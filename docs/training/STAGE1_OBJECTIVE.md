@@ -29,8 +29,20 @@ Scope note:
 - Raw-text norm1000 ablations remain legacy Stage-1 SFT surfaces, not latest
   compact detection overlays. Materialization verification should include:
   - `configs/stage1/profiles/2b/raw_text_xyxy_pure_ce_coco80_desc_first_1024_lvis_proxy.yaml`
-- Compact prefix roll-in multi-positive training now lives as the latest-detection `prefix_rollin_et_rmp_ce` ablation surface, not as a legacy custom trainer surface. The first checked-in route is `configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml`; treat it as E1 ablation/smoke validation, not production.
-- Geometry-aware coordinate SoftCE for latest compact recursive detection is scoped to historical A5-iou-gibbs/A6-ciou-gibbs and focused cap8 instance-trie provenance configs under `configs/stage1/recursive_detection_ce/prod/`. It uses `objective.coord_soft_ce` and does not route through legacy `custom.coord_soft_ce_w1.*`.
+- The canonical compact Stage-1 detection teacher-forcing public route is
+  `stage1_detection_teacher_forcing` under
+  `configs/stage1/detection_teacher_forcing/`.
+- Compact prefix roll-in multi-positive training remains only a legacy
+  recursive-detection CE comparator/ablation surface, not the active compact
+  teacher-forcing route. The checked-in route
+  `configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml`
+  should be treated as E1 ablation/smoke validation, not production.
+- Geometry-aware coordinate SoftCE for legacy compact recursive detection is
+  scoped to historical A5-iou-gibbs/A6-ciou-gibbs and focused cap8
+  instance-trie provenance configs under
+  `configs/stage1/recursive_detection_ce/prod/`. It uses
+  `objective.coord_soft_ce` and does not route through legacy
+  `custom.coord_soft_ce_w1.*`.
 - Narrow V1 exception:
   - `custom.bbox_format: cxcy_logw_logh` or `custom.bbox_format: cxcywh`
     defines an experimental Stage-1-only profile
@@ -149,17 +161,23 @@ custom:
   - `stage2_rollout_correction` uses rollout-prefix roll-in plus residual/GT correction target IR metrics under `stage2_rollout_correction/*`.
   - Historical coord/bbox groups such as `loss/coord/*`, `loss/B_coord/*`, `loss/A1_*`, `loss/A2_*`, `coord_diag/*`, `coord_diag/A1/*`, and `coord_diag/A2/*` are no longer part of the active Stage-2 objective contract.
 
-## Stage-1 compact recursive detection and prefix roll-in
+## Stage-1 compact detection teacher forcing and legacy recursive detection
 
-The active compact Stage-1 owner is the detection stack under `src/detection/`. There are now two distinct current-schema routes:
+The active compact Stage-1 owner is the detection stack under `src/detection/`.
+The current public compact teacher-forcing route is
+`stage1_detection_teacher_forcing` under
+`configs/stage1/detection_teacher_forcing/`.
 
-- `configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml` remains the random-permutation ET-RMP-CE legacy comparator.
+The old recursive-detection CE configs below remain legacy/comparator,
+migration, or ablation history only:
+
+- `configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml` remains the random-permutation ET-RMP-CE legacy comparator, not the active compact teacher-forcing route.
 - `configs/stage1/recursive_detection_ce/prod/compact_full_support2_iou_gibbs_softce_a5.yaml` is historical A5-iou-gibbs negative-result/superseded provenance: A2/support2 plus `iou_gibbs_v0` coordinate soft targets with `tau=0.0090909091` from the train one-token IoU-loss median.
 - `configs/stage1/recursive_detection_ce/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml` is historical paired A6-ciou-gibbs negative-result/superseded provenance: same setup as historical A5 but with `ciou_gibbs_v0`; production preparation assumed a separate 4-GPU slice for A5 and A6 rather than one 8-GPU run.
 - `configs/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1.yaml` is historical instance-trie/soft-CE ablation provenance, with `cap8_frac0p06_mix0p1` as the slope ablation and `cap8_frac0p04_mix0p2` as the strength ablation; see [`INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md`](INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md). These configs are not the new typed teacher-forcing objective surface.
-- `configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml` is the E1 `prefix_rollin_et_rmp_ce` ablation route for Prefix-Closed Multi-Target SFT.
+- `configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml` is the legacy/comparator E1 `prefix_rollin_et_rmp_ce` ablation route for Prefix-Closed Multi-Target SFT.
 
-`prefix_rollin_et_rmp_ce` is compact-full only. It requires `detection_template.id: compact_full`, masks roll-in prefix labels, samples `K` uniformly over `[0, object_count]`, keeps `suffix_order: same_sampled_permutation` for V1, and expresses support/balance weights under `objective.target`, not obsolete flat trie-weight aliases.
+The legacy/comparator `prefix_rollin_et_rmp_ce` route is compact-full only. It requires `detection_template.id: compact_full`, masks roll-in prefix labels, samples `K` uniformly over `[0, object_count]`, keeps `suffix_order: same_sampled_permutation` for V1, and expresses support/balance weights under `objective.target`, not obsolete flat trie-weight aliases.
 
 EOS supervision for this variant targets the Qwen chat-template assistant stop marker `<|im_end|>` only, using ordinary teacher-forced CE. Text-level terminators such as `<|endoftext|>` or `<|end_of_text|>` must not be used as training EOS for this surface.
 
@@ -174,7 +192,7 @@ Local vLLM launch kwargs should carry `mm_processor_kwargs: {do_resize: false}`
 when the installed vLLM API supports it, and inference artifacts must record the
 Qwen chat generation contract.
 
-For `prefix_rollin_et_rmp_ce`, `objective.state_weighting` and
+For legacy/comparator `prefix_rollin_et_rmp_ce`, `objective.state_weighting` and
 `objective.normalization` are authored config truth, not hidden runtime
 substitutions. They must be `uniform_permutation` and
 `semantic_image_bucket_balanced`, respectively. `training.effective_batch_size`
@@ -191,13 +209,14 @@ Compact-full token-row training uses 1002 trainable rows through the persisted
 historical; the current contract is token-row adaptation, not coord-only
 adaptation.
 
-For `prefix_rollin_et_rmp_ce` smoke and ablation monitoring, use
+For legacy/comparator `prefix_rollin_et_rmp_ce` smoke and ablation monitoring, use
 `loss/recursive_detection_ce` as the comparable objective-loss scalar. The
 top-level trainer `loss` may be scaled by gradient accumulation and is therefore
 not directly comparable across different `training.effective_batch_size`
 settings.
 
-Required training-health diagnostics for this surface include:
+Legacy recursive-detection CE training-health diagnostics for this comparator
+surface include:
 
 - `recursive_detection_ce/target_mix/targets_per_sample`: how many supervised
   local next-token targets contributed to the logged optimizer step.

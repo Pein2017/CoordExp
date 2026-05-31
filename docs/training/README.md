@@ -36,7 +36,7 @@ owner/expiry/opt-in. Supported `surface.id` values are:
 | Surface | Status | Primary config / route | Packing status | Notes |
 |---|---|---|---|---|
 | Stage-1 JSON CE | Current baseline and shadow `surface.id: stage1_json_ce` | `configs/stage1/sft_base.yaml`, shared Stage-1 profiles, and `src/training/pipelines/stage1_json_ce.py` | Static packing where supported | JSON chat CE remains the baseline/regression surface; do not treat it as the compact-full target architecture. |
-| Stage-1 compact teacher-forcing | Active compact-full direction and shadow `surface.id: stage1_compact_trie_ce` | `configs/stage1/teacher_forcing/`; runtime policy in `src/detection/runtime.py`; shared objective runner in `src/training/objectives/teacher_forcing.py` | Packing/cache fail fast until exact `teacher_forcing_target_ir` atom-position mapping is implemented and validated | Compact-full teacher-forcing is the active Stage-1 direction: global token-role stability plus singleton hard SFT or valid-set marginal atoms. |
+| Stage-1 compact teacher-forcing | Active compact-full direction and shadow `surface.id: stage1_compact_trie_ce` | `stage1_detection_teacher_forcing` under `configs/stage1/detection_teacher_forcing/`; runtime policy in `src/detection/runtime.py`; shared objective runner in `src/training/objectives/teacher_forcing.py` | Packing/cache fail fast until exact `teacher_forcing_target_ir` atom-position mapping is implemented and validated | Compact-full teacher-forcing is the active Stage-1 direction: global token-role stability plus singleton hard SFT or valid-set marginal atoms. |
 | Stage-1 compact recursive detection | Legacy/comparator handle, not an active new-training route | `configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml` | Legacy recursive sidecar packing/cache remain unsupported | Use only to interpret historical random-permutation ET-RMP-CE runs or explicit comparator reports. New active configs should use `objective.id: teacher_forcing`. |
 | Stage-1 compact recursive detection geometry-aware softCE | Legacy/comparator ablation candidates | `configs/stage1/recursive_detection_ce/prod/compact_full_support2_iou_gibbs_softce_a5.yaml`; `configs/stage1/recursive_detection_ce/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml` | Legacy recursive sidecar packing/cache remain unsupported | Historical/unlaunched comparator candidates; not part of the active teacher-forcing objective surface. |
 | Stage-1 compact prefix roll-in ET-RMP-CE | Legacy/comparator E1 ablation handle | `configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml` | Packing/cache disabled; recursive sidecar offset rewriting is not implemented | Compact-full historical ablation only. EOS supervision uses ordinary teacher-forced `<|im_end|>` CE. |
@@ -75,9 +75,11 @@ document implemented entrypoints and compatibility seams only; they do not imply
 that a benchmark, smoke, or validation run has completed.
 
 - Canonical active compact teacher-forcing configs live under
-  `configs/stage1/teacher_forcing/` and parse through
+  `configs/stage1/detection_teacher_forcing/` as
+  `stage1_detection_teacher_forcing` and parse through
   `DetectionTrainingConfig`.
-- Latest authoring snippets live under `configs/_shared/recursive_detection/` and
+- Legacy recursive-detection authoring snippets live under
+  `configs/_shared/recursive_detection/` and
   use top-level `data`, `prompt`, `detection_template`, `token_rows`,
   `objective`, `packing`, `evaluation`, and `validation`. They are not consumed
   by canonical launch configs until the relevant `extends` chains are migrated.
@@ -94,14 +96,15 @@ that a benchmark, smoke, or validation run has completed.
 - Compatible parsing returns `None` for malformed rows instead of raising through the common facade.
 - Generation suffix handling preserves desc control characters while keeping the existing suffix behavior.
 
-Latest compact recursive detection runtime policy is centralized in
+Current compact teacher-forcing runtime policy is centralized in
 `src/detection/runtime.py`:
 
 - detection runtime support and preflight checks,
-- recursive CE runtime config resolution,
+- teacher-forcing runtime policy,
 - prompt/mode/custom shim resolution,
 - `build_detection_dataset`,
-- packing/cache fail-fast policy for latest compact recursive CE surfaces.
+- packing/cache fail-fast policy for compact Stage-1 detection teacher-forcing
+  surfaces.
 
 `src/sft.py` delegates these policies to `src/detection/runtime.py`; removed
 legacy set-continuation routes are rejection-only and are not executable
@@ -142,7 +145,8 @@ latest-detection objective subkeys, but no new CLI flags.
 - `src/training/pipelines/`
 - `src/training/objectives/`
 - `src/training/observability/`
-- `configs/stage1/recursive_detection_ce/`
+- `configs/stage1/detection_teacher_forcing/`
+- `configs/stage1/recursive_detection_ce/` legacy/comparator configs only
 - `configs/stage1/compact_detection_sequence/`
 - `configs/_shared/recursive_detection/` authoring snippets, not current launch inheritance
 - `src/trainers/stage2_rollout_correction.py`
