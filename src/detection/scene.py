@@ -399,12 +399,13 @@ def _require_resolved_image_reference(image_reference: str) -> str:
             "DetectionScene requires a resolved image_reference supplied by the "
             "caller"
         )
-    if not Path(image_reference).expanduser().is_absolute():
+    expanded = Path(image_reference).expanduser()
+    if not expanded.is_absolute():
         raise ValueError(
             "DetectionScene image_reference must be an absolute local path; "
             f"got {image_reference!r}"
         )
-    return image_reference
+    return str(expanded.resolve(strict=False))
 
 
 def _validate_normalized_sample_ordering(

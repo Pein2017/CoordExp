@@ -132,6 +132,21 @@ def test_detection_scene_from_raw_row_rejects_relative_local_image_reference() -
         )
 
 
+def test_detection_scene_from_raw_row_expands_tilde_image_reference() -> None:
+    raw = parse_raw_detection_row(_raw_row())
+
+    scene = detection_scene_from_raw_row(
+        raw,
+        object_ordering=ObjectOrderingPlan.sorted(),
+        image_reference="~/coordexp-scene-test/example.jpg",
+    )
+
+    expected = str(Path("~/coordexp-scene-test/example.jpg").expanduser().resolve(strict=False))
+    assert scene.image_reference == expected
+    assert scene.images == (expected,)
+    assert not scene.image_reference.startswith("~")
+
+
 def test_detection_root_exports_keep_geometry_names_disambiguated() -> None:
     assert detection.DetectionGeometry is DetectionDocumentIRGeometry
     assert detection.DetectionSceneGeometry is DetectionSceneModuleGeometry
