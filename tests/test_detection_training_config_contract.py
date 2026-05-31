@@ -11,11 +11,6 @@ from src.config.loader import ConfigLoader
 from src.config.schema import DebugConfig, DetectionTrainingConfig
 from src.detection.runtime import resolve_recursive_detection_ce_runtime_cfg
 
-pytestmark = pytest.mark.skip(
-    reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective"
-)
-
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -104,6 +99,7 @@ def _update_section(
     payload[section] = {**current, **updates}
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_config_parses_and_exposes_typed_sections() -> None:
     cfg = DetectionTrainingConfig.from_mapping(_detection_payload())
 
@@ -132,6 +128,7 @@ def test_detection_config_parses_and_exposes_typed_sections() -> None:
     assert cfg.to_mapping()["objective"]["trie_support_weight"] == 2.0
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_custom_is_rejected_with_current_schema_message() -> None:
     payload = _detection_payload()
     payload["custom"] = {"trainer_variant": "stage1_set_continuation"}
@@ -155,6 +152,8 @@ def test_custom_is_rejected_with_current_schema_message() -> None:
         (("objective", "legacy_candidate_branch"), True),
     ],
 )
+
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_obsolete_keys_fail_with_dotted_path(
     path: tuple[str, ...], value: object
 ) -> None:
@@ -170,6 +169,7 @@ def test_obsolete_keys_fail_with_dotted_path(
     assert ".".join(path) in str(exc.value)
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_debug_section_parses_through_debug_config() -> None:
     payload = _detection_payload()
     payload["debug"] = {
@@ -188,6 +188,7 @@ def test_detection_debug_section_parses_through_debug_config() -> None:
     assert cfg.debug.val_sample_limit == 4
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_debug_unknown_keys_fail_fast() -> None:
     payload = _detection_payload()
     payload["debug"] = {"pem": "debug-pass-through"}
@@ -196,6 +197,7 @@ def test_detection_debug_unknown_keys_fail_fast() -> None:
         DetectionTrainingConfig.from_mapping(payload)
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_static_packing_requires_training_packing_owner() -> None:
     payload = _detection_payload()
     _update_section(payload, "packing", static_packing=True)
@@ -208,6 +210,7 @@ def test_detection_static_packing_requires_training_packing_owner() -> None:
         DetectionTrainingConfig.from_mapping(payload)
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_recursive_detection_rejects_runtime_packing_without_static_owner() -> None:
     payload = _detection_payload()
     _update_section(payload, "training", packing=True)
@@ -219,6 +222,7 @@ def test_detection_recursive_detection_rejects_runtime_packing_without_static_ow
         DetectionTrainingConfig.from_mapping(payload)
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_recursive_detection_rejects_static_packing_when_adapter_matches() -> None:
     payload = _detection_payload()
     _update_section(payload, "packing", static_packing=True)
@@ -228,6 +232,7 @@ def test_detection_recursive_detection_rejects_static_packing_when_adapter_match
         DetectionTrainingConfig.from_mapping(payload)
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_recursive_detection_rejects_padding_free_packing() -> None:
     payload = _detection_payload()
     _update_section(payload, "packing", padding_free_packed=True)
@@ -236,6 +241,7 @@ def test_detection_recursive_detection_rejects_padding_free_packing() -> None:
         DetectionTrainingConfig.from_mapping(payload)
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_recursive_detection_rejects_use_logits_to_keep() -> None:
     payload = _detection_payload()
     _update_section(payload, "training", use_logits_to_keep=True)
@@ -244,6 +250,7 @@ def test_detection_recursive_detection_rejects_use_logits_to_keep() -> None:
         DetectionTrainingConfig.from_mapping(payload)
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_recursive_detection_rejects_training_loss_scale() -> None:
     payload = _detection_payload()
     _update_section(payload, "training", loss_scale="default")
@@ -252,6 +259,7 @@ def test_detection_recursive_detection_rejects_training_loss_scale() -> None:
         DetectionTrainingConfig.from_mapping(payload)
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_recursive_detection_rejects_training_left_padding() -> None:
     payload = _detection_payload()
     _update_section(payload, "training", padding_side="left")
@@ -269,6 +277,8 @@ def test_detection_recursive_detection_rejects_training_left_padding() -> None:
         (("model", "not_a_train_argument"), True, "Unknown model keys"),
     ],
 )
+
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_framework_runtime_sections_preserve_strict_key_validation(
     path: tuple[str, ...], value: object, match: str
 ) -> None:
@@ -284,6 +294,7 @@ def test_framework_runtime_sections_preserve_strict_key_validation(
         DetectionTrainingConfig.from_mapping(payload)
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_unknown_keys_fail_with_dotted_path() -> None:
     payload = _detection_payload()
     payload["objective"] = {
@@ -297,6 +308,7 @@ def test_unknown_keys_fail_with_dotted_path() -> None:
     assert "objective.unknown_knob" in str(exc.value)
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_trie_weight_names_are_accepted() -> None:
     payload = _detection_payload()
     payload["objective"] = {
@@ -311,6 +323,7 @@ def test_detection_trie_weight_names_are_accepted() -> None:
     assert cfg.objective.trie_balance_weight == 0.25
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_random_permutation_accepts_iou_gibbs_coord_softce() -> None:
     payload = _detection_payload()
     payload["objective"] = {
@@ -340,6 +353,7 @@ def test_detection_random_permutation_accepts_iou_gibbs_coord_softce() -> None:
     assert cfg.objective.coord_soft_ce.weighting == "preserve_recursive_support_balance"
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_random_permutation_accepts_ciou_gibbs_coord_softce() -> None:
     payload = _detection_payload()
     payload["objective"] = {
@@ -367,6 +381,7 @@ def test_detection_random_permutation_accepts_ciou_gibbs_coord_softce() -> None:
     assert cfg.objective.coord_soft_ce.target_distribution == "ciou_gibbs_v0"
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_random_permutation_accepts_instance_trie_gaussian_coord_softce() -> None:
     payload = _detection_payload()
     payload["objective"] = {
@@ -394,6 +409,7 @@ def test_detection_random_permutation_accepts_instance_trie_gaussian_coord_softc
     assert not hasattr(cfg.objective.coord_soft_ce, "weighting")
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_random_permutation_et_rmp_accepts_type_gate_section() -> None:
     payload = _detection_payload()
     payload["objective"] = {
@@ -431,6 +447,7 @@ def test_random_permutation_et_rmp_accepts_type_gate_section() -> None:
     assert runtime_cfg.type_gate.weights.eos == pytest.approx(0.5)
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_random_permutation_accepts_ce_anchored_instance_trie_gaussian_coord_softce() -> None:
     payload = _detection_payload()
     payload["objective"] = {
@@ -459,6 +476,7 @@ def test_detection_random_permutation_accepts_ce_anchored_instance_trie_gaussian
     assert cfg.objective.coord_soft_ce.gaussian_r95_cap_bins == 8
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_recursive_detection_runtime_resolves_coord_softce_token_range() -> None:
     payload = _detection_payload()
     payload["objective"] = {
@@ -484,6 +502,7 @@ def test_recursive_detection_runtime_resolves_coord_softce_token_range() -> None
     assert runtime_cfg.coord_soft_ce.coord_token_end == 152669
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_instance_trie_gaussian_runtime_uses_token_row_coordinate_id_offset() -> None:
     cfg = SimpleNamespace(
         objective=SimpleNamespace(
@@ -525,6 +544,8 @@ def test_instance_trie_gaussian_runtime_uses_token_row_coordinate_id_offset() ->
     "deprecated_key",
     ["sigma", "truncate", "target_sigma", "target_truncate", "window", "radius"],
 )
+
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_coord_softce_rejects_fixed_gaussian_knobs(deprecated_key: str) -> None:
     payload = _detection_payload()
     payload["objective"]["coord_soft_ce"] = {
@@ -539,6 +560,7 @@ def test_coord_softce_rejects_fixed_gaussian_knobs(deprecated_key: str) -> None:
         DetectionTrainingConfig.from_mapping(payload)
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_coord_softce_requires_positive_data_derived_tau() -> None:
     payload = _detection_payload()
     payload["objective"]["coord_soft_ce"] = {
@@ -566,6 +588,8 @@ def test_coord_softce_requires_positive_data_derived_tau() -> None:
         "target_truncate",
     ],
 )
+
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_instance_trie_gaussian_coord_softce_rejects_stale_knobs(
     stale_key: str,
 ) -> None:
@@ -593,6 +617,8 @@ def test_instance_trie_gaussian_coord_softce_rejects_stale_knobs(
         ("gaussian_r95_cap_bins", True, "gaussian_r95_cap_bins"),
     ],
 )
+
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_instance_trie_gaussian_coord_softce_rejects_invalid_focused_policy(
     key: str,
     value: object,
@@ -612,6 +638,7 @@ def test_instance_trie_gaussian_coord_softce_rejects_invalid_focused_policy(
         DetectionTrainingConfig.from_mapping(payload)
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_recursive_detection_metrics_do_not_require_coord_softce_tau(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -732,6 +759,7 @@ def test_recursive_detection_metrics_do_not_require_coord_softce_tau(
     assert logged["recursive_detection_ce/type_gate/eos_weight"] == pytest.approx(0.5)
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_et_rmp_weights_must_be_non_negative_and_nonzero() -> None:
     payload = _detection_payload()
     payload["objective"] = {
@@ -744,6 +772,7 @@ def test_et_rmp_weights_must_be_non_negative_and_nonzero() -> None:
         DetectionTrainingConfig.from_mapping(payload)
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_sft_objective_uses_neutral_defaults() -> None:
     payload = _detection_payload()
     payload["data"] = {
@@ -763,6 +792,7 @@ def test_sft_objective_uses_neutral_defaults() -> None:
     assert cfg.objective.normalization == "token_mean"
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_requires_token_rows_section() -> None:
     payload = _detection_payload()
     payload.pop("token_rows")
@@ -771,6 +801,7 @@ def test_detection_requires_token_rows_section() -> None:
         DetectionTrainingConfig.from_mapping(payload)
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_requires_coord_geometry_token_rows() -> None:
     payload = _detection_payload()
     payload["token_rows"] = {
@@ -788,6 +819,7 @@ def test_detection_requires_coord_geometry_token_rows() -> None:
         DetectionTrainingConfig.from_mapping(payload)
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_rejects_disabled_token_rows() -> None:
     payload = _detection_payload()
     payload["token_rows"] = {
@@ -799,6 +831,7 @@ def test_detection_rejects_disabled_token_rows() -> None:
         DetectionTrainingConfig.from_mapping(payload)
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_requires_tied_token_rows() -> None:
     payload = _detection_payload()
     payload["token_rows"] = {
@@ -810,6 +843,7 @@ def test_detection_requires_tied_token_rows() -> None:
         DetectionTrainingConfig.from_mapping(payload)
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_requires_exact_compact_structural_rows() -> None:
     payload = _detection_payload()
     token_rows = dict(payload["token_rows"])  # type: ignore[arg-type]
@@ -822,6 +856,7 @@ def test_detection_requires_exact_compact_structural_rows() -> None:
         DetectionTrainingConfig.from_mapping(payload)
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_requires_exact_coord_row_range() -> None:
     payload = _detection_payload()
     token_rows = dict(payload["token_rows"])  # type: ignore[arg-type]
@@ -837,6 +872,7 @@ def test_detection_requires_exact_coord_row_range() -> None:
         DetectionTrainingConfig.from_mapping(payload)
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_rejects_extra_trainable_token_rows() -> None:
     payload = _detection_payload()
     token_rows = dict(payload["token_rows"])  # type: ignore[arg-type]
@@ -852,6 +888,7 @@ def test_detection_rejects_extra_trainable_token_rows() -> None:
         DetectionTrainingConfig.from_mapping(payload)
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_random_order_sft_accepts_random_permutation_ordering() -> None:
     payload = _detection_payload()
     payload["objective"] = {
@@ -902,6 +939,8 @@ def test_random_order_sft_accepts_random_permutation_ordering() -> None:
         ),
     ],
 )
+
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_object_ordering_must_match_objective_variant(
     object_ordering: str, objective: dict[str, object]
 ) -> None:
@@ -925,6 +964,8 @@ def test_object_ordering_must_match_objective_variant(
         {"normalization": "semantic_image_bucket_balanced"},
     ],
 )
+
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_sft_objective_rejects_recursive_knobs(
     override: dict[str, object],
 ) -> None:
@@ -939,6 +980,7 @@ def test_sft_objective_rejects_recursive_knobs(
         DetectionTrainingConfig.from_mapping(payload)
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_trie_disabled_full_suffix_ce_rejects_trie_weights() -> None:
     payload = _detection_payload()
     payload["objective"] = {
@@ -964,6 +1006,8 @@ def test_trie_disabled_full_suffix_ce_rejects_trie_weights() -> None:
         {"normalization": "semantic_image_bucket_balanced"},
     ],
 )
+
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_trie_disabled_full_suffix_ce_requires_neutral_profile(
     override: dict[str, object],
 ) -> None:
@@ -988,6 +1032,8 @@ def test_trie_disabled_full_suffix_ce_requires_neutral_profile(
         ("normalization", "typo_norm"),
     ],
 )
+
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_objective_strategy_ids_are_strictly_validated(
     field_name: str, bad_value: str
 ) -> None:
@@ -1001,6 +1047,7 @@ def test_objective_strategy_ids_are_strictly_validated(
         DetectionTrainingConfig.from_mapping(payload)
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_compact_full_template_must_not_require_json_field_order() -> None:
     payload = _detection_payload()
     payload["detection_template"] = {
@@ -1012,6 +1059,7 @@ def test_compact_full_template_must_not_require_json_field_order() -> None:
         DetectionTrainingConfig.from_mapping(payload)
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_stage1_json_pretty_template_requires_desc_first_field_order() -> None:
     payload = _detection_payload()
     payload["detection_template"] = {
@@ -1036,6 +1084,7 @@ def test_stage1_json_pretty_template_requires_desc_first_field_order() -> None:
     assert cfg.detection_template.object_field_order == "desc_first"
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_recursive_detection_ce_fixture_parses() -> None:
     path = (
         REPO_ROOT
@@ -1056,6 +1105,7 @@ def test_recursive_detection_ce_fixture_parses() -> None:
     assert cfg.objective.normalization == "semantic_image_bucket_balanced"
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_config_loader_materializes_detection_config_without_custom(
     tmp_path: Path,
 ) -> None:
@@ -1077,6 +1127,7 @@ def test_config_loader_materializes_detection_config_without_custom(
     assert cfg.data.train_jsonl.endswith("train.coord.jsonl")
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_config_loader_builds_train_arguments_from_detection_runtime_sections(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -1118,6 +1169,7 @@ def test_config_loader_builds_train_arguments_from_detection_runtime_sections(
     assert captured["gradient_accumulation_steps"] == 2
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_rejects_upstream_save_only_model_knob() -> None:
     payload = _detection_payload()
     payload["training"] = {
@@ -1132,6 +1184,7 @@ def test_detection_rejects_upstream_save_only_model_knob() -> None:
     assert "training.save_model_only" in str(exc.value)
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_rejects_deprecated_checkpoint_mode_knob() -> None:
     payload = _detection_payload()
     payload["training"] = {
@@ -1146,6 +1199,7 @@ def test_detection_rejects_deprecated_checkpoint_mode_knob() -> None:
     assert "training.save_model_only" in str(exc.value)
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_save_model_only_requires_boolean() -> None:
     payload = _detection_payload()
     payload["training"] = {
@@ -1159,6 +1213,7 @@ def test_detection_save_model_only_requires_boolean() -> None:
     assert "training.save_model_only must be a boolean" in str(exc.value)
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_config_loader_rejects_authored_gradient_accumulation_when_effective_batch_is_set(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1181,6 +1236,7 @@ def test_config_loader_rejects_authored_gradient_accumulation_when_effective_bat
         ConfigLoader.build_train_arguments(cfg)
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_effective_batch_config_names_do_not_bake_derived_accumulation() -> None:
     cfg_path = (
         REPO_ROOT
@@ -1194,6 +1250,7 @@ def test_effective_batch_config_names_do_not_bake_derived_accumulation() -> None
     assert "accum" not in str(cfg.training.get("run_name", ""))
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_recursive_detection_launch_configs_parse_without_custom() -> None:
     config_paths = [
         REPO_ROOT
@@ -1299,17 +1356,20 @@ def test_detection_recursive_detection_launch_configs_parse_without_custom() -> 
 
 
 def test_stage1_detection_teacher_forcing_canonical_launch_configs_parse() -> None:
+    canonical_route = REPO_ROOT / "configs/stage1/detection_teacher_forcing"
+    assert "stage1_detection_teacher_forcing" in (
+        canonical_route / "README.md"
+    ).read_text()
     config_paths = [
-        REPO_ROOT
-        / "configs/stage1/detection_teacher_forcing/prod/compact_full_support2.yaml",
-        REPO_ROOT
-        / "configs/stage1/detection_teacher_forcing/smoke/compact_full_tiny.yaml",
+        canonical_route / "prod/compact_full_support2.yaml",
+        canonical_route / "smoke/compact_full_tiny.yaml",
     ]
 
     for config_path in config_paths:
         cfg = ConfigLoader.load_materialized_training_config(str(config_path))
         assert isinstance(cfg, DetectionTrainingConfig)
         assert cfg.objective.id == "teacher_forcing"
+        assert config_path.is_relative_to(canonical_route)
         assert cfg.objective.profile == "pure_valid_set_marginal"
         assert cfg.objective.target_ir.rollin_policy.name == "random_permutation"
         assert cfg.data.object_ordering == "random_permutation"
@@ -1318,7 +1378,11 @@ def test_stage1_detection_teacher_forcing_canonical_launch_configs_parse() -> No
         assert cfg.packing.padding_free_packed is False
         assert cfg.training["packing"] is False
         assert cfg.training["eval_packing"] is False
-        assert "detection_teacher_forcing" in str(config_path)
+        assert cfg.training["encoded_sample_cache"]["enabled"] is False
+        assert "detection_teacher_forcing" in str(cfg.training["output_dir"])
+        assert "detection_teacher_forcing" in str(cfg.training["logging_dir"])
+
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_recursive_detection_prefix_rollin_smoke_config_parses() -> None:
     cfg = ConfigLoader.load_materialized_training_config(
         str(
@@ -1338,6 +1402,7 @@ def test_detection_recursive_detection_prefix_rollin_smoke_config_parses() -> No
     assert cfg.packing.padding_free_packed is False
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_compact_sft_smoke_configs_parse_with_hard_ce_objectives() -> None:
     expected = {
         "compact_full_random_sft.yaml": (
@@ -1365,6 +1430,7 @@ def test_detection_compact_sft_smoke_configs_parse_with_hard_ce_objectives() -> 
         assert cfg.prompt.prompt_variant_enabled is prompt_variant
 
 
+@pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_recursive_detection_packing_preflight_config_is_failfast_only() -> None:
     config_path = (
         REPO_ROOT

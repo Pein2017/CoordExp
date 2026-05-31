@@ -30,12 +30,12 @@ from src.detection.dataset import (
 from src.detection.ir import (
     DetectionCoordinateSlot,
     DetectionDocument,
-    DetectionGeometry,
     DetectionGeometry as DetectionDocumentGeometry,
     DetectionObjectEntry,
     detection_document_from_normalized_sample,
 )
 from src.detection.scene import (
+    DetectionGeometry,
     DetectionGeometry as DetectionSceneGeometry,
     DetectionObject,
     DetectionScene,

@@ -148,8 +148,10 @@ def test_detection_scene_from_raw_row_expands_tilde_image_reference() -> None:
 
 
 def test_detection_root_exports_keep_geometry_names_disambiguated() -> None:
-    assert detection.DetectionGeometry is DetectionDocumentIRGeometry
+    assert detection.DetectionGeometry is DetectionSceneModuleGeometry
     assert detection.DetectionSceneGeometry is DetectionSceneModuleGeometry
+    assert detection.DetectionDocumentGeometry is DetectionDocumentIRGeometry
+    assert detection.DetectionGeometry is not DetectionDocumentIRGeometry
 
 
 def test_detection_scene_projects_back_to_normalized_sample_without_raw_authority() -> None:
