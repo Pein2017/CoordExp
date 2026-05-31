@@ -26,10 +26,10 @@ Superpowers plan.
   or tag.
 - [x] 2.2 Record the archive checkpoint in the appropriate progress or docs
   surface.
-- [ ] 2.3 Classify active and historical surfaces as keep/rename, temporary
+- [x] 2.3 Classify active and historical surfaces as keep/rename, temporary
   migration handle, quarantine, or delete.
-- [ ] 2.4 Name search gates for historical public names before deletion starts.
-- [ ] 2.5 Name replacement-before-deletion gates for every retained canonical
+- [x] 2.4 Name search gates for historical public names before deletion starts.
+- [x] 2.5 Name replacement-before-deletion gates for every retained canonical
   behavior that will be renamed, rerouted, or removed from an old surface.
 
 ## 3. DetectionScene Semantic Layer After Approval
