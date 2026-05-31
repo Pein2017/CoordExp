@@ -3700,6 +3700,7 @@ class Stage2RolloutCorrectionTrainer(
                         duplicate_iou_threshold=float(duplicate_iou_threshold),
                         pseudo_positive_enabled=bool(pseudo_positive_enabled),
                         expected_peer_count=int(expected_peer_count_for_triage),
+                        rollout_prediction=anchor_view.get("rollout_prediction"),
                     )
                 )
             )

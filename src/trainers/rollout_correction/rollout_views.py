@@ -12,6 +12,11 @@ from src.training.stage2.rollout_codec import (
 
 from ..rollout_matching.contracts import GTObject
 from ..rollout_matching.parsing import decode_pieces
+from .projections import (
+    detection_decode_result_from_stage2_rollout,
+    rollout_prediction_from_legacy_stage2_parse,
+    rollout_prediction_from_shared_decode,
+)
 
 
 _COMPACT_COORD_RE = re.compile(r"<\|coord_(0|[1-9]\d{0,2})\|>")
@@ -283,6 +288,13 @@ def _build_compact_full_rollout_view(
         response_token_ids=resp_ids_local,
         response_text=resp_text,
     )
+    decoded_result = detection_decode_result_from_stage2_rollout(
+        response_text=response_text,
+        response_token_ids=resp_ids_local,
+        prompt_token_ids=prompt_ids,
+        decode_mode=rollout_decode_mode,
+        source_label=source_label,
+    )
     codec = CompactFullRolloutCodec(rollout_template_policy)
     parse = codec.parse(response_text)
     parse = replace(
@@ -400,6 +412,12 @@ def _build_compact_full_rollout_view(
             duplicate_metrics = duplicate_diagnostics_fn([])
             parsed_bbox_objects_raw = []
 
+    rollout_prediction = rollout_prediction_from_shared_decode(
+        decoded_result=decoded_result,
+        parse_result=parse,
+        metric_bearing=not fallback_applies,
+        source_label=source_label,
+    )
     return {
         "prompt_ids": [int(t) for t in prompt_ids],
         "decode_mode": str(rollout_decode_mode),
@@ -407,6 +425,8 @@ def _build_compact_full_rollout_view(
         "parse_truncated": int(1 if bool(parse.truncated) else 0),
         "gen_new_tokens": int(len(parse.response_token_ids)),
         "parse": parse,
+        "decoded_result": decoded_result,
+        "rollout_prediction": rollout_prediction,
         "invalid_rollout": int(1 if bool(parse.invalid_rollout) else 0),
         "empty_valid_object_set": int(
             1 if bool(parse.empty_valid_object_set) else 0
@@ -484,6 +504,15 @@ def build_rollout_correction_view(
         tokenizer=tokenizer,
         response_token_ids=resp_ids_local,
         object_field_order=object_field_order,
+    )
+    response_text = str(getattr(parse, "response_text", "") or _resp_text)
+    decoded_result = detection_decode_result_from_stage2_rollout(
+        response_text=response_text,
+        response_token_ids=resp_ids_local,
+        prompt_token_ids=prompt_ids,
+        decode_mode=rollout_decode_mode,
+        source_label=source_label,
+        backend_metadata={"migration_source": "rollout_matching"},
     )
     invalid_rollout = int(1 if bool(getattr(parse, "invalid_rollout", False)) else 0)
 
@@ -565,6 +594,13 @@ def build_rollout_correction_view(
         center_radius_scale=center_radius_scale,
         duplicate_diagnostics_fn=duplicate_diagnostics_fn,
     )
+    rollout_prediction = rollout_prediction_from_legacy_stage2_parse(
+        decoded_result=decoded_result,
+        parse_result=parse,
+        valid_objects=parsed_bbox_objects_raw,
+        metric_bearing=not bool(invalid_rollout),
+        source_label=source_label,
+    )
 
     return {
         "prompt_ids": [int(t) for t in prompt_ids],
@@ -573,6 +609,8 @@ def build_rollout_correction_view(
         "parse_truncated": int(1 if bool(getattr(parse, "truncated", False)) else 0),
         "gen_new_tokens": int(len(parse.response_token_ids)),
         "parse": parse,
+        "decoded_result": decoded_result,
+        "rollout_prediction": rollout_prediction,
         "invalid_rollout": int(invalid_rollout),
         "empty_valid_object_set": int(0),
         "fallback_reason": None,

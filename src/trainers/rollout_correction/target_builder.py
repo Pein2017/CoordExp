@@ -62,6 +62,14 @@ from .residual_set import (
     scan_dirty_prefix_rows,
     transition_state,
 )
+from .projections import (
+    DetectionAssignment,
+    DuplicateFilteredRolloutPrediction,
+    RolloutPrediction,
+    assign_detection_scene_rollout_prediction,
+    detection_scene_gt_objects,
+    filter_rollout_prediction_duplicates,
+)
 from .rollout_views import CompactFullObjectTokenSpan, extract_compact_full_object_token_spans
 
 _RESIDUAL_SET_OBJECTIVE_NAME = "residual_set_correction"
@@ -189,6 +197,10 @@ class RolloutCorrectionTargetContextInput:
     duplicate_iou_threshold: float
     pseudo_positive_enabled: bool
     expected_peer_count: int
+    detection_scene: Any | None = None
+    rollout_prediction: RolloutPrediction | None = None
+    assignment: DetectionAssignment | None = None
+    duplicate_filter: DuplicateFilteredRolloutPrediction | None = None
 
 
 @dataclass(frozen=True)
@@ -198,6 +210,11 @@ class RolloutCorrectionTargetContext:
     sample_id: str
     triage: _ChannelBTriageResult
     metrics: Dict[str, float]
+    detection_scene: Any | None = None
+    rollout_prediction: RolloutPrediction | None = None
+    assignment: DetectionAssignment | None = None
+    duplicate_filter: DuplicateFilteredRolloutPrediction | None = None
+    supervision_view_authority: str = "DetectionSupervisionView"
 
 
 @dataclass(frozen=True)
@@ -1239,10 +1256,90 @@ def construct_rollout_correction_target_context(
         "pseudo_positive_selected": float(len(triage.pseudo_positive_anchor_indices)),
         "valid_explorer_count": float(triage.valid_explorer_count),
     }
+    if request.rollout_prediction is not None:
+        metrics["rollout_prediction_valid_objects"] = float(
+            len(request.rollout_prediction.valid_objects)
+        )
+        metrics["rollout_prediction_metric_bearing"] = float(
+            1.0 if request.rollout_prediction.metric_bearing else 0.0
+        )
+    if request.assignment is not None:
+        metrics["detection_assignment_matched_pairs"] = float(
+            len(request.assignment.matched_pairs)
+        )
     return RolloutCorrectionTargetContext(
         sample_id=str(request.sample_id),
         triage=triage,
         metrics=metrics,
+        detection_scene=request.detection_scene,
+        rollout_prediction=request.rollout_prediction,
+        assignment=request.assignment,
+        duplicate_filter=request.duplicate_filter,
+    )
+
+
+def construct_detection_scene_rollout_correction_target_context(
+    *,
+    scene: Any,
+    rollout_prediction: RolloutPrediction,
+    explorer_predictions: Sequence[RolloutPrediction] = (),
+    unlabeled_consistent_iou_threshold: float,
+    duplicate_iou_threshold: float,
+    center_radius_scale: float,
+    pseudo_positive_enabled: bool,
+    expected_peer_count: int,
+    assignment_iou_threshold: float = 0.5,
+    anchor_policy_statuses: Sequence[Optional[str]] = (),
+) -> RolloutCorrectionTargetContext:
+    """Build Stage-2 target context from DetectionScene plus RolloutPrediction."""
+
+    duplicate_filter = filter_rollout_prediction_duplicates(
+        prediction=rollout_prediction,
+        explorer_predictions=explorer_predictions,
+        duplicate_iou_threshold=float(duplicate_iou_threshold),
+        center_radius_scale=float(center_radius_scale),
+        unlabeled_consistent_iou_threshold=float(unlabeled_consistent_iou_threshold),
+    )
+    assignment = assign_detection_scene_rollout_prediction(
+        scene=scene,
+        prediction=duplicate_filter.prediction,
+        min_iou=float(assignment_iou_threshold),
+    )
+    explorer_match_by_pred_by_view: List[Dict[int, int]] = []
+    for explorer_prediction in explorer_predictions:
+        explorer_assignment = assign_detection_scene_rollout_prediction(
+            scene=scene,
+            prediction=explorer_prediction,
+            min_iou=float(assignment_iou_threshold),
+        )
+        explorer_match_by_pred_by_view.append(explorer_assignment.anchor_match_by_pred)
+
+    return construct_rollout_correction_target_context(
+        RolloutCorrectionTargetContextInput(
+            sample_id=str(getattr(scene, "image_id", "")),
+            gt_objects=detection_scene_gt_objects(scene),
+            accepted_objects_clean=duplicate_filter.prediction.valid_objects,
+            suppressed_duplicate_objects_by_boundary=(
+                duplicate_filter.suppressed_duplicate_objects_by_boundary
+            ),
+            explorer_objects_raw_by_view=[
+                tuple(explorer_prediction.valid_objects)
+                for explorer_prediction in explorer_predictions
+            ],
+            anchor_match_by_pred=assignment.anchor_match_by_pred,
+            explorer_match_by_pred_by_view=explorer_match_by_pred_by_view,
+            anchor_policy_statuses=anchor_policy_statuses,
+            unlabeled_consistent_iou_threshold=float(
+                unlabeled_consistent_iou_threshold
+            ),
+            duplicate_iou_threshold=float(duplicate_iou_threshold),
+            pseudo_positive_enabled=bool(pseudo_positive_enabled),
+            expected_peer_count=int(expected_peer_count),
+            detection_scene=scene,
+            rollout_prediction=rollout_prediction,
+            assignment=assignment,
+            duplicate_filter=duplicate_filter,
+        )
     )
 
 
@@ -4228,6 +4325,7 @@ def _desc_tail_positions_and_weights(
 __all__ = [
     "RolloutCorrectionTargetContext",
     "RolloutCorrectionTargetContextInput",
+    "construct_detection_scene_rollout_correction_target_context",
     "construct_rollout_correction_target_context",
     "_ValueSpanObject",
     "_CanonicalPrefixData",

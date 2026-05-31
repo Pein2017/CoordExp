@@ -2,10 +2,25 @@ from __future__ import annotations
 
 import inspect
 
+from src.detection.data import DetectionMetadata, ObjectOrderingPlan
+from src.detection.scene import DetectionGeometry, DetectionObject, DetectionScene
+from src.infer.backend import DetectionDecodeResult
+from src.training.stage2.rollout_codec import (
+    Stage2RolloutObject,
+    Stage2RolloutParseResult,
+)
 from src.trainers.rollout_correction.target_builder import (
     RolloutCorrectionTargetContext,
     RolloutCorrectionTargetContextInput,
     construct_rollout_correction_target_context,
+    construct_detection_scene_rollout_correction_target_context,
+)
+from src.trainers.rollout_correction.projections import (
+    CorrectionEvent,
+    annotate_correction_events_with_projection_provenance,
+    assign_detection_scene_rollout_prediction,
+    filter_rollout_prediction_duplicates,
+    rollout_prediction_from_shared_decode,
 )
 from src.trainers.rollout_matching.contracts import GTObject
 
@@ -16,6 +31,95 @@ def _bbox_object(index: int, desc: str, box: list[int]) -> GTObject:
         geom_type="bbox_2d",
         points_norm1000=list(box),
         desc=str(desc),
+    )
+
+
+def _scene_object(index: int, desc: str, box: list[int]) -> DetectionObject:
+    return DetectionObject(
+        scene_object_index=int(index),
+        source_object_index=int(index),
+        object_instance_id=f"scene-object-{index}",
+        label=str(desc),
+        desc=str(desc),
+        geometry=DetectionGeometry.from_bbox_2d(
+            tuple(int(v) for v in box),
+            coordinate_frame="image",
+            coordinate_space="norm1000",
+            bbox_chart="xyxy",
+        ),
+        category_id=int(index) + 1,
+        category_name=str(desc),
+        coco_ann_id=1000 + int(index),
+    )
+
+
+def _scene(*objects: DetectionObject) -> DetectionScene:
+    return DetectionScene(
+        image_id=77,
+        image_reference="/tmp/stage2-scene.jpg",
+        source_image_reference="stage2-scene.jpg",
+        file_name="stage2-scene.jpg",
+        width=1000,
+        height=1000,
+        coordinate_frame="image",
+        coordinate_space="norm1000",
+        bbox_chart="xyxy",
+        objects=tuple(objects),
+        object_ordering=ObjectOrderingPlan.sorted().with_realized(
+            tuple(obj.source_object_index for obj in objects)
+        ),
+        metadata=DetectionMetadata(source="unit", split="train"),
+    )
+
+
+def _decoded(text: str) -> DetectionDecodeResult:
+    return DetectionDecodeResult(
+        text=str(text),
+        generated_token_ids=[11, 12, 13],
+        generated_tokens=["a", "b", "c"],
+        generated_logprobs=[-0.1, -0.2, -0.3],
+        stop_reason="stop",
+        backend="unit-runtime",
+        backend_metadata={
+            "decode_policy_fingerprint": "decode-fp",
+            "model_identity_fingerprint": "model-fp",
+            "prompt_policy": "stage2-test-prompt",
+        },
+        prompt_token_ids=[1, 2, 3],
+    )
+
+
+def _parse_result(
+    text: str,
+    *objects: Stage2RolloutObject,
+    invalid: bool = False,
+    dropped_invalid: int = 0,
+) -> Stage2RolloutParseResult:
+    return Stage2RolloutParseResult(
+        template_family="compact_full",
+        parser_id="compact_full",
+        response_text=str(text),
+        valid_objects=tuple(objects),
+        invalid_rollout=bool(invalid),
+        empty_valid_object_set=not objects and not invalid,
+        truncated=False,
+        fallback_reason="malformed_compact_full" if invalid else None,
+        metadata={"parser_policy": "strict"},
+        response_token_ids=(11, 12, 13),
+        dropped_invalid=int(dropped_invalid),
+        dropped_invalid_by_reason={"malformed_row": int(dropped_invalid)}
+        if dropped_invalid
+        else {},
+    )
+
+
+def _rollout_object(index: int, desc: str, box: list[int]) -> Stage2RolloutObject:
+    return Stage2RolloutObject(
+        object_id=f"pred-{index}",
+        index=int(index),
+        desc=str(desc),
+        bbox_norm1000=tuple(int(v) for v in box),
+        provenance="shared_decode_parse",
     )
 
 
@@ -79,3 +183,137 @@ def test_rollout_correction_target_context_boundary_has_no_lifecycle_inputs() ->
         "training_step",
     ):
         assert forbidden not in source
+
+
+def test_rollout_prediction_derives_from_shared_decode_and_strict_parse() -> None:
+    text = "<|object_ref_start|> cat<|box_start|><|coord_100|><|coord_100|><|coord_200|><|coord_200|>"
+    decoded = _decoded(text)
+    parse = _parse_result(
+        text,
+        _rollout_object(0, "cat", [100, 100, 200, 200]),
+        dropped_invalid=1,
+    )
+
+    prediction = rollout_prediction_from_shared_decode(
+        decoded_result=decoded,
+        parse_result=parse,
+        metric_bearing=True,
+        source_label="anchor",
+    )
+
+    assert prediction.decoded_result is decoded
+    assert prediction.parse_result is parse
+    assert prediction.metric_bearing is True
+    assert prediction.valid_objects[0].points_norm1000 == [100, 100, 200, 200]
+    assert prediction.invalid_drop_metadata == {
+        "invalid_rollout": False,
+        "empty_valid_object_set": False,
+        "truncated": False,
+        "fallback_reason": None,
+        "dropped_invalid": 1,
+        "dropped_ambiguous": 0,
+        "dropped_invalid_by_reason": {"malformed_row": 1},
+    }
+    assert prediction.provenance["decode_result_type"] == "DetectionDecodeResult"
+    assert prediction.provenance["backend"] == "unit-runtime"
+    assert prediction.provenance["parser_id"] == "compact_full"
+    assert prediction.provenance["metric_bearing"] is True
+    assert (
+        prediction.provenance["backend_metadata"]["model_identity_fingerprint"]
+        == "model-fp"
+    )
+
+
+def test_detection_scene_assignment_duplicate_filter_and_context_projection() -> None:
+    scene = _scene(_scene_object(0, "cat", [100, 100, 200, 200]))
+    prediction = rollout_prediction_from_shared_decode(
+        decoded_result=_decoded("duplicate cat rollout"),
+        parse_result=_parse_result(
+            "duplicate cat rollout",
+            _rollout_object(0, "cat", [100, 100, 200, 200]),
+            _rollout_object(1, "cat", [102, 102, 202, 202]),
+        ),
+        metric_bearing=True,
+        source_label="anchor",
+    )
+    explorer = rollout_prediction_from_shared_decode(
+        decoded_result=_decoded("support cat rollout"),
+        parse_result=_parse_result(
+            "support cat rollout",
+            _rollout_object(0, "cat", [101, 101, 201, 201]),
+        ),
+        metric_bearing=True,
+        source_label="peer",
+    )
+
+    duplicate_filter = filter_rollout_prediction_duplicates(
+        prediction=prediction,
+        explorer_predictions=[explorer],
+        duplicate_iou_threshold=0.9,
+        center_radius_scale=0.8,
+        unlabeled_consistent_iou_threshold=0.5,
+    )
+    assignment = assign_detection_scene_rollout_prediction(
+        scene=scene,
+        prediction=duplicate_filter.prediction,
+        min_iou=0.5,
+    )
+    context = construct_detection_scene_rollout_correction_target_context(
+        scene=scene,
+        rollout_prediction=prediction,
+        explorer_predictions=[explorer],
+        unlabeled_consistent_iou_threshold=0.5,
+        duplicate_iou_threshold=0.9,
+        center_radius_scale=0.8,
+        pseudo_positive_enabled=True,
+        expected_peer_count=1,
+    )
+
+    assert duplicate_filter.prediction.valid_objects[0].desc == "cat"
+    assert (
+        duplicate_filter.suppressed_duplicate_objects_by_boundary[1][0].desc
+        == "cat"
+    )
+    assert assignment.matched_pairs == ((0, 0),)
+    assert assignment.prediction_source == "shared_inference_runtime_decode"
+    assert context.detection_scene is scene
+    assert context.rollout_prediction is prediction
+    assert context.assignment.matched_pairs == ((0, 0),)
+    assert context.triage.anchor_gt_backed_indices == [0]
+
+
+def test_correction_event_provenance_links_scene_prediction_and_assignment() -> None:
+    scene = _scene(_scene_object(0, "cat", [100, 100, 200, 200]))
+    prediction = rollout_prediction_from_shared_decode(
+        decoded_result=_decoded("cat rollout"),
+        parse_result=_parse_result(
+            "cat rollout",
+            _rollout_object(0, "cat", [100, 100, 200, 200]),
+        ),
+        metric_bearing=True,
+        source_label="anchor",
+    )
+    assignment = assign_detection_scene_rollout_prediction(
+        scene=scene,
+        prediction=prediction,
+        min_iou=0.5,
+    )
+    event = CorrectionEvent(
+        correction_kind="residual_continuation",
+        sample_id="scene-77",
+        atom_drafts=(),
+        metadata={"correction_builder": "unit"},
+    )
+
+    (annotated,) = annotate_correction_events_with_projection_provenance(
+        [event],
+        scene=scene,
+        rollout_prediction=prediction,
+        assignment=assignment,
+    )
+
+    assert annotated.metadata["correction_builder"] == "unit"
+    assert annotated.metadata["detection_scene"]["image_id"] == 77
+    assert annotated.metadata["rollout_prediction"]["parser_id"] == "compact_full"
+    assert annotated.metadata["rollout_prediction"]["metric_bearing"] is True
+    assert annotated.metadata["detection_assignment"]["matched_pairs"] == [(0, 0)]

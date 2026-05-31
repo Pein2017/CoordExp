@@ -52,15 +52,15 @@ Superpowers plan.
 
 ## 5. Stage-2 Projection After Approval
 
-- [ ] 5.1 Route Stage-2 rollout correction through
+- [x] 5.1 Route Stage-2 rollout correction through
   `DetectionScene + RolloutPrediction -> DetectionAssignment -> CorrectionEvent
   -> DetectionSupervisionView`.
-- [ ] 5.2 Consolidate new Stage-2 rollout/decode/eval policy under the
+- [x] 5.2 Consolidate new Stage-2 rollout/decode/eval policy under the
   Stage-2 rollout-correction surface rather than public `rollout_matching.*`.
-- [ ] 5.3 Add characterization tests for assignment, duplicate filtering,
+- [x] 5.3 Add characterization tests for assignment, duplicate filtering,
   correction-event construction, invalid/drop metadata, and retained Stage-2
   semantic parity.
-- [ ] 5.4 Prove `RolloutPrediction` is derived from shared inference/runtime
+- [x] 5.4 Prove `RolloutPrediction` is derived from shared inference/runtime
   strict decoded output and provenance rather than a private Stage-2 parser or
   diagnostic salvage path.
 
