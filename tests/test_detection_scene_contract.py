@@ -103,11 +103,28 @@ def test_detection_scene_from_raw_row_preserves_explicit_semantics() -> None:
     assert not hasattr(scene, "eval_metrics")
 
 
+def test_detection_scene_from_raw_row_requires_resolved_image_reference() -> None:
+    raw = parse_raw_detection_row(_raw_row())
+
+    with pytest.raises(TypeError, match="image_reference"):
+        detection_scene_from_raw_row(raw, object_ordering=ObjectOrderingPlan.sorted())
+    with pytest.raises(ValueError, match="resolved image_reference"):
+        detection_scene_from_raw_row(
+            raw,
+            object_ordering=ObjectOrderingPlan.sorted(),
+            image_reference=None,  # type: ignore[arg-type]
+        )
+
+
 def test_detection_scene_projects_back_to_normalized_sample_without_raw_authority() -> None:
     raw = parse_raw_detection_row(_raw_row())
     ordering = ObjectOrderingPlan.random_permutation(seed=7, seed_source="unit")
 
-    scene = detection_scene_from_raw_row(raw, object_ordering=ordering)
+    scene = detection_scene_from_raw_row(
+        raw,
+        object_ordering=ordering,
+        image_reference="/resolved/images/train2017/example.jpg",
+    )
     sample = normalized_detection_sample_from_scene(scene)
 
     assert sample.images == ("images/train2017/example.jpg",)
@@ -133,7 +150,11 @@ def test_detection_scene_rejects_multiple_image_references() -> None:
     raw = parse_raw_detection_row(row)
 
     with pytest.raises(ValueError, match="exactly one image reference"):
-        detection_scene_from_raw_row(raw, object_ordering=ObjectOrderingPlan.sorted())
+        detection_scene_from_raw_row(
+            raw,
+            object_ordering=ObjectOrderingPlan.sorted(),
+            image_reference="/resolved/images/a.jpg",
+        )
 
 
 def test_detection_training_dataset_exposes_resolved_scene_for_raw_jsonl_rows(

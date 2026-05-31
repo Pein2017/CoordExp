@@ -152,7 +152,7 @@ def detection_scene_from_raw_row(
     raw: RawDetectionRow,
     *,
     object_ordering: ObjectOrderingPlan,
-    image_reference: str | None = None,
+    image_reference: str,
     coordinate_frame: CoordinateFrame = "image",
     coordinate_space: CoordinateSpace = "norm1000",
     bbox_chart: BBoxChart = "xyxy",
@@ -160,9 +160,7 @@ def detection_scene_from_raw_row(
     """Project a raw intake row into the semantic scene layer."""
 
     source_image_reference = _single_image_reference(raw.images)
-    resolved_image_reference = (
-        str(image_reference) if image_reference is not None else source_image_reference
-    )
+    resolved_image_reference = _require_resolved_image_reference(image_reference)
     source_indices = _realize_object_order(raw, object_ordering=object_ordering)
     objects = tuple(
         _scene_object_from_raw(
@@ -191,10 +189,44 @@ def detection_scene_from_raw_row(
     )
 
 
+def normalized_detection_sample_from_raw_row_bridge(
+    raw: RawDetectionRow,
+    *,
+    object_ordering: ObjectOrderingPlan,
+) -> NormalizedDetectionSample:
+    """Build the temporary normalized bridge without creating a canonical scene.
+
+    ``NormalizedDetectionSample`` still carries source-relative image strings for
+    migration-era render/token paths.  Keep that behavior explicit here so
+    canonical ``DetectionScene`` construction can require a resolved image
+    reference.
+    """
+
+    source_indices = _realize_object_order(raw, object_ordering=object_ordering)
+    normalized_objects = tuple(
+        _normalized_object_from_raw(
+            raw,
+            raw.objects[source_index],
+            normalized_object_index=normalized_index,
+        )
+        for normalized_index, source_index in enumerate(source_indices)
+    )
+    return NormalizedDetectionSample(
+        images=raw.images,
+        objects=normalized_objects,
+        width=raw.width,
+        height=raw.height,
+        image_id=raw.image_id,
+        file_name=raw.file_name,
+        metadata=raw.metadata,
+        object_ordering=object_ordering.with_realized(source_indices),
+    )
+
+
 def detection_scene_from_normalized_sample(
     sample: NormalizedDetectionSample,
     *,
-    image_reference: str | None = None,
+    image_reference: str,
     coordinate_frame: CoordinateFrame = "image",
     coordinate_space: CoordinateSpace = "norm1000",
     bbox_chart: BBoxChart = "xyxy",
@@ -202,9 +234,7 @@ def detection_scene_from_normalized_sample(
     """Adapt the temporary normalized bridge into a DetectionScene."""
 
     source_image_reference = _single_image_reference(sample.images)
-    resolved_image_reference = (
-        str(image_reference) if image_reference is not None else source_image_reference
-    )
+    resolved_image_reference = _require_resolved_image_reference(image_reference)
     realized = sample.realized_source_object_indices or tuple(
         obj.source_object_index for obj in sample.objects
     )
@@ -297,6 +327,28 @@ def _scene_object_from_raw(
     )
 
 
+def _normalized_object_from_raw(
+    raw: RawDetectionRow,
+    obj: RawDetectionObject,
+    *,
+    normalized_object_index: int,
+) -> NormalizedDetectionObject:
+    relation_snapshot = _relation_snapshot_for_object(raw.metadata, obj.object_id)
+    return NormalizedDetectionObject(
+        normalized_object_index=normalized_object_index,
+        source_object_index=obj.source_object_index,
+        object_instance_id=_stable_object_instance_id(raw, obj),
+        desc=obj.desc,
+        bbox_2d=obj.bbox_2d,
+        category_id=obj.category_id,
+        category_name=obj.category_name,
+        coco_ann_id=obj.coco_ann_id,
+        object_id=obj.object_id,
+        source_role=_source_role_from_snapshot(relation_snapshot),
+        relation_snapshot=relation_snapshot,
+    )
+
+
 def _scene_object_from_normalized(
     obj: NormalizedDetectionObject,
     *,
@@ -334,6 +386,15 @@ def _single_image_reference(images: Sequence[str]) -> str:
     image_reference = str(images[0])
     if not image_reference:
         raise ValueError("DetectionScene image reference must be non-empty")
+    return image_reference
+
+
+def _require_resolved_image_reference(image_reference: str) -> str:
+    if not isinstance(image_reference, str) or not image_reference:
+        raise ValueError(
+            "DetectionScene requires a resolved image_reference supplied by the "
+            "caller"
+        )
     return image_reference
 
 
@@ -425,4 +486,5 @@ __all__ = [
     "detection_scene_from_normalized_sample",
     "detection_scene_from_raw_row",
     "normalized_detection_sample_from_scene",
+    "normalized_detection_sample_from_raw_row_bridge",
 ]

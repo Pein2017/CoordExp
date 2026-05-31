@@ -189,13 +189,12 @@ def normalize_detection_row(
 ) -> NormalizedDetectionSample:
     """Normalize raw detection objects while preserving source provenance."""
 
-    from src.detection.scene import (
-        detection_scene_from_raw_row,
-        normalized_detection_sample_from_scene,
-    )
+    from src.detection.scene import normalized_detection_sample_from_raw_row_bridge
 
-    scene = detection_scene_from_raw_row(raw, object_ordering=object_ordering)
-    return normalized_detection_sample_from_scene(scene)
+    return normalized_detection_sample_from_raw_row_bridge(
+        raw,
+        object_ordering=object_ordering,
+    )
 
 
 def _parse_raw_object(obj: Any, *, index: int) -> RawDetectionObject:
