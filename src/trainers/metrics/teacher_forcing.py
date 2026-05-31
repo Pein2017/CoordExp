@@ -70,6 +70,10 @@ def _require_teacher_forcing_irs(payload: Any) -> tuple[TeacherForcingTargetIR, 
 def _resolve_sample_ids(payload: Any, *, count: int) -> tuple[str, ...]:
     if payload is None:
         return tuple(f"sample-{index}" for index in range(count))
+    if not isinstance(payload, (str, bytes)) and callable(
+        getattr(payload, "tolist", None)
+    ):
+        payload = payload.tolist()
     if isinstance(payload, (str, bytes)):
         values = (str(payload),)
     elif isinstance(payload, Sequence):

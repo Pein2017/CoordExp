@@ -17,6 +17,7 @@ from src.trainers.batch_extras import (
     TOKEN_TYPES_KEY,
     get_stashed_batch_extras,
 )
+from src.trainers.metrics.teacher_forcing import _resolve_sample_ids
 
 
 def test_batch_extras_are_stripped_before_model_forward_and_stashed() -> None:
@@ -146,6 +147,37 @@ def test_teacher_forcing_target_ir_is_collated_from_unpacked_samples() -> None:
     )
 
     assert out[TEACHER_FORCING_TARGET_IR_KEY] == ("ir-a", "ir-b")
+
+
+def test_teacher_forcing_target_ir_collates_sample_id_sidecar_from_raw_batch() -> None:
+    collator = build_dataset_metrics_collator(_DummyTemplate(), _base_collator)
+
+    out = collator(
+        [
+            {"dataset": "coco", "sample_id": 101, TEACHER_FORCING_TARGET_IR_KEY: "ir-a"},
+            {"dataset": "coco", "sample_id": 202, TEACHER_FORCING_TARGET_IR_KEY: "ir-b"},
+        ]
+    )
+
+    assert out[TEACHER_FORCING_TARGET_IR_KEY] == ("ir-a", "ir-b")
+    assert out["sample_id"] == (101, 202)
+
+
+def test_teacher_forcing_sample_ids_resolve_tensor_array_list_and_scalar() -> None:
+    class ArrayLike:
+        def __init__(self, value):
+            self.value = value
+
+        def tolist(self):
+            return self.value
+
+    assert _resolve_sample_ids(torch.tensor([101, 202]), count=2) == ("101", "202")
+    assert _resolve_sample_ids(ArrayLike([303, 404]), count=2) == ("303", "404")
+    assert _resolve_sample_ids([505, 606], count=2) == ("505", "606")
+    assert _resolve_sample_ids(torch.tensor(707), count=1) == ("707",)
+
+    with pytest.raises(ValueError, match="sample_id sidecar length"):
+        _resolve_sample_ids(torch.tensor(808), count=2)
 
 
 def test_teacher_forcing_target_ir_requires_all_unpacked_samples_to_have_sidecar() -> None:

@@ -1104,6 +1104,65 @@ def _detection_objective_runtime_payload(training_config: Any) -> dict[str, Any]
         )
     if type_gate_cfg is not None:
         payload["type_gate_mode"] = _get_section_value(type_gate_cfg, "mode")
+    if _get_section_value(objective_cfg, "id") == "teacher_forcing":
+        target_ir_cfg = _get_section_value(objective_cfg, "target_ir")
+        rollin_policy_cfg = _get_section_value(target_ir_cfg, "rollin_policy")
+        exact_packing_mapping_cfg = _get_section_value(
+            target_ir_cfg, "exact_packing_mapping"
+        )
+        modules_cfg = _get_section_value(objective_cfg, "modules")
+        token_type_mass_cfg = _get_section_value(modules_cfg, "token_type_mass")
+        conditional_valid_set_cfg = _get_section_value(
+            modules_cfg, "conditional_valid_set_likelihood"
+        )
+        within_valid_coverage_cfg = _get_section_value(
+            modules_cfg, "within_valid_coverage"
+        )
+        continuation_margin_cfg = _get_section_value(
+            modules_cfg, "continuation_margin"
+        )
+        payload.update(
+            {
+                "target_ir": {
+                    "rollin_policy": {
+                        "name": _get_section_value(rollin_policy_cfg, "name"),
+                        "base_seed": _get_section_value(
+                            rollin_policy_cfg, "base_seed"
+                        ),
+                    },
+                    "exact_packing_mapping": {
+                        "enabled": _get_section_value(
+                            exact_packing_mapping_cfg, "enabled"
+                        )
+                    },
+                },
+                "modules": {
+                    "token_type_mass": {
+                        "enabled": _get_section_value(
+                            token_type_mass_cfg, "enabled"
+                        )
+                    },
+                    "conditional_valid_set_likelihood": {
+                        "enabled": _get_section_value(
+                            conditional_valid_set_cfg, "enabled"
+                        )
+                    },
+                    "within_valid_coverage": {
+                        "enabled": _get_section_value(
+                            within_valid_coverage_cfg, "enabled"
+                        ),
+                        "coverage_strength": _get_section_value(
+                            within_valid_coverage_cfg, "coverage_strength"
+                        ),
+                    },
+                    "continuation_margin": {
+                        "enabled": _get_section_value(
+                            continuation_margin_cfg, "enabled"
+                        )
+                    },
+                },
+            }
+        )
     return payload
 
 

@@ -10,6 +10,7 @@ import yaml
 from src.config.loader import ConfigLoader
 from src.config.schema import DebugConfig, DetectionTrainingConfig
 from src.detection.runtime import resolve_recursive_detection_ce_runtime_cfg
+from src.sft import _detection_objective_runtime_payload
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -1360,12 +1361,20 @@ def test_stage1_detection_teacher_forcing_canonical_launch_configs_parse() -> No
     assert "stage1_detection_teacher_forcing" in (
         canonical_route / "README.md"
     ).read_text()
-    config_paths = [
+    discovered_configs = {
+        path
+        for path in canonical_route.rglob("*.yaml")
+        if path.parent.name in {"prod", "smoke", "ablation"}
+        and not path.name.startswith("common_")
+    }
+    expected_configs = {
         canonical_route / "prod/compact_full_support2.yaml",
         canonical_route / "smoke/compact_full_tiny.yaml",
-    ]
+    }
+    assert discovered_configs
+    assert expected_configs <= discovered_configs
 
-    for config_path in config_paths:
+    for config_path in sorted(discovered_configs):
         cfg = ConfigLoader.load_materialized_training_config(str(config_path))
         assert isinstance(cfg, DetectionTrainingConfig)
         assert cfg.objective.id == "teacher_forcing"
@@ -1381,6 +1390,49 @@ def test_stage1_detection_teacher_forcing_canonical_launch_configs_parse() -> No
         assert cfg.training["encoded_sample_cache"]["enabled"] is False
         assert "detection_teacher_forcing" in str(cfg.training["output_dir"])
         assert "detection_teacher_forcing" in str(cfg.training["logging_dir"])
+
+
+def test_stage1_detection_teacher_forcing_rejects_hybrid_profile_early(
+    tmp_path: Path,
+) -> None:
+    config_path = (
+        REPO_ROOT
+        / "configs/stage1/detection_teacher_forcing/prod/compact_full_support2.yaml"
+    )
+    payload = yaml.safe_load(config_path.read_text())
+    payload["objective"]["profile"] = "hybrid_valid_set_marginal"
+    payload["objective"]["modules"]["within_valid_coverage"] = {
+        "enabled": True,
+        "coverage_strength": 0.25,
+    }
+    authored = tmp_path / "hybrid_teacher_forcing.yaml"
+    authored.write_text(yaml.safe_dump(payload, sort_keys=False))
+
+    with pytest.raises(ValueError, match="hybrid_valid_set_marginal is unsupported"):
+        ConfigLoader.load_materialized_training_config(str(authored))
+
+
+def test_stage1_detection_teacher_forcing_runtime_payload_keeps_target_ir_knobs() -> None:
+    cfg = ConfigLoader.load_materialized_training_config(
+        str(
+            REPO_ROOT
+            / "configs/stage1/detection_teacher_forcing/prod/compact_full_support2.yaml"
+        )
+    )
+
+    payload = _detection_objective_runtime_payload(cfg)
+
+    assert payload is not None
+    assert payload["id"] == "teacher_forcing"
+    assert payload["target_ir"]["rollin_policy"]["name"] == "random_permutation"
+    assert payload["target_ir"]["rollin_policy"]["base_seed"] == 17
+    assert payload["target_ir"]["exact_packing_mapping"]["enabled"] is False
+    assert payload["modules"]["token_type_mass"]["enabled"] is False
+    assert payload["modules"]["conditional_valid_set_likelihood"]["enabled"] is False
+    assert payload["modules"]["within_valid_coverage"]["enabled"] is False
+    assert payload["modules"]["within_valid_coverage"]["coverage_strength"] == 0.0
+    assert payload["modules"]["continuation_margin"]["enabled"] is False
+
 
 @pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
 def test_detection_recursive_detection_prefix_rollin_smoke_config_parses() -> None:

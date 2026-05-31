@@ -3930,6 +3930,12 @@ class TeacherForcingObjectiveConfig:
             path="objective.profile",
             allowed=TEACHER_FORCING_PROFILES,
         )
+        if self.profile == "hybrid_valid_set_marginal":
+            raise ValueError(
+                "objective.profile=hybrid_valid_set_marginal is unsupported "
+                "for stage1_detection_teacher_forcing until hybrid runtime "
+                "support is implemented"
+            )
         coverage = self.modules.within_valid_coverage
         coverage_strength = float(coverage.coverage_strength)
         if self.profile == "hard_sft":
@@ -3962,14 +3968,7 @@ class TeacherForcingObjectiveConfig:
                         f"{module_key}; target-IR teacher-forcing modules "
                         "require a valid-set runtime path"
                     )
-        if self.profile == "hybrid_valid_set_marginal":
-            if not bool(coverage.enabled) or coverage_strength <= 0.0:
-                raise ValueError(
-                    "objective.profile=hybrid_valid_set_marginal "
-                    "requires objective.modules.within_valid_coverage.enabled=true "
-                    "and coverage_strength > 0"
-                )
-        elif coverage_strength > 0.0:
+        if coverage_strength > 0.0:
             raise ValueError(
                 f"objective.profile={self.profile} requires "
                 "objective.modules.within_valid_coverage.coverage_strength=0"

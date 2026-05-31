@@ -256,6 +256,18 @@ class TeacherForcingTargetIREnricher:
         collated[self.out_field] = tuple(
             row[self.out_field] for row in raw_batch if isinstance(row, Mapping)
         )
+        sample_id_present = [
+            isinstance(row, Mapping) and "sample_id" in row for row in raw_batch
+        ]
+        if any(sample_id_present):
+            if not all(sample_id_present):
+                raise ValueError(
+                    "sample_id sidecar must be present for every sample in an "
+                    "unpacked teacher-forcing batch when any sample provides it"
+                )
+            collated["sample_id"] = tuple(
+                row["sample_id"] for row in raw_batch if isinstance(row, Mapping)
+            )
 
 
 class TokenTypesEnricher:
