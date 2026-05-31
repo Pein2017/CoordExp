@@ -19,6 +19,7 @@ from src.detection.data import (
     NormalizedDetectionObject,
     NormalizedDetectionSample,
 )
+from src.detection.scene import DetectionScene, normalized_detection_sample_from_scene
 from src.detection.teacher_forcing.compact_full_policy import (
     parse_compact_full,
     render_compact_full,
@@ -27,6 +28,7 @@ from src.utils.assistant_json import dumps_coordjson
 
 
 TemplateId = Literal["stage1_json_pretty", "compact_full"]
+DetectionSequenceInput = NormalizedDetectionSample | DetectionScene
 TokenRoleName = Literal[
     "IGNORE",
     "ASSISTANT",
@@ -193,7 +195,7 @@ class RenderedObjectEntry:
 
 
 @dataclass(frozen=True)
-class RenderedAssistantSequence:
+class RenderedDetectionSequence:
     template_id: TemplateId
     template_version: int
     text: str
@@ -206,9 +208,12 @@ class RenderedAssistantSequence:
     render_span_events: tuple[RenderSpanEvent, ...] = ()
 
 
+RenderedAssistantSequence = RenderedDetectionSequence
+
+
 @dataclass(frozen=True)
 class RenderedConversation:
-    assistant: RenderedAssistantSequence
+    assistant: RenderedDetectionSequence
     messages: tuple[Mapping[str, str], ...]
 
 
@@ -219,7 +224,7 @@ class DetectionSequenceTemplate(Protocol):
 
     def validate_sample(
         self,
-        sample: NormalizedDetectionSample,
+        sample: DetectionSequenceInput,
         *,
         coordinate_surface: str = "coord_token",
         bbox_format: str = "xyxy",
@@ -228,12 +233,12 @@ class DetectionSequenceTemplate(Protocol):
 
     def render_assistant(
         self,
-        sample: NormalizedDetectionSample,
+        sample: DetectionSequenceInput,
         *,
         coordinate_surface: str = "coord_token",
         bbox_format: str = "xyxy",
         prompt_template_id: str | None = None,
-    ) -> RenderedAssistantSequence: ...
+    ) -> RenderedDetectionSequence: ...
 
     def parse_assistant(self, text: str) -> dict[str, Any]: ...
 
@@ -258,12 +263,13 @@ class Stage1JsonPrettyTemplate:
 
     def validate_sample(
         self,
-        sample: NormalizedDetectionSample,
+        sample: DetectionSequenceInput,
         *,
         coordinate_surface: str = "coord_token",
         bbox_format: str = "xyxy",
         prompt_template_id: str | None = None,
     ) -> None:
+        sample = _normalize_detection_sequence_input(sample)
         _validate_common_surface(
             self,
             sample,
@@ -276,12 +282,13 @@ class Stage1JsonPrettyTemplate:
 
     def render_assistant(
         self,
-        sample: NormalizedDetectionSample,
+        sample: DetectionSequenceInput,
         *,
         coordinate_surface: str = "coord_token",
         bbox_format: str = "xyxy",
         prompt_template_id: str | None = None,
-    ) -> RenderedAssistantSequence:
+    ) -> RenderedDetectionSequence:
+        sample = _normalize_detection_sequence_input(sample)
         self.validate_sample(
             sample,
             coordinate_surface=coordinate_surface,
@@ -394,12 +401,13 @@ class CompactFullTemplate:
 
     def validate_sample(
         self,
-        sample: NormalizedDetectionSample,
+        sample: DetectionSequenceInput,
         *,
         coordinate_surface: str = "coord_token",
         bbox_format: str = "xyxy",
         prompt_template_id: str | None = None,
     ) -> None:
+        sample = _normalize_detection_sequence_input(sample)
         _validate_common_surface(
             self,
             sample,
@@ -413,12 +421,13 @@ class CompactFullTemplate:
 
     def render_assistant(
         self,
-        sample: NormalizedDetectionSample,
+        sample: DetectionSequenceInput,
         *,
         coordinate_surface: str = "coord_token",
         bbox_format: str = "xyxy",
         prompt_template_id: str | None = None,
-    ) -> RenderedAssistantSequence:
+    ) -> RenderedDetectionSequence:
+        sample = _normalize_detection_sequence_input(sample)
         self.validate_sample(
             sample,
             coordinate_surface=coordinate_surface,
@@ -973,9 +982,9 @@ def _project_rendered_assistant_sequence(
     terminal_close_span: CharSpan,
     structural_token_spans: tuple[CharSpan, ...] | list[CharSpan],
     event_builder: _RenderEventBuilder,
-) -> RenderedAssistantSequence:
+) -> RenderedDetectionSequence:
     entries = tuple(object_entries)
-    return RenderedAssistantSequence(
+    return RenderedDetectionSequence(
         template_id=template_id,
         template_version=template_version,
         text=text,
@@ -987,6 +996,20 @@ def _project_rendered_assistant_sequence(
         trie_eligible_spans=tuple(entry.trie_eligible_span for entry in entries),
         render_span_events=event_builder.finalize(text),
     )
+
+
+def _normalize_detection_sequence_input(
+    sample: DetectionSequenceInput,
+) -> NormalizedDetectionSample:
+    if isinstance(sample, DetectionScene):
+        return normalized_detection_sample_from_scene(sample)
+    if isinstance(sample, NormalizedDetectionSample):
+        return sample
+    raise TypeError(
+        "DetectionSequenceTemplate expects DetectionScene or "
+        "NormalizedDetectionSample input"
+    )
+
 
 def _finalize_render_span_events(
     events: tuple[RenderSpanEvent, ...] | list[RenderSpanEvent],
@@ -1222,8 +1245,10 @@ __all__ = [
     "CharSpan",
     "CompactFullTemplate",
     "DetectionSequenceTemplate",
+    "DetectionSequenceInput",
     "MaskGroup",
     "RenderedAssistantSequence",
+    "RenderedDetectionSequence",
     "RenderedConversation",
     "RenderedObjectEntry",
     "RenderSpanEvent",

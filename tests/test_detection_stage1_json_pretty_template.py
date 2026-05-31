@@ -9,6 +9,7 @@ from src.detection.data import (
     NormalizedDetectionSample,
     ObjectOrderingPlan,
 )
+from src.detection.scene import detection_scene_from_normalized_sample_bridge
 from src.detection.template import Stage1JsonPrettyTemplate
 from src.utils.assistant_json import dumps_coordjson
 
@@ -223,6 +224,25 @@ def test_stage1_json_pretty_strict_parser_round_trips_rendered_text() -> None:
 
     with pytest.raises(ValueError, match="strict terminal closure"):
         template.parse_assistant(rendered.text[:-2])
+
+
+def test_stage1_json_pretty_renders_detection_scene_with_sample_semantic_parity() -> None:
+    template = Stage1JsonPrettyTemplate()
+    sample = _sample()
+    scene = detection_scene_from_normalized_sample_bridge(
+        sample,
+        image_reference="/resolved/image.jpg",
+    )
+
+    rendered_from_sample = template.render_assistant(sample)
+    rendered_from_scene = template.render_assistant(scene)
+
+    assert rendered_from_scene.text == rendered_from_sample.text
+    assert template.parse_assistant(rendered_from_scene.text) == template.parse_assistant(
+        rendered_from_sample.text
+    )
+    assert rendered_from_scene.object_entries == rendered_from_sample.object_entries
+    assert rendered_from_scene.render_span_events == rendered_from_sample.render_span_events
 
 
 @pytest.mark.parametrize(

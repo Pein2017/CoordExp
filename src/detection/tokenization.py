@@ -11,6 +11,7 @@ from src.detection.template import (
     RenderSpanEvent,
     RenderedAssistantSequence,
     RenderedConversation,
+    RenderedDetectionSequence,
     RenderedObjectEntry,
 )
 
@@ -73,8 +74,8 @@ class TokenizedObjectEntry:
 
 
 @dataclass(frozen=True)
-class TokenizedDetectionExample:
-    rendered_assistant: RenderedAssistantSequence
+class DetectionSupervisionView:
+    rendered_assistant: RenderedDetectionSequence
     chat_text: str
     input_ids: tuple[int, ...]
     labels: tuple[int, ...]
@@ -97,7 +98,7 @@ class TokenizedDetectionExample:
     separator_mask: tuple[bool, ...]
     terminal_mask: tuple[bool, ...]
     control_mask: tuple[bool, ...]
-    token_position_origin: str = "TokenizedDetectionExample.tokenized"
+    token_position_origin: str = "DetectionSupervisionView.tokenized"
 
     @property
     def supervised_label_positions(self) -> tuple[int, ...]:
@@ -182,14 +183,14 @@ def align_char_span_to_token_span(
 
 
 def tokenize_rendered_detection_conversation(
-    rendered: RenderedAssistantSequence | RenderedConversation,
+    rendered: RenderedDetectionSequence | RenderedConversation,
     *,
     tokenizer: TokenizerWithOffsets,
     system_prompt: str | None = None,
     user_content: str = "<image>",
     messages: Sequence[Mapping[str, Any]] | None = None,
     assistant_stop_markers: Sequence[str] | None = None,
-) -> TokenizedDetectionExample:
+) -> DetectionSupervisionView:
     stop_markers = _assistant_stop_marker_candidates(
         tokenizer,
         assistant_stop_markers=assistant_stop_markers,
@@ -292,7 +293,7 @@ def tokenize_rendered_detection_conversation(
         for token_index, token_id in enumerate(input_ids)
     )
 
-    return TokenizedDetectionExample(
+    return DetectionSupervisionView(
         rendered_assistant=rendered_assistant,
         chat_text=chat_text,
         input_ids=input_ids,
@@ -319,6 +320,9 @@ def tokenize_rendered_detection_conversation(
     )
 
 
+TokenizedDetectionExample = DetectionSupervisionView
+
+
 @dataclass(frozen=True)
 class _MasksAndRoles:
     token_roles: tuple[TokenRole, ...]
@@ -341,9 +345,9 @@ class _AlignedRenderSpanEvent:
 
 
 def _assistant_from_rendered(
-    rendered: RenderedAssistantSequence | RenderedConversation,
-) -> RenderedAssistantSequence:
-    if isinstance(rendered, RenderedAssistantSequence):
+    rendered: RenderedDetectionSequence | RenderedConversation,
+) -> RenderedDetectionSequence:
+    if isinstance(rendered, RenderedDetectionSequence):
         return rendered
     return rendered.assistant
 
@@ -1137,6 +1141,7 @@ def _as_single_offset_pair(value: object) -> tuple[int, int]:
 
 
 __all__ = [
+    "DetectionSupervisionView",
     "TokenRole",
     "TokenSpan",
     "TokenizedDetectionExample",

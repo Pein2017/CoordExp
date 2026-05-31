@@ -19,6 +19,7 @@ from src.detection.data import (
     NormalizedDetectionSample,
     ObjectOrderingPlan,
 )
+from src.detection.scene import detection_scene_from_normalized_sample_bridge
 from src.detection.teacher_forcing.rollin import derive_rollin_seed
 from src.detection.teacher_forcing.target_builder import (
     TeacherForcingTargetBuilder,
@@ -365,6 +366,41 @@ def test_selected_token_id_matches_rendered_input_ids_target_position() -> None:
     for atom in result.target_ir.atoms:
         assert atom.selected_token_id == result.input_ids[atom.target_position]
     _validate(result, tokenizer)
+
+
+def test_builder_accepts_detection_scene_with_sample_semantic_parity() -> None:
+    sample = _sample(
+        (
+            _object("cat", (1, 2, 10, 20), index=0),
+            _object("dog", (3, 4, 30, 40), index=1),
+        )
+    )
+    scene = detection_scene_from_normalized_sample_bridge(
+        sample,
+        image_reference="/resolved/image.jpg",
+    )
+    tokenizer = TinyContextTokenizer()
+
+    sample_result = build_teacher_forcing_target(
+        sample,
+        tokenizer=tokenizer,
+        profile="valid_set",
+        epoch=3,
+        stable_sample_id="scene-parity",
+    )
+    scene_result = build_teacher_forcing_target(
+        scene,
+        tokenizer=tokenizer,
+        profile="valid_set",
+        epoch=3,
+        stable_sample_id="scene-parity",
+    )
+
+    assert scene_result.ok
+    assert scene_result.rendered_text == sample_result.rendered_text
+    assert scene_result.input_ids == sample_result.input_ids
+    assert scene_result.target_ir == sample_result.target_ir
+    _validate(scene_result, tokenizer)
 
 
 def test_tokenizer_bos_prefix_source_is_recorded_in_target_metadata() -> None:

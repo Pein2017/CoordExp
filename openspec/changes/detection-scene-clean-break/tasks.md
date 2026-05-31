@@ -43,11 +43,11 @@ Superpowers plan.
 
 ## 4. Stage-1 Projection After Approval
 
-- [ ] 4.1 Route Stage-1 detection teacher-forcing through
+- [x] 4.1 Route Stage-1 detection teacher-forcing through
   `DetectionScene -> RenderedDetectionSequence -> DetectionSupervisionView`.
-- [ ] 4.2 Rename or replace public `recursive_detection_ce` vocabulary for the
+- [x] 4.2 Rename or replace public `recursive_detection_ce` vocabulary for the
   new canonical Stage-1 surface.
-- [ ] 4.3 Add characterization tests for template render/parse, token spans,
+- [x] 4.3 Add characterization tests for template render/parse, token spans,
   labels, masks, and retained Stage-1 semantic parity.
 
 ## 5. Stage-2 Projection After Approval

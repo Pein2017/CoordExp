@@ -18,6 +18,7 @@ from src.detection.data import (
     ObjectOrderingPlan,
     _parse_coordinate_box,
 )
+from src.detection.scene import DetectionScene, normalized_detection_sample_from_scene
 from src.detection.teacher_forcing.description_tokens import (
     DescriptionTokenPath,
     DescriptionTokenizationError,
@@ -85,7 +86,7 @@ class TeacherForcingTargetBuilder:
 
     def build(
         self,
-        sample: NormalizedDetectionSample | Mapping[str, Any],
+        sample: DetectionScene | NormalizedDetectionSample | Mapping[str, Any],
         *,
         epoch: int,
         stable_sample_id: str | None = None,
@@ -183,7 +184,7 @@ class TeacherForcingTargetBuilder:
 
 
 def build_teacher_forcing_target(
-    sample: NormalizedDetectionSample | Mapping[str, Any],
+    sample: DetectionScene | NormalizedDetectionSample | Mapping[str, Any],
     *,
     tokenizer: Any,
     profile: TeacherForcingBuilderProfile = "valid_set",
@@ -364,8 +365,10 @@ def _normalize_profile(profile: str) -> Literal["hard_sft", "valid_set"]:
 
 
 def _coerce_sample(
-    sample: NormalizedDetectionSample | Mapping[str, Any],
+    sample: DetectionScene | NormalizedDetectionSample | Mapping[str, Any],
 ) -> NormalizedDetectionSample | TeacherForcingBuildResult:
+    if isinstance(sample, DetectionScene):
+        return normalized_detection_sample_from_scene(sample)
     if isinstance(sample, NormalizedDetectionSample):
         return sample
     if not isinstance(sample, Mapping):

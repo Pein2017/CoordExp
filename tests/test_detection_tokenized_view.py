@@ -15,8 +15,13 @@ from src.detection.template import (
     CompactFullTemplate,
     RenderSpanEvent,
     RenderedAssistantSequence,
+    RenderedDetectionSequence,
 )
-from src.detection.tokenization import TokenRole, tokenize_rendered_detection_conversation
+from src.detection.tokenization import (
+    DetectionSupervisionView,
+    TokenRole,
+    tokenize_rendered_detection_conversation,
+)
 
 
 # Deterministic offset tokenizer for role/mask snapshotting. This intentionally
@@ -139,8 +144,8 @@ def _manual_rendered(
     text: str,
     *,
     render_span_events: tuple[RenderSpanEvent, ...],
-) -> RenderedAssistantSequence:
-    return RenderedAssistantSequence(
+) -> RenderedDetectionSequence:
+    return RenderedDetectionSequence(
         template_id="unit-test",
         template_version=1,
         text=text,
@@ -272,7 +277,8 @@ def test_next_token_prediction_positions_are_explicit() -> None:
         tokenizer=SnapshotTokenizer(),
     )
 
-    assert view.token_position_origin == "TokenizedDetectionExample.tokenized"
+    assert isinstance(view, DetectionSupervisionView)
+    assert view.token_position_origin == "DetectionSupervisionView.tokenized"
     assert view.supervised_label_positions
     assert 0 not in view.supervised_label_positions
     assert view.next_token_prediction_positions == tuple(
@@ -321,7 +327,6 @@ def test_compact_two_object_tokenization_snapshots_separator_and_entry_boundarie
         "<|coord_2|>",
         "<|coord_3|>",
         "<|coord_4|>",
-        "\n",
         OBJECT_REF_START_TOKEN,
         "dog",
         BOX_START_TOKEN,
@@ -359,7 +364,6 @@ def test_compact_two_object_tokenization_snapshots_separator_and_entry_boundarie
         "coord",
         "coord",
         "coord",
-        "separator",
         "control",
         "desc",
         "bbox_start",
@@ -370,7 +374,7 @@ def test_compact_two_object_tokenization_snapshots_separator_and_entry_boundarie
         "terminal",
         "ignore",
     )
-    assert _true_indices(tokenized.assistant_mask) == tuple(range(19, 34))
+    assert _true_indices(tokenized.assistant_mask) == tuple(range(19, 33))
     assert _true_indices(tokenized.object_entry_mask) == (
         19,
         20,
@@ -379,41 +383,36 @@ def test_compact_two_object_tokenization_snapshots_separator_and_entry_boundarie
         23,
         24,
         25,
+        26,
         27,
         28,
         29,
         30,
         31,
         32,
-        33,
     )
-    assert _true_indices(tokenized.control_mask) == (19, 21, 27, 29)
-    assert _true_indices(tokenized.desc_mask) == (20, 28)
-    assert _true_indices(tokenized.bbox_start_mask) == (21, 29)
-    assert _true_indices(tokenized.coord_mask) == (22, 23, 24, 25, 30, 31, 32, 33)
-    assert _true_indices(tokenized.separator_mask) == (26,)
-    assert _true_indices(tokenized.terminal_mask) == (34,)
-    assert tokenized.token_roles[26] is TokenRole.SEPARATOR
-    assert tokenized.separator_spans[0].start == 26
-    assert tokenized.separator_spans[0].end == 27
-    assert token_texts[tokenized.separator_spans[0].start] == "\n"
+    assert _true_indices(tokenized.control_mask) == (19, 21, 26, 28)
+    assert _true_indices(tokenized.desc_mask) == (20, 27)
+    assert _true_indices(tokenized.bbox_start_mask) == (21, 28)
+    assert _true_indices(tokenized.coord_mask) == (22, 23, 24, 25, 29, 30, 31, 32)
+    assert _true_indices(tokenized.separator_mask) == ()
+    assert _true_indices(tokenized.terminal_mask) == (33,)
+    assert tokenized.separator_spans == ()
 
     first, second = tokenized.object_entries
     assert len(tokenized.object_entries) == 2
     assert first.entry_span.start == 19
     assert first.entry_span.end == 26
-    assert first.separator_span is not None
-    assert first.separator_span.start == 26
-    assert first.separator_span.end == 27
+    assert first.separator_span is None
     assert first.desc_span.start == 20
     assert tuple(span.start for span in first.coord_spans) == (22, 23, 24, 25)
-    assert second.entry_span.start == 27
-    assert second.entry_span.end == 34
+    assert second.entry_span.start == 26
+    assert second.entry_span.end == 33
     assert second.separator_span is None
-    assert second.desc_span.start == 28
-    assert tuple(span.start for span in second.coord_spans) == (30, 31, 32, 33)
+    assert second.desc_span.start == 27
+    assert tuple(span.start for span in second.coord_spans) == (29, 30, 31, 32)
     assert tokenized.assistant_stop_token_span is not None
-    assert tokenized.assistant_stop_token_span.start == 34
+    assert tokenized.assistant_stop_token_span.start == 33
 
 
 def test_token_roles_use_priority_not_call_order() -> None:

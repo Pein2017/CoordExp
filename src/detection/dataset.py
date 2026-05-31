@@ -7,7 +7,7 @@ import inspect
 import random
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Literal, Mapping, MutableMapping, Sequence
+from typing import Any, Literal, Mapping, MutableMapping, Sequence, cast
 
 from public_data.view_contracts import (
     load_view_metadata,
@@ -37,6 +37,7 @@ from src.detection.objective import (
 )
 from src.detection.teacher_forcing.target_builder import (
     TeacherForcingBuildResult,
+    TeacherForcingBuilderProfile,
     build_teacher_forcing_target,
 )
 from src.detection.template import TemplateId, get_detection_template
@@ -401,11 +402,14 @@ class DetectionTrainingDataset(Dataset):
             if self.config.detection_template_id != "compact_full":
                 raise ValueError("teacher_forcing target IR requires compact_full template")
             build_result = build_teacher_forcing_target(
-                normalized,
+                scene,
                 tokenizer=self.tokenizer,
-                profile=self.config.teacher_forcing_profile,
+                profile=cast(
+                    TeacherForcingBuilderProfile,
+                    self.config.teacher_forcing_profile,
+                ),
                 epoch=self._epoch,
-                stable_sample_id=_make_sample_id(self.dataset_name, base_idx),
+                stable_sample_id=str(_make_sample_id(self.dataset_name, base_idx)),
                 base_seed=int(self.config.teacher_forcing_rollin_base_seed or 17),
                 input_prefix_token_id=self._teacher_forcing_input_prefix_token_id(),
             )
@@ -414,24 +418,26 @@ class DetectionTrainingDataset(Dataset):
                     "teacher_forcing target IR construction failed: "
                     f"{build_result.drop_reason}"
                 )
+            if build_result.target_ir is None:
+                raise ValueError("teacher_forcing target IR construction failed")
             selected_indices = tuple(
                 int(index)
                 for index in build_result.target_ir.metadata[
                     "selected_normalized_object_indices"
                 ]
             )
-            rendered_sample = replace(
-                normalized,
-                objects=tuple(normalized.objects[index] for index in selected_indices),
-                object_ordering=normalized.object_ordering.with_realized(
+            rendered_scene = replace(
+                scene,
+                objects=tuple(scene.objects[index] for index in selected_indices),
+                object_ordering=scene.object_ordering.with_realized(
                     tuple(
-                        normalized.objects[index].source_object_index
+                        scene.objects[index].source_object_index
                         for index in selected_indices
                     )
                 ),
             )
-            rendered_assistant = detection_template.render_assistant(rendered_sample)
-            metadata_object_ordering = rendered_sample.object_ordering
+            rendered_assistant = detection_template.render_assistant(rendered_scene)
+            metadata_object_ordering = rendered_scene.object_ordering
             if rendered_assistant.text != build_result.rendered_text:
                 raise ValueError(
                     "teacher_forcing rendered assistant does not match target IR roll-in"

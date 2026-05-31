@@ -1296,6 +1296,29 @@ def test_detection_recursive_detection_launch_configs_parse_without_custom() -> 
         assert cfg.packing.padding_free_packed is False
         assert cfg.training["packing"] is False
         assert cfg.training["optimizer"] == "multimodal_coord_offset"
+
+
+def test_stage1_detection_teacher_forcing_canonical_launch_configs_parse() -> None:
+    config_paths = [
+        REPO_ROOT
+        / "configs/stage1/detection_teacher_forcing/prod/compact_full_support2.yaml",
+        REPO_ROOT
+        / "configs/stage1/detection_teacher_forcing/smoke/compact_full_tiny.yaml",
+    ]
+
+    for config_path in config_paths:
+        cfg = ConfigLoader.load_materialized_training_config(str(config_path))
+        assert isinstance(cfg, DetectionTrainingConfig)
+        assert cfg.objective.id == "teacher_forcing"
+        assert cfg.objective.profile == "pure_valid_set_marginal"
+        assert cfg.objective.target_ir.rollin_policy.name == "random_permutation"
+        assert cfg.data.object_ordering == "random_permutation"
+        assert cfg.detection_template.id == "compact_full"
+        assert cfg.packing.static_packing is False
+        assert cfg.packing.padding_free_packed is False
+        assert cfg.training["packing"] is False
+        assert cfg.training["eval_packing"] is False
+        assert "detection_teacher_forcing" in str(config_path)
 def test_detection_recursive_detection_prefix_rollin_smoke_config_parses() -> None:
     cfg = ConfigLoader.load_materialized_training_config(
         str(
