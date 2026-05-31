@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
+import src.detection as detection
 from src.detection.data import ObjectOrderingPlan, parse_raw_detection_row
 from src.detection.dataset import DetectionDatasetRuntimeConfig, DetectionTrainingDataset
+from src.detection.ir import DetectionGeometry as DetectionDocumentIRGeometry
+from src.detection.scene import DetectionGeometry as DetectionSceneModuleGeometry
+import src.detection.scene as scene_module
 from src.detection.scene import (
     detection_scene_from_raw_row,
     normalized_detection_sample_from_scene,
@@ -116,6 +121,22 @@ def test_detection_scene_from_raw_row_requires_resolved_image_reference() -> Non
         )
 
 
+def test_detection_scene_from_raw_row_rejects_relative_local_image_reference() -> None:
+    raw = parse_raw_detection_row(_raw_row())
+
+    with pytest.raises(ValueError, match="absolute"):
+        detection_scene_from_raw_row(
+            raw,
+            object_ordering=ObjectOrderingPlan.sorted(),
+            image_reference="images/train2017/example.jpg",
+        )
+
+
+def test_detection_root_exports_keep_geometry_names_disambiguated() -> None:
+    assert detection.DetectionGeometry is DetectionDocumentIRGeometry
+    assert detection.DetectionSceneGeometry is DetectionSceneModuleGeometry
+
+
 def test_detection_scene_projects_back_to_normalized_sample_without_raw_authority() -> None:
     raw = parse_raw_detection_row(_raw_row())
     ordering = ObjectOrderingPlan.random_permutation(seed=7, seed_source="unit")
@@ -142,6 +163,44 @@ def test_detection_scene_projects_back_to_normalized_sample_without_raw_authorit
     assert tuple(obj.bbox_2d.values for obj in sample.objects) == tuple(
         obj.geometry.require_bbox_2d().values for obj in scene.objects
     )
+
+
+def test_detection_scene_from_normalized_sample_bridge_requires_valid_ordering() -> None:
+    raw = parse_raw_detection_row(_raw_row())
+    scene = detection_scene_from_raw_row(
+        raw,
+        object_ordering=ObjectOrderingPlan.sorted(),
+        image_reference="/resolved/images/train2017/example.jpg",
+    )
+    sample = normalized_detection_sample_from_scene(scene)
+
+    assert not hasattr(scene_module, "detection_scene_from_normalized_sample")
+    bridge = scene_module.detection_scene_from_normalized_sample_bridge(
+        sample,
+        image_reference="/resolved/images/train2017/example.jpg",
+    )
+
+    assert bridge.realized_source_object_indices == (0, 1)
+    assert tuple(obj.scene_object_index for obj in bridge.objects) == (0, 1)
+
+    bad_object_index = replace(sample.objects[0], normalized_object_index=4)
+    bad_sample = replace(
+        sample,
+        objects=(bad_object_index, *sample.objects[1:]),
+    )
+    with pytest.raises(ValueError, match="normalized_object_index"):
+        scene_module.detection_scene_from_normalized_sample_bridge(
+            bad_sample,
+            image_reference="/resolved/images/train2017/example.jpg",
+        )
+
+    bad_ordering = sample.object_ordering.with_realized((1, 0))
+    bad_sample = replace(sample, object_ordering=bad_ordering)
+    with pytest.raises(ValueError, match="realized_source_object_indices"):
+        scene_module.detection_scene_from_normalized_sample_bridge(
+            bad_sample,
+            image_reference="/resolved/images/train2017/example.jpg",
+        )
 
 
 def test_detection_scene_rejects_multiple_image_references() -> None:

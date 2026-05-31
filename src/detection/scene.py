@@ -8,6 +8,7 @@ stay owned by their projection layers.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from types import MappingProxyType
 import random
 from typing import Any, Literal, Mapping, Sequence
@@ -223,7 +224,7 @@ def normalized_detection_sample_from_raw_row_bridge(
     )
 
 
-def detection_scene_from_normalized_sample(
+def detection_scene_from_normalized_sample_bridge(
     sample: NormalizedDetectionSample,
     *,
     image_reference: str,
@@ -231,13 +232,16 @@ def detection_scene_from_normalized_sample(
     coordinate_space: CoordinateSpace = "norm1000",
     bbox_chart: BBoxChart = "xyxy",
 ) -> DetectionScene:
-    """Adapt the temporary normalized bridge into a DetectionScene."""
+    """Adapt the temporary normalized bridge into a DetectionScene.
+
+    This is a migration bridge for retained projection paths.  Public canonical
+    construction should prefer raw-intake loading with a resolved image
+    reference.
+    """
 
     source_image_reference = _single_image_reference(sample.images)
     resolved_image_reference = _require_resolved_image_reference(image_reference)
-    realized = sample.realized_source_object_indices or tuple(
-        obj.source_object_index for obj in sample.objects
-    )
+    realized = _validate_normalized_sample_ordering(sample)
     objects = tuple(
         _scene_object_from_normalized(
             obj,
@@ -395,7 +399,39 @@ def _require_resolved_image_reference(image_reference: str) -> str:
             "DetectionScene requires a resolved image_reference supplied by the "
             "caller"
         )
+    if not Path(image_reference).expanduser().is_absolute():
+        raise ValueError(
+            "DetectionScene image_reference must be an absolute local path; "
+            f"got {image_reference!r}"
+        )
     return image_reference
+
+
+def _validate_normalized_sample_ordering(
+    sample: NormalizedDetectionSample,
+) -> tuple[int, ...]:
+    realized = sample.realized_source_object_indices
+    if not realized:
+        realized = tuple(obj.source_object_index for obj in sample.objects)
+    if len(realized) != len(sample.objects):
+        raise ValueError(
+            "realized_source_object_indices length must match normalized objects; "
+            f"got {len(realized)} for {len(sample.objects)} objects"
+        )
+    object_source_indices = tuple(obj.source_object_index for obj in sample.objects)
+    if realized != object_source_indices:
+        raise ValueError(
+            "realized_source_object_indices must agree with normalized object "
+            f"source indices; got realized={realized}, objects={object_source_indices}"
+        )
+    for expected_index, obj in enumerate(sample.objects):
+        if int(obj.normalized_object_index) != expected_index:
+            raise ValueError(
+                "normalized_object_index must match object tuple position; "
+                f"got object at position {expected_index} with "
+                f"normalized_object_index={obj.normalized_object_index}"
+            )
+    return realized
 
 
 def _realize_object_order(
@@ -483,7 +519,7 @@ __all__ = [
     "DetectionGeometryKind",
     "DetectionObject",
     "DetectionScene",
-    "detection_scene_from_normalized_sample",
+    "detection_scene_from_normalized_sample_bridge",
     "detection_scene_from_raw_row",
     "normalized_detection_sample_from_scene",
     "normalized_detection_sample_from_raw_row_bridge",
