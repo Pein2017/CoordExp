@@ -41,6 +41,11 @@ from src.detection.teacher_forcing.target_builder import (
     build_teacher_forcing_target,
 )
 from src.detection.template import TemplateId, get_detection_template
+from src.detection.tokenization import (
+    DetectionSupervisionView,
+    TokenSpan,
+    tokenize_rendered_detection_conversation,
+)
 from src.training.teacher_forcing.constants import TEACHER_FORCING_TARGET_IR_KEY
 from src.training.teacher_forcing.ir import TeacherForcingTargetIR
 
@@ -50,6 +55,7 @@ REGISTERED_DETECTION_SIDECAR_KEYS: tuple[str, ...] = (
     "recursive_detection_targets",
     TEACHER_FORCING_TARGET_IR_KEY,
     "rendered_span_sources",
+    "detection_supervision_view_metadata",
     "detection_metadata",
     "assistant_payload",
     "sample_id",
@@ -443,10 +449,19 @@ class DetectionTrainingDataset(Dataset):
                     "teacher_forcing rendered assistant does not match target IR roll-in"
                 )
             messages = self._messages(scene.images, assistant_text=build_result.rendered_text)
+            supervision_view = tokenize_rendered_detection_conversation(
+                rendered_assistant,
+                tokenizer=self.tokenizer,
+                messages=messages,
+            )
             encoded = self._encode_messages(messages)
             teacher_forcing_target_ir = self._align_teacher_forcing_target_to_encoded(
                 encoded,
                 build_result,
+                supervision_view,
+            )
+            encoded["detection_supervision_view_metadata"] = (
+                _detection_supervision_view_metadata(supervision_view)
             )
             prepared = None
         elif self.config.mode == "prefix_rollin_et_rmp_ce":
@@ -768,6 +783,7 @@ class DetectionTrainingDataset(Dataset):
         self,
         encoded: MutableMapping[str, Any],
         build_result: TeacherForcingBuildResult,
+        supervision_view: DetectionSupervisionView,
     ) -> TeacherForcingTargetIR:
         target_ir = build_result.target_ir
         if target_ir is None:
@@ -782,40 +798,69 @@ class DetectionTrainingDataset(Dataset):
             index for index, label in enumerate(encoded_labels) if int(label) != -100
         )
         atom_positions = tuple(int(atom.target_position) for atom in target_ir.atoms)
-        if len(atom_positions) != len(encoded_positions):
+        view_positions = supervision_view.supervised_label_positions
+        if len(atom_positions) != len(view_positions):
             raise ValueError(
-                "encoded labels do not supervise the same target count as "
-                "teacher_forcing_target_ir"
+                "DetectionSupervisionView does not supervise the same target count "
+                "as teacher_forcing_target_ir"
             )
         if not atom_positions:
             raise ValueError("teacher_forcing_target_ir requires at least one atom")
-        position_delta = int(encoded_positions[0]) - int(atom_positions[0])
+        view_position_delta = int(view_positions[0]) - int(atom_positions[0])
+        expected_view_positions = tuple(
+            int(position) + view_position_delta for position in atom_positions
+        )
+        if expected_view_positions != view_positions:
+            raise ValueError(
+                "DetectionSupervisionView supervised positions are not a constant "
+                "shift of teacher_forcing_target_ir positions"
+            )
+        build_input_ids = tuple(int(token_id) for token_id in build_result.input_ids)
+        _validate_teacher_forcing_target_ir_against_supervision_view(
+            build_input_ids=build_input_ids,
+            atom_positions=atom_positions,
+            target_ir=target_ir,
+            supervision_view=supervision_view,
+        )
+
+        if len(view_positions) != len(encoded_positions):
+            raise ValueError(
+                "encoded labels do not supervise the same target count as "
+                "DetectionSupervisionView"
+            )
+        encoded_position_delta = int(encoded_positions[0]) - int(view_positions[0])
         expected_encoded_positions = tuple(
-            int(position) + position_delta for position in atom_positions
+            int(position) + encoded_position_delta for position in view_positions
         )
         if expected_encoded_positions != encoded_positions:
             raise ValueError(
                 "encoded supervised positions are not a constant shift of "
-                "teacher_forcing_target_ir positions"
+                "DetectionSupervisionView supervised positions"
             )
-        build_input_ids = tuple(int(token_id) for token_id in build_result.input_ids)
         shifted_atoms = []
-        for atom in target_ir.atoms:
+        for atom, view_position, encoded_position in zip(
+            target_ir.atoms,
+            view_positions,
+            encoded_positions,
+            strict=True,
+        ):
             target_position = int(atom.target_position)
-            if build_input_ids[target_position] != int(atom.selected_token_id):
+            shifted_target_position = int(encoded_position)
+            shifted_logit_position = int(encoded_position) - 1
+            if target_position + view_position_delta != int(view_position):
                 raise ValueError(
-                    "teacher_forcing target IR selected_token_id does not match "
-                    "builder input_ids"
+                    "teacher_forcing target IR to DetectionSupervisionView "
+                    "position mapping drifted"
                 )
-            shifted_target_position = target_position + position_delta
-            shifted_logit_position = int(atom.logit_position) + position_delta
             if encoded_input_ids[shifted_target_position] != int(atom.selected_token_id):
                 raise ValueError(
-                    "shifted teacher_forcing target does not match encoded input_ids"
+                    "Swift encoded input_ids do not match DetectionSupervisionView "
+                    "teacher token at adapted position"
                 )
             if encoded_labels[shifted_target_position] != int(atom.selected_token_id):
                 raise ValueError(
-                    "shifted teacher_forcing target is not supervised by labels"
+                    "Swift encoded labels are not supervised according to "
+                    "DetectionSupervisionView"
                 )
             shifted_atoms.append(
                 replace(
@@ -829,7 +874,14 @@ class DetectionTrainingDataset(Dataset):
             atoms=tuple(shifted_atoms),
             metadata={
                 **dict(target_ir.metadata),
-                "token_position_origin": "DetectionTrainingDataset.encoded",
+                "token_position_origin": (
+                    "DetectionSupervisionView.adapter_to_swift_encoded"
+                ),
+                "supervision_view_token_position_origin": (
+                    supervision_view.token_position_origin
+                ),
+                "supervision_view_position_delta": view_position_delta,
+                "swift_encoded_position_delta": encoded_position_delta,
             },
         )
 
@@ -912,6 +964,95 @@ def _rendered_span_sources(render_span_events: Sequence[Any]) -> list[dict[str, 
             }
         )
     return sources
+
+
+def _validate_teacher_forcing_target_ir_against_supervision_view(
+    *,
+    build_input_ids: Sequence[int],
+    atom_positions: Sequence[int],
+    target_ir: TeacherForcingTargetIR,
+    supervision_view: DetectionSupervisionView,
+) -> None:
+    for atom, atom_position, view_position in zip(
+        target_ir.atoms,
+        atom_positions,
+        supervision_view.supervised_label_positions,
+        strict=True,
+    ):
+        selected_token_id = int(atom.selected_token_id)
+        if int(build_input_ids[int(atom_position)]) != selected_token_id:
+            raise ValueError(
+                "teacher_forcing target IR selected_token_id does not match "
+                "builder input_ids"
+            )
+        if int(supervision_view.input_ids[int(view_position)]) != selected_token_id:
+            raise ValueError(
+                "DetectionSupervisionView input_ids do not match target IR "
+                "selected_token_id"
+            )
+        if int(supervision_view.labels[int(view_position)]) != selected_token_id:
+            raise ValueError(
+                "DetectionSupervisionView labels do not supervise target IR "
+                "selected_token_id"
+            )
+        if atom.coord_role is not None and not supervision_view.coord_mask[int(view_position)]:
+            raise ValueError(
+                "teacher_forcing coordinate atom is not backed by "
+                "DetectionSupervisionView coord_mask"
+            )
+
+
+def _detection_supervision_view_metadata(
+    supervision_view: DetectionSupervisionView,
+) -> dict[str, Any]:
+    return {
+        "authority": "DetectionSupervisionView",
+        "adapter": "DetectionTrainingDataset.teacher_forcing_swift_adapter",
+        "token_position_origin": supervision_view.token_position_origin,
+        "rendered_sequence_type": type(supervision_view.rendered_assistant).__name__,
+        "template_id": supervision_view.rendered_assistant.template_id,
+        "template_version": supervision_view.rendered_assistant.template_version,
+        "supervised_label_positions": list(supervision_view.supervised_label_positions),
+        "next_token_prediction_positions": list(
+            supervision_view.next_token_prediction_positions
+        ),
+        "assistant_token_span": _token_span_metadata(
+            supervision_view.assistant_token_span
+        ),
+        "assistant_stop_token_span": _optional_token_span_metadata(
+            supervision_view.assistant_stop_token_span
+        ),
+        "coord_token_positions": _mask_true_indices(supervision_view.coord_mask),
+        "bbox_token_positions": _mask_true_indices(supervision_view.bbox_mask),
+        "terminal_token_positions": _mask_true_indices(supervision_view.terminal_mask),
+        "object_entry_token_spans": [
+            _token_span_metadata(entry.entry_span)
+            for entry in supervision_view.object_entries
+        ],
+        "coord_token_spans": [
+            _token_span_metadata(span)
+            for entry in supervision_view.object_entries
+            for span in entry.coord_spans
+        ],
+    }
+
+
+def _token_span_metadata(span: TokenSpan) -> dict[str, Any]:
+    return {
+        "start": int(span.start),
+        "end": int(span.end),
+        "label": span.label,
+    }
+
+
+def _optional_token_span_metadata(span: TokenSpan | None) -> dict[str, Any] | None:
+    if span is None:
+        return None
+    return _token_span_metadata(span)
+
+
+def _mask_true_indices(mask: Sequence[bool]) -> list[int]:
+    return [index for index, value in enumerate(mask) if bool(value)]
 
 
 def _json_safe_sidecar_value(value: Any) -> Any:

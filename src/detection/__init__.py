@@ -53,6 +53,7 @@ from src.detection.template import (
     CompactFullTemplate,
     DetectionSequenceTemplate,
     RenderedAssistantSequence,
+    RenderedDetectionSequence,
     RenderedConversation,
     RenderedObjectEntry,
     Stage1JsonPrettyTemplate,
@@ -93,6 +94,7 @@ from src.detection.packing import (
     require_packing_eligibility,
 )
 from src.detection.tokenization import (
+    DetectionSupervisionView,
     TokenRole,
     TokenSpan,
     TokenizedDetectionExample,
@@ -112,6 +114,7 @@ __all__ = [
     "CoordSoftTargetRuntimeConfig",
     "CoordSoftTargetSpec",
     "DetectionSequenceTemplate",
+    "DetectionSupervisionView",
     "DetectionDatasetRuntimeConfig",
     "DetectionTrainingDataset",
     "DetectionTrainingMode",
@@ -146,6 +149,7 @@ __all__ = [
     "RawDetectionObject",
     "RawDetectionRow",
     "RenderedAssistantSequence",
+    "RenderedDetectionSequence",
     "RenderedConversation",
     "RenderedObjectEntry",
     "SemanticRole",

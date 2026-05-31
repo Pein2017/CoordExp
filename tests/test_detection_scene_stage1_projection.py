@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 from typing import Any, Mapping
 
+import src.detection as detection
 from src.training.teacher_forcing.constants import TEACHER_FORCING_TARGET_IR_KEY
 from src.detection.dataset import DetectionDatasetRuntimeConfig, DetectionTrainingDataset
 
@@ -212,10 +213,29 @@ def test_stage1_teacher_forcing_dataset_projects_scene_to_rendered_sequence_and_
     item = dataset[0]
 
     target_ir = item[TEACHER_FORCING_TARGET_IR_KEY]
+    supervision_meta = item["detection_supervision_view_metadata"]
     supervised_positions = tuple(
         index for index, label in enumerate(item["labels"]) if int(label) != -100
     )
     assert tuple(atom.target_position for atom in target_ir.atoms) == supervised_positions
+    assert target_ir.metadata["token_position_origin"] == (
+        "DetectionSupervisionView.adapter_to_swift_encoded"
+    )
+    assert target_ir.metadata["supervision_view_token_position_origin"] == (
+        "DetectionSupervisionView.tokenized"
+    )
+    assert supervision_meta["authority"] == "DetectionSupervisionView"
+    assert supervision_meta["adapter"] == (
+        "DetectionTrainingDataset.teacher_forcing_swift_adapter"
+    )
+    assert supervision_meta["rendered_sequence_type"] == "RenderedDetectionSequence"
+    assert tuple(supervision_meta["supervised_label_positions"]) == supervised_positions
+    assert tuple(supervision_meta["next_token_prediction_positions"]) == tuple(
+        position - 1 for position in supervised_positions
+    )
+    assert supervision_meta["template_id"] == "compact_full"
+    assert len(supervision_meta["coord_token_spans"]) == 8
+    assert set(supervision_meta["coord_token_positions"]).issubset(supervised_positions)
     assert all(item["labels"][position] == item["input_ids"][position] for position in supervised_positions)
     assert {atom.coord_role for atom in target_ir.atoms if atom.coord_role is not None} == {
         "x1",
@@ -240,3 +260,8 @@ def test_stage1_teacher_forcing_dataset_projects_scene_to_rendered_sequence_and_
         "image_id": 9,
         "file_name": "images/train2017/example.jpg",
     }
+
+
+def test_detection_root_exports_canonical_projection_names_and_migration_aliases() -> None:
+    assert detection.RenderedDetectionSequence is detection.RenderedAssistantSequence
+    assert detection.DetectionSupervisionView is detection.TokenizedDetectionExample
