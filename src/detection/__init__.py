@@ -32,11 +32,6 @@ from src.detection.scene import (
     detection_scene_from_raw_row,
     normalized_detection_sample_from_scene,
 )
-from src.detection.loss import (
-    RecursiveDetectionLossResult,
-    RecursiveDetectionLossWeights,
-    compute_recursive_detection_ce_batch_loss,
-)
 from src.detection.template import (
     CharSpan,
     CompactFullTemplate,
@@ -57,7 +52,6 @@ from src.detection.objective import (
     LossNormalizationResult,
     LossNormalizationStrategy,
     PreparedDetectionExample,
-    RecursiveDetectionTargets,
     SemanticRole,
     StateWeightingDiagnostics,
     StateWeightingStrategy,
@@ -65,7 +59,6 @@ from src.detection.objective import (
     TrieBranchTarget,
     TrieTargetKind,
     build_recursive_detection_targets,
-    normalize_recursive_detection_token_losses,
     prepare_detection_training_example,
 )
 from src.detection.packing import (
@@ -124,9 +117,6 @@ __all__ = [
     "PackingFingerprintMetadata",
     "PackingProfile",
     "PackingRuntimeMode",
-    "RecursiveDetectionTargets",
-    "RecursiveDetectionLossResult",
-    "RecursiveDetectionLossWeights",
     "RenderedDetectionSequence",
     "RenderedConversation",
     "RenderedObjectEntry",
@@ -147,7 +137,6 @@ __all__ = [
     "build_recursive_detection_targets",
     "build_coord_soft_target",
     "build_iou_gibbs_coord_target",
-    "compute_recursive_detection_ce_batch_loss",
     "build_packing_fingerprint",
     "build_static_sft_packing_fingerprint",
     "full_vocab_coord_soft_ce",
@@ -157,7 +146,6 @@ __all__ = [
     "detection_scene_from_raw_row",
     "normalize_detection_row",
     "normalized_detection_sample_from_scene",
-    "normalize_recursive_detection_token_losses",
     "parse_raw_detection_row",
     "prepare_detection_training_example",
     "require_packing_eligibility",

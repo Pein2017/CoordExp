@@ -151,12 +151,26 @@ def test_detection_root_exports_keep_geometry_names_disambiguated() -> None:
     assert detection.DetectionGeometry is DetectionSceneModuleGeometry
     assert detection.DetectionSceneGeometry is DetectionSceneModuleGeometry
     assert detection.DetectionGeometry is not DetectionDocumentIRGeometry
+    for name in [
+        "DetectionScene",
+        "DetectionObject",
+        "DetectionGeometry",
+        "RenderedDetectionSequence",
+        "DetectionSequenceTemplate",
+        "DetectionSupervisionView",
+    ]:
+        assert hasattr(detection, name), name
     assert not hasattr(detection, "DetectionDocumentGeometry")
     assert not hasattr(detection, "DetectionDocument")
     assert not hasattr(detection, "NormalizedDetectionSample")
     assert not hasattr(detection, "NormalizedDetectionObject")
     assert not hasattr(detection, "RenderedAssistantSequence")
     assert not hasattr(detection, "TokenizedDetectionExample")
+    assert not hasattr(detection, "compute_recursive_detection_ce_batch_loss")
+    assert not hasattr(detection, "normalize_recursive_detection_token_losses")
+    assert not hasattr(detection, "RecursiveDetectionTargets")
+    assert not hasattr(detection, "RecursiveDetectionLossResult")
+    assert not hasattr(detection, "RecursiveDetectionLossWeights")
 
 
 def test_detection_scene_projects_back_to_normalized_sample_without_raw_authority() -> None:

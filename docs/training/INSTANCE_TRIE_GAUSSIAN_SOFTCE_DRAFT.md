@@ -291,11 +291,13 @@ probability to every recombination coordinate when the radius is nonzero.
 
 ## Ablation Config Surface
 
-The historical ablation successor configs were:
+The historical ablation successor configs were retired from the active
+Stage-1 route by the DetectionScene clean-break and are preserved under the
+archive root:
 
-- main: `configs/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1.yaml`
-- slope ablation: `configs/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p06_mix0p1.yaml`
-- strength ablation: `configs/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p2.yaml`
+- main: `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1.yaml`
+- slope ablation: `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p06_mix0p1.yaml`
+- strength ablation: `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p2.yaml`
 
 The public focused-policy surface is:
 

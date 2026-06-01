@@ -414,7 +414,7 @@ Primary code/config surfaces inspected:
 - `scripts/run_infer_eval.sh`
 - `scripts/run_vis.sh`
 - `configs/stage1/`
-- `configs/stage2_rollout_correction/`
+- `configs/stage2/rollout_correction/`
 - `configs/infer/`
 - `configs/eval/`
 
@@ -565,7 +565,7 @@ Current Stage-1 has at least three important surfaces:
 | --- | --- | --- |
 | Stage-1 JSON CE baseline | Active baseline/regression surface | `configs/stage1/sft_base.yaml`, `configs/stage1/profiles/`, `src/datasets/dense_caption.py`, `src/trainers/losses/coord_soft_ce_w1.py` |
 | Stage-1 compact teacher-forcing | Active compact-full direction | `configs/stage1/teacher_forcing/`, `src/detection/runtime.py`, `src/detection/dataset.py`, `src/training/objectives/teacher_forcing.py` |
-| Stage-1 compact recursive detection CE | Legacy/comparator and ablation surface | `configs/stage1/recursive_detection_ce/`, `src/detection/objective.py`, recursive detection metrics |
+| Stage-1 compact recursive detection CE | Historical legacy/comparator and ablation surface; retired configs are archived, not active routing authority | `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/`, `src/detection/objective.py`, recursive detection metrics |
 
 Important distinction:
 
@@ -588,7 +588,7 @@ Current active Stage-2 public contract:
 - `stage2_rollout_correction.pipeline.objective[]` contains exactly one enabled
   `residual_set_correction`
 - `stage2_rollout_correction.pipeline.diagnostics[]` is empty
-- active configs live under `configs/stage2_rollout_correction/`
+- active configs live under `configs/stage2/rollout_correction/`
 - old public variants fail fast:
   `stage2_ab_training`, `stage2_two_channel`, `rollout_matching_sft`,
   `stage2_rollout_aligned`, and public `stage2_rollout_runtime`
@@ -754,7 +754,7 @@ The proposal correctly treats artifacts as architecture, not leftovers.
 | --- | --- |
 | YAML-first workflows | `src/config/loader.py`, `src/config/schema.py`, `scripts/run_infer.py --config`, Stage-2 runbook |
 | Offline-prepared JSONL and no runtime resize | `docs/data/CONTRACT.md`, `docs/data/PREPARATION.md`, dataset/runtime guards |
-| Public Stage-2 collapse to `stage2_rollout_correction` | `configs/stage2_rollout_correction/`, strict schema rejection of old variants |
+| Public Stage-2 collapse to `stage2_rollout_correction` | `configs/stage2/rollout_correction/`, strict schema rejection of old variants |
 | Compact template ownership | `src/detection/template.py`, strict factory IDs |
 | Shared inference decode request vocabulary | `DetectionDecodeRequest`, infer and rollout decode builders |
 | Canonical artifact family | `gt_vs_pred*.jsonl`, `resolved_config.path`, score provenance, guarded companions |

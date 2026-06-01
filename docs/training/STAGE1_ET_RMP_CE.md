@@ -21,16 +21,16 @@ Current Stage-1 objective routing lives in:
 
 - `docs/training/README.md`
 - `docs/training/STAGE1_OBJECTIVE.md`
-- `configs/stage1/recursive_detection_ce/`
+- `configs/stage1/detection_teacher_forcing/`
 - `src/detection/runtime.py`
 - `src/detection/objective.py`
 - `src/detection/loss.py`
 
 Do not use this page as the route for `prefix_rollin_et_rmp_ce`. The current
 compact-only ablation route is documented in `STAGE1_OBJECTIVE.md` and
-`docs/catalog.yaml`, with config
-`configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml`.
-It must stay in the compact detection stack rather than reviving this
-retired continuation implementation. Old branch-balance/support knobs and the
-retired continuation trainer path must remain absent from active configs,
-runtime routing, tests, and docs recommendations.
+`docs/catalog.yaml`. The pre-clean-break recursive-detection config example is
+historical-only and archived under
+`configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/`.
+Old branch-balance/support knobs and the retired continuation trainer path must
+remain absent from active configs, runtime routing, tests, and docs
+recommendations.

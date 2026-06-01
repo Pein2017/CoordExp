@@ -28,6 +28,11 @@ Archive/classification inputs:
   - `RenderedAssistantSequence`
   - `TokenizedDetectionExample`
   - `detection_document_from_normalized_sample`
+  - `compute_recursive_detection_ce_batch_loss`
+  - `normalize_recursive_detection_token_losses`
+  - `RecursiveDetectionTargets`
+  - `RecursiveDetectionLossResult`
+  - `RecursiveDetectionLossWeights`
 - Kept and characterized the canonical root public names:
   - `DetectionScene`
   - `DetectionObject`
@@ -63,24 +68,26 @@ Archive/classification inputs:
 ## Search Gate Results
 
 Final gates were run after cleanup using the required patterns over
-`src tests configs docs openspec` or the scoped path set named by the gate.
+`src tests configs docs scripts openspec/specs
+openspec/changes/detection-scene-clean-break progress/audits`, excluding this
+note itself and generated `__pycache__` files from the broad-count snapshot.
 
 Summary:
 
 | Gate | Result | Classification |
 | --- | ---: | --- |
-| Old semantic carriers | 463 matches in 58 files | Root `src.detection` exports are absent. Active source matches are private/module-local migration bridges or analysis/test characterization; historical docs/OpenSpec/progress references are allowed. |
-| Canonical scene names | 323 matches in 41 files | Canonical names are present across source/tests/docs/OpenSpec, including root public exports. |
-| Old Stage-1 names | 659 matches in 92 files | Live Stage-1 route is `configs/stage1/detection_teacher_forcing/`. Recursive-detection config YAML is quarantined under `configs/archive/detection_scene_clean_break/stage1/`; remaining old names are historical docs, metrics, fixtures, or explicit legacy/rejection context. |
-| Raw/dense-caption names | 212 matches in 61 files | Raw/dense-caption names remain intake/file-level implementation details and historical docs; semantic authority is `DetectionScene`. |
-| Old Stage-2 variants | 1587 matches in 248 files | Retired public variants remain as rejection tests, historical docs/specs, private implementation file names, and search seeds. Active trainer concept remains `stage2_rollout_correction`. |
-| `rollout_matching.*` namespace | 1005 matches in 164 files | `rollout_matching.pipeline` is retired/rejected. Prompt/decode/backend/eval keys remain classified migration/runtime handles until Stage-2 rollout-correction schema owns those knobs end to end. |
-| Old rollout parse/assignment names | 432 matches in 25 files | Active public concepts are `RolloutPrediction`, `DetectionAssignment`, and `CorrectionEvent`; remaining old names are private adapters, legacy tests, analysis probes, or retired rollout-matching internals. |
-| Salvage/drop terms | 1009 matches in 90 files | Strict metric-bearing decode/eval paths are covered by tests. Salvage/fallback/drop terms remain diagnostic/fallback policy names and do not become official metric-bearing predictions. |
-| Assignment/channel terms | 516 matches in 69 files | Current Stage-2 assignment is greedy IoU through the rollout-correction surface. Old channel vocabulary remains only in historical specs/docs, private internals, or rejection/legacy tests. |
-| Decode/eval record terms | 216 matches in 36 files | `DecodedDetectionResult`, `DetectionEvalRecord`, and `ScoredDetectionEvalRecord` are active clean-break concepts. Backend-level `DetectionDecodeResult` remains distinct and allowed. |
-| Artifact/visualization terms | 966 matches in 169 files | `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, and `vis_resources/gt_vs_pred.jsonl` are retained stable artifact/review handles by design. |
-| Config route terms | 201 matches in 41 files | Canonical Stage-1 route and nested Stage-2 route are active. Old live Stage-1/Stage-2 root directories are absent; remaining route strings are historical, archive, fixture, or current canonical mentions. |
+| Old semantic carriers | 495 matches in 56 files | Root `src.detection` exports are absent. Active source matches are private/module-local migration bridges or analysis/test characterization; historical docs/OpenSpec/progress references are allowed. |
+| Canonical scene names | 543 matches in 74 files | Canonical names are present across source/tests/docs/OpenSpec, including root public exports. |
+| Old Stage-1 names | 1170 matches in 121 files | Live Stage-1 route is `configs/stage1/detection_teacher_forcing/`. Recursive-detection config YAML is quarantined under `configs/archive/detection_scene_clean_break/stage1/`; remaining old names are historical docs, metrics, fixtures, or explicit legacy/rejection context. |
+| Raw/dense-caption names | 195 matches in 42 files | Raw/dense-caption names remain intake/file-level implementation details and historical docs; semantic authority is `DetectionScene`. |
+| Old Stage-2 variants | 730 matches in 79 files | Retired public variants remain as rejection tests, historical docs/specs, private implementation file names, and search seeds. Active trainer concept remains `stage2_rollout_correction`. |
+| `rollout_matching.*` namespace | 467 matches in 82 files | `rollout_matching.pipeline` is retired/rejected. Prompt/decode/backend/eval keys remain classified migration/runtime handles until Stage-2 rollout-correction schema owns those knobs end to end. |
+| Old rollout parse/assignment names | 483 matches in 28 files | Active public concepts are `RolloutPrediction`, `DetectionAssignment`, and `CorrectionEvent`; remaining old names are private adapters, legacy tests, analysis probes, or retired rollout-matching internals. |
+| Salvage/drop terms | 1004 matches in 73 files | Strict metric-bearing decode/eval paths are covered by tests. Salvage/fallback/drop terms remain diagnostic/fallback policy names and do not become official metric-bearing predictions. |
+| Assignment/channel terms | 342 matches in 35 files | Current Stage-2 assignment is greedy IoU through the rollout-correction surface. Old channel vocabulary remains only in historical specs/docs, private internals, or rejection/legacy tests. |
+| Decode/eval record terms | 227 matches in 35 files | `DecodedDetectionResult`, `DetectionEvalRecord`, and `ScoredDetectionEvalRecord` are active clean-break concepts. Backend-level `DetectionDecodeResult` remains distinct and allowed. |
+| Artifact/visualization terms | 779 matches in 129 files | `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, and `vis_resources/gt_vs_pred.jsonl` are retained stable artifact/review handles by design. |
+| Config route terms | 253 matches in 65 files | Canonical Stage-1 route and nested Stage-2 route are active. Old live Stage-1/Stage-2 root directories are absent; remaining route strings are historical, archive, fixture, or current canonical mentions. |
 
 Hard absence/presence checks:
 
@@ -98,6 +105,11 @@ root_export_absent_NormalizedDetectionObject: True
 root_export_absent_RenderedAssistantSequence: True
 root_export_absent_TokenizedDetectionExample: True
 root_export_absent_detection_document_from_normalized_sample: True
+root_export_absent_compute_recursive_detection_ce_batch_loss: True
+root_export_absent_normalize_recursive_detection_token_losses: True
+root_export_absent_RecursiveDetectionTargets: True
+root_export_absent_RecursiveDetectionLossResult: True
+root_export_absent_RecursiveDetectionLossWeights: True
 root_export_present_DetectionScene: True
 root_export_present_DetectionObject: True
 root_export_present_DetectionGeometry: True
@@ -106,16 +118,22 @@ root_export_present_DetectionSequenceTemplate: True
 root_export_present_DetectionSupervisionView: True
 ```
 
-Exact old active config-root search after cleanup found only fixture-path
-references in tests:
+Exact old active config-root search after the follow-up cleanup:
 
 ```text
-tests/test_detection_training_config_contract.py: tests/fixtures/configs/stage1/recursive_detection_ce_schema_contract.yaml
-tests/test_detection_training_config_contract.py: tests/fixtures/configs/stage1/recursive_detection_ce_static_packing_should_fail.yaml
-tests/test_recursive_detection_ce_sft_wiring.py: tests/fixtures/configs/stage1/recursive_detection_ce_static_packing_should_fail.yaml
+rg -n "configs/stage2_rollout_correction|configs/stage1/recursive_detection_ce|configs/_shared/recursive_detection" src configs docs tests scripts openspec/specs --glob '!configs/archive/**'
+Result: 130 matches in 17 files.
 ```
 
-These are allowed fixture/rejection leftovers, not live config roots.
+No active-authority files in `src`, `configs`, `docs/data`, `docs/architecture`,
+`docs/training` runbooks, `scripts`, or `openspec/specs` point current routing at
+the old roots. The remaining matches are dated historical `docs/superpowers/`
+plans/handoffs/spec drafts and fixture/rejection references in:
+
+- `tests/test_detection_training_config_contract.py`
+- `tests/test_recursive_detection_ce_sft_wiring.py`
+
+These are allowed historical/fixture/rejection leftovers, not live config roots.
 
 Allowed leftovers:
 
@@ -301,7 +319,8 @@ Result: `Change 'detection-scene-clean-break' is valid`.
 ## Task Evidence
 
 - 7.1: root public concepts now expose canonical names only; retired semantic,
-  render, and token names are private/module-local or historical.
+  render, token, and recursive-detection CE helper names are private/module-local
+  or historical.
 - 7.2: retired Stage-1 config roots and shared snippets are quarantined under an
   explicit archive path; public root compatibility exports were removed; risky
   runtime-required `rollout_matching.*` handles were classified instead of
