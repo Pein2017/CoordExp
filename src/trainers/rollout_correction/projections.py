@@ -395,6 +395,18 @@ def annotate_correction_events_with_projection_provenance(
 ) -> tuple[CorrectionEvent, ...]:
     """Attach scene/prediction/assignment provenance to retained events."""
 
+    rollout_provenance = dict(rollout_prediction.provenance)
+    backend_metadata = dict(rollout_provenance.get("backend_metadata", {}))
+    parser_metadata = dict(rollout_provenance.get("parser_metadata", {}))
+    prediction_id = (
+        f"{rollout_prediction.source_label}:"
+        f"{rollout_prediction.prediction_source}:"
+        f"{rollout_prediction.parse_result.parser_id}"
+    )
+    assignment_id = (
+        f"scene={scene.image_id}:prediction={prediction_id}:"
+        f"matches={len(assignment.matched_pairs)}"
+    )
     projection_metadata = {
         "detection_scene": {
             "image_id": int(scene.image_id),
@@ -405,13 +417,33 @@ def annotate_correction_events_with_projection_provenance(
             "bbox_chart": str(scene.bbox_chart),
         },
         "rollout_prediction": {
+            "prediction_id": prediction_id,
             "prediction_source": str(rollout_prediction.prediction_source),
             "parser_id": str(rollout_prediction.parse_result.parser_id),
             "template_family": str(rollout_prediction.parse_result.template_family),
             "metric_bearing": bool(rollout_prediction.metric_bearing),
             "invalid_drop_metadata": dict(rollout_prediction.invalid_drop_metadata),
+            "provenance": rollout_provenance,
+            "backend_metadata": backend_metadata,
+            "parser_metadata": parser_metadata,
+            "model_identity": backend_metadata.get("model_identity"),
+            "model_identity_fingerprint": backend_metadata.get(
+                "model_identity_fingerprint"
+            ),
+            "checkpoint_identity": backend_metadata.get("checkpoint_identity"),
+            "prompt_policy": backend_metadata.get("prompt_policy"),
+            "prompt_policy_fingerprint": backend_metadata.get(
+                "prompt_policy_fingerprint"
+            ),
+            "decode_policy": backend_metadata.get("decode_policy"),
+            "decode_policy_fingerprint": backend_metadata.get(
+                "decode_policy_fingerprint"
+            ),
+            "parser_policy": parser_metadata.get("parser_policy"),
+            "metric_eligibility": backend_metadata.get("metric_eligibility"),
         },
         "detection_assignment": {
+            "assignment_id": assignment_id,
             "matched_pairs": [tuple(pair) for pair in assignment.matched_pairs],
             "unmatched_prediction_indices": list(
                 assignment.unmatched_prediction_indices
@@ -469,6 +501,22 @@ def _validate_metric_bearing_rollout_prediction_provenance(
         raise ValueError(
             "metric-bearing RolloutPrediction requires shared decode provenance: "
             + ", ".join(str(key) for key in missing_decode)
+        )
+    blocked_backend_markers = [
+        key
+        for key in (
+            "diagnostic_private_parser",
+            "migration_source",
+            "migration_only",
+            "private_parser",
+        )
+        if backend_metadata.get(key) not in (None, "", False)
+    ]
+    if blocked_backend_markers:
+        raise ValueError(
+            "diagnostic/private parser decode provenance cannot create "
+            "metric-bearing RolloutPrediction: "
+            + ", ".join(str(key) for key in blocked_backend_markers)
         )
     parser_metadata = dict(parse_result.metadata)
     if str(parse_result.parser_id or "").strip() == "":

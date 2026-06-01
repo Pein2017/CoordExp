@@ -1,4 +1,5 @@
 import contextlib
+import hashlib
 import json
 import math
 import os
@@ -44,11 +45,15 @@ from src.infer.prompt import (
     require_verified_prompt_visual_parity,
     rollout_visual_metadata_from_sample,
 )
-from src.infer.runtime import build_decode_request_from_rollout_owner
+from src.infer.runtime import (
+    DetectionDecodeRequest,
+    build_decode_request_from_rollout_owner,
+    build_model_identity_fingerprint,
+)
 from src.utils.assistant_json import dumps_coordjson
 
 from .stage2_rollout_runtime import Stage2RolloutRuntime
-from .rollout_matching.contracts import GTObject
+from .rollout_matching.contracts import GTObject, MatchResult
 from .rollout_matching.parsing import (
     find_desc_value_token_positions,
     parse_rollout_for_matching,
@@ -1317,6 +1322,244 @@ def _stage2_detection_scene_from_sample(sample: Mapping[str, Any]) -> DetectionS
     )
 
 
+@dataclass(frozen=True)
+class _Stage2DetectionSceneTargetState:
+    target_context: Any
+    accepted_objects_clean: Tuple[GTObject, ...]
+    suppressed_duplicate_objects_by_boundary: Dict[int, Tuple[GTObject, ...]]
+    match: MatchResult
+    duplicate_counter_metrics: Dict[str, Any]
+    explorer_objects_by_view: Tuple[Tuple[GTObject, ...], ...]
+    explorer_match_by_pred_by_view: Tuple[Dict[int, int], ...]
+
+
+def _stage2_construct_detection_scene_target_state(
+    *,
+    sample: Mapping[str, Any],
+    detection_scene: DetectionScene,
+    rollout_prediction: Any,
+    explorer_predictions: Sequence[Any],
+    unlabeled_consistent_iou_threshold: float,
+    duplicate_iou_threshold: float,
+    center_radius_scale: float,
+    pseudo_positive_enabled: bool,
+    expected_peer_count: int,
+    assignment_iou_threshold: float,
+) -> _Stage2DetectionSceneTargetState:
+    """Build the production target state from DetectionScene projection helpers."""
+
+    duplicate_filter = _correction_targets.filter_rollout_prediction_duplicates(
+        prediction=rollout_prediction,
+        explorer_predictions=explorer_predictions,
+        duplicate_iou_threshold=float(duplicate_iou_threshold),
+        center_radius_scale=float(center_radius_scale),
+        unlabeled_consistent_iou_threshold=float(unlabeled_consistent_iou_threshold),
+    )
+    anchor_policy_statuses = _anchor_lvis_policy_statuses(
+        sample=sample,
+        accepted_objects_clean=duplicate_filter.prediction.valid_objects,
+    )
+    explorer_assignments = tuple(
+        _correction_targets.assign_detection_scene_rollout_prediction(
+            scene=detection_scene,
+            prediction=explorer_prediction,
+            min_iou=float(assignment_iou_threshold),
+        )
+        for explorer_prediction in explorer_predictions
+    )
+    target_context = (
+        _correction_targets.construct_detection_scene_rollout_correction_target_context(
+            scene=detection_scene,
+            rollout_prediction=rollout_prediction,
+            explorer_predictions=explorer_predictions,
+            unlabeled_consistent_iou_threshold=float(unlabeled_consistent_iou_threshold),
+            duplicate_iou_threshold=float(duplicate_iou_threshold),
+            center_radius_scale=float(center_radius_scale),
+            pseudo_positive_enabled=bool(pseudo_positive_enabled),
+            expected_peer_count=int(expected_peer_count),
+            assignment_iou_threshold=float(assignment_iou_threshold),
+            anchor_policy_statuses=anchor_policy_statuses,
+        )
+    )
+    if (
+        target_context.detection_scene is None
+        or target_context.rollout_prediction is None
+        or target_context.assignment is None
+        or target_context.duplicate_filter is None
+    ):
+        raise ValueError(
+            "stage2_rollout_correction target context must carry "
+            "DetectionScene, RolloutPrediction, DetectionAssignment, "
+            "and duplicate-filter projections"
+        )
+    assignment = target_context.assignment
+    duplicate_filter = target_context.duplicate_filter
+    return _Stage2DetectionSceneTargetState(
+        target_context=target_context,
+        accepted_objects_clean=tuple(assignment.prediction_objects),
+        suppressed_duplicate_objects_by_boundary={
+            int(boundary): tuple(objects)
+            for boundary, objects in duplicate_filter.suppressed_duplicate_objects_by_boundary.items()
+        },
+        match=MatchResult(
+            matched_pairs=[
+                (int(pred_i), int(gt_i)) for pred_i, gt_i in assignment.matched_pairs
+            ],
+            fn_gt_indices=[int(index) for index in assignment.unmatched_gt_indices],
+            fp_pred_indices=[
+                int(index) for index in assignment.unmatched_prediction_indices
+            ],
+            gating_rejections=0,
+            matched_maskiou_sum=float(len(assignment.matched_pairs)),
+            matched_maskiou_count=int(len(assignment.matched_pairs)),
+        ),
+        duplicate_counter_metrics=dict(duplicate_filter.counter_metrics),
+        explorer_objects_by_view=tuple(
+            tuple(explorer_prediction.valid_objects)
+            for explorer_prediction in explorer_predictions
+        ),
+        explorer_match_by_pred_by_view=tuple(
+            dict(assignment.anchor_match_by_pred)
+            for assignment in explorer_assignments
+        ),
+    )
+
+
+def _stage2_rollout_decode_provenance_from_request(
+    *,
+    owner: Any,
+    request: DetectionDecodeRequest,
+    rollout_template_policy: Stage2RolloutTemplatePolicy,
+    prompt_sample: Mapping[str, Any],
+) -> Dict[str, Any]:
+    """Resolve metric provenance from shared decode request plus prompt sample."""
+
+    if not isinstance(request, DetectionDecodeRequest):
+        raise TypeError("stage2 rollout provenance requires DetectionDecodeRequest")
+    decode_policy_fingerprint = _stage2_required_provenance_text(
+        request.decode_policy_fingerprint,
+        "decode_policy_fingerprint",
+    )
+    checkpoint_identity = _stage2_checkpoint_identity_from_owner(owner)
+    adapter_identity = _stage2_optional_adapter_identity_from_owner(owner)
+    model_identity_fingerprint = build_model_identity_fingerprint(
+        checkpoint_mode="stage2_rollout_correction_train",
+        requested_model_checkpoint=checkpoint_identity,
+        requested_adapter_checkpoint=adapter_identity,
+        resolved_base_model_checkpoint=checkpoint_identity,
+        resolved_adapter_checkpoint=adapter_identity,
+        backend=str(request.backend),
+        backend_mode=str(request.backend_mode),
+        backend_model=checkpoint_identity,
+        tokenizer_source=checkpoint_identity,
+        processor_source=checkpoint_identity,
+    )
+    prompt_policy = _stage2_prompt_policy_payload(prompt_sample)
+    prompt_policy_fingerprint = _stage2_prompt_policy_fingerprint(prompt_policy)
+    return {
+        "model_identity": checkpoint_identity,
+        "model_identity_fingerprint": model_identity_fingerprint,
+        "checkpoint_identity": checkpoint_identity,
+        "prompt_policy": prompt_policy,
+        "prompt_policy_fingerprint": prompt_policy_fingerprint,
+        "decode_policy": {
+            "backend": str(request.backend),
+            "backend_mode": str(request.backend_mode),
+            "decode_mode": str(request.decode_mode),
+            "max_new_tokens": int(request.max_new_tokens),
+            "temperature": float(request.temperature),
+            "top_p": request.top_p,
+            "top_k": request.top_k,
+            "num_beams": int(request.num_beams),
+            "repetition_penalty": request.repetition_penalty,
+            "stop_tokens": list(request.stop_tokens),
+            "stop_strings": list(request.stop_strings),
+            "trace_logprobs": bool(request.trace_logprobs),
+            "trace_prompt_logprobs": bool(request.trace_prompt_logprobs),
+            "generation_constraints": [
+                (str(key), value) for key, value in request.generation_constraints
+            ],
+        },
+        "decode_policy_fingerprint": decode_policy_fingerprint,
+        "decode_request_type": type(request).__name__,
+        "metric_eligibility": rollout_template_policy.template_family == "compact_full",
+    }
+
+
+def _stage2_required_provenance_text(value: Any, key: str) -> str:
+    text = str(value or "").strip()
+    if text in {"", "unset", "none", "None", "stage2_rollout_correction_model"}:
+        raise ValueError(
+            "stage2_rollout_correction metric-bearing decode provenance "
+            f"requires resolved {key}"
+        )
+    return text
+
+
+def _stage2_checkpoint_identity_from_owner(owner: Any) -> str:
+    args = getattr(owner, "args", None)
+    candidates = [
+        getattr(args, "model_name_or_path", None),
+        getattr(args, "model", None),
+        getattr(owner, "model_name_or_path", None),
+        getattr(getattr(getattr(owner, "model", None), "config", None), "_name_or_path", None),
+    ]
+    for candidate in candidates:
+        try:
+            return _stage2_required_provenance_text(candidate, "checkpoint_identity")
+        except ValueError:
+            continue
+    raise ValueError(
+        "stage2_rollout_correction metric-bearing decode provenance requires "
+        "resolved checkpoint_identity"
+    )
+
+
+def _stage2_optional_adapter_identity_from_owner(owner: Any) -> Optional[str]:
+    args = getattr(owner, "args", None)
+    candidates = [
+        getattr(args, "adapter_name_or_path", None),
+        getattr(args, "adapters", None),
+        getattr(owner, "adapter_name_or_path", None),
+    ]
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        if isinstance(candidate, (list, tuple)):
+            candidate = ",".join(str(item) for item in candidate if str(item).strip())
+        text = str(candidate or "").strip()
+        if text:
+            return text
+    return None
+
+
+def _stage2_prompt_policy_payload(prompt_sample: Mapping[str, Any]) -> Dict[str, Any]:
+    messages = prompt_sample.get("messages")
+    if not isinstance(messages, Sequence) or isinstance(messages, (str, bytes)) or not messages:
+        raise ValueError(
+            "stage2_rollout_correction metric-bearing decode provenance requires "
+            "prepared prompt messages"
+        )
+    return {
+        "schema": "coordexp.stage2_rollout_prompt_policy.v1",
+        "source": "src.infer.prompt.prepare_rollout_prompt_samples_from_owner",
+        "messages": list(messages),
+        "visual_metadata": dict(
+            prompt_sample.get("_coordexp_prompt_visual_metadata") or {}
+        ),
+    }
+
+
+def _stage2_prompt_policy_fingerprint(prompt_policy: Mapping[str, Any]) -> str:
+    encoded = json.dumps(
+        prompt_policy,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("utf-8")
+    return "prompt_policy:v1:" + hashlib.sha256(encoded).hexdigest()
+
+
 def _stage2_int_metadata(
     sample: Mapping[str, Any],
     key: str,
@@ -2579,9 +2822,6 @@ class Stage2RolloutCorrectionTrainer(
         timing_enabled = _stage2_batch_timing_enabled()
         t0 = time.perf_counter() if timing_enabled else 0.0
         rollout_template_policy = self._resolve_stage2_rollout_template_policy()
-        rollout_decode_provenance = self._stage2_rollout_decode_provenance(
-            rollout_template_policy
-        )
         template = self.template
         tok = template.tokenizer
 
@@ -2834,35 +3074,16 @@ class Stage2RolloutCorrectionTrainer(
 
     def _stage2_rollout_decode_provenance(
         self,
+        request: DetectionDecodeRequest,
         rollout_template_policy: Stage2RolloutTemplatePolicy,
+        prompt_sample: Mapping[str, Any],
     ) -> Dict[str, Any]:
-        prompt_variant = str(
-            (self.rollout_matching_cfg or {}).get("prompt_variant")
-            or (self.rollout_matching_cfg or {}).get("eval_prompt_variant")
-            or "unset"
+        return _stage2_rollout_decode_provenance_from_request(
+            owner=self,
+            request=request,
+            rollout_template_policy=rollout_template_policy,
+            prompt_sample=prompt_sample,
         )
-        model_obj = getattr(self, "model", None)
-        model_identity = str(type(model_obj).__name__ if model_obj is not None else "")
-        args = getattr(self, "args", None)
-        checkpoint_identity = str(
-            getattr(args, "resume_from_checkpoint", None)
-            or getattr(args, "model_name_or_path", None)
-            or model_identity
-            or "stage2_rollout_correction_model"
-        )
-        decode_policy = str(rollout_template_policy.decode_policy)
-        return {
-            "model_identity": model_identity or "stage2_rollout_correction_model",
-            "model_identity_fingerprint": model_identity
-            or "stage2_rollout_correction_model",
-            "checkpoint_identity": checkpoint_identity,
-            "prompt_policy": prompt_variant,
-            "prompt_policy_fingerprint": prompt_variant,
-            "decode_policy": decode_policy,
-            "decode_policy_fingerprint": decode_policy,
-            "metric_eligibility": rollout_template_policy.template_family
-            == "compact_full",
-        }
 
     def _resolve_stage2_rollout_correction_assignment_strategy(
         self,
@@ -3291,6 +3512,12 @@ class Stage2RolloutCorrectionTrainer(
                     f"gt_count={len(gts)} anchor_token_len={int(anchor_token_len)} "
                     f"anchor_text_len={int(anchor_text_len)}"
                 )
+            anchor_decode_request = rollout_decode_requests[int(primary_rollout_ordinal)]
+            anchor_decode_provenance = self._stage2_rollout_decode_provenance(
+                request=anchor_decode_request,
+                rollout_template_policy=rollout_template_policy,
+                prompt_sample=sample,
+            )
             anchor_view = build_rollout_correction_view(
                 tokenizer=tok,
                 object_field_order=object_field_order,
@@ -3304,7 +3531,7 @@ class Stage2RolloutCorrectionTrainer(
                 points_from_coord_tokens_fn=points_from_coord_tokens,
                 duplicate_diagnostics_fn=_correction_targets._compute_duplicate_diagnostics,
                 rollout_template_policy=rollout_template_policy,
-                decode_provenance=rollout_decode_provenance,
+                decode_provenance=anchor_decode_provenance,
             )
             if timing_enabled:
                 _append_stage2_timing_line(
@@ -3326,7 +3553,7 @@ class Stage2RolloutCorrectionTrainer(
             )
             _stage2_annotate_rollout_decode_request(
                 current_attempt.view,
-                request=rollout_decode_requests[int(primary_rollout_ordinal)],
+                request=anchor_decode_request,
                 rollout_index=int(primary_rollout_ordinal),
             )
             explorer_rollouts = [
@@ -3370,6 +3597,12 @@ class Stage2RolloutCorrectionTrainer(
                     explorer_view_item = _stage2_missing_peer_rollout_view()
                     peer_source = "missing_peer"
                 else:
+                    peer_decode_request = rollout_decode_requests[int(peer_rollout_ordinal)]
+                    peer_decode_provenance = self._stage2_rollout_decode_provenance(
+                        request=peer_decode_request,
+                        rollout_template_policy=rollout_template_policy,
+                        prompt_sample=sample,
+                    )
                     explorer_view_item = build_rollout_correction_view(
                         tokenizer=tok,
                         object_field_order=object_field_order,
@@ -3383,7 +3616,7 @@ class Stage2RolloutCorrectionTrainer(
                         points_from_coord_tokens_fn=points_from_coord_tokens,
                         duplicate_diagnostics_fn=_correction_targets._compute_duplicate_diagnostics,
                         rollout_template_policy=rollout_template_policy,
-                        decode_provenance=rollout_decode_provenance,
+                        decode_provenance=peer_decode_provenance,
                     )
                     peer_source = "live"
                 if timing_enabled:
@@ -3591,66 +3824,11 @@ class Stage2RolloutCorrectionTrainer(
             if timing_enabled:
                 _append_stage2_timing_line(
                     "stage2_batch_milestone "
-                    f"event=before_duplicate_control global_step={int(gs)} "
+                    f"event=before_scene_projection_target global_step={int(gs)} "
                     f"sample_index={int(sample_index)} sample_id={sample_attempt_id} "
                     f"anchor_raw={len(parsed_bbox_objects_raw)} "
                     f"triage_peer_views={len(triage_explorer_views)}"
                 )
-            duplicate_control = _correction_targets._apply_rollout_correction_duplicate_control(
-                anchor_objects_raw=parsed_bbox_objects_raw,
-                explorer_objects_raw_by_view=[
-                    list(explorer_view_item["parsed_bbox_objects_raw"])
-                    for explorer_view_item in triage_explorer_views
-                ],
-                duplicate_iou_threshold=float(duplicate_iou_threshold),
-                center_radius_scale=float(center_radius_scale),
-                unlabeled_consistent_iou_threshold=float(
-                    unlabeled_consistent_iou_threshold
-                ),
-            )
-            accepted_objects_clean = list(duplicate_control.kept_anchor_objects)
-            suppressed_duplicate_objects_by_boundary = {
-                int(boundary): list(duplicates)
-                for boundary, duplicates in duplicate_control.suppressed_duplicate_objects_by_boundary.items()
-            }
-            if timing_enabled:
-                _append_stage2_timing_line(
-                    "stage2_batch_milestone "
-                    f"event=after_duplicate_control global_step={int(gs)} "
-                    f"sample_index={int(sample_index)} sample_id={sample_attempt_id} "
-                    f"accepted={len(accepted_objects_clean)} "
-                    f"suppressed={sum(len(v) for v in suppressed_duplicate_objects_by_boundary.values())}"
-                )
-            duplicate_counter_metrics = dict(duplicate_control.counter_metrics)
-            dup_clusters_total_local = int(
-                duplicate_counter_metrics.get(
-                    "stage2_rollout_correction/correction/dup/N_clusters_total", 0.0
-                )
-                or 0.0
-            )
-            dup_clusters_exempt_local = int(
-                duplicate_counter_metrics.get(
-                    "stage2_rollout_correction/correction/dup/N_clusters_exempt", 0.0
-                )
-                or 0.0
-            )
-            dup_clusters_suppressed_local = int(
-                duplicate_counter_metrics.get(
-                    "stage2_rollout_correction/correction/dup/N_clusters_suppressed", 0.0
-                )
-                or 0.0
-            )
-            dup_objects_suppressed_local = int(
-                duplicate_counter_metrics.get(
-                    "stage2_rollout_correction/correction/dup/N_objects_suppressed", 0.0
-                )
-                or 0.0
-            )
-            match = _assign_stage2_rollout_correction_objects(
-                strategy=assignment_strategy,
-                preds=accepted_objects_clean,
-                gts=gts,
-            )
 
             dup_max_desc_count = float(
                 duplicate_metrics.get("dup/raw/max_desc_count", 0.0) or 0.0
@@ -3702,38 +3880,8 @@ class Stage2RolloutCorrectionTrainer(
             dup_near_same_desc_pairs_total += int(dup_near_same_desc_pairs)
             dup_near_any_desc_pairs_total += int(dup_near_any_desc_pairs)
             dup_raw_bbox_valid_total += int(len(parsed_bbox_objects_raw))
-            dup_clean_accepted_total += int(len(accepted_objects_clean))
-            dup_cluster_total += int(dup_clusters_total_local)
-            dup_cluster_exempt_total += int(dup_clusters_exempt_local)
-            dup_cluster_suppressed_total += int(dup_clusters_suppressed_local)
-            dup_objects_suppressed_total += int(dup_objects_suppressed_local)
             dup_metric_samples += 1
 
-            anchor_match_by_pred = {
-                int(pred_i): int(gt_i)
-                for pred_i, gt_i in match.matched_pairs
-                if 0 <= int(pred_i) < len(accepted_objects_clean)
-                and 0 <= int(gt_i) < len(gts)
-            }
-            explorer_objects_raw_by_view = [
-                list(explorer_view_item["parsed_bbox_objects_raw"])
-                for explorer_view_item in triage_explorer_views
-            ]
-            explorer_match_by_pred_by_view = []
-            for explorer_objects_raw in explorer_objects_raw_by_view:
-                explorer_match = _assign_stage2_rollout_correction_objects(
-                    strategy=assignment_strategy,
-                    preds=explorer_objects_raw,
-                    gts=gts,
-                )
-                explorer_match_by_pred_by_view.append(
-                    {
-                        int(pred_i): int(gt_i)
-                        for pred_i, gt_i in explorer_match.matched_pairs
-                        if 0 <= int(pred_i) < len(explorer_objects_raw)
-                        and 0 <= int(gt_i) < len(gts)
-                    }
-                )
             anchor_pred_objects_total += int(anchor_view["pred_objects"])
             anchor_valid_pred_objects_total += int(anchor_view["n_valid_pred"])
             anchor_parse_truncated_total += int(anchor_view["parse_truncated"])
@@ -3787,10 +3935,6 @@ class Stage2RolloutCorrectionTrainer(
                 for explorer_view_item in explorer_views
             )
 
-            anchor_policy_statuses = _anchor_lvis_policy_statuses(
-                sample=sample,
-                accepted_objects_clean=accepted_objects_clean,
-            )
             expected_peer_count_for_triage = max(0, int(num_rollouts) - 1)
             anchor_rollout_prediction = anchor_view.get("rollout_prediction")
             if anchor_rollout_prediction is None:
@@ -3802,67 +3946,78 @@ class Stage2RolloutCorrectionTrainer(
                 explorer_view_item["rollout_prediction"]
                 for explorer_view_item in triage_explorer_views
             ]
-            target_context = (
-                _correction_targets.construct_detection_scene_rollout_correction_target_context(
-                    scene=detection_scene,
-                    rollout_prediction=anchor_rollout_prediction,
-                    explorer_predictions=explorer_rollout_predictions,
-                    unlabeled_consistent_iou_threshold=float(
-                        unlabeled_consistent_iou_threshold
-                    ),
-                    duplicate_iou_threshold=float(duplicate_iou_threshold),
-                    center_radius_scale=float(center_radius_scale),
-                    pseudo_positive_enabled=bool(pseudo_positive_enabled),
-                    expected_peer_count=int(expected_peer_count_for_triage),
-                    assignment_iou_threshold=float(
-                        getattr(
-                            assignment_strategy,
-                            "iou_threshold",
-                            gate_thr,
-                        )
-                    ),
-                    anchor_policy_statuses=anchor_policy_statuses,
+            target_state = _stage2_construct_detection_scene_target_state(
+                sample=sample,
+                detection_scene=detection_scene,
+                rollout_prediction=anchor_rollout_prediction,
+                explorer_predictions=explorer_rollout_predictions,
+                unlabeled_consistent_iou_threshold=float(
+                    unlabeled_consistent_iou_threshold
+                ),
+                duplicate_iou_threshold=float(duplicate_iou_threshold),
+                center_radius_scale=float(center_radius_scale),
+                pseudo_positive_enabled=bool(pseudo_positive_enabled),
+                expected_peer_count=int(expected_peer_count_for_triage),
+                assignment_iou_threshold=float(
+                    getattr(
+                        assignment_strategy,
+                        "iou_threshold",
+                        gate_thr,
+                    )
                 )
             )
-            if (
-                target_context.detection_scene is None
-                or target_context.rollout_prediction is None
-                or target_context.assignment is None
-                or target_context.duplicate_filter is None
-            ):
-                raise ValueError(
-                    "stage2_rollout_correction target context must carry "
-                    "DetectionScene, RolloutPrediction, DetectionAssignment, "
-                    "and duplicate-filter projections"
-                )
-            accepted_objects_clean = list(
-                target_context.assignment.prediction_objects
-            )
+            target_context = target_state.target_context
+            accepted_objects_clean = list(target_state.accepted_objects_clean)
             suppressed_duplicate_objects_by_boundary = {
                 int(boundary): list(objects)
-                for boundary, objects in target_context.duplicate_filter.suppressed_duplicate_objects_by_boundary.items()
+                for boundary, objects in target_state.suppressed_duplicate_objects_by_boundary.items()
             }
-            match = MatchResult(
-                matched_pairs=[
-                    (int(pred_i), int(gt_i))
-                    for pred_i, gt_i in target_context.assignment.matched_pairs
-                ],
-                fn_gt_indices=[
-                    int(index)
-                    for index in target_context.assignment.unmatched_gt_indices
-                ],
-                fp_pred_indices=[
-                    int(index)
-                    for index in target_context.assignment.unmatched_prediction_indices
-                ],
-                gating_rejections=0,
-                matched_maskiou_sum=float(
-                    len(target_context.assignment.matched_pairs)
-                ),
-                matched_maskiou_count=int(
-                    len(target_context.assignment.matched_pairs)
-                ),
+            match = target_state.match
+            explorer_objects_raw_by_view = [
+                list(objects) for objects in target_state.explorer_objects_by_view
+            ]
+            explorer_match_by_pred_by_view = [
+                dict(match_by_pred)
+                for match_by_pred in target_state.explorer_match_by_pred_by_view
+            ]
+            duplicate_counter_metrics = dict(target_state.duplicate_counter_metrics)
+            dup_clusters_total_local = int(
+                duplicate_counter_metrics.get(
+                    "stage2_rollout_correction/correction/dup/N_clusters_total", 0.0
+                )
+                or 0.0
             )
+            dup_clusters_exempt_local = int(
+                duplicate_counter_metrics.get(
+                    "stage2_rollout_correction/correction/dup/N_clusters_exempt", 0.0
+                )
+                or 0.0
+            )
+            dup_clusters_suppressed_local = int(
+                duplicate_counter_metrics.get(
+                    "stage2_rollout_correction/correction/dup/N_clusters_suppressed", 0.0
+                )
+                or 0.0
+            )
+            dup_objects_suppressed_local = int(
+                duplicate_counter_metrics.get(
+                    "stage2_rollout_correction/correction/dup/N_objects_suppressed", 0.0
+                )
+                or 0.0
+            )
+            dup_clean_accepted_total += int(len(accepted_objects_clean))
+            dup_cluster_total += int(dup_clusters_total_local)
+            dup_cluster_exempt_total += int(dup_clusters_exempt_local)
+            dup_cluster_suppressed_total += int(dup_clusters_suppressed_local)
+            dup_objects_suppressed_total += int(dup_objects_suppressed_local)
+            if timing_enabled:
+                _append_stage2_timing_line(
+                    "stage2_batch_milestone "
+                    f"event=after_scene_projection_target global_step={int(gs)} "
+                    f"sample_index={int(sample_index)} sample_id={sample_attempt_id} "
+                    f"accepted={len(accepted_objects_clean)} "
+                    f"suppressed={sum(len(v) for v in suppressed_duplicate_objects_by_boundary.values())}"
+                )
             triage = target_context.triage
             association_pairs_by_view = [
                 list(pairs) for pairs in triage.association_pairs_by_view
