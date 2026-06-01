@@ -8,7 +8,9 @@ from src.infer.backend import DetectionDecodeResult
 from src.training.stage2.rollout_codec import (
     Stage2RolloutObject,
     Stage2RolloutParseResult,
+    Stage2RolloutTemplatePolicy,
 )
+from src.trainers.rollout_correction.rollout_views import build_rollout_correction_view
 from src.trainers.rollout_correction.target_builder import (
     RolloutCorrectionTargetContext,
     RolloutCorrectionTargetContextInput,
@@ -19,10 +21,32 @@ from src.trainers.rollout_correction.projections import (
     CorrectionEvent,
     annotate_correction_events_with_projection_provenance,
     assign_detection_scene_rollout_prediction,
+    detection_decode_result_from_stage2_rollout,
     filter_rollout_prediction_duplicates,
+    rollout_prediction_from_legacy_stage2_parse,
     rollout_prediction_from_shared_decode,
 )
-from src.trainers.rollout_matching.contracts import GTObject
+from src.trainers.rollout_matching.contracts import (
+    GTObject,
+    ParsedPredObject,
+    RolloutParseResult,
+)
+from src.trainers.stage2_rollout_correction_impl import (
+    Stage2RolloutCorrectionTrainer,
+    _stage2_detection_scene_from_sample,
+)
+
+
+_REQUIRED_DECODE_PROVENANCE = {
+    "model_identity": "unit-model",
+    "model_identity_fingerprint": "model-fp",
+    "checkpoint_identity": "ckpt-fp",
+    "prompt_policy": "stage2-test-prompt",
+    "prompt_policy_fingerprint": "prompt-fp",
+    "decode_policy": "unconstrained",
+    "decode_policy_fingerprint": "decode-fp",
+    "metric_eligibility": True,
+}
 
 
 def _bbox_object(index: int, desc: str, box: list[int]) -> GTObject:
@@ -80,11 +104,7 @@ def _decoded(text: str) -> DetectionDecodeResult:
         generated_logprobs=[-0.1, -0.2, -0.3],
         stop_reason="stop",
         backend="unit-runtime",
-        backend_metadata={
-            "decode_policy_fingerprint": "decode-fp",
-            "model_identity_fingerprint": "model-fp",
-            "prompt_policy": "stage2-test-prompt",
-        },
+        backend_metadata=dict(_REQUIRED_DECODE_PROVENANCE),
         prompt_token_ids=[1, 2, 3],
     )
 
@@ -104,7 +124,7 @@ def _parse_result(
         empty_valid_object_set=not objects and not invalid,
         truncated=False,
         fallback_reason="malformed_compact_full" if invalid else None,
-        metadata={"parser_policy": "strict"},
+        metadata={"rollout_parser_id": "compact_full", "parser_policy": "strict"},
         response_token_ids=(11, 12, 13),
         dropped_invalid=int(dropped_invalid),
         dropped_invalid_by_reason={"malformed_row": int(dropped_invalid)}
@@ -121,6 +141,36 @@ def _rollout_object(index: int, desc: str, box: list[int]) -> Stage2RolloutObjec
         bbox_norm1000=tuple(int(v) for v in box),
         provenance="shared_decode_parse",
     )
+
+
+class _PieceTokenizer:
+    eos_token_id = 99
+
+    def __init__(self, pieces: dict[int, str]) -> None:
+        self._pieces = dict(pieces)
+
+    def decode(
+        self,
+        token_ids: list[int] | tuple[int, ...],
+        skip_special_tokens: bool = False,
+        clean_up_tokenization_spaces: bool = False,
+    ) -> str:
+        _ = skip_special_tokens, clean_up_tokenization_spaces
+        return "".join(self._pieces[int(token_id)] for token_id in token_ids)
+
+
+def _compact_view_text_and_tokenizer() -> tuple[str, list[int], _PieceTokenizer]:
+    pieces = {
+        1: "<|object_ref_start|>",
+        2: "cat",
+        3: "<|box_start|>",
+        4: "<|coord_100|>",
+        5: "<|coord_100|>",
+        6: "<|coord_200|>",
+        7: "<|coord_200|>",
+    }
+    token_ids = [1, 2, 3, 4, 5, 6, 7]
+    return "".join(pieces[token_id] for token_id in token_ids), token_ids, _PieceTokenizer(pieces)
 
 
 def test_rollout_correction_target_context_uses_parsed_rollout_facts_only() -> None:
@@ -317,3 +367,189 @@ def test_correction_event_provenance_links_scene_prediction_and_assignment() -> 
     assert annotated.metadata["rollout_prediction"]["parser_id"] == "compact_full"
     assert annotated.metadata["rollout_prediction"]["metric_bearing"] is True
     assert annotated.metadata["detection_assignment"]["matched_pairs"] == [(0, 0)]
+
+
+def test_metric_bearing_rollout_prediction_fails_closed_without_decode_provenance() -> None:
+    text = "cat rollout"
+    decoded = DetectionDecodeResult(
+        text=text,
+        generated_token_ids=[11],
+        generated_tokens=None,
+        generated_logprobs=None,
+        stop_reason="stop",
+        backend="unit-runtime",
+        backend_metadata={"model_identity_fingerprint": "model-only"},
+        prompt_token_ids=[1],
+    )
+
+    try:
+        rollout_prediction_from_shared_decode(
+            decoded_result=decoded,
+            parse_result=_parse_result(
+                text,
+                _rollout_object(0, "cat", [100, 100, 200, 200]),
+            ),
+            metric_bearing=True,
+            source_label="anchor",
+        )
+    except ValueError as exc:
+        assert "requires shared decode provenance" in str(exc)
+    else:  # pragma: no cover - defensive guard for direct invocation
+        raise AssertionError("metric-bearing prediction accepted missing provenance")
+
+
+def test_metric_bearing_rollout_prediction_fails_closed_without_parser_policy() -> None:
+    text = "cat rollout"
+
+    try:
+        rollout_prediction_from_shared_decode(
+            decoded_result=_decoded(text),
+            parse_result=Stage2RolloutParseResult(
+                template_family="compact_full",
+                parser_id="compact_full",
+                response_text=text,
+                valid_objects=(
+                    _rollout_object(0, "cat", [100, 100, 200, 200]),
+                ),
+                invalid_rollout=False,
+                empty_valid_object_set=False,
+                truncated=False,
+                fallback_reason=None,
+                metadata={"rollout_parser_id": "compact_full"},
+                response_token_ids=(11, 12, 13),
+            ),
+            metric_bearing=True,
+            source_label="anchor",
+        )
+    except ValueError as exc:
+        assert "requires parser provenance" in str(exc)
+        assert "parser_policy" in str(exc)
+    else:  # pragma: no cover - defensive guard for direct invocation
+        raise AssertionError("metric-bearing prediction accepted missing parser policy")
+
+
+def test_legacy_coordjson_bridge_is_diagnostic_non_metric_even_when_requested() -> None:
+    text = "legacy coordjson"
+    decoded = detection_decode_result_from_stage2_rollout(
+        response_text=text,
+        response_token_ids=[11, 12],
+        prompt_token_ids=[1, 2],
+        decode_mode="legacy_coordjson",
+        source_label="legacy",
+        backend_metadata={
+            **_REQUIRED_DECODE_PROVENANCE,
+            "diagnostic_private_parser": True,
+            "metric_eligibility": False,
+        },
+    )
+    parse = RolloutParseResult(
+        response_token_ids=[11, 12],
+        response_text=text,
+        prefix_token_ids=[11, 12],
+        prefix_text=text,
+        invalid_rollout=False,
+        valid_objects=[
+            ParsedPredObject(
+                key="obj0",
+                index=0,
+                desc="cat",
+                geom_type="bbox_2d",
+                coord_token_indices=[0, 1, 2, 3],
+                value_span=(0, len(text)),
+            )
+        ],
+        dropped_invalid=0,
+    )
+
+    prediction = rollout_prediction_from_legacy_stage2_parse(
+        decoded_result=decoded,
+        parse_result=parse,
+        valid_objects=[_bbox_object(0, "cat", [100, 100, 200, 200])],
+        metric_bearing=True,
+        source_label="legacy",
+    )
+
+    assert prediction.metric_bearing is False
+    assert prediction.provenance["parser_metadata"]["migration_only"] is True
+    assert prediction.provenance["parser_metadata"]["diagnostic_private_parser"] is True
+
+
+def test_compact_production_view_threads_required_metric_provenance() -> None:
+    text, token_ids, tokenizer = _compact_view_text_and_tokenizer()
+    policy = Stage2RolloutTemplatePolicy(
+        template_family="compact_full",
+        parser_id="compact_full",
+        append_policy_id="compact_full_fn_append",
+        decode_policy="unconstrained",
+        invalid_rollout_policy="fallback_gt_fn_append_only",
+    )
+
+    view = build_rollout_correction_view(
+        tokenizer=tokenizer,
+        object_field_order="desc_first",
+        coord_id_to_bin={100: 100, 200: 200},
+        duplicate_iou_threshold=0.9,
+        center_radius_scale=0.8,
+        max_new_tokens=32,
+        rollout_result=(token_ids, text, "greedy", [101, 102]),
+        source_label="anchor",
+        parse_rollout_for_matching_fn=None,
+        points_from_coord_tokens_fn=None,
+        duplicate_diagnostics_fn=lambda _objects, **_kwargs: {},
+        rollout_template_policy=policy,
+        decode_provenance=_REQUIRED_DECODE_PROVENANCE,
+    )
+
+    prediction = view["rollout_prediction"]
+    assert prediction.metric_bearing is True
+    assert prediction.provenance["backend_metadata"]["checkpoint_identity"] == "ckpt-fp"
+    assert prediction.provenance["parser_metadata"]["rollout_parser_id"] == "compact_full"
+    assert view["decoded_result"].backend_metadata["metric_eligibility"] is True
+
+
+def test_production_boundary_requires_scene_assignment_and_scene_gt_authority() -> None:
+    sample = {
+        "image_id": 77,
+        "images": ["/tmp/stage2-scene.jpg"],
+        "assistant_payload": {
+            "objects": [
+                {
+                    "desc": "cat",
+                    "bbox_2d": [100, 100, 200, 200],
+                }
+            ]
+        },
+    }
+    scene = _stage2_detection_scene_from_sample(sample)
+    prediction = rollout_prediction_from_shared_decode(
+        decoded_result=_decoded("cat rollout"),
+        parse_result=_parse_result(
+            "cat rollout",
+            _rollout_object(0, "cat", [100, 100, 200, 200]),
+        ),
+        metric_bearing=True,
+        source_label="anchor",
+    )
+
+    context = construct_detection_scene_rollout_correction_target_context(
+        scene=scene,
+        rollout_prediction=prediction,
+        explorer_predictions=[],
+        unlabeled_consistent_iou_threshold=0.5,
+        duplicate_iou_threshold=0.9,
+        center_radius_scale=0.8,
+        pseudo_positive_enabled=True,
+        expected_peer_count=0,
+    )
+
+    assert context.detection_scene is scene
+    assert context.rollout_prediction is prediction
+    assert context.assignment is not None
+    assert context.duplicate_filter is not None
+    method_source = inspect.getsource(
+        Stage2RolloutCorrectionTrainer._prepare_rollout_correction_inputs_impl
+    )
+    assert "_stage2_detection_scene_from_sample(sample)" in method_source
+    assert "_correction_targets.detection_scene_gt_objects(detection_scene)" in method_source
+    assert "construct_detection_scene_rollout_correction_target_context" in method_source
+    assert "gt_objects=gts" not in method_source

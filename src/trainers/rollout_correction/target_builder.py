@@ -66,6 +66,7 @@ from .projections import (
     DetectionAssignment,
     DuplicateFilteredRolloutPrediction,
     RolloutPrediction,
+    annotate_correction_events_with_projection_provenance,
     assign_detection_scene_rollout_prediction,
     detection_scene_gt_objects,
     filter_rollout_prediction_duplicates,
@@ -1340,6 +1341,37 @@ def construct_detection_scene_rollout_correction_target_context(
             assignment=assignment,
             duplicate_filter=duplicate_filter,
         )
+    )
+
+
+def annotate_residual_set_build_result_with_projection_provenance(
+    build_result: _ResidualSetCorrectionBuildResult,
+    *,
+    target_context: RolloutCorrectionTargetContext,
+) -> _ResidualSetCorrectionBuildResult:
+    """Attach scene/prediction/assignment provenance to emitted correction events."""
+
+    if (
+        target_context.detection_scene is None
+        or target_context.rollout_prediction is None
+        or target_context.assignment is None
+    ):
+        raise ValueError(
+            "CorrectionEvent provenance requires DetectionScene, "
+            "RolloutPrediction, and DetectionAssignment in target context"
+        )
+    annotated_events = annotate_correction_events_with_projection_provenance(
+        build_result.events,
+        scene=target_context.detection_scene,
+        rollout_prediction=target_context.rollout_prediction,
+        assignment=target_context.assignment,
+    )
+    return replace(
+        build_result,
+        events=list(annotated_events),
+        event_summaries=[
+            _residual_event_summary(event) for event in annotated_events
+        ],
     )
 
 
@@ -4325,8 +4357,11 @@ def _desc_tail_positions_and_weights(
 __all__ = [
     "RolloutCorrectionTargetContext",
     "RolloutCorrectionTargetContextInput",
+    "annotate_correction_events_with_projection_provenance",
+    "annotate_residual_set_build_result_with_projection_provenance",
     "construct_detection_scene_rollout_correction_target_context",
     "construct_rollout_correction_target_context",
+    "detection_scene_gt_objects",
     "_ValueSpanObject",
     "_CanonicalPrefixData",
     "_ChannelBTriageResult",

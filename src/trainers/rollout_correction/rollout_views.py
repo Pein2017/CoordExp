@@ -266,6 +266,7 @@ def _build_compact_full_rollout_view(
     source_label: str,
     duplicate_diagnostics_fn: Any,
     rollout_template_policy: Stage2RolloutTemplatePolicy,
+    decode_provenance: Mapping[str, Any] | None = None,
 ) -> Dict[str, Any]:
     resp_ids, resp_text, rollout_decode_mode, prompt_ids = rollout_result
     resp_ids_local = [int(t) for t in resp_ids]
@@ -294,6 +295,7 @@ def _build_compact_full_rollout_view(
         prompt_token_ids=prompt_ids,
         decode_mode=rollout_decode_mode,
         source_label=source_label,
+        backend_metadata=decode_provenance,
     )
     codec = CompactFullRolloutCodec(rollout_template_policy)
     parse = codec.parse(response_text)
@@ -301,6 +303,11 @@ def _build_compact_full_rollout_view(
         parse,
         response_token_ids=tuple(int(t) for t in resp_ids_local),
         truncated=bool(parse.truncated or truncated_by_budget),
+        metadata={
+            **dict(getattr(parse, "metadata", {}) or {}),
+            "rollout_parser_id": str(rollout_template_policy.parser_id),
+            "parser_policy": "strict_compact_full",
+        },
     )
 
     drop_reasons: Dict[str, int] = {}
@@ -473,6 +480,7 @@ def build_rollout_correction_view(
     points_from_coord_tokens_fn: Any,
     duplicate_diagnostics_fn: Any,
     rollout_template_policy: Stage2RolloutTemplatePolicy | None = None,
+    decode_provenance: Mapping[str, Any] | None = None,
 ) -> Dict[str, Any]:
     if (
         rollout_template_policy is not None
@@ -487,6 +495,7 @@ def build_rollout_correction_view(
             source_label=source_label,
             duplicate_diagnostics_fn=duplicate_diagnostics_fn,
             rollout_template_policy=rollout_template_policy,
+            decode_provenance=decode_provenance,
         )
 
     resp_ids, _resp_text, rollout_decode_mode, prompt_ids = rollout_result
@@ -512,7 +521,12 @@ def build_rollout_correction_view(
         prompt_token_ids=prompt_ids,
         decode_mode=rollout_decode_mode,
         source_label=source_label,
-        backend_metadata={"migration_source": "rollout_matching"},
+        backend_metadata={
+            **(dict(decode_provenance) if decode_provenance is not None else {}),
+            "migration_source": "rollout_matching",
+            "diagnostic_private_parser": True,
+            "metric_eligibility": False,
+        },
     )
     invalid_rollout = int(1 if bool(getattr(parse, "invalid_rollout", False)) else 0)
 

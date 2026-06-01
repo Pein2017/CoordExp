@@ -25,6 +25,17 @@ from ..rollout_matching.matching import associate_one_to_one_greedy_iou
 from .residual_set import CorrectionEvent
 
 PREDICTION_SOURCE_SHARED_DECODE = "shared_inference_runtime_decode"
+_METRIC_BEARING_DECODE_PROVENANCE_KEYS = (
+    "model_identity",
+    "model_identity_fingerprint",
+    "checkpoint_identity",
+    "prompt_policy",
+    "prompt_policy_fingerprint",
+    "decode_policy",
+    "decode_policy_fingerprint",
+    "metric_eligibility",
+)
+_METRIC_BEARING_PARSER_METADATA_KEYS = ("rollout_parser_id", "parser_policy")
 
 
 @dataclass(frozen=True)
@@ -154,6 +165,11 @@ def rollout_prediction_from_shared_decode(
             "RolloutPrediction requires parse_result.response_text to match "
             "DetectionDecodeResult.text"
         )
+    if bool(metric_bearing):
+        _validate_metric_bearing_rollout_prediction_provenance(
+            decoded_result=decoded_result,
+            parse_result=parse_result,
+        )
     valid_objects = tuple(
         _gt_object_from_stage2_rollout_object(obj)
         for obj in tuple(parse_result.valid_objects)
@@ -204,6 +220,7 @@ def rollout_prediction_from_legacy_stage2_parse(
 ) -> RolloutPrediction:
     """Bridge migration-only legacy rollout parse output into RolloutPrediction."""
 
+    _ = metric_bearing
     stage2_parse = Stage2RolloutParseResult(
         template_family=str(template_family),  # type: ignore[arg-type]
         parser_id=str(parser_id),
@@ -227,6 +244,7 @@ def rollout_prediction_from_legacy_stage2_parse(
         metadata={
             "parser_policy": "legacy_coordjson_migration",
             "migration_only": True,
+            "diagnostic_private_parser": True,
         },
         response_token_ids=tuple(
             int(token_id)
@@ -246,7 +264,7 @@ def rollout_prediction_from_legacy_stage2_parse(
     return rollout_prediction_from_shared_decode(
         decoded_result=decoded_result,
         parse_result=stage2_parse,
-        metric_bearing=bool(metric_bearing),
+        metric_bearing=False,
         source_label=source_label,
     )
 
@@ -431,6 +449,47 @@ def _gt_object_from_stage2_rollout_object(obj: Stage2RolloutObject) -> GTObject:
         points_norm1000=coords,
         desc=str(obj.desc),
     )
+
+
+def _validate_metric_bearing_rollout_prediction_provenance(
+    *,
+    decoded_result: DetectionDecodeResult,
+    parse_result: Stage2RolloutParseResult,
+) -> None:
+    backend_metadata = dict(decoded_result.backend_metadata)
+    missing_decode = [
+        key
+        for key in _METRIC_BEARING_DECODE_PROVENANCE_KEYS
+        if backend_metadata.get(key) in (None, "")
+    ]
+    metric_eligibility = backend_metadata.get("metric_eligibility")
+    if metric_eligibility is not True:
+        missing_decode.append("metric_eligibility=True")
+    if missing_decode:
+        raise ValueError(
+            "metric-bearing RolloutPrediction requires shared decode provenance: "
+            + ", ".join(str(key) for key in missing_decode)
+        )
+    parser_metadata = dict(parse_result.metadata)
+    if str(parse_result.parser_id or "").strip() == "":
+        raise ValueError(
+            "metric-bearing RolloutPrediction requires parser provenance: parser_id"
+        )
+    missing_parser = [
+        key
+        for key in _METRIC_BEARING_PARSER_METADATA_KEYS
+        if parser_metadata.get(key) in (None, "")
+    ]
+    if missing_parser:
+        raise ValueError(
+            "metric-bearing RolloutPrediction requires parser provenance: "
+            + ", ".join(str(key) for key in missing_parser)
+        )
+    if bool(parser_metadata.get("diagnostic_private_parser", False)):
+        raise ValueError(
+            "diagnostic/private parser output cannot create metric-bearing "
+            "RolloutPrediction"
+        )
 
 
 __all__ = [
