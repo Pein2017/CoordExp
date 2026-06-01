@@ -177,6 +177,36 @@ def _compact_view_text_and_tokenizer() -> tuple[str, list[int], _PieceTokenizer]
     return "".join(pieces[token_id] for token_id in token_ids), token_ids, _PieceTokenizer(pieces)
 
 
+def _compact_multi_object_text_and_tokenizer(
+    boxes: list[tuple[str, list[int]]],
+) -> tuple[str, list[int], _PieceTokenizer, dict[int, int]]:
+    pieces: dict[int, str] = {}
+    coord_id_to_bin: dict[int, int] = {}
+    token_ids: list[int] = []
+    next_token_id = 1
+    for desc, box in boxes:
+        pieces[next_token_id] = "<|object_ref_start|>"
+        token_ids.append(next_token_id)
+        next_token_id += 1
+        pieces[next_token_id] = str(desc)
+        token_ids.append(next_token_id)
+        next_token_id += 1
+        pieces[next_token_id] = "<|box_start|>"
+        token_ids.append(next_token_id)
+        next_token_id += 1
+        for coord in box:
+            pieces[next_token_id] = f"<|coord_{int(coord)}|>"
+            coord_id_to_bin[int(next_token_id)] = int(coord)
+            token_ids.append(next_token_id)
+            next_token_id += 1
+    return (
+        "".join(pieces[token_id] for token_id in token_ids),
+        token_ids,
+        _PieceTokenizer(pieces),
+        coord_id_to_bin,
+    )
+
+
 def _decode_request() -> DetectionDecodeRequest:
     return DetectionDecodeRequest(
         backend="hf",
@@ -692,6 +722,93 @@ def test_compact_production_view_threads_required_metric_provenance() -> None:
     assert view["decoded_result"].backend_metadata["metric_eligibility"] is True
 
 
+def test_compact_production_view_filters_invalid_geometry_before_prediction() -> None:
+    text, token_ids, tokenizer, coord_id_to_bin = _compact_multi_object_text_and_tokenizer(
+        [
+            ("cat", [100, 100, 200, 200]),
+            ("bad", [300, 300, 200, 200]),
+        ]
+    )
+    policy = Stage2RolloutTemplatePolicy(
+        template_family="compact_full",
+        parser_id="compact_full",
+        append_policy_id="compact_full_fn_append",
+        decode_policy="unconstrained",
+        invalid_rollout_policy="fallback_gt_fn_append_only",
+    )
+
+    view = build_rollout_correction_view(
+        tokenizer=tokenizer,
+        object_field_order="desc_first",
+        coord_id_to_bin=coord_id_to_bin,
+        duplicate_iou_threshold=0.9,
+        center_radius_scale=0.8,
+        max_new_tokens=64,
+        rollout_result=(token_ids, text, "greedy", [101, 102]),
+        source_label="anchor",
+        parse_rollout_for_matching_fn=None,
+        points_from_coord_tokens_fn=None,
+        duplicate_diagnostics_fn=lambda _objects, **_kwargs: {},
+        rollout_template_policy=policy,
+        decode_provenance=_stage2_rollout_decode_provenance_from_request(
+            owner=_owner_with_checkpoint(),
+            request=_decode_request(),
+            rollout_template_policy=policy,
+            prompt_sample=_prompt_sample(),
+        ),
+    )
+
+    prediction = view["rollout_prediction"]
+    assert prediction.metric_bearing is True
+    assert [obj.desc for obj in prediction.valid_objects] == ["cat"]
+    assert prediction.invalid_drop_metadata["fallback_reason"] == "compact_full_salvage"
+    assert prediction.invalid_drop_metadata["dropped_invalid_by_reason"] == {}
+    assert view["drop_bbox_invalid"] == 0
+    assert view["compact_fallback_applies"] == 0
+
+
+def test_compact_production_view_all_invalid_geometry_falls_back_without_raising() -> None:
+    text, token_ids, tokenizer, coord_id_to_bin = _compact_multi_object_text_and_tokenizer(
+        [("bad", [300, 300, 200, 200])]
+    )
+    policy = Stage2RolloutTemplatePolicy(
+        template_family="compact_full",
+        parser_id="compact_full",
+        append_policy_id="compact_full_fn_append",
+        decode_policy="unconstrained",
+        invalid_rollout_policy="fallback_gt_fn_append_only",
+    )
+
+    view = build_rollout_correction_view(
+        tokenizer=tokenizer,
+        object_field_order="desc_first",
+        coord_id_to_bin=coord_id_to_bin,
+        duplicate_iou_threshold=0.9,
+        center_radius_scale=0.8,
+        max_new_tokens=64,
+        rollout_result=(token_ids, text, "greedy", [101, 102]),
+        source_label="anchor",
+        parse_rollout_for_matching_fn=None,
+        points_from_coord_tokens_fn=None,
+        duplicate_diagnostics_fn=lambda _objects, **_kwargs: {},
+        rollout_template_policy=policy,
+        decode_provenance=_stage2_rollout_decode_provenance_from_request(
+            owner=_owner_with_checkpoint(),
+            request=_decode_request(),
+            rollout_template_policy=policy,
+            prompt_sample=_prompt_sample(),
+        ),
+    )
+
+    prediction = view["rollout_prediction"]
+    assert prediction.metric_bearing is False
+    assert prediction.valid_objects == ()
+    assert prediction.invalid_drop_metadata["invalid_rollout"] is True
+    assert prediction.invalid_drop_metadata["fallback_reason"] == "malformed_compact_full"
+    assert prediction.invalid_drop_metadata["dropped_invalid_by_reason"] == {}
+    assert view["compact_fallback_applies"] == 1
+
+
 def test_production_target_state_uses_scene_projection_not_raw_precontext_state() -> None:
     sample = {
         "image_id": 77,
@@ -761,6 +878,49 @@ def test_production_target_state_uses_scene_projection_not_raw_precontext_state(
         "explorer_match_by_pred_by_view",
     }
     assert forbidden_raw_inputs.isdisjoint(helper_signature.parameters)
+
+
+def test_production_target_state_match_monitoring_uses_actual_iou() -> None:
+    sample = {
+        "image_id": 78,
+        "images": ["/tmp/stage2-scene.jpg"],
+        "assistant_payload": {
+            "objects": [
+                {
+                    "desc": "cat",
+                    "bbox_2d": [100, 100, 300, 300],
+                }
+            ]
+        },
+    }
+    scene = _stage2_detection_scene_from_sample(sample)
+    prediction = rollout_prediction_from_shared_decode(
+        decoded_result=_decoded("partial cat rollout"),
+        parse_result=_parse_result(
+            "partial cat rollout",
+            _rollout_object(0, "cat", [200, 200, 400, 400]),
+        ),
+        metric_bearing=True,
+        source_label="anchor",
+    )
+
+    target_state = _stage2_construct_detection_scene_target_state(
+        sample=sample,
+        detection_scene=scene,
+        rollout_prediction=prediction,
+        explorer_predictions=[],
+        unlabeled_consistent_iou_threshold=0.5,
+        duplicate_iou_threshold=0.9,
+        center_radius_scale=0.8,
+        pseudo_positive_enabled=True,
+        expected_peer_count=0,
+        assignment_iou_threshold=0.1,
+    )
+
+    expected_iou = 10000.0 / 70000.0
+    assert target_state.match.matched_pairs == [(0, 0)]
+    assert target_state.match.matched_maskiou_count == 1
+    assert abs(target_state.match.matched_maskiou_sum - expected_iou) < 1e-9
 
 
 def test_ul_rollout_evidence_uses_rollout_prediction_not_raw_view_objects() -> None:

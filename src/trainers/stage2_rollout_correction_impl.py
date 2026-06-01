@@ -1326,6 +1326,43 @@ def _stage2_detection_scene_from_sample(sample: Mapping[str, Any]) -> DetectionS
     )
 
 
+def _stage2_bbox_iou_from_gt_objects(pred: GTObject, gt: GTObject) -> float:
+    try:
+        px1, py1, px2, py2 = [float(value) for value in pred.points_norm1000]
+        gx1, gy1, gx2, gy2 = [float(value) for value in gt.points_norm1000]
+    except (TypeError, ValueError):
+        return 0.0
+    if px2 <= px1 or py2 <= py1 or gx2 <= gx1 or gy2 <= gy1:
+        return 0.0
+    ix1 = max(px1, gx1)
+    iy1 = max(py1, gy1)
+    ix2 = min(px2, gx2)
+    iy2 = min(py2, gy2)
+    iw = max(0.0, ix2 - ix1)
+    ih = max(0.0, iy2 - iy1)
+    inter = iw * ih
+    if inter <= 0.0:
+        return 0.0
+    pred_area = (px2 - px1) * (py2 - py1)
+    gt_area = (gx2 - gx1) * (gy2 - gy1)
+    union = pred_area + gt_area - inter
+    if union <= 0.0:
+        return 0.0
+    return float(inter / union)
+
+
+def _stage2_assignment_matched_iou_sum(assignment: Any) -> float:
+    total = 0.0
+    for pred_i, gt_i in assignment.matched_pairs:
+        try:
+            pred = assignment.prediction_objects[int(pred_i)]
+            gt = assignment.scene_gt_objects[int(gt_i)]
+        except (IndexError, TypeError, ValueError):
+            continue
+        total += _stage2_bbox_iou_from_gt_objects(pred, gt)
+    return float(total)
+
+
 @dataclass(frozen=True)
 class _Stage2DetectionSceneTargetState:
     target_context: Any
@@ -1418,7 +1455,7 @@ def _stage2_construct_detection_scene_target_state(
                 int(index) for index in assignment.unmatched_prediction_indices
             ],
             gating_rejections=0,
-            matched_maskiou_sum=float(len(assignment.matched_pairs)),
+            matched_maskiou_sum=_stage2_assignment_matched_iou_sum(assignment),
             matched_maskiou_count=int(len(assignment.matched_pairs)),
         ),
         duplicate_counter_metrics=dict(duplicate_filter.counter_metrics),

@@ -7,6 +7,7 @@ from src.common.detection_sequence import BOX_START_TOKEN, OBJECT_REF_START_TOKE
 from src.common.semantic_desc import normalize_desc
 from src.training.stage2.rollout_codec import (
     CompactFullRolloutCodec,
+    Stage2RolloutObject,
     Stage2RolloutTemplatePolicy,
 )
 
@@ -312,6 +313,7 @@ def _build_compact_full_rollout_view(
 
     drop_reasons: Dict[str, int] = {}
     drop_bbox_invalid = 0
+    filtered_rollout_objects: List[Stage2RolloutObject] = []
     parsed_bbox_objects_raw: List[GTObject] = []
     for pobj in list(parse.valid_objects):
         if pobj.geom_type != "bbox_2d" or pobj.bbox_norm1000 is None:
@@ -326,6 +328,9 @@ def _build_compact_full_rollout_view(
             drop_bbox_invalid += 1
             continue
 
+        filtered_rollout_objects.append(
+            replace(pobj, bbox_norm1000=(int(x1), int(y1), int(x2), int(y2)))
+        )
         parsed_bbox_objects_raw.append(
             GTObject(
                 index=int(pobj.index),
@@ -337,20 +342,24 @@ def _build_compact_full_rollout_view(
 
     if drop_bbox_invalid:
         drop_reasons["bbox_invalid"] = int(drop_bbox_invalid)
+        parse = replace(
+            parse,
+            valid_objects=tuple(filtered_rollout_objects),
+            dropped_invalid=int(parse.dropped_invalid) + int(drop_bbox_invalid),
+            dropped_invalid_by_reason={
+                **dict(parse.dropped_invalid_by_reason),
+                "bbox_invalid": int(drop_bbox_invalid),
+            },
+        )
 
     parse_empty_after_geometry_filter = bool(
-        parse.valid_objects and not parsed_bbox_objects_raw
+        (filtered_rollout_objects or drop_bbox_invalid) and not parsed_bbox_objects_raw
     )
     if parse_empty_after_geometry_filter:
         parse = replace(
             parse,
             empty_valid_object_set=True,
             fallback_reason="empty_valid_object_set",
-            dropped_invalid=int(parse.dropped_invalid) + int(drop_bbox_invalid),
-            dropped_invalid_by_reason={
-                **dict(parse.dropped_invalid_by_reason),
-                "bbox_invalid": int(drop_bbox_invalid),
-            },
         )
 
     duplicate_control_objects_raw, duplicate_metrics = _view_from_bbox_objects(
