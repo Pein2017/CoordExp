@@ -70,7 +70,7 @@ Summary:
 | Gate | Result | Classification |
 | --- | ---: | --- |
 | Old semantic carriers | 440 matches in 58 files | No root `src.detection` public exports remain. Active source matches are module-local migration/private bridge details or analysis probes. Historical docs/OpenSpec/progress references are allowed. |
-| Old Stage-1 names | 638 matches in 92 files | Canonical route exists under `configs/stage1/detection_teacher_forcing/`. `recursive_detection_ce` roots are quarantined legacy/comparator material; historical docs and rejection/legacy tests are allowed. |
+| Old Stage-1 names | 639 matches in 92 files | Canonical route exists under `configs/stage1/detection_teacher_forcing/`. `recursive_detection_ce` roots are quarantined legacy/comparator material; historical docs and rejection/legacy tests are allowed. |
 | Raw/dense-caption names | 191 matches in 61 files | `RawDetectionRow`/`RawDetectionObject` and `dense_caption` remain intake/file-level implementation details. They do not define semantic authority; current semantic authority is `DetectionScene`. |
 | Old Stage-2 variants | 1457 matches in 248 files | Active split variants are removed/rejected. Remaining references are historical docs/specs, strict rejection paths, private implementation file names, or search seeds. |
 | `rollout_matching.*` namespace | 943 matches in 164 files | `rollout_matching.pipeline` is retired/rejected. Prompt/decode/backend/eval keys remain classified temporary migration handles until Stage-2 rollout-correction schema owns those knobs end to end. |
