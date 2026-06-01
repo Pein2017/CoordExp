@@ -187,11 +187,15 @@ def _stage2_ul_rollout_evidence(
     *,
     sample_id: str,
     view: Mapping[str, Any],
+    rollout_prediction: Any | None,
     gts: Sequence[GTObject],
     assignment_iou_threshold: float,
 ) -> ULRolloutEvidence:
     rollout_id = _stage2_ul_rollout_id(sample_id=sample_id, view=view)
-    if int(view.get("rollout_counts_as_valid_rollout", 1) or 0) == 0:
+    if (
+        int(view.get("rollout_counts_as_valid_rollout", 1) or 0) == 0
+        or rollout_prediction is None
+    ):
         return ULRolloutEvidence(
             rollout_id=rollout_id,
             is_valid=False,
@@ -205,7 +209,7 @@ def _stage2_ul_rollout_evidence(
     def _drop(reason: str) -> None:
         member_drop_reasons[reason] = member_drop_reasons.get(reason, 0) + 1
 
-    for obj in list(view.get("parsed_bbox_objects_raw", [])):
+    for obj in list(getattr(rollout_prediction, "valid_objects", ())):
         if not isinstance(obj, GTObject):
             continue
         try:
@@ -1329,6 +1333,9 @@ class _Stage2DetectionSceneTargetState:
     suppressed_duplicate_objects_by_boundary: Dict[int, Tuple[GTObject, ...]]
     match: MatchResult
     duplicate_counter_metrics: Dict[str, Any]
+    duplicate_survivor_anchor_indices: Tuple[int, ...]
+    duplicate_exempt_anchor_indices: Tuple[int, ...]
+    duplicate_suppressed_anchor_indices: Tuple[int, ...]
     explorer_objects_by_view: Tuple[Tuple[GTObject, ...], ...]
     explorer_match_by_pred_by_view: Tuple[Dict[int, int], ...]
 
@@ -1394,6 +1401,7 @@ def _stage2_construct_detection_scene_target_state(
         )
     assignment = target_context.assignment
     duplicate_filter = target_context.duplicate_filter
+    duplicate_decisions = tuple(duplicate_filter.decisions)
     return _Stage2DetectionSceneTargetState(
         target_context=target_context,
         accepted_objects_clean=tuple(assignment.prediction_objects),
@@ -1414,6 +1422,21 @@ def _stage2_construct_detection_scene_target_state(
             matched_maskiou_count=int(len(assignment.matched_pairs)),
         ),
         duplicate_counter_metrics=dict(duplicate_filter.counter_metrics),
+        duplicate_survivor_anchor_indices=tuple(
+            int(decision.object_index)
+            for decision in duplicate_decisions
+            if str(decision.action) == "keep" and not bool(decision.is_exempt)
+        ),
+        duplicate_exempt_anchor_indices=tuple(
+            int(decision.object_index)
+            for decision in duplicate_decisions
+            if bool(decision.is_exempt)
+        ),
+        duplicate_suppressed_anchor_indices=tuple(
+            int(decision.object_index)
+            for decision in duplicate_decisions
+            if str(decision.action) == "suppress"
+        ),
         explorer_objects_by_view=tuple(
             tuple(explorer_prediction.valid_objects)
             for explorer_prediction in explorer_predictions
@@ -4083,6 +4106,7 @@ class Stage2RolloutCorrectionTrainer(
                         _stage2_ul_rollout_evidence(
                             sample_id=sample_id_for_meta,
                             view=view_item,
+                            rollout_prediction=view_item.get("rollout_prediction"),
                             gts=gts,
                             assignment_iou_threshold=assignment_iou_threshold_for_ul,
                         )
@@ -4536,15 +4560,15 @@ class Stage2RolloutCorrectionTrainer(
                             "desc_entropy": float(dup_desc_entropy),
                             "survivor_anchor_indices": [
                                 int(index)
-                                for index in duplicate_control.survivor_anchor_indices
+                                for index in target_state.duplicate_survivor_anchor_indices
                             ],
                             "exempt_anchor_indices": [
                                 int(index)
-                                for index in duplicate_control.exempt_anchor_indices
+                                for index in target_state.duplicate_exempt_anchor_indices
                             ],
                             "suppressed_anchor_indices": [
                                 int(index)
-                                for index in duplicate_control.suppressed_anchor_indices
+                                for index in target_state.duplicate_suppressed_anchor_indices
                             ],
                             "clean_accepted_objects": [
                                 _serialize_monitor_object(obj)
@@ -4892,11 +4916,13 @@ class Stage2RolloutCorrectionTrainer(
                 duplicate_clusters_suppressed=int(dup_clusters_suppressed_local),
                 duplicate_objects_suppressed=int(dup_objects_suppressed_local),
                 duplicate_survivor_anchor_indices=(
-                    duplicate_control.survivor_anchor_indices
+                    target_state.duplicate_survivor_anchor_indices
                 ),
-                duplicate_exempt_anchor_indices=duplicate_control.exempt_anchor_indices,
+                duplicate_exempt_anchor_indices=(
+                    target_state.duplicate_exempt_anchor_indices
+                ),
                 duplicate_suppressed_anchor_indices=(
-                    duplicate_control.suppressed_anchor_indices
+                    target_state.duplicate_suppressed_anchor_indices
                 ),
                 anchor_gt_backed_indices=anchor_gt_backed_indices,
                 anchor_support_counts=anchor_support_counts,

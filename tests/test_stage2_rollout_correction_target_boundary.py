@@ -36,6 +36,7 @@ from src.trainers.rollout_matching.contracts import (
 from src.trainers.stage2_rollout_correction_impl import (
     _stage2_construct_detection_scene_target_state,
     _stage2_detection_scene_from_sample,
+    _stage2_ul_rollout_evidence,
     _stage2_rollout_decode_provenance_from_request,
 )
 
@@ -712,6 +713,9 @@ def test_production_target_state_uses_scene_projection_not_raw_precontext_state(
     assert [obj.desc for obj in target_state.accepted_objects_clean] == ["cat"]
     assert target_state.match.matched_pairs == [(0, 0)]
     assert target_state.suppressed_duplicate_objects_by_boundary[1][0].desc == "cat"
+    assert target_state.duplicate_survivor_anchor_indices == (0,)
+    assert target_state.duplicate_exempt_anchor_indices == ()
+    assert target_state.duplicate_suppressed_anchor_indices == (1,)
     assert target_state.explorer_objects_by_view[0][0].desc == "cat"
     assert target_state.explorer_match_by_pred_by_view[0] == {0: 0}
 
@@ -723,3 +727,57 @@ def test_production_target_state_uses_scene_projection_not_raw_precontext_state(
         "explorer_match_by_pred_by_view",
     }
     assert forbidden_raw_inputs.isdisjoint(helper_signature.parameters)
+
+
+def test_ul_rollout_evidence_uses_rollout_prediction_not_raw_view_objects() -> None:
+    prediction = rollout_prediction_from_shared_decode(
+        decoded_result=_decoded("canonical cat rollout"),
+        parse_result=_parse_result(
+            "canonical cat rollout",
+            _rollout_object(0, "canonical-cat", [100, 100, 200, 200]),
+        ),
+        metric_bearing=True,
+        source_label="anchor",
+    )
+    raw_view_object = _bbox_object(99, "raw-view-dog", [700, 700, 800, 800])
+
+    evidence = _stage2_ul_rollout_evidence(
+        sample_id="ul-sample",
+        view={
+            "rollout_index": 3,
+            "rollout_counts_as_valid_rollout": 1,
+            "parsed_bbox_objects_raw": [raw_view_object],
+        },
+        rollout_prediction=prediction,
+        gts=[],
+        assignment_iou_threshold=0.5,
+    )
+
+    assert evidence.is_valid is True
+    assert [member.desc_text for member in evidence.unmatched_members] == [
+        "canonical-cat"
+    ]
+    assert [member.local_index for member in evidence.unmatched_members] == [0]
+    assert all(
+        member.desc_text != "raw-view-dog"
+        for member in evidence.unmatched_members
+    )
+
+
+def test_ul_rollout_evidence_fails_closed_without_rollout_prediction() -> None:
+    evidence = _stage2_ul_rollout_evidence(
+        sample_id="ul-sample",
+        view={
+            "rollout_index": 4,
+            "rollout_counts_as_valid_rollout": 1,
+            "parsed_bbox_objects_raw": [
+                _bbox_object(99, "raw-view-dog", [700, 700, 800, 800])
+            ],
+        },
+        rollout_prediction=None,
+        gts=[],
+        assignment_iou_threshold=0.5,
+    )
+
+    assert evidence.is_valid is False
+    assert evidence.unmatched_members == ()
