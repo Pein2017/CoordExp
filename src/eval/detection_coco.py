@@ -179,6 +179,23 @@ def _load_coco_categories_json(path: Path) -> Dict[str, int]:
     return categories
 
 
+def _coerce_json_object_record(
+    record: Any,
+    *,
+    record_idx: int,
+    label: str,
+) -> Dict[str, Any]:
+    to_json_record = getattr(record, "to_json_record", None)
+    if callable(to_json_record):
+        record = to_json_record()
+    if not isinstance(record, Mapping):
+        raise ValueError(
+            f"{label} JSONL record {record_idx} must be a JSON object, got "
+            f"{type(record).__name__}"
+        )
+    return dict(record)
+
+
 def export_coco_submission(
     pred_path: Path,
     *,
@@ -206,16 +223,16 @@ def export_coco_submission(
     for record_idx, (source_record, pred_record) in enumerate(
         zip(source_records, pred_records)
     ):
-        if not isinstance(source_record, dict):
-            raise ValueError(
-                f"Source JSONL record {record_idx} must be a JSON object, got "
-                f"{type(source_record).__name__}"
-            )
-        if not isinstance(pred_record, dict):
-            raise ValueError(
-                f"Prediction JSONL record {record_idx} must be a JSON object, got "
-                f"{type(pred_record).__name__}"
-            )
+        source_record = _coerce_json_object_record(
+            source_record,
+            record_idx=record_idx,
+            label="Source",
+        )
+        pred_record = _coerce_json_object_record(
+            pred_record,
+            record_idx=record_idx,
+            label="Prediction",
+        )
 
         _validate_score_provenance_for_coco(pred_record, record_idx)
 
