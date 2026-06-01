@@ -13,7 +13,7 @@ Queue format:
 - blank lines and lines beginning with `#` are ignored
 
 Backwards-compatible queue entries still work:
-    {"session":"stage2_rollout_correction","launch":false,"config":"configs/stage2_rollout_correction/base.yaml","stop_after_step":300,"require_eval":true}
+    {"session":"stage2_rollout_correction","launch":false,"config":"configs/stage2/rollout_correction/base.yaml","stop_after_step":300,"require_eval":true}
 
 Preferred flexible queue entries use:
     {

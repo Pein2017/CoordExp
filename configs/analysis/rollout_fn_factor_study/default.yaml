@@ -74,7 +74,7 @@ checkpoints:
     path: output/stage2_rollout_correction/2b_1024/a_only_iter1/merged_ckpt-900
     artifact_kind: executable_checkpoint
     provenance_sidecars:
-      config_source: configs/stage2_rollout_correction/prod/coco1024_online_residual_correction_vllm_tail_append.yaml
+      config_source: configs/stage2/rollout_correction/prod/coco1024_online_residual_correction_vllm_tail_append.yaml
 
 splits:
   train:

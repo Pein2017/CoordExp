@@ -48,8 +48,8 @@ Open these docs first:
 - [`docs/training/STAGE1_OBJECTIVE.md`](training/STAGE1_OBJECTIVE.md)
 - [`docs/data/PACKING.md`](data/PACKING.md)
 - [`configs/stage1/detection_teacher_forcing/`](../configs/stage1/detection_teacher_forcing/) for the canonical `stage1_detection_teacher_forcing` compact Stage-1 detection teacher-forcing route
-- [`configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml`](../configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml) only as a legacy/comparator recursive-detection CE handle, not the current public teacher-forcing route
-- [`configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml`](../configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml) only as a legacy/comparator compact-full prefix-rollin E1 ablation handle
+- [`configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2.yaml`](../configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2.yaml) only as a quarantined historical recursive-detection CE handle, not the current public teacher-forcing route
+- [`configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml`](../configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml) only as a quarantined historical compact-full prefix-rollin E1 ablation handle
 
 Open these configs first:
 - `configs/stage1/sft_base.yaml`
@@ -58,8 +58,8 @@ Open these configs first:
 - `configs/stage1/profiles/`
 - `configs/stage1/smoke/`
 - `configs/stage1/detection_teacher_forcing/`
-- `configs/stage1/recursive_detection_ce/prod/` only for legacy/comparator migration references
-- `configs/stage1/recursive_detection_ce/ablation/` only for legacy/comparator ablation references
+- `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/` only for quarantined historical migration references
+- `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/ablation/` only for quarantined historical ablation references
 
 Open these code files first:
 - `src/training/surfaces.py`
@@ -101,8 +101,8 @@ Stage-1 detection teacher-forcing ownership:
 - `compact_no_desc`, `compact_no_bbox`, and `compact_min` stay compatibility/helper formats.
 - `stage1_detection_teacher_forcing` keeps packing/cache fail-fast policy and
   remains config-first under `configs/stage1/detection_teacher_forcing/`.
-  Legacy/comparator recursive-detection CE configs under
-  `configs/stage1/recursive_detection_ce/` remain only as migration history,
+  Quarantined recursive-detection CE configs under
+  `configs/archive/detection_scene_clean_break/stage1/` remain only as archive history,
   ablation anchors, or explicit comparator handles.
 
 Trainer metric ownership:
@@ -142,11 +142,11 @@ Historical context only:
 - Use `progress/` notes only for historical evidence after checking the current docs above.
 
 Open these configs first:
-- `configs/stage2_rollout_correction/base.yaml`
+- `configs/stage2/rollout_correction/base.yaml`
 - `configs/_shared/datasets/`
 - `configs/_shared/prompts/`
-- `configs/stage2_rollout_correction/prod/`
-- `configs/stage2_rollout_correction/smoke/`
+- `configs/stage2/rollout_correction/prod/`
+- `configs/stage2/rollout_correction/smoke/`
 
 Key v3 config handles:
 - `stage2_rollout_correction.correction.triage_posterior.*`

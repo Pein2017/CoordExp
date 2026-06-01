@@ -74,6 +74,8 @@ Current internal ownership seams:
 - `rollout_matching.pipeline.*` is retired; active objective ownership is only
   through `stage2_rollout_correction.pipeline.*`
 - rollout runtime/backend/decode/eval knobs remain under `rollout_matching.*`
+  as a classified temporary migration handle until Stage-2 rollout-correction
+  schema owns those knobs end to end
 - final object sequencing is controlled by:
   - `stage2_rollout_correction.correction.insertion_order: tail_append | sorted | fn_slot_shuffle`
 - duplicate control is configured only through:
@@ -152,6 +154,9 @@ Current internal ownership seams:
     base-control, short pilots, or production candidates. Leaving the train-time
     key unset falls back to the default dense prompt for backward compatibility
     and is not the same experiment surface as `coco_80`.
+  - These `rollout_matching.*` prompt/decode/eval keys are retained migration
+    handles, not the target public namespace for new clean-break Stage-2
+    schema work.
   - malformed current-attempt preparation drops that attempt/sample from rollout-correction training
   - malformed peer attempts that remain invalid after salvage parsing abort the step by default only when pseudo-positive mode is enabled
   - outside pseudo-positive mode, malformed rollouts fall back to the existing empty-prefix / FN-only handling instead of taking the invalid-rollout abort path
@@ -202,12 +207,12 @@ Assignment note:
 
 ## Recommended Config Entry Points
 
-- Canonical base: `configs/stage2_rollout_correction/base.yaml`
-- New production and smoke leaves should live under `configs/stage2_rollout_correction/`
+- Canonical base: `configs/stage2/rollout_correction/base.yaml`
+- New production and smoke leaves should live under `configs/stage2/rollout_correction/`
 - Compact-full ckpt3664 + COCO-80 readiness leaves:
-  - `configs/stage2_rollout_correction/smoke/compact_full_hf_1step.yaml`
-  - `configs/stage2_rollout_correction/smoke/compact_full_vllm_train64_val32_base_control_lr0_1step_coco80_prompt.yaml`
-  - `configs/stage2_rollout_correction/smoke/compact_full_vllm_train64_val32_12steps_coco80_pilot.yaml`
+  - `configs/stage2/rollout_correction/smoke/compact_full_hf_1step.yaml`
+  - `configs/stage2/rollout_correction/smoke/compact_full_vllm_train64_val32_base_control_lr0_1step_coco80_prompt.yaml`
+  - `configs/stage2/rollout_correction/smoke/compact_full_vllm_train64_val32_12steps_coco80_pilot.yaml`
 - Every migrated leaf must restate the full `stage2_rollout_correction.pipeline.objective[]` list because config list merging replaces lists wholesale
 - Old split-stage and pseudo-positive clean-prefix handles are removed active contracts; use historical records only when interpreting older runs
 
@@ -223,14 +228,14 @@ Config-only checks:
 
 ```bash
 PYTHONPATH=. conda run -n ms python -m src.sft \
-  --config configs/stage2_rollout_correction/base.yaml \
+  --config configs/stage2/rollout_correction/base.yaml \
   --cfg-only
 
 PYTHONPATH=. CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
   conda run --no-capture-output -n ms torchrun \
   --nproc_per_node=8 --master_addr=127.0.0.1 --master_port=29650 \
   -m src.sft \
-  --config configs/stage2_rollout_correction/base.yaml \
+  --config configs/stage2/rollout_correction/base.yaml \
   --cfg-only
 ```
 
@@ -243,7 +248,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 conda run --no-capture-output -n ms torchrun \
   --nproc_per_node=8 --master_addr=127.0.0.1 --master_port=29650 \
   -m src.sft \
-  --config configs/stage2_rollout_correction/base.yaml
+  --config configs/stage2/rollout_correction/base.yaml
 ```
 
 The base config uses `rollout_matching.*` only for rollout runtime/backend,
@@ -290,7 +295,7 @@ construction, and loss/gradient flow before trying a hotter learning rate.
 Use this when you do not need the dedicated server-mode launcher split.
 
 ```bash
-PYTHONPATH=. conda run -n ms python -m src.sft --config configs/stage2_rollout_correction/base.yaml
+PYTHONPATH=. conda run -n ms python -m src.sft --config configs/stage2/rollout_correction/base.yaml
 ```
 
 Legacy center-size experiment note:
@@ -333,7 +338,7 @@ vLLM server launcher.
 ```bash
 server_gpus=0,1,2,3,4,5 \
 train_gpus=6,7 \
-config=configs/stage2_rollout_correction/base.yaml \
+config=configs/stage2/rollout_correction/base.yaml \
 conda run -n ms bash scripts/train_stage2.sh
 ```
 

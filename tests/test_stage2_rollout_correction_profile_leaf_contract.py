@@ -9,7 +9,7 @@ from src.config.loader import ConfigLoader
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-STAGE2_ROOT = REPO_ROOT / "configs" / "stage2_rollout_correction"
+STAGE2_ROOT = REPO_ROOT / "configs" / "stage2" / "rollout_correction"
 CKPT3664_ADAPTER = (
     "/data/CoordExp/temp/baidudisk-union-sync/download-staging/outputs/CoordExp/"
     "outputs/stage1_2b/recursive_detection_ce_latest/"
@@ -30,7 +30,7 @@ def _stage2_profile_leaves() -> list[Path]:
 
 def test_stage2_rollout_correction_profiles_load_under_current_hierarchy() -> None:
     profiles = _stage2_profile_leaves()
-    assert profiles, "Expected stage2_rollout_correction profile leaves."
+    assert profiles, "Expected stage2/rollout_correction profile leaves."
 
     for path in profiles:
         ConfigLoader.load_materialized_training_config(str(path))
@@ -39,8 +39,8 @@ def test_stage2_rollout_correction_profiles_load_under_current_hierarchy() -> No
 @pytest.mark.parametrize(
     "config_relpath",
     [
-        "configs/stage2_rollout_correction/prod/coco1024_online_residual_correction_vllm_tail_append.yaml",
-        "configs/stage2_rollout_correction/smoke/compact_full_hf_1step.yaml",
+        "configs/stage2/rollout_correction/prod/coco1024_online_residual_correction_vllm_tail_append.yaml",
+        "configs/stage2/rollout_correction/smoke/compact_full_hf_1step.yaml",
     ],
 )
 def test_stage2_rollout_correction_profiles_pin_residual_objective_only(
@@ -70,9 +70,9 @@ def test_stage2_rollout_correction_profiles_pin_residual_objective_only(
 @pytest.mark.parametrize(
     "config_relpath",
     [
-        "configs/stage2_rollout_correction/smoke/compact_full_hf_1step.yaml",
-        "configs/stage2_rollout_correction/smoke/compact_full_vllm_train64_val32_base_control_lr0_1step_coco80_prompt.yaml",
-        "configs/stage2_rollout_correction/smoke/compact_full_vllm_train64_val32_12steps_coco80_pilot.yaml",
+        "configs/stage2/rollout_correction/smoke/compact_full_hf_1step.yaml",
+        "configs/stage2/rollout_correction/smoke/compact_full_vllm_train64_val32_base_control_lr0_1step_coco80_prompt.yaml",
+        "configs/stage2/rollout_correction/smoke/compact_full_vllm_train64_val32_12steps_coco80_pilot.yaml",
     ],
 )
 def test_compact_full_ckpt3664_coco80_readiness_profiles_pin_same_surface(

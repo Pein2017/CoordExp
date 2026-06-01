@@ -262,6 +262,8 @@ def test_stage1_teacher_forcing_dataset_projects_scene_to_rendered_sequence_and_
     }
 
 
-def test_detection_root_exports_canonical_projection_names_and_migration_aliases() -> None:
-    assert detection.RenderedDetectionSequence is detection.RenderedAssistantSequence
-    assert detection.DetectionSupervisionView is detection.TokenizedDetectionExample
+def test_detection_root_exports_canonical_projection_names_only() -> None:
+    assert hasattr(detection, "RenderedDetectionSequence")
+    assert hasattr(detection, "DetectionSupervisionView")
+    assert not hasattr(detection, "RenderedAssistantSequence")
+    assert not hasattr(detection, "TokenizedDetectionExample")

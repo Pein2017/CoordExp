@@ -294,7 +294,7 @@ config=configs/stage1/smoke/lvis_bbox_max60_1024.yaml gpus=0 conda run -n ms bas
 ### 3. Stage-2 Training
 
 There is no current ready-to-run LVIS Stage-2 leaf in
-`configs/stage2_rollout_correction/`.
+`configs/stage2/rollout_correction/`.
 
 Future LVIS Stage-2 leaves should use the active residual correction objective
 only:
@@ -342,7 +342,7 @@ PYTHONPATH=. conda run -n ms python scripts/evaluate_detection.py --config confi
 
 Reasonable follow-ups, ordered from lowest to highest complexity:
 
-- add a dedicated LVIS Stage-2 smoke config under `configs/stage2_rollout_correction/`
+- add a dedicated LVIS Stage-2 smoke config under `configs/stage2/rollout_correction/`
 - add semantic-desc calibration specifically for long-tail LVIS categories
 - add stricter parity tests against the external `lvis-api` package when that
   dependency is available in the runtime env

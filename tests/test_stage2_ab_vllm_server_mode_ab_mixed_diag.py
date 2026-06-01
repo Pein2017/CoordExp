@@ -257,7 +257,7 @@ def test_stage2_rollout_correction_vllm_server_mode_diag(tmp_path: Path):
     cfg_path.write_text(
         "\n".join(
             [
-                f"extends: {(repo_root / 'configs/stage2_rollout_correction/smoke/compact_full_hf_1step.yaml').as_posix()}",
+                f"extends: {(repo_root / 'configs/stage2/rollout_correction/smoke/compact_full_hf_1step.yaml').as_posix()}",
                 f"global_max_length: {vllm_max_model_len}",
                 "model:",
                 f"  model: {model_dir}",

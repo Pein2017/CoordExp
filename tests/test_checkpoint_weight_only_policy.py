@@ -770,7 +770,7 @@ def test_default_configs_use_public_inference_only_checkpoint_policy() -> None:
 
     audited = [
         "configs/stage1/profiles/4b/coord_soft_ce_gate_coco80_desc_first_1024_lvis_proxy.yaml",
-        "configs/stage2_rollout_correction/prod/coco1024_online_residual_correction_vllm_tail_append.yaml",
+        "configs/stage2/rollout_correction/prod/coco1024_online_residual_correction_vllm_tail_append.yaml",
     ]
 
     for path in audited:
@@ -785,9 +785,9 @@ def test_instance_trie_configs_use_restartable_public_checkpoint_policy() -> Non
     from src.config.loader import ConfigLoader
 
     audited = [
-        "configs/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1.yaml",
-        "configs/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p2.yaml",
-        "configs/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p06_mix0p1.yaml",
+        "configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1.yaml",
+        "configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p2.yaml",
+        "configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p06_mix0p1.yaml",
     ]
 
     for path in audited:

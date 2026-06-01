@@ -49,9 +49,10 @@ as an active training objective surface.
 
 ### Requirement: Rollout runtime settings remain supported
 
-The `rollout_matching.*` namespace MUST remain the active home for rollout
+The `rollout_matching.*` namespace is a retained migration/runtime handle for rollout
 backend, decoding, vLLM/server dispatch, eval rollout, and post-rollout packing
-runtime settings. It does not own Stage-2 objectives.
+runtime settings until the schema-owned replacement seam is complete. It does not
+own Stage-2 objectives or the public trainer concept.
 
 #### Scenario: rollout settings stay outside objective ownership
 

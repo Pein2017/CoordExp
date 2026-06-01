@@ -22,8 +22,8 @@ Normative behavior:
   `custom.coord_soft_ce_w1.*` to configure recursive detection
   objectives,
 - `objective.id=sft` MUST pair only with SFT objective variants,
-- `objective.id=recursive_detection_ce` MUST pair only with recursive detection
-  CE variants,
+- `objective.id=teacher_forcing` MUST pair only with DetectionScene-backed
+  detection teacher-forcing variants,
 - objective variants MUST remain YAML/config driven and MUST NOT require new
   stable CLI flags.
 
@@ -36,9 +36,9 @@ Normative behavior:
   objective through top-level `objective`.
 
 #### Scenario: Recursive CE variant is selected through `objective.variant`
-- **GIVEN** a detection config with `objective.id: recursive_detection_ce`
+- **GIVEN** a detection config with `objective.id: teacher_forcing`
 - **WHEN** config parsing and runtime resolution run
-- **THEN** the recursive objective mode is selected from `objective.variant`
+- **THEN** the teacher-forcing objective mode is selected from `objective.variant`
 - **AND** no extra CLI flag is needed.
 
 ### Requirement: Random-permutation ET-RMP-CE remains the production baseline/comparator
@@ -49,9 +49,9 @@ successor is approved.
 Normative behavior:
 
 - the comparator config path MUST remain
-  `configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml`
+  `configs/stage1/detection_teacher_forcing/prod/compact_full_support2.yaml`
   unless a later contract supersedes it,
-- this baseline MUST use `objective.id: recursive_detection_ce`,
+- this baseline MUST use `objective.id: teacher_forcing`,
 - this baseline MUST use `detection_template.id: compact_full`,
 - this baseline MUST use `data.object_ordering: random_permutation`,
 - this baseline MUST keep `objective.state_weighting:
@@ -65,10 +65,10 @@ Normative behavior:
 
 #### Scenario: Comparator config resolves to random-permutation ET-RMP-CE
 - **WHEN** the comparator config
-  `configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml`
+  `configs/stage1/detection_teacher_forcing/prod/compact_full_support2.yaml`
   is parsed
 - **THEN** it resolves to `objective.variant: random_permutation_et_rmp_ce`
-- **AND** runtime recursive CE support and balance weights come from the
+- **AND** runtime teacher-forcing support and balance weights come from the
   top-level `objective.trie_*` fields.
 
 ### Requirement: Prefix-rollin ET-RMP-CE is a compact-full ablation surface
@@ -110,7 +110,7 @@ Recursive detection coord-soft-target overlays SHALL be authored through
 Normative behavior:
 
 - `objective.coord_soft_ce` MUST be valid only for
-  `objective.id: recursive_detection_ce` with ET-RMP-family objective
+  `objective.id: teacher_forcing` with ET-RMP-family objective
   variants,
 - `iou_gibbs_v0` and `ciou_gibbs_v0` overlays MUST be treated as historical
   A5/A6 ablation candidates unless promoted by later evidence,

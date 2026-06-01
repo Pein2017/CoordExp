@@ -146,8 +146,8 @@ Current source contract:
   teacher-forcing surfaces.
 - no new CLI flags or config schema keys are introduced by this extraction.
 
-Legacy/comparator note:
-- `configs/stage1/recursive_detection_ce/` remains only as
+Quarantined legacy/comparator note:
+- `configs/archive/detection_scene_clean_break/stage1/` contains quarantined
   recursive-detection CE migration history and comparator/ablation material. Do
   not use it as the current public Stage-1 detection teacher-forcing route.
 
@@ -155,7 +155,7 @@ Legacy/comparator note:
 
 Use Stage-2 when you need rollout prefix plus GT correction supervision or vLLM server-mode training.
 
-- Current config tree: `configs/stage2_rollout_correction/`
+- Current config tree: `configs/stage2/rollout_correction/`
 - Main docs:
   - [`docs/training/STAGE2_RUNBOOK.md`](training/STAGE2_RUNBOOK.md)
   - [`docs/training/METRICS.md`](training/METRICS.md)

@@ -19,7 +19,7 @@ def test_write_experiment_manifest_file_captures_soft_and_hard_context(
     }
     out_path = write_experiment_manifest_file(
         output_dir=tmp_path,
-        config_path="configs/stage2_rollout_correction/smoke/compact_full_hf_1step.yaml",
+        config_path="configs/stage2/rollout_correction/smoke/compact_full_hf_1step.yaml",
         base_config_path="configs/base.yaml",
         run_name="compact_full_hf_1step",
         dataset_seed=17,

@@ -91,7 +91,7 @@ class ConfigLoader:
     def _canonical_stage2_profile_kind(config_path: str) -> Optional[str]:
         config_abs = Path(config_path).resolve()
         repo_root = Path(__file__).resolve().parents[2]
-        stage2_root = (repo_root / "configs" / "stage2_rollout_correction").resolve()
+        stage2_root = (repo_root / "configs" / "stage2" / "rollout_correction").resolve()
         for kind in ("prod", "smoke", "ablation"):
             kind_root = (stage2_root / kind).resolve()
             try:

@@ -10,7 +10,7 @@ The audit process SHALL explicitly cover the pipeline exercised by the following
 operational entrypoints:
 - `scripts/train.sh` with a canonical Stage-1 profile
 - `scripts/train_stage2.sh` with a canonical
-  `configs/stage2_rollout_correction/` profile
+  `configs/stage2/rollout_correction/` profile
 
 The audit SHALL map `data -> transforms/packing -> training/inference ->
 artifacts` and SHALL enumerate code/module owners for each boundary.

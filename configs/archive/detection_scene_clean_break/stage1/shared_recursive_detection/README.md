@@ -3,10 +3,12 @@
 This directory contains authoring snippets for latest compact detection configs
 that parse through `DetectionTrainingConfig`.
 
-Current canonical launch configs under
-`configs/stage1/recursive_detection_ce/` are still materialized and do
-not extend these snippets. Edits here do not affect production or smoke launch
-configs until their `extends` chains are migrated.
+Quarantined legacy/comparator launch configs under
+`configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/`
+are preserved for historical inspection and do not extend these snippets. Edits here do not affect production or smoke launch
+configs until their `extends` chains are migrated. New canonical compact
+teacher-forcing configs belong under
+`configs/stage1/detection_teacher_forcing/`.
 
 Detection owns these top-level sections:
 

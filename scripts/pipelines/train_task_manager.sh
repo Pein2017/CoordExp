@@ -7,15 +7,15 @@ set -euo pipefail
 # Each row is a JSON object.
 #
 # Backward-compatible simple form:
-#   {"name":"watch-current","session":"stage2_rollout_correction","launch":false,"config":"configs/stage2_rollout_correction/base.yaml","stop_after_step":300,"require_eval":true}
-#   {"name":"next-task","session":"stage2_rollout_correction","config":"configs/stage2_rollout_correction/base.yaml","gpus":"0","stop_after_step":300,"require_eval":true}
+#   {"name":"watch-current","session":"stage2_rollout_correction","launch":false,"config":"configs/stage2/rollout_correction/base.yaml","stop_after_step":300,"require_eval":true}
+#   {"name":"next-task","session":"stage2_rollout_correction","config":"configs/stage2/rollout_correction/base.yaml","gpus":"0","stop_after_step":300,"require_eval":true}
 #
 # Extended flexible form:
 #   {
 #     "name": "watch-current",
 #     "session": "stage2_rollout_correction",
 #     "launch": false,
-#     "config": "configs/stage2_rollout_correction/base.yaml",
+#     "config": "configs/stage2/rollout_correction/base.yaml",
 #     "monitor_after_seconds": 7200,
 #     "poll_seconds": 600,
 #     "criteria_mode": "all",
@@ -34,7 +34,7 @@ set -euo pipefail
 #   {
 #     "name": "next-task",
 #     "session": "stage2_rollout_correction",
-#     "command": "config=configs/stage2_rollout_correction/base.yaml gpus=0 bash scripts/train.sh"
+#     "command": "config=configs/stage2/rollout_correction/base.yaml gpus=0 bash scripts/train.sh"
 #   }
 #
 # Usage:

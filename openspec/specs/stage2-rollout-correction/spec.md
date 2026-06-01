@@ -17,7 +17,7 @@ The system MUST fail fast for removed trainer variants and config namespaces:
 - `custom.trainer_variant: stage2_ab_training`
 - top-level `stage2_ab`
 
-`rollout_matching.*` remains the rollout runtime/backend/decode/eval namespace.
+`rollout_matching.*` remains a private migration/runtime handle for rollout runtime/backend/decode/eval settings until the schema-owned replacement seam is complete.
 `rollout_matching.pipeline` remains removed and MUST NOT own Stage-2 objectives.
 Train-time rollout prompt variants MUST be authored with
 `rollout_matching.prompt_variant`; eval-step rollout prompt variants MUST be

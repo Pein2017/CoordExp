@@ -1,4 +1,4 @@
-extends: ../base.yaml
+extends: ../../base.yaml
 
 # Stage-2 rollout-correction canonical runtime base.
 
@@ -117,6 +117,7 @@ custom:
   json_format: standard
   emit_norm: none
   detection_sequence_format: coordjson
+  object_field_order: desc_first
   trainer_variant: stage2_rollout_correction
   train_sample_limit: null
   val_sample_limit: null

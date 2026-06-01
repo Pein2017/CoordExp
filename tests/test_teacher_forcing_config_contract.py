@@ -499,5 +499,5 @@ def test_removed_stage2_teacher_forcing_config_tree_is_absent() -> None:
 
     assert not (repo_root / "configs/stage2_two_channel").exists()
     assert not (
-        repo_root / "configs/stage2_rollout_correction/teacher_forcing"
+        repo_root / "configs/stage2/rollout_correction/teacher_forcing"
     ).exists()

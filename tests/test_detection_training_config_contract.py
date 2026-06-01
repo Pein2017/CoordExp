@@ -1241,7 +1241,7 @@ def test_config_loader_rejects_authored_gradient_accumulation_when_effective_bat
 def test_effective_batch_config_names_do_not_bake_derived_accumulation() -> None:
     cfg_path = (
         REPO_ROOT
-        / "configs/stage1/recursive_detection_ce/prod/compact_full_random_sft.yaml"
+        / "configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_random_sft.yaml"
     )
     cfg = ConfigLoader.load_materialized_training_config(str(cfg_path))
 
@@ -1255,19 +1255,19 @@ def test_effective_batch_config_names_do_not_bake_derived_accumulation() -> None
 def test_detection_recursive_detection_launch_configs_parse_without_custom() -> None:
     config_paths = [
         REPO_ROOT
-        / "configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml",
+        / "configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2.yaml",
         REPO_ROOT
-        / "configs/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1.yaml",
+        / "configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1.yaml",
         REPO_ROOT
-        / "configs/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p06_mix0p1.yaml",
+        / "configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p06_mix0p1.yaml",
         REPO_ROOT
-        / "configs/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p2.yaml",
+        / "configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p2.yaml",
         REPO_ROOT
-        / "configs/stage1/recursive_detection_ce/smoke/compact_full_tiny.yaml",
+        / "configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/smoke/compact_full_tiny.yaml",
         REPO_ROOT
-        / "configs/stage1/recursive_detection_ce/smoke/compact_full_ddp8_preflight.yaml",
+        / "configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/smoke/compact_full_ddp8_preflight.yaml",
         REPO_ROOT
-        / "configs/stage1/recursive_detection_ce/smoke/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1_tiny.yaml",
+        / "configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/smoke/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1_tiny.yaml",
     ]
 
     for config_path in config_paths:
@@ -1439,7 +1439,7 @@ def test_detection_recursive_detection_prefix_rollin_smoke_config_parses() -> No
     cfg = ConfigLoader.load_materialized_training_config(
         str(
             REPO_ROOT
-            / "configs/stage1/recursive_detection_ce/smoke/compact_full_prefix_rollin_tiny.yaml"
+            / "configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/smoke/compact_full_prefix_rollin_tiny.yaml"
         )
     )
 
@@ -1468,7 +1468,7 @@ def test_detection_compact_sft_smoke_configs_parse_with_hard_ce_objectives() -> 
         cfg = ConfigLoader.load_materialized_training_config(
             str(
                 REPO_ROOT
-                / "configs/stage1/recursive_detection_ce/smoke"
+                / "configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/smoke"
                 / file_name
             )
         )

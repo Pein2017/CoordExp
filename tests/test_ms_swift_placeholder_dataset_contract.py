@@ -22,5 +22,5 @@ def test_placeholder_datasets_present_for_stage1_and_stage2_anchored_configs() -
         "configs/stage1/profiles/4b/coord_soft_ce_gate_coco80_desc_first_1024_lvis_proxy.yaml"
     )
     _assert_placeholder_datasets_present(
-        "configs/stage2_rollout_correction/prod/coco1024_online_residual_correction_vllm_tail_append.yaml"
+        "configs/stage2/rollout_correction/prod/coco1024_online_residual_correction_vllm_tail_append.yaml"
     )

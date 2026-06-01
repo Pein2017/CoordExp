@@ -15,10 +15,9 @@ provenance.
 
 Normative behavior:
 
-- offline `infer.*` YAML and online `rollout_matching.*` YAML MUST map into
+- offline `infer.*` YAML and Stage-2 rollout-correction runtime policy YAML MUST map into
   common internal prompt/decode/model policy objects;
-- public authored namespaces `infer.*` and `rollout_matching.*` MUST remain
-  stable unless a future OpenSpec explicitly renames them;
+- public authored `infer.*` stays stable; Stage-2 rollout-correction runtime policy may retain `rollout_matching.*` only as a classified migration handle until a schema-owned replacement is complete;
 - callers MUST NOT implement independent semantic prompt construction,
   generation-time image normalization, backend trace conversion, or
   metric-bearing parser salvage outside the shared runtime;

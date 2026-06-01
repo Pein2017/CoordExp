@@ -18,43 +18,6 @@ authority:
 
 config_surfaces:
   training:
-    - id: unified_training_shadow_stage1_json_ce
-      status: shadow-baseline
-      surface_id: stage1_json_ce
-      resolver: src/training/surfaces.py::TrainingSurfaceResolver
-      pipeline: src/training/pipelines/stage1_json_ce.py::Stage1JsonCEPipeline
-      domains:
-        - run
-        - surface
-        - data
-        - template
-        - supervision
-        - objectives
-        - observability
-        - artifacts
-        - runtime
-      notes: "Guarded shadow surface for JSON chat CE baseline/regression work. This keeps JSON CE available but does not make it the compact-full target architecture."
-    - id: unified_training_shadow_stage1_compact_trie_ce
-      status: shadow-primary-direction
-      surface_id: stage1_compact_trie_ce
-      resolver: src/training/surfaces.py::TrainingSurfaceResolver
-      pipeline: src/training/pipelines/stage1_compact_trie_ce.py::Stage1CompactTrieCEPipeline
-      domains:
-        - run
-        - surface
-        - data
-        - template
-        - supervision
-        - objectives
-        - observability
-        - artifacts
-        - runtime
-      template: compact_full
-      objective_order:
-        - token_ce
-        - trie_ce
-        - coord_soft_ce
-      notes: "Primary Stage-1 architecture direction: compact-full token-span supervision with trie CE, coordinate soft CE, and optional box regression. Disabled objectives remain explicit in the resolved profile."
     - id: unified_training_shadow_stage2_rollout_correction
       status: active
       surface_id: stage2_rollout_correction
@@ -81,39 +44,10 @@ config_surfaces:
       parser: src/config/schema.py::DetectionTrainingConfig
       runtime: src/detection/runtime.py
       notes: "Canonical clean-break Stage-1 detection teacher-forcing public route. New compact-full teacher-forcing configs should live under configs/stage1/detection_teacher_forcing/."
-    - id: stage1_legacy_recursive_detection_ce_random_permutation_et_rmp_ce
-      status: legacy-comparator
-      config: configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml
-      authoring_snippets: configs/_shared/recursive_detection/
-      parser: src/config/schema.py::DetectionTrainingConfig
-      runtime: src/detection/runtime.py
-      notes: "Legacy/comparator recursive_detection_ce anchor using random_permutation_et_rmp_ce with flat trie weights. Keep as migration/comparator history; do not use as the current public Stage-1 detection teacher-forcing route."
-    - id: stage1_legacy_recursive_detection_ce_iou_gibbs_coord_softce_a5
-      status: ablation-candidate
-      config: configs/stage1/recursive_detection_ce/prod/compact_full_support2_iou_gibbs_softce_a5.yaml
-      authoring_snippets: configs/_shared/recursive_detection/
-      parser: src/config/schema.py::DetectionTrainingConfig
-      runtime: src/detection/runtime.py
-      notes: "Legacy/comparator recursive_detection_ce A5 ablation candidate: A2/support2 plus iou_gibbs_v0 coordinate soft targets preserving recursive support/balance coefficients. Claim scope remains none until measured; launch preparation uses one 4-GPU slice."
-    - id: stage1_legacy_recursive_detection_ce_ciou_gibbs_coord_softce_a6
-      status: ablation-candidate
-      config: configs/stage1/recursive_detection_ce/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml
-      authoring_snippets: configs/_shared/recursive_detection/
-      parser: src/config/schema.py::DetectionTrainingConfig
-      runtime: src/detection/runtime.py
-      notes: "Legacy/comparator recursive_detection_ce A6 ablation candidate: A2/support2 plus ciou_gibbs_v0 coordinate soft targets preserving recursive support/balance coefficients; intended to run beside A5 on a separate 4-GPU slice."
-    - id: stage1_legacy_recursive_detection_ce_prefix_rollin_et_rmp_ce_ablation
-      status: ablation
-      config: configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml
-      authoring_snippets: configs/_shared/recursive_detection/
-      parser: src/config/schema.py::DetectionTrainingConfig
-      runtime: src/detection/runtime.py
-      notes: "Legacy/comparator recursive_detection_ce compact-full-only prefix_rollin_et_rmp_ce E1/A3 mechanism surface. EOS supervision targets the Qwen chat-template <|im_end|> marker with ordinary teacher-forced CE. Treat A3 as a mechanism probe rather than a fair A2 challenger unless supervised-token density is matched."
-    - id: stage1_legacy_compact_bridge
-      status: legacy-bridge
-      config: configs/stage1/compact_detection_sequence/smoke/compact_full_tiny.yaml
-      parser: src/config/schema.py::TrainingConfig
-      notes: "Legacy TrainingConfig plus custom.detection_sequence_format bridge; do not use as a current-schema example."
+    - id: stage1_retired_recursive_detection_archive
+      status: historical-archive
+      archive_root: configs/archive/detection_scene_clean_break/stage1/
+      notes: "Retired recursive-detection and compact-bridge config roots are quarantined for historical inspection only. Use stage1_detection_teacher_forcing for current Stage-1 configs."
 
 docs:
   repo:

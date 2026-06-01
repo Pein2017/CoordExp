@@ -14,7 +14,7 @@ def test_stage2_preflight_resolves_root_image_dir_relative_to_repo_root_not_cwd(
     repo_root = Path(__file__).resolve().parents[1]
     config_path = (
         repo_root
-        / "configs/stage2_rollout_correction/prod/coco1024_online_residual_correction_vllm_tail_append.yaml"
+        / "configs/stage2/rollout_correction/prod/coco1024_online_residual_correction_vllm_tail_append.yaml"
     )
 
     # Simulate a user invoking the launcher from outside the repo.

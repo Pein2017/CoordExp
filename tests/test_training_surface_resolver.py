@@ -329,25 +329,32 @@ def test_removed_nested_objective_config_keys_fail_fast(removed_key: str) -> Non
 
 
 @pytest.mark.parametrize(
-    ("config_relpath", "expected_type"),
+    "config_relpath",
     [
-        (
-            "configs/stage1/recursive_detection_ce/smoke/compact_full_tiny.yaml",
-            DetectionTrainingConfig,
-        ),
-        (
-            "configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml",
-            DetectionTrainingConfig,
-        ),
-        ("configs/stage2_rollout_correction/base.yaml", TrainingConfig),
+        "configs/stage2/rollout_correction/smoke/compact_full_hf_1step.yaml",
     ],
 )
 def test_current_config_loader_configs_remain_passthrough(
     config_relpath: str,
-    expected_type: type[object],
 ) -> None:
     repo_root = Path(__file__).resolve().parents[1]
 
     cfg = ConfigLoader.load_materialized_training_config(str(repo_root / config_relpath))
 
-    assert isinstance(cfg, expected_type)
+    assert isinstance(cfg, TrainingConfig)
+
+
+@pytest.mark.parametrize(
+    "config_relpath",
+    [
+        "configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/smoke/compact_full_tiny.yaml",
+        "configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2.yaml",
+    ],
+)
+def test_archived_recursive_detection_configs_are_not_current_passthrough(
+    config_relpath: str,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    with pytest.raises(ValueError, match="legacy objective ids are unsupported"):
+        ConfigLoader.load_materialized_training_config(str(repo_root / config_relpath))

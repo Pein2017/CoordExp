@@ -810,7 +810,7 @@ def test_stage2_rollout_correction_prod_config_keeps_residual_pipeline_contract(
     cfg = ConfigLoader.load_materialized_training_config(
         str(
             repo_root
-            / "configs/stage2_rollout_correction/prod/coco1024_online_residual_correction_vllm_tail_append.yaml"
+            / "configs/stage2/rollout_correction/prod/coco1024_online_residual_correction_vllm_tail_append.yaml"
         )
     )
 
@@ -830,7 +830,7 @@ def test_stage2_rollout_correction_smoke_config_resolves_residual_pipeline() -> 
     cfg = ConfigLoader.load_materialized_training_config(
         str(
             repo_root
-            / "configs/stage2_rollout_correction/smoke/compact_full_hf_1step.yaml"
+            / "configs/stage2/rollout_correction/smoke/compact_full_hf_1step.yaml"
         )
     )
 
@@ -848,7 +848,7 @@ def test_representative_raw_leaves_still_author_model_run_name_and_artifact_subd
     raw_paths = [
         repo_root / "configs/stage1/lvis_bbox_max60_1024.yaml",
         repo_root
-        / "configs/stage2_rollout_correction/prod/coco1024_online_residual_correction_vllm_tail_append.yaml",
+        / "configs/stage2/rollout_correction/prod/coco1024_online_residual_correction_vllm_tail_append.yaml",
     ]
 
     for path in raw_paths:

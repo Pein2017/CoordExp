@@ -85,7 +85,7 @@ def test_stage2_policy_provenance_omits_non_stage2_rollout_correction_runs() -> 
 
 def test_stage2_policy_provenance_reads_real_typed_stage2_config() -> None:
     cfg = ConfigLoader.load_materialized_training_config(
-        "configs/stage2_rollout_correction/smoke/compact_full_hf_1step.yaml"
+        "configs/stage2/rollout_correction/smoke/compact_full_hf_1step.yaml"
     )
 
     provenance = build_stage2_policy_provenance(

@@ -157,9 +157,9 @@ def test_compact_full_encoding_view_matches_template_and_tokenization_golden() -
 
     assert encoded.rendered_assistant_text == (
         f"{OBJECT_REF_START_TOKEN}traffic light{BOX_START_TOKEN}"
-        "<|coord_0|><|coord_1|><|coord_20|><|coord_30|>\n"
+        "<|coord_0|><|coord_1|><|coord_20|><|coord_30|>"
         f"{OBJECT_REF_START_TOKEN}red car{BOX_START_TOKEN}"
-        "<|coord_22|><|coord_31|><|coord_80|><|coord_90|>\n"
+        "<|coord_22|><|coord_31|><|coord_80|><|coord_90|>"
         f"{OBJECT_REF_START_TOKEN}person{BOX_START_TOKEN}"
         "<|coord_900|><|coord_910|><|coord_998|><|coord_999|>"
     )

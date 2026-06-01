@@ -9,10 +9,10 @@ from src.config.loader import ConfigLoader
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STAGE1_ROOT = REPO_ROOT / "configs" / "stage1"
-STAGE2_ROOT = REPO_ROOT / "configs" / "stage2_rollout_correction"
+STAGE2_ROOT = REPO_ROOT / "configs" / "stage2" / "rollout_correction"
 STAGE_BASES = {
     "configs/stage1/sft_base.yaml",
-    "configs/stage2_rollout_correction/base.yaml",
+    "configs/stage2/rollout_correction/base.yaml",
 }
 
 
@@ -48,9 +48,9 @@ def _is_stage1_non_smoke_leaf(path: Path) -> bool:
 def _is_stage2_non_smoke_leaf(path: Path) -> bool:
     rel = path.relative_to(REPO_ROOT).as_posix()
     return (
-        rel.startswith("configs/stage2_rollout_correction/")
+        rel.startswith("configs/stage2/rollout_correction/")
         and "/smoke/" not in rel
-        and rel != "configs/stage2_rollout_correction/base.yaml"
+        and rel != "configs/stage2/rollout_correction/base.yaml"
     )
 
 
@@ -115,6 +115,7 @@ def test_stage1_canonical_profiles_load_under_current_hierarchy() -> None:
 def test_stage2_rollout_correction_hierarchy_uses_single_active_root() -> None:
     assert STAGE2_ROOT.is_dir()
     assert (STAGE2_ROOT / "base.yaml").is_file()
+    assert not (REPO_ROOT / "configs" / "stage2_rollout_correction").exists()
     assert not (REPO_ROOT / "configs" / "stage2_two_channel").exists()
     assert not (REPO_ROOT / "configs" / "stage2_ab").exists()
 

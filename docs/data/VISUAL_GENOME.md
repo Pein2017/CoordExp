@@ -145,7 +145,7 @@ PYTHONPATH=. python public_data/scripts/merge_jsonl.py \
   --strategy round_robin
 ```
 
-Then point your current training config under `configs/stage1/` or `configs/stage2_rollout_correction/` to the merged file.
+Then point your current training config under `configs/stage1/` or `configs/stage2/rollout_correction/` to the merged file.
 
 ## Dataset-specific Notes
 

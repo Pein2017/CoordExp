@@ -224,7 +224,7 @@ def test_global_and_stage_bases_no_longer_hide_dataset_or_prompt_identity() -> N
         str(repo_root / "configs/stage1/sft_base.yaml")
     )
     raw_stage2 = ConfigLoader.load_yaml_with_extends(
-        str(repo_root / "configs/stage2_rollout_correction/base.yaml")
+        str(repo_root / "configs/stage2/rollout_correction/base.yaml")
     )
 
     for payload in (raw_base, raw_stage1, raw_stage2):

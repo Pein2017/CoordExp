@@ -22,14 +22,8 @@ attempt.
 - `configs/stage1/detection_teacher_forcing/`: canonical
   `stage1_detection_teacher_forcing` Stage-1 detection teacher-forcing surface.
   New compact-full teacher-forcing production and smoke configs belong here.
-- `configs/stage1/recursive_detection_ce/prod/`: legacy/comparator compact
-  recursive-detection CE production and comparison configs. Keep only for
-  migration history or explicitly named comparisons.
-- `configs/stage1/recursive_detection_ce/ablation/`: legacy/comparator
-  mechanism-level recursive-detection CE ablations.
-- `configs/stage1/recursive_detection_ce/smoke/`: migration smoke and
-  preflight overlays for the legacy recursive-detection CE configs.
-- `configs/stage2_rollout_correction/`: active Stage-2 rollout-correction
+- `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/`: quarantined legacy/comparator recursive-detection CE production, smoke, and ablation configs for historical inspection only. Do not add new canonical teacher-forcing configs here.
+- `configs/stage2/rollout_correction/`: active Stage-2 rollout-correction
   surface. These configs use rollout prefix plus GT/residual correction and the
   canonical `stage2_rollout_correction` namespace.
 

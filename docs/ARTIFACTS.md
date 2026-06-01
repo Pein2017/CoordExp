@@ -292,7 +292,7 @@ artifacts into `training.output_dir` before training starts:
   - emitted via `src/bootstrap/run_metadata.py`
 - `config_source.yaml` / `base_config_source.yaml`
   - Best-effort copies of the YAML sources used to build the run.
-- `monitor_dumps/` when either
+- `monitor_dumps/` when either retained migration handle
   `rollout_matching.train_monitor_dump.enabled: true` or
   `rollout_matching.eval_monitor_dump.enabled: true`
   - Qualitative rollout diagnostics written as `.json` and optional `.md`.
@@ -322,7 +322,7 @@ artifacts into `training.output_dir` before training starts:
     `metrics.json`, `per_image.json`, and standard evaluator sidecars for that
     eval window.
 - `eval_detection/step_<global_step>/` during Stage-2 rollout-aware eval
-  - Stage-2 writes this directory when
+  - Stage-2 writes this directory when retained migration handle
     `rollout_matching.eval_detection.materialize_artifacts: true`
     (default).
   - Official Stage-2 eval metrics require this materialized directory; setting
@@ -374,7 +374,7 @@ artifacts.
 Stage-2 eval artifact materialization is likewise frozen at the current
 default-on location:
 
-- `rollout_matching.eval_detection.materialize_artifacts: true`
+- retained migration handle `rollout_matching.eval_detection.materialize_artifacts: true`
 - disabling materialization is not valid for official Stage-2 eval metrics,
   because metric-bearing eval must pass through `gt_vs_pred_scored.jsonl`
   score-provenance checks

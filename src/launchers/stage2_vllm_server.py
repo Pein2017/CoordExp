@@ -647,7 +647,7 @@ def main() -> int:
         if config_raw is None:
             _die(
                 "Missing config. Set env var `config=...` (or `CONFIG=...`). Example: "
-                "config=configs/stage2_rollout_correction/base.yaml",
+                "config=configs/stage2/rollout_correction/base.yaml",
                 rc=2,
             )
 

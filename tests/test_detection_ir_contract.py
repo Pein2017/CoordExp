@@ -4,8 +4,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from src.detection import DetectionDocument as ExportedDetectionDocument
-from src.detection import detection_document_from_normalized_sample
+import src.detection as detection
 from src.detection.data import (
     CoordinateTokenBox,
     DetectionMetadata,
@@ -13,7 +12,7 @@ from src.detection.data import (
     NormalizedDetectionSample,
     ObjectOrderingPlan,
 )
-from src.detection.ir import DetectionDocument
+from src.detection.ir import DetectionDocument, detection_document_from_normalized_sample
 
 
 def test_detection_document_adapts_normalized_sample_without_behavior_change() -> None:
@@ -135,11 +134,12 @@ def test_detection_document_is_semantic_only() -> None:
     assert not hasattr(doc, "recursive_detection_targets")
 
 
-def test_detection_ir_public_exports() -> None:
+def test_detection_ir_bridge_is_private_not_root_public() -> None:
     sample = _sample(object_ordering=ObjectOrderingPlan.sorted())
     doc = detection_document_from_normalized_sample(sample)
 
-    assert ExportedDetectionDocument is DetectionDocument
+    assert not hasattr(detection, "DetectionDocument")
+    assert not hasattr(detection, "detection_document_from_normalized_sample")
     assert isinstance(doc, DetectionDocument)
     assert doc.objects[0].object_instance_id == sample.objects[0].object_instance_id
 

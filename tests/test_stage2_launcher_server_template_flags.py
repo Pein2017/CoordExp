@@ -50,15 +50,15 @@ def test_stage2_launcher_default_config_exists() -> None:
     script = repo_root / "scripts" / "train_stage2.sh"
     src = script.read_text(encoding="utf-8")
 
-    assert "configs/stage2_rollout_correction/base.yaml" in src
+    assert "configs/stage2/rollout_correction/base.yaml" in src
     assert (
-        repo_root / "configs" / "stage2_rollout_correction" / "base.yaml"
+        repo_root / "configs" / "stage2" / "rollout_correction" / "base.yaml"
     ).is_file()
 
 
 def test_stage2_launcher_round_trips_preflight_engine_kwargs() -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    config_path = repo_root / "configs/stage2_rollout_correction/base.yaml"
+    config_path = repo_root / "configs/stage2/rollout_correction/base.yaml"
     preflight = resolve_stage2_launcher_preflight(str(config_path))
 
     cmd = build_swift_rollout_cmd(

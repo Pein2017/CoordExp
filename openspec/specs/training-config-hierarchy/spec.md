@@ -112,7 +112,7 @@ dataset or prompt identity.
 Normative behavior:
 
 - `configs/stage1/sft_base.yaml` MUST remain the Stage-1 runtime base.
-- `configs/stage2_rollout_correction/base.yaml` MUST remain the Stage-2
+- `configs/stage2/rollout_correction/base.yaml` MUST remain the Stage-2
   rollout-correction runtime base.
 - for canonical migrated families, both stage-local runtime bases SHOULD layer
   on top of `configs/base.yaml` so the universal base remains truly universal.

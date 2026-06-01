@@ -76,27 +76,27 @@ Superpowers plan.
 
 ## 7. Rename/Delete Cleanup After Approval
 
-- [ ] 7.1 Rename public concepts whose names conflict with the target
+- [x] 7.1 Rename public concepts whose names conflict with the target
   vocabulary.
-- [ ] 7.2 Delete or quarantine retired trainer variants, old config roots,
+- [x] 7.2 Delete or quarantine retired trainer variants, old config roots,
   compatibility facades, and stale script-only workflows that are not retained
   canonical surfaces.
-- [ ] 7.3 Update docs/catalog/spec routing so current authority points to the
+- [x] 7.3 Update docs/catalog/spec routing so current authority points to the
   new concepts and archived history remains clearly historical.
-- [ ] 7.4 Tighten search gates only after the corresponding replacement surface
+- [x] 7.4 Tighten search gates only after the corresponding replacement surface
   exists.
-- [ ] 7.5 Do not delete or rename retained canonical behavior until its
+- [x] 7.5 Do not delete or rename retained canonical behavior until its
   replacement seam and characterization checks are in place.
 
 ## 8. Validation After Approval
 
-- [ ] 8.1 Run narrow template/render/parse tests.
-- [ ] 8.2 Run tokenization/span/supervision tests.
-- [ ] 8.3 Run Stage-1 smoke or config-parse checks for the retained canonical
+- [x] 8.1 Run narrow template/render/parse tests.
+- [x] 8.2 Run tokenization/span/supervision tests.
+- [x] 8.3 Run Stage-1 smoke or config-parse checks for the retained canonical
   surface.
-- [ ] 8.4 Run Stage-2 target-construction and assignment tests.
-- [ ] 8.5 Run inference decode tests.
-- [ ] 8.6 Run eval artifact/scoring tests.
-- [ ] 8.7 Run final search gates for retired names in active surfaces.
+- [x] 8.4 Run Stage-2 target-construction and assignment tests.
+- [x] 8.5 Run inference decode tests.
+- [x] 8.6 Run eval artifact/scoring tests.
+- [x] 8.7 Run final search gates for retired names in active surfaces.
 - [x] 8.8 Run `openspec validate detection-scene-clean-break --strict` before
   requesting implementation approval.

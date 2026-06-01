@@ -40,11 +40,11 @@ owner/expiry/opt-in. Supported `surface.id` values are:
 |---|---|---|---|---|
 | Stage-1 JSON CE | Current baseline and shadow `surface.id: stage1_json_ce` | `configs/stage1/sft_base.yaml`, shared Stage-1 profiles, and `src/training/pipelines/stage1_json_ce.py` | Static packing where supported | JSON chat CE remains the baseline/regression surface; do not treat it as the compact-full target architecture. |
 | Stage-1 compact teacher-forcing | Active canonical public route: `stage1_detection_teacher_forcing`; related shadow architecture ID: `surface.id: stage1_compact_trie_ce` | `configs/stage1/detection_teacher_forcing/`; runtime policy in `src/detection/runtime.py`; shared objective runner in `src/training/objectives/teacher_forcing.py` | Packing/cache fail fast until exact `teacher_forcing_target_ir` atom-position mapping is implemented and validated | Compact-full teacher-forcing is the active Stage-1 route: global token-role stability plus singleton hard SFT or valid-set marginal atoms. Treat `stage1_compact_trie_ce` as a separate shadow architecture ID, not the public config route. |
-| Stage-1 compact recursive detection | Legacy/comparator handle, not an active new-training route | `configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml` | Legacy recursive sidecar packing/cache remain unsupported | Use only to interpret historical random-permutation ET-RMP-CE runs or explicit comparator reports. New active configs should use `objective.id: teacher_forcing`. |
-| Stage-1 compact recursive detection geometry-aware softCE | Legacy/comparator ablation candidates | `configs/stage1/recursive_detection_ce/prod/compact_full_support2_iou_gibbs_softce_a5.yaml`; `configs/stage1/recursive_detection_ce/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml` | Legacy recursive sidecar packing/cache remain unsupported | Historical/unlaunched comparator candidates; not part of the active teacher-forcing objective surface. |
-| Stage-1 compact prefix roll-in ET-RMP-CE | Legacy/comparator E1 ablation handle | `configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml` | Packing/cache disabled; recursive sidecar offset rewriting is not implemented | Compact-full historical ablation only. EOS supervision uses ordinary teacher-forced `<|im_end|>` CE. |
+| Stage-1 compact recursive detection | Legacy/comparator handle, not an active new-training route | `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2.yaml` | Legacy recursive sidecar packing/cache remain unsupported | Use only to interpret historical random-permutation ET-RMP-CE runs or explicit comparator reports. New active configs should use `objective.id: teacher_forcing`. |
+| Stage-1 compact recursive detection geometry-aware softCE | Legacy/comparator ablation candidates | `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2_iou_gibbs_softce_a5.yaml`; `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml` | Legacy recursive sidecar packing/cache remain unsupported | Historical/unlaunched comparator candidates; not part of the active teacher-forcing objective surface. |
+| Stage-1 compact prefix roll-in ET-RMP-CE | Legacy/comparator E1 ablation handle | `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml` | Packing/cache disabled; recursive sidecar offset rewriting is not implemented | Compact-full historical ablation only. EOS supervision uses ordinary teacher-forced `<|im_end|>` CE. |
 | Stage-1 compact detection bridge | Legacy bridge only | `configs/stage1/compact_detection_sequence/smoke/compact_full_tiny.yaml` | Legacy SFT smoke surface; not a latest packing example | Uses legacy `TrainingConfig` plus `custom.detection_sequence_format`; do not use as a current-schema example. |
-| Stage-2 rollout correction | Active Stage-2 operator path and shadow `surface.id: stage2_rollout_correction` | `configs/stage2_rollout_correction/`; trainer route in `src/trainers/stage2_rollout_correction.py` | Post-rollout trainer packing when configured; rollout generation remains unpacked | YAML-first rollout-prefix + GT-correction training. The only active objective is `residual_set_correction` with `application.preset: rollout_self_prefix`. |
+| Stage-2 rollout correction | Active Stage-2 operator path and shadow `surface.id: stage2_rollout_correction` | `configs/stage2/rollout_correction/`; trainer route in `src/trainers/stage2_rollout_correction.py` | Post-rollout trainer packing when configured; rollout generation remains unpacked | YAML-first rollout-prefix + GT-correction training. The only active objective is `residual_set_correction` with `application.preset: rollout_self_prefix`. |
 | Retired Stage-2 rollout-aligned variants | Removed | `stage2_rollout_aligned`, `stage2_rollout_runtime`, `rollout_matching_sft` fail fast with guidance to `stage2_rollout_correction` | Removed | Shared prompt/decode/backend/trace behavior is owned by `src/infer/*`; Stage-2 trainer code owns residual correction orchestration. |
 | Runtime fusion config | Removed | `custom.fusion_config` fails fast; `configs/fusion/` was deleted | Removed | Merge JSONLs offline for multi-dataset training. |
 
@@ -82,13 +82,13 @@ that a benchmark, smoke, or validation run has completed.
   `stage1_detection_teacher_forcing` and parse through
   `DetectionTrainingConfig`.
 - Legacy recursive-detection authoring snippets live under
-  `configs/_shared/recursive_detection/` and
+  `configs/archive/detection_scene_clean_break/stage1/shared_recursive_detection/` and
   use top-level `data`, `prompt`, `detection_template`, `token_rows`,
   `objective`, `packing`, `evaluation`, and `validation`. They are not consumed
   by canonical launch configs until the relevant `extends` chains are migrated.
-- `configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml` is a legacy/comparator random-permutation ET-RMP-CE handle, not the active latest-detection production objective.
-- `configs/stage1/recursive_detection_ce/prod/compact_full_support2_iou_gibbs_softce_a5.yaml` and `configs/stage1/recursive_detection_ce/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml` are legacy/comparator geometry-aware coordinate softCE candidates that preserve the A2/support2 setup except for `objective.coord_soft_ce` and run identity.
-- `configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml` is a legacy/comparator `prefix_rollin_et_rmp_ce` ablation handle; do not describe it as production-ready.
+- `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2.yaml` is a legacy/comparator random-permutation ET-RMP-CE handle, not the active latest-detection production objective.
+- `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2_iou_gibbs_softce_a5.yaml` and `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml` are legacy/comparator geometry-aware coordinate softCE candidates that preserve the A2/support2 setup except for `objective.coord_soft_ce` and run identity.
+- `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml` is a legacy/comparator `prefix_rollin_et_rmp_ce` ablation handle; do not describe it as production-ready.
 - `configs/stage1/compact_detection_sequence/` is a legacy bridge around
   `TrainingConfig` plus `custom.detection_sequence_format`.
 - Strict template owner: `src/detection/template.py`.
@@ -149,9 +149,9 @@ latest-detection objective subkeys, but no new CLI flags.
 - `src/training/objectives/`
 - `src/training/observability/`
 - `configs/stage1/detection_teacher_forcing/`
-- `configs/stage1/recursive_detection_ce/` legacy/comparator configs only
+- `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/` legacy/comparator configs only
 - `configs/stage1/compact_detection_sequence/`
-- `configs/_shared/recursive_detection/` authoring snippets, not current launch inheritance
+- `configs/archive/detection_scene_clean_break/stage1/shared_recursive_detection/` authoring snippets, not current launch inheritance
 - `src/trainers/stage2_rollout_correction.py`
 - `src/trainers/rollout_aligned_targets.py`
 - `src/trainers/rollout_aligned_evaluator.py`
@@ -166,4 +166,4 @@ latest-detection objective subkeys, but no new CLI flags.
 - `configs/_shared/datasets/`
 - `configs/_shared/prompts/`
 - `configs/stage1/`
-- `configs/stage2_rollout_correction/`
+- `configs/stage2/rollout_correction/`

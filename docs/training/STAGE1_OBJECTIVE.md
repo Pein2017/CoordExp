@@ -35,12 +35,12 @@ Scope note:
 - Compact prefix roll-in multi-positive training remains only a legacy
   recursive-detection CE comparator/ablation surface, not the active compact
   teacher-forcing route. The checked-in route
-  `configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml`
+  the archived prefix-rollin recursive-detection config
   should be treated as E1 ablation/smoke validation, not production.
 - Geometry-aware coordinate SoftCE for legacy compact recursive detection is
   scoped to historical A5-iou-gibbs/A6-ciou-gibbs and focused cap8
   instance-trie provenance configs under
-  `configs/stage1/recursive_detection_ce/prod/`. It uses
+  the archived recursive-detection production config root. It uses
   `objective.coord_soft_ce` and does not route through legacy
   `custom.coord_soft_ce_w1.*`.
 - Narrow V1 exception:
@@ -181,11 +181,11 @@ The current public compact teacher-forcing route is
 The old recursive-detection CE configs below remain legacy/comparator,
 migration, or ablation history only:
 
-- `configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml` remains the random-permutation ET-RMP-CE legacy comparator, not the active compact teacher-forcing route.
-- `configs/stage1/recursive_detection_ce/prod/compact_full_support2_iou_gibbs_softce_a5.yaml` is historical A5-iou-gibbs negative-result/superseded provenance: A2/support2 plus `iou_gibbs_v0` coordinate soft targets with `tau=0.0090909091` from the train one-token IoU-loss median.
-- `configs/stage1/recursive_detection_ce/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml` is historical paired A6-ciou-gibbs negative-result/superseded provenance: same setup as historical A5 but with `ciou_gibbs_v0`; production preparation assumed a separate 4-GPU slice for A5 and A6 rather than one 8-GPU run.
-- `configs/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1.yaml` is historical instance-trie/soft-CE ablation provenance, with `cap8_frac0p06_mix0p1` as the slope ablation and `cap8_frac0p04_mix0p2` as the strength ablation; see [`INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md`](INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md). These configs are not the new typed teacher-forcing objective surface.
-- `configs/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml` is the legacy/comparator E1 `prefix_rollin_et_rmp_ce` ablation route for Prefix-Closed Multi-Target SFT.
+- `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2.yaml` remains the random-permutation ET-RMP-CE legacy comparator, not the active compact teacher-forcing route.
+- `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2_iou_gibbs_softce_a5.yaml` is historical A5-iou-gibbs negative-result/superseded provenance: A2/support2 plus `iou_gibbs_v0` coordinate soft targets with `tau=0.0090909091` from the train one-token IoU-loss median.
+- `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml` is historical paired A6-ciou-gibbs negative-result/superseded provenance: same setup as historical A5 but with `ciou_gibbs_v0`; production preparation assumed a separate 4-GPU slice for A5 and A6 rather than one 8-GPU run.
+- `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1.yaml` is historical instance-trie/soft-CE ablation provenance, with `cap8_frac0p06_mix0p1` as the slope ablation and `cap8_frac0p04_mix0p2` as the strength ablation; see [`INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md`](INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md). These configs are not the new typed teacher-forcing objective surface.
+- the archived prefix-rollin recursive-detection config is the legacy/comparator E1 `prefix_rollin_et_rmp_ce` ablation route for Prefix-Closed Multi-Target SFT.
 
 The legacy/comparator `prefix_rollin_et_rmp_ce` route is compact-full only. It requires `detection_template.id: compact_full`, masks roll-in prefix labels, samples `K` uniformly over `[0, object_count]`, keeps `suffix_order: same_sampled_permutation` for V1, and expresses support/balance weights under `objective.target`, not obsolete flat trie-weight aliases.
 
@@ -276,7 +276,7 @@ a diagnostic probe, not a forced-continuation training mechanism:
 
 ```bash
 conda run -n ms python -m src.analysis.prefix_rollin_teacher_forced_diagnostic \
-  --config configs/stage1/recursive_detection_ce/smoke/compact_full_prefix_rollin_adapter_tiny.yaml \
+  --config <archived recursive-detection smoke config> \
   --checkpoint outputs/stage1_2b/recursive_detection_ce/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664 \
   --split val \
   --limit 8 \
@@ -304,7 +304,7 @@ mode:
 
 ```bash
 conda run -n ms python -m src.analysis.prefix_rollin_teacher_forced_diagnostic \
-  --config configs/stage1/recursive_detection_ce/smoke/compact_full_prefix_rollin_adapter_tiny.yaml \
+  --config <archived recursive-detection smoke config> \
   --checkpoint outputs/stage1_2b/recursive_detection_ce/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664 \
   --split val \
   --limit 8 \

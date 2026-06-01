@@ -35,7 +35,7 @@ RUNTIME_PATH = REPO_ROOT / "src" / "detection" / "runtime.py"
 def _prod_detection_config() -> DetectionTrainingConfig:
     config_path = (
         REPO_ROOT
-        / "configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml"
+        / "configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2.yaml"
     )
     cfg = ConfigLoader.load_materialized_training_config(str(config_path))
     assert isinstance(cfg, DetectionTrainingConfig)
