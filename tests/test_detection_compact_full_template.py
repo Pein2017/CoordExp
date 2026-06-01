@@ -91,7 +91,7 @@ def test_compact_full_renders_approved_token_grammar_without_json_closure() -> N
     assert "\n" not in rendered.text
     assert '{"objects"' not in rendered.text
     assert "]}" not in rendered.text
-    assert rendered.separator_spans[0].text(rendered.text) == ""
+    assert rendered.separator_spans == ()
     assert rendered.terminal_close_span.start == len(rendered.text)
     assert rendered.terminal_close_span.end == len(rendered.text)
     assert rendered.terminal_close_span.text(rendered.text) == ""
@@ -131,7 +131,7 @@ def test_compact_full_exposes_entry_marker_coordinate_and_trie_spans() -> None:
         BOX_START_TOKEN,
     ]
     assert first.structural_token_spans == first.control_spans
-    assert first.separator_span == rendered.separator_spans[0]
+    assert first.separator_span is None
     assert first.trie_eligible_span == first.entry_span
 
     assert second.object_instance_id == "img-9:ann-502:src-3"
@@ -145,7 +145,6 @@ def test_compact_full_exposes_entry_marker_coordinate_and_trie_spans() -> None:
     assert [span.label for span in rendered.structural_token_spans] == [
         "object_ref_start",
         "bbox_start",
-        "object_separator",
         "object_ref_start",
         "bbox_start",
     ]

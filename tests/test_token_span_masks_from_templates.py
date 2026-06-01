@@ -149,7 +149,6 @@ def test_compact_full_token_roles_cover_markers_and_coordinate_special_tokens() 
     object_ref_index = token_texts.index(OBJECT_REF_START_TOKEN)
     box_start_index = token_texts.index(BOX_START_TOKEN)
     coord_indices = [index for index, text in enumerate(token_texts) if text.startswith("<|coord_")]
-    separator_index = token_texts.index("\n", object_ref_index)
 
     assert tokenized.token_roles[object_ref_index] is TokenRole.CONTROL
     assert tokenized.control_mask[object_ref_index] is True
@@ -158,8 +157,8 @@ def test_compact_full_token_roles_cover_markers_and_coordinate_special_tokens() 
     assert coord_indices
     assert all(tokenized.token_roles[index] is TokenRole.COORD for index in coord_indices)
     assert all(tokenized.coord_mask[index] is True for index in coord_indices)
-    assert tokenized.token_roles[separator_index] is TokenRole.IGNORE
-    assert tokenized.separator_mask[separator_index] is False
+    assert tokenized.separator_spans == ()
+    assert not any(tokenized.separator_mask)
     assert tokenized.assistant_stop_token_span is not None
     assert token_texts[tokenized.assistant_stop_token_span.start] == "<|im_end|>"
     assert tokenized.token_roles[tokenized.assistant_stop_token_span.start] is TokenRole.TERMINAL

@@ -442,7 +442,7 @@ class CompactFullTemplate:
         structural_spans: list[CharSpan] = []
 
         for object_index, obj in enumerate(sample.objects):
-            if object_index:
+            if object_index and self.render_separator(object_index - 1, object_index):
                 separator_span = builder.append(
                     self.render_separator(object_index - 1, object_index),
                     "object_separator",

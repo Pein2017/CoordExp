@@ -266,9 +266,8 @@ def test_compact_full_two_object_render_bytes_and_separator_stay_exact() -> None
         "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
     )
     assert len(rendered.object_entries) == 2
-    assert len(rendered.separator_spans) == 1
-    assert rendered.separator_spans[0].text(rendered.text) == ""
-    assert rendered.object_entries[0].separator_span == rendered.separator_spans[0]
+    assert rendered.separator_spans == ()
+    assert rendered.object_entries[0].separator_span is None
     assert rendered.object_entries[0].entry_span.text(rendered.text) == (
         f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
         "<|coord_1|><|coord_2|><|coord_3|><|coord_4|>"
@@ -281,24 +280,30 @@ def test_compact_full_two_object_render_bytes_and_separator_stay_exact() -> None
     assert rendered.terminal_close_span.end == len(rendered.text)
 
 
-def test_object_separator_events_follow_previous_entry_projection_for_json_and_compact() -> None:
-    for template in (Stage1JsonPrettyTemplate(), CompactFullTemplate()):
-        rendered = template.render_assistant(_two_object_sample())
-        previous_entry = rendered.object_entries[0]
+def test_object_separator_events_follow_previous_entry_projection_for_json() -> None:
+    rendered = Stage1JsonPrettyTemplate().render_assistant(_two_object_sample())
+    previous_entry = rendered.object_entries[0]
 
-        event = _find_event(
-            rendered,
-            span_kind="object_separator",
-            primary_role="SEPARATOR",
-        )
+    event = _find_event(
+        rendered,
+        span_kind="object_separator",
+        primary_role="SEPARATOR",
+    )
 
-        assert event.char_span == rendered.separator_spans[0]
-        assert event.char_span == previous_entry.separator_span
-        assert event.object_instance_id == previous_entry.object_instance_id
-        assert event.object_index == previous_entry.object_index
-        assert event.source_object_index == previous_entry.source_object_index
-        assert event.mask_groups == frozenset({"separator", "control"})
-        assert event.provenance == "rendered_control"
+    assert event.char_span == rendered.separator_spans[0]
+    assert event.char_span == previous_entry.separator_span
+    assert event.object_instance_id == previous_entry.object_instance_id
+    assert event.object_index == previous_entry.object_index
+    assert event.source_object_index == previous_entry.source_object_index
+    assert event.mask_groups == frozenset({"separator", "control"})
+    assert event.provenance == "rendered_control"
+
+
+def test_compact_full_no_newline_has_no_object_separator_events() -> None:
+    rendered = CompactFullTemplate().render_assistant(_two_object_sample())
+
+    assert rendered.separator_spans == ()
+    assert _events(rendered, span_kind="object_separator", primary_role="SEPARATOR") == ()
 
 
 def test_shared_render_projection_keeps_trie_and_object_container_fields_for_json_and_compact() -> None:
