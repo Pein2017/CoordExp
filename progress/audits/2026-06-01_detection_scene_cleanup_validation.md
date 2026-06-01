@@ -63,7 +63,9 @@ Archive/classification inputs:
   references remain historical.
 - Marked the legacy instance-trie recursive-detection config-diff test as
   historical/skipped because the archived `recursive_detection_ce` YAML is no
-  longer a materializable current config under the clean-break parser.
+  longer a materializable current config under the clean-break parser. Skipped
+  historical recursive-detection tests are archive/rejection evidence, not
+  active correctness evidence.
 
 ## Search Gate Results
 

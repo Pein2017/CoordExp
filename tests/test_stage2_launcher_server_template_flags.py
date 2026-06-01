@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 from src.launchers.stage2_vllm_server import build_swift_rollout_cmd, parse_base_url
@@ -8,6 +9,12 @@ from src.trainers.rollout_matching.preflight import resolve_stage2_launcher_pref
 def _flag_value(cmd: list[str], flag: str) -> str:
     index = cmd.index(flag)
     return cmd[index + 1]
+
+
+def _script_default_config(src: str) -> str:
+    match = re.search(r'export CONFIG="\$\{config:-\$\{CONFIG:-(?P<path>[^}]+)\}\}"', src)
+    assert match is not None
+    return match.group("path")
 
 
 def test_stage2_launcher_shell_is_thin_python_delegate() -> None:
@@ -49,11 +56,26 @@ def test_stage2_launcher_default_config_exists() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     script = repo_root / "scripts" / "train_stage2.sh"
     src = script.read_text(encoding="utf-8")
+    config_rel = _script_default_config(src)
 
-    assert "configs/stage2/rollout_correction/base.yaml" in src
     assert (
-        repo_root / "configs" / "stage2" / "rollout_correction" / "base.yaml"
-    ).is_file()
+        config_rel
+        == "configs/stage2/rollout_correction/smoke/compact_full_vllm_train64_val32_12steps_baseline.yaml"
+    )
+    assert (repo_root / config_rel).is_file()
+
+
+def test_stage2_launcher_default_config_is_single_server_vllm_preflight() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    script = repo_root / "scripts" / "train_stage2.sh"
+    config_rel = _script_default_config(script.read_text(encoding="utf-8"))
+
+    preflight = resolve_stage2_launcher_preflight(str(repo_root / config_rel))
+
+    assert preflight["rollout_backend"] == "vllm"
+    assert preflight["vllm_mode"] == "server"
+    assert preflight["server_base_urls"] == ["http://127.0.0.1:8000"]
+    assert preflight["server_group_ports"] == [51216]
 
 
 def test_stage2_launcher_round_trips_preflight_engine_kwargs() -> None:

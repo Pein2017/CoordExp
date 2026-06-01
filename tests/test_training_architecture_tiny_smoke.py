@@ -14,7 +14,7 @@ from helpers.training_architecture_fixture_builder import (
 FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "training_architecture"
 REAL_BACKEND_SMOKE_COMMAND = (
     "PYTHONDONTWRITEBYTECODE=1 "
-    "config=configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/smoke/compact_full_tiny.yaml "
+    "config=configs/stage1/detection_teacher_forcing/smoke/compact_full_tiny.yaml "
     "gpus=0 conda run -n ms bash scripts/train.sh"
 )
 
@@ -38,6 +38,9 @@ def test_tiny_fake_forward_backward_smoke_has_finite_loss_and_gradient() -> None
 
 def test_real_backend_smoke_command_is_documented_and_loadable() -> None:
     assert "conda run -n ms bash scripts/train.sh" in REAL_BACKEND_SMOKE_COMMAND
+    assert "configs/stage1/detection_teacher_forcing/smoke/compact_full_tiny.yaml" in (
+        REAL_BACKEND_SMOKE_COMMAND
+    )
     assert "compact_full_tiny.yaml" in REAL_BACKEND_SMOKE_COMMAND
     command_parts = shlex.split(REAL_BACKEND_SMOKE_COMMAND)
     config_arg = next(part for part in command_parts if part.startswith("config="))
