@@ -22,6 +22,7 @@ from src.infer.constraints import (
 from src.infer.parsing import (
     DecodedDetectionResult,
     diagnostic_parser_result,
+    require_metric_bearing,
     strict_parser_result,
 )
 from src.tokens.coord.codec import sequence_has_coord_tokens
@@ -488,6 +489,10 @@ def materialize_offline_gt_vs_pred_record(
 ) -> Dict[str, Any]:
     """Project a decoded detection result into the stable gt_vs_pred row schema."""
 
+    decoded_result = require_metric_bearing(
+        decoded_result,
+        consumer="official_gt_vs_pred_materialization",
+    )
     return {
         "image": image,
         "width": int(width),

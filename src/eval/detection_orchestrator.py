@@ -88,6 +88,7 @@ from src.eval.detection_lvis import (
     _use_lvis_backend,
 )
 from src.eval.detection_records import (
+    DetectionEvalRecord,
     EvalCounters,
     EvalOptions,
     Sample,
@@ -102,8 +103,8 @@ from src.eval.detection_records import (
 from src.infer.artifacts import load_comparable_artifact
 
 def _prepare_all_from_records(
-    gt_records: List[Dict[str, Any]],
-    pred_records: List[Dict[str, Any]],
+    gt_records: Sequence[Mapping[str, Any]],
+    pred_records: Sequence[Mapping[str, Any]],
     options: EvalOptions,
     counters: EvalCounters,
     *,
@@ -117,13 +118,28 @@ def _prepare_all_from_records(
     bool,
     List[Dict[str, Any]],
 ]:
+    gt_eval_records = [
+        record if isinstance(record, DetectionEvalRecord)
+        else DetectionEvalRecord.from_json_record(record)
+        for record in gt_records
+    ]
+    pred_eval_records = [
+        record if isinstance(record, DetectionEvalRecord)
+        else DetectionEvalRecord.from_json_record(record)
+        for record in pred_records
+    ]
     if prepare_coco:
-        for record_idx, rec in enumerate(pred_records):
+        for record_idx, rec in enumerate(pred_eval_records):
             _validate_score_provenance_for_coco(rec, record_idx)
 
     gt_samples: List[Sample] = []
     for idx, rec in enumerate(
-        tqdm(gt_records, desc="GT", unit="img", disable=len(gt_records) < 10)
+        tqdm(
+            gt_eval_records,
+            desc="GT",
+            unit="img",
+            disable=len(gt_eval_records) < 10,
+        )
     ):
         sample = _prepare_gt_record(rec, idx, counters, strict=options.strict_parse)
         if sample:
@@ -131,8 +147,8 @@ def _prepare_all_from_records(
         elif options.strict_parse:
             raise ValueError(f"Failed to prepare GT for index {idx}")
 
-    pred_map: Dict[int, Dict[str, Any]] = {}
-    for i, rec in enumerate(pred_records):
+    pred_map: Dict[int, DetectionEvalRecord] = {}
+    for i, rec in enumerate(pred_eval_records):
         image_id = rec.get("index", i)
         pred_map[int(image_id)] = rec
 
@@ -223,7 +239,7 @@ def _prepare_all_from_records(
 
 
 def _prepare_all(
-    pred_records: List[Dict[str, Any]],
+    pred_records: Sequence[Mapping[str, Any]],
     options: EvalOptions,
     counters: EvalCounters,
     *,
@@ -299,8 +315,8 @@ def compute_coco_metrics_from_records(
 
 
 def _prepare_all_separate(
-    gt_records: List[Dict[str, Any]],
-    pred_records: List[Dict[str, Any]],
+    gt_records: Sequence[Mapping[str, Any]],
+    pred_records: Sequence[Mapping[str, Any]],
     options: EvalOptions,
     counters: EvalCounters,
     *,
@@ -324,7 +340,7 @@ def _prepare_all_separate(
 
 
 def _evaluate_preloaded_records(
-    pred_records: List[Dict[str, Any]],
+    pred_records: Sequence[Mapping[str, Any]],
     *,
     pred_path: Path,
     options: EvalOptions,

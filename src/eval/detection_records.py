@@ -211,7 +211,7 @@ def load_jsonl(
     *,
     strict: bool = False,
     max_snippet_len: int = 200,
-) -> List[Dict[str, Any]]:
+) -> List[DetectionEvalRecord]:
     try:
         records, invalid_seen = load_jsonl_with_diagnostics(
             path,
@@ -229,20 +229,22 @@ def load_jsonl(
     if counters is not None:
         counters.invalid_json += int(invalid_seen)
 
-    return [
-        record.to_json_record()
-        for record in (DetectionEvalRecord.from_json_record(rec) for rec in records)
-    ]
+    return [DetectionEvalRecord.from_json_record(rec) for rec in records]
 
 
-def preds_to_gt_records(pred_records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _coerce_detection_eval_record(record: Mapping[str, Any]) -> DetectionEvalRecord:
+    if isinstance(record, DetectionEvalRecord):
+        return record
+    return DetectionEvalRecord.from_json_record(record)
+
+
+def preds_to_gt_records(
+    pred_records: Sequence[Mapping[str, Any]],
+) -> List[DetectionEvalRecord]:
     """Build minimal GT records from prediction lines that contain inline 'gt'."""
 
-    gt_records: List[Dict[str, Any]] = []
-    for eval_record in (
-        DetectionEvalRecord.from_json_record(rec) for rec in pred_records
-    ):
-        rec = eval_record.to_json_record()
+    gt_records: List[DetectionEvalRecord] = []
+    for rec in (_coerce_detection_eval_record(rec) for rec in pred_records):
         raw_gt = rec.get("gt") or rec.get("objects") or []
         if not isinstance(raw_gt, list) or not raw_gt:
             continue
@@ -269,18 +271,20 @@ def preds_to_gt_records(pred_records: List[Dict[str, Any]]) -> List[Dict[str, An
         elif isinstance(rec.get("images"), list) and rec["images"]:
             image = rec["images"][0]
         gt_records.append(
-            {
-                "images": [image] if image else [],
-                "width": width,
-                "height": height,
-                "objects": gt_objs,
-                "image_id": rec.get("image_id"),
-                "metadata": (
-                    dict(rec["metadata"])
-                    if isinstance(rec.get("metadata"), Mapping)
-                    else {}
-                ),
-            }
+            DetectionEvalRecord.from_json_record(
+                {
+                    "images": [image] if image else [],
+                    "width": width,
+                    "height": height,
+                    "objects": gt_objs,
+                    "image_id": rec.get("image_id"),
+                    "metadata": (
+                        dict(rec["metadata"])
+                        if isinstance(rec.get("metadata"), Mapping)
+                        else {}
+                    ),
+                }
+            )
         )
     return gt_records
 

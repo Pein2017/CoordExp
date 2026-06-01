@@ -118,6 +118,72 @@ def test_offline_eval_record_materialization_consumes_decoded_result() -> None:
     assert not hasattr(decoded, "raw_output_json")
 
 
+def test_official_gt_vs_pred_materialization_rejects_diagnostic_result() -> None:
+    from src.infer.runtime import materialize_offline_gt_vs_pred_record
+
+    diagnostic = diagnostic_parser_result(
+        predictions=({"type": "bbox_2d", "points": [1, 2, 3, 4], "desc": "cat"},),
+        parser_id="coordjson",
+        errors=("dropped_invalid",),
+        diagnostics={"dropped_invalid": 1},
+        salvage_recovered=False,
+    )
+
+    with pytest.raises(ValueError, match="metric_bearing=false"):
+        materialize_offline_gt_vs_pred_record(
+            image="img.png",
+            width=64,
+            height=48,
+            mode="text",
+            gt=[],
+            decoded_result=diagnostic,
+            raw_output_json={"objects": []},
+            raw_special_tokens=[],
+            raw_ends_with_im_end=False,
+        )
+
+
+def test_raw_eval_jsonl_loads_detection_eval_records_without_schema_change(
+    tmp_path: Path,
+) -> None:
+    from src.eval.detection_records import DetectionEvalRecord, load_jsonl, preds_to_gt_records
+
+    row = {
+        "image": "img.png",
+        "width": 64,
+        "height": 48,
+        "mode": "text",
+        "gt": [{"type": "bbox_2d", "points": [0, 0, 10, 10], "desc": "cat"}],
+        "pred": [{"type": "bbox_2d", "points": [1, 1, 9, 9], "desc": "cat"}],
+        "coord_mode": "pixel",
+        "raw_output_json": {"objects": []},
+        "raw_special_tokens": [],
+        "raw_ends_with_im_end": False,
+        "errors": [],
+        "error_entries": [],
+    }
+    path = tmp_path / "gt_vs_pred.jsonl"
+    _write_jsonl(path, [row])
+
+    records = load_jsonl(path)
+    gt_records = preds_to_gt_records(records)
+
+    assert records and isinstance(records[0], DetectionEvalRecord)
+    assert records[0]["image"] == "img.png"
+    assert records[0].get("width") == 64
+    assert records[0].to_json_record() == row
+    assert json.loads(json.dumps(records[0].to_json_record())) == row
+    assert gt_records and isinstance(gt_records[0], DetectionEvalRecord)
+    assert gt_records[0].to_json_record() == {
+        "images": ["img.png"],
+        "width": 64,
+        "height": 48,
+        "objects": [{"bbox_2d": [0, 0, 10, 10], "desc": "cat"}],
+        "image_id": None,
+        "metadata": {},
+    }
+
+
 def test_detection_eval_and_scored_records_are_detached_schema_views() -> None:
     from src.eval.detection_records import (
         DetectionEvalRecord,
@@ -165,6 +231,61 @@ def test_detection_eval_and_scored_records_are_detached_schema_views() -> None:
         "pred_score_version": 1,
     }
     assert scored_record.score_provenance["score_policy_fingerprint"] == "score:test"
+
+
+def test_confidence_postop_scored_path_uses_scored_eval_record(
+    tmp_path: Path,
+) -> None:
+    from src.eval.confidence_postop import (
+        PRED_SCORE_SOURCE,
+        PRED_SCORE_VERSION,
+        ConfidencePostOpPaths,
+        _build_scored_record,
+        run_confidence_postop,
+    )
+    from src.eval.detection_records import ScoredDetectionEvalRecord
+
+    row = {
+        "image": "img.png",
+        "width": 64,
+        "height": 48,
+        "gt": [],
+        "pred": [],
+    }
+    scored_record = _build_scored_record(record=row, confidence_objects=[])
+    assert isinstance(scored_record, ScoredDetectionEvalRecord)
+    assert scored_record.to_json_record() == {
+        **row,
+        "pred_score_source": PRED_SCORE_SOURCE,
+        "pred_score_version": PRED_SCORE_VERSION,
+    }
+
+    raw_path = tmp_path / "gt_vs_pred.jsonl"
+    trace_path = tmp_path / "pred_token_trace.jsonl"
+    confidence_path = tmp_path / "pred_confidence.jsonl"
+    scored_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    summary_path = tmp_path / "confidence_postop_summary.json"
+    _write_jsonl(raw_path, [row])
+    trace_path.write_text("", encoding="utf-8")
+
+    summary = run_confidence_postop(
+        ConfidencePostOpPaths(
+            gt_vs_pred_jsonl=raw_path,
+            pred_token_trace_jsonl=trace_path,
+            pred_confidence_jsonl=confidence_path,
+            gt_vs_pred_scored_jsonl=scored_path,
+            confidence_postop_summary_json=summary_path,
+        )
+    )
+
+    scored_rows = [
+        json.loads(line)
+        for line in scored_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert summary["total_samples"] == 1
+    assert scored_rows == [scored_record.to_json_record()]
+    assert scored_path.name == "gt_vs_pred_scored.jsonl"
 
 
 def test_stable_artifact_filenames_and_scored_provenance_remain_loadable(

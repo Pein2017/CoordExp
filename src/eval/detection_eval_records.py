@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import copy
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any
 
 
 @dataclass(frozen=True)
-class DetectionEvalRecord:
+class DetectionEvalRecord(Mapping[str, Any]):
     """Schema-preserving raw gt_vs_pred row wrapper."""
 
     row: Mapping[str, Any]
@@ -15,6 +16,22 @@ class DetectionEvalRecord:
         if not isinstance(self.row, Mapping):
             raise TypeError("DetectionEvalRecord row must be a mapping")
         object.__setattr__(self, "row", copy.deepcopy(dict(self.row)))
+
+    def __getitem__(self, key: str) -> Any:
+        return self.row[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.row)
+
+    def __len__(self) -> int:
+        return len(self.row)
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, DetectionEvalRecord):
+            return self.row == other.row
+        if isinstance(other, Mapping):
+            return dict(self.row) == dict(other)
+        return NotImplemented
 
     @classmethod
     def from_json_record(cls, record: Mapping[str, Any]) -> "DetectionEvalRecord":
@@ -25,7 +42,7 @@ class DetectionEvalRecord:
 
 
 @dataclass(frozen=True)
-class ScoredDetectionEvalRecord:
+class ScoredDetectionEvalRecord(Mapping[str, Any]):
     """Schema-preserving scored gt_vs_pred row wrapper plus score provenance."""
 
     row: Mapping[str, Any]
@@ -42,6 +59,56 @@ class ScoredDetectionEvalRecord:
             "score_provenance",
             copy.deepcopy(dict(self.score_provenance)),
         )
+        source = self.row.get("pred_score_source")
+        if not isinstance(source, str) or not source:
+            raise ValueError(
+                "ScoredDetectionEvalRecord requires non-empty pred_score_source"
+            )
+        version = self.row.get("pred_score_version")
+        if not isinstance(version, int) or isinstance(version, bool):
+            raise ValueError(
+                "ScoredDetectionEvalRecord requires integer pred_score_version"
+            )
+        preds = self.row.get("pred")
+        if isinstance(preds, list):
+            for pred_idx, pred in enumerate(preds):
+                if not isinstance(pred, Mapping):
+                    raise ValueError(
+                        "ScoredDetectionEvalRecord pred entries must be mappings"
+                    )
+                if "score" not in pred:
+                    raise ValueError(
+                        "ScoredDetectionEvalRecord pred entries must include "
+                        f"score (pred_idx={pred_idx})"
+                    )
+        for key, expected in (
+            ("pred_score_source", source),
+            ("pred_score_version", version),
+        ):
+            if key in self.score_provenance and self.score_provenance[key] != expected:
+                raise ValueError(
+                    f"score_provenance {key} does not match scored row "
+                    f"({self.score_provenance[key]!r} != {expected!r})"
+                )
+
+    def __getitem__(self, key: str) -> Any:
+        return self.row[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.row)
+
+    def __len__(self) -> int:
+        return len(self.row)
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, ScoredDetectionEvalRecord):
+            return (
+                self.row == other.row
+                and self.score_provenance == other.score_provenance
+            )
+        if isinstance(other, Mapping):
+            return dict(self.row) == dict(other)
+        return NotImplemented
 
     @classmethod
     def from_json_record(

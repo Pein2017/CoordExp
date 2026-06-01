@@ -29,6 +29,10 @@ from src.eval.bbox_confidence import (
     coord_bins_to_tokens,
     is_valid_confidence_score,
 )
+from src.eval.detection_eval_records import (
+    DetectionEvalRecord,
+    ScoredDetectionEvalRecord,
+)
 
 PRED_SCORE_SOURCE = "confidence_postop"
 PRED_SCORE_VERSION = 2
@@ -1009,7 +1013,8 @@ def _build_scored_record(
     *,
     record: Mapping[str, Any],
     confidence_objects: Sequence[Mapping[str, Any]],
-) -> dict[str, Any]:
+) -> ScoredDetectionEvalRecord:
+    raw_record = DetectionEvalRecord.from_json_record(record)
     pred_objs = list(record.get("pred")) if isinstance(record.get("pred"), list) else []
     confidence_checked = _enforce_object_idx_contract(pred_objs, confidence_objects)
 
@@ -1023,11 +1028,18 @@ def _build_scored_record(
         scored_obj["score"] = score
         scored_pred.append(scored_obj)
 
-    out = dict(record)
+    out = raw_record.to_json_record()
     out["pred"] = scored_pred
     out["pred_score_source"] = PRED_SCORE_SOURCE
     out["pred_score_version"] = PRED_SCORE_VERSION
-    return out
+    return ScoredDetectionEvalRecord.from_json_record(
+        out,
+        score_provenance={
+            "pred_score_source": PRED_SCORE_SOURCE,
+            "pred_score_version": PRED_SCORE_VERSION,
+            "confidence_method": CONFIDENCE_METHOD,
+        },
+    )
 
 
 def run_confidence_postop(
@@ -1075,7 +1087,9 @@ def run_confidence_postop(
                 record=record,
                 confidence_objects=confidence_objects,
             )
-            scored_out.write(json.dumps(scored_record, ensure_ascii=False) + "\n")
+            scored_out.write(
+                json.dumps(scored_record.to_json_record(), ensure_ascii=False) + "\n"
+            )
 
             total_samples += 1
             total_pred_objects += len(confidence_objects)
