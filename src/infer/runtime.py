@@ -19,6 +19,11 @@ from src.infer.constraints import (
     STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_BOUNDARY,
     STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_OPEN,
 )
+from src.infer.parsing import (
+    DecodedDetectionResult,
+    diagnostic_parser_result,
+    strict_parser_result,
+)
 from src.tokens.coord.codec import sequence_has_coord_tokens
 
 PromptTokenParity = Literal["verified", "unverified", "unverifiable"]
@@ -392,6 +397,57 @@ def process_offline_pred(
     )
 
 
+def decode_offline_detection_result(
+    owner: Any,
+    raw_text: str,
+    *,
+    width: int,
+    height: int,
+    compact_parse_artifact: Optional[Dict[str, Any]] = None,
+) -> DecodedDetectionResult:
+    """Decode one generated detection output into the canonical parse object."""
+
+    pred_errors: List[str] = []
+    pred = process_offline_pred(
+        owner,
+        raw_text,
+        width=width,
+        height=height,
+        errors=pred_errors,
+        compact_parse_artifact=compact_parse_artifact,
+    )
+    predictions = tuple(compact_gt_vs_pred_objects(pred))
+    parser_id = (
+        "compact_full"
+        if getattr(owner, "detection_sequence_format", None) == "compact_full"
+        else "coordjson"
+    )
+    diagnostics: Dict[str, Any] = {
+        "invalid_count": len(pred_errors),
+        "dropped_invalid": len(pred_errors),
+    }
+    if compact_parse_artifact is not None:
+        parse_error_code = compact_parse_artifact.get("parse_error_code")
+        diagnostics["parse_error_code"] = parse_error_code
+        diagnostics["parse_mode"] = compact_parse_artifact.get("parse_mode")
+        if parse_error_code:
+            pred_errors.append(str(parse_error_code))
+
+    if pred_errors:
+        return diagnostic_parser_result(
+            predictions=predictions,
+            parser_id=parser_id,
+            errors=tuple(pred_errors),
+            diagnostics=diagnostics,
+            salvage_recovered=False,
+        )
+    return strict_parser_result(
+        predictions=predictions,
+        parser_id=parser_id,
+        diagnostics=diagnostics,
+    )
+
+
 def compact_gt_vs_pred_objects(objs: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
     """Strip internal fields to the unified gt_vs_pred.jsonl object schema."""
 
@@ -414,6 +470,38 @@ def compact_gt_vs_pred_objects(objs: Sequence[Mapping[str, Any]]) -> List[Dict[s
             }
         )
     return compact
+
+
+def materialize_offline_gt_vs_pred_record(
+    *,
+    image: str,
+    width: int,
+    height: int,
+    mode: str,
+    gt: Sequence[Mapping[str, Any]],
+    decoded_result: DecodedDetectionResult,
+    raw_output_json: Any,
+    raw_special_tokens: Sequence[str],
+    raw_ends_with_im_end: bool,
+    errors: Sequence[str] | None = None,
+    error_entries: Sequence[Mapping[str, Any]] | None = None,
+) -> Dict[str, Any]:
+    """Project a decoded detection result into the stable gt_vs_pred row schema."""
+
+    return {
+        "image": image,
+        "width": int(width),
+        "height": int(height),
+        "mode": str(mode),
+        "coord_mode": "pixel",
+        "gt": [dict(obj) for obj in gt],
+        "pred": [dict(obj) for obj in decoded_result.predictions],
+        "raw_output_json": raw_output_json,
+        "raw_special_tokens": list(raw_special_tokens),
+        "raw_ends_with_im_end": bool(raw_ends_with_im_end),
+        "errors": [str(code) for code in (errors or decoded_result.errors)],
+        "error_entries": [dict(entry) for entry in (error_entries or ())],
+    }
 
 
 def detect_mode_from_gt(
@@ -1607,35 +1695,31 @@ def run_offline_artifact_inference(owner: Any) -> Tuple[Path, Path]:
                 raw_ends_with_im_end = raw_text.endswith("<|im_end|>")
                 raw_output_json = load_prediction_dict(raw_text)
 
-            pred_errors: List[str] = []
-            pred = process_offline_pred(
+            decoded_result = decode_offline_detection_result(
                 self,
                 raw_text,
                 width=int(p["width"]),
                 height=int(p["height"]),
-                errors=pred_errors,
                 compact_parse_artifact=compact_parse_artifact,
             )
-            pred = compact_gt_vs_pred_objects(pred)
 
-            error_codes = [_canonical(c) for c in pred_errors]
-            error_entries = [_error_entry(c) for c in pred_errors]
+            error_codes = [_canonical(c) for c in decoded_result.errors]
+            error_entries = [_error_entry(c) for c in decoded_result.errors]
             line_idx = int(counters.total_emitted)
 
-            output = {
-                "image": p["image"],
-                "width": p["width"],
-                "height": p["height"],
-                "mode": self.resolved_mode,
-                "coord_mode": "pixel",
-                "gt": p["gt"],
-                "pred": pred,
-                "raw_output_json": raw_output_json,
-                "raw_special_tokens": raw_special_tokens,
-                "raw_ends_with_im_end": raw_ends_with_im_end,
-                "errors": error_codes,
-                "error_entries": error_entries,
-            }
+            output = materialize_offline_gt_vs_pred_record(
+                image=p["image"],
+                width=int(p["width"]),
+                height=int(p["height"]),
+                mode=self.resolved_mode,
+                gt=p["gt"],
+                decoded_result=decoded_result,
+                raw_output_json=raw_output_json,
+                raw_special_tokens=raw_special_tokens,
+                raw_ends_with_im_end=raw_ends_with_im_end,
+                errors=error_codes,
+                error_entries=error_entries,
+            )
             if compact_parse_artifact is not None:
                 output.update(
                     {

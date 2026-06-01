@@ -51,6 +51,7 @@ from src.common.duplicate_control import (
 from src.common.prediction_parsing import GEOM_KEYS
 from src.common.semantic_desc import SemanticDescEncoder, normalize_desc
 from src.common.io import load_jsonl_with_diagnostics
+from src.eval.detection_eval_records import DetectionEvalRecord, ScoredDetectionEvalRecord
 from src.eval.artifacts import (
     build_per_image_report,
     resolve_duplicate_guard_report_path,
@@ -228,14 +229,20 @@ def load_jsonl(
     if counters is not None:
         counters.invalid_json += int(invalid_seen)
 
-    return records
+    return [
+        record.to_json_record()
+        for record in (DetectionEvalRecord.from_json_record(rec) for rec in records)
+    ]
 
 
 def preds_to_gt_records(pred_records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Build minimal GT records from prediction lines that contain inline 'gt'."""
 
     gt_records: List[Dict[str, Any]] = []
-    for rec in pred_records:
+    for eval_record in (
+        DetectionEvalRecord.from_json_record(rec) for rec in pred_records
+    ):
+        rec = eval_record.to_json_record()
         raw_gt = rec.get("gt") or rec.get("objects") or []
         if not isinstance(raw_gt, list) or not raw_gt:
             continue

@@ -4,6 +4,11 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
 
+from src.eval.detection_eval_records import (
+    DetectionEvalRecord,
+    ScoredDetectionEvalRecord,
+)
+
 CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_SOURCE = "cxcy_logw_logh_constant"
 CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_VERSION = 1
 CXCY_LOGW_LOGH_CONSTANT_SCORE = 1.0
@@ -57,22 +62,19 @@ def with_constant_scores(
     constant_score: float,
 ) -> List[Dict[str, Any]]:
     scored_rows: List[Dict[str, Any]] = []
-    score = float(constant_score)
     for row in records:
-        scored_row = dict(row)
-        scored_row["pred_score_source"] = str(pred_score_source)
-        scored_row["pred_score_version"] = int(pred_score_version)
-        preds_raw = row.get("pred")
-        preds_out: List[Dict[str, Any]] = []
-        if isinstance(preds_raw, list):
-            for pred in preds_raw:
-                if not isinstance(pred, Mapping):
-                    continue
-                pred_out = dict(pred)
-                pred_out["score"] = score
-                preds_out.append(pred_out)
-        scored_row["pred"] = preds_out
-        scored_rows.append(scored_row)
+        raw_record = DetectionEvalRecord.from_json_record(row)
+        scored_record = ScoredDetectionEvalRecord.from_detection_eval_record(
+            raw_record,
+            pred_score_source=pred_score_source,
+            pred_score_version=pred_score_version,
+            constant_score=constant_score,
+            score_provenance={
+                "pred_score_source": str(pred_score_source),
+                "pred_score_version": int(pred_score_version),
+            },
+        )
+        scored_rows.append(scored_record.to_json_record())
     return scored_rows
 
 

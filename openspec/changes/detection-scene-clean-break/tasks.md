@@ -66,12 +66,12 @@ Superpowers plan.
 
 ## 6. Inference And Eval Projection After Approval
 
-- [ ] 6.1 Route inference parse outputs through `DecodedDetectionResult`.
-- [ ] 6.2 Route raw eval rows through `DetectionEvalRecord` and scored rows
+- [x] 6.1 Route inference parse outputs through `DecodedDetectionResult`.
+- [x] 6.2 Route raw eval rows through `DetectionEvalRecord` and scored rows
   through `ScoredDetectionEvalRecord`.
-- [ ] 6.3 Keep `gt_vs_pred.jsonl` and `gt_vs_pred_scored.jsonl` artifact
+- [x] 6.3 Keep `gt_vs_pred.jsonl` and `gt_vs_pred_scored.jsonl` artifact
   filenames stable unless a later artifact-contract change renames them.
-- [ ] 6.4 Add checks for strict metric-bearing parser status, raw/scored
+- [x] 6.4 Add checks for strict metric-bearing parser status, raw/scored
   separation, score provenance, and artifact compatibility.
 
 ## 7. Rename/Delete Cleanup After Approval

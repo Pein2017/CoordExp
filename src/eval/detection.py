@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from src.eval.detection_records import (
     _DEFAULT_SEMANTIC_MODEL,
+    DetectionEvalRecord,
     SemanticDescEncoder,
+    ScoredDetectionEvalRecord,
     _normalize_desc,
     _wants_official_metrics,
     _resolve_semantic_desc_encoder,
@@ -95,6 +97,8 @@ from src.eval.detection_orchestrator import (
 __all__ = [
     'EvalCounters',
     'EvalOptions',
+    'DetectionEvalRecord',
+    'ScoredDetectionEvalRecord',
     'Sample',
     'SemanticDescEncoder',
     'load_jsonl',

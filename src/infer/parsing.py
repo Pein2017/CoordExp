@@ -9,8 +9,13 @@ ParserPolicy = Literal["strict", "diagnostic"]
 
 
 @dataclass(frozen=True)
-class DetectionParserResult:
-    """Parsed detection output plus the policy that makes it metric-safe or not."""
+class DecodedDetectionResult:
+    """Parsed detection predictions plus metric/drop metadata.
+
+    This is the clean-break inference/runtime parse-boundary object.  It carries
+    parsed predictions and parser status, but intentionally does not carry raw
+    backend text, rendered prompt/completion text, or eval rows.
+    """
 
     predictions: tuple[Mapping[str, Any], ...]
     parser_id: str
@@ -53,16 +58,19 @@ class DetectionParserResult:
         }
 
 
+DetectionParserResult = DecodedDetectionResult
+
+
 def strict_parser_result(
     *,
     predictions: Sequence[Mapping[str, Any]],
     parser_id: str,
     errors: Sequence[str] = (),
     diagnostics: Mapping[str, Any] | None = None,
-) -> DetectionParserResult:
-    """Build a strict parser result that may feed official metrics."""
+) -> DecodedDetectionResult:
+    """Build a strict decoded result that may feed official metrics."""
 
-    return DetectionParserResult(
+    return DecodedDetectionResult(
         predictions=tuple(predictions),
         parser_id=parser_id,
         parser_policy="strict",
@@ -80,10 +88,10 @@ def diagnostic_parser_result(
     errors: Sequence[str] = (),
     diagnostics: Mapping[str, Any] | None = None,
     salvage_recovered: bool = True,
-) -> DetectionParserResult:
-    """Build a non-metric diagnostic/salvage parser result."""
+) -> DecodedDetectionResult:
+    """Build a non-metric diagnostic/salvage decoded result."""
 
-    return DetectionParserResult(
+    return DecodedDetectionResult(
         predictions=tuple(predictions),
         parser_id=parser_id,
         parser_policy="diagnostic",
@@ -95,14 +103,14 @@ def diagnostic_parser_result(
 
 
 def require_metric_bearing(
-    result: DetectionParserResult,
+    result: DecodedDetectionResult,
     *,
     consumer: str,
-) -> DetectionParserResult:
+) -> DecodedDetectionResult:
     """Fail fast when a metric/export consumer is handed diagnostic parser output."""
 
-    if not isinstance(result, DetectionParserResult):
-        raise TypeError("result must be a DetectionParserResult")
+    if not isinstance(result, DecodedDetectionResult):
+        raise TypeError("result must be a DecodedDetectionResult")
     if not result.metric_bearing:
         raise ValueError(
             "metric_bearing=false: "
@@ -127,7 +135,7 @@ class Stage2ParsedRolloutPredictions:
     pred_meta: tuple[Any, ...]
     preds: tuple[Any, ...]
     pred_objects_dump: tuple[dict[str, Any], ...]
-    parser_result: DetectionParserResult
+    parser_result: DecodedDetectionResult
 
 
 def _stage2_parser_result_from_parse(
@@ -323,6 +331,7 @@ def parse_stage2_detection_rollout_predictions(
 
 
 __all__ = [
+    "DecodedDetectionResult",
     "DetectionParserResult",
     "ParserPolicy",
     "Stage2ParsedRolloutPredictions",
