@@ -1,8 +1,8 @@
 # Negative contract: this profile documents the expected parser/runtime failure
 # for compact recursive detection packing. It is not a launchable smoke.
 extends:
-  - ../../../../configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml
-  - ../../../../configs/stage1/recursive_detection_ce/smoke/common_prodlike.yaml
+  - ../../../../configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2.yaml
+  - ../../../../configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/smoke/common_prodlike.yaml
 
 training:
   artifact_subdir: compact_full_static_packing_should_fail
