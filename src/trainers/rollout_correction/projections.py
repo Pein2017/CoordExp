@@ -533,10 +533,21 @@ def _validate_metric_bearing_rollout_prediction_provenance(
             "metric-bearing RolloutPrediction requires parser provenance: "
             + ", ".join(str(key) for key in missing_parser)
         )
-    if bool(parser_metadata.get("diagnostic_private_parser", False)):
+    blocked_parser_markers = [
+        key
+        for key in (
+            "diagnostic_private_parser",
+            "migration_source",
+            "migration_only",
+            "private_parser",
+        )
+        if parser_metadata.get(key) not in (None, "", False)
+    ]
+    if blocked_parser_markers:
         raise ValueError(
-            "diagnostic/private parser output cannot create metric-bearing "
-            "RolloutPrediction"
+            "diagnostic/private parser metadata cannot create metric-bearing "
+            "RolloutPrediction: "
+            + ", ".join(str(key) for key in blocked_parser_markers)
         )
 
 

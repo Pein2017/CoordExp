@@ -491,6 +491,40 @@ def test_metric_bearing_rollout_prediction_fails_closed_without_parser_policy() 
         raise AssertionError("metric-bearing prediction accepted missing parser policy")
 
 
+def test_metric_bearing_rollout_prediction_rejects_parser_migration_marker() -> None:
+    text = "cat rollout"
+
+    try:
+        rollout_prediction_from_shared_decode(
+            decoded_result=_decoded(text),
+            parse_result=Stage2RolloutParseResult(
+                template_family="compact_full",
+                parser_id="compact_full",
+                response_text=text,
+                valid_objects=(
+                    _rollout_object(0, "cat", [100, 100, 200, 200]),
+                ),
+                invalid_rollout=False,
+                empty_valid_object_set=False,
+                truncated=False,
+                fallback_reason=None,
+                metadata={
+                    "rollout_parser_id": "compact_full",
+                    "parser_policy": "strict",
+                    "migration_only": True,
+                },
+                response_token_ids=(11, 12, 13),
+            ),
+            metric_bearing=True,
+            source_label="anchor",
+        )
+    except ValueError as exc:
+        assert "diagnostic/private parser metadata" in str(exc)
+        assert "migration_only" in str(exc)
+    else:  # pragma: no cover - defensive guard for direct invocation
+        raise AssertionError("metric-bearing prediction accepted parser migration marker")
+
+
 def test_metric_bearing_rollout_prediction_rejects_backend_private_parser_marker() -> None:
     text = "cat rollout"
     decoded = DetectionDecodeResult(
