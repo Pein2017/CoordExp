@@ -6,12 +6,16 @@ from typing import Any
 
 import pytest
 
+pytestmark = pytest.mark.skip(
+    reason="Archived recursive_detection_ce configs are historical after DetectionScene clean-break"
+)
+
 from src.config.loader import ConfigLoader
 from src.config.schema import DetectionTrainingConfig
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CONFIG_ROOT = REPO_ROOT / "configs/stage1/recursive_detection_ce"
+CONFIG_ROOT = REPO_ROOT / "configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce"
 BASE_CONFIG = CONFIG_ROOT / "prod/compact_full_support2.yaml"
 PROD_CONFIG = (
     CONFIG_ROOT
