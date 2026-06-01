@@ -7,7 +7,7 @@ from src.trainers.rollout_matching.preflight import resolve_stage2_launcher_pref
 
 def test_stage2_preflight_extracts_server_runtime_knobs_from_yaml() -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    config_path = repo_root / "configs/stage2/rollout_correction/base.yaml"
+    config_path = repo_root / "configs/stage2/rollout_correction/smoke/compact_full_hf_1step.yaml"
 
     preflight = resolve_stage2_launcher_preflight(str(config_path))
 

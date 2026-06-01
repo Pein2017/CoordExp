@@ -158,8 +158,8 @@ def test_compact_full_token_roles_cover_markers_and_coordinate_special_tokens() 
     assert coord_indices
     assert all(tokenized.token_roles[index] is TokenRole.COORD for index in coord_indices)
     assert all(tokenized.coord_mask[index] is True for index in coord_indices)
-    assert tokenized.token_roles[separator_index] is TokenRole.SEPARATOR
-    assert tokenized.separator_mask[separator_index] is True
+    assert tokenized.token_roles[separator_index] is TokenRole.IGNORE
+    assert tokenized.separator_mask[separator_index] is False
     assert tokenized.assistant_stop_token_span is not None
     assert token_texts[tokenized.assistant_stop_token_span.start] == "<|im_end|>"
     assert tokenized.token_roles[tokenized.assistant_stop_token_span.start] is TokenRole.TERMINAL

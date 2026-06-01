@@ -58,7 +58,7 @@ def test_stage2_launcher_default_config_exists() -> None:
 
 def test_stage2_launcher_round_trips_preflight_engine_kwargs() -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    config_path = repo_root / "configs/stage2/rollout_correction/base.yaml"
+    config_path = repo_root / "configs/stage2/rollout_correction/smoke/compact_full_hf_1step.yaml"
     preflight = resolve_stage2_launcher_preflight(str(config_path))
 
     cmd = build_swift_rollout_cmd(

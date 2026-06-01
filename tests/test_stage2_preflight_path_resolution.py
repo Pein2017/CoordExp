@@ -14,7 +14,7 @@ def test_stage2_preflight_resolves_root_image_dir_relative_to_repo_root_not_cwd(
     repo_root = Path(__file__).resolve().parents[1]
     config_path = (
         repo_root
-        / "configs/stage2/rollout_correction/prod/coco1024_online_residual_correction_vllm_tail_append.yaml"
+        / "configs/stage2/rollout_correction/smoke/compact_full_hf_1step.yaml"
     )
 
     # Simulate a user invoking the launcher from outside the repo.
@@ -22,5 +22,5 @@ def test_stage2_preflight_resolves_root_image_dir_relative_to_repo_root_not_cwd(
 
     preflight = resolve_stage2_launcher_preflight(str(config_path))
 
-    expected = (repo_root / "public_data/coco/rescale_32_768_bbox_max60").resolve()
+    expected = (repo_root / "public_data/coco/rescale_32_1024_bbox_max60").resolve()
     assert Path(preflight["root_image_dir_resolved"]).resolve() == expected
