@@ -18,8 +18,9 @@ Archive/classification inputs:
 
 ## Cleanup Performed
 
-- Removed the retired semantic/render/token migration handles from the root
-  `src.detection` package export surface:
+- Removed retired migration names from the root `src.detection` public export
+  surface while preserving private/module-local implementation bridges where
+  current code still needs them:
   - `DetectionDocument`
   - `DetectionDocumentGeometry`
   - `NormalizedDetectionSample`
@@ -27,70 +28,105 @@ Archive/classification inputs:
   - `RenderedAssistantSequence`
   - `TokenizedDetectionExample`
   - `detection_document_from_normalized_sample`
-- Kept those names only in their module-local implementation/migration owners
-  where current code still requires the bridges:
-  - `src/detection/data.py`
-  - `src/detection/ir.py`
-  - `src/detection/template.py`
-  - `src/detection/tokenization.py`
-  - Stage-1 and Stage-2 projection adapters that still consume the migration
-    bridge internally.
-- Updated tests so root package characterization now proves canonical public
-  names only:
+- Kept and characterized the canonical root public names:
   - `DetectionScene`
   - `DetectionObject`
   - `DetectionGeometry`
   - `RenderedDetectionSequence`
+  - `DetectionSequenceTemplate`
   - `DetectionSupervisionView`
-- Updated the compact-full encoding golden to match the strict template owner:
-  `CompactFullTemplate.capabilities.object_separator == ""`; compact-full rows
-  are concatenated without newline separators.
-- Tightened current routing docs and catalog status so old Stage-1 config roots
-  and shadow IDs are classified as implementation-only or quarantined rather
-  than current public authority:
-  - `configs/stage1/detection_teacher_forcing/` is the canonical public
-    Stage-1 detection teacher-forcing route.
-  - `configs/stage1/recursive_detection_ce/` is quarantined legacy/comparator
-    material only.
-  - `configs/_shared/recursive_detection/` is quarantined legacy authoring
-    material and is not consumed by canonical launch configs.
-  - `stage1_json_ce` and `stage1_compact_trie_ce` are implementation-shadow
-    resolver IDs, not public config routes.
-- Classified `rollout_matching.*` prompt/decode/eval keys in current docs as
-  retained temporary migration handles. They are not the target public namespace
-  for new clean-break Stage-2 schema work.
+- Quarantined retired Stage-1 recursive-detection config roots under
+  `configs/archive/detection_scene_clean_break/stage1/`:
+  - `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/`
+  - `configs/archive/detection_scene_clean_break/stage1/shared_recursive_detection/`
+- Kept the canonical Stage-1 public route under
+  `configs/stage1/detection_teacher_forcing/` with
+  `objective.id: teacher_forcing`.
+- Moved the Stage-2 rollout-correction config root from
+  `configs/stage2_rollout_correction/` to
+  `configs/stage2/rollout_correction/` and updated loader, launcher, docs,
+  specs, scripts, and tests that point at current Stage-2 config paths.
+- Kept the retained behavior/config namespace `stage2_rollout_correction` and
+  stable output/artifact strings. The directory move does not rename the trainer
+  variant, metric namespace, manifest family, or historical output roots.
+- Classified `rollout_matching.*` prompt/decode/backend/eval keys as retained
+  migration/runtime handles. `rollout_matching.pipeline` remains retired and
+  must not own Stage-2 objectives.
+- Updated current docs/catalog/spec routing so active authority points to
+  `stage1_detection_teacher_forcing`, `DetectionScene` projection vocabulary,
+  and `configs/stage2/rollout_correction/`; historical/progress/OpenSpec archive
+  references remain historical.
+- Marked the legacy instance-trie recursive-detection config-diff test as
+  historical/skipped because the archived `recursive_detection_ce` YAML is no
+  longer a materializable current config under the clean-break parser.
 
 ## Search Gate Results
 
-Final gates were run after cleanup using the required `rtk grep` patterns over
+Final gates were run after cleanup using the required patterns over
 `src tests configs docs openspec` or the scoped path set named by the gate.
 
 Summary:
 
 | Gate | Result | Classification |
 | --- | ---: | --- |
-| Old semantic carriers | 440 matches in 58 files | No root `src.detection` public exports remain. Active source matches are module-local migration/private bridge details or analysis probes. Historical docs/OpenSpec/progress references are allowed. |
-| Old Stage-1 names | 639 matches in 92 files | Canonical route exists under `configs/stage1/detection_teacher_forcing/`. `recursive_detection_ce` roots are quarantined legacy/comparator material; historical docs and rejection/legacy tests are allowed. |
-| Raw/dense-caption names | 191 matches in 61 files | `RawDetectionRow`/`RawDetectionObject` and `dense_caption` remain intake/file-level implementation details. They do not define semantic authority; current semantic authority is `DetectionScene`. |
-| Old Stage-2 variants | 1457 matches in 248 files | Active split variants are removed/rejected. Remaining references are historical docs/specs, strict rejection paths, private implementation file names, or search seeds. |
-| `rollout_matching.*` namespace | 943 matches in 164 files | `rollout_matching.pipeline` is retired/rejected. Prompt/decode/backend/eval keys remain classified temporary migration handles until Stage-2 rollout-correction schema owns those knobs end to end. |
-| Old rollout result names | 419 matches in 25 files | Active public concepts are `RolloutPrediction`, `DetectionAssignment`, and `CorrectionEvent`. Remaining old names are private adapters, analysis probes, or retired rollout-matching module internals. |
-| Salvage/drop terms | 892 matches in 90 files | Strict metric-bearing decode/eval paths are covered by tests. Salvage/fallback/drop terms remain diagnostic/fallback policy names and do not become official metric-bearing predictions. |
-| Assignment/channel terms | 492 matches in 69 files | Current Stage-2 assignment is greedy IoU through the rollout-correction surface. Old channel vocabulary remains only in historical specs/docs. |
-| Decode/eval record terms | 206 matches in 36 files | `DecodedDetectionResult`, `DetectionEvalRecord`, and `ScoredDetectionEvalRecord` are active clean-break concepts. Backend-level `DetectionDecodeResult` remains distinct and allowed. |
-| Artifact/visualization terms | 881 matches in 169 files | `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, and `vis_resources/gt_vs_pred.jsonl` are retained stable artifact/review handles by design. |
-| Config route terms | 193 matches in 41 files | Canonical Stage-1 route is active; nested Stage-2 rollout-correction route exists. Old Stage-1 recursive roots are quarantined; historical route mentions are allowed. |
+| Old semantic carriers | 463 matches in 58 files | Root `src.detection` exports are absent. Active source matches are private/module-local migration bridges or analysis/test characterization; historical docs/OpenSpec/progress references are allowed. |
+| Canonical scene names | 323 matches in 41 files | Canonical names are present across source/tests/docs/OpenSpec, including root public exports. |
+| Old Stage-1 names | 659 matches in 92 files | Live Stage-1 route is `configs/stage1/detection_teacher_forcing/`. Recursive-detection config YAML is quarantined under `configs/archive/detection_scene_clean_break/stage1/`; remaining old names are historical docs, metrics, fixtures, or explicit legacy/rejection context. |
+| Raw/dense-caption names | 212 matches in 61 files | Raw/dense-caption names remain intake/file-level implementation details and historical docs; semantic authority is `DetectionScene`. |
+| Old Stage-2 variants | 1587 matches in 248 files | Retired public variants remain as rejection tests, historical docs/specs, private implementation file names, and search seeds. Active trainer concept remains `stage2_rollout_correction`. |
+| `rollout_matching.*` namespace | 1005 matches in 164 files | `rollout_matching.pipeline` is retired/rejected. Prompt/decode/backend/eval keys remain classified migration/runtime handles until Stage-2 rollout-correction schema owns those knobs end to end. |
+| Old rollout parse/assignment names | 432 matches in 25 files | Active public concepts are `RolloutPrediction`, `DetectionAssignment`, and `CorrectionEvent`; remaining old names are private adapters, legacy tests, analysis probes, or retired rollout-matching internals. |
+| Salvage/drop terms | 1009 matches in 90 files | Strict metric-bearing decode/eval paths are covered by tests. Salvage/fallback/drop terms remain diagnostic/fallback policy names and do not become official metric-bearing predictions. |
+| Assignment/channel terms | 516 matches in 69 files | Current Stage-2 assignment is greedy IoU through the rollout-correction surface. Old channel vocabulary remains only in historical specs/docs, private internals, or rejection/legacy tests. |
+| Decode/eval record terms | 216 matches in 36 files | `DecodedDetectionResult`, `DetectionEvalRecord`, and `ScoredDetectionEvalRecord` are active clean-break concepts. Backend-level `DetectionDecodeResult` remains distinct and allowed. |
+| Artifact/visualization terms | 966 matches in 169 files | `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, and `vis_resources/gt_vs_pred.jsonl` are retained stable artifact/review handles by design. |
+| Config route terms | 201 matches in 41 files | Canonical Stage-1 route and nested Stage-2 route are active. Old live Stage-1/Stage-2 root directories are absent; remaining route strings are historical, archive, fixture, or current canonical mentions. |
+
+Hard absence/presence checks:
+
+```text
+old_stage1_root_absent: True
+old_shared_recursive_root_absent: True
+stage2_old_root_absent: True
+stage2_nested_root_present: True
+stage1_canonical_smoke_present: True
+stage1_archive_present: True
+root_export_absent_DetectionDocument: True
+root_export_absent_DetectionDocumentGeometry: True
+root_export_absent_NormalizedDetectionSample: True
+root_export_absent_NormalizedDetectionObject: True
+root_export_absent_RenderedAssistantSequence: True
+root_export_absent_TokenizedDetectionExample: True
+root_export_absent_detection_document_from_normalized_sample: True
+root_export_present_DetectionScene: True
+root_export_present_DetectionObject: True
+root_export_present_DetectionGeometry: True
+root_export_present_RenderedDetectionSequence: True
+root_export_present_DetectionSequenceTemplate: True
+root_export_present_DetectionSupervisionView: True
+```
+
+Exact old active config-root search after cleanup found only fixture-path
+references in tests:
+
+```text
+tests/test_detection_training_config_contract.py: tests/fixtures/configs/stage1/recursive_detection_ce_schema_contract.yaml
+tests/test_detection_training_config_contract.py: tests/fixtures/configs/stage1/recursive_detection_ce_static_packing_should_fail.yaml
+tests/test_recursive_detection_ce_sft_wiring.py: tests/fixtures/configs/stage1/recursive_detection_ce_static_packing_should_fail.yaml
+```
+
+These are allowed fixture/rejection leftovers, not live config roots.
 
 Allowed leftovers:
 
-- Historical docs, progress notes, and OpenSpec archive/change text.
+- Historical docs, progress notes, archived OpenSpec text, and older
+  superpowers plans/specs.
 - Rejection tests and strict schema error messages for retired variants.
-- Private implementation/migration adapters that still sit below canonical
-  `DetectionScene`, `RenderedDetectionSequence`, `DetectionSupervisionView`,
-  `RolloutPrediction`, `DetectionAssignment`, `CorrectionEvent`,
-  `DecodedDetectionResult`, `DetectionEvalRecord`, and
-  `ScoredDetectionEvalRecord` seams.
+- Fixture names that intentionally describe legacy recursive-detection contract
+  inputs.
+- Private implementation/migration adapters below canonical seams.
 - Stable artifact filenames `gt_vs_pred.jsonl` and `gt_vs_pred_scored.jsonl`.
+- Stable metric/output namespaces that are not renamed by this cleanup slice.
 
 ## Validation Results
 
@@ -100,67 +136,131 @@ Commands run:
 python - <<'PY'
 import pytest
 raise SystemExit(pytest.main([
-    'tests/test_detection_scene_contract.py',
+    'tests/test_detection_compact_full_template.py',
+    'tests/test_detection_stage1_json_pretty_template.py',
+    'tests/test_detection_template_ir_contract.py',
+    'tests/test_detection_template_parsing_eval.py',
+    'tests/test_detection_template_registry.py',
     'tests/test_detection_scene_stage1_projection.py',
+    '-q',
+]))
+PY
+```
+
+Result: `85 passed in 1.41s`.
+
+```bash
+python - <<'PY'
+import pytest
+raise SystemExit(pytest.main([
+    'tests/test_detection_tokenized_view.py',
+    'tests/test_detection_template_span_alignment.py',
+    'tests/test_token_span_masks_from_templates.py',
     'tests/test_compact_full_encoding_contract.py',
     'tests/test_compact_span_projector.py',
+    'tests/test_detection_scene_contract.py',
     '-q',
 ]))
 PY
 ```
 
-Result: `68 passed in 1.34s`.
+Result: `87 passed in 1.50s`.
 
 ```bash
 python - <<'PY'
-import pytest
-raise SystemExit(pytest.main([
-    'tests/test_detection_ir_contract.py',
-    '-q',
-]))
+from src.config.loader import ConfigLoader
+for path in [
+    'configs/stage1/detection_teacher_forcing/smoke/compact_full_tiny.yaml',
+    'configs/stage1/detection_teacher_forcing/prod/compact_full_support2.yaml',
+    'configs/stage2/rollout_correction/smoke/compact_full_hf_1step.yaml',
+    'configs/stage2/rollout_correction/prod/coco1024_online_residual_correction_vllm_tail_append.yaml',
+]:
+    cfg = ConfigLoader.load_materialized_training_config(path)
+    print(path)
+    print('  type=', type(cfg).__name__)
+    print('  trainer=', getattr(getattr(cfg, 'custom', None), 'trainer_variant', None))
+    print('  objective=', getattr(getattr(cfg, 'objective', None), 'id', None))
+    print('  template=', getattr(getattr(cfg, 'detection_template', None), 'id', None))
+base = ConfigLoader.load_yaml_with_extends('configs/stage2/rollout_correction/base.yaml')
+print('configs/stage2/rollout_correction/base.yaml')
+print('  raw_sections=', ','.join(sorted(base.keys())[:8]))
+print('  has_custom_train_jsonl=', 'train_jsonl' in (base.get('custom') or {}))
 PY
 ```
 
-Result: `7 passed in 1.03s`.
+Result:
 
-```bash
-python - <<'PY'
-import pytest
-raise SystemExit(pytest.main([
-    'tests/test_stage2_rollout_correction_target_boundary.py',
-    '-q',
-]))
-PY
+```text
+configs/stage1/detection_teacher_forcing/smoke/compact_full_tiny.yaml
+  type= DetectionTrainingConfig
+  trainer= None
+  objective= teacher_forcing
+  template= compact_full
+configs/stage1/detection_teacher_forcing/prod/compact_full_support2.yaml
+  type= DetectionTrainingConfig
+  trainer= None
+  objective= teacher_forcing
+  template= compact_full
+configs/stage2/rollout_correction/smoke/compact_full_hf_1step.yaml
+  type= TrainingConfig
+  trainer= stage2_rollout_correction
+  objective= None
+  template= None
+configs/stage2/rollout_correction/prod/coco1024_online_residual_correction_vllm_tail_append.yaml
+  type= TrainingConfig
+  trainer= stage2_rollout_correction
+  objective= None
+  template= None
+configs/stage2/rollout_correction/base.yaml
+  raw_sections= custom,data,debug,deepspeed,global_max_length,model,rollout_matching,stage2_rollout_correction
+  has_custom_train_jsonl= False
 ```
 
-Result: `19 passed, 2 warnings in 3.96s`.
-
 ```bash
 python - <<'PY'
 import pytest
 raise SystemExit(pytest.main([
-    'tests/test_detection_scene_phase4_infer_eval_projection.py',
-    '-q',
-]))
-PY
-```
-
-Result: `8 passed in 1.00s`.
-
-```bash
-python - <<'PY'
-import pytest
-raise SystemExit(pytest.main([
-    'tests/test_detection_training_config_contract.py',
-    'tests/test_stage2_rollout_correction_profile_leaf_contract.py',
     'tests/test_training_config_hierarchy_contract.py',
+    'tests/test_training_config_strict_unknown_keys.py',
+    'tests/test_stage2_rollout_correction_profile_leaf_contract.py',
+    'tests/test_stage2_launcher_server_template_flags.py',
+    'tests/test_stage2_preflight_path_resolution.py',
+    'tests/test_stage2_preflight_server_knob_plumbing.py',
     'tests/test_training_surface_resolver.py',
     '-q',
 ]))
 PY
 ```
 
-Result: `50 passed, 96 skipped in 4.15s`.
+Result: `158 passed, 2 warnings in 4.36s`.
+
+```bash
+python - <<'PY'
+import pytest
+raise SystemExit(pytest.main([
+    'tests/test_stage2_rollout_correction_target_boundary.py',
+    'tests/test_stage2_assignment_greedy_iou.py',
+    'tests/test_stage2_duplicate_filter.py',
+    '-q',
+]))
+PY
+```
+
+Result: `39 passed, 2 warnings in 4.37s`.
+
+```bash
+python - <<'PY'
+import pytest
+raise SystemExit(pytest.main([
+    'tests/test_detection_scene_phase4_infer_eval_projection.py',
+    'tests/test_infer_decode_request_mapping.py',
+    'tests/test_parser_policy_parity.py',
+    '-q',
+]))
+PY
+```
+
+Result: `52 passed in 1.21s`.
 
 ```bash
 python - <<'PY'
@@ -168,35 +268,29 @@ import pytest
 raise SystemExit(pytest.main([
     'tests/test_confidence_postop.py',
     'tests/test_detection_eval_ingestion_diagnostics.py',
-    'tests/test_detection_eval_output_parity.py',
+    'tests/test_detection_scene_phase4_infer_eval_projection.py',
     '-q',
 ]))
 PY
 ```
 
-Result: `40 passed in 1.38s`.
+Result: `25 passed in 1.12s`.
 
 ```bash
 python - <<'PY'
-from src.config.loader import ConfigLoader
-cfg = ConfigLoader.load_materialized_training_config(
-    'configs/stage1/detection_teacher_forcing/smoke/compact_full_tiny.yaml'
-)
-print(type(cfg).__name__)
-print(cfg.detection_template.id)
-print(cfg.objective.id)
-print(cfg.data.train_jsonl)
+import pytest
+raise SystemExit(pytest.main([
+    'tests/test_instance_trie_gaussian_config_diff.py',
+    'tests/test_detection_training_config_contract.py',
+    'tests/test_recursive_detection_ce_sft_wiring.py',
+    '-q',
+]))
 PY
 ```
 
-Result:
-
-```text
-DetectionTrainingConfig
-compact_full
-teacher_forcing
-public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
-```
+Result: `3 passed, 123 skipped in 1.46s`. The skipped test module is explicitly
+historical because archived `recursive_detection_ce` YAML is no longer a
+materializable current config.
 
 ```bash
 openspec validate detection-scene-clean-break --strict
@@ -204,44 +298,28 @@ openspec validate detection-scene-clean-break --strict
 
 Result: `Change 'detection-scene-clean-break' is valid`.
 
-Additional attempted Stage-1 config command:
-
-```bash
-PYTHONPATH=. python -m src.sft \
-  --config configs/stage1/detection_teacher_forcing/smoke/compact_full_tiny.yaml \
-  --cfg-only
-```
-
-Result: failed before config-only completion because ms-swift attempted to
-resolve `model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp` through
-ModelScope and raised `Invalid repo_id: model, must be of format
-namespace/name`. The side-effect-free `ConfigLoader.load_materialized_training_config`
-check above was used as the Stage-1 config-parse evidence.
-
 ## Task Evidence
 
-- 7.1: root public concepts now expose canonical names only; retired names are
-  private/module-local or historical.
-- 7.2: retired roots/facades were deleted from root public exports or
-  quarantined in docs/catalog. Risky runtime-required migration handles were
-  classified rather than deleted.
-- 7.3: current routing points to `stage1_detection_teacher_forcing` and
-  rollout-correction surfaces; old Stage-1 roots and shadow IDs are marked
-  quarantined/implementation-only.
-- 7.4: final gates were run after replacement surfaces existed and this note
-  records the tightened classification.
-- 7.5: no retained canonical behavior, stable artifact filename, geometry
-  semantic, object-ordering policy, or Stage-2 assignment/correction behavior
-  was deleted or renamed.
-- 8.1-8.7: validation and search-gate evidence are recorded above.
-
-## Remaining Concerns
-
-- `rollout_matching.*` remains a live prompt/decode/backend/eval migration
-  namespace in active Stage-2 config and runtime code. It is classified as a
-  temporary migration handle, not deleted, because Gate G requires Stage-2
-  rollout-correction schema ownership before removal.
-- Module-local old names such as `NormalizedDetectionSample`,
-  `RenderedAssistantSequence`, and `TokenizedDetectionExample` remain below the
-  canonical seam as private adapters. Deleting them would require a larger
-  internal migration than this final cleanup slice.
+- 7.1: root public concepts now expose canonical names only; retired semantic,
+  render, and token names are private/module-local or historical.
+- 7.2: retired Stage-1 config roots and shared snippets are quarantined under an
+  explicit archive path; public root compatibility exports were removed; risky
+  runtime-required `rollout_matching.*` handles were classified instead of
+  deleted.
+- 7.3: docs/catalog/spec routing points to the new Stage-1 and Stage-2 routes,
+  while historical docs/progress/OpenSpec archive references remain historical.
+- 7.4: final gates were run after replacement surfaces existed; this note records
+  exact counts, hard absence checks, and allowed leftovers.
+- 7.5: retained canonical behavior, stable artifact filenames, geometry/object
+  semantics, and Stage-2 assignment/correction semantics were not renamed or
+  deleted.
+- 8.1: template/render/parse tests passed.
+- 8.2: tokenization/span/supervision tests passed.
+- 8.3: Stage-1 canonical config leaves materialized; Stage-2 canonical leaves
+  materialized; Stage-2 base remains a non-materialized stage base without hidden
+  dataset identity.
+- 8.4: Stage-2 target construction, assignment, and duplicate-filter tests
+  passed.
+- 8.5: inference decode/projection tests passed.
+- 8.6: eval artifact/scoring tests passed.
+- 8.7: final search gates passed with classified allowed leftovers.
