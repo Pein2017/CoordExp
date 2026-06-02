@@ -2455,9 +2455,107 @@ Interpretation:
 - `IoU >= 0.75`: high-quality localization evidence.
 - same-desc duplicate flag: prevents counting a copied existing prediction as target rescue.
 
+Decoding policy:
+
+The first-pass `FN-rescue continuation` run uses deterministic greedy decoding. Each false-negative target is decoded once per hint tier. Sampling is out of scope for this diagnostic pass because it would mix stable visual-binding capacity with random exploration capacity. Sampling-based proposal inventory remains a separate future direction and should not be mixed into the E3 rescue interpretation.
+
+Sample policy:
+
+The first-pass scope is `val200 self-rollout FN stratified sample`, not all false negatives. The report should expose strata-level rescue outcomes as the main evidence and keep the aggregate rescue rate secondary. Suggested fixed caps are per-stratum, such as 64 examples per bucket when available.
+
+Required stratification axes:
+
+- prefix quality: `empty_prefix`, `clean_prefix`, `mixed_prefix`, `duplicate_prefix`, `fp_prefix`
+- binding/attention class: `same_desc_competitor`, `target_low_rank`, `no_local_object_diffuse`
+- rollout context: object-count bucket and prefix-depth bucket
+
+Rationale:
+
+This experiment is designed to compare mechanism surfaces: proposal failure, same-desc binding, prefix inhibition, and diffuse attention. A full unstratified FN set would over-weight common classes, crowded person-heavy images, and dataset-specific imbalance, making the mechanism read weaker even if the aggregate rate is useful as a secondary descriptive statistic.
+
+Sample source:
+
+The first-pass source of truth is the existing attention-atlas linked case ledger:
+
+```text
+/data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/attention_evidence_routing/selected_cases.jsonl
+```
+
+Evidence scope must be labeled `val200_attention_atlas_linked_fn_stratified`. This source already carries `prefix_quality`, `x1_top_peak_attribution`, `target_desc`, `target_gt_idx`, and `prefix_depth`, so it directly supports mechanism-stratified rescue analysis. It must not be described as the complete val200 FN universe. A full FN ledger can be added later if aggregate rescue rate becomes the primary question.
+
+Hint insertion policy:
+
+Hints must be inserted into the compact-full object-row structure, not appended as free-form natural language. The intended continuation prefixes are:
+
+- `desc_only`: self-rollout prefix plus a new row containing `object_ref_start + target_desc + box_start`; decode from `x1` through the remaining bbox slots.
+- `desc_x1`: self-rollout prefix plus a new row containing `object_ref_start + target_desc + box_start + target_gt_x1`; decode from `y1` through the remaining bbox slots.
+- `desc_x1_wrong_control`: same as `desc_x1`, but the inserted `x1` comes from a wrong or competing region; decode from `y1` through the remaining bbox slots.
+
+This constraint keeps the experiment on the row-level autoregressive mechanism. A free-form natural-language desc hint would be a prompt-surgery experiment and must not be mixed with first-pass FN-rescue results.
+
+Wrong-control `x1` policy:
+
+For `desc_x1_wrong_control`, choose the inserted `x1` by priority:
+
+1. Same-image same-desc competitor GT `x1`, if available.
+2. Same-image same-desc non-target rollout prediction `x1`, if available.
+3. Same-image far-background `x1`, requiring low overlap with the target GT and exclusion from the target context ring.
+4. If no valid wrong-control source exists, skip the wrong-control tier for that case.
+
+Random `x1` values must not be used in the first-pass results. The control should approximate realistic instance-binding competition where possible; same-desc competitor controls are more interpretable than arbitrary coordinates.
+
+Attention capture policy:
+
+First-pass FN-rescue should capture bounded attention states, not full attention for every generated token.
+
+- `desc_only`: capture `pre_x1` after `object_ref_start + target_desc + box_start`, immediately before decoding `x1`.
+- `desc_x1`: capture `pre_y1` after `object_ref_start + target_desc + box_start + target_gt_x1`, immediately before decoding `y1`.
+- `desc_x1_wrong_control`: capture `pre_y1` after the wrong-control `x1`, immediately before decoding `y1`.
+
+Each tier must still record the final generated bbox and rescue-success predicates. This policy keeps the attention evidence focused on whether the desc hint routes attention to the target and whether `x1` changes instance binding, without materializing full per-token decode attention for the first diagnostic pass.
+
+Rescue region ledger:
+
+FN-rescue attention rows should reuse the original attention-atlas candidate-region machinery and extend it where needed. Each rescue case should include at least:
+
+- `target_gt`
+- `context_ring`
+- `far_background`
+- `same_desc_competitor_gt_object`
+- `previous_generated_object`
+- `same_desc_rollout_prediction`
+- `wrong_control_source_region`
+
+The `wrong_control_source_region` is required whenever `desc_x1_wrong_control` is emitted. Reports should compare attention density over the target and these competitor/source regions, not just target versus background. This is necessary to decide whether a supplied `x1` changes instance binding or merely improves generic coordinate continuation.
+
+Dataset scope:
+
+The first-pass FN-rescue run should use only `val200_attention_atlas_linked_fn_stratified` cases. Training-dataset FN-rescue is out of scope for the first pass because GT-hint rescue on seen training samples can mix mechanism evidence with memorization or training-distribution familiarity. Training cases may be used later as a small sanity check, but not as the primary rescue evidence.
+
+Curated gallery:
+
+First-pass FN-rescue should emit a small curated visual gallery, not full-image rendering for every case. The gallery should sample representative cases from outcome buckets such as:
+
+- `desc_only_success`
+- `desc_x1_only_success`
+- `both_fail`
+- `wrong_control_binds_competitor`
+- `duplicate_copy_rejected`
+
+Each rendered example should show the target GT box, original self-rollout predictions, rescue generated box, and wrong-control source region when present. The gallery is a qualitative audit aid for partial COCO labels, same-desc competition, duplicate-copy rejection, and ambiguous rescue outcomes. Tables and JSONL remain the source of truth; gallery images are not the primary metric.
+
+Implementation shape:
+
+Use shared helpers, but keep two CLI entrypoints:
+
+- Existing `/data/CoordExp/scripts/analysis/run_autoreg_attention_evidence_routing.py` remains responsible for attention-atlas and E1/E2/E3 attention-summary extensions.
+- New `/data/CoordExp/scripts/analysis/run_autoreg_fn_rescue_continuation.py` should own FN-rescue generation, compact-row hint construction, bounded attention capture, rescue scoring, wrong-control handling, and curated gallery output.
+
+Rationale: FN-rescue has generation, parsing, scoring, and visualization responsibilities that differ from the existing pure attention-forward atlas. Keeping the CLI separate reduces schema coupling and makes debugging failures more direct. Shared geometry, candidate-region, and attention aggregation code may still live in `src/analysis/autoreg_attention_evidence_routing.py` or a small helper module if reuse is clean.
+
 Evidence:
 
-- Scope: `none-yet`
+- Scope: `val200_attention_atlas_linked_fn_stratified` planned, no rescue results yet
 - Handles: checkpoint `checkpoint-3664`, prior attention atlas roots under `/data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/attention_evidence_routing` and `/data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_train200/attention_evidence_routing_teacher_forced_anchor`
 
 ## Self-Review Notes
