@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from statistics import mean
@@ -139,11 +140,7 @@ def score_prefix_rollin_logits(
         rows.append(entry_row)
 
     boundary_target = _first_continue_boundary_target(example)
-    if (
-        boundary_target is not None
-        and branch_target is not None
-        and int(boundary_target.position) != int(branch_target.position)
-    ):
+    if boundary_target is not None and branch_target is not None:
         boundary_row = _score_target_row(
             logits=batch_logits[0],
             example=example,
@@ -276,6 +273,257 @@ def summarize_prefix_rollin_probe_rows(
     }
 
 
+_PREFIX_PROBE_SHARD_RE = re.compile(r"^shard_(\d{3})-of-(\d{3})$")
+
+
+def _prefix_probe_shard_label(shard_index: int, num_shards: int) -> str:
+    return f"shard_{int(shard_index):03d}-of-{int(num_shards):03d}"
+
+
+def _normalize_prefix_probe_shard(
+    *,
+    shard_index: int | None,
+    num_shards: int | None,
+) -> tuple[int | None, int | None, str | None]:
+    if shard_index is None and num_shards is None:
+        return None, None, None
+    if shard_index is None or num_shards is None:
+        raise ValueError("prefix probe sharding requires both shard_index and num_shards")
+    normalized_num_shards = int(num_shards)
+    normalized_shard_index = int(shard_index)
+    if normalized_num_shards <= 0:
+        raise ValueError(f"num_shards must be positive, got {normalized_num_shards}")
+    if not 0 <= normalized_shard_index < normalized_num_shards:
+        raise ValueError(
+            "shard_index must satisfy 0 <= shard_index < num_shards, got "
+            f"shard_index={normalized_shard_index} num_shards={normalized_num_shards}"
+        )
+    return (
+        normalized_shard_index,
+        normalized_num_shards,
+        _prefix_probe_shard_label(normalized_shard_index, normalized_num_shards),
+    )
+
+
+def _record_selected_for_prefix_probe(
+    record_idx: int,
+    *,
+    limit: int,
+    shard_index: int | None,
+    num_shards: int | None,
+) -> bool:
+    idx = int(record_idx)
+    if idx < 0 or idx >= int(limit):
+        return False
+    normalized_shard_index, normalized_num_shards, _ = _normalize_prefix_probe_shard(
+        shard_index=shard_index,
+        num_shards=num_shards,
+    )
+    if normalized_shard_index is None or normalized_num_shards is None:
+        return True
+    return idx % normalized_num_shards == normalized_shard_index
+
+
+def merge_prefix_rollin_shards(
+    *,
+    shards_dir: Path,
+    output_dir: Path,
+    expected_shards: int,
+) -> tuple[Path, Path]:
+    expected_count = int(expected_shards)
+    if expected_count <= 0:
+        raise ValueError(f"expected_shards must be positive, got {expected_count}")
+    if not shards_dir.exists():
+        raise ValueError(f"shards_dir does not exist: {shards_dir}")
+
+    expected_labels = [
+        _prefix_probe_shard_label(index, expected_count)
+        for index in range(expected_count)
+    ]
+    shard_dirs = [
+        path
+        for path in shards_dir.iterdir()
+        if path.is_dir() and path.name.startswith("shard_")
+    ]
+    actual_labels = sorted(path.name for path in shard_dirs)
+    missing_labels = sorted(set(expected_labels) - set(actual_labels))
+    unexpected_labels = sorted(set(actual_labels) - set(expected_labels))
+    malformed_labels = sorted(
+        label for label in actual_labels if _PREFIX_PROBE_SHARD_RE.fullmatch(label) is None
+    )
+    if missing_labels or unexpected_labels or malformed_labels:
+        raise ValueError(
+            "prefix_rollin_shard_set_mismatch: "
+            f"missing={missing_labels} unexpected={unexpected_labels} "
+            f"malformed={malformed_labels}"
+        )
+
+    summary_paths = [
+        shards_dir / label / "summary.json"
+        for label in expected_labels
+        if (shards_dir / label / "summary.json").exists()
+    ]
+    if len(summary_paths) != expected_count:
+        present = {path.parent.name for path in summary_paths}
+        missing_summaries = sorted(set(expected_labels) - present)
+        raise ValueError(
+            "prefix_rollin_shard_summary_count_mismatch: "
+            f"expected={expected_count} found={len(summary_paths)} "
+            f"missing={missing_summaries}"
+        )
+
+    rows: list[dict[str, Any]] = []
+    source_summaries: list[dict[str, Any]] = []
+    row_counts_by_shard: dict[str, int] = {}
+    seen_case_keys: set[tuple[Any, ...]] = set()
+    selected_record_count = 0
+
+    for label in expected_labels:
+        shard_dir = shards_dir / label
+        summary = json.loads((shard_dir / "summary.json").read_text(encoding="utf-8"))
+        if not isinstance(summary, dict):
+            raise ValueError(f"prefix_rollin_shard_summary_not_object: {shard_dir}")
+        source_summaries.append(dict(summary))
+        selected_record_count += int(summary.get("selected_record_count") or 0)
+
+        per_case_path = _resolve_shard_per_case_path(shard_dir=shard_dir, summary=summary)
+        shard_rows: list[dict[str, Any]] = []
+        for payload in _iter_jsonl(per_case_path):
+            case_key = _prefix_probe_merge_case_key(payload)
+            if case_key in seen_case_keys:
+                raise ValueError(
+                    "duplicate prefix rollin shard row key: "
+                    f"shard={label} key={case_key}"
+                )
+            seen_case_keys.add(case_key)
+            shard_rows.append(payload)
+        row_counts_by_shard[label] = len(shard_rows)
+        rows.extend(shard_rows)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    per_case_path = output_dir / "per_case.jsonl"
+    with per_case_path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+    summary_path = output_dir / "summary.json"
+    merged_summary = {
+        **summarize_prefix_rollin_probe_rows(rows),
+        "shard_index": None,
+        "num_shards": expected_count,
+        "shard_label": None,
+        "source_line_idx": None,
+        "selected_record_count": selected_record_count,
+        "per_case_jsonl": str(per_case_path),
+        "shards_dir": str(shards_dir),
+    }
+    summary_path.write_text(
+        json.dumps(merged_summary, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    merge_summary_path = output_dir / "merge_summary.json"
+    merge_summary = {
+        "diagnostic": "forced_prefix_continue_vs_eos_v0",
+        "probe_family": "prefix_rollin_teacher_forced",
+        "shards_dir": str(shards_dir),
+        "output_dir": str(output_dir),
+        "expected_shards": expected_count,
+        "shard_labels": expected_labels,
+        "row_counts_by_shard": row_counts_by_shard,
+        "row_count": len(rows),
+        "selected_record_count": selected_record_count,
+        "source_summaries": source_summaries,
+        "per_case_jsonl": str(per_case_path),
+        "summary_json": str(summary_path),
+    }
+    merge_summary_path.write_text(
+        json.dumps(merge_summary, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return per_case_path, summary_path
+
+
+def _resolve_shard_per_case_path(
+    *,
+    shard_dir: Path,
+    summary: Mapping[str, Any],
+) -> Path:
+    local_candidate = shard_dir / "per_case.jsonl"
+    if local_candidate.is_file():
+        return local_candidate
+
+    raw_path = summary.get("per_case_jsonl")
+    if raw_path:
+        candidate = Path(str(raw_path))
+        if not candidate.is_absolute():
+            candidate = shard_dir / candidate
+        try:
+            candidate.resolve(strict=False).relative_to(shard_dir.resolve(strict=False))
+        except ValueError as exc:
+            raise ValueError(
+                "stale_prefix_rollin_shard_per_case: "
+                f"shard_dir={shard_dir} per_case_jsonl={candidate}"
+            ) from exc
+        if candidate.is_file():
+            return candidate
+        raise ValueError(f"prefix_rollin_shard_per_case_missing: {candidate}")
+
+    raise ValueError(f"prefix_rollin_shard_per_case_missing: {local_candidate}")
+
+
+def _prefix_probe_merge_case_key(row: Mapping[str, Any]) -> tuple[Any, ...]:
+    missing: list[str] = []
+
+    def required_value(label: str, field_names: tuple[str, ...]) -> Any:
+        for field_name in field_names:
+            if field_name in row and row[field_name] is not None:
+                return row[field_name]
+        missing.append(label)
+        return None
+
+    def required_identity(label: str, field_names: tuple[str, ...]) -> Any:
+        for field_name in field_names:
+            if field_name in row:
+                return row[field_name]
+        missing.append(label)
+        return None
+
+    source_id = required_value(
+        "source_line_idx|record_idx",
+        ("source_line_idx", "record_idx"),
+    )
+    prefix_mode = required_value("prefix_mode", ("prefix_mode",))
+    prefix_depth = required_value("prefix_k|rollin_k|k", ("prefix_k", "rollin_k", "k"))
+    boundary_kind = required_value(
+        "boundary_kind|target_semantic_role|target_token_role",
+        ("boundary_kind", "target_semantic_role", "target_token_role"),
+    )
+    branch_kind = required_value("branch_kind", ("branch_kind",))
+    position = required_value(
+        "target_position|processor_position",
+        ("target_position", "processor_position", "position"),
+    )
+    object_identity = required_identity(
+        "target_object_instance_id|object_instance_id",
+        ("target_object_instance_id", "object_instance_id"),
+    )
+    if missing:
+        raise ValueError(
+            "missing_prefix_rollin_merge_key_fields: "
+            f"missing={sorted(missing)} row={dict(row)}"
+        )
+    return (
+        source_id,
+        prefix_mode,
+        prefix_depth,
+        boundary_kind,
+        branch_kind,
+        position,
+        object_identity,
+    )
+
+
 def run_prefix_rollin_teacher_forced_probe(
     *,
     config_path: Path,
@@ -290,6 +538,8 @@ def run_prefix_rollin_teacher_forced_probe(
     prefix_modes: Sequence[str] = ("gt_prefix",),
     decode_artifact_path: Path | None = None,
     trace_artifact_path: Path | None = None,
+    shard_index: int | None = None,
+    num_shards: int | None = None,
 ) -> tuple[Path, Path]:
     """Run a local real-model probe and write ``per_case.jsonl`` + summary."""
 
@@ -301,6 +551,12 @@ def run_prefix_rollin_teacher_forced_probe(
         raise TypeError("prefix rollin probe requires DetectionTrainingConfig")
     processor_kwargs: dict[str, Any] = {"do_resize": False}
     mode_set = _normalize_prefix_modes(prefix_modes)
+    normalized_shard_index, normalized_num_shards, shard_label = (
+        _normalize_prefix_probe_shard(
+            shard_index=shard_index,
+            num_shards=num_shards,
+        )
+    )
 
     scorer = TeacherForcedScorer(
         checkpoint_path=checkpoint_path,
@@ -321,6 +577,7 @@ def run_prefix_rollin_teacher_forced_probe(
     rows: list[dict[str, Any]] = []
     decode_rows = _load_artifact_rows_by_index(decode_artifact_path)
     trace_rows = _load_artifact_rows_by_index(trace_artifact_path)
+    selected_record_count = 0
 
     if "generated_prefix" in mode_set and decode_artifact_path is None:
         raise ValueError("prefix_mode=generated_prefix requires --decode-artifact")
@@ -328,6 +585,21 @@ def run_prefix_rollin_teacher_forced_probe(
     for record_idx, raw_payload in enumerate(_iter_jsonl(dataset_jsonl)):
         if record_idx >= int(limit):
             break
+        if not _record_selected_for_prefix_probe(
+            record_idx,
+            limit=limit,
+            shard_index=normalized_shard_index,
+            num_shards=normalized_num_shards,
+        ):
+            continue
+        selected_record_count += 1
+        record_shard_metadata = {
+            "shard_index": normalized_shard_index,
+            "num_shards": normalized_num_shards,
+            "shard_label": shard_label,
+            "source_line_idx": record_idx,
+            "selected_record_count": None,
+        }
         raw = parse_raw_detection_row(raw_payload)
         normalized = normalize_detection_row(
             raw,
@@ -404,6 +676,7 @@ def run_prefix_rollin_teacher_forced_probe(
                             "checkpoint_mode": scorer.resolved_checkpoint.checkpoint_mode,
                             "split": split,
                             "record_idx": record_idx,
+                            **record_shard_metadata,
                             "image_id": normalized.image_id,
                             "file_name": normalized.file_name,
                             "processor_kwargs": processor_kwargs,
@@ -442,6 +715,7 @@ def run_prefix_rollin_teacher_forced_probe(
                         "checkpoint_mode": scorer.resolved_checkpoint.checkpoint_mode,
                         "split": split,
                         "record_idx": record_idx,
+                        **record_shard_metadata,
                         "image_id": normalized.image_id,
                         "file_name": normalized.file_name,
                         "decode_artifact_path": (
@@ -453,6 +727,10 @@ def run_prefix_rollin_teacher_forced_probe(
                         **row,
                     }
                 )
+
+    row_selected_record_count = selected_record_count if shard_label is not None else None
+    for row in rows:
+        row["selected_record_count"] = row_selected_record_count
 
     output_dir.mkdir(parents=True, exist_ok=True)
     per_case_path = output_dir / "per_case.jsonl"
@@ -466,6 +744,11 @@ def run_prefix_rollin_teacher_forced_probe(
         "checkpoint_path": str(checkpoint_path),
         "split": split,
         "limit": int(limit),
+        "shard_index": normalized_shard_index,
+        "num_shards": normalized_num_shards,
+        "shard_label": shard_label,
+        "source_line_idx": None,
+        "selected_record_count": row_selected_record_count,
         "prefix_modes": sorted(mode_set),
         "per_case_jsonl": str(per_case_path),
         "dataset_jsonl": str(dataset_jsonl),
@@ -1189,15 +1472,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Run a teacher-forced compact prefix-rollin EOS-vs-branch probe."
     )
-    parser.add_argument("--config", required=True, type=Path)
-    parser.add_argument("--checkpoint", required=True, type=Path)
+    parser.add_argument("--config", type=Path)
+    parser.add_argument("--checkpoint", type=Path)
     parser.add_argument(
         "--output-dir",
         type=Path,
         default=Path("temp/prefix_rollin_tf_probe"),
     )
+    parser.add_argument(
+        "--merge-shards",
+        action="store_true",
+        help="Merge existing shard outputs without loading a model.",
+    )
+    parser.add_argument("--shards-dir", type=Path, default=None)
+    parser.add_argument("--expected-shards", type=int, default=None)
     parser.add_argument("--split", choices=("train", "val"), default="val")
     parser.add_argument("--limit", type=int, default=1)
+    parser.add_argument("--shard-index", type=int, default=None)
+    parser.add_argument("--num-shards", type=int, default=None)
     parser.add_argument(
         "--prefix-modes",
         default="gt_prefix",
@@ -1221,6 +1513,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--top-k", type=int, default=5)
     args = parser.parse_args(argv)
 
+    if args.merge_shards:
+        if args.shards_dir is None:
+            parser.error("--merge-shards requires --shards-dir")
+        if args.expected_shards is None:
+            parser.error("--merge-shards requires --expected-shards")
+        per_case, summary = merge_prefix_rollin_shards(
+            shards_dir=args.shards_dir,
+            output_dir=args.output_dir,
+            expected_shards=args.expected_shards,
+        )
+        print(f"wrote {per_case}")
+        print(f"wrote {summary}")
+        print(f"wrote {args.output_dir / 'merge_summary.json'}")
+        return 0
+
+    if args.config is None:
+        parser.error("--config is required unless --merge-shards is set")
+    if args.checkpoint is None:
+        parser.error("--checkpoint is required unless --merge-shards is set")
+
     per_case, summary = run_prefix_rollin_teacher_forced_probe(
         config_path=args.config,
         checkpoint_path=args.checkpoint,
@@ -1234,6 +1546,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         prefix_modes=_parse_prefix_modes(args.prefix_modes),
         decode_artifact_path=args.decode_artifact,
         trace_artifact_path=args.trace_artifact,
+        shard_index=args.shard_index,
+        num_shards=args.num_shards,
     )
     print(f"wrote {per_case}")
     print(f"wrote {summary}")
@@ -1247,6 +1561,7 @@ if __name__ == "__main__":
 __all__ = [
     "compute_prefix_rollin_position_delta",
     "find_token_subsequence",
+    "merge_prefix_rollin_shards",
     "run_prefix_rollin_teacher_forced_probe",
     "score_prefix_rollin_logits",
     "summarize_prefix_rollin_probe_rows",

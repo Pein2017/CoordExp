@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -8,13 +9,23 @@ import torch
 
 from src.analysis.hard_ce_coord_logit_locality import (
     SLOT_NAMES,
+    attribute_lane_c_coord_distribution,
+    build_lane_c_shard_plan,
+    build_lane_c_prefix_match_state,
     compact_slots_from_text,
     compute_embedding_geometry_metrics,
     compute_probability_locality_metrics,
     cut_complete_compact_rows,
     distribution_metrics_from_logits,
+    lane_c_record_selected,
+    lane_c_shard_label,
+    merge_lane_c_shards,
+    normalize_lane_c_shard,
     prediction_position_for_label_position,
     resolve_coord_token_ids,
+    summarize_lane_c_per_case_rows,
+    select_lane_c_intended_target_gt_idx,
+    select_lane_c_generated_intended_target,
     _prefix_text_at_depth,
 )
 
@@ -186,3 +197,261 @@ def test_compact_slots_from_text_preserves_xyxy_slot_order() -> None:
     assert [row.gt_bin for row in rows] == [10, 20, 30, 40]
     assert {row.object_order_index for row in rows} == {0}
     assert rows[0].desc == "cat"
+
+
+def test_lane_c_fp_prefix_does_not_advance_intended_target_by_depth() -> None:
+    state = build_lane_c_prefix_match_state(
+        [
+            {
+                "raw_pred_idx": 0,
+                "row_label": "unmatched_fp",
+                "raw_match_label": "unmatched_fp",
+                "guarded_match_label": "unmatched_fp",
+                "matched_gt_idx": None,
+                "guarded_matched_gt_idx": None,
+                "suppressed_by_guard": False,
+            }
+        ],
+        depth=1,
+        gt_count=2,
+    )
+
+    selected = select_lane_c_intended_target_gt_idx([0, 1], state)
+
+    assert state.prefix_quality == "fp_prefix"
+    assert state.fp_prefix_object_indices == (0,)
+    assert state.matched_prefix_gt_indices == ()
+    assert state.remaining_gt_indices == (0, 1)
+    assert selected.intended_target_gt_idx == 0
+    assert selected.target_selection_rule == "first_remaining_teacher_order_guarded"
+
+
+def test_lane_c_duplicate_suppressed_raw_tp_does_not_consume_guarded_gt() -> None:
+    state = build_lane_c_prefix_match_state(
+        [
+            {
+                "raw_pred_idx": 0,
+                "row_label": "duplicate_suppressed",
+                "raw_match_label": "tp_like",
+                "guarded_match_label": None,
+                "matched_gt_idx": 0,
+                "guarded_matched_gt_idx": None,
+                "suppressed_by_guard": True,
+            }
+        ],
+        depth=1,
+        gt_count=2,
+    )
+
+    selected = select_lane_c_intended_target_gt_idx([0, 1], state)
+
+    assert state.prefix_quality == "duplicate_prefix"
+    assert state.duplicate_prefix_object_indices == (0,)
+    assert state.matched_prefix_gt_indices == ()
+    assert state.remaining_gt_indices == (0, 1)
+    assert selected.intended_target_gt_idx == 0
+
+
+def test_lane_c_best_other_rank_uses_full_distribution_not_top_k() -> None:
+    probs = np.zeros(1000, dtype=np.float64)
+    probs[100] = 0.50
+    for idx in range(20):
+        probs[idx] = 0.01
+    probs[900] = 0.005
+
+    attr = attribute_lane_c_coord_distribution(
+        probs,
+        target_bin=100,
+        gt_bins_by_index={0: {"x1": 100}, 1: {"x1": 900}},
+        prefix_bins_by_label={},
+        slot="x1",
+        radii=(4, 8),
+    )
+
+    assert attr.target_rank == 1
+    assert attr.best_other_gt_idx == 1
+    assert attr.best_other_gt_bin == 900
+    assert attr.best_other_gt_rank == 22
+    assert attr.best_other_gt_rank > 12
+    assert attr.target_margin_vs_best_other == pytest.approx(
+        attr.mass_by_radius["mass_at_radius_4"] - probs[900] / probs.sum()
+    )
+
+
+def test_lane_c_attribution_labels_same_desc_and_previous_generated_peaks() -> None:
+    same_desc_probs = np.zeros(1000, dtype=np.float64)
+    same_desc_probs[303] = 0.80
+    same_desc_probs[100] = 0.20
+
+    same_desc_attr = attribute_lane_c_coord_distribution(
+        same_desc_probs,
+        target_bin=100,
+        gt_bins_by_index={
+            0: {"x1": 100},
+            1: {"x1": 304, "same_desc_competitor": True},
+        },
+        prefix_bins_by_label={},
+        slot="x1",
+        radii=(4, 8),
+    )
+
+    previous_probs = np.zeros(1000, dtype=np.float64)
+    previous_probs[701] = 0.80
+    previous_probs[100] = 0.20
+    previous_attr = attribute_lane_c_coord_distribution(
+        previous_probs,
+        target_bin=100,
+        gt_bins_by_index={0: {"x1": 100}},
+        prefix_bins_by_label={"previous_generated_object": [{"x1": 700}]},
+        slot="x1",
+        radii=(4, 8),
+    )
+
+    assert same_desc_attr.top_peak_attribution == "same_desc_competitor_gt_object"
+    assert previous_attr.top_peak_attribution == "previous_generated_object"
+
+
+def test_lane_c_shard_selection_uses_source_line_idx_for_full_curves() -> None:
+    shard_index, num_shards, label = normalize_lane_c_shard(
+        shard_index=2,
+        num_shards=3,
+    )
+    curve_rows = [
+        {"source_line_idx": 5, "prefix_depth": depth, "slot": "x1"}
+        for depth in range(4)
+    ]
+    other_curve_row = {"source_line_idx": 4, "prefix_depth": 0, "slot": "x1"}
+
+    assert label == lane_c_shard_label(2, 3)
+    assert shard_index == 2
+    assert num_shards == 3
+    assert all(
+        lane_c_record_selected(row, shard_index=2, num_shards=3)
+        for row in curve_rows
+    )
+    assert not lane_c_record_selected(
+        other_curve_row,
+        shard_index=2,
+        num_shards=3,
+    )
+
+
+def test_lane_c_merge_rejects_missing_unexpected_and_malformed_shard_dirs(tmp_path: Path) -> None:
+    root = tmp_path / "lane_c"
+    shards = root / "shards"
+    shards.mkdir(parents=True)
+    (shards / "lane_c_shard_000-of-002").mkdir()
+
+    with pytest.raises(ValueError, match="missing Lane-C shard dirs"):
+        merge_lane_c_shards(root, expected_shards=2)
+
+    (shards / "lane_c_shard_001-of-002").mkdir()
+    (shards / "lane_c_shard_002-of-002").mkdir()
+    with pytest.raises(ValueError, match="unexpected Lane-C shard dirs"):
+        merge_lane_c_shards(root, expected_shards=2)
+
+    (shards / "lane_c_shard_002-of-002").rmdir()
+    (shards / "lane_c_shard_bad").mkdir()
+    with pytest.raises(ValueError, match="malformed Lane-C shard dirs"):
+        merge_lane_c_shards(root, expected_shards=2)
+
+
+def test_lane_c_merge_rejects_duplicate_per_slot_keys(tmp_path: Path) -> None:
+    root = tmp_path / "lane_c"
+    for shard_index in range(2):
+        shard_dir = root / "shards" / lane_c_shard_label(shard_index, 2)
+        shard_dir.mkdir(parents=True)
+        row = {
+            "lane_c_merge_key": "row0:self_prefix:1:0:x1:0",
+            "source_line_idx": 0,
+            "prefix_mode": "self_prefix",
+            "prefix_depth": 1,
+            "intended_target_gt_idx": 0,
+            "slot": "x1",
+            "slot_index": 0,
+        }
+        (shard_dir / "per_slot.jsonl").write_text(
+            __import__("json").dumps(row) + "\n",
+            encoding="utf-8",
+        )
+        (shard_dir / "per_case.jsonl").write_text("", encoding="utf-8")
+        (shard_dir / "summary.json").write_text("{}", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="duplicate Lane-C per-slot merge key"):
+        merge_lane_c_shards(root, expected_shards=2)
+
+
+def test_lane_c_dry_run_shard_plan_has_unique_dirs_and_merge_without_model_load(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    output_root = tmp_path / "x1_basin_attribution"
+    plan = build_lane_c_shard_plan(
+        config_path=config_path,
+        output_root=output_root,
+        num_shards=8,
+        python_executable="python",
+    )
+
+    shard_dirs = [item["shard_dir"] for item in plan["shards"]]
+    commands = [item["command"] for item in plan["shards"]]
+
+    assert len(shard_dirs) == 8
+    assert len(set(shard_dirs)) == 8
+    assert all(f"--shard-index {index}" in commands[index] for index in range(8))
+    assert all("CUDA_VISIBLE_DEVICES" not in command for command in commands)
+    assert "--merge-shards" in plan["merge_command"]
+    assert "x1_basin_attribution" in plan["merge_command"]
+
+
+def test_lane_c_generated_prefix_target_selection_uses_lane_a_state_not_ordinal_depth() -> None:
+    selected = select_lane_c_generated_intended_target(
+        teacher_order_gt_indices=(0, 1, 2),
+        lane_a_rows=[
+            {
+                "raw_pred_idx": 0,
+                "row_label": "unmatched_fp",
+                "raw_match_label": "unmatched_fp",
+                "guarded_match_label": "unmatched_fp",
+                "matched_gt_idx": None,
+                "guarded_matched_gt_idx": None,
+                "suppressed_by_guard": False,
+            }
+        ],
+        depth=1,
+        gt_count=3,
+    )
+
+    assert selected.intended_target_gt_idx == 0
+    assert selected.target_selection_rule == "first_remaining_teacher_order_guarded"
+
+
+def test_lane_c_per_case_summary_preserves_separate_slot_metrics() -> None:
+    rows = [
+        {
+            "case_id": "row0:self_prefix:0:7",
+            "source_line_idx": 0,
+            "prefix_mode": "self_prefix",
+            "prefix_depth": 0,
+            "intended_target_gt_idx": 7,
+            "slot": slot,
+            "top_peak_attribution": f"{slot}_peak",
+            "target_rank": index + 1,
+            "best_other_gt_rank": 10 + index,
+            "target_margin_vs_best_other": 0.1 * index,
+            "gt_top1": index == 0,
+            "top1_distance": index,
+            "mass_at_radius_4": 0.2 + index,
+            "mass_at_radius_8": 0.3 + index,
+        }
+        for index, slot in enumerate(SLOT_NAMES)
+    ]
+
+    cases = summarize_lane_c_per_case_rows(rows)
+
+    assert len(cases) == 1
+    by_slot = cases[0]["slots"]
+    assert tuple(by_slot) == SLOT_NAMES
+    assert by_slot["x1"]["top_peak_attribution"] == "x1_peak"
+    assert by_slot["y1"]["target_rank"] == 2
+    assert by_slot["x2"]["mass_at_radius_4"] == pytest.approx(2.2)
+    assert by_slot["y2"]["top1_distance"] == 3
+    assert cases[0]["x1"]["top_peak_attribution"] == "x1_peak"

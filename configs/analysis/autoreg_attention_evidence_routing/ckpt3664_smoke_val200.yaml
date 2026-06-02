@@ -1,0 +1,24 @@
+paths:
+  artifact_root: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/attention_evidence_routing_smoke
+  checkpoint: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664
+  dataset_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+  lane_a_rollout_root: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/rollout_anatomy
+  lane_c_per_case: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/x1_basin_attribution/per_case.jsonl
+  lane_c_study_config: /data/CoordExp/configs/analysis/hard_ce_coord_logit_locality/ckpt3664_lane_c_val200.yaml
+  lane_d_selected_cases: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/hidden_state_probe/selected_cases.jsonl
+  self_rollout_root: /data/CoordExp/outputs/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_prompt_offset_fix_8gpu
+selection:
+  sample_limit: 200
+  max_cases: 8
+  prefer_prefix_mode: self_prefix
+  min_remaining_gt: 1
+  case_source: lane_d_self_prefix_remaining_gt
+  scope_label: val200_self_rollout_smoke
+regions:
+  context_expansion_norm1000: 64
+  duplicate_iou_threshold: 0.95
+execution:
+  batch_size: 1
+  attn_implementation: eager
+  torch_dtype: bfloat16
+  max_feasibility_cases: 4

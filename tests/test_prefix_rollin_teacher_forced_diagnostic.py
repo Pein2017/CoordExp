@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 
 import pytest
@@ -8,10 +9,13 @@ import torch
 from src.analysis.prefix_rollin_teacher_forced_diagnostic import (
     GeneratedPrefixCase,
     _generated_prefix_case_for_record,
+    _normalize_prefix_probe_shard,
     _normalize_prefix_modes,
+    _record_selected_for_prefix_probe,
     _resolve_k_values,
     _score_forced_prefix_boundary_logits,
     compute_prefix_rollin_position_delta,
+    merge_prefix_rollin_shards,
     score_prefix_rollin_logits,
     summarize_prefix_rollin_probe_rows,
 )
@@ -544,3 +548,294 @@ def test_normalize_prefix_modes_accepts_both_alias() -> None:
         "generated_prefix",
         "gt_prefix",
     }
+
+def test_prefix_probe_shard_selection_keeps_full_record_curves() -> None:
+    assert _record_selected_for_prefix_probe(
+        0, limit=10, shard_index=0, num_shards=2
+    )
+    assert not _record_selected_for_prefix_probe(
+        1, limit=10, shard_index=0, num_shards=2
+    )
+    assert _record_selected_for_prefix_probe(
+        9, limit=10, shard_index=1, num_shards=2
+    )
+    assert not _record_selected_for_prefix_probe(
+        10, limit=10, shard_index=0, num_shards=2
+    )
+
+def test_prefix_probe_shard_normalization_rejects_invalid_args() -> None:
+    with pytest.raises(ValueError):
+        _normalize_prefix_probe_shard(shard_index=2, num_shards=2)
+    with pytest.raises(ValueError):
+        _normalize_prefix_probe_shard(shard_index=0, num_shards=0)
+
+def _write_prefix_probe_shard(
+    shards_dir,
+    *,
+    shard_index: int,
+    num_shards: int,
+    rows: list[dict[str, object]],
+) -> None:
+    label = f"shard_{shard_index:03d}-of-{num_shards:03d}"
+    shard_dir = shards_dir / label
+    shard_dir.mkdir(parents=True)
+    per_case_path = shard_dir / "per_case.jsonl"
+    with per_case_path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row) + "\n")
+    summary = {
+        **summarize_prefix_rollin_probe_rows(rows),
+        "shard_index": shard_index,
+        "num_shards": num_shards,
+        "shard_label": label,
+        "selected_record_count": len(
+            {
+                int(
+                    row["source_line_idx"]
+                    if "source_line_idx" in row
+                    else row["record_idx"]
+                )
+                for row in rows
+            }
+        ),
+        "per_case_jsonl": str(per_case_path),
+    }
+    (shard_dir / "summary.json").write_text(
+        json.dumps(summary, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+def _merge_fixture_row(record_idx: int, *, margin: float) -> dict[str, object]:
+    return {
+        "record_idx": record_idx,
+        "source_line_idx": record_idx,
+        "prefix_mode": "gt_prefix",
+        "k": 0,
+        "prefix_k": 0,
+        "rollin_k": 0,
+        "boundary_kind": "object_ref_after_forced_separator",
+        "branch_kind": "valid_next_object",
+        "position": 5,
+        "target_position": 5,
+        "object_instance_id": f"obj-{record_idx}",
+        "continue_minus_eos_margin": margin,
+        "margin_valid_mass_minus_eos_logprob": margin,
+        "valid_mass": 0.5,
+    }
+
+def test_merge_prefix_rollin_shards_concatenates_rows_and_summaries(tmp_path) -> None:
+    shards_dir = tmp_path / "shards"
+    _write_prefix_probe_shard(
+        shards_dir,
+        shard_index=0,
+        num_shards=2,
+        rows=[_merge_fixture_row(0, margin=1.0)],
+    )
+    _write_prefix_probe_shard(
+        shards_dir,
+        shard_index=1,
+        num_shards=2,
+        rows=[_merge_fixture_row(1, margin=-1.0)],
+    )
+    output_dir = tmp_path / "merged"
+
+    per_case_path, summary_path = merge_prefix_rollin_shards(
+        shards_dir=shards_dir,
+        output_dir=output_dir,
+        expected_shards=2,
+    )
+
+    assert per_case_path == output_dir / "per_case.jsonl"
+    assert summary_path == output_dir / "summary.json"
+    merged_rows = [
+        json.loads(line)
+        for line in per_case_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert [row["record_idx"] for row in merged_rows] == [0, 1]
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert summary["row_count"] == 2
+    assert summary["selected_record_count"] == 2
+    assert summary["shard_index"] is None
+    assert summary["num_shards"] == 2
+    assert summary["shard_label"] is None
+    merge_summary = json.loads(
+        (output_dir / "merge_summary.json").read_text(encoding="utf-8")
+    )
+    assert merge_summary["shard_labels"] == [
+        "shard_000-of-002",
+        "shard_001-of-002",
+    ]
+    assert merge_summary["row_counts_by_shard"] == {
+        "shard_000-of-002": 1,
+        "shard_001-of-002": 1,
+    }
+    assert merge_summary["selected_record_count"] == 2
+    assert len(merge_summary["source_summaries"]) == 2
+
+def test_merge_prefix_rollin_shards_rejects_duplicate_case_keys(tmp_path) -> None:
+    shards_dir = tmp_path / "shards"
+    duplicate_row = _merge_fixture_row(0, margin=1.0)
+    _write_prefix_probe_shard(
+        shards_dir,
+        shard_index=0,
+        num_shards=2,
+        rows=[duplicate_row],
+    )
+    _write_prefix_probe_shard(
+        shards_dir,
+        shard_index=1,
+        num_shards=2,
+        rows=[{**duplicate_row, "shard_index": 1}],
+    )
+
+    with pytest.raises(ValueError, match="duplicate"):
+        merge_prefix_rollin_shards(
+            shards_dir=shards_dir,
+            output_dir=tmp_path / "merged",
+            expected_shards=2,
+        )
+
+def test_merge_prefix_rollin_shards_prefers_local_per_case_over_external_summary_path(
+    tmp_path,
+) -> None:
+    shards_dir = tmp_path / "shards"
+    local_row = _merge_fixture_row(0, margin=1.0)
+    _write_prefix_probe_shard(
+        shards_dir,
+        shard_index=0,
+        num_shards=1,
+        rows=[local_row],
+    )
+    external_per_case = tmp_path / "stale_external_per_case.jsonl"
+    external_per_case.write_text(
+        json.dumps(_merge_fixture_row(99, margin=-9.0)) + "\n",
+        encoding="utf-8",
+    )
+    summary_path = shards_dir / "shard_000-of-001" / "summary.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary["per_case_jsonl"] = str(external_per_case)
+    summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+
+    per_case_path, _ = merge_prefix_rollin_shards(
+        shards_dir=shards_dir,
+        output_dir=tmp_path / "merged",
+        expected_shards=1,
+    )
+
+    merged_rows = [
+        json.loads(line)
+        for line in per_case_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert [row["source_line_idx"] for row in merged_rows] == [0]
+
+def test_merge_prefix_rollin_shards_rejects_external_per_case_without_local_file(
+    tmp_path,
+) -> None:
+    shards_dir = tmp_path / "shards"
+    _write_prefix_probe_shard(
+        shards_dir,
+        shard_index=0,
+        num_shards=1,
+        rows=[_merge_fixture_row(0, margin=1.0)],
+    )
+    external_per_case = tmp_path / "stale_external_per_case.jsonl"
+    external_per_case.write_text(
+        json.dumps(_merge_fixture_row(99, margin=-9.0)) + "\n",
+        encoding="utf-8",
+    )
+    shard_dir = shards_dir / "shard_000-of-001"
+    (shard_dir / "per_case.jsonl").unlink()
+    summary_path = shard_dir / "summary.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary["per_case_jsonl"] = str(external_per_case)
+    summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="stale_prefix_rollin_shard_per_case"):
+        merge_prefix_rollin_shards(
+            shards_dir=shards_dir,
+            output_dir=tmp_path / "merged",
+            expected_shards=1,
+        )
+
+def test_merge_prefix_rollin_shards_accepts_source_line_idx_without_record_idx(
+    tmp_path,
+) -> None:
+    shards_dir = tmp_path / "shards"
+    row = _merge_fixture_row(7, margin=1.0)
+    row.pop("record_idx")
+    _write_prefix_probe_shard(
+        shards_dir,
+        shard_index=0,
+        num_shards=1,
+        rows=[row],
+    )
+
+    per_case_path, _ = merge_prefix_rollin_shards(
+        shards_dir=shards_dir,
+        output_dir=tmp_path / "merged",
+        expected_shards=1,
+    )
+
+    merged_rows = [
+        json.loads(line)
+        for line in per_case_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert merged_rows[0]["source_line_idx"] == 7
+    assert "record_idx" not in merged_rows[0]
+
+
+def test_merge_prefix_rollin_shards_accepts_semantic_eos_rows_without_boundary_kind(
+    tmp_path,
+) -> None:
+    shards_dir = tmp_path / "shards"
+    rows = []
+    for prefix_k in range(2):
+        row = _merge_fixture_row(0, margin=1.0)
+        row.pop("boundary_kind")
+        row["prefix_k"] = prefix_k
+        row["rollin_k"] = prefix_k
+        row["branch_kind"] = "semantic_eos"
+        row["target_token_role"] = "terminal"
+        row["target_semantic_role"] = "chat_stop"
+        row["target_object_instance_id"] = None
+        row["object_instance_id"] = None
+        rows.append(row)
+    _write_prefix_probe_shard(
+        shards_dir,
+        shard_index=0,
+        num_shards=1,
+        rows=rows,
+    )
+
+    per_case_path, _ = merge_prefix_rollin_shards(
+        shards_dir=shards_dir,
+        output_dir=tmp_path / "merged",
+        expected_shards=1,
+    )
+
+    merged_rows = [
+        json.loads(line)
+        for line in per_case_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert [row["prefix_k"] for row in merged_rows] == [0, 1]
+
+
+def test_merge_prefix_rollin_shards_rejects_missing_required_key_fields(
+    tmp_path,
+) -> None:
+    shards_dir = tmp_path / "shards"
+    row = _merge_fixture_row(0, margin=1.0)
+    row.pop("prefix_mode")
+    _write_prefix_probe_shard(
+        shards_dir,
+        shard_index=0,
+        num_shards=1,
+        rows=[row],
+    )
+
+    with pytest.raises(ValueError, match="missing_prefix_rollin_merge_key_fields"):
+        merge_prefix_rollin_shards(
+            shards_dir=shards_dir,
+            output_dir=tmp_path / "merged",
+            expected_shards=1,
+        )
