@@ -2424,6 +2424,42 @@ Expected final artifacts:
 
 This result is a training-distribution attention anchor. It is stronger evidence for seen-sample internal routing, but it must not be reported as train-set rollout recall unless a separate train self-rollout artifact is generated and analyzed with the same schema.
 
+## Resolved Follow-Up Decision: FN-Rescue Continuation
+
+Decision:
+
+`FN-rescue continuation` is a diagnostic GT-hint counterfactual experiment, not a deployable inference improvement. For a GT object that is false-negative under self-rollout matching, the experiment appends a constrained continuation after the same rollout prefix and measures whether minimal hints recover the missed object.
+
+Planned hint tiers:
+
+- `desc_only`: self-rollout prefix plus the target GT description; generate the bbox.
+- `desc_x1`: self-rollout prefix plus the target GT description and target GT `x1`; generate `y1/x2/y2`.
+- `desc_x1_wrong_control`: self-rollout prefix plus the target GT description and an intentionally wrong or competing `x1`; verify that recovery is not just coordinate prior leakage.
+
+Rationale:
+
+The purpose is to localize recall failure into mechanism stages: next-object desc proposal, x1 instance binding, or later bbox decoding. A rescue after `desc_only` argues against pure visual invisibility and points to proposal/enumeration failure. A rescue only after `desc_x1` points to x1 binding failure. Failure under both tiers remains ambiguous and must be interpreted with prefix quality, same-desc competition, and format validity controls.
+
+Consequence:
+
+First-pass reporting must label this as a counterfactual diagnostic surface with GT leakage. It must not be mixed with production rollout metrics or presented as an inference-time recall gain. Any later deployable variant must replace GT hints with model-derived top-k desc proposals, attention-derived region proposals, or multi-sample inventories and should be evaluated separately.
+
+Success criteria:
+
+Primary rescue success is `valid_parse == true`, target description is preserved by the forced hint condition, and `IoU(generated_box, target_gt_box) >= 0.5`. The first-pass report must also emit auxiliary thresholds at `IoU >= 0.3` and `IoU >= 0.75`, plus a duplicate guard that flags whether the generated box is a same-desc copy of an existing rollout prediction under `same-desc IoU > 0.95`.
+
+Interpretation:
+
+- `IoU >= 0.5`: main evidence that the missed target can be recovered under the hint condition.
+- `IoU >= 0.3`: weak coarse-localization evidence, useful for distinguishing partial visual grounding from total failure.
+- `IoU >= 0.75`: high-quality localization evidence.
+- same-desc duplicate flag: prevents counting a copied existing prediction as target rescue.
+
+Evidence:
+
+- Scope: `none-yet`
+- Handles: checkpoint `checkpoint-3664`, prior attention atlas roots under `/data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/attention_evidence_routing` and `/data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_train200/attention_evidence_routing_teacher_forced_anchor`
+
 ## Self-Review Notes
 
 Spec coverage:
