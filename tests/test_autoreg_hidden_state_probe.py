@@ -70,6 +70,8 @@ def _write_lane_d_config(
     lane_c_study_config: Path | str | None = None,
     max_cases: object = 512,
     batch_size: object = 1,
+    enable_x1_logit_lens: object = False,
+    enable_coord_slot_logit_lens: object = False,
 ) -> None:
     roles_yaml = "\n".join(f"    - {role}" for role in roles)
     layer_groups = layer_groups_yaml or "    early: [0, 1]\n    last: [-4, -3]"
@@ -99,6 +101,8 @@ positions:
 {layer_groups}
 execution:
   batch_size: {batch_size}
+  enable_x1_logit_lens: {str(enable_x1_logit_lens).lower()}
+  enable_coord_slot_logit_lens: {str(enable_coord_slot_logit_lens).lower()}
 """.lstrip(),
         encoding="utf-8",
     )
@@ -555,6 +559,9 @@ class _FakeLaneDProcessor:
 
 
 class _FakeLaneDModel:
+    def __init__(self) -> None:
+        self.lm_head = self._lm_head
+
     def __call__(
         self,
         *,
@@ -577,6 +584,16 @@ class _FakeLaneDModel:
                     )
             hidden_states.append(tensor)
         return SimpleNamespace(hidden_states=tuple(hidden_states))
+
+    @staticmethod
+    def _lm_head(hidden: object) -> object:
+        del hidden
+        import torch
+
+        logits = torch.zeros(1000, dtype=torch.float32)
+        logits[5] = 10.0
+        logits[9] = 9.0
+        return logits
 
 
 def _compact_row(desc: str, coords: tuple[int, int, int, int]) -> str:
@@ -1059,6 +1076,8 @@ def test_collect_lane_d_hidden_scalar_probe_rows_uses_hidden_indices_and_padding
         config_path,
         layer_groups_yaml="    first: [0]\n    final: [-1]",
         batch_size=2,
+        enable_x1_logit_lens=True,
+        enable_coord_slot_logit_lens=True,
     )
     config = load_lane_d_config(config_path)
     examples = [
@@ -1068,6 +1087,7 @@ def test_collect_lane_d_hidden_scalar_probe_rows_uses_hidden_indices_and_padding
             image_path=tmp_path / "case-0.jpg",
             prefix_condition="self_prefix",
             pairing_id="case-0",
+            assistant_text="<|object_ref_start|>case-0<|box_start|><|coord_5|><|coord_9|><|coord_7|><|coord_8|>",
             lane_c_metadata={
                 "case_id": "case-0",
                 "gt_bins_by_index": {0: {}, 1: {}},
@@ -1080,6 +1100,7 @@ def test_collect_lane_d_hidden_scalar_probe_rows_uses_hidden_indices_and_padding
             image_path=tmp_path / "case-1.jpg",
             prefix_condition="teacher_forced",
             pairing_id="case-1",
+            assistant_text="<|object_ref_start|>case-1<|box_start|><|coord_9|><|coord_10|><|coord_11|><|coord_12|>",
             lane_c_metadata={
                 "case_id": "case-1",
                 "gt_bins_by_index": {0: {}, 1: {}, 2: {}},
@@ -1151,6 +1172,12 @@ def test_collect_lane_d_hidden_scalar_probe_rows_uses_hidden_indices_and_padding
             prediction=2,
         ),
         inventory_row(
+            selected_case=selected_cases[0],
+            role="post_x1",
+            absolute=4,
+            prediction=3,
+        ),
+        inventory_row(
             selected_case=selected_cases[1],
             role="row_start",
             absolute=1,
@@ -1164,6 +1191,7 @@ def test_collect_lane_d_hidden_scalar_probe_rows_uses_hidden_indices_and_padding
         ),
     ]
     model_handle = SimpleNamespace(
+        coord_token_ids=tuple(range(1000)),
         processor=_FakeLaneDProcessor(
             {example.full_text: example.full_input_ids for example in examples}
         ),
@@ -1179,7 +1207,7 @@ def test_collect_lane_d_hidden_scalar_probe_rows_uses_hidden_indices_and_padding
         model_handle=model_handle,
     )
 
-    assert len(rows) == 8
+    assert len(rows) == 10
     by_key = {
         (
             row["case_id"],
@@ -1202,6 +1230,22 @@ def test_collect_lane_d_hidden_scalar_probe_rows_uses_hidden_indices_and_padding
     assert by_key[("case-1", "pre_x1", "final")]["object_count"] == 3
     assert by_key[("case-1", "pre_x1", "final")]["remaining_count"] == 2
     assert by_key[("case-1", "pre_x1", "final")]["x1_target_rank"] == 7
+    assert by_key[("case-0", "pre_x1", "first")]["target_x1_bin"] == 5
+    assert by_key[("case-0", "pre_x1", "first")]["target_coord_bins_xyxy"] == [
+        5,
+        9,
+        7,
+        8,
+    ]
+    assert by_key[("case-0", "pre_x1", "first")]["x1_logit_lens_rank"] == 1
+    assert by_key[("case-0", "pre_x1", "first")]["x1_logit_lens_top1_bin"] == 5
+    assert by_key[("case-0", "pre_x1", "first")]["x1_logit_lens_target_minus_top1"] == pytest.approx(0.0)
+    assert by_key[("case-0", "pre_x1", "first")]["coord_slot_logit_lens_target_slot"] == "x1"
+    assert by_key[("case-0", "pre_x1", "first")]["coord_slot_logit_lens_target_bin"] == 5
+    assert by_key[("case-0", "pre_x1", "first")]["coord_slot_logit_lens_rank"] == 1
+    assert by_key[("case-0", "post_x1", "first")]["coord_slot_logit_lens_target_slot"] == "y1"
+    assert by_key[("case-0", "post_x1", "first")]["coord_slot_logit_lens_target_bin"] == 9
+    assert by_key[("case-0", "post_x1", "first")]["coord_slot_logit_lens_rank"] == 2
 
 
 def test_validate_lane_d_position_inventory_rejects_mixed_context_under_same_case_id() -> None:

@@ -157,6 +157,7 @@ _LANE_D_DUPLICATE_KEY_STRING_FIELDS = {
 
 _LANE_D_SHARD_DIR_PATTERN = re.compile(r"^shard_(\d{3})-of-(\d{3})$")
 _LANE_D_COORD_TOKEN_RE = re.compile(r"<\|coord_\d+\|>")
+_LANE_D_COORD_VALUE_RE = re.compile(r"<\|coord_(\d+)\|>")
 
 LANE_D_OBJECT_REF_START_TOKEN = "<|object_ref_start|>"
 LANE_D_BOX_START_TOKEN = "<|box_start|>"
@@ -199,6 +200,12 @@ class LaneDPositionsConfig:
 @dataclass(frozen=True)
 class LaneDExecutionConfig:
     batch_size: int = 1
+    enable_x1_logit_lens: bool = False
+    x1_logit_lens_roles: tuple[str, ...] = ("desc_end", "box_start", "pre_x1")
+    x1_logit_lens_top_k: int = 5
+    enable_coord_slot_logit_lens: bool = False
+    coord_slot_logit_lens_roles: tuple[str, ...] = ("pre_x1", "post_x1", "post_y1")
+    coord_slot_logit_lens_top_k: int = 5
 
 
 @dataclass(frozen=True)
@@ -319,7 +326,49 @@ def load_lane_d_config(path: str | Path) -> LaneDConfig:
         batch_size=_config_positive_int(
             execution_raw.get("batch_size", LaneDExecutionConfig.batch_size),
             "execution.batch_size",
-        )
+        ),
+        enable_x1_logit_lens=_config_bool(
+            execution_raw.get(
+                "enable_x1_logit_lens",
+                LaneDExecutionConfig.enable_x1_logit_lens,
+            ),
+            "execution.enable_x1_logit_lens",
+        ),
+        x1_logit_lens_roles=_parse_lane_d_string_tuple(
+            execution_raw.get(
+                "x1_logit_lens_roles",
+                LaneDExecutionConfig.x1_logit_lens_roles,
+            ),
+            "execution.x1_logit_lens_roles",
+        ),
+        x1_logit_lens_top_k=_config_positive_int(
+            execution_raw.get(
+                "x1_logit_lens_top_k",
+                LaneDExecutionConfig.x1_logit_lens_top_k,
+            ),
+            "execution.x1_logit_lens_top_k",
+        ),
+        enable_coord_slot_logit_lens=_config_bool(
+            execution_raw.get(
+                "enable_coord_slot_logit_lens",
+                LaneDExecutionConfig.enable_coord_slot_logit_lens,
+            ),
+            "execution.enable_coord_slot_logit_lens",
+        ),
+        coord_slot_logit_lens_roles=_parse_lane_d_string_tuple(
+            execution_raw.get(
+                "coord_slot_logit_lens_roles",
+                LaneDExecutionConfig.coord_slot_logit_lens_roles,
+            ),
+            "execution.coord_slot_logit_lens_roles",
+        ),
+        coord_slot_logit_lens_top_k=_config_positive_int(
+            execution_raw.get(
+                "coord_slot_logit_lens_top_k",
+                LaneDExecutionConfig.coord_slot_logit_lens_top_k,
+            ),
+            "execution.coord_slot_logit_lens_top_k",
+        ),
     )
     return LaneDConfig(
         config_path=config_path,
@@ -804,6 +853,7 @@ def _lane_d_target_ledger(
 ) -> dict[str, Any]:
     metadata = getattr(example, "lane_c_metadata", None)
     metadata = metadata if isinstance(metadata, Mapping) else {}
+    coord_bins = _lane_d_target_coord_bins(example)
     gt_bins = metadata.get("gt_bins_by_index")
     remaining = metadata.get("remaining_gt_indices")
     object_count = len(gt_bins) if isinstance(gt_bins, Mapping) else selected_case.get("object_count")
@@ -843,6 +893,11 @@ def _lane_d_target_ledger(
             "x1_target_rank",
             case_id=str(selected_case.get("case_id")),
         ),
+        "target_coord_bins_xyxy": list(coord_bins) if coord_bins is not None else None,
+        "target_x1_bin": coord_bins[0] if coord_bins is not None else None,
+        "target_y1_bin": coord_bins[1] if coord_bins is not None else None,
+        "target_x2_bin": coord_bins[2] if coord_bins is not None else None,
+        "target_y2_bin": coord_bins[3] if coord_bins is not None else None,
     }
 
 
@@ -1406,6 +1461,20 @@ def _collect_lane_d_hidden_scalar_probe_rows(
                     hidden_tensor = hidden_states[hidden_state_tuple_index]
                     hidden_vec = hidden_tensor[batch_idx, tensor_token_index].detach().float()
                     scalar_summary = _lane_d_hidden_scalar_summary(hidden_vec)
+                    logit_lens_summary = _lane_d_x1_logit_lens_summary(
+                        config,
+                        model_handle=model_handle,
+                        hidden_vec=hidden_vec,
+                        role=str(inventory_row["role"]),
+                        target_x1_bin=target_ledger.get("target_x1_bin"),
+                    )
+                    coord_slot_logit_lens_summary = _lane_d_coord_slot_logit_lens_summary(
+                        config,
+                        model_handle=model_handle,
+                        hidden_vec=hidden_vec,
+                        role=str(inventory_row["role"]),
+                        target_ledger=target_ledger,
+                    )
                     rows.append(
                         {
                             "source_line_idx": inventory_row["source_line_idx"],
@@ -1448,6 +1517,8 @@ def _collect_lane_d_hidden_scalar_probe_rows(
                             "shard_label": inventory_row["shard_label"],
                             **target_ledger,
                             **scalar_summary,
+                            **logit_lens_summary,
+                            **coord_slot_logit_lens_summary,
                         }
                     )
     return rows
@@ -1509,6 +1580,264 @@ def _lane_d_hidden_scalar_summary(hidden_vec: Any) -> dict[str, Any]:
         "hidden_mean": _json_finite_float(mean),
         "hidden_std": _json_finite_float(std),
     }
+
+
+def _lane_d_target_coord_bins(example: Any) -> tuple[int, int, int, int] | None:
+    assistant_text = getattr(example, "assistant_text", None)
+    if not isinstance(assistant_text, str) or not assistant_text:
+        return None
+    target_row = assistant_text.splitlines()[-1]
+    values = tuple(int(match.group(1)) for match in _LANE_D_COORD_VALUE_RE.finditer(target_row))
+    if len(values) != 4:
+        return None
+    if any(value < 0 or value > 999 for value in values):
+        return None
+    return values  # type: ignore[return-value]
+
+
+def _lane_d_x1_logit_lens_summary(
+    config: LaneDConfig,
+    *,
+    model_handle: Any,
+    hidden_vec: Any,
+    role: str,
+    target_x1_bin: Any,
+) -> dict[str, Any]:
+    if not config.execution.enable_x1_logit_lens:
+        return {}
+    if role not in set(config.execution.x1_logit_lens_roles):
+        return {}
+    base_unavailable = {
+        "x1_logit_lens_available": False,
+        "x1_logit_lens_role_enabled": True,
+        "x1_logit_lens_rank": None,
+        "x1_logit_lens_top1_bin": None,
+        "x1_logit_lens_target_logit": None,
+        "x1_logit_lens_top1_logit": None,
+        "x1_logit_lens_target_minus_top1": None,
+        "x1_logit_lens_top_bins": [],
+    }
+    if not isinstance(target_x1_bin, int) or target_x1_bin < 0 or target_x1_bin > 999:
+        return {**base_unavailable, "x1_logit_lens_unavailable_reason": "missing_target_x1_bin"}
+    coord_token_ids = _lane_d_coord_token_ids_for_logit_lens(model_handle)
+    if coord_token_ids is None:
+        return {**base_unavailable, "x1_logit_lens_unavailable_reason": "missing_coord_token_ids"}
+    logits = _lane_d_hidden_lm_head_logits(model_handle, hidden_vec)
+    if logits is None:
+        return {**base_unavailable, "x1_logit_lens_unavailable_reason": "missing_lm_head"}
+
+    import torch
+
+    coord_index = torch.tensor(
+        [int(token_id) for token_id in coord_token_ids],
+        dtype=torch.long,
+        device=logits.device,
+    )
+    coord_logits = logits.index_select(0, coord_index).detach().float()
+    target_logit = float(coord_logits[int(target_x1_bin)].cpu().item())
+    greater_count = int((coord_logits > coord_logits[int(target_x1_bin)]).sum().cpu().item())
+    top_k = min(int(config.execution.x1_logit_lens_top_k), int(coord_logits.numel()))
+    top_values, top_indices = torch.topk(coord_logits, k=top_k)
+    top1_bin = int(top_indices[0].cpu().item())
+    top1_logit = float(top_values[0].cpu().item())
+    top_bins = [
+        {
+            "bin": int(bin_idx.cpu().item()),
+            "logit": _json_finite_float(float(value.cpu().item())),
+            "distance": int(abs(int(bin_idx.cpu().item()) - int(target_x1_bin))),
+        }
+        for value, bin_idx in zip(top_values, top_indices, strict=True)
+    ]
+    return {
+        "x1_logit_lens_available": True,
+        "x1_logit_lens_role_enabled": True,
+        "x1_logit_lens_rank": greater_count + 1,
+        "x1_logit_lens_top1_bin": top1_bin,
+        "x1_logit_lens_target_logit": _json_finite_float(target_logit),
+        "x1_logit_lens_top1_logit": _json_finite_float(top1_logit),
+        "x1_logit_lens_target_minus_top1": _json_finite_float(target_logit - top1_logit),
+        "x1_logit_lens_top_bins": top_bins,
+    }
+
+
+def _lane_d_coord_slot_logit_lens_summary(
+    config: LaneDConfig,
+    *,
+    model_handle: Any,
+    hidden_vec: Any,
+    role: str,
+    target_ledger: Mapping[str, Any],
+) -> dict[str, Any]:
+    if not config.execution.enable_coord_slot_logit_lens:
+        return {}
+    if role not in set(config.execution.coord_slot_logit_lens_roles):
+        return {}
+    target_slot = _lane_d_slot_for_role(role)
+    base_unavailable = {
+        "coord_slot_logit_lens_available": False,
+        "coord_slot_logit_lens_role_enabled": True,
+        "coord_slot_logit_lens_target_slot": target_slot,
+        "coord_slot_logit_lens_target_bin": None,
+        "coord_slot_logit_lens_rank": None,
+        "coord_slot_logit_lens_top1_bin": None,
+        "coord_slot_logit_lens_target_logit": None,
+        "coord_slot_logit_lens_top1_logit": None,
+        "coord_slot_logit_lens_target_minus_top1": None,
+        "coord_slot_logit_lens_top_bins": [],
+    }
+    target_bin_key = f"target_{target_slot}_bin"
+    target_bin = target_ledger.get(target_bin_key)
+    if not isinstance(target_bin, int) or target_bin < 0 or target_bin > 999:
+        return {
+            **base_unavailable,
+            "coord_slot_logit_lens_unavailable_reason": f"missing_{target_bin_key}",
+        }
+    summary = _lane_d_coord_logit_lens_summary(
+        config,
+        model_handle=model_handle,
+        hidden_vec=hidden_vec,
+        target_bin=target_bin,
+        top_k=config.execution.coord_slot_logit_lens_top_k,
+    )
+    if summary is None:
+        return {
+            **base_unavailable,
+            "coord_slot_logit_lens_target_bin": target_bin,
+            "coord_slot_logit_lens_unavailable_reason": "missing_coord_token_ids_or_lm_head",
+        }
+    return {
+        "coord_slot_logit_lens_available": True,
+        "coord_slot_logit_lens_role_enabled": True,
+        "coord_slot_logit_lens_target_slot": target_slot,
+        "coord_slot_logit_lens_target_bin": target_bin,
+        "coord_slot_logit_lens_rank": summary["rank"],
+        "coord_slot_logit_lens_top1_bin": summary["top1_bin"],
+        "coord_slot_logit_lens_target_logit": summary["target_logit"],
+        "coord_slot_logit_lens_top1_logit": summary["top1_logit"],
+        "coord_slot_logit_lens_target_minus_top1": summary["target_minus_top1"],
+        "coord_slot_logit_lens_top_bins": summary["top_bins"],
+    }
+
+
+def _lane_d_coord_logit_lens_summary(
+    config: LaneDConfig,
+    *,
+    model_handle: Any,
+    hidden_vec: Any,
+    target_bin: int,
+    top_k: int,
+) -> dict[str, Any] | None:
+    coord_token_ids = _lane_d_coord_token_ids_for_logit_lens(model_handle)
+    if coord_token_ids is None:
+        return None
+    logits = _lane_d_hidden_lm_head_logits(model_handle, hidden_vec)
+    if logits is None:
+        return None
+
+    import torch
+
+    coord_index = torch.tensor(
+        [int(token_id) for token_id in coord_token_ids],
+        dtype=torch.long,
+        device=logits.device,
+    )
+    coord_logits = logits.index_select(0, coord_index).detach().float()
+    target_logit = float(coord_logits[int(target_bin)].cpu().item())
+    greater_count = int((coord_logits > coord_logits[int(target_bin)]).sum().cpu().item())
+    top_k = min(int(top_k), int(coord_logits.numel()))
+    top_values, top_indices = torch.topk(coord_logits, k=top_k)
+    top1_bin = int(top_indices[0].cpu().item())
+    top1_logit = float(top_values[0].cpu().item())
+    return {
+        "rank": greater_count + 1,
+        "top1_bin": top1_bin,
+        "target_logit": _json_finite_float(target_logit),
+        "top1_logit": _json_finite_float(top1_logit),
+        "target_minus_top1": _json_finite_float(target_logit - top1_logit),
+        "top_bins": [
+            {
+                "bin": int(bin_idx.cpu().item()),
+                "logit": _json_finite_float(float(value.cpu().item())),
+                "distance": int(abs(int(bin_idx.cpu().item()) - int(target_bin))),
+            }
+            for value, bin_idx in zip(top_values, top_indices, strict=True)
+        ],
+    }
+
+
+def _lane_d_coord_token_ids_for_logit_lens(model_handle: Any) -> tuple[int, ...] | None:
+    raw = getattr(model_handle, "coord_token_ids", None)
+    if isinstance(raw, Sequence) and not isinstance(raw, (str, bytes)):
+        coord_ids = tuple(int(token_id) for token_id in raw)
+        if len(coord_ids) == 1000:
+            return coord_ids
+    tokenizer = getattr(model_handle, "tokenizer", None)
+    if tokenizer is None:
+        return None
+    try:
+        from src.analysis.hard_ce_coord_logit_locality import resolve_coord_token_ids
+
+        return tuple(int(token_id) for token_id in resolve_coord_token_ids(tokenizer).coord_token_ids)
+    except Exception:
+        return None
+
+
+def _lane_d_hidden_lm_head_logits(model_handle: Any, hidden_vec: Any) -> Any | None:
+    import torch
+
+    model = getattr(model_handle, "model", None)
+    if model is None:
+        return None
+    language_model, lm_head = _lane_d_language_norm_and_lm_head(model)
+    if lm_head is None:
+        get_output_embeddings = getattr(model, "get_output_embeddings", None)
+        lm_head = get_output_embeddings() if callable(get_output_embeddings) else None
+    if not callable(lm_head):
+        return None
+    try:
+        norm = getattr(language_model, "norm", None) if language_model is not None else None
+        head_input = hidden_vec
+        if callable(norm):
+            head_input = norm(hidden_vec.unsqueeze(0)).squeeze(0)
+        weight = getattr(lm_head, "weight", None)
+        if isinstance(weight, torch.Tensor):
+            head_input = head_input.to(device=weight.device, dtype=weight.dtype)
+        logits = lm_head(head_input)
+    except Exception:
+        return None
+    if not isinstance(logits, torch.Tensor):
+        return None
+    logits = logits.squeeze()
+    if logits.ndim != 1:
+        return None
+    return logits
+
+
+def _lane_d_language_norm_and_lm_head(model: Any) -> tuple[Any | None, Any | None]:
+    visited: set[int] = set()
+    stack = [model]
+    attr_paths = (
+        "model",
+        "base_model",
+        "module",
+        "language_model",
+    )
+    while stack:
+        candidate = stack.pop()
+        if candidate is None or id(candidate) in visited:
+            continue
+        visited.add(id(candidate))
+        language_model = getattr(candidate, "language_model", None)
+        lm_head = getattr(candidate, "lm_head", None)
+        if language_model is not None and callable(lm_head):
+            return language_model, lm_head
+        if callable(lm_head):
+            return None, lm_head
+        for attr in attr_paths:
+            child = getattr(candidate, attr, None)
+            if child is not None and id(child) not in visited:
+                stack.append(child)
+    return None, None
 
 
 def _lane_d_hidden_token_index(row: Mapping[str, Any]) -> int:
@@ -2278,6 +2607,15 @@ def _parse_lane_d_layer_groups(value: Any) -> Mapping[str, tuple[int, ...]]:
     return parsed
 
 
+def _parse_lane_d_string_tuple(value: Any, field_name: str) -> tuple[str, ...]:
+    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+        raise ValueError(f"{field_name} must be a sequence of strings")
+    parsed = tuple(str(item) for item in value)
+    if not parsed:
+        raise ValueError(f"{field_name} must not be empty")
+    return parsed
+
+
 def _normalize_lane_d_stages(stages: Sequence[str]) -> tuple[str, ...]:
     if isinstance(stages, (str, bytes)) or not isinstance(stages, Sequence):
         raise ValueError("stages must be a sequence of stage names")
@@ -2348,6 +2686,12 @@ def _config_positive_int(value: Any, key: str) -> int:
     if not _is_plain_int(value) or value <= 0:
         raise ValueError(f"{key} must be a positive integer")
     return int(value)
+
+
+def _config_bool(value: Any, key: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"{key} must be a boolean")
+    return bool(value)
 
 
 def _config_plain_int(value: Any, key: str) -> int:

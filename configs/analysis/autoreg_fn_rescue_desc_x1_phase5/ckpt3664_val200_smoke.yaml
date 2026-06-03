@@ -1,0 +1,18 @@
+paths:
+  artifact_root: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/fn_rescue_desc_x1_phase5_logit_binding_smoke
+  phase4_root: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/fn_rescue_desc_x1_phase4_binding_mechanism
+  lane_d_root: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/fn_rescue_desc_x1_phase2/x1_logit_lens_smoke
+evidence_scope: val200_fn_rescue_desc_x1_phase5_logit_binding_smoke
+x1_logit_probe:
+  max_probe_rows: 2000
+  requested_roles:
+    - desc_end
+    - box_start
+    - pre_x1
+    - post_x1
+    - pre_y1
+  layer_groups:
+    - middle
+    - late
+    - last
+  poor_rank_threshold: 100
