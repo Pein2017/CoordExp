@@ -1,0 +1,24 @@
+paths:
+  artifact_root: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/fn_rescue_desc_x1_phase2
+  fn_rescue_root: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/fn_rescue_continuation
+evidence_scope: val200_fn_rescue_desc_x1_phase2
+mining:
+  max_attention_rows: null
+  ranking_limit: 40
+  min_rows_per_head: 20
+  aggregation_scopes:
+    - union
+  region_kinds:
+    - target_gt
+    - same_desc_competitor_gt_object
+    - same_desc_rollout_prediction
+    - wrong_control_source_region
+    - context_ring
+    - far_background
+intervention_plan:
+  max_cases: null
+  fn_rescue_config_path: ../autoreg_fn_rescue_continuation/ckpt3664_val200_linked.yaml
+  execute_max_cases: 4
+  execute_intervention_kinds:
+    - no_op_control
+    - target_gt_mask

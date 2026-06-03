@@ -1,0 +1,21 @@
+paths:
+  artifact_root: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/fn_rescue_desc_x1_phase3_causal_binding
+  phase2_root: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/fn_rescue_desc_x1_phase2
+  fn_rescue_root: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/fn_rescue_continuation
+evidence_scope: val200_fn_rescue_desc_x1_phase3_causal_binding
+execution:
+  fn_rescue_config_path: ../autoreg_fn_rescue_continuation/ckpt3664_val200_linked.yaml
+  target_mask_max_cases: 50
+  competitor_source_max_cases: 16
+case_linked:
+  max_attention_rows: null
+  roles:
+    - pre_y1
+  aggregation_scopes:
+    - union
+  region_kinds:
+    - target_gt
+    - same_desc_competitor_gt_object
+    - same_desc_rollout_prediction
+    - wrong_control_source_region
+    - far_background
