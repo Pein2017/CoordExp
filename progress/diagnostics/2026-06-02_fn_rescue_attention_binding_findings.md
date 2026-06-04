@@ -1244,6 +1244,493 @@ desc-conditioned candidate field before launching painting, ordering, or
 training interventions.  The working phase name is
 `candidate_field_cardinality_tomography`.
 
+Case pool:
+
+Use a hybrid source-of-truth pool:
+
+- primary pool: same-desc crowded cases from both train and val;
+- overlay slice: existing FN-rescue linked cases from the current checkpoint
+  diagnostics.
+
+This avoids making the mechanism claim only on rollout-failed/FN-conditioned
+examples, while still preserving a direct link to the low-recall failure
+surface.
+
+Crowding threshold:
+
+Use `same_desc_gt_count >= 3` as the main entry condition.  Stratify all
+candidate-field and residual-row summaries by same-desc count buckets:
+
+| Bucket | Meaning |
+| --- | --- |
+| `same_desc_3` | exactly 3 GT objects with the queried desc |
+| `same_desc_4_5` | 4 or 5 GT objects with the queried desc |
+| `same_desc_6_plus` | 6 or more GT objects with the queried desc |
+
+This threshold excludes ordinary two-object ambiguity from the headline
+cluster-cardinality claim while preserving enough non-extreme crowded cases for
+train/val coverage.
+
+Peak-count definition:
+
+Do not count raw top-k coordinate tokens as independent instance modes.
+Coordinate tokens are treated as a numeric manifold with local continuity, as
+recorded in
+`progress/diagnostics/2026-05-18_hard_ce_coord_logit_embedding_locality.md`.
+
+The primary `x1_peak_count` should therefore use local maxima over the
+coordinate-only posterior, with thresholding and neighborhood merging:
+
+```text
+x1_peak = local maximum over coord bins
+keep if prob_mass >= max(absolute_mass_floor, top1_mass * relative_floor)
+merge peaks if abs(x1_a - x1_b) < merge_radius
+```
+
+Primary reporting should include:
+
+| Metric | Meaning |
+| --- | --- |
+| `raw_topk_coverage@K` | Whether the raw top-k coordinate bins touch GT x1 neighborhoods. |
+| `merged_peak_count` | Number of separated x1 modes after neighborhood merging. |
+| `gt_instance_coverage@K_or_peak` | Fraction/count of same-desc GT instances covered by either top-k bins or merged peaks. |
+
+Use `merge_radius=24` norm1000 bins as the primary setting, with
+`16` and `32` sensitivity tables.  This prevents coordinate-local neighborhoods
+around one instance from being over-counted as multiple object modes.
+
+Prefix conditions:
+
+Use three prefix conditions, with explicit hierarchy:
+
+| Condition | Role | Meaning |
+| --- | --- | --- |
+| `teacher_set_empty_prefix` | primary | Condition on image plus queried desc row start and `<|box_start|>`, with no previous object rows.  This measures the pure desc-conditioned candidate field. |
+| `teacher_prefix_at_boundary` | secondary | Condition on GT-rendered previous rows at object boundaries.  This measures how the candidate field changes under clean coverage state. |
+| `self_rollout_prefix` | overlay | Condition on the checkpoint's real rollout prefix.  This links candidate-field cardinality to the observed FN/low-recall surface. |
+
+`teacher_set_empty_prefix` is the Phase A headline condition.  Self-prefix rows
+should not be the headline for cluster-cardinality claims because prefix drift,
+missing rows, duplicates, and conservative stop behavior can contaminate the
+candidate-field measurement.
+
+Attention role:
+
+Phase A should include attention-region/component metrics, but they are
+secondary visual-field evidence rather than the headline criterion for
+candidate cardinality.  The primary field is the x1 coordinate posterior,
+because the desc-conditioned instance choice is operationally expressed at the
+pre-coordinate decision surface.
+
+Report the two evidence chains separately:
+
+| Evidence Chain | Metrics |
+| --- | --- |
+| `x1_coordinate_posterior` | `merged_peak_count`, `gt_instance_coverage@K_or_peak`, `peak_count_vs_same_desc_gt_count`, residual-row logprob, EOS/stop comparison |
+| `attention_visual_field` | localization-head attention components, GT-instance component coverage, background/sink mass, target-vs-same-desc-competitor mass |
+
+Attention maps should explain or stratify x1 candidate-field behavior.  They
+should not be interpreted as causal proof that the model has or lacks an
+instance mode, because previous phases already showed that target-positive
+attention is not sufficient for coordinate-slot binding.
+
+Residual-row scoring:
+
+The `residual_row_logprob_audit` should score complete residual rows and split
+the score into interpretable spans.  A single row-level logprob is not enough,
+because it can conflate continuation, desc selection, x1 binding, and bbox-tail
+geometry failures.
+
+Required score fields:
+
+| Field | Meaning |
+| --- | --- |
+| `logp_row_mean` | Mean teacher-forced log probability over the complete residual object row. |
+| `logp_desc_span_mean` | Mean log probability over the desc-entry span. |
+| `logp_x1_token` | Log probability of the first coordinate token for the residual row. |
+| `logp_bbox_tail_mean` | Mean log probability over the remaining bbox coordinate tokens after x1. |
+| `logp_eos_at_boundary` | EOS/stop log probability at the object boundary before choosing the residual row. |
+| `margin_best_residual_vs_teacher_next` | Score gap between the model-preferred residual row and the teacher-next row. |
+| `margin_best_residual_vs_eos` | Score gap between the model-preferred residual row and EOS/stop. |
+| `preference_violation` | Whether the best residual row differs from the teacher-next row under the chosen scoring rule. |
+
+Interpretation policy:
+
+| Pattern | Mechanism Read |
+| --- | --- |
+| Multiple residual rows high, teacher-next not best | Order/path CE friction; multiple-positive or trie-style supervision may be relevant. |
+| All residual rows low and EOS high | Stop/coverage failure rather than only order friction. |
+| Desc span high but x1 token low | Desc is acceptable, but instance binding or candidate-field routing is weak. |
+| Desc and x1 high but bbox tail low | Coordinate-chain geometry or post-x1 basin attraction is weak. |
+
+Basin-attraction decoding:
+
+The `instance_basin_attraction` probe should use greedy continuation as the
+primary metric and teacher-forced tail scoring as an auxiliary diagnostic.
+
+Primary greedy probe:
+
+```text
+prompt = desc + <|box_start|> + GT x1_i
+decode = greedy generate y1/x2/y2
+measure = generated box IoU to GT_i versus same-desc competitors
+```
+
+Auxiliary teacher-forced tail probe:
+
+```text
+score target tail_i = log P(y1_i, x2_i, y2_i | desc, x1_i)
+score competitor tails_j = log P(y1_j, x2_j, y2_j | desc, x1_i)
+```
+
+Interpretation policy:
+
+| Pattern | Mechanism Read |
+| --- | --- |
+| Greedy continuations separate for different `x1_i` | Local instance basins exist once x1 is supplied. |
+| Teacher-forced tails separate but greedy does not | Tail information is present but decoding/local argmax is unstable. |
+| Neither greedy nor teacher-forced tails separate | x1 seed is insufficient, or same-desc instances are already mixed in the visual/coordinate candidate field. |
+
+Ordering compatibility scope:
+
+Phase A may include lightweight `teacher_trajectory_compatibility` metrics, but
+it should not launch sorted-versus-random SFT or any other training comparison.
+Ordering is an explanatory readout for path/CE friction in this phase, not a
+candidate-field intervention.
+
+Compute the compatibility read under `teacher_prefix_at_boundary` conditions:
+
+| Field | Meaning |
+| --- | --- |
+| `teacher_next_rank_among_residual` | Rank of the teacher-next residual row among all residual GT rows under the chosen row score. |
+| `best_residual_same_as_teacher_next` | Whether the model-preferred residual row equals the teacher-next row. |
+| `margin_best_residual_vs_teacher_next` | Score gap between the model-preferred residual row and the teacher-next row. |
+| `sorted_order_delta` | Compatibility delta when the teacher order is sorted. |
+| `random_order_delta` | Compatibility delta under sampled/random order views. |
+| `model_preferred_order_signature` | The approximate order induced by repeatedly choosing the best residual row under the scoring proxy. |
+
+Interpretation policy:
+
+| Pattern | Mechanism Read |
+| --- | --- |
+| Teacher-next is often near the best residual | Single-path CE order friction is likely small. |
+| Many residual rows are high and teacher-next is often not best | Multiple-positive or trie-style supervision may be useful, but should be tested after Phase A/B. |
+| Residual rows are low while EOS is high | Ordering is not the main failure; stop/coverage should be prioritized. |
+
+Phase A conclusion taxonomy:
+
+Phase A should report a three-way mechanism taxonomy instead of a single
+aggregate score.  The taxonomy determines which later intervention is
+meaningful.
+
+| Bucket | Criteria | Mechanism Read | Next Intervention Family |
+| --- | --- | --- | --- |
+| `A1_cardinality_collapse` | `merged_peak_count < same_desc_gt_count` and GT-instance coverage by peaks is materially incomplete | The desc-conditioned candidate field exposes fewer instance modes than annotated same-desc objects. | Instance separation, finer foreground/object mode supervision, candidate-field sharpening. |
+| `A2_readout_or_coverage_failure` | `merged_peak_count >= same_desc_gt_count`, but residual rows are low, EOS is high, or modes disappear under self-prefix/coverage state | Candidate modes exist, but autoregressive continuation, coverage, or stop policy fails to read them out. | Painting/coverage memory, stop/remaining-objectness, prefix-conditioned continuation. |
+| `A3_basin_binding_failure` | x1 peaks cover GT neighborhoods, but forced `x1_i` greedy tails do not separate same-desc instances | x1 modes exist, but the x1->y1/x2/y2 coordinate-chain basin is unstable. | Coordinate-chain binding, post-x1 basin attraction, slot-local contrastive/margin objectives. |
+
+Reports should include bucket counts and stratified metrics by split, same-desc
+count bucket, prefix condition, and FN-rescue overlay membership.  Do not
+collapse the final interpretation into a single mean peak-count.
+
+Scale and resource policy:
+
+Phase A should use a two-stage scale strategy:
+
+| Stage | Policy |
+| --- | --- |
+| `case_index` | Exhaustively scan train and val to enumerate every `same_desc_gt_count >= 3` case and record split, desc, same-desc count bucket, bbox overlap, object-size bins, and FN-rescue overlay membership. |
+| `gpu_probe` | Use all available 8 GPUs for sharded diagnostic probing over the indexed pool, prioritizing full coverage when feasible and stratified high coverage otherwise. |
+
+This is an analysis/probe run, not production training.  The 8 GPUs should be
+used to parallelize case shards, prefix conditions, attention/logit extraction,
+and greedy basin continuations.  If exhaustive GPU probing becomes impractical,
+the fallback must be a documented stratified plan over split x same-desc count
+bucket x desc frequency x FN overlay, with the exhaustive `case_index` retained
+as the source of truth for coverage accounting.
+
+Artifact contract:
+
+Phase A should materialize structured artifacts before interpretation.  A
+prose report or gallery alone is not sufficient.
+
+Core JSONL tables:
+
+| Artifact | Required Meaning |
+| --- | --- |
+| `case_index.jsonl` | Exhaustive train/val same-desc crowded universe, including split, desc, same-desc count, overlap/size bins, and FN-rescue overlay membership. |
+| `x1_candidate_field_rows.jsonl` | Per case/desc/prefix x1 posterior summaries, raw top-k bins, merged peaks, and GT-neighborhood coverage. |
+| `residual_row_score_rows.jsonl` | Per residual GT row logprob scores, split into row, desc span, x1 token, bbox tail, and EOS-at-boundary fields. |
+| `basin_attraction_rows.jsonl` | Forced `x1_i` greedy continuations plus auxiliary teacher-forced target/competitor tail scores. |
+| `attention_component_rows.jsonl` | Localization-head attention components, GT-instance component coverage, target/competitor/background/sink masses. |
+| `phase_a_case_taxonomy_rows.jsonl` | Per case/desc/prefix A1/A2/A3 bucket assignment with reason codes and source metric handles. |
+
+Required aggregate/support artifacts:
+
+| Artifact | Required Meaning |
+| --- | --- |
+| `summary.json` | Machine-readable row counts, coverage counters, primary metrics, taxonomy counts, validation status, and config/provenance handles. |
+| `report.md` | Human-readable interpretation with scope labels, tables, known caveats, and no unsupported causal claims. |
+| `plots/` | Distribution and stratification plots for peak counts, coverage, residual-row margins, EOS margins, and taxonomy buckets. |
+| `gallery/` | Representative image-level examples for A1/A2/A3 and failure/success controls. |
+| `resolved_config.yaml` | Fully resolved analysis config used for the run. |
+| `manifest.json` | Artifact inventory, input paths, checkpoint, split coverage, shard coverage, and schema version. |
+
+Acceptance criteria:
+
+- every probe row can be joined back to `case_index.jsonl`;
+- coverage counters distinguish exhaustive case indexing from probed GPU rows;
+- A1/A2/A3 assignments cite the metric fields that triggered the bucket;
+- artifact validation fails if any required core table is missing.
+
+Implementation layout policy:
+
+Phase A should be implemented as an independent project/idea-wise analysis
+pipeline.  It should not continue the flat-script accumulation pattern under
+`scripts/analysis/`, nor should it be folded into the older FN-rescue
+continuation or hidden-state probe scripts.
+
+Working project id:
+
+`candidate_field_cardinality_tomography`
+
+The layout should keep source, configs, launchers, tests, and artifacts grouped
+by this project id across the repo's analysis surfaces.  Existing FN-rescue and
+hidden-state artifacts may be inputs or overlay slices, but they should not own
+Phase A's artifact contract, taxonomy, or launch entrypoint.
+
+Use the existing repo analysis namespaces, but create project-wise subtrees
+under each namespace instead of adding another top-level `analysis/` root:
+
+```text
+src/analysis/candidate_field_cardinality_tomography/
+scripts/analysis/candidate_field_cardinality_tomography/
+configs/analysis/candidate_field_cardinality_tomography/
+tests/analysis/candidate_field_cardinality_tomography/
+```
+
+The intended module split is:
+
+```text
+case_index.py
+x1_candidate_field.py
+residual_row_scoring.py
+basin_attraction.py
+attention_components.py
+taxonomy.py
+artifacts.py
+report.py
+```
+
+The intended operator entrypoints are:
+
+```text
+scripts/analysis/candidate_field_cardinality_tomography/run.py
+scripts/analysis/candidate_field_cardinality_tomography/launch_tmux.sh
+configs/analysis/candidate_field_cardinality_tomography/ckpt3664_trainval_same_desc_crowded.yaml
+configs/analysis/candidate_field_cardinality_tomography/ckpt3664_smoke.yaml
+```
+
+Execution order:
+
+Run Phase A in a case-index, smoke, then full sequence even when 8 GPUs are
+available and cost is not the primary constraint.  The case-index-only run is
+required to define the train/val universe and shard allocation.  The smoke run
+is required to validate schema, joins, peak merging, artifact completeness, and
+taxonomy reason codes before the full sharded diagnostic.
+
+Required order:
+
+| Step | Requirement |
+| --- | --- |
+| `unit_tests` | Validate pure functions and artifact contract behavior before model execution. |
+| `case_index_only` | Exhaustively scan train and val without model forward.  It must write `case_index.jsonl` and `case_index_summary.json`, including desc distribution, same-desc count distribution, object-size/overlap bins, person share, and FN-rescue overlay coverage. |
+| `smoke` | Use a small stratified train/val subset sampled from the case index with all stages enabled.  It must materialize all six core JSONL tables plus support artifacts and pass artifact validation. |
+| `full_8card_tmux` | Launch the train/val diagnostic in tmux, sharded over the 8 available GPUs according to the case-index strata rather than raw file row order.  The run must be resume-safe and write shard manifests. |
+| `merge_report_gallery` | Merge shards, validate joins and coverage counters, then write `summary.json`, `report.md`, plots, and gallery. |
+
+Acceptance condition:
+
+Do not interpret or promote full-run results unless the smoke run first proves
+that all required tables can be joined back to `case_index.jsonl`, the peak
+merge behavior is configured, and A1/A2/A3 assignments expose reason-code
+fields.
+
+Do not launch the full 8-card diagnostic until `case_index_summary.json` has
+been inspected for strata balance and used to define the shard plan.  This
+prevents the full probe from being dominated by frequent descs such as
+`person` or by extreme crowded cases without coverage accounting.
+
+Shard allocation:
+
+Use strata-balanced round-robin sharding for full GPU probes.  Build strata
+from at least:
+
+```text
+split
+same_desc_count_bucket
+desc_frequency_bucket
+fn_rescue_overlay
+object_size_bucket
+overlap_bucket
+```
+
+Cases should be bucketed by the strata key and assigned round-robin across the
+8 GPU shards.  Do not shard by raw JSONL row order or unstratified case id.
+
+Each shard must write `shard_manifest.json` with:
+
+```text
+shard_id
+gpu_id
+case_count
+strata_histogram
+stage_status
+input_case_ids
+output_row_counts
+```
+
+The merged `summary.json` must report shard balance and strata coverage before
+any mechanism interpretation.
+
+Annotation incompleteness boundary:
+
+COCO annotations are treated as an annotated GT universe, not as guaranteed
+complete object truth.  Phase A must state this boundary in reports:
+
+```text
+same_desc_gt_count = annotated same-desc count
+```
+
+Therefore:
+
+- `A1_cardinality_collapse` is a collapse relative to annotated same-desc GT
+  instances;
+- extra x1 peaks or attention components without a GT neighborhood should not
+  be called hallucinations by default;
+- unmatched peaks may correspond to unlabeled same-desc objects, background
+  sinks, merged object parts, or coordinate noise.
+
+Required fields/artifacts:
+
+| Field or Artifact | Meaning |
+| --- | --- |
+| `extra_peak_without_gt_neighborhood_count` | Count of separated x1 peaks that do not match annotated same-desc GT x1 neighborhoods. |
+| `peak_over_gt_count` | Whether merged x1 peak count exceeds annotated same-desc GT count. |
+| `unmatched_peak_visual_gallery` | Gallery of representative unmatched peaks/components for human review. |
+
+When unmatched peaks materially affect interpretation, keep them in a review
+bucket and ask the user to act as human judge before promoting them as
+unlabeled objects, background/sink modes, or noise.
+
+Phase B/C compass notes:
+
+These notes are intentionally written before Phase A results exist.  They are
+guardrails for staying aligned with the original research question after the
+candidate-field tomography reports A1/A2/A3 buckets.
+
+Core rule:
+
+Do not promote painting, ordering, multiple-positive supervision, or background
+suppression because they are interesting in isolation.  Promote a Phase B/C
+direction only if it targets the dominant Phase A mechanism bucket and has a
+matched diagnostic artifact on the same case universe.
+
+Phase B: painting and coverage-memory probes
+
+Phase B is mainly a response to `A2_readout_or_coverage_failure`.  Its purpose
+is to test whether explicit visual coverage memory can make already-emitted
+regions less attractive and remaining same-desc modes easier to read out.
+
+Recommended Phase B arms:
+
+| Arm | Intended Meaning |
+| --- | --- |
+| `paint_model_emitted_border` | Simulate human-style drawn boxes using the model's emitted boxes. |
+| `paint_gt_prefix_border` | Upper-bound coverage memory when previous boxes are clean and complete. |
+| `paint_model_emitted_hatch_or_translucent_fill` | Stronger done-region cue while preserving some visual content. |
+| `paint_random_shifted_boxes` | Control for generic visual mark effects. |
+| `paint_same_desc_competitor` | Test whether painting a competitor changes next-instance binding. |
+
+Phase B guardrails:
+
+- Do not start with hard masking as the headline intervention; hard masks can
+  destroy overlapping objects and confound coverage memory with visual
+  evidence removal.
+- Always report overlap-sensitive slices, especially target-overlaps-painted
+  and same-desc-overlaps-painted cases.
+- If painting only helps when GT prefix boxes are painted but not when model
+  emitted boxes are painted, the bottleneck may be rollout prefix quality rather
+  than visual coverage memory itself.
+- If painting increases recall but also increases repeated same-desc boxes over
+  painted regions, treat it as a routing artifact until gallery review confirms
+  the extra boxes are plausible objects.
+- If Phase A is dominated by `A1_cardinality_collapse`, use Phase B only as a
+  perturbation test: check whether suppressing already-emitted modes reveals
+  hidden remaining peaks.  Do not describe it as the main remedy unless hidden
+  modes appear after painting.
+- If Phase A is dominated by `A3_basin_binding_failure`, painting should not be
+  the first algorithmic intervention unless painting specifically improves
+  forced-x1 tail separation.
+
+Phase C: ordering and supervision probes
+
+Phase C is mainly a response to evidence that the model already exposes
+multiple valid residual rows but single-path teacher forcing frequently rewards
+a non-preferred row.  It should not be launched just because sorted-vs-random
+is a natural comparison.
+
+Recommended Phase C progression:
+
+| Trigger From Phase A | Phase C Direction |
+| --- | --- |
+| Many residual rows high; teacher-next often not best | Test multiple-positive/trie-style residual-row supervision on a tiny/smoke slice. |
+| Sorted teacher-next is usually close to model-preferred residual | Prefer sorted pure CE or model-preference-aware order before random shuffle. |
+| Random order has large preference violations | Treat random shuffle as possible training friction, not automatic regularization. |
+| Residual rows are low while EOS is high | Prioritize stop/remaining-objectness or coverage conditioning before ordering changes. |
+| Desc span high but x1 token low | Prioritize desc->x1 binding margins over row-order changes. |
+
+Phase C guardrails:
+
+- Do not use AP/recall alone as the first ordering verdict.  Require
+  `teacher_next_rank_among_residual`, `margin_best_residual_vs_teacher_next`,
+  EOS margins, and parse/drop counters.
+- Keep sorted, random, and model-preferred-order views on the same case
+  universe whenever possible.
+- Do not interpret higher unlabeled-object output as hallucination by default;
+  route ambiguous extra objects through the same unmatched-peak/human-review
+  policy.
+- If a training smoke is launched, require a matched baseline checkpoint/config
+  and the same infer/eval surface before claiming recall improvement.
+- If Phase A shows `A1_cardinality_collapse`, ordering changes are secondary:
+  the first algorithmic hypothesis should be instance-mode separation or
+  candidate-field sharpening.
+- If Phase A shows `A3_basin_binding_failure`, ordering changes are secondary:
+  the first algorithmic hypothesis should be coordinate-chain binding around
+  desc->x1 and post-x1 slots.
+
+Background/sink suppression fallback:
+
+Background or sink suppression should remain a fallback, not the default Phase
+B or Phase C headline.  It becomes worth promoting only if Phase A/B artifacts
+show that background/sink components systematically absorb mass that would
+otherwise map to missing same-desc GT neighborhoods, and an intervention
+improves residual-row or basin-attraction metrics on matched cases.
+
+Stop condition for this compass:
+
+After Phase A completes, choose one and only one primary next phase:
+
+| Dominant Phase A Result | Primary Next Phase |
+| --- | --- |
+| `A1_cardinality_collapse` | Instance-mode separation / candidate-field sharpening. |
+| `A2_readout_or_coverage_failure` | Phase B painting and coverage-memory probes. |
+| `A3_basin_binding_failure` | Coordinate-chain binding and post-x1 basin objectives. |
+| Strong order/path CE friction with high residual alternatives | Phase C ordering / multiple-positive supervision probe. |
+
+Secondary phases may run only as controls or supporting diagnostics.  They
+should not become the headline without a matched Phase A trigger.
+
 The phase should combine these probes into one source-of-truth experiment:
 
 | Probe | Question |
@@ -1278,3 +1765,643 @@ Evidence handles:
   `outputs/analysis/autoreg_object_rollout/ckpt3664_val200/fn_rescue_continuation`
 - Current Phase-5B coord-slot root:
   `outputs/analysis/autoreg_object_rollout/ckpt3664_val200/fn_rescue_desc_x1_phase5_logit_binding_coordslot`
+
+## 2026-06-03 Phase A Candidate-Field Tomography Update
+
+This update records the first implemented Phase A candidate-field tomography
+artifacts.  It is still a mechanism diagnostic and not a training run.
+
+Implemented project subtree:
+
+```text
+src/analysis/candidate_field_cardinality_tomography/
+scripts/analysis/candidate_field_cardinality_tomography/
+configs/analysis/candidate_field_cardinality_tomography/
+tests/analysis/candidate_field_cardinality_tomography/
+```
+
+Checkpoint:
+
+```text
+outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664
+```
+
+Completed probe artifact:
+
+```text
+outputs/analysis/autoreg_object_rollout/ckpt3664_val200/candidate_field_cardinality_tomography_probe1024
+```
+
+Probe1024 validation:
+
+- `summary.json`: `validation_status=ok`
+- `headline_eligibility_status=ineligible_missing_controls`
+- `manifest.json`: present, with artifact hashes and run metadata
+- `indexed_cases=357419`
+- `indexed_gt_rows=884929`
+- `sampled_gpu_cases=1024`
+- `attempted_gpu_cases=1024`
+- `valid_gpu_cases=1024`
+- `taxonomy_cases=1024`
+
+Probe1024 case-index denominator:
+
+| Pool Role | Exhaustive Cases |
+| --- | ---: |
+| `headline_crowded` | 87997 |
+| `same_desc_count_1_control` | 209865 |
+| `same_desc_count_2_control` | 59557 |
+
+Probe1024 sampled GPU cases:
+
+| Pool Role | Attempted | Valid | Taxonomy |
+| --- | ---: | ---: | ---: |
+| `headline_crowded` | 260 | 260 | 260 |
+| `same_desc_count_1_control` | 592 | 592 | 592 |
+| `same_desc_count_2_control` | 172 | 172 | 172 |
+
+Probe1024 x1 posterior aggregate:
+
+| Pool Role | Valid Rows | Mean GT-x1 Coverage | Mean Merged Peaks | Median Target x1 Rank | Projection Collisions |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `headline_crowded` | 260 | 0.351 | 2.592 | 176.0 | 102 |
+| `same_desc_count_1_control` | 592 | 0.927 | 1.309 | 6.0 | 0 |
+| `same_desc_count_2_control` | 172 | 0.570 | 1.907 | 23.0 | 6 |
+
+Probe1024 taxonomy:
+
+| Primary Bucket | Cases |
+| --- | ---: |
+| `A1_cardinality_collapse` | 333 |
+| `unassigned_or_inconclusive` | 691 |
+
+Taxonomy denominator:
+
+- `teacher_set_empty_prefix`: `1024` attempted, `1024` valid,
+  `1024` taxonomy cases.
+- `primary_bucket` counts use `taxonomy_denominator=1024`; they are not
+  reported with a zero attempted denominator.
+
+Interpretation boundary:
+
+- The current taxonomy is based on `teacher_set_empty_prefix` x1 posterior
+  evidence only.
+- `A1_cardinality_collapse` here means annotated same-desc GT x1 neighborhoods
+  were not all covered by merged x1 posterior peaks under the current peak
+  policy.
+- Rows with projection collisions or other unreliable evidence remain
+  `unassigned_or_inconclusive`; they are not forced into A1.
+- Residual-row scoring, instance-basin attraction, and attention-component
+  stages remain separate evidence layers and are not yet included in this
+  taxonomy.
+
+Full train/val x1 posterior analysis:
+
+```text
+tmux session: candidate_field_cardinality_ckpt3664_full
+artifact root: outputs/analysis/autoreg_object_rollout/ckpt3664_val200/candidate_field_cardinality_tomography
+planned cases: 357419
+GPU shape: 8 single-GPU shards
+```
+
+At the time of this note, the full run has completed `case_index` and
+`probe_plan`, launched all 8 x1 posterior shards, and is still running.  It is
+an analysis wave, not production training.
+
+Non-GPU Phase A logic added after the probe1024 artifact:
+
+| Layer | Implemented Pure Logic | Current Runner Status |
+| --- | --- | --- |
+| `prefixes` | teacher-empty, teacher-boundary, and self-rollout pre-x1 prompt identity hashes plus compact detection identity fields | pure logic tested; tokenizer id/hash materialization not yet wired |
+| `residual_row_scoring` | mean-logprob row scoring, desc/x1/tail spans, EOS margin, teacher-next preference violation | pure logic tested; GPU materialization not yet wired |
+| `basin_attraction` | A3a/A3b/A3_unresolved subtype classification from forced-x1/teacher-tail rows | pure logic tested; greedy GPU materialization not yet wired |
+| `attention_components` | region-mass normalization, required row-field validation, attention-only taxonomy guard | pure logic tested; attention tensor extraction not yet wired |
+
+These additions do not change the probe1024 x1 posterior evidence.  They make
+the downstream Phase A evidence layers explicit and testable while preventing
+their stage names from silently producing empty artifacts.
+
+Artifact validation update:
+
+- `manifest.json` validation now checks every listed file's presence, byte
+  count, and sha256 hash.
+- `report/validate` writes a manifest and immediately validates it before the
+  stage is trusted.
+- The probe1024 artifact root currently validates with `file_count=35`.
+
+2026-06-03 refresh:
+
+- `summary.json` and `report.md` now explicitly carry
+  `checkpoint_id=checkpoint-3664` and the full checkpoint path used for this
+  diagnostic wave:
+
+```text
+/data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664
+```
+
+- The refreshed probe1024 `summary.json` reports `validation_status=ok` and
+  `headline_eligibility_status=ineligible_missing_controls`.
+- The refreshed control matrix is explicit rather than sparse:
+
+| Control Type | Status |
+| --- | --- |
+| `same_desc_count_1_control` | `pass` |
+| `same_desc_count_2_control` | `pass` |
+| `wrong_desc_same_image` | `missing` |
+| `wrong_image_same_desc` | `missing` |
+| `x1_projection_collision_slice` | `present` |
+| `gt_x1_jitter` | `missing` |
+| `competitor_x1_control` | `missing` |
+| `merge_radius_sensitivity` | `missing` |
+| `mass_floor_sensitivity` | `missing` |
+| `p_cond_vs_coord_vocab_mass` | `pass` |
+
+- Probe1024 manifest validation still returns `validation_status=ok` with
+  `file_count=35`.
+- The full 8-GPU train/val analysis session remains:
+
+```text
+tmux session: candidate_field_cardinality_ckpt3664_full
+artifact root: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/candidate_field_cardinality_tomography
+```
+
+  At this checkpoint, the full run has completed `case_index` and
+  `probe_plan`; all 8 x1 shard Python processes are still running.  The full
+  root does not yet contain merged `x1_candidate_field_rows.jsonl`,
+  `phase_a_case_taxonomy_rows.jsonl`, `merge_summary.json`, or a final
+  `manifest.json`.
+
+- Verification commands completed after the refresh:
+
+```bash
+PYTHONPATH=/data/CoordExp/.worktrees/fn-rescue-attention-probes \
+PYTHONDONTWRITEBYTECODE=1 \
+python - <<'PY'
+import pytest, sys
+args=['tests/analysis/candidate_field_cardinality_tomography','-q','-p','no:cacheprovider']
+code=pytest.main(args)
+sys.exit(code)
+PY
+
+PYTHONPATH=/data/CoordExp/.worktrees/fn-rescue-attention-probes \
+python -m py_compile \
+  src/analysis/candidate_field_cardinality_tomography/*.py \
+  scripts/analysis/candidate_field_cardinality_tomography/run.py
+
+PYTHONPATH=/data/CoordExp/.worktrees/fn-rescue-attention-probes \
+python - <<'PY'
+from pathlib import Path
+from src.analysis.candidate_field_cardinality_tomography.artifacts import validate_manifest
+root=Path('/data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/candidate_field_cardinality_tomography_probe1024')
+print(validate_manifest(root))
+PY
+```
+
+  The pytest run reported `35 passed`; `py_compile` exited `0`; the manifest
+  validation reported `validation_status=ok`.
+
+2026-06-03 launcher/status refresh:
+
+- The tmux launcher now performs a GPU busy preflight before starting a real
+  session.  It checks each requested `GPU_IDS` entry with
+  `nvidia-smi -i <gpu> --query-compute-apps=pid,process_name,used_memory` and
+  refuses to launch if any requested GPU already has compute apps.
+- `SKIP_GPU_PREFLIGHT=1` is the explicit override for intentional GPU sharing.
+- `DRY_RUN=1` still bypasses tmux launch and only prints the dry-run execution
+  plan.
+- A live busy-GPU check against GPU 0 returned:
+
+```text
+[candidate-field] GPU 0 already has compute apps:
+[candidate-field]   3120104, [Not Found], 13614
+[candidate-field] refusing to launch because one or more requested GPUs are busy
+```
+
+- This is expected while the current full x1 wave is still running.  Linux
+  process inspection showed the 8 shard workers still alive under the tmux
+  parent, with elapsed time around one hour:
+
+```text
+3696270 ... run.py --stages x1_candidate_field --shard-id 0
+3696272 ... run.py --stages x1_candidate_field --shard-id 1
+3696274 ... run.py --stages x1_candidate_field --shard-id 2
+3696276 ... run.py --stages x1_candidate_field --shard-id 3
+3696278 ... run.py --stages x1_candidate_field --shard-id 4
+3696280 ... run.py --stages x1_candidate_field --shard-id 5
+3696282 ... run.py --stages x1_candidate_field --shard-id 6
+3696284 ... run.py --stages x1_candidate_field --shard-id 7
+```
+
+- `nvidia-smi` showed all 8 GPUs active, with memory in the approximate
+  9.9-14.0 GB range per GPU and high utilization.  The compute-app PID view
+  used driver-visible PIDs with `[Not Found]` process names, while Linux `ps`
+  and `/dev/nvidia*` holders still showed the tmux-launched Python shard
+  workers.  This note treats GPU/process evidence as a running-state check
+  only, not as completed artifact evidence.
+- Verification after this launcher refresh:
+
+```bash
+PYTHONPATH=/data/CoordExp/.worktrees/fn-rescue-attention-probes \
+python - <<'PY'
+import pytest, sys
+args=['tests/analysis/candidate_field_cardinality_tomography','-q','-p','no:cacheprovider']
+code=pytest.main(args)
+sys.exit(code)
+PY
+
+PYTHONPATH=/data/CoordExp/.worktrees/fn-rescue-attention-probes \
+python -m py_compile \
+  src/analysis/candidate_field_cardinality_tomography/*.py \
+  scripts/analysis/candidate_field_cardinality_tomography/run.py
+
+DRY_RUN=1 \
+SESSION=candidate_field_dryrun_check \
+CONFIG=/data/CoordExp/.worktrees/fn-rescue-attention-probes/configs/analysis/candidate_field_cardinality_tomography/ckpt3664_smoke.yaml \
+bash scripts/analysis/candidate_field_cardinality_tomography/launch_candidate_field_cardinality_tomography_tmux.sh
+```
+
+  The pytest run reported `36 passed`; `py_compile` exited `0`; launcher
+  dry-run exited `0`; busy-GPU preflight refused a real launch on GPU 0 with
+  exit `1` as intended.
+
+2026-06-03 x1 heartbeat refresh:
+
+- Future `x1_candidate_field` shard runs now write
+  `x1_candidate_field_progress.json` next to each shard's in-progress rows.
+- The heartbeat is JSON-safe and records:
+  `stage`, `status`, `shard_id`, `planned_cases`, `emitted_rows`,
+  `valid_rows`, `remaining_cases`, `progress_fraction`, `elapsed_seconds`,
+  `rows_per_second`, `last_probe_plan_row_id`, and `checkpoint_path`.
+- The primary rows artifact remains atomic: rows are appended to
+  `x1_candidate_field_rows.jsonl.inprogress` and only moved to
+  `x1_candidate_field_rows.jsonl` after the shard finishes.
+- This heartbeat change does not affect the current already-running full
+  workers, because they were launched before the change.  It only improves
+  observability for subsequent x1 shard runs.
+- Current full run state at this refresh:
+
+```text
+tmux session: candidate_field_cardinality_ckpt3664_full
+shard worker elapsed time: about 1 hour
+full root still lacks merged x1 rows, taxonomy rows, merge_summary, and final manifest
+```
+
+- Verification after the heartbeat change:
+
+```bash
+PYTHONPATH=/data/CoordExp/.worktrees/fn-rescue-attention-probes \
+python - <<'PY'
+import pytest, sys
+args=['tests/analysis/candidate_field_cardinality_tomography/test_x1_candidate_field.py','-q']
+code=pytest.main(args)
+sys.exit(code)
+PY
+
+PYTHONPATH=/data/CoordExp/.worktrees/fn-rescue-attention-probes \
+PYTHONDONTWRITEBYTECODE=1 \
+python - <<'PY'
+import pytest, sys
+args=['tests/analysis/candidate_field_cardinality_tomography','-q','-p','no:cacheprovider']
+code=pytest.main(args)
+sys.exit(code)
+PY
+
+PYTHONPATH=/data/CoordExp/.worktrees/fn-rescue-attention-probes \
+python -m py_compile \
+  src/analysis/candidate_field_cardinality_tomography/*.py \
+  scripts/analysis/candidate_field_cardinality_tomography/run.py
+```
+
+  The targeted x1 test run reported `3 passed`; the full suite reported
+  `37 passed`; `py_compile` exited `0`.
+
+2026-06-03 status-helper refresh:
+
+- Added a non-invasive status helper:
+
+```text
+src/analysis/candidate_field_cardinality_tomography/status.py
+scripts/analysis/candidate_field_cardinality_tomography/status.py
+```
+
+- It reads artifact files, `probe_plan_summary.json`, shard directories, and
+  optional launcher logs without touching model/GPU execution.
+- Current full-run status command:
+
+```bash
+PYTHONPATH=/data/CoordExp/.worktrees/fn-rescue-attention-probes \
+python scripts/analysis/candidate_field_cardinality_tomography/status.py \
+  --artifact-root /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/candidate_field_cardinality_tomography \
+  --log-root /data/CoordExp/.worktrees/fn-rescue-attention-probes/logs/candidate_field_cardinality_ckpt3664_full
+```
+
+- Current status summary from that helper:
+
+| Field | Value |
+| --- | --- |
+| `stage_status` | `x1_shards_running` |
+| `planned_cases` | `357419` |
+| `expected_shards` | `8` |
+| `alive_shard_processes` | `8` |
+| `final_ready` | `false` |
+
+- Missing final artifacts at this checkpoint:
+
+```text
+manifest.json
+merge_summary.json
+phase_a_case_taxonomy_rows.jsonl
+taxonomy_summary.json
+x1_candidate_field_rows.jsonl
+```
+
+- Verification after the status helper:
+
+```bash
+PYTHONPATH=/data/CoordExp/.worktrees/fn-rescue-attention-probes \
+python - <<'PY'
+import pytest, sys
+args=['tests/analysis/candidate_field_cardinality_tomography/test_status.py','-q']
+code=pytest.main(args)
+sys.exit(code)
+PY
+
+PYTHONPATH=/data/CoordExp/.worktrees/fn-rescue-attention-probes \
+PYTHONDONTWRITEBYTECODE=1 \
+python - <<'PY'
+import pytest, sys
+args=['tests/analysis/candidate_field_cardinality_tomography','-q','-p','no:cacheprovider']
+code=pytest.main(args)
+sys.exit(code)
+PY
+
+PYTHONPATH=/data/CoordExp/.worktrees/fn-rescue-attention-probes \
+python -m py_compile \
+  src/analysis/candidate_field_cardinality_tomography/*.py \
+  scripts/analysis/candidate_field_cardinality_tomography/*.py
+```
+
+  The status helper tests reported `2 passed`; the full suite reported
+  `39 passed`; `py_compile` exited `0`.
+
+2026-06-03 finalize-helper refresh:
+
+- Added a non-invasive finalize helper:
+
+```text
+src/analysis/candidate_field_cardinality_tomography/finalize.py
+scripts/analysis/candidate_field_cardinality_tomography/finalize_if_ready.py
+```
+
+- The helper first reads the status report.  It only runs
+  `merge,taxonomy,validate,report` when status is
+  `shards_complete_pending_merge`.
+- If shards are still running, it returns `action=not_ready` and does not
+  touch artifacts or GPU execution.
+- If final artifacts are already present, it returns `action=already_final`.
+- Current full-run invocation:
+
+```bash
+PYTHONPATH=/data/CoordExp/.worktrees/fn-rescue-attention-probes \
+python scripts/analysis/candidate_field_cardinality_tomography/finalize_if_ready.py \
+  --config /data/CoordExp/.worktrees/fn-rescue-attention-probes/configs/analysis/candidate_field_cardinality_tomography/ckpt3664_trainval.yaml \
+  --artifact-root /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/candidate_field_cardinality_tomography \
+  --log-root /data/CoordExp/.worktrees/fn-rescue-attention-probes/logs/candidate_field_cardinality_ckpt3664_full
+```
+
+- Current result from that helper:
+
+```text
+action=not_ready
+stage_status=x1_shards_running
+alive_shard_processes=8
+final_ready=false
+result=None
+```
+
+- Verification after the finalize helper:
+
+```bash
+PYTHONPATH=/data/CoordExp/.worktrees/fn-rescue-attention-probes \
+python - <<'PY'
+import pytest, sys
+args=['tests/analysis/candidate_field_cardinality_tomography/test_finalize.py','-q']
+code=pytest.main(args)
+sys.exit(code)
+PY
+
+PYTHONPATH=/data/CoordExp/.worktrees/fn-rescue-attention-probes \
+PYTHONDONTWRITEBYTECODE=1 \
+python - <<'PY'
+import pytest, sys
+args=['tests/analysis/candidate_field_cardinality_tomography','-q','-p','no:cacheprovider']
+code=pytest.main(args)
+sys.exit(code)
+PY
+
+PYTHONPATH=/data/CoordExp/.worktrees/fn-rescue-attention-probes \
+python -m py_compile \
+  src/analysis/candidate_field_cardinality_tomography/*.py \
+  scripts/analysis/candidate_field_cardinality_tomography/*.py
+```
+
+  The finalize helper tests reported `2 passed`; the full suite reported
+  `41 passed`; `py_compile` exited `0`.
+
+2026-06-03 full-run monitor refresh:
+
+- Current full train/val status remains `x1_shards_running`.
+- `status.py` summary:
+
+| Field | Value |
+| --- | --- |
+| `planned_cases` | `357419` |
+| `expected_shards` | `8` |
+| `alive_shard_processes` | `8` |
+| `final_ready` | `false` |
+
+- Current full root still contains only pre-GPU planning/report files:
+
+```text
+case_index.jsonl
+case_index_summary.json
+probe_plan.jsonl
+probe_plan_summary.json
+resolved_config.yaml
+summary.json
+report.md
+```
+
+- Current full root still lacks final artifacts:
+
+```text
+manifest.json
+merge_summary.json
+phase_a_case_taxonomy_rows.jsonl
+taxonomy_summary.json
+x1_candidate_field_rows.jsonl
+```
+
+- Shard worker elapsed time was about `01:12:29` at this refresh, with all 8
+  workers still visible under the tmux parent and all 8 GPUs active.
+- Running `finalize_if_ready.py` against the current full root returned:
+
+```text
+action=not_ready
+stage_status=x1_shards_running
+alive_shard_processes=8
+final_ready=false
+result=None
+```
+
+  No merge/taxonomy/report stage was executed in this state.
+
+2026-06-03 blocked-audit monitor refresh:
+
+- Current status remains unchanged from the previous full-run monitor checks:
+
+| Field | Value |
+| --- | --- |
+| `stage_status` | `x1_shards_running` |
+| `planned_cases` | `357419` |
+| `expected_shards` | `8` |
+| `alive_shard_processes` | `8` |
+| `final_ready` | `false` |
+
+- Shard worker elapsed time was about `01:14:06` at this refresh.
+- All 8 shard workers were still visible under the tmux parent, and all 8 GPUs
+  still showed active utilization/memory.
+- No shard rows or in-progress rows were visible because the current full
+  workers were launched before the heartbeat change:
+
+```text
+shard_000 x1_candidate_field_rows.jsonl: missing
+shard_001 x1_candidate_field_rows.jsonl: missing
+shard_002 x1_candidate_field_rows.jsonl: missing
+shard_003 x1_candidate_field_rows.jsonl: missing
+shard_004 x1_candidate_field_rows.jsonl: missing
+shard_005 x1_candidate_field_rows.jsonl: missing
+shard_006 x1_candidate_field_rows.jsonl: missing
+shard_007 x1_candidate_field_rows.jsonl: missing
+```
+
+- The full root still contains only pre-GPU planning/report files and still
+  lacks:
+
+```text
+manifest.json
+merge_summary.json
+phase_a_case_taxonomy_rows.jsonl
+taxonomy_summary.json
+x1_candidate_field_rows.jsonl
+```
+
+- The agent cannot safely execute `merge,taxonomy,validate,report` until the
+  running x1 shard workers finish and shard row/manifests are present.
+
+2026-06-03 sampling-scope adjustment:
+
+- The full train/val x1 wave was intentionally stopped after user review.
+- Reason: full `357419`-case collection was not necessary for the next
+  mechanism decision.  A representative subset is sufficient to test whether
+  `desc -> x1` candidate fields show same-desc cardinality collapse at useful
+  confidence.
+- Stopped full tmux/session:
+
+```text
+tmux session: candidate_field_cardinality_ckpt3664_full
+artifact root: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/candidate_field_cardinality_tomography
+stopped shard PIDs: 3696270 3696272 3696274 3696276 3696278 3696280 3696282 3696284
+```
+
+- After stop, GPUs were free and the full root remained incomplete.  No final
+  full artifact interpretation should be made from that root.
+- New representative run config:
+
+```text
+configs/analysis/candidate_field_cardinality_tomography/ckpt3664_representative8192.yaml
+artifact root: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/candidate_field_cardinality_tomography_representative8192
+max_cases: 8192
+num_shards: 8
+checkpoint: checkpoint-3664
+```
+
+- New tmux session:
+
+```text
+candidate_field_cardinality_representative8192_ckpt3664
+```
+
+- The representative run uses current heartbeat-enabled x1 code.  Each shard
+  writes `x1_candidate_field_progress.json` and
+  `x1_candidate_field_rows.jsonl.inprogress` while running.
+- Early representative8192 heartbeat showed all 8 shards active, each with
+  `planned_cases=1024`, and emitted rows visible in progress JSON.
+- Throughput note: current x1 probe is still one case per model forward.  GPU
+  memory headroom exists, but increasing utilization requires real batched
+  prompt/image forward support in `x1_candidate_field.py`; simply increasing
+  sequence length is not the right knob because this stage is a single
+  pre-x1 forward, not generation.
+
+2026-06-03 representative8192 completion:
+
+- The representative 8192-case run completed `x1_candidate_field`, merge,
+  taxonomy, validate, and report.
+- Artifact root:
+
+```text
+/data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/candidate_field_cardinality_tomography_representative8192
+```
+
+- Final status:
+
+| Field | Value |
+| --- | --- |
+| `stage_status` | `final_artifacts_present` |
+| `sampled_gpu_cases` | `8192` |
+| `attempted_gpu_cases` | `8192` |
+| `valid_gpu_cases` | `8192` |
+| `taxonomy_cases` | `8192` |
+| `validation_status` | `ok` |
+| `headline_eligibility_status` | `ineligible_missing_controls` |
+
+- Final artifact row counts:
+
+| Artifact | Rows |
+| --- | ---: |
+| `x1_candidate_field_rows.jsonl` | `8192` |
+| `phase_a_case_taxonomy_rows.jsonl` | `8192` |
+
+- Manifest validation:
+
+```text
+validation_status=ok
+file_count=51
+checkpoint_path=/data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664
+```
+
+- Taxonomy counts under current x1-only taxonomy:
+
+| Primary Bucket | Cases |
+| --- | ---: |
+| `A1_cardinality_collapse` | `2690` |
+| `unassigned_or_inconclusive` | `5502` |
+
+- Control matrix remains explicit:
+
+| Control Type | Status |
+| --- | --- |
+| `same_desc_count_1_control` | `pass` |
+| `same_desc_count_2_control` | `pass` |
+| `wrong_desc_same_image` | `missing` |
+| `wrong_image_same_desc` | `missing` |
+| `x1_projection_collision_slice` | `present` |
+| `gt_x1_jitter` | `missing` |
+| `competitor_x1_control` | `missing` |
+| `merge_radius_sensitivity` | `missing` |
+| `mass_floor_sensitivity` | `missing` |
+| `p_cond_vs_coord_vocab_mass` | `pass` |
+
+- GPUs were free after completion.
+- Scope boundary: this is a representative 8192-case analysis, not a full
+  train/val analysis and not production training.

@@ -1,0 +1,25 @@
+project_id: candidate_field_cardinality_tomography
+artifact_root: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/candidate_field_cardinality_tomography
+checkpoint_path: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664
+train_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
+val_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+fn_rescue_overlay_root: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/fn_rescue_continuation
+phase5_overlay_root: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/fn_rescue_desc_x1_phase5_logit_binding_coordslot
+stages:
+  - case_index
+  - probe_plan
+  - validate
+sampling:
+  num_shards: 8
+  max_cases: null
+  seed: 3664
+peak:
+  absolute_mass_floor: 0.002
+  relative_floor: 0.10
+  primary_merge_radius: 24
+  gt_x1_neighborhood_radius: 24
+  raw_topk_k: 32
+policies:
+  desc_normalization_policy_id: lower_strip_collapse_ws_v1
+  row_score_policy_id: residual_row_mean_v1
+  decode_policy_id: greedy_y1x2y2_v1
