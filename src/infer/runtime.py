@@ -486,14 +486,16 @@ def materialize_offline_gt_vs_pred_record(
     raw_ends_with_im_end: bool,
     errors: Sequence[str] | None = None,
     error_entries: Sequence[Mapping[str, Any]] | None = None,
+    allow_diagnostic: bool = False,
 ) -> Dict[str, Any]:
     """Project a decoded detection result into the stable gt_vs_pred row schema."""
 
-    decoded_result = require_metric_bearing(
-        decoded_result,
-        consumer="official_gt_vs_pred_materialization",
-    )
-    return {
+    if not allow_diagnostic:
+        decoded_result = require_metric_bearing(
+            decoded_result,
+            consumer="official_gt_vs_pred_materialization",
+        )
+    output = {
         "image": image,
         "width": int(width),
         "height": int(height),
@@ -507,6 +509,9 @@ def materialize_offline_gt_vs_pred_record(
         "errors": [str(code) for code in (errors or decoded_result.errors)],
         "error_entries": [dict(entry) for entry in (error_entries or ())],
     }
+    if allow_diagnostic:
+        output.update(decoded_result.to_artifact_metadata())
+    return output
 
 
 def detect_mode_from_gt(
@@ -796,7 +801,9 @@ class InferenceConfig:
     detection_sequence_format: str = COORDJSON_FORMAT
     object_field_order: ObjectFieldOrder = "desc_first"
     object_ordering: ObjectOrdering = "sorted"
+    row_separator: str = "newline"
     compact_full_parse_mode: str = "marker_delimited_strict"
+    allow_diagnostic_gt_vs_pred: bool = False
     pred_coord_mode: Literal["auto", "norm1000", "pixel"] = "auto"
     adapter_checkpoint: Optional[str] = None
     checkpoint_mode: str = "full_model"
@@ -1158,6 +1165,7 @@ class OfflineInferenceEngine:
             coord_mode_from_coord_tokens_enabled,
             get_template_prompt_hash,
             get_template_prompts,
+            normalize_compact_row_separator,
             resolve_dense_prompt_variant_key,
         )
         from src.infer.checkpoints import resolve_inference_checkpoint
@@ -1216,6 +1224,8 @@ class OfflineInferenceEngine:
             path="infer.object_ordering",
         )
         self.cfg.object_ordering = self.object_ordering
+        self.row_separator = normalize_compact_row_separator(cfg.row_separator)
+        self.cfg.row_separator = self.row_separator
 
         self.requested_mode = cfg.requested_mode or cfg.mode
         self.resolved_mode = cfg.mode
@@ -1237,6 +1247,7 @@ class OfflineInferenceEngine:
             object_field_order=self.object_field_order,
             bbox_format=self.bbox_format,
             detection_sequence_format=self.detection_sequence_format,
+            row_separator=self.row_separator,
         )
         self.prompt_template_hash = get_template_prompt_hash(
             ordering=self.object_ordering,
@@ -1245,6 +1256,7 @@ class OfflineInferenceEngine:
             object_field_order=self.object_field_order,
             bbox_format=self.bbox_format,
             detection_sequence_format=self.detection_sequence_format,
+            row_separator=self.row_separator,
         )
 
         self.coord = CoordinateStandardizer(
@@ -1724,6 +1736,9 @@ def run_offline_artifact_inference(owner: Any) -> Tuple[Path, Path]:
                 raw_ends_with_im_end=raw_ends_with_im_end,
                 errors=error_codes,
                 error_entries=error_entries,
+                allow_diagnostic=bool(
+                    getattr(self.cfg, "allow_diagnostic_gt_vs_pred", False)
+                ),
             )
             if compact_parse_artifact is not None:
                 output.update(
@@ -1751,10 +1766,23 @@ def run_offline_artifact_inference(owner: Any) -> Tuple[Path, Path]:
                 and res.generated_token_text is not None
                 and res.token_logprobs is not None
             ):
-                trace_record = {
-                    "line_idx": line_idx,
+                token_trace_payload = {
                     "generated_token_text": list(res.generated_token_text),
                     "token_logprobs": list(res.token_logprobs),
+                }
+                trace_record = {
+                    "line_idx": line_idx,
+                    **token_trace_payload,
+                    "raw_output_sha256": hashlib.sha256(
+                        raw_text.encode("utf-8")
+                    ).hexdigest(),
+                    "token_trace_sha256": hashlib.sha256(
+                        json.dumps(
+                            token_trace_payload,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ).encode("utf-8")
+                    ).hexdigest(),
                 }
                 if self.cfg.distributed_enabled:
                     trace_record[_DISTRIBUTED_SOURCE_INDEX_KEY] = int(

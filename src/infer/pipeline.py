@@ -27,6 +27,7 @@ from src.config.prompts import (
     coord_mode_from_coord_tokens_enabled,
     get_template_prompt_hash,
     get_template_prompts,
+    normalize_compact_row_separator,
     resolve_dense_prompt_variant_key,
 )
 from src.eval.artifacts import (
@@ -69,6 +70,7 @@ def _offline_prompt_policy_fingerprint(
     bbox_format: str,
     detection_sequence_format: str,
     object_ordering: ObjectOrdering,
+    row_separator: str = "newline",
 ) -> str:
     system_prompt, user_prompt = get_template_prompts(
         ordering=object_ordering,
@@ -77,6 +79,7 @@ def _offline_prompt_policy_fingerprint(
         object_field_order=object_field_order,
         bbox_format=bbox_format,
         detection_sequence_format=detection_sequence_format,
+        row_separator=row_separator,
     )
     return prompt_policy_fingerprint(
         DetectionPromptPolicy(
@@ -261,7 +264,7 @@ def _detect_infer_distributed_env() -> Tuple[int, int, int, bool]:
 
 def _resolve_infer_prompt_controls(
     infer_cfg: Mapping[str, Any],
-) -> Tuple[str, str, str, ObjectFieldOrder, ObjectOrdering]:
+) -> Tuple[str, str, str, ObjectFieldOrder, ObjectOrdering, str]:
     prompt_variant_raw = infer_cfg.get("prompt_variant", None)
     if prompt_variant_raw is not None and not isinstance(prompt_variant_raw, str):
         raise ValueError("infer.prompt_variant must be a string when provided")
@@ -284,6 +287,9 @@ def _resolve_infer_prompt_controls(
         object_field_order_raw,
         path="infer.object_field_order",
     )
+    row_separator = normalize_compact_row_separator(
+        infer_cfg.get("row_separator", "newline"),
+    )
 
     return (
         prompt_variant,
@@ -291,6 +297,7 @@ def _resolve_infer_prompt_controls(
         detection_sequence_format,
         object_field_order,
         object_ordering,
+        row_separator,
     )
 
 
@@ -828,6 +835,7 @@ def run_pipeline(
         resolved_detection_sequence_format,
         resolved_object_field_order,
         resolved_object_ordering,
+        resolved_row_separator,
     ) = _resolve_infer_prompt_controls(infer_cfg)
     resolved_compact_full_parse_mode = _resolve_compact_full_parse_mode(cfg)
     resolved_runtime_mode, resolved_mode_reason = _resolve_infer_runtime_mode(infer_cfg)
@@ -846,6 +854,7 @@ def run_pipeline(
         object_field_order=resolved_object_field_order,
         bbox_format=resolved_bbox_format,
         detection_sequence_format=resolved_detection_sequence_format,
+        row_separator=resolved_row_separator,
     )
     resolved_prompt_policy_fingerprint = _offline_prompt_policy_fingerprint(
         coord_mode=resolved_coord_mode,
@@ -854,6 +863,7 @@ def run_pipeline(
         bbox_format=resolved_bbox_format,
         detection_sequence_format=resolved_detection_sequence_format,
         object_ordering=resolved_object_ordering,
+        row_separator=resolved_row_separator,
     )
     resolved_decode_request = None
     if _get_map(infer_cfg, "generation"):
@@ -940,6 +950,7 @@ def run_pipeline(
             "detection_sequence_format": resolved_detection_sequence_format,
             "object_field_order": resolved_object_field_order,
             "object_ordering": resolved_object_ordering,
+            "row_separator": resolved_row_separator,
             "parsing": {
                 "compact_full": {
                     "mode": resolved_compact_full_parse_mode,
@@ -1121,6 +1132,7 @@ def _run_infer_stage(
         detection_sequence_format,
         object_field_order,
         object_ordering,
+        row_separator,
     ) = _resolve_infer_prompt_controls(infer_cfg)
 
     pred_coord_mode_raw = _require_choice(
@@ -1355,7 +1367,13 @@ def _run_infer_stage(
         "detection_sequence_format": detection_sequence_format,
         "object_field_order": object_field_order,
         "object_ordering": object_ordering,
+        "row_separator": row_separator,
         "compact_full_parse_mode": compact_full_parse_mode,
+        "allow_diagnostic_gt_vs_pred": _get_bool(
+            infer_cfg,
+            "allow_diagnostic_gt_vs_pred",
+            False,
+        ),
         "pred_coord_mode": pred_coord_mode,
         "out_path": str(artifacts.gt_vs_pred_jsonl),
         "pred_token_trace_path": str(artifacts.pred_token_trace_jsonl),
@@ -1372,6 +1390,7 @@ def _run_infer_stage(
             bbox_format=bbox_format,
             detection_sequence_format=detection_sequence_format,
             object_ordering=object_ordering,
+            row_separator=row_separator,
         ),
         "decode_policy_fingerprint": decode_request.decode_policy_fingerprint,
         "model_identity_fingerprint": build_model_identity_fingerprint(
