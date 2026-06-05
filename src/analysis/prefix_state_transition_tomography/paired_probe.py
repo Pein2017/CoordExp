@@ -18,7 +18,8 @@ from .prefix_rendering import (
 from .x1_readout import partition_x1_peaks, summarize_x1_partitions
 
 
-CHECKPOINT_ROLES = ("et_rmp_ce", "pure_ce")
+LEGACY_CHECKPOINT_ROLES = ("et_rmp_ce", "pure_ce")
+CHECKPOINT_ROLES = LEGACY_CHECKPOINT_ROLES
 PRE_X1_CONTEXT_SUFFIX = "<|box_start|>"
 
 
@@ -55,6 +56,7 @@ def run_paired_checkpoint_probe(
         }
     sampled_rows = read_jsonl(config.artifact_root / "prefix_state_sampled_rows.jsonl")
     shard_rows = rows_for_shard(sampled_rows, shard_id, config.sampling.num_shards)
+    checkpoint_roles = _checkpoint_roles(config)
     shard_root = config.artifact_root / "shards" / f"shard_{shard_id:02d}"
     shard_root.mkdir(parents=True, exist_ok=True)
     started_at = time.time()
@@ -65,7 +67,7 @@ def run_paired_checkpoint_probe(
             "status": "running",
             "shard_id": shard_id,
             "planned_prefix_state_rows": len(shard_rows),
-            "checkpoint_roles": list(CHECKPOINT_ROLES),
+            "checkpoint_roles": checkpoint_roles,
             "started_at": started_at,
             "updated_at": started_at,
             "completed_prefix_state_role_pairs": 0,
@@ -76,7 +78,7 @@ def run_paired_checkpoint_probe(
     boundary_rows: list[dict[str, Any]] = []
     forced_rows: list[dict[str, Any]] = []
     completed_pairs = 0
-    for role in CHECKPOINT_ROLES:
+    for role in checkpoint_roles:
         handle = _load_model_handle(
             checkpoint=config.checkpoints[role],
             config=config,
@@ -87,6 +89,7 @@ def run_paired_checkpoint_probe(
                 b_rows, x_rows = _probe_prefix_state(
                     state=row,
                     checkpoint_role=role,
+                    checkpoint=config.checkpoints[role],
                     model_handle=handle,
                     peak=config.peak,
                 )
@@ -100,7 +103,7 @@ def run_paired_checkpoint_probe(
                             "status": "running",
                             "shard_id": shard_id,
                             "planned_prefix_state_rows": len(shard_rows),
-                            "checkpoint_roles": list(CHECKPOINT_ROLES),
+                            "checkpoint_roles": checkpoint_roles,
                             "started_at": started_at,
                             "updated_at": time.time(),
                             "completed_prefix_state_role_pairs": completed_pairs,
@@ -118,7 +121,7 @@ def run_paired_checkpoint_probe(
         "prefix_state_rows": len(shard_rows),
         "boundary_score_rows": boundary_count,
         "forced_x1_rows": forced_count,
-        "checkpoint_roles": list(CHECKPOINT_ROLES),
+        "checkpoint_roles": checkpoint_roles,
         "completed_prefix_state_role_pairs": completed_pairs,
         "started_at": started_at,
         "finished_at": time.time(),
@@ -127,6 +130,10 @@ def run_paired_checkpoint_probe(
     _write_json(shard_root / "shard_manifest.json", shard_summary)
     _write_json(progress_path, {**shard_summary, "status": "complete"})
     return shard_summary
+
+
+def _checkpoint_roles(config: PrefixStateTransitionConfig) -> list[str]:
+    return [str(role) for role in config.checkpoints]
 
 
 def validate_sampled_image_paths(*, config: PrefixStateTransitionConfig) -> dict[str, Any]:
@@ -164,6 +171,7 @@ def _probe_prefix_state(
     checkpoint_role: str,
     model_handle: Any,
     peak: PeakConfig,
+    checkpoint: CheckpointConfig | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     gt_objects = list(state.get("gt_objects") or [])
     emitted_order = [int(idx) for idx in state.get("emitted_gt_indices") or []]
@@ -171,7 +179,11 @@ def _probe_prefix_state(
     residual_ids = {int(idx) for idx in state.get("residual_gt_indices") or []}
     by_gt_idx = {int(obj["gt_idx"]): obj for obj in gt_objects}
     emitted_rows = [by_gt_idx[idx] for idx in emitted_order if idx in by_gt_idx]
-    boundary_text = render_boundary_assistant_text(emitted_rows)
+    row_separator = _checkpoint_row_separator(checkpoint)
+    boundary_text = render_boundary_assistant_text(
+        emitted_rows,
+        row_separator=row_separator,
+    )
     image_path = _resolve_image_path(state, must_exist=True)
     candidate_descs = list(dict.fromkeys(str(desc) for desc in state.get("all_descs") or []))
     boundary_scores = _score_boundary(
@@ -180,10 +192,15 @@ def _probe_prefix_state(
         state=state,
         boundary_assistant_text=boundary_text,
         candidate_descs=candidate_descs,
+        row_separator=row_separator,
     )
     forced_rows: list[dict[str, Any]] = []
     for desc in _probe_descs(state):
-        forced_text = render_forced_desc_pre_x1_assistant_text(emitted_rows, desc)
+        forced_text = render_forced_desc_pre_x1_assistant_text(
+            emitted_rows,
+            desc,
+            row_separator=row_separator,
+        )
         emitted_same = [
             obj for obj in gt_objects if int(obj["gt_idx"]) in emitted_ids and str(obj["desc"]) == desc
         ]
@@ -196,6 +213,7 @@ def _probe_prefix_state(
                 image_path=image_path,
                 state=state,
                 checkpoint_role=checkpoint_role,
+                checkpoint=checkpoint,
                 desc=desc,
                 forced_assistant_text=forced_text,
                 emitted_same=emitted_same,
@@ -206,6 +224,7 @@ def _probe_prefix_state(
     boundary_rows = [
         {
             **_base_readout_row(state, checkpoint_role=checkpoint_role, probe_desc=row["desc"]),
+            **_checkpoint_metadata(checkpoint),
             "readout_type": "boundary_full_desc_span",
             "probe_desc_role": _probe_desc_role(state, str(row["desc"])),
             "boundary_score_policy_id": "boundary_desc_span_mean_v1",
@@ -230,10 +249,17 @@ def _score_boundary(
     state: Mapping[str, Any],
     boundary_assistant_text: str,
     candidate_descs: Sequence[str],
+    row_separator: str = "none",
 ) -> dict[str, Any]:
     scores = []
     for desc in candidate_descs:
-        suffix = render_forced_desc_pre_x1_assistant_text([], desc)
+        suffix = render_forced_desc_pre_x1_assistant_text(
+            [],
+            desc,
+            row_separator=row_separator,
+        )
+        if boundary_assistant_text:
+            suffix = _row_separator_text(row_separator) + suffix
         score = _score_suffix_mean_logprob(
             model_handle=model_handle,
             image_path=image_path,
@@ -250,12 +276,34 @@ def _score_boundary(
     return {"ranked_desc_scores": rank_desc_scores(scores), "summary": summary}
 
 
+def _checkpoint_row_separator(checkpoint: CheckpointConfig | None) -> str:
+    if checkpoint is None:
+        return "none"
+    if checkpoint.template_contract_id == "compact_full_newline_native_v1":
+        return "newline"
+    if checkpoint.template_contract_id in {"", "compact_full_no_newline_native_v1"}:
+        return "none"
+    raise ValueError(
+        f"unsupported template_contract_id for prefix rendering: "
+        f"{checkpoint.template_contract_id}"
+    )
+
+
+def _row_separator_text(row_separator: str) -> str:
+    if row_separator == "none":
+        return ""
+    if row_separator == "newline":
+        return "\n"
+    raise ValueError(f"unsupported row_separator: {row_separator}")
+
+
 def _score_forced_x1(
     *,
     model_handle: Any,
     image_path: Path,
     state: Mapping[str, Any],
     checkpoint_role: str,
+    checkpoint: CheckpointConfig | None,
     desc: str,
     forced_assistant_text: str,
     emitted_same: Sequence[Mapping[str, Any]],
@@ -306,6 +354,7 @@ def _score_forced_x1(
     del torch
     return {
         **_base_readout_row(state, checkpoint_role=checkpoint_role, probe_desc=desc),
+        **_checkpoint_metadata(checkpoint),
         "readout_type": "forced_desc_pre_x1",
         "probe_desc_role": _probe_desc_role(state, desc),
         "coord_vocab_mass": float(metrics.coord_vocab_mass),
@@ -600,10 +649,25 @@ def _resolve_image_path(
         + ", ".join(str(candidate) for candidate in candidates)
     )
 
-
 def _probe_descs(state: Mapping[str, Any]) -> list[str]:
     values = [state.get("target_residual_desc"), state.get("hard_competitor_desc")]
     return [str(value) for value in dict.fromkeys(values) if value]
+
+
+def _checkpoint_metadata(checkpoint: CheckpointConfig | None) -> dict[str, str]:
+    if checkpoint is None:
+        return {
+            "objective_policy": "",
+            "training_ordering": "",
+            "template_contract_id": "",
+            "comparison_group": "",
+        }
+    return {
+        "objective_policy": checkpoint.objective_policy,
+        "training_ordering": checkpoint.training_ordering,
+        "template_contract_id": checkpoint.template_contract_id,
+        "comparison_group": checkpoint.comparison_group,
+    }
 
 
 def _probe_desc_role(state: Mapping[str, Any], desc: str) -> str:

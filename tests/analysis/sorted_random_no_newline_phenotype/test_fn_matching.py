@@ -299,6 +299,75 @@ def test_replayable_fn_cases_are_complete_json_safe_and_deterministic() -> None:
     json.dumps(rows, allow_nan=False, sort_keys=True)
 
 
+def test_fn_universe_and_replay_support_multiple_full_checkpoint_roles() -> None:
+    gt_rows = [
+        _gt(0, "chair", [0, 0, 10, 10]),
+        _gt(1, "table", [20, 0, 30, 10]),
+    ]
+    pure_random = match_fn_cases_for_image(
+        gt_rows,
+        [_pred(0, "chair", [0, 0, 10, 10])],
+        split="val",
+        image_id=17,
+    )
+    et_random = match_fn_cases_for_image(
+        gt_rows,
+        [_pred(0, "table", [20, 0, 30, 10])],
+        split="val",
+        image_id=17,
+    )
+    et_sorted = match_fn_cases_for_image(
+        gt_rows,
+        [],
+        split="val",
+        image_id=17,
+    )
+    match_ledgers_by_role = {
+        "fullobj_random_pure_ce_ckpt3668": pure_random,
+        "fullobj_random_et_rmp_ce_ckpt3668": et_random,
+        "fullobj_sorted_et_rmp_ce_ckpt3668": et_sorted,
+    }
+
+    universe_rows = build_fn_case_universe(
+        gt_rows,
+        match_ledgers_by_role=match_ledgers_by_role,
+        split="val",
+        image_id=17,
+        sampled_gt_object_keys={"val:17:0", "val:17:1"},
+    )
+    by_gt = {row["gt_object_key"]: row for row in universe_rows}
+
+    assert by_gt["val:17:0"]["is_fn_fullobj_random_pure_ce_ckpt3668"] is False
+    assert by_gt["val:17:0"]["is_fn_fullobj_random_et_rmp_ce_ckpt3668"] is True
+    assert by_gt["val:17:0"]["is_fn_fullobj_sorted_et_rmp_ce_ckpt3668"] is True
+    assert by_gt["val:17:0"]["match_pred_idx_fullobj_random_et_rmp_ce_ckpt3668"] is None
+    assert by_gt["val:17:0"]["fn_membership"] == (
+        "fn:fullobj_random_et_rmp_ce_ckpt3668,"
+        "fullobj_sorted_et_rmp_ce_ckpt3668"
+    )
+    assert by_gt["val:17:1"]["is_fn_fullobj_random_pure_ce_ckpt3668"] is True
+    assert by_gt["val:17:1"]["is_fn_fullobj_random_et_rmp_ce_ckpt3668"] is False
+
+    rows = build_replayable_fn_cases(
+        universe_rows,
+        match_ledgers_by_role=match_ledgers_by_role,
+        contexts_by_role={
+            role: _context(checkpoint_role=role, checkpoint_fingerprint=f"{role}-sha")
+            for role in match_ledgers_by_role
+        },
+    )
+
+    assert [(row["fn_gt_idx"], row["checkpoint_role"]) for row in rows] == [
+        (0, "fullobj_random_et_rmp_ce_ckpt3668"),
+        (0, "fullobj_sorted_et_rmp_ce_ckpt3668"),
+        (1, "fullobj_random_pure_ce_ckpt3668"),
+        (1, "fullobj_sorted_et_rmp_ce_ckpt3668"),
+    ]
+    assert all(row["sample_stratum"].startswith("fn:") for row in rows)
+    json.dumps(universe_rows, allow_nan=False, sort_keys=True)
+    json.dumps(rows, allow_nan=False, sort_keys=True)
+
+
 def test_replayable_fn_cases_reject_missing_expected_checkpoint_context() -> None:
     gt_rows, random_ledger, sorted_ledger, universe_rows = _shared_fn_inputs()
 

@@ -43,6 +43,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Internal launcher guard for GPU-facing orchestration stages.",
     )
+    parser.add_argument(
+        "--mock-runtime",
+        action="store_true",
+        help="Use mocked A3.2 GPU-facing runtime paths where supported.",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -53,6 +58,7 @@ def main(argv: list[str] | None = None) -> int:
             allow_overwrite=args.allow_overwrite,
             shard_id=args.shard_id,
             launch_context=args.launch_context,
+            mock_runtime=args.mock_runtime,
         )
     except Exception as exc:
         print(f"{type(exc).__name__}: {exc}", file=sys.stderr)

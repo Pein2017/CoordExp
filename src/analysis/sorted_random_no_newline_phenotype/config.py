@@ -6,13 +6,14 @@ from typing import Any, Mapping
 
 import yaml
 
-from . import PHASE_ID, PROJECT_ID, RUN_ID, SCHEMA_VERSION
+from . import PHASE_ID, POLICY_OBJECTIVE_RUN_IDS, PROJECT_ID, RUN_ID, SCHEMA_VERSION
 
 
-EXPECTED_CHECKPOINT_ROLES = (
+LEGACY_CHECKPOINT_ROLES = (
     "fullobj_random_pure_ce_ckpt3668",
     "fullobj_sorted_pure_ce_ckpt3668",
 )
+EXPECTED_CHECKPOINT_ROLES = LEGACY_CHECKPOINT_ROLES
 
 
 @dataclass(frozen=True)
@@ -28,6 +29,9 @@ class CheckpointConfig:
     checkpoint_path: Path
     training_ordering: str
     readout_prompt_ordering: str
+    objective_policy: str = ""
+    comparison_group: str = ""
+    template_contract_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -98,8 +102,9 @@ def load_config(path: str | Path) -> A32Config:
         raise ValueError(f"phase_id must be {PHASE_ID}")
     if schema_version != SCHEMA_VERSION:
         raise ValueError(f"schema_version must be {SCHEMA_VERSION}")
-    if run_id != RUN_ID:
-        raise ValueError(f"run_id must be {RUN_ID}")
+    accepted_run_ids = (RUN_ID, *POLICY_OBJECTIVE_RUN_IDS)
+    if run_id not in accepted_run_ids:
+        raise ValueError(f"run_id must be one of {', '.join(accepted_run_ids)}")
 
     template_raw = _required_mapping(raw, "template_contract")
     sampling_raw = _mapping_or_empty(raw.get("sampling"), "sampling")
@@ -177,20 +182,27 @@ def load_config(path: str | Path) -> A32Config:
 
 def _load_checkpoints(raw: Mapping[str, Any]) -> dict[str, CheckpointConfig]:
     roles = tuple(raw)
-    if set(roles) != set(EXPECTED_CHECKPOINT_ROLES):
-        expected = ", ".join(EXPECTED_CHECKPOINT_ROLES)
-        actual = ", ".join(sorted(str(role) for role in roles)) or "<none>"
-        raise ValueError(f"checkpoint roles must be exactly {expected}; got {actual}")
+    if len(roles) < 2:
+        raise ValueError(
+            "checkpoint roles must be exactly a configured comparison cohort "
+            "or include at least two checkpoint roles"
+        )
+    if len(set(str(role) for role in roles)) != len(roles):
+        raise ValueError("checkpoint roles must be unique")
 
     checkpoints: dict[str, CheckpointConfig] = {}
-    for role in EXPECTED_CHECKPOINT_ROLES:
+    for role in roles:
         value = raw[role]
         if not isinstance(value, Mapping):
             raise ValueError(f"checkpoints.{role} must be a mapping")
-        checkpoints[role] = CheckpointConfig(
+        role_text = str(role)
+        checkpoints[role_text] = CheckpointConfig(
             checkpoint_path=_required_path(value, "checkpoint_path"),
             training_ordering=_required(value, "training_ordering"),
             readout_prompt_ordering=_required(value, "readout_prompt_ordering"),
+            objective_policy=str(value.get("objective_policy", "")),
+            comparison_group=str(value.get("comparison_group", "")),
+            template_contract_id=str(value.get("template_contract_id", "")),
         )
     return checkpoints
 
@@ -212,6 +224,13 @@ def _validate_config(config: A32Config) -> None:
     if config.sampling.num_shards != 8:
         raise ValueError("sampling.num_shards must be 8")
     for role, checkpoint in config.checkpoints.items():
+        if (
+            checkpoint.template_contract_id
+            and checkpoint.template_contract_id != "compact_full_no_newline_native_v1"
+        ):
+            raise ValueError(
+                f"{role} template_contract_id must be compact_full_no_newline_native_v1"
+            )
         if not checkpoint.checkpoint_path.is_dir():
             raise ValueError(
                 f"checkpoints.{role}.checkpoint_path must exist and be a directory: "

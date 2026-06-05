@@ -521,7 +521,13 @@ def _stage_prefix_merge(
     _ensure_can_write(merged_path, allow_overwrite=allow_overwrite)
     _ensure_can_write(summary_path, allow_overwrite=allow_overwrite)
     write_report_jsonl(merged_path, merged_rows)
-    _write_json(summary_path, _prefix_readout_summary(merged_rows))
+    _write_json(
+        summary_path,
+        _prefix_readout_summary(
+            merged_rows,
+            checkpoint_roles=checkpoint_roles_from_config(config),
+        ),
+    )
     return {
         "stage": "prefix_merge",
         "readout_rows": len(rows),
@@ -753,8 +759,7 @@ def _stage_fn_case_index(
     for package in image_packages:
         image_universe = build_fn_case_universe(
             package["gt_rows"],
-            random_match_ledger=package["match_ledgers_by_role"][roles[0]],
-            sorted_match_ledger=package["match_ledgers_by_role"][roles[1]],
+            match_ledgers_by_role=package["match_ledgers_by_role"],
             split=str(package["split"]),
             image_id=package["image_id"],
             sampled_gt_object_keys=selected_keys,
@@ -1058,6 +1063,9 @@ def _checkpoint_provenance(config: A32Config) -> dict[str, dict[str, str]]:
             "checkpoint_path": str(checkpoint.checkpoint_path),
             "training_ordering": checkpoint.training_ordering,
             "readout_prompt_ordering": checkpoint.readout_prompt_ordering,
+            "objective_policy": checkpoint.objective_policy,
+            "comparison_group": checkpoint.comparison_group,
+            "template_contract_id": checkpoint.template_contract_id,
         }
         for role, checkpoint in config.checkpoints.items()
     }
@@ -1127,22 +1135,58 @@ def _read_prefix_readout_rows(config: A32Config) -> list[dict[str, Any]]:
     return rows
 
 
-def _prefix_readout_summary(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+def _prefix_readout_summary(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    checkpoint_roles: Sequence[str] | None = None,
+) -> dict[str, Any]:
+    roles = (
+        [str(role) for role in checkpoint_roles]
+        if checkpoint_roles is not None
+        else _checkpoint_roles_from_rows(rows)
+    )
     summary: dict[str, Any] = {
         "project_id": PROJECT_ID,
         "phase_id": PHASE_ID,
         "schema_version": SCHEMA_VERSION,
         "run_id": RUN_ID,
-        "checkpoint_roles": [
-            "fullobj_random_pure_ce_ckpt3668",
-            "fullobj_sorted_pure_ce_ckpt3668",
-        ],
+        "checkpoint_roles": roles,
         "merged_prefix_state_count": len(rows),
+    }
+    by_delta_role: dict[str, dict[str, list[float]]] = {}
+    for row in rows:
+        delta_role = row.get("delta_role")
+        values = row.get("delta_metric_values")
+        if isinstance(delta_role, str) and isinstance(values, Mapping):
+            metric_values = by_delta_role.setdefault(delta_role, {})
+            for metric, value in values.items():
+                try:
+                    metric_values.setdefault(str(metric), []).append(float(value))
+                except (TypeError, ValueError):
+                    continue
+    summary["delta_metric_means_by_role"] = {
+        delta_role: {
+            metric: (sum(values) / len(values) if values else 0.0)
+            for metric, values in sorted(metrics.items())
+        }
+        for delta_role, metrics in sorted(by_delta_role.items())
     }
     for _, delta_name in DELTA_METRICS:
         values = [float(row[delta_name]) for row in rows if delta_name in row]
         summary[f"mean_{delta_name}"] = 0.0 if not values else sum(values) / len(values)
     return summary
+
+
+def _checkpoint_roles_from_rows(rows: Sequence[Mapping[str, Any]]) -> list[str]:
+    roles: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        for key in ("left_role", "right_role", "checkpoint_role"):
+            value = row.get(key)
+            if isinstance(value, str) and value and value not in seen:
+                seen.add(value)
+                roles.append(value)
+    return roles
 
 
 def _materialize_prefix_shard_summary_jsonl(
@@ -1224,7 +1268,8 @@ def _build_fn_image_packages(
         }
         for role in roles
     }
-    common_keys = set(indexed_by_role[roles[0]]).intersection(indexed_by_role[roles[1]])
+    key_sets = [set(indexed_by_role[role]) for role in roles]
+    common_keys = set.intersection(*key_sets) if key_sets else set()
     packages: list[dict[str, Any]] = []
     val_jsonl_sha = _file_sha256(config.val_jsonl)
     for key in sorted(common_keys):
@@ -1260,8 +1305,7 @@ def _build_fn_image_packages(
                 "contexts_by_role": contexts_by_role,
                 "universe_rows": build_fn_case_universe(
                     gt_rows,
-                    random_match_ledger=match_ledgers_by_role[roles[0]],
-                    sorted_match_ledger=match_ledgers_by_role[roles[1]],
+                    match_ledgers_by_role=match_ledgers_by_role,
                     split=str(reference.get("split", "val")),
                     image_id=_rollout_image_id(reference, fallback=key),
                 ),
@@ -1370,30 +1414,35 @@ def _sample_fn_probe_keys(
     *,
     max_per_checkpoint: int,
 ) -> tuple[set[str], dict[str, str]]:
-    roles = checkpoint_roles_from_config_like_universe()
+    roles = _fn_roles_from_universe(universe_rows)
     selected: set[str] = set()
     counts = {role: 0 for role in roles}
     reasons: dict[str, str] = {}
     for row in sorted(universe_rows, key=lambda item: str(item["gt_object_key"])):
         key = str(row["gt_object_key"])
         selected_here = False
-        if bool(row.get(f"is_fn_{roles[0]}")) and counts[roles[0]] < max_per_checkpoint:
-            counts[roles[0]] += 1
-            selected_here = True
-        if bool(row.get(f"is_fn_{roles[1]}")) and counts[roles[1]] < max_per_checkpoint:
-            counts[roles[1]] += 1
-            selected_here = True
+        for role in roles:
+            if bool(row.get(f"is_fn_{role}")) and counts[role] < max_per_checkpoint:
+                counts[role] += 1
+                selected_here = True
         if selected_here:
             selected.add(key)
             reasons[key] = str(row.get("fn_membership", "selected_for_probe"))
     return selected, reasons
 
 
-def checkpoint_roles_from_config_like_universe() -> list[str]:
-    return [
-        "fullobj_random_pure_ce_ckpt3668",
-        "fullobj_sorted_pure_ce_ckpt3668",
-    ]
+def _fn_roles_from_universe(universe_rows: Sequence[Mapping[str, Any]]) -> list[str]:
+    roles: list[str] = []
+    seen: set[str] = set()
+    for row in universe_rows:
+        for key in row:
+            if not str(key).startswith("is_fn_"):
+                continue
+            role = str(key)[len("is_fn_") :]
+            if role and role not in seen:
+                seen.add(role)
+                roles.append(role)
+    return roles
 
 
 def _file_sha256(path: Path) -> str:

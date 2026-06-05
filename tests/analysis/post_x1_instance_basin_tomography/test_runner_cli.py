@@ -30,12 +30,17 @@ def _write_config(path: Path, artifact_root: Path, *, run_id: str = "three_ckpt_
                 "schema_version": "a3.3.v1",
                 "run_id": run_id,
                 "artifact_root": str(artifact_root),
-                "num_shards": 8,
+                "train_jsonl": str(artifact_root.parent / "train.coord.jsonl"),
+                "val_jsonl": str(artifact_root.parent / "val.coord.jsonl"),
+                "image_root": str(artifact_root.parent / "images"),
                 "checkpoints": {
                     "fullobj_random_pure_ce_ckpt3668": {
                         "checkpoint_path": "/ckpts/random/checkpoint-3668",
+                        "objective_policy": "pure_ce",
+                        "training_ordering": "random_permutation",
                         "comparison_role": "clean_pair",
                         "controlled_comparison_group": "pure_ce_sorted_vs_random_no_newline",
+                        "chat_template_variant": "compact_full_no_newline_native_v1",
                         "template_contract": {
                             "template_contract_id": "compact_full_no_newline_native_v1",
                             "detection_sequence_format": "compact_full",
@@ -47,8 +52,11 @@ def _write_config(path: Path, artifact_root: Path, *, run_id: str = "three_ckpt_
                     },
                     "fullobj_sorted_pure_ce_ckpt3668": {
                         "checkpoint_path": "/ckpts/sorted/checkpoint-3668",
+                        "objective_policy": "pure_ce",
+                        "training_ordering": "sorted",
                         "comparison_role": "clean_pair",
                         "controlled_comparison_group": "pure_ce_sorted_vs_random_no_newline",
+                        "chat_template_variant": "compact_full_no_newline_native_v1",
                         "template_contract": {
                             "template_contract_id": "compact_full_no_newline_native_v1",
                             "detection_sequence_format": "compact_full",
@@ -60,8 +68,11 @@ def _write_config(path: Path, artifact_root: Path, *, run_id: str = "three_ckpt_
                     },
                     "et_rmp_ce_ckpt3664": {
                         "checkpoint_path": "/ckpts/et/checkpoint-3664",
+                        "objective_policy": "et_rmp_ce",
+                        "training_ordering": "random_permutation",
                         "comparison_role": "reference_anchor",
                         "controlled_comparison_group": "reference_anchor_not_controlled",
+                        "chat_template_variant": "compact_full_newline_native_v1",
                         "template_contract": {
                             "template_contract_id": "compact_full_newline_native_v1",
                             "detection_sequence_format": "compact_full",
@@ -72,7 +83,46 @@ def _write_config(path: Path, artifact_root: Path, *, run_id: str = "three_ckpt_
                         },
                     },
                 },
+                "case_sampling": {
+                    "max_images": 1,
+                    "max_target_instances": 8,
+                    "min_same_desc_count": 2,
+                    "min_object_count": 2,
+                    "easy_sanity_max_fraction": 0.2,
+                    "seed": 3668,
+                    "splits": ["train"],
+                    "split_quotas": {"train": 1},
+                    "desc_cap_per_split": 4,
+                    "desc_count_caps": {"train": 4},
+                    "object_count_buckets": ["2-4"],
+                },
+                "prefix": {
+                    "prefix_modes_requested": ["empty", "same_desc_good_prefix"],
+                    "rollout_prefix_missing_policy_smoke": "skip_with_manifest",
+                    "rollout_prefix_missing_policy_full": "fail",
+                },
+                "posterior": {
+                    "strict_r95_axis_fraction": 0.04,
+                    "strict_r95_cap_bins": 8,
+                    "peak_mass_floor": 0.002,
+                    "low_margin_threshold": 0.25,
+                    "coord_mass_low_threshold": 0.01,
+                    "r95_anchor_policy": "target_axis_fraction_cap",
+                },
+                "greedy": {
+                    "enabled": True,
+                    "sample_fraction": 0.25,
+                    "decode_policy": "free_text_unconstrained_greedy_temp0",
+                    "constraint_policy": "none",
+                },
+                "runtime": {
+                    "num_shards": 8,
+                    "max_new_tokens": 1024,
+                    "torch_dtype": "bfloat16",
+                    "device_map": "single_gpu",
+                },
             },
+            sort_keys=False,
         ),
         encoding="utf-8",
     )
@@ -96,6 +146,20 @@ def test_runner_dry_run_lists_a3_3_stages(tmp_path: Path) -> None:
     assert result["stage_results"]["case_universe"]["dry_run"] is True
     assert result["stage_results"]["prefix_states"]["planned_artifact"] == "prefix_states.jsonl"
     assert not artifact_root.exists()
+
+
+def test_runner_dry_run_uses_validated_template_contract(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    artifact_root = tmp_path / "artifacts"
+    _write_config(config_path, artifact_root)
+    raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    raw["checkpoints"]["et_rmp_ce_ckpt3664"]["template_contract"][
+        "row_separator"
+    ] = "none"
+    config_path.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="row_separator must be newline"):
+        run_stages(config_path, stages="data_root_audit", dry_run=True)
 
 
 def test_runner_cli_dry_run_returns_json_safe_plan(tmp_path: Path) -> None:

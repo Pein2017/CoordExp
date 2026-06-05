@@ -8,13 +8,10 @@ import yaml
 
 from . import (
     CHECKPOINT_ROLES,
-    ET_RMP_ROLE,
-    FULL_RUN_ID,
+    RUN_IDS,
     PHASE_ID,
     PROJECT_ID,
-    PURE_CE_ROLES,
     SCHEMA_VERSION,
-    SMOKE_RUN_ID,
 )
 
 
@@ -32,6 +29,7 @@ class TemplateContractConfig:
 class CheckpointConfig:
     enabled: bool
     checkpoint_path: Path
+    objective_policy: str
     training_ordering: str
     comparison_role: str
     controlled_comparison_group: str
@@ -122,8 +120,8 @@ def load_config(path: str | Path, *, validate_paths: bool = True) -> A33Config:
         raise ValueError(f"phase_id must be {PHASE_ID}")
     if schema_version != SCHEMA_VERSION:
         raise ValueError(f"schema_version must be {SCHEMA_VERSION}")
-    if run_id not in {SMOKE_RUN_ID, FULL_RUN_ID}:
-        raise ValueError(f"run_id must be {SMOKE_RUN_ID} or {FULL_RUN_ID}")
+    if run_id not in RUN_IDS:
+        raise ValueError(f"run_id must be one of {', '.join(RUN_IDS)}")
 
     config = A33Config(
         project_id=project_id,
@@ -149,15 +147,13 @@ def load_config(path: str | Path, *, validate_paths: bool = True) -> A33Config:
 
 def _load_checkpoints(raw: Mapping[str, Any]) -> dict[str, CheckpointConfig]:
     roles = tuple(str(role) for role in raw)
-    if roles != CHECKPOINT_ROLES:
-        expected = ", ".join(CHECKPOINT_ROLES)
-        actual = ", ".join(roles) or "<none>"
-        raise ValueError(
-            f"checkpoint roles must be ordered exactly as {expected}; got {actual}"
-        )
+    if len(roles) < 2:
+        raise ValueError("checkpoint roles must include at least two roles")
+    if len(set(roles)) != len(roles):
+        raise ValueError("checkpoint roles must be unique")
 
     checkpoints: dict[str, CheckpointConfig] = {}
-    for role in CHECKPOINT_ROLES:
+    for role in roles:
         value = raw[role]
         if not isinstance(value, Mapping):
             raise ValueError(f"checkpoints.{role} must be a mapping")
@@ -165,6 +161,9 @@ def _load_checkpoints(raw: Mapping[str, Any]) -> dict[str, CheckpointConfig]:
         checkpoints[role] = CheckpointConfig(
             enabled=bool(value.get("enabled", True)),
             checkpoint_path=_required_path(value, "checkpoint_path"),
+            objective_policy=str(
+                value.get("objective_policy") or _infer_objective_policy(role)
+            ),
             training_ordering=_required(value, "training_ordering"),
             comparison_role=_required(value, "comparison_role"),
             controlled_comparison_group=_required(
@@ -225,6 +224,15 @@ def _load_case_sampling(raw: Mapping[str, Any]) -> CaseSamplingConfig:
             "case_sampling.object_count_buckets",
         ),
     )
+
+
+def _infer_objective_policy(role: str) -> str:
+    role_lower = role.lower()
+    if "et_rmp" in role_lower:
+        return "et_rmp_ce"
+    if "pure_ce" in role_lower or "sft" in role_lower:
+        return "pure_ce"
+    return "unknown"
 
 
 def _load_prefix(raw: Mapping[str, Any]) -> PrefixConfig:
@@ -291,8 +299,6 @@ def _validate_config(
             "A3.3 requires per-checkpoint template_contract, not a global "
             "template_contract"
         )
-    if tuple(config.checkpoints) != CHECKPOINT_ROLES:
-        raise ValueError("checkpoint roles must be ordered exactly as CHECKPOINT_ROLES")
     if "len12000" in config.image_root.name:
         raise ValueError("image_root must not point to the len12000 JSONL directory")
 
@@ -301,14 +307,25 @@ def _validate_config(
     _validate_posterior(config.posterior)
     _validate_greedy(config.greedy)
     _validate_runtime(config.runtime)
-    _validate_checkpoints(config.checkpoints, validate_paths=validate_paths)
+    _validate_checkpoints(
+        config.checkpoints,
+        run_id=config.run_id,
+        validate_paths=validate_paths,
+    )
 
 
 def _validate_checkpoints(
     checkpoints: Mapping[str, CheckpointConfig],
     *,
+    run_id: str,
     validate_paths: bool,
 ) -> None:
+    if run_id in {"three_ckpt_phase_a3_3_smoke", "three_ckpt_phase_a3_3"}:
+        if tuple(checkpoints) != CHECKPOINT_ROLES:
+            raise ValueError(
+                "checkpoint roles must be ordered exactly as the legacy "
+                "three-checkpoint A3.3 contract"
+            )
     for role, checkpoint in checkpoints.items():
         contract = checkpoint.template_contract
         if contract.detection_sequence_format != "compact_full":
@@ -322,38 +339,33 @@ def _validate_checkpoints(
                 f"{role} chat_template_variant must match template_contract_id"
             )
 
-        if role == ET_RMP_ROLE:
-            if checkpoint.comparison_role != "reference_anchor":
-                raise ValueError(f"{role} comparison_role must be reference_anchor")
+        if checkpoint.comparison_role == "reference_anchor":
             if checkpoint.controlled_comparison_group != "reference_anchor_not_controlled":
                 raise ValueError(
-                    "et_rmp_ce_ckpt3664 must be labeled as a non-controlled "
-                    "reference anchor"
+                    f"{role} must be labeled as a non-controlled reference anchor"
+                )
+            if not contract.template_contract_id:
+                raise ValueError(
+                    f"{role} template_contract_id must be non-empty"
                 )
             if contract.template_contract_id != "compact_full_newline_native_v1":
                 raise ValueError(
-                    "et_rmp_ce_ckpt3664 template_contract_id must be "
+                    f"{role} template_contract_id must be "
                     "compact_full_newline_native_v1"
                 )
             if contract.row_separator != "newline":
-                raise ValueError(
-                    "et_rmp_ce_ckpt3664 template_contract.row_separator must be newline"
-                )
+                raise ValueError(f"{role} template_contract.row_separator must be newline")
             if contract.contract_provenance != "legacy_compact_full_default_inferred":
                 raise ValueError(
-                    "et_rmp_ce_ckpt3664 contract_provenance must be "
+                    f"{role} contract_provenance must be "
                     "legacy_compact_full_default_inferred"
                 )
-        elif role in PURE_CE_ROLES:
-            if checkpoint.comparison_role != "clean_pair":
-                raise ValueError(f"{role} comparison_role must be clean_pair")
-            if (
-                checkpoint.controlled_comparison_group
-                != "pure_ce_sorted_vs_random_no_newline"
-            ):
-                raise ValueError(
-                    f"{role} must stay in the pure-CE controlled comparison group"
-                )
+        elif checkpoint.comparison_role == "clean_pair":
+            if checkpoint.controlled_comparison_group not in {
+                "pure_ce_sorted_vs_random_no_newline",
+                "fullobj_2x2_20260601",
+            }:
+                raise ValueError(f"{role} pure-CE controlled comparison group is invalid")
             if contract.template_contract_id != "compact_full_no_newline_native_v1":
                 raise ValueError(
                     f"{role} template_contract_id must be "
@@ -367,7 +379,9 @@ def _validate_checkpoints(
                     "user_reported_training_contract"
                 )
         else:
-            raise ValueError(f"unknown checkpoint role: {role}")
+            raise ValueError(
+                f"{role} comparison_role must be clean_pair or reference_anchor"
+            )
 
         if validate_paths and not checkpoint.checkpoint_path.is_dir():
             raise ValueError(

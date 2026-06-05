@@ -40,22 +40,38 @@ def build_quadrant_rows(
     boundary_by_role = _group_one_by_role(boundary_rows)
     x1_by_role = _group_one_by_role(forced_x1_rows)
     out: list[dict[str, Any]] = []
+    metadata_fields = (
+        "objective_policy",
+        "training_ordering",
+        "template_contract_id",
+        "comparison_group",
+    )
     for key in sorted(set(boundary_by_role) & set(x1_by_role)):
         boundary_roles = boundary_by_role[key]
         x1_roles = x1_by_role[key]
-        if set(boundary_roles) != {"et_rmp_ce", "pure_ce"}:
+        common_roles = sorted(set(boundary_roles) & set(x1_roles))
+        if len(common_roles) < 2:
             continue
-        if set(x1_roles) != {"et_rmp_ce", "pure_ce"}:
-            continue
-        for role in ("et_rmp_ce", "pure_ce"):
+        for role in common_roles:
             boundary = boundary_roles[role]
             x1 = x1_roles[role]
+            metadata = {field: boundary.get(field, "") for field in metadata_fields}
+            for field in metadata_fields:
+                x1_value = x1.get(field, "")
+                if metadata[field] and x1_value and metadata[field] != x1_value:
+                    raise ValueError(
+                        f"metadata mismatch for {role} {field}: "
+                        f"{metadata[field]} != {x1_value}"
+                    )
+                if not metadata[field]:
+                    metadata[field] = x1_value
             boundary_good = boundary.get("boundary_alignment") == "residual_favored"
             x1_good = float(x1.get("forced_x1_residual_coverage", 0.0)) > 0.0
             out.append(
                 {
                     "paired_key": "|".join(str(part) for part in key),
                     "checkpoint_role": role,
+                    **metadata,
                     "split": boundary.get("split"),
                     "transition_type": boundary.get("transition_type"),
                     "prefix_depth": boundary.get("prefix_depth"),
@@ -77,6 +93,9 @@ def summarize_quadrants(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         "by_split": _count_by(rows, "split", "quadrant"),
         "by_transition_type": _count_by(rows, "transition_type", "quadrant"),
         "by_checkpoint_role": _count_by(rows, "checkpoint_role", "quadrant"),
+        "by_objective_policy": _count_by(rows, "objective_policy", "quadrant"),
+        "by_training_ordering": _count_by(rows, "training_ordering", "quadrant"),
+        "by_comparison_group": _count_by(rows, "comparison_group", "quadrant"),
         "paired_delta_metrics": _paired_delta_metrics(rows),
     }
 
@@ -173,25 +192,44 @@ def _paired_delta_metrics(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     grouped: dict[str, dict[str, Mapping[str, Any]]] = defaultdict(dict)
     for row in rows:
         grouped[str(row.get("paired_key"))][str(row.get("checkpoint_role"))] = row
-    deltas = []
-    disagreements = 0
+    legacy_deltas = []
+    legacy_disagreements = 0
+    pairwise: dict[str, list[float]] = defaultdict(list)
+    pairwise_disagreements: Counter[str] = Counter()
     for pair in grouped.values():
-        if set(pair) != {"et_rmp_ce", "pure_ce"}:
-            continue
-        et = pair["et_rmp_ce"]
-        pure = pair["pure_ce"]
-        deltas.append(
-            float(pure.get("forced_x1_residual_coverage", 0.0))
-            - float(et.get("forced_x1_residual_coverage", 0.0))
-        )
-        if pure.get("quadrant") != et.get("quadrant"):
-            disagreements += 1
+        roles = sorted(pair)
+        for idx, role_a in enumerate(roles):
+            for role_b in roles[idx + 1 :]:
+                row_a = pair[role_a]
+                row_b = pair[role_b]
+                key = f"{role_b}_minus_{role_a}"
+                pairwise[key].append(
+                    float(row_b.get("forced_x1_residual_coverage", 0.0))
+                    - float(row_a.get("forced_x1_residual_coverage", 0.0))
+                )
+                if row_a.get("quadrant") != row_b.get("quadrant"):
+                    pairwise_disagreements[key] += 1
+        if {"et_rmp_ce", "pure_ce"} <= set(pair):
+            et = pair["et_rmp_ce"]
+            pure = pair["pure_ce"]
+            legacy_deltas.append(
+                float(pure.get("forced_x1_residual_coverage", 0.0))
+                - float(et.get("forced_x1_residual_coverage", 0.0))
+            )
+            if pure.get("quadrant") != et.get("quadrant"):
+                legacy_disagreements += 1
     return {
-        "paired_state_count": len(deltas),
+        "paired_state_count": len(grouped),
+        "legacy_et_pure_paired_state_count": len(legacy_deltas),
         "mean_pure_minus_et_forced_x1_residual_coverage": (
-            0.0 if not deltas else sum(deltas) / len(deltas)
+            0.0 if not legacy_deltas else sum(legacy_deltas) / len(legacy_deltas)
         ),
-        "quadrant_disagreement_count": disagreements,
+        "quadrant_disagreement_count": legacy_disagreements,
+        "pairwise_mean_forced_x1_residual_coverage_delta": {
+            key: (sum(values) / len(values) if values else 0.0)
+            for key, values in sorted(pairwise.items())
+        },
+        "pairwise_quadrant_disagreement_count": dict(pairwise_disagreements),
     }
 
 

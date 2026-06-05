@@ -39,10 +39,10 @@ INDEX_READY_ARTIFACTS = (
 PREFIX_SHARD_ARTIFACTS = tuple(
     f"prefix_readout_shards/shard_{shard_id}.jsonl" for shard_id in range(8)
 )
-NATIVE_ROLLOUT_ARTIFACTS = tuple(
-    f"rollout/{role}/{name}"
-    for role in EXPECTED_ROLES
-    for name in ("gt_vs_pred.jsonl", "pred_token_trace.jsonl", "summary.json")
+NATIVE_ROLLOUT_FILENAMES = (
+    "gt_vs_pred.jsonl",
+    "pred_token_trace.jsonl",
+    "summary.json",
 )
 FINAL_ONLY_ARTIFACTS = (
     "prefix_state_shard_summaries.jsonl",
@@ -63,8 +63,15 @@ FINAL_ONLY_ARTIFACTS = (
     "gallery/metadata.json",
     "fn_probe/gallery/index.md",
     "fn_probe/gallery/metadata.json",
-) + NATIVE_ROLLOUT_ARTIFACTS + PREFIX_SHARD_ARTIFACTS
-REQUIRED_FINAL_ARTIFACTS = INDEX_READY_ARTIFACTS + FINAL_ONLY_ARTIFACTS
+) + PREFIX_SHARD_ARTIFACTS
+NATIVE_ROLLOUT_ARTIFACTS = tuple(
+    f"rollout/{role}/{name}"
+    for role in EXPECTED_ROLES
+    for name in NATIVE_ROLLOUT_FILENAMES
+)
+REQUIRED_FINAL_ARTIFACTS = (
+    INDEX_READY_ARTIFACTS + FINAL_ONLY_ARTIFACTS + NATIVE_ROLLOUT_ARTIFACTS
+)
 FN_SUMMARY_ARTIFACTS = (
     "fn_probe/fn_bucket_summary.json",
     "fn_probe/fn_prefix_sensitivity.json",
@@ -81,10 +88,13 @@ PLACEHOLDER_RUNTIME_MARKERS = {
 
 def evaluate_status(artifact_root: str | Path) -> dict[str, Any]:
     root = Path(artifact_root)
+    expected_roles = _expected_roles(root)
+    final_only_artifacts = _final_only_artifacts(expected_roles)
+    required_final_artifacts = INDEX_READY_ARTIFACTS + final_only_artifacts
     missing_index = _missing(root, INDEX_READY_ARTIFACTS)
-    missing_final = _missing(root, REQUIRED_FINAL_ARTIFACTS)
+    missing_final = _missing(root, required_final_artifacts)
     existing_final_only = [
-        rel_path for rel_path in FINAL_ONLY_ARTIFACTS if (root / rel_path).exists()
+        rel_path for rel_path in final_only_artifacts if (root / rel_path).exists()
     ]
     post_index_started = bool(existing_final_only)
 
@@ -99,7 +109,7 @@ def evaluate_status(artifact_root: str | Path) -> dict[str, Any]:
         _append(failed_gates, "no_inprogress_leftovers")
     if not _no_legacy_labels(root):
         _append(failed_gates, "no_legacy_a31_labels")
-    if not _checkpoint_roles_ok(root):
+    if not _checkpoint_roles_ok(root, expected_roles):
         _append(failed_gates, "checkpoint_roles_are_a3_2")
     if not _shard_and_merged_row_counts_match(root):
         _append(failed_gates, "shard_and_merged_row_counts_match")
@@ -149,8 +159,36 @@ def evaluate_status(artifact_root: str | Path) -> dict[str, Any]:
         "pending_final_artifacts": (
             missing_final if index_ready_pending_gpu else []
         ),
-        "required_final_artifacts": list(REQUIRED_FINAL_ARTIFACTS),
+        "required_final_artifacts": list(required_final_artifacts),
     }
+
+
+def _expected_roles(root: Path) -> tuple[str, ...]:
+    manifest = _read_json(root / "sample_manifest.json")
+    if isinstance(manifest, Mapping):
+        roles = manifest.get("checkpoint_roles")
+        parsed = _parse_role_sequence(roles)
+        if parsed:
+            return parsed
+    return EXPECTED_ROLES
+
+
+def _parse_role_sequence(value: Any) -> tuple[str, ...]:
+    if not isinstance(value, list | tuple):
+        return ()
+    roles = tuple(str(role) for role in value if str(role))
+    if len(roles) != len(value) or len(set(roles)) != len(roles):
+        return ()
+    return roles
+
+
+def _final_only_artifacts(expected_roles: tuple[str, ...]) -> tuple[str, ...]:
+    native_rollout_artifacts = tuple(
+        f"rollout/{role}/{name}"
+        for role in expected_roles
+        for name in NATIVE_ROLLOUT_FILENAMES
+    )
+    return FINAL_ONLY_ARTIFACTS + native_rollout_artifacts
 
 
 def _missing(root: Path, rel_paths: tuple[str, ...]) -> list[str]:
@@ -208,34 +246,35 @@ def _no_legacy_labels(root: Path) -> bool:
     return True
 
 
-def _checkpoint_roles_ok(root: Path) -> bool:
+def _checkpoint_roles_ok(root: Path, expected_roles: tuple[str, ...]) -> bool:
     for payload in _iter_structured_payloads(root):
-        if not _payload_roles_ok(payload):
+        if not _payload_roles_ok(payload, expected_roles):
             return False
     return True
 
 
-def _payload_roles_ok(payload: Any) -> bool:
+def _payload_roles_ok(payload: Any, expected_roles: tuple[str, ...]) -> bool:
     if isinstance(payload, Mapping):
         for key, value in payload.items():
             key_str = str(key)
             if key_str == "checkpoint_roles":
-                if tuple(value) != EXPECTED_ROLES:
+                roles = _parse_role_sequence(value)
+                if not roles or any(role not in expected_roles for role in roles):
                     return False
             elif key_str == "checkpoint_role":
-                if value is not None and str(value) not in EXPECTED_ROLES:
+                if value is not None and str(value) not in expected_roles:
                     return False
             elif key_str == "role_a":
-                if str(value) != RANDOM_ROLE:
+                if str(value) not in expected_roles:
                     return False
             elif key_str == "role_b":
-                if str(value) != SORTED_ROLE:
+                if str(value) not in expected_roles:
                     return False
-            if not _payload_roles_ok(value):
+            if not _payload_roles_ok(value, expected_roles):
                 return False
     elif isinstance(payload, list | tuple):
         for item in payload:
-            if not _payload_roles_ok(item):
+            if not _payload_roles_ok(item, expected_roles):
                 return False
     return True
 
@@ -388,7 +427,7 @@ def _real_prefix_runtime_ok(root: Path) -> bool:
 
 
 def _real_native_rollout_runtime_ok(root: Path) -> bool:
-    for role in EXPECTED_ROLES:
+    for role in _expected_roles(root):
         rollout_dir = root / "rollout" / role
         if not _json_has_runtime_kind(
             rollout_dir / "summary.json",

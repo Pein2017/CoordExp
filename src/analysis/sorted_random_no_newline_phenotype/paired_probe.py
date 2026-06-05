@@ -50,6 +50,16 @@ def build_shard_manifest_row(
         "checkpoint_paths": {
             role: str(config.checkpoints[role].checkpoint_path) for role in roles
         },
+        "checkpoint_objective_policy": {
+            role: str(config.checkpoints[role].objective_policy) for role in roles
+        },
+        "checkpoint_comparison_group": {
+            role: str(config.checkpoints[role].comparison_group) for role in roles
+        },
+        "checkpoint_template_contract_id": {
+            role: str(config.checkpoints[role].template_contract_id)
+            for role in roles
+        },
         "prefix_source_policy": PREFIX_SOURCE_POLICY,
         "readout_prompt_ordering": READOUT_PROMPT_ORDERING,
         "teacher_prefix_ordering": PREFIX_ORDER_POLICY_ID,
@@ -98,6 +108,9 @@ def build_mocked_paired_readout_rows(
                     "checkpoint_readout_prompt_ordering": str(
                         checkpoint.readout_prompt_ordering
                     ),
+                    "objective_policy": str(checkpoint.objective_policy),
+                    "comparison_group": str(checkpoint.comparison_group),
+                    "template_contract_id": str(checkpoint.template_contract_id),
                     "prefix_source_policy": PREFIX_SOURCE_POLICY,
                     "readout_prompt_ordering": READOUT_PROMPT_ORDERING,
                     "teacher_prefix_ordering": PREFIX_ORDER_POLICY_ID,

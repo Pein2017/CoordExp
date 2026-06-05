@@ -31,6 +31,24 @@ def test_teacher_prefix_concatenates_completed_rows_without_newline() -> None:
     assert text.count("<|box_start|>") == 2
 
 
+def test_teacher_prefix_can_render_legacy_newline_rows() -> None:
+    rows = [
+        {"desc": "person", "bbox_xyxy": [10, 20, 30, 40]},
+        {"desc": "traffic light", "bbox_xyxy": [50, 60, 70, 80]},
+    ]
+
+    text = render_teacher_prefix(rows, row_separator="newline")
+    forced = render_forced_desc_pre_x1_assistant_text(
+        rows,
+        "chair",
+        row_separator="newline",
+    )
+
+    assert text.count("\n") == 1
+    assert forced.count("\n") == 2
+    assert forced.endswith(BOX_START_TOKEN)
+
+
 def test_boundary_and_forced_desc_prefix_shapes() -> None:
     rows = [{"desc": "person", "bbox_xyxy": [10, 20, 30, 40]}]
 
@@ -52,4 +70,3 @@ def test_image_local_desc_groups_are_canonical_and_image_local() -> None:
     ]
 
     assert image_local_desc_groups(objects) == ["person", "traffic light"]
-

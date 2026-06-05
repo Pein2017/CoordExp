@@ -4,10 +4,11 @@ import gc
 import hashlib
 import json
 import os
+import fcntl
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from . import CHECKPOINT_ROLES, SCHEMA_VERSION
+from . import SCHEMA_VERSION
 from .jsonl import read_jsonl, write_jsonl
 from .posterior import axis_len_for_slot, classify_slot_posterior
 from .prefix_modes import render_compact_prefix_rows
@@ -43,9 +44,14 @@ def run_real_slot_posterior(
     if shard_path.exists() and not allow_overwrite:
         raise FileExistsError(f"slot posterior shard already exists: {shard_path}")
     rows: list[dict[str, Any]] = []
-    for role in CHECKPOINT_ROLES:
+    for role in _checkpoint_roles(config):
         checkpoint = config["checkpoints"][role]
-        handle = _load_model_handle(checkpoint_path=Path(checkpoint["checkpoint_path"]), artifact_root=root, role=role)
+        handle = _load_model_handle(
+            checkpoint=checkpoint,
+            artifact_root=root,
+            role=role,
+            runtime=config.get("runtime", {}),
+        )
         try:
             coord_token_ids = _coord_token_ids(handle)
             for prefix_row in selected:
@@ -66,9 +72,8 @@ def run_real_slot_posterior(
             _release_model_handle(handle)
     count = write_jsonl(shard_path, rows)
     summary_path = root / "slot_posterior_shard_summaries.jsonl"
-    existing = read_jsonl(summary_path) if summary_path.exists() and allow_overwrite else []
-    existing = [row for row in existing if int(row.get("shard_id", -1)) != int(shard_id)]
-    existing.append(
+    _upsert_shard_summary(
+        summary_path,
         {
             "artifact_schema_version": SCHEMA_VERSION,
             "row_schema_version": "slot_posterior_shard_summary.v1",
@@ -77,9 +82,9 @@ def run_real_slot_posterior(
             "gpu_id": gpu,
             "row_count": count,
             "prefix_state_rows": len(selected),
-        }
+        },
+        allow_overwrite=allow_overwrite,
     )
-    write_jsonl(summary_path, sorted(existing, key=lambda row: int(row["shard_id"])))
     return {
         "status": "ok",
         "runtime_kind": REAL_RUNTIME_KIND,
@@ -89,6 +94,37 @@ def run_real_slot_posterior(
         "row_count": count,
         "artifact": str(shard_path),
     }
+
+
+def _upsert_shard_summary(
+    summary_path: Path,
+    row: Mapping[str, Any],
+    *,
+    allow_overwrite: bool,
+) -> None:
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = summary_path.with_suffix(summary_path.suffix + ".lock")
+    with lock_path.open("w", encoding="utf-8") as lock_handle:
+        fcntl.flock(lock_handle, fcntl.LOCK_EX)
+        try:
+            existing = (
+                read_jsonl(summary_path)
+                if summary_path.exists() and allow_overwrite
+                else []
+            )
+            shard_id = int(row["shard_id"])
+            existing = [
+                item
+                for item in existing
+                if int(item.get("shard_id", -1)) != shard_id
+            ]
+            existing.append(dict(row))
+            write_jsonl(
+                summary_path,
+                sorted(existing, key=lambda item: int(item["shard_id"])),
+            )
+        finally:
+            fcntl.flock(lock_handle, fcntl.LOCK_UN)
 
 
 def _probe_prefix_row(
@@ -116,6 +152,7 @@ def _probe_prefix_row(
         logits = _last_logits(
             model_handle=model_handle,
             image_path=image_path,
+            checkpoint=checkpoint,
             assistant_text=assistant_text,
             expected_context_suffix=_expected_suffix(target_bbox, slot),
         )
@@ -135,6 +172,8 @@ def _probe_prefix_row(
             {
                 **row,
                 "checkpoint_role": checkpoint_role,
+                "objective_policy": checkpoint.get("objective_policy"),
+                "training_ordering": checkpoint.get("training_ordering"),
                 "comparison_role": checkpoint.get("comparison_role"),
                 "controlled_comparison_group": checkpoint.get("controlled_comparison_group"),
                 "template_contract": checkpoint.get("template_contract"),
@@ -178,17 +217,32 @@ def _assistant_prefix_for_slot(
     return forced if not prefix else prefix + sep + forced
 
 
+def _checkpoint_roles(config: Mapping[str, Any]) -> list[str]:
+    checkpoints = config.get("checkpoints")
+    if not isinstance(checkpoints, Mapping):
+        return []
+    return [str(role) for role in checkpoints]
+
+
 def _expected_suffix(target_bbox: Sequence[int], slot: str) -> str:
     coord_prefix_count = {"y1": 1, "x2": 2, "y2": 3}[slot]
     return "".join(f"<|coord_{int(value)}|>" for value in target_bbox[:coord_prefix_count])
 
 
-def _last_logits(*, model_handle: Any, image_path: Path, assistant_text: str, expected_context_suffix: str) -> Any:
+def _last_logits(
+    *,
+    model_handle: Any,
+    image_path: Path,
+    checkpoint: Mapping[str, Any],
+    assistant_text: str,
+    expected_context_suffix: str,
+) -> Any:
     import torch
 
     inputs = _processor_inputs(
         model_handle=model_handle,
         image_path=image_path,
+        checkpoint=checkpoint,
         assistant_text=assistant_text,
         expected_context_suffix=expected_context_suffix,
     )
@@ -199,13 +253,20 @@ def _last_logits(*, model_handle: Any, image_path: Path, assistant_text: str, ex
     return outputs.logits[0, -1].detach().cpu()
 
 
-def _processor_inputs(*, model_handle: Any, image_path: Path, assistant_text: str, expected_context_suffix: str) -> Mapping[str, Any]:
+def _processor_inputs(
+    *,
+    model_handle: Any,
+    image_path: Path,
+    checkpoint: Mapping[str, Any],
+    assistant_text: str,
+    expected_context_suffix: str,
+) -> Mapping[str, Any]:
     from PIL import Image
     from src.common.detection_chat import build_detection_chat_messages
     from src.config.prompts import get_template_prompts
 
     system_prompt, user_prompt = get_template_prompts(
-        ordering="sorted",
+        ordering=_prompt_ordering(checkpoint),
         coord_mode="coord_tokens",
         prompt_variant="coco_80",
         object_field_order="desc_first",
@@ -230,7 +291,13 @@ def _processor_inputs(*, model_handle: Any, image_path: Path, assistant_text: st
     return model_handle.processor(text=[full_text], images=[image], return_tensors="pt", padding=False)
 
 
-def _load_model_handle(*, checkpoint_path: Path, artifact_root: Path, role: str) -> Any:
+def _load_model_handle(
+    *,
+    checkpoint: Mapping[str, Any],
+    artifact_root: Path,
+    role: str,
+    runtime: Mapping[str, Any],
+) -> Any:
     from src.analysis.hard_ce_coord_logit_locality import (
         StudyConfig,
         StudyExecutionConfig,
@@ -241,7 +308,7 @@ def _load_model_handle(*, checkpoint_path: Path, artifact_root: Path, role: str)
 
     config = StudyConfig(
         paths=StudyPaths(
-            checkpoint=checkpoint_path,
+            checkpoint=Path(checkpoint["checkpoint_path"]),
             resolved_config=artifact_root / "runtime" / role / "resolved_config.json",
             source_config=None,
             dataset_jsonl=artifact_root / "case_universe.jsonl",
@@ -250,10 +317,28 @@ def _load_model_handle(*, checkpoint_path: Path, artifact_root: Path, role: str)
             self_rollout_root=None,
             self_rollout_regen_config=None,
         ),
-        model=StudyModelConfig(object_ordering="sorted", device="cuda:0", torch_dtype="bfloat16"),
+        model=StudyModelConfig(
+            object_ordering=_prompt_ordering(checkpoint),
+            device=_runtime_device(runtime),
+            torch_dtype=str(runtime.get("torch_dtype") or "bfloat16"),
+        ),
         execution=StudyExecutionConfig(sample_limit=1, batch_size=1, top_k=8),
     )
     return load_model_handle(config)
+
+
+def _prompt_ordering(checkpoint: Mapping[str, Any]) -> str:
+    ordering = str(checkpoint.get("training_ordering") or "")
+    if ordering.startswith("random"):
+        return "random"
+    return "sorted"
+
+
+def _runtime_device(runtime: Mapping[str, Any]) -> str:
+    device_map = str(runtime.get("device_map") or "")
+    if device_map in {"", "single_gpu"}:
+        return "cuda:0"
+    return device_map
 
 
 def _coord_token_ids(handle: Any) -> tuple[int, ...]:

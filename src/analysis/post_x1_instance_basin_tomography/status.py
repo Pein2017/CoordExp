@@ -5,7 +5,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Mapping
 
-from . import CHECKPOINT_ROLES, SCHEMA_VERSION
+from . import SCHEMA_VERSION
 from .jsonl import read_jsonl
 from .merge_report import validate_report_language
 
@@ -18,7 +18,9 @@ def evaluate_status(root: str | Path) -> dict[str, Any]:
     failed: list[str] = []
     if not (artifact_root / "template_contracts.json").is_file():
         failed.append("template_contracts_present")
-    contracts = _read_json(artifact_root / "template_contracts.json").get("template_contracts", {})
+    contract_payload = _read_json(artifact_root / "template_contracts.json")
+    contracts = contract_payload.get("template_contracts", {})
+    expected_roles = _checkpoint_roles_from_contract_payload(contract_payload)
     slot_rows = _read_rows_if_exists(artifact_root / "slot_posterior_rows.jsonl")
     if not slot_rows:
         failed.append("slot_posterior_rows_present")
@@ -34,7 +36,7 @@ def evaluate_status(root: str | Path) -> dict[str, Any]:
         failed.append("merged_slot_rows_match_shards")
     if slot_rows and contracts and not _contracts_match(slot_rows, contracts):
         failed.append("checkpoint_role_template_contracts_match")
-    for role in CHECKPOINT_ROLES:
+    for role in expected_roles:
         if slot_rows and not any(row.get("checkpoint_role") == role for row in slot_rows):
             failed.append(f"checkpoint_role_nonempty:{role}")
     report_path = artifact_root / "report.md"
@@ -91,6 +93,16 @@ def _contracts_match(rows: list[Mapping[str, Any]], contracts: Mapping[str, Any]
         if expected and row.get("template_contract") != expected:
             return False
     return True
+
+
+def _checkpoint_roles_from_contract_payload(payload: Mapping[str, Any]) -> list[str]:
+    roles = payload.get("checkpoint_roles")
+    if isinstance(roles, list):
+        return [str(role) for role in roles]
+    contracts = payload.get("template_contracts")
+    if isinstance(contracts, Mapping):
+        return [str(role) for role in contracts]
+    return []
 
 
 def _read_shard_rows(root: Path) -> list[dict[str, Any]]:

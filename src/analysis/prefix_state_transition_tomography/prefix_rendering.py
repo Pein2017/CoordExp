@@ -39,24 +39,40 @@ def render_compact_object_row(desc: str, bbox_xyxy: Sequence[int]) -> str:
     )
 
 
-def render_teacher_prefix(rows: Sequence[Mapping[str, Any]]) -> str:
-    return "".join(render_compact_object_row(_row_desc(row), _row_bbox(row)) for row in rows)
+def render_teacher_prefix(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    row_separator: str = "none",
+) -> str:
+    return _separator(row_separator).join(
+        render_compact_object_row(_row_desc(row), _row_bbox(row)) for row in rows
+    )
 
 
-def render_boundary_assistant_text(prefix_rows: Sequence[Mapping[str, Any]]) -> str:
-    return render_teacher_prefix(prefix_rows)
+def render_boundary_assistant_text(
+    prefix_rows: Sequence[Mapping[str, Any]],
+    *,
+    row_separator: str = "none",
+) -> str:
+    return render_teacher_prefix(prefix_rows, row_separator=row_separator)
 
 
 def render_forced_desc_pre_x1_assistant_text(
     prefix_rows: Sequence[Mapping[str, Any]],
     desc: str,
+    *,
+    row_separator: str = "none",
 ) -> str:
-    return render_teacher_prefix(prefix_rows) + render_compact_row(
+    prefix = render_teacher_prefix(prefix_rows, row_separator=row_separator)
+    suffix = render_compact_row(
         canonical_desc(desc),
         (),
         include_object_ref_marker=True,
         include_bbox_start_marker=True,
     )
+    if prefix:
+        return prefix + _separator(row_separator) + suffix
+    return suffix
 
 
 def image_local_desc_groups(objects: Sequence[Mapping[str, Any]]) -> list[str]:
@@ -87,6 +103,14 @@ def _int_to_coord_token(value: int) -> str:
     if value < 0 or value > 999:
         raise ValueError(f"coordinate token value out of range: {value}")
     return f"<|coord_{value}|>"
+
+
+def _separator(row_separator: str) -> str:
+    if row_separator == "none":
+        return ""
+    if row_separator == "newline":
+        return "\n"
+    raise ValueError(f"unsupported row_separator: {row_separator}")
 
 
 __all__ = [

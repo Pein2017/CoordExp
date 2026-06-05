@@ -1,0 +1,58 @@
+project_id: sorted_random_no_newline_phenotype
+phase_id: phase_a3_2
+schema_version: a3.2.v1
+run_id: fullobj_policy_objective_4ckpt_ckpt3668_phase_a3_2_smoke
+artifact_root: /data/CoordExp/outputs/analysis/autoreg_object_rollout/policy_objective_mechanism_comparison/fullobj_5ckpt_ckpt3668/a3_2_clean_4ckpt_smoke
+train_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/train.coord.jsonl
+val_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl
+image_root: /data/CoordExp/public_data/coco/rescale_32_1024_bbox
+template_contract:
+  detection_sequence_format: compact_full
+  coordinate_surface: coord_token
+  bbox_format: xyxy
+  row_separator: none
+sampling:
+  max_prefix_states: 64
+  num_shards: 8
+  seed: 3668
+  easy_sanity_max_fraction: 0.20
+rollout:
+  limit_images: 32
+  decode_policy: free_text_unconstrained_greedy_temp0
+  native_prompt_ordering: true
+  constraint_policy: none
+fn_probe:
+  max_fn_objects_per_checkpoint: 16
+  hint_policy_id: desc_x1_r95_ladder_v1
+  strict_r95_axis_fraction: 0.04
+  strict_r95_cap_bins: 8
+  broad_x1_radius: 24
+checkpoints:
+  fullobj_random_pure_ce_ckpt3668:
+    objective_policy: pure_ce
+    training_ordering: random_permutation
+    readout_prompt_ordering: sorted
+    comparison_group: fullobj_2x2_20260601
+    template_contract_id: compact_full_no_newline_native_v1
+    checkpoint_path: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_fullobj_random_sft_bsz16_4epoch_tokenrows_v2/compact-full-fullobj-random-sft-bsz16-4epoch-tokenrows-v2/v1-20260601-062428/checkpoint-3668
+  fullobj_sorted_pure_ce_ckpt3668:
+    objective_policy: pure_ce
+    training_ordering: sorted
+    readout_prompt_ordering: sorted
+    comparison_group: fullobj_2x2_20260601
+    template_contract_id: compact_full_no_newline_native_v1
+    checkpoint_path: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_fullobj_sorted_sft_bsz16_4epoch_tokenrows_v2/compact-full-fullobj-sorted-sft-bsz16-4epoch-tokenrows-v2/v1-20260601-062429/checkpoint-3668
+  fullobj_random_et_rmp_ce_ckpt3668:
+    objective_policy: et_rmp_ce
+    training_ordering: random_permutation
+    readout_prompt_ordering: sorted
+    comparison_group: fullobj_2x2_20260601
+    template_contract_id: compact_full_no_newline_native_v1
+    checkpoint_path: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_fullobj_random_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-fullobj-random-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v1-20260601-062429/checkpoint-3668
+  fullobj_sorted_et_rmp_ce_ckpt3668:
+    objective_policy: et_rmp_ce
+    training_ordering: sorted
+    readout_prompt_ordering: sorted
+    comparison_group: fullobj_2x2_20260601
+    template_contract_id: compact_full_no_newline_native_v1
+    checkpoint_path: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_fullobj_sorted_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-fullobj-sorted-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260601-062429/checkpoint-3668

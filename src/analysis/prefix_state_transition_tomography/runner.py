@@ -23,6 +23,9 @@ def build_dry_run_plan(
     _validate_shard_id(shard_id, config.sampling.num_shards)
     return {
         "project_id": config.project_id,
+        "run_id": config.run_id,
+        "index_checkpoint_id": config.index_checkpoint_id,
+        "index_checkpoint_role": config.index_checkpoint_role,
         "artifact_root": str(config.artifact_root),
         "train_jsonl": str(config.train_jsonl),
         "val_jsonl": str(config.val_jsonl),
@@ -110,11 +113,12 @@ def _run_prefix_state_index(
     config: PrefixStateTransitionConfig,
     config_path: Path,
 ) -> dict[str, Any]:
-    run_id = "phase_a3_1_ckpt3664_4096"
     rows, sampled_rows, summary = build_prefix_state_index(
         train_jsonl=config.train_jsonl,
         val_jsonl=config.val_jsonl,
-        run_id=run_id,
+        run_id=config.run_id,
+        checkpoint_id=config.index_checkpoint_id,
+        checkpoint_role=config.index_checkpoint_role,
         max_prefix_states=config.sampling.max_prefix_states,
         num_shards=config.sampling.num_shards,
         seed=config.sampling.seed,

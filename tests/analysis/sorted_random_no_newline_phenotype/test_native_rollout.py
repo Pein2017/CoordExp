@@ -7,6 +7,7 @@ import yaml
 
 from src.analysis.sorted_random_no_newline_phenotype import (
     PHASE_ID,
+    POLICY_OBJECTIVE_RUN_IDS,
     PROJECT_ID,
     RUN_ID,
     SCHEMA_VERSION,
@@ -139,6 +140,63 @@ def test_materialized_native_rollout_config_enables_diagnostic_free_text_capture
     assert raw["infer"]["generation"]["do_sample"] is False
     assert raw["infer"]["generation"]["num_beams"] == 1
     assert "compact_grammar" not in raw["infer"]["generation"]
+
+
+def test_materialized_native_rollout_config_supports_et_rmp_role_by_ordering_template(
+    tmp_path: Path,
+) -> None:
+    checkpoint_path = tmp_path / "checkpoint"
+    checkpoint_path.mkdir()
+    config = A32Config(
+        project_id=PROJECT_ID,
+        phase_id=PHASE_ID,
+        schema_version=SCHEMA_VERSION,
+        run_id=POLICY_OBJECTIVE_RUN_IDS[0],
+        artifact_root=tmp_path / "artifacts",
+        train_jsonl=tmp_path / "train.coord.jsonl",
+        val_jsonl=tmp_path / "val.coord.jsonl",
+        image_root=tmp_path / "images",
+        checkpoints={
+            "fullobj_random_et_rmp_ce_ckpt3668": CheckpointConfig(
+                checkpoint_path=checkpoint_path,
+                training_ordering="random_permutation",
+                readout_prompt_ordering="sorted",
+                objective_policy="et_rmp_ce",
+                template_contract_id="compact_full_no_newline_native_v1",
+                comparison_group="fullobj_2x2_20260601",
+            )
+        },
+        template_contract=TemplateContractConfig(
+            detection_sequence_format="compact_full",
+            coordinate_surface="coord_token",
+            bbox_format="xyxy",
+            row_separator="none",
+        ),
+        sampling=SamplingConfig(max_prefix_states=8, num_shards=8, seed=3668),
+        rollout=RolloutConfig(limit_images=32),
+        fn_probe=FNProbeConfig(),
+        peak=PeakConfig(),
+    )
+
+    path = materialize_role_infer_config(
+        config,
+        checkpoint_role="fullobj_random_et_rmp_ce_ckpt3668",
+        gpu_id="2",
+    )
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+
+    assert raw["metadata"]["run_id"] == POLICY_OBJECTIVE_RUN_IDS[0]
+    assert raw["run"]["name"] == (
+        f"{POLICY_OBJECTIVE_RUN_IDS[0]}_fullobj_random_et_rmp_ce_ckpt3668"
+    )
+    assert raw["infer"]["model_checkpoint"] == str(checkpoint_path)
+    assert raw["infer"]["object_ordering"] == "random"
+    assert raw["infer"]["row_separator"] == "none"
+    assert raw["infer"]["generation"]["decode_mode"] == "greedy"
+    assert raw["a3_2_launch_spec"]["checkpoint_role"] == (
+        "fullobj_random_et_rmp_ce_ckpt3668"
+    )
+    assert raw["a3_2_launch_spec"]["template_contract"]["row_separator"] == "none"
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:

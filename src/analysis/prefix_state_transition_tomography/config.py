@@ -22,6 +22,10 @@ KNOWN_STAGES = {
 @dataclass(frozen=True)
 class CheckpointConfig:
     checkpoint_path: Path
+    objective_policy: str = ""
+    training_ordering: str = ""
+    template_contract_id: str = ""
+    comparison_group: str = ""
 
 
 @dataclass(frozen=True)
@@ -44,6 +48,9 @@ class PeakConfig:
 @dataclass(frozen=True)
 class PrefixStateTransitionConfig:
     project_id: str
+    run_id: str
+    index_checkpoint_id: str
+    index_checkpoint_role: str
     artifact_root: Path
     train_jsonl: Path
     val_jsonl: Path
@@ -76,6 +83,9 @@ def load_config(path: str | Path) -> PrefixStateTransitionConfig:
 
     config = PrefixStateTransitionConfig(
         project_id=project_id,
+        run_id=str(raw.get("run_id", "phase_a3_1_ckpt3664_4096")),
+        index_checkpoint_id=str(raw.get("index_checkpoint_id", "paired_ckpt3664")),
+        index_checkpoint_role=str(raw.get("index_checkpoint_role", "paired_index")),
         artifact_root=_required_path(raw, "artifact_root"),
         train_jsonl=_required_path(raw, "train_jsonl"),
         val_jsonl=_required_path(raw, "val_jsonl"),
@@ -101,15 +111,18 @@ def load_config(path: str | Path) -> PrefixStateTransitionConfig:
 
 
 def _load_checkpoints(raw: Mapping[str, Any]) -> dict[str, CheckpointConfig]:
-    missing_roles = [role for role in ("et_rmp_ce", "pure_ce") if role not in raw]
-    if missing_roles:
-        raise ValueError(f"missing checkpoint role: {missing_roles[0]}")
+    if len(raw) < 2:
+        raise ValueError("checkpoints must include at least two roles")
     checkpoints: dict[str, CheckpointConfig] = {}
     for role, value in raw.items():
         if not isinstance(value, Mapping):
             raise ValueError(f"checkpoints.{role} must be a mapping")
         checkpoints[str(role)] = CheckpointConfig(
-            checkpoint_path=_required_path(value, "checkpoint_path")
+            checkpoint_path=_required_path(value, "checkpoint_path"),
+            objective_policy=str(value.get("objective_policy", "")),
+            training_ordering=str(value.get("training_ordering", "")),
+            template_contract_id=str(value.get("template_contract_id", "")),
+            comparison_group=str(value.get("comparison_group", "")),
         )
     return checkpoints
 

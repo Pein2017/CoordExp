@@ -34,10 +34,43 @@ def build_summary(
         if bool(row.get("boundary_extreme_flag"))
     )
     winner_counts = Counter(str(row.get("winner_bucket")) for row in slot_rows)
+    role_counts = Counter(str(row.get("checkpoint_role")) for row in slot_rows)
+    winner_counts_by_checkpoint: dict[str, dict[str, int]] = {}
+    for row in slot_rows:
+        role = str(row.get("checkpoint_role"))
+        bucket = str(row.get("winner_bucket"))
+        winner_counts_by_checkpoint.setdefault(role, {})
+        winner_counts_by_checkpoint[role][bucket] = (
+            winner_counts_by_checkpoint[role].get(bucket, 0) + 1
+        )
+    contracts = dict(template_contracts or {})
+    checkpoint_roles = sorted(contracts) if contracts else sorted(role_counts)
+    clean_2x2_roles = [
+        role
+        for role, contract in contracts.items()
+        if str(contract.get("comparison_group")) == "fullobj_2x2_20260601"
+        or str(contract.get("controlled_comparison_group")) == "fullobj_2x2_20260601"
+    ]
+    reference_anchor_roles = [
+        role
+        for role, contract in contracts.items()
+        if str(contract.get("comparison_group")) == "legacy_reference_anchor"
+        or str(contract.get("controlled_comparison_group"))
+        == "reference_anchor_not_controlled"
+        or str(contract.get("comparison_role")) == "reference_anchor"
+    ]
     return {
         "artifact_schema_version": SCHEMA_VERSION,
         "comparison_semantics": "mechanism_traits_not_detector_accuracy",
         "reference_anchor_caveat": "template_objective_confounded_reference",
+        "checkpoint_roles": checkpoint_roles,
+        "checkpoint_role_count": len(checkpoint_roles),
+        "role_counts": dict(role_counts),
+        "clean_2x2_roles": sorted(clean_2x2_roles),
+        "reference_anchor_roles": sorted(reference_anchor_roles),
+        "missing_role_counts": [
+            role for role in checkpoint_roles if role_counts.get(role, 0) == 0
+        ],
         "row_counts": {
             "slot_posterior_rows": len(slot_rows),
             "trajectory_rows": len(trajectory_rows),
@@ -45,16 +78,16 @@ def build_summary(
             "greedy_continuation_rows": len(greedy_rows),
         },
         "winner_bucket_counts": dict(winner_counts),
+        "winner_bucket_counts_by_checkpoint": winner_counts_by_checkpoint,
         "boundary_extreme_counts_by_checkpoint": dict(boundary_counts),
         "config_path": config_path,
         "config_sha256": config_sha256,
         "checkpoint_fingerprints": dict(checkpoint_fingerprints or {}),
-        "template_contracts": dict(template_contracts or {}),
+        "template_contracts": contracts,
         "shard_merge": dict(shard_merge or {}),
         "status_gate_result": dict(status_gate_result or {}),
         "interpretation_boundaries": [
-            "ET-RMP-CE is reference_anchor, not a clean controlled baseline.",
-            "ET-RMP-CE carries template_objective_confounded_reference caveat.",
+            "Only roles listed in reference_anchor_roles carry the reference-anchor caveat.",
             "IoU50 is secondary to slot-level and trajectory-level taxonomy.",
         ],
     }
@@ -66,7 +99,22 @@ def build_report_markdown(summary: Mapping[str, Any]) -> str:
         "",
         "Evidence scope: mechanism traits, not by final detector accuracy.",
         "",
-        "The ET-RMP checkpoint is a reference_anchor with template_objective_confounded_reference.",
+        "Only `reference_anchor_roles` carry `template_objective_confounded_reference`; clean ET-RMP roles are part of the controlled cohort when listed in `clean_2x2_roles`.",
+        "",
+        "## Role Scope",
+        "",
+        "```json",
+        json.dumps(
+            {
+                "checkpoint_roles": summary.get("checkpoint_roles", []),
+                "clean_2x2_roles": summary.get("clean_2x2_roles", []),
+                "reference_anchor_roles": summary.get("reference_anchor_roles", []),
+                "missing_role_counts": summary.get("missing_role_counts", []),
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        "```",
         "",
         "## Row Counts",
         "",
@@ -78,6 +126,16 @@ def build_report_markdown(summary: Mapping[str, Any]) -> str:
         "",
         "```json",
         json.dumps(summary.get("winner_bucket_counts", {}), indent=2, sort_keys=True),
+        "```",
+        "",
+        "## Winner Buckets By Checkpoint",
+        "",
+        "```json",
+        json.dumps(
+            summary.get("winner_bucket_counts_by_checkpoint", {}),
+            indent=2,
+            sort_keys=True,
+        ),
         "```",
         "",
     ]

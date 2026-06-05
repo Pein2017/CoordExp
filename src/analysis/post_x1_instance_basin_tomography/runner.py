@@ -3,13 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-import yaml
-
-from . import CHECKPOINT_ROLES, FULL_RUN_ID, PHASE_ID, PROJECT_ID, SCHEMA_VERSION
+from . import CHECKPOINT_ROLES, FULL_RUN_IDS, PHASE_ID, PROJECT_ID, SCHEMA_VERSION
 from .case_universe import build_case_universe_rows
+from .config import A33Config, load_config
 from .gallery import materialize_gallery
 from .jsonl import read_jsonl, write_jsonl
 from .merge_report import build_summary, write_report
@@ -63,7 +63,7 @@ def run_stages(
         return _dry_run(config, selected, shard_id=shard_id, allow_overwrite=allow_overwrite)
     _ = launch_context
     if (
-        config["run_id"] == FULL_RUN_ID
+        config["run_id"] in FULL_RUN_IDS
         and not full_run_override
         and not _smoke_marker_present(config["artifact_root"])
     ):
@@ -117,6 +117,7 @@ def run_stages(
                 greedy_rows=_read_if_exists(root / "greedy_continuation_rows.jsonl"),
                 config_path=str(config_path),
                 config_sha256=_sha256(Path(config_path)),
+                template_contracts=_contracts(config),
             )
             result["stage_results"][stage] = write_report(root, summary)
         elif stage == "gallery":
@@ -157,7 +158,7 @@ def _base_result(config: Mapping[str, Any], stages: Sequence[str], *, dry_run: b
         "artifact_schema_version": SCHEMA_VERSION,
         "run_id": config["run_id"],
         "artifact_root": str(config["artifact_root"]),
-        "checkpoint_roles": list(CHECKPOINT_ROLES),
+        "checkpoint_roles": _checkpoint_roles(config),
         "stages": list(stages),
         "stage_results": {},
         "dry_run": dry_run,
@@ -165,35 +166,43 @@ def _base_result(config: Mapping[str, Any], stages: Sequence[str], *, dry_run: b
 
 
 def _load_runtime_config(path: str | Path) -> dict[str, Any]:
-    config_path = Path(path)
-    raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    if not isinstance(raw, Mapping):
-        raise ValueError("A3.3 config must be a mapping")
-    checkpoints = raw.get("checkpoints")
-    if not isinstance(checkpoints, Mapping):
-        raise ValueError("missing config key: checkpoints")
-    missing_roles = [role for role in CHECKPOINT_ROLES if role not in checkpoints]
-    if missing_roles:
-        raise ValueError(f"missing checkpoint role(s): {', '.join(missing_roles)}")
-    runtime = raw.get("runtime") if isinstance(raw.get("runtime"), Mapping) else {}
-    prefix = raw.get("prefix") if isinstance(raw.get("prefix"), Mapping) else {}
-    case_sampling = raw.get("case_sampling") if isinstance(raw.get("case_sampling"), Mapping) else {}
+    config = load_config(path, validate_paths=False)
+    return _runtime_config_from_loaded(config)
+
+
+def _runtime_config_from_loaded(config: A33Config) -> dict[str, Any]:
+    checkpoint_payload = {
+        role: {
+            **asdict(checkpoint),
+            "template_contract": asdict(checkpoint.template_contract),
+        }
+        for role, checkpoint in config.checkpoints.items()
+        if checkpoint.enabled
+    }
+    if config.run_id in {"three_ckpt_phase_a3_3_smoke", "three_ckpt_phase_a3_3"}:
+        checkpoint_payload = {
+            role: checkpoint_payload[role]
+            for role in CHECKPOINT_ROLES
+            if role in checkpoint_payload
+        }
     return {
-        "project_id": str(raw.get("project_id", PROJECT_ID)),
-        "phase_id": str(raw.get("phase_id", PHASE_ID)),
-        "schema_version": str(raw.get("schema_version", SCHEMA_VERSION)),
-        "run_id": str(raw.get("run_id", "three_ckpt_phase_a3_3_smoke")),
-        "artifact_root": Path(str(raw.get("artifact_root"))),
-        "image_root": Path(str(raw.get("image_root", ""))) if raw.get("image_root") else Path("/"),
-        "train_jsonl": Path(str(raw.get("train_jsonl", ""))) if raw.get("train_jsonl") else None,
-        "val_jsonl": Path(str(raw.get("val_jsonl", ""))) if raw.get("val_jsonl") else None,
-        "num_shards": int(raw.get("num_shards", runtime.get("num_shards", 8))),
-        "checkpoints": {role: dict(checkpoints[role]) for role in CHECKPOINT_ROLES},
-        "prefix_modes_requested": tuple(prefix.get("prefix_modes_requested", ("empty", "same_desc_good_prefix"))),
-        "rollout_prefix_missing_policy": str(prefix.get("rollout_prefix_missing_policy_smoke", "skip_with_manifest")),
-        "split_quotas": dict(case_sampling.get("split_quotas", {"train": 1})),
-        "max_images": int(case_sampling.get("max_images", 1)),
-        "max_target_instances": int(case_sampling.get("max_target_instances", 8)),
+        "project_id": config.project_id,
+        "phase_id": config.phase_id,
+        "schema_version": config.schema_version,
+        "run_id": config.run_id,
+        "artifact_root": config.artifact_root,
+        "image_root": config.image_root,
+        "train_jsonl": config.train_jsonl,
+        "val_jsonl": config.val_jsonl,
+        "num_shards": int(config.runtime.num_shards),
+        "checkpoints": checkpoint_payload,
+        "prefix_modes_requested": tuple(config.prefix.prefix_modes_requested),
+        "rollout_prefix_missing_policy": config.prefix.rollout_prefix_missing_policy_smoke,
+        "split_quotas": dict(config.case_sampling.split_quotas),
+        "max_images": int(config.case_sampling.max_images),
+        "max_target_instances": int(config.case_sampling.max_target_instances),
+        "runtime": asdict(config.runtime),
+        "greedy": asdict(config.greedy),
     }
 
 
@@ -206,7 +215,7 @@ def _write_config_artifacts(root: Path, config: Mapping[str, Any], config_path: 
         json.dumps(
             {
                 "artifact_schema_version": SCHEMA_VERSION,
-                "checkpoint_roles": list(CHECKPOINT_ROLES),
+                "checkpoint_roles": _checkpoint_roles(config),
                 "template_contracts": _contracts(config),
             },
             sort_keys=True,
@@ -265,7 +274,10 @@ def _run_slot_posterior_mock(root: Path, config: Mapping[str, Any], *, shard_id:
     num_shards = int(config["num_shards"])
     shard_root = root / "slot_posterior_shards"
     contracts = _contracts(config)
-    rows = [_slot_row(role, contracts[role]) for role in CHECKPOINT_ROLES]
+    rows = [
+        _slot_row(role, config["checkpoints"][role], contracts[role])
+        for role in _checkpoint_roles(config)
+    ]
     summaries = []
     for sid in range(num_shards):
         shard_rows = rows if sid == (0 if shard_id is None else shard_id) else []
@@ -304,23 +316,33 @@ def _run_downstream_rows(root: Path, config: Mapping[str, Any], filename: str, s
             "template_contract": contracts[role],
             "primary_basin_label_source": "same_desc_gt_instances",
         }
-        for role in CHECKPOINT_ROLES
+        for role in _checkpoint_roles(config)
     ]
     count = write_jsonl(root / filename, rows)
     return {"status": "ok", "row_count": count, "artifact": filename}
 
 
-def _slot_row(role: str, contract: Mapping[str, Any]) -> dict[str, Any]:
+def _slot_row(
+    role: str,
+    checkpoint: Mapping[str, Any],
+    contract: Mapping[str, Any],
+) -> dict[str, Any]:
     return {
         "artifact_schema_version": SCHEMA_VERSION,
         "row_schema_version": "slot_posterior.v1",
         "case_id": "case-0",
         "prefix_state_id": "state-0",
         "checkpoint_role": role,
-        "comparison_role": "reference_anchor" if role == "et_rmp_ce_ckpt3664" else "clean_pair",
-        "controlled_comparison_group": "reference_anchor_not_controlled" if role == "et_rmp_ce_ckpt3664" else "pure_ce_sorted_vs_random_no_newline",
+        "objective_policy": checkpoint.get("objective_policy"),
+        "training_ordering": checkpoint.get("training_ordering"),
+        "comparison_role": checkpoint.get("comparison_role"),
+        "controlled_comparison_group": checkpoint.get("controlled_comparison_group"),
         "slot": "y1",
-        "winner_bucket": "same_desc_competitor" if role == "et_rmp_ce_ckpt3664" else "target_instance",
+        "winner_bucket": (
+            "same_desc_competitor"
+            if checkpoint.get("comparison_role") == "reference_anchor"
+            else "target_instance"
+        ),
         "primary_basin_label_source": "same_desc_gt_instances",
         "template_contract": dict(contract),
         "system_prompt_sha256": "a" * 64,
@@ -355,10 +377,26 @@ def _mock_case_rows() -> list[dict[str, Any]]:
 
 
 def _contracts(config: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
-    return {
-        role: dict(config["checkpoints"][role].get("template_contract", {}))
-        for role in CHECKPOINT_ROLES
-    }
+    contracts: dict[str, dict[str, Any]] = {}
+    for role in _checkpoint_roles(config):
+        checkpoint = config["checkpoints"][role]
+        contracts[role] = {
+            **dict(checkpoint.get("template_contract", {})),
+            "objective_policy": checkpoint.get("objective_policy"),
+            "training_ordering": checkpoint.get("training_ordering"),
+            "comparison_role": checkpoint.get("comparison_role"),
+            "comparison_group": checkpoint.get("controlled_comparison_group"),
+            "controlled_comparison_group": checkpoint.get("controlled_comparison_group"),
+            "chat_template_variant": checkpoint.get("chat_template_variant"),
+        }
+    return contracts
+
+
+def _checkpoint_roles(config: Mapping[str, Any]) -> list[str]:
+    checkpoints = config.get("checkpoints")
+    if not isinstance(checkpoints, Mapping):
+        return []
+    return [str(role) for role in checkpoints]
 
 
 def _read_if_exists(path: Path) -> list[dict[str, Any]]:

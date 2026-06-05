@@ -15,7 +15,6 @@ EXPECTED_A32_ROLES = (RANDOM_ROLE, SORTED_ROLE)
 
 LEGACY_A31_LABELS = (
     "pure_minus_et",
-    "et_rmp_ce",
     "ckpt3664",
     "phase_a3_1",
 )
@@ -61,18 +60,17 @@ def merge_prefix_readout_rows(
     role_a: str = RANDOM_ROLE,
     role_b: str = SORTED_ROLE,
 ) -> list[dict[str, Any]]:
-    """Merge paired readout rows into explicit sorted-minus-random rows."""
+    """Merge paired readout rows into explicit role-delta rows."""
 
-    _validate_a32_roles(role_a, role_b)
     validate_no_legacy_labels(rows)
     grouped: dict[str, dict[str, Mapping[str, Any]]] = {}
+    observed_roles: list[str] = []
     for index, row in enumerate(rows):
         checkpoint_role = str(row.get("checkpoint_role", ""))
-        if checkpoint_role not in EXPECTED_A32_ROLES:
-            raise ValueError(
-                f"rows[{index}].checkpoint_role must be one of {EXPECTED_A32_ROLES}; "
-                f"got {checkpoint_role!r}"
-            )
+        if not checkpoint_role:
+            raise ValueError(f"rows[{index}].checkpoint_role is required")
+        if checkpoint_role not in observed_roles:
+            observed_roles.append(checkpoint_role)
         prefix_state_id = str(row.get("prefix_state_id", ""))
         if not prefix_state_id:
             raise ValueError(f"rows[{index}].prefix_state_id is required")
@@ -84,36 +82,55 @@ def merge_prefix_readout_rows(
             )
         role_rows[checkpoint_role] = row
 
+    if set(observed_roles) <= set(EXPECTED_A32_ROLES):
+        _validate_a32_roles(role_a, role_b)
+        comparison_pairs = [(role_a, role_b, "sorted_minus_random")]
+        required_roles = list(EXPECTED_A32_ROLES)
+    else:
+        required_roles = observed_roles
+        comparison_pairs = _policy_objective_comparison_pairs(observed_roles)
+
     merged_rows: list[dict[str, Any]] = []
     for prefix_state_id in sorted(grouped):
         role_rows = grouped[prefix_state_id]
-        missing = [role for role in EXPECTED_A32_ROLES if role not in role_rows]
+        missing = [role for role in required_roles if role not in role_rows]
         if missing:
             raise ValueError(
                 f"missing paired readout rows for prefix_state_id {prefix_state_id}: "
                 f"{', '.join(missing)}"
             )
-        random_row = role_rows[role_a]
-        sorted_row = role_rows[role_b]
-        merged: dict[str, Any] = {
-            "project_id": PROJECT_ID,
-            "phase_id": PHASE_ID,
-            "schema_version": SCHEMA_VERSION,
-            "run_id": RUN_ID,
-            "prefix_state_id": prefix_state_id,
-            "role_a": role_a,
-            "role_b": role_b,
-            "checkpoint_roles": [role_a, role_b],
-            "delta_role": "sorted_minus_random",
-            "random_row": random_row,
-            "sorted_row": sorted_row,
-        }
-        for metric_name, delta_name in DELTA_METRICS:
-            merged[delta_name] = _metric_value(sorted_row, metric_name) - _metric_value(
-                random_row,
-                metric_name,
-            )
-        merged_rows.append(_json_safe(merged, "merged_row"))
+        for left_role, right_role, delta_role in comparison_pairs:
+            left_row = role_rows[left_role]
+            right_row = role_rows[right_role]
+            merged: dict[str, Any] = {
+                "project_id": PROJECT_ID,
+                "phase_id": PHASE_ID,
+                "schema_version": SCHEMA_VERSION,
+                "run_id": str(right_row.get("run_id", left_row.get("run_id", RUN_ID))),
+                "prefix_state_id": prefix_state_id,
+                "role_a": left_role,
+                "role_b": right_role,
+                "checkpoint_roles": [left_role, right_role],
+                "delta_role": delta_role,
+                "row_a": left_row,
+                "row_b": right_row,
+            }
+            if (left_role, right_role) == EXPECTED_A32_ROLES:
+                merged["random_row"] = left_row
+                merged["sorted_row"] = right_row
+            delta_metric_values: dict[str, float] = {}
+            for metric_name, legacy_delta_name in DELTA_METRICS:
+                value = _metric_value(right_row, metric_name) - _metric_value(
+                    left_row,
+                    metric_name,
+                )
+                generic_name = f"delta_{metric_name}"
+                delta_metric_values[generic_name] = value
+                merged[generic_name] = value
+                if (left_role, right_role) == EXPECTED_A32_ROLES:
+                    merged[legacy_delta_name] = value
+            merged["delta_metric_values"] = delta_metric_values
+            merged_rows.append(_json_safe(merged, "merged_row"))
     validate_no_legacy_labels(merged_rows)
     return merged_rows
 
@@ -247,6 +264,37 @@ def validate_cautious_language(text: str) -> None:
             )
 
 
+
+def _policy_objective_comparison_pairs(roles: Sequence[str]) -> list[tuple[str, str, str]]:
+    role_set = set(roles)
+    desired = [
+        (
+            "fullobj_random_pure_ce_ckpt3668",
+            "fullobj_sorted_pure_ce_ckpt3668",
+            "pure_ce_sorted_minus_random",
+        ),
+        (
+            "fullobj_random_et_rmp_ce_ckpt3668",
+            "fullobj_sorted_et_rmp_ce_ckpt3668",
+            "et_rmp_ce_sorted_minus_random",
+        ),
+        (
+            "fullobj_random_pure_ce_ckpt3668",
+            "fullobj_random_et_rmp_ce_ckpt3668",
+            "random_et_rmp_ce_minus_pure_ce",
+        ),
+        (
+            "fullobj_sorted_pure_ce_ckpt3668",
+            "fullobj_sorted_et_rmp_ce_ckpt3668",
+            "sorted_et_rmp_ce_minus_pure_ce",
+        ),
+    ]
+    pairs = [pair for pair in desired if pair[0] in role_set and pair[1] in role_set]
+    if pairs:
+        return pairs
+    ordered = list(roles)
+    return [(ordered[0], ordered[index], f"{ordered[index]}_minus_{ordered[0]}") for index in range(1, len(ordered))]
+
 def _validate_a32_roles(role_a: str, role_b: str) -> None:
     if (role_a, role_b) != EXPECTED_A32_ROLES:
         raise ValueError(
@@ -259,11 +307,8 @@ def _validate_report_roles(checkpoint_provenance: Mapping[str, Any]) -> None:
     if not checkpoint_provenance:
         return
     roles = tuple(str(role) for role in checkpoint_provenance)
-    if set(roles) != set(EXPECTED_A32_ROLES):
-        raise ValueError(
-            f"checkpoint provenance roles must be exactly {EXPECTED_A32_ROLES}; "
-            f"got {roles}"
-        )
+    if len(roles) < 2:
+        raise ValueError("checkpoint provenance must include at least two roles")
 
 
 def _metric_value(row: Mapping[str, Any], metric_name: str) -> float:

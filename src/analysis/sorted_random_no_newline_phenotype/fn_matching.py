@@ -159,51 +159,65 @@ def match_fn_cases_for_image(
 def build_fn_case_universe(
     gt_rows: Sequence[Mapping[str, Any]],
     *,
-    random_match_ledger: Mapping[str, Any] | Sequence[Mapping[str, Any]],
-    sorted_match_ledger: Mapping[str, Any] | Sequence[Mapping[str, Any]],
+    random_match_ledger: Mapping[str, Any] | Sequence[Mapping[str, Any]] | None = None,
+    sorted_match_ledger: Mapping[str, Any] | Sequence[Mapping[str, Any]] | None = None,
+    match_ledgers_by_role: Mapping[
+        str,
+        Mapping[str, Any] | Sequence[Mapping[str, Any]],
+    ]
+    | None = None,
     split: str,
     image_id: Any,
     sampled_gt_object_keys: set[str] | Sequence[str] | None = None,
     sampling_reasons: Mapping[str, str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Build denominator-safe per-GT rows carrying both checkpoint statuses."""
+    """Build denominator-safe per-GT rows carrying checkpoint FN statuses."""
 
-    random_by_key = _ledger_rows_by_key(random_match_ledger)
-    sorted_by_key = _ledger_rows_by_key(sorted_match_ledger)
+    ledgers_by_role = _normalize_universe_ledgers(
+        random_match_ledger=random_match_ledger,
+        sorted_match_ledger=sorted_match_ledger,
+        match_ledgers_by_role=match_ledgers_by_role,
+    )
+    rows_by_role = {
+        role: _ledger_rows_by_key(ledger) for role, ledger in ledgers_by_role.items()
+    }
     sampled_keys = None if sampled_gt_object_keys is None else {str(key) for key in sampled_gt_object_keys}
     reasons = {str(key): str(value) for key, value in (sampling_reasons or {}).items()}
     gt_key_rows = _gt_keys_by_key(gt_rows, split=split, image_id=image_id)
     gt_keys = set(gt_key_rows)
-    _validate_ledger_key_set("random_match_ledger", random_by_key, gt_keys)
-    _validate_ledger_key_set("sorted_match_ledger", sorted_by_key, gt_keys)
+    for role, rows_by_key in rows_by_role.items():
+        _validate_ledger_key_set(f"match_ledgers_by_role[{role}]", rows_by_key, gt_keys)
 
     rows: list[dict[str, Any]] = []
     for gt_object_key in sorted(gt_key_rows):
-        random_row = _required_ledger_row(random_by_key, gt_object_key)
-        sorted_row = _required_ledger_row(sorted_by_key, gt_object_key)
-        random_is_fn = bool(random_row["is_fn"])
-        sorted_is_fn = bool(sorted_row["is_fn"])
+        ledger_rows = {
+            role: _required_ledger_row(rows_by_key, gt_object_key)
+            for role, rows_by_key in rows_by_role.items()
+        }
+        fn_by_role = {
+            role: bool(row["is_fn"]) for role, row in ledger_rows.items()
+        }
         sampled_for_probe = (
-            random_is_fn or sorted_is_fn
+            any(fn_by_role.values())
             if sampled_keys is None
             else gt_object_key in sampled_keys
         )
+        payload: dict[str, Any] = {
+            "gt_object_key": gt_object_key,
+            "fn_membership": _fn_membership_by_role(fn_by_role),
+            "sampled_for_probe": sampled_for_probe,
+            "sampling_reason": _sampling_reason(
+                gt_object_key,
+                sampled_for_probe=sampled_for_probe,
+                sampling_reasons=reasons,
+            ),
+        }
+        for role, row in ledger_rows.items():
+            payload[_fn_field_for_role(role)] = fn_by_role[role]
+            payload[_match_field_for_role(role)] = row.get("match_pred_idx")
         rows.append(
             _json_safe(
-                {
-                    "gt_object_key": gt_object_key,
-                    RANDOM_FN_FIELD: random_is_fn,
-                    SORTED_FN_FIELD: sorted_is_fn,
-                    RANDOM_MATCH_FIELD: random_row.get("match_pred_idx"),
-                    SORTED_MATCH_FIELD: sorted_row.get("match_pred_idx"),
-                    "fn_membership": _fn_membership(random_is_fn, sorted_is_fn),
-                    "sampled_for_probe": sampled_for_probe,
-                    "sampling_reason": _sampling_reason(
-                        gt_object_key,
-                        sampled_for_probe=sampled_for_probe,
-                        sampling_reasons=reasons,
-                    ),
-                },
+                payload,
                 "fn_case_universe_row",
             )
         )
@@ -218,7 +232,7 @@ def build_replayable_fn_cases(
 ) -> list[dict[str, Any]]:
     """Expand sampled FN universe rows into deterministic replayable case rows."""
 
-    expected_roles = tuple(sorted(EXPECTED_CHECKPOINT_ROLES))
+    expected_roles = tuple(sorted(str(role) for role in match_ledgers_by_role))
     _validate_role_mapping("contexts_by_role", contexts_by_role, expected_roles)
     _validate_role_mapping(
         "match_ledgers_by_role",
@@ -812,6 +826,18 @@ def _fn_membership(random_is_fn: bool, sorted_is_fn: bool) -> str:
     return "not_fn"
 
 
+def _fn_membership_by_role(fn_by_role: Mapping[str, bool]) -> str:
+    if set(fn_by_role) == set(EXPECTED_CHECKPOINT_ROLES):
+        return _fn_membership(
+            bool(fn_by_role[RANDOM_CHECKPOINT_ROLE]),
+            bool(fn_by_role[SORTED_CHECKPOINT_ROLE]),
+        )
+    fn_roles = sorted(role for role, is_fn in fn_by_role.items() if bool(is_fn))
+    if not fn_roles:
+        return "not_fn"
+    return "fn:" + ",".join(fn_roles)
+
+
 def _sampling_reason(
     gt_object_key: str,
     *,
@@ -826,11 +852,40 @@ def _sampling_reason(
 
 
 def _fn_field_for_role(role: str) -> str:
-    if role == RANDOM_CHECKPOINT_ROLE or "random" in role:
-        return RANDOM_FN_FIELD
-    if role == SORTED_CHECKPOINT_ROLE or "sorted" in role:
-        return SORTED_FN_FIELD
     return f"is_fn_{role}"
+
+
+def _match_field_for_role(role: str) -> str:
+    if role == RANDOM_CHECKPOINT_ROLE:
+        return RANDOM_MATCH_FIELD
+    if role == SORTED_CHECKPOINT_ROLE:
+        return SORTED_MATCH_FIELD
+    return f"match_pred_idx_{role}"
+
+
+def _normalize_universe_ledgers(
+    *,
+    random_match_ledger: Mapping[str, Any] | Sequence[Mapping[str, Any]] | None,
+    sorted_match_ledger: Mapping[str, Any] | Sequence[Mapping[str, Any]] | None,
+    match_ledgers_by_role: Mapping[
+        str,
+        Mapping[str, Any] | Sequence[Mapping[str, Any]],
+    ]
+    | None,
+) -> dict[str, Mapping[str, Any] | Sequence[Mapping[str, Any]]]:
+    if match_ledgers_by_role is not None:
+        if not match_ledgers_by_role:
+            raise ValueError("match_ledgers_by_role must not be empty")
+        return {str(role): ledger for role, ledger in match_ledgers_by_role.items()}
+    if random_match_ledger is None or sorted_match_ledger is None:
+        raise ValueError(
+            "build_fn_case_universe requires either match_ledgers_by_role "
+            "or both random_match_ledger and sorted_match_ledger"
+        )
+    return {
+        RANDOM_CHECKPOINT_ROLE: random_match_ledger,
+        SORTED_CHECKPOINT_ROLE: sorted_match_ledger,
+    }
 
 
 def _context_or_match(

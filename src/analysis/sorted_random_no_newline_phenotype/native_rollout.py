@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
 from . import PHASE_ID, PROJECT_ID, RUN_ID, SCHEMA_VERSION
-from .config import EXPECTED_CHECKPOINT_ROLES
 from .status import (
     CONSTRAINT_POLICY,
     DECODE_POLICY,
@@ -35,10 +34,11 @@ def run_real_native_rollout(
     allow_overwrite: bool = False,
     gpu_id: str | None = None,
 ) -> dict[str, Any]:
-    """Run native free-text greedy rollout for both A3.2 checkpoints."""
+    """Run native free-text greedy rollout for configured A3.2 checkpoints."""
 
+    roles = _checkpoint_roles(config)
     written: dict[str, dict[str, str]] = {}
-    for role in EXPECTED_CHECKPOINT_ROLES:
+    for role in roles:
         paths = _role_artifact_paths(config, role)
         _ensure_paths_can_write(
             (
@@ -48,7 +48,7 @@ def run_real_native_rollout(
             ),
             allow_overwrite=allow_overwrite,
         )
-    for role in EXPECTED_CHECKPOINT_ROLES:
+    for role in roles:
         role_config_path = materialize_role_infer_config(
             config,
             checkpoint_role=role,
@@ -74,7 +74,7 @@ def run_real_native_rollout(
     return {
         "stage": "native_rollout",
         "runtime_kind": REAL_NATIVE_ROLLOUT_RUNTIME_KIND,
-        "checkpoint_roles": list(EXPECTED_CHECKPOINT_ROLES),
+        "checkpoint_roles": list(roles),
         "decode_policy": DECODE_POLICY,
         "constraint_policy": CONSTRAINT_POLICY,
         "written": written,
@@ -91,12 +91,13 @@ def materialize_role_infer_config(
 
     if checkpoint_role not in config.checkpoints:
         raise ValueError(f"unknown checkpoint role: {checkpoint_role}")
-    raw = yaml.safe_load(_role_template_path(checkpoint_role).read_text(encoding="utf-8"))
+    raw = yaml.safe_load(_role_template_path(config, checkpoint_role).read_text(encoding="utf-8"))
     if not isinstance(raw, Mapping):
         raise ValueError("role infer template must be a mapping")
     cfg = deepcopy(dict(raw))
     rollout_dir = config.artifact_root / "rollout" / checkpoint_role
     cfg.setdefault("run", {})
+    cfg["run"]["name"] = f"{config.run_id}_{checkpoint_role}"
     cfg["run"]["output_dir"] = str(config.artifact_root / "rollout")
     cfg.setdefault("artifacts", {})
     cfg["artifacts"].update(
@@ -167,7 +168,7 @@ def materialize_role_infer_config(
             "project_id": PROJECT_ID,
             "phase_id": PHASE_ID,
             "schema_version": SCHEMA_VERSION,
-            "run_id": RUN_ID,
+            "run_id": str(config.run_id),
             "runtime_kind": REAL_NATIVE_ROLLOUT_RUNTIME_KIND,
         }
     )
@@ -274,16 +275,35 @@ def _role_artifact_paths(config: A32Config, role: str) -> dict[str, Path]:
     }
 
 
-def _role_template_path(role: str) -> Path:
-    if role not in ROLE_INFER_CONFIG_NAMES:
-        raise ValueError(f"no native rollout infer template for role: {role}")
+def _role_template_path(config: A32Config, role: str) -> Path:
+    template_role = _template_role(config, role)
     return (
         Path(__file__).resolve().parents[3]
         / "configs"
         / "infer"
         / "recursive_detection_ce"
-        / ROLE_INFER_CONFIG_NAMES[role]
+        / ROLE_INFER_CONFIG_NAMES[template_role]
     )
+
+
+def _template_role(config: A32Config, role: str) -> str:
+    if role in ROLE_INFER_CONFIG_NAMES:
+        return role
+    if role not in config.checkpoints:
+        raise ValueError(f"unknown checkpoint role: {role}")
+    ordering = str(config.checkpoints[role].training_ordering)
+    if ordering.startswith("random"):
+        return "fullobj_random_pure_ce_ckpt3668"
+    if ordering.startswith("sorted"):
+        return "fullobj_sorted_pure_ce_ckpt3668"
+    raise ValueError(
+        f"no native rollout infer template for role {role!r} "
+        f"with training_ordering={ordering!r}"
+    )
+
+
+def _checkpoint_roles(config: A32Config) -> tuple[str, ...]:
+    return tuple(str(role) for role in config.checkpoints)
 
 
 def _ensure_paths_can_write(paths: Sequence[Path], *, allow_overwrite: bool) -> None:

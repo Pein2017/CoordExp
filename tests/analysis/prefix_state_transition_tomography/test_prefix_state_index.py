@@ -61,6 +61,31 @@ def test_build_prefix_state_index_materializes_hard_transition_rows(tmp_path: Pa
     assert all(row["residual_target_count"] >= 2 for row in same_hard)
 
 
+def test_prefix_state_index_accepts_nonlegacy_provenance(tmp_path: Path) -> None:
+    train_path = tmp_path / "train.coord.jsonl"
+    val_path = tmp_path / "val.coord.jsonl"
+    train_path.write_text(_records_jsonl(split="train", image_id=1), encoding="utf-8")
+    val_path.write_text(_records_jsonl(split="val", image_id=2), encoding="utf-8")
+
+    rows, sampled, _ = build_prefix_state_index(
+        train_jsonl=train_path,
+        val_jsonl=val_path,
+        run_id="fullobj_5ckpt_ckpt3668_phase_a3_prefix_state_smoke",
+        checkpoint_id="fullobj_5ckpt_ckpt3668_index",
+        checkpoint_role="policy_objective_prefix_index",
+        max_prefix_states=16,
+        seed=3668,
+    )
+
+    assert rows
+    assert sampled
+    assert all("ckpt3664" not in str(row["run_id"]) for row in rows)
+    assert {row["checkpoint_id"] for row in rows} == {"fullobj_5ckpt_ckpt3668_index"}
+    assert {row["checkpoint_role"] for row in rows} == {
+        "policy_objective_prefix_index"
+    }
+
+
 def test_prefix_state_index_reports_failed_launch_gates_for_easy_pool(tmp_path: Path) -> None:
     train_path = tmp_path / "train.coord.jsonl"
     val_path = tmp_path / "val.coord.jsonl"
