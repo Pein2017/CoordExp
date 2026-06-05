@@ -1,0 +1,4 @@
+interface:
+  display_name: "Architecture Review"
+  short_description: "Find deeper CoordExp module seams"
+  default_prompt: "Use $improve-codebase-architecture when the user wants CoordExp architecture review, refactoring opportunities, deeper modules, cleaner research workflow seams, or code that is easier to test, audit, and navigate. Present candidates before designing interfaces."

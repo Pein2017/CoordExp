@@ -1,6 +1,6 @@
 ---
 name: grill-me
-description: Use when the user explicitly asks to be grilled, stress-test a research idea, sharpen an experiment plan, pressure-test a design, or quickly resolve a decision.
+description: Use when the user explicitly asks for a short grill, stress test, pressure test, or decision-sharpening loop without durable repo recording.
 ---
 
 # Grill Me
@@ -38,16 +38,9 @@ Prefer questions that expose a real fork:
 
 Avoid questions whose answer is already in `docs/`, configs, tests, artifacts, or the current conversation.
 
-## Recording Loop
+## Recording Boundary
 
-After each resolved branch, decide whether it produced a durable record:
-
-- For implementation details, command plans, verification checklists, and branch-local handoff notes, update the active super-power plan/spec.
-- For measured results, diagnostics, benchmark evidence, artifact guides, and empirical findings, update the relevant `progress/` note or create a dated note when warranted.
-- For stable current behavior, update `docs/` using the repo routing in `docs/AGENT_INDEX.md` and `docs/catalog.yaml`.
-- For stable compatibility contracts, use `openspec/specs/` only when the contract is truly normative and compatibility-sensitive.
-- For executable truth, prefer repo configs, tests, scripts, manifests, and artifact paths over prose summaries.
-
-For detailed record shapes, use `../grill-me-with-docs/RECORDING.md` when
-available. If the right surface is unclear, ask one short question with a
-recommended target.
+Default to chat-only outcomes. If the discussion resolves durable repo state,
+switch to `grill-me-with-docs` and its `RECORDING.md` guidance before writing.
+If the right surface is unclear, ask one short question with a recommended
+target.

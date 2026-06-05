@@ -47,7 +47,9 @@ Automated sync must not:
 ## Conflict
 
 A conflict is a same relative path where local and remote manifests disagree on
-size or hash. The safe default is to stop and ask for a manual decision.
+the recorded identity. With `hash_mode: "size"` this detects size mismatches
+only; use a content-hash mode when same-size/different-content conflicts must be
+detected. The safe default is to stop and ask for a manual decision.
 
 Common manual resolutions:
 

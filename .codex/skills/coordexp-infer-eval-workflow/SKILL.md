@@ -1,6 +1,6 @@
 ---
 name: coordexp-infer-eval-workflow
-description: Use when launching, repairing, auditing, or summarizing CoordExp infer/scoring/eval/Oracle-K/proxy-bundle artifact workflows.
+description: Use when launching, repairing, checking artifact contracts, or summarizing CoordExp infer/scoring/eval/Oracle-K/proxy-bundle workflows.
 ---
 
 # CoordExp Inference And Evaluation Workflow
@@ -11,7 +11,7 @@ Treat this skill as the stable workflow guide, not a promise that one exact scri
 ## Entry Points
 
 - Primary pipeline surfaces:
-  - infer entrypoints such as `scripts/run_infer.py`, `src/infer/pipeline.py::run_pipeline`, `src/infer/engine.py::InferenceEngine.infer`
+  - infer entrypoints such as `scripts/run_infer.py`, `src/infer/pipeline.py::run_pipeline`, `src/infer/runtime.py`, and `src/infer/backend.py`
   - confidence / scoring surfaces such as `scripts/postop_confidence.py`, `src/eval/confidence_postop.py`
   - evaluation surfaces such as `scripts/evaluate_detection.py`, `src/eval/detection.py::evaluate_and_save`
   - proxy / bundle surfaces such as `scripts/evaluate_proxy_detection_bundle.py`, `src/eval/proxy_eval_bundle.py`
@@ -120,7 +120,7 @@ Useful debug surfaces:
 
 - `monitor_dumps/eval_phase_trace` for the last completed eval phase;
 - source-JSONL provenance and image-root metadata when archived artifacts need geometry recovery;
-- `configs/stage2_rollout_correction/smoke/compact_full_vllm_train64_val32_6steps_coco80_evaltrace.yaml` for compact-full COCO-80 evaltrace smoke coverage.
+- `configs/stage2/rollout_correction/smoke/compact_full_vllm_train64_val32_6steps_coco80_evaltrace.yaml` for compact-full COCO-80 evaltrace smoke coverage.
 
 ## Failure Modes
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenSpec Lifecycle"
+  short_description: "Mode-based CoordExp OpenSpec workflow"
+  default_prompt: "Use $openspec-lifecycle only when OpenSpec, an active OpenSpec change, or a stable compatibility-sensitive CoordExp contract lifecycle action is explicitly in scope. Choose the right mode: explore, new, fast-forward, continue, apply, verify, sync-specs, archive, bulk-archive, or onboard."

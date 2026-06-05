@@ -28,10 +28,11 @@
 
 ## Navigation
 - Start with the docs route, then use `rg` or `rtk` to narrow files, config keys, symbols, tests, or artifacts.
+- When `.codegraph/` exists, use CodeGraph as a local navigation accelerator for indexed symbol search, callers/callees, file maps, and impact radius; keep docs/OpenSpec/config/artifacts authoritative, and use Serena for Python symbol-level edits after narrowing.
 - Inspect the smallest code/config/artifact surface that can answer the task.
 - Python: use Serena MCP for symbol-level exploration and edits when available, after narrowing with `rg`/`rtk`.
 - Non-Python: use Serena for large symbolic changes; use raw shell plus the agent's patch/edit tool for exact Markdown/YAML/JSON edits.
-- If available, use `coordexp-codebase` for entrypoints and `coordexp-research-context` for historical Stage-2 context.
+- If available, use `coordexp-router-context` for entrypoints, current-vs-historical context, zoomed-out maps, and RTK/Serena navigation choices.
 - Treat `superpowers` as plugin-managed: source is `superpowers@openai-curated`, not a vendored repo-local copy. Verify provenance via `.codex/config.toml` and `.codex/plugins/cache/openai-curated/superpowers/*/.codex-plugin/plugin.json` when changing it.
 
 ## Commands
