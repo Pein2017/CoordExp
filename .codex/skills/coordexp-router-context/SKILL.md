@@ -36,10 +36,8 @@ Start with `docs/AGENT_INDEX.md` and `docs/catalog.yaml` before broad source sea
 2. Open the relevant docs/catalog route before source search.
 3. Resolve config/schema ownership before code changes.
 4. For code-heavy questions, if `.codegraph/` exists and is healthy, use CodeGraph before broad file reads:
-   - `codegraph query <symbol-or-topic> --json` for entrypoint discovery.
-   - `codegraph impact <symbol> --depth 2 --json` for blast radius and likely tests.
-   - `codegraph callers|callees <function> --json` for concrete function call edges.
-   - `codegraph files -p /data/CoordExp --json --filter <dir>` for package maps.
+   - Use CodeGraph MCP only when it is better than CLI: prefer `codegraph_explore` when the tool namespace is available and one capped call can return grouped source, relationships, and blast-radius context.
+   - Use CodeGraph CLI as fallback or maintenance: `codegraph query <symbol-or-topic> --json`, `codegraph impact <symbol> --depth 2 --json`, `codegraph callers|callees <function> --json`, `codegraph files -p /data/CoordExp --json --filter <dir>`.
 5. Trace the smallest useful path: JSONL/image -> config -> loader -> dataset/collator -> trainer/infer/eval -> artifact/metric.
 6. Use Serena after CodeGraph/`rg`/docs identify candidate Python files or exact symbols; prefer Serena for precise symbol overview, body reads, references, diagnostics, and edits.
 7. Use `rg`, `rtk grep`, raw shell, or structured parsers for config keys, YAML inheritance, docs/spec clauses, JSONL/artifact fields, metric names, and exact stdout.
@@ -73,7 +71,9 @@ Search `.codex/memories/MEMORY.md` only when prior session context is relevant. 
 
 ## Tool Choice
 
-- Use CodeGraph when `.codegraph/` exists for local AST/SQLite graph queries before token-heavy exploration: symbol search, file/package maps, call chains, and impact radius. Prefer `impact <symbol> --depth 2 --json` over `affected <files>` for CoordExp test selection.
+- Use CodeGraph when `.codegraph/` exists for local AST/SQLite graph queries before token-heavy exploration: symbol search, file/package maps, call chains, grouped source context, and impact radius.
+- Prefer CodeGraph MCP only for agent exploration cases where it is more efficient than CLI: `codegraph_explore` first for grouped source/context, then `codegraph_search`, `codegraph_impact`, `codegraph_callers`, `codegraph_callees`, `codegraph_files`, or `codegraph_status` as needed.
+- Use CodeGraph CLI for maintenance, reproducible handoff commands, or MCP fallback. Prefer CLI `impact <symbol> --depth 2 --json` over `affected <files>` for CoordExp test selection.
 - Treat CodeGraph as a fast tree-sitter graph, not a semantic type checker: it is strong for deterministic structure, imports, name-based calls, and local graph traversal; it is weaker for ambiguous method names, dynamic dispatch, config semantics, and true LSP-level reference precision.
 - After edits that change indexed source/YAML, run `codegraph sync /data/CoordExp` before relying on graph results.
 - Use `rtk` when output is noisy and a compact summary is enough: broad search, docs reads, git summaries, tests, logs, and file discovery.
@@ -84,10 +84,10 @@ Search `.codex/memories/MEMORY.md` only when prior session context is relevant. 
 
 ## CodeGraph Patterns
 
-- Broad code task: `codegraph query "<topic>" --limit 12 --json` -> inspect the top files/symbols -> switch to Serena for exact Python symbols.
-- Risky symbol change: `codegraph impact <ClassOrFunction> --depth 2 --json` -> list affected files/tests -> inspect exact references with Serena -> run targeted tests.
-- Function flow: `codegraph callers <function> --json` or `codegraph callees <function> --json`; if names are ambiguous, use Serena with an exact `Class/method` name path.
-- Package map: `codegraph files -p /data/CoordExp --json --filter src/<area>` before opening large files.
+- Broad code task: MCP `codegraph_explore` with `maxFiles` capped, or CLI `codegraph query "<topic>" --limit 12 --json` if MCP is unavailable -> switch to Serena for exact Python symbols.
+- Risky symbol change: MCP `codegraph_impact`, or CLI `codegraph impact <ClassOrFunction> --depth 2 --json` -> list affected files/tests -> inspect exact references with Serena -> run targeted tests.
+- Function flow: MCP `codegraph_callers`/`codegraph_callees`, or CLI `codegraph callers <function> --json`/`codegraph callees <function> --json`; if names are ambiguous, use Serena with an exact `Class/method` name path.
+- Package map: MCP `codegraph_files`, or CLI `codegraph files -p /data/CoordExp --json --filter src/<area>` before opening large files.
 - Config-driven change: start with docs/catalog and `rg` over `configs docs openspec src tests`; use CodeGraph only for the Python consumers of resolved config keys.
 
 ## References
