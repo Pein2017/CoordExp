@@ -1,18 +1,18 @@
 ---
 name: coordexp-router-context
-description: Use when CoordExp work needs current repo routing, docs/spec/code entrypoints, historical evidence boundaries, broad module maps, or guidance on RTK, raw shell, and Serena navigation.
+description: Use when CoordExp work needs current repo routing, docs/spec/code entrypoints, historical evidence boundaries, broad module maps, or guidance on CodeGraph, RTK, raw shell, and Serena navigation.
 ---
 
 # CoordExp Router Context
 
-Use this as the compact routing layer for CoordExp. It replaces the old split between current codebase navigation, research-history context, broad maps, RTK selection, and Serena navigation.
+Use this as the compact routing layer for CoordExp. It replaces the old split between current codebase navigation, research-history context, broad maps, CodeGraph routing, RTK selection, and Serena navigation.
 
 ## Mode Selector
 
 - `current-route`: find current docs, configs, code entrypoints, tests, or artifact contracts.
 - `history-pack`: connect current behavior to progress notes, memories, rollout summaries, or benchmark provenance.
 - `map`: give a module/config/artifact map before returning to a narrow task.
-- `navigation-tools`: choose between `rtk`, raw shell, and Serena.
+- `navigation-tools`: choose between CodeGraph, `rtk`, raw shell, and Serena.
 
 Exact leaf skills win over this router: use `coordexp-infer-eval-workflow` for launch/repair/eval artifacts, `coordexp-public-data-provenance` for `public_data`, `model-diagnosis` for abnormal behavior, `model-innovation-risk-audit` for pre-launch trust gates, `audit-review` for findings-first audits, and `worktree-feature-loop` for isolation.
 
@@ -35,10 +35,16 @@ Start with `docs/AGENT_INDEX.md` and `docs/catalog.yaml` before broad source sea
 1. Name the exact surface: config, script, artifact root, metric, symbol, or doc claim.
 2. Open the relevant docs/catalog route before source search.
 3. Resolve config/schema ownership before code changes.
-4. Trace the smallest useful path: JSONL/image -> config -> loader -> dataset/collator -> trainer/infer/eval -> artifact/metric.
-5. Narrow with `rg` or `rtk grep`; use Serena only after candidate Python files are known.
-6. Validate with the smallest check named by docs, specs, tests, or artifact manifests.
-7. Update docs/specs only when behavior, schema, artifact names, metric semantics, entrypoints, or recommended workflows change.
+4. For code-heavy questions, if `.codegraph/` exists and is healthy, use CodeGraph before broad file reads:
+   - `codegraph query <symbol-or-topic> --json` for entrypoint discovery.
+   - `codegraph impact <symbol> --depth 2 --json` for blast radius and likely tests.
+   - `codegraph callers|callees <function> --json` for concrete function call edges.
+   - `codegraph files -p /data/CoordExp --json --filter <dir>` for package maps.
+5. Trace the smallest useful path: JSONL/image -> config -> loader -> dataset/collator -> trainer/infer/eval -> artifact/metric.
+6. Use Serena after CodeGraph/`rg`/docs identify candidate Python files or exact symbols; prefer Serena for precise symbol overview, body reads, references, diagnostics, and edits.
+7. Use `rg`, `rtk grep`, raw shell, or structured parsers for config keys, YAML inheritance, docs/spec clauses, JSONL/artifact fields, metric names, and exact stdout.
+8. Validate with the smallest check named by docs, specs, CodeGraph impact results, tests, or artifact manifests.
+9. Update docs/specs only when behavior, schema, artifact names, metric semantics, entrypoints, or recommended workflows change.
 
 ## Current High-Signal Surfaces
 
@@ -67,10 +73,22 @@ Search `.codex/memories/MEMORY.md` only when prior session context is relevant. 
 
 ## Tool Choice
 
+- Use CodeGraph when `.codegraph/` exists for local AST/SQLite graph queries before token-heavy exploration: symbol search, file/package maps, call chains, and impact radius. Prefer `impact <symbol> --depth 2 --json` over `affected <files>` for CoordExp test selection.
+- Treat CodeGraph as a fast tree-sitter graph, not a semantic type checker: it is strong for deterministic structure, imports, name-based calls, and local graph traversal; it is weaker for ambiguous method names, dynamic dispatch, config semantics, and true LSP-level reference precision.
+- After edits that change indexed source/YAML, run `codegraph sync /data/CoordExp` before relying on graph results.
 - Use `rtk` when output is noisy and a compact summary is enough: broad search, docs reads, git summaries, tests, logs, and file discovery.
 - Use raw shell for exact stdout, machine-readable JSON/YAML, narrow `sed` reads, delicate quoting, or tiny commands.
-- Use Serena for Python symbol overview, references, and precise symbolic edits after narrowing with `rg`/`rtk`.
+- Use Serena for Python symbol overview, exact references, body reads, diagnostics, and precise symbolic edits after narrowing with CodeGraph, `rg`, or `rtk`.
+- Use `rg`/raw parsers over CodeGraph/Serena for exact literal search in configs, docs, OpenSpec, progress notes, JSONL, logs, metrics, and artifact manifests.
 - Do not run Serena repo-wide pattern scans with `relative_path` unset or `"."`.
+
+## CodeGraph Patterns
+
+- Broad code task: `codegraph query "<topic>" --limit 12 --json` -> inspect the top files/symbols -> switch to Serena for exact Python symbols.
+- Risky symbol change: `codegraph impact <ClassOrFunction> --depth 2 --json` -> list affected files/tests -> inspect exact references with Serena -> run targeted tests.
+- Function flow: `codegraph callers <function> --json` or `codegraph callees <function> --json`; if names are ambiguous, use Serena with an exact `Class/method` name path.
+- Package map: `codegraph files -p /data/CoordExp --json --filter src/<area>` before opening large files.
+- Config-driven change: start with docs/catalog and `rg` over `configs docs openspec src tests`; use CodeGraph only for the Python consumers of resolved config keys.
 
 ## References
 
