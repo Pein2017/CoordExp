@@ -118,7 +118,7 @@ def test_offline_eval_record_materialization_consumes_decoded_result() -> None:
     assert not hasattr(decoded, "raw_output_json")
 
 
-def test_official_gt_vs_pred_materialization_rejects_diagnostic_result() -> None:
+def test_offline_gt_vs_pred_materialization_preserves_diagnostic_result() -> None:
     from src.infer.runtime import materialize_offline_gt_vs_pred_record
 
     diagnostic = diagnostic_parser_result(
@@ -129,18 +129,25 @@ def test_official_gt_vs_pred_materialization_rejects_diagnostic_result() -> None
         salvage_recovered=False,
     )
 
-    with pytest.raises(ValueError, match="metric_bearing=false"):
-        materialize_offline_gt_vs_pred_record(
-            image="img.png",
-            width=64,
-            height=48,
-            mode="text",
-            gt=[],
-            decoded_result=diagnostic,
-            raw_output_json={"objects": []},
-            raw_special_tokens=[],
-            raw_ends_with_im_end=False,
-        )
+    record = materialize_offline_gt_vs_pred_record(
+        image="img.png",
+        width=64,
+        height=48,
+        mode="text",
+        gt=[],
+        decoded_result=diagnostic,
+        raw_output_json={"objects": []},
+        raw_special_tokens=[],
+        raw_ends_with_im_end=False,
+    )
+
+    assert record["pred"] == [{"type": "bbox_2d", "points": [1, 2, 3, 4], "desc": "cat"}]
+    assert record["errors"] == ["dropped_invalid"]
+    assert record["parser_id"] == "coordjson"
+    assert record["parser_policy"] == "diagnostic"
+    assert record["metric_bearing"] is False
+    assert record["salvage_recovered"] is False
+    assert record["parser_error_count"] == 1
 
 
 def test_raw_eval_jsonl_loads_detection_eval_records_without_schema_change(

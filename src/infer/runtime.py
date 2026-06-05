@@ -495,6 +495,7 @@ def materialize_offline_gt_vs_pred_record(
             decoded_result,
             consumer="official_gt_vs_pred_materialization",
         )
+    parser_metadata = decoded_result.to_artifact_metadata()
     output = {
         "image": image,
         "width": int(width),
@@ -508,6 +509,11 @@ def materialize_offline_gt_vs_pred_record(
         "raw_ends_with_im_end": bool(raw_ends_with_im_end),
         "errors": [str(code) for code in (errors or decoded_result.errors)],
         "error_entries": [dict(entry) for entry in (error_entries or ())],
+        "parser_id": parser_metadata["parser_id"],
+        "parser_policy": parser_metadata["parser_policy"],
+        "metric_bearing": parser_metadata["metric_bearing"],
+        "salvage_recovered": parser_metadata["salvage_recovered"],
+        "parser_error_count": parser_metadata["parser_error_count"],
     }
     if allow_diagnostic:
         output.update(decoded_result.to_artifact_metadata())
