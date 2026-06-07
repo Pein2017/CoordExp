@@ -4,126 +4,129 @@ layer: docs
 doc_type: standard
 status: canonical
 domain: standards
-summary: Upstream dependency boundaries and maintenance notes.
-updated: 2026-03-09
+summary: Upstream dependency boundaries, routing, and maintenance notes.
+updated: 2026-06-07
 ---
 
 # Upstream Dependencies
 
-Background on the two primary libraries this project builds on: Hugging Face's Qwen3-VL implementation and the ms-swift training framework. Use this as a quick reference when you need to trace behavior into upstream code or reason about configuration limits.
+Use this page as the upstream dependency router. Detailed notes live under
+[`upstream/`](upstream/). The current source of truth is the active `ms`
+environment plus the local `/data/ms-swift` checkout, not stale paths from older
+CoordExp runs.
 
----
+## Version Stamp
 
-## Hugging Face Qwen3-VL Model
+Last reviewed locally on 2026-06-07:
 
-_Source: `transformers.models.qwen3_vl` in the active `ms` environment._
+| Package | Version / state | Primary local handle |
+|---|---|---|
+| `torch` | `2.9.1+cu128` | active `ms` Python |
+| `transformers` | `4.57.1` | `/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers` |
+| `flash_attn` | `2.8.3` | `/root/miniconda3/envs/ms/lib/python3.12/site-packages/flash_attn` |
+| `ms-swift` | `4.2.2`, local checkout commit `f2797138dba0e224cfff735cd89a528a08d8732a` | `/data/ms-swift` |
+| `accelerate` | `1.10.1` | active `ms` Python |
+| `peft` | `0.17.1` | active `ms` Python |
+| `trl` | `0.23.1` | active `ms` Python |
+| `vllm` | `0.14.1` | active `ms` Python |
+| `deepspeed` | `0.17.5` | active `ms` Python |
+| `liger-kernel` | not installed | verify before enabling |
 
-### Architecture Highlights
-- **Config class**: `Qwen3VLConfig` glues together a text config (`Qwen3VLTextConfig`) and a vision config (`Qwen3VLVisionConfig`). It also stores multimodal token ids (`vision_start_token_id`, `vision_end_token_id`, `image_token_id`, `video_token_id`).
-- **Model class**: `Qwen3VLForConditionalGeneration` wraps a `Qwen3VLModel` backbone plus a tied `lm_head`. The backbone exposes convenience accessors:
-  - `model.visual` — vision encoder + aligner stack.
-  - `model.language_model` — the LLM (Qwen3-style decoder with rotary embeddings).
-  - `get_image_features(pixel_values, image_grid_thw)` — run only the visual branch.
-- **Vision pathway**: ViT encoder → deepstack aligner. Vision features are projected through
-  `model.visual.merger` and `model.visual.deepstack_merger_list.{0,1,2}` before replacing `<|image_pad|>` placeholders.
-- **Rope handling**: the model caches `rope_deltas` to keep multimodal rotary embeddings aligned. `image_grid_thw` (time/height/width) is used to adjust rope positions.
-- **Mask expectations**: image tokens are masked out in labels (`-100`), while attention masks can arrive as 4D tensors (prefill vs. decode). The Qwen code auto-flattens 4D masks.
+Every training, eval, or synchronization run that depends on upstream behavior
+should record at least `transformers`, `ms-swift`, `flash_attn`,
+`attn_implementation`, processor classes, `processor_do_resize`, `peft`, `trl`,
+`vllm`, and `deepspeed` when relevant.
 
-### Template & Token Mechanics
-- Chat templates insert start/end placeholders using the ids above. Do not manually insert `<|image_pad|>` tokens; use the HF-provided template (mirrored in this repo).
-- Placeholder count must equal the product of the grid dimensions provided in `image_grid_thw`.
-- During mixed image/video input the model distinguishes token ids (`image_token_id` vs `video_token_id`) and expects matching `pixel_values` / `pixel_values_videos` tensors.
+## Pages
 
-### Common Integration Points
-- **Freezing / LoRA**: the project’s YAMLs freeze `model.visual` components selectively. When adding LoRA targets, reference the actual module names (`model.visual.merger`, `model.visual.deepstack_merger_list.X`) from the HF implementation.
-- **Generation config**: `SwiftSft` replaces `model.generation_config` per run. The default config from HF sets repetition penalties and default image token ids; rely on `prepare_generation_config` to keep these in sync.
+- [`upstream/QWEN_VL.md`](upstream/QWEN_VL.md)
+  - Qwen2-VL, Qwen2.5-VL, and Qwen3-VL model, processor, grid, RoPE,
+    `logits_to_keep`, and LoRA/freezing boundaries.
+- [`upstream/MS_SWIFT.md`](upstream/MS_SWIFT.md)
+  - live ms-swift SFT route, YAML conventions, dataset/template/collator stack,
+    packing, padding-free, sequence parallel, extension maps, and launch
+    failures.
+- [`upstream/FLASH_ATTENTION.md`](upstream/FLASH_ATTENTION.md)
+  - FlashAttention v2 / Transformers attention interface, varlen tensors,
+    dtype/device constraints, determinism, and packed attention debugging.
+- [`upstream/TRAINING_ECOSYSTEM.md`](upstream/TRAINING_ECOSYSTEM.md)
+  - Accelerate, PEFT, TRL, Liger, adapter targeting, trainer wrappers, and
+    custom-loss boundaries.
 
-### Module Name Reference (LoRA/DoRA Targeting)
+## Boundary Rules
 
-When you set `tuner.target_regex`, ms-swift forwards it to PEFT as a *regex string* for `target_modules`.
-PEFT matches **module names** (not parameter names) using `re.fullmatch()`. This means:
-- Your regex must match the **entire** module key (use `^...$`).
-- Avoid broad `.*` patterns that also match non-linear modules (LayerNorm / ModuleList / containers), otherwise PEFT can error.
-- Keep the regex as a **single YAML line** (no folding), otherwise whitespace becomes part of the regex and it may match nothing.
+- Do not edit installed Hugging Face model files such as
+  `modeling_qwen3_vl.py`. Transformers Qwen3-VL files are generated from
+  modular upstream sources; local edits are not a maintainable integration
+  strategy.
+- Treat ms-swift as the training integration boundary. CoordExp should extend
+  ms-swift config, template, dataset, trainer, callback, loss, or plugin maps
+  before importing raw TRL/HF Trainer classes directly.
+- Preserve CoordExp geometry. Runtime training uses offline-prepared images and
+  `do_resize=false`; never rely on upstream processor resizing unless the run is
+  explicitly designed around that semantic.
+- For packed or padding-free runs, treat attention isolation and supervision
+  ownership as separate contracts:
 
-**Stable Qwen3-VL prefixes (HF)**:
-- **LLM tower**: `model.language_model.layers.<idx>.…`
-  - Typical LoRA-able linears:
-    - Attention: `self_attn.{q_proj,k_proj,v_proj,o_proj}`
-    - MLP: `mlp.{gate_proj,up_proj,down_proj}`
-- **ViT tower**: `model.visual.blocks.<idx>.…`
-  - Typical LoRA-able linears:
-    - Attention: `attn.{qkv,proj}`
-    - MLP: `mlp.{linear_fc1,linear_fc2}`
-- **Aligner (deepstack)**: `model.visual.{merger,deepstack_merger_list.<i>}.…`
-  - Typical LoRA-able linears:
-    - `linear_fc1`, `linear_fc2`
-
-**Cookbook: last-8 LLM blocks + aligner MLPs (freeze ViT via `freeze_vit: true`)**
-
-```yaml
-tuner:
-  # DoRA ("dlora") on last 8 LLM blocks + aligner MLPs, freeze ViT.
-  target_regex: '^(model\.visual\.merger\.(linear_fc1|linear_fc2)|model\.visual\.deepstack_merger_list\.(0|1|2)\.(linear_fc1|linear_fc2)|model\.language_model\.layers\.(2[8-9]|3[0-5])\.(self_attn\.(q_proj|k_proj|v_proj|o_proj)|mlp\.(gate_proj|up_proj|down_proj)))$'
+```text
+attention isolation -> upstream-compatible forward tensors
+supervision ownership -> CoordExp sidecars / loss metadata
 ```
 
-**Avoid repeated guesswork**:
-- Use `scripts/tools/inspect_checkpoint_modules.py` to inspect a checkpoint and generate a correct `target_regex`
-  based on the checkpoint’s actual module keys (works without loading tensors).
+- Prefer `attn_implementation: flash_attention_2` through Transformers/ms-swift
+  configuration instead of monkeypatching attention modules.
+- Keep full logits for CoordExp token/loss diagnostics unless a separate
+  projection-map contract is implemented. `logits_to_keep` slices hidden states
+  before `lm_head` in Qwen3-VL and changes downstream coordinate systems.
+- For LoRA/DoRA targeting, inspect real loaded module names and prefer ms-swift
+  knobs such as `target_regex`, `target_parameters`, `modules_to_save`,
+  `freeze_llm`, `freeze_vit`, `freeze_aligner`, and `use_dora`.
+- For sequence parallel or Liger, verify task support before launch. These paths
+  alter loss ownership and may reject padding-free, GRPO, custom loss, or
+  `device_map` combinations.
 
----
+## High-Signal Handles
 
-## ms-swift Training Framework
+Local upstream:
 
-_Source: local `ms-swift` checkout or installed package (notably `swift/llm/train/sft.py` and `swift/llm/argument/train_args.py`)._
+- Qwen3-VL model: `/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/models/qwen3_vl/modeling_qwen3_vl.py`
+- Transformers FlashAttention utility:
+  `/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/modeling_flash_attention_utils.py`
+- FlashAttention interface:
+  `/root/miniconda3/envs/ms/lib/python3.12/site-packages/flash_attn/flash_attn_interface.py`
+- ms-swift SFT pipeline: `/data/ms-swift/swift/pipelines/train/sft.py`
+- ms-swift SFT args: `/data/ms-swift/swift/arguments/sft_args.py`
+- ms-swift Qwen templates: `/data/ms-swift/swift/template/templates/qwen.py`
+- ms-swift trainer loss path: `/data/ms-swift/swift/trainers/seq2seq_trainer.py`
+- ms-swift sequence parallel: `/data/ms-swift/swift/sequence_parallel/ulysses.py`
 
-### SwiftSft Pipeline
-- **Entry point**: `SwiftSft` (inherits `SwiftPipeline` + `TunerMixin`) orchestrates loading the model/processor, template, datasets, collator, and trainer.
-- **Model loading**: `args.get_model_processor()` returns `(model, processor)`; padding-free or packing modes require flash attention kernels.
-- **Template**: `args.get_template(processor)` loads the multimodal chat template and verifies packing compatibility (`template.support_padding_free`). Templates can hook into the model for multimodal masking.
-- **Dataset preparation**:
-  1. Load JSONL via `load_dataset()` (returns HF Dataset or iterable dataset).
-  2. Encode using `LazyLLMDataset` + template.encode (handles multimodal fields).
-  3. Optional packing via `PackingDataset` / `IterablePackingDataset`.
-  4. Cache handling via `args.cached_dataset` (on-disk Arrow splits).
-- **Collation**: `template.data_collator` is partially applied with `padding_to` when `train_type == 'longlora'`. For other regimes the template decides padding/packing logic.
-- **Model preparation**: `TunerMixin.prepare_model(...)` applies LoRA/full tuning rules, sets `modules_to_save`, and ensures adapter checkpoints if requested.
-- **Trainer factory**: `TrainerFactory.get_trainer_cls(args)` selects a Hugging Face Trainer subclass (standard or DeepSpeed/sequence parallel variants). The resulting trainer receives the template to keep multimodal masking consistent.
+Upstream links:
 
-### TrainArguments
-- Consolidated dataclass that merges base arguments, tuning options, and Seq2Seq overrides.
-- Handles path normalization (`resume_from_checkpoint`, `adapters`), DeepSpeed config resolution (named presets → JSON), and padding-free checks (requires flash attention implementation).
-- Builds `training_args` (HF `Seq2SeqTrainingArguments`) through `TrainerFactory.get_training_args(self)` with `remove_unused_columns = False` to preserve multimodal tensors.
-- Enforces dataset presence: either `dataset` YAML entries or cached datasets must be provided—this is why the repo always supplies `custom.train_jsonl` / `custom.val_jsonl`.
+- [Transformers Qwen3-VL docs v4.57.1](https://huggingface.co/docs/transformers/v4.57.1/model_doc/qwen3_vl)
+- [Transformers Qwen3-VL source tag v4.57.1](https://github.com/huggingface/transformers/tree/v4.57.1/src/transformers/models/qwen3_vl)
+- [Transformers attention interface v4.57.1](https://huggingface.co/docs/transformers/v4.57.1/en/attention_interface)
+- [Dao-AILab flash-attention v2.8.3](https://github.com/Dao-AILab/flash-attention/tree/v2.8.3)
+- [modelscope/ms-swift](https://github.com/modelscope/ms-swift)
+- [ms-swift command-line parameters](https://github.com/modelscope/ms-swift/blob/main/docs/source_en/Instruction/Command-line-parameters.md)
+- [Accelerate docs](https://huggingface.co/docs/accelerate/package_reference/accelerator)
+- [PEFT LoRA reference](https://huggingface.co/docs/peft/v0.17.0/package_reference/lora)
+- [TRL docs](https://huggingface.co/docs/trl/index)
 
-### Packing & Streaming Modes
-- `padding_free` or `packing` set in YAML propagate to `TrainArguments`, which in turn select appropriate dataset wrappers.
-- Packing requires flash attention; ms-swift will raise if incompatible (`attn_impl` must be `flash_attn`/`flash_attention_*`).
-- Streaming datasets use `EncodePreprocessor` to tokenize on the fly while respecting template logic.
+## Refresh Checklist
 
-### Callbacks & Metrics
-### RLHF & GKD
+When bumping any upstream package:
 
-- **GKD (Generalized Knowledge Distillation)** is provided by TRL/ms-swift. In this repo we:
-  - Use `rlhf_type: gkd` to enable KD between student and a frozen teacher.
-  - Select a local wrapper via `custom.trainer_variant: gkd_monitor` to expose telemetry without modifying upstream code.
-  - Support forward-only KD (no on-policy sampling): set `seq_kd: false`, `lmbda: 0.0`.
-  - TRL versions ≥0.17 recommended. ms-swift adapts TRL GKD; trainer selection occurs in `src/sft.py`.
+1. Record package versions and local source roots.
+2. Re-check Qwen model signatures, `logits_to_keep`, processor placeholder
+   expansion, image/video grid handling, and `position_ids`.
+3. Re-check ms-swift CLI route, SFT pipeline path, dataclass keys, packing
+   checks, template support, trainer loss hooks, and extension maps.
+4. Re-check FlashAttention varlen dispatch, dtype/device checks,
+   `cu_seqlens` shape/dtype expectations, and `output_attentions` support.
+5. Re-check PEFT target matching, TRL import compatibility, Liger install
+   status, and sequence-parallel loss behavior.
+6. Update this router and the affected companion page before interpreting
+   changed training/eval behavior.
 
-- **Visual KD (optional)**: configure `custom.visual_kd` to add vision-feature distillation targets on top of (or alongside) GKD.
-  - Config is parsed/validated by `src/config/schema.py` and attached to TrainArguments as `visual_kd_config`.
-  - Implementation lives in `src/trainers/gkd_monitor.py` (fails fast if enabled without a teacher model).
-  - Targets are explicit and typed (`vit`, `aligner`, `deepstack`), each with `{enabled, weight, distance}` where `distance ∈ {mse, cosine}`.
-
-- Extra callbacks (`swift.plugin.extra_callbacks`) added via `SwiftSft._prepare_callbacks()` include logging helpers, checkpoint throttling, and optional visualization.
-- `SwiftSft._save_val_dataset()` saves the validation split to `val_dataset.jsonl` on rank 0 when the validation set is carved from training data—useful for reproduction.
-
----
-
-## Practical Tips
-- When debugging a mismatch, trace whether it originates upstream (HF template/model) or in-repo glue code. The modules above are the first places to inspect.
-- If adding new LoRA targets or freezing logic, confirm the actual module names in `modeling_qwen3_vl.py` and update YAML accordingly.
-- For new training modes, verify ms-swift already supports them (`swift/llm/train/` contains SFT, PT, RLHF, KTO). Extend SwiftSft only if the functionality is absent.
-- Keep this document updated when upstream versions change (e.g., Transformer release bumps or ms-swift upgrades).
-
-**Last Reviewed:** 2026-01-20
+Detailed handles and troubleshooting live in the companion pages under
+[`upstream/`](upstream/).
