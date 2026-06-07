@@ -44,22 +44,29 @@ Branch prefix defaults to `codex/`.
 
 1. Decide execution mode.
 2. If worktree, invoke `using-git-worktrees` with root, branch, and base branch.
-3. Choose planning surface:
+3. After creating or entering a worktree, initialize local navigation state:
+   - run `codegraph init -i` in the exact worktree when CodeGraph will be used;
+   - confirm with `codegraph status`;
+   - activate the exact worktree path with Serena MCP when Python symbol work is needed;
+   - for CodeGraph MCP calls in linked worktrees, pass `projectPath=/absolute/worktree/path`.
+4. Choose planning surface:
    - `existing`: continue existing `openspec-lifecycle` or super-power artifacts;
    - `new`: create only the appropriate repo-local plan/spec artifacts;
    - `none`: implement directly and record acceptance checks in final/PR text.
-4. Implement only in the approved tree.
-5. Use absolute or shared-root paths for heavy data, checkpoints, caches, and outputs.
-6. Put one-off debug artifacts under `temp/` and clean them after durable evidence is extracted.
-7. Validate the smallest realistic surface.
-8. For commits or sync, delegate detailed staging, PAT, fetch/pull/push, and conflict handling to `git-hygiene`; keep this skill focused on lifecycle state.
-9. For OpenSpec contract artifacts, delegate mode-specific workflow to `openspec-lifecycle`.
-10. Finish with `finishing-a-development-branch` or the user's requested commit/push/merge flow.
-11. Remove worktree only after merge/discard, from the main root, with provenance check and no uncommitted work.
+5. Implement only in the approved tree.
+6. Use absolute or shared-root paths for heavy data, checkpoints, caches, and outputs.
+7. Put one-off debug artifacts under `temp/` and clean them after durable evidence is extracted.
+8. Validate the smallest realistic surface.
+9. For commits or sync, delegate detailed staging, PAT, fetch/pull/push, and conflict handling to `git-hygiene`; keep this skill focused on lifecycle state.
+10. For OpenSpec contract artifacts, delegate mode-specific workflow to `openspec-lifecycle`.
+11. Finish with `finishing-a-development-branch` or the user's requested commit/push/merge flow.
+12. Remove worktree only after merge/discard, from the main root, with provenance check and no uncommitted work.
 
 ## CoordExp Gotchas
 
 - In worktrees, ignored data/model roots may be missing; prefer local symlinks over config path rewrites.
+- CodeGraph indexes are worktree-local. A parent/root `.codegraph/` is not enough for implementation in a linked worktree.
+- Serena project activation by name can point to another checkout. Prefer activation by absolute worktree path for side branches and parallel implementation lanes.
 - For infer/eval fanout, preserve canonical image roots or explicitly rewrite them before launching shards.
 - Dirty files in other worktrees are expected and out of scope.
 - If a research worktree produced durable findings, promote canonical outputs to `progress/`, docs, or requested artifact locations before cleanup.
@@ -77,6 +84,8 @@ spec_mode:
 changed_files_or_commits:
 validation_ran:
 validation_skipped:
+codegraph_index:
+serena_project:
 artifact_roots:
 sync_state:
 merge_state:

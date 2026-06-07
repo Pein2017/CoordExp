@@ -77,7 +77,7 @@ Use `references/report-template.md` when a skeleton is helpful.
 - Do not treat benchmark scopes as interchangeable. Always label `tiny`, `val200`, `limit=200`, first-200, full-val, proxy view, raw-text, coord-token, bbox format, checkpoint id, and launch shape when relevant.
 - Do not use `progress/` as current behavior when `docs/` or stable specs cover the contract.
 - Use Git inspection only when the audit scope depends on dirty state, a PR/change diff, or the user asks for it; otherwise do not run Git by reflex.
-- For Python code exploration, narrow first with `rg` or `rtk grep`, then use Serena symbol tools.
+- For Python code exploration, route docs/configs first, then use a correct local CodeGraph index for broad call/impact maps when helpful, and Serena symbol tools for exact references, bodies, diagnostics, and edit-risk checks. In linked worktrees, do not trust CodeGraph results from another checkout.
 - If a temporary probe is unavoidable, prefer `/tmp/`. Ask before writing under repo `temp/`.
 
 ## Audit Workflow
