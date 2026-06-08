@@ -823,25 +823,67 @@ class DetectionTrainingDataset(Dataset):
             supervision_view=supervision_view,
         )
 
-        if len(view_positions) != len(encoded_positions):
+        encoded_position_set = set(encoded_positions)
+        view_supervised_ids = tuple(
+            int(supervision_view.input_ids[position]) for position in view_positions
+        )
+        candidate_deltas: list[int] = []
+        first_view_position = int(view_positions[0])
+        for encoded_position in encoded_positions:
+            candidate_delta = int(encoded_position) - first_view_position
+            candidate_positions = tuple(
+                int(position) + candidate_delta for position in view_positions
+            )
+            if not all(
+                0 <= int(position) < len(encoded_input_ids)
+                and int(position) in encoded_position_set
+                for position in candidate_positions
+            ):
+                continue
+            candidate_ids = tuple(
+                int(encoded_input_ids[position]) for position in candidate_positions
+            )
+            if candidate_ids == view_supervised_ids:
+                candidate_deltas.append(candidate_delta)
+
+        unique_deltas = tuple(dict.fromkeys(candidate_deltas))
+        if not unique_deltas:
             raise ValueError(
-                "encoded labels do not supervise the same target count as "
+                "encoded labels do not contain an aligned supervised subset for "
                 "DetectionSupervisionView"
             )
-        encoded_position_delta = int(encoded_positions[0]) - int(view_positions[0])
+        if len(unique_deltas) > 1:
+            raise ValueError(
+                "encoded supervised positions are ambiguous relative to "
+                "DetectionSupervisionView supervised positions"
+            )
+        encoded_position_delta = int(unique_deltas[0])
         expected_encoded_positions = tuple(
             int(position) + encoded_position_delta for position in view_positions
         )
-        if expected_encoded_positions != encoded_positions:
+        expected_encoded_position_set = set(expected_encoded_positions)
+        extra_encoded_positions = tuple(
+            int(position)
+            for position in encoded_positions
+            if int(position) not in expected_encoded_position_set
+        )
+        if extra_encoded_positions and min(extra_encoded_positions) <= max(
+            expected_encoded_positions
+        ):
             raise ValueError(
-                "encoded supervised positions are not a constant shift of "
+                "encoded labels include interleaved supervised tokens outside "
                 "DetectionSupervisionView supervised positions"
             )
+        encoded_labels = tuple(
+            int(token_id) if index in expected_encoded_position_set else -100
+            for index, token_id in enumerate(encoded_input_ids)
+        )
+        encoded["labels"] = list(encoded_labels)
         shifted_atoms = []
         for atom, view_position, encoded_position in zip(
             target_ir.atoms,
             view_positions,
-            encoded_positions,
+            expected_encoded_positions,
             strict=True,
         ):
             target_position = int(atom.target_position)
@@ -882,6 +924,7 @@ class DetectionTrainingDataset(Dataset):
                 ),
                 "supervision_view_position_delta": view_position_delta,
                 "swift_encoded_position_delta": encoded_position_delta,
+                "swift_encoded_extra_label_count": len(extra_encoded_positions),
             },
         )
 

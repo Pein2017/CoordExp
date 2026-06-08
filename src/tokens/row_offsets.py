@@ -24,7 +24,7 @@ DEFAULT_EXCLUDE_IDS = {151_669}  # <|coord_*|>
 
 @dataclass
 class CoordOffsetConfig:
-    enabled: bool = False
+    enabled: bool = True
     tie_head: bool = True
     ids: Sequence[int] = ()
     embed_lr: float | None = None

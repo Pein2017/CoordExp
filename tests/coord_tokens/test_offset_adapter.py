@@ -212,10 +212,13 @@ def test_head_hook_accepts_sharded_hidden_and_logits_devices():
 
 def test_coord_offset_config_parsing_on_off():
     cfg_default = CoordOffsetConfig.from_mapping(None)
-    assert cfg_default.enabled is False
+    assert cfg_default.enabled is True
     assert cfg_default.tie_head is True
     assert cfg_default.ids == ()
     assert cfg_default.weight_decay == 0.0
+
+    cfg_disabled = CoordOffsetConfig.from_mapping({"enabled": False})
+    assert cfg_disabled.enabled is False
 
     cfg = CoordOffsetConfig.from_mapping(
         {

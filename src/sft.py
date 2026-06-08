@@ -204,16 +204,28 @@ def _adapter_checkpoint_paths_from_train_args(train_args: Any) -> list[str]:
 def _resolve_adapter_coord_offset_config(train_args: Any) -> CoordOffsetConfig | None:
     """Resolve saved coord-offset adapter metadata from loaded adapter checkpoints."""
 
+    adapter_paths = _adapter_checkpoint_paths_from_train_args(train_args)
+    if not adapter_paths:
+        return None
+
     resolved_specs: list[tuple[str, tuple[int, ...], bool]] = []
-    for adapter_path in _adapter_checkpoint_paths_from_train_args(train_args):
+    for adapter_path in adapter_paths:
         adapter_dir = Path(adapter_path).expanduser()
         if not adapter_dir.is_dir() or not (adapter_dir / "adapter_config.json").is_file():
-            continue
+            raise ValueError(
+                "Loaded adapter checkpoints must be local adapter directories "
+                f"containing adapter_config.json for coord-offset validation: {adapter_path}"
+            )
 
         adapter_info = load_adapter_checkpoint_info(str(adapter_dir))
         coord_spec = adapter_info.coord_offset_spec
         if coord_spec is None:
-            continue
+            raise ValueError(
+                "Loaded adapter checkpoint does not declare coord_offset_adapter in "
+                f"adapter_config.json.modules_to_save: {adapter_dir}. "
+                "Coord-offset is required for adapter-based training in this repo; "
+                "train from the base model only if a fresh coord-offset adapter is intended."
+            )
         resolved_specs.append(
             (
                 str(adapter_dir),
@@ -239,6 +251,27 @@ def _resolve_adapter_coord_offset_config(train_args: Any) -> CoordOffsetConfig |
         tie_head=first_tie_head,
         ids=first_ids,
     )
+
+
+def _require_coord_offset_compatible_with_loaded_adapter(
+    *,
+    requested_cfg: CoordOffsetConfig,
+    adapter_cfg: CoordOffsetConfig,
+    context: str,
+) -> None:
+    requested_ids = tuple(sorted(int(token_id) for token_id in requested_cfg.ids))
+    adapter_ids = tuple(sorted(int(token_id) for token_id in adapter_cfg.ids))
+    if requested_ids and requested_ids != adapter_ids:
+        raise ValueError(
+            f"{context} resolves {len(requested_ids)} coord-offset ids, but the "
+            f"loaded adapter checkpoint declares {len(adapter_ids)} ids. "
+            "Loaded adapter coord-offset ids must match the training token-row policy."
+        )
+    if bool(requested_cfg.tie_head) != bool(adapter_cfg.tie_head):
+        raise ValueError(
+            f"{context}.tie_head={bool(requested_cfg.tie_head)} conflicts with "
+            f"loaded coord_offset_adapter.tie_head={bool(adapter_cfg.tie_head)}."
+        )
 
 
 def _attach_coord_offset_config_to_train_args(
@@ -2522,6 +2555,7 @@ def main():
 
     coord_offset_cfg = getattr(custom_config, "coord_offset", None)
     trainable_rows_cfg = getattr(custom_config, "trainable_token_rows", None)
+    adapter_coord_offset_cfg = _resolve_adapter_coord_offset_config(train_args)
     if trainable_rows_cfg and trainable_rows_cfg.enabled:
         tokenizer = getattr(sft.template, "tokenizer", None)
         if tokenizer is None:
@@ -2533,6 +2567,25 @@ def main():
         if not trainable_row_ids:
             raise ValueError(
                 "custom.trainable_token_rows.enabled=true resolved no trainable token ids"
+            )
+        requested_coord_offset_cfg = CoordOffsetConfig(
+            enabled=True,
+            tie_head=trainable_rows_cfg.tie_head,
+            ids=trainable_row_ids,
+            embed_lr=trainable_rows_cfg.embed_lr
+            if trainable_rows_cfg.embed_lr is not None
+            else getattr(coord_offset_cfg, "embed_lr", None),
+            head_lr=trainable_rows_cfg.head_lr
+            if trainable_rows_cfg.head_lr is not None
+            else getattr(coord_offset_cfg, "head_lr", None),
+            weight_decay=trainable_rows_cfg.weight_decay,
+            dtype=trainable_rows_cfg.dtype or getattr(coord_offset_cfg, "dtype", None),
+        )
+        if adapter_coord_offset_cfg is not None:
+            _require_coord_offset_compatible_with_loaded_adapter(
+                requested_cfg=requested_coord_offset_cfg,
+                adapter_cfg=adapter_coord_offset_cfg,
+                context="custom.trainable_token_rows",
             )
         coord_offset_cfg = CoordOffsetConfig(
             enabled=True,
@@ -2559,16 +2612,28 @@ def main():
             len(token_role_sets.structural_ce_only_ids),
             len(token_role_sets.coord_loss_ids),
         )
-    elif not bool(getattr(coord_offset_cfg, "enabled", False)):
-        adapter_coord_offset_cfg = _resolve_adapter_coord_offset_config(train_args)
-        if adapter_coord_offset_cfg is not None:
-            coord_offset_cfg = adapter_coord_offset_cfg
-            _attach_coord_offset_config_to_train_args(train_args, coord_offset_cfg)
-            logger.info(
-                "Coord-offset adapter auto-enabled from loaded adapter checkpoint: ids=%s tie_head=%s",
-                len(coord_offset_cfg.ids),
-                coord_offset_cfg.tie_head,
+    elif adapter_coord_offset_cfg is not None:
+        if coord_offset_cfg is not None:
+            _require_coord_offset_compatible_with_loaded_adapter(
+                requested_cfg=coord_offset_cfg,
+                adapter_cfg=adapter_coord_offset_cfg,
+                context="custom.coord_offset",
             )
+        coord_offset_cfg = CoordOffsetConfig(
+            enabled=True,
+            tie_head=adapter_coord_offset_cfg.tie_head,
+            ids=adapter_coord_offset_cfg.ids,
+            embed_lr=getattr(coord_offset_cfg, "embed_lr", None),
+            head_lr=getattr(coord_offset_cfg, "head_lr", None),
+            weight_decay=getattr(coord_offset_cfg, "weight_decay", 0.0),
+            dtype=getattr(coord_offset_cfg, "dtype", None),
+        )
+        _attach_coord_offset_config_to_train_args(train_args, coord_offset_cfg)
+        logger.info(
+            "Coord-offset adapter loaded from adapter checkpoint: ids=%s tie_head=%s",
+            len(coord_offset_cfg.ids),
+            coord_offset_cfg.tie_head,
+        )
     if coord_offset_cfg and coord_offset_cfg.enabled:
         adapter = install_coord_offset_adapter(
             sft.model,
