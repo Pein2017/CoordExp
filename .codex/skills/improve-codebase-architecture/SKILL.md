@@ -44,11 +44,12 @@ configs, tests, artifacts, and `progress/` notes.
 Use CodeGraph when a correct local index exists to map modules, call chains,
 grouped source context, and impact radius before token-heavy file reads. In
 linked worktrees, initialize/query the exact worktree and pass `projectPath` to
-CodeGraph MCP calls when ambiguous. Use Serena after that for exact Python
-symbols, references, diagnostics, and symbolic edits. Use `rg`/`rtk` for exact
-literal search in docs, configs, specs, artifacts, and logs. Use subagents when
-parallel architecture audits materially help or the user explicitly asks for
-parallel agent work.
+CodeGraph MCP calls when ambiguous. Treat CodeGraph as the scout: after it
+identifies Python files or symbols, switch to Serena for exact symbol overview,
+references, declarations/implementations, diagnostics, and symbolic edits. Use
+`rg`/`rtk` for exact literal search in docs, configs, specs, artifacts, and
+logs. Use subagents when parallel architecture audits materially help or the
+user explicitly asks for parallel agent work.
 
 Explore organically and note where you experience friction:
 

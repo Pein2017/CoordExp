@@ -47,7 +47,7 @@ Branch prefix defaults to `codex/`.
 3. After creating or entering a worktree, initialize local navigation state:
    - run `codegraph init -i` in the exact worktree when CodeGraph will be used;
    - confirm with `codegraph status`;
-   - activate the exact worktree path with Serena MCP when Python symbol work is needed;
+   - activate the exact worktree path with Serena MCP before narrowed Python symbol inspection, reference checks, diagnostics, or symbolic edits;
    - for CodeGraph MCP calls in linked worktrees, pass `projectPath=/absolute/worktree/path`.
 4. Choose planning surface:
    - `existing`: continue existing `openspec-lifecycle` or super-power artifacts;
@@ -67,6 +67,7 @@ Branch prefix defaults to `codex/`.
 - In worktrees, ignored data/model roots may be missing; prefer local symlinks over config path rewrites.
 - CodeGraph indexes are worktree-local. A parent/root `.codegraph/` is not enough for implementation in a linked worktree.
 - Serena project activation by name can point to another checkout. Prefer activation by absolute worktree path for side branches and parallel implementation lanes.
+- Use CodeGraph for first-pass "where is this?" maps, then Serena for exact Python symbol semantics once files/classes/functions are known; do not let CodeGraph replace Serena for reference-sensitive edits.
 - For infer/eval fanout, preserve canonical image roots or explicitly rewrite them before launching shards.
 - Dirty files in other worktrees are expected and out of scope.
 - If a research worktree produced durable findings, promote canonical outputs to `progress/`, docs, or requested artifact locations before cleanup.
