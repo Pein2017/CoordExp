@@ -486,27 +486,38 @@ def materialize_offline_gt_vs_pred_record(
     raw_ends_with_im_end: bool,
     errors: Sequence[str] | None = None,
     error_entries: Sequence[Mapping[str, Any]] | None = None,
+    require_metric_bearing_output: bool = True,
 ) -> Dict[str, Any]:
     """Project a decoded detection result into the stable gt_vs_pred row schema."""
 
-    decoded_result = require_metric_bearing(
-        decoded_result,
-        consumer="official_gt_vs_pred_materialization",
-    )
-    return {
+    if require_metric_bearing_output:
+        decoded_result = require_metric_bearing(
+            decoded_result,
+            consumer="official_gt_vs_pred_materialization",
+        )
+        predictions = [dict(obj) for obj in decoded_result.predictions]
+    elif decoded_result.metric_bearing and decoded_result.parser_policy == "strict":
+        predictions = [dict(obj) for obj in decoded_result.predictions]
+    else:
+        predictions = []
+
+    row = {
         "image": image,
         "width": int(width),
         "height": int(height),
         "mode": str(mode),
         "coord_mode": "pixel",
         "gt": [dict(obj) for obj in gt],
-        "pred": [dict(obj) for obj in decoded_result.predictions],
+        "pred": predictions,
         "raw_output_json": raw_output_json,
         "raw_special_tokens": list(raw_special_tokens),
         "raw_ends_with_im_end": bool(raw_ends_with_im_end),
         "errors": [str(code) for code in (errors or decoded_result.errors)],
         "error_entries": [dict(entry) for entry in (error_entries or ())],
     }
+    if not require_metric_bearing_output:
+        row.update(decoded_result.to_artifact_metadata())
+    return row
 
 
 def detect_mode_from_gt(
@@ -797,6 +808,7 @@ class InferenceConfig:
     object_field_order: ObjectFieldOrder = "desc_first"
     object_ordering: ObjectOrdering = "sorted"
     compact_full_parse_mode: str = "marker_delimited_strict"
+    fail_fast: bool = True
     pred_coord_mode: Literal["auto", "norm1000", "pixel"] = "auto"
     adapter_checkpoint: Optional[str] = None
     checkpoint_mode: str = "full_model"
@@ -1724,6 +1736,7 @@ def run_offline_artifact_inference(owner: Any) -> Tuple[Path, Path]:
                 raw_ends_with_im_end=raw_ends_with_im_end,
                 errors=error_codes,
                 error_entries=error_entries,
+                require_metric_bearing_output=bool(self.cfg.fail_fast),
             )
             if compact_parse_artifact is not None:
                 output.update(

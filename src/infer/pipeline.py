@@ -1356,6 +1356,7 @@ def _run_infer_stage(
         "object_field_order": object_field_order,
         "object_ordering": object_ordering,
         "compact_full_parse_mode": compact_full_parse_mode,
+        "fail_fast": _get_bool(infer_cfg, "fail_fast", True),
         "pred_coord_mode": pred_coord_mode,
         "out_path": str(artifacts.gt_vs_pred_jsonl),
         "pred_token_trace_path": str(artifacts.pred_token_trace_jsonl),

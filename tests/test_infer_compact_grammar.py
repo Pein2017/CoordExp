@@ -52,7 +52,7 @@ def test_compact_grammar_forces_four_coord_tokens_after_box_start() -> None:
     assert processed[0, 1099] == 0.0
 
 
-def test_compact_grammar_forces_row_delimiter_after_four_coords() -> None:
+def test_compact_grammar_forces_next_object_or_stop_after_four_coords() -> None:
     processor = build_compact_full_grammar_logits_processor(
         tokenizer=_DummyTokenizer(),
         prompt_lengths=[1],
@@ -65,7 +65,8 @@ def test_compact_grammar_forces_row_delimiter_after_four_coords() -> None:
     processed = processor(input_ids, _scores())
 
     assert torch.isneginf(processed[0, 7])
-    assert processed[0, 3] == 0.0
+    assert torch.isneginf(processed[0, 3])
+    assert processed[0, 4] == 0.0
     assert processed[0, 2] == 0.0
 
 

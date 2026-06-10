@@ -60,10 +60,10 @@ class CompactFullGrammarLogitsProcessor(LogitsProcessor):
 
     ``<|object_ref_start|>{desc}<|box_start|>{coord}{coord}{coord}{coord}``
 
-    After a bbox is complete it permits either a newline separator or the chat
-    EOS token. At a fresh row boundary it permits a new object row or the chat
-    EOS token. This is a decode-time grammar constraint, not a scoring/eval parser
-    relaxation.
+    After a bbox is complete it permits either the next object marker or the
+    chat EOS token. At a fresh row boundary it permits a new object row or the
+    chat EOS token. This is a decode-time grammar constraint, not a scoring/eval
+    parser relaxation.
     """
 
     def __init__(
@@ -80,7 +80,9 @@ class CompactFullGrammarLogitsProcessor(LogitsProcessor):
         self.newline_id_set = set(int(v) for v in ids.newline_ids)
         self.eos_id_set = set(int(v) for v in ids.eos_ids)
         self.row_start_allowed = tuple(dict.fromkeys((ids.object_start_id, *ids.eos_ids)))
-        self.after_bbox_allowed = tuple(dict.fromkeys((*ids.newline_ids, *ids.eos_ids)))
+        self.after_bbox_allowed = tuple(
+            dict.fromkeys((ids.object_start_id, *ids.eos_ids))
+        )
         self._allowed_tensor_cache: dict[tuple[str, str], torch.LongTensor] = {}
         self._membership_mask_cache: dict[tuple[str, str, int], torch.BoolTensor] = {}
         self._row_processed_generated_lens: list[int] = []
