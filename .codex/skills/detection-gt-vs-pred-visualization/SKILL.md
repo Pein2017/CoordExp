@@ -1,6 +1,6 @@
 ---
 name: detection-gt-vs-pred-visualization
-description: Use when rendering, modifying, or debugging CoordExp detection GT/pred visualizations from raw, scored, guarded, proxy, evaluator, monitor, comparison, or ad hoc image/object artifacts.
+description: Use when the requested deliverable is a CoordExp detection GT/pred visualization or canonical visual resource from raw, scored, guarded, proxy, evaluator, monitor, comparison, or ad hoc image/object artifacts.
 ---
 
 # Detection GT/Pred Visualization
@@ -112,7 +112,7 @@ Before rendering from a derived artifact:
 ## Quick References
 
 - contract:
-  - `openspec/changes/unify-gt-vs-pred-visualization/specs/gt-vs-pred-visualization/spec.md`
+  - `openspec/specs/gt-vs-pred-visualization/spec.md`
 - implementation:
   - `src/vis/gt_vs_pred.py`
   - `src/vis/comparison.py`

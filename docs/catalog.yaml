@@ -155,6 +155,26 @@ docs:
       title: Upstream Dependencies
       type: standard
       status: canonical
+    - path: docs/standards/upstream/README.md
+      title: Upstream Notes
+      type: router
+      status: canonical
+    - path: docs/standards/upstream/QWEN_VL.md
+      title: Transformers Qwen-VL Upstream Notes
+      type: standard
+      status: canonical
+    - path: docs/standards/upstream/MS_SWIFT.md
+      title: ms-swift Upstream Notes
+      type: standard
+      status: canonical
+    - path: docs/standards/upstream/FLASH_ATTENTION.md
+      title: FlashAttention Upstream Notes
+      type: standard
+      status: canonical
+    - path: docs/standards/upstream/TRAINING_ECOSYSTEM.md
+      title: Training Ecosystem Upstream Notes
+      type: standard
+      status: canonical
     - path: docs/standards/PORTING.md
       title: Porting notes between Qwen3-VL and CoordExp
       type: standard

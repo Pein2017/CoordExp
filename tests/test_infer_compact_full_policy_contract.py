@@ -8,6 +8,11 @@ import pytest
 from PIL import Image
 
 from src.common.detection_sequence import BOX_START_TOKEN, OBJECT_REF_START_TOKEN
+from src.config.prompts import (
+    build_dense_system_prompt,
+    build_dense_user_prompt,
+    get_template_prompt_hash,
+)
 from src.detection.evaluation import parse_compact_full_output_artifact
 from src.infer.runtime import create_offline_engine, make_offline_generation_result
 from src.infer.pipeline import load_resolved_config, run_pipeline
@@ -155,6 +160,35 @@ def test_parse_artifact_records_policy_and_separator() -> None:
             ],
         },
     ]
+
+
+def test_compact_full_prompt_can_request_no_newline_row_separator() -> None:
+    system_prompt = build_dense_system_prompt(
+        prompt_variant="coco_80",
+        detection_sequence_format="compact_full",
+        row_separator="none",
+    )
+    user_prompt = build_dense_user_prompt(
+        prompt_variant="coco_80",
+        detection_sequence_format="compact_full",
+        row_separator="none",
+    )
+
+    assert "no newline" in system_prompt.lower()
+    assert "do not insert newline" in user_prompt.lower()
+    assert "single newline" not in user_prompt.lower()
+    assert (
+        get_template_prompt_hash(
+            prompt_variant="coco_80",
+            detection_sequence_format="compact_full",
+            row_separator="none",
+        )
+        != get_template_prompt_hash(
+            prompt_variant="coco_80",
+            detection_sequence_format="compact_full",
+            row_separator="newline",
+        )
+    )
 
 
 def test_parse_artifact_records_concrete_failure_code() -> None:

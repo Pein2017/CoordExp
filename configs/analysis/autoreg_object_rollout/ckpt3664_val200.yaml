@@ -1,0 +1,14 @@
+run:
+  output_dir: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200
+  scope_label: val200_first_200
+  checkpoint: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664
+inputs:
+  artifact_root: /data/CoordExp/outputs/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_prompt_offset_fix_8gpu
+  dataset_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+  dataset_slice:
+    kind: first_n
+    n: 200
+analysis:
+  truncate_at_first_im_end: true
+  require_scored_provenance: false
+  metric_family: guarded

@@ -650,7 +650,7 @@ class BBoxSizeAuxConfig:
 
 @dataclass(frozen=True)
 class CoordOffsetConfig:
-    enabled: bool = False
+    enabled: bool = True
     tie_head: bool = True
     ids: tuple[int, ...] = ()
     embed_lr: Optional[float] = None
@@ -669,7 +669,7 @@ class CoordOffsetConfig:
         if not isinstance(payload, Mapping):
             raise TypeError("coord_offset section must be a mapping when provided")
 
-        enabled = bool(payload.get("enabled", False))
+        enabled = bool(payload.get("enabled", True))
 
         tie_head_raw = payload.get("tie_head", True)
         if tie_head_raw is None:

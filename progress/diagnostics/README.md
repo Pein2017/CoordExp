@@ -6,7 +6,7 @@ status: canonical
 domain: research-history
 summary: Router for failure investigations, mechanism studies, threshold sweeps, and operator notes that support diagnosis.
 tags: [progress, diagnostics, investigations]
-updated: 2026-05-19
+updated: 2026-06-02
 ---
 
 # Diagnostics Index
@@ -62,6 +62,15 @@ Prefer `progress/benchmarks/` when the output is mainly a measured run-vs-run or
     for the fixed-checkpoint mechanism conclusion: partial pre-`x1` binding,
     late schema/pre-coordinate readout, and `x1/y1` as the hard commitment
     boundary.
+- Active FN-rescue attention and next-row binding diagnostics
+  - Start with
+    [2026-06-02_fn_rescue_attention_binding_findings.md](2026-06-02_fn_rescue_attention_binding_findings.md)
+    for the checkpoint-3664 full linked FN-rescue continuation study showing
+    that many rollout false negatives are recoverable under desc-first
+    continuation, correct `x1` is a strong instance-binding seed, wrong-control
+    `x1` misdirects binding, same-desc competitors are the sharpest failure
+    surface, and attention remains background/context-heavy rather than a clean
+    target-object spotlight.
 - Stage-2 birth-first Channel-B decision evidence
   - Start with
     [2026-04-22_stage2_birth_first_channel_b_decision_study.md](2026-04-22_stage2_birth_first_channel_b_decision_study.md)

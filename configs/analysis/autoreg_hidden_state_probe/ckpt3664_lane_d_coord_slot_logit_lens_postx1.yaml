@@ -1,0 +1,40 @@
+paths:
+  artifact_root: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/fn_rescue_desc_x1_phase5/postx1_coord_slot_logit_lens
+  checkpoint: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664
+  dataset_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+  self_rollout_root: /data/CoordExp/outputs/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_prompt_offset_fix_8gpu
+  lane_a_rollout_root: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/rollout_anatomy
+  lane_c_per_case: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/x1_basin_attribution/per_case.jsonl
+  lane_c_study_config: configs/analysis/hard_ce_coord_logit_locality/ckpt3664_lane_c_val200.yaml
+selection:
+  max_cases: 64
+positions:
+  roles:
+    - prompt_end
+    - row_start
+    - desc_end
+    - box_start
+    - pre_x1
+    - post_x1
+    - post_y1
+    - row_end_or_separator
+    - final_generated_prefix_state
+  layer_groups:
+    middle: [12]
+    late: [24]
+    last: [-1]
+execution:
+  batch_size: 1
+  enable_x1_logit_lens: true
+  x1_logit_lens_roles:
+    - desc_end
+    - box_start
+    - pre_x1
+    - post_x1
+  x1_logit_lens_top_k: 5
+  enable_coord_slot_logit_lens: true
+  coord_slot_logit_lens_roles:
+    - pre_x1
+    - post_x1
+    - post_y1
+  coord_slot_logit_lens_top_k: 5

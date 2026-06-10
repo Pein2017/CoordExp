@@ -22,6 +22,12 @@ from .prompt_variants import (
 
 # Shared prior rules (kept flat for easy embedding in system prompt)
 PRIOR_RULES = '- Open-domain object detection/grounding on public datasets; cover all visible targets.\n'
+COMPACT_ROW_SEPARATOR_NEWLINE = "newline"
+COMPACT_ROW_SEPARATOR_NONE = "none"
+_COMPACT_ROW_SEPARATORS = {
+    COMPACT_ROW_SEPARATOR_NEWLINE,
+    COMPACT_ROW_SEPARATOR_NONE,
+}
 
 _USER_EXAMPLE_DESC_FIRST_XYXY = (
     '{"desc": "black cat", "bbox_2d": [<|coord_110|>, <|coord_310|>, <|coord_410|>, <|coord_705|>]}'
@@ -317,15 +323,23 @@ def build_dense_system_prompt(
     object_field_order: str = "desc_first",
     bbox_format: str = "xyxy",
     detection_sequence_format: str = COORDJSON_FORMAT,
+    row_separator: str = COMPACT_ROW_SEPARATOR_NEWLINE,
 ) -> str:
     """Return system prompt for dense mode."""
     coord_mode_key = normalize_coord_mode(coord_mode)
     detection_format = normalize_detection_sequence_format(detection_sequence_format)
     if detection_format != COORDJSON_FORMAT:
         pattern = compact_pattern_for_detection_sequence_format(detection_format)
+        separator_key = normalize_compact_row_separator(row_separator)
+        row_separator_clause = (
+            "Output one compact detection row per object by concatenating rows directly "
+            "with no separator, no newline, and no extra text."
+            if separator_key == COMPACT_ROW_SEPARATOR_NONE
+            else "Output one newline-delimited compact detection row per object with no extra text."
+        )
         return (
             "You are a general-purpose object detection and grounding assistant. "
-            "Output one newline-delimited compact detection row per object with no extra text. "
+            f"{row_separator_clause} "
             f"Use this row pattern exactly: {pattern}. "
             "Descriptions are raw class text; bbox coords are four coord tokens in x1 y1 x2 y2 order."
         )
@@ -378,6 +392,7 @@ def build_dense_user_prompt(
     object_field_order: str = "desc_first",
     bbox_format: str = "xyxy",
     detection_sequence_format: str = COORDJSON_FORMAT,
+    row_separator: str = COMPACT_ROW_SEPARATOR_NEWLINE,
 ) -> str:
     """Return user prompt for dense mode."""
     coord_mode_key = normalize_coord_mode(coord_mode)
@@ -385,6 +400,12 @@ def build_dense_user_prompt(
     if detection_format != COORDJSON_FORMAT:
         pattern = compact_pattern_for_detection_sequence_format(detection_format)
         variant = resolve_prompt_variant(prompt_variant)
+        separator_key = normalize_compact_row_separator(row_separator)
+        separator_clause = (
+            "Use one row per object; concatenate rows directly with no separator and do not insert newline characters."
+            if separator_key == COMPACT_ROW_SEPARATOR_NONE
+            else "Use one row per object and separate rows with a single newline."
+        )
         class_clause = ""
         if variant.key == "coco_80":
             class_clause = (
@@ -393,7 +414,7 @@ def build_dense_user_prompt(
         return (
             "Locate each clearly visible object instance in the image. "
             f"Return compact rows using this exact pattern: {pattern}. "
-            "Use one row per object and separate rows with a single newline."
+            f"{separator_clause}"
             f"{class_clause}"
         )
 
@@ -446,6 +467,7 @@ def get_template_prompts(
     object_field_order: str = "desc_first",
     bbox_format: str = "xyxy",
     detection_sequence_format: str = COORDJSON_FORMAT,
+    row_separator: str = COMPACT_ROW_SEPARATOR_NEWLINE,
 ) -> tuple[str, str]:
     """Return (system, user) prompts for dense mode with variant support."""
     return (
@@ -456,6 +478,7 @@ def get_template_prompts(
             object_field_order=object_field_order,
             bbox_format=bbox_format,
             detection_sequence_format=detection_sequence_format,
+            row_separator=row_separator,
         ),
         build_dense_user_prompt(
             ordering=ordering,
@@ -464,6 +487,7 @@ def get_template_prompts(
             object_field_order=object_field_order,
             bbox_format=bbox_format,
             detection_sequence_format=detection_sequence_format,
+            row_separator=row_separator,
         ),
     )
 
@@ -476,6 +500,7 @@ def get_template_prompt_hash(
     object_field_order: str = "desc_first",
     bbox_format: str = "xyxy",
     detection_sequence_format: str = COORDJSON_FORMAT,
+    row_separator: str = COMPACT_ROW_SEPARATOR_NEWLINE,
 ) -> str:
     system_prompt, user_prompt = get_template_prompts(
         ordering=ordering,
@@ -484,7 +509,9 @@ def get_template_prompt_hash(
         object_field_order=object_field_order,
         bbox_format=bbox_format,
         detection_sequence_format=detection_sequence_format,
+        row_separator=row_separator,
     )
+    separator_key = normalize_compact_row_separator(row_separator)
     payload = {
         "ordering": ordering,
         "coord_mode": coord_mode,
@@ -496,6 +523,7 @@ def get_template_prompt_hash(
         "detection_sequence_format": normalize_detection_sequence_format(
             detection_sequence_format
         ),
+        "row_separator": separator_key,
         "system_prompt": system_prompt,
         "user_prompt": user_prompt,
         "do_resize": False,
@@ -510,6 +538,20 @@ def resolve_dense_prompt_variant_key(prompt_variant: Optional[str] = None) -> st
     return resolve_prompt_variant_key(prompt_variant)
 
 
+def normalize_compact_row_separator(row_separator: str | None = None) -> str:
+    value = (
+        COMPACT_ROW_SEPARATOR_NEWLINE
+        if row_separator is None
+        else str(row_separator).strip().lower().replace("-", "_")
+    )
+    if value in {"", "legacy"}:
+        value = COMPACT_ROW_SEPARATOR_NEWLINE
+    if value not in _COMPACT_ROW_SEPARATORS:
+        allowed = ", ".join(sorted(_COMPACT_ROW_SEPARATORS))
+        raise ValueError(f"compact row_separator must be one of {{{allowed}}}")
+    return value
+
+
 __all__ = [
     # primary helpers
     "build_dense_system_prompt",
@@ -518,6 +560,7 @@ __all__ = [
     "get_template_prompts",
     "get_template_prompt_hash",
     "normalize_coord_mode",
+    "normalize_compact_row_separator",
     "resolve_dense_prompt_variant_key",
     "available_prompt_variant_keys",
     # prompt variant defaults

@@ -41,9 +41,15 @@ Start from the repo route before broad source search:
 `docs/AGENT_INDEX.md`, `docs/catalog.yaml`, then relevant docs, stable specs,
 configs, tests, artifacts, and `progress/` notes.
 
-Use `rg`/`rtk` to narrow. For Python symbol exploration, prefer Serena when
-available. Do not spawn subagents unless the user explicitly asks for parallel
-agent work.
+Use CodeGraph when a correct local index exists to map modules, call chains,
+grouped source context, and impact radius before token-heavy file reads. In
+linked worktrees, initialize/query the exact worktree and pass `projectPath` to
+CodeGraph MCP calls when ambiguous. Treat CodeGraph as the scout: after it
+identifies Python files or symbols, switch to Serena for exact symbol overview,
+references, declarations/implementations, diagnostics, and symbolic edits. Use
+`rg`/`rtk` for exact literal search in docs, configs, specs, artifacts, and
+logs. Use subagents when parallel architecture audits materially help or the
+user explicitly asks for parallel agent work.
 
 Explore organically and note where you experience friction:
 
@@ -87,5 +93,5 @@ Side effects happen inline as decisions crystallize:
 - **Compatibility-sensitive contract changes?** Use OpenSpec, only when the contract is genuinely stable and normative.
 - **Empirical or historical reasons?** Record them in `progress/`.
 - **Implementation checklists or handoff notes?** Keep them in the active super-power plan/spec when available.
-- **User rejects the candidate with a load-bearing reason?** Record it in the right durable surface using `../grill/RECORDING.md` so future architecture reviews do not re-suggest it.
+- **User rejects the candidate with a load-bearing reason?** Record it in the right durable surface using `../grill-me-with-docs/RECORDING.md` so future architecture reviews do not re-suggest it.
 - **Want to explore alternative interfaces for the deepened module?** See [INTERFACE-DESIGN.md](INTERFACE-DESIGN.md).

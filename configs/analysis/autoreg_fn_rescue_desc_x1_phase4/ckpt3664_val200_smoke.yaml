@@ -1,0 +1,18 @@
+paths:
+  artifact_root: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/fn_rescue_desc_x1_phase4_binding_mechanism_smoke
+  phase3_root: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/fn_rescue_desc_x1_phase3_causal_binding
+  fn_rescue_root: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/fn_rescue_continuation
+  lane_d_root: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/fn_rescue_desc_x1_phase2/x1_logit_lens_smoke
+evidence_scope: val200_fn_rescue_desc_x1_phase4_binding_mechanism_smoke
+instance_attention:
+  max_attention_rows: 200000
+  roles:
+    - pre_x1
+    - pre_y1
+  region_kinds:
+    - target_gt
+    - same_desc_competitor_gt_object
+    - same_desc_rollout_prediction
+    - wrong_control_source_region
+    - context_ring
+    - far_background

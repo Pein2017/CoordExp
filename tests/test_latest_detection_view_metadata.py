@@ -54,6 +54,18 @@ class RequiresNoResizeSwiftTemplate(FakeSwiftTemplate):
         return super().encode(payload, return_length=return_length)
 
 
+class TrailingNewlineSupervisingSwiftTemplate(FakeSwiftTemplate):
+    def encode(
+        self,
+        payload: Mapping[str, Any],
+        *,
+        return_length: bool,
+    ) -> dict[str, Any]:
+        encoded = super().encode(payload, return_length=return_length)
+        encoded["labels"][-1] = encoded["input_ids"][-1]
+        return encoded
+
+
 def _canonical_all_proxy_row() -> dict[str, Any]:
     return {
         "images": ["images/val2017/example.jpg"],
@@ -536,6 +548,45 @@ def test_teacher_forcing_pure_valid_set_dataset_emits_ambiguous_atoms(
         atom.valid_token_ids != frozenset({atom.selected_token_id})
         for atom in target_ir.atoms
     )
+
+
+def test_teacher_forcing_dataset_masks_swift_trailing_newline_label(
+    tmp_path: Path,
+) -> None:
+    jsonl_path = tmp_path / "train.coord.jsonl"
+    _write_jsonl(jsonl_path, [_canonical_all_proxy_row()])
+    _ensure_image(tmp_path)
+    swift_template = TrailingNewlineSupervisingSwiftTemplate()
+    swift_template.tokenizer.bos_token_id = swift_template.tokenizer.convert_tokens_to_ids(
+        "<|im_start|>"
+    )
+    dataset = DetectionTrainingDataset.from_jsonl(
+        jsonl_path,
+        swift_template=swift_template,
+        image_root=tmp_path / "image-root",
+        detection_template_id="compact_full",
+        mode="random_order_sft",
+        object_ordering="sorted",
+        user_prompt="Detect every object.",
+        system_prompt="You are a detector.",
+        seed=123,
+        state_weighting="none",
+        normalization="token_mean",
+        teacher_forcing_profile="pure_valid_set_marginal",
+        teacher_forcing_rollin_base_seed=17,
+    )
+
+    sample = dataset[0]
+    target_ir = sample[TEACHER_FORCING_TARGET_IR_KEY]
+    supervised_positions = tuple(
+        index for index, label in enumerate(sample["labels"]) if int(label) != -100
+    )
+
+    assert supervised_positions == tuple(
+        int(atom.target_position) for atom in target_ir.atoms
+    )
+    assert sample["labels"][-1] == -100
+    assert target_ir.metadata["swift_encoded_extra_label_count"] == 1
 
 
 def _role_vocab_for_fake_tokenizer(tokenizer: object) -> RoleVocab:

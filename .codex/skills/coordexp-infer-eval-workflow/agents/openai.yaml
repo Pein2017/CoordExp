@@ -1,0 +1,4 @@
+interface:
+  display_name: "Infer Eval Workflow"
+  short_description: "Launch and check CoordExp infer/eval artifacts"
+  default_prompt: "Use $coordexp-infer-eval-workflow for CoordExp inference, confidence scoring, evaluation, Oracle-K, proxy-bundle, or metric-bearing artifact launch/repair/summary work. Start from YAML-first configs, verify coordinate surface and artifact contracts, and avoid general audit/diagnosis work unless infer/eval artifacts are the direct surface."

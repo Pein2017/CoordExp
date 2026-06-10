@@ -20,7 +20,7 @@ Use these as a breadth-pass index. Prefer scoping with `--glob` or `relative_pat
 ### Current Architecture Seams
 - `rg -n \"run_pipeline|ResolvedArtifacts|resolved_config\\.path|_maybe_run_confidence_postop|_run_eval_stage\" src/infer tests docs -S`
 - `rg -n \"evaluate_and_save|EvalOptions|with_constant_scores|gt_vs_pred_scored_guarded|metrics_guarded\" src/eval tests docs -S`
-- `rg -n \"Stage2ABTrainingTrainer|stage2_coordination|rollout_runtime|RolloutMatchingSFTTrainer|stage2_ab\\.pipeline|rollout_matching\\.pipeline\" src tests docs openspec configs -S`
+- `rg -n \"stage2_rollout_correction|Stage2RolloutCorrectionTrainer|stage2_coordination|stage2_rollout_runtime|GreedyIoUAssignment|duplicate_filter|CorrectionEvent\" src tests docs openspec configs -S`
 - `rg -n \"geometry_from_dict|transform_geometry|compute_coverage|bbox_2d|poly\" src/datasets tests docs -S`
 
 ### Progress / Benchmark Scope

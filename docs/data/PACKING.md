@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: data
 summary: Surface-specific packing policy, hard caps, cache behavior, and efficiency tradeoffs.
-updated: 2026-05-25
+updated: 2026-06-07
 ---
 
 # Packing Policy Matrix
@@ -125,6 +125,27 @@ Current implementation:
   ordinary-SFT ablation attaches per-token weights to the final global CoordJSON
   close sequence `]}` and therefore requires one un-packed assistant response
   per row.
+
+## FlashAttention Varlen Boundary
+
+Packed / padding-free runs that use FlashAttention should materialize explicit
+segment boundaries at collator or batch-builder time when CoordExp sidecars are
+active:
+
+```text
+cu_seq_lens_q
+cu_seq_lens_k
+max_length_q
+max_length_k
+```
+
+These tensors describe attention isolation for the upstream forward pass.
+CoordExp supervision sidecars describe loss ownership. The two maps must agree:
+labels, image placeholders, coordinate tokens, loss masks, image-grid slices,
+and sidecar ranges must be flattened in the same physical order. Do not rely on
+a plain 2D `attention_mask` to express multiple packed examples inside one row.
+For detailed upstream constraints, see
+[`../standards/upstream/FLASH_ATTENTION.md`](../standards/upstream/FLASH_ATTENTION.md).
 
 ## Historical 12k Packing Probe
 - Dramatically cuts padding waste (≈0% slack vs ~40–50% with padding).

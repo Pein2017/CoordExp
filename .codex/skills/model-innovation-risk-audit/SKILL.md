@@ -1,6 +1,6 @@
 ---
 name: model-innovation-risk-audit
-description: "Use when reviewing a planned or newly wired CoordExp model/objective/data/tokenizer/decode/eval/runtime change before trusting training or eval claims, especially for silent train/eval/config/artifact mismatch risk."
+description: "Use when a planned or newly wired CoordExp mechanism needs a pre-launch or pre-interpretation trust gate before training/eval claims, especially for silent train/eval/config/artifact mismatch risk."
 ---
 
 # Model Innovation Risk Audit
@@ -13,11 +13,24 @@ Use this skill when the question is:
 
 - "Can we trust this new mechanism, config, data path, tokenizer/template, loss, decode path, eval path, or runtime integration?"
 - "Could this innovation silently train or evaluate a different contract than intended?"
-- "Before launching or interpreting a run, are schema, materialized config, data, loss, decode/eval, and artifacts aligned?"
+- "Before launching or interpreting a run, are schema, materialized config, data, loss, decode/eval, metrics, and artifacts aligned?"
 
 Do **not** use this skill as the main tool when the user already has a concrete behavioral symptom such as a metric drop, FP/FN shift, invalid rollout spike, duplication burst, length collapse, train/eval divergence, or optimization instability. Start with `model-diagnosis` for those symptoms, then return here only if the diagnosis points to silent config/runtime/eval contract drift.
 
 Hand off to `model-diagnosis` when the contract appears wired correctly but behavior remains unproven or abnormal.
+
+## Minimal Contract Diff
+
+For every innovation, produce a compact contract diff:
+
+- intended contract: design, spec, or plan;
+- authored config: YAML keys and inheritance chain;
+- resolved contract: materialized config and schema dataclass;
+- runtime contract: dataset, collator, trainer, loss, decode, and eval objects actually used;
+- artifact contract: resolved config, manifests, parser/drop counters, and metric keys;
+- evidence verdict: matched, mismatched, or unproven.
+
+Do not trust a smoke run if any row silently falls back to legacy behavior.
 
 ## Contract Triangulation
 
@@ -33,6 +46,15 @@ Extract the intended algorithm contract, then compare it across:
 - metrics and effective weighted contributions;
 - decode/eval/parser behavior;
 - artifacts and manifests.
+
+## Config And Loss Footguns
+
+- `ConfigLoader.load_yaml_with_extends()` deep-merges dicts but replaces lists wholesale; inspect final resolved objective lists.
+- Reject legacy keys in semantic modes instead of warning or ignoring.
+- Separate monitoring-only knobs from differentiable objective weights.
+- Verify raw loss terms and effective weighted contributions are both logged.
+- Check zero-weight targets, EOS/type-gate composition, duplicate multiplicity, and teacher-token membership.
+- Use deterministic tiny-logit tests for scalar formulas before trusting training curves.
 
 ## Probes
 
@@ -54,6 +76,7 @@ Use:
 
 ```text
 Findings
+Minimal Contract Diff
 Confirmed OK
 Decision Questions
 Patch Recommendations
@@ -92,9 +115,9 @@ When independent surfaces exist and subagents are available, split by disjoint s
 - artifact/eval;
 - tests/diagnostics.
 
-## Stage-2 Production Gate
+## Launch/Promote Gate
 
-For Stage-2 rollout-correction, residual-set, trie, or vLLM candidates, return a bounded launch/promote decision instead of an open-ended audit. Check:
+For high-risk model innovations, return a bounded launch/promote decision instead of an open-ended audit. For Stage-2 rollout-correction, residual-set, trie, or vLLM candidates, check:
 
 - config load and resolved pipeline namespace;
 - prepared-data versus live-rollout mode;
@@ -113,3 +136,4 @@ Load only when needed:
 - `references/risk-taxonomy.md`
 - `references/subagent-prompts.md`
 - `references/report-template.md`
+- `references/contract-diff.md`

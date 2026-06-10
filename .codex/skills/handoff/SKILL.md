@@ -10,7 +10,8 @@ Write a concise continuation document for a fresh agent or another machine.
 ## Output Target
 
 - If the user gives a path, write there.
-- Otherwise save to a temporary Markdown file from `mktemp -t handoff-XXXXXX.md`.
+- If the user asks for a durable or cross-machine handoff file, save to a temporary Markdown file from `mktemp -t handoff-XXXXXX.md`.
+- Otherwise return the handoff inline in chat.
 - Read the target path before writing if it already exists.
 
 ## CoordExp Content

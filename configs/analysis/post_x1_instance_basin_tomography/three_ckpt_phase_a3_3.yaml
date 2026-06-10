@@ -1,0 +1,95 @@
+project_id: post_x1_instance_basin_tomography
+phase_id: phase_a3_3
+schema_version: a3.3.v1
+run_id: three_ckpt_phase_a3_3
+artifact_root: /data/CoordExp/outputs/analysis/autoreg_object_rollout/post_x1_instance_basin_tomography/three_ckpt_phase_a3_3
+train_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/train.coord.jsonl
+val_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl
+image_root: /data/CoordExp/public_data/coco/rescale_32_1024_bbox
+case_sampling:
+  max_images: 1024
+  max_target_instances: 4096
+  min_same_desc_count: 3
+  min_object_count: 6
+  easy_sanity_max_fraction: 0.10
+  seed: 333
+  splits: [train, val]
+  split_quotas:
+    train: 768
+    val: 256
+  desc_cap_per_split: 64
+  desc_count_caps:
+    train: 64
+    val: 64
+  object_count_buckets: ["6-9", "10-19", "20+"]
+prefix:
+  prefix_modes_requested:
+    - minimal_or_empty_prefix
+    - canonical_sorted_gt_prefix_before_target
+    - clean_non_target_same_desc_prefix
+    - duplicate_same_desc_prefix
+    - wrong_instance_same_desc_prefix
+    - rollout_native_prefix_with_quality_label
+  rollout_prefix_source_jsonl:
+  rollout_prefix_missing_policy_smoke: skip_with_manifest
+  rollout_prefix_missing_policy_full: fail
+posterior:
+  strict_r95_axis_fraction: 0.04
+  strict_r95_cap_bins: 8
+  peak_mass_floor: 0.002
+  low_margin_threshold: 0.05
+  coord_mass_low_threshold: 0.01
+  r95_anchor_policy: target_axis_fraction_cap
+greedy:
+  enabled: true
+  sample_fraction: 0.20
+  decode_policy: free_text_unconstrained_greedy_temp0
+  constraint_policy: none
+runtime:
+  num_shards: 8
+  max_new_tokens: 64
+  torch_dtype: bfloat16
+  device_map: single_gpu
+checkpoints:
+  fullobj_random_pure_ce_ckpt3668:
+    enabled: true
+    checkpoint_path: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_fullobj_random_sft_bsz16_4epoch_tokenrows_v2/compact-full-fullobj-random-sft-bsz16-4epoch-tokenrows-v2/v1-20260601-062428/checkpoint-3668
+    training_ordering: random_permutation
+    comparison_role: clean_pair
+    controlled_comparison_group: pure_ce_sorted_vs_random_no_newline
+    chat_template_variant: compact_full_no_newline_native_v1
+    template_contract:
+      template_contract_id: compact_full_no_newline_native_v1
+      detection_sequence_format: compact_full
+      coordinate_surface: coord_token
+      bbox_format: xyxy
+      row_separator: none
+      contract_provenance: user_reported_training_contract
+  fullobj_sorted_pure_ce_ckpt3668:
+    enabled: true
+    checkpoint_path: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_fullobj_sorted_sft_bsz16_4epoch_tokenrows_v2/compact-full-fullobj-sorted-sft-bsz16-4epoch-tokenrows-v2/v1-20260601-062429/checkpoint-3668
+    training_ordering: sorted
+    comparison_role: clean_pair
+    controlled_comparison_group: pure_ce_sorted_vs_random_no_newline
+    chat_template_variant: compact_full_no_newline_native_v1
+    template_contract:
+      template_contract_id: compact_full_no_newline_native_v1
+      detection_sequence_format: compact_full
+      coordinate_surface: coord_token
+      bbox_format: xyxy
+      row_separator: none
+      contract_provenance: user_reported_training_contract
+  et_rmp_ce_ckpt3664:
+    enabled: true
+    checkpoint_path: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664
+    training_ordering: random_permutation
+    comparison_role: reference_anchor
+    controlled_comparison_group: reference_anchor_not_controlled
+    chat_template_variant: compact_full_newline_native_v1
+    template_contract:
+      template_contract_id: compact_full_newline_native_v1
+      detection_sequence_format: compact_full
+      coordinate_surface: coord_token
+      bbox_format: xyxy
+      row_separator: newline
+      contract_provenance: legacy_compact_full_default_inferred

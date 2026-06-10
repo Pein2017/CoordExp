@@ -1,6 +1,6 @@
 ---
-name: git-sync
-description: Use when staging, committing, syncing with the remote branch, splitting dirty CoordExp work, or using the repo HTTPS token workflow.
+name: git-hygiene
+description: Use when the user asks to stage, commit, sync, push, split dirty CoordExp work, or use the repo HTTPS token workflow.
 ---
 
 # Git Hygiene

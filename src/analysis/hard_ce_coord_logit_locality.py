@@ -11,8 +11,9 @@ from __future__ import annotations
 import json
 import math
 import re
+import shlex
 from collections import Counter, defaultdict
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from statistics import mean
 from typing import Any, Iterable, Iterator, Mapping, MutableMapping, Sequence
@@ -118,6 +119,49 @@ class DistributionMetrics:
 
 
 @dataclass(frozen=True)
+class LaneCPrefixMatchState:
+    """Guarded Lane-A match state consumed by Lane-C target selection."""
+
+    depth: int
+    gt_count: int
+    match_policy: str
+    consumed_raw_pred_indices: tuple[int, ...]
+    matched_prefix_gt_indices: tuple[int, ...]
+    remaining_gt_indices: tuple[int, ...]
+    fp_prefix_object_indices: tuple[int, ...]
+    duplicate_prefix_object_indices: tuple[int, ...]
+    invalid_prefix_object_indices: tuple[int, ...]
+    ambiguous_prefix_object_indices: tuple[int, ...]
+    prefix_quality: str
+
+
+@dataclass(frozen=True)
+class LaneCTargetSelection:
+    """Selected Lane-C intended target and rule provenance."""
+
+    intended_target_gt_idx: int | None
+    target_selection_rule: str
+
+
+@dataclass(frozen=True)
+class LaneCCoordAttribution:
+    """Attribution metrics for one Lane-C coordinate distribution."""
+
+    target_bin: int
+    top1_bin: int
+    target_rank: int
+    best_other_gt_idx: int | None
+    best_other_gt_bin: int | None
+    best_other_gt_rank: int | None
+    target_margin_vs_best_other: float | None
+    entropy: float
+    gt_top1: bool
+    top1_distance: int
+    mass_by_radius: dict[str, float]
+    top_peak_attribution: str
+
+
+@dataclass(frozen=True)
 class EmbeddingGeometryMetrics:
     """Numeric-manifold diagnostics for coordinate-token row vectors."""
 
@@ -159,6 +203,7 @@ class StudyPaths:
     self_rollout_root: Path | None
     self_rollout_regen_config: Path | None
     base_model_for_embedding_control: Path | None = None
+    lane_a_rollout_root: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -223,6 +268,7 @@ class PreparedForwardExample:
     prefix_quality: str
     scope_label: str
     pairing_id: str | None = None
+    lane_c_metadata: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -341,6 +387,500 @@ def distribution_metrics_from_logits(
         conditional_probs=p_cond,
         coord_logits=coord_logits_t.detach().cpu().numpy().astype(np.float32),
     )
+
+
+def build_lane_c_prefix_match_state(
+    lane_a_rows: Sequence[Mapping[str, Any]],
+    depth: int,
+    gt_count: int,
+    *,
+    match_policy: str = "guarded",
+) -> LaneCPrefixMatchState:
+    """Build guarded prefix state from Lane-A per-row rollout anatomy records.
+
+    ``depth`` is a raw generated-object prefix length: only rows whose
+    ``raw_pred_idx`` is less than ``depth`` are consumed. Under the default
+    guarded policy, duplicate-suppressed raw TPs do not consume GT coverage.
+    """
+
+    policy = str(match_policy or "guarded").lower()
+    if policy != "guarded":
+        raise ValueError(f"unsupported Lane-C match_policy {match_policy!r}")
+    depth_i = max(0, int(depth))
+    gt_count_i = max(0, int(gt_count))
+    prefix_rows = sorted(
+        (
+            row
+            for row in lane_a_rows
+            if _lane_c_optional_int(row.get("raw_pred_idx")) is not None
+            and int(row["raw_pred_idx"]) < depth_i
+        ),
+        key=lambda row: int(row["raw_pred_idx"]),
+    )
+
+    matched_gt: set[int] = set()
+    consumed_indices: list[int] = []
+    fp_indices: list[int] = []
+    duplicate_indices: list[int] = []
+    invalid_indices: list[int] = []
+    ambiguous_indices: list[int] = []
+
+    for row in prefix_rows:
+        raw_idx = int(row["raw_pred_idx"])
+        consumed_indices.append(raw_idx)
+        classes = _lane_c_prefix_problem_classes(row)
+        if "fp" in classes:
+            fp_indices.append(raw_idx)
+        if "duplicate" in classes:
+            duplicate_indices.append(raw_idx)
+        if "invalid" in classes:
+            invalid_indices.append(raw_idx)
+        if "ambiguous" in classes:
+            ambiguous_indices.append(raw_idx)
+
+        guarded_gt_idx = _lane_c_optional_int(row.get("guarded_matched_gt_idx"))
+        if (
+            guarded_gt_idx is not None
+            and 0 <= guarded_gt_idx < gt_count_i
+            and not bool(row.get("suppressed_by_guard", False))
+            and _lane_c_is_guarded_tp_like(row)
+        ):
+            matched_gt.add(int(guarded_gt_idx))
+
+    problem_names = {
+        name
+        for name, indices in (
+            ("fp", fp_indices),
+            ("duplicate", duplicate_indices),
+            ("invalid", invalid_indices),
+            ("ambiguous", ambiguous_indices),
+        )
+        if indices
+    }
+    prefix_quality = _lane_c_prefix_quality(depth_i, problem_names)
+    matched_sorted = tuple(sorted(matched_gt))
+    return LaneCPrefixMatchState(
+        depth=depth_i,
+        gt_count=gt_count_i,
+        match_policy=policy,
+        consumed_raw_pred_indices=tuple(consumed_indices),
+        matched_prefix_gt_indices=matched_sorted,
+        remaining_gt_indices=tuple(idx for idx in range(gt_count_i) if idx not in matched_gt),
+        fp_prefix_object_indices=tuple(fp_indices),
+        duplicate_prefix_object_indices=tuple(duplicate_indices),
+        invalid_prefix_object_indices=tuple(invalid_indices),
+        ambiguous_prefix_object_indices=tuple(ambiguous_indices),
+        prefix_quality=prefix_quality,
+    )
+
+
+def select_lane_c_intended_target_gt_idx(
+    teacher_order_gt_indices: Sequence[int],
+    prefix_state: LaneCPrefixMatchState | Mapping[str, Any],
+) -> LaneCTargetSelection:
+    """Select the first teacher-order GT index still remaining after a prefix."""
+
+    remaining = set(
+        int(item)
+        for item in _lane_c_state_value(prefix_state, "remaining_gt_indices", ())
+        if item is not None
+    )
+    for raw_idx in teacher_order_gt_indices:
+        gt_idx = int(raw_idx)
+        if gt_idx in remaining:
+            return LaneCTargetSelection(
+                intended_target_gt_idx=gt_idx,
+                target_selection_rule="first_remaining_teacher_order_guarded",
+            )
+    return LaneCTargetSelection(
+        intended_target_gt_idx=None,
+        target_selection_rule="no_remaining_gt",
+    )
+
+
+def attribute_lane_c_coord_distribution(
+    probs: Sequence[float] | np.ndarray,
+    *,
+    target_bin: int,
+    gt_bins_by_index: Mapping[int, Any],
+    prefix_bins_by_label: Mapping[str, Any] | None,
+    slot: str,
+    radii: Sequence[int] = (4, 8),
+) -> LaneCCoordAttribution:
+    """Attribute one full 1000-bin coordinate distribution to local objects."""
+
+    p = _lane_c_normalized_probs(probs)
+    target = int(target_bin)
+    if target < 0 or target >= p.shape[0]:
+        raise ValueError("target_bin must be in the 0..999 range")
+    order = np.argsort(-p, kind="stable")
+    ranks = np.empty_like(order)
+    ranks[order] = np.arange(1, len(order) + 1)
+    top1_bin = int(order[0])
+
+    radius_values = tuple(int(radius) for radius in radii)
+    mass_by_radius = {
+        f"mass_at_radius_{radius}": float(
+            p[np.abs(np.arange(1000, dtype=np.int64) - target) <= radius].sum()
+        )
+        for radius in radius_values
+    }
+    entropy = float(-np.sum(p * np.log(np.clip(p, 1e-300, 1.0))))
+
+    other_gt_candidates: list[tuple[int, int, int, float]] = []
+    for raw_gt_idx, raw_value in gt_bins_by_index.items():
+        gt_idx = int(raw_gt_idx)
+        candidate_bin = _lane_c_extract_slot_bin(raw_value, slot=slot)
+        if candidate_bin is None or candidate_bin == target:
+            continue
+        other_gt_candidates.append((int(ranks[candidate_bin]), gt_idx, candidate_bin, float(p[candidate_bin])))
+    other_gt_candidates.sort(key=lambda item: (item[0], item[1]))
+    if other_gt_candidates:
+        best_other_rank, best_other_idx, best_other_bin, best_other_prob = other_gt_candidates[0]
+        margin = float(p[target] - best_other_prob)
+    else:
+        best_other_rank = None
+        best_other_idx = None
+        best_other_bin = None
+        margin = None
+
+    return LaneCCoordAttribution(
+        target_bin=target,
+        top1_bin=top1_bin,
+        target_rank=int(ranks[target]),
+        best_other_gt_idx=best_other_idx,
+        best_other_gt_bin=best_other_bin,
+        best_other_gt_rank=best_other_rank,
+        target_margin_vs_best_other=margin,
+        entropy=entropy,
+        gt_top1=bool(top1_bin == target),
+        top1_distance=int(abs(top1_bin - target)),
+        mass_by_radius=mass_by_radius,
+        top_peak_attribution=_lane_c_top_peak_attribution(
+            top1_bin=top1_bin,
+            target_bin=target,
+            gt_bins_by_index=gt_bins_by_index,
+            prefix_bins_by_label=prefix_bins_by_label or {},
+            slot=slot,
+            local_radius=max(radius_values) if radius_values else 8,
+        ),
+    )
+
+
+def lane_c_shard_label(shard_index: int, num_shards: int) -> str:
+    """Return the stable Lane-C shard label."""
+
+    return f"lane_c_shard_{int(shard_index):03d}-of-{int(num_shards):03d}"
+
+
+def normalize_lane_c_shard(
+    *,
+    shard_index: int | None,
+    num_shards: int | None,
+) -> tuple[int | None, int | None, str | None]:
+    """Validate optional Lane-C sharding parameters."""
+
+    if shard_index is None and num_shards is None:
+        return None, None, None
+    if shard_index is None or num_shards is None:
+        raise ValueError("Lane-C sharding requires both shard_index and num_shards")
+    shard_count = int(num_shards)
+    shard_i = int(shard_index)
+    if shard_count <= 0:
+        raise ValueError(f"num_shards must be positive, got {shard_count}")
+    if not 0 <= shard_i < shard_count:
+        raise ValueError(
+            "shard_index must satisfy 0 <= shard_index < num_shards, got "
+            f"shard_index={shard_i} num_shards={shard_count}"
+        )
+    return shard_i, shard_count, lane_c_shard_label(shard_i, shard_count)
+
+
+def lane_c_record_selected(
+    record: Mapping[str, Any] | int,
+    *,
+    limit: int | None = None,
+    shard_index: int | None = None,
+    num_shards: int | None = None,
+) -> bool:
+    """Select Lane-C records by stable source line so all prefix depths stay together."""
+
+    source_line_idx = int(record.get("source_line_idx")) if isinstance(record, Mapping) else int(record)
+    if source_line_idx < 0:
+        return False
+    if limit is not None and source_line_idx >= int(limit):
+        return False
+    normalized_shard_index, normalized_num_shards, _ = normalize_lane_c_shard(
+        shard_index=shard_index,
+        num_shards=num_shards,
+    )
+    if normalized_shard_index is None or normalized_num_shards is None:
+        return True
+    return source_line_idx % normalized_num_shards == normalized_shard_index
+
+
+def lane_c_merge_key(record: Mapping[str, Any]) -> tuple[Any, ...]:
+    """Stable merge key for Lane-C per-slot/per-case rows."""
+
+    return (
+        _lane_c_optional_int(record.get("source_line_idx")),
+        str(record.get("prefix_mode", record.get("prefix_condition", ""))),
+        _lane_c_optional_int(record.get("prefix_depth")),
+        _lane_c_optional_int(record.get("intended_target_gt_idx")),
+        str(record.get("slot", "")),
+        _lane_c_optional_int(record.get("slot_index")),
+    )
+
+
+def select_lane_c_generated_intended_target(
+    *,
+    teacher_order_gt_indices: Sequence[int],
+    lane_a_rows: Sequence[Mapping[str, Any]],
+    depth: int,
+    gt_count: int,
+    match_policy: str = "guarded",
+) -> LaneCTargetSelection:
+    """Select a generated-prefix target from Lane-A state, never ordinal depth."""
+
+    state = build_lane_c_prefix_match_state(
+        lane_a_rows,
+        depth=int(depth),
+        gt_count=int(gt_count),
+        match_policy=match_policy,
+    )
+    return select_lane_c_intended_target_gt_idx(teacher_order_gt_indices, state)
+
+
+def build_lane_c_shard_plan(
+    *,
+    config_path: str | Path,
+    output_root: str | Path,
+    num_shards: int,
+    python_executable: str = "python",
+) -> dict[str, Any]:
+    """Build CPU-only Lane-C shard and merge commands without loading a model."""
+
+    shard_count = int(num_shards)
+    if shard_count <= 0:
+        raise ValueError("num_shards must be positive")
+    config = Path(config_path)
+    root = Path(output_root)
+    script = REPO_ROOT / "scripts" / "analysis" / "run_hard_ce_coord_logit_locality.py"
+    shards: list[dict[str, str | int]] = []
+    for shard_index in range(shard_count):
+        label = lane_c_shard_label(shard_index, shard_count)
+        shard_dir = root / "shards" / label
+        command = " ".join(
+            [
+                shlex.quote(str(python_executable)),
+                shlex.quote(str(script)),
+                "--config",
+                shlex.quote(str(config)),
+                "--stages",
+                "x1_basin_attribution",
+                "--shard-index",
+                str(shard_index),
+                "--num-shards",
+                str(shard_count),
+            ]
+        )
+        shards.append(
+            {
+                "shard_index": shard_index,
+                "num_shards": shard_count,
+                "shard_label": label,
+                "shard_dir": str(shard_dir),
+                "command": command,
+            }
+        )
+    merge_command = " ".join(
+        [
+            shlex.quote(str(python_executable)),
+            shlex.quote(str(script)),
+            "--config",
+            shlex.quote(str(config)),
+            "--stages",
+            "x1_basin_attribution",
+            "--merge-shards",
+            "--num-shards",
+            str(shard_count),
+        ]
+    )
+    return {
+        "stage": "x1_basin_attribution",
+        "output_root": str(root),
+        "num_shards": shard_count,
+        "shards": shards,
+        "merge_command": merge_command,
+    }
+
+
+def summarize_lane_c_per_case_rows(
+    per_slot_rows: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Summarize Lane-C slot rows while preserving x1/y1/x2/y2 separately."""
+
+    grouped: dict[tuple[Any, ...], list[Mapping[str, Any]]] = defaultdict(list)
+    for row in per_slot_rows:
+        key = (
+            _lane_c_optional_int(row.get("source_line_idx")),
+            str(row.get("prefix_mode", row.get("prefix_condition", ""))),
+            _lane_c_optional_int(row.get("prefix_depth")),
+            _lane_c_optional_int(row.get("intended_target_gt_idx")),
+        )
+        grouped[key].append(row)
+
+    cases: list[dict[str, Any]] = []
+    metric_keys = (
+        "top_peak_attribution",
+        "target_rank",
+        "best_other_gt_rank",
+        "target_margin_vs_best_other",
+        "gt_top1",
+        "top1_distance",
+        "mass_at_radius_4",
+        "mass_at_radius_8",
+    )
+    for key, rows in sorted(grouped.items(), key=lambda item: item[0]):
+        exemplar = dict(rows[0])
+        slot_rows = {
+            str(row.get("slot")): row
+            for row in sorted(
+                rows,
+                key=lambda item: SLOT_NAMES.index(str(item.get("slot")))
+                if str(item.get("slot")) in SLOT_NAMES
+                else 99,
+            )
+            if str(row.get("slot")) in SLOT_NAMES
+        }
+        slots = {
+            slot: {metric_key: slot_rows[slot].get(metric_key) for metric_key in metric_keys}
+            for slot in SLOT_NAMES
+            if slot in slot_rows
+        }
+        case = {
+            "lane_c_case_key": ":".join("" if part is None else str(part) for part in key),
+            "case_id": exemplar.get("case_id"),
+            "source_line_idx": key[0],
+            "prefix_mode": key[1],
+            "prefix_depth": key[2],
+            "intended_target_gt_idx": key[3],
+            "prefix_quality": exemplar.get("prefix_quality"),
+            "match_policy": exemplar.get("match_policy"),
+            "target_selection_rule": exemplar.get("target_selection_rule"),
+            "target_object_instance_id": exemplar.get("target_object_instance_id"),
+            "target_source_object_index": exemplar.get("target_source_object_index"),
+            "target_desc": exemplar.get("target_desc"),
+            "target_bbox_xyxy": exemplar.get("target_bbox_xyxy"),
+            "slots": slots,
+        }
+        if "x1" in slots:
+            case["x1"] = slots["x1"]
+        cases.append(case)
+    return cases
+
+
+def merge_lane_c_shards(
+    output_root: str | Path,
+    *,
+    expected_shards: int,
+) -> dict[str, Any]:
+    """Merge Lane-C shard outputs with strict stale/missing/duplicate guards."""
+
+    root = Path(output_root)
+    shard_count = int(expected_shards)
+    if shard_count <= 0:
+        raise ValueError("expected_shards must be positive")
+    shards_dir = root / "shards"
+    if not shards_dir.exists():
+        raise FileNotFoundError(f"Lane-C shards directory not found: {shards_dir}")
+
+    shard_pattern = re.compile(r"^lane_c_shard_(\d{3})-of-(\d{3})$")
+    found_dirs = sorted(path for path in shards_dir.iterdir() if path.is_dir())
+    malformed = [path.name for path in found_dirs if shard_pattern.fullmatch(path.name) is None]
+    if malformed:
+        raise ValueError(f"malformed Lane-C shard dirs: {malformed}")
+
+    expected_names = {lane_c_shard_label(index, shard_count) for index in range(shard_count)}
+    found_names = {path.name for path in found_dirs}
+    unexpected = sorted(found_names - expected_names)
+    if unexpected:
+        raise ValueError(f"unexpected Lane-C shard dirs: {unexpected}")
+    missing = sorted(expected_names - found_names)
+    if missing:
+        raise ValueError(f"missing Lane-C shard dirs: {missing}")
+
+    per_slot_rows: list[dict[str, Any]] = []
+    per_case_rows: list[dict[str, Any]] = []
+    shard_summaries: list[dict[str, Any]] = []
+    seen_slot_keys: dict[str, str] = {}
+    for shard_name in sorted(expected_names):
+        shard_dir = shards_dir / shard_name
+        per_slot_path = shard_dir / "per_slot.jsonl"
+        per_case_path = shard_dir / "per_case.jsonl"
+        summary_path = shard_dir / "summary.json"
+        missing_files = [
+            str(path)
+            for path in (per_slot_path, per_case_path, summary_path)
+            if not path.exists()
+        ]
+        if missing_files:
+            raise FileNotFoundError(f"Lane-C shard {shard_name} missing files: {missing_files}")
+        for row in _read_jsonl(per_slot_path):
+            key = str(row.get("lane_c_merge_key") or lane_c_merge_key(row))
+            if key in seen_slot_keys:
+                raise ValueError(
+                    "duplicate Lane-C per-slot merge key "
+                    f"{key!r} in {shard_name} and {seen_slot_keys[key]}"
+                )
+            seen_slot_keys[key] = shard_name
+            row["lane_c_merge_key"] = key
+            per_slot_rows.append(row)
+        per_case_rows.extend(_read_jsonl(per_case_path))
+        shard_summaries.append(json.loads(summary_path.read_text(encoding="utf-8") or "{}"))
+
+    root.mkdir(parents=True, exist_ok=True)
+    with (root / "per_slot.jsonl").open("w", encoding="utf-8") as handle:
+        for row in sorted(per_slot_rows, key=lane_c_merge_key):
+            handle.write(json.dumps(_jsonable(row), ensure_ascii=True) + "\n")
+    if not per_case_rows:
+        per_case_rows = summarize_lane_c_per_case_rows(per_slot_rows)
+    with (root / "per_case.jsonl").open("w", encoding="utf-8") as handle:
+        for row in per_case_rows:
+            handle.write(json.dumps(_jsonable(row), ensure_ascii=True) + "\n")
+
+    summary = _lane_c_summary(
+        per_slot_rows,
+        per_case_rows=per_case_rows,
+        shard_metadata={"mode": "merge", "expected_shards": shard_count},
+    )
+    skipped_counts: Counter[str] = Counter()
+    selected_record_count = 0
+    planned_example_count = 0
+    for shard_summary in shard_summaries:
+        selected_record_count += int(shard_summary.get("selected_record_count") or 0)
+        planned_example_count += int(shard_summary.get("planned_example_count") or 0)
+        skipped_counts.update(
+            {
+                str(key): int(value)
+                for key, value in (shard_summary.get("skipped_counts") or {}).items()
+            }
+        )
+    summary["selected_record_count"] = selected_record_count
+    summary["planned_example_count"] = planned_example_count
+    summary["skipped_counts"] = dict(sorted(skipped_counts.items()))
+    summary["shard_summaries"] = shard_summaries
+    merge_summary = {
+        "stage": "x1_basin_attribution",
+        "output_root": str(root),
+        "expected_shards": shard_count,
+        "merged_shards": sorted(expected_names),
+        "row_count": len(per_slot_rows),
+        "case_count": len(per_case_rows),
+    }
+    _write_json(root / "summary.json", summary)
+    _write_json(root / "merge_summary.json", merge_summary)
+    return merge_summary
 
 
 def compute_probability_locality_metrics(
@@ -582,6 +1122,7 @@ def load_study_config(config_path: str | Path) -> StudyConfig:
         self_rollout_root=_optional_path(paths_raw.get("self_rollout_root")),
         self_rollout_regen_config=_optional_path(paths_raw.get("self_rollout_regen_config")),
         base_model_for_embedding_control=_optional_path(paths_raw.get("base_model_for_embedding_control")),
+        lane_a_rollout_root=_optional_path(paths_raw.get("lane_a_rollout_root")),
     )
     model = StudyModelConfig(
         prompt_variant=str(model_raw.get("prompt_variant", "coco_80")),
@@ -616,14 +1157,19 @@ def run_study(
     config_path: str | Path,
     stages: Sequence[str],
     limit: int | None = None,
+    shard_index: int | None = None,
+    num_shards: int | None = None,
+    dry_run: bool = False,
+    merge_shards: bool = False,
 ) -> dict[str, Any]:
     """Run one or more locality-study stages."""
 
     # preparing output directories
     config = load_study_config(config_path)
-    config.paths.artifact_root.mkdir(parents=True, exist_ok=True)
-    (config.paths.artifact_root / "plots").mkdir(parents=True, exist_ok=True)
-    (config.paths.artifact_root / "examples").mkdir(parents=True, exist_ok=True)
+    if not dry_run and not merge_shards:
+        config.paths.artifact_root.mkdir(parents=True, exist_ok=True)
+        (config.paths.artifact_root / "plots").mkdir(parents=True, exist_ok=True)
+        (config.paths.artifact_root / "examples").mkdir(parents=True, exist_ok=True)
     stage_summaries: list[dict[str, Any]] = []
     model_handle: ModelHandle | None = None
 
@@ -649,11 +1195,52 @@ def run_study(
             stage_summaries.append(run_plot_stage(config))
         elif stage == "report":
             stage_summaries.append(run_report_stage(config))
+        elif stage == "x1_basin_attribution":
+            if merge_shards:
+                expected = num_shards if num_shards is not None else 8
+                stage_summaries.append(
+                    merge_lane_c_shards(config.paths.artifact_root, expected_shards=expected)
+                )
+                continue
+            if dry_run:
+                expected = num_shards if num_shards is not None else 8
+                stage_summaries.append(
+                    build_lane_c_shard_plan(
+                        config_path=config_path,
+                        output_root=config.paths.artifact_root,
+                        num_shards=expected,
+                    )
+                )
+                continue
+            normalized_shard_index, normalized_num_shards, shard_label = normalize_lane_c_shard(
+                shard_index=shard_index,
+                num_shards=num_shards,
+            )
+            stage_config = config
+            if shard_label is not None:
+                shard_root = config.paths.artifact_root / "shards" / shard_label
+                stage_config = replace(
+                    config,
+                    paths=replace(config.paths, artifact_root=shard_root),
+                )
+                stage_config.paths.artifact_root.mkdir(parents=True, exist_ok=True)
+            model_handle = model_handle or load_model_handle(stage_config)
+            stage_summaries.append(
+                run_lane_c_x1_basin_attribution_stage(
+                    stage_config,
+                    model_handle=model_handle,
+                    limit=limit,
+                    shard_index=normalized_shard_index,
+                    num_shards=normalized_num_shards,
+                    shard_label=shard_label,
+                )
+            )
         else:
             raise ValueError(f"unknown hard-CE locality stage {stage!r}")
 
     summary = {"artifact_root": str(config.paths.artifact_root), "stages": stage_summaries}
-    _write_json(config.paths.artifact_root / "run_summary.json", summary)
+    if not dry_run:
+        _write_json(config.paths.artifact_root / "run_summary.json", summary)
     return summary
 
 
@@ -912,6 +1499,224 @@ def run_self_prefix_stage(
         rows=rows,
         stage_name="self_prefix",
     )
+
+
+def run_lane_c_x1_basin_attribution_stage(
+    config: StudyConfig,
+    *,
+    model_handle: ModelHandle,
+    limit: int | None = None,
+    shard_index: int | None = None,
+    num_shards: int | None = None,
+    shard_label: str | None = None,
+) -> dict[str, Any]:
+    """Score Lane-C intended-target coordinate basins for teacher/self prefixes."""
+
+    examples, build_summary = prepare_lane_c_x1_basin_examples(
+        config,
+        model_handle=model_handle,
+        limit=limit,
+        shard_index=shard_index,
+        num_shards=num_shards,
+    )
+    rows = _score_forward_examples(
+        config,
+        model_handle=model_handle,
+        examples=examples,
+        output_suffix="lane_c_x1_basin_attribution",
+    )
+    per_slot_path = config.paths.artifact_root / "per_slot.jsonl"
+    with per_slot_path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(_jsonable(row), ensure_ascii=True) + "\n")
+
+    per_case_rows = summarize_lane_c_per_case_rows(rows)
+    per_case_path = config.paths.artifact_root / "per_case.jsonl"
+    with per_case_path.open("w", encoding="utf-8") as handle:
+        for row in per_case_rows:
+            handle.write(json.dumps(_jsonable(row), ensure_ascii=True) + "\n")
+
+    summary = _lane_c_summary(
+        rows,
+        per_case_rows=per_case_rows,
+        shard_metadata={
+            "mode": "shard" if shard_label else "single",
+            "shard_index": shard_index,
+            "num_shards": num_shards,
+            "shard_label": shard_label,
+        },
+    )
+    summary.update(build_summary)
+    _write_json(config.paths.artifact_root / "summary.json", summary)
+    return {
+        "stage": "x1_basin_attribution",
+        "row_count": len(rows),
+        "case_count": len(per_case_rows),
+        "per_slot": str(per_slot_path),
+        "per_case": str(per_case_path),
+        "summary": str(config.paths.artifact_root / "summary.json"),
+        "shard_label": shard_label,
+    }
+
+
+def prepare_lane_c_x1_basin_examples(
+    config: StudyConfig,
+    *,
+    model_handle: ModelHandle,
+    limit: int | None,
+    shard_index: int | None = None,
+    num_shards: int | None = None,
+) -> tuple[list[PreparedForwardExample], dict[str, Any]]:
+    """Build Lane-C teacher and generated-prefix forced-continuation examples."""
+
+    if config.paths.lane_a_rollout_root is None:
+        raise ValueError("x1_basin_attribution requires paths.lane_a_rollout_root")
+    if config.paths.self_rollout_root is None:
+        raise ValueError("x1_basin_attribution requires paths.self_rollout_root")
+    lane_a_rows = _lane_c_group_rows_by_source_line(
+        config.paths.lane_a_rollout_root / "per_row.jsonl"
+    )
+    rows = _read_jsonl(config.paths.dataset_jsonl)
+    traces = _read_jsonl(config.paths.self_rollout_root / "pred_token_trace.jsonl")
+    confidences = _read_jsonl(config.paths.self_rollout_root / "pred_confidence.jsonl")
+    active_limit = min(
+        config.execution.sample_limit if limit is None else int(limit),
+        len(rows),
+        len(traces),
+        len(confidences),
+    )
+    scope_label = f"val{active_limit}" if limit is None else f"limit={active_limit}"
+    template = get_detection_template("compact_full")
+    system_prompt, user_prompt = _resolve_prompts(config)
+    vocab = resolve_coord_token_ids(model_handle.tokenizer)
+    examples: list[PreparedForwardExample] = []
+    skipped: Counter[str] = Counter()
+    selected_record_count = 0
+
+    for row_index in range(active_limit):
+        if not lane_c_record_selected(
+            row_index,
+            limit=active_limit,
+            shard_index=shard_index,
+            num_shards=num_shards,
+        ):
+            continue
+        selected_record_count += 1
+        raw = parse_raw_detection_row(rows[row_index])
+        normalized = normalize_detection_row(
+            raw,
+            object_ordering=_ordering_plan(config, row_index=row_index),
+        )
+        gt_count = len(normalized.objects)
+        if gt_count <= 0:
+            skipped["empty_gt"] += 1
+            continue
+        teacher_order_gt_indices = tuple(
+            int(obj.source_object_index) for obj in normalized.objects
+        )
+        objects_by_source = {
+            int(obj.source_object_index): obj for obj in normalized.objects
+        }
+        gt_bins_by_index = _lane_c_gt_bins_by_source_index(normalized)
+
+        for depth in range(gt_count):
+            prefix_state = _lane_c_teacher_prefix_state(
+                teacher_order_gt_indices,
+                depth=depth,
+                gt_count=gt_count,
+            )
+            selection = select_lane_c_intended_target_gt_idx(
+                teacher_order_gt_indices,
+                prefix_state,
+            )
+            example = _lane_c_build_forward_example(
+                config,
+                model_handle=model_handle,
+                raw=raw,
+                normalized=normalized,
+                source_line_idx=row_index,
+                prefix_text="\n".join(
+                    _render_normalized_object(obj) for obj in normalized.objects[:depth]
+                ),
+                prefix_mode="teacher_forced",
+                prefix_depth=depth,
+                prefix_state=prefix_state,
+                selection=selection,
+                objects_by_source=objects_by_source,
+                gt_bins_by_index=gt_bins_by_index,
+                scope_label=scope_label,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                vocab=vocab,
+            )
+            if example is None:
+                skipped["teacher_forced_unrenderable"] += 1
+            else:
+                examples.append(example)
+
+        trace = traces[row_index]
+        confidence = confidences[row_index]
+        valid_confidence_objects = _valid_confidence_objects(confidence, trace)
+        generated_text = "".join(str(item) for item in trace.get("generated_token_text", []))
+        complete_prefix_text = cut_complete_compact_rows(generated_text)
+        prefix_rows = [line for line in complete_prefix_text.splitlines() if line.strip()]
+        max_depth = min(
+            len(prefix_rows),
+            len(valid_confidence_objects),
+            config.execution.max_self_prefixes_per_image,
+        )
+        for depth in range(max_depth + 1):
+            prefix_state = build_lane_c_prefix_match_state(
+                lane_a_rows.get(row_index, ()),
+                depth=depth,
+                gt_count=gt_count,
+                match_policy="guarded",
+            )
+            selection = select_lane_c_intended_target_gt_idx(
+                teacher_order_gt_indices,
+                prefix_state,
+            )
+            if selection.intended_target_gt_idx is None:
+                skipped["generated_prefix_no_remaining_gt"] += 1
+                continue
+            prefix_text = _generated_prefix_text_from_confidence(
+                trace,
+                valid_confidence_objects,
+                depth=depth,
+            )
+            if prefix_text:
+                prefix_text = _prefix_text_at_depth(prefix_text, depth=depth)
+            if depth > 0 and len([line for line in prefix_text.splitlines() if line.strip()]) != depth:
+                skipped["generated_prefix_unrenderable"] += 1
+                continue
+            example = _lane_c_build_forward_example(
+                config,
+                model_handle=model_handle,
+                raw=raw,
+                normalized=normalized,
+                source_line_idx=row_index,
+                prefix_text=prefix_text,
+                prefix_mode="self_prefix",
+                prefix_depth=depth,
+                prefix_state=prefix_state,
+                selection=selection,
+                objects_by_source=objects_by_source,
+                gt_bins_by_index=gt_bins_by_index,
+                scope_label=scope_label,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                vocab=vocab,
+            )
+            if example is None:
+                skipped["generated_prefix_unrenderable"] += 1
+            else:
+                examples.append(example)
+
+    return examples, {
+        "selected_record_count": selected_record_count,
+        "skipped_counts": dict(skipped),
+        "planned_example_count": len(examples),
+    }
 
 
 def prepare_teacher_forced_examples(
@@ -1405,18 +2210,24 @@ def _score_forward_examples(
                     hidden_vec = last_hidden[batch_idx, pred_pos].detach().float().cpu().numpy()
                     hidden_arrays.append(hidden_vec.astype(np.float32))
                     hidden_norm = float(np.linalg.norm(hidden_vec))
+                base_row = _coord_metric_row(
+                    config,
+                    example=example,
+                    slot=slot,
+                    slot_index=slot_index,
+                    abs_pos=abs_pos,
+                    pred_pos=pred_pos,
+                    teacher_token_id=teacher_token_id,
+                    metrics=metrics,
+                    hidden_norm=hidden_norm,
+                    model_handle=model_handle,
+                )
                 rows.append(
-                    _coord_metric_row(
-                        config,
-                        example=example,
+                    _lane_c_enrich_coord_metric_row(
+                        base_row,
                         slot=slot,
-                        slot_index=slot_index,
-                        abs_pos=abs_pos,
-                        pred_pos=pred_pos,
-                        teacher_token_id=teacher_token_id,
                         metrics=metrics,
-                        hidden_norm=hidden_norm,
-                        model_handle=model_handle,
+                        metadata=example.lane_c_metadata,
                     )
                 )
 
@@ -1984,6 +2795,507 @@ def _classify_probability_shape(
     if local_maxima_count >= 3:
         return "multimodal_irregular"
     return "smooth_or_irregular"
+
+
+def _lane_c_optional_int(value: Any) -> int | None:
+    """Return an int for present scalar values, otherwise None."""
+
+    if value is None:
+        return None
+    try:
+        if isinstance(value, float) and not math.isfinite(value):
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _lane_c_state_value(
+    state: LaneCPrefixMatchState | Mapping[str, Any],
+    key: str,
+    default: Any,
+) -> Any:
+    """Read a field from either a Lane-C dataclass or mapping."""
+
+    if isinstance(state, Mapping):
+        return state.get(key, default)
+    return getattr(state, key, default)
+
+
+def _lane_c_is_guarded_tp_like(row: Mapping[str, Any]) -> bool:
+    """Return whether a Lane-A row is a non-suppressed guarded TP-like row."""
+
+    if bool(row.get("suppressed_by_guard", False)):
+        return False
+    guarded_label = row.get("guarded_match_label")
+    if guarded_label is not None:
+        return str(guarded_label).strip().lower() == "tp_like"
+    return str(row.get("row_label", "")).strip().lower() == "tp_like"
+
+
+def _lane_c_prefix_problem_classes(row: Mapping[str, Any]) -> set[str]:
+    """Classify generated prefix rows into Lane-C problem families."""
+
+    labels = {
+        str(row.get(key, "")).strip().lower()
+        for key in ("row_label", "raw_match_label", "guarded_match_label")
+        if row.get(key) is not None
+    }
+    out: set[str] = set()
+    if bool(row.get("suppressed_by_guard", False)) or any("duplicate" in label for label in labels):
+        out.add("duplicate")
+    if any("invalid" in label or "unparsed" in label for label in labels):
+        out.add("invalid")
+    if bool(row.get("ambiguous", False)) or any("ambiguous" in label for label in labels):
+        out.add("ambiguous")
+    if any(
+        label in {"unmatched_fp", "wrong_desc_fp", "fp", "false_positive"}
+        or label.endswith("_fp")
+        for label in labels
+    ):
+        out.add("fp")
+    return out
+
+
+def _lane_c_prefix_quality(depth: int, problem_names: set[str]) -> str:
+    """Map prefix problem families to the Lane-C quality label."""
+
+    if int(depth) <= 0:
+        return "empty_prefix"
+    if not problem_names:
+        return "clean_prefix"
+    if len(problem_names) > 1:
+        return "mixed_prefix"
+    only = next(iter(problem_names))
+    return {
+        "fp": "fp_prefix",
+        "duplicate": "duplicate_prefix",
+        "invalid": "invalid_prefix",
+        "ambiguous": "ambiguous_prefix",
+    }.get(only, "mixed_prefix")
+
+
+def _lane_c_normalized_probs(probs: Sequence[float] | np.ndarray) -> np.ndarray:
+    """Validate and normalize a 1000-bin conditional probability vector."""
+
+    p = np.asarray(probs, dtype=np.float64).reshape(-1)
+    if p.shape[0] != 1000:
+        raise ValueError(f"Lane-C probability vector must have 1000 bins; got {p.shape[0]}")
+    if np.any(p < 0.0):
+        raise ValueError("Lane-C probabilities must be non-negative")
+    total = float(np.sum(p))
+    if total <= 0.0 or not math.isfinite(total):
+        return np.full(1000, 0.001, dtype=np.float64)
+    return p / total
+
+
+def _lane_c_extract_slot_bin(value: Any, *, slot: str) -> int | None:
+    """Extract a slot bin from compact object-ish metadata."""
+
+    if value is None:
+        return None
+    if isinstance(value, Mapping):
+        for key in (slot, "bin"):
+            if key in value:
+                direct = _lane_c_extract_slot_bin(value[key], slot=slot)
+                if direct is not None:
+                    return direct
+        for key in ("bins", "slot_bins", "coord_bins", "bbox_xyxy", "bbox", "points"):
+            if key in value:
+                nested = _lane_c_extract_slot_bin(value[key], slot=slot)
+                if nested is not None:
+                    return nested
+        return None
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        if len(value) == 4 and slot in SLOT_NAMES:
+            return _lane_c_valid_bin(value[SLOT_NAMES.index(slot)])
+        if len(value) == 1:
+            return _lane_c_valid_bin(value[0])
+        return None
+    return _lane_c_valid_bin(value)
+
+
+def _lane_c_valid_bin(value: Any) -> int | None:
+    """Return a valid coord bin or None."""
+
+    bin_value = _lane_c_optional_int(value)
+    if bin_value is None or not 0 <= bin_value < 1000:
+        return None
+    return int(bin_value)
+
+
+def _lane_c_is_same_desc_gt(value: Any) -> bool:
+    """Return whether GT metadata marks a same-description competitor."""
+
+    if not isinstance(value, Mapping):
+        return False
+    if any(bool(value.get(key, False)) for key in ("same_desc", "same_desc_as_target", "same_desc_competitor")):
+        return True
+    attribution = str(value.get("attribution", "")).lower()
+    return "same_desc" in attribution
+
+
+def _lane_c_prefix_bins_by_category(
+    prefix_bins_by_label: Mapping[str, Any],
+    *,
+    slot: str,
+) -> dict[str, list[int]]:
+    """Group prefix object bins into attribution categories."""
+
+    grouped: dict[str, list[int]] = {
+        "false_positive_prefix_object": [],
+        "previous_generated_object": [],
+    }
+    for label, raw_value in prefix_bins_by_label.items():
+        label_text = str(label).lower()
+        category = (
+            "false_positive_prefix_object"
+            if "false_positive" in label_text or label_text.startswith("fp") or "_fp" in label_text
+            else "previous_generated_object"
+        )
+        values: Iterable[Any]
+        if isinstance(raw_value, Mapping):
+            if any(key in raw_value for key in (slot, "bin", "bins", "slot_bins", "coord_bins", "bbox_xyxy", "bbox", "points")):
+                values = (raw_value,)
+            else:
+                values = raw_value.values()
+        elif isinstance(raw_value, Sequence) and not isinstance(raw_value, (str, bytes)):
+            values = raw_value
+        else:
+            values = (raw_value,)
+        for item in values:
+            bin_value = _lane_c_extract_slot_bin(item, slot=slot)
+            if bin_value is not None:
+                grouped[category].append(bin_value)
+    return grouped
+
+
+def _lane_c_top_peak_attribution(
+    *,
+    top1_bin: int,
+    target_bin: int,
+    gt_bins_by_index: Mapping[int, Any],
+    prefix_bins_by_label: Mapping[str, Any],
+    slot: str,
+    local_radius: int,
+) -> str:
+    """Attribute the top coordinate peak to the nearest known local object."""
+
+    radius = max(0, int(local_radius))
+    if abs(int(top1_bin) - int(target_bin)) <= radius:
+        return "target_gt_object"
+
+    same_desc_bins: list[int] = []
+    other_gt_bins: list[int] = []
+    for raw_value in gt_bins_by_index.values():
+        bin_value = _lane_c_extract_slot_bin(raw_value, slot=slot)
+        if bin_value is None or bin_value == int(target_bin):
+            continue
+        if _lane_c_is_same_desc_gt(raw_value):
+            same_desc_bins.append(bin_value)
+        else:
+            other_gt_bins.append(bin_value)
+    if any(abs(int(top1_bin) - candidate) <= radius for candidate in same_desc_bins):
+        return "same_desc_competitor_gt_object"
+    if any(abs(int(top1_bin) - candidate) <= radius for candidate in other_gt_bins):
+        return "other_same_image_gt_object"
+
+    prefix_bins = _lane_c_prefix_bins_by_category(prefix_bins_by_label, slot=slot)
+    if any(abs(int(top1_bin) - candidate) <= radius for candidate in prefix_bins["false_positive_prefix_object"]):
+        return "false_positive_prefix_object"
+    if any(abs(int(top1_bin) - candidate) <= radius for candidate in prefix_bins["previous_generated_object"]):
+        return "previous_generated_object"
+    return "no_local_object_diffuse"
+
+
+def _lane_c_group_rows_by_source_line(path: Path) -> dict[int, list[dict[str, Any]]]:
+    """Load Lane-A per-row records grouped by dataset source line."""
+
+    grouped: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for row in _read_jsonl(path):
+        source_line_idx = _lane_c_optional_int(row.get("source_line_idx"))
+        if source_line_idx is None:
+            continue
+        grouped[int(source_line_idx)].append(row)
+    for rows in grouped.values():
+        rows.sort(key=lambda item: _lane_c_optional_int(item.get("raw_pred_idx")) or 0)
+    return grouped
+
+
+def _lane_c_teacher_prefix_state(
+    teacher_order_gt_indices: Sequence[int],
+    *,
+    depth: int,
+    gt_count: int,
+) -> LaneCPrefixMatchState:
+    """Build Lane-C state for direct GT teacher-prefix coverage."""
+
+    depth_i = max(0, int(depth))
+    gt_count_i = max(0, int(gt_count))
+    matched = tuple(
+        sorted(
+            {
+                int(item)
+                for item in teacher_order_gt_indices[:depth_i]
+                if 0 <= int(item) < gt_count_i
+            }
+        )
+    )
+    matched_set = set(matched)
+    return LaneCPrefixMatchState(
+        depth=depth_i,
+        gt_count=gt_count_i,
+        match_policy="teacher_forced",
+        consumed_raw_pred_indices=tuple(range(depth_i)),
+        matched_prefix_gt_indices=matched,
+        remaining_gt_indices=tuple(idx for idx in range(gt_count_i) if idx not in matched_set),
+        fp_prefix_object_indices=(),
+        duplicate_prefix_object_indices=(),
+        invalid_prefix_object_indices=(),
+        ambiguous_prefix_object_indices=(),
+        prefix_quality="empty_prefix" if depth_i <= 0 else "gt_prefix",
+    )
+
+
+def _lane_c_gt_bins_by_source_index(normalized: Any) -> dict[int, dict[str, Any]]:
+    """Return GT object metadata keyed by original source-object index."""
+
+    desc_counts = Counter(str(obj.desc) for obj in normalized.objects)
+    out: dict[int, dict[str, Any]] = {}
+    for obj in normalized.objects:
+        bins = tuple(_coord_bin_from_token(token) for token in obj.bbox_2d.tokens)
+        out[int(obj.source_object_index)] = {
+            "desc": str(obj.desc),
+            "bbox_xyxy": [int(value) for value in bins],
+            "x1": int(bins[0]),
+            "y1": int(bins[1]),
+            "x2": int(bins[2]),
+            "y2": int(bins[3]),
+            "object_instance_id": str(obj.object_instance_id),
+            "source_object_index": int(obj.source_object_index),
+            "same_desc_competitor": desc_counts[str(obj.desc)] > 1,
+        }
+    return out
+
+
+def _lane_c_prefix_bins_by_label_from_text(
+    prefix_text: str,
+    prefix_state: LaneCPrefixMatchState,
+) -> dict[str, list[dict[str, Any]]]:
+    """Parse generated prefix boxes into attribution groups."""
+
+    slots = compact_slots_from_text(prefix_text)
+    by_object: dict[int, dict[str, Any]] = {}
+    for slot in slots:
+        item = by_object.setdefault(
+            int(slot.object_order_index),
+            {
+                "desc": slot.desc,
+                "bbox_xyxy": [int(value) for value in slot.bbox_xyxy],
+            },
+        )
+        item[str(slot.slot)] = int(slot.gt_bin)
+    fp_indices = set(prefix_state.fp_prefix_object_indices)
+    out: dict[str, list[dict[str, Any]]] = {
+        "previous_generated_object": [],
+        "false_positive_prefix_object": [],
+    }
+    for object_index, item in sorted(by_object.items()):
+        label = (
+            "false_positive_prefix_object"
+            if object_index in fp_indices
+            else "previous_generated_object"
+        )
+        out[label].append(item)
+    return out
+
+
+def _lane_c_build_forward_example(
+    config: StudyConfig,
+    *,
+    model_handle: ModelHandle,
+    raw: Any,
+    normalized: Any,
+    source_line_idx: int,
+    prefix_text: str,
+    prefix_mode: str,
+    prefix_depth: int,
+    prefix_state: LaneCPrefixMatchState,
+    selection: LaneCTargetSelection,
+    objects_by_source: Mapping[int, NormalizedDetectionObject],
+    gt_bins_by_index: Mapping[int, Any],
+    scope_label: str,
+    system_prompt: str | None,
+    user_prompt: str,
+    vocab: CoordVocab,
+) -> PreparedForwardExample | None:
+    """Render one Lane-C forced continuation and locate target coord positions."""
+
+    target_idx = selection.intended_target_gt_idx
+    if target_idx is None or int(target_idx) not in objects_by_source:
+        return None
+    target = objects_by_source[int(target_idx)]
+    target_row_text = _render_normalized_object(target)
+    clean_prefix = str(prefix_text).strip()
+    assistant_text = f"{clean_prefix}\n{target_row_text}" if clean_prefix else target_row_text
+    messages = build_detection_chat_messages(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        images=[str(_resolve_image(config, raw.images[0]))],
+        assistant_text=assistant_text,
+    )
+    full_text = model_handle.processor.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=False,
+    )
+    full_input_ids = _processor_input_ids(
+        model_handle.processor,
+        full_text=full_text,
+        image_path=_resolve_image(config, raw.images[0]),
+    )
+    assistant_ids = tuple(
+        int(v)
+        for v in model_handle.tokenizer.encode(
+            assistant_text,
+            add_special_tokens=False,
+        )
+    )
+    assistant_start = _find_subsequence(full_input_ids, assistant_ids)
+    if assistant_start is None:
+        return None
+    all_slots = compact_slots_from_text(assistant_text)
+    target_object_order_index = int(prefix_depth)
+    target_slots = tuple(
+        slot for slot in all_slots if slot.object_order_index == target_object_order_index
+    )
+    if len(target_slots) != len(SLOT_NAMES):
+        return None
+    assistant_coord_positions = _assistant_coord_positions(
+        assistant_ids=assistant_ids,
+        slots=all_slots,
+        coord_token_ids=vocab.coord_token_ids,
+        assistant_start=assistant_start,
+    )[-len(target_slots) :]
+    target_meta = dict(gt_bins_by_index[int(target_idx)])
+    case_id = (
+        f"row{int(source_line_idx)}:{prefix_mode}:"
+        f"depth{int(prefix_depth)}:gt{int(target_idx)}"
+    )
+    metadata = {
+        "case_id": case_id,
+        "source_line_idx": int(source_line_idx),
+        "prefix_mode": str(prefix_mode),
+        "prefix_depth": int(prefix_depth),
+        "prefix_quality": prefix_state.prefix_quality,
+        "match_policy": prefix_state.match_policy,
+        "intended_target_gt_idx": int(target_idx),
+        "target_selection_rule": selection.target_selection_rule,
+        "matched_prefix_gt_indices": list(prefix_state.matched_prefix_gt_indices),
+        "remaining_gt_indices": list(prefix_state.remaining_gt_indices),
+        "fp_prefix_object_indices": list(prefix_state.fp_prefix_object_indices),
+        "duplicate_prefix_object_indices": list(prefix_state.duplicate_prefix_object_indices),
+        "invalid_prefix_object_indices": list(prefix_state.invalid_prefix_object_indices),
+        "ambiguous_prefix_object_indices": list(prefix_state.ambiguous_prefix_object_indices),
+        "target_object_instance_id": target_meta.get("object_instance_id"),
+        "target_source_object_index": int(target.source_object_index),
+        "target_desc": str(target.desc),
+        "target_bbox_xyxy": target_meta.get("bbox_xyxy"),
+        "gt_bins_by_index": dict(gt_bins_by_index),
+        "prefix_bins_by_label": _lane_c_prefix_bins_by_label_from_text(
+            clean_prefix,
+            prefix_state,
+        ),
+    }
+    return PreparedForwardExample(
+        row_index=int(source_line_idx),
+        image_id=int(raw.image_id),
+        file_name=str(raw.file_name),
+        image_path=_resolve_image(config, raw.images[0]),
+        width=int(raw.width),
+        height=int(raw.height),
+        assistant_text=assistant_text,
+        full_text=str(full_text),
+        full_input_ids=full_input_ids,
+        coord_slots=target_slots,
+        assistant_coord_positions=assistant_coord_positions,
+        target_kinds=tuple("hard_ce" for _ in target_slots),
+        target_roles=tuple("coord" for _ in target_slots),
+        prefix_condition=str(prefix_mode),
+        prefix_depth=int(prefix_depth),
+        prefix_quality=prefix_state.prefix_quality,
+        scope_label=scope_label,
+        pairing_id=case_id,
+        lane_c_metadata=metadata,
+    )
+
+
+def _lane_c_enrich_coord_metric_row(
+    row: Mapping[str, Any],
+    *,
+    slot: CompactSlot,
+    metrics: DistributionMetrics,
+    metadata: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Add Lane-C attribution metadata to a scored coordinate row."""
+
+    out = dict(row)
+    if not metadata:
+        return out
+    gt_bins_by_index = metadata.get("gt_bins_by_index") or {}
+    prefix_bins_by_label = metadata.get("prefix_bins_by_label") or {}
+    attr = attribute_lane_c_coord_distribution(
+        metrics.conditional_probs,
+        target_bin=int(slot.gt_bin),
+        gt_bins_by_index=gt_bins_by_index,
+        prefix_bins_by_label=prefix_bins_by_label,
+        slot=str(slot.slot),
+        radii=(4, 8),
+    )
+    out.update(_jsonable(metadata))
+    out.update(
+        {
+            "prefix_condition": metadata.get("prefix_mode", row.get("prefix_condition")),
+            "top_peak_attribution": attr.top_peak_attribution,
+            "target_rank": attr.target_rank,
+            "best_other_gt_idx": attr.best_other_gt_idx,
+            "best_other_gt_bin": attr.best_other_gt_bin,
+            "best_other_gt_rank": attr.best_other_gt_rank,
+            "target_margin_vs_best_other": attr.target_margin_vs_best_other,
+            "gt_top1": attr.gt_top1,
+            "top1_distance": attr.top1_distance,
+            "mass_at_radius_4": attr.mass_by_radius.get("mass_at_radius_4"),
+            "mass_at_radius_8": attr.mass_by_radius.get("mass_at_radius_8"),
+        }
+    )
+    out["lane_c_merge_key"] = ":".join(
+        "" if part is None else str(part) for part in lane_c_merge_key(out)
+    )
+    return out
+
+
+def _lane_c_summary(
+    per_slot_rows: Sequence[Mapping[str, Any]],
+    *,
+    per_case_rows: Sequence[Mapping[str, Any]],
+    shard_metadata: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Build Lane-C summary counts for shard or merged outputs."""
+
+    by_prefix_mode = Counter(str(row.get("prefix_mode", row.get("prefix_condition", "unknown"))) for row in per_slot_rows)
+    by_prefix_quality = Counter(str(row.get("prefix_quality", "unknown")) for row in per_slot_rows)
+    by_slot = Counter(str(row.get("slot", "unknown")) for row in per_slot_rows)
+    by_attribution = Counter(str(row.get("top_peak_attribution", "unknown")) for row in per_slot_rows)
+    return {
+        "stage": "x1_basin_attribution",
+        "row_count": len(per_slot_rows),
+        "case_count": len(per_case_rows),
+        "counts_by_prefix_mode": dict(sorted(by_prefix_mode.items())),
+        "counts_by_prefix_quality": dict(sorted(by_prefix_quality.items())),
+        "counts_by_slot": dict(sorted(by_slot.items())),
+        "counts_by_top_peak_attribution": dict(sorted(by_attribution.items())),
+        "shard_metadata": dict(shard_metadata),
+    }
 
 
 def _coord_bin_from_token(token: str) -> int:

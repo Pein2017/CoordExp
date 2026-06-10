@@ -54,7 +54,7 @@ Before creating assets, produce a compact shortlist with:
 - recommended form;
 - why it is or is not worth creating.
 
-Then create only high-confidence missing or extension-only items. Keep changes small, source-aware, and validator-clean.
+Create only when the user explicitly asks for asset creation or approves the shortlist. Keep changes small, source-aware, and validator-clean.
 
 ## Verification
 

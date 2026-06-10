@@ -1,0 +1,53 @@
+project_id: prefix_state_transition_tomography
+run_id: fullobj_5ckpt_ckpt3668_phase_a3_prefix_state
+index_checkpoint_id: fullobj_5ckpt_ckpt3668_index
+index_checkpoint_role: policy_objective_prefix_index
+artifact_root: /data/CoordExp/outputs/analysis/autoreg_object_rollout/policy_objective_mechanism_comparison/fullobj_5ckpt_ckpt3668/prefix_state
+train_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/train.coord.jsonl
+val_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl
+image_root: /data/CoordExp/public_data/coco/rescale_32_1024_bbox
+stages:
+  - prefix_state_index
+  - validate
+checkpoints:
+  fullobj_random_pure_ce_ckpt3668:
+    checkpoint_path: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_fullobj_random_sft_bsz16_4epoch_tokenrows_v2/compact-full-fullobj-random-sft-bsz16-4epoch-tokenrows-v2/v1-20260601-062428/checkpoint-3668
+    objective_policy: pure_ce
+    training_ordering: random_permutation
+    template_contract_id: compact_full_no_newline_native_v1
+    comparison_group: fullobj_2x2_20260601
+  fullobj_sorted_pure_ce_ckpt3668:
+    checkpoint_path: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_fullobj_sorted_sft_bsz16_4epoch_tokenrows_v2/compact-full-fullobj-sorted-sft-bsz16-4epoch-tokenrows-v2/v1-20260601-062429/checkpoint-3668
+    objective_policy: pure_ce
+    training_ordering: sorted
+    template_contract_id: compact_full_no_newline_native_v1
+    comparison_group: fullobj_2x2_20260601
+  fullobj_random_et_rmp_ce_ckpt3668:
+    checkpoint_path: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_fullobj_random_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-fullobj-random-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v1-20260601-062429/checkpoint-3668
+    objective_policy: et_rmp_ce
+    training_ordering: random_permutation
+    template_contract_id: compact_full_no_newline_native_v1
+    comparison_group: fullobj_2x2_20260601
+  fullobj_sorted_et_rmp_ce_ckpt3668:
+    checkpoint_path: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_fullobj_sorted_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-fullobj-sorted-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260601-062429/checkpoint-3668
+    objective_policy: et_rmp_ce
+    training_ordering: sorted
+    template_contract_id: compact_full_no_newline_native_v1
+    comparison_group: fullobj_2x2_20260601
+  et_rmp_ce_ckpt3664_reference:
+    checkpoint_path: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664
+    objective_policy: et_rmp_ce
+    training_ordering: random_permutation
+    template_contract_id: compact_full_newline_native_v1
+    comparison_group: legacy_reference_anchor
+sampling:
+  max_prefix_states: 4096
+  num_shards: 8
+  seed: 3668
+  easy_sanity_max_fraction: 0.20
+peak:
+  absolute_mass_floor: 0.002
+  relative_floor: 0.10
+  primary_merge_radius: 24
+  gt_x1_neighborhood_radius: 24
+  raw_topk_k: 32

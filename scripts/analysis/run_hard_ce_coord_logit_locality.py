@@ -29,7 +29,8 @@ def _parse_args() -> argparse.Namespace:
         "--stages",
         required=True,
         help=(
-            "Comma-separated stages: embeddings,teacher_forced,self_prefix,plots,report."
+            "Comma-separated stages: embeddings,teacher_forced,self_prefix,"
+            "x1_basin_attribution,plots,report."
         ),
     )
     parser.add_argument(
@@ -37,6 +38,28 @@ def _parse_args() -> argparse.Namespace:
         type=int,
         default=None,
         help="Optional row limit override for logit extraction stages.",
+    )
+    parser.add_argument(
+        "--shard-index",
+        type=int,
+        default=None,
+        help="Optional Lane-C shard index for x1_basin_attribution.",
+    )
+    parser.add_argument(
+        "--num-shards",
+        type=int,
+        default=None,
+        help="Optional Lane-C shard count for x1_basin_attribution.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Build a CPU-only Lane-C shard plan without loading the model.",
+    )
+    parser.add_argument(
+        "--merge-shards",
+        action="store_true",
+        help="Merge Lane-C shard outputs without loading the model.",
     )
     return parser.parse_args()
 
@@ -46,7 +69,15 @@ def main() -> int:
 
     args = _parse_args()
     stages = tuple(stage.strip() for stage in str(args.stages).split(",") if stage.strip())
-    result = run_study(config_path=args.config, stages=stages, limit=args.limit)
+    result = run_study(
+        config_path=args.config,
+        stages=stages,
+        limit=args.limit,
+        shard_index=args.shard_index,
+        num_shards=args.num_shards,
+        dry_run=bool(args.dry_run),
+        merge_shards=bool(args.merge_shards),
+    )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
 

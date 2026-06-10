@@ -1,0 +1,91 @@
+# A3.2 native greedy rollout launch spec for the random-order full-object pure-CE checkpoint.
+#
+# Scope:
+# - local mechanism probe only; this task does not launch rollout
+# - dataset: COCO rescale_32_1024_bbox_len12000 val.coord.jsonl
+# - image root: COCO rescale_32_1024_bbox image-bearing tree
+# - checkpoint role: fullobj_random_pure_ce_ckpt3668
+# - decode policy: free text, unconstrained, deterministic greedy at temperature 0
+# - template contract: compact_full marker-delimited rows with no newline row separator
+
+run:
+  name: fullobj_random_purece_ckpt3668_a3_2_rollout1024_greedy
+  output_dir: /data/CoordExp/outputs/analysis/autoreg_object_rollout/sorted_random_no_newline_phenotype/fullobj_purece_random_vs_sorted_ckpt3668_phase_a3_2/rollout
+  root_image_dir: /data/CoordExp/public_data/coco/rescale_32_1024_bbox
+
+stages:
+  infer: true
+  eval: false
+  vis: false
+
+artifacts:
+  run_dir: /data/CoordExp/outputs/analysis/autoreg_object_rollout/sorted_random_no_newline_phenotype/fullobj_purece_random_vs_sorted_ckpt3668_phase_a3_2/rollout/fullobj_random_pure_ce_ckpt3668
+  gt_vs_pred_jsonl: /data/CoordExp/outputs/analysis/autoreg_object_rollout/sorted_random_no_newline_phenotype/fullobj_purece_random_vs_sorted_ckpt3668_phase_a3_2/rollout/fullobj_random_pure_ce_ckpt3668/gt_vs_pred.jsonl
+  pred_token_trace_jsonl: /data/CoordExp/outputs/analysis/autoreg_object_rollout/sorted_random_no_newline_phenotype/fullobj_purece_random_vs_sorted_ckpt3668_phase_a3_2/rollout/fullobj_random_pure_ce_ckpt3668/pred_token_trace.jsonl
+  summary_json: /data/CoordExp/outputs/analysis/autoreg_object_rollout/sorted_random_no_newline_phenotype/fullobj_purece_random_vs_sorted_ckpt3668_phase_a3_2/rollout/fullobj_random_pure_ce_ckpt3668/summary.json
+
+metadata:
+  project_id: sorted_random_no_newline_phenotype
+  phase_id: phase_a3_2
+  schema_version: a3.2.v1
+  run_id: fullobj_purece_random_vs_sorted_ckpt3668_phase_a3_2
+  evidence_scope: a3_2_rollout1024_greedy_len12000_native
+  config_role: a3_2_launch_spec
+  infer_schema_note: Uses the current YAML infer runner shape; CPU tests assert the A3.2 decode, constraint, template, checkpoint, and output-root contract before any GPU rollout is launched.
+
+a3_2_launch_spec:
+  checkpoint_role: fullobj_random_pure_ce_ckpt3668
+  checkpoint_path: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_fullobj_random_sft_bsz16_4epoch_tokenrows_v2/compact-full-fullobj-random-sft-bsz16-4epoch-tokenrows-v2/v1-20260601-062428/checkpoint-3668
+  output_root: /data/CoordExp/outputs/analysis/autoreg_object_rollout/sorted_random_no_newline_phenotype/fullobj_purece_random_vs_sorted_ckpt3668_phase_a3_2/rollout/fullobj_random_pure_ce_ckpt3668
+  decode_policy: free_text_unconstrained_greedy_temp0
+  constraint_policy: none
+  native_prompt_ordering: random_permutation
+  image_limit: 1024
+  source_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl
+  image_root: /data/CoordExp/public_data/coco/rescale_32_1024_bbox
+  template_contract:
+    detection_sequence_format: compact_full
+    coordinate_surface: coord_token
+    bbox_format: xyxy
+    row_separator: none
+    compact_full_parse_mode: marker_delimited_strict
+
+infer:
+  gt_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl
+  model_checkpoint: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_fullobj_random_sft_bsz16_4epoch_tokenrows_v2/compact-full-fullobj-random-sft-bsz16-4epoch-tokenrows-v2/v1-20260601-062428/checkpoint-3668
+
+  prompt_variant: coco_80
+  detection_sequence_format: compact_full
+  row_separator: none
+  allow_diagnostic_gt_vs_pred: true
+  bbox_format: xyxy
+  object_field_order: desc_first
+  object_ordering: random
+
+  parsing:
+    compact_full:
+      mode: marker_delimited_strict
+
+  mode: coord
+  pred_coord_mode: auto
+
+  backend:
+    type: hf
+    mode: local
+    attn_implementation: flash_attention_2
+
+  generation:
+    decode_mode: greedy
+    do_sample: false
+    temperature: 0.0
+    top_p: 1.0
+    num_beams: 1
+    max_new_tokens: 3084
+    repetition_penalty: 1.0
+    trace_logprobs: true
+    batch_size: 1
+    seed: 3668
+
+  device: cuda:0
+  limit: 1024
+  detect_samples: 128

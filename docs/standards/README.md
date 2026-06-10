@@ -6,7 +6,7 @@ status: canonical
 domain: standards
 summary: Router for repo conventions, code style, upstream policy, porting notes, and asset provenance standards.
 tags: [standards, policy]
-updated: 2026-05-11
+updated: 2026-06-07
 ---
 
 # Standards
@@ -21,6 +21,8 @@ Use this folder for stable repo policy and engineering conventions.
   - code and architecture style guidance
 - [UPSTREAM.md](UPSTREAM.md)
   - upstream dependencies and boundary rules
+- [upstream/](upstream/)
+  - focused upstream notes for Qwen-VL, ms-swift, FlashAttention, and the HF training ecosystem
 - [PORTING.md](PORTING.md)
   - porting notes and compatibility guidance
 - [OUTPUT_SYNC_AND_DATA_PROVENANCE.md](OUTPUT_SYNC_AND_DATA_PROVENANCE.md)

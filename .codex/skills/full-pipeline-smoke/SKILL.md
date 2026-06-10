@@ -1,6 +1,6 @@
 ---
 name: full-pipeline-smoke
-description: Use when validating a CoordExp change through a production-like data/train-or-rollout/infer/eval/artifact smoke path.
+description: Use when validating a CoordExp change through a production-like multi-stage data/train-or-rollout/infer/eval/artifact smoke path, not for narrow unit or config checks.
 metadata:
   short-description: Full-cycle smoke workflow
 ---
@@ -72,7 +72,7 @@ Codex shells initialize the `ms` conda environment by default. Use raw `python .
   ```
 - Do not stage runtime symlinks unless explicitly requested.
 - For server-mode rollouts, clear local proxy vars and ensure `NO_PROXY` includes `127.0.0.1,localhost`.
-- Stage-2 two-channel uses `stage2_ab.pipeline`; rollout-aligned uses `rollout_matching.pipeline`.
+- Stage-2 rollout correction uses `stage2_rollout_correction` and rollout-correction configs under `configs/stage2/rollout_correction/`.
 - Latest recursive detection sidecars require the current runtime-supported packing policy; do not silently enable unsupported packing.
 - Raw-text `xyxy` norm1000 infer/eval must use `infer.mode: text` and `infer.pred_coord_mode: norm1000`.
 - `cxcy_logw_logh` or `cxcywh` evidence is valid only for checkpoints trained on that serialization.

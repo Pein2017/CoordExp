@@ -19,10 +19,20 @@ Do **not** use this skill as the first pass when the user is asking whether a pl
 
 Switch to `model-innovation-risk-audit` when symptom evidence suggests silent train/eval/config/runtime mismatch, stale artifacts, wrong adapter, prompt/template drift, schema drift, or metric-contract ambiguity.
 
+## Artifact Triage First
+
+Start from the exact artifact root named by the user before interpreting metrics.
+
+- Identify run root, checkpoint, dataset slice, config, decode surface, bbox format, and scope label.
+- Open durable summaries before logs: `resolved_config.json`, `summary.json`, `metrics*.json`, `run_metadata.json`, and relevant manifests.
+- For infer/eval, check raw and scored prediction JSONL, parser/drop counters, token traces, confidence/scoring sidecars, and duplicate guard reports when present.
+- For invalid outputs, aggregate failure families before sampling examples: wrong arity, missing fields, unexpected keys, bad coordinate slots, empty objects, truncation, repetition tails, and max-token saturation.
+- Decide whether the evidence is `artifact invalid`, `implementation bug likely`, `objective mismatch`, `decoding/parser mismatch`, `data distribution issue`, `optimization issue`, `model limitation`, or `inconclusive-needs-probe`.
+
 ## Diagnostic Order
 
-1. **Pin the innovation**: exact change, intended math, expected observable effect, baseline, checkpoint, dataset slice, decoding, seed, and step count.
-2. **Build symptom deltas**: main metric, precision/recall or FP/FN, parse validity, length/stop/repetition, loss terms, gradient/LR, data counts/weights/packing.
+1. **Pin the observed run**: artifact root, checkpoint, config, dataset slice, decoding, seed, step count, baseline, and intended change if any.
+2. **Build symptom deltas**: AP/AP50/AP75/AR, precision/recall or FP/FN, prediction counts, parse/drop validity, duplicate tails, length/stop/repetition, loss terms, gradient/LR, data counts/weights/packing, and raw-vs-guarded metrics.
 3. **Classify symptoms** before explaining:
    - train improves, eval drops -> objective/eval mismatch or overfit;
    - teacher-forced improves, free rollout worsens -> exposure/off-policy mismatch;
@@ -84,10 +94,11 @@ If a direct script launch cannot import `src`, set `PYTHONPATH=/data/CoordExp` e
 Diagnosis
 Evidence
 Probe Scope
-Symptom
+Symptom Taxonomy
 Likely Root Cause
 Corrective Strategies
 Verification
+Confidence / Verdict
 ```
 
 Always distinguish "fixes the measured symptom" from "improves the underlying task." Never relax parsers to hide malformed outputs unless the user explicitly changes the benchmark contract.

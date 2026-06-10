@@ -1,11 +1,27 @@
 ---
 name: audit-review
-description: "Use when producing a read-only CoordExp audit of code, configs, specs, artifacts, docs, progress notes, or OpenSpec changes for correctness, reproducibility, pipeline, and eval-validity risks."
+description: "Use when producing a read-only CoordExp audit of code, configs, specs, artifacts, docs, progress notes, or OpenSpec changes for correctness, reproducibility, governance, pipeline, and eval-validity risks."
 ---
 
 # Audit Review
 
-Produce read-only audits that help another implementer change CoordExp safely. Optimize for correctness, reproducibility, pipeline integrity, and eval validity over style commentary.
+Produce read-only audits that help another implementer change CoordExp safely. Optimize for correctness, reproducibility, governance, pipeline integrity, and eval validity over style commentary.
+
+## Role Boundary
+
+Use this for severity-ranked audits, not implementation. If the user gives a concrete model symptom such as a metric drop, invalid spike, duplication burst, or length collapse, start with `model-diagnosis`; return here only for independent correctness or claim-validity review. If the user asks whether a new mechanism is contract-safe before launch, use `model-innovation-risk-audit`.
+
+## Audit Mode Selector
+
+Name the mode before searching broadly:
+
+- `change/spec audit`: compare implementation, docs, stable specs, and active OpenSpec deltas.
+- `artifact/run audit`: start from the exact artifact root; label scope and do not generalize beyond it.
+- `launch gate`: decide `promote`, `hold`, `rerun gate`, or `needs user decision`.
+- `claim validity audit`: identify the claim, scope, baseline/ablation, metrics, counterevidence, and falsification gap.
+- `implementation-vs-contract audit`: verify code/config/runtime/artifacts implement the documented contract.
+
+If the user requests blocker-only review, stop after blocking findings, confirmed OK checks, and residual risks.
 
 ## Authority Model
 
@@ -20,6 +36,16 @@ Use current repo truth in this order:
 7. `progress/` only for history, diagnostics, benchmark evidence, or empirical failures
 
 Use `docs/AGENT_INDEX.md` and `docs/catalog.yaml` for routing. Treat `progress/audits/` and other temporary notes as removable evidence, not durable codebase references.
+
+## Governance Checks
+
+For stable contracts or OpenSpec work:
+
+- Check active-change state when it matters.
+- Validate specs strictly when specs changed.
+- Verify code/docs/spec sync when schema, artifact names, metrics, loss semantics, entrypoints, or recommended workflows move.
+- Treat incomplete proposals as active or explicitly deprecated; do not let stale changes masquerade as current contract.
+- Reviewer timeout or disconnection is unresolved, not approval.
 
 ## Output Contract
 
@@ -51,7 +77,7 @@ Use `references/report-template.md` when a skeleton is helpful.
 - Do not treat benchmark scopes as interchangeable. Always label `tiny`, `val200`, `limit=200`, first-200, full-val, proxy view, raw-text, coord-token, bbox format, checkpoint id, and launch shape when relevant.
 - Do not use `progress/` as current behavior when `docs/` or stable specs cover the contract.
 - Use Git inspection only when the audit scope depends on dirty state, a PR/change diff, or the user asks for it; otherwise do not run Git by reflex.
-- For Python code exploration, narrow first with `rg` or `rtk grep`, then use Serena symbol tools.
+- For Python code exploration, route docs/configs first, then use a correct local CodeGraph index only for broad "where should I look?" maps. Once files or symbols are known, switch to Serena for exact references, bodies, declarations/implementations, diagnostics, and edit-risk checks. In linked worktrees, do not trust CodeGraph results from another checkout.
 - If a temporary probe is unavoidable, prefer `/tmp/`. Ask before writing under repo `temp/`.
 
 ## Audit Workflow
@@ -74,7 +100,7 @@ Prioritize 3-5 flows with the highest impact:
 - Data contract and geometry: JSONL schema, `bbox_2d` xor `poly`, ordering, pixel/norm1000/token transitions, image-root resolution.
 - Training: config schema, `src/sft.py`, `src/training_runtime/plan.py`, trainer variant, collator family, packing owner, cache eligibility, manifests.
 - Stage-1 compact detection: `LatestDetectionTrainingConfig`, `DetectionTrainingDataset`, recursive detection objective, sidecar/packing policy.
-- Stage-2: `stage2_ab.pipeline` vs `rollout_matching.pipeline`, rollout runtime, teacher-forcing modules, duplicate-control losses, metric keys.
+- Stage-2 rollout correction: `stage2_rollout_correction`, rollout runtime, residual-set planning, duplicate filtering before assignment, teacher-forcing modules, diagnostic events, and metric keys.
 - Infer/eval: `src/infer/pipeline.py::run_pipeline`, `resolved_config.json`, `resolved_config.path`, confidence post-op compatibility, `src/eval/detection.py::evaluate_and_save`, guarded metrics.
 - Artifacts/provenance: `summary.json`, `metrics.json`, `run_metadata.json`, `pipeline_manifest.json`, `experiment_manifest.json`, `effective_runtime.json`, durable copied summaries.
 
@@ -109,3 +135,4 @@ Open only when helpful:
 - `references/report-template.md`: audit report skeleton
 - `references/grep-seeds.md`: high-signal `rg` starting points
 - `references/pipeline-checklist.md`: end-to-end correctness and reproducibility checklist
+- `references/governance-claim-checks.md`: OpenSpec governance, claim-validity, and review-closure checklist

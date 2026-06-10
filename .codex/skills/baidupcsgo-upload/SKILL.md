@@ -7,15 +7,19 @@ description: Use when Baidu Netdisk transfers need BaiduPCS-Go, browser-cookie l
 
 Use for Ubuntu-based Baidu Netdisk uploads/downloads, especially when `bypy` fails with `Slice MD5 mismatch`, `31064 file is not authorized`, app-root confusion, or large directory transfers.
 
+This is a one-off transfer skill. Do not use it for cross-machine append-only union sync; use `baidudisk-union-sync` when skip-existing, conflict detection, or no-overwrite semantics matter.
+
 ## Non-Obvious Facts
 
 - `BaiduPCS-Go` sees Netdisk root `/`; `bypy` uses an app sandbox.
 - Create remote directories under the real root before uploading; ignore `31061 文件已存在`.
 - Preserve the intended repo-relative remote layout unless the user gives a different root.
 - Upload safest default: `--norapid -p 1 -l 1 --retry 8`.
+- The helper upload policy defaults to overwrite for deliberate one-off replacement. Set `BAIDUPCS_UPLOAD_POLICY=skip` when preserving existing remote files matters.
 - With `--norapid`, single-file threading is effectively limited; increase concurrent file count before per-file threads.
 - Large transfers should run in `tmux`.
 - Downloads may stage under an account-prefixed directory such as `1592545883_Pien1722/...`; treat it as BaiduPCS-Go staging, then verify/merge the intended contents.
+- The helper download path passes overwrite by default. Set `BAIDUPCS_DOWNLOAD_OVERWRITE=0` when preserving existing local files matters.
 
 ## Scripts
 

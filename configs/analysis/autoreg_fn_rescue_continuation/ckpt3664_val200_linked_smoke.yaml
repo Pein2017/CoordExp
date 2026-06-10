@@ -1,0 +1,28 @@
+paths:
+  artifact_root: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/fn_rescue_continuation_smoke
+  checkpoint: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ce_support2_bsz16_4epoch_tokenrows_v2/compact-full-et-rmp-ce-support2-bsz16-4epoch-tokenrows-v2/v0-20260504-071356/checkpoint-3664
+  dataset_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+  attention_atlas_root: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/attention_evidence_routing
+  source_selected_cases: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/attention_evidence_routing/selected_cases.jsonl
+  source_candidate_regions: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/attention_evidence_routing/candidate_region_rows.jsonl
+  rollout_anatomy_per_row: /data/CoordExp/outputs/analysis/autoreg_object_rollout/ckpt3664_val200/rollout_anatomy/per_row.jsonl
+  gt_vs_pred_scored: /data/CoordExp/outputs/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_prompt_offset_fix_8gpu/gt_vs_pred_scored.jsonl
+  pred_token_trace: /data/CoordExp/outputs/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_prompt_offset_fix_8gpu/pred_token_trace.jsonl
+  infer_resolved_config: /data/CoordExp/outputs/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_prompt_offset_fix_8gpu/resolved_config.json
+  lane_c_study_config: null
+selection:
+  evidence_scope: val200_attention_atlas_linked_fn_stratified
+  sample_limit: 24
+  per_stratum_cap: 4
+  duplicate_iou_threshold: 0.95
+  wrong_control_overlap_threshold: 0.05
+  context_expansion_norm1000: 64
+execution:
+  attn_implementation: eager
+  torch_dtype: bfloat16
+  decoding: greedy
+  do_sample: false
+  num_beams: 1
+  max_new_tokens_desc_only: 4
+  max_new_tokens_desc_x1: 3
+  gallery_per_bucket: 2

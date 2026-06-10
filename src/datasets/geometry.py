@@ -853,9 +853,41 @@ def transform_geometry(
         return {"poly": q}
 
 
+def valid_xyxy_box(box: Any) -> bool:
+    """Return whether `box` is a strict xyxy rectangle."""
+
+    if isinstance(box, (str, bytes)) or not isinstance(box, Sequence) or len(box) != 4:
+        return False
+    try:
+        x1, y1, x2, y2 = [float(value) for value in box]
+    except (TypeError, ValueError):
+        return False
+    return x2 > x1 and y2 > y1
+
+
+def box_iou_xyxy(a: Sequence[Any], b: Sequence[Any]) -> float:
+    """Compute IoU for strict xyxy boxes using half-open rectangle area."""
+
+    if not valid_xyxy_box(a) or not valid_xyxy_box(b):
+        return 0.0
+    ax1, ay1, ax2, ay2 = [float(value) for value in a]
+    bx1, by1, bx2, by2 = [float(value) for value in b]
+    ix1 = max(ax1, bx1)
+    iy1 = max(ay1, by1)
+    ix2 = min(ax2, bx2)
+    iy2 = min(ay2, by2)
+    inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+    area_a = (ax2 - ax1) * (ay2 - ay1)
+    area_b = (bx2 - bx1) * (by2 - by1)
+    union = area_a + area_b - inter
+    return 0.0 if union <= 0.0 else inter / union
+
+
 __all_typed__ = [
     "BBox",
     "Polygon",
+    "box_iou_xyxy",
     "geometry_from_dict",
     "transform_geometry",
+    "valid_xyxy_box",
 ]
