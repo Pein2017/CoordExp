@@ -3602,6 +3602,7 @@ class CoordSoftCEConfig:
         "iou_gibbs_v0",
         "ciou_gibbs_v0",
         "instance_trie_gaussian",
+        "gaussian_around_gold",
     ]
 
     def __post_init__(self) -> None:
@@ -3612,8 +3613,67 @@ class CoordSoftCEConfig:
         _detection_validate_choice(
             self.target_distribution,
             path="objective.coord_soft_ce.target_distribution",
-            allowed={"iou_gibbs_v0", "ciou_gibbs_v0", "instance_trie_gaussian"},
+            allowed={
+                "iou_gibbs_v0",
+                "ciou_gibbs_v0",
+                "instance_trie_gaussian",
+                "gaussian_around_gold",
+            },
         )
+
+
+@dataclass(frozen=True)
+class SFTGaussianCoordSoftCEConfig(CoordSoftCEConfig):
+    target_distribution: Literal["gaussian_around_gold"]
+    gaussian_mixture_weight: float = 0.5
+    gaussian_r95_axis_fraction: float = 0.04
+    gaussian_r95_cap_bins: int = 8
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        _detection_validate_choice(
+            self.target_distribution,
+            path="objective.coord_soft_ce.target_distribution",
+            allowed={"gaussian_around_gold"},
+        )
+        if not isinstance(self.gaussian_mixture_weight, (int, float)) or isinstance(
+            self.gaussian_mixture_weight, bool
+        ):
+            raise TypeError(
+                "objective.coord_soft_ce.gaussian_mixture_weight must be numeric"
+            )
+        if not math.isfinite(float(self.gaussian_mixture_weight)):
+            raise ValueError(
+                "objective.coord_soft_ce.gaussian_mixture_weight must be finite and within [0, 1]"
+            )
+        if not 0.0 <= float(self.gaussian_mixture_weight) <= 1.0:
+            raise ValueError(
+                "objective.coord_soft_ce.gaussian_mixture_weight must be within [0, 1]"
+            )
+        if not isinstance(self.gaussian_r95_axis_fraction, (int, float)) or isinstance(
+            self.gaussian_r95_axis_fraction, bool
+        ):
+            raise TypeError(
+                "objective.coord_soft_ce.gaussian_r95_axis_fraction must be numeric"
+            )
+        if (
+            not math.isfinite(float(self.gaussian_r95_axis_fraction))
+            or float(self.gaussian_r95_axis_fraction) <= 0.0
+            or float(self.gaussian_r95_axis_fraction) > 1.0
+        ):
+            raise ValueError(
+                "objective.coord_soft_ce.gaussian_r95_axis_fraction must be finite and within (0, 1]"
+            )
+        if not isinstance(self.gaussian_r95_cap_bins, int) or isinstance(
+            self.gaussian_r95_cap_bins, bool
+        ):
+            raise TypeError(
+                "objective.coord_soft_ce.gaussian_r95_cap_bins must be an integer"
+            )
+        if int(self.gaussian_r95_cap_bins) < 0 or int(self.gaussian_r95_cap_bins) > 999:
+            raise ValueError(
+                "objective.coord_soft_ce.gaussian_r95_cap_bins must be within [0, 999]"
+            )
 
 
 @dataclass(frozen=True)
@@ -3718,14 +3778,14 @@ class GibbsCoordSoftCEConfig(CoordSoftCEConfig):
 
 @dataclass(frozen=True)
 class TeacherForcingRollinPolicyConfig:
-    name: Literal["random_permutation"] = "random_permutation"
+    name: Literal["random_permutation", "sorted"] = "random_permutation"
     base_seed: int = 17
 
     def __post_init__(self) -> None:
         _detection_validate_choice(
             self.name,
             path="objective.target_ir.rollin_policy.name",
-            allowed={"random_permutation"},
+            allowed={"random_permutation", "sorted"},
         )
         if not isinstance(self.base_seed, int) or isinstance(self.base_seed, bool):
             raise TypeError(
@@ -4147,13 +4207,39 @@ class DetectionObjectiveConfig:
                 "objective.variant"
             )
         if self.coord_soft_ce is not None:
-            if self.id != "recursive_detection_ce" or self.variant not in {
-                "random_permutation_et_rmp_ce",
-                "prefix_rollin_et_rmp_ce",
-            }:
+            target_distribution = getattr(
+                self.coord_soft_ce,
+                "target_distribution",
+                None,
+            )
+            if self.id == "sft":
+                if self.variant not in {"sorted_sft", "random_order_sft"}:
+                    raise ValueError(
+                        "SFT objective.coord_soft_ce requires an SFT objective.variant"
+                    )
+                if target_distribution != "gaussian_around_gold":
+                    raise ValueError(
+                        "SFT objective.coord_soft_ce requires "
+                        "target_distribution=gaussian_around_gold"
+                    )
+            elif self.id == "recursive_detection_ce":
+                if self.variant not in {
+                    "random_permutation_et_rmp_ce",
+                    "prefix_rollin_et_rmp_ce",
+                }:
+                    raise ValueError(
+                        "objective.coord_soft_ce is only supported for latest "
+                        "recursive_detection_ce ET-RMP variants"
+                    )
+                if target_distribution == "gaussian_around_gold":
+                    raise ValueError(
+                        "recursive_detection_ce objective.coord_soft_ce does not "
+                        "support target_distribution=gaussian_around_gold"
+                    )
+            else:
                 raise ValueError(
-                    "objective.coord_soft_ce is only supported for latest "
-                    "recursive_detection_ce ET-RMP variants"
+                    "objective.coord_soft_ce is only supported for SFT Gaussian "
+                    "or latest recursive_detection_ce ET-RMP variants"
                 )
         for field_name in ("state_weighting", "normalization"):
             if not isinstance(getattr(self, field_name), str):
@@ -4178,7 +4264,24 @@ class DetectionObjectiveConfig:
         raw_id = payload.get("id")
         if raw_id == TEACHER_FORCING_OBJECTIVE_ID:
             return TeacherForcingObjectiveConfig.from_mapping(payload)
-        if raw_id in LEGACY_TEACHER_FORCING_OBJECTIVE_IDS or raw_id in {"sft"}:
+        if raw_id == "sft":
+            data: MutableMapping[str, Any] = dict(payload)
+            coord_soft_raw = data.get("coord_soft_ce")
+            if coord_soft_raw is not None:
+                if not isinstance(coord_soft_raw, Mapping):
+                    raise TypeError("objective.coord_soft_ce must be a mapping")
+                if coord_soft_raw.get("target_distribution") != "gaussian_around_gold":
+                    raise ValueError(
+                        "SFT objective.coord_soft_ce requires "
+                        "target_distribution=gaussian_around_gold"
+                    )
+                data["coord_soft_ce"] = parse_dataclass_strict(
+                    SFTGaussianCoordSoftCEConfig,
+                    coord_soft_raw,
+                    path="objective.coord_soft_ce",
+                )
+            return parse_dataclass_strict(cls, data, path="objective")
+        if raw_id in LEGACY_TEACHER_FORCING_OBJECTIVE_IDS:
             raise ValueError(
                 "objective.id must be exactly 'teacher_forcing'; "
                 f"legacy objective ids are unsupported, got {raw_id!r}"

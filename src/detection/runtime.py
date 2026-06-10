@@ -22,6 +22,7 @@ DetectionRuntimeMode = Literal[
     "sorted_sft",
     "random_order_sft",
     "random_permutation_et_rmp_ce",
+    "sorted_et_rmp_ce",
     "prefix_rollin_et_rmp_ce",
 ]
 
@@ -42,6 +43,17 @@ class RecursiveDetectionCERuntimeConfig:
     variant: str = "random_permutation_et_rmp_ce"
     coord_soft_ce: CoordSoftTargetRuntimeConfig | None = None
     type_gate: Any | None = None
+
+
+@dataclass(frozen=True)
+class SFTGaussianCoordSoftCERuntimeConfig:
+    enabled: bool
+    target_distribution: str
+    coord_token_start: int
+    coord_token_end: int
+    gaussian_mixture_weight: float = 0.5
+    gaussian_r95_axis_fraction: float = 0.04
+    gaussian_r95_cap_bins: int = 8
 
 
 def is_detection_config(training_config: Any) -> bool:
@@ -146,6 +158,7 @@ def build_detection_runtime_custom_shim(
         eval_detection=None,
         token_type_metrics=None,
         coord_soft_ce_w1=None,
+        sft_gaussian_coord_soft_ce=None,
         bbox_geo=None,
         bbox_size_aux=None,
         sft_structural_close=None,
@@ -170,18 +183,26 @@ def detection_mode(
                 "objective.profile in {'hard_sft', 'pure_valid_set_marginal'}"
             )
         rollin_policy = training_config.objective.target_ir.rollin_policy
-        if rollin_policy.name != "random_permutation":
+        if rollin_policy.name not in {"random_permutation", "sorted"}:
             raise ValueError(
-                "teacher_forcing detection runtime currently supports only "
-                "objective.target_ir.rollin_policy.name=random_permutation"
+                "teacher_forcing detection runtime currently supports "
+                "objective.target_ir.rollin_policy.name in "
+                "{'random_permutation', 'sorted'}"
             )
-        return "random_order_sft"
+        if training_config.objective.profile == "hard_sft":
+            return "sorted_sft" if rollin_policy.name == "sorted" else "random_order_sft"
+        return (
+            "sorted_et_rmp_ce"
+            if rollin_policy.name == "sorted"
+            else "random_permutation_et_rmp_ce"
+        )
 
     variant = training_config.objective.variant
     supported = {
         "sorted_sft",
         "random_order_sft",
         "random_permutation_et_rmp_ce",
+        "sorted_et_rmp_ce",
         "prefix_rollin_et_rmp_ce",
     }
     if variant in supported:
@@ -396,6 +417,56 @@ def resolve_recursive_detection_ce_runtime_cfg(
     )
 
 
+def resolve_sft_gaussian_coord_soft_ce_runtime_cfg(
+    training_config: Any,
+) -> SFTGaussianCoordSoftCERuntimeConfig | None:
+    objective = getattr(training_config, "objective", None)
+    if objective is None:
+        return None
+
+    def _field(container: Any, field_name: str) -> Any:
+        if isinstance(container, Mapping):
+            return container.get(field_name)
+        return getattr(container, field_name, None)
+
+    if str(_field(objective, "id") or "") != "sft":
+        return None
+    raw_cfg = _field(objective, "coord_soft_ce")
+    if raw_cfg is None or not bool(_field(raw_cfg, "enabled")):
+        return None
+    if str(_field(raw_cfg, "target_distribution") or "") != "gaussian_around_gold":
+        raise ValueError(
+            "SFT objective.coord_soft_ce requires target_distribution=gaussian_around_gold"
+        )
+
+    coord_group = None
+    groups = getattr(training_config.token_rows, "groups", {})
+    coord_group = groups.get("coord_geometry") if isinstance(groups, Mapping) else None
+    if coord_group is None:
+        for group in training_config.token_rows.groups.values():
+            role = getattr(group.role, "value", group.role)
+            if str(role) == "coord_geometry":
+                coord_group = group
+                break
+    if coord_group is None:
+        raise ValueError(
+            "SFT objective.coord_soft_ce requires a token_rows coord_geometry group"
+        )
+    if coord_group.expected_start is None or coord_group.expected_end is None:
+        raise ValueError(
+            "SFT objective.coord_soft_ce requires token_rows coord_geometry expected_start/end"
+        )
+    return SFTGaussianCoordSoftCERuntimeConfig(
+        enabled=True,
+        target_distribution="gaussian_around_gold",
+        coord_token_start=int(coord_group.expected_start),
+        coord_token_end=int(coord_group.expected_end),
+        gaussian_mixture_weight=float(_field(raw_cfg, "gaussian_mixture_weight")),
+        gaussian_r95_axis_fraction=float(_field(raw_cfg, "gaussian_r95_axis_fraction")),
+        gaussian_r95_cap_bins=int(_field(raw_cfg, "gaussian_r95_cap_bins")),
+    )
+
+
 def _resolve_coord_soft_ce_runtime_config(
     *,
     training_config: DetectionTrainingConfig,
@@ -480,6 +551,7 @@ def build_detection_dataset(
     objective_variant = str(getattr(objective, "variant", "") or "")
     if objective_variant in {
         "random_permutation_et_rmp_ce",
+        "sorted_et_rmp_ce",
         "prefix_rollin_et_rmp_ce",
     }:
         type_gate_config = getattr(objective, "type_gate", None)
@@ -490,11 +562,15 @@ def build_detection_dataset(
         teacher_forcing_rollin_base_seed = int(
             getattr(objective.target_ir.rollin_policy, "base_seed")
         )
+        teacher_forcing_rollin_policy_name = str(
+            getattr(objective.target_ir.rollin_policy, "name")
+        )
     else:
         state_weighting = getattr(objective, "state_weighting")
         normalization = getattr(objective, "normalization")
         teacher_forcing_profile = None
         teacher_forcing_rollin_base_seed = None
+        teacher_forcing_rollin_policy_name = None
     return DetectionTrainingDataset.from_jsonl(
         jsonl_path,
         swift_template=swift_template,
@@ -510,6 +586,7 @@ def build_detection_dataset(
         type_gate_config=type_gate_config,
         teacher_forcing_profile=teacher_forcing_profile,
         teacher_forcing_rollin_base_seed=teacher_forcing_rollin_base_seed,
+        teacher_forcing_rollin_policy_name=teacher_forcing_rollin_policy_name,
         sample_limit=sample_limit,
         dataset_name=dataset_name,
     )
@@ -529,4 +606,5 @@ __all__ = [
     "resolve_detection_runtime_support",
     "resolve_detection_prompts",
     "resolve_recursive_detection_ce_runtime_cfg",
+    "resolve_sft_gaussian_coord_soft_ce_runtime_cfg",
 ]

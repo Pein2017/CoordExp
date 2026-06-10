@@ -1,0 +1,25 @@
+# Shared fully-compact full-object Stage-1 packed SFT base for LLM-only LoRA.
+#
+# This base intentionally excludes vision/aligner/merger adapters so hard CE and
+# Gaussian coord-soft CE arms differ only in the objective/run names.
+extends:
+  - ./compact_full_ablation_base.yaml
+
+tuner:
+  freeze_llm: false
+  freeze_vit: true
+  freeze_aligner: true
+  target_modules: [all-linear]
+  target_regex: '^(model\.language_model.*\.(q_proj|k_proj|v_proj|o_proj|up_proj|down_proj|gate_proj))$'
+  lora_rank: 16
+  lora_alpha: 32
+  lora_dropout: 0.0
+  lora_bias: none
+
+training:
+  artifact_subdir: compact_full_fullobj_llm_lora_packed_base
+  run_name: compact-full-fullobj-llm-lora-packed-base
+  freeze_vit: true
+  freeze_aligner: true
+  packing: true
+  eval_steps: 600

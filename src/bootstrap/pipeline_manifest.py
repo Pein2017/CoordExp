@@ -125,6 +125,8 @@ def build_pipeline_manifest(
     diagnostics = _resolve("diagnostics", default_diagnostics)
 
     extra: dict[str, Any] = {"variant": runtime_profile.variant}
+    if coord_soft_cfg:
+        extra["coord_soft_ce"] = dict(coord_soft_cfg)
 
     payload = _normalize_json_value(
         {"objective": objective, "diagnostics": diagnostics, "extra": extra}

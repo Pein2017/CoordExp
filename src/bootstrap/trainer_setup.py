@@ -10,6 +10,7 @@ from src.trainers.metrics.mixins import (
     GradAccumLossScaleMixin,
     InstabilityMonitorMixin,
     RecursiveDetectionCEMixin,
+    SFTGaussianCoordSoftCELossMixin,
     SFTStructuralCloseLossMixin,
     TeacherForcingObjectiveMixin,
 )
@@ -68,6 +69,7 @@ def compose_trainer_class(
     bbox_geo_cfg: Any,
     bbox_size_aux_cfg: Any,
     coord_soft_ce_w1_cfg: Any,
+    sft_gaussian_coord_soft_ce_cfg: Any = None,
     sft_structural_close_cfg: Any = None,
     recursive_detection_ce_cfg: Any = None,
     teacher_forcing_objective_cfg: Any = None,
@@ -90,6 +92,7 @@ def compose_trainer_class(
                 ("bbox_size_aux", bbox_size_aux_cfg),
                 ("bbox_geo", bbox_geo_cfg),
                 ("coord_soft_ce_w1", coord_soft_ce_w1_cfg),
+                ("sft_gaussian_coord_soft_ce", sft_gaussian_coord_soft_ce_cfg),
                 ("sft_structural_close", sft_structural_close_cfg),
             ):
                 if cfg and getattr(cfg, "enabled", False):
@@ -113,6 +116,14 @@ def compose_trainer_class(
             mixins.append(TeacherForcingObjectiveMixin)
         if (
             not recursive_ce_enabled
+            and not teacher_forcing_enabled
+            and sft_gaussian_coord_soft_ce_cfg
+            and getattr(sft_gaussian_coord_soft_ce_cfg, "enabled", False)
+        ):
+            mixins.append(SFTGaussianCoordSoftCELossMixin)
+        if (
+            not recursive_ce_enabled
+            and not teacher_forcing_enabled
             and coord_soft_ce_w1_cfg
             and getattr(coord_soft_ce_w1_cfg, "enabled", False)
         ):

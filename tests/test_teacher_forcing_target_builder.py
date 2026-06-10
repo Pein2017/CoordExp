@@ -230,6 +230,7 @@ def _build(
     sample: NormalizedDetectionSample | dict[str, Any],
     *,
     profile: str = "valid_set",
+    policy_name: str = "random_permutation",
     epoch: int = 3,
     stable_sample_id: str = "sample-42",
     max_length: int | None = None,
@@ -243,6 +244,7 @@ def _build(
         epoch=epoch,
         stable_sample_id=stable_sample_id,
         max_length=max_length,
+        policy_name=policy_name,
     )
     return result, tok
 
@@ -284,6 +286,32 @@ def test_valid_set_profile_emits_all_legal_next_tokens_at_ambiguous_prefixes() -
     assert object_ref_atom.valid_token_ids == frozenset({tokenizer.token_id(OBJECT_REF_START_TOKEN)})
     next_desc_atom = result.target_ir.atoms[result.target_ir.atoms.index(object_ref_atom) + 1]
     assert next_desc_atom.valid_token_ids == frozenset(
+        {tokenizer.token_id("cat"), tokenizer.token_id("dog")}
+    )
+    _validate(result, tokenizer)
+
+
+def test_sorted_rollin_uses_teacher_order_with_same_residual_set_atoms() -> None:
+    sample = _sample(
+        (
+            _object("cat", (1, 2, 10, 20), index=0),
+            _object("dog", (3, 4, 30, 40), index=1),
+        )
+    )
+    result, tokenizer = _build(sample, profile="valid_set", policy_name="sorted")
+
+    assert result.ok
+    assert result.target_ir is not None
+    assert result.target_ir.metadata["rollin_policy"] == "sorted"
+    assert result.target_ir.metadata["selected_normalized_object_indices"] == (0, 1)
+    assert result.rendered_text.startswith(f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}")
+
+    first_desc_atom = next(
+        atom
+        for atom in result.target_ir.atoms
+        if atom.selected_token_id == tokenizer.token_id("cat")
+    )
+    assert first_desc_atom.valid_token_ids == frozenset(
         {tokenizer.token_id("cat"), tokenizer.token_id("dog")}
     )
     _validate(result, tokenizer)

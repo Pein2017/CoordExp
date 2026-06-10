@@ -137,6 +137,7 @@ def _validate_detection_training_mode(value: str) -> DetectionTrainingMode:
         "sorted_sft",
         "random_order_sft",
         "random_permutation_et_rmp_ce",
+        "sorted_et_rmp_ce",
         "trie_disabled_full_suffix_ce",
         "prefix_rollin_et_rmp_ce",
     }:
@@ -145,13 +146,13 @@ def _validate_detection_training_mode(value: str) -> DetectionTrainingMode:
 
 
 def _default_state_weighting_for_mode(training_mode: DetectionTrainingMode) -> str:
-    if training_mode == "random_permutation_et_rmp_ce":
+    if training_mode in {"random_permutation_et_rmp_ce", "sorted_et_rmp_ce"}:
         return "legacy_row_mean_prefix_mixture_equivalence"
     return "none"
 
 
 def _default_normalization_for_mode(training_mode: DetectionTrainingMode) -> str:
-    if training_mode == "random_permutation_et_rmp_ce":
+    if training_mode in {"random_permutation_et_rmp_ce", "sorted_et_rmp_ce"}:
         return "legacy_row_mean_equivalence"
     return "token_mean"
 

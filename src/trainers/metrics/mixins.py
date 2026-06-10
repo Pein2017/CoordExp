@@ -13,6 +13,9 @@ from src.trainers.metrics.batch_contract import (
 )
 from src.trainers.metrics.coord_losses import CoordSoftCEW1LossMixin
 from src.trainers.metrics.recursive_detection import RecursiveDetectionCEMixin
+from src.trainers.metrics.sft_gaussian_coord_soft_ce import (
+    SFTGaussianCoordSoftCELossMixin,
+)
 from src.trainers.metrics.structural_close import SFTStructuralCloseLossMixin
 from src.trainers.metrics.teacher_forcing import TeacherForcingObjectiveMixin
 from src.trainers.monitoring.instability import InstabilityMonitorMixin
@@ -24,6 +27,7 @@ __all__ = [
     "_validate_batch_contract",
     "SFTStructuralCloseLossMixin",
     "RecursiveDetectionCEMixin",
+    "SFTGaussianCoordSoftCELossMixin",
     "TeacherForcingObjectiveMixin",
     "AggregateTokenTypeMetricsMixin",
     "CoordSoftCEW1LossMixin",

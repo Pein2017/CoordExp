@@ -7,6 +7,7 @@ import random
 from typing import Sequence, TypeVar
 
 ROLLIN_POLICY_NAME = "random_permutation"
+SORTED_ROLLIN_POLICY_NAME = "sorted"
 ROLLIN_POLICY_VERSION = 1
 DEFAULT_ROLLIN_BASE_SEED = 17
 
@@ -44,10 +45,16 @@ def random_permutation_rollin(
     return tuple(ordered)
 
 
+def sorted_rollin(items: Sequence[T]) -> tuple[T, ...]:
+    return tuple(items)
+
+
 __all__ = [
     "DEFAULT_ROLLIN_BASE_SEED",
     "ROLLIN_POLICY_NAME",
     "ROLLIN_POLICY_VERSION",
+    "SORTED_ROLLIN_POLICY_NAME",
     "derive_rollin_seed",
     "random_permutation_rollin",
+    "sorted_rollin",
 ]

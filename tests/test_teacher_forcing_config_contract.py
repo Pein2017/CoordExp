@@ -52,6 +52,7 @@ OLD_OBJECTIVE_IDS = (
 def _teacher_forcing_objective(
     *,
     profile: str = "pure_valid_set_marginal",
+    rollin_policy_name: str = "random_permutation",
     coverage_strength: float = 0.0,
     coverage_enabled: bool = False,
     exact_packing_mapping: bool = False,
@@ -61,7 +62,7 @@ def _teacher_forcing_objective(
         "profile": profile,
         "target_ir": {
             "rollin_policy": {
-                "name": "random_permutation",
+                "name": rollin_policy_name,
                 "base_seed": 17,
             },
             "exact_packing_mapping": {
@@ -110,7 +111,6 @@ def _hard_sft_objective() -> dict:
     [
         "hard_sft",
         "pure_valid_set_marginal",
-        "hybrid_valid_set_marginal",
     ],
 )
 def test_latest_teacher_forcing_accepts_supported_profiles(profile: str) -> None:
@@ -227,7 +227,7 @@ def test_latest_teacher_forcing_accepts_minimal_hard_sft_profile() -> None:
     assert cfg.objective.modules.within_valid_coverage.coverage_strength == 0.0
 
 
-def test_coverage_profile_requires_explicit_positive_coverage_strength() -> None:
+def test_coverage_profile_is_rejected_until_hybrid_runtime_exists() -> None:
     payload = _latest_teacher_payload(
         profile="hybrid_valid_set_marginal",
         modules={
@@ -241,7 +241,7 @@ def test_coverage_profile_requires_explicit_positive_coverage_strength() -> None
 
     with pytest.raises(
         ValueError,
-        match=r"hybrid_valid_set_marginal.*coverage_strength.*> 0",
+        match=r"hybrid_valid_set_marginal is unsupported",
     ):
         DetectionTrainingConfig.from_mapping(payload)
 
@@ -447,23 +447,55 @@ def test_latest_teacher_forcing_pure_valid_set_profile_reaches_runtime() -> None
     payload["objective"] = _teacher_forcing_objective()
     cfg = DetectionTrainingConfig.from_mapping(payload)
 
-    assert detection_mode(cfg) == "random_order_sft"
+    assert detection_mode(cfg) == "random_permutation_et_rmp_ce"
 
 
-def test_latest_teacher_forcing_coverage_profile_still_requires_runtime_wiring() -> None:
+def test_latest_teacher_forcing_sorted_rollin_reaches_sorted_runtime_modes() -> None:
+    hard_sft_payload = _latest_teacher_payload()
+    hard_sft_payload["data"]["object_ordering"] = "sorted"
+    hard_sft_payload["objective"] = _teacher_forcing_objective(
+        profile="hard_sft",
+        rollin_policy_name="sorted",
+        coverage_enabled=False,
+    )
+    hard_sft_payload["objective"]["modules"] = _hard_sft_objective()["modules"]
+    hard_sft_cfg = DetectionTrainingConfig.from_mapping(hard_sft_payload)
+
+    residual_payload = _latest_teacher_payload()
+    residual_payload["data"]["object_ordering"] = "sorted"
+    residual_payload["objective"] = _teacher_forcing_objective(
+        profile="pure_valid_set_marginal",
+        rollin_policy_name="sorted",
+    )
+    residual_cfg = DetectionTrainingConfig.from_mapping(residual_payload)
+
+    assert hard_sft_cfg.objective.target_ir.rollin_policy.name == "sorted"
+    assert detection_mode(hard_sft_cfg) == "sorted_sft"
+    assert residual_cfg.objective.target_ir.rollin_policy.name == "sorted"
+    assert detection_mode(residual_cfg) == "sorted_et_rmp_ce"
+
+
+def test_latest_teacher_forcing_rejects_rollin_order_mismatch() -> None:
+    payload = _latest_teacher_payload()
+    payload["data"]["object_ordering"] = "random_permutation"
+    payload["objective"] = _teacher_forcing_objective(rollin_policy_name="sorted")
+
+    with pytest.raises(ValueError, match="data\\.object_ordering must be 'sorted'"):
+        DetectionTrainingConfig.from_mapping(payload)
+
+
+def test_latest_teacher_forcing_coverage_profile_still_rejected_before_runtime() -> None:
     payload = _latest_teacher_payload()
     payload["objective"] = _teacher_forcing_objective(
         profile="hybrid_valid_set_marginal",
         coverage_enabled=True,
         coverage_strength=0.1,
     )
-    cfg = DetectionTrainingConfig.from_mapping(payload)
-
     with pytest.raises(
         ValueError,
-        match=r"currently supports objective\.profile",
+        match=r"hybrid_valid_set_marginal is unsupported",
     ):
-        detection_mode(cfg)
+        DetectionTrainingConfig.from_mapping(payload)
 
 
 @pytest.mark.parametrize(

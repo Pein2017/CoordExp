@@ -40,6 +40,7 @@ DetectionTrainingMode = Literal[
     "sorted_sft",
     "random_order_sft",
     "random_permutation_et_rmp_ce",
+    "sorted_et_rmp_ce",
     "prefix_rollin_et_rmp_ce",
 ]
 TrieTargetKind = Literal["hard_ce", "trie_multi_positive"]
@@ -658,9 +659,15 @@ def _prepare_sample_for_mode(
             mode_name="random_permutation_et_rmp_ce",
         )
         return sample
+    if mode == "sorted_et_rmp_ce":
+        if sample.object_ordering.strategy != "sorted":
+            raise ValueError(
+                "sorted_et_rmp_ce requires sample.object_ordering.strategy='sorted'"
+            )
+        return sample
     raise ValueError(
         "mode must be one of {'sorted_sft', 'random_order_sft', "
-        "'random_permutation_et_rmp_ce'}; "
+        "'random_permutation_et_rmp_ce', 'sorted_et_rmp_ce'}; "
         f"got {mode!r}"
     )
 

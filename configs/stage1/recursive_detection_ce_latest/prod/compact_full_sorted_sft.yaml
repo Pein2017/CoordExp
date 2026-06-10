@@ -1,0 +1,18 @@
+# Fully-compact full-object sorted-order hard-CE SFT with LLM+aligner LoRA.
+extends:
+  - ./compact_full_ablation_base.yaml
+
+training:
+  artifact_subdir: compact_full_fullobj_sorted_sft_llm_aligner_lora_packed_bsz16_4epoch_tokenrows_v2
+  run_name: compact-full-fullobj-sorted-sft-llm-aligner-lora-packed-bsz16-4epoch-tokenrows-v2
+  packing: true
+  eval_steps: 600
+
+data:
+  object_ordering: sorted
+
+objective:
+  id: sft
+  variant: sorted_sft
+  state_weighting: none
+  normalization: token_mean

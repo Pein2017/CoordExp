@@ -1,0 +1,130 @@
+# Shared full-object fully-compact Stage-1 2x2 ablation base.
+#
+# This variant tunes LLM and MLP aligner/merger adapters while keeping the
+# vision tower frozen. The four leaf configs should differ only by object
+# ordering, objective, and run/artifact names.
+model:
+  model: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+  attn_impl: flash_attention_2
+  torch_dtype: bfloat16
+
+template:
+  template: qwen3_vl
+  truncation_strategy: raise
+  max_length: 12000
+  max_pixels: 1048576
+
+global_max_length: 12000
+
+tuner:
+  train_type: lora
+  use_swift_lora: false
+  freeze_llm: false
+  freeze_vit: true
+  freeze_aligner: false
+  target_modules: [all-linear]
+  target_regex: '^(model\.language_model.*\.(q_proj|k_proj|v_proj|o_proj|up_proj|down_proj|gate_proj)|model\.visual\.(merger|deepstack_merger_list\.\d+).*\.(linear_fc1|linear_fc2))$'
+  modules_to_save: []
+  lora_rank: 16
+  lora_alpha: 32
+  lora_dropout: 0.0
+  lora_bias: none
+
+training:
+  output_root: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest
+  logging_root: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/tb
+  artifact_subdir: compact_full_fullobj_llm_aligner_lora_base
+  run_name: compact-full-fullobj-llm-aligner-lora-base
+  num_train_epochs: 4
+  per_device_train_batch_size: 16
+  effective_batch_size: 32
+  per_device_eval_batch_size: 1
+  learning_rate: 5.0e-5
+  warmup_ratio: 0.1
+  weight_decay: 0.1
+  lr_scheduler_type: cosine
+  optimizer: multimodal_coord_offset
+  optim: adamw_torch_fused
+  train_type: lora
+  freeze_vit: true
+  freeze_aligner: false
+  bf16: true
+  fp16: false
+  gradient_checkpointing: true
+  remove_unused_columns: false
+  dataloader_num_workers: 0
+  dataloader_pin_memory: false
+  dataloader_persistent_workers: false
+  dataloader_prefetch_factor: null
+  packing: false
+  eval_packing: false
+  encoded_sample_cache:
+    enabled: false
+    ineligible_policy: error
+    wait_timeout_s: 7200
+    max_resident_shards: 4
+  eval_strategy: steps
+  eval_steps: 600
+  save_strategy: steps
+  save_steps: 200
+  save_total_limit: 2
+  save_delay_steps: 600
+  logging_steps: 10
+  logging_first_step: true
+  metric_for_best_model: eval_loss
+  greater_is_better: false
+  ddp_find_unused_parameters: false
+  ddp_broadcast_buffers: false
+
+deepspeed:
+  enabled: false
+
+data:
+  train_jsonl: public_data/coco/rescale_32_1024_bbox/train.coord.jsonl
+  val_jsonl: public_data/coco/rescale_32_1024_bbox/val.coord.jsonl
+  image_root: public_data/coco/rescale_32_1024_bbox
+  object_ordering: random_permutation
+
+prompt:
+  system_variant: stage1_detection
+  user_variant: compact_detection
+  include_template_summary: true
+  prompt_variant_enabled: true
+
+detection_template:
+  id: compact_full
+  coordinate_surface: coord_token
+  bbox_format: xyxy
+  strict_parse: true
+
+token_rows:
+  enabled: true
+  tie_head: true
+  groups:
+    coord_geometry:
+      role: coord_geometry
+      start_token: "<|coord_0|>"
+      end_token: "<|coord_999|>"
+      expected_start: 151670
+      expected_end: 152669
+    compact_structure:
+      role: structural_ce_only
+      tokens: ["<|object_ref_start|>", "<|box_start|>"]
+      expected_ids:
+        "<|object_ref_start|>": 151646
+        "<|box_start|>": 151648
+  embed_lr: 5.0e-5
+  weight_decay: 0.0
+
+packing:
+  static_packing: false
+  padding_free_packed: false
+
+evaluation:
+  expected_template: compact_full
+  parser_mode: strict_expected
+
+validation:
+  validate_span_alignment: true
+  validate_template_capabilities: true
+  fail_fast: true

@@ -217,6 +217,7 @@ class DetectionDatasetRuntimeConfig:
     type_gate_config: Any | None = None
     teacher_forcing_profile: str | None = None
     teacher_forcing_rollin_base_seed: int | None = None
+    teacher_forcing_rollin_policy_name: str | None = None
 
 
 def _encode_swift_template_no_resize(
@@ -294,6 +295,7 @@ class DetectionTrainingDataset(Dataset):
         type_gate_config: Any | None = None,
         teacher_forcing_profile: str | None = None,
         teacher_forcing_rollin_base_seed: int | None = None,
+        teacher_forcing_rollin_policy_name: str | None = None,
         sample_limit: int | None = None,
         dataset_name: str | None = None,
     ) -> "DetectionTrainingDataset":
@@ -324,6 +326,7 @@ class DetectionTrainingDataset(Dataset):
                 type_gate_config=type_gate_config,
                 teacher_forcing_profile=teacher_forcing_profile,
                 teacher_forcing_rollin_base_seed=teacher_forcing_rollin_base_seed,
+                teacher_forcing_rollin_policy_name=teacher_forcing_rollin_policy_name,
             ),
             dataset_name=dataset_name or path.stem,
         )
@@ -417,6 +420,10 @@ class DetectionTrainingDataset(Dataset):
                 epoch=self._epoch,
                 stable_sample_id=str(_make_sample_id(self.dataset_name, base_idx)),
                 base_seed=int(self.config.teacher_forcing_rollin_base_seed or 17),
+                policy_name=(
+                    self.config.teacher_forcing_rollin_policy_name
+                    or "random_permutation"
+                ),
                 input_prefix_token_id=self._teacher_forcing_input_prefix_token_id(),
             )
             if not build_result.ok:

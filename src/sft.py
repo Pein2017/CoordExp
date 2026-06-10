@@ -103,6 +103,7 @@ from .detection.runtime import (
     detection_sequence_format as _detection_sequence_format,
     resolve_detection_prompts as _resolve_detection_prompts,
     resolve_recursive_detection_ce_runtime_cfg as _resolve_recursive_detection_ce_cfg,
+    resolve_sft_gaussian_coord_soft_ce_runtime_cfg as _resolve_sft_gaussian_coord_soft_ce_cfg,
 )
 from .infer.checkpoints import load_adapter_checkpoint_info
 from .trainers import with_final_checkpoint
@@ -3589,6 +3590,9 @@ def main():
     trainer_variant = getattr(train_args, "trainer_variant", None)
     runtime_profile = resolve_training_runtime_profile(trainer_variant)
     recursive_detection_ce_cfg = _resolve_recursive_detection_ce_cfg(training_config)
+    sft_gaussian_coord_soft_ce_cfg = _resolve_sft_gaussian_coord_soft_ce_cfg(
+        training_config
+    )
     teacher_forcing_objective_cfg = None
     if detection_config is not None and getattr(
         detection_config.objective, "id", None
@@ -3776,6 +3780,7 @@ def main():
         bbox_geo_cfg=None,
         bbox_size_aux_cfg=None,
         coord_soft_ce_w1_cfg=coord_soft_ce_w1_cfg,
+        sft_gaussian_coord_soft_ce_cfg=sft_gaussian_coord_soft_ce_cfg,
         sft_structural_close_cfg=sft_structural_close_cfg,
         recursive_detection_ce_cfg=recursive_detection_ce_cfg,
         teacher_forcing_objective_cfg=teacher_forcing_objective_cfg,
@@ -3856,6 +3861,10 @@ def main():
             coord_soft_cfg_for_manifest = dict(coord_soft_ce_w1_cfg)
         elif is_dataclass(coord_soft_ce_w1_cfg):
             coord_soft_cfg_for_manifest = dataclass_asdict_no_none(coord_soft_ce_w1_cfg)
+    if sft_gaussian_coord_soft_ce_cfg is not None:
+        coord_soft_cfg_for_manifest = dataclass_asdict_no_none(
+            sft_gaussian_coord_soft_ce_cfg
+        )
 
     def _resolve_pipeline_manifest(
         cfg: Mapping[str, Any] | None,
@@ -3941,6 +3950,12 @@ def main():
 
     if coord_soft_ce_w1_cfg is not None:
         setattr(trainer, "coord_soft_ce_w1_cfg", coord_soft_ce_w1_cfg)
+    if sft_gaussian_coord_soft_ce_cfg is not None:
+        setattr(
+            trainer,
+            "sft_gaussian_coord_soft_ce_cfg",
+            sft_gaussian_coord_soft_ce_cfg,
+        )
     if sft_structural_close_cfg is not None:
         setattr(trainer, "sft_structural_close_cfg", sft_structural_close_cfg)
     if recursive_detection_ce_cfg is not None:
