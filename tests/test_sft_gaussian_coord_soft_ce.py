@@ -12,6 +12,9 @@ from src.trainers.losses.coord_soft_ce_w1 import build_coord_id_map
 from src.trainers.losses.sft_gaussian_coord_soft_ce import (
     compute_sft_gaussian_coord_soft_ce_loss,
 )
+from src.trainers.metrics.sft_gaussian_coord_soft_ce import (
+    SFTGaussianCoordSoftCELossMixin,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -119,3 +122,138 @@ def test_sft_gaussian_coord_soft_ce_loss_uses_packed_coord_positions() -> None:
     assert float(result.loss.item()) > 0.0
     assert float(result.target_peak_prob.item()) < 1.0
     assert float(result.target_r95_radius_max.item()) <= 8.0
+
+
+class _GaussianTokenizer:
+    def convert_tokens_to_ids(self, token):
+        if isinstance(token, list):
+            return [self.convert_tokens_to_ids(item) for item in token]
+        if (
+            isinstance(token, str)
+            and token.startswith("<|coord_")
+            and token.endswith("|>")
+        ):
+            return 1000 + int(token[len("<|coord_") : -len("|>")])
+        return 0
+
+
+class _GaussianTemplate:
+    tokenizer = _GaussianTokenizer()
+
+
+def _gaussian_logits_for_labels(
+    labels: torch.Tensor,
+    *,
+    vocab: int = 2000,
+    boost: float = 0.0,
+) -> torch.Tensor:
+    seq_len = max(int(labels.shape[1]) - 1, 0)
+    logits = torch.zeros((int(labels.shape[0]), seq_len, vocab), dtype=torch.float32)
+    if boost:
+        labels_next = labels[:, 1 : seq_len + 1]
+        for row in range(int(labels_next.shape[0])):
+            for pos, token_id in enumerate(labels_next[row].tolist()):
+                if int(token_id) >= 0:
+                    logits[row, pos, int(token_id)] = float(boost)
+    return logits
+
+
+def test_sft_gaussian_coord_soft_ce_uses_accum_window_coord_token_mean() -> None:
+    """Packed Gaussian SFT must use coord-token mean over the whole accum window."""
+
+    coord_ids = list(range(1000, 2000))
+
+    class _BaseTrainer:
+        def get_batch_samples(self, epoch_iterator, num_batches, device):
+            samples = [next(epoch_iterator) for _ in range(int(num_batches))]
+            num_items = sum(
+                int(sample["labels"].ne(-100).sum().item()) for sample in samples
+            )
+            return samples, torch.tensor(num_items, device=device)
+
+        def compute_loss(
+            self, model, inputs, return_outputs: bool = False, num_items_in_batch=None
+        ):
+            outputs = SimpleNamespace(logits=inputs["fake_logits"])
+            loss = inputs["fake_logits"].new_tensor(0.0)
+            return (loss, outputs) if return_outputs else loss
+
+    class _Trainer(SFTGaussianCoordSoftCELossMixin, _BaseTrainer):
+        def __init__(self):
+            self.sft_gaussian_coord_soft_ce_cfg = SimpleNamespace(
+                enabled=True,
+                gaussian_mixture_weight=0.5,
+                gaussian_r95_axis_fraction=0.04,
+                gaussian_r95_cap_bins=8,
+            )
+            self.template = _GaussianTemplate()
+            self.args = SimpleNamespace(
+                average_tokens_across_devices=False,
+                gradient_accumulation_steps=2,
+            )
+            self.current_gradient_accumulation_steps = 2
+            self.model_accepts_loss_kwargs = True
+            self.compute_loss_func = None
+            self.model = SimpleNamespace(training=True)
+
+    labels_a = torch.tensor([[42, 1010, 1020, 1110, 1220]], dtype=torch.long)
+    labels_b = torch.tensor(
+        [[42, 1001, 1002, 1010, 1020, 1030, 1040, 1090, 1120]],
+        dtype=torch.long,
+    )
+    sample_a = {
+        "labels": labels_a,
+        "fake_logits": _gaussian_logits_for_labels(labels_a, boost=0.0),
+    }
+    sample_b = {
+        "labels": labels_b,
+        "fake_logits": _gaussian_logits_for_labels(labels_b, boost=5.0),
+    }
+
+    coord_id_map = build_coord_id_map(
+        vocab_size=2000,
+        device=torch.device("cpu"),
+        coord_token_ids=coord_ids,
+    )
+    aux_a = compute_sft_gaussian_coord_soft_ce_loss(
+        logits=sample_a["fake_logits"],
+        labels=labels_a,
+        coord_token_ids=coord_ids,
+        coord_id_map=coord_id_map,
+        cfg=_Trainer().sft_gaussian_coord_soft_ce_cfg,
+        average_tokens_across_devices=False,
+        model_accepts_loss_kwargs=True,
+        accelerator_num_processes=None,
+    )
+    aux_b = compute_sft_gaussian_coord_soft_ce_loss(
+        logits=sample_b["fake_logits"],
+        labels=labels_b,
+        coord_token_ids=coord_ids,
+        coord_id_map=coord_id_map,
+        cfg=_Trainer().sft_gaussian_coord_soft_ce_cfg,
+        average_tokens_across_devices=False,
+        model_accepts_loss_kwargs=True,
+        accelerator_num_processes=None,
+    )
+    assert aux_a is not None and aux_b is not None
+    expected = (
+        aux_a.loss * aux_a.coord_tokens + aux_b.loss * aux_b.coord_tokens
+    ) / float(aux_a.coord_tokens + aux_b.coord_tokens)
+
+    trainer = _Trainer()
+    batch_samples, num_items = trainer.get_batch_samples(
+        iter([sample_a, sample_b]),
+        2,
+        torch.device("cpu"),
+    )
+    observed = sum(
+        trainer.compute_loss(
+            model=None,
+            inputs=dict(sample),
+            return_outputs=False,
+            num_items_in_batch=num_items,
+        )
+        for sample in batch_samples
+    )
+
+    assert torch.allclose(observed, expected, atol=1e-6)

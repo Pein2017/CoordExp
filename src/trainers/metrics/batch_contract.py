@@ -196,6 +196,48 @@ def _validate_batch_contract(
                     f"pack_num_samples={expected_segments} segment_count={int(len(cu_list)-1)} cu_seq_lens_q={cu_list}"
                 )
 
+
+def _default_batch_contract_checks(inputs: Mapping[str, Any]) -> int:
+    if inputs.get("image_grid_thw") is not None or inputs.get("cu_seq_lens_q") is not None:
+        return 256
+    return 8
+
+
+def _maybe_validate_batch_contract_for_trainer(
+    trainer: Any,
+    *,
+    model: Any,
+    inputs: Any,
+    remember_inputs: bool = False,
+) -> bool:
+    if not isinstance(inputs, Mapping):
+        return False
+    if getattr(trainer, "_coordexp_batch_contract_validated_inputs_id", None) == id(inputs):
+        return False
+
+    default_checks = _default_batch_contract_checks(inputs)
+    checks_remaining = int(
+        getattr(trainer, "_coordexp_batch_contract_checks_remaining", default_checks) or 0
+    )
+    if checks_remaining <= 0:
+        return False
+
+    model_for_contract = model if model is not None else getattr(trainer, "model", None)
+    _validate_batch_contract(
+        model=model_for_contract,
+        inputs=inputs,
+        template=getattr(trainer, "template", None),
+    )
+    setattr(
+        trainer,
+        "_coordexp_batch_contract_checks_remaining",
+        checks_remaining - 1,
+    )
+    if remember_inputs:
+        setattr(trainer, "_coordexp_batch_contract_validated_inputs_id", id(inputs))
+    return True
+
+
 class GradAccumLossScaleMixin:
     """CoordExp Trainer compatibility shim for packing-aware metrics.
 
@@ -213,15 +255,36 @@ class GradAccumLossScaleMixin:
     def compute_loss(
         self, model, inputs, return_outputs: bool = False, num_items_in_batch=None
     ):
+        validated_inputs_id: int | None = None
+        if _maybe_validate_batch_contract_for_trainer(
+            self,
+            model=model,
+            inputs=inputs,
+            remember_inputs=True,
+        ):
+            validated_inputs_id = id(inputs)
+
         # Pop known batch-extras once (Stage-1 / standard SFT). They are diagnostics-only
         # fields and MUST NOT be forwarded into model(**inputs).
         from src.trainers.batch_extras import pop_and_stash_batch_extras
 
-        pop_and_stash_batch_extras(self, inputs)
+        try:
+            pop_and_stash_batch_extras(self, inputs)
 
-        loss, outputs = super().compute_loss(  # type: ignore[misc]
-            model, inputs, return_outputs=True, num_items_in_batch=num_items_in_batch
-        )
+            loss, outputs = super().compute_loss(  # type: ignore[misc]
+                model, inputs, return_outputs=True, num_items_in_batch=num_items_in_batch
+            )
+        finally:
+            if (
+                validated_inputs_id is not None
+                and getattr(
+                    self,
+                    "_coordexp_batch_contract_validated_inputs_id",
+                    None,
+                )
+                == validated_inputs_id
+            ):
+                setattr(self, "_coordexp_batch_contract_validated_inputs_id", None)
 
         # Log a few optimizer/runtime scalars as *metrics* so eval logs include them
         # (ms-swift only injects learning_rate/grad_norm into train logs by default).
@@ -252,5 +315,6 @@ __all__ = [
     "_resolve_text_vocab_size",
     "_resolve_embedding_rows",
     "_validate_batch_contract",
+    "_maybe_validate_batch_contract_for_trainer",
     "GradAccumLossScaleMixin",
 ]

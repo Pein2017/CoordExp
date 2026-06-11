@@ -1,11 +1,13 @@
-from typing import Any, Mapping
+from typing import Any
 
 import torch
 import torch.distributed as dist
 
 from src.coord_tokens.codec import get_coord_token_ids
 from src.data_collators.token_types import TokenType
-from src.trainers.metrics.batch_contract import _validate_batch_contract
+from src.trainers.metrics.batch_contract import (
+    _maybe_validate_batch_contract_for_trainer,
+)
 
 
 class AggregateTokenTypeMetricsMixin:
@@ -25,25 +27,11 @@ class AggregateTokenTypeMetricsMixin:
     def compute_loss(
         self, model, inputs, return_outputs=False, num_items_in_batch=None
     ):
-        default_checks = 8
-        if isinstance(inputs, Mapping) and (
-            inputs.get("image_grid_thw") is not None or inputs.get("cu_seq_lens_q") is not None
-        ):
-            default_checks = 256
-        checks_remaining = int(
-            getattr(self, "_coordexp_batch_contract_checks_remaining", default_checks) or 0
+        _maybe_validate_batch_contract_for_trainer(
+            self,
+            model=model,
+            inputs=inputs,
         )
-        if checks_remaining > 0 and isinstance(inputs, Mapping):
-            _validate_batch_contract(
-                model=model,
-                inputs=inputs,
-                template=getattr(self, "template", None),
-            )
-            setattr(
-                self,
-                "_coordexp_batch_contract_checks_remaining",
-                checks_remaining - 1,
-            )
 
         # Ensure batch-extras are stripped before model forward (Stage-1).
         from src.metrics.reporter import warn_once

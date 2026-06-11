@@ -12,6 +12,8 @@ import torch.nn.functional as F
 @dataclass(frozen=True)
 class SFTGaussianCoordSoftCEResult:
     loss: torch.Tensor
+    loss_sum: torch.Tensor
+    denom: torch.Tensor
     coord_tokens: int
     target_entropy: torch.Tensor
     target_peak_prob: torch.Tensor
@@ -225,6 +227,8 @@ def compute_sft_gaussian_coord_soft_ce_loss(
 
     return SFTGaussianCoordSoftCEResult(
         loss=loss,
+        loss_sum=loss_sum,
+        denom=denom,
         coord_tokens=int(coord_positions_mask.sum().detach().item()),
         target_entropy=entropy,
         target_peak_prob=peak_prob,
