@@ -1,6 +1,6 @@
 ---
 name: coordexp-router-context
-description: Use when CoordExp work needs current repo routing, docs/spec/code entrypoints, historical evidence boundaries, broad module maps, or guidance on CodeGraph, RTK, raw shell, and Serena navigation.
+description: Use when CoordExp work needs current repo routing, docs/spec/code entrypoints, historical evidence boundaries, broad module maps, or guidance on CodeGraph MCP, Serena MCP, RTK, raw shell, and navigation.
 ---
 
 # CoordExp Router Context
@@ -12,7 +12,7 @@ Use this as the compact routing layer for CoordExp. It replaces the old split be
 - `current-route`: find current docs, configs, code entrypoints, tests, or artifact contracts.
 - `history-pack`: connect current behavior to progress notes, memories, rollout summaries, or benchmark provenance.
 - `map`: give a module/config/artifact map before returning to a narrow task.
-- `navigation-tools`: choose between CodeGraph, Serena, `rtk`, and raw shell by phase.
+- `navigation-tools`: choose between CodeGraph MCP/CLI, Serena MCP, `rtk`, and raw shell by phase.
 
 Exact leaf skills win over this router: use `coordexp-infer-eval-workflow` for launch/repair/eval artifacts, `coordexp-public-data-provenance` for `public_data`, `model-diagnosis` for abnormal behavior, `model-innovation-risk-audit` for pre-launch trust gates, `audit-review` for findings-first audits, and `worktree-feature-loop` for isolation.
 
