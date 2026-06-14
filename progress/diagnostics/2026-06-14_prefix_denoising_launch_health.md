@@ -114,7 +114,9 @@ No inference/eval was run in this smoke, so there are no parse/drop counters to 
 
 Static packing did report `skipped_long=0`, `single_long=0`, and `pad_needed=0` for both smoke plans.
 
-The smoke artifacts did not emit explicit noising or sample-skip counters such as `zero_object_hybrid_sample` or `noise_infeasible_4coord_changed`. This is a remaining instrumentation gap: V1 should warn/skip if the noising maker ever produces an impossible sample, but this smoke only confirms that the packed tiny samples launched and trained.
+The smoke artifacts did not emit explicit noising or sample-skip counters such as `zero_object_hybrid_sample` or `noise_infeasible_4coord_changed`. This is a remaining artifact gap for the two historical smoke runs: V1 should warn/skip if the noising maker ever produces an impossible sample, but this smoke only confirms that the packed tiny samples launched and trained.
+
+Post-smoke implementation note: the branch now emits a dataset-construction warning with `skip_counters` whenever the prefix-denoising eligibility index filters rows. The historical smoke artifacts above still predate that warning, so this note should not be read as evidence that those two tiny runs observed no noising/sample-policy skips.
 
 ## Launch-Health Read
 

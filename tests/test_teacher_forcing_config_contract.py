@@ -110,11 +110,9 @@ def _hard_sft_objective() -> dict:
     [
         "hard_sft",
         "pure_valid_set_marginal",
-        "hybrid_valid_set_marginal",
     ],
 )
 def test_latest_teacher_forcing_accepts_supported_profiles(profile: str) -> None:
-    coverage_enabled = profile == "hybrid_valid_set_marginal"
     base_modules = (
         _hard_sft_objective()["modules"]
         if profile == "hard_sft"
@@ -125,8 +123,8 @@ def test_latest_teacher_forcing_accepts_supported_profiles(profile: str) -> None
         modules={
             **base_modules,
             "within_valid_coverage": {
-                "enabled": coverage_enabled,
-                "coverage_strength": 0.2 if coverage_enabled else 0.0,
+                "enabled": False,
+                "coverage_strength": 0.0,
             },
         },
     )
@@ -227,7 +225,7 @@ def test_latest_teacher_forcing_accepts_minimal_hard_sft_profile() -> None:
     assert cfg.objective.modules.within_valid_coverage.coverage_strength == 0.0
 
 
-def test_coverage_profile_requires_explicit_positive_coverage_strength() -> None:
+def test_hybrid_valid_set_marginal_profile_is_schema_rejected() -> None:
     payload = _latest_teacher_payload(
         profile="hybrid_valid_set_marginal",
         modules={
@@ -241,7 +239,7 @@ def test_coverage_profile_requires_explicit_positive_coverage_strength() -> None
 
     with pytest.raises(
         ValueError,
-        match=r"hybrid_valid_set_marginal.*coverage_strength.*> 0",
+        match=r"hybrid_valid_set_marginal is unsupported",
     ):
         DetectionTrainingConfig.from_mapping(payload)
 
@@ -450,20 +448,19 @@ def test_latest_teacher_forcing_pure_valid_set_profile_reaches_runtime() -> None
     assert detection_mode(cfg) == "random_order_sft"
 
 
-def test_latest_teacher_forcing_coverage_profile_still_requires_runtime_wiring() -> None:
+def test_latest_teacher_forcing_hybrid_profile_is_rejected_before_runtime() -> None:
     payload = _latest_teacher_payload()
     payload["objective"] = _teacher_forcing_objective(
         profile="hybrid_valid_set_marginal",
         coverage_enabled=True,
         coverage_strength=0.1,
     )
-    cfg = DetectionTrainingConfig.from_mapping(payload)
 
     with pytest.raises(
         ValueError,
-        match=r"currently supports objective\.profile",
+        match=r"hybrid_valid_set_marginal is unsupported",
     ):
-        detection_mode(cfg)
+        DetectionTrainingConfig.from_mapping(payload)
 
 
 @pytest.mark.parametrize(

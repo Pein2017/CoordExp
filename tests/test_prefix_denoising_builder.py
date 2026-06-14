@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import random
 import re
 from pathlib import Path
@@ -358,6 +359,36 @@ def test_noising_infeasible_rows_are_counted_as_sample_policy_skips(
 
     assert eligibility["eligible_indices"] == ()
     assert eligibility["skip_counters"] == {"noise_infeasible_4coord_changed": 1}
+
+
+def test_dataset_logs_visible_skip_counters_for_ineligible_rows(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _touch_image(tmp_path)
+    cfg = PrefixDenoisingConfig.from_mapping({"enabled": True})
+
+    caplog.set_level(
+        logging.WARNING,
+        logger="src.detection.prefix_denoising.dataset",
+    )
+    dataset = PrefixDenoisingTrainingDataset(
+        [_row(), _row(objects=[])],
+        swift_template=FakeTemplate(),
+        image_root=tmp_path,
+        user_prompt="find objects",
+        system_prompt=None,
+        prefix_denoising=cfg,
+        max_length=12000,
+        dataset_name="unit",
+        seed=17,
+    )
+
+    assert len(dataset) == 1
+    assert dataset.skip_counters == {"zero_object_hybrid_sample": 1}
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("prefix-denoising skipped rows" in message for message in messages)
+    assert any("zero_object_hybrid_sample" in message for message in messages)
 
 
 def test_multitoken_coord_tokenizer_returns_alignment_skip(tmp_path: Path) -> None:

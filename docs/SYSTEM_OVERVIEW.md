@@ -142,9 +142,11 @@ Current source contract:
   teacher-forcing runtime policy, prompt/mode/custom shim resolution, and
   `build_detection_training_dataset`.
 - `src/sft.py` delegates these policies and keeps backward-compatible private aliases.
-- packing/cache fail fast remains in force for compact Stage-1 detection
-  teacher-forcing surfaces.
-- no new CLI flags or config schema keys are introduced by this extraction.
+- packing/cache fail fast remains in force for non-prefix compact Stage-1
+  detection teacher-forcing surfaces. The prefix-denoising V1 experiment adds a
+  narrow `prefix_denoising` config surface and a dedicated hybrid-packed path
+  with encoded sample cache disabled.
+- no new CLI flags are introduced by this extraction.
 
 Quarantined legacy/comparator note:
 - `configs/archive/detection_scene_clean_break/stage1/` contains quarantined

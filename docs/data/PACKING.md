@@ -88,10 +88,13 @@ packing:
 ```
 
 Until recursive sidecar target-position offset rewriting is implemented and
-validated, canonical Stage-1 detection teacher-forcing configs under
+validated, non-prefix Stage-1 detection teacher-forcing configs under
 `configs/stage1/detection_teacher_forcing/` must not enable dataset/static
-packing or padding-free packed runtime. The retired recursive-detection config
-root is archived under
+packing or padding-free packed runtime. The narrow prefix-denoising V1 route
+(`prefix_denoising.enabled: true`) is the exception: it packs one clean/noisy
+hybrid sample as the packing unit through explicit branch-boundary sidecars,
+keeps `training.eval_packing: false`, and requires encoded sample cache
+disabled. The retired recursive-detection config root is archived under
 `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/`
 for historical evidence only. Expected-failure packing examples belong under an
 explicit `contract_failures/` or fixture location, not under positive `smoke/`

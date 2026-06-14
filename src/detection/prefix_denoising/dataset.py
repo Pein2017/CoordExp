@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import logging
 import random
 from collections import Counter
 from collections.abc import Mapping, Sequence
@@ -18,6 +19,7 @@ from .builder import build_hybrid_prefix_denoising_sample
 from .types import HybridPrefixDenoisingSample, PrefixDenoisingSegment
 
 _CORE_SEGMENT_KEYS = {"input_ids", "labels", "attention_mask"}
+logger = logging.getLogger(__name__)
 
 
 class PrefixDenoisingTrainingDataset(Dataset):
@@ -64,6 +66,15 @@ class PrefixDenoisingTrainingDataset(Dataset):
         self._eligible_indices = tuple(eligibility["eligible_indices"])
         self._static_lengths = dict(eligibility["static_lengths"])
         self.skip_counters = Counter(eligibility["skip_counters"])
+        if self.skip_counters:
+            logger.warning(
+                "prefix-denoising skipped rows during dataset eligibility build: "
+                "dataset=%s eligible=%d total=%d skip_counters=%s",
+                self.dataset_name,
+                len(self._eligible_indices),
+                len(self.rows),
+                dict(sorted(self.skip_counters.items())),
+            )
         if not self._eligible_indices:
             raise ValueError(
                 "PrefixDenoisingTrainingDataset has no eligible rows; "

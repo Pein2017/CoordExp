@@ -456,10 +456,10 @@ those are engineering details rather than research-policy choices.
 ## Review-Convergence Gate
 
 The implementation plan now exists at
-`docs/superpowers/plans/2026-06-14-prefix-denoising-sft-v1.md`. Implementation
-remains unauthorized until review-convergence findings are triaged, required
-P0/P1 fixes are incorporated, and the user explicitly approves implementation.
+`docs/superpowers/plans/2026-06-14-prefix-denoising-sft-v1.md`. The original
+review-convergence gate has been completed for the implemented V1 slice on
+`codex/prefix-denoising-sft`; required findings were triaged before execution.
 Because V1 changes config schema, loss semantics, metric keys, and packing
-eligibility, implementation also requires an OpenSpec change or an explicit
-user decision that the code remains branch-local experiment-only until later
-promotion.
+eligibility, future stable promotion may still require an OpenSpec change or an
+explicit user decision that the code remains branch-local experiment-only until
+later promotion.
