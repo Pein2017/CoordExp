@@ -16,6 +16,7 @@ from src.config.schema import (
 )
 from src.detection.dataset import DetectionTrainingDataset
 from src.detection.coord_soft_targets import CoordSoftTargetRuntimeConfig
+from src.detection.prefix_denoising import PrefixDenoisingTrainingDataset
 from src.detection.tokenizer_contract import resolve_compact_training_stop_contract
 
 DetectionRuntimeMode = Literal[
@@ -497,7 +498,22 @@ def build_detection_dataset(
     seed: int,
     sample_limit: int | None,
     dataset_name: str,
-) -> DetectionTrainingDataset:
+) -> DetectionTrainingDataset | PrefixDenoisingTrainingDataset:
+    prefix_denoising = getattr(training_config, "prefix_denoising", None)
+    if getattr(prefix_denoising, "enabled", False):
+        return PrefixDenoisingTrainingDataset.from_jsonl(
+            jsonl_path,
+            swift_template=swift_template,
+            image_root=training_config.data.image_root,
+            user_prompt=custom_config.user_prompt,
+            system_prompt=system_prompt,
+            prefix_denoising=prefix_denoising,
+            max_length=_resolve_detection_max_length(training_config),
+            seed=seed,
+            sample_limit=sample_limit,
+            dataset_name=dataset_name,
+        )
+
     type_gate_config = None
     objective = training_config.objective
     objective_id = str(getattr(objective, "id", "") or "")
@@ -536,6 +552,18 @@ def build_detection_dataset(
         teacher_forcing_rollin_base_seed=teacher_forcing_rollin_base_seed,
         sample_limit=sample_limit,
         dataset_name=dataset_name,
+    )
+
+
+def _resolve_detection_max_length(training_config: DetectionTrainingConfig) -> int:
+    if training_config.global_max_length is not None:
+        return int(training_config.global_max_length)
+    template_max_length = training_config.template.get("max_length")
+    if template_max_length is not None:
+        return int(template_max_length)
+    raise ValueError(
+        "prefix_denoising dataset construction requires global_max_length "
+        "or template.max_length"
     )
 
 
