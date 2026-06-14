@@ -1,0 +1,15 @@
+extends:
+  - ./compact_full_prefix_denoising_ce_only.yaml
+
+# Prefix-denoising V1 default:
+#   branch-balanced clean/noisy hard CE + sparse clean-to-noisy local coord KL.
+
+training:
+  artifact_subdir: compact_full_prefix_denoising_kl_w0p05_bsz1x128_4epoch
+  run_name: compact-full-prefix-denoising-kl-w0p05-bsz1x128-4epoch
+
+prefix_denoising:
+  current_object_kl:
+    weight: 0.05
+    window_radius: 8
+    num_objects_per_image: 1

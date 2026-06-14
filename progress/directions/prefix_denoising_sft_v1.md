@@ -13,12 +13,13 @@ updated: 2026-06-14
 
 ## Decision
 
-Contract status: this is an active research direction, not current runtime
-behavior. The `prefix_denoising` YAML surface, metric keys, packed hybrid
-boundary map, and encoded-cache rules are proposed V1 implementation targets.
-They are not accepted by `DetectionTrainingConfig` or canonical training docs
-until the implementation adds schema support, tests, and any required docs or
-OpenSpec updates.
+Contract status: this is an active research direction with an initial runtime
+implementation on the `codex/prefix-denoising-sft` worktree. The
+`prefix_denoising` YAML surface, hard CE objective, sparse local coordinate KL,
+packed hybrid boundary map, packed KL-site rewrite, encoded-cache guardrails,
+and launch-health config leaves are implemented for the Stage-1 compact
+teacher-forcing route. This note remains the research rationale and launch
+checklist rather than a stable cross-surface contract.
 
 V1 targets Stage-1 compact detection teacher forcing first, under the current
 `stage1_detection_teacher_forcing` route. The names and interfaces should stay
@@ -726,19 +727,26 @@ sidecar-safe packed target-position rewriting and attention-boundary metadata,
 but its site count is intentionally capped. The implementation should not rely
 on all-object KL expansion by default and then hope packing makes it cheap.
 
-Current CoordExp compact teacher-forcing packing is guarded because precise
-target-position sidecar rewriting is not implemented for packed rows. That
-safety boundary remains important. Do not relax compact teacher-forcing or
-recursive sidecar packing guards globally. V1 must add a narrow positive
-eligibility path: `prefix_denoising.enabled: true` plus the hybrid-aware packed
-builder/collator and `PackedHybridBoundaryMap` offset rewrite. Teacher-forcing
-or recursive configs without this explicit V1 path must continue to reject
+Current CoordExp compact teacher-forcing packing remains guarded for ordinary
+teacher-forcing because precise target-position sidecar rewriting is not a
+generic feature. That safety boundary remains important. V1 adds a narrow
+positive eligibility path: `prefix_denoising.enabled: true` plus the
+hybrid-aware packed builder/collator and `PackedHybridBoundaryMap` offset
+rewrite. Teacher-forcing or recursive configs without this explicit V1 path
+must continue to reject
 `training.packing`, `training.eval_packing`, `packing.static_packing`,
 `packing.padding_free_packed`, encoded-sample cache, and logits pruning as they
 do today. The hybrid design changes the cost target: make full-sequence
 denoising efficient first, then add bounded selected-object KL-site sidecars
 with tests that prove pack offsets, labels, KL sites, and metrics survive
 flattening.
+
+The first authored launch-health leaves are:
+
+- `configs/stage1/detection_teacher_forcing/prod/compact_full_prefix_denoising_ce_only.yaml`;
+- `configs/stage1/detection_teacher_forcing/prod/compact_full_prefix_denoising_kl_w0p05.yaml`;
+- `configs/stage1/detection_teacher_forcing/smoke/compact_full_prefix_denoising_ce_only_tiny.yaml`;
+- `configs/stage1/detection_teacher_forcing/smoke/compact_full_prefix_denoising_kl_w0p05_tiny.yaml`.
 
 For production-style V1 training, the first implementation target is static
 hybrid pack planning under `training.packing: true`: the whole
