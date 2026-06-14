@@ -231,6 +231,49 @@ def test_local_coord_kl_raw_loss_is_mean_over_effective_sites() -> None:
     assert two_sites.identical_prefix_site_count == 2
 
 
+def test_local_coord_kl_uses_teacher_to_student_orientation_and_gradients() -> None:
+    coord_token_ids = torch.tensor([1000 + i for i in range(1000)], dtype=torch.long)
+    clean_logits = torch.zeros((1, 4, 2100), dtype=torch.float32, requires_grad=True)
+    noisy_logits = torch.zeros((1, 4, 2100), dtype=torch.float32, requires_grad=True)
+    support_bins = (9, 10, 11)
+    support_token_ids = torch.tensor([1009, 1010, 1011], dtype=torch.long)
+    teacher_local_logits = torch.tensor([-1.0, 3.0, 0.0], dtype=torch.float32)
+    student_local_logits = torch.tensor([-1.0, 0.0, 3.0], dtype=torch.float32)
+    clean_logits.data[0, 1, support_token_ids] = teacher_local_logits
+    noisy_logits.data[0, 1, support_token_ids] = student_local_logits
+    site = ResolvedPrefixDenoisingKLSite(
+        clean_batch_index=0,
+        noisy_batch_index=0,
+        object_index=0,
+        coord_slot="x1",
+        clean_label_position=2,
+        noisy_label_position=2,
+        clean_gt_bin=10,
+        support_bins=support_bins,
+        identical_prefix=False,
+    )
+
+    result = compute_local_coord_kl(
+        clean_logits=clean_logits,
+        noisy_logits=noisy_logits,
+        sites=(site,),
+        coord_token_ids=coord_token_ids,
+    )
+    teacher_prob = torch.softmax(teacher_local_logits, dim=-1)
+    student_log_prob = torch.log_softmax(student_local_logits, dim=-1)
+    expected = torch.sum(
+        teacher_prob * (torch.log(teacher_prob) - student_log_prob)
+    )
+
+    torch.testing.assert_close(result.raw_loss, expected)
+    result.raw_loss.backward()
+
+    assert clean_logits.grad is None
+    assert noisy_logits.grad is not None
+    assert noisy_logits.grad[0, 1, 1010].item() < 0.0
+    assert noisy_logits.grad[0, 1, 1011].item() > 0.0
+
+
 def test_local_coord_kl_rejects_unresolved_and_invalid_support_sites() -> None:
     coord_token_ids = torch.tensor([1000 + i for i in range(1000)], dtype=torch.long)
     clean_logits = torch.zeros((1, 4, 2100), dtype=torch.float32)

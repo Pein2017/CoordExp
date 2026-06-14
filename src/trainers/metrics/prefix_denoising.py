@@ -110,6 +110,11 @@ class PrefixDenoisingObjectiveMixin:
                 extras=extras,
                 packing_enabled=packing_enabled,
             )
+            if not resolved_sites:
+                raise ValueError(
+                    "positive prefix_denoising KL requires at least one "
+                    "resolved KL site"
+                )
             coord_token_ids = _coord_token_id_tensor(
                 trainer=self,
                 logits=logits,
