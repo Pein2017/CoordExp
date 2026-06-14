@@ -218,6 +218,16 @@ The support never wraps, pads, mirrors, or includes invalid coordinate-token
 bins. It must be non-empty, unique, and include the clean GT bin. Launch-health
 metrics should log the actual support-bin count and edge-truncation count/rate.
 
+Support values are coordinate bins, not full-vocabulary token ids. The KL
+implementation must map each support bin through the tokenizer's coord-token id
+row before indexing logits. Full coordinate-vocab mass diagnostics must sum over
+all coord-token ids, not raw vocab columns `0..999`.
+
+All CE, token-accuracy, and KL label sites use causal-LM alignment:
+`labels[position]` is predicted by `logits[position - 1]`. Physical position
+`0` and each packed segment's first token must remain unsupervised or be
+excluded from loss/metric denominators.
+
 For uniform V1 accounting, all selected objects contribute four candidate KL
 sites: `x1`, `y1`, `x2`, and `y2`. If the first selected object has an identical
 clean/noisy causal prefix at `x1`, that site remains in the KL denominator and
@@ -690,11 +700,13 @@ Required count/skip diagnostics include:
 
 The optimized CE scalar is `prefix_denoising/global/loss/ce_balanced`, and it
 must equal `0.5 * CE_clean_full + 0.5 * CE_noisy_full`. A token-pooled CE monitor
-may also be logged as `prefix_denoising/global/loss/ce_token_pooled`, and the
-standard `llm_loss` dashboard monitor may mirror the optimized CE contribution
-for operator continuity. Token-pooled CE must not be used to verify the
-`0.5/0.5` objective scale when branch denominators differ. Token accuracy
-metrics remain denominator-weighted over supervised clean-label tokens.
+may also be logged as `prefix_denoising/global/loss/ce_token_pooled`. The
+standard `llm_loss` dashboard monitor is the actual optimized scalar
+backpropagated by the trainer: CE-only runs log the branch-balanced CE, and
+KL-on runs log `CE_balanced + kl_weight * KL_raw`. Token-pooled CE must not be
+used to verify the `0.5/0.5` objective scale when branch denominators differ.
+Token accuracy metrics remain denominator-weighted over supervised clean-label
+tokens.
 
 The implementation should keep CE and KL separated in objective outputs and
 metrics even though training uses one scalar total loss. `L_total` is
@@ -728,11 +740,14 @@ denoising efficient first, then add bounded selected-object KL-site sidecars
 with tests that prove pack offsets, labels, KL sites, and metrics survive
 flattening.
 
-For production-style V1 training, the intended runtime shape is still
-padding-free packed training with no padding waste and a hard
-`global_max_length` cap. However, the algorithmic design should not depend on
-all-object KL expansion as the packing unit. KL sites are sparse auxiliary
-metadata, not extra CE data segments.
+For production-style V1 training, the first implementation target is static
+hybrid pack planning under `training.packing: true`: the whole
+`HybridPrefixDenoisingSample` is the atomic planning item, and the actual
+collated packed batch must prove position reset, varlen attention boundaries,
+and visual ownership through `PackedHybridBoundaryMap`. The separate
+`packing.padding_free_packed` escape hatch remains out of V1. The algorithmic
+design should not depend on all-object KL expansion as the packing unit. KL
+sites are sparse auxiliary metadata, not extra CE data segments.
 
 The V1 packed KL shape is:
 

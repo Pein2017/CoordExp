@@ -126,7 +126,10 @@ Validation requirements:
 - `detection_template.coordinate_surface: coord_token`;
 - `detection_template.bbox_format: xyxy`;
 - `data.object_ordering: sorted`;
-- hard clean-label CE profile for V1, not valid-set marginal CE;
+- current canonical `objective.id: teacher_forcing` with
+  `objective.profile: hard_sft`;
+- hard clean-label CE profile for V1, not valid-set marginal CE or any
+  auxiliary teacher-forcing modules;
 - `training.encoded_sample_cache.enabled: false`;
 - `training.use_logits_to_keep` absent or false;
 - no non-V1 teacher-forcing packing escape hatch;
@@ -229,6 +232,11 @@ The optimized CE scalar is branch-balanced, not token-pooled. A separate
 token-pooled monitor may be logged, but it must not define the training loss
 scale when branch denominators differ.
 
+All CE and token-accuracy positions use causal-LM alignment:
+`labels[position]` is predicted by `logits[position - 1]`. Prompt/non-response
+labels, physical position `0`, and each packed segment's first token must remain
+masked or excluded from denominators.
+
 ### 5. Sparse Local-Window KL
 
 When `prefix_denoising.current_object_kl.weight > 0.0`, select
@@ -258,6 +266,11 @@ KL(stopgrad(clean_full local coord distribution)
 The KL term is averaged over selected objects and candidate sites. Increasing
 `K` increases coverage and compute, not effective KL weight scale.
 
+The clipped support is expressed in coordinate bins. Before indexing full-vocab
+logits, implementation must map bins through the tokenizer's coord-token ids.
+Full coordinate-vocab support-mass and GT-bin diagnostics are computed over
+coord-token ids, not raw vocab columns `0..999`.
+
 Required diagnostics include raw KL, weighted KL, candidate site count,
 effective site count, identical-prefix site count, support-bin count,
 edge-truncation count, teacher/student support mass, full coordinate-vocab
@@ -272,7 +285,7 @@ flat metric key with only different `MetricEvent.channel` values.
 
 Required monitor families:
 
-- standard `llm_loss`;
+- standard `llm_loss` as the optimized scalar actually backpropagated;
 - global full-vocab token top-1 and top-5 accuracy;
 - clean/noisy branch CE;
 - branch-balanced CE;
@@ -439,9 +452,13 @@ CE. The implementation plan still needs to choose exact class/function names
 and the smallest code insertion points after inspecting current symbols, but
 those are engineering details rather than research-policy choices.
 
-## User Review Gate
+## Review-Convergence Gate
 
-After this spec is written, the user should review it before the implementation
-plan is created. The next Superpowers step is `superpowers:writing-plans`, which
-will turn this design into a task-by-task implementation roadmap with exact
-files, failing tests, implementation steps, and verification commands.
+The implementation plan now exists at
+`docs/superpowers/plans/2026-06-14-prefix-denoising-sft-v1.md`. Implementation
+remains unauthorized until review-convergence findings are triaged, required
+P0/P1 fixes are incorporated, and the user explicitly approves implementation.
+Because V1 changes config schema, loss semantics, metric keys, and packing
+eligibility, implementation also requires an OpenSpec change or an explicit
+user decision that the code remains branch-local experiment-only until later
+promotion.

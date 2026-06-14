@@ -4,7 +4,7 @@
 
 **Goal:** Build prefix-denoising SFT V1 as a Stage-1 compact detection extension with paired clean/noisy hard-CE supervision, optional sparse clean-to-noisy coord KL, and an explicit hybrid-packed runtime path.
 
-**Architecture:** Add a typed `prefix_denoising` config surface that uses `objective.id: sft` and `objective.variant: sorted_sft` as the hard-CE base, then route enabled configs into a dedicated hybrid dataset, collator sidecar, trainer loss mixin, metrics, and hybrid packing contract. Keep bbox math in `src/datasets/geometry.py`, keep prefix-denoising types and builders under `src/detection/prefix_denoising/`, and preserve all existing non-V1 teacher-forcing and recursive packing guardrails.
+**Architecture:** Add a typed `prefix_denoising` config surface on the current canonical `objective.id: teacher_forcing` route with `objective.profile: hard_sft` as the CE base, then route enabled configs into a dedicated hybrid dataset, model-ready collator path, trainer loss mixin, metrics, and hybrid packing contract. Keep bbox math in `src/datasets/geometry.py`, keep prefix-denoising types and builders under `src/detection/prefix_denoising/`, and preserve all existing non-V1 teacher-forcing and recursive packing guardrails.
 
 **Tech Stack:** Python dataclasses, PyTorch, ms-swift trainer/collator integration, existing CoordExp `DetectionTrainingConfig`, compact-full templates, typed `MetricEvent`, pytest, YAML configs.
 
@@ -36,7 +36,7 @@ No review subagents were launched while writing this plan because the user said 
 | Guardrail | Requirement |
 |---|---|
 | CE objective | Hard clean-label CE only. No valid-set marginal CE, multi-positive trie CE, coordinate SoftCE, or previous recursive objective features. |
-| Config base | Prefix-denoising config leaves use `objective.id: sft`, `objective.variant: sorted_sft`, `state_weighting: none`, and `normalization: token_mean`. |
+| Config base | Prefix-denoising config leaves use current canonical `objective.id: teacher_forcing` with `objective.profile: hard_sft`. Do not revive legacy `objective.id: sft` or `variant: sorted_sft`. |
 | Object order | `data.object_ordering: sorted` is mandatory when `prefix_denoising.enabled: true`. |
 | Branches | Exactly two multimodal segments per hybrid sample: `clean_full` and `noisy_full`. |
 | KL | KL is optional by weight, asymmetric `stopgrad(clean_full) -> noisy_full`, coord-local, GT-windowed, and sparse over selected object sites. |
@@ -65,6 +65,7 @@ No review subagents were launched while writing this plan because the user said 
 | `src/data_collators/batch_extras_collator.py` | Register the prefix-denoising sidecar enricher. |
 | `src/trainers/metrics/prefix_denoising.py` | Trainer mixin that owns model forward, hard CE, KL, metric buffering, and standard monitors for V1. |
 | `src/trainers/metrics/mixins.py` | Re-export `PrefixDenoisingObjectiveMixin`. |
+| `src/bootstrap/trainer_setup.py` | Compose `PrefixDenoisingObjectiveMixin` through the existing trainer composition owner. |
 | `src/sft.py` | Parse runtime config, route datasets/collators/trainers, add runtime payload, add static packing fingerprint fields. |
 | `configs/stage1/detection_teacher_forcing/smoke/prefix_denoising_tiny_ce_only.yaml` | Tiny packed CE-only launch-health config. |
 | `configs/stage1/detection_teacher_forcing/smoke/prefix_denoising_tiny_kl005.yaml` | Tiny packed CE+KL launch-health config. |
@@ -77,6 +78,7 @@ No review subagents were launched while writing this plan because the user said 
 | `tests/test_prefix_denoising_loss.py` | Hard CE and KL numerical tests. |
 | `tests/test_prefix_denoising_metrics.py` | Metric key and denominator tests. |
 | `tests/test_prefix_denoising_packing.py` | Hybrid pack plan and boundary-map tests. |
+| `tests/test_prefix_denoising_runtime_integration.py` | Dataset-to-collator-to-dummy-loss contract test for model-ready hybrid batches. |
 | `tests/test_stage1_static_packing_runtime_config.py` | Preserve existing non-V1 packing guard tests and add V1 fingerprint checks. |
 
 ## Task 0: Implementation Preflight
@@ -107,7 +109,7 @@ Expected:
 codex/prefix-denoising-sft
 ```
 
-The existing direction-note edits may be dirty. Do not revert or stage unrelated dirty files unless the user explicitly requests it.
+Expected working state before implementation is clean on this branch. If new dirty files exist, identify whether they belong to prefix-denoising implementation before staging; do not revert or stage unrelated user work.
 
 - [ ] **Step 2: Confirm the approved hard-CE decision is present**
 
@@ -153,8 +155,28 @@ Expected: the implementer can identify exactly which files belong to the prefix-
 - Modify: `src/config/schema.py`
 - Modify: `src/detection/runtime.py`
 - Modify: `src/sft.py`
+- Modify: `openspec/changes/<prefix-denoising-change>/` or record an explicit user-approved experiment-only decision before code
 - Create: `tests/test_prefix_denoising_config_contract.py`
 - Modify: `tests/test_detection_training_config_contract.py` only if shared helpers are needed
+
+- [ ] **Step 0: Add the governance gate**
+
+Before changing schema/runtime code, create an OpenSpec change for the compatibility-sensitive parts of V1 unless the user explicitly decides this remains branch-local experiment-only code. The OpenSpec change must cover:
+
+- the `prefix_denoising` config schema and strict unknown-key behavior;
+- hard-CE-only loss semantics and the optional sparse KL term;
+- required metric keys including `llm_loss`, top-1/top-5, raw/weighted KL, and skip counters;
+- encoded-sample cache ineligibility and static hybrid packing eligibility;
+- the statement that rollout/free-decode evaluation remains outside V1 implementation.
+
+Verification for this gate:
+
+```bash
+rg -n "prefix_denoising|prefix-denoising" openspec/specs openspec/changes docs/superpowers progress/directions
+openspec validate <change-id> --strict
+```
+
+If the OpenSpec CLI is unavailable, record the command and blocker in the implementation summary. Do not proceed to implementation without either a validated OpenSpec change or an explicit user decision that V1 is experiment-only and not a stable contract.
 
 - [ ] **Step 1: Write failing schema tests**
 
@@ -228,10 +250,18 @@ def _base_prefix_payload() -> dict[str, object]:
             "weight_decay": 0.0,
         },
         "objective": {
-            "id": "sft",
-            "variant": "sorted_sft",
-            "state_weighting": "none",
-            "normalization": "token_mean",
+            "id": "teacher_forcing",
+            "profile": "hard_sft",
+            "target_ir": {
+                "rollin_policy": {"name": "random_permutation", "base_seed": 17},
+                "exact_packing_mapping": {"enabled": False},
+            },
+            "modules": {
+                "token_type_mass": {"enabled": False},
+                "conditional_valid_set_likelihood": {"enabled": False},
+                "within_valid_coverage": {"enabled": False, "coverage_strength": 0.0},
+                "continuation_margin": {"enabled": False},
+            },
         },
         "prefix_denoising": {
             "enabled": True,
@@ -247,7 +277,6 @@ def _base_prefix_payload() -> dict[str, object]:
         },
         "packing": {
             "static_packing": True,
-            "padding_free_packed": False,
         },
         "evaluation": {
             "expected_template": "compact_full",
@@ -268,11 +297,11 @@ def _payload_with(**updates: object) -> dict[str, object]:
     return payload
 
 
-def test_prefix_denoising_schema_accepts_hard_ce_sorted_sft() -> None:
+def test_prefix_denoising_schema_accepts_teacher_forcing_hard_sft() -> None:
     cfg = DetectionTrainingConfig.from_mapping(_base_prefix_payload())
 
-    assert cfg.objective.id == "sft"
-    assert cfg.objective.variant == "sorted_sft"
+    assert cfg.objective.id == "teacher_forcing"
+    assert cfg.objective.profile == "hard_sft"
     assert cfg.data.object_ordering == "sorted"
     assert cfg.prefix_denoising.enabled is True
     assert cfg.prefix_denoising.noise.center_shift_frac == pytest.approx(0.08)
@@ -530,20 +559,30 @@ def _detection_validate_prefix_denoising_contract(
         raise ValueError("prefix_denoising requires detection_template.bbox_format=xyxy")
     if data.object_ordering != "sorted":
         raise ValueError("prefix_denoising requires data.object_ordering=sorted")
-    if getattr(objective, "id", None) != "sft" or getattr(objective, "variant", None) != "sorted_sft":
-        raise ValueError("prefix_denoising requires hard clean-label CE via objective.id=sft and objective.variant=sorted_sft")
-    if getattr(objective, "coord_soft_ce", None) is not None:
-        raise ValueError("prefix_denoising does not support SoftCE or objective.coord_soft_ce")
+    if getattr(objective, "id", None) != "teacher_forcing" or getattr(objective, "profile", None) != "hard_sft":
+        raise ValueError("prefix_denoising requires objective.id=teacher_forcing and objective.profile=hard_sft")
+    modules = getattr(objective, "modules", None)
+    if modules is not None:
+        enabled_modules = []
+        for name in ("token_type_mass", "conditional_valid_set_likelihood", "within_valid_coverage", "continuation_margin"):
+            module = getattr(modules, name, None)
+            if bool(getattr(module, "enabled", False)):
+                enabled_modules.append(name)
+        coverage = getattr(modules, "within_valid_coverage", None)
+        if float(getattr(coverage, "coverage_strength", 0.0) or 0.0) != 0.0:
+            enabled_modules.append("within_valid_coverage.coverage_strength")
+        if enabled_modules:
+            raise ValueError(f"prefix_denoising requires hard_sft with teacher-forcing modules disabled: {enabled_modules}")
     encoded_cache = training.get("encoded_sample_cache")
     if isinstance(encoded_cache, Mapping) and bool(encoded_cache.get("enabled", False)):
         raise ValueError("prefix_denoising requires training.encoded_sample_cache.enabled=false")
     if bool(training.get("use_logits_to_keep", False)):
         raise ValueError("prefix_denoising requires training.use_logits_to_keep=false")
     if packing.padding_free_packed:
-        raise ValueError("prefix_denoising V1 starts with static hybrid packing; packing.padding_free_packed=true is deferred")
+        raise ValueError("prefix_denoising V1 uses training.packing plus static hybrid pack planning; explicit packing.padding_free_packed=true is deferred")
 ```
 
-Do not change `_detection_validate_order_matches_objective` for non-V1 configs. With `objective.variant=sorted_sft`, the existing sorted-order check remains valid.
+Do not revive legacy `objective.id=sft`. Prefix-denoising stays under `objective.id=teacher_forcing` with `objective.profile=hard_sft`, but it must bypass the existing target-IR random-permutation runtime by using its own sorted clean-GT hybrid builder. Update the teacher-forcing packing guard so `training.packing=true` and `packing.static_packing=true` are allowed only when `prefix_denoising.enabled=true` and the V1 hybrid materializer/boundary-map path is active. Non-V1 teacher-forcing configs must continue to reject packing exactly as before.
 
 - [ ] **Step 5: Run schema tests**
 
@@ -705,8 +744,8 @@ def construct_valid_norm1000_bbox_noise(
     width = x2 - x1
     height = y2 - y1
     candidates: list[tuple[int, int, int, int]] = []
-    max_dx = max(1, int(round(width * float(config.center_shift_frac))))
-    max_dy = max(1, int(round(height * float(config.center_shift_frac))))
+    max_dx = int(round(width * float(config.center_shift_frac)))
+    max_dy = int(round(height * float(config.center_shift_frac)))
     scale_low, scale_high = config.uniform_scale_range
     scale_values = sorted({scale_low, 1.0, scale_high})
     cx2 = x1 + x2
@@ -757,7 +796,7 @@ def construct_valid_norm1000_bbox_noise(
     )
 ```
 
-This candidate-grid helper is intentionally simple. If later implementation needs a denser random profile, it must preserve the same public contract: direct valid construction, no clamp-repair, deterministic seed behavior, and explicit infeasible result.
+This candidate-grid helper is intentionally simple. It must respect the authored envelope exactly: a zero-strength config with `center_shift_frac=0.0` and `uniform_scale_range=(1.0, 1.0)` has no valid 4-coordinate-changing candidates and returns `ok=False`. Do not introduce an implicit one-bin minimum movement; default/fallback configs may still produce one-bin movement when it falls inside their explicit envelope. If later implementation needs a denser random profile, it must preserve the same public contract: direct valid construction, no clamp-repair, deterministic seed behavior, and explicit infeasible result.
 
 - [ ] **Step 4: Run geometry tests**
 
@@ -954,6 +993,19 @@ class PrefixDenoisingKLSite:
 
 
 @dataclass(frozen=True)
+class ResolvedPrefixDenoisingKLSite:
+    clean_batch_index: int
+    noisy_batch_index: int
+    clean_label_position: int
+    noisy_label_position: int
+    clean_gt_bin: int
+    support_bins: tuple[int, ...]
+    coord_slot: CoordSlot
+    object_index: int
+    identical_prefix: bool = False
+
+
+@dataclass(frozen=True)
 class HybridPrefixDenoisingSample:
     ok: bool
     hybrid_sample_id: str
@@ -971,6 +1023,8 @@ class HybridPrefixDenoisingSample:
         return len(self.clean_full.input_ids) + len(self.noisy_full.input_ids)
 ```
 
+`support_bins` are coordinate bins in `[0, 999]`, not full-vocabulary token ids. Loss code must map bins through the tokenizer's coord-token id row before indexing logits. `PrefixDenoisingKLSite` is builder-local metadata; packed or collated loss code must consume `ResolvedPrefixDenoisingKLSite` with explicit physical batch indices and rewritten physical label positions. Do not default unresolved KL sites to batch row `0`.
+
 Create `src/detection/prefix_denoising/__init__.py` with exports for these classes and the builder.
 
 - [ ] **Step 4: Add the first builder implementation**
@@ -986,6 +1040,7 @@ The implementation should:
 - call the same Swift template encoding path as `DetectionTrainingDataset._encode_messages`;
 - create clean labels for both branches;
 - compare clean/noisy lengths and label equality;
+- preserve prompt/user/system labels as `-100`, never supervise physical position `0`, and supervise only assistant-response clean labels plus assistant stop tokens;
 - locate coordinate label positions for every object slot;
 - select `K_i` object indices by deterministic seeded shuffle;
 - build no KL sites when weight is zero.
@@ -1033,29 +1088,36 @@ class PrefixDenoisingTrainingDataset(Dataset):
         self.dataset_name = str(dataset_name)
         self.seed = int(seed)
         self._epoch = 0
+        self._eligible_indices, self.skip_counters = build_prefix_denoising_eligibility_index(
+            rows=self.rows,
+            image_root=self.image_root,
+            swift_template=self.swift_template,
+            user_prompt=self.user_prompt,
+            system_prompt=self.system_prompt,
+            prefix_denoising=self.prefix_denoising,
+            max_length=self.max_length,
+        )
 
     def __len__(self) -> int:
-        return len(self.rows)
+        return len(self._eligible_indices)
 
     def set_epoch(self, epoch: int) -> None:
         self._epoch = int(epoch)
 
-    def encoded_length_for_row(self, index: int, *, epoch: int | None = None) -> int:
-        sample = self._build(index, epoch=self._epoch if epoch is None else int(epoch))
-        if not sample.ok:
-            return 0
+    def _static_packing_length(self, index: int) -> int:
+        base_idx = self._eligible_indices[int(index)]
+        sample = self._build(base_idx, epoch=0)
         return sample.total_length
 
     def __getitem__(self, index: int) -> dict[str, Any]:
-        sample = self._build(index, epoch=self._epoch)
+        base_idx = self._eligible_indices[int(index)]
+        sample = self._build(base_idx, epoch=self._epoch)
         if not sample.ok:
-            raise ValueError(f"prefix denoising sample is not eligible: {sample.skip_reason}")
-        return {
-            "prefix_denoising_hybrid": sample,
-            "sample_id": sample.hybrid_sample_id,
-            "dataset": self.dataset_name,
-            "length": sample.total_length,
-        }
+            raise RuntimeError(f"planned prefix denoising sample became ineligible: {sample.skip_reason}")
+        return materialize_hybrid_model_ready_item(
+            sample=sample,
+            dataset_name=self.dataset_name,
+        )
 
     def _build(self, index: int, *, epoch: int):
         base_idx = int(index)
@@ -1074,7 +1136,15 @@ class PrefixDenoisingTrainingDataset(Dataset):
         )
 ```
 
-Implementation note: keep the public dataset contract above. The private row-loading path must reuse the same JSONL loader and prompt/template resolution used by the current detection training dataset so schema diagnostics remain identical outside the new hybrid sample payload.
+Implementation note: `materialize_hybrid_model_ready_item` must return a real collator-ready sample, not only a sidecar. Its output contract is:
+
+- `input_ids`, `labels`, and `attention_mask` for the two complete segments or for a pre-flattened hybrid item;
+- multimodal fields required by the active Qwen-VL template, including duplicated logical ownership for `pixel_values` and `image_grid_thw`;
+- `prefix_denoising_segment_meta` with `hybrid_sample_id`, `segment_id`, `branch_id`, local token start/end, and local supervised positions for both branches;
+- `prefix_denoising_hybrid` sidecar;
+- `length` equal to `len(clean_full) + len(noisy_full)`.
+
+The private row-loading path must reuse the same JSONL loader and prompt/template resolution used by the current detection training dataset so schema diagnostics remain identical outside the new hybrid sample payload. Overlength or deterministic noising-infeasible rows are excluded by `_eligible_indices` before static packing; `__getitem__` must not be the normal skip mechanism.
 
 - [ ] **Step 6: Route runtime dataset construction**
 
@@ -1235,12 +1305,33 @@ python -m pytest tests/test_prefix_denoising_collator.py -q
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit sidecar contract**
+- [ ] **Step 5: Add a model-ready runtime integration test**
+
+Create `tests/test_prefix_denoising_runtime_integration.py`. The test must build one tiny two-segment hybrid item, send it through the actual configured `BatchExtrasCollator`/template collator path, and assert the collated batch contains:
+
+- `input_ids`, `labels`, `attention_mask`;
+- Qwen-VL multimodal tensors or stand-in test fields for `pixel_values` and `image_grid_thw`;
+- `prefix_denoising_segment_meta` for both `clean_full` and `noisy_full`;
+- `prefix_denoising_hybrid`;
+- no unregistered sidecars;
+- local CE label positions and KL label positions that can be rewritten to packed/logit positions.
+
+The test should then call a dummy `PrefixDenoisingObjectiveMixin.compute_loss` path with fixed logits and prove the trainer sees labels, segment metadata, and boundary metadata.
 
 Run:
 
 ```bash
-git add src/data_collators/enrichers.py src/data_collators/batch_extras_collator.py tests/test_prefix_denoising_collator.py
+python -m pytest tests/test_prefix_denoising_collator.py tests/test_prefix_denoising_runtime_integration.py -q
+```
+
+Expected: PASS.
+
+- [ ] **Step 6: Commit sidecar contract**
+
+Run:
+
+```bash
+git add src/data_collators/enrichers.py src/data_collators/batch_extras_collator.py tests/test_prefix_denoising_collator.py tests/test_prefix_denoising_runtime_integration.py
 git commit -m "feat: carry prefix denoising hybrid sidecars"
 ```
 
@@ -1251,9 +1342,11 @@ git commit -m "feat: carry prefix denoising hybrid sidecars"
 - Create: `src/detection/prefix_denoising/metrics.py`
 - Create: `src/trainers/metrics/prefix_denoising.py`
 - Modify: `src/trainers/metrics/mixins.py`
+- Modify: `src/bootstrap/trainer_setup.py`
 - Modify: `src/sft.py`
 - Create: `tests/test_prefix_denoising_loss.py`
 - Create: `tests/test_prefix_denoising_metrics.py`
+- Modify: `tests/test_training_runtime_sft_integration.py`
 
 - [ ] **Step 1: Write failing CE loss tests**
 
@@ -1265,46 +1358,51 @@ from __future__ import annotations
 import torch
 
 from src.detection.prefix_denoising.loss import (
+    PrefixDenoisingSegmentSpan,
     compute_branch_balanced_hard_ce,
     topk_accuracy_from_logits,
 )
 
 
-def test_branch_balanced_hard_ce_uses_equal_branch_weights() -> None:
-    logits = torch.tensor(
-        [
-            [[4.0, 0.0], [0.0, 4.0], [2.0, 0.0]],
-            [[0.0, 4.0], [4.0, 0.0], [0.0, 2.0]],
-        ],
-        dtype=torch.float32,
+def test_branch_balanced_hard_ce_uses_shifted_positions_and_all_segments() -> None:
+    logits = torch.full((1, 8, 4), -9.0, dtype=torch.float32)
+    labels = torch.full((1, 8), -100, dtype=torch.long)
+    labels[0, 2] = 1
+    labels[0, 3] = 2
+    labels[0, 6] = 3
+    logits[0, 1, 1] = 8.0
+    logits[0, 2, 2] = 8.0
+    logits[0, 5, 3] = 8.0
+    logits[0, 2, 0] = 12.0  # same-position row would be wrong for label position 2
+    spans = (
+        PrefixDenoisingSegmentSpan(batch_index=0, token_start=0, token_end=4, branch_id="clean_full", segment_id="a:clean"),
+        PrefixDenoisingSegmentSpan(batch_index=0, token_start=4, token_end=8, branch_id="noisy_full", segment_id="a:noisy"),
     )
-    labels = torch.tensor(
-        [
-            [0, 1, -100],
-            [1, 0, 1],
-        ],
-        dtype=torch.long,
-    )
-    branch_ids = ("clean_full", "noisy_full")
 
     result = compute_branch_balanced_hard_ce(
         logits=logits,
         labels=labels,
-        branch_ids=branch_ids,
+        segment_spans=spans,
     )
 
-    clean_ce = torch.nn.functional.cross_entropy(logits[0, :2], labels[0, :2])
-    noisy_ce = torch.nn.functional.cross_entropy(logits[1], labels[1])
+    clean_ce = torch.nn.functional.cross_entropy(
+        torch.stack([logits[0, 1], logits[0, 2]]),
+        torch.tensor([1, 2]),
+    )
+    noisy_ce = torch.nn.functional.cross_entropy(logits[0, 5].unsqueeze(0), torch.tensor([3]))
     torch.testing.assert_close(result.loss, 0.5 * clean_ce + 0.5 * noisy_ce)
     assert result.clean_denominator == 2
-    assert result.noisy_denominator == 3
+    assert result.noisy_denominator == 1
 
 
-def test_topk_accuracy_ignores_masked_labels() -> None:
-    logits = torch.tensor([[[5.0, 1.0, 0.0], [0.0, 1.0, 5.0]]], dtype=torch.float32)
-    labels = torch.tensor([[0, -100]], dtype=torch.long)
+def test_topk_accuracy_uses_shifted_causal_positions() -> None:
+    logits = torch.tensor([[[0.0, 5.0, 1.0], [5.0, 0.0, 1.0], [0.0, 1.0, 5.0]]], dtype=torch.float32)
+    labels = torch.tensor([[-100, 1, -100]], dtype=torch.long)
+    spans = (
+        PrefixDenoisingSegmentSpan(batch_index=0, token_start=0, token_end=3, branch_id="clean_full", segment_id="a:clean"),
+    )
 
-    result = topk_accuracy_from_logits(logits=logits, labels=labels, topk=(1, 2))
+    result = topk_accuracy_from_logits(logits=logits, labels=labels, segment_spans=spans, topk=(1, 2))
 
     assert result[1] == 1.0
     assert result[2] == 1.0
@@ -1355,6 +1453,7 @@ Run:
 
 ```bash
 python -m pytest tests/test_prefix_denoising_loss.py tests/test_prefix_denoising_metrics.py -q
+python -m pytest tests/test_training_runtime_sft_integration.py tests/test_training_runtime_profile.py -q
 ```
 
 Expected: FAIL because loss and metrics modules do not exist.
@@ -1374,6 +1473,15 @@ import torch.nn.functional as F
 
 
 @dataclass(frozen=True)
+class PrefixDenoisingSegmentSpan:
+    batch_index: int
+    token_start: int
+    token_end: int
+    branch_id: str
+    segment_id: str
+
+
+@dataclass(frozen=True)
 class PrefixDenoisingCEResult:
     loss: torch.Tensor
     clean_ce: torch.Tensor
@@ -1383,35 +1491,50 @@ class PrefixDenoisingCEResult:
     noisy_denominator: int
 
 
-def _branch_ce(logits: torch.Tensor, labels: torch.Tensor) -> tuple[torch.Tensor, int]:
-    active = labels.ne(-100)
+def _segment_ce_sum(logits: torch.Tensor, labels: torch.Tensor, span: PrefixDenoisingSegmentSpan) -> tuple[torch.Tensor, int]:
+    batch_index = int(span.batch_index)
+    start = int(span.token_start)
+    end = int(span.token_end)
+    label_positions = torch.arange(start, end, device=labels.device)
+    segment_labels = labels[batch_index, start:end]
+    active = segment_labels.ne(-100)
     denominator = int(active.sum().detach().cpu().item())
     if denominator == 0:
-        raise ValueError("prefix denoising branch has zero supervised labels")
-    return F.cross_entropy(logits[active], labels[active]), denominator
+        return logits[batch_index, start:end].float().sum() * 0.0, 0
+    active_positions = label_positions[active]
+    if torch.any(active_positions <= start):
+        raise ValueError("prefix denoising labels at segment start cannot be supervised in causal LM")
+    active_logits = logits[batch_index, active_positions - 1]
+    active_labels = segment_labels[active]
+    denominator = int(active_labels.numel())
+    return F.cross_entropy(active_logits, active_labels, reduction="sum"), denominator
 
 
 def compute_branch_balanced_hard_ce(
     *,
     logits: torch.Tensor,
     labels: torch.Tensor,
-    branch_ids: tuple[str, ...],
+    segment_spans: tuple[PrefixDenoisingSegmentSpan, ...],
 ) -> PrefixDenoisingCEResult:
     if logits.ndim != 3:
         raise ValueError("prefix denoising CE requires logits [batch, time, vocab]")
     if labels.shape != logits.shape[:2]:
         raise ValueError("prefix denoising labels must match logits batch/time shape")
-    if len(branch_ids) != int(logits.shape[0]):
-        raise ValueError("branch_ids length must match logits batch size")
-    try:
-        clean_index = branch_ids.index("clean_full")
-        noisy_index = branch_ids.index("noisy_full")
-    except ValueError as exc:
-        raise ValueError("branch_ids must contain clean_full and noisy_full") from exc
-    clean_ce, clean_den = _branch_ce(logits[clean_index], labels[clean_index])
-    noisy_ce, noisy_den = _branch_ce(logits[noisy_index], labels[noisy_index])
-    active = labels.ne(-100)
-    token_pooled = F.cross_entropy(logits[active], labels[active])
+    sums = {"clean_full": logits.float().sum() * 0.0, "noisy_full": logits.float().sum() * 0.0}
+    denominators = {"clean_full": 0, "noisy_full": 0}
+    for span in segment_spans:
+        if span.branch_id not in sums:
+            raise ValueError(f"unsupported prefix denoising branch_id: {span.branch_id!r}")
+        ce_sum, denom = _segment_ce_sum(logits, labels, span)
+        sums[span.branch_id] = sums[span.branch_id] + ce_sum
+        denominators[span.branch_id] += denom
+    clean_den = denominators["clean_full"]
+    noisy_den = denominators["noisy_full"]
+    if clean_den == 0 or noisy_den == 0:
+        raise ValueError("prefix denoising CE requires supervised labels in both clean_full and noisy_full")
+    clean_ce = sums["clean_full"] / float(clean_den)
+    noisy_ce = sums["noisy_full"] / float(noisy_den)
+    token_pooled = (sums["clean_full"] + sums["noisy_full"]) / float(clean_den + noisy_den)
     return PrefixDenoisingCEResult(
         loss=0.5 * clean_ce + 0.5 * noisy_ce,
         clean_ce=clean_ce,
@@ -1426,20 +1549,36 @@ def topk_accuracy_from_logits(
     *,
     logits: torch.Tensor,
     labels: torch.Tensor,
+    segment_spans: tuple[PrefixDenoisingSegmentSpan, ...],
     topk: Iterable[int] = (1, 5),
 ) -> dict[int, float]:
-    active = labels.ne(-100)
-    denominator = int(active.sum().detach().cpu().item())
+    active_logits: list[torch.Tensor] = []
+    active_labels: list[torch.Tensor] = []
+    for span in segment_spans:
+        batch_index = int(span.batch_index)
+        start = int(span.token_start)
+        end = int(span.token_end)
+        label_positions = torch.arange(start, end, device=labels.device)
+        segment_labels = labels[batch_index, start:end]
+        active = segment_labels.ne(-100)
+        if not bool(active.any()):
+            continue
+        positions = label_positions[active]
+        if torch.any(positions <= start):
+            raise ValueError("prefix denoising labels at segment start cannot be scored in causal LM")
+        active_logits.append(logits[batch_index, positions - 1])
+        active_labels.append(segment_labels[active])
+    denominator = int(sum(int(item.numel()) for item in active_labels))
     if denominator == 0:
         return {int(k): 0.0 for k in topk}
-    active_logits = logits[active]
-    active_labels = labels[active]
+    active_logits_tensor = torch.cat(active_logits, dim=0)
+    active_labels_tensor = torch.cat(active_labels, dim=0)
     max_k = max(int(k) for k in topk)
-    top = active_logits.topk(k=max_k, dim=-1).indices
+    top = active_logits_tensor.topk(k=max_k, dim=-1).indices
     out: dict[int, float] = {}
     for k in topk:
         kk = int(k)
-        correct = top[:, :kk].eq(active_labels.unsqueeze(-1)).any(dim=-1).float().sum()
+        correct = top[:, :kk].eq(active_labels_tensor.unsqueeze(-1)).any(dim=-1).float().sum()
         out[kk] = float((correct / float(denominator)).detach().cpu().item())
     return out
 ```
@@ -1537,11 +1676,13 @@ from typing import MutableMapping
 import torch
 
 from src.detection.prefix_denoising.loss import (
+    PrefixDenoisingSegmentSpan,
     compute_branch_balanced_hard_ce,
     topk_accuracy_from_logits,
 )
 from src.detection.prefix_denoising.metrics import prefix_denoising_ce_events
 from src.metrics.events import flatten_metric_events
+from src.metrics.reporter import SwiftMetricReporter
 from src.trainers.teacher_forcing.forwards import prepare_forward_inputs
 
 
@@ -1555,7 +1696,17 @@ class PrefixDenoisingObjectiveMixin:
         labels = inputs.get("labels")
         if not isinstance(labels, torch.Tensor):
             raise ValueError("prefix_denoising requires labels tensor")
-        branch_ids = tuple(str(item.get("branch_id")) for item in inputs.pop("prefix_denoising_segment_meta"))
+        segment_meta = tuple(inputs.pop("prefix_denoising_segment_meta"))
+        segment_spans = tuple(
+            PrefixDenoisingSegmentSpan(
+                batch_index=int(item["batch_index"]),
+                token_start=int(item["token_start"]),
+                token_end=int(item["token_end"]),
+                branch_id=str(item["branch_id"]),
+                segment_id=str(item["segment_id"]),
+            )
+            for item in segment_meta
+        )
         ignored_keys = ["labels", "prefix_denoising_segment_meta", "prefix_denoising_hybrid"]
         _, inputs_for_model, _ = prepare_forward_inputs(
             model=model,
@@ -1569,9 +1720,9 @@ class PrefixDenoisingObjectiveMixin:
         ce = compute_branch_balanced_hard_ce(
             logits=logits,
             labels=labels,
-            branch_ids=branch_ids,
+            segment_spans=segment_spans,
         )
-        acc = topk_accuracy_from_logits(logits=logits, labels=labels, topk=(1, 5))
+        acc = topk_accuracy_from_logits(logits=logits, labels=labels, segment_spans=segment_spans, topk=(1, 5))
         events = prefix_denoising_ce_events(
             ce_balanced=float(ce.loss.detach().cpu().item()),
             ce_clean=float(ce.clean_ce.detach().cpu().item()),
@@ -1584,21 +1735,17 @@ class PrefixDenoisingObjectiveMixin:
         )
         flat = flatten_metric_events(events)
         flat["llm_loss"] = float(ce.loss.detach().cpu().item())
-        pending = getattr(self, "_prefix_denoising_pending_train_logs", None)
-        if pending is None:
-            self._prefix_denoising_pending_train_logs = []
-            pending = self._prefix_denoising_pending_train_logs
-        pending.append(flat)
+        SwiftMetricReporter(self).update_many(flat)
         return (ce.loss, outputs) if return_outputs else ce.loss
 ```
 
-The first implementation may replace the pending-list logger with the repository's standard pending train-log aggregator if one exists for this trainer class.
+Use `SwiftMetricReporter(self).update_many(flat)` for required monitors; do not introduce a private pending-list logger unless a real consumer is added and tested.
 
 - [ ] **Step 7: Compose trainer only when prefix-denoising is enabled**
 
 In `src/trainers/metrics/mixins.py`, export `PrefixDenoisingObjectiveMixin`.
 
-In `src/sft.py`, after resolving `training_config`, if `training_config.prefix_denoising.enabled` is true, compose a trainer class with `(PrefixDenoisingObjectiveMixin, trainer_cls)`. Keep the existing `TeacherForcingObjectiveMixin` path unchanged for non-V1 configs.
+In `src/bootstrap/trainer_setup.py::compose_trainer_class`, add `prefix_denoising_cfg` as an explicit input. If `prefix_denoising_cfg.enabled` is true, compose `PrefixDenoisingObjectiveMixin` instead of `TeacherForcingObjectiveMixin`; they are mutually exclusive owners of the token loss. Keep the existing `TeacherForcingObjectiveMixin` path unchanged for non-V1 configs. Add a test proving the enabled prefix path yields `issubclass(trainer_cls, PrefixDenoisingObjectiveMixin)` and does not also attach incompatible objective mixins.
 
 - [ ] **Step 8: Run CE and metric tests**
 
@@ -1615,7 +1762,7 @@ Expected: PASS.
 Run:
 
 ```bash
-git add src/detection/prefix_denoising/loss.py src/detection/prefix_denoising/metrics.py src/trainers/metrics/prefix_denoising.py src/trainers/metrics/mixins.py src/sft.py tests/test_prefix_denoising_loss.py tests/test_prefix_denoising_metrics.py
+git add src/detection/prefix_denoising/loss.py src/detection/prefix_denoising/metrics.py src/trainers/metrics/prefix_denoising.py src/trainers/metrics/mixins.py src/bootstrap/trainer_setup.py src/sft.py tests/test_prefix_denoising_loss.py tests/test_prefix_denoising_metrics.py tests/test_training_runtime_sft_integration.py
 git commit -m "feat: add prefix denoising hard ce loss"
 ```
 
@@ -1638,6 +1785,7 @@ from src.detection.prefix_denoising.loss import (
     coord_support_window,
 )
 from src.detection.prefix_denoising.types import PrefixDenoisingKLSite
+from src.detection.prefix_denoising.types import ResolvedPrefixDenoisingKLSite
 
 
 def test_coord_support_window_clips_at_edges() -> None:
@@ -1645,14 +1793,18 @@ def test_coord_support_window_clips_at_edges() -> None:
     assert coord_support_window(clean_bin=998, radius=4, coord_min=0, coord_max=999) == (994, 995, 996, 997, 998, 999)
 
 
-def test_local_coord_kl_is_finite_and_detaches_teacher() -> None:
-    clean_logits = torch.zeros((1, 6, 1000), dtype=torch.float32, requires_grad=True)
-    noisy_logits = torch.zeros((1, 6, 1000), dtype=torch.float32, requires_grad=True)
-    site = PrefixDenoisingKLSite(
-        clean_segment_id="clean",
-        noisy_segment_id="noisy",
+def test_local_coord_kl_maps_bins_to_coord_token_ids_and_detaches_teacher() -> None:
+    coord_token_ids = torch.tensor([1000 + i for i in range(1000)], dtype=torch.long)
+    clean_logits = torch.zeros((2, 6, 2100), dtype=torch.float32, requires_grad=True)
+    noisy_logits = torch.zeros((2, 6, 2100), dtype=torch.float32, requires_grad=True)
+    clean_logits.data[1, 1, 1010] = 5.0
+    noisy_logits.data[1, 1, 1010] = 3.0
+    clean_logits.data[0, 1, 1010] = -20.0  # wrong if the site silently defaults to row 0
+    clean_logits.data[1, 1, 10] = 30.0  # wrong if bin 10 is used as a vocab column
+    site = ResolvedPrefixDenoisingKLSite(
+        clean_batch_index=1,
+        noisy_batch_index=1,
         object_index=0,
-        history_object_count=0,
         coord_slot="y1",
         clean_label_position=2,
         noisy_label_position=2,
@@ -1665,8 +1817,7 @@ def test_local_coord_kl_is_finite_and_detaches_teacher() -> None:
         clean_logits=clean_logits,
         noisy_logits=noisy_logits,
         sites=(site,),
-        clean_batch_index=0,
-        noisy_batch_index=0,
+        coord_token_ids=coord_token_ids,
     )
     result.loss.backward()
 
@@ -1675,7 +1826,23 @@ def test_local_coord_kl_is_finite_and_detaches_teacher() -> None:
     assert noisy_logits.grad is not None
     assert result.candidate_site_count == 1
     assert result.effective_site_count == 1
+
+
+def test_k_two_builds_eight_candidate_sites_without_rescaling_raw_kl() -> None:
+    # Builder fixture must use three objects and num_objects_per_image=2.
+    sample = build_three_object_hybrid_fixture(num_objects_per_image=2, epoch=3, seed=17)
+    assert len(sample.kl_sites) == 8
+    assert len({site.object_index for site in sample.kl_sites}) == 2
+    for object_index in {site.object_index for site in sample.kl_sites}:
+        assert {site.coord_slot for site in sample.kl_sites if site.object_index == object_index} == {"x1", "y1", "x2", "y2"}
+
+    # Loss fixture must prove raw KL is a mean over sites, not a sum.
+    result_one_group = compute_uniform_fixture_kl(site_count=4)
+    result_two_groups = compute_uniform_fixture_kl(site_count=8)
+    torch.testing.assert_close(result_two_groups.raw_loss, result_one_group.raw_loss)
 ```
+
+In that test file, implement `build_three_object_hybrid_fixture` as a local helper that exercises the real builder with three clean objects, `num_objects_per_image=2`, and deterministic seed/epoch; implement `compute_uniform_fixture_kl` as a local helper that creates repeated identical `ResolvedPrefixDenoisingKLSite` rows with explicit batch indices and fixed logits. These helpers are test scaffolds, not production APIs.
 
 - [ ] **Step 2: Run KL tests and verify the intended failure**
 
@@ -1691,6 +1858,8 @@ Expected: FAIL because KL helpers do not exist.
 
 Add to `src/detection/prefix_denoising/loss.py`:
 
+Import `ResolvedPrefixDenoisingKLSite` from `src.detection.prefix_denoising.types`; the loss helper must not accept unresolved builder-local `PrefixDenoisingKLSite` objects.
+
 ```python
 @dataclass(frozen=True)
 class PrefixDenoisingKLResult:
@@ -1701,6 +1870,8 @@ class PrefixDenoisingKLResult:
     identical_prefix_site_count: int
     teacher_support_mass: float
     student_support_mass: float
+    teacher_gt_prob_full_coord_vocab: float
+    student_gt_prob_full_coord_vocab: float
     teacher_gt_prob_conditional: float
     student_gt_prob_conditional: float
 
@@ -1721,9 +1892,8 @@ def compute_local_coord_kl(
     *,
     clean_logits: torch.Tensor,
     noisy_logits: torch.Tensor,
-    sites: tuple[object, ...],
-    clean_batch_index: int,
-    noisy_batch_index: int,
+    sites: tuple[ResolvedPrefixDenoisingKLSite, ...],
+    coord_token_ids: torch.Tensor,
 ) -> PrefixDenoisingKLResult:
     if not sites:
         zero = noisy_logits.float().sum() * 0.0
@@ -1735,26 +1905,39 @@ def compute_local_coord_kl(
             identical_prefix_site_count=0,
             teacher_support_mass=0.0,
             student_support_mass=0.0,
+            teacher_gt_prob_full_coord_vocab=0.0,
+            student_gt_prob_full_coord_vocab=0.0,
             teacher_gt_prob_conditional=0.0,
             student_gt_prob_conditional=0.0,
         )
     losses: list[torch.Tensor] = []
     teacher_support_mass_values: list[float] = []
     student_support_mass_values: list[float] = []
+    teacher_gt_full_values: list[float] = []
+    student_gt_full_values: list[float] = []
     teacher_gt_values: list[float] = []
     student_gt_values: list[float] = []
     identical = 0
+    coord_token_ids = coord_token_ids.to(device=noisy_logits.device, dtype=torch.long)
     for site in sites:
+        if not isinstance(site.clean_batch_index, int) or not isinstance(site.noisy_batch_index, int):
+            raise TypeError("resolved KL sites must carry explicit clean/noisy batch indices")
         clean_row = int(site.clean_label_position) - 1
         noisy_row = int(site.noisy_label_position) - 1
-        support = torch.tensor(tuple(int(v) for v in site.support_bins), device=noisy_logits.device, dtype=torch.long)
+        support_bins = torch.tensor(tuple(int(v) for v in site.support_bins), device=noisy_logits.device, dtype=torch.long)
+        support_token_ids = coord_token_ids.index_select(0, support_bins)
         gt_index = tuple(int(v) for v in site.support_bins).index(int(site.clean_gt_bin))
-        teacher_full = torch.softmax(clean_logits[int(clean_batch_index), clean_row].detach().float(), dim=-1)
-        student_full = torch.softmax(noisy_logits[int(noisy_batch_index), noisy_row].float(), dim=-1)
-        teacher_support_mass_values.append(float(teacher_full.index_select(0, support).sum().detach().cpu().item()))
-        student_support_mass_values.append(float(student_full.index_select(0, support).sum().detach().cpu().item()))
-        teacher_local_logits = clean_logits[int(clean_batch_index), clean_row].detach().float().index_select(0, support)
-        student_local_logits = noisy_logits[int(noisy_batch_index), noisy_row].float().index_select(0, support)
+        gt_token_id = int(coord_token_ids[int(site.clean_gt_bin)].detach().cpu().item())
+        clean_batch_index = int(site.clean_batch_index)
+        noisy_batch_index = int(site.noisy_batch_index)
+        teacher_full = torch.softmax(clean_logits[clean_batch_index, clean_row].detach().float(), dim=-1)
+        student_full = torch.softmax(noisy_logits[noisy_batch_index, noisy_row].float(), dim=-1)
+        teacher_support_mass_values.append(float(teacher_full.index_select(0, support_token_ids).sum().detach().cpu().item()))
+        student_support_mass_values.append(float(student_full.index_select(0, support_token_ids).sum().detach().cpu().item()))
+        teacher_gt_full_values.append(float(teacher_full[gt_token_id].detach().cpu().item()))
+        student_gt_full_values.append(float(student_full[gt_token_id].detach().cpu().item()))
+        teacher_local_logits = clean_logits[clean_batch_index, clean_row].detach().float().index_select(0, support_token_ids)
+        student_local_logits = noisy_logits[noisy_batch_index, noisy_row].float().index_select(0, support_token_ids)
         teacher_prob = torch.softmax(teacher_local_logits, dim=-1)
         student_log_prob = torch.log_softmax(student_local_logits, dim=-1)
         student_prob = torch.softmax(student_local_logits, dim=-1)
@@ -1772,6 +1955,8 @@ def compute_local_coord_kl(
         identical_prefix_site_count=identical,
         teacher_support_mass=sum(teacher_support_mass_values) / len(teacher_support_mass_values),
         student_support_mass=sum(student_support_mass_values) / len(student_support_mass_values),
+        teacher_gt_prob_full_coord_vocab=sum(teacher_gt_full_values) / len(teacher_gt_full_values),
+        student_gt_prob_full_coord_vocab=sum(student_gt_full_values) / len(student_gt_full_values),
         teacher_gt_prob_conditional=sum(teacher_gt_values) / len(teacher_gt_values),
         student_gt_prob_conditional=sum(student_gt_values) / len(student_gt_values),
     )
@@ -1788,8 +1973,15 @@ Extend `src/detection/prefix_denoising/metrics.py` with KL keys and an event hel
 - `prefix_denoising/kl/local_window/identical_prefix_site_count`;
 - `prefix_denoising/kl/local_window/teacher_support_mass`;
 - `prefix_denoising/kl/local_window/student_support_mass`;
+- `prefix_denoising/kl/local_window/teacher_gt_prob_full_coord_vocab`;
+- `prefix_denoising/kl/local_window/student_gt_prob_full_coord_vocab`;
 - `prefix_denoising/kl/local_window/teacher_gt_prob_conditional`;
-- `prefix_denoising/kl/local_window/student_gt_prob_conditional`.
+- `prefix_denoising/kl/local_window/student_gt_prob_conditional`;
+- `prefix_denoising/kl/local_window/support_bin_count`;
+- `prefix_denoising/kl/local_window/edge_truncation_rate`;
+- `prefix_denoising/kl/local_window/teacher_top1_is_gt`;
+- `prefix_denoising/kl/local_window/student_top1_is_gt`;
+- slot-specific reduced keys for `x1`, `y1`, `x2`, and `y2` for support mass, full-vocab GT probability, local GT probability, and teacher-minus-student deltas.
 
 Use distinct flat keys, not channel-only identity differences.
 
@@ -1802,7 +1994,8 @@ In `src/trainers/metrics/prefix_denoising.py`:
 - compute KL after model forward when weight is positive;
 - total loss is `ce.loss + weight * kl.raw_loss`;
 - log raw and weighted KL separately;
-- preserve `llm_loss` as the optimized total or optimized CE according to the design review decision. If reviewers disagree, convert this to a user decision before implementation.
+- publish `llm_loss` as the optimized scalar actually backpropagated: `ce.loss + weight * kl.raw_loss`;
+- also log `prefix_denoising/global/loss/ce_balanced`, `prefix_denoising/kl/local_window/raw`, and `prefix_denoising/kl/local_window/weighted` separately so CE-only and KL-on runs remain comparable.
 
 - [ ] **Step 6: Run KL tests**
 
@@ -1841,7 +2034,7 @@ Create `tests/test_prefix_denoising_packing.py`:
 ```python
 from __future__ import annotations
 
-from src.detection.prefix_denoising.packing import build_hybrid_pack_plan
+from src.detection.prefix_denoising.packing import build_hybrid_pack_plan, materialize_packed_hybrid_boundary_map
 from src.detection.prefix_denoising.types import (
     HybridPrefixDenoisingSample,
     PrefixDenoisingSegment,
@@ -1902,6 +2095,33 @@ def test_hybrid_pack_plan_records_overlength_exclusion() -> None:
 
     assert plan.rows == ()
     assert plan.exclusions["overlength_hybrid_sample"] == 1
+
+
+def test_hybrid_pack_plan_allows_exact_global_max_length() -> None:
+    plan = build_hybrid_pack_plan(
+        samples=[_hybrid("a", 15, 15)],
+        global_max_length=30,
+    )
+
+    assert len(plan.rows) == 1
+    assert plan.rows[0].total_length == 30
+    assert plan.exclusions == {}
+
+
+def test_boundary_map_rewrites_two_hybrids_in_one_physical_row() -> None:
+    plan = build_hybrid_pack_plan(
+        samples=[_hybrid("a", 5, 5), _hybrid("b", 6, 6)],
+        global_max_length=25,
+    )
+    boundary = materialize_packed_hybrid_boundary_map(plan.rows[0])
+
+    assert {item.branch_id for item in boundary.boundaries} == {"clean_full", "noisy_full"}
+    assert all(item.token_start < item.token_end for item in boundary.boundaries)
+    assert boundary.ce_denominator_by_branch["clean_full"] > 0
+    assert boundary.ce_denominator_by_branch["noisy_full"] > 0
+    assert boundary.position_reset_offsets
+    assert boundary.image_placeholder_owners
+    assert boundary.visual_slice_owners
 ```
 
 - [ ] **Step 2: Run packing tests and verify the intended failure**
@@ -1929,6 +2149,12 @@ class PackedHybridBoundary:
     token_end: int
     supervised_start: int
     supervised_end: int
+    label_position_offset: int
+    logit_position_offset: int
+    image_placeholder_start: int
+    image_placeholder_end: int
+    pixel_values_slice: tuple[int, int]
+    image_grid_thw_slice: tuple[int, int]
     ce_denominator: int
     kl_site_count: int
 
@@ -1937,6 +2163,11 @@ class PackedHybridBoundary:
 class PackedHybridBoundaryMap:
     packed_row_index: int
     boundaries: tuple[PackedHybridBoundary, ...]
+    position_reset_offsets: tuple[int, ...]
+    varlen_cu_seqlens: tuple[int, ...]
+    ce_denominator_by_branch: Mapping[str, int]
+    image_placeholder_owners: Mapping[tuple[int, int], str]
+    visual_slice_owners: Mapping[tuple[int, int], str]
 ```
 
 - [ ] **Step 4: Implement pack planner**
@@ -2001,16 +2232,24 @@ def build_hybrid_pack_plan(
     return HybridPackPlan(rows=tuple(rows), exclusions=dict(exclusions))
 ```
 
-Then extend the module with offset rewrite helpers for actual tensors after the planner tests pass.
+Then extend the module with offset rewrite helpers for actual tensors after the planner tests pass. The boundary-map tests must cover at least two hybrid samples in one physical packed row with nonempty KL sites and must assert:
+
+- CE label positions are mapped to causal logit rows by `label_position - 1` within the same segment boundary;
+- KL clean/noisy label positions and support metadata are rewritten to physical batch/logit positions and emitted as `ResolvedPrefixDenoisingKLSite` objects with explicit clean/noisy batch indices;
+- branch ids and segment ids survive flattening;
+- position reset offsets and FlashAttention varlen metadata agree with segment boundaries when the active packed runtime emits varlen fields;
+- image placeholders, `pixel_values`, and `image_grid_thw` slices have explicit segment owners;
+- CE/KL denominators are preserved after packing.
 
 - [ ] **Step 5: Integrate with static packing runtime**
 
 In `src/sft.py` and `src/detection/packing.py`:
 
 - add prefix-denoising fingerprint fields: schema version, noise config, KL weight, KL window radius, `num_objects_per_image`, eligibility policy;
-- allow `training.packing=true` and `packing.static_packing=true` only when `prefix_denoising.enabled=true` and the dataset is `PrefixDenoisingTrainingDataset`;
+- allow `training.packing=true` and `packing.static_packing=true` only when `prefix_denoising.enabled=true`, the dataset is `PrefixDenoisingTrainingDataset`, and the collated batch carries `PackedHybridBoundaryMap`;
 - continue rejecting non-V1 teacher-forcing/recursive sidecar packing;
 - record `overlength_hybrid_sample` exclusions in runtime artifacts.
+- inspect the actual packed batch for the repo's varlen/position-boundary fields and record them in launch-health artifacts. A plain 2D attention mask is not sufficient evidence for sidecar-active packed prefix denoising.
 
 - [ ] **Step 6: Run packing tests**
 
@@ -2064,10 +2303,18 @@ data:
   object_ordering: sorted
 
 objective:
-  id: sft
-  variant: sorted_sft
-  state_weighting: none
-  normalization: token_mean
+  id: teacher_forcing
+  profile: hard_sft
+  modules:
+    token_type_mass:
+      enabled: false
+    conditional_valid_set_likelihood:
+      enabled: false
+    within_valid_coverage:
+      enabled: false
+      coverage_strength: 0.0
+    continuation_margin:
+      enabled: false
 
 prefix_denoising:
   enabled: true
@@ -2081,7 +2328,6 @@ prefix_denoising:
 
 packing:
   static_packing: true
-  padding_free_packed: false
 ```
 
 - [ ] **Step 2: Add KL tiny config**
@@ -2125,10 +2371,18 @@ data:
   object_ordering: sorted
 
 objective:
-  id: sft
-  variant: sorted_sft
-  state_weighting: none
-  normalization: token_mean
+  id: teacher_forcing
+  profile: hard_sft
+  modules:
+    token_type_mass:
+      enabled: false
+    conditional_valid_set_likelihood:
+      enabled: false
+    within_valid_coverage:
+      enabled: false
+      coverage_strength: 0.0
+    continuation_margin:
+      enabled: false
 
 prefix_denoising:
   enabled: true
@@ -2150,8 +2404,9 @@ Update `configs/stage1/detection_teacher_forcing/README.md` with:
 ```markdown
 ## Prefix-Denoising SFT V1
 
-Prefix-denoising V1 uses hard clean-label CE only with `objective.id: sft`,
-`objective.variant: sorted_sft`, and `prefix_denoising.enabled: true`.
+Prefix-denoising V1 uses hard clean-label CE only with `objective.id:
+teacher_forcing`, `objective.profile: hard_sft`, all teacher-forcing auxiliary
+modules disabled, and `prefix_denoising.enabled: true`.
 It requires `data.object_ordering: sorted`, coord-token compact-full `xyxy`,
 encoded-sample cache disabled, and the V1 hybrid static packing path.
 
@@ -2172,8 +2427,6 @@ Run:
 
 ```bash
 python - <<'PY'
-from pathlib import Path
-import yaml
 from src.config.loader import ConfigLoader
 from src.config.schema import DetectionTrainingConfig
 
@@ -2183,11 +2436,13 @@ paths = [
     "configs/stage1/detection_teacher_forcing/prod/prefix_denoising_2b_k1_kl005.yaml",
 ]
 for path in paths:
-    payload = yaml.safe_load(Path(path).read_text())
-    prompts = ConfigLoader.resolve_prompts(payload)
-    cfg = DetectionTrainingConfig.from_mapping(payload)
+    cfg = ConfigLoader.load_materialized_training_config(path)
+    assert isinstance(cfg, DetectionTrainingConfig)
     assert cfg.prefix_denoising.enabled is True
+    assert cfg.objective.id == "teacher_forcing"
+    assert cfg.objective.profile == "hard_sft"
     assert cfg.data.object_ordering == "sorted"
+    assert bool(cfg.training.get("packing", False)) is True
     print(f"{path}: ok")
 PY
 ```
@@ -2376,11 +2631,66 @@ Type consistency:
 - `HybridPrefixDenoisingSample`, `PrefixDenoisingSegment`, `PrefixDenoisingKLSite`, and `PackedHybridBoundaryMap` are the runtime names used throughout.
 - `PrefixDenoisingObjectiveMixin` is the trainer integration name used throughout.
 
+## Review-Convergence Round 1 Resolutions
+
+Accepted P0 fixes:
+
+- Causal-LM alignment: CE, token accuracy, and KL label sites must use
+  `labels[position] -> logits[position - 1]`; physical position `0` and each
+  packed segment's first token are excluded from supervision.
+- Coordinate KL support: `support_bins` are coordinate bins and must be mapped
+  through coord-token ids before indexing full-vocab logits.
+
+Accepted P1 fixes:
+
+- Config surface stays on canonical `objective.id: teacher_forcing` with
+  `objective.profile: hard_sft`; legacy `objective.id: sft` is not revived.
+- OpenSpec or explicit experiment-only governance gate is required before schema
+  and metric contracts are implemented.
+- Dataset/collator tasks now require model-ready fields, actual collator
+  integration, `PackedHybridBoundaryMap`, and a dummy-loss integration test.
+- Packing tasks now require exact-cap inclusion, pre-plan skip filtering,
+  two-hybrid boundary-map rewriting, position/varlen boundary evidence, and
+  visual ownership checks.
+- Trainer composition is owned by `src/bootstrap/trainer_setup.py`.
+- Metrics use `SwiftMetricReporter`; no private pending-log list is allowed
+  without a tested consumer.
+- KL and CE helpers must aggregate all clean/noisy segments in packed batches
+  and include K>1 selected-object coverage tests.
+- Packed KL sites must be resolved by the boundary map into
+  `ResolvedPrefixDenoisingKLSite` objects with explicit physical batch indices;
+  unresolved builder-local KL sites must not default to batch row `0`.
+
+Accepted P2 fixes:
+
+- `llm_loss` is the optimized total scalar actually backpropagated.
+- Catalog and spec phase metadata were refreshed.
+- Config verification uses `ConfigLoader.load_materialized_training_config`.
+- Zero-strength bbox noising respects the authored envelope and returns
+  infeasible instead of applying an implicit one-bin shift.
+
+## Review-Convergence Round 2 Closure
+
+Reviewer lanes:
+
+- Packing/data/collator/runtime lane: converged with no remaining blocking
+  findings.
+- Config/runtime/docs-governance lane: converged with no remaining blocking
+  findings.
+- Loss numerics/KL lane: initially held on packed KL site row resolution and
+  weak K>1 fixture coverage; the plan now requires
+  `ResolvedPrefixDenoisingKLSite`, forbids row-0 fallback, requires
+  boundary-map emission of resolved sites, and requires a real three-object K>1
+  fixture with duplicate-site mean-preservation coverage. Focused re-review
+  confirmed convergence.
+
 ## Execution Handoff
 
 Plan complete and saved to `docs/superpowers/plans/2026-06-14-prefix-denoising-sft-v1.md`.
 
-Next gate: user-run review convergence over this plan. Do not start implementation until the review findings are triaged and the user explicitly approves implementation.
+Next gate: user approval. Do not start implementation until the OpenSpec or
+experiment-only governance boundary is resolved and the user explicitly
+approves implementation.
 
 After review approval, two execution options are available:
 
