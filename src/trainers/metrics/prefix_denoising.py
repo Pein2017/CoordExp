@@ -45,12 +45,12 @@ class PrefixDenoisingObjectiveMixin:
                 "prefix_denoising objective requires full sequence logits; "
                 "logits_to_keep is unsupported"
             )
+        _reject_positive_kl_weight(self)
 
         packing_enabled = _resolve_prefix_denoising_packing_enabled(self)
-        if packing_enabled and extras.packed_hybrid_boundary_map is None:
+        if packing_enabled:
             raise ValueError(
-                "prefix_denoising packed training requires "
-                "packed_hybrid_boundary_map sidecar"
+                "packed prefix_denoising requires Task 7 boundary rewriting"
             )
         segment_spans = _segment_spans_from_meta(
             extras.prefix_denoising_segment_meta,
@@ -128,6 +128,21 @@ def _resolve_prefix_denoising_packing_enabled(trainer: Any) -> bool:
             "prefix_denoising_packing_enabled runtime state"
         )
     return bool(value)
+
+
+def _reject_positive_kl_weight(trainer: Any) -> None:
+    raw_value = getattr(trainer, "prefix_denoising_kl_weight", 0.0)
+    try:
+        value = float(raw_value or 0.0)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "prefix_denoising current_object_kl.weight must be numeric"
+        ) from exc
+    if value > 0.0:
+        raise ValueError(
+            "positive prefix_denoising current_object_kl.weight requires "
+            "Task 6 KL support"
+        )
 
 
 def _segment_spans_from_meta(

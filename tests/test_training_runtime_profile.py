@@ -331,8 +331,11 @@ def test_compose_trainer_class_prefix_denoising_sets_runtime_flag() -> None:
         sft_structural_close_cfg=None,
         recursive_detection_ce_cfg=None,
         teacher_forcing_objective_cfg=SimpleNamespace(enabled=True),
-        prefix_denoising_cfg=SimpleNamespace(enabled=True),
-        prefix_denoising_runtime={"packing_enabled": False},
+        prefix_denoising_cfg=SimpleNamespace(
+            enabled=True,
+            current_object_kl=SimpleNamespace(weight=0.0),
+        ),
+        prefix_denoising_runtime={"packing_enabled": False, "kl_weight": 0.0},
     )
 
     assert issubclass(trainer_cls, PrefixDenoisingObjectiveMixin)

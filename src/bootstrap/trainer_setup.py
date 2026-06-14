@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Any, Mapping, Sequence
 
 from src.config import SaveDelayConfig
@@ -104,9 +105,22 @@ def compose_trainer_class(
                 raise ValueError(
                     "prefix_denoising_runtime must include packing_enabled"
                 )
-            class_attrs["prefix_denoising_packing_enabled"] = bool(
-                prefix_denoising_runtime["packing_enabled"]
+            packing_enabled = bool(prefix_denoising_runtime["packing_enabled"])
+            if packing_enabled:
+                raise ValueError(
+                    "packed prefix_denoising requires Task 7 boundary rewriting"
+                )
+            kl_weight = _resolve_prefix_denoising_kl_weight(
+                prefix_denoising_cfg=prefix_denoising_cfg,
+                prefix_denoising_runtime=prefix_denoising_runtime,
             )
+            if kl_weight > 0.0:
+                raise ValueError(
+                    "positive prefix_denoising current_object_kl.weight requires "
+                    "Task 6 KL support"
+                )
+            class_attrs["prefix_denoising_packing_enabled"] = packing_enabled
+            class_attrs["prefix_denoising_kl_weight"] = kl_weight
         mixins.append(GradAccumLossScaleMixin)
         if prefix_denoising_enabled or recursive_ce_enabled or teacher_forcing_enabled:
             incompatible = []
@@ -158,6 +172,33 @@ def compose_trainer_class(
         tuple(mixins + [trainer_cls]),
         class_attrs,
     )
+
+
+def _resolve_prefix_denoising_kl_weight(
+    *,
+    prefix_denoising_cfg: Any,
+    prefix_denoising_runtime: Mapping[str, Any],
+) -> float:
+    if "kl_weight" in prefix_denoising_runtime:
+        raw_value = prefix_denoising_runtime["kl_weight"]
+    else:
+        current_object_kl = getattr(
+            prefix_denoising_cfg,
+            "current_object_kl",
+            None,
+        )
+        raw_value = getattr(current_object_kl, "weight", 0.0)
+    try:
+        value = float(raw_value or 0.0)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "prefix_denoising current_object_kl.weight must be numeric"
+        ) from exc
+    if not math.isfinite(value) or value < 0.0:
+        raise ValueError(
+            "prefix_denoising current_object_kl.weight must be finite and >= 0"
+        )
+    return value
 
 
 def build_trainer_callbacks(

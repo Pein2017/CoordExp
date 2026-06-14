@@ -752,10 +752,12 @@ def _build_prefix_denoising_runtime_payload(
 ) -> dict[str, Any] | None:
     if not _prefix_denoising_enabled(prefix_denoising_cfg):
         return None
+    current_object_kl = getattr(prefix_denoising_cfg, "current_object_kl", None)
     return {
         "enabled": True,
         "packing_enabled": bool(packing_cfg.enabled),
         "packing_mode": str(packing_cfg.mode),
+        "kl_weight": float(getattr(current_object_kl, "weight", 0.0) or 0.0),
     }
 
 

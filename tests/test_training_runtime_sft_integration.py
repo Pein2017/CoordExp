@@ -276,13 +276,58 @@ def test_compose_trainer_class_uses_prefix_denoising_objective_when_enabled() ->
         sft_structural_close_cfg=None,
         recursive_detection_ce_cfg=None,
         teacher_forcing_objective_cfg=SimpleNamespace(enabled=True),
-        prefix_denoising_cfg=SimpleNamespace(enabled=True),
-        prefix_denoising_runtime={"packing_enabled": True},
+        prefix_denoising_cfg=SimpleNamespace(
+            enabled=True,
+            current_object_kl=SimpleNamespace(weight=0.0),
+        ),
+        prefix_denoising_runtime={"packing_enabled": False, "kl_weight": 0.0},
     )
 
     assert issubclass(trainer_cls, PrefixDenoisingObjectiveMixin)
     assert not issubclass(trainer_cls, TeacherForcingObjectiveMixin)
-    assert trainer_cls.prefix_denoising_packing_enabled is True
+    assert trainer_cls.prefix_denoising_packing_enabled is False
+
+
+def test_compose_trainer_class_rejects_prefix_denoising_packed_until_task7() -> None:
+    with pytest.raises(ValueError, match="Task 7 boundary rewriting"):
+        compose_trainer_class(
+            trainer_cls=object,
+            trainer_variant="",
+            instability_monitor_cfg=None,
+            token_type_cfg=None,
+            bbox_geo_cfg=None,
+            bbox_size_aux_cfg=None,
+            coord_soft_ce_w1_cfg=None,
+            sft_structural_close_cfg=None,
+            recursive_detection_ce_cfg=None,
+            teacher_forcing_objective_cfg=SimpleNamespace(enabled=True),
+            prefix_denoising_cfg=SimpleNamespace(
+                enabled=True,
+                current_object_kl=SimpleNamespace(weight=0.0),
+            ),
+            prefix_denoising_runtime={"packing_enabled": True, "kl_weight": 0.0},
+        )
+
+
+def test_compose_trainer_class_rejects_positive_prefix_kl_until_task6() -> None:
+    with pytest.raises(ValueError, match="Task 6 KL support"):
+        compose_trainer_class(
+            trainer_cls=object,
+            trainer_variant="",
+            instability_monitor_cfg=None,
+            token_type_cfg=None,
+            bbox_geo_cfg=None,
+            bbox_size_aux_cfg=None,
+            coord_soft_ce_w1_cfg=None,
+            sft_structural_close_cfg=None,
+            recursive_detection_ce_cfg=None,
+            teacher_forcing_objective_cfg=SimpleNamespace(enabled=True),
+            prefix_denoising_cfg=SimpleNamespace(
+                enabled=True,
+                current_object_kl=SimpleNamespace(weight=0.05),
+            ),
+            prefix_denoising_runtime={"packing_enabled": False, "kl_weight": 0.05},
+        )
 
 
 def test_compose_trainer_class_requires_prefix_runtime_when_enabled() -> None:
@@ -378,6 +423,115 @@ def test_prefix_denoising_objective_reads_stashed_extras_and_strips_sidecars() -
     assert "prefix_denoising_hybrid" not in model.calls[0]
     assert "prefix_denoising_segment_meta" not in model.calls[0]
     assert "sample_id" not in model.calls[0]
+
+
+def test_prefix_denoising_real_mro_refreshes_batch_extras_between_loss_calls() -> None:
+    class _Model:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+            self.training = True
+            self.config = SimpleNamespace(model_type="unit")
+
+        def __call__(self, **kwargs):
+            self.calls.append(dict(kwargs))
+            input_ids = kwargs["input_ids"]
+            vocab = 5
+            logits = torch.full(
+                (int(input_ids.shape[0]), int(input_ids.shape[1]), vocab),
+                -6.0,
+                dtype=torch.float32,
+            )
+            if int(input_ids[0, 1]) == 11:
+                logits[0, 1, 1] = 9.0
+                logits[0, 4, 3] = 9.0
+            else:
+                logits[0, 2, 2] = 9.0
+                logits[0, 4, 4] = 9.0
+            return SimpleNamespace(logits=logits)
+
+    class _BaseTrainer:
+        custom_metrics = None
+        model = None
+        args = SimpleNamespace(gradient_accumulation_steps=1)
+
+    trainer_cls = compose_trainer_class(
+        trainer_cls=_BaseTrainer,
+        trainer_variant="",
+        instability_monitor_cfg=None,
+        token_type_cfg=None,
+        bbox_geo_cfg=None,
+        bbox_size_aux_cfg=None,
+        coord_soft_ce_w1_cfg=None,
+        sft_structural_close_cfg=None,
+        recursive_detection_ce_cfg=None,
+        teacher_forcing_objective_cfg=SimpleNamespace(enabled=True),
+        prefix_denoising_cfg=SimpleNamespace(
+            enabled=True,
+            current_object_kl=SimpleNamespace(weight=0.0),
+        ),
+        prefix_denoising_runtime={"packing_enabled": False, "kl_weight": 0.0},
+    )
+    trainer = trainer_cls()
+    model = _Model()
+
+    first_loss = trainer.compute_loss(
+        model,
+        {
+            "input_ids": torch.tensor([[0, 11, 1, 0, 13, 3]], dtype=torch.long),
+            "attention_mask": torch.ones((1, 6), dtype=torch.long),
+            "labels": torch.tensor([[-100, -100, 1, -100, -100, 3]], dtype=torch.long),
+            "prefix_denoising_hybrid": (object(),),
+            "prefix_denoising_segment_meta": (
+                (
+                    {
+                        "batch_index": 0,
+                        "token_start": 0,
+                        "token_end": 3,
+                        "branch_id": "clean_full",
+                        "segment_id": "first:clean",
+                    },
+                    {
+                        "batch_index": 0,
+                        "token_start": 3,
+                        "token_end": 6,
+                        "branch_id": "noisy_full",
+                        "segment_id": "first:noisy",
+                    },
+                ),
+            ),
+        },
+    )
+    second_loss = trainer.compute_loss(
+        model,
+        {
+            "input_ids": torch.tensor([[0, 0, 12, 0, 0, 14]], dtype=torch.long),
+            "attention_mask": torch.ones((1, 6), dtype=torch.long),
+            "labels": torch.tensor([[-100, -100, -100, 2, -100, 4]], dtype=torch.long),
+            "prefix_denoising_hybrid": (object(),),
+            "prefix_denoising_segment_meta": (
+                (
+                    {
+                        "batch_index": 0,
+                        "token_start": 0,
+                        "token_end": 4,
+                        "branch_id": "clean_full",
+                        "segment_id": "second:clean",
+                    },
+                    {
+                        "batch_index": 0,
+                        "token_start": 4,
+                        "token_end": 6,
+                        "branch_id": "noisy_full",
+                        "segment_id": "second:noisy",
+                    },
+                ),
+            ),
+        },
+    )
+
+    assert len(model.calls) == 2
+    assert first_loss.item() < 0.001
+    assert second_loss.item() < 0.001
 
 
 def test_teacher_forcing_objective_mixin_computes_loss_through_runner() -> None:
