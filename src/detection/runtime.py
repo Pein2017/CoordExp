@@ -222,6 +222,12 @@ def assert_detection_runtime_supported(
     if support.teacher_forcing_target_ir_required:
         prefix_denoising = getattr(training_config, "prefix_denoising", None)
         prefix_denoising_enabled = bool(getattr(prefix_denoising, "enabled", False))
+        if prefix_denoising_enabled and bool(
+            training_config.training.get("use_logits_to_keep", False)
+        ):
+            raise ValueError(
+                "prefix_denoising requires training.use_logits_to_keep=false"
+            )
         if (
             bool(training_config.training.get("packing", False))
             and not prefix_denoising_enabled
@@ -242,6 +248,15 @@ def assert_detection_runtime_supported(
                 "latest teacher_forcing_target_ir requires "
                 "packing.static_packing=false; exact atom-position packing "
                 "mapping is not implemented yet"
+            )
+        if (
+            prefix_denoising_enabled
+            and training_config.packing.static_packing
+            and not bool(training_config.training.get("packing", False))
+        ):
+            raise ValueError(
+                "prefix_denoising requires packing.static_packing=true only when "
+                "training.packing=true"
             )
         if training_config.packing.padding_free_packed:
             raise ValueError(

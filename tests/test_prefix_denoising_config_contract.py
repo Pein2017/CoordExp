@@ -7,6 +7,8 @@ from types import SimpleNamespace
 import pytest
 
 from src.config.schema import DetectionTrainingConfig
+import src.detection.dataset as detection_dataset_mod
+from src.detection.dataset import DetectionTrainingDataset
 from src.detection.runtime import (
     assert_detection_runtime_supported,
     detection_mode,
@@ -149,10 +151,82 @@ def test_prefix_denoising_runtime_preflight_allows_static_training_packing() -> 
     )
 
 
+def test_prefix_denoising_runtime_preflight_rejects_use_logits_to_keep() -> None:
+    cfg = _load(_prefix_denoising_payload())
+
+    with pytest.raises(
+        ValueError,
+        match=r"prefix_denoising.*use_logits_to_keep",
+    ):
+        assert_detection_runtime_supported(
+            replace(cfg, training={**cfg.training, "use_logits_to_keep": True}),
+            encoded_sample_cache_cfg=SimpleNamespace(enabled=False),
+            tokenizer=None,
+        )
+
+
+def test_prefix_denoising_runtime_preflight_rejects_static_without_training_packing() -> None:
+    cfg = _load(_prefix_denoising_payload())
+
+    with pytest.raises(
+        ValueError,
+        match=r"prefix_denoising.*packing\.static_packing.*training\.packing",
+    ):
+        assert_detection_runtime_supported(
+            replace(cfg, training={**cfg.training, "packing": False}),
+            encoded_sample_cache_cfg=SimpleNamespace(enabled=False),
+            tokenizer=None,
+        )
+
+
 def test_prefix_denoising_detection_mode_is_distinct_from_random_order_sft() -> None:
     cfg = _load(_prefix_denoising_payload())
 
     assert detection_mode(cfg) == "prefix_denoising_sft"
+
+
+def test_prefix_denoising_dataset_materialization_fails_before_teacher_forcing_builder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dataset = object.__new__(DetectionTrainingDataset)
+    dataset.config = SimpleNamespace(
+        mode="prefix_denoising_sft",
+        teacher_forcing_profile="hard_sft",
+        detection_template_id="compact_full",
+        teacher_forcing_rollin_base_seed=17,
+    )
+    dataset.tokenizer = object()
+    dataset._epoch = 0
+    dataset.dataset_name = "unit"
+    dataset._base_index = lambda _index: 0
+    dataset._scene_for_base_index = lambda _base_idx: SimpleNamespace(images=())
+    dataset._teacher_forcing_input_prefix_token_id = lambda: None
+
+    monkeypatch.setattr(
+        detection_dataset_mod,
+        "normalized_detection_sample_from_scene",
+        lambda _scene: SimpleNamespace(object_ordering=SimpleNamespace()),
+    )
+    monkeypatch.setattr(
+        detection_dataset_mod,
+        "get_detection_template",
+        lambda _template_id: SimpleNamespace(),
+    )
+
+    def _unexpected_teacher_forcing_builder(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("random-permutation teacher-forcing builder was called")
+
+    monkeypatch.setattr(
+        detection_dataset_mod,
+        "build_teacher_forcing_target",
+        _unexpected_teacher_forcing_builder,
+    )
+
+    with pytest.raises(
+        (NotImplementedError, ValueError),
+        match=r"prefix_denoising_sft.*prefix-denoising.*target builder|materializer",
+    ):
+        dataset[0]
 
 
 def test_teacher_forcing_runtime_preflight_still_rejects_packing_without_prefix_denoising() -> None:

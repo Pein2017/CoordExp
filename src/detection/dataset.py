@@ -397,6 +397,12 @@ class DetectionTrainingDataset(Dataset):
         return len(_as_int_tuple(encoded.get("input_ids"), path="encoded.input_ids"))
 
     def __getitem__(self, index: int) -> dict[str, Any]:
+        if self.config.mode == "prefix_denoising_sft":
+            raise NotImplementedError(
+                "prefix_denoising_sft materialization requires the "
+                "prefix-denoising hybrid target builder/materializer; it is "
+                "not implemented or wired yet"
+            )
         base_idx = self._base_index(index)
         scene = self._scene_for_base_index(base_idx)
         normalized = normalized_detection_sample_from_scene(scene)
