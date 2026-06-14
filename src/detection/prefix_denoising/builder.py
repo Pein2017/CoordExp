@@ -69,14 +69,7 @@ def build_hybrid_prefix_denoising_sample(
         )
 
     image_reference = _resolve_single_image(row, image_root=image_root)
-    try:
-        raw = parse_raw_detection_row(row)
-    except Exception as exc:
-        return _skip_sample(
-            base_sample_id=base_sample_id,
-            hybrid_sample_id=hybrid_sample_id,
-            reason=f"raw_row_parse_failed:{type(exc).__name__}",
-        )
+    raw = parse_raw_detection_row(row)
 
     scene = detection_scene_from_raw_row(
         raw,
@@ -198,6 +191,7 @@ def build_hybrid_prefix_denoising_sample(
 
     coord_positions = _locate_clean_coord_positions(
         clean_labels=clean_labels,
+        clean_input_ids=clean_input_ids,
         clean_sample=clean_sample,
         rendered=clean_rendered,
         tokenizer=getattr(swift_template, "tokenizer", None),
@@ -207,6 +201,22 @@ def build_hybrid_prefix_denoising_sample(
             base_sample_id=base_sample_id,
             hybrid_sample_id=hybrid_sample_id,
             reason="coord_label_position_alignment_failed",
+        )
+
+    alignment_failure = _validate_clean_noisy_alignment(
+        clean_sample=clean_sample,
+        noisy_sample=noisy_sample,
+        clean_input_ids=clean_input_ids,
+        noisy_input_ids=noisy_input_ids,
+        clean_labels=clean_labels,
+        coord_positions=coord_positions,
+        tokenizer=getattr(swift_template, "tokenizer", None),
+    )
+    if alignment_failure is not None:
+        return _skip_sample(
+            base_sample_id=base_sample_id,
+            hybrid_sample_id=hybrid_sample_id,
+            reason=alignment_failure,
         )
 
     kl_sites = _build_kl_sites(
@@ -377,20 +387,34 @@ def _encoded_extras(encoded: Mapping[str, Any]) -> Mapping[str, object]:
 def _locate_clean_coord_positions(
     *,
     clean_labels: Sequence[int],
+    clean_input_ids: Sequence[int],
     clean_sample: NormalizedDetectionSample,
     rendered: RenderedDetectionSequence,
     tokenizer: Any,
 ) -> tuple[tuple[int, int, int, int], ...] | None:
     del rendered
+    supervised_positions = tuple(
+        index
+        for index, label in enumerate(clean_labels)
+        if index > 0 and label != -100
+    )
     cursor = 0
     object_positions: list[tuple[int, int, int, int]] = []
     for obj in clean_sample.objects:
         positions: list[int] = []
         for clean_bin in _bbox_tuple(obj.bbox_2d):
-            token_id = _coord_token_id(tokenizer, int(clean_bin))
+            try:
+                token_id = _coord_token_id(tokenizer, int(clean_bin))
+            except ValueError:
+                return None
             found = None
-            for index in range(cursor, len(clean_labels)):
-                if int(clean_labels[index]) == token_id:
+            for index in supervised_positions:
+                if index < cursor:
+                    continue
+                if (
+                    int(clean_labels[index]) == token_id
+                    and int(clean_input_ids[index]) == token_id
+                ):
                     found = index
                     break
             if found is None:
@@ -403,17 +427,101 @@ def _locate_clean_coord_positions(
 
 def _coord_token_id(tokenizer: Any, coord_bin: int) -> int:
     token = f"<|coord_{int(coord_bin)}|>"
-    convert = getattr(tokenizer, "convert_tokens_to_ids", None)
-    if callable(convert):
-        token_id = convert(token)
-        if token_id is not None:
-            return int(token_id)
+    if tokenizer is None:
+        raise ValueError("swift_template.tokenizer cannot resolve coord token ids")
     encode = getattr(tokenizer, "encode", None)
+    encode_id: int | None = None
     if callable(encode):
-        ids = encode(token)
-        if ids:
-            return int(ids[0])
+        try:
+            ids = encode(token, add_special_tokens=False)
+        except TypeError:
+            ids = encode(token)
+        if hasattr(ids, "tolist"):
+            ids = ids.tolist()
+        if not isinstance(ids, Sequence) or isinstance(ids, (str, bytes, bytearray)):
+            raise ValueError(f"coord token {token!r} did not encode to a sequence")
+        if len(ids) != 1:
+            raise ValueError(f"coord token {token!r} must encode to exactly one id")
+        encode_id = int(ids[0])
+        _reject_unknown_coord_token_id(tokenizer, encode_id, token=token)
+
+    convert = getattr(tokenizer, "convert_tokens_to_ids", None)
+    convert_id: int | None = None
+    if callable(convert):
+        raw_convert_id = convert(token)
+        if raw_convert_id is None:
+            raise ValueError(f"coord token {token!r} did not convert to an id")
+        convert_id = int(raw_convert_id)
+        _reject_unknown_coord_token_id(tokenizer, convert_id, token=token)
+
+    if encode_id is not None and convert_id is not None and encode_id != convert_id:
+        raise ValueError(
+            f"coord token {token!r} encode id {encode_id} does not match "
+            f"convert id {convert_id}"
+        )
+    if encode_id is not None:
+        return encode_id
+    if convert_id is not None:
+        return convert_id
     raise ValueError("swift_template.tokenizer cannot resolve coord token ids")
+
+
+def _reject_unknown_coord_token_id(tokenizer: Any, token_id: int, *, token: str) -> None:
+    unk_token_id = getattr(tokenizer, "unk_token_id", None)
+    if unk_token_id is not None and int(token_id) == int(unk_token_id):
+        raise ValueError(f"coord token {token!r} resolved to unk_token_id")
+
+
+def _validate_clean_noisy_alignment(
+    *,
+    clean_sample: NormalizedDetectionSample,
+    noisy_sample: NormalizedDetectionSample,
+    clean_input_ids: Sequence[int],
+    noisy_input_ids: Sequence[int],
+    clean_labels: Sequence[int],
+    coord_positions: Sequence[Sequence[int]],
+    tokenizer: Any,
+) -> str | None:
+    expected_coord_positions = {
+        int(position)
+        for object_positions in coord_positions
+        for position in object_positions
+    }
+    diff_positions = {
+        index
+        for index, (clean_id, noisy_id) in enumerate(
+            zip(clean_input_ids, noisy_input_ids, strict=True)
+        )
+        if int(clean_id) != int(noisy_id)
+    }
+    if diff_positions - expected_coord_positions:
+        return "clean_noisy_noncoord_alignment_failed"
+    if diff_positions != expected_coord_positions:
+        return "clean_noisy_coord_alignment_failed"
+
+    for object_index, (clean_obj, noisy_obj) in enumerate(
+        zip(clean_sample.objects, noisy_sample.objects, strict=True)
+    ):
+        for slot_idx, position in enumerate(coord_positions[object_index]):
+            try:
+                clean_token_id = _coord_token_id(
+                    tokenizer, int(_bbox_tuple(clean_obj.bbox_2d)[slot_idx])
+                )
+                noisy_token_id = _coord_token_id(
+                    tokenizer, int(_bbox_tuple(noisy_obj.bbox_2d)[slot_idx])
+                )
+            except ValueError:
+                return "coord_label_position_alignment_failed"
+            position_i = int(position)
+            if int(clean_labels[position_i]) != clean_token_id:
+                return "clean_noisy_coord_alignment_failed"
+            if int(clean_input_ids[position_i]) != clean_token_id:
+                return "clean_noisy_coord_alignment_failed"
+            if int(noisy_input_ids[position_i]) != noisy_token_id:
+                return "clean_noisy_coord_alignment_failed"
+            if clean_token_id == noisy_token_id:
+                return "clean_noisy_coord_alignment_failed"
+    return None
 
 
 def _build_kl_sites(

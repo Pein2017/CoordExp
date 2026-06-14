@@ -5,9 +5,15 @@ import re
 from pathlib import Path
 from typing import Any, Mapping
 
+import pytest
+
 from src.config.schema import PrefixDenoisingConfig
 from src.detection.prefix_denoising.builder import (
     build_hybrid_prefix_denoising_sample,
+)
+from src.detection.prefix_denoising.dataset import (
+    PrefixDenoisingTrainingDataset,
+    build_prefix_denoising_eligibility_index,
 )
 
 
@@ -18,12 +24,12 @@ class FakeTokenizer:
     def encode(self, text: str, *args: object, **kwargs: object) -> list[int]:
         del args, kwargs
         if match := _COORD_RE.fullmatch(text):
-            return [int(match.group(1))]
+            return self._coord_ids(int(match.group(1)))
         ids: list[int] = []
         cursor = 0
         for match in _COORD_RE.finditer(text):
             ids.extend(10_000 + ord(ch) for ch in text[cursor : match.start()])
-            ids.append(int(match.group(1)))
+            ids.extend(self._coord_ids(int(match.group(1))))
             cursor = match.end()
         ids.extend(10_000 + ord(ch) for ch in text[cursor:])
         return ids
@@ -31,12 +37,24 @@ class FakeTokenizer:
     def convert_tokens_to_ids(self, token: str) -> int:
         return self.encode(token)[0]
 
+    def _coord_ids(self, coord_bin: int) -> list[int]:
+        return [int(coord_bin)]
+
+
+class MultiTokenCoordTokenizer(FakeTokenizer):
+    def _coord_ids(self, coord_bin: int) -> list[int]:
+        return [int(coord_bin), int(coord_bin) + 1_000]
+
 
 class FakeTemplate:
-    def __init__(self) -> None:
-        self.tokenizer = FakeTokenizer()
+    tokenizer_cls = FakeTokenizer
 
-    def encode(self, payload: Mapping[str, Any], *args: object, **kwargs: object) -> dict[str, Any]:
+    def __init__(self) -> None:
+        self.tokenizer = self.tokenizer_cls()
+
+    def encode(
+        self, payload: Mapping[str, Any], *args: object, **kwargs: object
+    ) -> dict[str, Any]:
         del args, kwargs
         content = str(payload["messages"][-1]["content"])
         input_ids = self.tokenizer.encode(content)
@@ -45,6 +63,25 @@ class FakeTemplate:
             "labels": list(input_ids),
             "attention_mask": [1 for _ in input_ids],
         }
+
+
+class MultiTokenCoordTemplate(FakeTemplate):
+    tokenizer_cls = MultiTokenCoordTokenizer
+
+
+class NoisyNonCoordDriftTemplate(FakeTemplate):
+    def encode(
+        self, payload: Mapping[str, Any], *args: object, **kwargs: object
+    ) -> dict[str, Any]:
+        encoded = super().encode(payload, *args, **kwargs)
+        content = str(payload["messages"][-1]["content"])
+        if "<|coord_100|>" not in content:
+            for index, token_id in enumerate(encoded["input_ids"]):
+                if int(token_id) >= 10_000:
+                    encoded["input_ids"][index] = int(token_id) + 1
+                    encoded["labels"][index] = int(token_id) + 1
+                    break
+        return encoded
 
 
 def _row(*, objects: list[dict[str, object]] | None = None) -> dict[str, object]:
@@ -87,7 +124,11 @@ def test_hybrid_builder_emits_two_segments_and_clean_labels(tmp_path: Path) -> N
     cfg = PrefixDenoisingConfig.from_mapping(
         {
             "enabled": True,
-            "current_object_kl": {"weight": 0.0, "window_radius": 8, "num_objects_per_image": 1},
+            "current_object_kl": {
+                "weight": 0.0,
+                "window_radius": 8,
+                "num_objects_per_image": 1,
+            },
         }
     )
 
@@ -111,6 +152,19 @@ def test_hybrid_builder_emits_two_segments_and_clean_labels(tmp_path: Path) -> N
     assert sample.noisy_full.branch_id == "noisy_full"
     assert sample.clean_full.labels == sample.noisy_full.labels
     assert len(sample.clean_full.input_ids) == len(sample.noisy_full.input_ids)
+    diff_positions = {
+        index
+        for index, (clean_id, noisy_id) in enumerate(
+            zip(sample.clean_full.input_ids, sample.noisy_full.input_ids, strict=True)
+        )
+        if clean_id != noisy_id
+    }
+    coord_positions = {
+        index
+        for index, label in enumerate(sample.clean_full.labels)
+        if 0 <= int(label) <= 999
+    }
+    assert diff_positions == coord_positions
     assert sample.kl_sites == ()
 
 
@@ -142,12 +196,31 @@ def test_hybrid_builder_builds_kl_sites_when_weight_positive(tmp_path: Path) -> 
 
     assert sample.ok is True
     assert len(sample.kl_sites) == 4
-    assert tuple(site.coord_slot for site in sample.kl_sites) == ("x1", "y1", "x2", "y2")
+    assert tuple(site.coord_slot for site in sample.kl_sites) == (
+        "x1",
+        "y1",
+        "x2",
+        "y2",
+    )
     for site in sample.kl_sites:
         assert site.clean_gt_bin in site.support_bins
+        assert sample.clean_full is not None
+        assert sample.noisy_full is not None
+        assert sample.clean_full.labels[site.clean_label_position] == site.clean_gt_bin
+        assert (
+            sample.clean_full.input_ids[site.clean_label_position]
+            == site.clean_gt_bin
+        )
+        assert sample.noisy_full.labels[site.noisy_label_position] == site.clean_gt_bin
+        assert (
+            sample.noisy_full.input_ids[site.noisy_label_position]
+            != site.clean_gt_bin
+        )
 
 
-def test_hybrid_builder_excludes_zero_object_rows_with_counter_reason(tmp_path: Path) -> None:
+def test_hybrid_builder_excludes_zero_object_rows_with_counter_reason(
+    tmp_path: Path,
+) -> None:
     _touch_image(tmp_path)
     cfg = PrefixDenoisingConfig.from_mapping({"enabled": True})
 
@@ -167,3 +240,110 @@ def test_hybrid_builder_excludes_zero_object_rows_with_counter_reason(tmp_path: 
     assert sample.ok is False
     assert sample.skip_reason == "zero_object_hybrid_sample"
     assert sample.total_length == 0
+
+
+def test_dataset_construction_raises_on_malformed_row(tmp_path: Path) -> None:
+    _touch_image(tmp_path)
+    malformed = _row()
+    malformed["objects"] = [
+        {
+            "desc": "bad box",
+            "bbox_2d": [100, 100, 200],
+            "category_id": 1,
+            "category_name": "bad box",
+            "coco_ann_id": 33,
+            "object_id": "bad-1",
+        }
+    ]
+
+    with pytest.raises(ValueError, match="bbox_2d|coordinate"):
+        PrefixDenoisingTrainingDataset(
+            [_row(), malformed],
+            swift_template=FakeTemplate(),
+            image_root=tmp_path,
+            user_prompt="find objects",
+            system_prompt=None,
+            prefix_denoising=PrefixDenoisingConfig.from_mapping({"enabled": True}),
+            max_length=12000,
+            dataset_name="unit",
+            seed=17,
+        )
+
+
+def test_noising_infeasible_rows_are_counted_as_sample_policy_skips(
+    tmp_path: Path,
+) -> None:
+    _touch_image(tmp_path)
+    cfg = PrefixDenoisingConfig.from_mapping(
+        {
+            "enabled": True,
+            "noise": {"center_shift_frac": 0.0, "uniform_scale_range": [1.0, 1.0]},
+        }
+    )
+    tiny_box_row = _row(
+        objects=[
+            {
+                "desc": "tiny box",
+                "bbox_2d": [0, 0, 1, 1],
+                "category_id": 1,
+                "category_name": "tiny box",
+                "coco_ann_id": 44,
+                "object_id": "tiny-1",
+            }
+        ]
+    )
+
+    eligibility = build_prefix_denoising_eligibility_index(
+        [tiny_box_row],
+        swift_template=FakeTemplate(),
+        image_root=tmp_path,
+        user_prompt="find objects",
+        system_prompt=None,
+        prefix_denoising=cfg,
+        max_length=12000,
+        dataset_name="unit",
+        seed=17,
+    )
+
+    assert eligibility["eligible_indices"] == ()
+    assert eligibility["skip_counters"] == {"noise_infeasible_4coord_changed": 1}
+
+
+def test_multitoken_coord_tokenizer_returns_alignment_skip(tmp_path: Path) -> None:
+    _touch_image(tmp_path)
+
+    sample = build_hybrid_prefix_denoising_sample(
+        _row(),
+        base_sample_id="unit-0",
+        image_root=tmp_path,
+        swift_template=MultiTokenCoordTemplate(),
+        user_prompt="find objects",
+        system_prompt=None,
+        prefix_denoising=PrefixDenoisingConfig.from_mapping({"enabled": True}),
+        epoch=0,
+        rng=random.Random(5),
+        max_length=12000,
+    )
+
+    assert sample.ok is False
+    assert sample.skip_reason == "coord_label_position_alignment_failed"
+
+
+def test_noncoord_noisy_input_drift_is_rejected(tmp_path: Path) -> None:
+    _touch_image(tmp_path)
+
+    sample = build_hybrid_prefix_denoising_sample(
+        _row(),
+        base_sample_id="unit-0",
+        image_root=tmp_path,
+        swift_template=NoisyNonCoordDriftTemplate(),
+        user_prompt="find objects",
+        system_prompt=None,
+        prefix_denoising=PrefixDenoisingConfig.from_mapping({"enabled": True}),
+        epoch=0,
+        rng=random.Random(5),
+        max_length=12000,
+    )
+
+    assert sample.ok is False
+    assert sample.skip_reason == "clean_noisy_noncoord_alignment_failed"

@@ -170,22 +170,18 @@ def build_prefix_denoising_eligibility_index(
     static_lengths: dict[int, int] = {}
     skip_counters: Counter[str] = Counter()
     for base_idx, row in enumerate(rows):
-        try:
-            sample = build_hybrid_prefix_denoising_sample(
-                row,
-                base_sample_id=_make_base_sample_id(dataset_name, base_idx),
-                image_root=image_root,
-                swift_template=swift_template,
-                user_prompt=user_prompt,
-                system_prompt=system_prompt,
-                prefix_denoising=prefix_denoising,
-                epoch=0,
-                rng=random.Random(_mix_seed(seed, 0, base_idx)),
-                max_length=max_length,
-            )
-        except Exception as exc:
-            skip_counters[f"exception:{type(exc).__name__}"] += 1
-            continue
+        sample = build_hybrid_prefix_denoising_sample(
+            row,
+            base_sample_id=_make_base_sample_id(dataset_name, base_idx),
+            image_root=image_root,
+            swift_template=swift_template,
+            user_prompt=user_prompt,
+            system_prompt=system_prompt,
+            prefix_denoising=prefix_denoising,
+            epoch=0,
+            rng=random.Random(_mix_seed(seed, 0, base_idx)),
+            max_length=max_length,
+        )
         if not sample.ok:
             skip_counters[str(sample.skip_reason or "unknown_skip_reason")] += 1
             continue
