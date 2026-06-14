@@ -2908,6 +2908,7 @@ _DETECTION_RUNTIME_SECTIONS: set[str] = {
 _DETECTION_OPTIONAL_SECTIONS: set[str] = {
     "debug",
     "experiment",
+    "prefix_denoising",
     "global_max_length",
 }
 
@@ -3025,6 +3026,24 @@ def _detection_validate_bool(value: bool, *, path: str) -> None:
         raise TypeError(f"{path} must be a boolean")
 
 
+def _detection_validate_nonnegative_finite_float(value: Any, *, path: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(f"{path} must be numeric, not bool")
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError(f"{path} must be finite")
+    if result < 0.0:
+        raise ValueError(f"{path} must be >= 0")
+    return result
+
+
+def _detection_validate_positive_finite_float(value: Any, *, path: str) -> float:
+    result = _detection_validate_nonnegative_finite_float(value, path=path)
+    if result <= 0.0:
+        raise ValueError(f"{path} must be > 0")
+    return result
+
+
 def _detection_validate_runtime_mapping(
     value: Any, *, path: str
 ) -> dict[str, Any]:
@@ -3084,12 +3103,13 @@ def _detection_validate_packing_runtime_contract(
     objective: "DetectionObjectiveConfig | TeacherForcingObjectiveConfig",
     packing: "DetectionPackingConfig",
     training: Mapping[str, Any],
+    prefix_denoising: "PrefixDenoisingConfig",
 ) -> None:
     training_packing = _detection_runtime_bool(training, "packing")
     training_eval_packing = _detection_runtime_bool(training, "eval_packing")
 
     if getattr(objective, "id", None) == TEACHER_FORCING_OBJECTIVE_ID:
-        if training_packing:
+        if training_packing and not prefix_denoising.enabled:
             raise ValueError(
                 "objective.id=teacher_forcing currently rejects training.packing=true; "
                 "exact atom-position packing mapping is not implemented"
@@ -3100,11 +3120,16 @@ def _detection_validate_packing_runtime_contract(
                 "training.eval_packing=true; exact atom-position packing mapping "
                 "is not implemented"
             )
-        if packing.static_packing:
+        if packing.static_packing and not prefix_denoising.enabled:
             raise ValueError(
                 "objective.id=teacher_forcing currently rejects "
                 "packing.static_packing=true; exact atom-position packing mapping "
                 "is not implemented"
+            )
+        if packing.static_packing and not training_packing:
+            raise ValueError(
+                "packing.static_packing=true requires training.packing=true "
+                "for prefix_denoising detection runtime materialization."
             )
         if packing.padding_free_packed:
             raise ValueError(
@@ -3169,7 +3194,17 @@ def _detection_validate_deepspeed_mapping(value: Any) -> dict[str, Any]:
 def _detection_validate_order_matches_objective(
     data: DetectionDataConfig,
     objective: DetectionObjectiveConfig | TeacherForcingObjectiveConfig,
+    prefix_denoising: "PrefixDenoisingConfig",
 ) -> None:
+    if prefix_denoising.enabled:
+        if data.object_ordering != "sorted":
+            raise ValueError(
+                "prefix_denoising requires data.object_ordering='sorted' "
+                "for sorted clean-GT prefix construction, "
+                f"got {data.object_ordering!r}"
+            )
+        return
+
     if getattr(objective, "id", None) == TEACHER_FORCING_OBJECTIVE_ID:
         required_order = objective.target_ir.rollin_policy.name
         if data.object_ordering != required_order:
@@ -3213,6 +3248,141 @@ def _detection_validate_prefix_rollin_contract(
     if experiment is None:
         raise ValueError(
             f"experiment.surface is required for objective.variant={objective.variant}"
+        )
+
+
+def _detection_prefix_denoising_raw_enabled(payload: Mapping[str, Any]) -> bool:
+    prefix_raw = payload.get("prefix_denoising")
+    if not isinstance(prefix_raw, Mapping):
+        return False
+    return prefix_raw.get("enabled") is True
+
+
+def _detection_validate_prefix_denoising_raw_payload(
+    payload: Mapping[str, Any],
+) -> None:
+    if not _detection_prefix_denoising_raw_enabled(payload):
+        return
+    objective_raw = payload.get("objective")
+    if not isinstance(objective_raw, Mapping):
+        return
+
+    if "coord_soft_ce" in objective_raw:
+        raise ValueError(
+            "prefix_denoising requires hard clean-label CE and does not support "
+            "objective.coord_soft_ce SoftCE semantics."
+        )
+
+    target_ir_raw = objective_raw.get("target_ir")
+    if isinstance(target_ir_raw, Mapping) and "rollin_policy" in target_ir_raw:
+        raise ValueError(
+            "prefix_denoising owns sorted clean-GT ordering; remove "
+            "objective.target_ir.rollin_policy."
+        )
+
+    modules_raw = objective_raw.get("modules")
+    if isinstance(modules_raw, Mapping):
+        enabled_modules: list[str] = []
+        for module_name in (
+            "token_type_mass",
+            "conditional_valid_set_likelihood",
+            "continuation_margin",
+        ):
+            module_raw = modules_raw.get(module_name)
+            if isinstance(module_raw, Mapping) and module_raw.get("enabled") is True:
+                enabled_modules.append(f"objective.modules.{module_name}.enabled")
+        coverage_raw = modules_raw.get("within_valid_coverage")
+        if isinstance(coverage_raw, Mapping):
+            if coverage_raw.get("enabled") is True:
+                enabled_modules.append(
+                    "objective.modules.within_valid_coverage.enabled"
+                )
+            coverage_strength = coverage_raw.get("coverage_strength", 0.0)
+            if (
+                isinstance(coverage_strength, (int, float))
+                and not isinstance(coverage_strength, bool)
+                and float(coverage_strength) != 0.0
+            ):
+                enabled_modules.append(
+                    "objective.modules.within_valid_coverage.coverage_strength"
+                )
+        if enabled_modules:
+            raise ValueError(
+                "prefix_denoising requires all teacher-forcing modules disabled; "
+                f"enabled modules: {enabled_modules}"
+            )
+
+
+def _detection_prefix_denoising_enabled_modules(
+    modules: "TeacherForcingModulesConfig",
+) -> list[str]:
+    coverage = modules.within_valid_coverage
+    enabled: list[str] = []
+    if modules.token_type_mass.enabled:
+        enabled.append("objective.modules.token_type_mass.enabled")
+    if modules.conditional_valid_set_likelihood.enabled:
+        enabled.append("objective.modules.conditional_valid_set_likelihood.enabled")
+    if coverage.enabled:
+        enabled.append("objective.modules.within_valid_coverage.enabled")
+    if float(coverage.coverage_strength) != 0.0:
+        enabled.append("objective.modules.within_valid_coverage.coverage_strength")
+    if modules.continuation_margin.enabled:
+        enabled.append("objective.modules.continuation_margin.enabled")
+    return enabled
+
+
+def _detection_validate_prefix_denoising_contract(
+    *,
+    prefix_denoising: "PrefixDenoisingConfig",
+    detection_template: "DetectionTemplateConfig",
+    data: "DetectionDataConfig",
+    objective: "DetectionObjectiveConfig | TeacherForcingObjectiveConfig",
+    packing: "DetectionPackingConfig",
+    training: Mapping[str, Any],
+) -> None:
+    if not prefix_denoising.enabled:
+        return
+
+    if detection_template.id != "compact_full":
+        raise ValueError("prefix_denoising requires detection_template.id=compact_full")
+    if detection_template.coordinate_surface != "coord_token":
+        raise ValueError(
+            "prefix_denoising requires detection_template.coordinate_surface=coord_token"
+        )
+    if detection_template.bbox_format != "xyxy":
+        raise ValueError("prefix_denoising requires detection_template.bbox_format=xyxy")
+    if data.object_ordering != "sorted":
+        raise ValueError(
+            "prefix_denoising requires data.object_ordering='sorted' "
+            "for sorted clean-GT prefix construction"
+        )
+    if (
+        getattr(objective, "id", None) != TEACHER_FORCING_OBJECTIVE_ID
+        or getattr(objective, "profile", None) != "hard_sft"
+    ):
+        raise ValueError(
+            "prefix_denoising requires hard clean-label CE via "
+            "objective.id=teacher_forcing and objective.profile=hard_sft."
+        )
+
+    enabled_modules = _detection_prefix_denoising_enabled_modules(objective.modules)
+    if enabled_modules:
+        raise ValueError(
+            "prefix_denoising requires all teacher-forcing modules disabled; "
+            f"enabled modules: {enabled_modules}"
+        )
+
+    encoded_cache = training.get("encoded_sample_cache")
+    if isinstance(encoded_cache, Mapping) and encoded_cache.get("enabled") is True:
+        raise ValueError(
+            "prefix_denoising requires training.encoded_sample_cache.enabled=false"
+        )
+    if _detection_runtime_bool(training, "use_logits_to_keep"):
+        raise ValueError("prefix_denoising requires training.use_logits_to_keep=false")
+    if packing.padding_free_packed:
+        raise ValueError(
+            "prefix_denoising defers explicit packing.padding_free_packed support; "
+            "set packing.padding_free_packed=false"
         )
 
 
@@ -4209,6 +4379,119 @@ class DetectionPackingConfig:
 
 
 @dataclass(frozen=True)
+class PrefixDenoisingNoiseConfig:
+    center_shift_frac: float = 0.08
+    uniform_scale_range: tuple[float, float] = (0.92, 1.08)
+
+    def __post_init__(self) -> None:
+        center_shift_frac = _detection_validate_nonnegative_finite_float(
+            self.center_shift_frac,
+            path="prefix_denoising.noise.center_shift_frac",
+        )
+        value = self.uniform_scale_range
+        if isinstance(value, (str, bytes, bytearray)) or not isinstance(
+            value, Sequence
+        ):
+            raise TypeError(
+                "prefix_denoising.noise.uniform_scale_range must be a two-number sequence"
+            )
+        if len(value) != 2:
+            raise ValueError(
+                "prefix_denoising.noise.uniform_scale_range must contain exactly two values"
+            )
+        low = _detection_validate_positive_finite_float(
+            value[0],
+            path="prefix_denoising.noise.uniform_scale_range[0]",
+        )
+        high = _detection_validate_positive_finite_float(
+            value[1],
+            path="prefix_denoising.noise.uniform_scale_range[1]",
+        )
+        if low > high:
+            raise ValueError(
+                "prefix_denoising.noise.uniform_scale_range must be ordered [low, high]"
+            )
+        object.__setattr__(self, "center_shift_frac", center_shift_frac)
+        object.__setattr__(self, "uniform_scale_range", (low, high))
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "PrefixDenoisingNoiseConfig":
+        if payload is None:
+            return cls()
+        return parse_dataclass_strict(cls, payload, path="prefix_denoising.noise")
+
+
+@dataclass(frozen=True)
+class PrefixDenoisingCurrentObjectKLConfig:
+    weight: float = 0.05
+    window_radius: int = 8
+    num_objects_per_image: int = 1
+
+    def __post_init__(self) -> None:
+        weight = _detection_validate_nonnegative_finite_float(
+            self.weight,
+            path="prefix_denoising.current_object_kl.weight",
+        )
+        for field_name in ("window_radius", "num_objects_per_image"):
+            value = getattr(self, field_name)
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise TypeError(
+                    f"prefix_denoising.current_object_kl.{field_name} must be an integer, not bool"
+                )
+            if value <= 0:
+                raise ValueError(
+                    f"prefix_denoising.current_object_kl.{field_name} must be > 0"
+                )
+        object.__setattr__(self, "weight", weight)
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "PrefixDenoisingCurrentObjectKLConfig":
+        if payload is None:
+            return cls()
+        return parse_dataclass_strict(
+            cls,
+            payload,
+            path="prefix_denoising.current_object_kl",
+        )
+
+
+@dataclass(frozen=True)
+class PrefixDenoisingConfig:
+    enabled: bool = False
+    noise: PrefixDenoisingNoiseConfig = field(default_factory=PrefixDenoisingNoiseConfig)
+    current_object_kl: PrefixDenoisingCurrentObjectKLConfig = field(
+        default_factory=PrefixDenoisingCurrentObjectKLConfig
+    )
+
+    def __post_init__(self) -> None:
+        _detection_validate_bool(self.enabled, path="prefix_denoising.enabled")
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "PrefixDenoisingConfig":
+        if payload is None:
+            return cls()
+        if not isinstance(payload, Mapping):
+            raise TypeError("prefix_denoising must be a mapping")
+        data: MutableMapping[str, Any] = dict(payload)
+        noise = PrefixDenoisingNoiseConfig.from_mapping(data.pop("noise", None))
+        current_object_kl = PrefixDenoisingCurrentObjectKLConfig.from_mapping(
+            data.pop("current_object_kl", None)
+        )
+        enabled = data.pop("enabled", False)
+        if data:
+            unknown = [
+                f"prefix_denoising.{str(k)}"
+                for k in sorted(data.keys(), key=lambda x: str(x))
+            ]
+            raise ValueError(f"Unknown prefix_denoising keys: {unknown}")
+        return cls(
+            enabled=enabled,
+            noise=noise,
+            current_object_kl=current_object_kl,
+        )
+
+
+@dataclass(frozen=True)
 class DetectionEvaluationConfig:
     expected_template: Literal["stage1_json_pretty", "compact_full"]
     parser_mode: Literal["strict_expected", "diagnostic_salvage"] = "strict_expected"
@@ -4262,6 +4545,9 @@ class DetectionTrainingConfig:
     packing: DetectionPackingConfig
     evaluation: DetectionEvaluationConfig
     validation: DetectionValidationConfig
+    prefix_denoising: PrefixDenoisingConfig = field(
+        default_factory=PrefixDenoisingConfig
+    )
     experiment: Optional[DetectionExperimentConfig] = None
     debug: DebugConfig = field(default_factory=DebugConfig)
     model: Mapping[str, Any] = field(default_factory=dict)
@@ -4329,6 +4615,10 @@ class DetectionTrainingConfig:
             ):
                 raise ValueError("global_max_length must be a positive integer")
 
+        _detection_validate_prefix_denoising_raw_payload(payload)
+        prefix_denoising = PrefixDenoisingConfig.from_mapping(
+            payload.get("prefix_denoising")
+        )
         detection_template = DetectionTemplateConfig.from_mapping(
             payload["detection_template"]
         )
@@ -4340,7 +4630,11 @@ class DetectionTrainingConfig:
             )
         data_config = DetectionDataConfig.from_mapping(payload["data"])
         objective = DetectionObjectiveConfig.from_mapping(payload["objective"])
-        _detection_validate_order_matches_objective(data_config, objective)
+        _detection_validate_order_matches_objective(
+            data_config,
+            objective,
+            prefix_denoising,
+        )
         if (
             getattr(objective, "id", None) != TEACHER_FORCING_OBJECTIVE_ID
             and objective.variant == "prefix_rollin_et_rmp_ce"
@@ -4364,10 +4658,19 @@ class DetectionTrainingConfig:
         _detection_validate_token_rows(detection_template, token_rows)
         packing = DetectionPackingConfig.from_mapping(payload["packing"])
         training = _detection_validate_training_mapping(payload.get("training"))
+        _detection_validate_prefix_denoising_contract(
+            prefix_denoising=prefix_denoising,
+            detection_template=detection_template,
+            data=data_config,
+            objective=objective,
+            packing=packing,
+            training=training,
+        )
         _detection_validate_packing_runtime_contract(
             objective=objective,
             packing=packing,
             training=training,
+            prefix_denoising=prefix_denoising,
         )
 
         return cls(
@@ -4377,6 +4680,7 @@ class DetectionTrainingConfig:
             token_rows=token_rows,
             objective=objective,
             packing=packing,
+            prefix_denoising=prefix_denoising,
             evaluation=evaluation,
             validation=DetectionValidationConfig.from_mapping(payload["validation"]),
             experiment=experiment,
