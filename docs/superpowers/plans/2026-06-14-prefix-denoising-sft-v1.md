@@ -68,9 +68,10 @@ No review subagents were launched while writing this plan because the user said 
 | `src/trainers/metrics/mixins.py` | Re-export `PrefixDenoisingObjectiveMixin`. |
 | `src/bootstrap/trainer_setup.py` | Compose `PrefixDenoisingObjectiveMixin` through the existing trainer composition owner. |
 | `src/sft.py` | Parse runtime config, route datasets/collators/trainers, add runtime payload, add static packing fingerprint fields. |
-| `configs/stage1/detection_teacher_forcing/smoke/prefix_denoising_tiny_ce_only.yaml` | Tiny packed CE-only launch-health config. |
-| `configs/stage1/detection_teacher_forcing/smoke/prefix_denoising_tiny_kl005.yaml` | Tiny packed CE+KL launch-health config. |
-| `configs/stage1/detection_teacher_forcing/prod/prefix_denoising_2b_k1_kl005.yaml` | Production-intent config starting from coord 2B full checkpoint. |
+| `configs/stage1/detection_teacher_forcing/prod/compact_full_prefix_denoising_ce_only.yaml` | Production-intent packed CE-only prefix-denoising ablation. |
+| `configs/stage1/detection_teacher_forcing/prod/compact_full_prefix_denoising_kl_w0p05.yaml` | Production-intent packed CE+KL prefix-denoising run. |
+| `configs/stage1/detection_teacher_forcing/smoke/compact_full_prefix_denoising_ce_only_tiny.yaml` | Tiny packed CE-only launch-health config. |
+| `configs/stage1/detection_teacher_forcing/smoke/compact_full_prefix_denoising_kl_w0p05_tiny.yaml` | Tiny packed CE+KL launch-health config. |
 | `configs/stage1/detection_teacher_forcing/README.md` | Route note for prefix-denoising config leaves and launch-health ladder. |
 | `docs/training/METRICS.md` | Register prefix-denoising metric families after implementation. |
 | `tests/test_prefix_denoising_config_contract.py` | Schema/runtime contract tests. |
@@ -196,7 +197,10 @@ from src.config.schema import DetectionTrainingConfig
 
 def _base_prefix_payload() -> dict[str, object]:
     return {
-        "model": {"model": "model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp"},
+        "model": {
+            "model": "/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp",
+            "model_type": "qwen3_vl",
+        },
         "template": {
             "template": "qwen3_vl",
             "truncation_strategy": "raise",
@@ -2536,38 +2540,54 @@ git commit -m "feat: add prefix denoising hybrid packing contract"
 ## Task 8: Config Leaves And Docs
 
 **Files:**
-- Create: `configs/stage1/detection_teacher_forcing/smoke/prefix_denoising_tiny_ce_only.yaml`
-- Create: `configs/stage1/detection_teacher_forcing/smoke/prefix_denoising_tiny_kl005.yaml`
-- Create: `configs/stage1/detection_teacher_forcing/prod/prefix_denoising_2b_k1_kl005.yaml`
+- Create: `configs/stage1/detection_teacher_forcing/prod/compact_full_prefix_denoising_ce_only.yaml`
+- Create: `configs/stage1/detection_teacher_forcing/prod/compact_full_prefix_denoising_kl_w0p05.yaml`
+- Create: `configs/stage1/detection_teacher_forcing/smoke/compact_full_prefix_denoising_ce_only_tiny.yaml`
+- Create: `configs/stage1/detection_teacher_forcing/smoke/compact_full_prefix_denoising_kl_w0p05_tiny.yaml`
 - Modify: `configs/stage1/detection_teacher_forcing/README.md`
 - Modify: `docs/training/METRICS.md`
 - Modify: `docs/catalog.yaml`
 - Modify: `progress/index.yaml`
 
-- [ ] **Step 1: Add CE-only tiny config**
+- [ ] **Step 1: Add CE-only production config**
 
-Create `configs/stage1/detection_teacher_forcing/smoke/prefix_denoising_tiny_ce_only.yaml` by copying the canonical Stage-1 compact detection teacher-forcing shape, then make these required changes:
+Create `configs/stage1/detection_teacher_forcing/prod/compact_full_prefix_denoising_ce_only.yaml` by extending `configs/stage1/detection_teacher_forcing/prod/compact_full_support2.yaml`, then make these required changes:
 
 ```yaml
+model:
+  model: /data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+  model_type: qwen3_vl
+
 training:
-  run_name: smoke-prefix-denoising-hard-ce-only-tiny
-  artifact_subdir: prefix_denoising_hard_ce_only_tiny
-  num_train_epochs: 1
-  max_steps: 2
+  artifact_subdir: compact_full_prefix_denoising_ce_only_bsz1x128_4epoch
+  run_name: compact-full-prefix-denoising-ce-only-bsz1x128-4epoch
   per_device_train_batch_size: 1
-  effective_batch_size: 1
+  effective_batch_size: 128
   per_device_eval_batch_size: 1
+  train_type: lora
+  use_dora: true
+  freeze_llm: false
+  freeze_vit: true
+  freeze_aligner: true
+  target_modules: [all-linear]
+  lora_rank: 16
+  lora_alpha: 32
   packing: true
+  packing_mode: static
   eval_packing: false
   encoded_sample_cache:
     enabled: false
 
 data:
+  train_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
+  val_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+  image_root: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60
   object_ordering: sorted
 
 objective:
   id: teacher_forcing
   profile: hard_sft
+  target_ir: null
   modules:
     token_type_mass:
       enabled: false
@@ -2591,16 +2611,17 @@ prefix_denoising:
 
 packing:
   static_packing: true
+  padding_free_packed: false
 ```
 
-- [ ] **Step 2: Add KL tiny config**
+- [ ] **Step 2: Add KL production config**
 
-Create `configs/stage1/detection_teacher_forcing/smoke/prefix_denoising_tiny_kl005.yaml` with the same shape and:
+Create `configs/stage1/detection_teacher_forcing/prod/compact_full_prefix_denoising_kl_w0p05.yaml` by extending the CE-only production config and overriding only the run names and KL weight:
 
 ```yaml
 training:
-  run_name: smoke-prefix-denoising-hard-ce-kl005-tiny
-  artifact_subdir: prefix_denoising_hard_ce_kl005_tiny
+  artifact_subdir: compact_full_prefix_denoising_kl_w0p05_bsz1x128_4epoch
+  run_name: compact-full-prefix-denoising-kl-w0p05-bsz1x128-4epoch
 
 prefix_denoising:
   current_object_kl:
@@ -2609,56 +2630,34 @@ prefix_denoising:
 
 Keep the rest identical to the CE-only config except for run/artifact names and KL weight.
 
-- [ ] **Step 3: Add production-intent config**
+- [ ] **Step 3: Add tiny smoke configs**
 
-Create `configs/stage1/detection_teacher_forcing/prod/prefix_denoising_2b_k1_kl005.yaml` with:
+Create:
+
+- `configs/stage1/detection_teacher_forcing/smoke/compact_full_prefix_denoising_ce_only_tiny.yaml`
+- `configs/stage1/detection_teacher_forcing/smoke/compact_full_prefix_denoising_kl_w0p05_tiny.yaml`
+
+Each smoke leaf should extend the matching production config plus `smoke/common_prodlike.yaml`, then override:
 
 ```yaml
-model:
-  model: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
-
 training:
-  output_root: /data/CoordExp/outputs/stage1_2b/prefix_denoising_sft
-  logging_root: /data/CoordExp/outputs/stage1_2b/prefix_denoising_sft/tb
-  artifact_subdir: prefix_denoising_hard_ce_kl005_k1
-  run_name: prefix-denoising-hard-ce-kl005-k1
-  num_train_epochs: 4
+  max_steps: 2
   per_device_train_batch_size: 1
-  effective_batch_size: 128
-  packing: true
-  eval_packing: false
-  encoded_sample_cache:
-    enabled: false
+  effective_batch_size: 1
+  per_device_eval_batch_size: 1
+  packing_min_fill_ratio: 0.1
+  packing_drop_last: false
+  packing_length_precompute_workers: 1
+  static_packing_cache:
+    root_dir: temp/static_packing_smoke/<leaf-name>
 
-data:
-  object_ordering: sorted
-
-objective:
-  id: teacher_forcing
-  profile: hard_sft
-  modules:
-    token_type_mass:
-      enabled: false
-    conditional_valid_set_likelihood:
-      enabled: false
-    within_valid_coverage:
-      enabled: false
-      coverage_strength: 0.0
-    continuation_margin:
-      enabled: false
-
-prefix_denoising:
+debug:
   enabled: true
-  noise:
-    center_shift_frac: 0.08
-    uniform_scale_range: [0.92, 1.08]
-  current_object_kl:
-    weight: 0.05
-    window_radius: 8
-    num_objects_per_image: 1
+  train_sample_limit: 4
+  val_sample_limit: 1
 ```
 
-Copy other model/template/token-row/eval/validation fields from `configs/stage1/detection_teacher_forcing/prod/compact_full_support2.yaml` unless a previous task introduced a narrower shared base.
+The smoke configs are launch-health leaves, not clean baselines.
 
 - [ ] **Step 4: Add docs routing and metric docs**
 
@@ -2675,9 +2674,10 @@ encoded-sample cache disabled, and the V1 hybrid static packing path.
 
 First launch-health order:
 
-1. `smoke/prefix_denoising_tiny_ce_only.yaml`
-2. `smoke/prefix_denoising_tiny_kl005.yaml`
-3. `prod/prefix_denoising_2b_k1_kl005.yaml` after smoke verification
+1. `smoke/compact_full_prefix_denoising_ce_only_tiny.yaml`
+2. `smoke/compact_full_prefix_denoising_kl_w0p05_tiny.yaml`
+3. `prod/compact_full_prefix_denoising_ce_only.yaml` and
+   `prod/compact_full_prefix_denoising_kl_w0p05.yaml` after smoke verification
 ```
 
 Update `docs/training/METRICS.md` with the prefix-denoising metric key families from the design spec.
@@ -2694,9 +2694,10 @@ from src.config.loader import ConfigLoader
 from src.config.schema import DetectionTrainingConfig
 
 paths = [
-    "configs/stage1/detection_teacher_forcing/smoke/prefix_denoising_tiny_ce_only.yaml",
-    "configs/stage1/detection_teacher_forcing/smoke/prefix_denoising_tiny_kl005.yaml",
-    "configs/stage1/detection_teacher_forcing/prod/prefix_denoising_2b_k1_kl005.yaml",
+    "configs/stage1/detection_teacher_forcing/prod/compact_full_prefix_denoising_ce_only.yaml",
+    "configs/stage1/detection_teacher_forcing/prod/compact_full_prefix_denoising_kl_w0p05.yaml",
+    "configs/stage1/detection_teacher_forcing/smoke/compact_full_prefix_denoising_ce_only_tiny.yaml",
+    "configs/stage1/detection_teacher_forcing/smoke/compact_full_prefix_denoising_kl_w0p05_tiny.yaml",
 ]
 for path in paths:
     cfg = ConfigLoader.load_materialized_training_config(path)
@@ -2705,12 +2706,16 @@ for path in paths:
     assert cfg.objective.id == "teacher_forcing"
     assert cfg.objective.profile == "hard_sft"
     assert cfg.data.object_ordering == "sorted"
+    assert str(cfg.data.train_jsonl).startswith("/data/CoordExp/public_data/")
+    assert str(cfg.data.val_jsonl).startswith("/data/CoordExp/public_data/")
+    assert str(cfg.data.image_root).startswith("/data/CoordExp/public_data/")
     assert bool(cfg.training.get("packing", False)) is True
+    assert "target_ir" not in cfg.to_mapping()["objective"]
     print(f"{path}: ok")
 PY
 ```
 
-Expected: all three configs parse and print `ok`.
+Expected: all four configs parse and print `ok`.
 
 - [ ] **Step 6: Commit configs and docs**
 
@@ -2732,7 +2737,7 @@ git commit -m "docs: add prefix denoising launch configs"
 Run:
 
 ```bash
-python scripts/run_sft.py configs/stage1/detection_teacher_forcing/smoke/prefix_denoising_tiny_ce_only.yaml
+python -m src.sft --config configs/stage1/detection_teacher_forcing/smoke/compact_full_prefix_denoising_ce_only_tiny.yaml
 ```
 
 Expected:
@@ -2756,7 +2761,7 @@ Expected:
 Run:
 
 ```bash
-python scripts/run_sft.py configs/stage1/detection_teacher_forcing/smoke/prefix_denoising_tiny_kl005.yaml
+python -m src.sft --config configs/stage1/detection_teacher_forcing/smoke/compact_full_prefix_denoising_kl_w0p05_tiny.yaml
 ```
 
 Expected:

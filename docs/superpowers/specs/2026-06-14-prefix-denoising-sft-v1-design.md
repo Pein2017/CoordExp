@@ -51,7 +51,7 @@ only at selected objects' coordinate sites when
 | Cache | Disable encoded-sample cache for V1. Static packing may cache a length/pack plan because planned hybrid lengths are epoch-invariant. |
 | Visual inputs | Treat clean/noisy segments as separate multimodal segments with separate visual ownership, even when they reference the same image. |
 | Decode | Keep free autoregressive decode untouched. Do not add logits constraints or rollout/free-decode eval in the first implementation slice. |
-| Model | Do not edit upstream HF/Qwen model files. Production training starts from `model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp`. |
+| Model | Do not edit upstream HF/Qwen model files. Production training starts from `/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp`. |
 
 ## Non-Goals
 
