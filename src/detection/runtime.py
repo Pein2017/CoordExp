@@ -21,6 +21,7 @@ from src.detection.tokenizer_contract import resolve_compact_training_stop_contr
 DetectionRuntimeMode = Literal[
     "sorted_sft",
     "random_order_sft",
+    "prefix_denoising_sft",
     "random_permutation_et_rmp_ce",
     "prefix_rollin_et_rmp_ce",
 ]
@@ -161,6 +162,9 @@ def detection_mode(
 ) -> DetectionRuntimeMode:
     objective_id = getattr(training_config.objective, "id", None)
     if objective_id == "teacher_forcing":
+        prefix_denoising = getattr(training_config, "prefix_denoising", None)
+        if getattr(prefix_denoising, "enabled", False):
+            return "prefix_denoising_sft"
         if training_config.objective.profile not in {
             "hard_sft",
             "pure_valid_set_marginal",
@@ -216,7 +220,12 @@ def assert_detection_runtime_supported(
 ) -> None:
     support = resolve_detection_runtime_support(training_config)
     if support.teacher_forcing_target_ir_required:
-        if bool(training_config.training.get("packing", False)):
+        prefix_denoising = getattr(training_config, "prefix_denoising", None)
+        prefix_denoising_enabled = bool(getattr(prefix_denoising, "enabled", False))
+        if (
+            bool(training_config.training.get("packing", False))
+            and not prefix_denoising_enabled
+        ):
             raise ValueError(
                 "latest teacher_forcing_target_ir requires "
                 "training.packing=false; exact atom-position packing mapping "
@@ -228,7 +237,7 @@ def assert_detection_runtime_supported(
                 "training.eval_packing=false; exact atom-position packing "
                 "mapping is not implemented yet"
             )
-        if training_config.packing.static_packing:
+        if training_config.packing.static_packing and not prefix_denoising_enabled:
             raise ValueError(
                 "latest teacher_forcing_target_ir requires "
                 "packing.static_packing=false; exact atom-position packing "

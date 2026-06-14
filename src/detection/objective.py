@@ -39,6 +39,7 @@ from src.tokens.coord.codec import token_to_int
 DetectionTrainingMode = Literal[
     "sorted_sft",
     "random_order_sft",
+    "prefix_denoising_sft",
     "random_permutation_et_rmp_ce",
     "prefix_rollin_et_rmp_ce",
 ]
@@ -652,6 +653,12 @@ def _prepare_sample_for_mode(
             mode_name="random_order_sft",
         )
         return sample
+    if mode == "prefix_denoising_sft":
+        if sample.object_ordering.strategy != "sorted":
+            raise ValueError(
+                "prefix_denoising_sft requires sample.object_ordering.strategy='sorted'"
+            )
+        return sample
     if mode == "random_permutation_et_rmp_ce":
         _validate_random_permutation_sample(
             sample,
@@ -660,6 +667,7 @@ def _prepare_sample_for_mode(
         return sample
     raise ValueError(
         "mode must be one of {'sorted_sft', 'random_order_sft', "
+        "'prefix_denoising_sft', "
         "'random_permutation_et_rmp_ce'}; "
         f"got {mode!r}"
     )
@@ -695,7 +703,7 @@ def _validate_template_capabilities(
     *,
     mode: DetectionTrainingMode,
 ) -> None:
-    if mode in {"sorted_sft", "random_order_sft"}:
+    if mode in {"sorted_sft", "random_order_sft", "prefix_denoising_sft"}:
         if not template.capabilities.supports_sft:
             raise ValueError(f"template {template.template_id!r} does not support SFT")
         return

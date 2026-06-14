@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 
 from src.config.schema import DetectionTrainingConfig
+from src.detection.runtime import (
+    assert_detection_runtime_supported,
+    detection_mode,
+)
 
 
 def _prefix_denoising_payload() -> dict[str, object]:
@@ -131,6 +137,54 @@ def test_prefix_denoising_accepts_hard_sft_sorted_teacher_forcing() -> None:
     assert cfg.data.object_ordering == "sorted"
     assert cfg.training["packing"] is True
     assert cfg.packing.static_packing is True
+
+
+def test_prefix_denoising_runtime_preflight_allows_static_training_packing() -> None:
+    cfg = _load(_prefix_denoising_payload())
+
+    assert_detection_runtime_supported(
+        cfg,
+        encoded_sample_cache_cfg=SimpleNamespace(enabled=False),
+        tokenizer=None,
+    )
+
+
+def test_prefix_denoising_detection_mode_is_distinct_from_random_order_sft() -> None:
+    cfg = _load(_prefix_denoising_payload())
+
+    assert detection_mode(cfg) == "prefix_denoising_sft"
+
+
+def test_teacher_forcing_runtime_preflight_still_rejects_packing_without_prefix_denoising() -> None:
+    payload = _prefix_denoising_payload()
+    payload.pop("prefix_denoising")
+    payload["data"] = {
+        **payload["data"],  # type: ignore[arg-type]
+        "object_ordering": "random_permutation",
+    }
+    payload["training"] = {
+        **payload["training"],  # type: ignore[arg-type]
+        "packing": False,
+    }
+    payload["packing"] = {
+        **payload["packing"],  # type: ignore[arg-type]
+        "static_packing": False,
+    }
+    cfg = _load(payload)
+
+    with pytest.raises(ValueError, match=r"training\.packing=false"):
+        assert_detection_runtime_supported(
+            replace(cfg, training={**cfg.training, "packing": True}),
+            encoded_sample_cache_cfg=SimpleNamespace(enabled=False),
+            tokenizer=None,
+        )
+
+    with pytest.raises(ValueError, match=r"packing\.static_packing=false"):
+        assert_detection_runtime_supported(
+            replace(cfg, packing=replace(cfg.packing, static_packing=True)),
+            encoded_sample_cache_cfg=SimpleNamespace(enabled=False),
+            tokenizer=None,
+        )
 
 
 def test_prefix_denoising_omitted_defaults_to_disabled() -> None:

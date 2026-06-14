@@ -941,12 +941,20 @@ class DetectionTrainingDataset(Dataset):
         return None
 
     def _state_weighting_for_prepare(self) -> StateWeightingStrategy:
-        if self.config.mode in {"sorted_sft", "random_order_sft"}:
+        if self.config.mode in {
+            "sorted_sft",
+            "random_order_sft",
+            "prefix_denoising_sft",
+        }:
             return "uniform_permutation"
         return self.config.state_weighting  # type: ignore[return-value]
 
     def _normalization_for_prepare(self) -> LossNormalizationStrategy:
-        if self.config.mode in {"sorted_sft", "random_order_sft"}:
+        if self.config.mode in {
+            "sorted_sft",
+            "random_order_sft",
+            "prefix_denoising_sft",
+        }:
             return "semantic_image_bucket_balanced"
         return self.config.normalization  # type: ignore[return-value]
 
