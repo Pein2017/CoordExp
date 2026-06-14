@@ -17,8 +17,11 @@ materializes paired `clean_full` and `noisy_full` branches with clean labels.
 Production configs start from:
 
 ```text
-model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
 ```
+
+The authored leaves also set `model.model_type: qwen3_vl` so cfg-only launch
+checks do not have to infer the local checkpoint family.
 
 Use these leaves for the first launch-health ladder:
 

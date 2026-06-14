@@ -46,6 +46,42 @@ from src.training.teacher_forcing.roles import TokenRole
 from src.training.teacher_forcing.vocab import RoleVocab
 
 
+def _teacher_forcing_runtime_config(
+    *, prefix_denoising_enabled: bool
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        objective=SimpleNamespace(
+            id="teacher_forcing",
+            variant=None,
+            profile="hard_sft",
+            state_weighting=None,
+            normalization=None,
+            target_ir=SimpleNamespace(
+                rollin_policy=SimpleNamespace(
+                    name="random_permutation",
+                    base_seed=17,
+                ),
+                exact_packing_mapping=SimpleNamespace(enabled=False),
+            ),
+            modules=SimpleNamespace(
+                token_type_mass=SimpleNamespace(enabled=False),
+                conditional_valid_set_likelihood=SimpleNamespace(enabled=False),
+                within_valid_coverage=SimpleNamespace(
+                    enabled=False,
+                    coverage_strength=0.0,
+                ),
+                continuation_margin=SimpleNamespace(enabled=False),
+            ),
+        ),
+        detection_template=SimpleNamespace(
+            id="compact_full",
+            coordinate_surface="coord_token",
+            bbox_format="xyxy",
+        ),
+        prefix_denoising=SimpleNamespace(enabled=prefix_denoising_enabled),
+    )
+
+
 @pytest.mark.parametrize(
     ("variant", "replacement"),
     [
@@ -88,6 +124,32 @@ def test_sft_variant_helpers_agree_with_runtime_plan(variant: str | None) -> Non
 def test_sft_rejects_removed_stage1_set_continuation_variant() -> None:
     with pytest.raises(ValueError, match=r"stage1_set_continuation.*removed"):
         resolve_training_runtime_plan("stage1_set_continuation")
+
+
+def test_prefix_denoising_objective_runtime_omits_inactive_target_ir() -> None:
+    payload = sft_module._detection_objective_runtime_payload(
+        _teacher_forcing_runtime_config(prefix_denoising_enabled=True)
+    )
+
+    assert payload is not None
+    assert payload["id"] == "teacher_forcing"
+    assert "target_ir" not in payload
+    assert payload["modules"]["token_type_mass"]["enabled"] is False
+
+
+def test_teacher_forcing_objective_runtime_keeps_target_ir_without_prefix_denoising() -> None:
+    payload = sft_module._detection_objective_runtime_payload(
+        _teacher_forcing_runtime_config(prefix_denoising_enabled=False)
+    )
+
+    assert payload is not None
+    assert payload["target_ir"] == {
+        "rollin_policy": {
+            "name": "random_permutation",
+            "base_seed": 17,
+        },
+        "exact_packing_mapping": {"enabled": False},
+    }
 
 
 def test_sft_rejects_unknown_non_empty_trainer_variant() -> None:

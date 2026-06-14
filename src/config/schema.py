@@ -4721,6 +4721,17 @@ class DetectionTrainingConfig:
         for section in _DETECTION_RUNTIME_SECTIONS:
             if payload.get(section) == {}:
                 payload.pop(section, None)
+        prefix_denoising_payload = payload.get("prefix_denoising")
+        if (
+            isinstance(prefix_denoising_payload, Mapping)
+            and prefix_denoising_payload.get("enabled") is True
+        ):
+            objective_payload = payload.get("objective")
+            if (
+                isinstance(objective_payload, dict)
+                and objective_payload.get("id") == TEACHER_FORCING_OBJECTIVE_ID
+            ):
+                objective_payload.pop("target_ir", None)
         token_groups = payload.get("token_rows", {}).get("groups", {})
         if isinstance(token_groups, dict):
             for group in token_groups.values():

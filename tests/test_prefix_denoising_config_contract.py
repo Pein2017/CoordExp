@@ -139,6 +139,7 @@ def test_prefix_denoising_accepts_hard_sft_sorted_teacher_forcing() -> None:
     assert cfg.data.object_ordering == "sorted"
     assert cfg.training["packing"] is True
     assert cfg.packing.static_packing is True
+    assert "target_ir" not in cfg.to_mapping()["objective"]
 
 
 def test_prefix_denoising_runtime_preflight_allows_static_training_packing() -> None:

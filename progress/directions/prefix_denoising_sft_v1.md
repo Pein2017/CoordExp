@@ -31,15 +31,17 @@ full checkpoint, not from a well-tuned pure-CE adapter checkpoint. The
 production starting point is:
 
 ```text
-model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
 ```
 
 That checkpoint already provides the coordinate-capable model architecture,
-token machinery, and initialized coordinate-offset state. The first production
-trainable boundary is coord offset plus LLM-tower DoRA through the existing
-ms-swift/PEFT tuner path. ViT and aligner should stay frozen for the first
-quality-bearing denoising run so the result reads as coordinate-prefix
-robustness, not a change in visual feature extraction or connector behavior.
+token machinery, and initialized coordinate-offset state. Authored launch
+leaves should also set `model.model_type: qwen3_vl` so cfg-only checks do not
+need to infer the local checkpoint family. The first production trainable
+boundary is coord offset plus LLM-tower DoRA through the existing ms-swift/PEFT
+tuner path. ViT and aligner should stay frozen for the first quality-bearing
+denoising run so the result reads as coordinate-prefix robustness, not a change
+in visual feature extraction or connector behavior.
 
 V1 requires coord-token compact detection mode. It should fail fast if the
 active data/template route cannot represent each bbox coordinate as the expected
@@ -1146,6 +1148,6 @@ launch-health metrics.
   - metric event contract:
     `src/metrics/events.py`
   - production starting checkpoint:
-    `model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp`
+    `/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp`
   - tiny launch-health adapter candidate:
     `/data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_fullobj_sorted_sft_bsz16_4epoch_tokenrows_v2/compact-full-fullobj-sorted-sft-bsz16-4epoch-tokenrows-v2/v1-20260601-062429/checkpoint-3668`
