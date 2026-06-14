@@ -177,6 +177,48 @@ def test_hybrid_builder_emits_two_segments_and_clean_labels(tmp_path: Path) -> N
     assert sample.kl_sites == ()
 
 
+def test_hybrid_builder_accepts_coord_token_bbox_rows(tmp_path: Path) -> None:
+    _touch_image(tmp_path)
+    cfg = PrefixDenoisingConfig.from_mapping({"enabled": True})
+    row = _row(
+        objects=[
+            {
+                "desc": "token box",
+                "bbox_2d": [
+                    "<|coord_100|>",
+                    "<|coord_100|>",
+                    "<|coord_200|>",
+                    "<|coord_220|>",
+                ],
+                "category_id": 1,
+                "category_name": "token box",
+                "coco_ann_id": 11,
+                "object_id": "token-1",
+            }
+        ]
+    )
+
+    sample = build_hybrid_prefix_denoising_sample(
+        row,
+        base_sample_id="unit-token-box",
+        image_root=tmp_path,
+        swift_template=FakeTemplate(),
+        user_prompt="find objects",
+        system_prompt=None,
+        prefix_denoising=cfg,
+        epoch=0,
+        rng=random.Random(5),
+        max_length=12000,
+    )
+
+    assert sample.ok is True
+    assert sample.clean_full is not None
+    assert sample.noisy_full is not None
+    noising = sample.metadata["noising"][0]
+    assert noising["clean_bins"] == (100, 100, 200, 220)
+    assert noising["noisy_bins"] != noising["clean_bins"]
+
+
 def test_hybrid_builder_builds_kl_sites_when_weight_positive(tmp_path: Path) -> None:
     _touch_image(tmp_path)
     cfg = PrefixDenoisingConfig.from_mapping(

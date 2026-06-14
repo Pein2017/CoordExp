@@ -7,6 +7,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+import torch
 from torch.utils.data import Dataset
 
 from src.common.io import load_jsonl_with_diagnostics
@@ -223,7 +224,7 @@ def materialize_hybrid_model_ready_item(
     item: dict[str, Any] = {
         "input_ids": list(input_ids),
         "labels": list(labels),
-        "attention_mask": list(attention_mask),
+        "attention_mask": torch.tensor(attention_mask, dtype=torch.long).unsqueeze(0),
         "length": length,
         "dataset": dataset_name,
         "sample_id": sample.hybrid_sample_id,

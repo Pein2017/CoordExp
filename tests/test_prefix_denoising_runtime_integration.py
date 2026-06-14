@@ -30,12 +30,17 @@ class _DummyTemplate:
 
 
 def _base_collator(batch: list[dict[str, Any]]) -> dict[str, Any]:
+    def _mask_1d(value: Any) -> torch.Tensor:
+        tensor = value if isinstance(value, torch.Tensor) else torch.tensor(value)
+        if tensor.ndim == 2 and tensor.shape[0] == 1:
+            tensor = tensor[0]
+        return tensor.long()
+
     return {
         "input_ids": torch.tensor([row["input_ids"] for row in batch], dtype=torch.long),
         "labels": torch.tensor([row["labels"] for row in batch], dtype=torch.long),
-        "attention_mask": torch.tensor(
-            [row["attention_mask"] for row in batch],
-            dtype=torch.long,
+        "attention_mask": torch.stack(
+            [_mask_1d(row["attention_mask"]) for row in batch]
         ),
         "pixel_values": torch.cat(
             [row["pixel_values"] for row in batch],
@@ -186,7 +191,10 @@ def _packed_prefix_base_collator(batch: list[Any]) -> dict[str, torch.Tensor]:
         for sample in pack_seq:
             row["input_ids"].extend(sample["input_ids"])
             row["labels"].extend(sample["labels"])
-            row["attention_mask"].extend(sample["attention_mask"])
+            mask = sample["attention_mask"]
+            if isinstance(mask, torch.Tensor):
+                mask = mask.reshape(-1).tolist()
+            row["attention_mask"].extend(mask)
         rows.append(row)
     return {
         "input_ids": torch.tensor([row["input_ids"] for row in rows], dtype=torch.long),
@@ -236,6 +244,9 @@ def test_prefix_denoising_model_ready_sidecars_survive_until_model_boundary() ->
         dataset_name="unit",
         base_idx=0,
     )
+    assert isinstance(item["attention_mask"], torch.Tensor)
+    assert item["attention_mask"].dtype == torch.long
+    assert item["attention_mask"].shape == torch.Size([1, 8])
     collator = build_batch_extras_collator(
         _DummyTemplate(),
         base_collator=_base_collator,

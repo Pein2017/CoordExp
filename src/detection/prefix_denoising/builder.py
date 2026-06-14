@@ -11,6 +11,7 @@ from src.common.detection_chat import build_detection_chat_messages
 from src.config.schema import PrefixDenoisingConfig
 from src.datasets.geometry import BBoxNoiseConfig, construct_valid_norm1000_bbox_noise
 from src.detection.data import (
+    CoordinateTokenBox,
     NormalizedDetectionObject,
     NormalizedDetectionSample,
     ObjectOrderingPlan,
@@ -284,7 +285,6 @@ def _build_noisy_objects(
     noisy_objects: list[NormalizedDetectionObject] = []
     provenance: list[Mapping[str, object]] = []
     for index, obj in enumerate(objects):
-        bbox_type = type(obj.bbox_2d)
         result = construct_valid_norm1000_bbox_noise(
             _bbox_tuple(obj.bbox_2d),
             config=noise_cfg,
@@ -297,7 +297,9 @@ def _build_noisy_objects(
                 "skip_reason": result.skip_reason or "noise_infeasible_valid_bbox",
                 "object_index": index,
             }
-        noisy_objects.append(replace(obj, bbox_2d=bbox_type(*result.noisy_bbox)))
+        noisy_objects.append(
+            replace(obj, bbox_2d=CoordinateTokenBox(*result.noisy_bbox))
+        )
         provenance.append(
             {
                 "object_index": index,
@@ -316,6 +318,12 @@ def _build_noisy_objects(
 
 
 def _bbox_tuple(bbox: Any) -> tuple[int, int, int, int]:
+    values_attr = getattr(bbox, "values", None)
+    if values_attr is not None:
+        values = tuple(int(value) for value in values_attr)
+        if len(values) != 4:
+            raise ValueError("bbox.values must contain four coordinates")
+        return values  # type: ignore[return-value]
     if all(hasattr(bbox, field_name) for field_name in _COORD_SLOTS):
         return (
             int(getattr(bbox, "x1")),
