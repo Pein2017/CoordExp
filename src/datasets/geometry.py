@@ -31,7 +31,10 @@ def _coerce_norm1000_xyxy(
 ) -> tuple[int, int, int, int]:
     if len(bbox) != 4:
         raise ValueError(f"{field_name} must contain four coordinates")
-    values = tuple(int(round(float(value))) for value in bbox)
+    try:
+        values = tuple(int(round(float(value))) for value in bbox)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"{field_name} must be valid norm1000 xyxy") from exc
     x1, y1, x2, y2 = values
     if not (0 <= x1 < x2 <= 999 and 0 <= y1 < y2 <= 999):
         raise ValueError(f"{field_name} must be valid norm1000 xyxy")
@@ -53,7 +56,10 @@ def construct_valid_norm1000_bbox_noise(
     max_dx = int(round(width * float(config.center_shift_frac)))
     max_dy = int(round(height * float(config.center_shift_frac)))
     scale_low, scale_high = config.uniform_scale_range
-    scale_values = sorted({scale_low, 1.0, scale_high})
+    scale_values = {scale_low, scale_high}
+    if scale_low <= 1.0 <= scale_high:
+        scale_values.add(1.0)
+    scale_values = sorted(scale_values)
     cx2 = x1 + x2
     cy2 = y1 + y2
     for dx in range(-max_dx, max_dx + 1):
