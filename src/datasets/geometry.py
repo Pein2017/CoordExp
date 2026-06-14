@@ -93,6 +93,10 @@ def _coerce_norm1000_xyxy(
         raise ValueError(
             f"{field_name} must be a non-string sequence of four coordinates"
         )
+    if not isinstance(bbox, SequenceABC):
+        raise ValueError(
+            f"{field_name} must be a non-string sequence of four coordinates"
+        )
     try:
         bbox_len = len(bbox)
     except TypeError as exc:

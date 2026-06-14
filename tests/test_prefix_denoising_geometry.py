@@ -124,7 +124,9 @@ def test_invalid_clean_bbox_is_rejected() -> None:
         )
 
 
-@pytest.mark.parametrize("bad_bbox", [None, 5, "1234", b"1234"])
+@pytest.mark.parametrize(
+    "bad_bbox", [None, 5, "1234", b"1234", {0: 0, 1: 1, 2: 2, 3: 3}]
+)
 def test_invalid_clean_bbox_container_errors_include_field_name(bad_bbox: object) -> None:
     with pytest.raises(ValueError, match="clean bbox"):
         construct_valid_norm1000_bbox_noise(
