@@ -6,7 +6,13 @@ import torch
 from src.detection.prefix_denoising.loss import (
     PrefixDenoisingSegmentSpan,
     compute_branch_balanced_hard_ce,
+    compute_local_coord_kl,
+    coord_support_window,
     topk_accuracy_from_logits,
+)
+from src.detection.prefix_denoising.types import (
+    PrefixDenoisingKLSite,
+    ResolvedPrefixDenoisingKLSite,
 )
 
 
@@ -138,3 +144,130 @@ def test_topk_accuracy_uses_shifted_causal_positions() -> None:
     assert result[1] == 1.0
     assert result[2] == 1.0
     assert result[5] == 1.0
+
+
+def test_coord_support_window_clips_at_edges() -> None:
+    assert coord_support_window(clean_bin=2, radius=4) == (0, 1, 2, 3, 4, 5, 6)
+    assert coord_support_window(clean_bin=998, radius=4) == (
+        994,
+        995,
+        996,
+        997,
+        998,
+        999,
+    )
+
+
+def test_local_coord_kl_maps_bins_to_coord_token_ids_and_detaches_teacher() -> None:
+    coord_token_ids = torch.tensor([1000 + i for i in range(1000)], dtype=torch.long)
+    clean_logits = torch.zeros((2, 6, 2100), dtype=torch.float32, requires_grad=True)
+    noisy_logits = torch.zeros((2, 6, 2100), dtype=torch.float32, requires_grad=True)
+    clean_logits.data[1, 1, 1010] = 5.0
+    noisy_logits.data[1, 1, 1010] = 3.0
+    clean_logits.data[0, 1, 1010] = -20.0
+    clean_logits.data[1, 1, 10] = 30.0
+    site = ResolvedPrefixDenoisingKLSite(
+        clean_batch_index=1,
+        noisy_batch_index=1,
+        object_index=0,
+        coord_slot="y1",
+        clean_label_position=2,
+        noisy_label_position=2,
+        clean_gt_bin=10,
+        support_bins=tuple(range(8, 13)),
+        identical_prefix=False,
+    )
+
+    result = compute_local_coord_kl(
+        clean_logits=clean_logits,
+        noisy_logits=noisy_logits,
+        sites=(site,),
+        coord_token_ids=coord_token_ids,
+    )
+    result.loss.backward()
+
+    assert torch.isfinite(result.loss)
+    assert clean_logits.grad is None
+    assert noisy_logits.grad is not None
+    assert result.candidate_site_count == 1
+    assert result.effective_site_count == 1
+    assert result.teacher_gt_prob_conditional > 0.9
+
+
+def test_local_coord_kl_raw_loss_is_mean_over_effective_sites() -> None:
+    coord_token_ids = torch.tensor([1000 + i for i in range(1000)], dtype=torch.long)
+    clean_logits = torch.zeros((1, 4, 2100), dtype=torch.float32)
+    noisy_logits = torch.zeros((1, 4, 2100), dtype=torch.float32)
+    clean_logits[0, 1, 1010] = 4.0
+    noisy_logits[0, 1, 1011] = 4.0
+    base_site = ResolvedPrefixDenoisingKLSite(
+        clean_batch_index=0,
+        noisy_batch_index=0,
+        object_index=0,
+        coord_slot="x1",
+        clean_label_position=2,
+        noisy_label_position=2,
+        clean_gt_bin=10,
+        support_bins=(9, 10, 11),
+        identical_prefix=True,
+    )
+
+    one_site = compute_local_coord_kl(
+        clean_logits=clean_logits,
+        noisy_logits=noisy_logits,
+        sites=(base_site,),
+        coord_token_ids=coord_token_ids,
+    )
+    two_sites = compute_local_coord_kl(
+        clean_logits=clean_logits,
+        noisy_logits=noisy_logits,
+        sites=(base_site, base_site),
+        coord_token_ids=coord_token_ids,
+    )
+
+    torch.testing.assert_close(two_sites.raw_loss, one_site.raw_loss)
+    assert two_sites.candidate_site_count == 2
+    assert two_sites.effective_site_count == 2
+    assert two_sites.identical_prefix_site_count == 2
+
+
+def test_local_coord_kl_rejects_unresolved_and_invalid_support_sites() -> None:
+    coord_token_ids = torch.tensor([1000 + i for i in range(1000)], dtype=torch.long)
+    clean_logits = torch.zeros((1, 4, 2100), dtype=torch.float32)
+    noisy_logits = torch.zeros((1, 4, 2100), dtype=torch.float32)
+    unresolved = PrefixDenoisingKLSite(
+        clean_segment_id="unit:clean",
+        noisy_segment_id="unit:noisy",
+        object_index=0,
+        history_object_count=0,
+        coord_slot="x1",
+        clean_label_position=2,
+        noisy_label_position=2,
+        clean_gt_bin=10,
+        support_bins=(9, 10, 11),
+    )
+    resolved_missing_gt = ResolvedPrefixDenoisingKLSite(
+        clean_batch_index=0,
+        noisy_batch_index=0,
+        object_index=0,
+        coord_slot="x1",
+        clean_label_position=2,
+        noisy_label_position=2,
+        clean_gt_bin=10,
+        support_bins=(8, 9, 11),
+    )
+
+    with pytest.raises(TypeError, match="ResolvedPrefixDenoisingKLSite"):
+        compute_local_coord_kl(
+            clean_logits=clean_logits,
+            noisy_logits=noisy_logits,
+            sites=(unresolved,),  # type: ignore[arg-type]
+            coord_token_ids=coord_token_ids,
+        )
+    with pytest.raises(ValueError, match="clean_gt_bin"):
+        compute_local_coord_kl(
+            clean_logits=clean_logits,
+            noisy_logits=noisy_logits,
+            sites=(resolved_missing_gt,),
+            coord_token_ids=coord_token_ids,
+        )

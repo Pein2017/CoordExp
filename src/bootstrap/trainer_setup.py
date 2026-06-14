@@ -114,11 +114,6 @@ def compose_trainer_class(
                 prefix_denoising_cfg=prefix_denoising_cfg,
                 prefix_denoising_runtime=prefix_denoising_runtime,
             )
-            if kl_weight > 0.0:
-                raise ValueError(
-                    "positive prefix_denoising current_object_kl.weight requires "
-                    "Task 6 KL support"
-                )
             class_attrs["prefix_denoising_packing_enabled"] = packing_enabled
             class_attrs["prefix_denoising_kl_weight"] = kl_weight
         mixins.append(GradAccumLossScaleMixin)
