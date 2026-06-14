@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Sequence as SequenceABC
 import math
 import random
 from dataclasses import dataclass
+from numbers import Real
 from typing import Any, Dict, List, Literal, Sequence, Tuple, Union
 
 
@@ -12,6 +14,64 @@ class BBoxNoiseConfig:
     uniform_scale_range: tuple[float, float] = (0.92, 1.08)
     coord_min: int = 0
     coord_max: int = 999
+
+    def __post_init__(self) -> None:
+        center_shift_frac = _coerce_finite_float(
+            self.center_shift_frac, field_name="BBoxNoiseConfig.center_shift_frac"
+        )
+        if center_shift_frac < 0:
+            raise ValueError("BBoxNoiseConfig.center_shift_frac must be >= 0")
+        object.__setattr__(self, "center_shift_frac", center_shift_frac)
+
+        scale_range = self.uniform_scale_range
+        if (
+            isinstance(scale_range, (str, bytes))
+            or not isinstance(scale_range, SequenceABC)
+            or len(scale_range) != 2
+        ):
+            raise ValueError(
+                "BBoxNoiseConfig.uniform_scale_range must contain two scale values"
+            )
+        scale_low = _coerce_finite_float(
+            scale_range[0], field_name="BBoxNoiseConfig.uniform_scale_range"
+        )
+        scale_high = _coerce_finite_float(
+            scale_range[1], field_name="BBoxNoiseConfig.uniform_scale_range"
+        )
+        if scale_low <= 0 or scale_high <= 0:
+            raise ValueError("BBoxNoiseConfig.uniform_scale_range values must be > 0")
+        if scale_low > scale_high:
+            raise ValueError("BBoxNoiseConfig.uniform_scale_range must be ordered")
+        object.__setattr__(self, "uniform_scale_range", (scale_low, scale_high))
+
+        _validate_norm1000_coord_bound(
+            self.coord_min,
+            expected=0,
+            field_name="BBoxNoiseConfig.coord_min",
+        )
+        _validate_norm1000_coord_bound(
+            self.coord_max,
+            expected=999,
+            field_name="BBoxNoiseConfig.coord_max",
+        )
+
+
+def _coerce_finite_float(value: object, *, field_name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise ValueError(f"{field_name} must be a finite number")
+    coerced = float(value)
+    if not math.isfinite(coerced):
+        raise ValueError(f"{field_name} must be finite")
+    return coerced
+
+
+def _validate_norm1000_coord_bound(
+    value: object, *, expected: int, field_name: str
+) -> None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{field_name} must be exactly {expected}")
+    if value != expected:
+        raise ValueError(f"{field_name} must be exactly {expected}")
 
 
 @dataclass(frozen=True)
@@ -29,7 +89,11 @@ class BBoxNoiseResult:
 def _coerce_norm1000_xyxy(
     bbox: Sequence[int | float], *, field_name: str
 ) -> tuple[int, int, int, int]:
-    if len(bbox) != 4:
+    try:
+        bbox_len = len(bbox)
+    except TypeError as exc:
+        raise ValueError(f"{field_name} must contain four coordinates") from exc
+    if bbox_len != 4:
         raise ValueError(f"{field_name} must contain four coordinates")
     try:
         values = tuple(int(round(float(value))) for value in bbox)
@@ -39,6 +103,15 @@ def _coerce_norm1000_xyxy(
     if not (0 <= x1 < x2 <= 999 and 0 <= y1 < y2 <= 999):
         raise ValueError(f"{field_name} must be valid norm1000 xyxy")
     return values
+
+
+def _feasible_shift_bounds(center2: int, size: int, *, coord_max: int) -> tuple[int, int]:
+    max_start = coord_max - size
+    base_start = (center2 - size) / 2.0
+    return (
+        math.ceil(-0.5 - base_start),
+        math.floor(max_start + 0.5 - base_start),
+    )
 
 
 def construct_valid_norm1000_bbox_noise(
@@ -62,12 +135,26 @@ def construct_valid_norm1000_bbox_noise(
     scale_values = sorted(scale_values)
     cx2 = x1 + x2
     cy2 = y1 + y2
-    for dx in range(-max_dx, max_dx + 1):
-        for dy in range(-max_dy, max_dy + 1):
-            for sx in scale_values:
-                for sy in scale_values:
-                    new_w = max(1, int(round(width * sx)))
-                    new_h = max(1, int(round(height * sy)))
+    for sx in scale_values:
+        new_w = max(1, int(round(width * sx)))
+        feasible_dx_low, feasible_dx_high = _feasible_shift_bounds(
+            cx2, new_w, coord_max=999
+        )
+        dx_low = max(-max_dx, feasible_dx_low)
+        dx_high = min(max_dx, feasible_dx_high)
+        if dx_low > dx_high:
+            continue
+        for sy in scale_values:
+            new_h = max(1, int(round(height * sy)))
+            feasible_dy_low, feasible_dy_high = _feasible_shift_bounds(
+                cy2, new_h, coord_max=999
+            )
+            dy_low = max(-max_dy, feasible_dy_low)
+            dy_high = min(max_dy, feasible_dy_high)
+            if dy_low > dy_high:
+                continue
+            for dx in range(dx_low, dx_high + 1):
+                for dy in range(dy_low, dy_high + 1):
                     new_cx2 = cx2 + 2 * dx
                     new_cy2 = cy2 + 2 * dy
                     nx1 = int(round((new_cx2 - new_w) / 2.0))
@@ -91,7 +178,8 @@ def construct_valid_norm1000_bbox_noise(
             skip_reason="noise_infeasible_4coord_changed",
             provenance={"object_id": object_id, "candidate_count": 0},
         )
-    noisy = unique_candidates[rng.randrange(len(unique_candidates))]
+    selected_index = rng.randrange(len(unique_candidates))
+    noisy = unique_candidates[selected_index]
     return BBoxNoiseResult(
         ok=True,
         clean_bbox=clean,
@@ -103,7 +191,7 @@ def construct_valid_norm1000_bbox_noise(
         provenance={
             "object_id": object_id,
             "candidate_count": len(unique_candidates),
-            "selected_index": unique_candidates.index(noisy),
+            "selected_index": selected_index,
         },
     )
 
