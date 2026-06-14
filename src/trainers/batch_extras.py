@@ -18,6 +18,10 @@ PROXY_DESC_TOKEN_WEIGHTS_KEY = "proxy_desc_token_weights"
 PROXY_COORD_TOKEN_WEIGHTS_KEY = "proxy_coord_token_weights"
 SFT_STRUCTURAL_CLOSE_TOKEN_WEIGHTS_KEY = "sft_structural_close_token_weights"
 RECURSIVE_DETECTION_TARGETS_KEY = "recursive_detection_targets"
+PREFIX_DENOISING_HYBRID_KEY = "prefix_denoising_hybrid"
+PREFIX_DENOISING_SEGMENT_META_KEY = "prefix_denoising_segment_meta"
+PREFIX_DENOISING_RESOLVED_KL_SITES_KEY = "prefix_denoising_resolved_kl_sites"
+PACKED_HYBRID_BOUNDARY_MAP_KEY = "packed_hybrid_boundary_map"
 
 BATCH_EXTRAS_KEYS: tuple[str, ...] = (
     DATASET_LABELS_KEY,
@@ -30,6 +34,10 @@ BATCH_EXTRAS_KEYS: tuple[str, ...] = (
     SFT_STRUCTURAL_CLOSE_TOKEN_WEIGHTS_KEY,
     RECURSIVE_DETECTION_TARGETS_KEY,
     TEACHER_FORCING_TARGET_IR_KEY,
+    PREFIX_DENOISING_HYBRID_KEY,
+    PREFIX_DENOISING_SEGMENT_META_KEY,
+    PREFIX_DENOISING_RESOLVED_KL_SITES_KEY,
+    PACKED_HYBRID_BOUNDARY_MAP_KEY,
 )
 
 
@@ -52,6 +60,10 @@ class BatchExtras:
     sft_structural_close_token_weights: Any = None
     recursive_detection_targets: Any = None
     teacher_forcing_target_ir: Any = None
+    prefix_denoising_hybrid: Any = None
+    prefix_denoising_segment_meta: Any = None
+    prefix_denoising_resolved_kl_sites: Any = None
+    packed_hybrid_boundary_map: Any = None
 
 
 _STASH_ATTR = "_coordexp_batch_extras"
@@ -73,6 +85,14 @@ def pop_batch_extras(inputs: MutableMapping[str, Any]) -> BatchExtras:
         ),
         recursive_detection_targets=inputs.pop(RECURSIVE_DETECTION_TARGETS_KEY, None),
         teacher_forcing_target_ir=inputs.pop(TEACHER_FORCING_TARGET_IR_KEY, None),
+        prefix_denoising_hybrid=inputs.pop(PREFIX_DENOISING_HYBRID_KEY, None),
+        prefix_denoising_segment_meta=inputs.pop(
+            PREFIX_DENOISING_SEGMENT_META_KEY, None
+        ),
+        prefix_denoising_resolved_kl_sites=inputs.pop(
+            PREFIX_DENOISING_RESOLVED_KL_SITES_KEY, None
+        ),
+        packed_hybrid_boundary_map=inputs.pop(PACKED_HYBRID_BOUNDARY_MAP_KEY, None),
     )
 
 

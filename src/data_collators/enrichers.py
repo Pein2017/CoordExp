@@ -295,6 +295,7 @@ class PrefixDenoisingHybridEnricher:
             isinstance(row, Mapping) and self.out_field in row for row in raw_batch
         ]
         if not any(present):
+            self._reject_companion_without_hybrid(raw_batch=raw_batch, packed=False)
             return
         if not all(present):
             raise ValueError(
@@ -317,6 +318,10 @@ class PrefixDenoisingHybridEnricher:
         collated: dict[str, Any],
         raw_batch: Sequence[Any],
     ) -> None:
+        if not self._packed_has_field(raw_batch, self.out_field):
+            self._reject_companion_without_hybrid(raw_batch=raw_batch, packed=True)
+            return
+
         packed_groups: list[tuple[Any, ...]] = []
         saw_sidecar = False
         saw_incomplete_group = False
@@ -351,7 +356,7 @@ class PrefixDenoisingHybridEnricher:
                 "prefix_denoising_hybrid sidecar must be present for every "
                 "packed prefix-denoising group in the batch"
             )
-        if self.boundary_map_field not in collated:
+        if collated.get(self.boundary_map_field) is None:
             raise ValueError(
                 "Packed prefix_denoising_hybrid sidecars require "
                 "PackedHybridBoundaryMap via collated['packed_hybrid_boundary_map']"
@@ -424,6 +429,36 @@ class PrefixDenoisingHybridEnricher:
                 "prefix-denoising group in the batch when any group provides it"
             )
         collated[field] = tuple(packed_groups)
+
+    def _reject_companion_without_hybrid(
+        self,
+        *,
+        raw_batch: Sequence[Any],
+        packed: bool,
+    ) -> None:
+        for field in self.companion_fields:
+            has_field = (
+                self._packed_has_field(raw_batch, field)
+                if packed
+                else self._unpacked_has_field(raw_batch, field)
+            )
+            if has_field:
+                raise ValueError(
+                    f"{field} sidecar cannot be present without "
+                    "prefix_denoising_hybrid"
+                )
+
+    @staticmethod
+    def _unpacked_has_field(raw_batch: Sequence[Any], field: str) -> bool:
+        return any(isinstance(row, Mapping) and field in row for row in raw_batch)
+
+    @staticmethod
+    def _packed_has_field(raw_batch: Sequence[Any], field: str) -> bool:
+        return any(
+            isinstance(sample, Mapping) and field in sample
+            for pack in raw_batch
+            for sample in (pack if isinstance(pack, (list, tuple)) else [pack])
+        )
 
 
 class TokenTypesEnricher:

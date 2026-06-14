@@ -44,6 +44,17 @@ def test_prefix_denoising_enricher_attaches_tuple_unpacked() -> None:
     assert len(collated["prefix_denoising_hybrid"]) == 1  # type: ignore[arg-type]
 
 
+def test_prefix_denoising_enricher_rejects_unpacked_companion_without_hybrid() -> None:
+    enricher = PrefixDenoisingHybridEnricher()
+
+    with pytest.raises(ValueError, match="prefix_denoising_segment_meta.*without"):
+        enricher(
+            collated={},
+            raw_batch=[{"prefix_denoising_segment_meta": object()}],
+            packed=False,
+        )
+
+
 def test_prefix_denoising_enricher_rejects_plain_packed_sidecar_without_boundary_map() -> None:
     enricher = PrefixDenoisingHybridEnricher()
 
@@ -51,6 +62,28 @@ def test_prefix_denoising_enricher_rejects_plain_packed_sidecar_without_boundary
         enricher(
             collated={},
             raw_batch=[[{"prefix_denoising_hybrid": _sample("a")}]],
+            packed=True,
+        )
+
+
+def test_prefix_denoising_enricher_rejects_packed_sidecar_with_null_boundary_map() -> None:
+    enricher = PrefixDenoisingHybridEnricher()
+
+    with pytest.raises(ValueError, match="PackedHybridBoundaryMap"):
+        enricher(
+            collated={"packed_hybrid_boundary_map": None},
+            raw_batch=[[{"prefix_denoising_hybrid": _sample("a")}]],
+            packed=True,
+        )
+
+
+def test_prefix_denoising_enricher_rejects_packed_companion_without_hybrid() -> None:
+    enricher = PrefixDenoisingHybridEnricher()
+
+    with pytest.raises(ValueError, match="prefix_denoising_resolved_kl_sites.*without"):
+        enricher(
+            collated={"packed_hybrid_boundary_map": object()},
+            raw_batch=[[{"prefix_denoising_resolved_kl_sites": object()}]],
             packed=True,
         )
 

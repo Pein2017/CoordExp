@@ -12,11 +12,18 @@ from src.detection.prefix_denoising.types import (
     PrefixDenoisingKLSite,
     PrefixDenoisingSegment,
 )
+from src.trainers.batch_extras import (
+    maybe_pop_and_stash_batch_extras,
+    pop_batch_extras,
+)
 
 
 class _DummyTemplate:
     tokenizer = None
     template_meta = None
+
+    def data_collator(self, batch: list[dict[str, Any]]) -> dict[str, Any]:
+        return _base_collator(batch)
 
 
 def _base_collator(batch: list[dict[str, Any]]) -> dict[str, Any]:
@@ -52,6 +59,10 @@ class _FuturePrefixDenoisingObjective:
             "hybrids": len(prefix_denoising_hybrid),
             "kl_sites": len(prefix_denoising_hybrid[0].kl_sites),
         }
+
+
+class _DummyTrainer:
+    pass
 
 
 def _hybrid_sample() -> HybridPrefixDenoisingSample:
@@ -156,11 +167,48 @@ def test_prefix_denoising_model_ready_sidecars_survive_until_model_boundary() ->
         "kl_sites": 1,
     }
 
-    stripped = strip_non_model_detection_sidecars(dict(collated))
+    model_inputs = dict(collated)
+    extras = pop_batch_extras(model_inputs)
+    assert extras.prefix_denoising_hybrid == (sample,)
+    assert extras.prefix_denoising_segment_meta == segment_meta
+    assert extras.prefix_denoising_resolved_kl_sites is None
+    assert extras.packed_hybrid_boundary_map is None
+    assert "prefix_denoising_hybrid" not in model_inputs
+    assert "prefix_denoising_segment_meta" not in model_inputs
+
+    stripped = strip_non_model_detection_sidecars(model_inputs)
     assert "prefix_denoising_hybrid" not in stripped
     assert "prefix_denoising_segment_meta" not in stripped
     assert "packed_hybrid_boundary_map" not in stripped
     assert "prefix_denoising_resolved_kl_sites" not in stripped
+    assert set(stripped) == {
+        "input_ids",
+        "labels",
+        "attention_mask",
+        "pixel_values",
+        "image_grid_thw",
+    }
+
+
+def test_prefix_denoising_template_data_collator_path_stashes_batch_extras() -> None:
+    sample = _hybrid_sample()
+    item = materialize_hybrid_model_ready_item(
+        sample=sample,
+        dataset_name="unit",
+        base_idx=0,
+    )
+    collator = build_batch_extras_collator(_DummyTemplate())
+    collated = collator([item])
+    trainer = _DummyTrainer()
+
+    extras = maybe_pop_and_stash_batch_extras(trainer, collated)
+    stripped = strip_non_model_detection_sidecars(collated)
+
+    assert extras.prefix_denoising_hybrid == (sample,)
+    assert extras.prefix_denoising_segment_meta[0][0]["branch_id"] == "clean_full"
+    assert extras.prefix_denoising_segment_meta[0][1]["branch_id"] == "noisy_full"
+    assert "prefix_denoising_hybrid" not in stripped
+    assert "prefix_denoising_segment_meta" not in stripped
     assert set(stripped) == {
         "input_ids",
         "labels",
