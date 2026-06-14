@@ -16,7 +16,10 @@ Design spec: `docs/superpowers/specs/2026-06-14-prefix-denoising-sft-v1-design.m
 
 Direction note: `progress/directions/prefix_denoising_sft_v1.md`
 
-Status: planning artifact only. Implementation is not approved until this plan passes the user-requested review-convergence pass.
+Status: historical implementation plan for the implemented V1 slice on
+`codex/prefix-denoising-sft`. The plan passed into execution after review
+approval; see `progress/diagnostics/2026-06-14_prefix_denoising_launch_health.md`
+for the current tiny launch-health evidence.
 
 ## Review-Convergence Scope
 
@@ -26,8 +29,8 @@ Status: planning artifact only. Implementation is not approved until this plan p
 | Mutation level for this document | docs-only |
 | Implementation mutation allowed by this plan | code/config/docs allowed after review approval |
 | Source of truth | approved design spec, direction note, current code in this worktree |
-| Stop condition | plan saved, self-reviewed, and ready for independent reviewer lanes |
-| Approval gates | user review of this plan, then review-convergence findings triaged, then explicit implementation approval |
+| Stop condition | implementation landed, tiny launch-health evidence recorded, and final convergence review pending |
+| Approval gates | historical: user review, review-convergence triage, and explicit implementation approval were completed before execution |
 
 No review subagents were launched while writing this plan because the user said they will launch additional reviewers after the docs are complete.
 
@@ -2997,13 +3000,15 @@ critically after Round 2. Accepted roadmap revisions:
 
 ## Execution Handoff
 
-Plan complete and saved to `docs/superpowers/plans/2026-06-14-prefix-denoising-sft-v1.md`.
+Plan saved to `docs/superpowers/plans/2026-06-14-prefix-denoising-sft-v1.md`
+as the historical task plan for the V1 implementation on
+`codex/prefix-denoising-sft`.
 
-Next gate: user approval. Do not start implementation until the OpenSpec or
-experiment-only governance boundary is resolved and the user explicitly
-approves implementation.
+Implementation has already started and the first launch-health evidence is
+recorded in
+`progress/diagnostics/2026-06-14_prefix_denoising_launch_health.md`.
 
-After review approval, two execution options are available:
+For future continuation work, two execution options remain available:
 
 **1. Subagent-Driven (recommended)** - dispatch a fresh subagent per task, review between tasks, fast iteration.
 

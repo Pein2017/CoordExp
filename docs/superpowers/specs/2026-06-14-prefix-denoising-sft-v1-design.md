@@ -2,9 +2,10 @@
 
 Date: 2026-06-14
 
-Status: design approved for durable recording. Implementation is not yet authorized
-until the user reviews this written spec and approves the follow-up
-implementation plan.
+Status: historical design spec for the implemented V1 slice on
+`codex/prefix-denoising-sft`. The implementation and tiny launch-health smoke
+have landed; see `progress/diagnostics/2026-06-14_prefix_denoising_launch_health.md`
+for the current launch-health interpretation and residual risks.
 
 Owner surface: Stage-1 compact detection teacher forcing under
 `stage1_detection_teacher_forcing`, with new prefix-denoising V1 code isolated
