@@ -492,9 +492,6 @@ _STAGE2_CHANNEL_B_DIRECT_BATCH_METRIC_KEYS = frozenset(
         "rollout/backend_vllm",
         "rollout/decode_mode_greedy",
         "rollout/decode_mode_beam",
-        "rollout/decode_policy_legacy_coordjson",
-        "rollout/decode_policy_unconstrained",
-        "rollout/decode_policy_compact_grammar",
         "rollout/do_sample",
         "rollout/fallback_dominance_warning",
         "rollout/fallback_gt_fn_append_only_count",
@@ -3117,10 +3114,6 @@ class Stage2RolloutCorrectionTrainer(
     def _resolve_stage2_rollout_template_policy(self) -> Stage2RolloutTemplatePolicy:
         return resolve_stage2_rollout_template_policy(
             self._rollout_correction_cfg_get("rollout_template_family", "coordjson"),
-            rollout_decode_policy=self._rollout_correction_cfg_get(
-                "rollout_decode_policy",
-                None,
-            ),
             invalid_rollout_policy=self._rollout_correction_cfg_get(
                 "invalid_rollout_policy",
                 None,
@@ -5151,21 +5144,6 @@ class Stage2RolloutCorrectionTrainer(
             ),
             "rollout/parser_coordjson_legacy": float(
                 1.0 if rollout_template_policy.parser_id == "coordjson_legacy" else 0.0
-            ),
-            "rollout/decode_policy_legacy_coordjson": float(
-                1.0
-                if rollout_template_policy.decode_policy == "legacy_coordjson"
-                else 0.0
-            ),
-            "rollout/decode_policy_unconstrained": float(
-                1.0
-                if rollout_template_policy.decode_policy == "unconstrained"
-                else 0.0
-            ),
-            "rollout/decode_policy_compact_grammar": float(
-                1.0
-                if rollout_template_policy.decode_policy == "compact_grammar"
-                else 0.0
             ),
             "rollout/parser_template_mismatch_rate": float(0.0),
             "rollout/invalid_fallback_gt_fn_count": float(

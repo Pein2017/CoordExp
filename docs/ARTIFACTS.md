@@ -422,7 +422,6 @@ surface fields:
 - `stage2_policy_provenance.object_ordering_strategy_id`
 - `stage2_policy_provenance.sample_object_ordering`
 - `stage2_policy_provenance.rollout_template_family`
-- `stage2_policy_provenance.rollout_decode_policy`
 - `stage2_policy_provenance.invalid_rollout_policy`
 - `stage2_policy_provenance.fallback_loss_weight`
 

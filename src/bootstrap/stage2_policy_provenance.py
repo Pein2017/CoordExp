@@ -125,11 +125,6 @@ def build_stage2_policy_provenance(
             "rollout_template_family",
             "coordjson",
         ),
-        "rollout_decode_policy": _string_field(
-            correction,
-            "rollout_decode_policy",
-            "legacy_coordjson",
-        ),
         "invalid_rollout_policy": _string_field(
             correction,
             "invalid_rollout_policy",

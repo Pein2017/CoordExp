@@ -19,7 +19,6 @@ if TYPE_CHECKING:
     from src.trainers.rollout_matching.contracts import GTObject as _TrainerGTObject
 
 Stage2RolloutTemplateFamily = Literal["compact_full", "coordjson"]
-Stage2RolloutDecodePolicy = Literal["unconstrained", "compact_grammar", "legacy_coordjson"]
 
 FALLBACK_GT_FN_APPEND_ONLY = "fallback_gt_fn_append_only"
 
@@ -42,9 +41,6 @@ class Stage2RolloutTemplatePolicy:
     :param template_family: Template family selected for rollout I/O.
     :param parser_id: Parser implementation identifier.
     :param append_policy_id: False-negative append policy identifier.
-    :param decode_policy: Rollout decoding policy. Compact-full defaults to
-        unconstrained decoding; grammar-constrained compact decoding is only a
-        labeled diagnostic/control choice.
     :param invalid_rollout_policy: Policy used for invalid rollout outputs.
     :param fallback_loss_weight: Loss weight applied to fallback targets.
     :param strict_rollout_preflight: When true, reject compact-full rollout
@@ -55,7 +51,6 @@ class Stage2RolloutTemplatePolicy:
     template_family: Stage2RolloutTemplateFamily
     parser_id: str
     append_policy_id: str
-    decode_policy: Stage2RolloutDecodePolicy
     invalid_rollout_policy: str
     fallback_loss_weight: float = 1.0
     strict_rollout_preflight: bool = False
@@ -68,7 +63,6 @@ class Stage2RolloutTemplatePolicy:
             "resolved_rollout_template": self.template_family,
             "rollout_parser_id": self.parser_id,
             "rollout_append_policy_id": self.append_policy_id,
-            "rollout_decode_policy": self.decode_policy,
             "invalid_rollout_policy": self.invalid_rollout_policy,
             "fallback_loss_weight": float(self.fallback_loss_weight),
             "strict_rollout_preflight": bool(self.strict_rollout_preflight),
@@ -249,8 +243,6 @@ def resolve_stage2_rollout_template_policy(
     rollout_template_family: str | None = None,
     *,
     custom_json_format: str | None = None,
-    compact_decode_policy: str | None = None,
-    rollout_decode_policy: str | None = None,
     invalid_rollout_policy: str | None = None,
     fallback_loss_weight: float = 1.0,
     strict_rollout_preflight: bool | str | int = False,
@@ -308,10 +300,6 @@ def resolve_stage2_rollout_template_policy(
             "stage2_rollout_correction.correction.strict_rollout_preflight must be boolean"
         )
 
-    # normalize optional runtime policies
-    decode_policy_raw = rollout_decode_policy
-    if decode_policy_raw is None:
-        decode_policy_raw = compact_decode_policy
     invalid_policy = (
         None
         if invalid_rollout_policy is None
@@ -329,13 +317,6 @@ def resolve_stage2_rollout_template_policy(
 
     # resolve the canonical compact-full surface
     if template_family == COMPACT_FULL_FORMAT:
-        decode_policy = str(decode_policy_raw or "unconstrained").strip().lower()
-        decode_policy = decode_policy.replace("-", "_")
-        if decode_policy not in {"unconstrained", "compact_grammar"}:
-            raise ValueError(
-                "stage2_rollout_correction.correction.rollout_decode_policy for compact_full must be "
-                "'unconstrained' or 'compact_grammar'"
-            )
         if invalid_policy is not None and invalid_policy != FALLBACK_GT_FN_APPEND_ONLY:
             raise ValueError(
                 "stage2_rollout_correction.correction.invalid_rollout_policy for compact_full must be "
@@ -346,7 +327,6 @@ def resolve_stage2_rollout_template_policy(
             template_family="compact_full",
             parser_id="compact_full",
             append_policy_id="compact_full_fn_append",
-            decode_policy=decode_policy,  # type: ignore[arg-type]
             invalid_rollout_policy=invalid_policy or FALLBACK_GT_FN_APPEND_ONLY,
             fallback_loss_weight=resolved_fallback_loss_weight,
             strict_rollout_preflight=resolved_strict_rollout_preflight,
@@ -354,13 +334,6 @@ def resolve_stage2_rollout_template_policy(
 
     # resolve the explicit legacy CoordJSON surface
     if template_family == COORDJSON_FORMAT:
-        decode_policy = str(decode_policy_raw or "legacy_coordjson").strip().lower()
-        decode_policy = decode_policy.replace("-", "_")
-        if decode_policy != "legacy_coordjson":
-            raise ValueError(
-                "stage2_rollout_correction.correction.rollout_decode_policy for coordjson must be "
-                "'legacy_coordjson'; compact-only decode policies are not supported"
-            )
         if invalid_policy == FALLBACK_GT_FN_APPEND_ONLY:
             raise ValueError(
                 "fallback_gt_fn_append_only is only valid for compact_full; "
@@ -370,7 +343,6 @@ def resolve_stage2_rollout_template_policy(
             template_family="coordjson",
             parser_id="coordjson_legacy",
             append_policy_id="coordjson_legacy_fn_append",
-            decode_policy="legacy_coordjson",
             invalid_rollout_policy=invalid_policy or "abort",
             fallback_loss_weight=resolved_fallback_loss_weight,
             strict_rollout_preflight=resolved_strict_rollout_preflight,

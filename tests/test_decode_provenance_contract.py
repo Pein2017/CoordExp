@@ -37,9 +37,6 @@ def _fake_infer_owner() -> SimpleNamespace:
         stop_pressure_trigger_rule="none",
         stop_pressure_logit_bias=0.0,
         stop_pressure_active=False,
-        compact_grammar_enabled=False,
-        compact_grammar_format="coordjson",
-        compact_grammar_force_row_start=True,
     )
     cfg = SimpleNamespace(
         checkpoint_mode="full_model",

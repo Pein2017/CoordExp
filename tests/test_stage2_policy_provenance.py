@@ -20,7 +20,6 @@ def test_stage2_policy_provenance_records_effective_greedy_threshold() -> None:
                     },
                     "insertion_order": "tail_append",
                     "rollout_template_family": "compact_full",
-                    "rollout_decode_policy": "unconstrained",
                     "invalid_rollout_policy": "fallback_to_gt_fn_append",
                 }
             },
@@ -40,7 +39,7 @@ def test_stage2_policy_provenance_records_effective_greedy_threshold() -> None:
     assert provenance["object_ordering_strategy_id"] == "legacy_tail_append"
     assert provenance["sample_object_ordering"] == "sorted"
     assert provenance["rollout_template_family"] == "compact_full"
-    assert provenance["rollout_decode_policy"] == "unconstrained"
+    assert "rollout_decode_policy" not in provenance
     assert provenance["invalid_rollout_policy"] == "fallback_to_gt_fn_append"
     assert provenance["fallback_loss_weight"] == 1.0
 
@@ -105,6 +104,6 @@ def test_stage2_policy_provenance_reads_real_typed_stage2_config() -> None:
     assert provenance["object_ordering_strategy_id"] == "legacy_tail_append"
     assert provenance["sample_object_ordering"] == "sorted"
     assert provenance["rollout_template_family"] == "compact_full"
-    assert provenance["rollout_decode_policy"] == "unconstrained"
+    assert "rollout_decode_policy" not in provenance
     assert provenance["invalid_rollout_policy"] == "fallback_gt_fn_append_only"
     assert provenance["fallback_loss_weight"] == 1.0

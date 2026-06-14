@@ -41,7 +41,6 @@ def test_artifact_contract_docs_freeze_rank0_and_stage2_eval_surfaces() -> None:
         "stage2_policy_provenance.assignment_iou_threshold_effective",
         "stage2_policy_provenance.object_ordering_strategy_id",
         "stage2_policy_provenance.rollout_template_family",
-        "stage2_policy_provenance.rollout_decode_policy",
         "stage2_policy_provenance.invalid_rollout_policy",
         "stage2_policy_provenance.fallback_loss_weight",
         "src/training/stage2/assignment.py::GreedyIoUAssignment",
@@ -142,8 +141,6 @@ def test_catalog_unified_shadow_surfaces_share_closed_domains() -> None:
     ]
 
     assert {surface["surface_id"] for surface in shadow_surfaces} == {
-        "stage1_json_ce",
-        "stage1_compact_trie_ce",
         "stage2_rollout_correction",
     }
     assert all(surface["domains"] == expected_domains for surface in shadow_surfaces)

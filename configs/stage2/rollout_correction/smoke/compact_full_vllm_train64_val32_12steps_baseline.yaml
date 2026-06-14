@@ -81,7 +81,6 @@ stage2_rollout_correction:
       strategy: greedy_iou
       iou_threshold: null
     rollout_template_family: compact_full
-    rollout_decode_policy: unconstrained
     invalid_rollout_policy: fallback_gt_fn_append_only
     insertion_order: tail_append
     duplicate_control:

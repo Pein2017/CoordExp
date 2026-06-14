@@ -21,21 +21,16 @@ def _block_optional_deps(name, globals=None, locals=None, fromlist=(), level=0):
 builtins.__import__ = _block_optional_deps
 constraints = importlib.import_module("src.infer.constraints")
 assert "CompactFullGrammarIds" not in vars(constraints)
-with unittest.TestCase().assertRaisesRegex(
-    ModuleNotFoundError,
-    "requires optional decode constraint dependencies",
-):
+with unittest.TestCase().assertRaises(AttributeError):
     getattr(constraints, "CompactFullGrammarIds")
 '''
     subprocess.run([sys.executable, "-c", code], check=True)
 
 
-def test_constraints_facade_exports_decode_constraint_builders() -> None:
+def test_constraints_facade_exports_stop_pressure_builders_only() -> None:
     import src.infer.constraints as constraints
 
     assert set(constraints.__all__) == {
-        "CompactFullGrammarIds",
-        "CompactFullGrammarLogitsProcessor",
         "STOP_PRESSURE_MODE_MIN_NEW_TOKENS_AFTER_OBJECT_OPEN",
         "STOP_PRESSURE_MODE_STEER_BBOX_TAIL_CLOSURE_TO_NEXT_OBJECT",
         "STOP_PRESSURE_MODE_STEER_BBOX_TAIL_THEN_OBJECT_OPEN",
@@ -46,8 +41,6 @@ def test_constraints_facade_exports_decode_constraint_builders() -> None:
         "STOP_PRESSURE_MODE_SUPPRESS_TERMINATING_TOKENS_AFTER_OBJECT_BOUNDARY",
         "STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_BOUNDARY",
         "STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_OPEN",
-        "build_compact_full_grammar_logits_processor",
-        "build_compact_grammar_logits_processor",
         "build_terminating_token_suppression_logits_processor",
         "build_array_branch_continuation_steering_logits_processor",
         "build_bbox_tail_closure_steering_logits_processor",
@@ -63,17 +56,12 @@ def test_constraints_facade_real_env_exports_match_implementation_modules() -> N
     except ModuleNotFoundError:
         return
 
-    assert (
-        constraints.CompactFullGrammarIds is constraints_impl.CompactFullGrammarIds
-    )
-    assert (
-        constraints.CompactFullGrammarLogitsProcessor
-        is constraints_impl.CompactFullGrammarLogitsProcessor
-    )
-    assert (
-        constraints.build_compact_grammar_logits_processor
-        is constraints_impl.build_compact_grammar_logits_processor
-    )
+    assert not hasattr(constraints, "CompactFullGrammarIds")
+    assert not hasattr(constraints, "CompactFullGrammarLogitsProcessor")
+    assert not hasattr(constraints, "build_compact_grammar_logits_processor")
+    assert not hasattr(constraints_impl, "CompactFullGrammarIds")
+    assert not hasattr(constraints_impl, "CompactFullGrammarLogitsProcessor")
+    assert not hasattr(constraints_impl, "build_compact_grammar_logits_processor")
     assert (
         constraints.build_terminating_token_suppression_logits_processor
         is constraints_impl.build_terminating_token_suppression_logits_processor

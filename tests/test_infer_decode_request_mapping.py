@@ -252,8 +252,6 @@ def test_infer_decode_request_projects_to_legacy_generation_kwargs() -> None:
         stop_pressure_mode="raw_text_object_boundary",
         stop_pressure_trigger_rule="raw_text_object_boundary",
         stop_pressure_logit_bias=2.5,
-        compact_grammar_enabled=True,
-        compact_grammar_format="compact_full",
     )
 
     assert kwargs["temperature"] == 0.4
@@ -265,8 +263,8 @@ def test_infer_decode_request_projects_to_legacy_generation_kwargs() -> None:
     assert kwargs["stop_pressure_mode"] == "raw_text_object_boundary"
     assert kwargs["stop_pressure_trigger_rule"] == "raw_text_object_boundary"
     assert kwargs["stop_pressure_logit_bias"] == 2.5
-    assert kwargs["compact_grammar_enabled"] is True
-    assert kwargs["compact_grammar_format"] == "compact_full"
+    assert "compact_grammar_enabled" not in kwargs
+    assert "compact_grammar_format" not in kwargs
 
 
 def test_rollout_matching_maps_to_shared_decode_request_with_sampling_overrides() -> None:
@@ -354,7 +352,7 @@ def test_decode_policy_fingerprint_is_stable_and_excludes_operational_fields() -
     assert first.decode_policy_fingerprint == second.decode_policy_fingerprint
 
 
-def test_decode_policy_fingerprint_changes_with_backend_and_constraints() -> None:
+def test_decode_policy_fingerprint_changes_with_backend_and_stop_pressure_constraints() -> None:
     unconstrained = build_decode_request_from_infer_config(
         {
             "backend": {"type": "hf"},
@@ -376,11 +374,14 @@ def test_decode_policy_fingerprint_changes_with_backend_and_constraints() -> Non
     constrained = build_decode_request_from_infer_config(
         {
             "backend": {"type": "hf"},
-            "detection_sequence_format": "compact_full",
             "generation": {
                 "temperature": 0.0,
                 "max_new_tokens": 8,
-                "compact_grammar": {"enabled": True},
+                "stop_pressure": {
+                    "mode": "min_new_tokens_after_object_open",
+                    "min_new_tokens": 2,
+                    "trigger_rule": "raw_text_object_open",
+                },
             },
         }
     )
@@ -392,8 +393,13 @@ def test_decode_policy_fingerprint_changes_with_backend_and_constraints() -> Non
     )
     assert constrained.generation_constraints == (
         (
-            "compact_grammar",
-            {"enabled": True, "force_row_start": True, "format": "compact_full"},
+            "stop_pressure",
+            {
+                "logit_bias": 0.0,
+                "min_new_tokens": 2,
+                "mode": "min_new_tokens_after_object_open",
+                "trigger_rule": "raw_text_object_open",
+            },
         ),
     )
 

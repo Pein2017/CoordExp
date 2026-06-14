@@ -508,7 +508,6 @@ def test_stage2_eval_prompt_provenance_binds_prompt_tokens_and_format(
             _detection_sequence_format=lambda: detection_sequence_format,
             _eval_rollout_template_policy=lambda: types.SimpleNamespace(
                 template_family=detection_sequence_format,
-                decode_policy="compact_grammar",
                 bbox_format="xyxy",
                 object_field_order="desc_first",
             ),
@@ -2698,56 +2697,23 @@ def test_rollout_many_hf_training_rollout_does_not_force_optimizer_offload(
     assert "force_offload_optimizer" not in kwargs
 
 
-def test_hf_rollout_logits_processor_wires_compact_grammar(monkeypatch) -> None:
-    trainer = object.__new__(Stage2RolloutRuntime)
-    trainer._eval_rollout_template_policy = lambda: types.SimpleNamespace(
-        decode_policy="compact_grammar",
-        template_family="compact_full",
-    )
-
-    captured: dict[str, object] = {}
-
+def test_hf_rollout_logits_processor_keeps_only_trailing_processors() -> None:
     class _NoopProcessor:
         def __call__(self, input_ids, scores):
             return scores
 
-    grammar_processor = _NoopProcessor()
     trailing_processor = _NoopProcessor()
-
-    def _fake_build_compact_grammar_logits_processor(
-        *,
-        tokenizer,
-        prompt_lengths,
-        detection_sequence_format,
-        force_row_start,
-    ):
-        captured["tokenizer"] = tokenizer
-        captured["prompt_lengths"] = list(prompt_lengths)
-        captured["detection_sequence_format"] = detection_sequence_format
-        captured["force_row_start"] = force_row_start
-        return grammar_processor
-
-    monkeypatch.setattr(
-        "src.infer.constraints.build_compact_grammar_logits_processor",
-        _fake_build_compact_grammar_logits_processor,
-    )
 
     tokenizer = object()
     processors = build_hf_rollout_logits_processor(
         tokenizer=tokenizer,
         prompt_pad_len=7,
         batch_size=3,
-        rollout_template_policy=trainer._eval_rollout_template_policy(),
+        rollout_template_policy=types.SimpleNamespace(template_family="compact_full"),
         trailing_processors=[trailing_processor],
     )
 
-    assert captured == {
-        "tokenizer": tokenizer,
-        "prompt_lengths": [7, 7, 7],
-        "detection_sequence_format": "compact_full",
-        "force_row_start": True,
-    }
-    assert list(processors) == [grammar_processor, trailing_processor]
+    assert list(processors) == [trailing_processor]
 
 
 def test_vllm_server_rollout_uses_decode_override_request_config(monkeypatch):

@@ -55,9 +55,6 @@ def _owner(
         stop_pressure_trigger_rule=None,
         stop_pressure_logit_bias=0.0,
         stop_pressure_active=False,
-        compact_grammar_enabled=True,
-        compact_grammar_format="compact_full",
-        compact_grammar_force_row_start=True,
     )
     return SimpleNamespace(
         cfg=cfg,
@@ -80,7 +77,7 @@ def _owner(
     )
 
 
-def test_infer_artifacts_record_compact_grammar_decode_provenance() -> None:
+def test_infer_artifacts_do_not_emit_grammar_decode_provenance() -> None:
     owner = _owner()
 
     resolved = build_infer_resolved_meta(
@@ -100,12 +97,7 @@ def test_infer_artifacts_record_compact_grammar_decode_provenance() -> None:
     )
 
     assert resolved["detection_sequence_format"] == "compact_full"
-    assert resolved["generation"]["compact_grammar"] == {
-        "enabled": True,
-        "format": "compact_full",
-        "force_row_start": True,
-        "active": True,
-    }
+    assert "compact_grammar" not in resolved["generation"]
     assert resolved["generation"]["qwen_chat_generation"] == {
         "eos_token": "<|im_end|>",
         "eos_token_id": 151645,
@@ -115,12 +107,7 @@ def test_infer_artifacts_record_compact_grammar_decode_provenance() -> None:
         "processor_do_resize": False,
     }
     assert summary["infer"]["detection_sequence_format"] == "compact_full"
-    assert summary["generation"]["compact_grammar"] == {
-        "enabled": True,
-        "format": "compact_full",
-        "force_row_start": True,
-        "active": True,
-    }
+    assert "compact_grammar" not in summary["generation"]
     assert summary["generation"]["qwen_chat_generation"] == {
         "eos_token": "<|im_end|>",
         "eos_token_id": 151645,

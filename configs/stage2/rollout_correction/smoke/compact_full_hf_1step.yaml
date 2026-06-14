@@ -68,7 +68,6 @@ stage2_rollout_correction:
     diagnostics: []
   correction:
     rollout_template_family: compact_full
-    rollout_decode_policy: unconstrained
     invalid_rollout_policy: fallback_gt_fn_append_only
     insertion_order: tail_append
     triage_posterior:

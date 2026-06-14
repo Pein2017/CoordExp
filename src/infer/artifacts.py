@@ -720,15 +720,6 @@ def _generation_meta(owner: Any, *, backend: str, batch_size: int) -> Dict[str, 
             "logit_bias": owner.gen_cfg.stop_pressure_logit_bias,
             "active": backend == "hf" and owner.gen_cfg.stop_pressure_active,
         },
-        "compact_grammar": {
-            "enabled": bool(getattr(owner.gen_cfg, "compact_grammar_enabled", False)),
-            "format": getattr(owner.gen_cfg, "compact_grammar_format", "coordjson"),
-            "force_row_start": bool(
-                getattr(owner.gen_cfg, "compact_grammar_force_row_start", True)
-            ),
-            "active": backend == "hf"
-            and bool(getattr(owner.gen_cfg, "compact_grammar_enabled", False)),
-        },
         "qwen_chat_generation": _qwen_chat_generation_meta(owner),
     }
 

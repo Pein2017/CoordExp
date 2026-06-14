@@ -124,8 +124,8 @@ Current internal ownership seams:
     rollout template/decode/parser provenance in rollout-correction batch metrics.
   - `stage2_rollout_correction.correction.rollout_template_family: compact_full` is the new
     canonical target surface for compact-full checkpoints. It uses the
-    compact-full parser and compact-full rollout-correction target renderer, with default
-    `rollout_decode_policy: unconstrained`. It must not flow through the legacy
+    compact-full parser and compact-full rollout-correction target renderer, with
+    unconstrained generation. It must not flow through the legacy
     CoordJSON parser or CoordJSON FN appender.
   - compact-full invalid, malformed, or empty-valid-object rollout policy
     resolves to `fallback_gt_fn_append_only` with `fallback_loss_weight: 1.0`.

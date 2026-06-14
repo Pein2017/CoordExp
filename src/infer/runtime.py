@@ -623,9 +623,6 @@ class GenerationConfig:
     stop_pressure_min_new_tokens: int = 0
     stop_pressure_trigger_rule: Optional[str] = None
     stop_pressure_logit_bias: float = 0.0
-    compact_grammar_enabled: bool = False
-    compact_grammar_format: str = COORDJSON_FORMAT
-    compact_grammar_force_row_start: bool = True
     trace_logprobs: bool = False
 
     @property
@@ -1059,29 +1056,8 @@ def _infer_generation_constraints(
     infer_cfg: Mapping[str, Any],
     generation_cfg: Mapping[str, Any],
 ) -> tuple[tuple[str, Any], ...]:
+    _ = infer_cfg
     constraints: dict[str, Any] = {}
-    compact_grammar_cfg = _get_nested_mapping(
-        generation_cfg,
-        "compact_grammar",
-        path="infer.generation.compact_grammar",
-    )
-    if _get_bool(
-        compact_grammar_cfg,
-        "enabled",
-        False,
-        path_prefix="infer.generation.compact_grammar",
-    ):
-        constraints["compact_grammar"] = {
-            "enabled": True,
-            "format": str(infer_cfg.get("detection_sequence_format") or "coordjson"),
-            "force_row_start": _get_bool(
-                compact_grammar_cfg,
-                "force_row_start",
-                True,
-                path_prefix="infer.generation.compact_grammar",
-            ),
-        }
-
     stop_pressure_cfg = _get_nested_mapping(
         generation_cfg,
         "stop_pressure",
@@ -1116,9 +1092,6 @@ def legacy_generation_kwargs_from_decode_request(
     stop_pressure_min_new_tokens: int = 0,
     stop_pressure_trigger_rule: Optional[str] = None,
     stop_pressure_logit_bias: float = 0.0,
-    compact_grammar_enabled: bool = False,
-    compact_grammar_format: str = "coordjson",
-    compact_grammar_force_row_start: bool = True,
 ) -> dict[str, Any]:
     """Project the shared decode request into the legacy engine config shape.
 
@@ -1137,9 +1110,6 @@ def legacy_generation_kwargs_from_decode_request(
         "stop_pressure_min_new_tokens": int(stop_pressure_min_new_tokens),
         "stop_pressure_trigger_rule": stop_pressure_trigger_rule,
         "stop_pressure_logit_bias": float(stop_pressure_logit_bias),
-        "compact_grammar_enabled": bool(compact_grammar_enabled),
-        "compact_grammar_format": compact_grammar_format,
-        "compact_grammar_force_row_start": bool(compact_grammar_force_row_start),
         "trace_logprobs": bool(request.trace_logprobs),
     }
 

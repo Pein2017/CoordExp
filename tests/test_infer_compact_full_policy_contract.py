@@ -61,7 +61,7 @@ def _load_infer_config(
     def _fake_run_offline_inference(*, inference_kwargs, generation_kwargs, logger=None):
         del logger
         captured["compact_full_parse_mode"] = inference_kwargs["compact_full_parse_mode"]
-        captured["compact_grammar_enabled"] = generation_kwargs["compact_grammar_enabled"]
+        captured["generation_keys"] = set(generation_kwargs)
         out_path = Path(str(inference_kwargs["out_path"]))
         summary_path = Path(str(inference_kwargs["summary_path"]))
         out_path.write_text("", encoding="utf-8")
@@ -94,10 +94,8 @@ def test_new_teacher_forcing_infer_defaults_to_marker_strict(
         "marker_delimited_strict"
     )
     assert config.captured["compact_full_parse_mode"] == "marker_delimited_strict"
-    assert (
-        config.raw["infer"]["generation"]["compact_grammar"]["enabled"] is False
-    )
-    assert config.captured["compact_grammar_enabled"] is False
+    assert "compact_grammar" not in config.raw["infer"]["generation"]
+    assert "compact_grammar_enabled" not in config.captured["generation_keys"]
 
 
 def test_legacy_parser_mode_requires_explicit_legacy_namespace(

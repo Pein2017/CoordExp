@@ -33,10 +33,6 @@ STOP_PRESSURE_MODE_STEER_BBOX_TAIL_THEN_OBJECT_OPEN_ONCE = (
 STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_BOUNDARY = "raw_text_object_boundary"
 
 _EXPORT_MODULES = {
-    "CompactFullGrammarIds": "src.infer._constraints_impl",
-    "CompactFullGrammarLogitsProcessor": "src.infer._constraints_impl",
-    "build_compact_full_grammar_logits_processor": "src.infer._constraints_impl",
-    "build_compact_grammar_logits_processor": "src.infer._constraints_impl",
     "build_array_branch_continuation_steering_logits_processor": (
         "src.infer._constraints_impl"
     ),
@@ -76,8 +72,6 @@ def _clear_failed_constraint_import(module_name: str) -> None:
 
 
 __all__ = [
-    "CompactFullGrammarIds",
-    "CompactFullGrammarLogitsProcessor",
     "STOP_PRESSURE_MODE_MIN_NEW_TOKENS_AFTER_OBJECT_OPEN",
     "STOP_PRESSURE_MODE_STEER_BBOX_TAIL_CLOSURE_TO_NEXT_OBJECT",
     "STOP_PRESSURE_MODE_STEER_BBOX_TAIL_THEN_OBJECT_OPEN",
@@ -92,7 +86,5 @@ __all__ = [
     "build_bbox_tail_closure_steering_logits_processor",
     "build_bbox_tail_then_object_open_once_steering_logits_processor",
     "build_bbox_tail_then_object_open_steering_logits_processor",
-    "build_compact_full_grammar_logits_processor",
-    "build_compact_grammar_logits_processor",
     "build_terminating_token_suppression_logits_processor",
 ]

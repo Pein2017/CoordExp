@@ -40,9 +40,6 @@ infer:
     repetition_penalty: 1.10
     batch_size: 1
     seed: 42
-    compact_grammar:
-      enabled: true
-      force_row_start: true
 
   device: cuda:0
   limit: 2
