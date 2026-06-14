@@ -10,6 +10,11 @@ import torch
 from src.config.schema import TokenTypeMetricsConfig
 from src.coord_tokens.codec import get_coord_token_ids
 from src.data_collators.token_types import TokenType, compute_token_types
+from src.detection.prefix_denoising.types import (
+    HybridPrefixDenoisingSample,
+    PrefixDenoisingKLSite,
+    ResolvedPrefixDenoisingKLSite,
+)
 from src.trainers.rollout_matching.parsing import find_desc_value_token_positions_by_span
 from src.trainers.batch_extras import (
     RECURSIVE_DETECTION_TARGETS_KEY,
@@ -322,12 +327,13 @@ class PrefixDenoisingHybridEnricher:
             self._reject_companion_without_hybrid(raw_batch=raw_batch, packed=True)
             return
 
+        packs = self._normalize_packs(raw_batch)
+        boundary_map = self._build_packed_boundary_map(packs)
         packed_groups: list[tuple[Any, ...]] = []
         saw_sidecar = False
         saw_incomplete_group = False
 
-        for pack in raw_batch:
-            pack_seq = pack if isinstance(pack, (list, tuple)) else [pack]
+        for pack_seq in packs:
             present = [
                 isinstance(sample, Mapping) and self.out_field in sample
                 for sample in pack_seq
@@ -356,18 +362,18 @@ class PrefixDenoisingHybridEnricher:
                 "prefix_denoising_hybrid sidecar must be present for every "
                 "packed prefix-denoising group in the batch"
             )
-        if collated.get(self.boundary_map_field) is None:
-            raise ValueError(
-                "Packed prefix_denoising_hybrid sidecars require "
-                "PackedHybridBoundaryMap via collated['packed_hybrid_boundary_map']"
-            )
+        collated[self.boundary_map_field] = boundary_map
         collated[self.out_field] = tuple(packed_groups)
-        for field in self.companion_fields:
-            self._attach_packed_companion(
-                collated=collated,
-                raw_batch=raw_batch,
-                field=field,
-            )
+        segment_groups = self._attach_packed_segment_meta(
+            collated=collated,
+            packs=packs,
+            boundary_map=boundary_map,
+        )
+        self._attach_packed_resolved_kl_sites(
+            collated=collated,
+            packs=packs,
+            segment_groups=segment_groups,
+        )
 
     @staticmethod
     def _attach_unpacked_companion(
@@ -429,6 +435,215 @@ class PrefixDenoisingHybridEnricher:
                 "prefix-denoising group in the batch when any group provides it"
             )
         collated[field] = tuple(packed_groups)
+
+    @staticmethod
+    def _normalize_packs(raw_batch: Sequence[Any]) -> list[list[Any]]:
+        return [
+            list(pack) if isinstance(pack, (list, tuple)) else [pack]
+            for pack in raw_batch
+        ]
+
+    def _build_packed_boundary_map(
+        self,
+        packs: Sequence[Sequence[Any]],
+    ) -> tuple[tuple[dict[str, int], ...], ...]:
+        rows: list[tuple[dict[str, int], ...]] = []
+        for pack in packs:
+            offset = 0
+            entries: list[dict[str, int]] = []
+            for sample_index, sample in enumerate(pack):
+                length = self._sample_length(sample)
+                end = offset + length
+                entries.append(
+                    {
+                        "sample_index": int(sample_index),
+                        "start": int(offset),
+                        "end": int(end),
+                    }
+                )
+                offset = end
+            rows.append(tuple(entries))
+        return tuple(rows)
+
+    @staticmethod
+    def _sample_length(sample: Any) -> int:
+        if not isinstance(sample, Mapping):
+            return 0
+        raw_length = sample.get("length")
+        if raw_length is not None:
+            try:
+                return int(raw_length)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    "packed prefix_denoising sample length must be an integer"
+                ) from exc
+        for key in ("input_ids", "attention_mask", "labels"):
+            value = sample.get(key)
+            if isinstance(value, torch.Tensor):
+                return int(value.numel())
+            if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+                return int(len(value))
+        hybrid = sample.get("prefix_denoising_hybrid")
+        if type(hybrid) is HybridPrefixDenoisingSample:
+            return int(hybrid.total_length)
+        return 0
+
+    @staticmethod
+    def _attach_packed_segment_meta(
+        *,
+        collated: dict[str, Any],
+        packs: Sequence[Sequence[Any]],
+        boundary_map: Sequence[Sequence[Mapping[str, int]]],
+    ) -> tuple[tuple[tuple[dict[str, Any], ...], ...], ...] | None:
+        field = "prefix_denoising_segment_meta"
+        present = [
+            isinstance(sample, Mapping) and field in sample
+            for pack in packs
+            for sample in pack
+        ]
+        if not any(present):
+            return None
+        if not all(present):
+            raise ValueError(
+                f"{field} sidecar must be present for every sample in a "
+                "packed prefix-denoising batch when any sample provides it"
+            )
+
+        row_groups: list[tuple[tuple[dict[str, Any], ...], ...]] = []
+        for row_index, (pack, boundaries) in enumerate(zip(packs, boundary_map)):
+            sample_groups: list[tuple[dict[str, Any], ...]] = []
+            for sample, boundary in zip(pack, boundaries):
+                if not isinstance(sample, Mapping):
+                    continue
+                sample_offset = int(boundary["start"])
+                sample_groups.append(
+                    tuple(
+                        PrefixDenoisingHybridEnricher._globalized_segment_record(
+                            record,
+                            batch_index=row_index,
+                            sample_offset=sample_offset,
+                        )
+                        for record in PrefixDenoisingHybridEnricher._segment_records(
+                            sample[field]
+                        )
+                    )
+                )
+            row_groups.append(tuple(sample_groups))
+        result = tuple(row_groups)
+        collated[field] = result
+        return result
+
+    @staticmethod
+    def _segment_records(payload: Any) -> tuple[Mapping[str, Any], ...]:
+        if isinstance(payload, Mapping):
+            return (payload,)
+        if isinstance(payload, Sequence) and not isinstance(payload, (str, bytes)):
+            records = tuple(payload)
+            if all(isinstance(record, Mapping) for record in records):
+                return records  # type: ignore[return-value]
+        raise TypeError("prefix_denoising_segment_meta entries must be mappings")
+
+    @staticmethod
+    def _globalized_segment_record(
+        record: Mapping[str, Any],
+        *,
+        batch_index: int,
+        sample_offset: int,
+    ) -> dict[str, Any]:
+        out = dict(record)
+        if "local_token_start" in record and "local_token_end" in record:
+            token_start = sample_offset + int(record["local_token_start"])
+            token_end = sample_offset + int(record["local_token_end"])
+        elif "token_start" in record and "token_end" in record:
+            token_start = sample_offset + int(record["token_start"])
+            token_end = sample_offset + int(record["token_end"])
+        else:
+            raise ValueError(
+                "prefix_denoising_segment_meta requires local_token_start/"
+                "local_token_end or token_start/token_end for packed rewriting"
+            )
+        out["batch_index"] = int(batch_index)
+        out["local_token_start"] = int(token_start)
+        out["local_token_end"] = int(token_end)
+        out["token_start"] = int(token_start)
+        out["token_end"] = int(token_end)
+        return out
+
+    @staticmethod
+    def _attach_packed_resolved_kl_sites(
+        *,
+        collated: dict[str, Any],
+        packs: Sequence[Sequence[Any]],
+        segment_groups: tuple[tuple[tuple[dict[str, Any], ...], ...], ...] | None,
+    ) -> None:
+        field = "prefix_denoising_resolved_kl_sites"
+        if segment_groups is None:
+            has_kl_sites = any(
+                isinstance(sample, Mapping)
+                and type(sample.get("prefix_denoising_hybrid"))
+                is HybridPrefixDenoisingSample
+                and bool(sample["prefix_denoising_hybrid"].kl_sites)
+                for pack in packs
+                for sample in pack
+            )
+            if has_kl_sites:
+                raise ValueError(
+                    "prefix_denoising_segment_meta is required to resolve packed "
+                    "prefix_denoising KL sites"
+                )
+            return
+
+        row_groups: list[tuple[tuple[ResolvedPrefixDenoisingKLSite, ...], ...]] = []
+        for row_index, (pack, row_segment_groups) in enumerate(
+            zip(packs, segment_groups)
+        ):
+            sample_groups: list[tuple[ResolvedPrefixDenoisingKLSite, ...]] = []
+            for sample, sample_segments in zip(pack, row_segment_groups):
+                if not isinstance(sample, Mapping):
+                    sample_groups.append(())
+                    continue
+                hybrid = sample.get("prefix_denoising_hybrid")
+                if type(hybrid) is not HybridPrefixDenoisingSample:
+                    sample_groups.append(())
+                    continue
+                meta_by_segment_id = {
+                    str(meta["segment_id"]): meta for meta in sample_segments
+                }
+                sites: list[ResolvedPrefixDenoisingKLSite] = []
+                for site in hybrid.kl_sites:
+                    if type(site) is not PrefixDenoisingKLSite:
+                        raise TypeError(
+                            "prefix_denoising_hybrid kl_sites must contain "
+                            "PrefixDenoisingKLSite entries"
+                        )
+                    try:
+                        clean_meta = meta_by_segment_id[site.clean_segment_id]
+                        noisy_meta = meta_by_segment_id[site.noisy_segment_id]
+                    except KeyError as exc:
+                        raise ValueError(
+                            "prefix_denoising_segment_meta is missing a segment "
+                            "referenced by a KL site"
+                        ) from exc
+                    sites.append(
+                        ResolvedPrefixDenoisingKLSite(
+                            clean_batch_index=int(row_index),
+                            noisy_batch_index=int(row_index),
+                            clean_label_position=int(clean_meta["token_start"])
+                            + int(site.clean_label_position),
+                            noisy_label_position=int(noisy_meta["token_start"])
+                            + int(site.noisy_label_position),
+                            clean_gt_bin=int(site.clean_gt_bin),
+                            support_bins=tuple(
+                                int(value) for value in site.support_bins
+                            ),
+                            coord_slot=site.coord_slot,
+                            object_index=int(site.object_index),
+                            identical_prefix=bool(site.identical_prefix),
+                        )
+                    )
+                sample_groups.append(tuple(sites))
+            row_groups.append(tuple(sample_groups))
+        collated[field] = tuple(row_groups)
 
     def _reject_companion_without_hybrid(
         self,

@@ -106,10 +106,6 @@ def compose_trainer_class(
                     "prefix_denoising_runtime must include packing_enabled"
                 )
             packing_enabled = bool(prefix_denoising_runtime["packing_enabled"])
-            if packing_enabled:
-                raise ValueError(
-                    "packed prefix_denoising requires Task 7 boundary rewriting"
-                )
             kl_weight = _resolve_prefix_denoising_kl_weight(
                 prefix_denoising_cfg=prefix_denoising_cfg,
                 prefix_denoising_runtime=prefix_denoising_runtime,

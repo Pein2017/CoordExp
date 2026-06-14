@@ -59,10 +59,6 @@ class PrefixDenoisingObjectiveMixin:
         kl_weight = _resolve_prefix_denoising_kl_weight(self)
 
         packing_enabled = _resolve_prefix_denoising_packing_enabled(self)
-        if packing_enabled:
-            raise ValueError(
-                "packed prefix_denoising requires Task 7 boundary rewriting"
-            )
         segment_spans = _segment_spans_from_meta(
             extras.prefix_denoising_segment_meta,
             packing_enabled=packing_enabled,
@@ -226,11 +222,13 @@ def _resolve_kl_sites_from_extras(
     extras: Any,
     packing_enabled: bool,
 ) -> tuple[ResolvedPrefixDenoisingKLSite, ...]:
-    if packing_enabled:
-        raise ValueError("packed prefix_denoising requires Task 7 boundary rewriting")
     resolved_payload = getattr(extras, "prefix_denoising_resolved_kl_sites", None)
     if resolved_payload is not None:
         return _flatten_resolved_kl_sites(resolved_payload)
+    if packing_enabled:
+        raise ValueError(
+            "packed prefix_denoising KL requires prefix_denoising_resolved_kl_sites"
+        )
 
     hybrids = _unpacked_hybrids(getattr(extras, "prefix_denoising_hybrid", None))
     if not hybrids:

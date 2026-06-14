@@ -39,6 +39,7 @@ from src.detection.prefix_denoising.types import (
     HybridPrefixDenoisingSample,
     PrefixDenoisingKLSite,
     PrefixDenoisingSegment,
+    ResolvedPrefixDenoisingKLSite,
 )
 from src.training.teacher_forcing.ir import SupervisionAtom, TeacherForcingTargetIR
 from src.training.teacher_forcing.roles import TokenRole
@@ -294,25 +295,27 @@ def test_compose_trainer_class_uses_prefix_denoising_objective_when_enabled() ->
     assert trainer_cls.prefix_denoising_packing_enabled is False
 
 
-def test_compose_trainer_class_rejects_prefix_denoising_packed_until_task7() -> None:
-    with pytest.raises(ValueError, match="Task 7 boundary rewriting"):
-        compose_trainer_class(
-            trainer_cls=object,
-            trainer_variant="",
-            instability_monitor_cfg=None,
-            token_type_cfg=None,
-            bbox_geo_cfg=None,
-            bbox_size_aux_cfg=None,
-            coord_soft_ce_w1_cfg=None,
-            sft_structural_close_cfg=None,
-            recursive_detection_ce_cfg=None,
-            teacher_forcing_objective_cfg=SimpleNamespace(enabled=True),
-            prefix_denoising_cfg=SimpleNamespace(
-                enabled=True,
-                current_object_kl=SimpleNamespace(weight=0.0),
-            ),
-            prefix_denoising_runtime={"packing_enabled": True, "kl_weight": 0.0},
-        )
+def test_compose_trainer_class_allows_prefix_denoising_packed_after_task7() -> None:
+    trainer_cls = compose_trainer_class(
+        trainer_cls=object,
+        trainer_variant="",
+        instability_monitor_cfg=None,
+        token_type_cfg=None,
+        bbox_geo_cfg=None,
+        bbox_size_aux_cfg=None,
+        coord_soft_ce_w1_cfg=None,
+        sft_structural_close_cfg=None,
+        recursive_detection_ce_cfg=None,
+        teacher_forcing_objective_cfg=SimpleNamespace(enabled=True),
+        prefix_denoising_cfg=SimpleNamespace(
+            enabled=True,
+            current_object_kl=SimpleNamespace(weight=0.0),
+        ),
+        prefix_denoising_runtime={"packing_enabled": True, "kl_weight": 0.0},
+    )
+
+    assert issubclass(trainer_cls, PrefixDenoisingObjectiveMixin)
+    assert trainer_cls.prefix_denoising_packing_enabled is True
 
 
 def test_compose_trainer_class_accepts_positive_prefix_kl_after_task6() -> None:
@@ -454,7 +457,10 @@ def test_prefix_denoising_positive_kl_changes_returned_loss_and_llm_loss_metric(
 
     class _Tokenizer:
         def convert_tokens_to_ids(self, tokens):
-            return [1000 + int(str(token).split("_")[1].split("|")[0]) for token in tokens]
+            return [
+                1000 + int(str(token).split("_")[1].split("|")[0])
+                for token in tokens
+            ]
 
     class _BaseTrainer:
         model = None
@@ -588,6 +594,166 @@ def test_prefix_denoising_positive_kl_changes_returned_loss_and_llm_loss_metric(
         ].values
         == []
     )
+
+
+def test_prefix_denoising_packed_objective_computes_ce_only_and_ce_plus_kl() -> None:
+    class _Model:
+        def __init__(self, logits: torch.Tensor) -> None:
+            self.logits = logits
+            self.calls: list[dict[str, object]] = []
+            self.training = True
+            self.config = SimpleNamespace(model_type="unit")
+
+        def __call__(self, **kwargs):
+            self.calls.append(dict(kwargs))
+            return SimpleNamespace(logits=self.logits)
+
+    class _Metric:
+        def __init__(self) -> None:
+            self.values: list[float] = []
+
+        def update(self, value: float) -> None:
+            self.values.append(float(value))
+
+    class _Tokenizer:
+        def convert_tokens_to_ids(self, tokens):
+            return [1000 + int(str(token).split("_")[1].split("|")[0]) for token in tokens]
+
+    class _BaseTrainer:
+        model = None
+        args = SimpleNamespace(gradient_accumulation_steps=1)
+
+        def __init__(self) -> None:
+            self.custom_metrics = {"train": defaultdict(_Metric)}
+            self.tokenizer = _Tokenizer()
+
+    logits = torch.full((1, 12, 2100), -8.0, dtype=torch.float32)
+    labels = torch.full((1, 12), -100, dtype=torch.long)
+    for label_position in (2, 5, 8, 11):
+        labels[0, label_position] = 1010
+        logits[0, label_position - 1, 1010] = 7.0
+    logits[0, 10, 1011] = 9.0
+    segment_meta = (
+        (
+            (
+                {
+                    "batch_index": 0,
+                    "token_start": 0,
+                    "token_end": 3,
+                    "branch_id": "clean_full",
+                    "segment_id": "first:clean",
+                },
+                {
+                    "batch_index": 0,
+                    "token_start": 3,
+                    "token_end": 6,
+                    "branch_id": "noisy_full",
+                    "segment_id": "first:noisy",
+                },
+            ),
+            (
+                {
+                    "batch_index": 0,
+                    "token_start": 6,
+                    "token_end": 9,
+                    "branch_id": "clean_full",
+                    "segment_id": "second:clean",
+                },
+                {
+                    "batch_index": 0,
+                    "token_start": 9,
+                    "token_end": 12,
+                    "branch_id": "noisy_full",
+                    "segment_id": "second:noisy",
+                },
+            ),
+        ),
+    )
+    resolved_sites = (
+        (
+            (),
+            (
+                ResolvedPrefixDenoisingKLSite(
+                    clean_batch_index=0,
+                    noisy_batch_index=0,
+                    clean_label_position=8,
+                    noisy_label_position=11,
+                    clean_gt_bin=10,
+                    support_bins=(9, 10, 11),
+                    coord_slot="x1",
+                    object_index=1,
+                    identical_prefix=False,
+                ),
+            ),
+        ),
+    )
+    inputs = {
+        "input_ids": torch.tensor(
+            [[0, 9, 1010, 0, 9, 1010, 0, 9, 1010, 0, 9, 1011]],
+            dtype=torch.long,
+        ),
+        "attention_mask": torch.ones((1, 12), dtype=torch.long),
+        "labels": labels,
+        "prefix_denoising_hybrid": ((object(), object()),),
+        "prefix_denoising_segment_meta": segment_meta,
+        "packed_hybrid_boundary_map": (
+            (
+                {"sample_index": 0, "start": 0, "end": 6},
+                {"sample_index": 1, "start": 6, "end": 12},
+            ),
+        ),
+        "prefix_denoising_resolved_kl_sites": resolved_sites,
+    }
+    ce_cls = compose_trainer_class(
+        trainer_cls=_BaseTrainer,
+        trainer_variant="",
+        instability_monitor_cfg=None,
+        token_type_cfg=None,
+        bbox_geo_cfg=None,
+        bbox_size_aux_cfg=None,
+        coord_soft_ce_w1_cfg=None,
+        sft_structural_close_cfg=None,
+        recursive_detection_ce_cfg=None,
+        teacher_forcing_objective_cfg=SimpleNamespace(enabled=True),
+        prefix_denoising_cfg=SimpleNamespace(
+            enabled=True,
+            current_object_kl=SimpleNamespace(weight=0.0),
+        ),
+        prefix_denoising_runtime={"packing_enabled": True, "kl_weight": 0.0},
+    )
+    kl_cls = compose_trainer_class(
+        trainer_cls=_BaseTrainer,
+        trainer_variant="",
+        instability_monitor_cfg=None,
+        token_type_cfg=None,
+        bbox_geo_cfg=None,
+        bbox_size_aux_cfg=None,
+        coord_soft_ce_w1_cfg=None,
+        sft_structural_close_cfg=None,
+        recursive_detection_ce_cfg=None,
+        teacher_forcing_objective_cfg=SimpleNamespace(enabled=True),
+        prefix_denoising_cfg=SimpleNamespace(
+            enabled=True,
+            current_object_kl=SimpleNamespace(weight=0.25),
+        ),
+        prefix_denoising_runtime={"packing_enabled": True, "kl_weight": 0.25},
+    )
+
+    ce_trainer = ce_cls()
+    kl_trainer = kl_cls()
+    ce_model = _Model(logits)
+    kl_model = _Model(logits)
+    ce_loss = ce_trainer.compute_loss(ce_model, dict(inputs))
+    kl_loss = kl_trainer.compute_loss(kl_model, dict(inputs))
+
+    assert torch.isfinite(ce_loss)
+    assert kl_loss.item() > ce_loss.item()
+    assert "packed_hybrid_boundary_map" not in ce_model.calls[0]
+    assert "prefix_denoising_segment_meta" not in ce_model.calls[0]
+    assert "prefix_denoising_resolved_kl_sites" not in ce_model.calls[0]
+    assert kl_trainer.custom_metrics["train"][
+        "prefix_denoising/kl/local_window/raw"
+    ].values[-1] > 0.0
 
 
 def test_prefix_denoising_positive_kl_requires_resolved_sites() -> None:
