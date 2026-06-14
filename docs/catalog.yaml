@@ -200,6 +200,10 @@ progress:
       title: Directions Index
       type: router
       status: canonical
+    - path: progress/directions/prefix_denoising_sft_v1.md
+      title: Prefix-Denoising SFT V1
+      type: direction
+      status: active-draft
     - path: progress/directions/full_idea_v5.md
       title: Full Idea v5
       type: direction
