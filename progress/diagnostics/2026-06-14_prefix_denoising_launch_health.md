@@ -133,5 +133,5 @@ Evidence:
 Residual risks:
 
 - This is not a training-quality result.
-- Explicit noising/sample-skip counters should be added before treating skip-rate monitoring as complete.
+- The historical smoke artifacts did not record explicit noising/sample-skip counters; current HEAD emits dataset-construction `skip_counters` warnings, so future launch notes should capture those logs when skips occur.
 - The KL probability diagnostics are numerically present but not meaningful in a tiny two-step run.
