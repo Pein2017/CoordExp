@@ -59,10 +59,11 @@ No review subagents were launched while writing this plan because the user said 
 | `src/detection/prefix_denoising/loss.py` | Hard CE, local-window KL, token accuracy, and numerics helpers. |
 | `src/detection/prefix_denoising/metrics.py` | Prefix-denoising `MetricEvent` constructors and required metric key list. |
 | `src/detection/prefix_denoising/packing.py` | Atomic hybrid packing planner, `PackedHybridBoundaryMap`, and offset rewrite helpers. |
+| `src/detection/dataset.py` | Register prefix-denoising sidecars in the canonical fail-fast model-input stripping boundary. |
 | `src/detection/runtime.py` | Route enabled prefix-denoising configs to the hybrid dataset and runtime support policy. |
 | `src/detection/packing.py` | Add prefix-denoising fingerprint fields and narrow eligibility metadata if needed by static packing helpers. |
 | `src/data_collators/enrichers.py` | Attach prefix-denoising hybrid sidecars and reject incompatible packed sidecars outside the V1 path. |
-| `src/data_collators/batch_extras_collator.py` | Register the prefix-denoising sidecar enricher. |
+| `src/data_collators/batch_extras_collator.py` | Register the prefix-denoising sidecar enricher and call the packed boundary-map producer immediately after the template collator flattens a packed batch. |
 | `src/trainers/metrics/prefix_denoising.py` | Trainer mixin that owns model forward, hard CE, KL, metric buffering, and standard monitors for V1. |
 | `src/trainers/metrics/mixins.py` | Re-export `PrefixDenoisingObjectiveMixin`. |
 | `src/bootstrap/trainer_setup.py` | Compose `PrefixDenoisingObjectiveMixin` through the existing trainer composition owner. |
@@ -75,6 +76,7 @@ No review subagents were launched while writing this plan because the user said 
 | `tests/test_prefix_denoising_config_contract.py` | Schema/runtime contract tests. |
 | `tests/test_prefix_denoising_geometry.py` | Constructive noiser tests. |
 | `tests/test_prefix_denoising_builder.py` | Hybrid builder and dataset tests. |
+| `tests/test_prefix_denoising_collator.py` | Prefix-denoising sidecar enricher, packed boundary producer, and model-input boundary tests. |
 | `tests/test_prefix_denoising_loss.py` | Hard CE and KL numerical tests. |
 | `tests/test_prefix_denoising_metrics.py` | Metric key and denominator tests. |
 | `tests/test_prefix_denoising_packing.py` | Hybrid pack plan and boundary-map tests. |
@@ -252,10 +254,6 @@ def _base_prefix_payload() -> dict[str, object]:
         "objective": {
             "id": "teacher_forcing",
             "profile": "hard_sft",
-            "target_ir": {
-                "rollin_policy": {"name": "random_permutation", "base_seed": 17},
-                "exact_packing_mapping": {"enabled": False},
-            },
             "modules": {
                 "token_type_mass": {"enabled": False},
                 "conditional_valid_set_likelihood": {"enabled": False},
@@ -348,13 +346,22 @@ def test_prefix_denoising_rejects_valid_set_marginal_teacher_forcing() -> None:
     payload["objective"] = {
         "id": "teacher_forcing",
         "profile": "pure_valid_set_marginal",
-        "target_ir": {
-            "rollin_policy": {"name": "random_permutation", "base_seed": 17},
-            "exact_packing_mapping": {"enabled": False},
-        },
     }
 
     with pytest.raises(ValueError, match=r"prefix_denoising.*hard clean-label CE"):
+        DetectionTrainingConfig.from_mapping(payload)
+
+
+def test_prefix_denoising_rejects_explicit_target_ir_rollin_policy() -> None:
+    payload = _base_prefix_payload()
+    objective = dict(payload["objective"])  # type: ignore[index]
+    objective["target_ir"] = {
+        "rollin_policy": {"name": "random_permutation", "base_seed": 17},
+        "exact_packing_mapping": {"enabled": False},
+    }
+    payload["objective"] = objective
+
+    with pytest.raises(ValueError, match=r"prefix_denoising.*target_ir\.rollin_policy"):
         DetectionTrainingConfig.from_mapping(payload)
 
 
@@ -537,7 +544,37 @@ In `src/config/schema.py`:
 - call `_detection_validate_prefix_denoising_contract` after `training` and `packing` are parsed;
 - include `prefix_denoising=prefix_denoising` in the returned config.
 
-Add this validation helper:
+Add this raw-payload guard before `objective` is parsed into
+`TeacherForcingObjectiveConfig`. This guard exists because the parsed
+teacher-forcing dataclass supplies a default `target_ir.rollin_policy`; prefix
+denoising must reject only an explicit user-authored target-IR roll-in policy,
+not the dataclass default:
+
+```python
+def _detection_validate_prefix_denoising_raw_contract(payload: Mapping[str, Any]) -> None:
+    prefix_raw = payload.get("prefix_denoising")
+    if not isinstance(prefix_raw, Mapping) or not bool(prefix_raw.get("enabled", False)):
+        return
+    objective_raw = payload.get("objective")
+    if not isinstance(objective_raw, Mapping):
+        return
+    if "coord_soft_ce" in objective_raw:
+        raise ValueError(
+            "prefix_denoising uses hard clean-label CE only; objective.coord_soft_ce / SoftCE is not supported"
+        )
+    target_ir_raw = objective_raw.get("target_ir")
+    if isinstance(target_ir_raw, Mapping) and "rollin_policy" in target_ir_raw:
+        raise ValueError(
+            "prefix_denoising owns sorted clean-GT ordering through its hybrid builder; "
+            "remove objective.target_ir.rollin_policy"
+        )
+```
+
+Call `_detection_validate_prefix_denoising_raw_contract(data)` in
+`DetectionTrainingConfig.from_mapping` before `objective_raw` is converted by
+`DetectionObjectiveConfig.from_mapping`.
+
+Add this parsed validation helper:
 
 ```python
 def _detection_validate_prefix_denoising_contract(
@@ -560,7 +597,10 @@ def _detection_validate_prefix_denoising_contract(
     if data.object_ordering != "sorted":
         raise ValueError("prefix_denoising requires data.object_ordering=sorted")
     if getattr(objective, "id", None) != "teacher_forcing" or getattr(objective, "profile", None) != "hard_sft":
-        raise ValueError("prefix_denoising requires objective.id=teacher_forcing and objective.profile=hard_sft")
+        raise ValueError(
+            "prefix_denoising requires hard clean-label CE with "
+            "objective.id=teacher_forcing and objective.profile=hard_sft"
+        )
     modules = getattr(objective, "modules", None)
     if modules is not None:
         enabled_modules = []
@@ -798,6 +838,19 @@ def construct_valid_norm1000_bbox_noise(
 
 This candidate-grid helper is intentionally simple. It must respect the authored envelope exactly: a zero-strength config with `center_shift_frac=0.0` and `uniform_scale_range=(1.0, 1.0)` has no valid 4-coordinate-changing candidates and returns `ok=False`. Do not introduce an implicit one-bin minimum movement; default/fallback configs may still produce one-bin movement when it falls inside their explicit envelope. If later implementation needs a denser random profile, it must preserve the same public contract: direct valid construction, no clamp-repair, deterministic seed behavior, and explicit infeasible result.
 
+Noising fallback policy:
+
+- If launch-health shows high `noise_infeasible_4coord_changed` or small/thin-box
+  skip rates, do not switch to milder noise as the first fix. A smaller envelope
+  can shrink the feasible set under the strict 4/4-changed rule. First measure
+  skip rate by clean bbox width/height bins, then either increase the authored
+  envelope or implement direct feasible-set sampling with an explicit candidate
+  cap.
+- If launch-health shows finite but too-difficult noisy CE/KL behavior, such as a
+  severe noisy-full CE gap, token-accuracy collapse, or poor teacher-vs-student
+  local-window diagnostics with acceptable skip rates, the first milder fallback
+  remains `center_shift_frac=0.04` and `uniform_scale_range=(0.96, 1.04)`.
+
 - [ ] **Step 4: Run geometry tests**
 
 Run:
@@ -867,13 +920,13 @@ class _Template:
         return {"input_ids": ids, "labels": labels, "attention_mask": [1] * len(ids)}
 
 
-def _row() -> dict:
+def _row(objects: list[dict] | None = None) -> dict:
     return {
         "image": "dummy.jpg",
         "objects": [
             {"desc": "red box", "bbox_2d": [100, 100, 200, 220]},
             {"desc": "blue box", "bbox_2d": [300, 320, 420, 470]},
-        ],
+        ] if objects is None else objects,
         "metadata": {"source": "unit"},
     }
 
@@ -938,6 +991,35 @@ def test_hybrid_builder_builds_kl_sites_when_weight_positive(tmp_path) -> None:
     assert len(sample.kl_sites) == 4
     assert {site.coord_slot for site in sample.kl_sites} == {"x1", "y1", "x2", "y2"}
     assert all(site.clean_gt_bin in site.support_bins for site in sample.kl_sites)
+
+
+def test_hybrid_builder_excludes_zero_object_rows_with_counter_reason(tmp_path) -> None:
+    image = tmp_path / "dummy.jpg"
+    image.write_bytes(b"fake")
+    cfg = PrefixDenoisingConfig.from_mapping(
+        {
+            "enabled": True,
+            "noise": {"center_shift_frac": 0.08, "uniform_scale_range": [0.92, 1.08]},
+            "current_object_kl": {"weight": 0.05, "window_radius": 8, "num_objects_per_image": 1},
+        }
+    )
+
+    sample = build_hybrid_prefix_denoising_sample(
+        row=_row(objects=[]),
+        base_sample_id="unit-empty",
+        image_root=tmp_path,
+        swift_template=_Template(),
+        user_prompt="Locate objects.",
+        system_prompt=None,
+        prefix_denoising=cfg,
+        epoch=0,
+        rng=random.Random(5),
+        max_length=12000,
+    )
+
+    assert sample.ok is False
+    assert sample.skip_reason == "zero_object_hybrid_sample"
+    assert sample.total_length == 0
 ```
 
 - [ ] **Step 2: Run builder tests and verify the intended failure**
@@ -1034,6 +1116,7 @@ Create `src/detection/prefix_denoising/builder.py`.
 The implementation should:
 
 - parse raw detection rows using existing detection helpers where possible;
+- exclude zero-object rows before rendering with `skip_reason="zero_object_hybrid_sample"` so duplicated no-op clean/noisy branches do not dilute noisy CE or KL diagnostics;
 - sort objects by clean top-left order through the existing detection scene/order path;
 - render compact-full entries with clean bbox tokens and noisy bbox tokens;
 - use `construct_valid_norm1000_bbox_noise` for every valid object;
@@ -1177,6 +1260,7 @@ git commit -m "feat: build prefix denoising hybrid samples"
 ## Task 4: Collator Sidecar And Batch Contract
 
 **Files:**
+- Modify: `src/detection/dataset.py`
 - Modify: `src/data_collators/enrichers.py`
 - Modify: `src/data_collators/batch_extras_collator.py`
 - Create: `tests/test_prefix_denoising_collator.py`
@@ -1191,6 +1275,7 @@ from __future__ import annotations
 import pytest
 
 from src.data_collators.enrichers import PrefixDenoisingHybridEnricher
+from src.detection.dataset import strip_non_model_detection_sidecars
 from src.detection.prefix_denoising.types import HybridPrefixDenoisingSample
 
 
@@ -1240,6 +1325,43 @@ def test_prefix_denoising_enricher_rejects_plain_packed_sidecar_without_boundary
             raw_batch=[[{"prefix_denoising_hybrid": _sample("a")}]],
             packed=True,
         )
+
+
+def test_prefix_denoising_enricher_attaches_packed_hybrids_when_boundary_map_exists() -> None:
+    enricher = PrefixDenoisingHybridEnricher()
+    collated: dict[str, object] = {"packed_hybrid_boundary_map": object()}
+
+    enricher(
+        collated=collated,
+        raw_batch=[
+            [
+                {"prefix_denoising_hybrid": _sample("a")},
+                {"prefix_denoising_hybrid": _sample("b")},
+            ]
+        ],
+        packed=True,
+    )
+
+    assert "prefix_denoising_hybrid" in collated
+    packed_groups = collated["prefix_denoising_hybrid"]
+    assert len(packed_groups) == 1  # type: ignore[arg-type]
+    assert len(packed_groups[0]) == 2  # type: ignore[index]
+
+
+def test_prefix_denoising_sidecars_are_registered_at_model_boundary() -> None:
+    batch = {
+        "input_ids": object(),
+        "labels": object(),
+        "prefix_denoising_hybrid": object(),
+        "prefix_denoising_segment_meta": object(),
+        "packed_hybrid_boundary_map": object(),
+        "prefix_denoising_resolved_kl_sites": object(),
+        "sample_id": "unit-0",
+    }
+
+    stripped = strip_non_model_detection_sidecars(batch)
+
+    assert sorted(stripped) == ["input_ids", "labels"]
 ```
 
 - [ ] **Step 2: Run tests and verify the intended failure**
@@ -1268,15 +1390,31 @@ class PrefixDenoisingHybridEnricher:
         packed: bool,
     ) -> None:
         if packed:
-            has_sidecar = any(
-                isinstance(sample, Mapping) and self.out_field in sample
-                for pack in raw_batch
-                for sample in (pack if isinstance(pack, (list, tuple)) else [pack])
-            )
-            if has_sidecar and "packed_hybrid_boundary_map" not in collated:
+            packed_groups: list[tuple[Any, ...]] = []
+            has_sidecar = False
+            missing_sidecar = False
+            for pack in raw_batch:
+                pack_seq = pack if isinstance(pack, (list, tuple)) else [pack]
+                group: list[Any] = []
+                for sample in pack_seq:
+                    if isinstance(sample, Mapping) and self.out_field in sample:
+                        has_sidecar = True
+                        group.append(sample[self.out_field])
+                    else:
+                        missing_sidecar = True
+                if group:
+                    packed_groups.append(tuple(group))
+            if not has_sidecar:
+                return
+            if missing_sidecar:
+                raise ValueError(
+                    "prefix_denoising_hybrid sidecar must be present for every sample in a packed prefix-denoising batch"
+                )
+            if "packed_hybrid_boundary_map" not in collated:
                 raise ValueError(
                     "prefix_denoising_hybrid packed sidecars require PackedHybridBoundaryMap"
                 )
+            collated[self.out_field] = tuple(packed_groups)
             return
 
         present = [
@@ -1293,7 +1431,33 @@ class PrefixDenoisingHybridEnricher:
         )
 ```
 
-In `src/data_collators/batch_extras_collator.py`, instantiate and call this enricher after `DatasetMetaEnricher` and before token-type/proxy enrichers.
+In `src/detection/dataset.py`, add the prefix-denoising sidecars to
+`REGISTERED_DETECTION_SIDECAR_KEYS` so the canonical model-input boundary strips
+them before `model(**inputs)`:
+
+```python
+REGISTERED_DETECTION_SIDECAR_KEYS: tuple[str, ...] = (
+    "recursive_detection_targets",
+    TEACHER_FORCING_TARGET_IR_KEY,
+    "rendered_span_sources",
+    "detection_supervision_view_metadata",
+    "detection_metadata",
+    "assistant_payload",
+    "sample_id",
+    "dataset",
+    "base_idx",
+    "prefix_denoising_hybrid",
+    "prefix_denoising_segment_meta",
+    "packed_hybrid_boundary_map",
+    "prefix_denoising_resolved_kl_sites",
+)
+```
+
+In `src/data_collators/batch_extras_collator.py`, instantiate and call
+`PrefixDenoisingHybridEnricher` after `DatasetMetaEnricher` and before
+token-type/proxy enrichers. This task does not add the packed boundary-map
+producer; Task 7 owns that producer and wires it into this collator after the
+base template collator has flattened a packed batch.
 
 - [ ] **Step 4: Run collator tests**
 
@@ -1331,7 +1495,7 @@ Expected: PASS.
 Run:
 
 ```bash
-git add src/data_collators/enrichers.py src/data_collators/batch_extras_collator.py tests/test_prefix_denoising_collator.py tests/test_prefix_denoising_runtime_integration.py
+git add src/detection/dataset.py src/data_collators/enrichers.py src/data_collators/batch_extras_collator.py tests/test_prefix_denoising_collator.py tests/test_prefix_denoising_runtime_integration.py
 git commit -m "feat: carry prefix denoising hybrid sidecars"
 ```
 
@@ -1357,6 +1521,7 @@ from __future__ import annotations
 
 import torch
 
+from src.detection.dataset import strip_non_model_detection_sidecars
 from src.detection.prefix_denoising.loss import (
     PrefixDenoisingSegmentSpan,
     compute_branch_balanced_hard_ce,
@@ -1675,6 +1840,7 @@ from typing import MutableMapping
 
 import torch
 
+from src.detection.dataset import strip_non_model_detection_sidecars
 from src.detection.prefix_denoising.loss import (
     PrefixDenoisingSegmentSpan,
     compute_branch_balanced_hard_ce,
@@ -1683,20 +1849,40 @@ from src.detection.prefix_denoising.loss import (
 from src.detection.prefix_denoising.metrics import prefix_denoising_ce_events
 from src.metrics.events import flatten_metric_events
 from src.metrics.reporter import SwiftMetricReporter
+from src.trainers.batch_extras import maybe_pop_and_stash_batch_extras
 from src.trainers.teacher_forcing.forwards import prepare_forward_inputs
+
+
+def _resolve_prefix_denoising_packing_enabled(trainer) -> bool:
+    value = getattr(trainer, "prefix_denoising_packing_enabled", None)
+    if value is None:
+        raise ValueError(
+            "prefix_denoising trainer requires explicit prefix_denoising_packing_enabled runtime state"
+        )
+    return bool(value)
 
 
 class PrefixDenoisingObjectiveMixin:
     def compute_loss(self, model, inputs, return_outputs: bool = False, num_items_in_batch=None):
         if not isinstance(inputs, MutableMapping):
             raise TypeError("prefix_denoising objective requires dict-like inputs")
+        maybe_pop_and_stash_batch_extras(self, inputs)
         hybrids = inputs.pop("prefix_denoising_hybrid", None)
         if hybrids is None:
             return super().compute_loss(model, inputs, return_outputs=return_outputs, num_items_in_batch=num_items_in_batch)
         labels = inputs.get("labels")
         if not isinstance(labels, torch.Tensor):
             raise ValueError("prefix_denoising requires labels tensor")
-        segment_meta = tuple(inputs.pop("prefix_denoising_segment_meta"))
+        segment_meta = tuple(inputs.pop("prefix_denoising_segment_meta", ()))
+        if not segment_meta:
+            raise ValueError("prefix_denoising requires prefix_denoising_segment_meta sidecar")
+        boundary_map = inputs.pop("packed_hybrid_boundary_map", None)
+        inputs.pop("prefix_denoising_resolved_kl_sites", None)
+        packing_enabled = _resolve_prefix_denoising_packing_enabled(self)
+        if packing_enabled and boundary_map is None:
+            raise ValueError(
+                "prefix_denoising packed training requires packed_hybrid_boundary_map sidecar"
+            )
         segment_spans = tuple(
             PrefixDenoisingSegmentSpan(
                 batch_index=int(item["batch_index"]),
@@ -1707,12 +1893,13 @@ class PrefixDenoisingObjectiveMixin:
             )
             for item in segment_meta
         )
-        ignored_keys = ["labels", "prefix_denoising_segment_meta", "prefix_denoising_hybrid"]
+        strip_non_model_detection_sidecars(inputs)
+        ignored_keys = ["labels"]
         _, inputs_for_model, _ = prepare_forward_inputs(
             model=model,
             inputs=inputs,
             ignored_keys=ignored_keys,
-            packing_enabled=bool(getattr(self, "_packing_enabled", lambda: False)()),
+            packing_enabled=packing_enabled,
             where="prefix_denoising",
         )
         outputs = model(**inputs_for_model)
@@ -1739,13 +1926,13 @@ class PrefixDenoisingObjectiveMixin:
         return (ce.loss, outputs) if return_outputs else ce.loss
 ```
 
-Use `SwiftMetricReporter(self).update_many(flat)` for required monitors; do not introduce a private pending-list logger unless a real consumer is added and tested.
+Use `SwiftMetricReporter(self).update_many(flat)` for required monitors; do not introduce a private pending-list logger unless a real consumer is added and tested. Do not use `getattr(self, "_packing_enabled", lambda: False)()` in this mixin: `_packing_enabled` is a Stage-2 runtime helper, and falling back to `False` would skip the packed Qwen position-id assertion for V1.
 
 - [ ] **Step 7: Compose trainer only when prefix-denoising is enabled**
 
 In `src/trainers/metrics/mixins.py`, export `PrefixDenoisingObjectiveMixin`.
 
-In `src/bootstrap/trainer_setup.py::compose_trainer_class`, add `prefix_denoising_cfg` as an explicit input. If `prefix_denoising_cfg.enabled` is true, compose `PrefixDenoisingObjectiveMixin` instead of `TeacherForcingObjectiveMixin`; they are mutually exclusive owners of the token loss. Keep the existing `TeacherForcingObjectiveMixin` path unchanged for non-V1 configs. Add a test proving the enabled prefix path yields `issubclass(trainer_cls, PrefixDenoisingObjectiveMixin)` and does not also attach incompatible objective mixins.
+In `src/bootstrap/trainer_setup.py::compose_trainer_class`, add `prefix_denoising_cfg` and `prefix_denoising_runtime` as explicit inputs. If `prefix_denoising_cfg.enabled` is true, compose `PrefixDenoisingObjectiveMixin` instead of `TeacherForcingObjectiveMixin`; they are mutually exclusive owners of the token loss. The dynamically composed class must carry `prefix_denoising_packing_enabled = bool(prefix_denoising_runtime["packing_enabled"])`. Keep the existing `TeacherForcingObjectiveMixin` path unchanged for non-V1 configs. Add a test proving the enabled prefix path yields `issubclass(trainer_cls, PrefixDenoisingObjectiveMixin)`, does not also attach incompatible objective mixins, and raises if `prefix_denoising_packing_enabled` is absent while `prefix_denoising.enabled` is true.
 
 - [ ] **Step 8: Run CE and metric tests**
 
@@ -1991,6 +2178,10 @@ In `src/trainers/metrics/prefix_denoising.py`:
 
 - extract KL sites from the hybrid sidecar;
 - skip KL construction entirely when weight is zero;
+- source the coordinate-token id row from
+  `src.tokens.coord.codec.get_coord_token_ids(tokenizer, validate=True)` using
+  the trainer/template tokenizer, convert it once to a `torch.long` tensor on
+  the logits device, and pass that tensor into `compute_local_coord_kl`;
 - compute KL after model forward when weight is positive;
 - total loss is `ce.loss + weight * kl.raw_loss`;
 - log raw and weighted KL separately;
@@ -2024,6 +2215,7 @@ git commit -m "feat: add prefix denoising local coord kl"
 - Modify: `src/detection/prefix_denoising/dataset.py`
 - Modify: `src/sft.py`
 - Modify: `src/detection/packing.py`
+- Modify: `src/data_collators/batch_extras_collator.py`
 - Modify: `tests/test_prefix_denoising_packing.py`
 - Modify: `tests/test_stage1_static_packing_runtime_config.py`
 
@@ -2034,7 +2226,13 @@ Create `tests/test_prefix_denoising_packing.py`:
 ```python
 from __future__ import annotations
 
-from src.detection.prefix_denoising.packing import build_hybrid_pack_plan, materialize_packed_hybrid_boundary_map
+import torch
+
+from src.detection.prefix_denoising.packing import (
+    build_hybrid_pack_plan,
+    materialize_packed_hybrid_boundary_map,
+    maybe_attach_packed_hybrid_boundary_map,
+)
 from src.detection.prefix_denoising.types import (
     HybridPrefixDenoisingSample,
     PrefixDenoisingSegment,
@@ -2122,6 +2320,26 @@ def test_boundary_map_rewrites_two_hybrids_in_one_physical_row() -> None:
     assert boundary.position_reset_offsets
     assert boundary.image_placeholder_owners
     assert boundary.visual_slice_owners
+
+
+def test_boundary_map_producer_attaches_after_template_collate() -> None:
+    collated = {
+        "input_ids": torch.tensor([[1, 2, 3, 4, 5, 6, 7, 8]], dtype=torch.long),
+        "labels": torch.tensor([[-100, 2, 3, 4, -100, 6, 7, 8]], dtype=torch.long),
+        "position_ids": torch.arange(8, dtype=torch.long).view(1, 1, 8).repeat(3, 1, 1),
+        "text_position_ids": torch.arange(8, dtype=torch.long).view(1, 8),
+        "pixel_values": torch.zeros((2, 4), dtype=torch.float32),
+        "image_grid_thw": torch.ones((2, 3), dtype=torch.long),
+    }
+    raw_batch = [[{"prefix_denoising_hybrid": _hybrid("a", 4, 4)}]]
+
+    maybe_attach_packed_hybrid_boundary_map(collated=collated, raw_batch=raw_batch)
+
+    assert "packed_hybrid_boundary_map" in collated
+    boundary = collated["packed_hybrid_boundary_map"]
+    assert boundary.segment_meta
+    assert "prefix_denoising_segment_meta" in collated
+    assert "prefix_denoising_resolved_kl_sites" in collated
 ```
 
 - [ ] **Step 2: Run packing tests and verify the intended failure**
@@ -2168,9 +2386,11 @@ class PackedHybridBoundaryMap:
     ce_denominator_by_branch: Mapping[str, int]
     image_placeholder_owners: Mapping[tuple[int, int], str]
     visual_slice_owners: Mapping[tuple[int, int], str]
+    segment_meta: tuple[Mapping[str, object], ...]
+    resolved_kl_sites: tuple[ResolvedPrefixDenoisingKLSite, ...]
 ```
 
-- [ ] **Step 4: Implement pack planner**
+- [ ] **Step 4: Implement pack planner and post-collate boundary producer**
 
 Create `src/detection/prefix_denoising/packing.py`:
 
@@ -2179,7 +2399,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Any, Sequence
 
 from src.detection.prefix_denoising.types import HybridPrefixDenoisingSample
 
@@ -2232,7 +2452,43 @@ def build_hybrid_pack_plan(
     return HybridPackPlan(rows=tuple(rows), exclusions=dict(exclusions))
 ```
 
-Then extend the module with offset rewrite helpers for actual tensors after the planner tests pass. The boundary-map tests must cover at least two hybrid samples in one physical packed row with nonempty KL sites and must assert:
+In the same module, add the post-collate producer that owns the live tensor
+seam. The existing static packing wrapper groups raw dataset samples into a
+`list[dict]` pack and sets template packing flags; the ms-swift/template collator
+then flattens model tensors. Prefix-denoising must attach
+`PackedHybridBoundaryMap` after `collate_fn(batch)` has produced `input_ids`,
+`labels`, `position_ids` / `text_position_ids`, `pixel_values`, and
+`image_grid_thw`, but before enrichers and the trainer loss consume prefix
+sidecars:
+
+```python
+def maybe_attach_packed_hybrid_boundary_map(
+    *,
+    collated: dict[str, Any],
+    raw_batch: Sequence[Any],
+) -> None:
+    if not _raw_batch_has_prefix_denoising_pack(raw_batch):
+        return
+    if "input_ids" not in collated or "labels" not in collated:
+        raise ValueError("prefix_denoising packed boundary map requires collated input_ids and labels")
+    if "position_ids" not in collated:
+        raise ValueError("prefix_denoising packed boundary map requires collated position_ids")
+    if "pixel_values" not in collated or "image_grid_thw" not in collated:
+        raise ValueError("prefix_denoising packed boundary map requires pixel_values and image_grid_thw")
+    boundary = build_packed_hybrid_boundary_map_from_collated(
+        collated=collated,
+        raw_batch=raw_batch,
+    )
+    collated["packed_hybrid_boundary_map"] = boundary
+    collated["prefix_denoising_segment_meta"] = boundary.segment_meta
+    collated["prefix_denoising_resolved_kl_sites"] = boundary.resolved_kl_sites
+```
+
+`build_packed_hybrid_boundary_map_from_collated` must inspect the flattened
+physical batch emitted by the active template collator; it must not infer model
+tensor offsets from the assignment plan alone. The boundary-map tests must cover
+at least two hybrid samples in one physical packed row with nonempty KL sites and
+must assert:
 
 - CE label positions are mapped to causal logit rows by `label_position - 1` within the same segment boundary;
 - KL clean/noisy label positions and support metadata are rewritten to physical batch/logit positions and emitted as `ResolvedPrefixDenoisingKLSite` objects with explicit clean/noisy batch indices;
@@ -2240,6 +2496,8 @@ Then extend the module with offset rewrite helpers for actual tensors after the 
 - position reset offsets and FlashAttention varlen metadata agree with segment boundaries when the active packed runtime emits varlen fields;
 - image placeholders, `pixel_values`, and `image_grid_thw` slices have explicit segment owners;
 - CE/KL denominators are preserved after packing.
+- a dummy packed-isolation probe would fail if noisy-segment logits can attend
+  to clean-segment coordinate-token edits across a segment boundary.
 
 - [ ] **Step 5: Integrate with static packing runtime**
 
@@ -2250,6 +2508,11 @@ In `src/sft.py` and `src/detection/packing.py`:
 - continue rejecting non-V1 teacher-forcing/recursive sidecar packing;
 - record `overlength_hybrid_sample` exclusions in runtime artifacts.
 - inspect the actual packed batch for the repo's varlen/position-boundary fields and record them in launch-health artifacts. A plain 2D attention mask is not sufficient evidence for sidecar-active packed prefix denoising.
+
+In `src/data_collators/batch_extras_collator.py`, import and call
+`maybe_attach_packed_hybrid_boundary_map(collated=collated, raw_batch=batch)`
+immediately after `collated = collate_fn(batch)` and before
+`DatasetMetaEnricher`. This is the only V1 boundary-map insertion seam.
 
 - [ ] **Step 6: Run packing tests**
 
@@ -2266,7 +2529,7 @@ Expected: PASS.
 Run:
 
 ```bash
-git add src/detection/prefix_denoising/packing.py src/detection/prefix_denoising/types.py src/detection/prefix_denoising/dataset.py src/sft.py src/detection/packing.py tests/test_prefix_denoising_packing.py tests/test_stage1_static_packing_runtime_config.py
+git add src/detection/prefix_denoising/packing.py src/detection/prefix_denoising/types.py src/detection/prefix_denoising/dataset.py src/sft.py src/detection/packing.py src/data_collators/batch_extras_collator.py tests/test_prefix_denoising_packing.py tests/test_stage1_static_packing_runtime_config.py
 git commit -m "feat: add prefix denoising hybrid packing contract"
 ```
 
@@ -2482,7 +2745,11 @@ Expected:
 - `prefix_denoising/kl/local_window/raw` is absent or zero because KL weight is zero;
 - `llm_loss` is present;
 - top-1 and top-5 token accuracy are present;
-- skip counters are present.
+- skip counters are present, including `zero_object_hybrid_sample`,
+  `noise_infeasible_4coord_changed`, and overlength hybrid exclusions;
+- noising difficulty is summarized by clean bbox width/height bins so small/thin
+  object filtering is visible before interpreting the smoke as full-data
+  launch-health.
 
 - [ ] **Step 2: Run KL-on packed smoke**
 
@@ -2500,6 +2767,11 @@ Expected:
 - KL site counts are positive for rows with eligible objects;
 - teacher/student support-mass diagnostics are present;
 - no invalid bbox warnings dominate the tiny run.
+- if skip rate is high, the report recommends larger explicit noise envelope or
+  direct feasible-set sampling rather than the milder-noise fallback; if skip
+  rate is acceptable but noisy CE/KL is too hard, the report recommends the
+  milder-noise fallback, lower KL weight, wider KL window, or CE-only training
+  continuation.
 
 - [ ] **Step 3: Summarize launch-health artifacts**
 
@@ -2520,6 +2792,9 @@ Include:
 - KL metrics;
 - token top-1/top-5;
 - noising skip counters;
+- skip rate by clean bbox width/height bins and by skip reason;
+- chosen fallback interpretation, explicitly one of `high_skip_rate`,
+  `too_hard_noise`, `healthy_smoke`, or `blocked_runtime`;
 - packing runtime payload;
 - parse/drop counters if eval ran;
 - statement that this is launch-health, not rollout/exposure-bias evidence.
@@ -2612,12 +2887,15 @@ Spec coverage:
 - Config schema and gates are covered by Task 1.
 - Constructive valid bbox noising is covered by Task 2.
 - Hybrid sample structure and two-segment builder are covered by Task 3.
+- Zero-object/no-op rows are excluded by Task 3.
+- Prefix sidecar registration and model-input stripping are covered by Task 4.
 - Hard CE only is covered by Tasks 1 and 5.
 - Sparse asymmetric local-window KL is covered by Task 6.
 - Metrics and standard monitors are covered by Task 5 and Task 6.
-- Hybrid packing and boundary-map semantics are covered by Task 7.
+- Hybrid packing, post-collate boundary-map production, packed row metadata,
+  visual ownership, and position-boundary semantics are covered by Task 7.
 - Config leaves and docs routing are covered by Task 8.
-- Launch-health order is covered by Task 9.
+- Launch-health order and noising skip-rate interpretation are covered by Task 9.
 - Final verification and evidence scope are covered by Task 10.
 
 Placeholder scan:
@@ -2629,6 +2907,7 @@ Type consistency:
 
 - `PrefixDenoisingConfig`, `PrefixDenoisingNoiseConfig`, and `PrefixDenoisingCurrentObjectKLConfig` are the schema names used throughout.
 - `HybridPrefixDenoisingSample`, `PrefixDenoisingSegment`, `PrefixDenoisingKLSite`, and `PackedHybridBoundaryMap` are the runtime names used throughout.
+- `ResolvedPrefixDenoisingKLSite` is the only KL-site type consumed by packed loss code.
 - `PrefixDenoisingObjectiveMixin` is the trainer integration name used throughout.
 
 ## Review-Convergence Round 1 Resolutions
@@ -2683,6 +2962,33 @@ Reviewer lanes:
   boundary-map emission of resolved sites, and requires a real three-object K>1
   fixture with duplicate-site mean-preservation coverage. Focused re-review
   confirmed convergence.
+
+## External Audit Revision
+
+An external read-only audit at
+`progress/audits/2026-06-14_prefix_denoising_sft_v1_audit.md` was reviewed
+critically after Round 2. Accepted roadmap revisions:
+
+- sidecar boundary: Task 4 now edits `src/detection/dataset.py`, registers
+  prefix-denoising sidecars, and requires `PrefixDenoisingObjectiveMixin` to use
+  `strip_non_model_detection_sidecars` instead of a private ignored-key list;
+- packed trainer state: Task 5 now forbids `_packing_enabled` fallback and
+  requires explicit `prefix_denoising_packing_enabled` runtime state;
+- packed materialization seam: Task 7 now names the post-collate
+  `PackedHybridBoundaryMap` producer and wires it immediately after the template
+  collator flattens a packed batch;
+- packed sidecar carry-through: Task 4 now requires packed
+  `prefix_denoising_hybrid` sidecars to be attached when a boundary map exists,
+  instead of returning before the trainer can see them;
+- config ambiguity: Task 1 now rejects explicit
+  `objective.target_ir.rollin_policy` and raw `objective.coord_soft_ce` when
+  prefix denoising is enabled;
+- noise policy: Task 2 and Task 9 now separate high-skip-rate remedies from
+  too-hard-noise remedies;
+- zero-object policy: Task 3 now excludes zero-object rows with
+  `skip_reason="zero_object_hybrid_sample"`;
+- coord-token ids: Task 6 now sources coord-token ids from
+  `src.tokens.coord.codec.get_coord_token_ids(tokenizer, validate=True)`.
 
 ## Execution Handoff
 
