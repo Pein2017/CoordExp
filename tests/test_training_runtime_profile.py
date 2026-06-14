@@ -16,8 +16,10 @@ from src.trainers.metrics.mixins import (
     CoordSoftCEW1LossMixin,
     GradAccumLossScaleMixin,
     InstabilityMonitorMixin,
+    PrefixDenoisingObjectiveMixin,
     RecursiveDetectionCEMixin,
     SFTStructuralCloseLossMixin,
+    TeacherForcingObjectiveMixin,
 )
 
 
@@ -282,6 +284,7 @@ def _compose_for_variant(variant: str) -> type:
         coord_soft_ce_w1_cfg=SimpleNamespace(enabled=True),
         sft_structural_close_cfg=SimpleNamespace(enabled=True),
         recursive_detection_ce_cfg=None,
+        teacher_forcing_objective_cfg=None,
     )
 
 
@@ -314,6 +317,27 @@ def test_compose_trainer_class_adds_recursive_detection_ce_mixin_when_enabled() 
     assert issubclass(trainer_cls, RecursiveDetectionCEMixin)
     assert issubclass(trainer_cls, GradAccumLossScaleMixin)
     assert issubclass(trainer_cls, _BaseTrainer)
+
+
+def test_compose_trainer_class_prefix_denoising_sets_runtime_flag() -> None:
+    trainer_cls = compose_trainer_class(
+        trainer_cls=_BaseTrainer,
+        trainer_variant="",
+        instability_monitor_cfg=None,
+        token_type_cfg=None,
+        bbox_geo_cfg=None,
+        bbox_size_aux_cfg=None,
+        coord_soft_ce_w1_cfg=None,
+        sft_structural_close_cfg=None,
+        recursive_detection_ce_cfg=None,
+        teacher_forcing_objective_cfg=SimpleNamespace(enabled=True),
+        prefix_denoising_cfg=SimpleNamespace(enabled=True),
+        prefix_denoising_runtime={"packing_enabled": False},
+    )
+
+    assert issubclass(trainer_cls, PrefixDenoisingObjectiveMixin)
+    assert not issubclass(trainer_cls, TeacherForcingObjectiveMixin)
+    assert trainer_cls.prefix_denoising_packing_enabled is False
 
 
 @pytest.mark.parametrize(

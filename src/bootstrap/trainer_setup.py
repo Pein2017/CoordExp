@@ -9,6 +9,7 @@ from src.trainers.metrics.mixins import (
     CoordSoftCEW1LossMixin,
     GradAccumLossScaleMixin,
     InstabilityMonitorMixin,
+    PrefixDenoisingObjectiveMixin,
     RecursiveDetectionCEMixin,
     SFTStructuralCloseLossMixin,
     TeacherForcingObjectiveMixin,
@@ -71,10 +72,16 @@ def compose_trainer_class(
     sft_structural_close_cfg: Any = None,
     recursive_detection_ce_cfg: Any = None,
     teacher_forcing_objective_cfg: Any = None,
+    prefix_denoising_cfg: Any = None,
+    prefix_denoising_runtime: Mapping[str, Any] | None = None,
 ) -> type:
     mixins: list[type] = []
+    class_attrs: dict[str, Any] = {}
     runtime_profile = resolve_training_runtime_profile(trainer_variant)
     if runtime_profile.ordinary_stage1_mixins_allowed:
+        prefix_denoising_enabled = bool(
+            prefix_denoising_cfg and getattr(prefix_denoising_cfg, "enabled", False)
+        )
         recursive_ce_enabled = bool(
             recursive_detection_ce_cfg
             and getattr(recursive_detection_ce_cfg, "enabled", False)
@@ -83,8 +90,25 @@ def compose_trainer_class(
             teacher_forcing_objective_cfg
             and getattr(teacher_forcing_objective_cfg, "enabled", True)
         )
+        if prefix_denoising_enabled and recursive_ce_enabled:
+            raise ValueError(
+                "prefix_denoising and recursive_detection_ce are mutually exclusive "
+                "token-loss owners"
+            )
+        if prefix_denoising_enabled:
+            if not isinstance(prefix_denoising_runtime, Mapping):
+                raise ValueError(
+                    "prefix_denoising enabled but prefix_denoising_runtime is missing"
+                )
+            if "packing_enabled" not in prefix_denoising_runtime:
+                raise ValueError(
+                    "prefix_denoising_runtime must include packing_enabled"
+                )
+            class_attrs["prefix_denoising_packing_enabled"] = bool(
+                prefix_denoising_runtime["packing_enabled"]
+            )
         mixins.append(GradAccumLossScaleMixin)
-        if recursive_ce_enabled or teacher_forcing_enabled:
+        if prefix_denoising_enabled or recursive_ce_enabled or teacher_forcing_enabled:
             incompatible = []
             for name, cfg in (
                 ("bbox_size_aux", bbox_size_aux_cfg),
@@ -107,18 +131,24 @@ def compose_trainer_class(
             mixins.append(InstabilityMonitorMixin)
         if token_type_cfg and getattr(token_type_cfg, "enabled", False):
             mixins.append(AggregateTokenTypeMetricsMixin)
-        if recursive_ce_enabled:
+        if prefix_denoising_enabled:
+            mixins.append(PrefixDenoisingObjectiveMixin)
+        elif recursive_ce_enabled:
             mixins.append(RecursiveDetectionCEMixin)
         elif teacher_forcing_enabled:
             mixins.append(TeacherForcingObjectiveMixin)
         if (
-            not recursive_ce_enabled
+            not prefix_denoising_enabled
+            and not recursive_ce_enabled
             and coord_soft_ce_w1_cfg
             and getattr(coord_soft_ce_w1_cfg, "enabled", False)
         ):
             mixins.append(CoordSoftCEW1LossMixin)
-        if not recursive_ce_enabled and sft_structural_close_cfg and getattr(
-            sft_structural_close_cfg, "enabled", False
+        if (
+            not prefix_denoising_enabled
+            and not recursive_ce_enabled
+            and sft_structural_close_cfg
+            and getattr(sft_structural_close_cfg, "enabled", False)
         ):
             mixins.append(SFTStructuralCloseLossMixin)
     if not mixins:
@@ -126,7 +156,7 @@ def compose_trainer_class(
     return type(
         f"{trainer_cls.__name__}WithMetrics",
         tuple(mixins + [trainer_cls]),
-        {},
+        class_attrs,
     )
 
 

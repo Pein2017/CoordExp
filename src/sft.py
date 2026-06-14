@@ -741,6 +741,24 @@ def _config_to_mapping(value: Any) -> dict[str, Any]:
     return {}
 
 
+def _prefix_denoising_enabled(prefix_denoising_cfg: Any) -> bool:
+    return bool(prefix_denoising_cfg and getattr(prefix_denoising_cfg, "enabled", False))
+
+
+def _build_prefix_denoising_runtime_payload(
+    *,
+    prefix_denoising_cfg: Any,
+    packing_cfg: PackingRuntimeConfig,
+) -> dict[str, Any] | None:
+    if not _prefix_denoising_enabled(prefix_denoising_cfg):
+        return None
+    return {
+        "enabled": True,
+        "packing_enabled": bool(packing_cfg.enabled),
+        "packing_mode": str(packing_cfg.mode),
+    }
+
+
 def _resolve_authored_experiment_payload(training_config: Any) -> dict[str, Any] | None:
     """Return authored experiment metadata for run manifests, if configured."""
 
@@ -1085,6 +1103,12 @@ def _build_effective_runtime_payload(
         else "",
         "launcher": _collect_launcher_metadata_from_env(),
     }
+    prefix_denoising_runtime = _build_prefix_denoising_runtime_payload(
+        prefix_denoising_cfg=getattr(training_config, "prefix_denoising", None),
+        packing_cfg=packing_cfg,
+    )
+    if prefix_denoising_runtime is not None:
+        payload["prefix_denoising"] = prefix_denoising_runtime
     if stage2_policy_provenance is not None:
         payload["stage2_policy_provenance"] = dict(stage2_policy_provenance)
     payload.update(
@@ -3654,6 +3678,11 @@ def main():
     trainer_variant = getattr(train_args, "trainer_variant", None)
     runtime_profile = resolve_training_runtime_profile(trainer_variant)
     recursive_detection_ce_cfg = _resolve_recursive_detection_ce_cfg(training_config)
+    prefix_denoising_cfg = getattr(training_config, "prefix_denoising", None)
+    prefix_denoising_runtime = _build_prefix_denoising_runtime_payload(
+        prefix_denoising_cfg=prefix_denoising_cfg,
+        packing_cfg=packing_cfg,
+    )
     teacher_forcing_objective_cfg = None
     if detection_config is not None and getattr(
         detection_config.objective, "id", None
@@ -3663,9 +3692,14 @@ def main():
         runtime_profile.preserve_raw_sample_metadata
         or recursive_detection_ce_cfg is not None
         or teacher_forcing_objective_cfg is not None
+        or _prefix_denoising_enabled(prefix_denoising_cfg)
     ):
         # Keep raw fields for trainer-owned branch/rollout construction.
-        if recursive_detection_ce_cfg is not None or teacher_forcing_objective_cfg is not None:
+        if (
+            recursive_detection_ce_cfg is not None
+            or teacher_forcing_objective_cfg is not None
+            or _prefix_denoising_enabled(prefix_denoising_cfg)
+        ):
             setattr(train_args, "remove_unused_columns", False)
         if getattr(train_args, "training_args", None) is not None:
             train_args.training_args.remove_unused_columns = False
@@ -3844,6 +3878,8 @@ def main():
         sft_structural_close_cfg=sft_structural_close_cfg,
         recursive_detection_ce_cfg=recursive_detection_ce_cfg,
         teacher_forcing_objective_cfg=teacher_forcing_objective_cfg,
+        prefix_denoising_cfg=prefix_denoising_cfg,
+        prefix_denoising_runtime=prefix_denoising_runtime,
     )
     length_bucketing_cfg = _build_detection_length_bucketing_config(
         dataset=dataset,
@@ -4012,6 +4048,8 @@ def main():
         setattr(trainer, "recursive_detection_ce_cfg", recursive_detection_ce_cfg)
     if teacher_forcing_objective_cfg is not None:
         setattr(trainer, "teacher_forcing_objective_cfg", teacher_forcing_objective_cfg)
+    if prefix_denoising_cfg is not None:
+        setattr(trainer, "prefix_denoising_cfg", prefix_denoising_cfg)
     setattr(trainer, "bbox_format", str(custom_config.bbox_format))
     if token_type_cfg is not None:
         setattr(trainer, "token_type_metrics_cfg", token_type_cfg)

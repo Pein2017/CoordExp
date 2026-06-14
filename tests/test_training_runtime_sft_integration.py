@@ -29,7 +29,11 @@ from src.training_runtime.stage2_projection import (
     apply_stage2_runtime_projection,
     resolve_stage2_runtime_projection,
 )
-from src.trainers.metrics.mixins import TeacherForcingObjectiveMixin
+from src.trainers.batch_extras import BatchExtras, stash_batch_extras
+from src.trainers.metrics.mixins import (
+    PrefixDenoisingObjectiveMixin,
+    TeacherForcingObjectiveMixin,
+)
 from src.training.teacher_forcing.ir import SupervisionAtom, TeacherForcingTargetIR
 from src.training.teacher_forcing.roles import TokenRole
 from src.training.teacher_forcing.vocab import RoleVocab
@@ -258,6 +262,122 @@ def test_compose_trainer_class_adds_teacher_forcing_objective_mixin() -> None:
     )
 
     assert issubclass(trainer_cls, TeacherForcingObjectiveMixin)
+
+
+def test_compose_trainer_class_uses_prefix_denoising_objective_when_enabled() -> None:
+    trainer_cls = compose_trainer_class(
+        trainer_cls=object,
+        trainer_variant="",
+        instability_monitor_cfg=None,
+        token_type_cfg=None,
+        bbox_geo_cfg=None,
+        bbox_size_aux_cfg=None,
+        coord_soft_ce_w1_cfg=None,
+        sft_structural_close_cfg=None,
+        recursive_detection_ce_cfg=None,
+        teacher_forcing_objective_cfg=SimpleNamespace(enabled=True),
+        prefix_denoising_cfg=SimpleNamespace(enabled=True),
+        prefix_denoising_runtime={"packing_enabled": True},
+    )
+
+    assert issubclass(trainer_cls, PrefixDenoisingObjectiveMixin)
+    assert not issubclass(trainer_cls, TeacherForcingObjectiveMixin)
+    assert trainer_cls.prefix_denoising_packing_enabled is True
+
+
+def test_compose_trainer_class_requires_prefix_runtime_when_enabled() -> None:
+    with pytest.raises(ValueError, match="prefix_denoising_runtime"):
+        compose_trainer_class(
+            trainer_cls=object,
+            trainer_variant="",
+            instability_monitor_cfg=None,
+            token_type_cfg=None,
+            bbox_geo_cfg=None,
+            bbox_size_aux_cfg=None,
+            coord_soft_ce_w1_cfg=None,
+            sft_structural_close_cfg=None,
+            recursive_detection_ce_cfg=None,
+            teacher_forcing_objective_cfg=SimpleNamespace(enabled=True),
+            prefix_denoising_cfg=SimpleNamespace(enabled=True),
+        )
+
+
+def test_prefix_denoising_objective_reads_stashed_extras_and_strips_sidecars() -> None:
+    class _Model:
+        def __init__(self, logits: torch.Tensor) -> None:
+            self.logits = logits
+            self.calls: list[dict[str, object]] = []
+            self.training = True
+            self.config = SimpleNamespace(model_type="unit")
+
+        def __call__(self, **kwargs):
+            self.calls.append(dict(kwargs))
+            return SimpleNamespace(logits=self.logits)
+
+    class _BaseTrainer:
+        custom_metrics = None
+        model = None
+
+        def compute_loss(self, *args, **kwargs):  # pragma: no cover - must not run
+            raise AssertionError("base trainer CE path should not own prefix denoising")
+
+    class _Trainer(PrefixDenoisingObjectiveMixin, _BaseTrainer):
+        prefix_denoising_packing_enabled = False
+
+    logits = torch.full((1, 6, 4), -5.0, dtype=torch.float32)
+    labels = torch.full((1, 6), -100, dtype=torch.long)
+    labels[0, 2] = 1
+    labels[0, 5] = 3
+    logits[0, 1, 1] = 8.0
+    logits[0, 4, 3] = 8.0
+    inputs = {
+        "input_ids": torch.tensor([[0, 9, 1, 2, 8, 3]], dtype=torch.long),
+        "attention_mask": torch.ones((1, 6), dtype=torch.long),
+        "labels": labels,
+        "prefix_denoising_hybrid": "must-not-be-read-from-inputs",
+        "sample_id": "unit-0",
+    }
+    extras = BatchExtras(
+        prefix_denoising_hybrid=(object(),),
+        prefix_denoising_segment_meta=(
+            (
+                {
+                    "batch_index": 0,
+                    "token_start": 0,
+                    "token_end": 3,
+                    "branch_id": "clean_full",
+                    "segment_id": "unit:clean",
+                },
+                {
+                    "batch_index": 0,
+                    "token_start": 3,
+                    "token_end": 6,
+                    "branch_id": "noisy_full",
+                    "segment_id": "unit:noisy",
+                },
+            ),
+        ),
+    )
+    trainer = _Trainer()
+    stash_batch_extras(trainer, extras)
+
+    model = _Model(logits)
+    loss, outputs = trainer.compute_loss(model, inputs, return_outputs=True)
+
+    expected = 0.5 * torch.nn.functional.cross_entropy(
+        logits[0, 1].unsqueeze(0),
+        torch.tensor([1]),
+    ) + 0.5 * torch.nn.functional.cross_entropy(
+        logits[0, 4].unsqueeze(0),
+        torch.tensor([3]),
+    )
+    assert loss.item() == pytest.approx(expected.item())
+    assert outputs.logits is logits
+    assert len(model.calls) == 1
+    assert "labels" not in model.calls[0]
+    assert "prefix_denoising_hybrid" not in model.calls[0]
+    assert "prefix_denoising_segment_meta" not in model.calls[0]
+    assert "sample_id" not in model.calls[0]
 
 
 def test_teacher_forcing_objective_mixin_computes_loss_through_runner() -> None:
