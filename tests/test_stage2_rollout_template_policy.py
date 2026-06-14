@@ -22,7 +22,7 @@ def test_compact_full_policy_is_explicit_and_unconstrained_by_default() -> None:
     assert policy.template_family == "compact_full"
     assert policy.parser_id == "compact_full"
     assert policy.append_policy_id == "compact_full_fn_append"
-    assert policy.decode_policy == "unconstrained"
+    assert not hasattr(policy, "decode_policy")
     assert policy.invalid_rollout_policy == "fallback_gt_fn_append_only"
     assert policy.fallback_loss_weight == 1.0
     assert policy.strict_rollout_preflight is False
@@ -30,24 +30,35 @@ def test_compact_full_policy_is_explicit_and_unconstrained_by_default() -> None:
         "resolved_rollout_template": "compact_full",
         "rollout_parser_id": "compact_full",
         "rollout_append_policy_id": "compact_full_fn_append",
-        "rollout_decode_policy": "unconstrained",
         "invalid_rollout_policy": "fallback_gt_fn_append_only",
         "fallback_loss_weight": 1.0,
         "strict_rollout_preflight": False,
     }
 
 
+def test_compact_full_policy_rejects_removed_decode_policy_knobs() -> None:
+    with pytest.raises(ValueError, match="rollout_decode_policy.*removed"):
+        resolve_stage2_rollout_template_policy(
+            "compact_full",
+            rollout_decode_policy="compact-grammar",
+        )
+
+    with pytest.raises(ValueError, match="compact_decode_policy.*removed"):
+        resolve_stage2_rollout_template_policy(
+            "compact_full",
+            compact_decode_policy="compact-grammar",
+        )
+
+
 def test_compact_full_policy_accepts_explicit_fallback_runtime_knobs() -> None:
     policy = resolve_stage2_rollout_template_policy(
         "compact_full",
-        rollout_decode_policy="compact-grammar",
         invalid_rollout_policy="fallback_gt_fn_append_only",
         fallback_loss_weight=0.5,
         strict_rollout_preflight=True,
     )
 
     assert policy.template_family == "compact_full"
-    assert policy.decode_policy == "compact_grammar"
     assert policy.invalid_rollout_policy == "fallback_gt_fn_append_only"
     assert policy.fallback_loss_weight == pytest.approx(0.5)
     assert policy.strict_rollout_preflight is True
@@ -75,13 +86,12 @@ def test_coordjson_policy_is_explicit_legacy_surface() -> None:
     assert policy.template_family == "coordjson"
     assert policy.parser_id == "coordjson_legacy"
     assert policy.append_policy_id == "coordjson_legacy_fn_append"
-    assert policy.decode_policy == "legacy_coordjson"
     assert policy.invalid_rollout_policy == "abort"
     assert policy.fallback_loss_weight == 1.0
 
 
-def test_coordjson_policy_rejects_compact_only_runtime_knobs() -> None:
-    with pytest.raises(ValueError, match="rollout_decode_policy.*coordjson"):
+def test_coordjson_policy_rejects_removed_decode_policy_knobs() -> None:
+    with pytest.raises(ValueError, match="rollout_decode_policy.*removed"):
         resolve_stage2_rollout_template_policy(
             "coordjson",
             rollout_decode_policy="unconstrained",

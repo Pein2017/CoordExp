@@ -93,8 +93,9 @@ def test_compact_full_ckpt3664_coco80_readiness_profiles_pin_same_surface(
     assert cfg.stage2_rollout_correction.correction.rollout_template_family == (
         "compact_full"
     )
-    assert cfg.stage2_rollout_correction.correction.rollout_decode_policy == (
-        "unconstrained"
+    assert not hasattr(
+        cfg.stage2_rollout_correction.correction,
+        "rollout_decode_policy",
     )
     assert cfg.stage2_rollout_correction.correction.invalid_rollout_policy == (
         "fallback_gt_fn_append_only"

@@ -2705,7 +2705,6 @@ class Stage2RolloutCorrectionRuntimeConfig:
     producer_wait_timeout_s: Optional[float] = None
     ddp_phase_timeout_s: Optional[float] = None
     rollout_template_family: str = "coordjson"
-    rollout_decode_policy: str = "legacy_coordjson"
     fallback_loss_weight: float = 1.0
     invalid_rollout_policy: str = "abort"
     strict_rollout_preflight: bool = False
@@ -2733,6 +2732,8 @@ class Stage2RolloutCorrectionRuntimeConfig:
             "rollouts_per_step",
             "enable_pipeline",
             "rollout_decode_batch_size",
+            "rollout_decode_policy",
+            "compact_decode_policy",
             "reordered_gt_sft",
             "desc_ce_weight_matched",
             "semantic_desc_gate",
@@ -2750,7 +2751,6 @@ class Stage2RolloutCorrectionRuntimeConfig:
 
         rollout_template_policy = resolve_stage2_rollout_template_policy(
             data.pop("rollout_template_family", cls.rollout_template_family),
-            rollout_decode_policy=data.pop("rollout_decode_policy", None),
             invalid_rollout_policy=data.pop("invalid_rollout_policy", None),
             fallback_loss_weight=data.pop("fallback_loss_weight", cls.fallback_loss_weight),
             strict_rollout_preflight=data.pop(
@@ -2810,7 +2810,6 @@ class Stage2RolloutCorrectionRuntimeConfig:
             producer_wait_timeout_s=producer_wait_timeout_s,
             ddp_phase_timeout_s=ddp_phase_timeout_s,
             rollout_template_family=rollout_template_policy.template_family,
-            rollout_decode_policy=rollout_template_policy.decode_policy,
             fallback_loss_weight=float(rollout_template_policy.fallback_loss_weight),
             invalid_rollout_policy=rollout_template_policy.invalid_rollout_policy,
             strict_rollout_preflight=bool(rollout_template_policy.strict_rollout_preflight),

@@ -278,8 +278,8 @@ def test_infer_writes_pred_token_trace_sidecar(tmp_path, monkeypatch):
     ]
 
 
-def test_hf_batch_compact_grammar_uses_padded_prompt_offset(monkeypatch):
-    captured: dict[str, list[int]] = {}
+def test_hf_batch_does_not_build_compact_grammar_logits_processor(monkeypatch):
+    captured: dict[str, object] = {}
 
     class _DummyTokenizer(_QwenSpecialTokenMixin):
         padding_side = "left"
@@ -332,28 +332,9 @@ def test_hf_batch_compact_grammar_uses_padded_prompt_offset(monkeypatch):
             self.scores = [torch.zeros((2, 32), dtype=torch.float32)]
 
     class _DummyModel:
-        def generate(self, **_kwargs):
+        def generate(self, **kwargs):
+            captured["generate_kwargs"] = kwargs
             return _DummyGenerateOutput()
-
-    def _fake_build_compact_grammar_logits_processor(
-        *, tokenizer, prompt_lengths, detection_sequence_format, force_row_start
-    ):
-        captured["prompt_lengths"] = list(prompt_lengths)
-        assert detection_sequence_format == "compact_full"
-        assert force_row_start is True
-
-        def _processor(input_ids, scores):
-            return scores
-
-        return _processor
-
-    import src.infer.constraints as constraints
-
-    monkeypatch.setattr(
-        constraints,
-        "build_compact_grammar_logits_processor",
-        _fake_build_compact_grammar_logits_processor,
-    )
 
     owner = types.SimpleNamespace(
         model=_DummyModel(),
@@ -366,9 +347,6 @@ def test_hf_batch_compact_grammar_uses_padded_prompt_offset(monkeypatch):
             repetition_penalty=1.0,
             batch_size=2,
             seed=123,
-            compact_grammar_enabled=True,
-            compact_grammar_format="compact_full",
-            compact_grammar_force_row_start=True,
         ),
         system_prompt="system",
         user_prompt="prompt",
@@ -383,7 +361,7 @@ def test_hf_batch_compact_grammar_uses_padded_prompt_offset(monkeypatch):
         result_factory=GenerationResult,
     )
 
-    assert captured["prompt_lengths"] == [4, 4]
+    assert "logits_processor" not in captured["generate_kwargs"]
     assert [result.text for result in results] == ["<|im_end|>", "<|im_end|>"]
 
 

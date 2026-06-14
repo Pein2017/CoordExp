@@ -2,7 +2,7 @@
 # Same decode/eval surface as val200, with infer.limit reduced to 8.
 
 run:
-  name: compact_full_support2_ckpt3600_preflight8_bsz8_temp0_compact_grammar
+  name: compact_full_support2_ckpt3600_preflight8_bsz8_temp0
   output_dir: /data/CoordExp/outputs/infer/recursive_detection_ce
 
 stages:
@@ -34,10 +34,6 @@ infer:
     repetition_penalty: 1.05
     batch_size: 8
     seed: 42
-    compact_grammar:
-      enabled: true
-      force_row_start: true
-
   device: cuda:0
   limit: 8
   detect_samples: 128

@@ -218,20 +218,6 @@ def build_hf_rollout_logits_processor(
     """Build HF logits processors for shared rollout decoding."""
 
     processors: List[Any] = []
-    if getattr(rollout_template_policy, "decode_policy", None) == "compact_grammar":
-        from src.infer.constraints import build_compact_grammar_logits_processor
-
-        processors.append(
-            build_compact_grammar_logits_processor(
-                tokenizer=tokenizer,
-                prompt_lengths=[int(prompt_pad_len)] * int(batch_size),
-                detection_sequence_format=getattr(
-                    rollout_template_policy,
-                    "template_family",
-                ),
-                force_row_start=True,
-            )
-        )
     if trailing_processors:
         processors.extend(trailing_processors)
     if not processors:
@@ -860,21 +846,7 @@ def generate_hf_batch(
     )
     if stop_pressure_processor is not None:
         logits_processors.append(stop_pressure_processor)
-    if bool(getattr(owner.gen_cfg, "compact_grammar_enabled", False)):
-        from transformers import LogitsProcessorList
-
-        from src.infer.constraints import build_compact_grammar_logits_processor
-
-        logits_processors.append(
-            build_compact_grammar_logits_processor(
-                tokenizer=owner.processor.tokenizer,
-                prompt_lengths=prompt_lengths,
-                detection_sequence_format=owner.gen_cfg.compact_grammar_format,
-                force_row_start=owner.gen_cfg.compact_grammar_force_row_start,
-            )
-        )
-        gen_kwargs["logits_processor"] = LogitsProcessorList(logits_processors)
-    elif logits_processors:
+    if logits_processors:
         if len(logits_processors) == 1:
             gen_kwargs["logits_processor"] = logits_processors[0]
         else:

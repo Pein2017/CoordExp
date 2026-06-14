@@ -199,7 +199,6 @@ def _fixture_artifact(tmp_path: Path) -> tuple[Path, Path, Path]:
                 "temperature": 0.0,
                 "repetition_penalty": 1.1,
                 "max_new_tokens": 1024,
-                "compact_grammar": {"enabled": True},
             },
             "infer": {
                 "prompt_template_hash": "hash",

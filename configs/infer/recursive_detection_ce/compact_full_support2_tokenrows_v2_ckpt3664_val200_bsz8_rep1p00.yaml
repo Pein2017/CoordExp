@@ -9,7 +9,7 @@
 # - comparison knob: generation.repetition_penalty = 1.0
 
 run:
-  name: compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p00_compact_grammar
+  name: compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p00
   output_dir: /data/CoordExp/outputs/infer/recursive_detection_ce
 
 stages:
@@ -41,10 +41,6 @@ infer:
     repetition_penalty: 1.0
     batch_size: 8
     seed: 42
-    compact_grammar:
-      enabled: true
-      force_row_start: true
-
   device: cuda:0
   limit: 200
   detect_samples: 128

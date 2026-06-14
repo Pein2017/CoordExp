@@ -252,8 +252,6 @@ def test_infer_decode_request_projects_to_legacy_generation_kwargs() -> None:
         stop_pressure_mode="raw_text_object_boundary",
         stop_pressure_trigger_rule="raw_text_object_boundary",
         stop_pressure_logit_bias=2.5,
-        compact_grammar_enabled=True,
-        compact_grammar_format="compact_full",
     )
 
     assert kwargs["temperature"] == 0.4
@@ -265,8 +263,8 @@ def test_infer_decode_request_projects_to_legacy_generation_kwargs() -> None:
     assert kwargs["stop_pressure_mode"] == "raw_text_object_boundary"
     assert kwargs["stop_pressure_trigger_rule"] == "raw_text_object_boundary"
     assert kwargs["stop_pressure_logit_bias"] == 2.5
-    assert kwargs["compact_grammar_enabled"] is True
-    assert kwargs["compact_grammar_format"] == "compact_full"
+    assert "compact_grammar_enabled" not in kwargs
+    assert "compact_grammar_format" not in kwargs
 
 
 def test_rollout_matching_maps_to_shared_decode_request_with_sampling_overrides() -> None:
@@ -354,7 +352,7 @@ def test_decode_policy_fingerprint_is_stable_and_excludes_operational_fields() -
     assert first.decode_policy_fingerprint == second.decode_policy_fingerprint
 
 
-def test_decode_policy_fingerprint_changes_with_backend_and_constraints() -> None:
+def test_decode_policy_fingerprint_changes_with_backend_and_stop_pressure() -> None:
     unconstrained = build_decode_request_from_infer_config(
         {
             "backend": {"type": "hf"},
@@ -373,14 +371,16 @@ def test_decode_policy_fingerprint_changes_with_backend_and_constraints() -> Non
             },
         }
     )
-    constrained = build_decode_request_from_infer_config(
+    stop_pressure = build_decode_request_from_infer_config(
         {
             "backend": {"type": "hf"},
-            "detection_sequence_format": "compact_full",
             "generation": {
                 "temperature": 0.0,
                 "max_new_tokens": 8,
-                "compact_grammar": {"enabled": True},
+                "stop_pressure": {
+                    "mode": "suppress_special_terminating_tokens_after_object_boundary",
+                    "trigger_rule": "raw_text_object_boundary",
+                },
             },
         }
     )
@@ -388,14 +388,37 @@ def test_decode_policy_fingerprint_changes_with_backend_and_constraints() -> Non
     assert unconstrained.decode_policy_fingerprint != vllm.decode_policy_fingerprint
     assert (
         unconstrained.decode_policy_fingerprint
-        != constrained.decode_policy_fingerprint
+        != stop_pressure.decode_policy_fingerprint
     )
-    assert constrained.generation_constraints == (
+    assert stop_pressure.generation_constraints == (
         (
-            "compact_grammar",
-            {"enabled": True, "force_row_start": True, "format": "compact_full"},
+            "stop_pressure",
+            {
+                "logit_bias": 0.0,
+                "min_new_tokens": 0,
+                "mode": "suppress_special_terminating_tokens_after_object_boundary",
+                "trigger_rule": "raw_text_object_boundary",
+            },
         ),
     )
+
+
+def test_infer_decode_request_rejects_removed_compact_grammar_constraint() -> None:
+    with unittest.TestCase().assertRaisesRegex(
+        ValueError,
+        "infer.generation.compact_grammar has been removed",
+    ):
+        build_decode_request_from_infer_config(
+            {
+                "backend": {"type": "hf"},
+                "detection_sequence_format": "compact_full",
+                "generation": {
+                    "temperature": 0.0,
+                    "max_new_tokens": 8,
+                    "compact_grammar": {"enabled": True},
+                },
+            }
+        )
 
 
 def test_model_identity_fingerprint_is_stable_and_backend_sensitive() -> None:

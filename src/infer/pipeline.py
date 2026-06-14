@@ -956,15 +956,7 @@ def run_pipeline(
                     "mode": resolved_compact_full_parse_mode,
                 },
             },
-            "generation": {
-                "compact_grammar": {
-                    "enabled": _get_bool(
-                        _get_map(_get_map(infer_cfg, "generation"), "compact_grammar"),
-                        "enabled",
-                        False,
-                    ),
-                },
-            },
+            "generation": {},
             "prompt_template_hash": resolved_prompt_hash,
             "runtime_mode": resolved_runtime_mode,
             "mode_resolution_reason": resolved_mode_reason,
@@ -1167,11 +1159,6 @@ def _run_infer_stage(
             raise ValueError(f"infer.generation.{key} must be an int") from exc
 
     stop_pressure_cfg = _get_map(gen_cfg_map, "stop_pressure")
-    compact_grammar_cfg = _get_map(gen_cfg_map, "compact_grammar")
-    compact_grammar_enabled = _get_bool(compact_grammar_cfg, "enabled", False)
-    compact_grammar_force_row_start = _get_bool(
-        compact_grammar_cfg, "force_row_start", True
-    )
     stop_pressure_min_new_tokens_raw = stop_pressure_cfg.get("min_new_tokens", 0)
     if stop_pressure_min_new_tokens_raw is None:
         stop_pressure_min_new_tokens = 0
@@ -1202,21 +1189,7 @@ def _run_infer_stage(
         stop_pressure_min_new_tokens=stop_pressure_min_new_tokens,
         stop_pressure_trigger_rule=stop_pressure_trigger_rule,
         stop_pressure_logit_bias=stop_pressure_logit_bias,
-        compact_grammar_enabled=compact_grammar_enabled,
-        compact_grammar_format=detection_sequence_format,
-        compact_grammar_force_row_start=compact_grammar_force_row_start,
     )
-    if compact_grammar_enabled:
-        if backend_type != "hf":
-            raise ValueError(
-                "infer.generation.compact_grammar is only supported for "
-                "infer.backend.type=hf"
-            )
-        if detection_sequence_format != "compact_full":
-            raise ValueError(
-                "infer.generation.compact_grammar currently requires "
-                "infer.detection_sequence_format=compact_full"
-            )
     if stop_pressure_mode not in (
         None,
         STOP_PRESSURE_MODE_MIN_NEW_TOKENS_AFTER_OBJECT_OPEN,

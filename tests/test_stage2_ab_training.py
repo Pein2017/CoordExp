@@ -3198,6 +3198,7 @@ def test_rollout_correction_closure_resolution_failure_falls_back_without_droppi
     t._cfg = lambda key, default=None: cfg.get(key, default)
     t.rollout_matching_cfg = _test_rollout_matching_cfg(cfg)
     t._rollout_correction_cfg_get = lambda key, default=None: default
+    t.model_name_or_path = "unit-model"
 
     class _CoordLiteralTokenizer(_DummyTokenizer):
         def encode(self, text: str, add_special_tokens: bool = False):
@@ -3279,7 +3280,7 @@ def test_rollout_correction_closure_resolution_failure_falls_back_without_droppi
     )
 
     sample = {
-        "messages": [],
+        "messages": [{"role": "user", "content": "locate objects"}],
         "assistant_payload": {
             "objects": [{"bbox_2d": [9, 9, 10, 10], "desc": "fn"}],
         },
@@ -3297,7 +3298,7 @@ def test_rollout_correction_closure_resolution_failure_falls_back_without_droppi
     assert batch_metrics["rollout/template_family_coordjson"] == pytest.approx(1.0)
     assert batch_metrics["rollout/template_family_compact_full"] == pytest.approx(0.0)
     assert batch_metrics["rollout/parser_coordjson_legacy"] == pytest.approx(1.0)
-    assert batch_metrics["rollout/decode_policy_legacy_coordjson"] == pytest.approx(1.0)
+    assert "rollout/decode_policy_legacy_coordjson" not in batch_metrics
     assert batch_metrics["rollout/parser_template_mismatch_rate"] == pytest.approx(0.0)
     assert batch_metrics["rollout/fallback_loss_weight"] == pytest.approx(1.0)
 
@@ -8298,7 +8299,6 @@ def test_pending_stage2_log_aggregates_closure_and_invalid_rollout_metrics() -> 
     "metric_key",
     [
         "rollout/template_family_compact_full",
-        "rollout/decode_policy_unconstrained",
         "rollout/parser_template_mismatch_rate",
         "rollout/invalid_fallback_gt_fn_count",
         "rollout/invalid_fallback_gt_fn_rate",

@@ -61,7 +61,7 @@ def _load_infer_config(
     def _fake_run_offline_inference(*, inference_kwargs, generation_kwargs, logger=None):
         del logger
         captured["compact_full_parse_mode"] = inference_kwargs["compact_full_parse_mode"]
-        captured["compact_grammar_enabled"] = generation_kwargs["compact_grammar_enabled"]
+        captured["generation_keys"] = set(generation_kwargs)
         out_path = Path(str(inference_kwargs["out_path"]))
         summary_path = Path(str(inference_kwargs["summary_path"]))
         out_path.write_text("", encoding="utf-8")
@@ -94,10 +94,24 @@ def test_new_teacher_forcing_infer_defaults_to_marker_strict(
         "marker_delimited_strict"
     )
     assert config.captured["compact_full_parse_mode"] == "marker_delimited_strict"
-    assert (
-        config.raw["infer"]["generation"]["compact_grammar"]["enabled"] is False
-    )
-    assert config.captured["compact_grammar_enabled"] is False
+    assert "compact_grammar" not in config.raw["infer"]["generation"]
+    assert "compact_grammar_enabled" not in config.captured["generation_keys"]
+
+
+def test_infer_rejects_removed_compact_grammar_generation_config(
+    tmp_path: Path,
+) -> None:
+    cfg = _base_pipeline_cfg(tmp_path)
+    infer_cfg = cfg["infer"]
+    assert isinstance(infer_cfg, dict)
+    generation_cfg = infer_cfg["generation"]
+    assert isinstance(generation_cfg, dict)
+    generation_cfg["compact_grammar"] = {"enabled": True}
+
+    config_path = tmp_path / "bad_compact_grammar.json"
+    config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+    with pytest.raises(ValueError, match="infer.generation.compact_grammar has been removed"):
+        run_pipeline(config_path=config_path)
 
 
 def test_legacy_parser_mode_requires_explicit_legacy_namespace(

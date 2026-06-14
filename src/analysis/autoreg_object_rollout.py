@@ -221,7 +221,6 @@ def _decode_scope(summary: Mapping[str, Any], resolved_config: Mapping[str, Any]
         "temperature": generation.get("temperature"),
         "repetition_penalty": generation.get("repetition_penalty"),
         "max_new_tokens": generation.get("max_new_tokens"),
-        "grammar": generation.get("compact_grammar"),
         "prompt_template_hash": infer.get("prompt_template_hash")
         or resolved_infer.get("prompt_template_hash"),
         "object_ordering": infer.get("object_ordering") or resolved_infer.get("object_ordering"),

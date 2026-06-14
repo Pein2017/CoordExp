@@ -98,7 +98,6 @@ stage2_rollout_correction:
       strategy: greedy_iou
       iou_threshold: null
     rollout_template_family: coordjson
-    rollout_decode_policy: legacy_coordjson
     invalid_rollout_policy: abort
     fallback_loss_weight: 1.0
     insertion_order: tail_append
