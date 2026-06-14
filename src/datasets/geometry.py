@@ -1,8 +1,105 @@
 from __future__ import annotations
 
 import math
+import random
 from dataclasses import dataclass
 from typing import Any, Dict, List, Literal, Sequence, Tuple, Union
+
+
+@dataclass(frozen=True)
+class BBoxNoiseConfig:
+    center_shift_frac: float = 0.08
+    uniform_scale_range: tuple[float, float] = (0.92, 1.08)
+    coord_min: int = 0
+    coord_max: int = 999
+
+
+@dataclass(frozen=True)
+class BBoxNoiseResult:
+    ok: bool
+    clean_bbox: tuple[int, int, int, int]
+    noisy_bbox: tuple[int, int, int, int] | None
+    clean_bins: tuple[int, int, int, int]
+    noisy_bins: tuple[int, int, int, int] | None
+    changed: tuple[bool, bool, bool, bool]
+    skip_reason: str | None
+    provenance: dict[str, int | float | str]
+
+
+def _coerce_norm1000_xyxy(
+    bbox: Sequence[int | float], *, field_name: str
+) -> tuple[int, int, int, int]:
+    if len(bbox) != 4:
+        raise ValueError(f"{field_name} must contain four coordinates")
+    values = tuple(int(round(float(value))) for value in bbox)
+    x1, y1, x2, y2 = values
+    if not (0 <= x1 < x2 <= 999 and 0 <= y1 < y2 <= 999):
+        raise ValueError(f"{field_name} must be valid norm1000 xyxy")
+    return values
+
+
+def construct_valid_norm1000_bbox_noise(
+    clean_bbox: Sequence[int | float],
+    *,
+    config: BBoxNoiseConfig,
+    rng: random.Random,
+    object_id: str = "",
+) -> BBoxNoiseResult:
+    clean = _coerce_norm1000_xyxy(clean_bbox, field_name="clean bbox")
+    x1, y1, x2, y2 = clean
+    width = x2 - x1
+    height = y2 - y1
+    candidates: list[tuple[int, int, int, int]] = []
+    max_dx = int(round(width * float(config.center_shift_frac)))
+    max_dy = int(round(height * float(config.center_shift_frac)))
+    scale_low, scale_high = config.uniform_scale_range
+    scale_values = sorted({scale_low, 1.0, scale_high})
+    cx2 = x1 + x2
+    cy2 = y1 + y2
+    for dx in range(-max_dx, max_dx + 1):
+        for dy in range(-max_dy, max_dy + 1):
+            for sx in scale_values:
+                for sy in scale_values:
+                    new_w = max(1, int(round(width * sx)))
+                    new_h = max(1, int(round(height * sy)))
+                    new_cx2 = cx2 + 2 * dx
+                    new_cy2 = cy2 + 2 * dy
+                    nx1 = int(round((new_cx2 - new_w) / 2.0))
+                    ny1 = int(round((new_cy2 - new_h) / 2.0))
+                    nx2 = nx1 + new_w
+                    ny2 = ny1 + new_h
+                    candidate = (nx1, ny1, nx2, ny2)
+                    if not (0 <= nx1 < nx2 <= 999 and 0 <= ny1 < ny2 <= 999):
+                        continue
+                    if all(a != b for a, b in zip(clean, candidate, strict=True)):
+                        candidates.append(candidate)
+    unique_candidates = sorted(set(candidates))
+    if not unique_candidates:
+        return BBoxNoiseResult(
+            ok=False,
+            clean_bbox=clean,
+            noisy_bbox=None,
+            clean_bins=clean,
+            noisy_bins=None,
+            changed=(False, False, False, False),
+            skip_reason="noise_infeasible_4coord_changed",
+            provenance={"object_id": object_id, "candidate_count": 0},
+        )
+    noisy = unique_candidates[rng.randrange(len(unique_candidates))]
+    return BBoxNoiseResult(
+        ok=True,
+        clean_bbox=clean,
+        noisy_bbox=noisy,
+        clean_bins=clean,
+        noisy_bins=noisy,
+        changed=tuple(a != b for a, b in zip(clean, noisy, strict=True)),
+        skip_reason=None,
+        provenance={
+            "object_id": object_id,
+            "candidate_count": len(unique_candidates),
+            "selected_index": unique_candidates.index(noisy),
+        },
+    )
 
 
 def _pair_points(points: Sequence[float]) -> List[Tuple[float, float]]:
@@ -885,8 +982,11 @@ def box_iou_xyxy(a: Sequence[Any], b: Sequence[Any]) -> float:
 
 __all_typed__ = [
     "BBox",
+    "BBoxNoiseConfig",
+    "BBoxNoiseResult",
     "Polygon",
     "box_iou_xyxy",
+    "construct_valid_norm1000_bbox_noise",
     "geometry_from_dict",
     "transform_geometry",
     "valid_xyxy_box",
