@@ -237,8 +237,8 @@ def test_local_coord_kl_uses_teacher_to_student_orientation_and_gradients() -> N
     noisy_logits = torch.zeros((1, 4, 2100), dtype=torch.float32, requires_grad=True)
     support_bins = (9, 10, 11)
     support_token_ids = torch.tensor([1009, 1010, 1011], dtype=torch.long)
-    teacher_local_logits = torch.tensor([-1.0, 3.0, 0.0], dtype=torch.float32)
-    student_local_logits = torch.tensor([-1.0, 0.0, 3.0], dtype=torch.float32)
+    teacher_local_logits = torch.tensor([0.2, 2.3, -0.7], dtype=torch.float32)
+    student_local_logits = torch.tensor([1.1, -0.4, 2.0], dtype=torch.float32)
     clean_logits.data[0, 1, support_token_ids] = teacher_local_logits
     noisy_logits.data[0, 1, support_token_ids] = student_local_logits
     site = ResolvedPrefixDenoisingKLSite(
@@ -260,12 +260,16 @@ def test_local_coord_kl_uses_teacher_to_student_orientation_and_gradients() -> N
         coord_token_ids=coord_token_ids,
     )
     teacher_prob = torch.softmax(teacher_local_logits, dim=-1)
+    teacher_log_prob = torch.log_softmax(teacher_local_logits, dim=-1)
+    student_prob = torch.softmax(student_local_logits, dim=-1)
     student_log_prob = torch.log_softmax(student_local_logits, dim=-1)
-    expected = torch.sum(
+    expected_forward = torch.sum(
         teacher_prob * (torch.log(teacher_prob) - student_log_prob)
     )
+    expected_reverse = torch.sum(student_prob * (student_log_prob - teacher_log_prob))
 
-    torch.testing.assert_close(result.raw_loss, expected)
+    assert expected_forward.item() != pytest.approx(expected_reverse.item())
+    torch.testing.assert_close(result.raw_loss, expected_forward)
     result.raw_loss.backward()
 
     assert clean_logits.grad is None
