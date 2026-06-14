@@ -329,6 +329,10 @@ class PrefixDenoisingHybridEnricher:
 
         packs = self._normalize_packs(raw_batch)
         boundary_map = self._build_packed_boundary_map(packs)
+        self._validate_boundary_map_against_collated(
+            collated=collated,
+            boundary_map=boundary_map,
+        )
         packed_groups: list[tuple[Any, ...]] = []
         saw_sidecar = False
         saw_incomplete_group = False
@@ -469,10 +473,10 @@ class PrefixDenoisingHybridEnricher:
     def _sample_length(sample: Any) -> int:
         if not isinstance(sample, Mapping):
             return 0
-        raw_length = sample.get("length")
-        if raw_length is not None:
+        observed: dict[str, int] = {}
+        if sample.get("length") is not None:
             try:
-                return int(raw_length)
+                observed["length"] = int(sample["length"])
             except (TypeError, ValueError) as exc:
                 raise ValueError(
                     "packed prefix_denoising sample length must be an integer"
@@ -480,13 +484,88 @@ class PrefixDenoisingHybridEnricher:
         for key in ("input_ids", "attention_mask", "labels"):
             value = sample.get(key)
             if isinstance(value, torch.Tensor):
-                return int(value.numel())
-            if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
-                return int(len(value))
+                observed[key] = int(value.numel())
+            elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+                observed[key] = int(len(value))
+        if observed:
+            lengths = set(observed.values())
+            if len(lengths) != 1:
+                raise ValueError(
+                    "packed prefix_denoising sample length mismatch across fields: "
+                    f"{observed}"
+                )
+            return next(iter(lengths))
         hybrid = sample.get("prefix_denoising_hybrid")
         if type(hybrid) is HybridPrefixDenoisingSample:
             return int(hybrid.total_length)
         return 0
+
+    @classmethod
+    def _validate_boundary_map_against_collated(
+        cls,
+        *,
+        collated: Mapping[str, Any],
+        boundary_map: Sequence[Sequence[Mapping[str, int]]],
+    ) -> None:
+        row_lengths = cls._collated_active_row_lengths(collated)
+        if row_lengths is None:
+            return
+        if len(row_lengths) != len(boundary_map):
+            raise ValueError(
+                "packed_hybrid_boundary_map row count does not match collated row "
+                f"count: boundary_map={len(boundary_map)}, collated={len(row_lengths)}"
+            )
+        for row_index, (row_boundaries, row_length) in enumerate(
+            zip(boundary_map, row_lengths)
+        ):
+            final_end = int(row_boundaries[-1]["end"]) if row_boundaries else 0
+            if final_end != int(row_length):
+                raise ValueError(
+                    "packed_hybrid_boundary_map final boundary end does not match "
+                    "collated row active length: "
+                    f"row={row_index}, boundary_map_end={final_end}, "
+                    f"collated_row_length={int(row_length)}"
+                )
+
+    @classmethod
+    def _collated_active_row_lengths(
+        cls,
+        collated: Mapping[str, Any],
+    ) -> list[int] | None:
+        attention_mask = collated.get("attention_mask")
+        if attention_mask is not None:
+            return cls._collated_lengths_from_value(attention_mask, active_mask=True)
+        for key in ("input_ids", "labels"):
+            value = collated.get(key)
+            if value is not None:
+                return cls._collated_lengths_from_value(value, active_mask=False)
+        return None
+
+    @staticmethod
+    def _collated_lengths_from_value(value: Any, *, active_mask: bool) -> list[int]:
+        if isinstance(value, torch.Tensor):
+            if value.ndim == 0:
+                raise ValueError("packed prefix_denoising collated sequence field is scalar")
+            if value.ndim == 1:
+                if active_mask:
+                    return [int(value.long().sum().item())]
+                return [int(value.shape[0])]
+            if active_mask:
+                return [int(row.long().sum().item()) for row in value]
+            return [int(value.shape[-1])] * int(value.shape[0])
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+            if not value:
+                return []
+            if all(isinstance(row, Sequence) and not isinstance(row, (str, bytes)) for row in value):
+                if active_mask:
+                    return [int(sum(int(token) for token in row)) for row in value]
+                return [int(len(row)) for row in value]
+            if active_mask:
+                return [int(sum(int(token) for token in value))]
+            return [int(len(value))]
+        raise TypeError(
+            "packed prefix_denoising collated sequence field must be a tensor or sequence"
+        )
 
     @staticmethod
     def _attach_packed_segment_meta(
@@ -516,12 +595,14 @@ class PrefixDenoisingHybridEnricher:
                 if not isinstance(sample, Mapping):
                     continue
                 sample_offset = int(boundary["start"])
+                sample_end = int(boundary["end"])
                 sample_groups.append(
                     tuple(
                         PrefixDenoisingHybridEnricher._globalized_segment_record(
                             record,
                             batch_index=row_index,
                             sample_offset=sample_offset,
+                            sample_end=sample_end,
                         )
                         for record in PrefixDenoisingHybridEnricher._segment_records(
                             sample[field]
@@ -549,22 +630,35 @@ class PrefixDenoisingHybridEnricher:
         *,
         batch_index: int,
         sample_offset: int,
+        sample_end: int,
     ) -> dict[str, Any]:
         out = dict(record)
         if "local_token_start" in record and "local_token_end" in record:
-            token_start = sample_offset + int(record["local_token_start"])
-            token_end = sample_offset + int(record["local_token_end"])
+            local_token_start = int(record["local_token_start"])
+            local_token_end = int(record["local_token_end"])
         elif "token_start" in record and "token_end" in record:
-            token_start = sample_offset + int(record["token_start"])
-            token_end = sample_offset + int(record["token_end"])
+            local_token_start = int(record["token_start"])
+            local_token_end = int(record["token_end"])
         else:
             raise ValueError(
                 "prefix_denoising_segment_meta requires local_token_start/"
                 "local_token_end or token_start/token_end for packed rewriting"
             )
+        sample_length = int(sample_end) - int(sample_offset)
+        if (
+            local_token_start < 0
+            or local_token_end < local_token_start
+            or local_token_end > sample_length
+        ):
+            raise ValueError(
+                "prefix_denoising segment lies outside packed sample boundary: "
+                f"segment_id={record.get('segment_id')!r}, "
+                f"local_token_start={local_token_start}, "
+                f"local_token_end={local_token_end}, sample_length={sample_length}"
+            )
+        token_start = int(sample_offset) + local_token_start
+        token_end = int(sample_offset) + local_token_end
         out["batch_index"] = int(batch_index)
-        out["local_token_start"] = int(token_start)
-        out["local_token_end"] = int(token_end)
         out["token_start"] = int(token_start)
         out["token_end"] = int(token_end)
         return out

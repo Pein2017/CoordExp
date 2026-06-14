@@ -756,6 +756,128 @@ def test_prefix_denoising_packed_objective_computes_ce_only_and_ce_plus_kl() -> 
     ].values[-1] > 0.0
 
 
+def test_prefix_denoising_packed_kl_rejects_shifted_label_site() -> None:
+    class _Model:
+        def __init__(self, logits: torch.Tensor) -> None:
+            self.logits = logits
+            self.training = True
+            self.config = SimpleNamespace(model_type="unit")
+
+        def __call__(self, **kwargs):
+            return SimpleNamespace(logits=self.logits)
+
+    class _Metric:
+        def __init__(self) -> None:
+            self.values: list[float] = []
+
+        def update(self, value: float) -> None:
+            self.values.append(float(value))
+
+    class _Tokenizer:
+        def convert_tokens_to_ids(self, tokens):
+            return [
+                1000 + int(str(token).split("_")[1].split("|")[0])
+                for token in tokens
+            ]
+
+    class _BaseTrainer:
+        model = None
+        args = SimpleNamespace(gradient_accumulation_steps=1)
+
+        def __init__(self) -> None:
+            self.custom_metrics = {"train": defaultdict(_Metric)}
+            self.tokenizer = _Tokenizer()
+
+    logits = torch.full((1, 12, 2100), -8.0, dtype=torch.float32)
+    labels = torch.full((1, 12), -100, dtype=torch.long)
+    for label_position in (2, 5, 8, 11):
+        labels[0, label_position] = 1010
+        logits[0, label_position - 1, 1010] = 7.0
+    inputs = {
+        "input_ids": torch.tensor(
+            [[0, 9, 1010, 0, 9, 1010, 0, 9, 1010, 0, 9, 1011]],
+            dtype=torch.long,
+        ),
+        "attention_mask": torch.ones((1, 12), dtype=torch.long),
+        "labels": labels,
+        "prefix_denoising_hybrid": ((object(), object()),),
+        "prefix_denoising_segment_meta": (
+            (
+                (
+                    {
+                        "batch_index": 0,
+                        "token_start": 0,
+                        "token_end": 3,
+                        "branch_id": "clean_full",
+                        "segment_id": "first:clean",
+                    },
+                    {
+                        "batch_index": 0,
+                        "token_start": 3,
+                        "token_end": 6,
+                        "branch_id": "noisy_full",
+                        "segment_id": "first:noisy",
+                    },
+                ),
+                (
+                    {
+                        "batch_index": 0,
+                        "token_start": 6,
+                        "token_end": 9,
+                        "branch_id": "clean_full",
+                        "segment_id": "second:clean",
+                    },
+                    {
+                        "batch_index": 0,
+                        "token_start": 9,
+                        "token_end": 12,
+                        "branch_id": "noisy_full",
+                        "segment_id": "second:noisy",
+                    },
+                ),
+            ),
+        ),
+        "prefix_denoising_resolved_kl_sites": (
+            (
+                (),
+                (
+                    ResolvedPrefixDenoisingKLSite(
+                        clean_batch_index=0,
+                        noisy_batch_index=0,
+                        clean_label_position=7,
+                        noisy_label_position=11,
+                        clean_gt_bin=10,
+                        support_bins=(9, 10, 11),
+                        coord_slot="x1",
+                        object_index=1,
+                        identical_prefix=False,
+                    ),
+                ),
+            ),
+        ),
+    }
+    trainer_cls = compose_trainer_class(
+        trainer_cls=_BaseTrainer,
+        trainer_variant="",
+        instability_monitor_cfg=None,
+        token_type_cfg=None,
+        bbox_geo_cfg=None,
+        bbox_size_aux_cfg=None,
+        coord_soft_ce_w1_cfg=None,
+        sft_structural_close_cfg=None,
+        recursive_detection_ce_cfg=None,
+        teacher_forcing_objective_cfg=SimpleNamespace(enabled=True),
+        prefix_denoising_cfg=SimpleNamespace(
+            enabled=True,
+            current_object_kl=SimpleNamespace(weight=0.25),
+        ),
+        prefix_denoising_runtime={"packing_enabled": True, "kl_weight": 0.25},
+    )
+
+    with pytest.raises(ValueError, match="KL site label alignment"):
+        trainer_cls().compute_loss(_Model(logits), inputs)
+
+
 def test_prefix_denoising_positive_kl_requires_resolved_sites() -> None:
     class _Model:
         def __init__(self, logits: torch.Tensor) -> None:

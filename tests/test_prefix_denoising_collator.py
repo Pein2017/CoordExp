@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import torch
 
 from src.data_collators.enrichers import PrefixDenoisingHybridEnricher
 from src.detection.dataset import strip_non_model_detection_sidecars
@@ -152,6 +153,47 @@ def test_prefix_denoising_enricher_builds_packed_boundary_map_from_sample_length
     )
 
 
+def test_prefix_denoising_enricher_rejects_stale_packed_sample_length() -> None:
+    enricher = PrefixDenoisingHybridEnricher()
+    first = _row("a", token_base=1)
+    second = _row("b", token_base=2)
+    first["length"] = 6
+
+    with pytest.raises(ValueError, match="sample length.*mismatch"):
+        enricher(
+            collated={"attention_mask": torch.ones((1, 10), dtype=torch.long)},
+            raw_batch=[[first, second]],
+            packed=True,
+        )
+
+
+def test_prefix_denoising_enricher_rejects_boundary_map_collated_row_mismatch() -> None:
+    enricher = PrefixDenoisingHybridEnricher()
+    first = _row("a", token_base=1)
+    second = _row("b", token_base=2)
+
+    with pytest.raises(ValueError, match="packed_hybrid_boundary_map.*collated row"):
+        enricher(
+            collated={"attention_mask": torch.ones((1, 9), dtype=torch.long)},
+            raw_batch=[[first, second]],
+            packed=True,
+        )
+
+
+def test_prefix_denoising_enricher_rejects_segment_outside_sample_boundary() -> None:
+    enricher = PrefixDenoisingHybridEnricher()
+    first = _row("a", token_base=1)
+    second = _row("b", token_base=2)
+    second["prefix_denoising_segment_meta"][1]["local_token_end"] = 6  # type: ignore[index]
+
+    with pytest.raises(ValueError, match="segment.*outside.*sample boundary"):
+        enricher(
+            collated={"attention_mask": torch.ones((1, 10), dtype=torch.long)},
+            raw_batch=[[first, second]],
+            packed=True,
+        )
+
+
 def test_prefix_denoising_enricher_rejects_packed_companion_without_hybrid() -> None:
     enricher = PrefixDenoisingHybridEnricher()
 
@@ -201,10 +243,14 @@ def test_prefix_denoising_enricher_globalizes_packed_segments_and_kl_sites() -> 
     assert segment_meta[0][0][0]["local_token_end"] == 3  # type: ignore[index]
     assert segment_meta[0][0][1]["local_token_start"] == 3  # type: ignore[index]
     assert segment_meta[0][0][1]["local_token_end"] == 5  # type: ignore[index]
-    assert segment_meta[0][1][0]["local_token_start"] == 5  # type: ignore[index]
-    assert segment_meta[0][1][0]["local_token_end"] == 8  # type: ignore[index]
-    assert segment_meta[0][1][1]["local_token_start"] == 8  # type: ignore[index]
-    assert segment_meta[0][1][1]["local_token_end"] == 10  # type: ignore[index]
+    assert segment_meta[0][1][0]["local_token_start"] == 0  # type: ignore[index]
+    assert segment_meta[0][1][0]["local_token_end"] == 3  # type: ignore[index]
+    assert segment_meta[0][1][0]["token_start"] == 5  # type: ignore[index]
+    assert segment_meta[0][1][0]["token_end"] == 8  # type: ignore[index]
+    assert segment_meta[0][1][1]["local_token_start"] == 3  # type: ignore[index]
+    assert segment_meta[0][1][1]["local_token_end"] == 5  # type: ignore[index]
+    assert segment_meta[0][1][1]["token_start"] == 8  # type: ignore[index]
+    assert segment_meta[0][1][1]["token_end"] == 10  # type: ignore[index]
     assert segment_meta[0][1][0]["local_supervised_positions"] == (2,)  # type: ignore[index]
     assert segment_meta[0][1][1]["local_supervised_positions"] == (1,)  # type: ignore[index]
     assert segment_meta[0][1][0]["batch_index"] == 0  # type: ignore[index]

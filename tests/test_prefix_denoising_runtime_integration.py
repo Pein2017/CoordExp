@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections import defaultdict
+from types import SimpleNamespace
 from typing import Any
 
 import torch
@@ -16,6 +18,7 @@ from src.trainers.batch_extras import (
     maybe_pop_and_stash_batch_extras,
     pop_batch_extras,
 )
+from src.trainers.metrics.mixins import PrefixDenoisingObjectiveMixin
 
 
 class _DummyTemplate:
@@ -63,6 +66,22 @@ class _FuturePrefixDenoisingObjective:
 
 class _DummyTrainer:
     pass
+
+
+class _Metric:
+    def __init__(self) -> None:
+        self.values: list[float] = []
+
+    def update(self, value: float) -> None:
+        self.values.append(float(value))
+
+
+class _CoordTokenizer:
+    def convert_tokens_to_ids(self, tokens):
+        return [
+            1000 + int(str(token).split("_")[1].split("|")[0])
+            for token in tokens
+        ]
 
 
 def _hybrid_sample() -> HybridPrefixDenoisingSample:
@@ -116,6 +135,98 @@ def _hybrid_sample() -> HybridPrefixDenoisingSample:
             ),
         ),
     )
+
+
+def _coord_hybrid_sample(sample_id: str) -> HybridPrefixDenoisingSample:
+    clean = PrefixDenoisingSegment(
+        segment_id=f"{sample_id}:clean",
+        branch_id="clean_full",
+        input_ids=(0, 9, 1010),
+        labels=(-100, -100, 1010),
+        attention_mask=(1, 1, 1),
+        supervised_positions=(2,),
+        ce_denominator=1,
+    )
+    noisy = PrefixDenoisingSegment(
+        segment_id=f"{sample_id}:noisy",
+        branch_id="noisy_full",
+        input_ids=(0, 9, 1011),
+        labels=(-100, -100, 1010),
+        attention_mask=(1, 1, 1),
+        supervised_positions=(2,),
+        ce_denominator=1,
+    )
+    return HybridPrefixDenoisingSample(
+        ok=True,
+        hybrid_sample_id=sample_id,
+        base_sample_id=f"base-{sample_id}",
+        clean_full=clean,
+        noisy_full=noisy,
+        kl_sites=(
+            PrefixDenoisingKLSite(
+                clean_segment_id=clean.segment_id,
+                noisy_segment_id=noisy.segment_id,
+                object_index=0,
+                history_object_count=0,
+                coord_slot="x1",
+                clean_label_position=2,
+                noisy_label_position=2,
+                clean_gt_bin=10,
+                support_bins=(9, 10, 11),
+            ),
+        ),
+    )
+
+
+def _packed_prefix_base_collator(batch: list[Any]) -> dict[str, torch.Tensor]:
+    rows: list[dict[str, list[int]]] = []
+    for pack in batch:
+        pack_seq = pack if isinstance(pack, (list, tuple)) else [pack]
+        row = {"input_ids": [], "labels": [], "attention_mask": []}
+        for sample in pack_seq:
+            row["input_ids"].extend(sample["input_ids"])
+            row["labels"].extend(sample["labels"])
+            row["attention_mask"].extend(sample["attention_mask"])
+        rows.append(row)
+    return {
+        "input_ids": torch.tensor([row["input_ids"] for row in rows], dtype=torch.long),
+        "labels": torch.tensor([row["labels"] for row in rows], dtype=torch.long),
+        "attention_mask": torch.tensor(
+            [row["attention_mask"] for row in rows],
+            dtype=torch.long,
+        ),
+    }
+
+
+class _PackedPrefixTrainer(PrefixDenoisingObjectiveMixin):
+    prefix_denoising_packing_enabled = True
+    prefix_denoising_kl_weight = 0.25
+    model = None
+    args = SimpleNamespace(gradient_accumulation_steps=1)
+
+    def __init__(self) -> None:
+        self.custom_metrics = {"train": defaultdict(_Metric)}
+        self.tokenizer = _CoordTokenizer()
+
+
+class _PackedPrefixModel:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+        self.training = True
+        self.config = SimpleNamespace(model_type="unit")
+
+    def __call__(self, **kwargs):
+        self.calls.append(dict(kwargs))
+        input_ids = kwargs["input_ids"]
+        logits = torch.full(
+            (int(input_ids.shape[0]), int(input_ids.shape[1]), 2100),
+            -8.0,
+            dtype=torch.float32,
+        )
+        for label_position in (2, 5, 8, 11):
+            logits[0, label_position - 1, 1010] = 7.0
+        logits[0, 10, 1011] = 9.0
+        return SimpleNamespace(logits=logits)
 
 
 def test_prefix_denoising_model_ready_sidecars_survive_until_model_boundary() -> None:
@@ -216,3 +327,46 @@ def test_prefix_denoising_template_data_collator_path_stashes_batch_extras() -> 
         "pixel_values",
         "image_grid_thw",
     }
+
+
+def test_prefix_denoising_packed_collator_enriches_and_objective_runs_ce_kl() -> None:
+    first = materialize_hybrid_model_ready_item(
+        sample=_coord_hybrid_sample("pack-0"),
+        dataset_name="unit",
+        base_idx=0,
+    )
+    second = materialize_hybrid_model_ready_item(
+        sample=_coord_hybrid_sample("pack-1"),
+        dataset_name="unit",
+        base_idx=1,
+    )
+    collator = build_batch_extras_collator(
+        _DummyTemplate(),
+        base_collator=_packed_prefix_base_collator,
+    )
+    collated = collator([[first, second]])
+
+    assert collated["packed_hybrid_boundary_map"] == (
+        (
+            {"sample_index": 0, "start": 0, "end": 6},
+            {"sample_index": 1, "start": 6, "end": 12},
+        ),
+    )
+    second_clean = collated["prefix_denoising_segment_meta"][0][1][0]
+    assert second_clean["local_token_start"] == 0
+    assert second_clean["token_start"] == 6
+    second_site = collated["prefix_denoising_resolved_kl_sites"][0][1][0]
+    assert second_site.clean_label_position == 8
+    assert second_site.noisy_label_position == 11
+
+    trainer = _PackedPrefixTrainer()
+    model = _PackedPrefixModel()
+    loss = trainer.compute_loss(model, collated)
+
+    assert torch.isfinite(loss)
+    assert trainer.custom_metrics["train"][
+        "prefix_denoising/kl/local_window/raw"
+    ].values[-1] > 0.0
+    assert "prefix_denoising_segment_meta" not in model.calls[0]
+    assert "packed_hybrid_boundary_map" not in model.calls[0]
+    assert "prefix_denoising_resolved_kl_sites" not in model.calls[0]

@@ -115,6 +115,11 @@ class PrefixDenoisingObjectiveMixin:
                 trainer=self,
                 logits=logits,
             )
+            _validate_kl_sites_against_labels(
+                labels=labels,
+                sites=resolved_sites,
+                coord_token_ids=coord_token_ids,
+            )
             kl = compute_local_coord_kl(
                 clean_logits=logits,
                 noisy_logits=logits,
@@ -197,6 +202,61 @@ def _coord_token_id_tensor(
             f"coord token id lookup must return exactly 1000 ids; got {len(values)}"
         )
     return torch.tensor(values, device=logits.device, dtype=torch.long)
+
+
+def _validate_kl_sites_against_labels(
+    *,
+    labels: torch.Tensor,
+    sites: tuple[ResolvedPrefixDenoisingKLSite, ...],
+    coord_token_ids: torch.Tensor,
+) -> None:
+    if labels.ndim != 2:
+        raise ValueError("prefix_denoising KL label alignment requires 2D labels")
+    batch_size = int(labels.shape[0])
+    sequence_length = int(labels.shape[1])
+    for index, site in enumerate(sites):
+        if type(site) is not ResolvedPrefixDenoisingKLSite:
+            raise TypeError(
+                "prefix_denoising KL label alignment requires "
+                "ResolvedPrefixDenoisingKLSite entries"
+            )
+        clean_gt_bin = int(site.clean_gt_bin)
+        if clean_gt_bin < 0 or clean_gt_bin >= int(coord_token_ids.shape[0]):
+            raise ValueError(
+                "prefix_denoising KL site label alignment failed: "
+                f"site={index}, clean_gt_bin={clean_gt_bin} outside coord_token_ids"
+            )
+        expected_token_id = int(coord_token_ids[clean_gt_bin].detach().cpu().item())
+        for branch, batch_index, label_position in (
+            ("clean", int(site.clean_batch_index), int(site.clean_label_position)),
+            ("noisy", int(site.noisy_batch_index), int(site.noisy_label_position)),
+        ):
+            if batch_index < 0 or batch_index >= batch_size:
+                raise ValueError(
+                    "prefix_denoising KL site label alignment failed: "
+                    f"site={index}, branch={branch}, batch_index={batch_index} "
+                    f"outside labels batch"
+                )
+            if label_position < 0 or label_position >= sequence_length:
+                raise ValueError(
+                    "prefix_denoising KL site label alignment failed: "
+                    f"site={index}, branch={branch}, "
+                    f"label_position={label_position} outside labels sequence"
+                )
+            observed = int(labels[batch_index, label_position].detach().cpu().item())
+            if observed == -100:
+                raise ValueError(
+                    "prefix_denoising KL site label alignment failed: "
+                    f"site={index}, branch={branch}, "
+                    f"label_position={label_position} is unsupervised"
+                )
+            if observed != expected_token_id:
+                raise ValueError(
+                    "prefix_denoising KL site label alignment failed: "
+                    f"site={index}, branch={branch}, "
+                    f"label_position={label_position}, observed_token_id={observed}, "
+                    f"expected_token_id={expected_token_id}"
+                )
 
 
 def _resolve_prefix_denoising_tokenizer(trainer: Any) -> Any:
