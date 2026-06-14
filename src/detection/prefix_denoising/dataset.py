@@ -209,6 +209,13 @@ def materialize_hybrid_model_ready_item(
     input_ids = tuple(clean.input_ids) + tuple(noisy.input_ids)
     labels = tuple(clean.labels) + tuple(noisy.labels)
     attention_mask = tuple(clean.attention_mask) + tuple(noisy.attention_mask)
+    length = len(input_ids)
+    if len(labels) != length or len(attention_mask) != length:
+        raise ValueError(
+            "prefix-denoising materialized length invariant failed: "
+            f"input_ids={length}, labels={len(labels)}, "
+            f"attention_mask={len(attention_mask)}"
+        )
     clean_start = 0
     clean_end = len(clean.input_ids)
     noisy_start = clean_end
@@ -217,7 +224,7 @@ def materialize_hybrid_model_ready_item(
         "input_ids": list(input_ids),
         "labels": list(labels),
         "attention_mask": list(attention_mask),
-        "length": len(input_ids),
+        "length": length,
         "dataset": dataset_name,
         "sample_id": sample.hybrid_sample_id,
         "prefix_denoising_segment_meta": (

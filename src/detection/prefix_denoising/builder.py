@@ -373,7 +373,13 @@ def _masked_labels(value: Any, path: str) -> tuple[int, ...]:
 def _attention_tuple(encoded: Mapping[str, Any], length: int) -> tuple[int, ...]:
     if "attention_mask" not in encoded:
         return tuple(1 for _ in range(length))
-    return _as_int_tuple(encoded.get("attention_mask"), "encoded.attention_mask")
+    mask = _as_int_tuple(encoded.get("attention_mask"), "encoded.attention_mask")
+    if len(mask) != int(length):
+        raise ValueError(
+            "encoded attention_mask length must match input_ids length: "
+            f"attention_mask={len(mask)}, length={int(length)}"
+        )
+    return mask
 
 
 def _encoded_extras(encoded: Mapping[str, Any]) -> Mapping[str, object]:

@@ -84,6 +84,15 @@ class NoisyNonCoordDriftTemplate(FakeTemplate):
         return encoded
 
 
+class ShortAttentionMaskTemplate(FakeTemplate):
+    def encode(
+        self, payload: Mapping[str, Any], *args: object, **kwargs: object
+    ) -> dict[str, Any]:
+        encoded = super().encode(payload, *args, **kwargs)
+        encoded["attention_mask"] = encoded["attention_mask"][:-1]
+        return encoded
+
+
 def _row(*, objects: list[dict[str, object]] | None = None) -> dict[str, object]:
     if objects is None:
         objects = [
@@ -347,3 +356,21 @@ def test_noncoord_noisy_input_drift_is_rejected(tmp_path: Path) -> None:
 
     assert sample.ok is False
     assert sample.skip_reason == "clean_noisy_noncoord_alignment_failed"
+
+
+def test_short_attention_mask_raises_template_contract_error(tmp_path: Path) -> None:
+    _touch_image(tmp_path)
+
+    with pytest.raises(ValueError, match="attention_mask.*length"):
+        build_hybrid_prefix_denoising_sample(
+            _row(),
+            base_sample_id="unit-0",
+            image_root=tmp_path,
+            swift_template=ShortAttentionMaskTemplate(),
+            user_prompt="find objects",
+            system_prompt=None,
+            prefix_denoising=PrefixDenoisingConfig.from_mapping({"enabled": True}),
+            epoch=0,
+            rng=random.Random(5),
+            max_length=12000,
+        )
