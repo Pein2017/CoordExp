@@ -89,6 +89,10 @@ class BBoxNoiseResult:
 def _coerce_norm1000_xyxy(
     bbox: Sequence[int | float], *, field_name: str
 ) -> tuple[int, int, int, int]:
+    if isinstance(bbox, (str, bytes)):
+        raise ValueError(
+            f"{field_name} must be a non-string sequence of four coordinates"
+        )
     try:
         bbox_len = len(bbox)
     except TypeError as exc:
