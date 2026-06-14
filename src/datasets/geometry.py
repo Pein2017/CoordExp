@@ -144,7 +144,9 @@ def construct_valid_norm1000_bbox_noise(
     cx2 = x1 + x2
     cy2 = y1 + y2
     for sx in scale_values:
-        new_w = max(1, int(round(width * sx)))
+        new_w = int(round(width * sx))
+        if new_w <= 0:
+            continue
         feasible_dx_low, feasible_dx_high = _feasible_shift_bounds(
             cx2, new_w, coord_max=999
         )
@@ -153,7 +155,9 @@ def construct_valid_norm1000_bbox_noise(
         if dx_low > dx_high:
             continue
         for sy in scale_values:
-            new_h = max(1, int(round(height * sy)))
+            new_h = int(round(height * sy))
+            if new_h <= 0:
+                continue
             feasible_dy_low, feasible_dy_high = _feasible_shift_bounds(
                 cy2, new_h, coord_max=999
             )

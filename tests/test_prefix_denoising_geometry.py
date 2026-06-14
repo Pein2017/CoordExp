@@ -117,6 +117,20 @@ def test_constructive_noise_reports_infeasible_without_repair(
     assert result.noisy_bbox is None
 
 
+def test_constructive_noise_skips_zero_size_scaled_candidates_without_repair() -> None:
+    result = construct_valid_norm1000_bbox_noise(
+        (10, 10, 11, 11),
+        config=BBoxNoiseConfig(
+            center_shift_frac=1.0, uniform_scale_range=(0.4, 0.49)
+        ),
+        rng=random.Random(9),
+    )
+
+    assert result.ok is False
+    assert result.noisy_bbox is None
+    assert result.skip_reason == "noise_infeasible_4coord_changed"
+
+
 def test_invalid_clean_bbox_is_rejected() -> None:
     with pytest.raises(ValueError, match="clean bbox"):
         construct_valid_norm1000_bbox_noise(
