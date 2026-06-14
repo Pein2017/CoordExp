@@ -270,6 +270,162 @@ class TeacherForcingTargetIREnricher:
             )
 
 
+class PrefixDenoisingHybridEnricher:
+    """Attach prefix-denoising hybrid sidecars for trainer-owned losses."""
+
+    out_field = "prefix_denoising_hybrid"
+    boundary_map_field = "packed_hybrid_boundary_map"
+    companion_fields = (
+        "prefix_denoising_segment_meta",
+        "prefix_denoising_resolved_kl_sites",
+    )
+
+    def __call__(
+        self,
+        *,
+        collated: dict[str, Any],
+        raw_batch: Sequence[Any],
+        packed: bool,
+    ) -> None:
+        if packed:
+            self._attach_packed(collated=collated, raw_batch=raw_batch)
+            return
+
+        present = [
+            isinstance(row, Mapping) and self.out_field in row for row in raw_batch
+        ]
+        if not any(present):
+            return
+        if not all(present):
+            raise ValueError(
+                "prefix_denoising_hybrid sidecar must be present for every "
+                "sample in an unpacked prefix-denoising batch"
+            )
+        collated[self.out_field] = tuple(
+            row[self.out_field] for row in raw_batch if isinstance(row, Mapping)
+        )
+        for field in self.companion_fields:
+            self._attach_unpacked_companion(
+                collated=collated,
+                raw_batch=raw_batch,
+                field=field,
+            )
+
+    def _attach_packed(
+        self,
+        *,
+        collated: dict[str, Any],
+        raw_batch: Sequence[Any],
+    ) -> None:
+        packed_groups: list[tuple[Any, ...]] = []
+        saw_sidecar = False
+        saw_incomplete_group = False
+
+        for pack in raw_batch:
+            pack_seq = pack if isinstance(pack, (list, tuple)) else [pack]
+            present = [
+                isinstance(sample, Mapping) and self.out_field in sample
+                for sample in pack_seq
+            ]
+            if not any(present):
+                saw_incomplete_group = True
+                continue
+            saw_sidecar = True
+            if not all(present):
+                raise ValueError(
+                    "prefix_denoising_hybrid sidecar must be present for every "
+                    "sample in a packed prefix-denoising group"
+                )
+            packed_groups.append(
+                tuple(
+                    sample[self.out_field]
+                    for sample in pack_seq
+                    if isinstance(sample, Mapping)
+                )
+            )
+
+        if not saw_sidecar:
+            return
+        if saw_incomplete_group:
+            raise ValueError(
+                "prefix_denoising_hybrid sidecar must be present for every "
+                "packed prefix-denoising group in the batch"
+            )
+        if self.boundary_map_field not in collated:
+            raise ValueError(
+                "Packed prefix_denoising_hybrid sidecars require "
+                "PackedHybridBoundaryMap via collated['packed_hybrid_boundary_map']"
+            )
+        collated[self.out_field] = tuple(packed_groups)
+        for field in self.companion_fields:
+            self._attach_packed_companion(
+                collated=collated,
+                raw_batch=raw_batch,
+                field=field,
+            )
+
+    @staticmethod
+    def _attach_unpacked_companion(
+        *,
+        collated: dict[str, Any],
+        raw_batch: Sequence[Any],
+        field: str,
+    ) -> None:
+        present = [
+            isinstance(row, Mapping) and field in row for row in raw_batch
+        ]
+        if not any(present):
+            return
+        if not all(present):
+            raise ValueError(
+                f"{field} sidecar must be present for every sample in an "
+                "unpacked prefix-denoising batch when any sample provides it"
+            )
+        collated[field] = tuple(
+            row[field] for row in raw_batch if isinstance(row, Mapping)
+        )
+
+    @staticmethod
+    def _attach_packed_companion(
+        *,
+        collated: dict[str, Any],
+        raw_batch: Sequence[Any],
+        field: str,
+    ) -> None:
+        packed_groups: list[tuple[Any, ...]] = []
+        saw_sidecar = False
+        saw_incomplete_group = False
+        for pack in raw_batch:
+            pack_seq = pack if isinstance(pack, (list, tuple)) else [pack]
+            present = [
+                isinstance(sample, Mapping) and field in sample for sample in pack_seq
+            ]
+            if not any(present):
+                saw_incomplete_group = True
+                continue
+            saw_sidecar = True
+            if not all(present):
+                raise ValueError(
+                    f"{field} sidecar must be present for every sample in a "
+                    "packed prefix-denoising group when any sample provides it"
+                )
+            packed_groups.append(
+                tuple(
+                    sample[field]
+                    for sample in pack_seq
+                    if isinstance(sample, Mapping)
+                )
+            )
+        if not saw_sidecar:
+            return
+        if saw_incomplete_group:
+            raise ValueError(
+                f"{field} sidecar must be present for every packed "
+                "prefix-denoising group in the batch when any group provides it"
+            )
+        collated[field] = tuple(packed_groups)
+
+
 class TokenTypesEnricher:
     """Attach `token_types` tensor for token-type metrics (best-effort)."""
 

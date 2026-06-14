@@ -61,6 +61,10 @@ REGISTERED_DETECTION_SIDECAR_KEYS: tuple[str, ...] = (
     "sample_id",
     "dataset",
     "base_idx",
+    "prefix_denoising_hybrid",
+    "prefix_denoising_segment_meta",
+    "packed_hybrid_boundary_map",
+    "prefix_denoising_resolved_kl_sites",
 )
 
 DETECTION_DROPPED_BEFORE_MODEL_KEYS: tuple[str, ...] = (

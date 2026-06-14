@@ -18,6 +18,7 @@ from src.config.schema import TokenTypeMetricsConfig
 from src.data_collators.enrichers import (
     DatasetMetaEnricher,
     InstabilityMetaEnricher,
+    PrefixDenoisingHybridEnricher,
     ProxySupervisionEnricher,
     RecursiveDetectionTargetsEnricher,
     SFTStructuralCloseEnricher,
@@ -78,6 +79,7 @@ def build_batch_extras_collator(
     instab_enricher = None
     if instab_enabled:
         instab_enricher = InstabilityMetaEnricher(max_meta_samples=max_meta_samples)
+    prefix_denoising_hybrid_enricher = PrefixDenoisingHybridEnricher()
     recursive_detection_targets_enricher = RecursiveDetectionTargetsEnricher()
     teacher_forcing_target_ir_enricher = TeacherForcingTargetIREnricher()
 
@@ -89,6 +91,11 @@ def build_batch_extras_collator(
         if instab_enricher is not None:
             instab_enricher(batch=batch, collated=collated, packed=meta.packed)
 
+        prefix_denoising_hybrid_enricher(
+            collated=collated,
+            raw_batch=batch,
+            packed=meta.packed,
+        )
         recursive_detection_targets_enricher(
             collated=collated,
             raw_batch=batch,
