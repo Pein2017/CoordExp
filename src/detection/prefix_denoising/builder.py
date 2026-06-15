@@ -285,12 +285,20 @@ def _build_noisy_objects(
     noisy_objects: list[NormalizedDetectionObject] = []
     provenance: list[Mapping[str, object]] = []
     for index, obj in enumerate(objects):
-        result = construct_valid_norm1000_bbox_noise(
-            _bbox_tuple(obj.bbox_2d),
-            config=noise_cfg,
-            rng=rng,
-            object_id=obj.object_instance_id,
-        )
+        try:
+            result = construct_valid_norm1000_bbox_noise(
+                _bbox_tuple(obj.bbox_2d),
+                config=noise_cfg,
+                rng=rng,
+                object_id=obj.object_instance_id,
+            )
+        except ValueError as exc:
+            return {
+                "ok": False,
+                "skip_reason": "degenerate_gt_bbox",
+                "object_index": index,
+                "error": str(exc),
+            }
         if not result.ok or result.noisy_bbox is None:
             return {
                 "ok": False,

@@ -88,6 +88,37 @@ def test_branch_balanced_hard_ce_requires_both_branches() -> None:
         )
 
 
+def test_branch_balanced_hard_ce_rejects_nonfinite_logits() -> None:
+    logits = torch.zeros((1, 6, 4), dtype=torch.float32)
+    labels = torch.full((1, 6), -100, dtype=torch.long)
+    labels[0, 1] = 1
+    labels[0, 4] = 1
+    logits[0, 0, 1] = float("nan")
+    spans = (
+        PrefixDenoisingSegmentSpan(
+            batch_index=0,
+            token_start=0,
+            token_end=3,
+            branch_id="clean_full",
+            segment_id="a:clean",
+        ),
+        PrefixDenoisingSegmentSpan(
+            batch_index=0,
+            token_start=3,
+            token_end=6,
+            branch_id="noisy_full",
+            segment_id="a:noisy",
+        ),
+    )
+
+    with pytest.raises(ValueError, match="finite"):
+        compute_branch_balanced_hard_ce(
+            logits=logits,
+            labels=labels,
+            segment_spans=spans,
+        )
+
+
 def test_branch_balanced_hard_ce_rejects_segment_start_supervision() -> None:
     logits = torch.zeros((1, 4, 3), dtype=torch.float32)
     labels = torch.full((1, 4), -100, dtype=torch.long)
@@ -229,6 +260,32 @@ def test_local_coord_kl_raw_loss_is_mean_over_effective_sites() -> None:
     assert two_sites.candidate_site_count == 2
     assert two_sites.effective_site_count == 2
     assert two_sites.identical_prefix_site_count == 2
+
+
+def test_local_coord_kl_rejects_nonfinite_logits() -> None:
+    coord_token_ids = torch.tensor([1000 + i for i in range(1000)], dtype=torch.long)
+    clean_logits = torch.zeros((1, 4, 2100), dtype=torch.float32)
+    noisy_logits = torch.zeros((1, 4, 2100), dtype=torch.float32)
+    clean_logits[0, 1, 1010] = float("nan")
+    site = ResolvedPrefixDenoisingKLSite(
+        clean_batch_index=0,
+        noisy_batch_index=0,
+        object_index=0,
+        coord_slot="x1",
+        clean_label_position=2,
+        noisy_label_position=2,
+        clean_gt_bin=10,
+        support_bins=(9, 10, 11),
+        identical_prefix=False,
+    )
+
+    with pytest.raises(ValueError, match="finite"):
+        compute_local_coord_kl(
+            clean_logits=clean_logits,
+            noisy_logits=noisy_logits,
+            sites=(site,),
+            coord_token_ids=coord_token_ids,
+        )
 
 
 def test_local_coord_kl_uses_teacher_to_student_orientation_and_gradients() -> None:

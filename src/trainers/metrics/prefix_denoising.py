@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping, MutableMapping, Sequence
+from types import SimpleNamespace
 from typing import Any
 
 import torch
@@ -58,35 +59,22 @@ class PrefixDenoisingObjectiveMixin:
             )
         kl_weight = _resolve_prefix_denoising_kl_weight(self)
 
-        packing_enabled = _resolve_prefix_denoising_packing_enabled(self)
-        segment_spans = _segment_spans_from_meta(
-            extras.prefix_denoising_segment_meta,
-            packing_enabled=packing_enabled,
-        )
-
         strip_non_model_detection_sidecars(inputs)
         input_ids = inputs.get("input_ids")
         if not isinstance(input_ids, torch.Tensor):
             raise ValueError("prefix_denoising objective requires input_ids tensor")
 
-        _, inputs_for_model, _ = prepare_forward_inputs(
+        forward = _run_isolated_prefix_denoising_forwards(
+            trainer=self,
             model=model,
-            inputs=inputs,
-            ignored_keys=("labels",),
-            packing_enabled=packing_enabled,
-            where="prefix_denoising",
+            hybrids_payload=extras.prefix_denoising_hybrid,
+            reference_input_ids=input_ids,
         )
-        outputs = run_no_cache_forward(model=model, inputs_for_model=inputs_for_model)
-        logits = getattr(outputs, "logits", None)
-        if not isinstance(logits, torch.Tensor):
-            raise RuntimeError(
-                "prefix_denoising objective requires model outputs with logits"
-            )
-        assert_unsliced_logits(
-            logits=logits,
-            input_ids=input_ids,
-            where="prefix_denoising",
-        )
+        logits = forward["logits"]
+        labels = forward["labels"]
+        segment_spans = forward["segment_spans"]
+        resolved_sites = forward["resolved_kl_sites"]
+        outputs = forward["outputs"]
 
         ce = compute_branch_balanced_hard_ce(
             logits=logits,
@@ -102,10 +90,6 @@ class PrefixDenoisingObjectiveMixin:
         total_loss = ce.loss
         kl_events = ()
         if kl_weight > 0.0:
-            resolved_sites = _resolve_kl_sites_from_extras(
-                extras=extras,
-                packing_enabled=packing_enabled,
-            )
             if not resolved_sites:
                 raise ValueError(
                     "positive prefix_denoising KL requires at least one "
@@ -156,12 +140,264 @@ class PrefixDenoisingObjectiveMixin:
         return (total_loss, outputs) if return_outputs else total_loss
 
 
+def _run_isolated_prefix_denoising_forwards(
+    *,
+    trainer: Any,
+    model: Any,
+    hybrids_payload: Any,
+    reference_input_ids: torch.Tensor,
+) -> dict[str, Any]:
+    hybrids = _flatten_hybrid_payload(hybrids_payload)
+    if not hybrids:
+        raise ValueError("prefix_denoising objective requires non-empty hybrids")
+    device = reference_input_ids.device
+    clean_segments = []
+    noisy_segments = []
+    for hybrid in hybrids:
+        if hybrid.clean_full is None or hybrid.noisy_full is None:
+            raise ValueError("prefix_denoising hybrid must contain clean/noisy segments")
+        clean_segments.append(hybrid.clean_full)
+        noisy_segments.append(hybrid.noisy_full)
+
+    clean_inputs = _collate_prefix_denoising_segments(clean_segments, device=device)
+    noisy_inputs = _collate_prefix_denoising_segments(noisy_segments, device=device)
+    _, clean_model_inputs, _ = prepare_forward_inputs(
+        model=model,
+        inputs=clean_inputs,
+        ignored_keys=("labels",),
+        packing_enabled=False,
+        where="prefix_denoising.clean_full",
+    )
+    _, noisy_model_inputs, _ = prepare_forward_inputs(
+        model=model,
+        inputs=noisy_inputs,
+        ignored_keys=("labels",),
+        packing_enabled=False,
+        where="prefix_denoising.noisy_full",
+    )
+    clean_outputs = run_no_cache_forward(
+        model=model,
+        inputs_for_model=clean_model_inputs,
+    )
+    noisy_outputs = run_no_cache_forward(
+        model=model,
+        inputs_for_model=noisy_model_inputs,
+    )
+    clean_logits = getattr(clean_outputs, "logits", None)
+    noisy_logits = getattr(noisy_outputs, "logits", None)
+    if not isinstance(clean_logits, torch.Tensor) or not isinstance(
+        noisy_logits, torch.Tensor
+    ):
+        raise RuntimeError(
+            "prefix_denoising isolated forwards require model outputs with logits"
+        )
+    assert_unsliced_logits(
+        logits=clean_logits,
+        input_ids=clean_inputs["input_ids"],
+        where="prefix_denoising.clean_full",
+    )
+    assert_unsliced_logits(
+        logits=noisy_logits,
+        input_ids=noisy_inputs["input_ids"],
+        where="prefix_denoising.noisy_full",
+    )
+    if tuple(clean_logits.shape) != tuple(noisy_logits.shape):
+        raise ValueError(
+            "prefix_denoising isolated clean/noisy logits must have matching shapes"
+        )
+
+    logits = torch.cat((clean_logits, noisy_logits), dim=0)
+    labels = torch.cat((clean_inputs["labels"], noisy_inputs["labels"]), dim=0)
+    sample_count = len(hybrids)
+    spans = []
+    resolved_sites = []
+    for index, hybrid in enumerate(hybrids):
+        clean = clean_segments[index]
+        noisy = noisy_segments[index]
+        spans.append(
+            PrefixDenoisingSegmentSpan(
+                batch_index=index,
+                token_start=0,
+                token_end=len(clean.input_ids),
+                branch_id="clean_full",
+                segment_id=clean.segment_id,
+            )
+        )
+        noisy_batch_index = sample_count + index
+        spans.append(
+            PrefixDenoisingSegmentSpan(
+                batch_index=noisy_batch_index,
+                token_start=0,
+                token_end=len(noisy.input_ids),
+                branch_id="noisy_full",
+                segment_id=noisy.segment_id,
+            )
+        )
+        for site in hybrid.kl_sites:
+            if type(site) is not PrefixDenoisingKLSite:
+                raise TypeError(
+                    "prefix_denoising_hybrid kl_sites must contain "
+                    "PrefixDenoisingKLSite entries"
+                )
+            resolved_sites.append(
+                ResolvedPrefixDenoisingKLSite(
+                    clean_batch_index=index,
+                    noisy_batch_index=noisy_batch_index,
+                    clean_label_position=int(site.clean_label_position),
+                    noisy_label_position=int(site.noisy_label_position),
+                    clean_gt_bin=int(site.clean_gt_bin),
+                    support_bins=tuple(int(value) for value in site.support_bins),
+                    coord_slot=site.coord_slot,
+                    object_index=int(site.object_index),
+                    identical_prefix=bool(site.identical_prefix),
+                )
+            )
+    return {
+        "logits": logits,
+        "labels": labels,
+        "segment_spans": tuple(spans),
+        "resolved_kl_sites": tuple(resolved_sites),
+        "outputs": SimpleNamespace(logits=logits),
+    }
+
+
 def _require_prefix_hybrids(payload: Any) -> None:
     if payload is None:
         raise ValueError("prefix_denoising objective requires prefix_denoising_hybrid sidecar")
     if isinstance(payload, Sequence) and not isinstance(payload, (str, bytes)):
         if len(payload) == 0:
             raise ValueError("prefix_denoising_hybrid sidecar batch is empty")
+
+
+def _flatten_hybrid_payload(payload: Any) -> tuple[HybridPrefixDenoisingSample, ...]:
+    hybrids: list[HybridPrefixDenoisingSample] = []
+
+    def visit(value: Any) -> None:
+        if type(value) is HybridPrefixDenoisingSample:
+            hybrids.append(value)
+            return
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+            for item in value:
+                visit(item)
+            return
+        raise TypeError(
+            "prefix_denoising_hybrid sidecar must contain "
+            "HybridPrefixDenoisingSample entries"
+        )
+
+    visit(payload)
+    return tuple(hybrids)
+
+
+def _collate_prefix_denoising_segments(
+    segments: Sequence[Any],
+    *,
+    device: torch.device,
+) -> dict[str, Any]:
+    if not segments:
+        raise ValueError("prefix_denoising isolated forward received no segments")
+    max_length = max(len(segment.input_ids) for segment in segments)
+    input_rows: list[list[int]] = []
+    label_rows: list[list[int]] = []
+    mask_rows: list[list[int]] = []
+    for segment in segments:
+        length = len(segment.input_ids)
+        pad = max_length - length
+        input_rows.append(list(segment.input_ids) + [0] * pad)
+        label_rows.append(list(segment.labels) + [-100] * pad)
+        mask_rows.append(list(segment.attention_mask) + [0] * pad)
+    batch: dict[str, Any] = {
+        "input_ids": torch.tensor(input_rows, dtype=torch.long, device=device),
+        "labels": torch.tensor(label_rows, dtype=torch.long, device=device),
+        "attention_mask": torch.tensor(mask_rows, dtype=torch.long, device=device),
+    }
+    batch.update(_collate_segment_encoded_extras(segments, device=device, max_length=max_length))
+    return batch
+
+
+def _collate_segment_encoded_extras(
+    segments: Sequence[Any],
+    *,
+    device: torch.device,
+    max_length: int,
+) -> dict[str, Any]:
+    per_segment = [
+        dict(getattr(segment, "metadata", {}).get("encoded_extras", {}))
+        for segment in segments
+    ]
+    keys = sorted({key for extras in per_segment for key in extras})
+    out: dict[str, Any] = {}
+    for key in keys:
+        if key in {"input_ids", "labels", "attention_mask", "length"}:
+            continue
+        values = [extras.get(key) for extras in per_segment]
+        if any(value is None for value in values):
+            continue
+        if all(isinstance(value, torch.Tensor) for value in values):
+            out[key] = _collate_tensor_extra(
+                key=key,
+                values=[value for value in values if isinstance(value, torch.Tensor)],
+                device=device,
+                max_length=max_length,
+            )
+            continue
+        if all(isinstance(value, list) for value in values):
+            merged: list[Any] = []
+            for value in values:
+                merged.extend(value)  # type: ignore[arg-type]
+            out[key] = merged
+            continue
+        if all(isinstance(value, tuple) for value in values):
+            merged_tuple: list[Any] = []
+            for value in values:
+                merged_tuple.extend(value)  # type: ignore[arg-type]
+            out[key] = tuple(merged_tuple)
+            continue
+        if all(value == values[0] for value in values):
+            out[key] = values[0]
+    return out
+
+
+def _collate_tensor_extra(
+    *,
+    key: str,
+    values: Sequence[torch.Tensor],
+    device: torch.device,
+    max_length: int,
+) -> torch.Tensor:
+    moved = [value.to(device=device) for value in values]
+    if key in {"pixel_values", "pixel_values_videos", "image_grid_thw", "video_grid_thw"}:
+        return torch.cat(tuple(moved), dim=0)
+    if key == "position_ids" and all(
+        value.ndim == 2 and int(value.shape[-1]) <= int(max_length) for value in moved
+    ):
+        return torch.stack(
+            tuple(_pad_tensor_last_dim(value, max_length=max_length, pad_value=0) for value in moved),
+            dim=1,
+        )
+    if key == "text_position_ids" and all(
+        value.ndim == 1 and int(value.shape[-1]) <= int(max_length) for value in moved
+    ):
+        return torch.stack(
+            tuple(_pad_tensor_last_dim(value, max_length=max_length, pad_value=0) for value in moved),
+            dim=0,
+        )
+    try:
+        return torch.cat(tuple(moved), dim=0)
+    except RuntimeError:
+        return torch.stack(tuple(moved), dim=0)
+
+
+def _pad_tensor_last_dim(
+    value: torch.Tensor,
+    *,
+    max_length: int,
+    pad_value: int,
+) -> torch.Tensor:
+    pad = int(max_length) - int(value.shape[-1])
+    if pad <= 0:
+        return value
+    return torch.nn.functional.pad(value, (0, pad), value=float(pad_value))
 
 
 def _resolve_prefix_denoising_packing_enabled(trainer: Any) -> bool:

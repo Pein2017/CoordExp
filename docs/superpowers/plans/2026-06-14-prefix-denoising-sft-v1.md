@@ -18,8 +18,9 @@ Direction note: `progress/directions/prefix_denoising_sft_v1.md`
 
 Status: historical implementation plan for the implemented V1 slice on
 `codex/prefix-denoising-sft`. The plan passed into execution after review
-approval; see `progress/diagnostics/2026-06-14_prefix_denoising_launch_health.md`
-for the current tiny launch-health evidence.
+approval. The original 2026-06-14 smoke is superseded; see
+`progress/diagnostics/2026-06-15_prefix_denoising_branch_isolation_repair.md`
+for the current post-repair tiny launch-health evidence.
 
 ## Review-Convergence Scope
 

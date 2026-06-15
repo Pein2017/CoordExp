@@ -13,6 +13,7 @@ from src.sft import (
     PackingRuntimeConfig,
     _apply_sft_encoded_sample_cache_preflight,
     _build_pipeline_manifest,
+    _build_effective_runtime_payload,
     _build_encoded_sample_cache_request,
     _apply_rollout_decode_batch_size_override,
     _is_rollout_matching_variant,
@@ -420,18 +421,173 @@ def test_compose_trainer_class_requires_prefix_runtime_when_enabled() -> None:
         )
 
 
+def test_effective_runtime_payload_records_prefix_dataset_summary() -> None:
+    dataset_summary = {
+        "train": {
+            "dataset_name": "detection_train",
+            "source_rows": 9,
+            "eligible_rows": 7,
+            "skipped_rows": 2,
+            "skip_counters": {"degenerate_gt_bbox": 2},
+        }
+    }
+
+    payload = _build_effective_runtime_payload(
+        training_config=SimpleNamespace(
+            template={},
+            training={},
+            model={},
+            global_max_length=1024,
+            prefix_denoising=SimpleNamespace(
+                enabled=True,
+                current_object_kl=SimpleNamespace(weight=0.05),
+            ),
+        ),
+        train_args=SimpleNamespace(
+            output_dir="out",
+            logging_dir="logs",
+            run_name="unit",
+            per_device_train_batch_size=1,
+            per_device_eval_batch_size=1,
+            gradient_accumulation_steps=1,
+            max_steps=1,
+            num_train_epochs=1.0,
+            seed=17,
+        ),
+        trainer_variant="",
+        dataset_seed=17,
+        checkpoint_mode="artifact_only",
+        packing_cfg=PackingRuntimeConfig(
+            enabled=True,
+            mode="static",
+            packing_length=1024,
+        ),
+        encoded_sample_cache_cfg=EncodedSampleCacheRuntimeConfig(),
+        train_jsonl="train.jsonl",
+        val_jsonl=None,
+        pipeline_manifest={},
+        prefix_denoising_dataset_summary=dataset_summary,
+    )
+
+    assert payload["prefix_denoising"]["dataset"] == dataset_summary
+
+
+def _prefix_segment(
+    *,
+    segment_id: str,
+    branch_id: str,
+    input_ids: tuple[int, ...],
+    labels: tuple[int, ...],
+) -> PrefixDenoisingSegment:
+    return PrefixDenoisingSegment(
+        segment_id=segment_id,
+        branch_id=branch_id,  # type: ignore[arg-type]
+        input_ids=input_ids,
+        labels=labels,
+        attention_mask=(1,) * len(input_ids),
+        supervised_positions=tuple(
+            index for index, label in enumerate(labels) if int(label) != -100
+        ),
+        ce_denominator=sum(1 for label in labels if int(label) != -100),
+    )
+
+
+def _prefix_hybrid(
+    *,
+    sample_id: str,
+    clean: PrefixDenoisingSegment,
+    noisy: PrefixDenoisingSegment,
+    kl_sites: tuple[PrefixDenoisingKLSite, ...] = (),
+) -> HybridPrefixDenoisingSample:
+    return HybridPrefixDenoisingSample(
+        ok=True,
+        hybrid_sample_id=sample_id,
+        base_sample_id=f"base-{sample_id}",
+        clean_full=clean,
+        noisy_full=noisy,
+        kl_sites=kl_sites,
+    )
+
+
+def _coord_prefix_hybrid(
+    sample_id: str,
+    *,
+    include_kl: bool = True,
+    clean_label_position: int = 2,
+    noisy_label_position: int = 2,
+) -> HybridPrefixDenoisingSample:
+    clean = _prefix_segment(
+        segment_id=f"{sample_id}:clean",
+        branch_id="clean_full",
+        input_ids=(0, 9, 1010),
+        labels=(-100, -100, 1010),
+    )
+    noisy = _prefix_segment(
+        segment_id=f"{sample_id}:noisy",
+        branch_id="noisy_full",
+        input_ids=(0, 9, 1011),
+        labels=(-100, -100, 1010),
+    )
+    kl_sites = ()
+    if include_kl:
+        kl_sites = (
+            PrefixDenoisingKLSite(
+                clean_segment_id=clean.segment_id,
+                noisy_segment_id=noisy.segment_id,
+                object_index=0,
+                history_object_count=0,
+                coord_slot="x1",
+                clean_label_position=clean_label_position,
+                noisy_label_position=noisy_label_position,
+                clean_gt_bin=10,
+                support_bins=(9, 10, 11),
+            ),
+        )
+    return _prefix_hybrid(
+        sample_id=sample_id,
+        clean=clean,
+        noisy=noisy,
+        kl_sites=kl_sites,
+    )
+
+
+class _SequentialPrefixModel:
+    def __init__(self, logits_by_call: tuple[torch.Tensor, ...]) -> None:
+        self.logits_by_call = logits_by_call
+        self.calls: list[dict[str, object]] = []
+        self.training = True
+        self.config = SimpleNamespace(model_type="unit")
+
+    def __call__(self, **kwargs):
+        self.calls.append(dict(kwargs))
+        index = len(self.calls) - 1
+        return SimpleNamespace(logits=self.logits_by_call[index])
+
+
+class _CoordPrefixModel:
+    def __init__(self, *, noisy_prefers_alt: bool) -> None:
+        self.noisy_prefers_alt = noisy_prefers_alt
+        self.calls: list[dict[str, object]] = []
+        self.training = True
+        self.config = SimpleNamespace(model_type="unit")
+
+    def __call__(self, **kwargs):
+        self.calls.append(dict(kwargs))
+        input_ids = kwargs["input_ids"]
+        logits = torch.full(
+            (int(input_ids.shape[0]), int(input_ids.shape[1]), 2100),
+            -8.0,
+            dtype=torch.float32,
+        )
+        for row_index, row in enumerate(input_ids.tolist()):
+            logits[row_index, 1, 1010] = 7.0
+            if int(row[-1]) == 1011 and self.noisy_prefers_alt:
+                logits[row_index, 1, 1010] = 2.0
+                logits[row_index, 1, 1011] = 7.0
+        return SimpleNamespace(logits=logits)
+
+
 def test_prefix_denoising_objective_reads_stashed_extras_and_strips_sidecars() -> None:
-    class _Model:
-        def __init__(self, logits: torch.Tensor) -> None:
-            self.logits = logits
-            self.calls: list[dict[str, object]] = []
-            self.training = True
-            self.config = SimpleNamespace(model_type="unit")
-
-        def __call__(self, **kwargs):
-            self.calls.append(dict(kwargs))
-            return SimpleNamespace(logits=self.logits)
-
     class _BaseTrainer:
         custom_metrics = None
         model = None
@@ -441,13 +597,28 @@ def test_prefix_denoising_objective_reads_stashed_extras_and_strips_sidecars() -
 
     class _Trainer(PrefixDenoisingObjectiveMixin, _BaseTrainer):
         prefix_denoising_packing_enabled = False
+        prefix_denoising_kl_weight = 0.0
 
-    logits = torch.full((1, 6, 4), -5.0, dtype=torch.float32)
+    clean = _prefix_segment(
+        segment_id="unit:clean",
+        branch_id="clean_full",
+        input_ids=(0, 9, 1),
+        labels=(-100, -100, 1),
+    )
+    noisy = _prefix_segment(
+        segment_id="unit:noisy",
+        branch_id="noisy_full",
+        input_ids=(2, 8, 3),
+        labels=(-100, -100, 3),
+    )
+    hybrid = _prefix_hybrid(sample_id="unit", clean=clean, noisy=noisy)
+    clean_logits = torch.full((1, 3, 4), -5.0, dtype=torch.float32)
+    noisy_logits = torch.full((1, 3, 4), -5.0, dtype=torch.float32)
+    clean_logits[0, 1, 1] = 8.0
+    noisy_logits[0, 1, 3] = 8.0
     labels = torch.full((1, 6), -100, dtype=torch.long)
     labels[0, 2] = 1
     labels[0, 5] = 3
-    logits[0, 1, 1] = 8.0
-    logits[0, 4, 3] = 8.0
     inputs = {
         "input_ids": torch.tensor([[0, 9, 1, 2, 8, 3]], dtype=torch.long),
         "attention_mask": torch.ones((1, 6), dtype=torch.long),
@@ -456,7 +627,7 @@ def test_prefix_denoising_objective_reads_stashed_extras_and_strips_sidecars() -
         "sample_id": "unit-0",
     }
     extras = BatchExtras(
-        prefix_denoising_hybrid=(object(),),
+        prefix_denoising_hybrid=(hybrid,),
         prefix_denoising_segment_meta=(
             (
                 {
@@ -479,37 +650,27 @@ def test_prefix_denoising_objective_reads_stashed_extras_and_strips_sidecars() -
     trainer = _Trainer()
     stash_batch_extras(trainer, extras)
 
-    model = _Model(logits)
+    model = _SequentialPrefixModel((clean_logits, noisy_logits))
     loss, outputs = trainer.compute_loss(model, inputs, return_outputs=True)
 
     expected = 0.5 * torch.nn.functional.cross_entropy(
-        logits[0, 1].unsqueeze(0),
+        clean_logits[0, 1].unsqueeze(0),
         torch.tensor([1]),
     ) + 0.5 * torch.nn.functional.cross_entropy(
-        logits[0, 4].unsqueeze(0),
+        noisy_logits[0, 1].unsqueeze(0),
         torch.tensor([3]),
     )
     assert loss.item() == pytest.approx(expected.item())
-    assert outputs.logits is logits
-    assert len(model.calls) == 1
-    assert "labels" not in model.calls[0]
-    assert "prefix_denoising_hybrid" not in model.calls[0]
-    assert "prefix_denoising_segment_meta" not in model.calls[0]
-    assert "sample_id" not in model.calls[0]
+    assert outputs.logits.shape == (2, 3, 4)
+    assert len(model.calls) == 2
+    for call in model.calls:
+        assert "labels" not in call
+        assert "prefix_denoising_hybrid" not in call
+        assert "prefix_denoising_segment_meta" not in call
+        assert "sample_id" not in call
 
 
 def test_prefix_denoising_positive_kl_changes_returned_loss_and_llm_loss_metric() -> None:
-    class _Model:
-        def __init__(self, logits: torch.Tensor) -> None:
-            self.logits = logits
-            self.calls: list[dict[str, object]] = []
-            self.training = True
-            self.config = SimpleNamespace(model_type="unit")
-
-        def __call__(self, **kwargs):
-            self.calls.append(dict(kwargs))
-            return SimpleNamespace(logits=self.logits)
-
     class _Metric:
         def __init__(self) -> None:
             self.values: list[float] = []
@@ -532,51 +693,10 @@ def test_prefix_denoising_positive_kl_changes_returned_loss_and_llm_loss_metric(
             self.custom_metrics = {"train": defaultdict(_Metric)}
             self.tokenizer = _Tokenizer()
 
-    logits = torch.full((1, 6, 2100), -8.0, dtype=torch.float32)
     labels = torch.full((1, 6), -100, dtype=torch.long)
     labels[0, 2] = 1010
     labels[0, 5] = 1010
-    logits[0, 1, 1010] = 7.0
-    logits[0, 4, 1010] = 2.0
-    logits[0, 4, 1011] = 7.0
-    clean_segment = PrefixDenoisingSegment(
-        segment_id="unit:clean",
-        branch_id="clean_full",
-        input_ids=(0, 9, 1010),
-        labels=(-100, -100, 1010),
-        attention_mask=(1, 1, 1),
-        supervised_positions=(2,),
-        ce_denominator=1,
-    )
-    noisy_segment = PrefixDenoisingSegment(
-        segment_id="unit:noisy",
-        branch_id="noisy_full",
-        input_ids=(0, 9, 1011),
-        labels=(-100, -100, 1010),
-        attention_mask=(1, 1, 1),
-        supervised_positions=(2,),
-        ce_denominator=1,
-    )
-    hybrid = HybridPrefixDenoisingSample(
-        ok=True,
-        hybrid_sample_id="unit",
-        base_sample_id="base-unit",
-        clean_full=clean_segment,
-        noisy_full=noisy_segment,
-        kl_sites=(
-            PrefixDenoisingKLSite(
-                clean_segment_id=clean_segment.segment_id,
-                noisy_segment_id=noisy_segment.segment_id,
-                object_index=0,
-                history_object_count=0,
-                coord_slot="x1",
-                clean_label_position=2,
-                noisy_label_position=2,
-                clean_gt_bin=10,
-                support_bins=(9, 10, 11),
-            ),
-        ),
-    )
+    hybrid = _coord_prefix_hybrid("unit")
     inputs = {
         "input_ids": torch.tensor([[0, 9, 1010, 0, 9, 1011]], dtype=torch.long),
         "attention_mask": torch.ones((1, 6), dtype=torch.long),
@@ -589,14 +709,14 @@ def test_prefix_denoising_positive_kl_changes_returned_loss_and_llm_loss_metric(
                     "local_token_start": 0,
                     "local_token_end": 3,
                     "branch_id": "clean_full",
-                    "segment_id": clean_segment.segment_id,
+                    "segment_id": hybrid.clean_full.segment_id,
                 },
                 {
                     "batch_index": 0,
                     "local_token_start": 3,
                     "local_token_end": 6,
                     "branch_id": "noisy_full",
-                    "segment_id": noisy_segment.segment_id,
+                    "segment_id": hybrid.noisy_full.segment_id,
                 },
             ),
         ),
@@ -639,9 +759,14 @@ def test_prefix_denoising_positive_kl_changes_returned_loss_and_llm_loss_metric(
 
     ce_trainer = ce_cls()
     kl_trainer = kl_cls()
-    model = _Model(logits)
-    ce_loss = ce_trainer.compute_loss(model, dict(inputs))
-    kl_loss = kl_trainer.compute_loss(model, dict(inputs))
+    ce_loss = ce_trainer.compute_loss(
+        _CoordPrefixModel(noisy_prefers_alt=True),
+        dict(inputs),
+    )
+    kl_loss = kl_trainer.compute_loss(
+        _CoordPrefixModel(noisy_prefers_alt=True),
+        dict(inputs),
+    )
 
     assert kl_loss.item() > ce_loss.item()
     assert kl_trainer.custom_metrics["train"]["llm_loss"].values[-1] == pytest.approx(
@@ -659,17 +784,6 @@ def test_prefix_denoising_positive_kl_changes_returned_loss_and_llm_loss_metric(
 
 
 def test_prefix_denoising_packed_objective_computes_ce_only_and_ce_plus_kl() -> None:
-    class _Model:
-        def __init__(self, logits: torch.Tensor) -> None:
-            self.logits = logits
-            self.calls: list[dict[str, object]] = []
-            self.training = True
-            self.config = SimpleNamespace(model_type="unit")
-
-        def __call__(self, **kwargs):
-            self.calls.append(dict(kwargs))
-            return SimpleNamespace(logits=self.logits)
-
     class _Metric:
         def __init__(self) -> None:
             self.values: list[float] = []
@@ -689,12 +803,11 @@ def test_prefix_denoising_packed_objective_computes_ce_only_and_ce_plus_kl() -> 
             self.custom_metrics = {"train": defaultdict(_Metric)}
             self.tokenizer = _Tokenizer()
 
-    logits = torch.full((1, 12, 2100), -8.0, dtype=torch.float32)
+    first = _coord_prefix_hybrid("first", include_kl=False)
+    second = _coord_prefix_hybrid("second")
     labels = torch.full((1, 12), -100, dtype=torch.long)
     for label_position in (2, 5, 8, 11):
         labels[0, label_position] = 1010
-        logits[0, label_position - 1, 1010] = 7.0
-    logits[0, 10, 1011] = 9.0
     segment_meta = (
         (
             (
@@ -703,14 +816,14 @@ def test_prefix_denoising_packed_objective_computes_ce_only_and_ce_plus_kl() -> 
                     "token_start": 0,
                     "token_end": 3,
                     "branch_id": "clean_full",
-                    "segment_id": "first:clean",
+                    "segment_id": first.clean_full.segment_id,
                 },
                 {
                     "batch_index": 0,
                     "token_start": 3,
                     "token_end": 6,
                     "branch_id": "noisy_full",
-                    "segment_id": "first:noisy",
+                    "segment_id": first.noisy_full.segment_id,
                 },
             ),
             (
@@ -719,33 +832,15 @@ def test_prefix_denoising_packed_objective_computes_ce_only_and_ce_plus_kl() -> 
                     "token_start": 6,
                     "token_end": 9,
                     "branch_id": "clean_full",
-                    "segment_id": "second:clean",
+                    "segment_id": second.clean_full.segment_id,
                 },
                 {
                     "batch_index": 0,
                     "token_start": 9,
                     "token_end": 12,
                     "branch_id": "noisy_full",
-                    "segment_id": "second:noisy",
+                    "segment_id": second.noisy_full.segment_id,
                 },
-            ),
-        ),
-    )
-    resolved_sites = (
-        (
-            (),
-            (
-                ResolvedPrefixDenoisingKLSite(
-                    clean_batch_index=0,
-                    noisy_batch_index=0,
-                    clean_label_position=8,
-                    noisy_label_position=11,
-                    clean_gt_bin=10,
-                    support_bins=(9, 10, 11),
-                    coord_slot="x1",
-                    object_index=1,
-                    identical_prefix=False,
-                ),
             ),
         ),
     )
@@ -756,7 +851,7 @@ def test_prefix_denoising_packed_objective_computes_ce_only_and_ce_plus_kl() -> 
         ),
         "attention_mask": torch.ones((1, 12), dtype=torch.long),
         "labels": labels,
-        "prefix_denoising_hybrid": ((object(), object()),),
+        "prefix_denoising_hybrid": ((first, second),),
         "prefix_denoising_segment_meta": segment_meta,
         "packed_hybrid_boundary_map": (
             (
@@ -764,7 +859,6 @@ def test_prefix_denoising_packed_objective_computes_ce_only_and_ce_plus_kl() -> 
                 {"sample_index": 1, "start": 6, "end": 12},
             ),
         ),
-        "prefix_denoising_resolved_kl_sites": resolved_sites,
     }
     ce_cls = compose_trainer_class(
         trainer_cls=_BaseTrainer,
@@ -803,13 +897,17 @@ def test_prefix_denoising_packed_objective_computes_ce_only_and_ce_plus_kl() -> 
 
     ce_trainer = ce_cls()
     kl_trainer = kl_cls()
-    ce_model = _Model(logits)
-    kl_model = _Model(logits)
+    ce_model = _CoordPrefixModel(noisy_prefers_alt=True)
+    kl_model = _CoordPrefixModel(noisy_prefers_alt=True)
     ce_loss = ce_trainer.compute_loss(ce_model, dict(inputs))
     kl_loss = kl_trainer.compute_loss(kl_model, dict(inputs))
 
     assert torch.isfinite(ce_loss)
     assert kl_loss.item() > ce_loss.item()
+    assert [call["input_ids"].shape for call in ce_model.calls] == [
+        torch.Size([2, 3]),
+        torch.Size([2, 3]),
+    ]
     assert "packed_hybrid_boundary_map" not in ce_model.calls[0]
     assert "prefix_denoising_segment_meta" not in ce_model.calls[0]
     assert "prefix_denoising_resolved_kl_sites" not in ce_model.calls[0]
@@ -819,15 +917,6 @@ def test_prefix_denoising_packed_objective_computes_ce_only_and_ce_plus_kl() -> 
 
 
 def test_prefix_denoising_packed_kl_rejects_shifted_label_site() -> None:
-    class _Model:
-        def __init__(self, logits: torch.Tensor) -> None:
-            self.logits = logits
-            self.training = True
-            self.config = SimpleNamespace(model_type="unit")
-
-        def __call__(self, **kwargs):
-            return SimpleNamespace(logits=self.logits)
-
     class _Metric:
         def __init__(self) -> None:
             self.values: list[float] = []
@@ -850,11 +939,11 @@ def test_prefix_denoising_packed_kl_rejects_shifted_label_site() -> None:
             self.custom_metrics = {"train": defaultdict(_Metric)}
             self.tokenizer = _Tokenizer()
 
-    logits = torch.full((1, 12, 2100), -8.0, dtype=torch.float32)
+    first = _coord_prefix_hybrid("first", include_kl=False)
+    second = _coord_prefix_hybrid("second", clean_label_position=1)
     labels = torch.full((1, 12), -100, dtype=torch.long)
     for label_position in (2, 5, 8, 11):
         labels[0, label_position] = 1010
-        logits[0, label_position - 1, 1010] = 7.0
     inputs = {
         "input_ids": torch.tensor(
             [[0, 9, 1010, 0, 9, 1010, 0, 9, 1010, 0, 9, 1011]],
@@ -862,7 +951,7 @@ def test_prefix_denoising_packed_kl_rejects_shifted_label_site() -> None:
         ),
         "attention_mask": torch.ones((1, 12), dtype=torch.long),
         "labels": labels,
-        "prefix_denoising_hybrid": ((object(), object()),),
+        "prefix_denoising_hybrid": ((first, second),),
         "prefix_denoising_segment_meta": (
             (
                 (
@@ -871,14 +960,14 @@ def test_prefix_denoising_packed_kl_rejects_shifted_label_site() -> None:
                         "token_start": 0,
                         "token_end": 3,
                         "branch_id": "clean_full",
-                        "segment_id": "first:clean",
+                        "segment_id": first.clean_full.segment_id,
                     },
                     {
                         "batch_index": 0,
                         "token_start": 3,
                         "token_end": 6,
                         "branch_id": "noisy_full",
-                        "segment_id": "first:noisy",
+                        "segment_id": first.noisy_full.segment_id,
                     },
                 ),
                 (
@@ -887,33 +976,15 @@ def test_prefix_denoising_packed_kl_rejects_shifted_label_site() -> None:
                         "token_start": 6,
                         "token_end": 9,
                         "branch_id": "clean_full",
-                        "segment_id": "second:clean",
+                        "segment_id": second.clean_full.segment_id,
                     },
                     {
                         "batch_index": 0,
                         "token_start": 9,
                         "token_end": 12,
                         "branch_id": "noisy_full",
-                        "segment_id": "second:noisy",
+                        "segment_id": second.noisy_full.segment_id,
                     },
-                ),
-            ),
-        ),
-        "prefix_denoising_resolved_kl_sites": (
-            (
-                (),
-                (
-                    ResolvedPrefixDenoisingKLSite(
-                        clean_batch_index=0,
-                        noisy_batch_index=0,
-                        clean_label_position=7,
-                        noisy_label_position=11,
-                        clean_gt_bin=10,
-                        support_bins=(9, 10, 11),
-                        coord_slot="x1",
-                        object_index=1,
-                        identical_prefix=False,
-                    ),
                 ),
             ),
         ),
@@ -937,56 +1008,19 @@ def test_prefix_denoising_packed_kl_rejects_shifted_label_site() -> None:
     )
 
     with pytest.raises(ValueError, match="KL site label alignment"):
-        trainer_cls().compute_loss(_Model(logits), inputs)
+        trainer_cls().compute_loss(_CoordPrefixModel(noisy_prefers_alt=True), inputs)
 
 
 def test_prefix_denoising_positive_kl_requires_resolved_sites() -> None:
-    class _Model:
-        def __init__(self, logits: torch.Tensor) -> None:
-            self.logits = logits
-            self.training = True
-            self.config = SimpleNamespace(model_type="unit")
-
-        def __call__(self, **kwargs):
-            return SimpleNamespace(logits=self.logits)
-
     class _BaseTrainer:
         custom_metrics = None
         model = None
         args = SimpleNamespace(gradient_accumulation_steps=1)
 
-    logits = torch.full((1, 6, 2100), -8.0, dtype=torch.float32)
     labels = torch.full((1, 6), -100, dtype=torch.long)
     labels[0, 2] = 1010
     labels[0, 5] = 1010
-    logits[0, 1, 1010] = 7.0
-    logits[0, 4, 1010] = 7.0
-    clean_segment = PrefixDenoisingSegment(
-        segment_id="unit-empty-kl:clean",
-        branch_id="clean_full",
-        input_ids=(0, 9, 1010),
-        labels=(-100, -100, 1010),
-        attention_mask=(1, 1, 1),
-        supervised_positions=(2,),
-        ce_denominator=1,
-    )
-    noisy_segment = PrefixDenoisingSegment(
-        segment_id="unit-empty-kl:noisy",
-        branch_id="noisy_full",
-        input_ids=(0, 9, 1011),
-        labels=(-100, -100, 1010),
-        attention_mask=(1, 1, 1),
-        supervised_positions=(2,),
-        ce_denominator=1,
-    )
-    hybrid = HybridPrefixDenoisingSample(
-        ok=True,
-        hybrid_sample_id="unit-empty-kl",
-        base_sample_id="base-empty-kl",
-        clean_full=clean_segment,
-        noisy_full=noisy_segment,
-        kl_sites=(),
-    )
+    hybrid = _coord_prefix_hybrid("unit-empty-kl", include_kl=False)
     inputs = {
         "input_ids": torch.tensor([[0, 9, 1010, 0, 9, 1011]], dtype=torch.long),
         "attention_mask": torch.ones((1, 6), dtype=torch.long),
@@ -999,14 +1033,14 @@ def test_prefix_denoising_positive_kl_requires_resolved_sites() -> None:
                     "local_token_start": 0,
                     "local_token_end": 3,
                     "branch_id": "clean_full",
-                    "segment_id": clean_segment.segment_id,
+                    "segment_id": hybrid.clean_full.segment_id,
                 },
                 {
                     "batch_index": 0,
                     "local_token_start": 3,
                     "local_token_end": 6,
                     "branch_id": "noisy_full",
-                    "segment_id": noisy_segment.segment_id,
+                    "segment_id": hybrid.noisy_full.segment_id,
                 },
             ),
         ),
@@ -1030,56 +1064,23 @@ def test_prefix_denoising_positive_kl_requires_resolved_sites() -> None:
     )
 
     with pytest.raises(ValueError, match="positive prefix_denoising KL.*resolved KL site"):
-        trainer_cls().compute_loss(_Model(logits), inputs)
+        trainer_cls().compute_loss(_CoordPrefixModel(noisy_prefers_alt=True), inputs)
 
 
 def test_prefix_denoising_ce_only_allows_empty_kl_sites_without_tokenizer() -> None:
-    class _Model:
-        def __init__(self, logits: torch.Tensor) -> None:
-            self.logits = logits
-            self.training = True
-            self.config = SimpleNamespace(model_type="unit")
-
-        def __call__(self, **kwargs):
-            return SimpleNamespace(logits=self.logits)
-
     class _BaseTrainer:
         custom_metrics = None
         model = None
         args = SimpleNamespace(gradient_accumulation_steps=1)
 
-    logits = torch.full((1, 6, 2100), -8.0, dtype=torch.float32)
+    clean_logits = torch.full((1, 3, 2100), -8.0, dtype=torch.float32)
+    noisy_logits = torch.full((1, 3, 2100), -8.0, dtype=torch.float32)
+    clean_logits[0, 1, 1010] = 7.0
+    noisy_logits[0, 1, 1010] = 7.0
     labels = torch.full((1, 6), -100, dtype=torch.long)
     labels[0, 2] = 1010
     labels[0, 5] = 1010
-    logits[0, 1, 1010] = 7.0
-    logits[0, 4, 1010] = 7.0
-    clean_segment = PrefixDenoisingSegment(
-        segment_id="unit-ce-only-empty-kl:clean",
-        branch_id="clean_full",
-        input_ids=(0, 9, 1010),
-        labels=(-100, -100, 1010),
-        attention_mask=(1, 1, 1),
-        supervised_positions=(2,),
-        ce_denominator=1,
-    )
-    noisy_segment = PrefixDenoisingSegment(
-        segment_id="unit-ce-only-empty-kl:noisy",
-        branch_id="noisy_full",
-        input_ids=(0, 9, 1011),
-        labels=(-100, -100, 1010),
-        attention_mask=(1, 1, 1),
-        supervised_positions=(2,),
-        ce_denominator=1,
-    )
-    hybrid = HybridPrefixDenoisingSample(
-        ok=True,
-        hybrid_sample_id="unit-ce-only-empty-kl",
-        base_sample_id="base-ce-only-empty-kl",
-        clean_full=clean_segment,
-        noisy_full=noisy_segment,
-        kl_sites=(),
-    )
+    hybrid = _coord_prefix_hybrid("unit-ce-only-empty-kl", include_kl=False)
     inputs = {
         "input_ids": torch.tensor([[0, 9, 1010, 0, 9, 1011]], dtype=torch.long),
         "attention_mask": torch.ones((1, 6), dtype=torch.long),
@@ -1092,14 +1093,14 @@ def test_prefix_denoising_ce_only_allows_empty_kl_sites_without_tokenizer() -> N
                     "local_token_start": 0,
                     "local_token_end": 3,
                     "branch_id": "clean_full",
-                    "segment_id": clean_segment.segment_id,
+                    "segment_id": hybrid.clean_full.segment_id,
                 },
                 {
                     "batch_index": 0,
                     "local_token_start": 3,
                     "local_token_end": 6,
                     "branch_id": "noisy_full",
-                    "segment_id": noisy_segment.segment_id,
+                    "segment_id": hybrid.noisy_full.segment_id,
                 },
             ),
         ),
@@ -1122,13 +1123,16 @@ def test_prefix_denoising_ce_only_allows_empty_kl_sites_without_tokenizer() -> N
         prefix_denoising_runtime={"packing_enabled": False, "kl_weight": 0.0},
     )
 
-    loss = trainer_cls().compute_loss(_Model(logits), inputs)
+    loss = trainer_cls().compute_loss(
+        _SequentialPrefixModel((clean_logits, noisy_logits)),
+        inputs,
+    )
 
     expected = 0.5 * torch.nn.functional.cross_entropy(
-        logits[0, 1].unsqueeze(0),
+        clean_logits[0, 1].unsqueeze(0),
         torch.tensor([1010]),
     ) + 0.5 * torch.nn.functional.cross_entropy(
-        logits[0, 4].unsqueeze(0),
+        noisy_logits[0, 1].unsqueeze(0),
         torch.tensor([1010]),
     )
     assert loss.item() == pytest.approx(expected.item())
@@ -1150,12 +1154,15 @@ def test_prefix_denoising_real_mro_refreshes_batch_extras_between_loss_calls() -
                 -6.0,
                 dtype=torch.float32,
             )
-            if int(input_ids[0, 1]) == 11:
+            row = tuple(int(value) for value in input_ids[0].tolist())
+            if row == (0, 11, 1):
                 logits[0, 1, 1] = 9.0
-                logits[0, 4, 3] = 9.0
-            else:
-                logits[0, 2, 2] = 9.0
-                logits[0, 4, 4] = 9.0
+            elif row == (0, 13, 3):
+                logits[0, 1, 3] = 9.0
+            elif row == (0, 0, 12):
+                logits[0, 1, 2] = 9.0
+            elif row == (0, 0, 14):
+                logits[0, 1, 4] = 9.0
             return SimpleNamespace(logits=logits)
 
     class _BaseTrainer:
@@ -1183,13 +1190,43 @@ def test_prefix_denoising_real_mro_refreshes_batch_extras_between_loss_calls() -
     trainer = trainer_cls()
     model = _Model()
 
+    first_clean = _prefix_segment(
+        segment_id="first:clean",
+        branch_id="clean_full",
+        input_ids=(0, 11, 1),
+        labels=(-100, -100, 1),
+    )
+    first_noisy = _prefix_segment(
+        segment_id="first:noisy",
+        branch_id="noisy_full",
+        input_ids=(0, 13, 3),
+        labels=(-100, -100, 3),
+    )
+    second_clean = _prefix_segment(
+        segment_id="second:clean",
+        branch_id="clean_full",
+        input_ids=(0, 0, 12),
+        labels=(-100, -100, 2),
+    )
+    second_noisy = _prefix_segment(
+        segment_id="second:noisy",
+        branch_id="noisy_full",
+        input_ids=(0, 0, 14),
+        labels=(-100, -100, 4),
+    )
     first_loss = trainer.compute_loss(
         model,
         {
             "input_ids": torch.tensor([[0, 11, 1, 0, 13, 3]], dtype=torch.long),
             "attention_mask": torch.ones((1, 6), dtype=torch.long),
             "labels": torch.tensor([[-100, -100, 1, -100, -100, 3]], dtype=torch.long),
-            "prefix_denoising_hybrid": (object(),),
+            "prefix_denoising_hybrid": (
+                _prefix_hybrid(
+                    sample_id="first",
+                    clean=first_clean,
+                    noisy=first_noisy,
+                ),
+            ),
             "prefix_denoising_segment_meta": (
                 (
                     {
@@ -1197,14 +1234,14 @@ def test_prefix_denoising_real_mro_refreshes_batch_extras_between_loss_calls() -
                         "token_start": 0,
                         "token_end": 3,
                         "branch_id": "clean_full",
-                        "segment_id": "first:clean",
+                        "segment_id": first_clean.segment_id,
                     },
                     {
                         "batch_index": 0,
                         "token_start": 3,
                         "token_end": 6,
                         "branch_id": "noisy_full",
-                        "segment_id": "first:noisy",
+                        "segment_id": first_noisy.segment_id,
                     },
                 ),
             ),
@@ -1212,33 +1249,39 @@ def test_prefix_denoising_real_mro_refreshes_batch_extras_between_loss_calls() -
     )
     second_loss = trainer.compute_loss(
         model,
-        {
-            "input_ids": torch.tensor([[0, 0, 12, 0, 0, 14]], dtype=torch.long),
-            "attention_mask": torch.ones((1, 6), dtype=torch.long),
-            "labels": torch.tensor([[-100, -100, -100, 2, -100, 4]], dtype=torch.long),
-            "prefix_denoising_hybrid": (object(),),
+            {
+                "input_ids": torch.tensor([[0, 0, 12, 0, 0, 14]], dtype=torch.long),
+                "attention_mask": torch.ones((1, 6), dtype=torch.long),
+                "labels": torch.tensor([[-100, -100, 2, -100, -100, 4]], dtype=torch.long),
+            "prefix_denoising_hybrid": (
+                _prefix_hybrid(
+                    sample_id="second",
+                    clean=second_clean,
+                    noisy=second_noisy,
+                ),
+            ),
             "prefix_denoising_segment_meta": (
                 (
                     {
                         "batch_index": 0,
                         "token_start": 0,
-                        "token_end": 4,
+                        "token_end": 3,
                         "branch_id": "clean_full",
-                        "segment_id": "second:clean",
+                        "segment_id": second_clean.segment_id,
                     },
                     {
                         "batch_index": 0,
-                        "token_start": 4,
+                        "token_start": 3,
                         "token_end": 6,
                         "branch_id": "noisy_full",
-                        "segment_id": "second:noisy",
+                        "segment_id": second_noisy.segment_id,
                     },
                 ),
             ),
         },
     )
 
-    assert len(model.calls) == 2
+    assert len(model.calls) == 4
     assert first_loss.item() < 0.001
     assert second_loss.item() < 0.001
 

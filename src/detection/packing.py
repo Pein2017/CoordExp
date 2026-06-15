@@ -136,6 +136,7 @@ def _validate_detection_training_mode(value: str) -> DetectionTrainingMode:
     if value not in {
         "sorted_sft",
         "random_order_sft",
+        "prefix_denoising_sft",
         "random_permutation_et_rmp_ce",
         "trie_disabled_full_suffix_ce",
         "prefix_rollin_et_rmp_ce",
@@ -153,6 +154,8 @@ def _default_state_weighting_for_mode(training_mode: DetectionTrainingMode) -> s
 def _default_normalization_for_mode(training_mode: DetectionTrainingMode) -> str:
     if training_mode == "random_permutation_et_rmp_ce":
         return "legacy_row_mean_equivalence"
+    if training_mode == "prefix_denoising_sft":
+        return "branch_balanced_clean_noisy_ce"
     return "token_mean"
 
 
@@ -433,7 +436,7 @@ def assess_packing_eligibility(
             requires_trie_metadata_preservation=True,
         )
 
-    if training_mode not in {"sorted_sft", "random_order_sft"}:
+    if training_mode not in {"sorted_sft", "random_order_sft", "prefix_denoising_sft"}:
         raise ValueError(f"Unsupported detection packing training mode: {training_mode!r}")
 
     if not template.capabilities.supports_sft:

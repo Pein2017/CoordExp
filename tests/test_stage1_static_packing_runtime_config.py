@@ -449,6 +449,58 @@ def test_static_packing_fingerprint_tracks_eval_split_inputs(
     assert fingerprint["eval_sample_with_replacement"] is False
 
 
+def test_static_packing_fingerprint_marks_prefix_denoising_objective() -> None:
+    packing_cfg = _parse_packing_config(
+        training_cfg={"packing": True, "packing_mode": "static"},
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=0),
+    )
+
+    fingerprint = _build_static_packing_fingerprint(
+        training_config=SimpleNamespace(
+            global_max_length=1024,
+            template={"system": "sys", "truncation_strategy": "raise"},
+            training={"train_dataloader_shuffle": True},
+            prefix_denoising=SimpleNamespace(enabled=True),
+        ),
+        custom_config=SimpleNamespace(
+            user_prompt="prompt",
+            emit_norm="none",
+            json_format="standard",
+            object_ordering="sorted",
+            object_field_order="desc_first",
+            use_summary=False,
+            system_prompt_dense=None,
+            system_prompt_summary=None,
+        ),
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=512),
+        dataset_seed=7,
+        packing_cfg=packing_cfg,
+        train_jsonl="train.jsonl",
+        prefix_denoising_dataset_summary={
+            "source_rows": 9,
+            "eligible_rows": 7,
+            "skipped_rows": 2,
+            "skip_counters": {"degenerate_gt_bbox": 2},
+        },
+    )
+
+    contract = fingerprint["detection_packing_contract"]
+    assert contract["metadata"]["objective_variant"] == "prefix_denoising_sft"
+    assert contract["metadata"]["normalization_policy"] == "branch_balanced_clean_noisy_ce"
+    assert (
+        contract["metadata"]["loss_mask_version"]
+        == "prefix_denoising_branch_isolated_hard_ce_v1"
+    )
+    assert fingerprint["prefix_denoising_dataset_summary"] == {
+        "source_rows": 9,
+        "eligible_rows": 7,
+        "skipped_rows": 2,
+        "skip_counters": {"degenerate_gt_bbox": 2},
+    }
+
+
 def test_static_packing_fingerprint_tracks_offline_pixels_and_coord_tokens() -> None:
     packing_cfg = _parse_packing_config(
         training_cfg={"packing": True, "packing_mode": "static"},

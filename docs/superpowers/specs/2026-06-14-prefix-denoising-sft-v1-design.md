@@ -3,9 +3,10 @@
 Date: 2026-06-14
 
 Status: historical design spec for the implemented V1 slice on
-`codex/prefix-denoising-sft`. The implementation and tiny launch-health smoke
-have landed; see `progress/diagnostics/2026-06-14_prefix_denoising_launch_health.md`
-for the current launch-health interpretation and residual risks.
+`codex/prefix-denoising-sft`. The original 2026-06-14 launch-health smoke is
+superseded; see
+`progress/diagnostics/2026-06-15_prefix_denoising_branch_isolation_repair.md`
+for the current post-repair launch-health interpretation and residual risks.
 
 Owner surface: Stage-1 compact detection teacher forcing under
 `stage1_detection_teacher_forcing`, with new prefix-denoising V1 code isolated

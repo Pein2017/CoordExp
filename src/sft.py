@@ -749,16 +749,47 @@ def _build_prefix_denoising_runtime_payload(
     *,
     prefix_denoising_cfg: Any,
     packing_cfg: PackingRuntimeConfig,
+    dataset_summary: Mapping[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     if not _prefix_denoising_enabled(prefix_denoising_cfg):
         return None
     current_object_kl = getattr(prefix_denoising_cfg, "current_object_kl", None)
-    return {
+    payload = {
         "enabled": True,
         "packing_enabled": bool(packing_cfg.enabled),
         "packing_mode": str(packing_cfg.mode),
         "kl_weight": float(getattr(current_object_kl, "weight", 0.0) or 0.0),
     }
+    if isinstance(dataset_summary, Mapping):
+        payload["dataset"] = copy.deepcopy(dict(dataset_summary))
+    return payload
+
+
+def _prefix_denoising_dataset_summary(dataset: Any) -> dict[str, Any] | None:
+    if dataset is None:
+        return None
+    helper = getattr(dataset, "prefix_denoising_dataset_summary", None)
+    if callable(helper):
+        summary = helper()
+        if isinstance(summary, Mapping):
+            return copy.deepcopy(dict(summary))
+    inner = getattr(dataset, "dataset", None)
+    if inner is not None and inner is not dataset:
+        return _prefix_denoising_dataset_summary(inner)
+    return None
+
+
+def _prefix_denoising_dataset_summary_by_split(
+    *,
+    train_summary: Mapping[str, Any] | None,
+    eval_summary: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    out: dict[str, Any] = {}
+    if isinstance(train_summary, Mapping):
+        out["train"] = copy.deepcopy(dict(train_summary))
+    if isinstance(eval_summary, Mapping):
+        out["eval"] = copy.deepcopy(dict(eval_summary))
+    return out or None
 
 
 def _resolve_authored_experiment_payload(training_config: Any) -> dict[str, Any] | None:
@@ -974,6 +1005,7 @@ def _build_effective_runtime_payload(
     stage2_policy_provenance: Mapping[str, Any] | None = None,
     train_encoded_sample_cache_info: Mapping[str, Any] | None = None,
     eval_encoded_sample_cache_info: Mapping[str, Any] | None = None,
+    prefix_denoising_dataset_summary: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     template_cfg = getattr(training_config, "template", {}) or {}
     encoded_sample_cache_runtime = dataclass_asdict_no_none(encoded_sample_cache_cfg)
@@ -1108,6 +1140,7 @@ def _build_effective_runtime_payload(
     prefix_denoising_runtime = _build_prefix_denoising_runtime_payload(
         prefix_denoising_cfg=getattr(training_config, "prefix_denoising", None),
         packing_cfg=packing_cfg,
+        dataset_summary=prefix_denoising_dataset_summary,
     )
     if prefix_denoising_runtime is not None:
         payload["prefix_denoising"] = prefix_denoising_runtime
@@ -1471,6 +1504,7 @@ def _build_static_packing_fingerprint(
     train_sample_limit: int | None = None,
     eval_sample_limit: int | None = None,
     eval_sample_with_replacement: bool | None = None,
+    prefix_denoising_dataset_summary: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     template_cfg = getattr(training_config, "template", {}) or {}
     training_cfg = getattr(training_config, "training", {}) or {}
@@ -1485,6 +1519,11 @@ def _build_static_packing_fingerprint(
     ) = _resolve_objective_fingerprint_fields(
         training_config=training_config,
     )
+    loss_mask_version = "legacy_stage1_static_packing_mask_v1"
+    if _prefix_denoising_enabled(getattr(training_config, "prefix_denoising", None)):
+        objective_variant = "prefix_denoising_sft"
+        normalization_policy = "branch_balanced_clean_noisy_ce"
+        loss_mask_version = "prefix_denoising_branch_isolated_hard_ce_v1"
     object_ordering = _resolve_object_ordering_fingerprint_value(
         training_config=training_config,
         custom_config=custom_config,
@@ -1544,6 +1583,10 @@ def _build_static_packing_fingerprint(
         if isinstance(training_cfg, Mapping)
         else None,
     }
+    if isinstance(prefix_denoising_dataset_summary, Mapping):
+        runtime_fields["prefix_denoising_dataset_summary"] = copy.deepcopy(
+            dict(prefix_denoising_dataset_summary)
+        )
     prompt_profile = (
         f"variant={prompt_identity['prompt_variant']};"
         f"template_hash={prompt_identity['prompt_template_hash']};"
@@ -1568,6 +1611,7 @@ def _build_static_packing_fingerprint(
             state_weighting_policy=state_weighting_policy,
             normalization_policy=normalization_policy,
             trainer_variant=str(trainer_variant) if trainer_variant is not None else None,
+            loss_mask_version=loss_mask_version,
             profile=_detection_packing_profile_from_runtime(packing_cfg),
             runtime_fields=runtime_fields,
         ),
@@ -2890,6 +2934,8 @@ def main():
         system_prompt_summary=system_prompt_summary,
     )
     dataset: Any
+    train_prefix_denoising_dataset_summary: dict[str, Any] | None = None
+    eval_prefix_denoising_dataset_summary: dict[str, Any] | None = None
     _validate_bbox_format_contract(
         custom_config=custom_config,
         trainer_variant=trainer_variant,
@@ -2914,6 +2960,9 @@ def main():
             seed=dataset_seed,
             sample_limit=_normalize_optional_sample_limit(train_sample_limit),
             dataset_name="detection_train",
+        )
+        train_prefix_denoising_dataset_summary = _prefix_denoising_dataset_summary(
+            dataset
         )
     else:
         dataset = BaseCaptionDataset.from_jsonl(
@@ -2995,6 +3044,7 @@ def main():
             train_jsonl=str(train_jsonl) if train_jsonl else None,
             dataset_split="train",
             train_sample_limit=_normalize_optional_sample_limit(train_sample_limit),
+            prefix_denoising_dataset_summary=train_prefix_denoising_dataset_summary,
         )
         static_cache_dir = _resolve_static_packing_cache_dir(
             runtime_cfg=static_packing_cache_cfg,
@@ -3525,6 +3575,9 @@ def main():
                 sample_limit=_normalize_optional_sample_limit(eval_sample_limit),
                 dataset_name="detection_eval",
             )
+            eval_prefix_denoising_dataset_summary = _prefix_denoising_dataset_summary(
+                eval_dataset
+            )
         else:
             eval_dataset = BaseCaptionDataset.from_jsonl(
                 val_jsonl,
@@ -3593,6 +3646,7 @@ def main():
             dataset_split="eval",
             eval_sample_limit=eval_sample_limit_i,
             eval_sample_with_replacement=bool(val_sample_with_replacement),
+            prefix_denoising_dataset_summary=eval_prefix_denoising_dataset_summary,
         )
         eval_cache_dir = _resolve_static_packing_cache_dir(
             runtime_cfg=static_packing_cache_cfg,
@@ -4122,6 +4176,10 @@ def main():
         if eval_dataset is not None
         else None
     )
+    prefix_denoising_dataset_summary = _prefix_denoising_dataset_summary_by_split(
+        train_summary=train_prefix_denoising_dataset_summary,
+        eval_summary=eval_prefix_denoising_dataset_summary,
+    )
     effective_runtime = _build_effective_runtime_payload(
         training_config=training_config,
         train_args=train_args,
@@ -4136,6 +4194,7 @@ def main():
         stage2_policy_provenance=stage2_policy_provenance,
         train_encoded_sample_cache_info=train_encoded_sample_cache_info,
         eval_encoded_sample_cache_info=eval_encoded_sample_cache_info,
+        prefix_denoising_dataset_summary=prefix_denoising_dataset_summary,
     )
 
     # Start training

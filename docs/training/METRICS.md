@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: training
 summary: Canonical training metric families for Stage-1 and the active Stage-2 single-pass contract.
-updated: 2026-05-16
+updated: 2026-06-15
 ---
 
 # Training Metrics and Losses
@@ -198,6 +198,63 @@ Flattening still publishes canonical identities first and adds aliases only for
 registered identities. New compact recursive-detection diagnostics should follow
 the same typed-event-first contract instead of adding direct `compact/*` scalar
 side channels.
+
+### Prefix-Denoising SFT Metrics
+
+Prefix-denoising V1 is a Stage-1 compact teacher-forcing route enabled by
+`prefix_denoising.enabled: true`. It uses two clean-label hard-CE branches:
+`clean_full` and `noisy_full`. Even when static packing groups multiple hybrid
+samples into one packed dataloader item, the objective replays clean and noisy
+segments as isolated model forwards before computing CE and optional KL. A
+noisy branch must not causally attend to the clean branch answer tokens from
+the same packed item.
+
+Required CE and standard monitor keys:
+
+- `llm_loss`
+- `prefix_denoising/global/loss/ce_balanced`
+- `prefix_denoising/global/loss/ce_token_pooled`
+- `prefix_denoising/clean_full/loss/ce`
+- `prefix_denoising/noisy_full/loss/ce`
+- `prefix_denoising/global/token_acc/full_vocab/top1`
+- `prefix_denoising/global/token_acc/full_vocab/top5`
+
+`llm_loss` is the optimized loss. For CE-only runs it equals
+`prefix_denoising/global/loss/ce_balanced`; when
+`prefix_denoising.current_object_kl.weight > 0`, it includes weighted local KL.
+`ce_balanced` averages clean-branch CE and noisy-branch CE with equal branch
+weight. `ce_token_pooled` is diagnostic-only and pools all supervised tokens
+without branch balancing.
+
+KL-on runs additionally emit local-window diagnostics:
+
+- `prefix_denoising/kl/local_window/raw`
+- `prefix_denoising/kl/local_window/weighted`
+- `prefix_denoising/kl/local_window/candidate_site_count`
+- `prefix_denoising/kl/local_window/site_count`
+- `prefix_denoising/kl/local_window/identical_prefix_site_count`
+- `prefix_denoising/kl/local_window/teacher_support_mass`
+- `prefix_denoising/kl/local_window/student_support_mass`
+- `prefix_denoising/kl/local_window/teacher_gt_prob_full_coord_vocab`
+- `prefix_denoising/kl/local_window/student_gt_prob_full_coord_vocab`
+- `prefix_denoising/kl/local_window/teacher_gt_prob_conditional`
+- `prefix_denoising/kl/local_window/student_gt_prob_conditional`
+- `prefix_denoising/kl/local_window/support_bin_count`
+- `prefix_denoising/kl/local_window/edge_truncation_rate`
+- `prefix_denoising/kl/local_window/teacher_top1_is_gt`
+- `prefix_denoising/kl/local_window/student_top1_is_gt`
+
+Slot-specific KL diagnostics may also appear under
+`prefix_denoising/kl/local_window/{x1,y1,x2,y2}/...` for the same teacher/student
+probability and support-mass families.
+
+Prefix-denoising run artifacts should also record
+`effective_runtime.prefix_denoising.dataset.{train,eval}` when the corresponding
+split is built through the prefix-denoising dataset. These summaries include
+`source_rows`, `eligible_rows`, `skipped_rows`, and `skip_counters`; they are the
+durable artifact form of dataset eligibility filtering. A non-empty
+`skip_counters` map is not automatically a launch failure, but it must be
+reported when interpreting the run.
 
 ### Trainer Metric Module Boundaries
 

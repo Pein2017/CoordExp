@@ -4,6 +4,12 @@ Date: 2026-06-14
 
 Scope: tiny launch-health only. This note verifies that the V1 prefix-denoising SFT runtime can launch, pack paired clean/noisy views, preserve the standard `llm_loss` and token-accuracy monitors, and emit the configured local-window KL diagnostics. It is not rollout evidence and should not be interpreted as exposure-bias improvement.
 
+Supersession note added 2026-06-15: the artifact roots below predate the
+branch-isolated forward repair. They remain useful as historical launch smoke
+evidence, but they are no longer valid evidence that the noisy branch was
+causally isolated from clean-branch answer tokens. Use the 2026-06-15 repair
+note and rerun smokes for current launch evidence.
+
 ## Configs
 
 CE-only smoke:
@@ -120,18 +126,24 @@ Post-smoke implementation note: the branch now emits a dataset-construction warn
 
 ## Launch-Health Read
 
-Status: healthy for V1 launch wiring.
+Status: superseded / no-go as current launch evidence.
 
 Evidence:
 
-- Both CE-only and KL-on packed smoke configs launch and complete 2/2 steps.
-- Prefix-denoising static packing is active in runtime metadata.
-- The A/B paired packed sample shape is accepted by the Qwen3-VL training path.
-- Standard `llm_loss`, top1, and top5 token-accuracy monitors are preserved.
-- KL-on config emits local-window raw/weighted KL, site-count, support, edge-truncation, and teacher/student probability diagnostics.
+- The historical CE-only and KL-on packed smoke configs launched and completed
+  2/2 steps.
+- Prefix-denoising static packing was active in runtime metadata.
+- The A/B paired packed sample shape was accepted by the Qwen3-VL training path.
+- Standard `llm_loss`, top1, and top5 token-accuracy monitors were preserved.
+- KL-on config emitted local-window raw/weighted KL, site-count, support,
+  edge-truncation, and teacher/student probability diagnostics.
 
 Residual risks:
 
+- The historical objective forwarded clean and noisy branches as one concatenated
+  causal row, so noisy-branch logits could attend to clean-branch answer tokens.
+  Current code fixes this by replaying clean and noisy segments as isolated
+  branch forwards before computing CE/KL.
 - This is not a training-quality result.
 - The historical smoke artifacts did not record explicit noising/sample-skip counters; current HEAD emits dataset-construction `skip_counters` warnings, so future launch notes should capture those logs when skips occur.
 - The KL probability diagnostics are numerically present but not meaningful in a tiny two-step run.

@@ -361,6 +361,49 @@ def test_noising_infeasible_rows_are_counted_as_sample_policy_skips(
     assert eligibility["skip_counters"] == {"noise_infeasible_4coord_changed": 1}
 
 
+@pytest.mark.parametrize(
+    "bbox",
+    [
+        [100, 100, 100, 120],
+        [100, 100, 120, 100],
+    ],
+)
+def test_degenerate_gt_boxes_are_counted_as_sample_policy_skips(
+    tmp_path: Path,
+    bbox: list[int],
+) -> None:
+    _touch_image(tmp_path)
+    cfg = PrefixDenoisingConfig.from_mapping({"enabled": True})
+    row = _row(
+        objects=[
+            {
+                "desc": "degenerate box",
+                "bbox_2d": bbox,
+                "category_id": 1,
+                "category_name": "degenerate box",
+                "coco_ann_id": 55,
+                "object_id": "degenerate-1",
+            }
+        ]
+    )
+
+    sample = build_hybrid_prefix_denoising_sample(
+        row,
+        base_sample_id="unit-degenerate",
+        image_root=tmp_path,
+        swift_template=FakeTemplate(),
+        user_prompt="find objects",
+        system_prompt=None,
+        prefix_denoising=cfg,
+        epoch=0,
+        rng=random.Random(5),
+        max_length=12000,
+    )
+
+    assert sample.ok is False
+    assert sample.skip_reason == "degenerate_gt_bbox"
+
+
 def test_dataset_logs_visible_skip_counters_for_ineligible_rows(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
@@ -386,6 +429,13 @@ def test_dataset_logs_visible_skip_counters_for_ineligible_rows(
 
     assert len(dataset) == 1
     assert dataset.skip_counters == {"zero_object_hybrid_sample": 1}
+    assert dataset.prefix_denoising_dataset_summary() == {
+        "dataset_name": "unit",
+        "source_rows": 2,
+        "eligible_rows": 1,
+        "skipped_rows": 1,
+        "skip_counters": {"zero_object_hybrid_sample": 1},
+    }
     messages = [record.getMessage() for record in caplog.records]
     assert any("prefix-denoising skipped rows" in message for message in messages)
     assert any("zero_object_hybrid_sample" in message for message in messages)

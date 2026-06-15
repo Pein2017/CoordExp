@@ -128,6 +128,27 @@ class PrefixDenoisingTrainingDataset(Dataset):
         base_idx = self._base_index(index)
         return self._static_lengths.get(base_idx)
 
+    def _static_packing_precompute_info(self) -> dict[str, Any]:
+        return {
+            "thread_safe": True,
+            "prefix_denoising_dataset_summary": self.prefix_denoising_dataset_summary(),
+        }
+
+    def prefix_denoising_dataset_summary(self) -> dict[str, Any]:
+        skip_counters = {
+            str(key): int(value)
+            for key, value in sorted(self.skip_counters.items(), key=lambda item: str(item[0]))
+        }
+        eligible_rows = len(self._eligible_indices)
+        source_rows = len(self.rows)
+        return {
+            "dataset_name": self.dataset_name,
+            "source_rows": int(source_rows),
+            "eligible_rows": int(eligible_rows),
+            "skipped_rows": int(max(source_rows - eligible_rows, 0)),
+            "skip_counters": skip_counters,
+        }
+
     def __getitem__(self, index: int) -> dict[str, Any]:
         base_idx = self._base_index(index)
         sample = self._build_sample(base_idx, epoch=self._epoch)

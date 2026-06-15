@@ -182,30 +182,23 @@ def compute_local_coord_kl(
             )
         gt_token_id = coord_token_ids[int(site.clean_gt_bin)]
 
-        teacher_full = torch.softmax(
-            clean_logits[int(site.clean_batch_index), clean_row].detach().float(),
-            dim=-1,
-        )
-        student_full = torch.softmax(
-            noisy_logits[int(site.noisy_batch_index), noisy_row].float(),
-            dim=-1,
-        )
-        teacher_local_logits = (
-            clean_logits[int(site.clean_batch_index), clean_row]
-            .detach()
-            .float()
-            .index_select(0, support_token_ids)
-        )
-        student_local_logits = (
-            noisy_logits[int(site.noisy_batch_index), noisy_row]
-            .float()
-            .index_select(0, support_token_ids)
-        )
+        clean_row_logits = clean_logits[int(site.clean_batch_index), clean_row].detach().float()
+        noisy_row_logits = noisy_logits[int(site.noisy_batch_index), noisy_row].float()
+        _require_finite_tensor(clean_row_logits, "prefix denoising KL clean logits")
+        _require_finite_tensor(noisy_row_logits, "prefix denoising KL noisy logits")
+        teacher_full = torch.softmax(clean_row_logits, dim=-1)
+        student_full = torch.softmax(noisy_row_logits, dim=-1)
+        teacher_local_logits = clean_row_logits.index_select(0, support_token_ids)
+        student_local_logits = noisy_row_logits.index_select(0, support_token_ids)
         teacher_prob = torch.softmax(teacher_local_logits, dim=-1)
         teacher_log_prob = torch.log_softmax(teacher_local_logits, dim=-1)
         student_log_prob = torch.log_softmax(student_local_logits, dim=-1)
         student_prob = torch.softmax(student_local_logits, dim=-1)
-        losses.append(torch.sum(teacher_prob * (teacher_log_prob - student_log_prob)))
+        _require_finite_tensor(teacher_prob, "prefix denoising KL teacher probabilities")
+        _require_finite_tensor(student_prob, "prefix denoising KL student probabilities")
+        site_loss = torch.sum(teacher_prob * (teacher_log_prob - student_log_prob))
+        _require_finite_tensor(site_loss, "prefix denoising KL site loss")
+        losses.append(site_loss)
 
         teacher_support_mass = teacher_full.index_select(0, support_token_ids).sum()
         student_support_mass = student_full.index_select(0, support_token_ids).sum()
@@ -255,6 +248,7 @@ def compute_local_coord_kl(
         )
 
     raw_loss = torch.stack(losses).mean()
+    _require_finite_tensor(raw_loss, "prefix denoising KL raw loss")
     slot_metrics = {
         slot: _mean_metric_rows([row for row in rows if row["slot"] == slot])
         for slot in ("x1", "y1", "x2", "y2")
@@ -453,11 +447,14 @@ def _segment_ce_sum(
     denominator = int(shifted_labels.numel())
     if denominator == 0:
         return logits.float().sum() * 0.0, 0
+    shifted_logits = shifted_logits.float()
+    _require_finite_tensor(shifted_logits, "prefix denoising CE logits")
     ce_sum = F.cross_entropy(
-        shifted_logits.float(),
+        shifted_logits,
         shifted_labels,
         reduction="sum",
     )
+    _require_finite_tensor(ce_sum, "prefix denoising CE loss")
     return ce_sum, denominator
 
 
@@ -505,6 +502,11 @@ def _validate_logits_and_labels(*, logits: torch.Tensor, labels: torch.Tensor) -
             "prefix denoising labels must match logits batch/time shape; "
             f"got labels={tuple(labels.shape)} logits={tuple(logits.shape[:2])}"
         )
+
+
+def _require_finite_tensor(tensor: torch.Tensor, name: str) -> None:
+    if not bool(torch.isfinite(tensor).all()):
+        raise ValueError(f"{name} must be finite")
 
 
 def _validate_span(

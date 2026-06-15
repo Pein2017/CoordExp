@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any
 
@@ -217,6 +218,48 @@ class _PackedPrefixTrainer(PrefixDenoisingObjectiveMixin):
         self.tokenizer = _CoordTokenizer()
 
 
+class _UnpackedPrefixTrainer(PrefixDenoisingObjectiveMixin):
+    prefix_denoising_packing_enabled = False
+    prefix_denoising_kl_weight = 0.0
+    model = None
+    args = SimpleNamespace(gradient_accumulation_steps=1)
+
+    def __init__(self) -> None:
+        self.custom_metrics = {"train": defaultdict(_Metric)}
+        self.tokenizer = _CoordTokenizer()
+
+
+class _CleanPrefixLeakProbeModel:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+        self.training = True
+        self.config = SimpleNamespace(model_type="unit")
+
+    def __call__(self, **kwargs):
+        self.calls.append(dict(kwargs))
+        input_ids = kwargs["input_ids"]
+        logits = torch.full(
+            (int(input_ids.shape[0]), int(input_ids.shape[1]), 2100),
+            -8.0,
+            dtype=torch.float32,
+        )
+        for row_index, row in enumerate(input_ids.tolist()):
+            # Clean branch loss is intentionally invariant to the perturbation.
+            logits[row_index, 0, 101] = 8.0
+            if len(row) >= 8:
+                # Simulate a causal leak: noisy branch logits depend on clean tokens
+                # that precede the noisy segment in the same model row.
+                if 999 in row[:4]:
+                    logits[row_index, 6, 202] = 8.0
+                else:
+                    logits[row_index, 6, 101] = 8.0
+            else:
+                # Isolated noisy segment forward: clean tokens are absent, so the
+                # noisy prediction cannot depend on them.
+                logits[row_index, 2, 101] = 8.0
+        return SimpleNamespace(logits=logits)
+
+
 class _PackedPrefixModel:
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
@@ -231,10 +274,28 @@ class _PackedPrefixModel:
             -8.0,
             dtype=torch.float32,
         )
-        for label_position in (2, 5, 8, 11):
-            logits[0, label_position - 1, 1010] = 7.0
-        logits[0, 10, 1011] = 9.0
+        for row_index, row in enumerate(input_ids.tolist()):
+            if int(row[2]) == 1010:
+                logits[row_index, 1, 1010] = 7.0
+            else:
+                logits[row_index, 1, 1010] = 5.0
+                logits[row_index, 1, 1011] = 9.0
         return SimpleNamespace(logits=logits)
+
+
+def _replace_clean_token(
+    sample: HybridPrefixDenoisingSample,
+    *,
+    token_index: int,
+    token_id: int,
+) -> HybridPrefixDenoisingSample:
+    assert sample.clean_full is not None
+    clean_ids = list(sample.clean_full.input_ids)
+    clean_ids[int(token_index)] = int(token_id)
+    return replace(
+        sample,
+        clean_full=replace(sample.clean_full, input_ids=tuple(clean_ids)),
+    )
 
 
 def test_prefix_denoising_model_ready_sidecars_survive_until_model_boundary() -> None:
@@ -340,6 +401,37 @@ def test_prefix_denoising_template_data_collator_path_stashes_batch_extras() -> 
     }
 
 
+def test_noisy_branch_logits_are_isolated_from_clean_branch_tokens() -> None:
+    base = _hybrid_sample()
+    perturbed = _replace_clean_token(base, token_index=1, token_id=999)
+    base_item = materialize_hybrid_model_ready_item(
+        sample=base,
+        dataset_name="unit",
+        base_idx=0,
+    )
+    perturbed_item = materialize_hybrid_model_ready_item(
+        sample=perturbed,
+        dataset_name="unit",
+        base_idx=0,
+    )
+    collator = build_batch_extras_collator(
+        _DummyTemplate(),
+        base_collator=_base_collator,
+    )
+
+    trainer = _UnpackedPrefixTrainer()
+    base_model = _CleanPrefixLeakProbeModel()
+    base_loss = trainer.compute_loss(base_model, collator([base_item]))
+    perturbed_model = _CleanPrefixLeakProbeModel()
+    perturbed_loss = trainer.compute_loss(perturbed_model, collator([perturbed_item]))
+
+    torch.testing.assert_close(base_loss, perturbed_loss)
+    assert all(
+        call["input_ids"].shape[-1] == len(base.clean_full.input_ids)  # type: ignore[index, union-attr]
+        for call in perturbed_model.calls
+    )
+
+
 def test_prefix_denoising_packed_collator_enriches_and_objective_runs_ce_kl() -> None:
     first = materialize_hybrid_model_ready_item(
         sample=_coord_hybrid_sample("pack-0"),
@@ -378,6 +470,8 @@ def test_prefix_denoising_packed_collator_enriches_and_objective_runs_ce_kl() ->
     assert trainer.custom_metrics["train"][
         "prefix_denoising/kl/local_window/raw"
     ].values[-1] > 0.0
+    assert len(model.calls) == 2
+    assert all(call["input_ids"].shape == torch.Size([2, 3]) for call in model.calls)
     assert "prefix_denoising_segment_meta" not in model.calls[0]
     assert "packed_hybrid_boundary_map" not in model.calls[0]
     assert "prefix_denoising_resolved_kl_sites" not in model.calls[0]
