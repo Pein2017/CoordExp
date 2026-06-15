@@ -1,4 +1,4 @@
 interface:
   display_name: "CoordExp Router Context"
-  short_description: "Route current CoordExp work, code maps, and history context"
-  default_prompt: "Use $coordexp-router-context to route CoordExp tasks through current docs/catalog/spec/code surfaces, build current-vs-historical context packs, choose CodeGraph/RTK/raw shell/Serena navigation, or provide a zoomed-out module map. Prefer exact leaf skills for infer/eval artifacts, public_data provenance, model diagnosis, model innovation risk audits, audit reviews, and worktree lifecycle."
+  short_description: "Route CoordExp work, history context, and MCP navigation"
+  default_prompt: "Use $coordexp-router-context to route CoordExp tasks through current docs/catalog/spec/code surfaces, build current-vs-historical context packs, choose phase-specific CodeGraph/Serena/RTK/raw shell navigation, or provide a zoomed-out module map. Prefer exact leaf skills for infer/eval artifacts, public_data provenance, model diagnosis, model innovation risk audits, audit reviews, and worktree lifecycle."
