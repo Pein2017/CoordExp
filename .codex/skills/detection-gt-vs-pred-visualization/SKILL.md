@@ -7,6 +7,11 @@ description: Use when the requested deliverable is a CoordExp detection GT/pred 
 
 Reuse the existing shared visualization stack.
 Do not introduce a new renderer unless the current pipeline cannot express the requested figure.
+Always emit review images as one sample per image in a strict `1x2` layout:
+GT panel on the left, Pred panel on the right. Do not create contact sheets,
+sprite sheets, grids, collages, or any other image that packs multiple samples
+into one large figure unless the user explicitly asks for a multi-sample summary
+image.
 
 ## Primary Entry Points
 
@@ -36,8 +41,11 @@ Do not introduce a new renderer unless the current pipeline cannot express the r
    - single-run artifact render: call `src.infer.vis.render_vis_from_jsonl(...)`
    - programmatic or ad hoc scene: call `materialize_gt_vs_pred_vis_resource(...)` then `render_gt_vs_pred_review(...)`
    - comparison scene: call `compose_comparison_scenes_from_jsonls(...)` or the compare script
-3. Keep input and output paths explicit.
-4. Fail fast on contract violations; do not hide missing fields with renderer-local fallback logic.
+3. Render each selected record to its own PNG. If multiple records are selected,
+   write multiple `1x2` PNGs plus a small text/JSON manifest; do not pack them
+   into one combined image.
+4. Keep input and output paths explicit.
+5. Fail fast on contract violations; do not hide missing fields with renderer-local fallback logic.
 
 Before rendering from a derived artifact:
 
@@ -84,7 +92,7 @@ Before rendering from a derived artifact:
 - Treat guarded artifacts as post-op views. Keep raw artifacts available for model-output inspection.
 - For raw-text `xyxy` norm1000 artifacts, do not add renderer-local denormalization logic; rely on the canonical artifact/eval path to provide pixel-space boxes.
 - Shared GT-vs-Pred review rendering requires canonical matching. Materialize or normalize matching before rendering; do not recompute matching inside the renderer as a fallback.
-- Keep the default review semantics unchanged:
+- Keep the default review semantics unchanged and mandatory:
   - `1x2` layout
   - GT left, Pred right
   - GT green
@@ -92,6 +100,9 @@ Before rendering from a derived artifact:
   - matched Pred green
   - FP Pred red
   - labels focus on `FN` and `FP` objects by default
+- For multiple representative samples, render one `1x2` image per sample and
+  provide the ordered file list or manifest. Do not create a contact sheet as
+  the default deliverable.
 - For comparison scenes, compose multiple canonical single-view members and verify exact GT equivalence (`width`, `height`, canonical `gt`) before drawing.
 
 ## Ad Hoc Image + Object List Requests
@@ -106,6 +117,9 @@ Before rendering from a derived artifact:
 ## Avoid
 
 - Do not build a new matplotlib or PIL overlay path if `src/vis/` or `src/infer/vis.py` already covers the request.
+- Do not pack multiple samples into one large image, including contact sheets,
+  montage grids, or side-by-side rows of different samples, unless explicitly
+  requested.
 - Do not invent a new compare-only per-object schema.
 - Do not change colors, panel order, or matching semantics unless the user explicitly requests a different figure style and that change does not violate the repo contract.
 
