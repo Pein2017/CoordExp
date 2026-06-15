@@ -21,6 +21,7 @@ groups:
     - progress/directions/full_idea_v5.md
     - progress/directions/2026-06-07_segment_aware_packing_infra.md
     - progress/directions/2026-06-05_row_conditioned_visual_coverage.md
+    - progress/directions/prefix_denoising_sft_v1.md
     - progress/directions/full_idea_v4.md
     - progress/directions/full_idea_v3.md
     - progress/directions/stage2_clean_prefix_v2.md
@@ -28,6 +29,12 @@ groups:
   diagnostics:
     - progress/diagnostics/README.md
     - progress/diagnostics/artifacts/README.md
+    - progress/diagnostics/2026-06-12_autoregressive_duplication_causal_chain_synthesis.md
+    - progress/diagnostics/2026-06-12_fn_guidance_and_coord_basin_synthesis.md
+    - progress/diagnostics/2026-06-12_pre_onset_duplication_precursor_synthesis.md
+    - progress/diagnostics/2026-06-12_diagnostics_consolidation_summary.md
+    - progress/diagnostics/2026-06-15_prefix_denoising_branch_isolation_repair.md
+    - progress/diagnostics/2026-06-14_prefix_denoising_launch_health.md
     - progress/diagnostics/2026-05-18_hard_ce_coord_logit_embedding_locality.md
     - progress/diagnostics/2026-05-18_gaussian_softce_a5_a6_coord_logit_locality.md
     - progress/diagnostics/2026-05-14_a5_a6_iou_gibbs_softce_negative_result.md
@@ -78,6 +85,7 @@ groups:
     - progress/diagnostics/2026-03-11_visualization_tools_index.md
   audits:
     - progress/audits/README.md
+    - progress/audits/2026-06-14_prefix_denoising_sft_v1_audit.md
     - progress/audits/2026-06-01_detection_scene_cleanup_validation.md
     - progress/audits/2026-05-31_detection_scene_phase0_surface_classification.md
     - progress/audits/2026-05-31_detection_scene_clean_break_archive_checkpoint.md
@@ -144,6 +152,11 @@ notes:
     kind: direction
     status: historical-reference
     summary: Branch-provenance row-conditioned visual coverage direction note; not current training guidance.
+  - path: progress/directions/prefix_denoising_sft_v1.md
+    title: Prefix-Denoising SFT V1
+    kind: direction
+    status: branch-provenance
+    summary: Branch-provenance research rationale and checklist for prefix-denoising SFT V1 on codex/prefix-denoising-sft; not current main training guidance until the matching code/config surface lands.
   - path: progress/directions/full_idea_v4.md
     title: Full Idea v4
     kind: direction
@@ -154,6 +167,36 @@ notes:
     kind: router
     status: canonical
     summary: Router for mechanism studies, failure investigations, threshold sweeps, and operator notes.
+  - path: progress/diagnostics/2026-06-12_autoregressive_duplication_causal_chain_synthesis.md
+    title: Autoregressive Duplication Causal Chain Synthesis
+    kind: diagnostic-synthesis
+    status: canonical
+    summary: Consolidated June 10-11 causal-chain read for compact-full coordinate-token duplication, covering residual localization, Layer 17/head-1 visual-basin routing, candidate-basin specificity, and x2 overcorrection.
+  - path: progress/diagnostics/2026-06-12_fn_guidance_and_coord_basin_synthesis.md
+    title: False-Negative Guidance And Coordinate-Basin Synthesis
+    kind: diagnostic-synthesis
+    status: canonical
+    summary: Consolidated June 11-12 false-negative guidance branch covering prefix-state coordinate-basin lock, vase same-slot repair, hard book/chair context-band probes, and selector follow-ups.
+  - path: progress/diagnostics/2026-06-12_pre_onset_duplication_precursor_synthesis.md
+    title: Pre-Onset Duplication Precursor Synthesis
+    kind: diagnostic-synthesis
+    status: canonical
+    summary: Consolidated June 12 pre-onset branch covering coordinate-basin precursor drift, rank-moving residual selectors, matched-pair sign splits, and Layer 16/head-8 route-content evidence.
+  - path: progress/diagnostics/2026-06-12_diagnostics_consolidation_summary.md
+    title: June 10-12 Diagnostics Consolidation Summary
+    kind: consolidation-summary
+    status: canonical
+    summary: Source-to-merged-document map and loss-check method for the June 10-12 diagnostics consolidation.
+  - path: progress/diagnostics/2026-06-15_prefix_denoising_branch_isolation_repair.md
+    title: Prefix-Denoising Branch-Isolation Repair
+    kind: launch-health
+    status: branch-provenance
+    summary: Post-audit prefix-denoising branch-isolation repair and focused verification on codex/prefix-denoising-sft; branch evidence only until the code/config surface lands in main.
+  - path: progress/diagnostics/2026-06-14_prefix_denoising_launch_health.md
+    title: Prefix-Denoising SFT V1 Launch-Health Smoke
+    kind: launch-health
+    status: superseded-branch-evidence
+    summary: Original tiny prefix-denoising launch-health smoke, superseded by the 2026-06-15 branch-isolation repair note.
   - path: progress/diagnostics/2026-05-18_hard_ce_coord_logit_embedding_locality.md
     title: Hard-CE Coordinate-Logit And Embedding Locality Diagnosis
     kind: diagnostic-study
@@ -314,6 +357,11 @@ notes:
     kind: exploration
     status: branch-provenance
     summary: Coord-repel Stage-1 design decision record imported from the conservative-design worktree.
+  - path: progress/audits/2026-06-14_prefix_denoising_sft_v1_audit.md
+    title: Prefix-Denoising SFT V1 Audit
+    kind: audit
+    status: branch-provenance
+    summary: Read-only design and plan audit for codex/prefix-denoising-sft; branch-scoped evidence only until the prefix-denoising surface lands in main.
   - path: progress/explorations/2026-05-31_grid_anchor_pending_record.md
     title: Grid Anchor Compact Detection Pending Record
     kind: exploration

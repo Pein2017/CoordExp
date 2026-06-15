@@ -22,6 +22,9 @@ decision record.
 
 ## Current Contents
 
+- Prefix-denoising branch audit:
+  - [2026-06-14_prefix_denoising_sft_v1_audit.md](2026-06-14_prefix_denoising_sft_v1_audit.md)
+    - read-only design/plan audit for `codex/prefix-denoising-sft`; branch-scoped evidence, not current main contract
 - DetectionScene clean-break cleanup gates:
   - [2026-06-01_detection_scene_cleanup_validation.md](2026-06-01_detection_scene_cleanup_validation.md)
     - cleanup and validation gate after DetectionScene archive/classification work

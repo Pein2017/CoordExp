@@ -32,4 +32,10 @@ Current behavior still comes from:
 - `2026-06-05-row-conditioned-visual-coverage-*`: row-conditioned and pixel-painted visual coverage research planning
 - `2026-06-07-segment-aware-packing-v1-*`: segment-aware packing draft/provenance and review notes
 - `2026-06-08-loss-only-instance-enumeration-*`: loss-only instance enumeration design provenance
+- `2026-06-10-autoregressive-duplication-mechanism-roadmap.md`: mechanistic
+  diagnosis roadmap; current conclusions now route through
+  `progress/diagnostics/2026-06-12_*_synthesis.md`
+- `2026-06-14-prefix-denoising-sft-v1-*`: prefix-denoising SFT V1 branch
+  implementation/design provenance for `codex/prefix-denoising-sft`; current
+  main behavior does not include the prefix-denoising runtime surface
 - `2026-06-12-coord-repel-v1-*`: coord-repel Stage-1 design and implementation provenance

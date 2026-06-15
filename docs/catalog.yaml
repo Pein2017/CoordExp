@@ -259,6 +259,10 @@ progress:
       title: Row-Conditioned Visual Coverage
       type: direction
       status: historical-reference
+    - path: progress/directions/prefix_denoising_sft_v1.md
+      title: Prefix-Denoising SFT V1
+      type: direction
+      status: branch-provenance
     - path: progress/directions/full_idea_v4.md
       title: Full Idea v4
       type: direction
@@ -284,6 +288,30 @@ progress:
       title: Diagnostics Artifact Copies
       type: router
       status: canonical
+    - path: progress/diagnostics/2026-06-12_autoregressive_duplication_causal_chain_synthesis.md
+      title: Autoregressive Duplication Causal Chain Synthesis
+      type: diagnostic-synthesis
+      status: canonical
+    - path: progress/diagnostics/2026-06-12_fn_guidance_and_coord_basin_synthesis.md
+      title: False-Negative Guidance And Coordinate-Basin Synthesis
+      type: diagnostic-synthesis
+      status: canonical
+    - path: progress/diagnostics/2026-06-12_pre_onset_duplication_precursor_synthesis.md
+      title: Pre-Onset Duplication Precursor Synthesis
+      type: diagnostic-synthesis
+      status: canonical
+    - path: progress/diagnostics/2026-06-12_diagnostics_consolidation_summary.md
+      title: June 10-12 Diagnostics Consolidation Summary
+      type: consolidation-summary
+      status: canonical
+    - path: progress/diagnostics/2026-06-15_prefix_denoising_branch_isolation_repair.md
+      title: Prefix-Denoising Branch-Isolation Repair
+      type: launch-health
+      status: branch-provenance
+    - path: progress/diagnostics/2026-06-14_prefix_denoising_launch_health.md
+      title: Prefix-Denoising SFT V1 Launch-Health Smoke
+      type: launch-health
+      status: superseded-branch-evidence
     - path: progress/diagnostics/2026-04-21_raw_text_coordinate_mechanism_findings.md
       title: Raw-Text Coordinate Mechanism Findings
       type: mechanism-summary
@@ -433,6 +461,10 @@ progress:
       title: Audits Index
       type: router
       status: canonical
+    - path: progress/audits/2026-06-14_prefix_denoising_sft_v1_audit.md
+      title: Prefix-Denoising SFT V1 Audit
+      type: audit
+      status: branch-provenance
     - path: progress/audits/2026-05-03_type_schema_architecture_audit.md
       title: Type-System And Schema-Boundary Audit
       type: audit

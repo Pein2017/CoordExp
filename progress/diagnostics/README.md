@@ -22,6 +22,36 @@ Prefer `progress/benchmarks/` when the output is mainly a measured run-vs-run or
 
 ## Diagnostic Clusters
 
+- Active autoregressive duplication mechanism diagnosis
+  - Start with
+    [2026-06-12_autoregressive_duplication_causal_chain_synthesis.md](2026-06-12_autoregressive_duplication_causal_chain_synthesis.md)
+    for the consolidated June 10-11 causal-chain read on residual localization,
+    Layer 17/head-1 visual-basin routing, candidate-basin specificity, and x2
+    overcorrection. This document supersedes the one-probe Phase 4 fragments
+    from June 10-11.
+  - Use
+    [2026-06-12_fn_guidance_and_coord_basin_synthesis.md](2026-06-12_fn_guidance_and_coord_basin_synthesis.md)
+    for the consolidated June 11-12 false-negative guidance branch, including
+    prefix-state coordinate-basin lock, vase same-slot repair, hard book/chair
+    context-band probes, and selector follow-ups.
+  - Use
+    [2026-06-12_pre_onset_duplication_precursor_synthesis.md](2026-06-12_pre_onset_duplication_precursor_synthesis.md)
+    for the consolidated June 12 pre-onset branch, including coordinate-basin
+    precursor drift, rank-moving residual selectors, matched-pair sign splits,
+    and Layer 16/head-8 route-content evidence.
+  - See
+    [2026-06-12_diagnostics_consolidation_summary.md](2026-06-12_diagnostics_consolidation_summary.md)
+    for the source-to-merged-document map and loss-check method for the June
+    10-12 consolidation.
+- Prefix-denoising branch launch-health notes
+  - [2026-06-14_prefix_denoising_launch_health.md](2026-06-14_prefix_denoising_launch_health.md)
+    records the original tiny launch-health smoke on `codex/prefix-denoising-sft`;
+    it is superseded by the branch-isolation repair note for current branch
+    interpretation.
+  - [2026-06-15_prefix_denoising_branch_isolation_repair.md](2026-06-15_prefix_denoising_branch_isolation_repair.md)
+    records the post-audit branch-isolation repair and focused verification on
+    `codex/prefix-denoising-sft`. Treat it as branch provenance until the
+    prefix-denoising code/config surface lands in main.
 - Hard-CE coordinate-logit and token-embedding locality diagnostics
   - Start with
     [2026-05-18_hard_ce_coord_logit_embedding_locality.md](2026-05-18_hard_ce_coord_logit_embedding_locality.md)

@@ -33,6 +33,8 @@ Prefer `docs/` and `openspec/specs/` for the current contract. Use
   - segment-aware packing infrastructure direction; draft/provenance only until promoted into current packing docs
 - [2026-06-05_row_conditioned_visual_coverage.md](2026-06-05_row_conditioned_visual_coverage.md)
   - row-conditioned visual coverage research direction; historical branch provenance, not current training guidance
+- [prefix_denoising_sft_v1.md](prefix_denoising_sft_v1.md)
+  - prefix-denoising SFT V1 branch provenance from `codex/prefix-denoising-sft`; not current main guidance until the matching code/config surface lands
 
 ## Historical Direction Notes
 
