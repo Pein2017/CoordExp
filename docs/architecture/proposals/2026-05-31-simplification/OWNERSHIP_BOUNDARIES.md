@@ -227,7 +227,7 @@ src/detection/token_types.py
 - Token-role taxonomy.
 - Render span events.
 - Terminal and stop-marker semantics.
-- Compact grammar definitions.
+- Compact row render/parser definitions.
 - Object field order semantics.
 
 **Should not own:**

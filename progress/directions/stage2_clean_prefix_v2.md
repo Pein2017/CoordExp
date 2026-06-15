@@ -1,12 +1,12 @@
 ---
 title: Full Idea v2
-status: active
+status: historical-reference
 scope: stage2-channel-b
 topics: [stage2, channel-b, clean-prefix, duplicate-ul]
 supersedes: progress/directions/stage2_emish_set_supervision_v1.md
 references:
   - docs/PROJECT_CONTEXT.md
-  - docs/training/STAGE2_DESIGN.md
+  - docs/history/training/STAGE2_DESIGN.md
   - docs/training/STAGE2_RUNBOOK.md
   - openspec/specs/stage2-ab-training/spec.md
 ---
@@ -20,7 +20,7 @@ Read it after the stable docs layer when you want the motivation, contract, and 
 ## Status
 
 - The stable docs-layer design overview lives at:
-  - [docs/training/STAGE2_DESIGN.md](../../docs/training/STAGE2_DESIGN.md)
+  - [docs/history/training/STAGE2_DESIGN.md](../../docs/history/training/STAGE2_DESIGN.md)
 - Normative behavior still lives in:
   - [docs/PROJECT_CONTEXT.md](../../docs/PROJECT_CONTEXT.md)
   - [Stage-2 Runbook](../../docs/training/STAGE2_RUNBOOK.md)

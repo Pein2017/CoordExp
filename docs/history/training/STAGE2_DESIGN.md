@@ -15,9 +15,9 @@ AB/two-channel era and must not be used as the active operator contract.
 
 For current work, use:
 
-- [docs/training/STAGE2_RUNBOOK.md](STAGE2_RUNBOOK.md)
-- [docs/training/METRICS.md](METRICS.md)
-- [`openspec/specs/stage2-rollout-correction/spec.md`](../../openspec/specs/stage2-rollout-correction/spec.md)
+- [docs/training/STAGE2_RUNBOOK.md](../../training/STAGE2_RUNBOOK.md)
+- [docs/training/METRICS.md](../../training/METRICS.md)
+- [`openspec/specs/stage2-rollout-correction/spec.md`](../../../openspec/specs/stage2-rollout-correction/spec.md)
 
 The active Stage-2 contract is Stage-2 rollout correction:
 
@@ -34,4 +34,4 @@ configs and fail fast when authored.
 Historical rationale for retiring the old split lives in progress notes, for
 example:
 
-- [progress/diagnostics/2026-03-20_stage2_channel_a_self_context_iter_ablation.md](../../progress/diagnostics/2026-03-20_stage2_channel_a_self_context_iter_ablation.md)
+- [progress/diagnostics/2026-03-20_stage2_channel_a_self_context_iter_ablation.md](../../../progress/diagnostics/2026-03-20_stage2_channel_a_self_context_iter_ablation.md)

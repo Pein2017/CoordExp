@@ -1,6 +1,6 @@
 ---
 title: Full Idea v3
-status: proposal
+status: historical-reference
 scope: stage2-channel-b
 topics: [stage2, channel-b, k2-rollout, recoverability, unlabeled, triage-posterior]
 supersedes: progress/directions/stage2_clean_prefix_v2.md

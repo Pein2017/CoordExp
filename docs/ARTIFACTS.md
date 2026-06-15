@@ -407,7 +407,9 @@ manifest family:
   `runtime_summary.stage2_policy_provenance`
 
 The block contains these exact policy identifiers, thresholds, and rollout
-surface fields:
+surface fields. Schema version 2 removes the former rollout decode-policy
+field; new Stage-2 runs record sampling/backend details in decode provenance
+instead of `stage2_policy_provenance`:
 
 - `stage2_policy_provenance.schema_version`
 - `stage2_policy_provenance.trainer_variant`

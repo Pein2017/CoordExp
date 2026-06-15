@@ -6,7 +6,7 @@ status: canonical
 domain: repo
 summary: Human-first router for the stable CoordExp documentation layer.
 tags: [entrypoint, docs]
-updated: 2026-05-03
+updated: 2026-06-15
 ---
 
 # Documentation Index
@@ -32,6 +32,8 @@ For AI-agent-first routing, use [AGENT_INDEX.md](AGENT_INDEX.md).
   - [docs/eval/README.md](eval/README.md)
 - Standards and repo policy:
   - [docs/standards/README.md](standards/README.md)
+- Architecture proposals and reviews:
+  - [docs/architecture/README.md](architecture/README.md)
 
 ## Cross-Cutting Docs
 
@@ -39,6 +41,11 @@ For AI-agent-first routing, use [AGENT_INDEX.md](AGENT_INDEX.md).
 - [AGENT_INDEX.md](AGENT_INDEX.md): fast-path retrieval guide for coding assistants
 - [catalog.yaml](catalog.yaml): curated machine-readable catalog for `docs/` and important `progress/` routes
 - [`runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md): stable runtime-structure and compatibility contract
+
+## Supplemental And Historical Docs
+
+- [docs/history/README.md](history/README.md): non-normative implementation plans, design specs, handoffs, and historical training notes
+- [docs/supplemental/patent/draft.md](supplemental/patent/draft.md): supplemental patent draft
 
 ## Research History
 

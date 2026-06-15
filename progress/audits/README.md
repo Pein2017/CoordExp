@@ -6,7 +6,7 @@ status: canonical
 domain: research-history
 summary: Router for structured audit notes and decision-focused reviews.
 tags: [progress, audits, review]
-updated: 2026-05-20
+updated: 2026-06-15
 ---
 
 # Audits Index
@@ -22,6 +22,13 @@ decision record.
 
 ## Current Contents
 
+- DetectionScene clean-break cleanup gates:
+  - [2026-06-01_detection_scene_cleanup_validation.md](2026-06-01_detection_scene_cleanup_validation.md)
+    - cleanup and validation gate after DetectionScene archive/classification work
+  - [2026-05-31_detection_scene_phase0_surface_classification.md](2026-05-31_detection_scene_phase0_surface_classification.md)
+    - Phase 0 surface classification for keep/quarantine/delete decisions
+  - [2026-05-31_detection_scene_clean_break_archive_checkpoint.md](2026-05-31_detection_scene_clean_break_archive_checkpoint.md)
+    - archive checkpoint record for the clean-break transition
 - [2026-05-20_repository_stewardship_audit.md](2026-05-20_repository_stewardship_audit.md)
   - repository structure diagnosis, cleanup candidates, and long-term governance rules
 - [2026-05-19_openspec_reactivation_audit.md](2026-05-19_openspec_reactivation_audit.md)

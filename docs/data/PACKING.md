@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: data
 summary: Surface-specific packing policy, hard caps, cache behavior, and efficiency tradeoffs.
-updated: 2026-06-07
+updated: 2026-06-15
 ---
 
 # Packing Policy Matrix
@@ -38,6 +38,11 @@ Note:
 | Stage-1 compact recursive detection latest | `12000` | `128` | disabled | Packing remains disabled until sidecar target-position offset rewriting is implemented and validated. |
 | Stage-2 rollout-correction base | `12000` | `64` | post-rollout trainer packing | Rollout generation remains padded/unpacked; correction segments are atomic. |
 | Historical 12k packing probe | `12000` | `12` | historical probe | Useful as prior efficiency evidence, not the global default. |
+
+Branch-provenance notes for segment-aware packing, coord-repel exact remapping,
+and prefix-denoising hybrid packing live under `progress/` and `docs/history/`.
+They are not current packing contract until their code/config surfaces are
+merged and this matrix is updated.
 
 ## Effective Batch Source Of Truth
 

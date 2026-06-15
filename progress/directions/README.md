@@ -6,7 +6,7 @@ status: canonical
 domain: research-history
 summary: Router for historical research directions and Stage-2 design lineage.
 tags: [progress, directions, stage1, stage2]
-updated: 2026-04-23
+updated: 2026-06-15
 ---
 
 # Directions Index
@@ -26,6 +26,13 @@ Prefer `docs/` and `openspec/specs/` for the current contract. Use
 - [full_idea_v5.md](full_idea_v5.md)
   - current Stage-1 set-continuation direction note
   - source research note for subset-conditioned full-entry multi-positive supervision
+
+## Recent Draft Direction Notes
+
+- [2026-06-07_segment_aware_packing_infra.md](2026-06-07_segment_aware_packing_infra.md)
+  - segment-aware packing infrastructure direction; draft/provenance only until promoted into current packing docs
+- [2026-06-05_row_conditioned_visual_coverage.md](2026-06-05_row_conditioned_visual_coverage.md)
+  - row-conditioned visual coverage research direction; historical branch provenance, not current training guidance
 
 ## Historical Direction Notes
 

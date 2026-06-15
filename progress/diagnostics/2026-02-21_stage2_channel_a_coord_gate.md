@@ -6,7 +6,7 @@ kind: diagnosis
 topics: [stage2, channel-a, coord-gate, parseability, historical-stage2-ab]
 references:
   - docs/PROJECT_CONTEXT.md
-  - docs/training/STAGE2_DESIGN.md
+  - docs/history/training/STAGE2_DESIGN.md
   - docs/IMPLEMENTATION_MAP.md
 ---
 

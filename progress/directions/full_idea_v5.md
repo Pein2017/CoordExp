@@ -1,3 +1,11 @@
+---
+title: Full Idea v5
+status: active-reference
+scope: stage1-stage2
+topics: [stage1, stage2, subset-conditioning, multi-positive, autoregressive-detection]
+supersedes: progress/directions/full_idea_v4.md
+---
+
 # Full Idea: Prefix-Attached Multi-Positive Subset Training for Autoregressive V-LLM Detection
 
 ## 0. One-sentence summary

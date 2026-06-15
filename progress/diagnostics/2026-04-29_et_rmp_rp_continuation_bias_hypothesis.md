@@ -29,9 +29,9 @@ Use this note to answer:
 Do not use this note as the implementation source of truth. Current objective
 and config behavior belongs in:
 
-- [docs/training/STAGE1_ET_RMP_CE.md](../../docs/training/STAGE1_ET_RMP_CE.md)
+- [docs/history/training/STAGE1_ET_RMP_CE.md](../../docs/history/training/STAGE1_ET_RMP_CE.md)
 - [docs/training/STAGE1_OBJECTIVE.md](../../docs/training/STAGE1_OBJECTIVE.md)
-- [configs/stage1/set_continuation/production.yaml](../../configs/stage1/set_continuation/production.yaml)
+- `configs/stage1/set_continuation/production.yaml` historical config handle
 
 ## Scope Guard
 

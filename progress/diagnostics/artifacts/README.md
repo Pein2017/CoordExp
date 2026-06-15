@@ -6,7 +6,7 @@ status: canonical
 domain: research-history
 summary: Router for copied artifact-side markdown preserved under progress for durable review.
 tags: [progress, diagnostics, artifacts]
-updated: 2026-05-01
+updated: 2026-06-15
 ---
 
 # Diagnostics Artifact Copies
@@ -28,6 +28,8 @@ evidence.
   - parent note for `raw_text_coord_continuity_probe_2026-04-18/`
 - [../2026-04-20_coord_family_basin_and_recall_comparison.md](../2026-04-20_coord_family_basin_and_recall_comparison.md)
   - parent note for `coord_family_comparison_2026-04-20/`
+- [../2026-05-14_a5_a6_iou_gibbs_softce_negative_result.md](../2026-05-14_a5_a6_iou_gibbs_softce_negative_result.md)
+  - parent note for `a5_a6_iou_gibbs_softce_negative_result_2026-05-14/`
 
 ## Artifact Clusters
 
@@ -45,3 +47,6 @@ evidence.
   - `invalid_geometry_audit_report.md`
   - `recall_progress_report.md`
   - `recall_slices_report.md`
+- `a5_a6_iou_gibbs_softce_negative_result_2026-05-14/`
+  - copied configs, analysis summaries, and visual manifests for the A5/A6
+    IoU-Gibbs negative-result archive

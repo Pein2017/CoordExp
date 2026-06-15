@@ -6,7 +6,7 @@ status: canonical
 domain: research-history
 summary: Router for architecture, infrastructure, and implementation-planning explorations.
 tags: [progress, explorations, architecture, infrastructure]
-updated: 2026-05-29
+updated: 2026-06-15
 ---
 
 # Explorations Index
@@ -21,8 +21,14 @@ contracts. Prefer `docs/` and `openspec/specs/` for current structure.
 
 ## Current Entry Points
 
-- [2026-05-29_anchor_first_grid_anchor_design.md](2026-05-29_anchor_first_grid_anchor_design.md)
-  - active pressure-test notes for the anchor-first / grid-anchor autoregressive detection design
+- [2026-06-12_coord_repel_stage1_sft_design_decisions.md](2026-06-12_coord_repel_stage1_sft_design_decisions.md)
+  - coord-repel Stage-1 design decisions imported from the conservative-design worktree; use as research provenance until current docs promote a stable surface
+- [2026-05-31_grid_anchor_pending_record.md](2026-05-31_grid_anchor_pending_record.md)
+  - pending/deprecated grid-anchor compact-detection record; use as historical design evidence, not active guidance
+- [2026-05-20_stage2_residual_set_self_prefix_ul_redesign.md](2026-05-20_stage2_residual_set_self_prefix_ul_redesign.md)
+  - Stage-2 residual-set self-prefix / UL redesign decision record
+- [2026-05-19_unified_teacher_forcing_objective_architecture_decisions.md](2026-05-19_unified_teacher_forcing_objective_architecture_decisions.md)
+  - unified teacher-forcing objective architecture decisions and discussion record
 - [2026-05-15_training_infrastructure_architecture_decisions.md](2026-05-15_training_infrastructure_architecture_decisions.md)
   - active architecture decision record for the training infrastructure audit and `grill-me` cleanup decisions; use it as cleanup rationale, not current training run guidance
 - [2026-03-19_runtime_refactor_architecture_program.md](2026-03-19_runtime_refactor_architecture_program.md)

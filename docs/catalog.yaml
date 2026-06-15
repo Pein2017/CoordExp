@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-05-16
+updated: 2026-06-15
 
 entrypoints:
   human:
@@ -12,6 +12,7 @@ entrypoints:
 
 authority:
   current_truth: docs/
+  non_normative_doc_history: docs/history/
   stable_contracts: openspec/specs/
   active_deltas: openspec/changes/<active-change>/
   historical_evidence: progress/
@@ -75,6 +76,10 @@ docs:
       title: Artifacts & Provenance
       type: artifacts-reference
       status: canonical
+    - path: docs/history/README.md
+      title: Documentation History
+      type: history-router
+      status: historical-router
   data:
     - path: docs/data/README.md
       title: Data & Datasets
@@ -117,6 +122,10 @@ docs:
       title: Training Metrics and Losses
       type: reference
       status: canonical
+    - path: docs/training/drafts/INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md
+      title: Instance-Trie Gaussian SoftCE Draft
+      type: implementation-draft
+      status: draft
   eval:
     - path: docs/eval/README.md
       title: Evaluation & Inference
@@ -134,10 +143,31 @@ docs:
       title: COCO Test-Dev Submission
       type: runbook
       status: canonical
-    - path: docs/eval/UNMATCHED_PROPOSAL_VERIFIER_STUDY.md
+    - path: docs/eval/drafts/UNMATCHED_PROPOSAL_VERIFIER_STUDY.md
       title: Unmatched Proposal Verifier Study
       type: runbook
       status: draft
+  architecture:
+    - path: docs/architecture/README.md
+      title: CoordExp Architecture Notes
+      type: proposal-router
+      status: proposal
+    - path: docs/architecture/INDEPENDENT_ARCHITECTURE_REVIEW.md
+      title: CoordExp Independent Architecture Review
+      type: architecture-review
+      status: review
+    - path: docs/architecture/proposals/2026-05-31-simplification/CODEBASE_SIMPLIFICATION_PROPOSAL.md
+      title: CoordExp Codebase Simplification Proposal
+      type: architecture-proposal
+      status: proposal
+    - path: docs/architecture/proposals/2026-05-31-simplification/OWNERSHIP_BOUNDARIES.md
+      title: CoordExp Subsystem Ownership Boundaries
+      type: architecture-proposal
+      status: proposal
+    - path: docs/architecture/proposals/2026-05-31-simplification/SIMPLIFICATION_ROADMAP.md
+      title: CoordExp Architecture Simplification Roadmap
+      type: architecture-roadmap
+      status: proposal
   standards:
     - path: docs/standards/README.md
       title: Standards
@@ -183,8 +213,25 @@ docs:
       title: Output Sync And Data Provenance
       type: standard
       status: canonical
-  notes:
-    - path: docs/notes/patent/draft.md
+  history:
+    - path: docs/history/README.md
+      title: Documentation History
+      type: history-router
+      status: historical-router
+    - path: docs/history/superpowers/README.md
+      title: Superpowers Plan And Spec Archive
+      type: history-router
+      status: historical-router
+    - path: docs/history/training/STAGE1_ET_RMP_CE.md
+      title: Superseded Stage-1 Continuation Objective
+      type: historical-note
+      status: superseded
+    - path: docs/history/training/STAGE2_DESIGN.md
+      title: Stage-2 Design History
+      type: historical-note
+      status: historical
+  supplemental:
+    - path: docs/supplemental/patent/draft.md
       title: Patent Draft
       type: supplemental-note
       status: supplemental
@@ -204,6 +251,14 @@ progress:
       title: Full Idea v5
       type: direction
       status: active-reference
+    - path: progress/directions/2026-06-07_segment_aware_packing_infra.md
+      title: Segment-Aware Packing Infrastructure
+      type: direction
+      status: draft-reference
+    - path: progress/directions/2026-06-05_row_conditioned_visual_coverage.md
+      title: Row-Conditioned Visual Coverage
+      type: direction
+      status: historical-reference
     - path: progress/directions/full_idea_v4.md
       title: Full Idea v4
       type: direction
@@ -211,11 +266,11 @@ progress:
     - path: progress/directions/full_idea_v3.md
       title: Full Idea v3
       type: direction
-      status: active-reference
+      status: historical-reference
     - path: progress/directions/stage2_clean_prefix_v2.md
       title: Full Idea v2
       type: direction
-      status: active-reference
+      status: historical-reference
     - path: progress/directions/stage2_emish_set_supervision_v1.md
       title: CoordExp + EM-ish Set-Supervision for V-LLM Detection (Qwen3-VL, norm1000)
       type: historical-direction
@@ -253,6 +308,26 @@ progress:
       title: Stage-2 Birth-First Channel-B Decision Study
       type: diagnostic-study
       status: decision-evidence
+    - path: progress/diagnostics/2026-05-14_a5_a6_iou_gibbs_softce_negative_result.md
+      title: A5/A6 IoU-Gibbs Coordinate SoftCE Negative Result
+      type: diagnostic-study
+      status: concluded-negative
+    - path: progress/diagnostics/2026-06-03_candidate_field_cardinality_representative8192_analysis.md
+      title: Candidate Field Cardinality Representative8192 Analysis
+      type: diagnostic-study
+      status: active-diagnostic
+    - path: progress/diagnostics/2026-06-04_prefix_state_transition_phase_a3_1_analysis.md
+      title: Prefix-State Transition Tomography Phase A3.1 Analysis
+      type: diagnostic-study
+      status: completed-diagnostic
+    - path: progress/diagnostics/2026-06-04_a3_2_sorted_random_no_newline_smoke_findings.md
+      title: A3.2 Sorted-Random No-Newline Smoke Findings
+      type: diagnostic-evidence
+      status: diagnostic-evidence
+    - path: progress/diagnostics/2026-06-05_a3_3_post_x1_instance_basin_real_tiny_smoke.md
+      title: A3.3 Post-X1 Instance-Basin Tomography Real-Tiny Smoke
+      type: diagnostic-evidence
+      status: diagnostic-evidence
     - path: progress/diagnostics/2026-04-11_stage1_coord_basin_duplication_mechanism.md
       title: Stage-1 Coordinate-Basin Duplication Mechanism
       type: mechanism-summary
@@ -362,6 +437,10 @@ progress:
       title: Type-System And Schema-Boundary Audit
       type: audit
       status: active-audit
+    - path: progress/audits/2026-06-01_detection_scene_cleanup_validation.md
+      title: DetectionScene Cleanup And Validation Gate
+      type: audit
+      status: active
     - path: progress/audits/2026-01-22_stage1_softce_logging.md
       title: 'Stage-1 SoftCE (W1) Audit: Loss Dynamics, Logging Alignment, and Efficiency Notes (2026-01-22)'
       type: audit
@@ -420,6 +499,14 @@ progress:
       title: Training Infrastructure Architecture Decisions
       type: exploration
       status: active-reference
+    - path: progress/explorations/2026-06-12_coord_repel_stage1_sft_design_decisions.md
+      title: Coord-Repel Stage-1 SFT Design Decisions
+      type: exploration
+      status: branch-provenance
+    - path: progress/explorations/2026-05-31_grid_anchor_pending_record.md
+      title: Grid Anchor Compact Detection Pending Record
+      type: exploration
+      status: historical-reference
     - path: progress/explorations/2026-03-19_runtime_refactor_architecture_program.md
       title: Runtime Refactor Architecture Program (2026-03-19)
       type: exploration

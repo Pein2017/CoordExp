@@ -5,7 +5,7 @@ scope: stage2-channel-b
 topics: [stage2, channel-b, duplicate-ul, diagnostics, resolution-1024]
 references:
   - docs/PROJECT_CONTEXT.md
-  - docs/training/STAGE2_DESIGN.md
+  - docs/history/training/STAGE2_DESIGN.md
   - progress/directions/stage2_clean_prefix_v2.md
   - progress/diagnostics/2026-03-05_stage2_near_duplication.md
 ---
@@ -33,7 +33,7 @@ That is the exact failure mode where an overly aggressive duplicate cleaner / hi
 Related notes:
 
 - prior duplicate-heavy baseline and tail-instability context: `progress/diagnostics/2026-03-05_stage2_near_duplication.md`
-- current design intent: `docs/training/STAGE2_DESIGN.md`
+- historical design intent: `docs/history/training/STAGE2_DESIGN.md`
 - clean-prefix v2 direction: `progress/directions/stage2_clean_prefix_v2.md`
 
 ---
