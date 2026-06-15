@@ -36,3 +36,5 @@
 ## Response Format
 - Report changed files, verification commands, skipped checks, residual risks, and next actions.
 - Keep final responses concise unless the user asks for a detailed audit or handoff.
+
+@/data/CoordExp/.codex/RTK.md
