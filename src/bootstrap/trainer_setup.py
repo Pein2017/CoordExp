@@ -30,6 +30,25 @@ class _InjectedSwiftDataCollatorMixin:
             return collator
         return super()._get_data_collator(args, template)  # type: ignore[misc]
 
+    def _get_collator_with_removed_columns(
+        self, data_collator: Any, description: str | None = None
+    ) -> Any:
+        collator = getattr(self, "_coordexp_injected_data_collator", None)
+        prefix_denoising_cfg = getattr(self, "prefix_denoising_cfg", None)
+        if (
+            collator is not None
+            and data_collator is collator
+            and bool(
+                prefix_denoising_cfg
+                and getattr(prefix_denoising_cfg, "enabled", False)
+            )
+        ):
+            return data_collator
+        return super()._get_collator_with_removed_columns(  # type: ignore[misc]
+            data_collator,
+            description=description,
+        )
+
 
 _SWIFT_COLLATOR_WRAPPER_CACHE: dict[type, type] = {}
 

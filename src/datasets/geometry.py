@@ -122,6 +122,122 @@ def _feasible_shift_bounds(center2: int, size: int, *, coord_max: int) -> tuple[
     )
 
 
+def _noise_scale_values(config: BBoxNoiseConfig) -> list[float]:
+    scale_low, scale_high = config.uniform_scale_range
+    scale_values = {scale_low, scale_high}
+    if scale_low <= 1.0 <= scale_high:
+        scale_values.add(1.0)
+    return sorted(scale_values)
+
+
+def _axis_noise_candidates(
+    *,
+    start: int,
+    end: int,
+    scale_values: Sequence[float],
+    max_shift: int,
+    coord_max: int,
+) -> tuple[tuple[int, int], ...]:
+    size = int(end) - int(start)
+    center2 = int(start) + int(end)
+    candidates: set[tuple[int, int]] = set()
+    for scale in scale_values:
+        new_size = int(round(size * float(scale)))
+        if new_size <= 0:
+            continue
+        feasible_low, feasible_high = _feasible_shift_bounds(
+            center2,
+            new_size,
+            coord_max=coord_max,
+        )
+        shift_low = max(-int(max_shift), feasible_low)
+        shift_high = min(int(max_shift), feasible_high)
+        if shift_low > shift_high:
+            continue
+        for shift in range(shift_low, shift_high + 1):
+            new_center2 = center2 + 2 * shift
+            new_start = int(round((new_center2 - new_size) / 2.0))
+            new_end = new_start + new_size
+            if not (0 <= new_start < new_end <= coord_max):
+                continue
+            if new_start == int(start) or new_end == int(end):
+                continue
+            candidates.add((new_start, new_end))
+    return tuple(sorted(candidates))
+
+
+def _bbox_noise_axis_candidates(
+    clean_bbox: Sequence[int | float],
+    *,
+    config: BBoxNoiseConfig,
+) -> tuple[tuple[int, int, int, int], tuple[tuple[int, int], ...], tuple[tuple[int, int], ...]]:
+    clean = _coerce_norm1000_xyxy(clean_bbox, field_name="clean bbox")
+    x1, y1, x2, y2 = clean
+    width = x2 - x1
+    height = y2 - y1
+    scale_values = _noise_scale_values(config)
+    x_candidates = _axis_noise_candidates(
+        start=x1,
+        end=x2,
+        scale_values=scale_values,
+        max_shift=int(round(width * float(config.center_shift_frac))),
+        coord_max=int(config.coord_max),
+    )
+    y_candidates = _axis_noise_candidates(
+        start=y1,
+        end=y2,
+        scale_values=scale_values,
+        max_shift=int(round(height * float(config.center_shift_frac))),
+        coord_max=int(config.coord_max),
+    )
+    return clean, x_candidates, y_candidates
+
+
+def valid_norm1000_bbox_noise_candidate_count(
+    clean_bbox: Sequence[int | float],
+    *,
+    config: BBoxNoiseConfig,
+) -> int:
+    """Return the count of valid 4-coordinate-changing noise candidates."""
+
+    _clean, x_candidates, y_candidates = _bbox_noise_axis_candidates(
+        clean_bbox,
+        config=config,
+    )
+    return int(len(x_candidates) * len(y_candidates))
+
+
+def _axis_candidates_by_start(
+    candidates: Sequence[tuple[int, int]],
+) -> tuple[tuple[int, tuple[int, ...]], ...]:
+    grouped: dict[int, list[int]] = {}
+    for start, end in candidates:
+        grouped.setdefault(start, []).append(end)
+    return tuple((start, tuple(sorted(ends))) for start, ends in sorted(grouped.items()))
+
+
+def _select_legacy_sorted_bbox_candidate(
+    *,
+    x_candidates: Sequence[tuple[int, int]],
+    y_candidates: Sequence[tuple[int, int]],
+    selected_index: int,
+) -> tuple[int, int, int, int]:
+    """Map a product index to the old sorted `(x1, y1, x2, y2)` candidate order."""
+
+    remaining = int(selected_index)
+    y_groups = _axis_candidates_by_start(y_candidates)
+    for nx1, nx2_values in _axis_candidates_by_start(x_candidates):
+        for ny1, ny2_values in y_groups:
+            group_count = len(nx2_values) * len(ny2_values)
+            if remaining >= group_count:
+                remaining -= group_count
+                continue
+            nx2 = nx2_values[remaining // len(ny2_values)]
+            ny2 = ny2_values[remaining % len(ny2_values)]
+            return (nx1, ny1, nx2, ny2)
+    raise IndexError("selected bbox noise candidate index is out of range")
+
+
 def construct_valid_norm1000_bbox_noise(
     clean_bbox: Sequence[int | float],
     *,
@@ -129,57 +245,12 @@ def construct_valid_norm1000_bbox_noise(
     rng: random.Random,
     object_id: str = "",
 ) -> BBoxNoiseResult:
-    clean = _coerce_norm1000_xyxy(clean_bbox, field_name="clean bbox")
-    x1, y1, x2, y2 = clean
-    width = x2 - x1
-    height = y2 - y1
-    candidates: list[tuple[int, int, int, int]] = []
-    max_dx = int(round(width * float(config.center_shift_frac)))
-    max_dy = int(round(height * float(config.center_shift_frac)))
-    scale_low, scale_high = config.uniform_scale_range
-    scale_values = {scale_low, scale_high}
-    if scale_low <= 1.0 <= scale_high:
-        scale_values.add(1.0)
-    scale_values = sorted(scale_values)
-    cx2 = x1 + x2
-    cy2 = y1 + y2
-    for sx in scale_values:
-        new_w = int(round(width * sx))
-        if new_w <= 0:
-            continue
-        feasible_dx_low, feasible_dx_high = _feasible_shift_bounds(
-            cx2, new_w, coord_max=999
-        )
-        dx_low = max(-max_dx, feasible_dx_low)
-        dx_high = min(max_dx, feasible_dx_high)
-        if dx_low > dx_high:
-            continue
-        for sy in scale_values:
-            new_h = int(round(height * sy))
-            if new_h <= 0:
-                continue
-            feasible_dy_low, feasible_dy_high = _feasible_shift_bounds(
-                cy2, new_h, coord_max=999
-            )
-            dy_low = max(-max_dy, feasible_dy_low)
-            dy_high = min(max_dy, feasible_dy_high)
-            if dy_low > dy_high:
-                continue
-            for dx in range(dx_low, dx_high + 1):
-                for dy in range(dy_low, dy_high + 1):
-                    new_cx2 = cx2 + 2 * dx
-                    new_cy2 = cy2 + 2 * dy
-                    nx1 = int(round((new_cx2 - new_w) / 2.0))
-                    ny1 = int(round((new_cy2 - new_h) / 2.0))
-                    nx2 = nx1 + new_w
-                    ny2 = ny1 + new_h
-                    candidate = (nx1, ny1, nx2, ny2)
-                    if not (0 <= nx1 < nx2 <= 999 and 0 <= ny1 < ny2 <= 999):
-                        continue
-                    if all(a != b for a, b in zip(clean, candidate, strict=True)):
-                        candidates.append(candidate)
-    unique_candidates = sorted(set(candidates))
-    if not unique_candidates:
+    clean, x_candidates, y_candidates = _bbox_noise_axis_candidates(
+        clean_bbox,
+        config=config,
+    )
+    candidate_count = int(len(x_candidates) * len(y_candidates))
+    if candidate_count <= 0:
         return BBoxNoiseResult(
             ok=False,
             clean_bbox=clean,
@@ -190,8 +261,12 @@ def construct_valid_norm1000_bbox_noise(
             skip_reason="noise_infeasible_4coord_changed",
             provenance={"object_id": object_id, "candidate_count": 0},
         )
-    selected_index = rng.randrange(len(unique_candidates))
-    noisy = unique_candidates[selected_index]
+    selected_index = rng.randrange(candidate_count)
+    noisy = _select_legacy_sorted_bbox_candidate(
+        x_candidates=x_candidates,
+        y_candidates=y_candidates,
+        selected_index=selected_index,
+    )
     return BBoxNoiseResult(
         ok=True,
         clean_bbox=clean,
@@ -202,7 +277,7 @@ def construct_valid_norm1000_bbox_noise(
         skip_reason=None,
         provenance={
             "object_id": object_id,
-            "candidate_count": len(unique_candidates),
+            "candidate_count": candidate_count,
             "selected_index": selected_index,
         },
     )
@@ -1095,5 +1170,6 @@ __all_typed__ = [
     "construct_valid_norm1000_bbox_noise",
     "geometry_from_dict",
     "transform_geometry",
+    "valid_norm1000_bbox_noise_candidate_count",
     "valid_xyxy_box",
 ]

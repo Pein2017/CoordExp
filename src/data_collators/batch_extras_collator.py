@@ -12,6 +12,7 @@ compatibility shim.
 
 from __future__ import annotations
 
+from collections.abc import Mapping as MappingABC
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from src.config.schema import TokenTypeMetricsConfig
@@ -84,33 +85,38 @@ def build_batch_extras_collator(
     teacher_forcing_target_ir_enricher = TeacherForcingTargetIREnricher()
 
     def _collate(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
+        raw_batch_for_extras = _snapshot_raw_batch_for_extras(batch)
         collated = collate_fn(batch)
 
-        meta = meta_enricher(batch=batch, collated=collated)
+        meta = meta_enricher(batch=raw_batch_for_extras, collated=collated)
 
         if instab_enricher is not None:
-            instab_enricher(batch=batch, collated=collated, packed=meta.packed)
+            instab_enricher(
+                batch=raw_batch_for_extras,
+                collated=collated,
+                packed=meta.packed,
+            )
 
         prefix_denoising_hybrid_enricher(
             collated=collated,
-            raw_batch=batch,
+            raw_batch=raw_batch_for_extras,
             packed=meta.packed,
         )
         recursive_detection_targets_enricher(
             collated=collated,
-            raw_batch=batch,
+            raw_batch=raw_batch_for_extras,
             packed=meta.packed,
         )
         teacher_forcing_target_ir_enricher(
             collated=collated,
-            raw_batch=batch,
+            raw_batch=raw_batch_for_extras,
             packed=meta.packed,
         )
 
         if token_type_enricher is not None:
             token_type_enricher(
                 collated=collated,
-                raw_batch=batch,
+                raw_batch=raw_batch_for_extras,
                 dataset_labels=meta.dataset_labels,
                 packed=meta.packed,
             )
@@ -118,20 +124,32 @@ def build_batch_extras_collator(
         if proxy_supervision_enricher is not None:
             proxy_supervision_enricher(
                 collated=collated,
-                raw_batch=batch,
+                raw_batch=raw_batch_for_extras,
                 packed=meta.packed,
             )
 
         if sft_structural_close_enricher is not None:
             sft_structural_close_enricher(
                 collated=collated,
-                raw_batch=batch,
+                raw_batch=raw_batch_for_extras,
                 packed=meta.packed,
             )
 
         return collated
 
     return _collate
+
+
+def _snapshot_raw_batch_for_extras(value: Any) -> Any:
+    """Shallow-copy raw batch containers before template collators mutate them."""
+
+    if isinstance(value, MappingABC):
+        return dict(value)
+    if isinstance(value, list):
+        return [_snapshot_raw_batch_for_extras(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_snapshot_raw_batch_for_extras(item) for item in value)
+    return value
 
 
 # Backward compatible name (historical API).

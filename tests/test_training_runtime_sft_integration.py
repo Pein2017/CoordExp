@@ -661,7 +661,7 @@ def test_prefix_denoising_objective_reads_stashed_extras_and_strips_sidecars() -
         torch.tensor([3]),
     )
     assert loss.item() == pytest.approx(expected.item())
-    assert outputs.logits.shape == (2, 3, 4)
+    assert outputs["logits"].shape == (2, 3, 4)
     assert len(model.calls) == 2
     for call in model.calls:
         assert "labels" not in call

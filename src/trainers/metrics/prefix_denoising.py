@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping, MutableMapping, Sequence
-from types import SimpleNamespace
 from typing import Any
 
 import torch
@@ -257,7 +256,7 @@ def _run_isolated_prefix_denoising_forwards(
         "labels": labels,
         "segment_spans": tuple(spans),
         "resolved_kl_sites": tuple(resolved_sites),
-        "outputs": SimpleNamespace(logits=logits),
+        "outputs": {"logits": logits},
     }
 
 

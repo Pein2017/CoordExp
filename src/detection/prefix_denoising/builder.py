@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import math
 import random
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
@@ -27,12 +29,33 @@ from src.detection.template import RenderedDetectionSequence, get_detection_temp
 from .types import (
     CoordSlot,
     HybridPrefixDenoisingSample,
+    PrefixDenoisingPackingEstimate,
     PrefixDenoisingKLSite,
     PrefixDenoisingSegment,
 )
 
 _COORD_SLOTS: tuple[CoordSlot, ...] = ("x1", "y1", "x2", "y2")
 _CORE_ENCODED_KEYS = {"input_ids", "labels", "attention_mask", "length"}
+PREFIX_DENOISING_FAST_ESTIMATOR_VERSION = "qwen3_vl_chat_template_alignment_v2"
+
+
+def prefix_denoising_fast_estimator_fingerprint(swift_template: Any) -> dict[str, Any]:
+    """Fingerprint fast-estimator inputs that affect static packing eligibility."""
+
+    tokenizer = getattr(swift_template, "tokenizer", None)
+    chat_template = getattr(tokenizer, "chat_template", None)
+    patch_size, merge_size = _resolve_qwen_vl_patch_merge(swift_template)
+    return {
+        "schema_version": PREFIX_DENOISING_FAST_ESTIMATOR_VERSION,
+        "tokenizer_chat_template_sha256": (
+            hashlib.sha256(str(chat_template).encode("utf-8")).hexdigest()
+            if chat_template is not None
+            else None
+        ),
+        "tokenizer_chat_template_present": chat_template is not None,
+        "qwen_vl_patch_size": int(patch_size),
+        "qwen_vl_merge_size": int(merge_size),
+    }
 
 
 def build_hybrid_prefix_denoising_sample(
@@ -246,6 +269,159 @@ def build_hybrid_prefix_denoising_sample(
     )
 
 
+def estimate_hybrid_prefix_denoising_packing(
+    row: Mapping[str, Any],
+    *,
+    image_root: str | Path,
+    swift_template: Any,
+    user_prompt: str,
+    system_prompt: str | None,
+    prefix_denoising: PrefixDenoisingConfig,
+    rng: random.Random,
+    max_length: int,
+) -> PrefixDenoisingPackingEstimate:
+    """Estimate V1 hybrid sample eligibility and packed token length.
+
+    This mirrors the full builder's row parsing, sorted order, constructive
+    noising, compact-full rendering, and max-length skip policy, but it avoids
+    Swift multimodal image encoding. Qwen-VL visual token count is deterministic
+    from the stored image dimensions when `do_resize=false`, so this is suitable
+    for static-packing precompute.
+    """
+
+    if not prefix_denoising.enabled:
+        return PrefixDenoisingPackingEstimate(
+            ok=False,
+            skip_reason="prefix_denoising_disabled",
+        )
+    if _raw_object_count(row) == 0:
+        return PrefixDenoisingPackingEstimate(
+            ok=False,
+            skip_reason="zero_object_hybrid_sample",
+        )
+
+    image_reference = _resolve_single_image(row, image_root=image_root)
+    raw = parse_raw_detection_row(row)
+    scene = detection_scene_from_raw_row(
+        raw,
+        object_ordering=ObjectOrderingPlan.sorted(
+            seed_source="prefix_denoising_hybrid_builder"
+        ),
+        image_reference=image_reference,
+    )
+    clean_sample = normalized_detection_sample_from_scene(scene)
+    if not clean_sample.objects:
+        return PrefixDenoisingPackingEstimate(
+            ok=False,
+            skip_reason="zero_object_hybrid_sample",
+        )
+
+    noised = _build_noisy_objects(
+        clean_sample.objects,
+        prefix_denoising=prefix_denoising,
+        rng=rng,
+    )
+    if not noised["ok"]:
+        return PrefixDenoisingPackingEstimate(
+            ok=False,
+            skip_reason=str(noised["skip_reason"]),
+            metadata={"object_index": noised.get("object_index")},
+        )
+
+    noisy_sample = replace(
+        clean_sample,
+        objects=tuple(noised["objects"]),
+    )
+    template = get_detection_template("compact_full")
+    clean_rendered = template.render_assistant(clean_sample)
+    noisy_rendered = template.render_assistant(noisy_sample)
+    clean_token_ids = _estimate_branch_token_ids(
+        swift_template=swift_template,
+        images=scene.images,
+        assistant_text=clean_rendered.text,
+        user_prompt=user_prompt,
+        system_prompt=system_prompt,
+    )
+    noisy_token_ids = _estimate_branch_token_ids(
+        swift_template=swift_template,
+        images=scene.images,
+        assistant_text=noisy_rendered.text,
+        user_prompt=user_prompt,
+        system_prompt=system_prompt,
+    )
+    clean_length = _estimate_branch_length_from_token_ids(
+        row=row,
+        swift_template=swift_template,
+        token_ids=clean_token_ids,
+    )
+    noisy_length = _estimate_branch_length_from_token_ids(
+        row=row,
+        swift_template=swift_template,
+        token_ids=noisy_token_ids,
+    )
+    if clean_length != noisy_length or len(clean_token_ids) != len(noisy_token_ids):
+        return PrefixDenoisingPackingEstimate(
+            ok=False,
+            skip_reason="clean_noisy_length_mismatch",
+            metadata={
+                "clean_length": int(clean_length),
+                "noisy_length": int(noisy_length),
+                "clean_chat_template_length": len(clean_token_ids),
+                "noisy_chat_template_length": len(noisy_token_ids),
+            },
+        )
+    tokenizer = getattr(swift_template, "tokenizer", None)
+    assistant_span = _locate_rendered_text_span(
+        token_ids=clean_token_ids,
+        rendered_text=clean_rendered.text,
+        tokenizer=tokenizer,
+    )
+    coord_positions = _locate_clean_coord_positions_in_range(
+        clean_input_ids=clean_token_ids,
+        clean_sample=clean_sample,
+        tokenizer=tokenizer,
+        start=assistant_span[0] if assistant_span is not None else 0,
+        end=assistant_span[1] if assistant_span is not None else len(clean_token_ids),
+    )
+    if coord_positions is None:
+        return PrefixDenoisingPackingEstimate(
+            ok=False,
+            skip_reason="coord_label_position_alignment_failed",
+        )
+    alignment_failure = _validate_clean_noisy_alignment(
+        clean_sample=clean_sample,
+        noisy_sample=noisy_sample,
+        clean_input_ids=clean_token_ids,
+        noisy_input_ids=noisy_token_ids,
+        clean_labels=clean_token_ids,
+        coord_positions=coord_positions,
+        tokenizer=tokenizer,
+    )
+    if alignment_failure is not None:
+        return PrefixDenoisingPackingEstimate(
+            ok=False,
+            skip_reason=alignment_failure,
+        )
+
+    total_length = int(clean_length + noisy_length)
+    if int(max_length) > 0 and total_length > int(max_length):
+        return PrefixDenoisingPackingEstimate(
+            ok=False,
+            skip_reason="overlength_hybrid_sample",
+            metadata={"total_length": total_length, "max_length": int(max_length)},
+        )
+
+    return PrefixDenoisingPackingEstimate(
+        ok=True,
+        total_length=total_length,
+        metadata={
+            "clean_length": int(clean_length),
+            "noisy_length": int(noisy_length),
+            "object_count": len(clean_sample.objects),
+        },
+    )
+
+
 def _raw_object_count(row: Mapping[str, Any]) -> int:
     objects = row.get("objects")
     if isinstance(objects, Sequence) and not isinstance(objects, (str, bytes, bytearray)):
@@ -323,6 +499,142 @@ def _build_noisy_objects(
         "objects": tuple(noisy_objects),
         "provenance": tuple(provenance),
     }
+
+
+def _estimate_branch_token_ids(
+    *,
+    swift_template: Any,
+    images: Sequence[str],
+    assistant_text: str,
+    user_prompt: str,
+    system_prompt: str | None,
+) -> list[int]:
+    tokenizer = getattr(swift_template, "tokenizer", None)
+    if tokenizer is None:
+        raise ValueError("swift_template must expose tokenizer")
+    apply_chat_template = getattr(tokenizer, "apply_chat_template", None)
+    if not callable(apply_chat_template):
+        raise ValueError(
+            "prefix-denoising fast length estimate requires "
+            "tokenizer.apply_chat_template for Qwen3-VL chat-template parity"
+        )
+    messages = build_detection_chat_messages(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        images=images,
+        assistant_text=assistant_text,
+    )
+    token_ids = apply_chat_template(
+        messages,
+        tokenize=True,
+        add_generation_prompt=False,
+        return_tensors=None,
+    )
+    if hasattr(token_ids, "tolist"):
+        token_ids = token_ids.tolist()
+    if not isinstance(token_ids, Sequence) or isinstance(
+        token_ids, (str, bytes, bytearray)
+    ):
+        raise TypeError("tokenizer.apply_chat_template must return token ids")
+    return [int(token_id) for token_id in token_ids]
+
+
+def _estimate_branch_length_from_token_ids(
+    *,
+    row: Mapping[str, Any],
+    swift_template: Any,
+    token_ids: Sequence[int],
+) -> int:
+    tokenizer = getattr(swift_template, "tokenizer", None)
+    if tokenizer is None:
+        raise ValueError("swift_template must expose tokenizer")
+    image_token_id = _image_token_id(tokenizer)
+    ids = [int(token_id) for token_id in token_ids]
+    image_placeholders = int(ids.count(image_token_id))
+    return int(
+        len(ids)
+        - image_placeholders
+        + _estimate_qwen_vl_image_tokens(row=row, swift_template=swift_template)
+    )
+
+
+def _image_token_id(tokenizer: Any) -> int:
+    convert = getattr(tokenizer, "convert_tokens_to_ids", None)
+    if not callable(convert):
+        raise ValueError("tokenizer must expose convert_tokens_to_ids")
+    token_id = convert("<|image_pad|>")
+    if token_id is None:
+        raise ValueError("tokenizer did not resolve <|image_pad|>")
+    return int(token_id)
+
+
+def _coord_tokens_single_token(tokenizer: Any) -> bool:
+    if tokenizer is None:
+        return False
+    cached = getattr(tokenizer, "_coordexp_coord_tokens_single_token", None)
+    if cached is not None:
+        return bool(cached)
+    encode = getattr(tokenizer, "encode", None)
+    if not callable(encode):
+        setattr(tokenizer, "_coordexp_coord_tokens_single_token", False)
+        return False
+    try:
+        zero = encode("<|coord_0|>", add_special_tokens=False)
+        high = encode("<|coord_999|>", add_special_tokens=False)
+    except TypeError:
+        zero = encode("<|coord_0|>")
+        high = encode("<|coord_999|>")
+    if hasattr(zero, "tolist"):
+        zero = zero.tolist()
+    if hasattr(high, "tolist"):
+        high = high.tolist()
+    ok = (
+        isinstance(zero, Sequence)
+        and not isinstance(zero, (str, bytes, bytearray))
+        and isinstance(high, Sequence)
+        and not isinstance(high, (str, bytes, bytearray))
+        and len(zero) == 1
+        and len(high) == 1
+    )
+    setattr(tokenizer, "_coordexp_coord_tokens_single_token", bool(ok))
+    return bool(ok)
+
+
+def _estimate_qwen_vl_image_tokens(
+    *,
+    row: Mapping[str, Any],
+    swift_template: Any,
+) -> int:
+    try:
+        width = int(row["width"])
+        height = int(row["height"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("prefix-denoising fast length estimate requires width/height") from exc
+    if width <= 0 or height <= 0:
+        raise ValueError("prefix-denoising fast length estimate requires positive width/height")
+    patch_size, merge_size = _resolve_qwen_vl_patch_merge(swift_template)
+    stride = int(patch_size * merge_size)
+    images = row.get("images") or ()
+    image_count = max(1, len(images) if isinstance(images, Sequence) else 1)
+    return int(math.ceil(height / stride) * math.ceil(width / stride) * image_count)
+
+
+def _resolve_qwen_vl_patch_merge(swift_template: Any) -> tuple[int, int]:
+    candidates = (
+        getattr(swift_template, "image_processor", None),
+        getattr(getattr(swift_template, "processor", None), "image_processor", None),
+        getattr(swift_template, "processor", None),
+    )
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        patch_size = getattr(candidate, "patch_size", None)
+        merge_size = getattr(candidate, "merge_size", None)
+        if merge_size is None:
+            merge_size = getattr(candidate, "spatial_merge_size", None)
+        if patch_size is not None and merge_size is not None:
+            return int(patch_size), int(merge_size)
+    return 16, 2
 
 
 def _bbox_tuple(bbox: Any) -> tuple[int, int, int, int]:
@@ -437,6 +749,74 @@ def _locate_clean_coord_positions(
                     int(clean_labels[index]) == token_id
                     and int(clean_input_ids[index]) == token_id
                 ):
+                    found = index
+                    break
+            if found is None:
+                return None
+            positions.append(found)
+            cursor = found + 1
+        object_positions.append(tuple(positions))  # type: ignore[arg-type]
+    return tuple(object_positions)
+
+
+def _locate_rendered_text_span(
+    *,
+    token_ids: Sequence[int],
+    rendered_text: str,
+    tokenizer: Any,
+) -> tuple[int, int] | None:
+    rendered_ids = _encode_text_token_ids(tokenizer, rendered_text)
+    if not rendered_ids:
+        return None
+    max_start = len(token_ids) - len(rendered_ids)
+    if max_start < 0:
+        return None
+    for start in range(max_start + 1):
+        end = start + len(rendered_ids)
+        if list(token_ids[start:end]) == rendered_ids:
+            return start, end
+    return None
+
+
+def _encode_text_token_ids(tokenizer: Any, text: str) -> list[int]:
+    if tokenizer is None:
+        return []
+    encode = getattr(tokenizer, "encode", None)
+    if not callable(encode):
+        return []
+    try:
+        ids = encode(str(text), add_special_tokens=False)
+    except TypeError:
+        ids = encode(str(text))
+    if hasattr(ids, "tolist"):
+        ids = ids.tolist()
+    if not isinstance(ids, Sequence) or isinstance(ids, (str, bytes, bytearray)):
+        return []
+    return [int(token_id) for token_id in ids]
+
+
+def _locate_clean_coord_positions_in_range(
+    *,
+    clean_input_ids: Sequence[int],
+    clean_sample: NormalizedDetectionSample,
+    tokenizer: Any,
+    start: int,
+    end: int,
+) -> tuple[tuple[int, int, int, int], ...] | None:
+    lower = max(int(start), 0)
+    upper = min(int(end), len(clean_input_ids))
+    cursor = lower
+    object_positions: list[tuple[int, int, int, int]] = []
+    for obj in clean_sample.objects:
+        positions: list[int] = []
+        for clean_bin in _bbox_tuple(obj.bbox_2d):
+            try:
+                token_id = _coord_token_id(tokenizer, int(clean_bin))
+            except ValueError:
+                return None
+            found = None
+            for index in range(cursor, upper):
+                if int(clean_input_ids[index]) == token_id:
                     found = index
                     break
             if found is None:
@@ -617,4 +997,7 @@ def _skip_sample(
     )
 
 
-__all__ = ["build_hybrid_prefix_denoising_sample"]
+__all__ = [
+    "build_hybrid_prefix_denoising_sample",
+    "estimate_hybrid_prefix_denoising_packing",
+]

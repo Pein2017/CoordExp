@@ -913,7 +913,7 @@ def test_final_checkpoint_callback_installation_tracks_configured_fallback_polic
         args=args_steps,
         train_dataset=_TinyDataset(),
     )
-    assert not hasattr(trainer_steps, trainer_steps._final_checkpoint_callback_attr)
+    assert hasattr(trainer_steps, trainer_steps._final_checkpoint_callback_attr)
 
 
 def test_non_best_followup_save_preserves_best_checkpoint_state(tmp_path: Path) -> None:

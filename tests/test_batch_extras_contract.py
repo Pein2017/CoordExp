@@ -7,11 +7,16 @@ import torch
 
 from src.metrics.dataset_metrics import GradAccumLossScaleMixin
 from src.data_collators.dataset_metrics import build_dataset_metrics_collator
+from src.detection.prefix_denoising.types import (
+    HybridPrefixDenoisingSample,
+    PrefixDenoisingSegment,
+)
 from src.trainers.batch_extras import (
     DATASET_LABELS_KEY,
     DATASET_SEGMENTS_KEY,
     INSTABILITY_META_JSON_KEY,
     PACK_NUM_SAMPLES_KEY,
+    PREFIX_DENOISING_HYBRID_KEY,
     RECURSIVE_DETECTION_TARGETS_KEY,
     TEACHER_FORCING_TARGET_IR_KEY,
     TOKEN_TYPES_KEY,
@@ -147,6 +152,49 @@ def test_teacher_forcing_target_ir_is_collated_from_unpacked_samples() -> None:
     )
 
     assert out[TEACHER_FORCING_TARGET_IR_KEY] == ("ir-a", "ir-b")
+
+
+def test_prefix_denoising_sidecar_survives_mutating_base_collator() -> None:
+    def mutating_base_collator(batch):
+        for row in batch:
+            row.pop(PREFIX_DENOISING_HYBRID_KEY, None)
+        return _base_collator(batch)
+
+    clean = PrefixDenoisingSegment(
+        segment_id="sample.clean",
+        branch_id="clean_full",
+        input_ids=(1, 2),
+        labels=(-100, 2),
+        attention_mask=(1, 1),
+        supervised_positions=(1,),
+        ce_denominator=1,
+    )
+    noisy = PrefixDenoisingSegment(
+        segment_id="sample.noisy",
+        branch_id="noisy_full",
+        input_ids=(1, 3),
+        labels=(-100, 2),
+        attention_mask=(1, 1),
+        supervised_positions=(1,),
+        ce_denominator=1,
+    )
+    hybrid = HybridPrefixDenoisingSample(
+        ok=True,
+        hybrid_sample_id="sample",
+        base_sample_id="base",
+        clean_full=clean,
+        noisy_full=noisy,
+    )
+    row = {"dataset": "coco", PREFIX_DENOISING_HYBRID_KEY: hybrid}
+    collator = build_dataset_metrics_collator(
+        _DummyTemplate(),
+        mutating_base_collator,
+    )
+
+    out = collator([row])
+
+    assert PREFIX_DENOISING_HYBRID_KEY not in row
+    assert out[PREFIX_DENOISING_HYBRID_KEY] == (hybrid,)
 
 
 def test_teacher_forcing_target_ir_collates_sample_id_sidecar_from_raw_batch() -> None:

@@ -1035,7 +1035,11 @@ class FinalCheckpointMixin:
     def _save_strategy_requires_final_checkpoint_fallback(save_strategy) -> bool:
         """Return True when upstream may skip the terminal checkpoint save."""
 
-        return save_strategy == SaveStrategy.BEST
+        return save_strategy in {
+            SaveStrategy.BEST,
+            SaveStrategy.STEPS,
+            SaveStrategy.EPOCH,
+        }
 
     def _maybe_save_final_checkpoint(  # noqa: PLR0912
         self,

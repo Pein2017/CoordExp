@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import copy
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from src.config.loader import ConfigLoader
 from src.config.schema import DetectionTrainingConfig
 import src.detection.dataset as detection_dataset_mod
 from src.detection.dataset import DetectionTrainingDataset
 from src.detection.runtime import (
     assert_detection_runtime_supported,
     detection_mode,
+    resolve_detection_prompts,
 )
 
 
@@ -184,6 +187,44 @@ def test_prefix_denoising_detection_mode_is_distinct_from_random_order_sft() -> 
     cfg = _load(_prefix_denoising_payload())
 
     assert detection_mode(cfg) == "prefix_denoising_sft"
+
+
+def test_prefix_denoising_compact_prompt_matches_marker_delimited_rows() -> None:
+    cfg = _load(_prefix_denoising_payload())
+
+    _system_prompt, user_prompt = resolve_detection_prompts(cfg)
+
+    assert "concatenate rows directly with no separator" in user_prompt
+    assert "do not insert newline characters" in user_prompt
+    assert "single newline" not in user_prompt
+
+
+def test_prefix_denoising_production_leaf_resolves_base_sorted_val512() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    payload = ConfigLoader.load_yaml_with_extends(
+        str(
+            repo_root
+            / "configs/stage1/detection_teacher_forcing/prod/"
+            "compact_full_prefix_denoising_kl_w0p05_2b_base_sorted_2epoch.yaml"
+        )
+    )
+    cfg = _load(payload)
+
+    assert (
+        cfg.model["model"]
+        == "/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp"
+    )
+    assert cfg.model.get("adapters") in (None, [])
+    assert cfg.training["num_train_epochs"] == 2
+    assert cfg.training["dataloader_num_workers"] == 0
+    assert cfg.training["dataloader_pin_memory"] is False
+    assert cfg.training["dataloader_persistent_workers"] is False
+    assert cfg.training["dataloader_prefetch_factor"] is None
+    assert cfg.training["eval_packing"] is False
+    assert cfg.data.object_ordering == "sorted"
+    assert cfg.debug.enabled is True
+    assert cfg.debug.val_sample_limit == 512
+    assert cfg.prefix_denoising.current_object_kl.weight == pytest.approx(0.05)
 
 
 def test_prefix_denoising_dataset_materialization_fails_before_teacher_forcing_builder(

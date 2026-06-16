@@ -22,6 +22,7 @@ CompactFullSerializationPolicy = Literal[
 ]
 CompactFullParseMode = Literal[
     "marker_delimited_strict",
+    "marker_delimited_axis_sort_repair",
     "legacy_compatible",
 ]
 CompactFullParseErrorCode = Literal[
@@ -97,7 +98,7 @@ def parse_compact_full(
     if not isinstance(text, str):
         raise TypeError("text must be a string")
 
-    if parse_mode == "marker_delimited_strict":
+    if parse_mode in {"marker_delimited_strict", "marker_delimited_axis_sort_repair"}:
         return _parse_marker_delimited_strict(text, mode=parse_mode)
     return _parse_legacy_compatible(text, mode=parse_mode)
 
@@ -226,6 +227,8 @@ def _parse_one_object(
         return _error(mode, "wrong_coord_arity", coord_index)
 
     bbox = cast(tuple[str, str, str, str], tuple(bbox_tokens))
+    if mode == "marker_delimited_axis_sort_repair":
+        bbox = _axis_sort_bbox_tokens(bbox)
     if not valid_xyxy_positive_area(bbox):
         return _error(mode, "invalid_geometry", box_start + len(BOX_START_TOKEN))
 
@@ -295,6 +298,27 @@ def _validate_bbox_tokens(value: Any) -> tuple[str, str, str, str]:
     return bbox
 
 
+def _axis_sort_bbox_tokens(
+    bbox: tuple[str, str, str, str],
+) -> tuple[str, str, str, str]:
+    x1, y1, x2, y2 = (_coord_token_value(token) for token in bbox)
+    sx1, sx2 = sorted((x1, x2))
+    sy1, sy2 = sorted((y1, y2))
+    return (
+        f"<|coord_{sx1}|>",
+        f"<|coord_{sy1}|>",
+        f"<|coord_{sx2}|>",
+        f"<|coord_{sy2}|>",
+    )
+
+
+def _coord_token_value(token: str) -> int:
+    match = STRICT_COMPACT_ROW_COORD_TOKEN_RE.fullmatch(str(token))
+    if match is None:
+        raise ValueError(f"invalid coordinate token: {token!r}")
+    return int(match.group(1))
+
+
 def _strip_generation_terminal(text: str) -> tuple[str, str | None]:
     im_end_pos = text.find(IM_END_TOKEN)
     if im_end_pos >= 0:
@@ -321,10 +345,16 @@ def _normalize_serialization_policy(value: str) -> CompactFullSerializationPolic
 
 def _normalize_parse_mode(value: str) -> CompactFullParseMode:
     normalized = str(value).strip().lower().replace("-", "_").replace(" ", "_")
-    if normalized not in {"marker_delimited_strict", "legacy_compatible"}:
+    if normalized not in {
+        "marker_delimited_strict",
+        "marker_delimited_axis_sort_repair",
+        "legacy_compatible",
+    }:
         raise ValueError(
             "compact_full parse mode must be one of "
-            "{'marker_delimited_strict', 'legacy_compatible'}"
+            "{'marker_delimited_strict', "
+            "'marker_delimited_axis_sort_repair', "
+            "'legacy_compatible'}"
         )
     return cast(CompactFullParseMode, normalized)
 

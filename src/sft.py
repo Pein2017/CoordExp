@@ -3028,7 +3028,10 @@ def main():
         )
 
         logger.info(
-            "Packing unit semantics: one per-device dataloader item equals one packed sequence; effective_batch_size is interpreted in packed-sequence units."
+            "Packing unit semantics: one per-device dataloader item equals one "
+            "packed sequence for sampling/accumulation. Prefix-denoising V1 "
+            "replays clean/noisy branch sidecars as isolated model forwards "
+            "inside the objective."
         )
 
         train_dataloader_shuffle = bool(

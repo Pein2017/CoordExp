@@ -1,0 +1,24 @@
+extends:
+  - ./compact_full_prefix_denoising_kl_w0p05_2b_base_sorted_2epoch.yaml
+
+# Continuation-style probe for prefix-denoising SFT V1.
+#
+# This is intentionally not an HF Trainer resume: checkpoint-450 from the first
+# production run was saved as an artifact-only adapter checkpoint, without
+# optimizer/scheduler/RNG state.  This leaf loads that adapter over the same 2B
+# coord base model and trains a fresh additional 2 epochs with the same data,
+# objective, packing, and scheduler shape.
+
+model:
+  model: /data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+  adapters:
+    - /data/CoordExp/outputs/stage1_2b/detection_teacher_forcing/compact_full_prefix_denoising_kl_w0p05_2b_base_sorted_marker_bsz1x128_2epoch/compact-full-prefix-denoising-kl-w0p05-2b-base-sorted-marker-bsz1x128-2epoch/v25-20260615-124531/checkpoint-450
+
+training:
+  artifact_subdir: compact_full_prefix_denoising_kl_w0p05_2b_base_sorted_marker_ckpt450_adapter_plus2epoch
+  run_name: compact-full-prefix-denoising-kl-w0p05-2b-base-sorted-marker-ckpt450-adapter-plus2epoch
+  num_train_epochs: 2
+  learning_rate: 1.0e-5
+
+token_rows:
+  embed_lr: 1.0e-5

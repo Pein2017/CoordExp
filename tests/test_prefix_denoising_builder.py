@@ -4,13 +4,16 @@ import logging
 import random
 import re
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Mapping
 
 import pytest
 
+import src.detection.prefix_denoising.dataset as prefix_dataset_mod
 from src.config.schema import PrefixDenoisingConfig
 from src.detection.prefix_denoising.builder import (
     build_hybrid_prefix_denoising_sample,
+    estimate_hybrid_prefix_denoising_packing,
 )
 from src.detection.prefix_denoising.dataset import (
     PrefixDenoisingTrainingDataset,
@@ -22,6 +25,8 @@ _COORD_RE = re.compile(r"<\|coord_(\d+)\|>")
 
 
 class FakeTokenizer:
+    image_token_id = 999_999
+
     def encode(self, text: str, *args: object, **kwargs: object) -> list[int]:
         del args, kwargs
         if match := _COORD_RE.fullmatch(text):
@@ -36,7 +41,45 @@ class FakeTokenizer:
         return ids
 
     def convert_tokens_to_ids(self, token: str) -> int:
+        if token == "<|image_pad|>":
+            return self.image_token_id
         return self.encode(token)[0]
+
+    def apply_chat_template(
+        self,
+        messages: list[dict[str, object]],
+        *,
+        tokenize: bool,
+        add_generation_prompt: bool,
+        return_tensors: object | None = None,
+    ) -> list[int] | str:
+        del add_generation_prompt, return_tensors
+        parts: list[str] = []
+        for message in messages:
+            parts.append(f"<{message['role']}>")
+            content = message["content"]
+            if isinstance(content, list):
+                for item in content:
+                    if not isinstance(item, Mapping):
+                        continue
+                    if item.get("type") == "image":
+                        parts.append("<|image_pad|>")
+                    elif item.get("type") == "text":
+                        parts.append(str(item.get("text", "")))
+            else:
+                parts.append(str(content))
+        text = "".join(parts)
+        if not tokenize:
+            return text
+        ids: list[int] = []
+        cursor = 0
+        image_token = "<|image_pad|>"
+        for match in re.finditer(re.escape(image_token), text):
+            ids.extend(self.encode(text[cursor : match.start()]))
+            ids.append(self.image_token_id)
+            cursor = match.end()
+        ids.extend(self.encode(text[cursor:]))
+        return ids
 
     def _coord_ids(self, coord_bin: int) -> list[int]:
         return [int(coord_bin)]
@@ -47,18 +90,51 @@ class MultiTokenCoordTokenizer(FakeTokenizer):
         return [int(coord_bin), int(coord_bin) + 1_000]
 
 
+class NoisyNonCoordDriftTokenizer(FakeTokenizer):
+    def apply_chat_template(
+        self,
+        messages: list[dict[str, object]],
+        *,
+        tokenize: bool,
+        add_generation_prompt: bool,
+        return_tensors: object | None = None,
+    ) -> list[int] | str:
+        rendered = super().apply_chat_template(
+            messages,
+            tokenize=tokenize,
+            add_generation_prompt=add_generation_prompt,
+            return_tensors=return_tensors,
+        )
+        if not tokenize:
+            return rendered
+        assistant_text = str(messages[-1]["content"])
+        if "<|coord_100|>" not in assistant_text:
+            ids = list(rendered)
+            for index, token_id in enumerate(ids):
+                if int(token_id) >= 10_000 and int(token_id) != self.image_token_id:
+                    ids[index] = int(token_id) + 1
+                    break
+            return ids
+        return rendered
+
+
 class FakeTemplate:
     tokenizer_cls = FakeTokenizer
 
     def __init__(self) -> None:
         self.tokenizer = self.tokenizer_cls()
+        self.image_processor = SimpleNamespace(patch_size=1000, merge_size=1000)
 
     def encode(
         self, payload: Mapping[str, Any], *args: object, **kwargs: object
     ) -> dict[str, Any]:
         del args, kwargs
-        content = str(payload["messages"][-1]["content"])
-        input_ids = self.tokenizer.encode(content)
+        input_ids = self.tokenizer.apply_chat_template(
+            list(payload["messages"]),
+            tokenize=True,
+            add_generation_prompt=False,
+            return_tensors=None,
+        )
         return {
             "input_ids": list(input_ids),
             "labels": list(input_ids),
@@ -71,18 +147,15 @@ class MultiTokenCoordTemplate(FakeTemplate):
 
 
 class NoisyNonCoordDriftTemplate(FakeTemplate):
-    def encode(
-        self, payload: Mapping[str, Any], *args: object, **kwargs: object
-    ) -> dict[str, Any]:
-        encoded = super().encode(payload, *args, **kwargs)
-        content = str(payload["messages"][-1]["content"])
-        if "<|coord_100|>" not in content:
-            for index, token_id in enumerate(encoded["input_ids"]):
-                if int(token_id) >= 10_000:
-                    encoded["input_ids"][index] = int(token_id) + 1
-                    encoded["labels"][index] = int(token_id) + 1
-                    break
-        return encoded
+    tokenizer_cls = NoisyNonCoordDriftTokenizer
+
+
+class LegacyAssistantOnlyTokenizer(FakeTokenizer):
+    apply_chat_template = None
+
+
+class LegacyAssistantOnlyTemplate(FakeTemplate):
+    tokenizer_cls = LegacyAssistantOnlyTokenizer
 
 
 class ShortAttentionMaskTemplate(FakeTemplate):
@@ -176,6 +249,41 @@ def test_hybrid_builder_emits_two_segments_and_clean_labels(tmp_path: Path) -> N
     }
     assert diff_positions == coord_positions
     assert sample.kl_sites == ()
+
+
+def test_fast_packing_estimate_matches_full_hybrid_length(tmp_path: Path) -> None:
+    _touch_image(tmp_path)
+    cfg = PrefixDenoisingConfig.from_mapping({"enabled": True})
+    template = FakeTemplate()
+    row = _row()
+    rng_seed = 5
+
+    sample = build_hybrid_prefix_denoising_sample(
+        row,
+        base_sample_id="unit-0",
+        image_root=tmp_path,
+        swift_template=template,
+        user_prompt="find objects",
+        system_prompt=None,
+        prefix_denoising=cfg,
+        epoch=0,
+        rng=random.Random(rng_seed),
+        max_length=12000,
+    )
+    estimate = estimate_hybrid_prefix_denoising_packing(
+        row,
+        image_root=tmp_path,
+        swift_template=template,
+        user_prompt="find objects",
+        system_prompt=None,
+        prefix_denoising=cfg,
+        rng=random.Random(rng_seed),
+        max_length=12000,
+    )
+
+    assert sample.ok is True
+    assert estimate.ok is True
+    assert estimate.total_length == sample.total_length
 
 
 def test_hybrid_builder_accepts_coord_token_bbox_rows(tmp_path: Path) -> None:
@@ -361,6 +469,42 @@ def test_noising_infeasible_rows_are_counted_as_sample_policy_skips(
     assert eligibility["skip_counters"] == {"noise_infeasible_4coord_changed": 1}
 
 
+def test_eligibility_precompute_does_not_materialize_full_hybrid_samples(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _touch_image(tmp_path)
+    cfg = PrefixDenoisingConfig.from_mapping({"enabled": True})
+
+    def _unexpected_full_build(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError(
+            "eligibility precompute should use metadata/text length estimation, "
+            "not full branch materialization"
+        )
+
+    monkeypatch.setattr(
+        prefix_dataset_mod,
+        "build_hybrid_prefix_denoising_sample",
+        _unexpected_full_build,
+    )
+
+    eligibility = build_prefix_denoising_eligibility_index(
+        [_row()],
+        swift_template=FakeTemplate(),
+        image_root=tmp_path,
+        user_prompt="find objects",
+        system_prompt=None,
+        prefix_denoising=cfg,
+        max_length=12000,
+        dataset_name="unit",
+        seed=17,
+    )
+
+    assert eligibility["eligible_indices"] == (0,)
+    assert eligibility["skip_counters"] == {}
+    assert eligibility["static_lengths"][0] > 0
+
+
 @pytest.mark.parametrize(
     "bbox",
     [
@@ -479,6 +623,59 @@ def test_noncoord_noisy_input_drift_is_rejected(tmp_path: Path) -> None:
 
     assert sample.ok is False
     assert sample.skip_reason == "clean_noisy_noncoord_alignment_failed"
+
+
+def test_fast_packing_estimate_rejects_noncoord_noisy_input_drift(
+    tmp_path: Path,
+) -> None:
+    _touch_image(tmp_path)
+
+    estimate = estimate_hybrid_prefix_denoising_packing(
+        _row(),
+        image_root=tmp_path,
+        swift_template=NoisyNonCoordDriftTemplate(),
+        user_prompt="find objects",
+        system_prompt=None,
+        prefix_denoising=PrefixDenoisingConfig.from_mapping({"enabled": True}),
+        rng=random.Random(5),
+        max_length=12000,
+    )
+
+    assert estimate.ok is False
+    assert estimate.skip_reason == "clean_noisy_noncoord_alignment_failed"
+
+
+def test_fast_packing_estimate_ignores_coord_tokens_in_prompt(tmp_path: Path) -> None:
+    _touch_image(tmp_path)
+
+    estimate = estimate_hybrid_prefix_denoising_packing(
+        _row(),
+        image_root=tmp_path,
+        swift_template=FakeTemplate(),
+        user_prompt="format example <|coord_100|> before real answer",
+        system_prompt=None,
+        prefix_denoising=PrefixDenoisingConfig.from_mapping({"enabled": True}),
+        rng=random.Random(5),
+        max_length=12000,
+    )
+
+    assert estimate.ok is True
+
+
+def test_fast_packing_estimate_requires_qwen_chat_template(tmp_path: Path) -> None:
+    _touch_image(tmp_path)
+
+    with pytest.raises(ValueError, match="apply_chat_template"):
+        estimate_hybrid_prefix_denoising_packing(
+            _row(),
+            image_root=tmp_path,
+            swift_template=LegacyAssistantOnlyTemplate(),
+            user_prompt="find objects",
+            system_prompt=None,
+            prefix_denoising=PrefixDenoisingConfig.from_mapping({"enabled": True}),
+            rng=random.Random(5),
+            max_length=12000,
+        )
 
 
 def test_short_attention_mask_raises_template_contract_error(tmp_path: Path) -> None:

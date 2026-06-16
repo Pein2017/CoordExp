@@ -97,7 +97,27 @@ The prefix-denoising objective then replays the clean and noisy branches as
 isolated model forwards before computing CE/KL, so the noisy branch cannot
 attend to clean answer tokens from the same packed item. V1 keeps
 `training.eval_packing: false` and requires encoded sample cache disabled. The
-retired recursive-detection config root is archived under
+prefix-denoising route owns a pre-static-packing eligibility cache under
+`training.static_packing_cache.root_dir/prefix_denoising_eligibility/` when that
+root is configured. Rank 0 materializes `progress.json` and `eligibility.json`;
+nonzero ranks wait for the completed cache. This root must be a shared
+experiment-family cache root, not a per-run output directory; changing checkpoint
+cadence, run name, or artifact subdir must not fork the data/packing cache. The
+root name should also avoid loss-only labels such as `kl_w0p05` when those
+ablations share the same data/template/noise/length semantics. The
+eligibility pass estimates exact hybrid sample lengths from row metadata, compact
+text rendering, tokenizer chat template ids, and deterministic Qwen-VL
+visual-token counts, avoiding full clean/noisy branch materialization and
+multimodal encoding during the pre-static packing scan. After that cache is
+ready, the normal static packing length/plan cache is built or loaded. Its
+fingerprint includes the rendered prompt surface, Swift chat-template id/text
+hash, Qwen-VL patch/merge visual-token shape, and the fast-estimator schema
+version so research prompt/template changes do not reuse a stale eligibility
+index. Rank 0 may reuse an existing eligibility cache with identical admission
+and static-length semantics when only loss/checkpoint/trial-only fields differ,
+then writes an exact-fingerprint alias for other ranks. The retired
+recursive-detection config root is
+archived under
 `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/`
 for historical evidence only. Expected-failure packing examples belong under an
 explicit `contract_failures/` or fixture location, not under positive `smoke/`

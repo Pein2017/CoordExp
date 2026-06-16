@@ -137,6 +137,27 @@ def test_legacy_parser_mode_requires_explicit_legacy_namespace(
     assert config.raw["metadata"]["compatibility_namespace"] == "legacy"
 
 
+def test_axis_sort_repair_parser_mode_is_diagnostic_without_legacy_namespace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _base_pipeline_cfg(tmp_path)
+    infer_cfg = cfg["infer"]
+    assert isinstance(infer_cfg, dict)
+    infer_cfg["parsing"] = {
+        "compact_full": {"mode": "marker_delimited_axis_sort_repair"}
+    }
+
+    config = _load_infer_config(tmp_path, monkeypatch, cfg)
+
+    assert config.raw["infer"]["parsing"]["compact_full"]["mode"] == (
+        "marker_delimited_axis_sort_repair"
+    )
+    assert config.captured["compact_full_parse_mode"] == (
+        "marker_delimited_axis_sort_repair"
+    )
+
+
 def test_parse_artifact_records_policy_and_separator() -> None:
     marker_output_with_two_objects = (
         _compact_row("cat", 1, 2, 10, 20)
@@ -173,6 +194,28 @@ def test_parse_artifact_records_policy_and_separator() -> None:
                 "<|coord_90|>",
             ],
         },
+    ]
+
+
+def test_parse_artifact_axis_sort_repair_records_repaired_payload() -> None:
+    artifact = parse_compact_full_output_artifact(
+        _compact_row("cat", 10, 20, 1, 2),
+        parse_mode="marker_delimited_axis_sort_repair",
+    )
+
+    assert artifact["parse_mode"] == "marker_delimited_axis_sort_repair"
+    assert artifact["serialization_policy"] == "marker_delimited"
+    assert artifact["parse_error_code"] is None
+    assert artifact["raw_output_json"]["objects"] == [
+        {
+            "desc": "cat",
+            "bbox_2d": [
+                "<|coord_1|>",
+                "<|coord_2|>",
+                "<|coord_10|>",
+                "<|coord_20|>",
+            ],
+        }
     ]
 
 

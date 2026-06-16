@@ -90,6 +90,33 @@ def test_marker_parser_allows_next_object_or_im_end_after_four_coords() -> None:
     assert result.terminal_token == "<|im_end|>"
 
 
+def test_axis_sort_repair_parser_canonicalizes_inverted_xyxy() -> None:
+    result = parse_compact_full(
+        f"{OBJECT_REF_START_TOKEN}person{BOX_START_TOKEN}"
+        "<|coord_30|><|coord_40|><|coord_10|><|coord_20|>",
+        mode="marker_delimited_axis_sort_repair",
+    )
+
+    assert result.ok
+    assert result.objects[0].bbox_2d == [
+        "<|coord_10|>",
+        "<|coord_20|>",
+        "<|coord_30|>",
+        "<|coord_40|>",
+    ]
+    assert result.mode == "marker_delimited_axis_sort_repair"
+
+
+def test_axis_sort_repair_parser_still_rejects_degenerate_bbox() -> None:
+    result = parse_compact_full(
+        f"{OBJECT_REF_START_TOKEN}person{BOX_START_TOKEN}"
+        "<|coord_10|><|coord_20|><|coord_10|><|coord_40|>",
+        mode="marker_delimited_axis_sort_repair",
+    )
+
+    assert result.error_code == "invalid_geometry"
+
+
 @pytest.mark.parametrize(
     ("text", "error_code"),
     [

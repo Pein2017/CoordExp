@@ -17,6 +17,7 @@ from src.detection.teacher_forcing.compact_full_policy import (
 ParserMode = Literal[
     "strict_expected",
     "marker_delimited_strict",
+    "marker_delimited_axis_sort_repair",
     "legacy_compatible",
     "diagnostic_auto_detect",
     "diagnostic_salvage",
@@ -34,6 +35,7 @@ _SUPPORTED_PARSER_MODES = frozenset(
     {
         "strict_expected",
         "marker_delimited_strict",
+        "marker_delimited_axis_sort_repair",
         "legacy_compatible",
         "diagnostic_auto_detect",
         "diagnostic_salvage",
@@ -118,7 +120,11 @@ def parse_detection_output_strict_expected(
     if template.template_id == "compact_full":
         if parser_mode == "strict_expected":
             parser_mode = "marker_delimited_strict"
-        if parser_mode not in {"marker_delimited_strict", "legacy_compatible"}:
+        if parser_mode not in {
+            "marker_delimited_strict",
+            "marker_delimited_axis_sort_repair",
+            "legacy_compatible",
+        }:
             raise ValueError(
                 f"Unsupported detection parser_mode for metrics: {parser_mode!r}"
             )
@@ -157,6 +163,7 @@ def build_detection_template_eval_manifest(
     if parser_mode in {
         "strict_expected",
         "marker_delimited_strict",
+        "marker_delimited_axis_sort_repair",
         "legacy_compatible",
     }:
         if template.template_id != "compact_full" and parser_mode != "strict_expected":
@@ -237,12 +244,15 @@ def _strip_compact_terminal_and_padding(text: str) -> str:
 def _metric_parser_mode(parser_mode: str) -> Literal[
     "strict_expected",
     "marker_delimited_strict",
+    "marker_delimited_axis_sort_repair",
     "legacy_compatible",
 ]:
     if parser_mode == "strict_expected":
         return "strict_expected"
     if parser_mode == "marker_delimited_strict":
         return "marker_delimited_strict"
+    if parser_mode == "marker_delimited_axis_sort_repair":
+        return "marker_delimited_axis_sort_repair"
     if parser_mode == "legacy_compatible":
         return "legacy_compatible"
     raise ValueError(f"Unsupported detection parser_mode: {parser_mode!r}")

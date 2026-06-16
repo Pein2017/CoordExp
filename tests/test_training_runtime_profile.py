@@ -56,6 +56,9 @@ class _SwiftLikeTrainer:
     def _get_data_collator(self, args, template):
         return "base-collator"
 
+    def _get_collator_with_removed_columns(self, data_collator, description=None):
+        return ("removed-columns", data_collator, description)
+
 
 _SwiftLikeTrainer.__module__ = "swift.fake"
 
@@ -137,6 +140,38 @@ def test_instantiate_trainer_injects_collator_via_swift_factory() -> None:
     )
 
     assert trainer.data_collator is collator
+
+
+def test_prefix_denoising_eval_preserves_injected_collator_columns() -> None:
+    collator = object()
+
+    trainer = instantiate_trainer(
+        trainer_cls=_SwiftLikeTrainer,
+        sft_model="model",
+        training_args=SimpleNamespace(),
+        data_collator=collator,
+        dataset=["train"],
+        eval_dataset=["eval"],
+        callbacks=[],
+        template=SimpleNamespace(),
+        trainer_kwargs={},
+        heartbeat_writer=None,
+    )
+
+    assert trainer._get_collator_with_removed_columns(  # noqa: SLF001
+        trainer.data_collator,
+        description="Evaluation",
+    )[0] == "removed-columns"
+
+    trainer.prefix_denoising_cfg = SimpleNamespace(enabled=True)
+
+    assert (
+        trainer._get_collator_with_removed_columns(  # noqa: SLF001
+            trainer.data_collator,
+            description="Evaluation",
+        )
+        is collator
+    )
 
 
 def test_instantiate_trainer_preserves_plain_hf_collator_path() -> None:

@@ -60,8 +60,10 @@ class HeartbeatDataCollator:
         self.base_collator = base_collator
         self.writer = writer
         self._first_collate_emitted = False
+        self._debug_collate_count = 0
 
     def __call__(self, features: Any) -> Any:
+        feature_debug = _collate_value_debug(features)
         if not self._first_collate_emitted:
             feature_count = None
             try:
@@ -70,7 +72,58 @@ class HeartbeatDataCollator:
                 feature_count = None
             self.writer.emit("first_batch_collate", feature_count=feature_count)
             self._first_collate_emitted = True
-        return self.base_collator(features)
+        collated = self.base_collator(features)
+        collated_debug = _collate_value_debug(collated)
+        should_emit_debug = self._debug_collate_count < 8
+        should_emit_debug = should_emit_debug or (
+            _debug_has_key(feature_debug, "prefix_denoising_hybrid")
+            and not _debug_has_key(collated_debug, "prefix_denoising_hybrid")
+        )
+        if should_emit_debug:
+            self.writer.emit(
+                "collate_debug",
+                collate_index=self._debug_collate_count,
+                features=feature_debug,
+                collated=collated_debug,
+            )
+        self._debug_collate_count += 1
+        return collated
+
+
+def _collate_value_debug(value: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {"type": type(value).__qualname__}
+    try:
+        payload["len"] = int(len(value))
+    except Exception:
+        pass
+    if isinstance(value, Mapping):
+        keys = sorted(str(key) for key in value.keys())
+        payload["keys"] = keys
+        return payload
+    if isinstance(value, (list, tuple)):
+        first = value[0] if value else None
+        payload["first_type"] = type(first).__qualname__
+        if isinstance(first, Mapping):
+            payload["first_keys"] = sorted(str(key) for key in first.keys())
+        elif isinstance(first, (list, tuple)):
+            payload["first_len"] = len(first)
+            nested = first[0] if first else None
+            payload["first_first_type"] = type(nested).__qualname__
+            if isinstance(nested, Mapping):
+                payload["first_first_keys"] = sorted(str(key) for key in nested.keys())
+        return payload
+    return payload
+
+
+def _debug_has_key(payload: Mapping[str, Any], key: str) -> bool:
+    keys = payload.get("keys")
+    if isinstance(keys, list) and key in keys:
+        return True
+    first_keys = payload.get("first_keys")
+    if isinstance(first_keys, list) and key in first_keys:
+        return True
+    first_first_keys = payload.get("first_first_keys")
+    return isinstance(first_first_keys, list) and key in first_first_keys
 
 
 class TrainHeartbeatCallback(TrainerCallback):

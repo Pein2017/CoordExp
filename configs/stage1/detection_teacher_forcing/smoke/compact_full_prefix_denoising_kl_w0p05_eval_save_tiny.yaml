@@ -1,0 +1,33 @@
+extends:
+  - ../prod/compact_full_prefix_denoising_kl_w0p05_2b_base_sorted_2epoch.yaml
+  - ./common_prodlike.yaml
+
+# Production-shaped prefix-denoising eval/save preflight.
+# This intentionally keeps eval_strategy=steps and save_strategy=steps so it
+# crosses the same Trainer eval boundary that production uses.
+
+training:
+  artifact_subdir: compact_full_prefix_denoising_kl_w0p05_eval_save_tiny
+  run_name: smoke-compact-full-prefix-denoising-kl-w0p05-eval-save-tiny
+  max_steps: 2
+  num_train_epochs: 1
+  per_device_train_batch_size: 1
+  effective_batch_size: 8
+  per_device_eval_batch_size: 1
+  eval_strategy: steps
+  eval_steps: 1
+  save_strategy: steps
+  save_steps: 1
+  save_delay_steps: 0
+  save_total_limit: 2
+  save_last_epoch: true
+  packing_min_fill_ratio: 0.1
+  packing_drop_last: false
+  packing_length_precompute_workers: 1
+  static_packing_cache:
+    root_dir: temp/static_packing_smoke/prefix_denoising_eval_save_tiny
+
+debug:
+  enabled: true
+  train_sample_limit: 64
+  val_sample_limit: 16

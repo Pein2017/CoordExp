@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Literal, Mapping, cast
 
-from src.config.prompts import get_template_prompts
+from src.config.prompts import COMPACT_ROW_SEPARATOR_NONE, get_template_prompts
 from src.config.schema import (
     CoordOffsetConfig,
     CoordTokensConfig,
@@ -17,6 +17,9 @@ from src.config.schema import (
 from src.detection.dataset import DetectionTrainingDataset
 from src.detection.coord_soft_targets import CoordSoftTargetRuntimeConfig
 from src.detection.prefix_denoising import PrefixDenoisingTrainingDataset
+from src.detection.prefix_denoising.builder import (
+    prefix_denoising_fast_estimator_fingerprint,
+)
 from src.detection.tokenizer_contract import resolve_compact_training_stop_contract
 
 DetectionRuntimeMode = Literal[
@@ -101,13 +104,20 @@ def resolve_detection_prompts(
         if training_config.data.object_ordering == "random_permutation"
         else "sorted"
     )
+    sequence_format = detection_sequence_format(training_config)
+    row_separator = (
+        COMPACT_ROW_SEPARATOR_NONE
+        if sequence_format == "compact_full"
+        else None
+    )
     return get_template_prompts(
         ordering=ordering,
         coord_mode="coord_tokens",
         prompt_variant=detection_prompt_variant(training_config),
         object_field_order=str(object_field_order),
         bbox_format=str(training_config.detection_template.bbox_format),
-        detection_sequence_format=detection_sequence_format(training_config),
+        detection_sequence_format=sequence_format,
+        row_separator=row_separator,
     )
 
 
@@ -501,6 +511,7 @@ def build_detection_dataset(
 ) -> DetectionTrainingDataset | PrefixDenoisingTrainingDataset:
     prefix_denoising = getattr(training_config, "prefix_denoising", None)
     if getattr(prefix_denoising, "enabled", False):
+        max_length = _resolve_detection_max_length(training_config)
         return PrefixDenoisingTrainingDataset.from_jsonl(
             jsonl_path,
             swift_template=swift_template,
@@ -508,10 +519,21 @@ def build_detection_dataset(
             user_prompt=custom_config.user_prompt,
             system_prompt=system_prompt,
             prefix_denoising=prefix_denoising,
-            max_length=_resolve_detection_max_length(training_config),
+            max_length=max_length,
             seed=seed,
             sample_limit=sample_limit,
             dataset_name=dataset_name,
+            **_prefix_denoising_eligibility_cache_kwargs(
+                jsonl_path=jsonl_path,
+                swift_template=swift_template,
+                training_config=training_config,
+                custom_config=custom_config,
+                system_prompt=system_prompt,
+                max_length=max_length,
+                seed=seed,
+                sample_limit=sample_limit,
+                dataset_name=dataset_name,
+            ),
         )
 
     type_gate_config = None
@@ -565,6 +587,113 @@ def _resolve_detection_max_length(training_config: DetectionTrainingConfig) -> i
         "prefix_denoising dataset construction requires global_max_length "
         "or template.max_length"
     )
+
+
+def _prefix_denoising_eligibility_cache_kwargs(
+    *,
+    jsonl_path: str | Path,
+    swift_template: Any,
+    training_config: DetectionTrainingConfig,
+    custom_config: Any,
+    system_prompt: str | None,
+    max_length: int,
+    seed: int,
+    sample_limit: int | None,
+    dataset_name: str,
+) -> dict[str, Any]:
+    training = getattr(training_config, "training", {}) or {}
+    if not isinstance(training, Mapping):
+        return {}
+    if not bool(training.get("packing", False)):
+        return {}
+    static_cache = training.get("static_packing_cache") or {}
+    if not isinstance(static_cache, Mapping):
+        return {}
+    root_dir = static_cache.get("root_dir")
+    if root_dir in (None, ""):
+        return {}
+
+    path = Path(jsonl_path).expanduser().resolve(strict=False)
+    try:
+        stat_result = path.stat()
+        jsonl_size = int(stat_result.st_size)
+        jsonl_mtime_ns = int(stat_result.st_mtime_ns)
+    except OSError:
+        jsonl_size = None
+        jsonl_mtime_ns = None
+
+    workers_raw = training.get("packing_length_precompute_workers", 1)
+    try:
+        workers = int(workers_raw)
+    except (TypeError, ValueError):
+        workers = 1
+    workers = max(workers, 1)
+
+    wait_raw = training.get("packing_wait_timeout_s", 7200.0)
+    try:
+        wait_timeout_s = float(wait_raw)
+    except (TypeError, ValueError):
+        wait_timeout_s = 7200.0
+
+    prefix_denoising = getattr(training_config, "prefix_denoising", None)
+    detection_template = getattr(training_config, "detection_template", None)
+    noise = getattr(prefix_denoising, "noise", None)
+    kl = getattr(prefix_denoising, "current_object_kl", None)
+    fingerprint = {
+        "schema_version": "prefix_denoising_runtime_eligibility_v1",
+        "dataset_jsonl": str(path),
+        "dataset_jsonl_size": jsonl_size,
+        "dataset_jsonl_mtime_ns": jsonl_mtime_ns,
+        "dataset_split": str(dataset_name),
+        "sample_limit": sample_limit,
+        "image_root": str(
+            Path(str(training_config.data.image_root))
+            .expanduser()
+            .resolve(strict=False)
+        ),
+        "user_prompt": str(custom_config.user_prompt),
+        "system_prompt": system_prompt,
+        "seed": int(seed),
+        "max_length": int(max_length),
+        "template": {
+            "max_length": training_config.template.get("max_length"),
+            "chat_template": training_config.template.get("template"),
+        },
+        "detection_template": {
+            "id": getattr(detection_template, "id", None),
+            "bbox_format": getattr(detection_template, "bbox_format", None),
+            "object_field_order": getattr(
+                detection_template, "object_field_order", None
+            ),
+        },
+        "fast_estimator": prefix_denoising_fast_estimator_fingerprint(swift_template),
+        "prefix_denoising": {
+            "enabled": bool(getattr(prefix_denoising, "enabled", False)),
+            "noise": {
+                "center_shift_frac": float(
+                    getattr(noise, "center_shift_frac", 0.0) or 0.0
+                ),
+                "uniform_scale_range": [
+                    float(value)
+                    for value in getattr(noise, "uniform_scale_range", (0.0, 0.0))
+                ],
+            },
+            "current_object_kl": {
+                "weight": float(getattr(kl, "weight", 0.0) or 0.0),
+                "window_radius": int(getattr(kl, "window_radius", 0) or 0),
+                "num_objects_per_image": int(
+                    getattr(kl, "num_objects_per_image", 0) or 0
+                ),
+            },
+        },
+    }
+    return {
+        "eligibility_cache_dir": Path(str(root_dir)).expanduser().resolve(strict=False)
+        / "prefix_denoising_eligibility",
+        "eligibility_cache_fingerprint": fingerprint,
+        "eligibility_cache_wait_timeout_s": wait_timeout_s,
+        "eligibility_precompute_workers": workers,
+    }
 
 
 __all__ = [

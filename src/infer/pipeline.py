@@ -166,10 +166,16 @@ def _resolve_compact_full_parse_mode(cfg: Mapping[str, Any]) -> str:
     if not isinstance(raw_mode, str):
         raise ValueError("infer.parsing.compact_full.mode must be a string")
     mode = raw_mode.strip().lower().replace("-", "_").replace(" ", "_")
-    if mode not in {"marker_delimited_strict", "legacy_compatible"}:
+    if mode not in {
+        "marker_delimited_strict",
+        "marker_delimited_axis_sort_repair",
+        "legacy_compatible",
+    }:
         raise ValueError(
             "infer.parsing.compact_full.mode must be one of "
-            "{'marker_delimited_strict', 'legacy_compatible'}"
+            "{'marker_delimited_strict', "
+            "'marker_delimited_axis_sort_repair', "
+            "'legacy_compatible'}"
         )
     if mode == "legacy_compatible":
         metadata = _get_map(cfg, "metadata")

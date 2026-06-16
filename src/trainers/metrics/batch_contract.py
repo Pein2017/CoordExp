@@ -1,3 +1,6 @@
+import json
+import os
+from pathlib import Path
 from typing import Any, Mapping
 
 import torch
@@ -217,7 +220,21 @@ class GradAccumLossScaleMixin:
         # fields and MUST NOT be forwarded into model(**inputs).
         from src.trainers.batch_extras import pop_and_stash_batch_extras
 
-        pop_and_stash_batch_extras(self, inputs)
+        input_keys_before = (
+            sorted(str(key) for key in inputs.keys()) if isinstance(inputs, Mapping) else []
+        )
+        extras = pop_and_stash_batch_extras(self, inputs)
+        _maybe_dump_missing_prefix_denoising_sidecar(
+            trainer=self,
+            model=model,
+            input_keys_before=input_keys_before,
+            input_keys_after=(
+                sorted(str(key) for key in inputs.keys())
+                if isinstance(inputs, Mapping)
+                else []
+            ),
+            extras=extras,
+        )
 
         loss, outputs = super().compute_loss(  # type: ignore[misc]
             model, inputs, return_outputs=True, num_items_in_batch=num_items_in_batch
@@ -246,6 +263,114 @@ class GradAccumLossScaleMixin:
         best_effort(self, name="runtime_metrics", fn=_log_runtime_metrics)
 
         return (loss, outputs) if return_outputs else loss
+
+
+def _maybe_dump_missing_prefix_denoising_sidecar(
+    *,
+    trainer: Any,
+    model: Any,
+    input_keys_before: list[str],
+    input_keys_after: list[str],
+    extras: Any,
+) -> None:
+    prefix_denoising_cfg = getattr(trainer, "prefix_denoising_cfg", None)
+    if not bool(prefix_denoising_cfg and getattr(prefix_denoising_cfg, "enabled", False)):
+        return
+    if getattr(extras, "prefix_denoising_hybrid", None) is not None:
+        return
+    args = getattr(trainer, "args", None)
+    output_dir = getattr(args, "output_dir", None)
+    if not output_dir:
+        return
+    rank = str(os.environ.get("RANK", os.environ.get("LOCAL_RANK", "0")) or "0")
+    path = Path(str(output_dir)) / f"prefix_denoising_missing_sidecar.rank{rank}.json"
+    if path.exists():
+        return
+    try:
+        data_collator = getattr(trainer, "data_collator", None)
+        injected_collator = getattr(trainer, "_coordexp_injected_data_collator", None)
+        state = getattr(trainer, "state", None)
+        eval_dataset = getattr(trainer, "eval_dataset", None)
+        train_dataset = getattr(trainer, "train_dataset", None)
+        payload = {
+            "rank": rank,
+            "model_training": bool(getattr(model, "training", False)),
+            "global_step": int(getattr(state, "global_step", 0) or 0),
+            "input_keys_before": input_keys_before,
+            "input_keys_after": input_keys_after,
+            "data_collator_type": (
+                type(data_collator).__qualname__ if data_collator is not None else None
+            ),
+            "data_collator_module": (
+                type(data_collator).__module__ if data_collator is not None else None
+            ),
+            "injected_collator_type": (
+                type(injected_collator).__qualname__
+                if injected_collator is not None
+                else None
+            ),
+            "injected_collator_module": (
+                type(injected_collator).__module__
+                if injected_collator is not None
+                else None
+            ),
+            "remove_unused_columns": bool(getattr(args, "remove_unused_columns", False)),
+            "eval_strategy": str(getattr(args, "eval_strategy", "")),
+            "eval_steps": getattr(args, "eval_steps", None),
+            "save_strategy": str(getattr(args, "save_strategy", "")),
+            "save_steps": getattr(args, "save_steps", None),
+            "train_dataset": _dataset_debug_summary(train_dataset),
+            "eval_dataset": _dataset_debug_summary(eval_dataset),
+        }
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    except Exception:
+        return
+
+
+def _dataset_debug_summary(dataset: Any) -> dict[str, Any]:
+    if dataset is None:
+        return {"type": None}
+    payload: dict[str, Any] = {
+        "type": type(dataset).__qualname__,
+        "module": type(dataset).__module__,
+    }
+    try:
+        payload["len"] = int(len(dataset))
+    except Exception as exc:
+        payload["len_error"] = type(exc).__name__
+    try:
+        sample = dataset[0]
+    except Exception as exc:
+        payload["sample0_error"] = type(exc).__name__
+        payload["sample0_error_text"] = str(exc)[:500]
+        return payload
+    payload["sample0_type"] = type(sample).__qualname__
+    if isinstance(sample, Mapping):
+        keys = sorted(str(key) for key in sample.keys())
+        payload["sample0_keys"] = keys
+        payload["sample0_has_prefix_denoising_hybrid"] = (
+            "prefix_denoising_hybrid" in sample
+        )
+        hybrid = sample.get("prefix_denoising_hybrid")
+        payload["sample0_prefix_denoising_hybrid_type"] = (
+            type(hybrid).__qualname__ if hybrid is not None else None
+        )
+    elif isinstance(sample, (list, tuple)):
+        payload["sample0_len"] = len(sample)
+        first = sample[0] if sample else None
+        payload["sample0_first_type"] = type(first).__qualname__
+        if isinstance(first, Mapping):
+            keys = sorted(str(key) for key in first.keys())
+            payload["sample0_first_keys"] = keys
+            payload["sample0_first_has_prefix_denoising_hybrid"] = (
+                "prefix_denoising_hybrid" in first
+            )
+            hybrid = first.get("prefix_denoising_hybrid")
+            payload["sample0_first_prefix_denoising_hybrid_type"] = (
+                type(hybrid).__qualname__ if hybrid is not None else None
+            )
+    return payload
 
 
 __all__ = [

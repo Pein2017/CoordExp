@@ -63,3 +63,11 @@ class HybridPrefixDenoisingSample:
         if self.clean_full is None or self.noisy_full is None:
             return 0
         return len(self.clean_full.input_ids) + len(self.noisy_full.input_ids)
+
+
+@dataclass(frozen=True)
+class PrefixDenoisingPackingEstimate:
+    ok: bool
+    total_length: int = 0
+    skip_reason: str | None = None
+    metadata: Mapping[str, object] = field(default_factory=dict)
