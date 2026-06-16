@@ -40,3 +40,4 @@ def test_build_source_path_identity_includes_sha256_for_small_files(
     assert identity["exists"] is True
     assert identity["resolved_path"] == str(sample.resolve())
     assert isinstance(identity.get("sha256"), str)
+    assert "mtime_ns" not in identity

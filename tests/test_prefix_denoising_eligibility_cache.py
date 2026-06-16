@@ -219,6 +219,96 @@ def test_prefix_denoising_eligibility_cache_reuses_compatible_loss_and_trial_fin
     assert len(list(cache_root.glob("*/eligibility.json"))) == 2
 
 
+def test_prefix_denoising_eligibility_cache_reuses_after_jsonl_mtime_drift(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    def _estimate_sample(*_args: object, **_kwargs: object):
+        calls.append(f"estimate-{len(calls)}")
+        return PrefixDenoisingPackingEstimate(ok=True, total_length=10 + len(calls))
+
+    monkeypatch.setattr(
+        prefix_dataset_mod,
+        "estimate_hybrid_prefix_denoising_packing",
+        _estimate_sample,
+    )
+    monkeypatch.setenv("RANK", "0")
+    monkeypatch.setenv("WORLD_SIZE", "1")
+    cache_root = tmp_path / "eligibility"
+    fingerprint = {
+        "schema_version": "prefix_denoising_runtime_eligibility_v1",
+        "dataset_jsonl": "train.coord.jsonl",
+        "dataset_jsonl_size": 1234,
+        "dataset_jsonl_mtime_ns": 111,
+        "dataset_split": "detection_train",
+        "sample_limit": None,
+        "prefix_denoising": {
+            "enabled": True,
+            "noise": {
+                "center_shift_frac": 0.08,
+                "uniform_scale_range": [0.92, 1.08],
+            },
+            "current_object_kl": {
+                "weight": 0.05,
+                "window_radius": 8,
+                "num_objects_per_image": 1,
+            },
+        },
+    }
+
+    first = PrefixDenoisingTrainingDataset(
+        _rows(2),
+        swift_template=SimpleNamespace(tokenizer=object()),
+        image_root=tmp_path,
+        user_prompt="detect",
+        system_prompt=None,
+        prefix_denoising=PrefixDenoisingConfig(enabled=True),
+        max_length=12000,
+        dataset_name="unit",
+        seed=17,
+        eligibility_cache_dir=cache_root,
+        eligibility_cache_fingerprint=fingerprint,
+        eligibility_cache_wait_timeout_s=0.1,
+        eligibility_precompute_workers=1,
+    )
+    assert len(first) == 2
+    assert calls == ["estimate-0", "estimate-1"]
+
+    def _unexpected_build(*_args: object, **_kwargs: object):
+        raise AssertionError("mtime-only drift should not rebuild eligibility cache")
+
+    monkeypatch.setattr(
+        prefix_dataset_mod,
+        "estimate_hybrid_prefix_denoising_packing",
+        _unexpected_build,
+    )
+    mtime_only_changed = {
+        **fingerprint,
+        "dataset_jsonl_mtime_ns": 222,
+    }
+
+    second = PrefixDenoisingTrainingDataset(
+        _rows(2),
+        swift_template=SimpleNamespace(tokenizer=object()),
+        image_root=tmp_path,
+        user_prompt="detect",
+        system_prompt=None,
+        prefix_denoising=PrefixDenoisingConfig(enabled=True),
+        max_length=12000,
+        dataset_name="unit",
+        seed=17,
+        eligibility_cache_dir=cache_root,
+        eligibility_cache_fingerprint=mtime_only_changed,
+        eligibility_cache_wait_timeout_s=0.1,
+        eligibility_precompute_workers=1,
+    )
+
+    assert len(second) == 2
+    assert len(list(cache_root.glob("*/eligibility.json"))) == 2
+
+
 def test_prefix_denoising_runtime_wires_static_cache_root_to_eligibility_cache(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

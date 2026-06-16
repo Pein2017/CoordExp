@@ -5,7 +5,7 @@ extends:
 #
 # Contract:
 # - start from the 2B coord base checkpoint in model_cache, with no warm-start adapter
-# - train 2 epochs on sorted compact-full data
+# - train 4 epochs on sorted compact-full data
 # - use marker-delimited compact rows, i.e. no "\n" object separator
 # - evaluate on a deterministic 512-row validation subset
 # - keep eval packing disabled: current teacher_forcing guard rejects eval_packing=true
@@ -14,9 +14,9 @@ extends:
 #   objective replays clean/noisy branches as isolated forwards for CE/KL
 
 training:
-  artifact_subdir: compact_full_prefix_denoising_kl_w0p05_2b_base_sorted_marker_bsz1x128_2epoch
-  run_name: compact-full-prefix-denoising-kl-w0p05-2b-base-sorted-marker-bsz1x128-2epoch
-  num_train_epochs: 2
+  artifact_subdir: compact_full_prefix_denoising_kl_w0p05_2b_base_sorted_marker_bsz1x128_4epoch
+  run_name: compact-full-prefix-denoising-kl-w0p05-2b-base-sorted-marker-bsz1x128-4epoch
+  num_train_epochs: 4
   per_device_train_batch_size: 1
   effective_batch_size: 128
   per_device_eval_batch_size: 1

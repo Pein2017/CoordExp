@@ -617,10 +617,8 @@ def _prefix_denoising_eligibility_cache_kwargs(
     try:
         stat_result = path.stat()
         jsonl_size = int(stat_result.st_size)
-        jsonl_mtime_ns = int(stat_result.st_mtime_ns)
     except OSError:
         jsonl_size = None
-        jsonl_mtime_ns = None
 
     workers_raw = training.get("packing_length_precompute_workers", 1)
     try:
@@ -643,7 +641,6 @@ def _prefix_denoising_eligibility_cache_kwargs(
         "schema_version": "prefix_denoising_runtime_eligibility_v1",
         "dataset_jsonl": str(path),
         "dataset_jsonl_size": jsonl_size,
-        "dataset_jsonl_mtime_ns": jsonl_mtime_ns,
         "dataset_split": str(dataset_name),
         "sample_limit": sample_limit,
         "image_root": str(

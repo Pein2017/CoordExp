@@ -700,6 +700,7 @@ def _eligibility_reuse_fingerprint(fingerprint: Mapping[str, Any]) -> dict[str, 
     for key in (
         "artifact_subdir",
         "checkpoint_mode",
+        "dataset_jsonl_mtime_ns",
         "output_dir",
         "run_name",
         "save_delay_steps",

@@ -52,9 +52,9 @@ checks do not have to infer the local checkpoint family.
 
 Use these leaves for the first launch-health ladder:
 
-- `prod/compact_full_prefix_denoising_kl_w0p05_2b_base_sorted_2epoch.yaml`:
+- `prod/compact_full_prefix_denoising_kl_w0p05_2b_base_sorted_4epoch.yaml`:
   production launch leaf for 2B coord-base, sorted compact-full, no-newline
-  marker-delimited rows, 2 epochs, KL weight `0.05`, deterministic
+  marker-delimited rows, 4 epochs, KL weight `0.05`, deterministic
   `debug.val_sample_limit: 512`, static packing for grouped train sampling,
   shared-memory-safe dataloader settings, and `training.eval_packing: false`.
   Eval packing is intentionally disabled because the current

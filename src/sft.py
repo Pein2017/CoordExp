@@ -685,13 +685,6 @@ def _build_source_path_identity(path_hint: Any) -> dict[str, Any] | None:
 
     identity["exists"] = True
     identity["size_bytes"] = int(stat_result.st_size)
-    identity["mtime_ns"] = int(
-        getattr(
-            stat_result,
-            "st_mtime_ns",
-            int(stat_result.st_mtime * 1_000_000_000),
-        )
-    )
     if resolved_path.is_file():
         try:
             if int(stat_result.st_size) <= 64 * 1024 * 1024:

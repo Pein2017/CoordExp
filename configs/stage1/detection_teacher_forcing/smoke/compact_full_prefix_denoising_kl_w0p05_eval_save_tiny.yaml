@@ -1,5 +1,5 @@
 extends:
-  - ../prod/compact_full_prefix_denoising_kl_w0p05_2b_base_sorted_2epoch.yaml
+  - ../prod/compact_full_prefix_denoising_kl_w0p05_2b_base_sorted_4epoch.yaml
   - ./common_prodlike.yaml
 
 # Production-shaped prefix-denoising eval/save preflight.

@@ -1,5 +1,5 @@
 extends:
-  - ./compact_full_prefix_denoising_kl_w0p05_2b_base_sorted_2epoch.yaml
+  - ./compact_full_prefix_denoising_kl_w0p05_2b_base_sorted_4epoch.yaml
 
 # Continuation-style probe for prefix-denoising SFT V1.
 #
