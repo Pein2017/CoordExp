@@ -34,6 +34,8 @@ The program should not:
 - change training/eval behavior silently,
 - collapse geometry code for cosmetic reasons,
 - break current chat/detection template variant work,
+- break current uncommitted standard-SFT launch prep for sorted/random ordering with object and bbox closure,
+- delete or archive the preserved recursive-detection / ET-RMP algorithm family,
 - prune or wholesale-merge worktrees,
 - run expensive jobs as a default validation strategy,
 - turn historical evidence into current guidance,
@@ -156,6 +158,21 @@ Guardrail:
 
 The current chat/detection template variant work is active and necessary. The program should finish convergence, not delete the churn.
 
+Current uncommitted main-tree work for standard SFT launch prep is also active
+and necessary. In particular, sorted/random ordering variants with object
+closure and bbox closure should be treated as protected launch work, not as
+stale per-run config fan-out. Known active handles include:
+
+- `configs/stage1/profiles/2b/pure_ce_coco80_desc_first_1024_object_ref_close_box_close_sorted_packed_natural_adjacent.yaml`
+- `configs/stage1/smoke/pure_ce_coco80_desc_first_1024_object_ref_close_box_close_sorted_packed_natural_adjacent_tiny.yaml`
+- the supporting prompt/template/packing/schema/test edits currently dirty in
+  the main worktree.
+
+This work belongs to the simple standard-SFT lane: labels-only CE first, with
+ordering and object/bbox closure as data/template/config semantics. Do not
+classify it as recursive-detection / ET-RMP, Stage-2 rollout correction, or a
+legacy compatibility path merely because it touches detection sequence code.
+
 ### 4.4 Stage-1 And Stage-2 Training
 
 Protected active surfaces:
@@ -163,6 +180,9 @@ Protected active surfaces:
 - `src/sft.py`
 - `src/config/schema.py`
 - `src/training_runtime`
+- `src/detection/objective.py`
+- `src/detection/loss.py`
+- `src/detection/rollin.py`
 - `src/training/stage2/assignment.py`
 - `src/training/stage2/duplicate_filter.py`
 - `src/training/stage2/planners.py`
@@ -172,11 +192,22 @@ Protected active surfaces:
 - `src/trainers/rollout_correction/target_builder.py`
 - `src/trainers/rollout_matching`
 - `configs/stage1/detection_teacher_forcing`
+- `configs/stage1/profiles`
+- `configs/stage1/smoke`
 - `configs/stage2/rollout_correction`
+- `configs/infer/recursive_detection_ce`
 
 Guardrail:
 
 `rollout_matching.*` is still an active private migration/runtime namespace. Do not retire it until schema/runtime ownership has been deliberately moved.
+
+Recursive-detection / ET-RMP is a preserved research algorithm family and comparator baseline, not a deletion target for this refactoring program. It should be made easier to identify and safer to run, but its algorithmic implementation, infer/config lineage, and historical comparator value must be preserved unless the research owner explicitly reverses this decision.
+
+Preservation does not mean it should become the default new Stage-1 SFT route. The clean current Stage-1 path should still distinguish:
+
+- standard labels-only SFT / CE,
+- typed teacher-forcing research objectives,
+- preserved recursive-detection / ET-RMP comparator and ablation routes.
 
 ### 4.5 Infer, Eval, Artifacts, Provenance
 
@@ -229,6 +260,27 @@ Examples:
 - current detection-template variant work,
 - active diagnostic configs required for current reruns,
 - live worktree idea slices before promotion.
+
+### Preserved Comparator
+
+Research algorithm, config lineage, or diagnostic route that is not the default
+new-training path but remains intentionally available for comparison,
+interpretation, reruns, or ablations.
+
+Examples:
+
+- recursive-detection CE,
+- random-permutation ET-RMP-CE,
+- prefix-rollin ET-RMP-CE ablations,
+- checkpoint-bound infer configs under `configs/infer/recursive_detection_ce`.
+
+Requirements:
+
+- explicit owner/status,
+- documented canonical or historical entrypoints,
+- config preflight that distinguishes live checkpoints from historical evidence,
+- narrow regression tests for target construction, loss semantics, and artifact compatibility,
+- no silent promotion into the default SFT path.
 
 ### Compatibility
 
@@ -366,7 +418,40 @@ Decision:
 - either make this the production launch owner,
 - or retire/shrink shadow descriptors after verifying callers.
 
-### 6.8 Stale And Misleading Names
+### 6.8 Recursive-Detection / ET-RMP
+
+Disposition: preserve as a comparator/research-baseline family; clarify lifecycle, entrypoints, and checks.
+
+Paths:
+
+- `src/detection/objective.py`
+- `src/detection/loss.py`
+- `src/detection/rollin.py`
+- `configs/infer/recursive_detection_ce`
+- archived Stage-1 recursive-detection config roots under `configs/archive/detection_scene_clean_break/stage1/`
+- Stage-1 objective/spec/docs that define ET-RMP comparator behavior.
+
+Why:
+
+- ET-RMP and recursive-detection CE remain research-relevant comparator and ablation mechanisms.
+- Prior diagnostics and benchmark notes still depend on this family for interpretation.
+- Deleting it would remove useful research contrast, not just bloat.
+
+Do first:
+
+- label it as `Preserved Comparator` in the lifecycle registry,
+- document canonical current infer/config handles separately from historical archived handles,
+- add or keep targeted tests for recursive target construction, prefix-rollin behavior, loss normalization, and strict artifact parsing,
+- add config/checkpoint preflight so dead-checkpoint leaves fail clearly or are labeled historical,
+- keep new standard SFT configs out of this family unless they explicitly compare against ET-RMP.
+
+Do not:
+
+- delete the implementation as part of general cleanup,
+- rename away ET-RMP lineage where it is needed to interpret checkpoints,
+- let preserved comparator status make it the default place for new teacher-forcing experiments.
+
+### 6.9 Stale And Misleading Names
 
 Disposition: low-risk clarity cleanup after verification.
 
@@ -378,7 +463,7 @@ Candidates:
 - `src/eval/orchestration.py` if confirmed orphaned,
 - `configs/stage1/teacher_forcing` if superseded.
 
-### 6.9 Package-Level Import Cycles
+### 6.10 Package-Level Import Cycles
 
 Disposition: structural refactor after lifecycle cleanup.
 
@@ -406,6 +491,7 @@ Known drift:
 - live code validates semantic IDs such as `compact`,
 - some smoke tests and scripts still point to `compact_full_*`,
 - some active tests still call `get_detection_template("compact_full")`,
+- current standard-SFT launch prep is adding sorted/random object-closure and bbox-closure semantics in the main worktree,
 - prefix-rollin schema/spec/runtime support is not fully converged,
 - `configs/infer/recursive_detection_ce` filenames carry historical `compact_full` lineage while the parser contract moves toward `compact`.
 
@@ -413,8 +499,9 @@ Completion criteria:
 
 - stable specs, docs, configs, tests, and scripts agree on strict current template IDs,
 - `compact_full` appears only in whitelisted compatibility/history contexts,
+- sorted/random object-closure and bbox-closure standard-SFT launch configs remain protected and clearly labeled as current Stage-1 SFT work,
 - prefix-rollin contract is decided and tested,
-- recursive-detection config naming is either updated or documented as historical checkpoint lineage.
+- recursive-detection / ET-RMP config naming is documented as preserved comparator lineage, with any semantic-template migration handled through explicit compatibility notes rather than deletion.
 
 Suggested gate:
 
@@ -452,9 +539,10 @@ Actions:
 
 1. Sync Stage-1 template specs/docs.
 2. Update stale smoke tests and analysis launchers.
-3. Resolve prefix-rollin compact-family support.
-4. Document or rename recursive-detection config lineage.
-5. Add stale-template grep/test gates.
+3. Preserve and document current simple standard-SFT sorted/random object-closure and bbox-closure launch prep.
+4. Resolve prefix-rollin compact-family support.
+5. Document recursive-detection / ET-RMP preservation status and config lineage.
+6. Add stale-template grep/test gates.
 
 Risk: medium.
 
@@ -506,6 +594,7 @@ Actions:
 2. Consolidate repeated infer/postop/eval leaves.
 3. Label dead-checkpoint configs historical or make preflight fail clearly.
 4. Convert completed-study configs into progress/artifact references.
+5. Keep `configs/infer/recursive_detection_ce` as preserved comparator lineage; consolidate repeated launch knobs only when the canonical ET-RMP comparison handles remain obvious.
 
 Risk: medium.
 
@@ -555,12 +644,13 @@ Risk: high.
 | 2 | Add lifecycle registry and hygiene gates | Very high | Low/medium | prevents new bloat before cleanup |
 | 3 | Classify/quarantine analysis surfaces | Very high | Medium | largest token/navigation win |
 | 4 | Rename misleading surfaces | High | Low | improves navigation with low behavioral risk |
-| 5 | Consolidate config bundles | High | Medium | reduces misleading runnable configs |
-| 6 | Retire mechanical shims | Medium/high | Low/medium | cheap simplification after gates |
-| 7 | Split `schema.py` and `sft.py` | High | Medium/high | active monoliths, needs stable tests |
-| 8 | Decompose Stage-2 internals | High | High | important but research-semantics sensitive |
-| 9 | Split `target_builder.py` | Medium | High | highest loss-semantics risk, do last |
-| 10 | Cut package cycles | High | High | structural payoff, needs prior stabilization |
+| 5 | Label and guard recursive-detection / ET-RMP comparator lineage | High | Medium | prevents accidental deletion while clarifying non-default status |
+| 6 | Consolidate config bundles | High | Medium | reduces misleading runnable configs |
+| 7 | Retire mechanical shims | Medium/high | Low/medium | cheap simplification after gates |
+| 8 | Split `schema.py` and `sft.py` | High | Medium/high | active monoliths, needs stable tests |
+| 9 | Decompose Stage-2 internals | High | High | important but research-semantics sensitive |
+| 10 | Split `target_builder.py` | Medium | High | highest loss-semantics risk, do last |
+| 11 | Cut package cycles | High | High | structural payoff, needs prior stabilization |
 
 ## 10. Verification And Hygiene Gates
 
@@ -590,6 +680,18 @@ Add checks for:
 - active config roots parse,
 - missing checkpoints are labeled historical or fail preflight,
 - retired config keys fail fast.
+
+### Recursive-Detection / ET-RMP Comparator Gate
+
+```bash
+rg -n "recursive_detection_ce|prefix_rollin_et_rmp_ce|random_permutation_et_rmp_ce|ET-RMP" src configs docs openspec/specs tests --glob '!docs/history/**'
+python -m pytest tests/test_recursive_detection_ce_target_builder.py tests/test_recursive_detection_ce_loss_adapter.py tests/test_prefix_rollin_sampler.py tests/test_prefix_rollin_dataset_alignment.py -q
+```
+
+Use this gate before moving, renaming, or consolidating recursive-detection /
+ET-RMP files. The expected outcome is not zero references. The expected outcome
+is that live references are classified as preserved comparator, compatibility,
+or documented history, and that target/loss/alignment behavior remains intact.
 
 ### Analysis Archive Gate
 
@@ -688,6 +790,12 @@ Do not prune or merge worktrees based on this charter alone. Re-run `git worktre
 
 These decisions should be resolved before large cleanup starts:
 
+Resolved for this charter:
+
+- Recursive-detection / ET-RMP is preserved. Refactoring may clarify ownership,
+  lifecycle state, preflight, naming, and docs, but the algorithm family is not
+  a deletion/archive target.
+
 1. Should `src/analysis` move outside importable `src`, or is lifecycle metadata/import gating enough?
 2. Which analysis studies are expected to be rerun?
 3. Should `src/training/surfaces.py` become the production launch owner, or should shadow surfaces retire?
@@ -723,6 +831,7 @@ Important audit findings to preserve:
 - active monoliths: `schema.py`, `sft.py`, `stage2_rollout_correction_impl.py`, `stage2_rollout_runtime.py`, `target_builder.py`.
 - package cycles: `detection <-> training`, `eval <-> infer`, `metrics <-> trainers`, high-fan-in `common`.
 - active template drift: `compact_full` vs semantic `compact*` IDs across specs/docs/tests/configs/code.
+- recursive-detection / ET-RMP: preserved comparator lineage, not a general cleanup deletion target.
 - stale/misleading names: `test_stage2_ab_*`, `backend_sync.py`, CLI named `test_*`, possible orphan `src/eval/orchestration.py`.
 - decode policy distinction: keep `decode_policy_fingerprint`; verify and remove/rename live-looking authored `decode_policy:` keys.
 - worktree snapshot: linked worktrees are isolated idea containers; do not merge wholesale.
