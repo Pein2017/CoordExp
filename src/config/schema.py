@@ -3308,12 +3308,13 @@ class DetectionTemplateConfig:
         "stage1_json_pretty",
         "compact",
         "compact_box_closed",
+        "compact_object_closed",
         "compact_object_box_closed",
         "compact_object_box_closed_lines",
     ]
     coordinate_surface: Literal["coord_token"]
     bbox_format: Literal["xyxy"]
-    object_field_order: Optional[Literal["desc_first"]] = None
+    object_field_order: Optional[Literal["desc_first", "geometry_first"]] = None
     strict_parse: bool = True
 
     def __post_init__(self) -> None:
@@ -3337,25 +3338,25 @@ class DetectionTemplateConfig:
             _detection_validate_choice(
                 self.object_field_order,
                 path="detection_template.object_field_order",
-                allowed={"desc_first"},
+                allowed={"desc_first", "geometry_first"},
             )
         _detection_validate_bool(
             self.strict_parse,
             path="detection_template.strict_parse",
         )
-        if self.id == "stage1_json_pretty" and self.object_field_order != "desc_first":
+        if (
+            self.id == "stage1_json_pretty"
+            and self.object_field_order not in {None, "desc_first"}
+        ):
             raise ValueError(
                 "detection_template.id=stage1_json_pretty requires "
                 "detection_template.object_field_order=desc_first"
             )
-        if contract.is_compact and self.object_field_order is not None:
-            raise ValueError(
-                "detection_template.object_field_order must be omitted for "
-                f"detection_template.id={self.id}"
-            )
 
     @classmethod
     def from_mapping(cls, payload: Any) -> "DetectionTemplateConfig":
+        if isinstance(payload, Mapping) and payload.get("id") == "compact_full":
+            payload = {**dict(payload), "id": "compact"}
         return parse_dataclass_strict(cls, payload, path="detection_template")
 
 
@@ -3890,14 +3891,19 @@ class TeacherForcingObjectiveConfig:
             path="objective.profile",
             allowed=TEACHER_FORCING_PROFILES,
         )
-        if self.profile == "hybrid_valid_set_marginal":
-            raise ValueError(
-                "objective.profile=hybrid_valid_set_marginal is unsupported "
-                "for stage1_detection_teacher_forcing until hybrid runtime "
-                "support is implemented"
-            )
         coverage = self.modules.within_valid_coverage
         coverage_strength = float(coverage.coverage_strength)
+        if self.profile == "hybrid_valid_set_marginal":
+            if not bool(coverage.enabled) or coverage_strength <= 0.0:
+                raise ValueError(
+                    "objective.profile=hybrid_valid_set_marginal requires "
+                    "objective.modules.within_valid_coverage.coverage_strength > 0"
+                )
+        elif coverage_strength > 0.0:
+            raise ValueError(
+                f"objective.profile={self.profile} requires "
+                "objective.modules.within_valid_coverage.coverage_strength=0"
+            )
         if self.profile == "hard_sft":
             hard_sft_module_checks = (
                 (
@@ -3928,12 +3934,6 @@ class TeacherForcingObjectiveConfig:
                         f"{module_key}; target-IR teacher-forcing modules "
                         "require a valid-set runtime path"
                     )
-        if coverage_strength > 0.0:
-            raise ValueError(
-                f"objective.profile={self.profile} requires "
-                "objective.modules.within_valid_coverage.coverage_strength=0"
-            )
-
     @classmethod
     def from_mapping(cls, payload: Any) -> "TeacherForcingObjectiveConfig":
         if not isinstance(payload, Mapping):
@@ -4174,6 +4174,7 @@ class DetectionEvaluationConfig:
         "stage1_json_pretty",
         "compact",
         "compact_box_closed",
+        "compact_object_closed",
         "compact_object_box_closed",
         "compact_object_box_closed_lines",
     ]
@@ -4193,6 +4194,8 @@ class DetectionEvaluationConfig:
 
     @classmethod
     def from_mapping(cls, payload: Any) -> "DetectionEvaluationConfig":
+        if isinstance(payload, Mapping) and payload.get("expected_template") == "compact_full":
+            payload = {**dict(payload), "expected_template": "compact"}
         return parse_dataclass_strict(cls, payload, path="evaluation")
 
 

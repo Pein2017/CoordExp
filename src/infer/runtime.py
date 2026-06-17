@@ -51,6 +51,14 @@ def _semantic_template_id_from_sequence_format(detection_sequence_format: str) -
     normalized = (
         str(detection_sequence_format).strip().lower().replace("-", "_").replace(" ", "_")
     )
+    if normalized == COORDJSON_FORMAT:
+        return "stage1_json_pretty"
+    if normalized in {"compact", "compact_full"}:
+        return "compact"
+    raise ValueError(
+        "inference checkpoint validation requires a semantic detection template; "
+        f"unsupported detection_sequence_format={detection_sequence_format!r}"
+    )
 
 
 def _resolve_detection_template_contract(template_id: str) -> Any:
@@ -82,14 +90,6 @@ def _parser_mode_for_template_id(template_id: str) -> str:
     if contract.template_id == "compact":
         return "marker_delimited_strict"
     return "strict_expected"
-    if normalized == COORDJSON_FORMAT:
-        return "stage1_json_pretty"
-    if normalized in {"compact", "compact_full"}:
-        return "compact"
-    raise ValueError(
-        "inference checkpoint validation requires a semantic detection template; "
-        f"unsupported detection_sequence_format={detection_sequence_format!r}"
-    )
 
 
 # Map fine-grained error tags to canonical counter buckets.
@@ -423,23 +423,15 @@ def parse_detection_template_output_artifact(
     text: str,
     *,
     detection_template_id: str,
+    object_field_order: str = "desc_first",
 ) -> Dict[str, Any]:
     contract = _resolve_detection_template_contract(detection_template_id)
     if not contract.is_compact:
         raise ValueError(
             "parse_detection_template_output_artifact only handles compact templates"
         )
-    if contract.template_id == "compact":
-        from src.detection.evaluation import parse_compact_full_output_artifact
 
-        artifact = parse_compact_full_output_artifact(
-            text,
-            parse_mode=_parser_mode_for_template_id(contract.template_id),
-        )
-        artifact["detection_template_id"] = contract.template_id
-        return artifact
-
-    from src.common.detection_sequence import OBJECT_REF_START_TOKEN
+    from src.common.detection_sequence import BOX_START_TOKEN, OBJECT_REF_START_TOKEN
     from src.detection.evaluation import parse_detection_output_strict_expected
 
     effective_text, terminal_token = _strip_generation_terminal_preserving_template_text(
@@ -450,6 +442,7 @@ def parse_detection_template_output_artifact(
             effective_text,
             expected_template=contract.template_id,
             parser_mode="strict_expected",
+            object_field_order=object_field_order,
         )
         parse_error_code = None
     except ValueError:
@@ -459,8 +452,15 @@ def parse_detection_template_output_artifact(
         "raw_output_json": raw_output_json,
         "parse_mode": "strict_expected",
         "serialization_policy": contract.template_id,
+        "object_field_order": object_field_order,
         "object_separator": (
-            "\n" if contract.canonical_final_separator == "\n" else OBJECT_REF_START_TOKEN
+            "\n"
+            if contract.canonical_final_separator == "\n"
+            else (
+                BOX_START_TOKEN
+                if str(object_field_order) == "geometry_first"
+                else OBJECT_REF_START_TOKEN
+            )
         ),
         "terminal_token": terminal_token,
         "parse_error_code": parse_error_code,
@@ -490,6 +490,7 @@ def process_offline_pred(
         artifact = compact_parse_artifact or parse_detection_template_output_artifact(
             raw_text,
             detection_template_id=contract.template_id,
+            object_field_order=str(getattr(owner, "object_field_order", "desc_first")),
         )
         payload = artifact.get("raw_output_json")
         if not isinstance(payload, Mapping):
@@ -1803,6 +1804,7 @@ def run_offline_artifact_inference(owner: Any) -> Tuple[Path, Path]:
                 compact_parse_artifact = parse_detection_template_output_artifact(
                     raw_text,
                     detection_template_id=self.detection_template_id,
+                    object_field_order=self.object_field_order,
                 )
                 raw_output_json = compact_parse_artifact["raw_output_json"]
                 raw_ends_with_im_end = (
@@ -1853,9 +1855,13 @@ def run_offline_artifact_inference(owner: Any) -> Tuple[Path, Path]:
                         "parse_error_offset": compact_parse_artifact[
                             "parse_error_offset"
                         ],
+                        "object_field_order": compact_parse_artifact[
+                            "object_field_order"
+                        ],
                     }
                 )
             output["detection_template_id"] = self.detection_template_id
+            output["object_field_order"] = self.object_field_order
             if p.get("image_id") is not None:
                 output["image_id"] = p.get("image_id")
             if isinstance(p.get("metadata"), Mapping):

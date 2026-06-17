@@ -8,10 +8,14 @@ names, row separators, parse modes, serialization policies, and token-row
 groups.
 
 This change introduces compact wrapper variants for ablation and anchoring
-experiments while keeping one authored decision: `detection_template.id`. The
-implementation must keep Qwen chat-template behavior intact, keep `do_resize`
-false for detection training, preserve geometry order and coordinates, and avoid
-editing upstream HF model internals.
+experiments while keeping compact wrapper authoring centralized under
+`detection_template.id`. The follow-on
+`compact-template-field-order-ablation` change amends field-order authoring:
+`custom.object_field_order` remains the authored source for desc-first versus
+geometry-first compact row layout. The implementation must keep Qwen
+chat-template behavior intact, keep `do_resize` false for detection training,
+preserve geometry order and coordinates, and avoid editing upstream HF model
+internals.
 
 Current high-impact code owners include:
 
@@ -50,8 +54,11 @@ training/inference YAML
 
 **Goals:**
 
-- Make `detection_template.id` the single authored source of truth for detection
-  serialization.
+- Make `detection_template.id` the authored source of truth for compact template
+  family, closure tokens, row separator, parser family, structural token rows,
+  and template provenance; `compact-template-field-order-ablation` adds
+  `custom.object_field_order` as the companion authored source for desc-first
+  versus geometry-first row layout.
 - Rename the current compact surface from `compact_full` to `compact` in active
   configs/docs without keeping `compact_full` as a schema alias.
 - Support semantic compact template ids:
@@ -175,9 +182,9 @@ template derives the required row count:
 - `compact_object_box_closed`: 1004 rows.
 - `compact_object_box_closed_lines`: 1004 rows.
 
-The persisted module name may remain `coord_offset_adapter` for checkpoint file
-compatibility, but docs/specs should describe this surface as token-row
-adaptation when compact detection structural rows are included.
+The persisted module name is `token_embeddings_adapter`; docs/specs should
+describe this surface as token-row adaptation when compact detection structural
+rows are included.
 
 Adapter checkpoint validation for compact templates applies when an adapter
 checkpoint carries the offset-adapter module. It must validate the exact

@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, Sequence
 
+from src.common.object_field_order import normalize_object_field_order
 from src.tokens.qwen_native import (
     BOX_END_TOKEN,
     BOX_START_TOKEN,
@@ -27,6 +28,7 @@ STAGE1_JSON_PRETTY_TEMPLATE_ID = "stage1_json_pretty"
 COMPACT_TEMPLATE_IDS = (
     "compact",
     "compact_box_closed",
+    "compact_object_closed",
     "compact_object_box_closed",
     "compact_object_box_closed_lines",
 )
@@ -40,6 +42,7 @@ DetectionTemplateId = Literal[
     "stage1_json_pretty",
     "compact",
     "compact_box_closed",
+    "compact_object_closed",
     "compact_object_box_closed",
     "compact_object_box_closed_lines",
 ]
@@ -92,6 +95,14 @@ def resolve_detection_template_contract(
             row_separator="",
             canonical_final_separator="",
         )
+    if value == "compact_object_closed":
+        return _compact_contract(
+            template_id="compact_object_closed",
+            include_object_ref_end=True,
+            include_box_end=False,
+            row_separator="",
+            canonical_final_separator="",
+        )
     if value == "compact_object_box_closed":
         return _compact_contract(
             template_id="compact_object_box_closed",
@@ -125,6 +136,7 @@ def render_compact_contract_row(
     *,
     desc: str,
     bbox_tokens: Sequence[str],
+    object_field_order: str = "desc_first",
 ) -> str:
     """Render one compact row from an already-resolved template contract."""
 
@@ -135,13 +147,25 @@ def render_compact_contract_row(
     if len(tuple(bbox_tokens)) != 4:
         raise ValueError("compact detection rows require exactly four bbox tokens")
 
-    parts = [OBJECT_REF_START_TOKEN, str(desc)]
+    field_order = normalize_object_field_order(
+        object_field_order,
+        path="custom.object_field_order",
+    )
+
+    object_parts = [OBJECT_REF_START_TOKEN, str(desc)]
     if contract.include_object_ref_end:
-        parts.append(OBJECT_REF_END_TOKEN)
-    parts.append(BOX_START_TOKEN)
-    parts.extend(str(token) for token in bbox_tokens)
+        object_parts.append(OBJECT_REF_END_TOKEN)
+
+    box_parts = [BOX_START_TOKEN]
+    box_parts.extend(str(token) for token in bbox_tokens)
     if contract.include_box_end:
-        parts.append(BOX_END_TOKEN)
+        box_parts.append(BOX_END_TOKEN)
+
+    parts = (
+        [*box_parts, *object_parts]
+        if field_order == "geometry_first"
+        else [*object_parts, *box_parts]
+    )
     parts.append(contract.canonical_final_separator)
     return "".join(parts)
 
@@ -165,6 +189,7 @@ def _compact_contract(
     template_id: Literal[
         "compact",
         "compact_box_closed",
+        "compact_object_closed",
         "compact_object_box_closed",
         "compact_object_box_closed_lines",
     ],

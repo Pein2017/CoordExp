@@ -125,6 +125,44 @@ def test_prompt_template_hash_changes_when_detection_template_changes() -> None:
     assert coordjson_hash != compact_hash
 
 
+def test_compact_prompt_template_hash_changes_when_object_field_order_changes() -> None:
+    desc_first_pattern = (
+        "<|object_ref_start|>{desc}<|object_ref_end|><|box_start|>"
+        "<|coord_x1|><|coord_y1|><|coord_x2|><|coord_y2|><|box_end|>"
+    )
+    geometry_first_pattern = (
+        "<|box_start|><|coord_x1|><|coord_y1|><|coord_x2|><|coord_y2|><|box_end|>"
+        "<|object_ref_start|>{desc}<|object_ref_end|>"
+    )
+
+    desc_first_system, desc_first_user = get_template_prompts(
+        prompt_variant="coco_80",
+        detection_template_id="compact_object_box_closed",
+        object_field_order="desc_first",
+    )
+    geometry_first_system, geometry_first_user = get_template_prompts(
+        prompt_variant="coco_80",
+        detection_template_id="compact_object_box_closed",
+        object_field_order="geometry_first",
+    )
+    desc_first_hash = get_template_prompt_hash(
+        prompt_variant="coco_80",
+        detection_template_id="compact_object_box_closed",
+        object_field_order="desc_first",
+    )
+    geometry_first_hash = get_template_prompt_hash(
+        prompt_variant="coco_80",
+        detection_template_id="compact_object_box_closed",
+        object_field_order="geometry_first",
+    )
+
+    assert desc_first_pattern in desc_first_system
+    assert desc_first_pattern in desc_first_user
+    assert geometry_first_pattern in geometry_first_system
+    assert geometry_first_pattern in geometry_first_user
+    assert desc_first_hash != geometry_first_hash
+
+
 @pytest.mark.parametrize("object_ordering", ["sorted", "random"])
 def test_prompt_variant_cross_surface_parity_between_training_and_inference(
     object_ordering: str,

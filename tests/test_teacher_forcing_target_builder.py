@@ -308,19 +308,47 @@ def test_teacher_forcing_target_builder_uses_detection_template_contract(
         "<|coord_20|>",
     )
     if template_id in {
+        "compact_object_closed",
         "compact_object_box_closed",
         "compact_object_box_closed_lines",
     }:
         assert OBJECT_REF_END_TOKEN in selected_texts
     else:
         assert OBJECT_REF_END_TOKEN not in selected_texts
-    if template_id == "compact":
+    if template_id in {"compact", "compact_object_closed"}:
         assert BOX_END_TOKEN not in selected_texts
     else:
         assert BOX_END_TOKEN in selected_texts
     assert ("\n" in selected_texts) is (
         template_id == "compact_object_box_closed_lines"
     )
+    _validate(result, tokenizer)
+
+
+def test_teacher_forcing_target_builder_normalizes_object_field_order() -> None:
+    sample = _sample((_object("cat", (1, 2, 10, 20)),))
+    tokenizer = TinyContextTokenizer()
+    builder = TeacherForcingTargetBuilder(
+        tokenizer=tokenizer,
+        detection_template_id="compact_object_box_closed",
+        object_field_order=" Geometry_First ",
+    )
+
+    result = builder.build(
+        sample,
+        epoch=3,
+        stable_sample_id="normalized-field-order",
+    )
+    rendered = get_detection_template("compact_object_box_closed").render_assistant(
+        sample,
+        object_field_order="geometry_first",
+    )
+
+    assert builder.object_field_order == "geometry_first"
+    assert result.ok
+    assert result.rendered_text == rendered.text
+    assert result.rendered_text.startswith(BOX_START_TOKEN)
+    assert result.target_ir.metadata["object_field_order"] == "geometry_first"
     _validate(result, tokenizer)
 
 

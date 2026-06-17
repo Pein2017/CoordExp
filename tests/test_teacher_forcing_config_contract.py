@@ -17,6 +17,7 @@ from src.detection.runtime import (
     detection_mode,
     resolve_detection_prompts,
 )
+from src.detection.template_contracts import resolve_detection_template_contract
 from src.training.teacher_forcing.constants import TEACHER_FORCING_TARGET_IR_KEY
 
 TEST_DIR = Path(__file__).resolve().parent
@@ -440,6 +441,81 @@ def test_checked_in_latest_teacher_forcing_smoke_reaches_dataset_runtime(
     assert sample["detection_metadata"]["mode"] == "random_order_sft"
     assert "recursive_detection_targets" not in sample
     assert TEACHER_FORCING_TARGET_IR_KEY in sample
+
+
+def test_detection_dataset_runtime_uses_configured_compact_field_order(
+    tmp_path: Path,
+) -> None:
+    payload = _latest_teacher_payload()
+    payload["detection_template"] = {
+        "id": "compact_object_box_closed",
+        "coordinate_surface": "coord_token",
+        "bbox_format": "xyxy",
+        "object_field_order": "geometry_first",
+        "strict_parse": True,
+    }
+    payload["evaluation"] = {
+        "expected_template": "compact_object_box_closed",
+        "parser_mode": "strict_expected",
+    }
+    contract = resolve_detection_template_contract("compact_object_box_closed")
+    token_rows = dict(payload["token_rows"])  # type: ignore[arg-type]
+    groups = dict(token_rows["groups"])  # type: ignore[index]
+    groups["compact_structure"] = {
+        "role": "structural_ce_only",
+        "tokens": list(contract.required_structural_tokens),
+        "expected_ids": dict(
+            zip(
+                contract.required_structural_tokens,
+                contract.required_structural_token_ids,
+            )
+        ),
+    }
+    token_rows["groups"] = groups
+    payload["token_rows"] = token_rows
+    cfg = DetectionTrainingConfig.from_mapping(payload)
+
+    jsonl_path = tmp_path / "train.coord.jsonl"
+    _write_jsonl(jsonl_path, [_raw_row()])
+    image_root = _ensure_image(tmp_path).parents[2]
+    cfg = replace(
+        cfg,
+        data=replace(
+            cfg.data,
+            train_jsonl=str(jsonl_path),
+            image_root=str(image_root),
+        ),
+    )
+
+    system_prompt, _user_prompt = resolve_detection_prompts(cfg)
+    custom_config = build_detection_runtime_custom_shim(cfg)
+    dataset = build_detection_dataset(
+        jsonl_path,
+        swift_template=FakeSwiftTemplate(),
+        training_config=cfg,
+        custom_config=custom_config,
+        system_prompt=system_prompt,
+        seed=17,
+        sample_limit=1,
+        dataset_name="geometry_first_teacher_forcing",
+    )
+
+    sample = dataset[0]
+    assistant_text = sample["messages"][2]["content"]
+
+    assert assistant_text.startswith("<|box_start|>")
+    assert "<|box_end|><|object_ref_start|>" in assistant_text
+    assert not assistant_text.startswith("<|object_ref_start|>")
+    assert {
+        str(obj["desc"])
+        for obj in sample["assistant_payload"]["objects"]
+    } == {"cat", "dog", "bus"}
+    assert sample["detection_metadata"]["object_field_order"] == "geometry_first"
+    assert (
+        sample[TEACHER_FORCING_TARGET_IR_KEY].metadata["object_field_order"]
+        == "geometry_first"
+    )
+    assert dataset.encoded_length_for_row(0) == len(sample["input_ids"])
 
 
 def test_latest_teacher_forcing_pure_valid_set_profile_reaches_runtime() -> None:

@@ -64,7 +64,9 @@ The new unified training architecture defines two Stage-1 shadow surfaces:
 
 - `surface.id: stage1_compact_trie_ce`
   - shadow architecture ID for compact-full Stage-1 objective research
-  - uses `template.id: compact_full`
+  - uses semantic compact template IDs such as `compact` or
+    `compact_object_box_closed`; legacy config-level `compact_full` is a
+    compatibility alias for semantic `compact`, not a low-level template id
   - supervises token spans, object-entry trie targets, coordinate soft targets,
     and optional decoded-box regression through typed objective atoms
   - not the canonical public compact teacher-forcing config route; use
@@ -185,7 +187,11 @@ For ordinary baseline SFT, keep the standard `TrainingConfig` surface under
 `configs/stage1/profiles/` rather than the detection teacher-forcing route.
 Closed compact assistant rows are selected with
 `custom.detection_template_id: compact_object_box_closed` while retaining
-`custom.object_ordering: sorted` and Stage-1 static packing.
+`custom.object_ordering: sorted` and Stage-1 static packing. For bbox-first
+versus desc-first ablations, keep the same semantic template id and switch
+`custom.object_field_order` / `detection_template.object_field_order` between
+`geometry_first` and `desc_first`; cache fingerprints and infer artifacts record
+both axes.
 
 - `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2.yaml` remains the random-permutation ET-RMP-CE legacy comparator, not the active compact teacher-forcing route.
 - `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2_iou_gibbs_softce_a5.yaml` is historical A5-iou-gibbs negative-result/superseded provenance: A2/support2 plus `iou_gibbs_v0` coordinate soft targets with `tau=0.0090909091` from the train one-token IoU-loss median.
@@ -193,7 +199,13 @@ Closed compact assistant rows are selected with
 - `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1.yaml` is historical instance-trie/soft-CE ablation provenance, with `cap8_frac0p06_mix0p1` as the slope ablation and `cap8_frac0p04_mix0p2` as the strength ablation; see [`drafts/INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md`](drafts/INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md). These configs are not the new typed teacher-forcing objective surface.
 - the archived prefix-rollin recursive-detection config is the legacy/comparator E1 `prefix_rollin_et_rmp_ce` ablation route for Prefix-Closed Multi-Target SFT.
 
-The legacy/comparator `prefix_rollin_et_rmp_ce` route is compact-full only. It requires `detection_template.id: compact_full`, masks roll-in prefix labels, samples `K` uniformly over `[0, object_count]`, keeps `suffix_order: same_sampled_permutation` for V1, and expresses support/balance weights under `objective.target`, not obsolete flat trie-weight aliases.
+The legacy/comparator `prefix_rollin_et_rmp_ce` route is compact-row only. It
+uses semantic `detection_template.id: compact` in current configs; old
+`compact_full` config mentions are migration aliases or archive provenance. The
+route masks roll-in prefix labels, samples `K` uniformly over `[0, object_count]`,
+keeps `suffix_order: same_sampled_permutation` for V1, and expresses
+support/balance weights under `objective.target`, not obsolete flat trie-weight
+aliases.
 
 EOS supervision for this variant targets the Qwen chat-template assistant stop marker `<|im_end|>` only, using ordinary teacher-forced CE. Text-level terminators such as `<|endoftext|>` or `<|end_of_text|>` must not be used as training EOS for this surface.
 

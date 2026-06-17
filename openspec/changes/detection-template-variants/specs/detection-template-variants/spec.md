@@ -56,9 +56,14 @@ patterns.
 - **THEN** the resolver selects the strict JSON assistant template
 - **AND** compact token-row adaptation is not required for that template id.
 
-### Requirement: Template id is the single authored serialization surface
-For compact detection templates, `detection_template.id` SHALL be the only
-authored config choice that selects assistant serialization.
+### Requirement: Template id owns compact template-family serialization
+For compact detection templates, `detection_template.id` SHALL be the authored
+config choice that selects template family, closure tokens, row separator,
+strict parser family, structural token rows, and template provenance.
+
+The follow-on `compact-template-field-order-ablation` change amends the earlier
+single-source wording: `custom.object_field_order` is the companion authored
+source for desc-first versus geometry-first row layout.
 
 The canonical YAML path SHALL be `detection_template.id` in both training and
 inference configs. Inference-specific compact controls such as
@@ -79,7 +84,9 @@ The system MUST derive all of the following from `detection_template.id`:
 
 Configs MUST reject independently authored compact parse modes, row separators,
 serialization policies, or compact-format aliases when they duplicate or
-contradict the selected template id.
+contradict the selected template id. Configs MUST NOT use these rejected knobs to
+select desc-first versus geometry-first row layout; that layout is owned by
+`custom.object_field_order` in the follow-on two-knob contract.
 
 #### Scenario: Duplicate row separator knob is rejected
 - **GIVEN** a config with

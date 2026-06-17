@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
+from src.common.object_field_order import normalize_object_field_order
 from src.detection.template import TemplateId, get_detection_template
 from src.detection.teacher_forcing.compact_full_policy import (
     END_OF_TEXT_TOKEN,
@@ -112,15 +113,30 @@ def parse_detection_output_strict_expected(
     *,
     expected_template: TemplateId | str,
     parser_mode: str = "strict_expected",
+    object_field_order: str = "desc_first",
 ) -> dict[str, Any]:
     parser_mode = _require_string(parser_mode, field_name="parser_mode")
+    field_order = normalize_object_field_order(
+        object_field_order,
+        path="detection_template.object_field_order",
+    )
     template = get_detection_template(expected_template)
     if template.template_id == "compact":
         if parser_mode == "strict_expected":
-            parser_mode = "marker_delimited_strict"
+            return _parse_expected_template(
+                text,
+                expected_template=template.template_id,
+                object_field_order=field_order,
+            )
         if parser_mode not in {"marker_delimited_strict", "legacy_compatible"}:
             raise ValueError(
                 f"Unsupported detection parser_mode for metrics: {parser_mode!r}"
+            )
+        if field_order != "desc_first":
+            return _parse_expected_template(
+                text,
+                expected_template=template.template_id,
+                object_field_order=field_order,
             )
         return _parse_compact_full_expected(text, parser_mode=parser_mode)
     if template.capabilities.object_field_order == "compact_row":
@@ -129,10 +145,18 @@ def parse_detection_output_strict_expected(
                 f"{template.template_id} evaluation does not support "
                 f"parser_mode={parser_mode!r}"
             )
-        return _parse_expected_template(text, expected_template=template.template_id)
+        return _parse_expected_template(
+            text,
+            expected_template=template.template_id,
+            object_field_order=field_order,
+        )
     if parser_mode != "strict_expected":
         raise ValueError(f"Unsupported detection parser_mode for metrics: {parser_mode!r}")
-    return _parse_expected_template(text, expected_template=template.template_id)
+    return _parse_expected_template(
+        text,
+        expected_template=template.template_id,
+        object_field_order=field_order,
+    )
 
 
 def build_detection_template_eval_manifest(
@@ -196,11 +220,12 @@ def _parse_expected_template(
     text: str,
     *,
     expected_template: TemplateId | str,
+    object_field_order: str = "desc_first",
 ) -> dict[str, Any]:
     text = _require_string(text, field_name="text")
     template = get_detection_template(expected_template)
     try:
-        return template.parse_assistant(text)
+        return template.parse_assistant(text, object_field_order=object_field_order)
     except ValueError as exc:
         raise ValueError(
             f"output does not match expected {template.template_id} template"

@@ -81,12 +81,22 @@ analysis artifacts into the resolved run directory and its eval subdirectory.
     reviewer and evaluator overlay path.
 - `summary.json`
   - Inference-stage summary emitted by the YAML infer pipeline.
-  - Check `infer.prompt_variant`, `infer.object_field_order`, and
-    `infer.object_ordering` when reproducing prompt-sensitive evaluations.
+  - Check `detection_template.id` / `infer.detection_template_id`,
+    `infer.object_field_order`, `infer.prompt_variant`, and
+    `infer.object_ordering` when reproducing compact prompt-sensitive
+    evaluations.
 - `resolved_config.json`
   - Canonical snapshot of the resolved infer pipeline config.
-  - Check `infer.prompt_variant`, `infer.object_field_order`, and
+  - Check `detection_template.id` / `infer.detection_template_id`,
+    `infer.object_field_order`, `infer.prompt_variant`, and
     `infer.object_ordering` before launching long evaluation jobs.
+- `gt_vs_pred.jsonl`
+  - CoordExp-written inference rows carry `detection_template_id` and
+    `object_field_order` so compact bbox-first and desc-first artifacts remain
+    distinguishable even when copied away from `resolved_config.json`.
+- `gt_vs_pred_scored.jsonl.provenance.json`
+  - Score-bearing sidecars include a parser policy fingerprint over both
+    `detection_template_id` and `object_field_order`.
 - `resolved_config.path`
   - Pointer sidecar written next to `gt_vs_pred.jsonl` so downstream eval or
     visualization jobs can recover the authoritative `resolved_config.json`

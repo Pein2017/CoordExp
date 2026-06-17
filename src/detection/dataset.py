@@ -16,6 +16,7 @@ from public_data.view_contracts import (
 )
 from torch.utils.data import Dataset
 
+from src.common.object_field_order import ObjectFieldOrder, normalize_object_field_order
 from src.common.detection_chat import build_detection_chat_messages
 from src.common.io import load_jsonl_with_diagnostics
 from src.detection.data import (
@@ -215,9 +216,20 @@ class DetectionDatasetRuntimeConfig:
     seed: int
     state_weighting: str
     normalization: str
+    object_field_order: ObjectFieldOrder = "desc_first"
     type_gate_config: Any | None = None
     teacher_forcing_profile: str | None = None
     teacher_forcing_rollin_base_seed: int | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "object_field_order",
+            normalize_object_field_order(
+                self.object_field_order,
+                path="detection_template.object_field_order",
+            ),
+        )
 
 
 def _encode_swift_template_no_resize(
@@ -292,6 +304,7 @@ class DetectionTrainingDataset(Dataset):
         seed: int,
         state_weighting: str,
         normalization: str,
+        object_field_order: str = "desc_first",
         type_gate_config: Any | None = None,
         teacher_forcing_profile: str | None = None,
         teacher_forcing_rollin_base_seed: int | None = None,
@@ -315,6 +328,10 @@ class DetectionTrainingDataset(Dataset):
             config=DetectionDatasetRuntimeConfig(
                 image_root=str(resolved_image_root),
                 detection_template_id=detection_template_id,
+                object_field_order=normalize_object_field_order(
+                    object_field_order,
+                    path="detection_template.object_field_order",
+                ),
                 mode=mode,
                 object_ordering=object_ordering,
                 user_prompt=user_prompt,
@@ -389,7 +406,10 @@ class DetectionTrainingDataset(Dataset):
                 )
 
         detection_template = get_detection_template(self.config.detection_template_id)
-        rendered_assistant = detection_template.render_assistant(normalized)
+        rendered_assistant = detection_template.render_assistant(
+            normalized,
+            object_field_order=self.config.object_field_order,
+        )
         messages = self._messages(scene.images, assistant_text=rendered_assistant.text)
         encoded = self._encode_messages(messages)
         length = encoded.get("length")
@@ -414,6 +434,7 @@ class DetectionTrainingDataset(Dataset):
                 scene,
                 tokenizer=self.tokenizer,
                 detection_template_id=self.config.detection_template_id,
+                object_field_order=self.config.object_field_order,
                 profile=cast(
                     TeacherForcingBuilderProfile,
                     self.config.teacher_forcing_profile,
@@ -446,7 +467,10 @@ class DetectionTrainingDataset(Dataset):
                     )
                 ),
             )
-            rendered_assistant = detection_template.render_assistant(rendered_scene)
+            rendered_assistant = detection_template.render_assistant(
+                rendered_scene,
+                object_field_order=self.config.object_field_order,
+            )
             metadata_object_ordering = rendered_scene.object_ordering
             if rendered_assistant.text != build_result.rendered_text:
                 raise ValueError(
@@ -469,7 +493,10 @@ class DetectionTrainingDataset(Dataset):
             )
             prepared = None
         elif self.config.mode == "prefix_rollin_et_rmp_ce":
-            rendered_assistant = detection_template.render_assistant(normalized)
+            rendered_assistant = detection_template.render_assistant(
+                normalized,
+                object_field_order=self.config.object_field_order,
+            )
             messages = self._messages(scene.images, assistant_text=rendered_assistant.text)
             if self.config.detection_template_id != "compact":
                 raise ValueError(
@@ -493,7 +520,10 @@ class DetectionTrainingDataset(Dataset):
                 prepared,
             )
         else:
-            rendered_assistant = detection_template.render_assistant(normalized)
+            rendered_assistant = detection_template.render_assistant(
+                normalized,
+                object_field_order=self.config.object_field_order,
+            )
             messages = self._messages(scene.images, assistant_text=rendered_assistant.text)
             prepared = prepare_detection_training_example(
                 normalized,
@@ -503,6 +533,7 @@ class DetectionTrainingDataset(Dataset):
                 state_weighting=self._state_weighting_for_prepare(),
                 normalization=self._normalization_for_prepare(),
                 type_gate_config=self.config.type_gate_config,
+                object_field_order=self.config.object_field_order,
                 messages=messages,
             )
             encoded = self._encode_messages(messages)
@@ -513,7 +544,8 @@ class DetectionTrainingDataset(Dataset):
 
         encoded["messages"] = copy.deepcopy(messages)
         encoded["assistant_payload"] = detection_template.parse_assistant(
-            rendered_assistant.text
+            rendered_assistant.text,
+            object_field_order=self.config.object_field_order,
         )
         detection_metadata = {
             "dataset": self.dataset_name,
@@ -522,6 +554,7 @@ class DetectionTrainingDataset(Dataset):
             "template_version": rendered_assistant.template_version,
             "mode": self.config.mode,
             "object_ordering": metadata_object_ordering.strategy,
+            "object_field_order": self.config.object_field_order,
             "object_ordering_seed": metadata_object_ordering.seed,
             "object_ordering_seed_source": metadata_object_ordering.seed_source,
             "realized_source_object_indices": list(

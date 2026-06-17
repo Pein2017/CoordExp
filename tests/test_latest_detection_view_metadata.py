@@ -271,7 +271,7 @@ def _load_latest_compact_view_dataset(
         jsonl_path,
         swift_template=FakeSwiftTemplate(),
         image_root=image_root,
-        detection_template_id="compact_full",
+        detection_template_id="compact",
         mode="sorted_sft",
         object_ordering="sorted",
         user_prompt="Detect every object.",
@@ -311,7 +311,7 @@ def test_metadata_rejects_unknown_unrelated_keys_after_supervision_allowlist() -
 def test_compact_full_render_spans_carry_object_id_and_supervision_source() -> None:
     sample = _normalized_all_proxy_sample()
 
-    rendered = get_detection_template("compact_full").render_assistant(sample)
+    rendered = get_detection_template("compact").render_assistant(sample)
 
     assert len(rendered.object_entries) == 2
     assert "support umbrella" not in rendered.text
@@ -369,7 +369,7 @@ def test_dataset_exposes_rendered_span_sources_without_model_input_leak(
         jsonl_path,
         swift_template=FakeSwiftTemplate(),
         image_root=tmp_path / "image-root",
-        detection_template_id="compact_full",
+        detection_template_id="compact",
         mode="sorted_sft",
         object_ordering="sorted",
         user_prompt="Detect every object.",
@@ -426,7 +426,7 @@ def test_teacher_forcing_hard_sft_dataset_emits_aligned_target_ir(
         jsonl_path,
         swift_template=swift_template,
         image_root=tmp_path / "image-root",
-        detection_template_id="compact_full",
+        detection_template_id="compact",
         mode="random_order_sft",
         object_ordering="sorted",
         user_prompt="Detect every object.",
@@ -487,7 +487,7 @@ def test_teacher_forcing_dataset_encode_passes_do_resize_false_when_supported(
         jsonl_path,
         swift_template=swift_template,
         image_root=tmp_path / "image-root",
-        detection_template_id="compact_full",
+        detection_template_id="compact",
         mode="random_order_sft",
         object_ordering="sorted",
         user_prompt="Detect every object.",
@@ -524,7 +524,7 @@ def test_teacher_forcing_pure_valid_set_dataset_emits_ambiguous_atoms(
         jsonl_path,
         swift_template=swift_template,
         image_root=tmp_path / "image-root",
-        detection_template_id="compact_full",
+        detection_template_id="compact",
         mode="random_order_sft",
         object_ordering="sorted",
         user_prompt="Detect every object.",
@@ -564,7 +564,7 @@ def test_teacher_forcing_dataset_masks_swift_trailing_newline_label(
         jsonl_path,
         swift_template=swift_template,
         image_root=tmp_path / "image-root",
-        detection_template_id="compact_full",
+        detection_template_id="compact",
         mode="random_order_sft",
         object_ordering="sorted",
         user_prompt="Detect every object.",
@@ -732,7 +732,7 @@ def test_proxy_candidate_bbox_coords_do_not_receive_recursive_bbox_supervision()
 
     prepared = prepare_detection_training_example(
         sample,
-        template=get_detection_template("compact_full"),
+        template=get_detection_template("compact"),
         tokenizer=FakeSwiftTemplate().tokenizer,
         mode="random_permutation_et_rmp_ce",
     )

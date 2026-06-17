@@ -77,6 +77,7 @@ def test_top_level_canonical_string_provenance_is_comparable(tmp_path: Path) -> 
                 "decode_policy_fingerprint": "decode:1",
                 "model_identity_fingerprint": "model:1",
                 "score_policy_fingerprint": "score:1",
+                "detection_template": {"id": "compact"},
                 "artifacts": {"gt_vs_pred_scored_jsonl": str(artifact)},
             }
         ),
@@ -100,6 +101,7 @@ def test_generated_style_inference_provenance_is_comparable(tmp_path: Path) -> N
                     "decode_policy_fingerprint": "decode:1",
                     "model_identity_fingerprint": "model:1",
                     "score_policy_fingerprint": "score:1",
+                    "detection_template": {"id": "compact"},
                 },
                 "artifacts": {"gt_vs_pred_scored_jsonl": str(artifact)},
             }
@@ -402,7 +404,8 @@ def test_artifact_sidecar_can_override_run_level_raw_summary(
             '"prompt_policy_fingerprint":"prompt:1",'
             '"decode_policy_fingerprint":"decode:1",'
             '"model_identity_fingerprint":"model:1",'
-            '"score_policy_fingerprint":"score:1"'
+            '"score_policy_fingerprint":"score:1",'
+            '"detection_template":{"id":"compact"}'
             "}\n"
         ),
         encoding="utf-8",
@@ -446,6 +449,7 @@ def test_score_bearing_artifact_requires_score_fingerprint(tmp_path: Path) -> No
                 "prompt_policy_fingerprint": "prompt:1",
                 "decode_policy_fingerprint": "decode:1",
                 "model_identity_fingerprint": "model:1",
+                "detection_template": {"id": "compact"},
                 "artifacts": {"gt_vs_pred_scored_jsonl": str(artifact)},
             }
         ),
@@ -466,6 +470,7 @@ def test_raw_artifact_requires_score_policy_none(tmp_path: Path) -> None:
                 "prompt_policy_fingerprint": "prompt:1",
                 "decode_policy_fingerprint": "decode:1",
                 "model_identity_fingerprint": "model:1",
+                "detection_template": {"id": "compact"},
                 "artifacts": {"gt_vs_pred_jsonl": str(artifact)},
             }
         ),
@@ -487,6 +492,7 @@ def test_raw_artifact_with_score_policy_none_is_comparable(tmp_path: Path) -> No
                 "decode_policy_fingerprint": "decode:1",
                 "model_identity_fingerprint": "model:1",
                 "score_policy": "none",
+                "detection_template": {"id": "compact"},
                 "artifacts": {"gt_vs_pred_jsonl": str(artifact)},
             }
         ),
@@ -565,7 +571,8 @@ def test_scored_substring_in_unknown_filename_can_be_explicit_raw(
             '"prompt_policy_fingerprint":"prompt:1",'
             '"decode_policy_fingerprint":"decode:1",'
             '"model_identity_fingerprint":"model:1",'
-            '"score_policy":"none"'
+            '"score_policy":"none",'
+            '"detection_template":{"id":"compact"}'
             "}\n"
         ),
         encoding="utf-8",
@@ -609,7 +616,8 @@ def test_custom_artifact_with_explicit_scored_role_is_comparable(
             '"prompt_policy_fingerprint":"prompt:1",'
             '"decode_policy_fingerprint":"decode:1",'
             '"model_identity_fingerprint":"model:1",'
-            '"score_policy_fingerprint":"score:1"'
+            '"score_policy_fingerprint":"score:1",'
+            '"detection_template":{"id":"compact"}'
             "}\n"
         ),
         encoding="utf-8",

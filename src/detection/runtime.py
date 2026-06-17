@@ -512,6 +512,9 @@ def build_detection_dataset(
         seed=seed,
         state_weighting=state_weighting,
         normalization=normalization,
+        object_field_order=str(
+            training_config.detection_template.object_field_order or "desc_first"
+        ),
         type_gate_config=type_gate_config,
         teacher_forcing_profile=teacher_forcing_profile,
         teacher_forcing_rollin_base_seed=teacher_forcing_rollin_base_seed,

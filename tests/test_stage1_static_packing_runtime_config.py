@@ -626,9 +626,63 @@ def test_static_packing_fingerprint_tracks_detection_sequence_format() -> None:
         train_jsonl="train.jsonl",
     )
 
-    assert coordjson["custom_detection_sequence_format"] == "coordjson"
-    assert compact["custom_detection_sequence_format"] == "compact_full"
+    assert coordjson["custom_detection_sequence_format"] == "stage1_json_pretty"
+    assert compact["custom_detection_sequence_format"] == "compact"
     assert coordjson != compact
+
+
+def test_static_packing_fingerprint_canonicalizes_legacy_compact_format() -> None:
+    packing_cfg = _parse_packing_config(
+        training_cfg={"packing": True, "packing_mode": "static"},
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=0),
+    )
+    training_cfg = SimpleNamespace(
+        global_max_length=1024,
+        template={"system": "sys", "truncation_strategy": "raise"},
+        training={"train_dataloader_shuffle": True},
+    )
+    common_custom = dict(
+        user_prompt="prompt",
+        emit_norm="none",
+        json_format="standard",
+        bbox_format="xyxy",
+        object_ordering="sorted",
+        object_field_order="desc_first",
+        use_summary=False,
+        system_prompt_dense=None,
+        system_prompt_summary=None,
+        offline_max_pixels=1048576,
+        coord_tokens={"enabled": True, "skip_bbox_norm": True},
+    )
+
+    compact = _build_static_packing_fingerprint(
+        training_config=training_cfg,
+        custom_config=SimpleNamespace(
+            **common_custom,
+            detection_sequence_format="compact",
+        ),
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=512),
+        dataset_seed=7,
+        packing_cfg=packing_cfg,
+        train_jsonl="train.jsonl",
+    )
+    compact_full = _build_static_packing_fingerprint(
+        training_config=training_cfg,
+        custom_config=SimpleNamespace(
+            **common_custom,
+            detection_sequence_format="compact_full",
+        ),
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=512),
+        dataset_seed=7,
+        packing_cfg=packing_cfg,
+        train_jsonl="train.jsonl",
+    )
+
+    assert compact["custom_detection_sequence_format"] == "compact"
+    assert compact == compact_full
 
 
 def test_static_packing_fingerprint_tracks_prompt_variant_and_template_hash() -> None:
@@ -687,6 +741,93 @@ def test_static_packing_fingerprint_tracks_prompt_variant_and_template_hash() ->
     assert isinstance(default_fp["custom_prompt_template_hash"], str)
     assert isinstance(lvis_fp["custom_prompt_template_hash"], str)
     assert default_fp["custom_prompt_template_hash"] != lvis_fp["custom_prompt_template_hash"]
+
+
+def test_static_packing_fingerprint_tracks_template_and_field_order_axes() -> None:
+    packing_cfg = _parse_packing_config(
+        training_cfg={"packing": True, "packing_mode": "static"},
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=0),
+    )
+    common_training = dict(
+        global_max_length=12000,
+        template={"system": "sys", "truncation_strategy": "raise"},
+        training={"train_dataloader_shuffle": True},
+    )
+    common_custom = dict(
+        user_prompt="prompt",
+        emit_norm="none",
+        json_format="standard",
+        bbox_format="xyxy",
+        object_ordering="sorted",
+        detection_sequence_format="compact",
+        use_summary=False,
+        system_prompt_dense=None,
+        system_prompt_summary=None,
+        offline_max_pixels=1048576,
+        coord_tokens={"enabled": True, "skip_bbox_norm": True},
+        extra={"prompt_variant": "default"},
+    )
+
+    def fingerprint(
+        *,
+        template_id: str = "compact_object_box_closed",
+        object_field_order: str = "desc_first",
+        global_max_length: int = 12000,
+        prompt_variant: str = "default",
+        packing_length: int = 128,
+    ) -> dict[str, object]:
+        local_packing_cfg = _parse_packing_config(
+            training_cfg={"packing": True, "packing_mode": "static"},
+            template=_Template(max_length=packing_length),
+            train_args=SimpleNamespace(max_model_len=0),
+        )
+        training_cfg = SimpleNamespace(
+            **{
+                **common_training,
+                "global_max_length": global_max_length,
+                "detection_template": {"id": template_id},
+            }
+        )
+        custom_cfg = SimpleNamespace(
+            **{
+                **common_custom,
+                "object_field_order": object_field_order,
+                "extra": {"prompt_variant": prompt_variant},
+            }
+        )
+        return _build_static_packing_fingerprint(
+            training_config=training_cfg,
+            custom_config=custom_cfg,
+            template=_Template(max_length=128),
+            train_args=SimpleNamespace(max_model_len=512),
+            dataset_seed=7,
+            packing_cfg=local_packing_cfg,
+            train_jsonl="train.jsonl",
+        )
+
+    baseline = fingerprint()
+    geometry_first = fingerprint(object_field_order="geometry_first")
+    object_closed = fingerprint(template_id="compact_object_closed")
+    longer = fingerprint(global_max_length=16000)
+    longer_packing = fingerprint(packing_length=256)
+    prompt_changed = fingerprint(prompt_variant="lvis_stage1_federated")
+
+    assert baseline["detection_template_id"] == "compact_object_box_closed"
+    assert baseline["custom_object_field_order"] == "desc_first"
+    assert baseline["global_max_length"] == 12000
+    assert baseline["packing_length"] == 128
+    assert baseline["custom_prompt_template_hash"]
+    assert geometry_first["custom_object_field_order"] == "geometry_first"
+    assert object_closed["detection_template_id"] == "compact_object_closed"
+    assert longer["global_max_length"] == 16000
+    assert longer_packing["packing_length"] == 256
+    assert prompt_changed["custom_prompt_template_hash"] != baseline["custom_prompt_template_hash"]
+    assert baseline != geometry_first
+    assert baseline != object_closed
+    assert baseline != longer
+    assert baseline != longer_packing
+    assert baseline != prompt_changed
 
 
 def test_fingerprint_diff_keys_reports_missing_vs_null() -> None:

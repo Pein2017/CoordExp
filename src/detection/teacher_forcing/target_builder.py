@@ -13,6 +13,7 @@ from src.common.detection_compact_rows import (
     OBJECT_REF_END_TOKEN,
     OBJECT_REF_START_TOKEN,
 )
+from src.common.object_field_order import ObjectFieldOrder, normalize_object_field_order
 from src.detection.data import (
     DetectionMetadata,
     NormalizedDetectionObject,
@@ -81,6 +82,7 @@ class _InputPrefixToken(NamedTuple):
 class TeacherForcingTargetBuilder:
     tokenizer: Any
     detection_template_id: TemplateId
+    object_field_order: ObjectFieldOrder = "desc_first"
     profile: TeacherForcingBuilderProfile = "valid_set"
     base_seed: int = DEFAULT_ROLLIN_BASE_SEED
     policy_name: str = ROLLIN_POLICY_NAME
@@ -95,6 +97,11 @@ class TeacherForcingTargetBuilder:
                 "teacher_forcing target IR requires a compact detection template; "
                 f"got detection_template.id={self.detection_template_id!r}"
             )
+        normalized_field_order = normalize_object_field_order(
+            self.object_field_order,
+            path="detection_template.object_field_order",
+        )
+        object.__setattr__(self, "object_field_order", normalized_field_order)
 
     def build(
         self,
@@ -127,6 +134,7 @@ class TeacherForcingTargetBuilder:
                     obj,
                     self.tokenizer,
                     detection_template=detection_template,
+                    object_field_order=self.object_field_order,
                 )
                 for index, obj in enumerate(parsed.objects)
             }
@@ -180,6 +188,7 @@ class TeacherForcingTargetBuilder:
                 "rollin_seed": seed,
                 "serialization_policy": self.serialization_policy,
                 "detection_template_id": detection_template.template_id,
+                "object_field_order": self.object_field_order,
                 "stop_token_text": IM_END_TOKEN,
                 "pad_token_text": END_OF_TEXT_TOKEN,
                 "parser_mode": "strict_expected",
@@ -206,6 +215,7 @@ def build_teacher_forcing_target(
     *,
     tokenizer: Any,
     detection_template_id: TemplateId,
+    object_field_order: str = "desc_first",
     profile: TeacherForcingBuilderProfile = "valid_set",
     epoch: int,
     stable_sample_id: str | None = None,
@@ -216,6 +226,10 @@ def build_teacher_forcing_target(
     builder = TeacherForcingTargetBuilder(
         tokenizer=tokenizer,
         detection_template_id=detection_template_id,
+        object_field_order=normalize_object_field_order(
+            object_field_order,
+            path="detection_template.object_field_order",
+        ),
         profile=profile,
         base_seed=base_seed,
         input_prefix_token_id=input_prefix_token_id,
@@ -309,6 +323,7 @@ def _prepare_object(
     tokenizer: Any,
     *,
     detection_template: DetectionSequenceTemplate,
+    object_field_order: ObjectFieldOrder,
 ) -> _PreparedObject:
     contract = resolve_detection_template_contract(detection_template.template_id)
     token_path = tokenize_description_context(
@@ -318,32 +333,41 @@ def _prepare_object(
     )
     coord_tokens = obj.bbox_2d.tokens
     coord_token_ids = tuple(_single_token_id(tokenizer, token) for token in coord_tokens)
-    token_ids: list[int] = [
-        token_path.object_ref_start_token_id,
-        *token_path.description_token_ids,
-    ]
-    token_roles: list[TokenRole] = [
-        TokenRole.SCHEMA,
-        *(TokenRole.TEXT for _ in token_path.description_token_ids),
-    ]
-    coord_roles: list[str | None] = [
-        None,
-        *(None for _ in token_path.description_token_ids),
-    ]
-    if token_path.object_ref_end_token_id is not None:
-        token_ids.append(token_path.object_ref_end_token_id)
+    token_ids: list[int] = []
+    token_roles: list[TokenRole] = []
+    coord_roles: list[str | None] = []
+
+    def append_object_segment() -> None:
+        token_ids.append(token_path.object_ref_start_token_id)
         token_roles.append(TokenRole.SCHEMA)
         coord_roles.append(None)
-    token_ids.append(token_path.bbox_start_token_id)
-    token_roles.append(TokenRole.SCHEMA)
-    coord_roles.append(None)
-    token_ids.extend(coord_token_ids)
-    token_roles.extend(TokenRole.COORD for _ in coord_token_ids)
-    coord_roles.extend(_COORD_ROLES)
-    if contract.include_box_end:
-        token_ids.append(_single_token_id(tokenizer, BOX_END_TOKEN))
+        token_ids.extend(token_path.description_token_ids)
+        token_roles.extend(TokenRole.TEXT for _ in token_path.description_token_ids)
+        coord_roles.extend(None for _ in token_path.description_token_ids)
+        if token_path.object_ref_end_token_id is not None:
+            token_ids.append(token_path.object_ref_end_token_id)
+            token_roles.append(TokenRole.SCHEMA)
+            coord_roles.append(None)
+
+    def append_box_segment() -> None:
+        token_ids.append(token_path.bbox_start_token_id)
         token_roles.append(TokenRole.SCHEMA)
         coord_roles.append(None)
+        token_ids.extend(coord_token_ids)
+        token_roles.extend(TokenRole.COORD for _ in coord_token_ids)
+        coord_roles.extend(_COORD_ROLES)
+        if contract.include_box_end:
+            token_ids.append(_single_token_id(tokenizer, BOX_END_TOKEN))
+            token_roles.append(TokenRole.SCHEMA)
+            coord_roles.append(None)
+
+    if object_field_order == "geometry_first":
+        append_box_segment()
+        append_object_segment()
+    else:
+        append_object_segment()
+        append_box_segment()
+
     if contract.canonical_final_separator:
         separator_ids = _encode_rendered_text(
             tokenizer,
@@ -353,8 +377,12 @@ def _prepare_object(
         token_roles.extend(TokenRole.SCHEMA for _ in separator_ids)
         coord_roles.extend(None for _ in separator_ids)
 
-    rendered_text = detection_template.render_entry(obj)
-    _assert_context_matches_rendered_prefix(token_path, rendered_text, tokenizer)
+    rendered_text = detection_template.render_entry(
+        obj,
+        object_field_order=object_field_order,
+    )
+    if object_field_order == "desc_first":
+        _assert_context_matches_rendered_prefix(token_path, rendered_text, tokenizer)
     return _PreparedObject(
         obj=obj,
         branch=TokenBranch(

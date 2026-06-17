@@ -2,17 +2,18 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Implement semantic detection template variants so `detection_template.id` is the single training, inference, artifact, token-row, and evaluator contract.
+**Goal:** Implement semantic detection template variants so `detection_template.id` owns compact template-family, closure, separator, token-row, and evaluator provenance contracts. Superseded field-order note: `compact-template-field-order-ablation` adds `custom.object_field_order` as the companion authored source for desc-first versus geometry-first row layout.
 
-**Architecture:** Add a small template contract resolver that maps semantic ids to render, parse, prompt, token-row, and provenance behavior. Update existing strict template, teacher-forcing, prompt, inference, and evaluator surfaces to consume that resolver instead of independently authored compact format knobs. Keep standard post-hoc mAP on normalized `gt_vs_pred.pred` objects while using template metadata for inference materialization and evaluation preflight.
+**Architecture:** Add a small template contract resolver that maps semantic ids to closure/separator render policy, parser family, prompt wrapper pattern, token rows, and provenance behavior. Update existing strict template, teacher-forcing, prompt, inference, and evaluator surfaces to consume that resolver instead of independently authored compact format knobs. Keep standard post-hoc mAP on normalized `gt_vs_pred.pred` objects while using template metadata for inference materialization and evaluation preflight.
 
-**Tech Stack:** Python, pytest, OpenSpec, Qwen3-VL tokenizer special tokens, CoordExp detection template/rendering stack, PEFT coord-offset adapter metadata.
+**Tech Stack:** Python, pytest, OpenSpec, Qwen3-VL tokenizer special tokens, CoordExp detection template/rendering stack, PEFT token-embeddings adapter metadata.
 
 ---
 
 ## Source Of Truth
 
 - OpenSpec change: `openspec/changes/detection-template-variants/`
+- Follow-on amendment: `openspec/changes/compact-template-field-order-ablation/`
 - Normative implementation tasks: `openspec/changes/detection-template-variants/tasks.md`
 - Current strict template owner: `src/detection/template.py`
 - Compatibility facade boundary: `src/common/detection_sequence.py`
@@ -49,8 +50,10 @@
   entrypoint imports them.
 - 2026-06-17 convergence recheck found no P0/P1 blockers after these revisions;
   `openspec validate detection-template-variants --type change --strict` passed.
-- Per user approval, implementation may start after this revised roadmap and
-  OpenSpec validation pass.
+- Supersession gate: do not use this older roadmap alone to implement
+  bbox-first/geometry-first compact rows. Use
+  `docs/superpowers/plans/2026-06-17-compact-template-field-order-ablation.md`
+  and wait for explicit user approval of that amendment.
 
 ## File Structure
 

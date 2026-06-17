@@ -277,7 +277,7 @@ def _make_dataset(
         jsonl_path,
         swift_template=BoundarySensitiveSwiftTemplate(),
         image_root=image_root,
-        detection_template_id="compact_full",
+        detection_template_id="compact",
         mode="prefix_rollin_et_rmp_ce",
         object_ordering="random_permutation",
         user_prompt="Detect every object.",

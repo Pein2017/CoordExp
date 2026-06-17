@@ -1586,7 +1586,7 @@ def prepare_lane_c_x1_basin_examples(
         len(confidences),
     )
     scope_label = f"val{active_limit}" if limit is None else f"limit={active_limit}"
-    template = get_detection_template("compact_full")
+    template = get_detection_template("compact")
     system_prompt, user_prompt = _resolve_prompts(config)
     vocab = resolve_coord_token_ids(model_handle.tokenizer)
     examples: list[PreparedForwardExample] = []
@@ -1732,7 +1732,7 @@ def prepare_teacher_forced_examples(
     active_limit = config.execution.sample_limit if limit is None else int(limit)
     scope_label = f"val{active_limit}" if limit is None else f"limit={active_limit}"
     examples: list[PreparedForwardExample] = []
-    template = get_detection_template("compact_full")
+    template = get_detection_template("compact")
     system_prompt, user_prompt = _resolve_prompts(config)
     for row_index, row in enumerate(rows[:active_limit]):
         raw = parse_raw_detection_row(row)
@@ -1833,7 +1833,7 @@ def prepare_self_prefix_examples(
         len(confidences),
     )
     scope_label = f"val{active_limit}" if limit is None else f"limit={active_limit}"
-    template = get_detection_template("compact_full")
+    template = get_detection_template("compact")
     system_prompt, user_prompt = _resolve_prompts(config)
     vocab = resolve_coord_token_ids(model_handle.tokenizer)
     examples: list[PreparedForwardExample] = []
@@ -2404,7 +2404,7 @@ def _target_kind_inventory(
     try:
         prepared = prepare_detection_training_example(
             normalized,
-            template=get_detection_template("compact_full"),
+            template=get_detection_template("compact"),
             tokenizer=tokenizer,
             mode="random_permutation_et_rmp_ce",
             state_weighting="uniform_permutation",

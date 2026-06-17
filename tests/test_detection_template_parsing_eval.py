@@ -1,6 +1,11 @@
 import pytest
 
-from src.common.detection_sequence import BOX_START_TOKEN, OBJECT_REF_START_TOKEN
+from src.common.detection_sequence import (
+    BOX_END_TOKEN,
+    BOX_START_TOKEN,
+    OBJECT_REF_END_TOKEN,
+    OBJECT_REF_START_TOKEN,
+)
 from src.detection.evaluation import (
     DetectionTemplateEvalManifest,
     build_detection_template_eval_manifest,
@@ -18,6 +23,14 @@ STAGE1_JSON_TEXT = (
 COMPACT_TEXT = (
     f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
     "<|coord_1|><|coord_2|><|coord_3|><|coord_4|>"
+)
+COMPACT_GEOMETRY_FIRST_TEXT = (
+    f"{BOX_START_TOKEN}<|coord_1|><|coord_2|><|coord_3|><|coord_4|>"
+    f"{OBJECT_REF_START_TOKEN}cat"
+)
+COMPACT_OBJECT_BOX_CLOSED_GEOMETRY_FIRST_TEXT = (
+    f"{BOX_START_TOKEN}<|coord_1|><|coord_2|><|coord_3|><|coord_4|>{BOX_END_TOKEN}"
+    f"{OBJECT_REF_START_TOKEN}cat{OBJECT_REF_END_TOKEN}"
 )
 COMPACT_LEGACY_TEXT = (
     f"{OBJECT_REF_START_TOKEN}cat{BOX_START_TOKEN}"
@@ -88,6 +101,61 @@ def test_compact_full_eval_routes_marker_strict_and_legacy_compatible_modes() ->
     }
 
 
+def test_compact_strict_expected_uses_configured_field_order() -> None:
+    assert parse_detection_output_strict_expected(
+        COMPACT_GEOMETRY_FIRST_TEXT,
+        expected_template="compact",
+        object_field_order="geometry_first",
+    ) == {
+        "objects": [
+            {
+                "desc": "cat",
+                "bbox_2d": [
+                    "<|coord_1|>",
+                    "<|coord_2|>",
+                    "<|coord_3|>",
+                    "<|coord_4|>",
+                ],
+            }
+        ]
+    }
+
+    with pytest.raises(ValueError, match="expected compact"):
+        parse_detection_output_strict_expected(
+            COMPACT_TEXT,
+            expected_template="compact",
+            object_field_order="geometry_first",
+        )
+
+
+def test_compact_marker_strict_honors_geometry_first_field_order() -> None:
+    assert parse_detection_output_strict_expected(
+        COMPACT_GEOMETRY_FIRST_TEXT,
+        expected_template="compact",
+        parser_mode="marker_delimited_strict",
+        object_field_order="geometry_first",
+    ) == {
+        "objects": [
+            {
+                "desc": "cat",
+                "bbox_2d": [
+                    "<|coord_1|>",
+                    "<|coord_2|>",
+                    "<|coord_3|>",
+                    "<|coord_4|>",
+                ],
+            }
+        ]
+    }
+
+    with pytest.raises(ValueError, match="expected compact"):
+        parse_detection_output_strict_expected(
+            COMPACT_GEOMETRY_FIRST_TEXT,
+            expected_template="compact",
+            parser_mode="marker_delimited_strict",
+        )
+
+
 def test_compact_full_marker_strict_treats_im_end_as_terminal_not_endoftext() -> None:
     marker_with_padding = COMPACT_TEXT + "<|im_end|><|endoftext|><|endoftext|>"
 
@@ -135,6 +203,32 @@ def test_stage1_json_pretty_strict_expected_parses_valid_json_output() -> None:
         STAGE1_JSON_TEXT,
         expected_template="stage1_json_pretty",
     ) == Stage1JsonPrettyTemplate().parse_assistant(STAGE1_JSON_TEXT)
+
+
+def test_strict_expected_parse_uses_configured_compact_field_order() -> None:
+    assert parse_detection_output_strict_expected(
+        COMPACT_OBJECT_BOX_CLOSED_GEOMETRY_FIRST_TEXT,
+        expected_template="compact_object_box_closed",
+        object_field_order="geometry_first",
+    ) == {
+        "objects": [
+            {
+                "desc": "cat",
+                "bbox_2d": [
+                    "<|coord_1|>",
+                    "<|coord_2|>",
+                    "<|coord_3|>",
+                    "<|coord_4|>",
+                ],
+            }
+        ]
+    }
+
+    with pytest.raises(ValueError, match="expected compact_object_box_closed"):
+        parse_detection_output_strict_expected(
+            COMPACT_OBJECT_BOX_CLOSED_GEOMETRY_FIRST_TEXT,
+            expected_template="compact_object_box_closed",
+        )
 
 
 def test_stage1_json_pretty_strict_expected_rejects_compact_like_output() -> None:

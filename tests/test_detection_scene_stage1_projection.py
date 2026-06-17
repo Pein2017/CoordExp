@@ -197,7 +197,7 @@ def test_stage1_teacher_forcing_dataset_projects_scene_to_rendered_sequence_and_
         swift_template=_FakeSwiftTemplate(),
         config=DetectionDatasetRuntimeConfig(
             image_root=str(tmp_path / "image-root"),
-            detection_template_id="compact_full",
+            detection_template_id="compact",
             mode="teacher_forcing",
             object_ordering="random_permutation",
             user_prompt="Detect every object.",
@@ -233,7 +233,7 @@ def test_stage1_teacher_forcing_dataset_projects_scene_to_rendered_sequence_and_
     assert tuple(supervision_meta["next_token_prediction_positions"]) == tuple(
         position - 1 for position in supervised_positions
     )
-    assert supervision_meta["template_id"] == "compact_full"
+    assert supervision_meta["template_id"] == "compact"
     assert len(supervision_meta["coord_token_spans"]) == 8
     assert set(supervision_meta["coord_token_positions"]).issubset(supervised_positions)
     assert all(item["labels"][position] == item["input_ids"][position] for position in supervised_positions)
@@ -252,7 +252,7 @@ def test_stage1_teacher_forcing_dataset_projects_scene_to_rendered_sequence_and_
         ("<|coord_10|>", "<|coord_20|>", "<|coord_30|>", "<|coord_40|>"),
         ("<|coord_50|>", "<|coord_60|>", "<|coord_70|>", "<|coord_80|>"),
     }
-    assert item["detection_metadata"]["template_id"] == "compact_full"
+    assert item["detection_metadata"]["template_id"] == "compact"
     assert item["detection_metadata"]["object_ordering"] == "random_permutation"
     assert item["metadata"] == {
         "source": "unit",
