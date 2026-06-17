@@ -10,7 +10,6 @@ from typing import Any, Literal, Mapping, cast
 
 from src.config.prompts import get_template_prompts
 from src.config.schema import (
-    CoordOffsetConfig,
     CoordTokensConfig,
     DetectionTrainingConfig,
 )
@@ -156,8 +155,7 @@ def build_detection_runtime_custom_shim(
         sft_structural_close=None,
         dump_conversation_text=False,
         dump_conversation_path=None,
-        coord_offset=CoordOffsetConfig(enabled=False),
-        trainable_token_rows=training_config.token_rows,
+        token_embeddings_adapter=training_config.token_rows,
     )
 
 

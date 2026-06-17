@@ -123,7 +123,7 @@ Current implementation:
 - Static packing probes each atomic sample at full length before building the pack plan. If any sample exceeds that hard cap, packing now fails fast instead of silently truncating or skipping it.
 - Latest compact recursive detection surfaces keep packing and encoded-sample cache fail-fast until sidecar target-position rewriting is explicitly implemented and validated.
 - Compact-full token-row runs train 1002 rows through the persisted
-  `coord_offset_adapter` module name: 1000 coord rows plus the two compact
+  `token_embeddings_adapter` module name: 1000 coord rows plus the two compact
   structural rows `<|object_ref_start|>` and `<|box_start|>`. The module name is
   historical; the current contract is token-row adaptation, not coord-only
   adaptation.

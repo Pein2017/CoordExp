@@ -325,7 +325,7 @@ Normative behavior:
   `rollout_matching.vllm.enable_lora=true`;
 - native `sync.mode=full` materialization is superseded for active unified
   Stage-2 rollout-correction server training unless a later OpenSpec revives it;
-- PEFT `modules_to_save` and `coord_offset_adapter` MUST NOT be sent as
+- PEFT `modules_to_save` and `token_embeddings_adapter` MUST NOT be sent as
   ordinary LoRA tensors;
 - missing coord-row sync support MUST hard-fail for coord-adapter checkpoints;
 - Stage-2 train vLLM server rollouts require `sync_policy:
@@ -339,7 +339,7 @@ Normative behavior:
 
 #### Scenario: Coord-row sync support is missing
 
-- **GIVEN** a checkpoint contains `coord_offset_adapter`
+- **GIVEN** a checkpoint contains `token_embeddings_adapter`
 - **AND** the selected vLLM server path lacks the patched token-row sync
   endpoint
 - **WHEN** backend sync prepares generation

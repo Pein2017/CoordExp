@@ -753,7 +753,7 @@ def test_lvis_stage1_config_keeps_canonical_recipe_and_desc_first_sorted_contrac
         str(repo_root / "configs/stage1/lvis_bbox_max60_1024.yaml")
     )
 
-    assert cfg.training["optimizer"] == "multimodal_coord_offset"
+    assert cfg.training["optimizer"] == "multimodal_token_embeddings_adapter"
     assert cfg.training["run_name"] == "epoch_4-hard_ce_soft_ce_w1-2b"
     assert cfg.custom.train_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/train.coord.jsonl"
     assert cfg.custom.val_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/val.coord.jsonl"
@@ -809,8 +809,8 @@ def test_object_ref_close_box_close_standard_sft_config_contract() -> None:
         assert cfg.tuner["freeze_vit"] is True
         assert cfg.tuner["freeze_aligner"] is True
         assert cfg.custom.coord_soft_ce_w1.enabled is False
-        assert cfg.custom.trainable_token_rows.enabled is True
-        assert set(cfg.custom.trainable_token_rows.groups) == {
+        assert cfg.custom.token_embeddings_adapter.enabled is True
+        assert set(cfg.custom.token_embeddings_adapter.groups) == {
             "coord_geometry",
             "compact_structure",
         }

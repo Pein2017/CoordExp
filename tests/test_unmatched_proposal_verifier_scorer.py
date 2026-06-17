@@ -33,7 +33,7 @@ def test_teacher_forced_scorer_uses_base_processor_for_adapter_shorthand(
                 path=str(adapter_dir),
                 base_model_name_or_path=str(base_dir),
                 modules_to_save=(),
-                coord_offset_spec=None,
+                token_embeddings_adapter_spec=None,
             ),
         ),
     )
@@ -104,7 +104,7 @@ def test_teacher_forced_scorer_build_messages_uses_requested_coord_mode(
                 path=str(checkpoint_dir),
                 base_model_name_or_path=str(base_dir),
                 modules_to_save=(),
-                coord_offset_spec=None,
+                token_embeddings_adapter_spec=None,
             ),
         ),
     )
@@ -193,7 +193,7 @@ def test_teacher_forced_scorer_score_prepared_batch_spans_handles_left_padding(
                 path=str(checkpoint_dir),
                 base_model_name_or_path=str(base_dir),
                 modules_to_save=(),
-                coord_offset_spec=None,
+                token_embeddings_adapter_spec=None,
             ),
         ),
     )
@@ -310,7 +310,7 @@ def test_teacher_forced_scorer_score_prepared_batch_span_token_rows_rebases_padd
                 path=str(checkpoint_dir),
                 base_model_name_or_path=str(base_dir),
                 modules_to_save=(),
-                coord_offset_spec=None,
+                token_embeddings_adapter_spec=None,
             ),
         ),
     )

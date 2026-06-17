@@ -90,7 +90,7 @@ src/training/
     checkpointing.py
     preflight.py
   adapters/
-    coord_offset.py
+    token_embeddings_adapter.py
     token_rows.py
   artifacts.py
   ms_swift_projection.py

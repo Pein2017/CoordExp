@@ -427,7 +427,7 @@ def _load_model_handle(
         resolve_inference_checkpoint,
         validate_compact_coord_token_adapter_contract,
     )
-    from src.tokens.row_offsets import install_coord_offset_adapter, reattach_coord_offset_hooks
+    from src.tokens.row_offsets import install_token_embeddings_adapter, reattach_token_embeddings_adapter_hooks
 
     resolved = resolve_inference_checkpoint(model_checkpoint=str(checkpoint_path))
     validate_compact_coord_token_adapter_contract(
@@ -460,19 +460,19 @@ def _load_model_handle(
     model.to(torch.device(device))
     adapter_checkpoint = str(resolved.resolved_adapter_checkpoint or "").strip()
     adapter_info = getattr(resolved, "adapter_info", None)
-    coord_offset_spec = getattr(adapter_info, "coord_offset_spec", None) if adapter_info else None
+    token_embeddings_adapter_spec = getattr(adapter_info, "token_embeddings_adapter_spec", None) if adapter_info else None
     if adapter_checkpoint:
-        if coord_offset_spec is not None:
-            install_coord_offset_adapter(
+        if token_embeddings_adapter_spec is not None:
+            install_token_embeddings_adapter(
                 model,
-                coord_ids=coord_offset_spec.coord_ids,
-                tie_head=coord_offset_spec.tie_head,
+                token_ids=token_embeddings_adapter_spec.token_ids,
+                tie_head=token_embeddings_adapter_spec.tie_head,
             )
         from swift import Swift
 
         model = Swift.from_pretrained(model, model_id=adapter_checkpoint, inference_mode=True)
-        if coord_offset_spec is not None:
-            reattach_coord_offset_hooks(model)
+        if token_embeddings_adapter_spec is not None:
+            reattach_token_embeddings_adapter_hooks(model)
     model.eval()
     return {"model": model, "processor": processor, "tokenizer": tokenizer, "resolved_checkpoint": resolved}
 

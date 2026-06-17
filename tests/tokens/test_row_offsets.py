@@ -1,13 +1,18 @@
 from __future__ import annotations
 
-from src.coord_tokens.offset_adapter import CoordOffsetAdapter
+from src.coord_tokens.offset_adapter import (
+    TokenEmbeddingsAdapter as WrappedTokenEmbeddingsAdapter,
+)
 from src.tokens.row_offsets import (
-    TokenRowOffsetAdapter,
-    install_coord_offset_adapter,
-    install_token_row_offset_adapter,
+    TOKEN_EMBEDDINGS_ADAPTER_NAME,
+    TokenEmbeddingsAdapter,
+    install_token_embeddings_adapter,
+    reattach_token_embeddings_adapter_hooks,
 )
 
 
-def test_row_offset_module_preserves_coord_offset_compatibility_names():
-    assert TokenRowOffsetAdapter is CoordOffsetAdapter
-    assert install_token_row_offset_adapter is install_coord_offset_adapter
+def test_row_offset_module_exposes_token_embeddings_adapter_surface():
+    assert WrappedTokenEmbeddingsAdapter is TokenEmbeddingsAdapter
+    assert TOKEN_EMBEDDINGS_ADAPTER_NAME == "token_embeddings_adapter"
+    assert callable(install_token_embeddings_adapter)
+    assert callable(reattach_token_embeddings_adapter_hooks)

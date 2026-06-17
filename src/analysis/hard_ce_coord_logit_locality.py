@@ -279,7 +279,7 @@ class ModelHandle:
     processor: Any
     tokenizer: Any
     resolved_checkpoint: Any
-    coord_offset_adapter: Any | None
+    token_embeddings_adapter: Any | None
     base_embedding_rows: np.ndarray | None = None
     base_output_rows: np.ndarray | None = None
 
@@ -1245,7 +1245,7 @@ def run_study(
 
 
 def load_model_handle(config: StudyConfig) -> ModelHandle:
-    """Load the checkpoint with the same HF/Swift coord-offset semantics as inference."""
+    """Load the checkpoint with the same HF/Swift token-embeddings adapter semantics as inference."""
 
     # importing heavy dependencies lazily
     from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
@@ -1254,7 +1254,7 @@ def load_model_handle(config: StudyConfig) -> ModelHandle:
         resolve_inference_checkpoint,
         validate_compact_coord_token_adapter_contract,
     )
-    from src.tokens.row_offsets import install_coord_offset_adapter, reattach_coord_offset_hooks
+    from src.tokens.row_offsets import install_token_embeddings_adapter, reattach_token_embeddings_adapter_hooks
 
     # resolving adapter shorthand and processor source
     resolved = resolve_inference_checkpoint(model_checkpoint=str(config.paths.checkpoint))
@@ -1285,18 +1285,18 @@ def load_model_handle(config: StudyConfig) -> ModelHandle:
         device=device,
     )
 
-    coord_offset_adapter = None
+    token_embeddings_adapter = None
     adapter_checkpoint = str(resolved.resolved_adapter_checkpoint or "").strip()
     adapter_info = getattr(resolved, "adapter_info", None)
-    coord_offset_spec = getattr(adapter_info, "coord_offset_spec", None) if adapter_info else None
+    token_embeddings_adapter_spec = getattr(adapter_info, "token_embeddings_adapter_spec", None) if adapter_info else None
     base_embedding_rows = None
     base_output_rows = None
     if adapter_checkpoint:
-        if coord_offset_spec is not None:
-            install_coord_offset_adapter(
+        if token_embeddings_adapter_spec is not None:
+            install_token_embeddings_adapter(
                 model,
-                coord_ids=coord_offset_spec.coord_ids,
-                tie_head=coord_offset_spec.tie_head,
+                token_ids=token_embeddings_adapter_spec.token_ids,
+                tie_head=token_embeddings_adapter_spec.tie_head,
             )
         vocab = resolve_coord_token_ids(tokenizer)
         base_embedding_rows, base_output_rows = _extract_base_rows(model, vocab.coord_token_ids)
@@ -1305,10 +1305,10 @@ def load_model_handle(config: StudyConfig) -> ModelHandle:
         except ImportError as exc:
             raise RuntimeError("Swift adapter loading requires the 'swift' package") from exc
         model = Swift.from_pretrained(model, model_id=adapter_checkpoint, inference_mode=True)
-        if coord_offset_spec is not None:
-            coord_offset_adapter = reattach_coord_offset_hooks(model)
-            if coord_offset_adapter is None:
-                raise RuntimeError("coord_offset_adapter hooks could not be reattached")
+        if token_embeddings_adapter_spec is not None:
+            token_embeddings_adapter = reattach_token_embeddings_adapter_hooks(model)
+            if token_embeddings_adapter is None:
+                raise RuntimeError("token_embeddings_adapter hooks could not be reattached")
     else:
         vocab = resolve_coord_token_ids(tokenizer)
         base_embedding_rows, base_output_rows = _extract_base_rows(model, vocab.coord_token_ids)
@@ -1319,7 +1319,7 @@ def load_model_handle(config: StudyConfig) -> ModelHandle:
         processor=processor,
         tokenizer=tokenizer,
         resolved_checkpoint=resolved,
-        coord_offset_adapter=coord_offset_adapter,
+        token_embeddings_adapter=token_embeddings_adapter,
         base_embedding_rows=base_embedding_rows,
         base_output_rows=base_output_rows,
     )
@@ -1411,8 +1411,8 @@ def extract_embedding_surfaces(
         "base_output": base_output.astype(np.float32),
     }
 
-    # applying coord-offset semantics explicitly
-    adapter = model_handle.coord_offset_adapter
+    # applying token-embeddings adapter semantics explicitly
+    adapter = model_handle.token_embeddings_adapter
     if adapter is not None:
         offset_by_id = _adapter_offsets_by_token_id(adapter)
         embed_offsets = np.stack(
@@ -1426,7 +1426,7 @@ def extract_embedding_surfaces(
                 [head_offset_by_id.get(int(token_id), np.zeros(base_output.shape[1], dtype=np.float32)) for token_id in coord_ids],
                 axis=0,
             )
-        surfaces["coord_offset"] = embed_offsets.astype(np.float32)
+        surfaces["token_embeddings_adapter_offset"] = embed_offsets.astype(np.float32)
         surfaces["effective_input"] = (base_input + embed_offsets).astype(np.float32)
         surfaces["effective_output"] = (base_output + head_offsets).astype(np.float32)
     else:
@@ -2544,12 +2544,12 @@ def _load_qwen_with_attention_fallback(
 
 
 def _adapter_offsets_by_token_id(adapter: Any, *, use_head: bool = False) -> dict[int, np.ndarray]:
-    """Return coord-offset rows keyed by token id."""
+    """Return token-embeddings adapter rows keyed by token id."""
 
     # extracting adapter tensors by persisted coord id order
-    coord_ids = getattr(adapter, "coord_ids", None)
+    coord_ids = getattr(adapter, "token_ids", None)
     if not isinstance(coord_ids, torch.Tensor):
-        raise RuntimeError("coord_offset_adapter is missing coord_ids")
+        raise RuntimeError("token_embeddings_adapter is missing token_ids")
     if use_head and getattr(adapter, "head_offset", None) is not None:
         offset = adapter.head_offset
     else:

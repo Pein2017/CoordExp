@@ -146,7 +146,7 @@ Normative behavior:
 - compact-full recursive detection MUST train the 1000 coord-token rows plus
   `<|object_ref_start|>` and `<|box_start|>` when token-row adaptation is
   enabled,
-- the persisted module name `coord_offset_adapter` MAY remain for checkpoint
+- the persisted module name `token_embeddings_adapter` MAY remain for checkpoint
   compatibility,
 - contract wording MUST describe this surface as token-row adaptation rather
   than coord-only adaptation,

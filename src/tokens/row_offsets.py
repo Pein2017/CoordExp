@@ -1,18 +1,13 @@
 """Trainable token-row offset adapter.
 
 This module keeps the base embedding / lm_head weights frozen and applies
-per‑ID offsets during forward passes. Offsets live under a dedicated
-submodule (`coord_offset_adapter`) so they can be persisted via PEFT
+per-ID offsets during forward passes. Offsets live under a dedicated
+submodule (`token_embeddings_adapter`) so they can be persisted via PEFT
 `modules_to_save` without sidecar files.
-
-The persisted module name remains `coord_offset_adapter` for compatibility with
-existing checkpoints, but the adapter can be driven by any role-resolved token
-ID set.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Iterable, List, Sequence, Tuple
 
 import torch
@@ -20,17 +15,7 @@ import torch.nn as nn
 
 DEFAULT_COORD_ID_RANGE: Tuple[int, int] = (151_670, 152_669)  # inclusive
 DEFAULT_EXCLUDE_IDS = {151_669}  # <|coord_*|>
-
-
-@dataclass
-class CoordOffsetConfig:
-    enabled: bool = True
-    tie_head: bool = True
-    ids: Sequence[int] = ()
-    embed_lr: float | None = None
-    head_lr: float | None = None
-    weight_decay: float = 0.0
-    dtype: str | None = None  # 'auto' or torch dtype name
+TOKEN_EMBEDDINGS_ADAPTER_NAME = "token_embeddings_adapter"
 
 
 def _sanitize_ids(ids: Iterable[int] | None) -> List[int]:
@@ -51,16 +36,16 @@ def _to_dtype(tensor: torch.Tensor, dtype: str | None) -> torch.dtype:
         return torch.float16
     if dtype_norm in {"fp32", "float32", "single"}:
         return torch.float32
-    raise ValueError(f"Unsupported coord_offset.dtype: {dtype}")
+    raise ValueError(f"Unsupported token_embeddings_adapter.dtype: {dtype}")
 
 
-class CoordOffsetAdapter(nn.Module):
+class TokenEmbeddingsAdapter(nn.Module):
     """Holds token-row offsets and applies them via forward hooks."""
 
     def __init__(
         self,
         *,
-        coord_ids: Sequence[int],
+        token_ids: Sequence[int] | None = None,
         tie_head: bool = True,
         embed_dim: int,
         head_dim: int,
@@ -68,9 +53,9 @@ class CoordOffsetAdapter(nn.Module):
         device: torch.device,
     ) -> None:
         super().__init__()
-        coord_ids = _sanitize_ids(coord_ids)
-        if not coord_ids:
-            raise ValueError("coord_offset ids must be non-empty when enabled")
+        token_ids = _sanitize_ids(token_ids)
+        if not token_ids:
+            raise ValueError("token_embeddings_adapter ids must be non-empty when enabled")
 
         self.tie_head = bool(tie_head)
         if self.tie_head and embed_dim != head_dim:
@@ -78,22 +63,22 @@ class CoordOffsetAdapter(nn.Module):
                 f"tie_head requires embed_dim == head_dim (got {embed_dim} vs {head_dim})"
             )
 
-        self.register_buffer("coord_ids", torch.tensor(coord_ids, dtype=torch.long))
+        self.register_buffer("token_ids", torch.tensor(token_ids, dtype=torch.long))
         self.embed_offset = nn.Parameter(
-            torch.zeros(len(coord_ids), embed_dim, device=device, dtype=base_dtype)
+            torch.zeros(len(token_ids), embed_dim, device=device, dtype=base_dtype)
         )
         if self.tie_head:
             self.head_offset = None
         else:
             self.head_offset = nn.Parameter(
-                torch.zeros(len(coord_ids), head_dim, device=device, dtype=base_dtype)
+                torch.zeros(len(token_ids), head_dim, device=device, dtype=base_dtype)
             )
         self._embed_hook_handle = None
         self._head_hook_handle = None
 
     @property
     def module_name(self) -> str:
-        return "coord_offset_adapter"
+        return TOKEN_EMBEDDINGS_ADAPTER_NAME
 
     def attach(self, embed_module: nn.Embedding, head_module: nn.Linear) -> None:
         """Register forward hooks on embedding and lm_head."""
@@ -107,7 +92,7 @@ class CoordOffsetAdapter(nn.Module):
             if not torch.is_tensor(input_ids):
                 return output
 
-            coord_ids = self.coord_ids.to(input_ids.device)
+            coord_ids = self.token_ids.to(input_ids.device)
             flat_ids = input_ids.reshape(-1)
             mask = torch.isin(flat_ids, coord_ids)
             if not torch.any(mask):
@@ -144,7 +129,7 @@ class CoordOffsetAdapter(nn.Module):
             flat_hidden = hidden_states.reshape(-1, hidden_states.size(-1))
             extra_logits = flat_hidden.to(head_offset.dtype) @ head_offset.T  # (N, num_ids)
 
-            coord_ids = self.coord_ids.to(output.device)
+            coord_ids = self.token_ids.to(output.device)
             delta = torch.zeros_like(output)
             flat_delta = delta.reshape(-1, delta.size(-1))
             # Clone the expanded index so repeated independent forwards do not
@@ -172,25 +157,25 @@ def _find_first_named_module(model: nn.Module, target_name: str) -> nn.Module | 
     return None
 
 
-def install_coord_offset_adapter(
+def install_token_embeddings_adapter(
     model: nn.Module,
     *,
-    coord_ids: Iterable[int] | None,
+    token_ids: Iterable[int] | None = None,
     tie_head: bool = True,
     dtype: str | None = None,
-) -> CoordOffsetAdapter:
-    """Install coord offset adapter onto the model.
+) -> TokenEmbeddingsAdapter:
+    """Install token embeddings adapter onto the model.
 
     Returns the created adapter module for further inspection.
     """
-    if hasattr(model, "coord_offset_adapter"):
-        return getattr(model, "coord_offset_adapter")
+    if hasattr(model, TOKEN_EMBEDDINGS_ADAPTER_NAME):
+        return getattr(model, TOKEN_EMBEDDINGS_ADAPTER_NAME)
 
     embed_module = _find_first_named_module(model, "embed_tokens")
     head_module = _find_first_named_module(model, "lm_head")
     if embed_module is None or head_module is None:
         raise ValueError(
-            "Could not locate embed_tokens and lm_head modules needed for coord_offset."
+            "Could not locate embed_tokens and lm_head modules needed for token_embeddings_adapter."
         )
 
     embed_weight = getattr(embed_module, "weight", None)
@@ -204,8 +189,8 @@ def install_coord_offset_adapter(
     embed_weight.requires_grad_(False)
     head_weight.requires_grad_(False)
 
-    adapter = CoordOffsetAdapter(
-        coord_ids=_sanitize_ids(coord_ids),
+    adapter = TokenEmbeddingsAdapter(
+        token_ids=_sanitize_ids(token_ids),
         tie_head=tie_head,
         embed_dim=embed_weight.size(1),
         head_dim=head_weight.size(1),
@@ -217,8 +202,8 @@ def install_coord_offset_adapter(
     return adapter
 
 
-def reattach_coord_offset_hooks(model: nn.Module) -> CoordOffsetAdapter | None:
-    """Re-bind coord-offset hooks after PEFT/Swift wrapping.
+def reattach_token_embeddings_adapter_hooks(model: nn.Module) -> TokenEmbeddingsAdapter | None:
+    """Re-bind token embeddings adapter hooks after PEFT/Swift wrapping.
 
     When the adapter is wrapped by ModulesToSaveWrapper, the active module is the
     copied adapter under modules_to_save, not the original instance we attached
@@ -231,9 +216,9 @@ def reattach_coord_offset_hooks(model: nn.Module) -> CoordOffsetAdapter | None:
         ModulesToSaveWrapper = None  # type: ignore
 
     # Find adapter instance (unwrap ModulesToSaveWrapper when present)
-    adapter: CoordOffsetAdapter | None = None
+    adapter: TokenEmbeddingsAdapter | None = None
     for _, module in model.named_modules():
-        if isinstance(module, CoordOffsetAdapter):
+        if isinstance(module, TokenEmbeddingsAdapter):
             adapter = module
             break
         if ModulesToSaveWrapper and isinstance(module, ModulesToSaveWrapper):
@@ -244,7 +229,7 @@ def reattach_coord_offset_hooks(model: nn.Module) -> CoordOffsetAdapter | None:
             elif len(module.modules_to_save):
                 # fallback to any stored module
                 target = next(iter(module.modules_to_save.values()))
-            if isinstance(target, CoordOffsetAdapter):
+            if isinstance(target, TokenEmbeddingsAdapter):
                 adapter = target
                 break
 
@@ -255,7 +240,7 @@ def reattach_coord_offset_hooks(model: nn.Module) -> CoordOffsetAdapter | None:
     head_module = _find_first_named_module(model, "lm_head")
     if embed_module is None or head_module is None:
         raise ValueError(
-            "Could not locate embed_tokens and lm_head modules needed to reattach coord_offset hooks."
+            "Could not locate embed_tokens and lm_head modules needed to reattach token_embeddings_adapter hooks."
         )
 
     # Remove stale hooks (they point to pre-wrapped modules)
@@ -270,21 +255,11 @@ def reattach_coord_offset_hooks(model: nn.Module) -> CoordOffsetAdapter | None:
     return adapter
 
 
-TokenRowOffsetAdapter = CoordOffsetAdapter
-TokenRowOffsetConfig = CoordOffsetConfig
-install_token_row_offset_adapter = install_coord_offset_adapter
-reattach_token_row_offset_hooks = reattach_coord_offset_hooks
-
-
 __all__ = [
     "DEFAULT_COORD_ID_RANGE",
     "DEFAULT_EXCLUDE_IDS",
-    "CoordOffsetConfig",
-    "CoordOffsetAdapter",
-    "TokenRowOffsetConfig",
-    "TokenRowOffsetAdapter",
-    "install_coord_offset_adapter",
-    "install_token_row_offset_adapter",
-    "reattach_coord_offset_hooks",
-    "reattach_token_row_offset_hooks",
+    "TokenEmbeddingsAdapter",
+    "TOKEN_EMBEDDINGS_ADAPTER_NAME",
+    "install_token_embeddings_adapter",
+    "reattach_token_embeddings_adapter_hooks",
 ]

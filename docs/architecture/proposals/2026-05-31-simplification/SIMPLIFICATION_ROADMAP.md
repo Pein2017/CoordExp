@@ -139,8 +139,8 @@ src/training/runtime/cache.py
 src/training/runtime/checkpointing.py
   checkpoint mode, resume, final checkpoint behavior
 
-src/training/adapters/coord_offset.py
-  coord-offset and trainable token-row setup
+src/training/adapters/token_embeddings_adapter.py
+  token-embeddings adapter setup
 
 src/training/artifacts.py
   effective runtime payload, manifests, provenance
@@ -485,7 +485,7 @@ Moving too much at once will blur behavior changes and ownership changes.
 - Keep wrappers.
 - Prove tests pass.
 
-### PR 4: Extract coord-offset and token-row setup
+### PR 4: Extract token-embeddings adapter setup
 
 - Move adapter logic to `src/training/adapters/`.
 - Keep behavior identical.

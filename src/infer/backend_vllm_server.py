@@ -23,7 +23,7 @@ from src.infer.runtime import (
     resolve_rollout_runtime_facts_from_owner,
     vllm_mode_from_rollout_owner,
 )
-from src.tokens.row_offsets import CoordOffsetAdapter
+from src.tokens.row_offsets import TokenEmbeddingsAdapter
 
 from src.infer.backend_sync import (
     COORDEXP_WORKER_EXTENSION_CLS,
@@ -1204,7 +1204,7 @@ def _vllm_adapter_peft_config(peft_config: Any) -> tuple[dict[str, Any], tuple[s
     )
     if modules_to_save:
         # vLLM's in-memory adapter endpoint only consumes LoRA tensors. Extra
-        # PEFT modules such as CoordExp's coord_offset_adapter stay on the
+        # PEFT modules such as CoordExp's token_embeddings_adapter stay on the
         # learner/checkpoint path and must not be declared to the vLLM LoRA loader.
         payload["modules_to_save"] = None
     return payload, modules_to_save
@@ -1217,7 +1217,7 @@ def _filter_vllm_adapter_lora_tensors(
     dropped: list[str] = []
     for name, tensor in lora_params.items():
         name_s = str(name)
-        if "modules_to_save." in name_s or "coord_offset_adapter" in name_s:
+        if "modules_to_save." in name_s or "token_embeddings_adapter" in name_s:
             dropped.append(name_s)
             continue
         if "lora_" in name_s or "lora_magnitude_vector" in name_s:
@@ -1351,21 +1351,21 @@ def _build_vllm_adapter_sync_provenance(
 _UNRESOLVED_ACTIVE_ADAPTER = object()
 
 
-def _find_active_coord_offset_adapter(model: Any) -> CoordOffsetAdapter | None:
+def _find_active_token_embeddings_adapter(model: Any) -> TokenEmbeddingsAdapter | None:
     named_modules = getattr(model, "named_modules", None)
     if not callable(named_modules):
         return None
 
-    direct: CoordOffsetAdapter | None = None
+    direct: TokenEmbeddingsAdapter | None = None
     for name, module in named_modules():
         wrapped = _active_modules_to_save_coord_adapter(module)
         if wrapped is _UNRESOLVED_ACTIVE_ADAPTER:
             return None
-        if isinstance(wrapped, CoordOffsetAdapter):
+        if isinstance(wrapped, TokenEmbeddingsAdapter):
             return wrapped
         if (
             direct is None
-            and isinstance(module, CoordOffsetAdapter)
+            and isinstance(module, TokenEmbeddingsAdapter)
             and not _is_wrapper_internal_module_name(name)
         ):
             direct = module
@@ -1374,7 +1374,7 @@ def _find_active_coord_offset_adapter(model: Any) -> CoordOffsetAdapter | None:
 
 def _active_modules_to_save_coord_adapter(
     module: Any,
-) -> CoordOffsetAdapter | object | None:
+) -> TokenEmbeddingsAdapter | object | None:
     modules_to_save = getattr(module, "modules_to_save", None)
     if not _looks_like_module_mapping(modules_to_save):
         return None
@@ -1383,13 +1383,13 @@ def _active_modules_to_save_coord_adapter(
     if active_adapters is not None:
         for name in active_adapters:
             if name in modules_to_save and isinstance(
-                modules_to_save[name], CoordOffsetAdapter
+                modules_to_save[name], TokenEmbeddingsAdapter
             ):
                 return modules_to_save[name]
         return _UNRESOLVED_ACTIVE_ADAPTER
 
     for candidate in modules_to_save.values():
-        if isinstance(candidate, CoordOffsetAdapter):
+        if isinstance(candidate, TokenEmbeddingsAdapter):
             return candidate
     return None
 
@@ -1422,17 +1422,17 @@ def _looks_like_module_mapping(value: Any) -> bool:
     )
 
 
-def _validate_coord_offset_adapter_for_vllm_sync(
-    adapter: CoordOffsetAdapter,
+def _validate_token_embeddings_adapter_for_vllm_sync(
+    adapter: TokenEmbeddingsAdapter,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None, bool]:
-    coord_ids = getattr(adapter, "coord_ids", None)
+    coord_ids = getattr(adapter, "token_ids", None)
     embed_offset = getattr(adapter, "embed_offset", None)
     head_offset = getattr(adapter, "head_offset", None)
     tie_head = bool(getattr(adapter, "tie_head", True))
 
     if not torch.is_tensor(coord_ids) or coord_ids.ndim != 1 or coord_ids.numel() == 0:
         raise RuntimeError(
-            "coord_offset_adapter vLLM sync requires non-empty 1D coord_ids."
+            "token_embeddings_adapter vLLM sync requires non-empty 1D token_ids."
         )
     if (
         not torch.is_tensor(embed_offset)
@@ -1440,8 +1440,8 @@ def _validate_coord_offset_adapter_for_vllm_sync(
         or embed_offset.size(0) != coord_ids.numel()
     ):
         raise RuntimeError(
-            "coord_offset_adapter vLLM sync requires embed_offset with shape "
-            "[num_coord_ids, hidden]."
+            "token_embeddings_adapter vLLM sync requires embed_offset with shape "
+            "[num_token_ids, hidden]."
         )
     if not tie_head and (
         not torch.is_tensor(head_offset)
@@ -1449,8 +1449,8 @@ def _validate_coord_offset_adapter_for_vllm_sync(
         or head_offset.size(0) != coord_ids.numel()
     ):
         raise RuntimeError(
-            "untied coord_offset_adapter vLLM sync requires head_offset with "
-            "shape [num_coord_ids, hidden]."
+            "untied token_embeddings_adapter vLLM sync requires head_offset with "
+            "shape [num_token_ids, hidden]."
         )
     return (
         coord_ids.detach().to(dtype=torch.long).contiguous(),
@@ -1460,7 +1460,7 @@ def _validate_coord_offset_adapter_for_vllm_sync(
     )
 
 
-def _sync_vllm_server_coord_offset_adapter(
+def _sync_vllm_server_token_embeddings_adapter(
     *,
     owner: Any,
     client: Any,
@@ -1468,15 +1468,15 @@ def _sync_vllm_server_coord_offset_adapter(
     dropped_modules_to_save: tuple[str, ...],
     dropped_param_names: tuple[str, ...],
 ) -> dict[str, Any]:
-    has_declared_coord = "coord_offset_adapter" in set(dropped_modules_to_save) or any(
-        "coord_offset_adapter" in name for name in dropped_param_names
+    has_declared_coord = "token_embeddings_adapter" in set(dropped_modules_to_save) or any(
+        "token_embeddings_adapter" in name for name in dropped_param_names
     )
-    adapter = _find_active_coord_offset_adapter(owner.model)
+    adapter = _find_active_token_embeddings_adapter(owner.model)
     if adapter is None:
         if has_declared_coord:
             raise RuntimeError(
-                "vLLM adapter sync detected coord_offset_adapter in the PEFT "
-                "payload, but could not find an active CoordOffsetAdapter on "
+                "vLLM adapter sync detected token_embeddings_adapter in the PEFT "
+                "payload, but could not find an active TokenEmbeddingsAdapter on "
                 "the learner model. Refusing to run rollouts with missing "
                 "token-row offsets."
             )
@@ -1492,12 +1492,12 @@ def _sync_vllm_server_coord_offset_adapter(
     if not callable(update_fn):
         raise RuntimeError(
             "vLLM adapter sync requires ms-swift VLLMClient.update_token_row_offsets "
-            "when the learner has coord_offset_adapter. Update /data/ms-swift or "
+            "when the learner has token_embeddings_adapter. Update /data/ms-swift or "
             "disable vLLM server rollouts for this checkpoint."
         )
 
     coord_ids, embed_offset, head_offset, tie_head = (
-        _validate_coord_offset_adapter_for_vllm_sync(adapter)
+        _validate_token_embeddings_adapter_for_vllm_sync(adapter)
     )
     update_fn(
         coord_ids.to(device=embed_offset.device),
@@ -1506,7 +1506,7 @@ def _sync_vllm_server_coord_offset_adapter(
         tie_head=tie_head,
     )
     logger.info(
-        "vLLM adapter sync updated coord_offset_adapter token rows: rows=%s "
+        "vLLM adapter sync updated token_embeddings_adapter token rows: rows=%s "
         "tie_head=%s embed_shape=%s head_shape=%s",
         int(coord_ids.numel()),
         bool(tie_head),
@@ -1617,7 +1617,7 @@ def sync_vllm_server_adapter(
         bucket.get_metadata(),
         bucket.get_flattened_tensor(),
     )
-    coord_row_provenance = _sync_vllm_server_coord_offset_adapter(
+    coord_row_provenance = _sync_vllm_server_token_embeddings_adapter(
         owner=owner,
         client=client,
         logger=logger,

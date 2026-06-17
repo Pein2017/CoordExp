@@ -219,11 +219,11 @@ Separator, terminal, and chat-stop positions are ordinary recursive CE targets.
 They do not have a separate authored weighting section or metric; `<|im_end|>`
 is supervised with the same teacher-forced CE path as other hard targets.
 
-Compact-full token-row training uses 1002 trainable rows through the persisted
-`coord_offset_adapter` module name: the 1000 coord rows plus
-`<|object_ref_start|>` and `<|box_start|>`. Treat the persisted module name as
-historical; the current contract is token-row adaptation, not coord-only
-adaptation.
+Compact token-row training uses the persisted `token_embeddings_adapter` module
+name. The compact teacher-forcing route trains the 1000 coord rows plus required
+schema rows such as `<|object_ref_start|>` and `<|box_start|>`; the
+`compact_object_box_closed` route trains 1004 rows by also including
+`<|object_ref_end|>` and `<|box_end|>`.
 
 For legacy/comparator `prefix_rollin_et_rmp_ce` smoke and ablation monitoring, use
 `loss/recursive_detection_ce` as the comparable objective-loss scalar. The
@@ -405,23 +405,37 @@ before drawing boxes or scoring metrics. Score-aware mAP for this benchmark
 comes from numeric-span confidence post-op on the raw bbox integers rather than
 from constant-score compatibility artifacts.
 
-## Coord-offset adapter (tie-head / single shared table)
+## Token-embeddings adapter (tie-head / single shared table)
 
 When training with coord tokens, CoordExp can optionally avoid updating the full vocabulary embedding
-and instead learn a small **offset adapter** over just the coord-token id range.
+and instead learn a small **offset adapter** over role-resolved token rows.
 
 **Key idea**:
 - Freeze the base `embed_tokens.weight` and `lm_head.weight`.
-- Train a compact offset table only for `<|coord_0|>.. <|coord_999|>` token ids.
+- Train a compact offset table for `<|coord_0|>.. <|coord_999|>` and any
+  schema tokens required by the active compact template.
 
 **Config**:
 ```yaml
 custom:
-  coord_offset:
+  token_embeddings_adapter:
     enabled: true
     # Default: Qwen3-VL-style tie-head (single/shared lookup table for embed + head).
     tie_head: true
-    ids: { start: 151670, end: 152669 }  # <|coord_0|>.. <|coord_999|>
+    groups:
+      coord_geometry:
+        role: coord_geometry
+        start_token: "<|coord_0|>"
+        end_token: "<|coord_999|>"
+        expected_start: 151670
+        expected_end: 152669
+      schema_tokens:
+        role: structural_ce_only
+        tokens:
+          - "<|object_ref_start|>"
+          - "<|object_ref_end|>"
+          - "<|box_start|>"
+          - "<|box_end|>"
     # Optional: learning-rate overrides for the offset parameters.
     # When tie_head: true, only embed_lr is used (head_lr is ignored).
     embed_lr: 1.0e-4
@@ -441,6 +455,6 @@ custom:
   - Export/merge may need to materialize `lm_head.weight` and disable tying to preserve separate behavior.
 
 **Export/merge**:
-- Use `scripts/merge_coord.sh` to merge LoRA/DoRA and bake the coord-offset adapter into a merged HF checkpoint.
+- Use `scripts/merge_coord.sh` to merge LoRA/DoRA and bake the token-embeddings adapter into a merged HF checkpoint.
   - With `tie_head: true`, the merged checkpoint can keep tied embeddings (single table).
   - With `tie_head: false`, the merged checkpoint may need an explicit `lm_head.weight` tensor and `tie_word_embeddings: false`.

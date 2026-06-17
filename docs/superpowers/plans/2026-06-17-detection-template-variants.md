@@ -544,7 +544,7 @@ Expected: all selected tests pass.
 - Modify: `src/infer/checkpoints.py`
 - Modify: `src/config/schema.py`
 - Test: `tests/test_infer_checkpoint_resolution.py`
-- Test: `tests/test_inject_coord_offsets_script.py`
+- Test: `tests/test_inject_token_embeddings_adapter_script.py`
 
 - [x] **Step 1: Add adapter validation tests**
 
@@ -581,14 +581,14 @@ Also add rejection tests for missing `<|box_end|>`, missing `<|object_ref_end|>`
 Run:
 
 ```bash
-python -m pytest tests/test_infer_checkpoint_resolution.py tests/test_inject_coord_offsets_script.py -q
+python -m pytest tests/test_infer_checkpoint_resolution.py tests/test_inject_token_embeddings_adapter_script.py -q
 ```
 
 Expected: failures because validation still keys on `detection_sequence_format == "compact_full"` and 1002 rows.
 
 - [x] **Step 3: Implement template-derived row validation**
 
-Update `validate_compact_coord_token_adapter_contract` to accept `detection_template_id`. If an adapter checkpoint has `coord_offset_adapter`, validate:
+Update `validate_compact_coord_token_adapter_contract` to accept `detection_template_id`. If an adapter checkpoint has `token_embeddings_adapter`, validate:
 
 - exact required row id set,
 - no missing ids,
@@ -596,7 +596,7 @@ Update `validate_compact_coord_token_adapter_contract` to accept `detection_temp
 - no duplicates,
 - coord id count matches embedding offset row count,
 - untied head offset row count matches when present,
-- `modules_to_save` contains `coord_offset_adapter` when adapter rows are expected.
+- `modules_to_save` contains `token_embeddings_adapter` when adapter rows are expected.
 
 Keep full or merged checkpoint exemption for tensor row validation, but require template metadata elsewhere.
 
@@ -605,7 +605,7 @@ Keep full or merged checkpoint exemption for tensor row validation, but require 
 Run:
 
 ```bash
-python -m pytest tests/test_infer_checkpoint_resolution.py tests/test_inject_coord_offsets_script.py -q
+python -m pytest tests/test_infer_checkpoint_resolution.py tests/test_inject_token_embeddings_adapter_script.py -q
 ```
 
 Expected: all selected tests pass.
@@ -804,7 +804,7 @@ python -m pytest \
   tests/test_detection_template_span_alignment.py \
   tests/test_token_span_masks_from_templates.py \
   tests/test_infer_checkpoint_resolution.py \
-  tests/test_inject_coord_offsets_script.py \
+  tests/test_inject_token_embeddings_adapter_script.py \
   tests/test_infer_compact_full_policy_contract.py \
   tests/test_infer_artifact_metadata.py \
   tests/test_unified_infer_pipeline.py \
@@ -864,7 +864,7 @@ Expected: any remaining active `compact_full` or old compact-knob references are
 
 - [x] Every OpenSpec requirement in `openspec/changes/detection-template-variants/specs/detection-template-variants/spec.md` maps to Tasks 1, 2, 3, 5, 6, or 7.
 - [x] `stage1-detection-objectives` deltas map to Tasks 3, 4, and 8.
-- [x] `coord_offset` deltas map to Task 5.
+- [x] `token_embeddings_adapter` deltas map to Task 5.
 - [x] `dataset-prompt-variants`, `inference-engine`, and `shared-inference-runtime` deltas map to Task 6.
 - [x] `detection-evaluator` deltas map to Task 7.
 - [x] No implementation starts before this plan and OpenSpec docs converge through subagent review.

@@ -81,8 +81,7 @@ Normative behavior:
 - `compact_box_closed` MUST require 1003 trainable rows,
 - `compact_object_box_closed` and `compact_object_box_closed_lines` MUST require
   1004 trainable rows,
-- the persisted module name `coord_offset_adapter` MAY remain for checkpoint
-  compatibility,
+- the persisted module name MUST be `token_embeddings_adapter`,
 - contract wording MUST describe this surface as token-row adaptation rather
   than coord-only adaptation,
 - the `coord_geometry` token-row group MUST preserve the expected

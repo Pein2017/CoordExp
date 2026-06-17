@@ -48,11 +48,11 @@ def _write_adapter_checkpoint(
     path: Path,
     *,
     base_model_name_or_path: str = "base-model",
-    with_coord_offset: bool = False,
+    with_token_embeddings_adapter: bool = False,
     tie_head: bool = True,
 ) -> None:
     path.mkdir(parents=True, exist_ok=True)
-    modules_to_save = ["coord_offset_adapter"] if with_coord_offset else []
+    modules_to_save = ["token_embeddings_adapter"] if with_token_embeddings_adapter else []
     (path / "adapter_config.json").write_text(
         json.dumps(
             {
@@ -63,20 +63,20 @@ def _write_adapter_checkpoint(
         ),
         encoding="utf-8",
     )
-    if with_coord_offset:
+    if with_token_embeddings_adapter:
         import torch
         from safetensors.torch import save_file
 
         payload = {
-            "base_model.model.coord_offset_adapter.coord_ids": torch.tensor(
+            "base_model.model.token_embeddings_adapter.token_ids": torch.tensor(
                 [2, 5], dtype=torch.long
             ),
-            "base_model.model.coord_offset_adapter.embed_offset": torch.zeros(
+            "base_model.model.token_embeddings_adapter.embed_offset": torch.zeros(
                 2, 4, dtype=torch.float32
             ),
         }
         if not tie_head:
-            payload["base_model.model.coord_offset_adapter.head_offset"] = (
+            payload["base_model.model.token_embeddings_adapter.head_offset"] = (
                 torch.zeros(2, 4, dtype=torch.float32)
             )
         save_file(payload, str(path / "adapter_model.safetensors"))
@@ -512,14 +512,14 @@ def test_hf_adapter_checkpoint_loads_via_swift_shorthand_and_records_resolved_ba
     assert summary["backend"]["resolved_adapter_checkpoint"] == str(adapter_dir)
 
 
-def test_hf_coord_offset_adapter_is_preinstalled_before_swift_reload(
+def test_hf_token_embeddings_adapter_is_preinstalled_before_swift_reload(
     tmp_path, monkeypatch
 ):
     adapter_dir = tmp_path / "adapter-dir"
     _write_adapter_checkpoint(
         adapter_dir,
         base_model_name_or_path="base-model",
-        with_coord_offset=True,
+        with_token_embeddings_adapter=True,
         tie_head=False,
     )
 
@@ -591,8 +591,8 @@ def test_hf_coord_offset_adapter_is_preinstalled_before_swift_reload(
             load_order.append(("swift", model_id, inference_mode))
             return _WrappedModel(model)
 
-    def _fake_install(model, *, coord_ids, tie_head, dtype=None):
-        load_order.append(("install", tuple(coord_ids), tie_head, dtype))
+    def _fake_install(model, *, token_ids, tie_head, dtype=None):
+        load_order.append(("install", tuple(token_ids), tie_head, dtype))
         return object()
 
     def _fake_reattach(model):
@@ -604,8 +604,10 @@ def test_hf_coord_offset_adapter_is_preinstalled_before_swift_reload(
 
     monkeypatch.setattr(infer_runtime, "AutoProcessor", _DummyAutoProcessor)
     monkeypatch.setattr(infer_runtime, "Qwen3VLForConditionalGeneration", _DummyQwen)
-    monkeypatch.setattr(infer_runtime, "install_coord_offset_adapter", _fake_install)
-    monkeypatch.setattr(infer_runtime, "reattach_coord_offset_hooks", _fake_reattach)
+    monkeypatch.setattr(infer_runtime, "install_token_embeddings_adapter", _fake_install)
+    monkeypatch.setattr(
+        infer_runtime, "reattach_token_embeddings_adapter_hooks", _fake_reattach
+    )
     monkeypatch.setitem(sys.modules, "swift", fake_swift_module)
 
     engine = InferenceEngine(inf_cfg, gen_cfg)

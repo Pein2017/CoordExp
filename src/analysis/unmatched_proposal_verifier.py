@@ -44,8 +44,8 @@ from src.common.paths import resolve_image_path_strict
 from src.common.semantic_desc import normalize_desc
 from src.config.prompts import get_template_prompts
 from src.coord_tokens.offset_adapter import (
-    install_coord_offset_adapter,
-    reattach_coord_offset_hooks,
+    install_token_embeddings_adapter,
+    reattach_token_embeddings_adapter_hooks,
 )
 from src.infer.checkpoints import resolve_inference_checkpoint
 from src.infer.pipeline import run_pipeline
@@ -1927,9 +1927,9 @@ class TeacherForcedScorer:
         resolved_adapter_checkpoint = str(
             self.resolved_checkpoint.resolved_adapter_checkpoint or ""
         ).strip()
-        coord_offset_spec = None
+        token_embeddings_adapter_spec = None
         if self.resolved_checkpoint.adapter_info is not None:
-            coord_offset_spec = self.resolved_checkpoint.adapter_info.coord_offset_spec
+            token_embeddings_adapter_spec = self.resolved_checkpoint.adapter_info.token_embeddings_adapter_spec
         candidates: List[str] = []
         for cand in (requested, "flash_attention_2", "sdpa", "eager"):
             value = str(cand).strip().lower()
@@ -1945,11 +1945,11 @@ class TeacherForcedScorer:
                 )
                 model = base_model.to(self.device)
                 if resolved_adapter_checkpoint:
-                    if coord_offset_spec is not None:
-                        install_coord_offset_adapter(
+                    if token_embeddings_adapter_spec is not None:
+                        install_token_embeddings_adapter(
                             model,
-                            coord_ids=coord_offset_spec.coord_ids,
-                            tie_head=coord_offset_spec.tie_head,
+                            token_ids=token_embeddings_adapter_spec.token_ids,
+                            tie_head=token_embeddings_adapter_spec.tie_head,
                         )
                     try:
                         from swift import Swift
@@ -1969,11 +1969,11 @@ class TeacherForcedScorer:
                             f"{resolved_adapter_checkpoint!r} onto base model "
                             f"{resolved_base_model_checkpoint!r}."
                         ) from exc
-                    if coord_offset_spec is not None:
-                        reattached = reattach_coord_offset_hooks(model)
+                    if token_embeddings_adapter_spec is not None:
+                        reattached = reattach_token_embeddings_adapter_hooks(model)
                         if reattached is None:
                             raise RuntimeError(
-                                "coord_offset_adapter was declared in the adapter checkpoint, "
+                                "token_embeddings_adapter was declared in the adapter checkpoint, "
                                 "but its runtime hooks could not be reattached after Swift loading."
                             )
                 model.eval()

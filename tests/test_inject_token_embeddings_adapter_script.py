@@ -7,15 +7,15 @@ import safetensors.torch as st
 import torch
 
 
-def test_inject_coord_offsets_materializes_head_and_unties_config(tmp_path: Path) -> None:
-    """Contract: an untied coord_offset adapter must materialize lm_head.weight when
+def test_inject_token_embeddings_adapter_materializes_head_and_unties_config(tmp_path: Path) -> None:
+    """Contract: an untied token_embeddings_adapter must materialize lm_head.weight when
     the merged export omitted it (typical when tie_word_embeddings=True).
 
     This ensures merged checkpoints preserve distinct embed vs head deltas.
     """
 
     repo_root = Path(__file__).resolve().parents[1]
-    tool = repo_root / "scripts" / "tools" / "inject_coord_offsets.py"
+    tool = repo_root / "scripts" / "tools" / "inject_token_embeddings_adapter.py"
     assert tool.is_file()
 
     merged_dir = tmp_path / "merged"
@@ -49,9 +49,9 @@ def test_inject_coord_offsets_materializes_head_and_unties_config(tmp_path: Path
     head_offset = torch.full((2, hidden), 2.0, dtype=torch.float32)
     st.save_file(
         {
-            "base_model.model.coord_offset_adapter.coord_ids": coord_ids,
-            "base_model.model.coord_offset_adapter.embed_offset": embed_offset,
-            "base_model.model.coord_offset_adapter.head_offset": head_offset,
+            "base_model.model.token_embeddings_adapter.token_ids": coord_ids,
+            "base_model.model.token_embeddings_adapter.embed_offset": embed_offset,
+            "base_model.model.token_embeddings_adapter.head_offset": head_offset,
         },
         str(adapter_dir / "adapter_model.safetensors"),
     )
@@ -85,4 +85,3 @@ def test_inject_coord_offsets_materializes_head_and_unties_config(tmp_path: Path
         (merged_dir / "model.safetensors.index.json").read_text(encoding="utf-8")
     )
     assert index["weight_map"]["lm_head.weight"] == shard_name
-

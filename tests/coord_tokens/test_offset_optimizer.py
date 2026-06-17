@@ -4,14 +4,14 @@ import pytest
 import torch.nn as nn
 from transformers import TrainingArguments
 
-from src.coord_tokens.offset_adapter import install_coord_offset_adapter
-from src.config.schema import CoordOffsetConfig
+from src.coord_tokens.offset_adapter import install_token_embeddings_adapter
+from src.config.schema import TokenEmbeddingsAdapterConfig
 
 try:
-    from src.optim.coord_offset_optimizer import create_multimodal_coord_offset_optimizer
+    from src.optim.token_embeddings_adapter_optimizer import create_multimodal_token_embeddings_adapter_optimizer
 except ImportError:
     pytest.skip(
-        "swift.plugin.optimizer not installed; skipping coord_offset_optimizer tests",
+        "swift.plugin.optimizer not installed; skipping token_embeddings_adapter optimizer tests",
         allow_module_level=True,
     )
 
@@ -47,16 +47,15 @@ class ToyModelWithoutMeta(nn.Module):
         return self.lm_head(hidden)
 
 
-def test_optimizer_groups_separate_coord_offsets():
+def test_optimizer_groups_separate_token_embeddings_adapter_offsets():
     model = ToyModel()
-    adapter = install_coord_offset_adapter(
-        model, coord_ids=[3, 4], tie_head=True, dtype="float32"
+    adapter = install_token_embeddings_adapter(
+        model, token_ids=[3, 4], tie_head=True, dtype="float32"
     )
 
-    coord_cfg = CoordOffsetConfig(
+    adapter_cfg = TokenEmbeddingsAdapterConfig(
         enabled=True,
         tie_head=True,
-        ids=(3, 4),
         embed_lr=1e-3,
         head_lr=2e-3,
         weight_decay=0.0,
@@ -72,9 +71,9 @@ def test_optimizer_groups_separate_coord_offsets():
     # Inject ms-swift style attrs
     args.vit_lr = 2e-4
     args.aligner_lr = 8e-4
-    args.coord_offset_config = coord_cfg
+    args.token_embeddings_adapter_config = adapter_cfg
 
-    optimizer, _ = create_multimodal_coord_offset_optimizer(args, model, dataset=None)
+    optimizer, _ = create_multimodal_token_embeddings_adapter_optimizer(args, model, dataset=None)
 
     lr_by_param = {}
     wd_by_param = {}
@@ -87,8 +86,8 @@ def test_optimizer_groups_separate_coord_offsets():
 
     # Tie-head: only a single shared offset table should exist.
     assert adapter.head_offset is None
-    assert lr_by_param[id(adapter.embed_offset)] == coord_cfg.embed_lr
-    assert wd_by_param[id(adapter.embed_offset)] == coord_cfg.weight_decay
+    assert lr_by_param[id(adapter.embed_offset)] == adapter_cfg.embed_lr
+    assert wd_by_param[id(adapter.embed_offset)] == adapter_cfg.weight_decay
 
     # Vision/aligner/llm params follow their respective LRs
     vision_weight = dict(model.named_parameters())["vision.weight"]
@@ -102,14 +101,13 @@ def test_optimizer_groups_separate_coord_offsets():
 
 def test_optimizer_groups_untied_offsets_use_two_buckets():
     model = ToyModel()
-    adapter = install_coord_offset_adapter(
-        model, coord_ids=[3, 4], tie_head=False, dtype="float32"
+    adapter = install_token_embeddings_adapter(
+        model, token_ids=[3, 4], tie_head=False, dtype="float32"
     )
 
-    coord_cfg = CoordOffsetConfig(
+    adapter_cfg = TokenEmbeddingsAdapterConfig(
         enabled=True,
         tie_head=False,
-        ids=(3, 4),
         embed_lr=1e-3,
         head_lr=2e-3,
         weight_decay=0.0,
@@ -123,9 +121,9 @@ def test_optimizer_groups_untied_offsets_use_two_buckets():
     )
     args.vit_lr = 2e-4
     args.aligner_lr = 8e-4
-    args.coord_offset_config = coord_cfg
+    args.token_embeddings_adapter_config = adapter_cfg
 
-    optimizer, _ = create_multimodal_coord_offset_optimizer(args, model, dataset=None)
+    optimizer, _ = create_multimodal_token_embeddings_adapter_optimizer(args, model, dataset=None)
 
     lr_by_param = {}
     for group in optimizer.param_groups:
@@ -134,20 +132,19 @@ def test_optimizer_groups_untied_offsets_use_two_buckets():
             lr_by_param[id(p)] = lr
 
     assert adapter.head_offset is not None
-    assert lr_by_param[id(adapter.embed_offset)] == coord_cfg.embed_lr
-    assert lr_by_param[id(adapter.head_offset)] == coord_cfg.head_lr
+    assert lr_by_param[id(adapter.embed_offset)] == adapter_cfg.embed_lr
+    assert lr_by_param[id(adapter.head_offset)] == adapter_cfg.head_lr
 
 
 def test_optimizer_fallback_without_model_meta_groups_remaining_params_once():
     model = ToyModelWithoutMeta()
-    adapter = install_coord_offset_adapter(
-        model, coord_ids=[3, 4], tie_head=True, dtype="float32"
+    adapter = install_token_embeddings_adapter(
+        model, token_ids=[3, 4], tie_head=True, dtype="float32"
     )
 
-    coord_cfg = CoordOffsetConfig(
+    adapter_cfg = TokenEmbeddingsAdapterConfig(
         enabled=True,
         tie_head=True,
-        ids=(3, 4),
         embed_lr=1e-3,
         weight_decay=0.0,
     )
@@ -159,9 +156,9 @@ def test_optimizer_fallback_without_model_meta_groups_remaining_params_once():
     )
     args.vit_lr = None
     args.aligner_lr = None
-    args.coord_offset_config = coord_cfg
+    args.token_embeddings_adapter_config = adapter_cfg
 
-    optimizer, _ = create_multimodal_coord_offset_optimizer(args, model, dataset=None)
+    optimizer, _ = create_multimodal_token_embeddings_adapter_optimizer(args, model, dataset=None)
 
     grouped_param_ids = [
         id(param) for group in optimizer.param_groups for param in group["params"]

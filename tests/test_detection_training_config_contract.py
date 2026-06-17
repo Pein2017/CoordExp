@@ -1066,7 +1066,7 @@ def test_detection_requires_exact_coord_row_range() -> None:
 
 
 @pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
-def test_detection_rejects_extra_trainable_token_rows() -> None:
+def test_detection_rejects_extra_token_rows() -> None:
     payload = _detection_payload()
     token_rows = dict(payload["token_rows"])  # type: ignore[arg-type]
     groups = dict(token_rows["groups"])  # type: ignore[index]
@@ -1545,7 +1545,7 @@ def test_detection_recursive_detection_launch_configs_parse_without_custom() -> 
         assert cfg.packing.static_packing is False
         assert cfg.packing.padding_free_packed is False
         assert cfg.training["packing"] is False
-        assert cfg.training["optimizer"] == "multimodal_coord_offset"
+        assert cfg.training["optimizer"] == "multimodal_token_embeddings_adapter"
 
 
 def test_stage1_detection_teacher_forcing_canonical_launch_configs_parse() -> None:

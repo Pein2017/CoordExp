@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
-### Requirement: Coord-offset tuning for coord tokens
-The system SHALL provide an opt-in offset adapter that adds trainable offsets for
+### Requirement: Token-embeddings adapter tuning for special token rows
+The system SHALL provide an opt-in `custom.token_embeddings_adapter` adapter that adds trainable offsets for
 configured token row IDs to both the token embedding and lm_head, while leaving
 base weights frozen and storing the offsets with the adapter checkpoint (PEFT).
 
@@ -15,14 +15,13 @@ The structural row IDs are the native Qwen/CoordExp special-token IDs:
 verify those tokens resolve as single-token entries before training or adapter
 checkpoint validation relies on them.
 
-The implementation MAY keep the persisted module name `coord_offset_adapter` for
-checkpoint file compatibility, but config validation and docs MUST describe
-compact detection usage as token-row adaptation when structural rows are
-included.
+The persisted module name MUST be `token_embeddings_adapter`; config validation
+and docs MUST describe compact detection usage as token-row adaptation when
+structural rows are included.
 
-#### Scenario: Coord offsets enabled
-- GIVEN coord_offset.enabled is true in the training config
-- AND coord_offset.ids is set to the coord vocab IDs (default 151670-152669)
+#### Scenario: Token embeddings adapter enabled
+- GIVEN custom.token_embeddings_adapter.enabled is true in the training config
+- AND custom.token_embeddings_adapter.groups resolves the coord vocab IDs (default 151670-152669)
 - WHEN the model runs forward
 - THEN embeddings for those IDs include the offset addition, logits include the
   head offset, and non-coord IDs are unchanged.
@@ -36,17 +35,17 @@ included.
   `<|box_start|>`, and `<|box_end|>`.
 
 #### Scenario: Base weights remain frozen
-- GIVEN coord_offset.enabled is true
-- WHEN training with coord-offset active
+- GIVEN custom.token_embeddings_adapter.enabled is true
+- WHEN training with token-embeddings adapter active
 - THEN gradients for base embed_tokens and lm_head weights remain zero, and only
-  coord-offset parameters receive updates.
+  token-embeddings adapter parameters receive updates.
 
 #### Scenario: Saving and loading
-- GIVEN a trained model with coord-offset enabled
+- GIVEN a trained model with token_embeddings_adapter enabled
 - WHEN saving the adapter checkpoint
-- THEN coord-offset parameters are saved with the adapter (PEFT
-  `adapter_model.safetensors`, via `modules_to_save`) and restored on load
-  without extra steps.
+- THEN token-embeddings adapter parameters are saved with the adapter (PEFT
+  `adapter_model.safetensors`, via `modules_to_save=["token_embeddings_adapter"]`)
+  and restored on load without extra steps.
 
 ## ADDED Requirements
 
@@ -56,13 +55,13 @@ the exact row-id set derived from the resolved `detection_template.id`.
 
 Normative behavior:
 
-- adapter-shorthand or PEFT checkpoints with `coord_offset_adapter` MUST validate
+- adapter-shorthand or PEFT checkpoints with `token_embeddings_adapter` MUST validate
   against the selected compact template id,
 - validation MUST reject missing row ids, extra row ids, duplicate row ids, and
   structural row omissions,
-- saved `coord_ids`, embedding offset rows, and lm-head offset rows when present
+- saved `token_ids`, embedding offset rows, and lm-head offset rows when present
   MUST have matching row counts,
-- `modules_to_save` MUST include `coord_offset_adapter` when offset rows are
+- `modules_to_save` MUST include `token_embeddings_adapter` when offset rows are
   expected from the adapter checkpoint,
 - validation errors MUST name the resolved template id and any missing or extra
   structural rows,
@@ -71,7 +70,7 @@ Normative behavior:
   applicable to them.
 
 #### Scenario: Adapter checkpoint accepts exact object-box row set
-- GIVEN an adapter checkpoint with `coord_offset_adapter`
+- GIVEN an adapter checkpoint with `token_embeddings_adapter`
 - AND `detection_template.id: compact_object_box_closed`
 - WHEN checkpoint validation runs
 - THEN the checkpoint is accepted only if its row ids are exactly the 1000 coord
@@ -79,7 +78,7 @@ Normative behavior:
   `<|box_end|>`.
 
 #### Scenario: Missing box-end row is rejected
-- GIVEN an adapter checkpoint with `coord_offset_adapter`
+- GIVEN an adapter checkpoint with `token_embeddings_adapter`
 - AND `detection_template.id: compact_box_closed`
 - WHEN the checkpoint row ids omit `<|box_end|>`
 - THEN checkpoint validation fails

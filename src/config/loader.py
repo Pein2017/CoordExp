@@ -806,10 +806,14 @@ class ConfigLoader:
             setattr(train_args, "detection_config", config)
         else:
             try:
-                setattr(train_args, "coord_offset_config", config.custom.coord_offset)
+                setattr(
+                    train_args,
+                    "token_embeddings_adapter_config",
+                    config.custom.token_embeddings_adapter,
+                )
             except (AttributeError, TypeError) as exc:  # pragma: no cover
                 raise RuntimeError(
-                    "Unable to attach coord_offset_config to TrainArguments; ensure ms-swift exposes this attribute."
+                    "Unable to attach token_embeddings_adapter_config to TrainArguments; ensure ms-swift exposes this attribute."
                 ) from exc
 
         inner_args = getattr(train_args, "training_args", None)
@@ -837,10 +841,14 @@ class ConfigLoader:
             setattr(inner_args, "detection_config", config)
         else:
             try:
-                setattr(inner_args, "coord_offset_config", config.custom.coord_offset)
+                setattr(
+                    inner_args,
+                    "token_embeddings_adapter_config",
+                    config.custom.token_embeddings_adapter,
+                )
             except (AttributeError, TypeError) as exc:  # pragma: no cover
                 raise RuntimeError(
-                    "Unable to attach coord_offset_config to inner training arguments; ensure ms-swift exposes this attribute."
+                    "Unable to attach token_embeddings_adapter_config to inner training arguments; ensure ms-swift exposes this attribute."
                 ) from exc
 
         return train_args

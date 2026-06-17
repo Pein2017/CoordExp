@@ -34,9 +34,7 @@ custom:
   object_ordering: sorted
   detection_sequence_format: compact
   detection_template_id: compact_object_box_closed
-  coord_offset:
-    enabled: false
-  trainable_token_rows:
+  token_embeddings_adapter:
     enabled: true
     tie_head: true
     groups:

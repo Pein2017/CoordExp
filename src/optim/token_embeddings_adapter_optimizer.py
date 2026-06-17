@@ -1,4 +1,4 @@
-"""Optimizer variant that adds coord-offset parameter buckets."""
+"""Optimizer variant that adds token-embeddings adapter parameter buckets."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ except ImportError:
         )
     except ImportError as exc:  # pragma: no cover - defensive for environments without swift
         raise ImportError(
-            "swift optimizer plugin APIs are required for coord_offset optimizer."
+            "swift optimizer plugin APIs are required for token_embeddings_adapter optimizer."
         ) from exc
 
     _OPTIMIZER_CALLBACK_BASE = OptimizerCallback
@@ -51,13 +51,13 @@ def _split_decay(
     return groups
 
 
-def create_multimodal_coord_offset_optimizer(args, model, dataset):
-    coord_cfg = getattr(args, "coord_offset_config", None)
-    if not coord_cfg or not getattr(coord_cfg, "enabled", False):
+def create_multimodal_token_embeddings_adapter_optimizer(args, model, dataset):
+    adapter_cfg = getattr(args, "token_embeddings_adapter_config", None)
+    if not adapter_cfg or not getattr(adapter_cfg, "enabled", False):
         return create_multimodal_optimizer(args, model, dataset)
 
     decay_parameters = set(Trainer.get_decay_parameter_names(None, model))
-    rejected_prefix = ["coord_offset_adapter"]
+    rejected_prefix = ["token_embeddings_adapter"]
 
     seen_params: set[int] = set()
 
@@ -70,17 +70,17 @@ def create_multimodal_coord_offset_optimizer(args, model, dataset):
             seen_params.add(id(p))
         return uniq
 
-    coord_params = [
+    adapter_params = [
         (n, p)
         for n, p in model.named_parameters()
-        if p.requires_grad and "coord_offset_adapter" in n
+        if p.requires_grad and "token_embeddings_adapter" in n
     ]
-    embed_params = [p for n, p in coord_params if "embed_offset" in n]
-    head_params = [p for n, p in coord_params if "head_offset" in n]
+    embed_params = [p for n, p in adapter_params if "embed_offset" in n]
+    head_params = [p for n, p in adapter_params if "head_offset" in n]
 
-    embed_lr = coord_cfg.embed_lr if coord_cfg.embed_lr is not None else args.learning_rate
-    head_lr = coord_cfg.head_lr if coord_cfg.head_lr is not None else args.learning_rate
-    offset_wd = coord_cfg.weight_decay if coord_cfg.weight_decay is not None else 0.0
+    embed_lr = adapter_cfg.embed_lr if adapter_cfg.embed_lr is not None else args.learning_rate
+    head_lr = adapter_cfg.head_lr if adapter_cfg.head_lr is not None else args.learning_rate
+    offset_wd = adapter_cfg.weight_decay if adapter_cfg.weight_decay is not None else 0.0
 
     optimizer_grouped_parameters: list[dict] = []
     if embed_params:
@@ -93,17 +93,17 @@ def create_multimodal_coord_offset_optimizer(args, model, dataset):
         )
 
     model_arch = getattr(getattr(model, "model_meta", None), "model_arch", None)
-    def _strip_coord(params: List[Tuple[str, torch.nn.Parameter]]) -> List[Tuple[str, torch.nn.Parameter]]:
-        return [(n, p) for n, p in params if "coord_offset_adapter" not in n]
+    def _strip_adapter(params: List[Tuple[str, torch.nn.Parameter]]) -> List[Tuple[str, torch.nn.Parameter]]:
+        return [(n, p) for n, p in params if "token_embeddings_adapter" not in n]
 
     if model_arch is not None:
-        vit_parameters = _strip_coord(
+        vit_parameters = _strip_adapter(
             get_param_startswith(model, model_arch.vision_tower, rejected_prefix)
         )
-        aligner_parameters = _strip_coord(
+        aligner_parameters = _strip_adapter(
             get_param_startswith(model, model_arch.aligner, rejected_prefix)
         )
-        llm_parameters = _strip_coord(
+        llm_parameters = _strip_adapter(
             get_param_startswith(model, model_arch.language_model, rejected_prefix)
         )
         for lr, parameters in zip(
@@ -120,7 +120,7 @@ def create_multimodal_coord_offset_optimizer(args, model, dataset):
         remaining = [
             (n, p)
             for n, p in model.named_parameters()
-            if p.requires_grad and "coord_offset_adapter" not in n
+            if p.requires_grad and "token_embeddings_adapter" not in n
         ]
         dedup_remaining = []
         for name, param in remaining:
@@ -141,30 +141,30 @@ def create_multimodal_coord_offset_optimizer(args, model, dataset):
     return optimizer_cls(optimizer_grouped_parameters, **optimizer_kwargs), None
 
 
-def register_coord_offset_optimizer() -> None:
+def register_token_embeddings_adapter_optimizer() -> None:
     try:
         from swift.plugin import optimizers_map as plugin_optimizers_map
     except ImportError:
         plugin_optimizers_map = None
 
     if plugin_optimizers_map is not None:
-        if "multimodal_coord_offset" not in plugin_optimizers_map:
-            plugin_optimizers_map["multimodal_coord_offset"] = (
-                create_multimodal_coord_offset_optimizer
+        if "multimodal_token_embeddings_adapter" not in plugin_optimizers_map:
+            plugin_optimizers_map["multimodal_token_embeddings_adapter"] = (
+                create_multimodal_token_embeddings_adapter_optimizer
             )
         return
 
-    class CoordOffsetOptimizerCallback(_OPTIMIZER_CALLBACK_BASE):
+    class TokenEmbeddingsAdapterOptimizerCallback(_OPTIMIZER_CALLBACK_BASE):
         def create_optimizer(self, model=None):
             model = model if model is not None else self.trainer.model
-            optimizer, _scheduler = create_multimodal_coord_offset_optimizer(
+            optimizer, _scheduler = create_multimodal_token_embeddings_adapter_optimizer(
                 self.args,
                 model,
                 None,
             )
             return optimizer
 
-    if "multimodal_coord_offset" not in optimizers_map:
-        optimizers_map["multimodal_coord_offset"] = (
-            CoordOffsetOptimizerCallback
+    if "multimodal_token_embeddings_adapter" not in optimizers_map:
+        optimizers_map["multimodal_token_embeddings_adapter"] = (
+            TokenEmbeddingsAdapterOptimizerCallback
         )

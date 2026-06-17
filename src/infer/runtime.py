@@ -42,8 +42,8 @@ _DISTRIBUTED_MANIFEST_TIMEOUT_S = 1800.0
 # intentionally default to None so importing this module stays lightweight.
 AutoProcessor = None
 Qwen3VLForConditionalGeneration = None
-install_coord_offset_adapter = None
-reattach_coord_offset_hooks = None
+install_token_embeddings_adapter = None
+reattach_token_embeddings_adapter_hooks = None
 tqdm = None
 
 
@@ -1410,9 +1410,9 @@ class OfflineInferenceEngine:
         resolved_adapter_checkpoint = str(
             self.cfg.resolved_adapter_checkpoint or ""
         ).strip()
-        coord_offset_spec = None
+        token_embeddings_adapter_spec = None
         if self.resolved_checkpoint.adapter_info is not None:
-            coord_offset_spec = self.resolved_checkpoint.adapter_info.coord_offset_spec
+            token_embeddings_adapter_spec = self.resolved_checkpoint.adapter_info.token_embeddings_adapter_spec
         validate_compact_coord_token_adapter_contract(
             self.resolved_checkpoint,
             detection_template_id=self.detection_template_id,
@@ -1445,18 +1445,18 @@ class OfflineInferenceEngine:
             if qwen_model_cls is None:
                 qwen_model_cls = _Qwen3VLForConditionalGeneration
 
-        install_coord_offset_adapter_fn = install_coord_offset_adapter
-        reattach_coord_offset_hooks_fn = reattach_coord_offset_hooks
-        if install_coord_offset_adapter_fn is None or reattach_coord_offset_hooks_fn is None:
+        install_token_embeddings_adapter_fn = install_token_embeddings_adapter
+        reattach_token_embeddings_adapter_hooks_fn = reattach_token_embeddings_adapter_hooks
+        if install_token_embeddings_adapter_fn is None or reattach_token_embeddings_adapter_hooks_fn is None:
             from src.coord_tokens.offset_adapter import (
-                install_coord_offset_adapter as _install_coord_offset_adapter,
-                reattach_coord_offset_hooks as _reattach_coord_offset_hooks,
+                install_token_embeddings_adapter as _install_token_embeddings_adapter,
+                reattach_token_embeddings_adapter_hooks as _reattach_token_embeddings_adapter_hooks,
             )
 
-            if install_coord_offset_adapter_fn is None:
-                install_coord_offset_adapter_fn = _install_coord_offset_adapter
-            if reattach_coord_offset_hooks_fn is None:
-                reattach_coord_offset_hooks_fn = _reattach_coord_offset_hooks
+            if install_token_embeddings_adapter_fn is None:
+                install_token_embeddings_adapter_fn = _install_token_embeddings_adapter
+            if reattach_token_embeddings_adapter_hooks_fn is None:
+                reattach_token_embeddings_adapter_hooks_fn = _reattach_token_embeddings_adapter_hooks
 
         self._seed()
         if self.model is None:
@@ -1489,11 +1489,11 @@ class OfflineInferenceEngine:
                     )
                     model = base_model.to(self.cfg.device)
                     if resolved_adapter_checkpoint:
-                        if coord_offset_spec is not None:
-                            install_coord_offset_adapter_fn(
+                        if token_embeddings_adapter_spec is not None:
+                            install_token_embeddings_adapter_fn(
                                 model,
-                                coord_ids=coord_offset_spec.coord_ids,
-                                tie_head=coord_offset_spec.tie_head,
+                                token_ids=token_embeddings_adapter_spec.token_ids,
+                                tie_head=token_embeddings_adapter_spec.tie_head,
                             )
                         try:
                             from swift import Swift
@@ -1514,11 +1514,11 @@ class OfflineInferenceEngine:
                                 f"{resolved_adapter_checkpoint!r} onto base model "
                                 f"{resolved_base_model_checkpoint!r}."
                             ) from exc
-                        if coord_offset_spec is not None:
-                            reattached = reattach_coord_offset_hooks_fn(model)
+                        if token_embeddings_adapter_spec is not None:
+                            reattached = reattach_token_embeddings_adapter_hooks_fn(model)
                             if reattached is None:
                                 raise RuntimeError(
-                                    "coord_offset_adapter was declared in the adapter "
+                                    "token_embeddings_adapter was declared in the adapter "
                                     "checkpoint, but its runtime hooks could not be "
                                     "reattached after Swift loading."
                                 )

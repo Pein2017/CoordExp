@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 """
-Inject coord_offset embeddings/logits directly into merged safetensor shards
+Inject token_embeddings_adapter embeddings/logits directly into merged safetensor shards
 without loading the full model.
 
 Usage:
-  python scripts/tools/inject_coord_offsets.py \
+  python scripts/tools/inject_token_embeddings_adapter.py \
       --merged_dir outputs/debug/coord_merged \
       --adapter_dir outputs/debug/coord/v0-20251203-054636/epoch_30-dlora-lrs_4_2_8-sft_base/checkpoint-6
 """
@@ -22,7 +22,7 @@ import torch
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--merged_dir", required=True, help="LoRA-merged model directory (safetensors shards).")
-    p.add_argument("--adapter_dir", required=True, help="Adapter checkpoint containing coord_offset.")
+    p.add_argument("--adapter_dir", required=True, help="Adapter checkpoint containing token_embeddings_adapter.")
     return p.parse_args()
 
 
@@ -31,9 +31,9 @@ def load_offsets(adapter_dir: str) -> Tuple[torch.Tensor, torch.Tensor, torch.Te
     if not os.path.isfile(ck):
         raise FileNotFoundError(f"adapter_model.safetensors not found at {ck}")
     d = st.load_file(ck)
-    coord_ids = d["base_model.model.coord_offset_adapter.coord_ids"].long()
-    embed_offset = d["base_model.model.coord_offset_adapter.embed_offset"]
-    head_offset = d.get("base_model.model.coord_offset_adapter.head_offset")
+    coord_ids = d["base_model.model.token_embeddings_adapter.token_ids"].long()
+    embed_offset = d["base_model.model.token_embeddings_adapter.embed_offset"]
+    head_offset = d.get("base_model.model.token_embeddings_adapter.head_offset")
     return coord_ids, embed_offset, head_offset
 
 
@@ -42,7 +42,7 @@ def is_tied_embeddings(merged_dir: str) -> bool:
 
     Some Qwen-family checkpoints do not store `lm_head.weight` as a standalone
     tensor shard because it is tied to `embed_tokens.weight`. In that case, to
-    bake `coord_offset.head_offset` into the exported checkpoint, we must apply
+        bake `token_embeddings_adapter.head_offset` into the exported checkpoint, we must apply
     it to `embed_tokens.weight` rows as well.
     """
 
