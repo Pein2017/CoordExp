@@ -331,6 +331,7 @@ class JSONLinesBuilder(BaseBuilder):
             return render_compact_detection_sequence(
                 payload,
                 detection_sequence_format=render_format,
+                object_field_order=self.object_field_order,
             )
         text_payload = self._prepare_text_payload(payload)
         assistant_text = dumps_coordjson(text_payload)

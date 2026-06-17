@@ -9,13 +9,14 @@ from src.datasets.utils import (
 )
 
 
-def _builder(object_field_order: str = "desc_first") -> JSONLinesBuilder:
+def _builder(object_field_order: str = "desc_first", **kwargs) -> JSONLinesBuilder:
     return JSONLinesBuilder(
         user_prompt="Locate objects",
         emit_norm="none",
         mode="dense",
         coord_tokens_enabled=True,
         object_field_order=object_field_order,
+        **kwargs,
     )
 
 
@@ -203,6 +204,35 @@ def test_jsonlines_builder_object_field_order_switches_bbox_per_object_key_order
     geometry_first_text = geometry_first["messages"][1]["content"][0]["text"]
     assert desc_first_text.index('"desc"') < desc_first_text.index('"bbox_2d"')
     assert geometry_first_text.index('"bbox_2d"') < geometry_first_text.index('"desc"')
+
+
+def test_jsonlines_builder_compact_template_honors_geometry_first_field_order():
+    record = _record_with_objects(
+        [
+            {
+                "desc": "cat",
+                "bbox_2d": [
+                    "<|coord_1|>",
+                    "<|coord_2|>",
+                    "<|coord_3|>",
+                    "<|coord_4|>",
+                ],
+            }
+        ]
+    )
+
+    built = _builder(
+        "geometry_first",
+        detection_sequence_format="compact",
+        detection_template_id="compact_object_box_closed",
+    ).build_many([record])
+
+    assistant_text = built["messages"][1]["content"][0]["text"]
+    assert (
+        assistant_text
+        == "<|box_start|><|coord_1|><|coord_2|><|coord_3|><|coord_4|>"
+        "<|box_end|><|object_ref_start|>cat<|object_ref_end|>"
+    )
 
 
 def test_jsonlines_builder_poly_output_omits_poly_points_metadata():

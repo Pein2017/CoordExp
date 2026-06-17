@@ -127,6 +127,7 @@ def render_compact_detection_sequence(
     payload: Mapping[str, Any],
     *,
     detection_sequence_format: str = COORDJSON_FORMAT,
+    object_field_order: str = "desc_first",
 ) -> str:
     """Render canonical ``{"objects": [...]}`` payload as a detection sequence."""
 
@@ -151,6 +152,7 @@ def render_compact_detection_sequence(
                     contract,
                     desc=_validate_desc(entry.get("desc")),
                     bbox_tokens=_validate_bbox_tokens(entry.get("bbox_2d")),
+                    object_field_order=object_field_order,
                 )
             )
         return "".join(rows)
