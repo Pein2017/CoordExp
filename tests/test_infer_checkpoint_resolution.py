@@ -9,7 +9,7 @@ import pytest
 from src.common.model_paths import canonical_coordexp_repo_root
 from src.infer.checkpoints import (
     resolve_inference_checkpoint,
-    validate_compact_coord_token_adapter_contract,
+    validate_compact_token_embeddings_adapter_contract,
 )
 from src.detection.template_contracts import required_trainable_token_row_ids
 
@@ -145,7 +145,7 @@ def test_resolve_inference_checkpoint_rejects_shorthand_without_base_model(
         resolve_inference_checkpoint(model_checkpoint=str(adapter_dir))
 
 
-def test_compact_coord_token_adapter_requires_saved_token_embeddings_adapter(
+def test_compact_token_embeddings_adapter_requires_saved_token_embeddings_adapter(
     tmp_path: Path,
 ) -> None:
     adapter_dir = tmp_path / "adapter"
@@ -153,13 +153,13 @@ def test_compact_coord_token_adapter_requires_saved_token_embeddings_adapter(
     resolved = resolve_inference_checkpoint(model_checkpoint=str(adapter_dir))
 
     with pytest.raises(ValueError, match="compact.*token_embeddings_adapter"):
-        validate_compact_coord_token_adapter_contract(
+        validate_compact_token_embeddings_adapter_contract(
             resolved,
             detection_template_id="compact",
         )
 
 
-def test_compact_coord_token_adapter_guard_rejects_missing_object_box_adapter(
+def test_compact_token_embeddings_adapter_guard_rejects_missing_object_box_adapter(
     tmp_path: Path,
 ) -> None:
     adapter_dir = tmp_path / "adapter"
@@ -170,13 +170,13 @@ def test_compact_coord_token_adapter_guard_rejects_missing_object_box_adapter(
         ValueError,
         match="compact_object_box_closed.*token_embeddings_adapter",
     ):
-        validate_compact_coord_token_adapter_contract(
+        validate_compact_token_embeddings_adapter_contract(
             resolved,
             detection_template_id="compact_object_box_closed",
         )
 
 
-def test_compact_coord_token_adapter_rejects_partial_rows(
+def test_compact_token_embeddings_adapter_rejects_partial_rows(
     tmp_path: Path,
 ) -> None:
     adapter_dir = tmp_path / "adapter"
@@ -193,7 +193,7 @@ def test_compact_coord_token_adapter_rejects_partial_rows(
     resolved = resolve_inference_checkpoint(model_checkpoint=str(adapter_dir))
 
     with pytest.raises(ValueError, match="compact.*1002"):
-        validate_compact_coord_token_adapter_contract(
+        validate_compact_token_embeddings_adapter_contract(
             resolved,
             detection_template_id="compact",
         )
@@ -208,7 +208,7 @@ def test_compact_coord_token_adapter_rejects_partial_rows(
         ("compact_object_box_closed_lines", 1004),
     ],
 )
-def test_compact_coord_token_adapter_accepts_exact_template_rows(
+def test_compact_token_embeddings_adapter_accepts_exact_template_rows(
     tmp_path: Path,
     template_id: str,
     expected_count: int,
@@ -219,31 +219,31 @@ def test_compact_coord_token_adapter_accepts_exact_template_rows(
         base_model_name_or_path="base-model",
         modules_to_save=["token_embeddings_adapter"],
     )
-    coord_ids = list(required_trainable_token_row_ids(template_id))
+    token_ids = list(required_trainable_token_row_ids(template_id))
     _write_token_embeddings_adapter_weights(
         adapter_dir,
-        token_ids=coord_ids,
+        token_ids=token_ids,
         tie_head=True,
     )
     resolved = resolve_inference_checkpoint(model_checkpoint=str(adapter_dir))
 
-    validate_compact_coord_token_adapter_contract(
+    validate_compact_token_embeddings_adapter_contract(
         resolved,
         detection_template_id=template_id,
     )
-    assert len(coord_ids) == expected_count
+    assert len(token_ids) == expected_count
 
 
 @pytest.mark.parametrize(
-    "coord_ids",
+    "token_ids",
     [
         [151646, 151648, *range(151670, 152669)],
         [151646, 151648, *range(151670, 152670), 42],
     ],
 )
-def test_compact_coord_token_adapter_rejects_missing_or_extra_rows(
+def test_compact_token_embeddings_adapter_rejects_missing_or_extra_rows(
     tmp_path: Path,
-    coord_ids: list[int],
+    token_ids: list[int],
 ) -> None:
     adapter_dir = tmp_path / "adapter"
     _write_adapter_checkpoint(
@@ -253,13 +253,13 @@ def test_compact_coord_token_adapter_rejects_missing_or_extra_rows(
     )
     _write_token_embeddings_adapter_weights(
         adapter_dir,
-        token_ids=coord_ids,
+        token_ids=token_ids,
         tie_head=True,
     )
     resolved = resolve_inference_checkpoint(model_checkpoint=str(adapter_dir))
 
     with pytest.raises(ValueError, match="exactly 1002 trainable"):
-        validate_compact_coord_token_adapter_contract(
+        validate_compact_token_embeddings_adapter_contract(
             resolved,
             detection_template_id="compact",
         )
@@ -272,7 +272,7 @@ def test_compact_coord_token_adapter_rejects_missing_or_extra_rows(
         ("compact_object_box_closed", 151647, "<|object_ref_end|>"),
     ],
 )
-def test_compact_coord_token_adapter_rejects_missing_closure_rows(
+def test_compact_token_embeddings_adapter_rejects_missing_closure_rows(
     tmp_path: Path,
     template_id: str,
     missing_id: int,
@@ -284,41 +284,41 @@ def test_compact_coord_token_adapter_rejects_missing_closure_rows(
         base_model_name_or_path="base-model",
         modules_to_save=["token_embeddings_adapter"],
     )
-    coord_ids = [
+    token_ids = [
         token_id
         for token_id in required_trainable_token_row_ids(template_id)
         if token_id != missing_id
     ]
-    _write_token_embeddings_adapter_weights(adapter_dir, token_ids=coord_ids, tie_head=True)
+    _write_token_embeddings_adapter_weights(adapter_dir, token_ids=token_ids, tie_head=True)
     resolved = resolve_inference_checkpoint(model_checkpoint=str(adapter_dir))
 
     with pytest.raises(ValueError, match=rf"{template_id}.*{re.escape(missing_token)}"):
-        validate_compact_coord_token_adapter_contract(
+        validate_compact_token_embeddings_adapter_contract(
             resolved,
             detection_template_id=template_id,
         )
 
 
-def test_compact_coord_token_adapter_rejects_duplicate_rows(tmp_path: Path) -> None:
+def test_compact_token_embeddings_adapter_rejects_duplicate_rows(tmp_path: Path) -> None:
     adapter_dir = tmp_path / "adapter"
     _write_adapter_checkpoint(
         adapter_dir,
         base_model_name_or_path="base-model",
         modules_to_save=["token_embeddings_adapter"],
     )
-    coord_ids = list(required_trainable_token_row_ids("compact"))
-    coord_ids[-1] = coord_ids[-2]
-    _write_token_embeddings_adapter_weights(adapter_dir, token_ids=coord_ids, tie_head=True)
+    token_ids = list(required_trainable_token_row_ids("compact"))
+    token_ids[-1] = token_ids[-2]
+    _write_token_embeddings_adapter_weights(adapter_dir, token_ids=token_ids, tie_head=True)
     resolved = resolve_inference_checkpoint(model_checkpoint=str(adapter_dir))
 
     with pytest.raises(ValueError, match="duplicates"):
-        validate_compact_coord_token_adapter_contract(
+        validate_compact_token_embeddings_adapter_contract(
             resolved,
             detection_template_id="compact",
         )
 
 
-def test_compact_coord_token_adapter_rejects_tensor_shape_mismatch(
+def test_compact_token_embeddings_adapter_rejects_tensor_shape_mismatch(
     tmp_path: Path,
 ) -> None:
     adapter_dir = tmp_path / "adapter"
@@ -327,39 +327,39 @@ def test_compact_coord_token_adapter_rejects_tensor_shape_mismatch(
         base_model_name_or_path="base-model",
         modules_to_save=["token_embeddings_adapter"],
     )
-    coord_ids = list(required_trainable_token_row_ids("compact"))
+    token_ids = list(required_trainable_token_row_ids("compact"))
     _write_token_embeddings_adapter_weights(
         adapter_dir,
-        token_ids=coord_ids,
+        token_ids=token_ids,
         tie_head=True,
-        embed_rows=len(coord_ids) - 1,
+        embed_rows=len(token_ids) - 1,
     )
     resolved = resolve_inference_checkpoint(model_checkpoint=str(adapter_dir))
 
     with pytest.raises(ValueError, match="embed_offset rows"):
-        validate_compact_coord_token_adapter_contract(
+        validate_compact_token_embeddings_adapter_contract(
             resolved,
             detection_template_id="compact",
         )
 
 
-def test_compact_coord_token_adapter_guard_does_not_apply_to_non_compact_format(
+def test_compact_token_embeddings_adapter_guard_does_not_apply_to_non_compact_format(
     tmp_path: Path,
 ) -> None:
     adapter_dir = tmp_path / "adapter"
     _write_adapter_checkpoint(adapter_dir, base_model_name_or_path="base-model")
     resolved = resolve_inference_checkpoint(model_checkpoint=str(adapter_dir))
 
-    validate_compact_coord_token_adapter_contract(
+    validate_compact_token_embeddings_adapter_contract(
         resolved,
         detection_template_id="stage1_json_pretty",
     )
 
 
-def test_compact_coord_token_adapter_allows_full_or_merged_checkpoint() -> None:
+def test_compact_token_embeddings_adapter_allows_full_or_merged_checkpoint() -> None:
     resolved = resolve_inference_checkpoint(model_checkpoint="merged-model")
 
-    validate_compact_coord_token_adapter_contract(
+    validate_compact_token_embeddings_adapter_contract(
         resolved,
         detection_template_id="compact_object_box_closed",
     )

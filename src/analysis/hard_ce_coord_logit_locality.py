@@ -1252,13 +1252,13 @@ def load_model_handle(config: StudyConfig) -> ModelHandle:
 
     from src.infer.checkpoints import (
         resolve_inference_checkpoint,
-        validate_compact_coord_token_adapter_contract,
+        validate_compact_token_embeddings_adapter_contract,
     )
     from src.tokens.row_offsets import install_token_embeddings_adapter, reattach_token_embeddings_adapter_hooks
 
     # resolving adapter shorthand and processor source
     resolved = resolve_inference_checkpoint(model_checkpoint=str(config.paths.checkpoint))
-    validate_compact_coord_token_adapter_contract(
+    validate_compact_token_embeddings_adapter_contract(
         resolved,
         detection_template_id="compact",
     )
@@ -2546,9 +2546,9 @@ def _load_qwen_with_attention_fallback(
 def _adapter_offsets_by_token_id(adapter: Any, *, use_head: bool = False) -> dict[int, np.ndarray]:
     """Return token-embeddings adapter rows keyed by token id."""
 
-    # extracting adapter tensors by persisted coord id order
-    coord_ids = getattr(adapter, "token_ids", None)
-    if not isinstance(coord_ids, torch.Tensor):
+    # Extract adapter tensors by persisted token id order.
+    token_ids = getattr(adapter, "token_ids", None)
+    if not isinstance(token_ids, torch.Tensor):
         raise RuntimeError("token_embeddings_adapter is missing token_ids")
     if use_head and getattr(adapter, "head_offset", None) is not None:
         offset = adapter.head_offset
@@ -2557,7 +2557,7 @@ def _adapter_offsets_by_token_id(adapter: Any, *, use_head: bool = False) -> dic
     tensor = offset.detach().float().cpu().numpy()
     return {
         int(token_id): tensor[index].astype(np.float32)
-        for index, token_id in enumerate(coord_ids.detach().cpu().tolist())
+        for index, token_id in enumerate(token_ids.detach().cpu().tolist())
     }
 
 

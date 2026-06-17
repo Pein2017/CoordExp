@@ -57,7 +57,7 @@ src/trainers/
 - Surface-specific collator choice.
 - Packing/cache eligibility.
 - Runtime preflight policy.
-- Coord-offset / trainable token-row setup, once extracted from entrypoint code.
+- token_embeddings_adapter / trainable token-row setup, once extracted from entrypoint code.
 - Training artifact and manifest emission.
 
 **Should not own:**

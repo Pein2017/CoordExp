@@ -32,7 +32,7 @@ Current high-impact code owners include:
   inference message construction.
 - `src/infer/runtime.py` and the shared inference runtime contract for parser
   provenance and backend prompt parity.
-- `src/infer/checkpoints.py` and token-row validation for offset-adapter row
+- `src/infer/checkpoints.py` and token-row validation for token_embeddings_adapter row
   contracts.
 - `src/detection/evaluation.py` and infer artifact metadata for post-hoc mAP
   preflight and scoring.
@@ -44,7 +44,7 @@ training/inference YAML
 -> typed config resolves detection_template.id
 -> template registry derives render/parser/prompt/token-row contract
 -> dataset and teacher-forcing builders render canonical assistant text
--> offset adapter trains exactly the required token rows
+-> token_embeddings_adapter trains exactly the required token rows
 -> inference renders matching prompts and parses generated text by template id
 -> artifacts persist detection_template.id
 -> post-hoc mAP scores the existing normalized pixel geometry schema
@@ -68,7 +68,7 @@ training/inference YAML
   - `compact_object_box_closed_lines`
 - Keep `stage1_json_pretty` supported as a separate non-compact template.
 - Derive parser, renderer, prompt row pattern, row separator, required special
-  tokens, trainable offset-adapter rows, artifact metadata, and post-hoc mAP
+  tokens, trainable token_embeddings_adapter rows, artifact metadata, and post-hoc mAP
   preflight from the selected template id.
 - Validate that compact token-row adaptation supports the selected 1002, 1003,
   or 1004 row contract.
@@ -171,9 +171,9 @@ Alternative considered: infer the variant from generated text. This would make
 old artifacts easier to inspect but would weaken ablation interpretation and
 would hide config/artifact mismatches.
 
-### Decision: Derive offset-adapter rows from the template id
+### Decision: Derive token_embeddings_adapter rows from the template id
 
-The offset adapter remains the mechanism for trainable token rows, but the row
+The token_embeddings_adapter remains the mechanism for trainable token rows, but the row
 set is no longer coord-only on compact detection runs. The selected compact
 template derives the required row count:
 
@@ -187,10 +187,10 @@ describe this surface as token-row adaptation when compact detection structural
 rows are included.
 
 Adapter checkpoint validation for compact templates applies when an adapter
-checkpoint carries the offset-adapter module. It must validate the exact
+checkpoint carries the token_embeddings_adapter module. It must validate the exact
 template-derived row id set, reject missing/extra/duplicate ids, and ensure saved
 offset tensor row counts agree with the resolved ids. Full or merged checkpoints
-that do not carry an offset-adapter module still need resolved template metadata,
+that do not carry a token_embeddings_adapter module still need resolved template metadata,
 but adapter tensor validation is not applicable to them.
 
 ### Decision: Persist template metadata in artifacts for mAP

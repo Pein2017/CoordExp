@@ -43,7 +43,7 @@ from src.vis import DEFAULT_BBOX_OUTLINE_WIDTH
 from src.common.paths import resolve_image_path_strict
 from src.common.semantic_desc import normalize_desc
 from src.config.prompts import get_template_prompts
-from src.coord_tokens.offset_adapter import (
+from src.tokens.row_offsets import (
     install_token_embeddings_adapter,
     reattach_token_embeddings_adapter_hooks,
 )

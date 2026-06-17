@@ -425,12 +425,12 @@ def _load_model_handle(
 
     from src.infer.checkpoints import (
         resolve_inference_checkpoint,
-        validate_compact_coord_token_adapter_contract,
+        validate_compact_token_embeddings_adapter_contract,
     )
     from src.tokens.row_offsets import install_token_embeddings_adapter, reattach_token_embeddings_adapter_hooks
 
     resolved = resolve_inference_checkpoint(model_checkpoint=str(checkpoint_path))
-    validate_compact_coord_token_adapter_contract(
+    validate_compact_token_embeddings_adapter_contract(
         resolved,
         detection_template_id="compact",
     )

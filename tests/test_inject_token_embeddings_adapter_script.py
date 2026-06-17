@@ -44,12 +44,12 @@ def test_inject_token_embeddings_adapter_materializes_head_and_unties_config(tmp
     )
 
     # Untied adapter offsets (embed_offset + head_offset).
-    coord_ids = torch.tensor([2, 5], dtype=torch.long)
+    token_ids = torch.tensor([2, 5], dtype=torch.long)
     embed_offset = torch.full((2, hidden), 1.0, dtype=torch.float32)
     head_offset = torch.full((2, hidden), 2.0, dtype=torch.float32)
     st.save_file(
         {
-            "base_model.model.token_embeddings_adapter.token_ids": coord_ids,
+            "base_model.model.token_embeddings_adapter.token_ids": token_ids,
             "base_model.model.token_embeddings_adapter.embed_offset": embed_offset,
             "base_model.model.token_embeddings_adapter.head_offset": head_offset,
         },
@@ -75,8 +75,8 @@ def test_inject_token_embeddings_adapter_materializes_head_and_unties_config(tmp
     emb_patched = patched["embed_tokens.weight"]
     head_patched = patched["lm_head.weight"]
 
-    assert torch.allclose(emb_patched[coord_ids], base[coord_ids] + embed_offset)
-    assert torch.allclose(head_patched[coord_ids], base[coord_ids] + head_offset)
+    assert torch.allclose(emb_patched[token_ids], base[token_ids] + embed_offset)
+    assert torch.allclose(head_patched[token_ids], base[token_ids] + head_offset)
 
     cfg = json.loads((merged_dir / "config.json").read_text(encoding="utf-8"))
     assert cfg.get("tie_word_embeddings") is False

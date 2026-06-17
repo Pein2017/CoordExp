@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import pytest
 
-from src.coord_tokens.offset_adapter import (
+from src.tokens.row_offsets import (
     TokenEmbeddingsAdapter,
     install_token_embeddings_adapter,
 )

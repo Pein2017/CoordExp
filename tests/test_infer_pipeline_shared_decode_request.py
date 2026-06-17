@@ -62,7 +62,7 @@ def test_infer_stage_uses_shared_decode_request_validation(tmp_path: Path) -> No
         return_value=_resolved_checkpoint(),
     ), patch.object(
         infer_pipeline,
-        "validate_compact_coord_token_adapter_contract",
+        "validate_compact_token_embeddings_adapter_contract",
         return_value=None,
     ):
         with pytest.raises(ValueError, match="decode_mode=beam"):
@@ -100,7 +100,7 @@ def test_infer_stage_propagates_decode_request_to_legacy_bridge(tmp_path: Path) 
         return_value=_resolved_checkpoint(),
     ), patch.object(
         infer_pipeline,
-        "validate_compact_coord_token_adapter_contract",
+        "validate_compact_token_embeddings_adapter_contract",
         return_value=None,
     ), patch.object(
         infer_pipeline,
@@ -144,7 +144,7 @@ def test_infer_stage_allows_vllm_trace_logprobs_through_shared_runtime(
         return_value=_resolved_checkpoint(),
     ), patch.object(
         infer_pipeline,
-        "validate_compact_coord_token_adapter_contract",
+        "validate_compact_token_embeddings_adapter_contract",
         return_value=None,
     ), patch.object(
         infer_pipeline,
@@ -184,7 +184,7 @@ def test_infer_stage_resolves_auto_mode_once_for_runtime_config(
         return_value=_resolved_checkpoint(),
     ), patch.object(
         infer_pipeline,
-        "validate_compact_coord_token_adapter_contract",
+        "validate_compact_token_embeddings_adapter_contract",
         return_value=None,
     ), patch.object(
         infer_pipeline,
@@ -217,7 +217,7 @@ def test_run_pipeline_records_runtime_policy_in_resolved_config(tmp_path: Path) 
         return_value=_resolved_checkpoint(),
     ), patch.object(
         infer_pipeline,
-        "validate_compact_coord_token_adapter_contract",
+        "validate_compact_token_embeddings_adapter_contract",
         return_value=None,
     ), patch.object(
         infer_pipeline,

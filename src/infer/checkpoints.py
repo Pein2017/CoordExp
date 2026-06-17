@@ -222,7 +222,7 @@ def resolve_inference_checkpoint(
     )
 
 
-def validate_compact_coord_token_adapter_contract(
+def validate_compact_token_embeddings_adapter_contract(
     resolved_checkpoint: ResolvedInferenceCheckpoint,
     *,
     detection_template_id: str,

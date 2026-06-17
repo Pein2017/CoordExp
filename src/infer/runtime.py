@@ -1401,7 +1401,7 @@ class OfflineInferenceEngine:
         )
         from src.infer.checkpoints import (
             VLLM_ADAPTER_UNSUPPORTED_MESSAGE,
-            validate_compact_coord_token_adapter_contract,
+            validate_compact_token_embeddings_adapter_contract,
         )
 
         backend = str(self.cfg.backend_type).lower().strip()
@@ -1414,7 +1414,7 @@ class OfflineInferenceEngine:
         token_embeddings_adapter_spec = None
         if self.resolved_checkpoint.adapter_info is not None:
             token_embeddings_adapter_spec = self.resolved_checkpoint.adapter_info.token_embeddings_adapter_spec
-        validate_compact_coord_token_adapter_contract(
+        validate_compact_token_embeddings_adapter_contract(
             self.resolved_checkpoint,
             detection_template_id=self.detection_template_id,
         )
@@ -1449,7 +1449,7 @@ class OfflineInferenceEngine:
         install_token_embeddings_adapter_fn = install_token_embeddings_adapter
         reattach_token_embeddings_adapter_hooks_fn = reattach_token_embeddings_adapter_hooks
         if install_token_embeddings_adapter_fn is None or reattach_token_embeddings_adapter_hooks_fn is None:
-            from src.coord_tokens.offset_adapter import (
+            from src.tokens.row_offsets import (
                 install_token_embeddings_adapter as _install_token_embeddings_adapter,
                 reattach_token_embeddings_adapter_hooks as _reattach_token_embeddings_adapter_hooks,
             )

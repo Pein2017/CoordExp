@@ -226,7 +226,7 @@ def test_real_qwen_coordexp_adapter_token_embeddings_rows_match_compact_surface(
     coord_surface_rows = 1000
     struct_surface_rows = 2
     expected_rows = coord_surface_rows + struct_surface_rows
-    expected_coord_ids = [
+    expected_token_ids = [
         tokenizer.convert_tokens_to_ids(OBJECT_REF_START_TOKEN),
         tokenizer.convert_tokens_to_ids(BOX_START_TOKEN),
         *[
@@ -246,7 +246,7 @@ def test_real_qwen_coordexp_adapter_token_embeddings_rows_match_compact_surface(
     assert _safetensor_int_vector(
         adapter_safetensors,
         "base_model.model.token_embeddings_adapter.token_ids",
-    ) == expected_coord_ids
+    ) == expected_token_ids
     assert not any(
         key.endswith(".token_embeddings_adapter.head_offset")
         for key in _safetensor_keys(adapter_safetensors)

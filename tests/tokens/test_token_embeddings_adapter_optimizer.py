@@ -4,7 +4,7 @@ import pytest
 import torch.nn as nn
 from transformers import TrainingArguments
 
-from src.coord_tokens.offset_adapter import install_token_embeddings_adapter
+from src.tokens.row_offsets import install_token_embeddings_adapter
 from src.config.schema import TokenEmbeddingsAdapterConfig
 
 try:

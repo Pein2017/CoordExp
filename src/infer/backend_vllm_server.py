@@ -27,7 +27,7 @@ from src.tokens.row_offsets import TokenEmbeddingsAdapter
 
 from src.infer.backend_sync import (
     COORDEXP_WORKER_EXTENSION_CLS,
-    apply_coord_row_patch_for_vllm_client,
+    apply_token_row_patch_for_vllm_client,
 )
 
 
@@ -913,7 +913,7 @@ def ensure_vllm_server_client(
         )
 
         try:
-            VLLMClient = apply_coord_row_patch_for_vllm_client()
+            VLLMClient = apply_token_row_patch_for_vllm_client()
         except Exception as exc:
             raise RuntimeError(
                 "vLLM server mode requires ms-swift's VLLMClient (and vLLM + pynccl). "
@@ -1284,25 +1284,25 @@ def _build_vllm_adapter_sync_provenance(
     vllm_peft_config: Mapping[str, Any],
     dropped_modules_to_save: Sequence[str],
     dropped_param_names: Sequence[str],
-    coord_ids: torch.Tensor | None,
+    token_ids: torch.Tensor | None,
     embed_offset: torch.Tensor | None,
     head_offset: torch.Tensor | None,
     tie_head: bool,
-    coord_row_status: str,
+    token_row_status: str,
     worker_verified: bool,
     worker_verified_status: str,
     rank_symmetric_failure: bool,
 ) -> dict[str, Any]:
-    coord_tensors: "OrderedDict[str, torch.Tensor]" = OrderedDict()
-    if coord_ids is not None:
-        coord_tensors["coord_ids"] = coord_ids
+    token_row_tensors: "OrderedDict[str, torch.Tensor]" = OrderedDict()
+    if token_ids is not None:
+        token_row_tensors["token_ids"] = token_ids
     if embed_offset is not None:
-        coord_tensors["embed_offset"] = embed_offset
+        token_row_tensors["embed_offset"] = embed_offset
     if head_offset is not None:
-        coord_tensors["head_offset"] = head_offset
-    coord_digest = (
-        _named_tensor_payload_digest(coord_tensors)
-        if coord_tensors
+        token_row_tensors["head_offset"] = head_offset
+    token_row_digest = (
+        _named_tensor_payload_digest(token_row_tensors)
+        if token_row_tensors
         else {
             "tensor_count": 0,
             "tensor_names": [],
@@ -1317,11 +1317,11 @@ def _build_vllm_adapter_sync_provenance(
             "frequency": str(sync_frequency),
             "global_step": int(sync_step) if sync_step is not None else None,
             "adapter_endpoint": "update_adapter_flattened_param",
-            "coord_row_endpoint": "update_token_row_offsets",
+            "token_row_endpoint": "update_token_row_offsets",
         },
         "server_identity": {
             "sync_schema": "coordexp_vllm_adapter_sync_v1",
-            "coord_row_api": "coordexp_token_row_offsets_v1",
+            "token_row_api": "coordexp_token_row_offsets_v1",
             "client_patch": "coordexp_vllm_client_token_row_offsets_v1",
             "worker_extension_cls": COORDEXP_WORKER_EXTENSION_CLS,
         },
@@ -1331,14 +1331,14 @@ def _build_vllm_adapter_sync_provenance(
             "dropped_modules_to_save": [str(item) for item in dropped_modules_to_save],
             "dropped_param_names": [str(item) for item in dropped_param_names],
         },
-        "coord_rows": {
-            **coord_digest,
-            "status": str(coord_row_status),
+        "token_rows": {
+            **token_row_digest,
+            "status": str(token_row_status),
             "tie_head": bool(tie_head),
         },
         "requested": {
             "adapter_update": True,
-            "coord_row_update": str(coord_row_status) == "requested",
+            "token_row_update": str(token_row_status) == "requested",
         },
         "worker_verified": {
             "verified": bool(worker_verified),
@@ -1358,7 +1358,7 @@ def _find_active_token_embeddings_adapter(model: Any) -> TokenEmbeddingsAdapter 
 
     direct: TokenEmbeddingsAdapter | None = None
     for name, module in named_modules():
-        wrapped = _active_modules_to_save_coord_adapter(module)
+        wrapped = _active_modules_to_save_token_embeddings_adapter(module)
         if wrapped is _UNRESOLVED_ACTIVE_ADAPTER:
             return None
         if isinstance(wrapped, TokenEmbeddingsAdapter):
@@ -1372,7 +1372,7 @@ def _find_active_token_embeddings_adapter(model: Any) -> TokenEmbeddingsAdapter 
     return direct
 
 
-def _active_modules_to_save_coord_adapter(
+def _active_modules_to_save_token_embeddings_adapter(
     module: Any,
 ) -> TokenEmbeddingsAdapter | object | None:
     modules_to_save = getattr(module, "modules_to_save", None)
@@ -1425,19 +1425,19 @@ def _looks_like_module_mapping(value: Any) -> bool:
 def _validate_token_embeddings_adapter_for_vllm_sync(
     adapter: TokenEmbeddingsAdapter,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None, bool]:
-    coord_ids = getattr(adapter, "token_ids", None)
+    token_ids = getattr(adapter, "token_ids", None)
     embed_offset = getattr(adapter, "embed_offset", None)
     head_offset = getattr(adapter, "head_offset", None)
     tie_head = bool(getattr(adapter, "tie_head", True))
 
-    if not torch.is_tensor(coord_ids) or coord_ids.ndim != 1 or coord_ids.numel() == 0:
+    if not torch.is_tensor(token_ids) or token_ids.ndim != 1 or token_ids.numel() == 0:
         raise RuntimeError(
             "token_embeddings_adapter vLLM sync requires non-empty 1D token_ids."
         )
     if (
         not torch.is_tensor(embed_offset)
         or embed_offset.ndim != 2
-        or embed_offset.size(0) != coord_ids.numel()
+        or embed_offset.size(0) != token_ids.numel()
     ):
         raise RuntimeError(
             "token_embeddings_adapter vLLM sync requires embed_offset with shape "
@@ -1446,14 +1446,14 @@ def _validate_token_embeddings_adapter_for_vllm_sync(
     if not tie_head and (
         not torch.is_tensor(head_offset)
         or head_offset.ndim != 2
-        or head_offset.size(0) != coord_ids.numel()
+        or head_offset.size(0) != token_ids.numel()
     ):
         raise RuntimeError(
             "untied token_embeddings_adapter vLLM sync requires head_offset with "
             "shape [num_token_ids, hidden]."
         )
     return (
-        coord_ids.detach().to(dtype=torch.long).contiguous(),
+        token_ids.detach().to(dtype=torch.long).contiguous(),
         embed_offset.detach().contiguous(),
         head_offset.detach().contiguous() if torch.is_tensor(head_offset) else None,
         tie_head,
@@ -1468,12 +1468,12 @@ def _sync_vllm_server_token_embeddings_adapter(
     dropped_modules_to_save: tuple[str, ...],
     dropped_param_names: tuple[str, ...],
 ) -> dict[str, Any]:
-    has_declared_coord = "token_embeddings_adapter" in set(dropped_modules_to_save) or any(
+    has_declared_token_embeddings_adapter = "token_embeddings_adapter" in set(dropped_modules_to_save) or any(
         "token_embeddings_adapter" in name for name in dropped_param_names
     )
     adapter = _find_active_token_embeddings_adapter(owner.model)
     if adapter is None:
-        if has_declared_coord:
+        if has_declared_token_embeddings_adapter:
             raise RuntimeError(
                 "vLLM adapter sync detected token_embeddings_adapter in the PEFT "
                 "payload, but could not find an active TokenEmbeddingsAdapter on "
@@ -1482,7 +1482,7 @@ def _sync_vllm_server_token_embeddings_adapter(
             )
         return {
             "status": "not_present",
-            "coord_ids": None,
+            "token_ids": None,
             "embed_offset": None,
             "head_offset": None,
             "tie_head": True,
@@ -1496,11 +1496,11 @@ def _sync_vllm_server_token_embeddings_adapter(
             "disable vLLM server rollouts for this checkpoint."
         )
 
-    coord_ids, embed_offset, head_offset, tie_head = (
+    token_ids, embed_offset, head_offset, tie_head = (
         _validate_token_embeddings_adapter_for_vllm_sync(adapter)
     )
     update_fn(
-        coord_ids.to(device=embed_offset.device),
+        token_ids.to(device=embed_offset.device),
         embed_offset,
         head_offset=head_offset,
         tie_head=tie_head,
@@ -1508,14 +1508,14 @@ def _sync_vllm_server_token_embeddings_adapter(
     logger.info(
         "vLLM adapter sync updated token_embeddings_adapter token rows: rows=%s "
         "tie_head=%s embed_shape=%s head_shape=%s",
-        int(coord_ids.numel()),
+        int(token_ids.numel()),
         bool(tie_head),
         tuple(embed_offset.shape),
         tuple(head_offset.shape) if head_offset is not None else None,
     )
     return {
         "status": "requested",
-        "coord_ids": coord_ids,
+        "token_ids": token_ids,
         "embed_offset": embed_offset,
         "head_offset": head_offset,
         "tie_head": bool(tie_head),
@@ -1617,7 +1617,7 @@ def sync_vllm_server_adapter(
         bucket.get_metadata(),
         bucket.get_flattened_tensor(),
     )
-    coord_row_provenance = _sync_vllm_server_token_embeddings_adapter(
+    token_row_provenance = _sync_vllm_server_token_embeddings_adapter(
         owner=owner,
         client=client,
         logger=logger,
@@ -1633,11 +1633,11 @@ def sync_vllm_server_adapter(
         vllm_peft_config=vllm_peft_config,
         dropped_modules_to_save=dropped_modules_to_save,
         dropped_param_names=dropped_param_names,
-        coord_ids=coord_row_provenance.get("coord_ids"),
-        embed_offset=coord_row_provenance.get("embed_offset"),
-        head_offset=coord_row_provenance.get("head_offset"),
-        tie_head=bool(coord_row_provenance.get("tie_head", True)),
-        coord_row_status=str(coord_row_provenance.get("status", "unknown")),
+        token_ids=token_row_provenance.get("token_ids"),
+        embed_offset=token_row_provenance.get("embed_offset"),
+        head_offset=token_row_provenance.get("head_offset"),
+        tie_head=bool(token_row_provenance.get("tie_head", True)),
+        token_row_status=str(token_row_provenance.get("status", "unknown")),
         worker_verified=False,
         worker_verified_status="unavailable_fire_and_forget",
         rank_symmetric_failure=True,

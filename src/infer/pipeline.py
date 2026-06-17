@@ -50,7 +50,7 @@ from src.infer.artifacts import (
 from src.infer.checkpoints import (
     VLLM_ADAPTER_UNSUPPORTED_MESSAGE,
     resolve_inference_checkpoint,
-    validate_compact_coord_token_adapter_contract,
+    validate_compact_token_embeddings_adapter_contract,
 )
 from src.infer.prompt import DetectionPromptPolicy, prompt_policy_fingerprint
 from src.infer.runtime import (
@@ -946,7 +946,7 @@ def run_pipeline(
         resolved_runtime_mode == "coord"
     )
     if resolved_checkpoint is not None:
-        validate_compact_coord_token_adapter_contract(
+        validate_compact_token_embeddings_adapter_contract(
             resolved_checkpoint,
             detection_template_id=resolved_detection_template_id,
         )
@@ -1243,7 +1243,7 @@ def _run_infer_stage(
     backend_type = cast(Literal["hf", "vllm"], backend_type_raw)
     if resolved_checkpoint.resolved_adapter_checkpoint is not None and backend_type != "hf":
         raise ValueError(VLLM_ADAPTER_UNSUPPORTED_MESSAGE)
-    validate_compact_coord_token_adapter_contract(
+    validate_compact_token_embeddings_adapter_contract(
         resolved_checkpoint,
         detection_template_id=detection_template_id,
     )

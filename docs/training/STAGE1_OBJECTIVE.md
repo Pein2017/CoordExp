@@ -420,11 +420,11 @@ from constant-score compatibility artifacts.
 ## Token-embeddings adapter (tie-head / single shared table)
 
 When training with coord tokens, CoordExp can optionally avoid updating the full vocabulary embedding
-and instead learn a small **offset adapter** over role-resolved token rows.
+and instead learn a small **token_embeddings_adapter** over role-resolved token rows.
 
 **Key idea**:
 - Freeze the base `embed_tokens.weight` and `lm_head.weight`.
-- Train a compact offset table for `<|coord_0|>.. <|coord_999|>` and any
+- Train compact token-row offsets for `<|coord_0|>.. <|coord_999|>` and any
   schema tokens required by the active compact template.
 
 **Config**:

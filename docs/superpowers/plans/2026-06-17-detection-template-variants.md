@@ -551,7 +551,7 @@ Expected: all selected tests pass.
 
 - [x] **Step 1: Add adapter validation tests**
 
-Extend checkpoint tests to cover exact row sets. Use an existing checkpoint fixture if the file already has one; otherwise add a test-local helper named `_adapter_checkpoint_with_coord_ids(tmp_path, coord_ids) -> ResolvedInferenceCheckpoint` that writes the minimal adapter metadata and tensors, resolves them through `resolve_inference_checkpoint(...)` when needed, and returns the resolved checkpoint object consumed by `validate_compact_coord_token_adapter_contract`.
+Extend checkpoint tests to cover exact row sets. Use an existing checkpoint fixture if the file already has one; otherwise add a test-local helper named `_adapter_checkpoint_with_token_ids(tmp_path, token_ids) -> ResolvedInferenceCheckpoint` that writes the minimal adapter metadata and tensors, resolves them through `resolve_inference_checkpoint(...)` when needed, and returns the resolved checkpoint object consumed by `validate_compact_token_embeddings_adapter_contract`.
 
 ```python
 @pytest.mark.parametrize(
@@ -568,13 +568,13 @@ def test_compact_adapter_checkpoint_accepts_exact_template_rows(
     template_id: str,
     expected_count: int,
 ) -> None:
-    coord_ids = required_trainable_token_row_ids(template_id)
-    checkpoint = _adapter_checkpoint_with_coord_ids(tmp_path, coord_ids)
-    validate_compact_coord_token_adapter_contract(
+    token_ids = required_trainable_token_row_ids(template_id)
+    checkpoint = _adapter_checkpoint_with_token_ids(tmp_path, token_ids)
+    validate_compact_token_embeddings_adapter_contract(
         checkpoint,
         detection_template_id=template_id,
     )
-    assert len(coord_ids) == expected_count
+    assert len(token_ids) == expected_count
 ```
 
 Also add rejection tests for missing `<|box_end|>`, missing `<|object_ref_end|>`, duplicate ids, extra ids, tensor shape mismatch, and `compact` not bypassing validation.
@@ -591,7 +591,7 @@ Expected: failures because validation still keys on `detection_sequence_format =
 
 - [x] **Step 3: Implement template-derived row validation**
 
-Update `validate_compact_coord_token_adapter_contract` to accept `detection_template_id`. If an adapter checkpoint has `token_embeddings_adapter`, validate:
+Update `validate_compact_token_embeddings_adapter_contract` to accept `detection_template_id`. If an adapter checkpoint has `token_embeddings_adapter`, validate:
 
 - exact required row id set,
 - no missing ids,

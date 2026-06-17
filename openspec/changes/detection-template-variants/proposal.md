@@ -78,7 +78,7 @@ owns desc-first versus geometry-first row layout.
   inference configs, active compact detection examples, token-row validation, and
   resolved artifact metadata.
 - Affected runtime surfaces include detection template rendering/parsing,
-  teacher-forcing target construction, dense prompt construction, offset-adapter
+  teacher-forcing target construction, dense prompt construction, token_embeddings_adapter
   row selection, inference artifact materialization, and evaluator post-hoc mAP
   parsing.
 - Existing checkpoints or old artifacts that still say `compact_full` or omit

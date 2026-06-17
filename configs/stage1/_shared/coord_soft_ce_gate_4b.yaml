@@ -39,7 +39,7 @@ custom:
   dump_conversation_text: true
   token_type_metrics:
     enabled: true
-  # Train only the 1000 newly added coord-token IDs via a lightweight offset adapter
+  # Train only the 1000 newly added coord-token IDs via token_embeddings_adapter
   # (keeps the adapter small vs saving full embed/lm_head matrices).
   token_embeddings_adapter:
     enabled: true

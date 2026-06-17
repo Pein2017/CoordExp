@@ -31,10 +31,10 @@ def load_offsets(adapter_dir: str) -> Tuple[torch.Tensor, torch.Tensor, torch.Te
     if not os.path.isfile(ck):
         raise FileNotFoundError(f"adapter_model.safetensors not found at {ck}")
     d = st.load_file(ck)
-    coord_ids = d["base_model.model.token_embeddings_adapter.token_ids"].long()
+    token_ids = d["base_model.model.token_embeddings_adapter.token_ids"].long()
     embed_offset = d["base_model.model.token_embeddings_adapter.embed_offset"]
     head_offset = d.get("base_model.model.token_embeddings_adapter.head_offset")
-    return coord_ids, embed_offset, head_offset
+    return token_ids, embed_offset, head_offset
 
 
 def is_tied_embeddings(merged_dir: str) -> bool:
@@ -82,7 +82,7 @@ def load_shard(shard_path: str) -> Tuple[Dict[str, torch.Tensor], Dict[str, str]
 def main():
     args = parse_args()
 
-    coord_ids, embed_offset, head_offset = load_offsets(args.adapter_dir)
+    token_ids, embed_offset, head_offset = load_offsets(args.adapter_dir)
     adapter_tie_head = head_offset is None
     merged_tie_head = is_tied_embeddings(args.merged_dir)
     if adapter_tie_head:
@@ -135,7 +135,7 @@ def main():
     emb_base = tensors_e[embed_key]
     emb = emb_base.clone()
     with torch.no_grad():
-        emb[coord_ids] = emb[coord_ids] + embed_offset.to(emb.dtype)
+        emb[token_ids] = emb[token_ids] + embed_offset.to(emb.dtype)
     tensors_e[embed_key] = emb
 
     if head_key is not None and head_shard == embed_shard:
@@ -146,7 +146,7 @@ def main():
             head_base = tensors_e[head_key]
         head_t = head_base.clone()
         with torch.no_grad():
-            head_t[coord_ids] = head_t[coord_ids] + head_offset.to(head_t.dtype)
+            head_t[token_ids] = head_t[token_ids] + head_offset.to(head_t.dtype)
         tensors_e[head_key] = head_t
 
         st.save_file(tensors_e, embed_shard, metadata=meta_e)
@@ -161,7 +161,7 @@ def main():
                 raise ValueError(f"Could not find {head_key} in {head_shard}")
             head_t = tensors_h[head_key].clone()
             with torch.no_grad():
-                head_t[coord_ids] = head_t[coord_ids] + head_offset.to(head_t.dtype)
+                head_t[token_ids] = head_t[token_ids] + head_offset.to(head_t.dtype)
             tensors_h[head_key] = head_t
             st.save_file(tensors_h, head_shard, metadata=meta_h)
             print(f"Patched lm_head in {head_shard}")
@@ -207,7 +207,7 @@ def main():
         except Exception as e:
             print(f"WARNING: Failed to update tie_word_embeddings in {cfg_path}: {e}")
 
-    print("Coord offsets injected into merged shards.")
+    print("token_embeddings_adapter offsets injected into merged shards.")
 
 
 if __name__ == "__main__":

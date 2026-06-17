@@ -49,8 +49,8 @@ structural rows are included.
 
 ## ADDED Requirements
 
-### Requirement: Template-derived offset adapter checkpoint validation
-The system SHALL validate compact detection offset-adapter checkpoints against
+### Requirement: Template-derived token_embeddings_adapter checkpoint validation
+The system SHALL validate compact detection token_embeddings_adapter checkpoints against
 the exact row-id set derived from the resolved `detection_template.id`.
 
 Normative behavior:
@@ -61,11 +61,11 @@ Normative behavior:
   structural row omissions,
 - saved `token_ids`, embedding offset rows, and lm-head offset rows when present
   MUST have matching row counts,
-- `modules_to_save` MUST include `token_embeddings_adapter` when offset rows are
-  expected from the adapter checkpoint,
+- `modules_to_save` MUST include `token_embeddings_adapter` when token-row
+  updates are expected from the adapter checkpoint,
 - validation errors MUST name the resolved template id and any missing or extra
   structural rows,
-- full or merged checkpoints without an offset-adapter module MUST still carry
+- full or merged checkpoints without a token_embeddings_adapter module MUST still carry
   resolved template metadata, but adapter tensor row-shape validation is not
   applicable to them.
 

@@ -70,7 +70,7 @@ Normative behavior:
 
 ### Requirement: Compact detection token-row adaptation covers template structural rows
 Compact recursive detection SHALL treat trainable token rows as a detection
-template contract rather than as a coord-only adapter contract.
+template contract rather than as coord-only adaptation.
 
 Normative behavior:
 

@@ -438,7 +438,7 @@ Prompt templates, chat templates, coord tokens, stop tokens, and compact grammar
 
 ### 4. Coordinate token ID and adapter risk
 
-Coord-offset adapters, trainable token rows, tokenizer expansion, and LoRA merge/export behavior depend on stable token IDs.
+token_embeddings_adapter, trainable token rows, tokenizer expansion, and LoRA merge/export behavior depend on stable token IDs.
 
 **Mitigation:** keep coord-token row setup isolated and add explicit token-ID contract tests before moving export or adapter logic.
 

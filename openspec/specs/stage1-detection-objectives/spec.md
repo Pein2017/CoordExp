@@ -137,15 +137,14 @@ Normative behavior:
 
 ### Requirement: Compact-full token-row adaptation covers geometry and structural rows
 Compact-full recursive detection SHALL treat trainable token rows as a
-detection contract rather than as a coord-only adapter contract.
+detection contract rather than as coord-only adaptation.
 
 Normative behavior:
 
 - compact-full recursive detection MUST train the 1000 coord-token rows plus
   `<|object_ref_start|>` and `<|box_start|>` when token-row adaptation is
   enabled,
-- the persisted module name `token_embeddings_adapter` MAY remain for checkpoint
-  compatibility,
+- the persisted module name MUST be `token_embeddings_adapter`,
 - contract wording MUST describe this surface as token-row adaptation rather
   than coord-only adaptation,
 - the `coord_geometry` token-row group MUST preserve the expected
@@ -308,4 +307,3 @@ Normative behavior:
 - **THEN** the model path resolves to the natural-adjacent checkpoint
 - **AND** `global_max_length` resolves to `12000`
 - **AND** static packing is enabled.
-

@@ -113,17 +113,17 @@ fi
 #    checkpoints this is expected, and patching embed_tokens.weight is sufficient
 #    because lm_head resolves to the same underlying weights after load.
 #    Warn only when the merged output breaks that tie-head contract.
-COORD_OFFSETS_MODE=$("${COORDEXP_PYTHON[@]}" -c $'import sys\nfrom pathlib import Path\n\nadapter_dir = Path(sys.argv[1])\nweights = adapter_dir / \"adapter_model.safetensors\"\nif not weights.exists():\n    print(\"none\")\n    raise SystemExit(0)\n\ntry:\n    from safetensors import safe_open\nexcept Exception:\n    # If safetensors is missing, injection will fail anyway; treat as unknown and let the\n    # caller attempt injection (so we fail loudly rather than silently skipping).\n    print(\"unknown\")\n    raise SystemExit(0)\n\nhas_coord = False\nhas_head = False\nhas_embed = False\n\ntry:\n    with safe_open(str(weights), framework=\"pt\", device=\"cpu\") as f:\n        for k in f.keys():\n            if \"token_embeddings_adapter\" not in k:\n                continue\n            has_coord = True\n            if \".head_offset\" in k or k.endswith(\"head_offset\"):\n                has_head = True\n            if \".embed_offset\" in k or k.endswith(\"embed_offset\"):\n                has_embed = True\nexcept Exception:\n    print(\"unknown\")\n    raise SystemExit(0)\n\nif not has_coord:\n    print(\"none\")\nelif has_head:\n    print(\"untied\")\nelif has_embed:\n    print(\"tied\")\nelse:\n    print(\"unknown\")\n' "$ADAPTERS")
+TOKEN_EMBEDDINGS_ADAPTER_MODE=$("${COORDEXP_PYTHON[@]}" -c $'import sys\nfrom pathlib import Path\n\nadapter_dir = Path(sys.argv[1])\nweights = adapter_dir / \"adapter_model.safetensors\"\nif not weights.exists():\n    print(\"none\")\n    raise SystemExit(0)\n\ntry:\n    from safetensors import safe_open\nexcept Exception:\n    # If safetensors is missing, injection will fail anyway; treat as unknown and let the\n    # caller attempt injection (so we fail loudly rather than silently skipping).\n    print(\"unknown\")\n    raise SystemExit(0)\n\nhas_token_embeddings_adapter = False\nhas_head = False\nhas_embed = False\n\ntry:\n    with safe_open(str(weights), framework=\"pt\", device=\"cpu\") as f:\n        for k in f.keys():\n            if \"token_embeddings_adapter\" not in k:\n                continue\n            has_token_embeddings_adapter = True\n            if \".head_offset\" in k or k.endswith(\"head_offset\"):\n                has_head = True\n            if \".embed_offset\" in k or k.endswith(\"embed_offset\"):\n                has_embed = True\nexcept Exception:\n    print(\"unknown\")\n    raise SystemExit(0)\n\nif not has_token_embeddings_adapter:\n    print(\"none\")\nelif has_head:\n    print(\"untied\")\nelif has_embed:\n    print(\"tied\")\nelse:\n    print(\"unknown\")\n' "$ADAPTERS")
 
-if [[ "$COORD_OFFSETS_MODE" != "none" ]]; then
-  if [[ "$COORD_OFFSETS_MODE" == "untied" ]]; then
+if [[ "$TOKEN_EMBEDDINGS_ADAPTER_MODE" != "none" ]]; then
+  if [[ "$TOKEN_EMBEDDINGS_ADAPTER_MODE" == "untied" ]]; then
     echo "[WARN] Adapter contains separate token_embeddings_adapter head updates (untied embed/head)." >&2
     echo "[WARN] This will likely DISABLE tie_word_embeddings in the merged checkpoint to preserve behavior." >&2
     echo "[WARN] Qwen3-VL default is tie-head (single shared lookup table)." >&2
-  elif [[ "$COORD_OFFSETS_MODE" == "tied" ]]; then
+  elif [[ "$TOKEN_EMBEDDINGS_ADAPTER_MODE" == "tied" ]]; then
     echo "[INFO] Adapter uses tie_head=True (shared token embeddings offsets)." >&2
     echo "[INFO] For tied Qwen-family checkpoints, injecting embed_tokens.weight is the expected merge path." >&2
-  elif [[ "$COORD_OFFSETS_MODE" == "unknown" ]]; then
+  elif [[ "$TOKEN_EMBEDDINGS_ADAPTER_MODE" == "unknown" ]]; then
     echo "[WARN] Could not determine token_embeddings_adapter mode; attempting injection anyway." >&2
   fi
 
@@ -132,7 +132,7 @@ if [[ "$COORD_OFFSETS_MODE" != "none" ]]; then
     --merged_dir "$OUTPUT_DIR" \
     --adapter_dir "$ADAPTERS"
 else
-  echo "No token_embeddings_adapter tensors found in adapter; skipping coord-token injection."
+  echo "No token_embeddings_adapter tensors found in adapter; skipping token_embeddings_adapter injection."
 fi
 
 # Best-effort: warn if the merged checkpoint config indicates tie-head is broken.
