@@ -8,10 +8,13 @@ from dataclasses import dataclass, replace
 from typing import Any, Literal, Mapping, Protocol, runtime_checkable
 
 from src.common.detection_compact_rows import (
+    BOX_END_TOKEN,
     BOX_START_TOKEN,
     COMPACT_DESC_FORBIDDEN_SUBSTRINGS,
     COMPACT_ROW_COORD_TOKEN_RE,
+    OBJECT_REF_END_TOKEN,
     OBJECT_REF_START_TOKEN,
+    STRICT_COMPACT_ROW_COORD_TOKEN_RE,
     valid_xyxy_positive_area,
 )
 from src.detection.data import (
@@ -20,14 +23,16 @@ from src.detection.data import (
     NormalizedDetectionSample,
 )
 from src.detection.scene import DetectionScene, normalized_detection_sample_from_scene
-from src.detection.teacher_forcing.compact_full_policy import (
-    parse_compact_full,
-    render_compact_full,
+from src.detection.template_contracts import (
+    DetectionTemplateContract,
+    DetectionTemplateId,
+    render_compact_contract_row,
+    resolve_detection_template_contract,
 )
 from src.utils.assistant_json import dumps_coordjson
 
 
-TemplateId = Literal["stage1_json_pretty", "compact_full"]
+TemplateId = DetectionTemplateId
 DetectionSequenceInput = NormalizedDetectionSample | DetectionScene
 TokenRoleName = Literal[
     "IGNORE",
@@ -42,7 +47,7 @@ TokenRoleName = Literal[
 ]
 # Terminal taxonomy contract for Task 4:
 # - `terminal_close` is the assistant-rendered terminal close owned by templates.
-# - `compact_full` has no rendered terminal bytes, so it emits a zero-length
+# - `compact` has no rendered terminal bytes, so it emits a zero-length
 #   `terminal_close` provenance event at the assistant text boundary.
 # - `chat_stop_marker` is reserved for chat-template/tokenization-level terminal
 #   projection and is not emitted by template-only render paths in this slice.
@@ -106,7 +111,7 @@ class TemplateCapabilities:
     version: int
     coordinate_surface: Literal["coord_token"]
     bbox_format: Literal["xyxy"]
-    object_field_order: Literal["desc_first", "compact_full_row"]
+    object_field_order: Literal["desc_first", "compact_row"]
     object_separator: str
     terminal_close: str
     supports_sft: bool = True
@@ -380,24 +385,27 @@ class Stage1JsonPrettyTemplate:
 
 
 class CompactFullTemplate:
-    """First-class strict compact training/eval template.
+    """Contract-backed strict compact training/eval template.
 
-    The common compact facade keeps compatibility behavior for generated text
-    repair, suffix stripping, and ``None`` diagnostics.  This template owns the
-    strict ``compact_full`` training target surface and intentionally does not
-    delegate parsing to the common compatibility parser.
+    The class name remains as an internal compatibility handle for existing
+    imports.  The public template id is semantic and defaults to ``compact``.
     """
 
-    template_id: TemplateId = "compact_full"
-    capabilities = TemplateCapabilities(
-        template_id="compact_full",
-        version=1,
-        coordinate_surface="coord_token",
-        bbox_format="xyxy",
-        object_field_order="compact_full_row",
-        object_separator="",
-        terminal_close="",
-    )
+    def __init__(self, template_id: str = "compact") -> None:
+        contract = resolve_detection_template_contract(template_id)
+        if not contract.is_compact:
+            raise ValueError(f"detection_template.id={template_id!r} is not compact")
+        self.contract = contract
+        self.template_id: TemplateId = contract.template_id
+        self.capabilities = TemplateCapabilities(
+            template_id=contract.template_id,
+            version=1,
+            coordinate_surface="coord_token",
+            bbox_format="xyxy",
+            object_field_order="compact_row",
+            object_separator="",
+            terminal_close="",
+        )
 
     def validate_sample(
         self,
@@ -443,18 +451,25 @@ class CompactFullTemplate:
 
         for object_index, obj in enumerate(sample.objects):
             if object_index:
-                separator_span = builder.append(
-                    self.render_separator(object_index - 1, object_index),
-                    "object_separator",
-                )
-                separator_spans.append(separator_span)
-                structural_spans.append(separator_span)
-                event_builder.append_object_separator(
-                    separator_span,
-                    previous_entry=entries[-1],
-                )
-                entries[-1] = replace(entries[-1], separator_span=separator_span)
-            entry = _append_compact_full_entry(builder, obj, object_index)
+                separator = self.render_separator(object_index - 1, object_index)
+                if separator:
+                    separator_span = builder.append(
+                        separator,
+                        "object_separator",
+                    )
+                    separator_spans.append(separator_span)
+                    structural_spans.append(separator_span)
+                    event_builder.append_object_separator(
+                        separator_span,
+                        previous_entry=entries[-1],
+                    )
+                    entries[-1] = replace(entries[-1], separator_span=separator_span)
+            entry = _append_compact_contract_entry(
+                builder,
+                obj,
+                object_index,
+                self.contract,
+            )
             entries.append(entry)
             structural_spans.extend(entry.control_spans)
             event_builder.extend(_compact_full_entry_events(entry))
@@ -476,14 +491,16 @@ class CompactFullTemplate:
     def parse_assistant(self, text: str) -> dict[str, Any]:
         if not text:
             return {"objects": []}
-        result = parse_compact_full(text, mode="marker_delimited_strict")
-        if not result.ok:
-            raise ValueError(f"strict compact_full parse failed: {result.error_code}")
-        return result.to_payload()
+        return _parse_compact_contract_text(text, self.contract)
 
     def render_entry(self, obj: NormalizedDetectionObject) -> str:
         _validate_compact_desc(obj.desc)
-        return render_compact_full({"objects": [obj]})
+        _validate_compact_full_bbox_geometry(obj)
+        return render_compact_contract_row(
+            self.contract,
+            desc=obj.desc,
+            bbox_tokens=_render_bbox_coord_tokens(obj.bbox_2d),
+        )
 
     def render_separator(self, before_index: int, after_index: int) -> str:
         del before_index, after_index
@@ -588,8 +605,13 @@ class _RenderEventBuilder:
 def get_detection_template(template_id: TemplateId | str) -> DetectionSequenceTemplate:
     if template_id == "stage1_json_pretty":
         return Stage1JsonPrettyTemplate()
-    if template_id == "compact_full":
-        return CompactFullTemplate()
+    if template_id in {
+        "compact",
+        "compact_box_closed",
+        "compact_object_box_closed",
+        "compact_object_box_closed_lines",
+    }:
+        return CompactFullTemplate(str(template_id))
     raise ValueError(f"Unsupported detection template: {template_id!r}")
 
 
@@ -651,20 +673,41 @@ def _append_stage1_json_entry(
     )
 
 
-def _append_compact_full_entry(
-    builder: _SpanTextBuilder, obj: NormalizedDetectionObject, object_index: int
+def _append_compact_contract_entry(
+    builder: _SpanTextBuilder,
+    obj: NormalizedDetectionObject,
+    object_index: int,
+    contract: DetectionTemplateContract,
 ) -> RenderedObjectEntry:
     entry_start = len(builder)
     object_ref_span = builder.append(OBJECT_REF_START_TOKEN, "object_ref_start")
     desc_span = builder.append(obj.desc, "desc")
+    control_spans: list[CharSpan] = [object_ref_span]
+    if contract.include_object_ref_end:
+        control_spans.append(builder.append(OBJECT_REF_END_TOKEN, "object_ref_end"))
     bbox_start_span = builder.append(BOX_START_TOKEN, "bbox_start")
+    control_spans.append(bbox_start_span)
 
     coordinate_spans = tuple(
         builder.append(token, f"coord_{coord_index}")
         for coord_index, token in enumerate(_render_bbox_coord_tokens(obj.bbox_2d))
     )
+    box_end_span = None
+    if contract.include_box_end:
+        box_end_span = builder.append(BOX_END_TOKEN, "box_end")
+        control_spans.append(box_end_span)
+    separator_span = None
+    if contract.canonical_final_separator:
+        separator_span = builder.append(
+            contract.canonical_final_separator,
+            "row_separator",
+        )
+        control_spans.append(separator_span)
     entry_span = CharSpan(entry_start, len(builder), "object_entry")
-    bbox_span = CharSpan(bbox_start_span.end, len(builder), "bbox")
+    bbox_end = box_end_span.start if box_end_span is not None else len(builder)
+    if separator_span is not None and box_end_span is None:
+        bbox_end = separator_span.start
+    bbox_span = CharSpan(bbox_start_span.end, bbox_end, "bbox")
     return RenderedObjectEntry(
         object_instance_id=obj.object_instance_id,
         object_index=object_index,
@@ -675,8 +718,8 @@ def _append_compact_full_entry(
         bbox_start_span=bbox_start_span,
         bbox_span=bbox_span,
         coord_spans=coordinate_spans,
-        separator_span=None,
-        control_spans=(object_ref_span, bbox_start_span),
+        separator_span=separator_span,
+        control_spans=tuple(control_spans),
         trie_eligible_span=entry_span,
         object_id=obj.object_id,
         source_role=obj.source_role,
@@ -688,6 +731,121 @@ def _append_compact_full_entry(
             relation_snapshot=obj.relation_snapshot,
         ),
     )
+
+
+def _parse_compact_contract_text(
+    text: str,
+    contract: DetectionTemplateContract,
+) -> dict[str, Any]:
+    if not contract.is_compact:
+        raise ValueError(f"detection_template.id={contract.template_id!r} is not compact")
+
+    if contract.canonical_final_separator == "\n":
+        if not text.endswith("\n"):
+            raise ValueError(
+                f"strict {contract.template_id} parse failed: missing final newline"
+            )
+        rows = text.splitlines(keepends=True)
+        row_bodies = []
+        for row in rows:
+            if not row.endswith("\n"):
+                raise ValueError(
+                    f"strict {contract.template_id} parse failed: malformed row separator"
+                )
+            row_bodies.append(row[:-1])
+    else:
+        if "\n" in text:
+            raise ValueError(
+                f"strict {contract.template_id} parse failed: unexpected newline"
+            )
+        if not text.startswith(OBJECT_REF_START_TOKEN):
+            raise ValueError(
+                f"strict {contract.template_id} parse failed: missing object ref start"
+            )
+        row_bodies = [
+            f"{OBJECT_REF_START_TOKEN}{part}"
+            for part in text.split(OBJECT_REF_START_TOKEN)[1:]
+        ]
+
+    return {
+        "objects": [
+            _parse_compact_contract_row(row, contract)
+            for row in row_bodies
+            if row
+        ]
+    }
+
+
+def _parse_compact_contract_row(
+    row: str,
+    contract: DetectionTemplateContract,
+) -> dict[str, Any]:
+    body = row
+    if not body.startswith(OBJECT_REF_START_TOKEN):
+        raise ValueError(
+            f"strict {contract.template_id} parse failed: missing object ref start"
+        )
+    body = body[len(OBJECT_REF_START_TOKEN) :]
+
+    if contract.include_object_ref_end:
+        if OBJECT_REF_END_TOKEN not in body:
+            raise ValueError(
+                f"strict {contract.template_id} parse failed: missing object ref end"
+            )
+        desc, body = body.split(OBJECT_REF_END_TOKEN, maxsplit=1)
+        if not body.startswith(BOX_START_TOKEN):
+            raise ValueError(
+                f"strict {contract.template_id} parse failed: missing box start"
+            )
+        coord_tail = body[len(BOX_START_TOKEN) :]
+    else:
+        if OBJECT_REF_END_TOKEN in body:
+            raise ValueError(
+                f"strict {contract.template_id} parse failed: unexpected object ref end"
+            )
+        if BOX_START_TOKEN not in body:
+            raise ValueError(
+                f"strict {contract.template_id} parse failed: missing box start"
+            )
+        desc, coord_tail = body.split(BOX_START_TOKEN, maxsplit=1)
+
+    if contract.include_box_end:
+        if not coord_tail.endswith(BOX_END_TOKEN):
+            raise ValueError(
+                f"strict {contract.template_id} parse failed: missing box end"
+            )
+        coord_tail = coord_tail[: -len(BOX_END_TOKEN)]
+    elif BOX_END_TOKEN in coord_tail:
+        raise ValueError(
+            f"strict {contract.template_id} parse failed: unexpected box end"
+        )
+
+    _validate_compact_desc(desc)
+    bbox_tokens = _parse_strict_coord_tail(coord_tail, contract.template_id)
+    if not valid_xyxy_positive_area(bbox_tokens):
+        raise ValueError(
+            f"strict {contract.template_id} parse failed: invalid bbox geometry"
+        )
+    return {"desc": desc, "bbox_2d": list(bbox_tokens)}
+
+
+def _parse_strict_coord_tail(
+    coord_tail: str,
+    template_id: str,
+) -> tuple[str, ...]:
+    coord_matches = list(STRICT_COMPACT_ROW_COORD_TOKEN_RE.finditer(coord_tail))
+    if len(coord_matches) != 4:
+        raise ValueError(f"strict {template_id} parse failed: expected four coords")
+    if coord_matches[0].start() != 0:
+        raise ValueError(f"strict {template_id} parse failed: malformed coord tail")
+    if any(
+        match.end() != next_match.start()
+        for match, next_match in zip(coord_matches, coord_matches[1:])
+    ):
+        raise ValueError(f"strict {template_id} parse failed: malformed coord tail")
+    if coord_matches[-1].end() != len(coord_tail):
+        raise ValueError(f"strict {template_id} parse failed: malformed coord tail")
+    return tuple(match.group(0) for match in coord_matches)
 
 
 def _metadata_weight(
@@ -920,6 +1078,19 @@ def _compact_full_entry_events(entry: RenderedObjectEntry) -> tuple[RenderSpanEv
                 provenance="rendered_control",
             )
         )
+    for control_span in entry.control_spans:
+        if control_span.label == "object_ref_end":
+            events.append(
+                _render_event(
+                    control_span,
+                    span_kind="object_ref_marker",
+                    primary_role="CONTROL",
+                    mask_groups=("schema", "control"),
+                    classifying=True,
+                    object_entry=entry,
+                    provenance="rendered_control",
+                )
+            )
     events.append(
         _render_event(
             entry.desc_span,
@@ -947,6 +1118,34 @@ def _compact_full_entry_events(entry: RenderedObjectEntry) -> tuple[RenderSpanEv
             provenance="rendered_control",
         )
     )
+    for control_span in entry.control_spans:
+        if control_span.label == "box_end":
+            events.append(
+                _render_event(
+                    control_span,
+                    span_kind="bbox_field_binding",
+                    primary_role="CONTROL",
+                    mask_groups=("schema", "control"),
+                    classifying=True,
+                    object_entry=entry,
+                    span_family="geometry",
+                    field_name="bbox_2d",
+                    geometry_kind="bbox_2d",
+                    provenance="rendered_control",
+                )
+            )
+        elif control_span.label == "row_separator":
+            events.append(
+                _render_event(
+                    control_span,
+                    span_kind="object_separator",
+                    primary_role="SEPARATOR",
+                    mask_groups=("separator", "control"),
+                    classifying=True,
+                    object_entry=entry,
+                    provenance="rendered_control",
+                )
+            )
     events.extend(_coordinate_slot_events(entry))
     return tuple(events)
 

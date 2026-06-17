@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Optional
 
 from src.common.model_paths import normalize_coordexp_base_model_path
-from src.tokens.qwen_native import (
-    EXPECTED_BOX_START_ID,
-    EXPECTED_COORD_END_ID,
-    EXPECTED_COORD_START_ID,
-    EXPECTED_OBJECT_REF_START_ID,
+from src.detection.template_contracts import (
+    resolve_detection_template_contract,
+    required_trainable_token_row_ids,
 )
+from src.tokens.qwen_native import EXPECTED_COORD_END_ID, EXPECTED_COORD_START_ID
 
 VLLM_ADAPTER_UNSUPPORTED_MESSAGE = (
     "Adapter-based inference is supported only with infer.backend.type=hf in "
@@ -20,17 +20,20 @@ VLLM_ADAPTER_UNSUPPORTED_MESSAGE = (
     "merged checkpoint for vLLM."
 )
 
-COMPACT_COORD_TOKEN_REQUIRED_ROW_IDS: tuple[int, ...] = (
-    EXPECTED_OBJECT_REF_START_ID,
-    EXPECTED_BOX_START_ID,
-    *range(EXPECTED_COORD_START_ID, EXPECTED_COORD_END_ID + 1),
-)
+_STRUCTURAL_ROW_ID_TO_TOKEN = {
+    151646: "<|object_ref_start|>",
+    151647: "<|object_ref_end|>",
+    151648: "<|box_start|>",
+    151649: "<|box_end|>",
+}
 
 
 @dataclass(frozen=True)
 class CoordOffsetAdapterSpec:
     coord_ids: tuple[int, ...]
     tie_head: bool
+    embed_offset_rows: int
+    head_offset_rows: int | None = None
 
 
 @dataclass(frozen=True)
@@ -93,6 +96,8 @@ def _load_coord_offset_spec(adapter_dir: Path) -> CoordOffsetAdapterSpec:
     embed_key: Optional[str] = None
     head_key: Optional[str] = None
     coord_ids: tuple[int, ...] = ()
+    embed_offset_rows: int | None = None
+    head_offset_rows: int | None = None
 
     with safe_open(str(weights_path), framework="pt", device="cpu") as handle:
         for key in handle.keys():
@@ -111,11 +116,22 @@ def _load_coord_offset_spec(adapter_dir: Path) -> CoordOffsetAdapterSpec:
 
         coord_ids_tensor = handle.get_tensor(coord_key).reshape(-1).tolist()
         coord_ids = tuple(int(value) for value in coord_ids_tensor)
+        embed_offset_rows = int(handle.get_tensor(embed_key).shape[0])
+        if head_key is not None:
+            head_offset_rows = int(handle.get_tensor(head_key).shape[0])
 
     if not coord_ids:
         raise ValueError("coord_offset_adapter.coord_ids must be non-empty.")
 
-    return CoordOffsetAdapterSpec(coord_ids=coord_ids, tie_head=head_key is None)
+    if embed_offset_rows is None:
+        raise ValueError("coord_offset_adapter.embed_offset row count is unavailable.")
+
+    return CoordOffsetAdapterSpec(
+        coord_ids=coord_ids,
+        tie_head=head_key is None,
+        embed_offset_rows=embed_offset_rows,
+        head_offset_rows=head_offset_rows,
+    )
 
 
 def load_adapter_checkpoint_info(adapter_checkpoint: str) -> AdapterCheckpointInfo:
@@ -209,14 +225,12 @@ def resolve_inference_checkpoint(
 def validate_compact_coord_token_adapter_contract(
     resolved_checkpoint: ResolvedInferenceCheckpoint,
     *,
-    detection_sequence_format: str,
+    detection_template_id: str,
 ) -> None:
     """Fail fast when compact adapter inference would drop token-row offsets."""
 
-    normalized_format = (
-        str(detection_sequence_format).strip().lower().replace("-", "_").replace(" ", "_")
-    )
-    if normalized_format != "compact_full":
+    contract = resolve_detection_template_contract(detection_template_id)
+    if not contract.is_compact:
         return
     if resolved_checkpoint.resolved_adapter_checkpoint is None:
         # Full/merged checkpoints may already have offsets injected into weights.
@@ -226,27 +240,62 @@ def validate_compact_coord_token_adapter_contract(
     coord_spec = adapter_info.coord_offset_spec if adapter_info is not None else None
     if coord_spec is None:
         raise ValueError(
-            "compact_full adapter inference requires adapter_config.json "
+            f"{contract.template_id} adapter inference requires adapter_config.json "
             "modules_to_save to include coord_offset_adapter and "
             "adapter_model.safetensors to contain coord_offset_adapter weights. "
             "This checkpoint would otherwise run with coordinate/token-row offsets inactive."
         )
-    if not coord_spec.tie_head:
-        raise ValueError(
-            "compact_full adapter inference requires tied-head "
-            "coord_offset_adapter checkpoints (tie_head=True; no head_offset tensor)."
-        )
 
     actual = tuple(int(token_id) for token_id in coord_spec.coord_ids)
+    expected = required_trainable_token_row_ids(contract.template_id)
     actual_set = set(actual)
-    required_set = set(COMPACT_COORD_TOKEN_REQUIRED_ROW_IDS)
+    required_set = set(expected)
     missing = sorted(required_set - actual_set)
     extra = sorted(actual_set - required_set)
-    if len(actual) != len(required_set) or missing or extra:
+    duplicates = sorted(
+        token_id for token_id, count in Counter(actual).items() if count > 1
+    )
+    if len(actual) != len(required_set) or missing or extra or duplicates:
         raise ValueError(
-            "compact_full coord_offset_adapter must contain exactly 1002 trainable "
-            "token rows: <|object_ref_start|>, <|box_start|>, and "
-            "<|coord_0|>..<|coord_999|>. "
+            f"{contract.template_id} coord_offset_adapter must contain exactly "
+            f"{len(expected)} trainable token rows: "
+            f"{_describe_required_rows(contract.template_id)}. "
             f"got={len(actual)} unique={len(actual_set)} "
-            f"missing={missing[:8]} extra={extra[:8]}"
+            f"missing={_describe_row_id_list(missing[:8])} "
+            f"extra={_describe_row_id_list(extra[:8])} "
+            f"duplicates={_describe_row_id_list(duplicates[:8])}"
         )
+    if coord_spec.embed_offset_rows != len(actual):
+        raise ValueError(
+            f"{contract.template_id} coord_offset_adapter embed_offset rows "
+            f"must match coord_ids; got embed_offset rows={coord_spec.embed_offset_rows} "
+            f"coord_ids={len(actual)}"
+        )
+    if coord_spec.head_offset_rows is not None and coord_spec.head_offset_rows != len(actual):
+        raise ValueError(
+            f"{contract.template_id} coord_offset_adapter head_offset rows "
+            f"must match coord_ids; got head_offset rows={coord_spec.head_offset_rows} "
+            f"coord_ids={len(actual)}"
+        )
+
+
+def _describe_required_rows(template_id: str) -> str:
+    contract = resolve_detection_template_contract(template_id)
+    structural = ", ".join(contract.required_structural_tokens)
+    return f"{structural}, and <|coord_0|>..<|coord_999|>"
+
+
+def _describe_row_id_list(row_ids: list[int]) -> list[str]:
+    return [
+        _STRUCTURAL_ROW_ID_TO_TOKEN.get(
+            int(row_id),
+            _coord_row_id_to_token_text(int(row_id)),
+        )
+        for row_id in row_ids
+    ]
+
+
+def _coord_row_id_to_token_text(row_id: int) -> str:
+    if EXPECTED_COORD_START_ID <= row_id <= EXPECTED_COORD_END_ID:
+        return f"<|coord_{row_id - EXPECTED_COORD_START_ID}|>"
+    return str(row_id)

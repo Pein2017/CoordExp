@@ -41,6 +41,7 @@ from src.detection.teacher_forcing.target_builder import (
     build_teacher_forcing_target,
 )
 from src.detection.template import TemplateId, get_detection_template
+from src.detection.template_contracts import resolve_detection_template_contract
 from src.detection.tokenization import (
     DetectionSupervisionView,
     TokenSpan,
@@ -405,11 +406,14 @@ class DetectionTrainingDataset(Dataset):
         teacher_forcing_target_ir = None
         metadata_object_ordering = normalized.object_ordering
         if self.config.teacher_forcing_profile is not None:
-            if self.config.detection_template_id != "compact_full":
-                raise ValueError("teacher_forcing target IR requires compact_full template")
+            if not resolve_detection_template_contract(
+                self.config.detection_template_id
+            ).is_compact:
+                raise ValueError("teacher_forcing target IR requires a compact template")
             build_result = build_teacher_forcing_target(
                 scene,
                 tokenizer=self.tokenizer,
+                detection_template_id=self.config.detection_template_id,
                 profile=cast(
                     TeacherForcingBuilderProfile,
                     self.config.teacher_forcing_profile,
@@ -467,9 +471,10 @@ class DetectionTrainingDataset(Dataset):
         elif self.config.mode == "prefix_rollin_et_rmp_ce":
             rendered_assistant = detection_template.render_assistant(normalized)
             messages = self._messages(scene.images, assistant_text=rendered_assistant.text)
-            if self.config.detection_template_id != "compact_full":
+            if self.config.detection_template_id != "compact":
                 raise ValueError(
-                    "prefix_rollin_et_rmp_ce requires compact_full template"
+                    "prefix_rollin_et_rmp_ce currently requires the compact template "
+                    "until checkpointed rollout variants are validated"
                 )
             k_rng = random.Random(_mix_seed(self.config.seed, self._epoch, base_idx))
             k = k_rng.randint(0, len(normalized.objects))

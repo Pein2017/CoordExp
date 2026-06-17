@@ -19,12 +19,14 @@ stages:
   eval: true
   vis: false
 
+detection_template:
+  id: compact
+
 infer:
   gt_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
   model_checkpoint: /data/CoordExp/outputs/stage1_2b/compact_full_et_rmp_instance_trie_gaussian_softce_a5_support2_bsz16_8gpu_4epoch_tokenrows_v2/compact-full-et-rmp-instance_trie_gaussian_softce_a5-support2-bsz16-8gpu-4epoch-tokenrows-v2/v0-20260514-152238/checkpoint-3664
 
   prompt_variant: coco_80
-  detection_sequence_format: compact_full
   bbox_format: xyxy
   object_field_order: desc_first
   object_ordering: random

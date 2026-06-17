@@ -39,6 +39,7 @@ def _build_inference_messages(
     object_field_order: str = "desc_first",
     bbox_format: str = "xyxy",
     detection_sequence_format: str = "coordjson",
+    detection_template_id: str | None = None,
 ) -> list[dict[str, object]]:
     system_prompt, user_prompt = get_template_prompts(
         ordering=object_ordering,
@@ -47,6 +48,7 @@ def _build_inference_messages(
         object_field_order=object_field_order,
         bbox_format=bbox_format,
         detection_sequence_format=detection_sequence_format,
+        detection_template_id=detection_template_id,
     )
     return build_detection_chat_messages(
         system_prompt=system_prompt,
@@ -110,14 +112,14 @@ def test_prompt_template_hash_changes_when_bbox_format_changes() -> None:
     assert xyxy_hash != cxcy_logw_logh_hash
 
 
-def test_prompt_template_hash_changes_when_detection_sequence_format_changes() -> None:
+def test_prompt_template_hash_changes_when_detection_template_changes() -> None:
     coordjson_hash = get_template_prompt_hash(
         prompt_variant="coco_80",
-        detection_sequence_format="coordjson",
+        detection_template_id="stage1_json_pretty",
     )
     compact_hash = get_template_prompt_hash(
         prompt_variant="coco_80",
-        detection_sequence_format="compact_full",
+        detection_template_id="compact",
     )
 
     assert coordjson_hash != compact_hash
@@ -156,7 +158,7 @@ def test_compact_prompt_variant_cross_surface_parity_between_training_and_infere
                 "object_ordering": "sorted",
                 "object_field_order": "desc_first",
                 "coord_tokens": {"enabled": True},
-                "detection_sequence_format": "compact_full",
+                "detection_sequence_format": "compact",
                 "extra": {"prompt_variant": "coco_80"},
             }
         }
@@ -165,7 +167,7 @@ def test_compact_prompt_variant_cross_surface_parity_between_training_and_infere
     messages = _build_inference_messages(
         prompt_variant="coco_80",
         object_ordering="sorted",
-        detection_sequence_format="compact_full",
+        detection_template_id="compact",
     )
     infer_system = _message_text(messages[0]["content"])
     infer_user = _message_text(messages[1]["content"])
@@ -274,14 +276,14 @@ def test_coord_mode_numeric_is_rejected() -> None:
 def test_training_prompt_resolution_rejects_compact_without_coord_tokens() -> None:
     with pytest.raises(
         ValueError,
-        match="custom.detection_sequence_format=compact_full requires custom.coord_tokens.enabled=true",
+        match="custom.detection_sequence_format=compact requires custom.coord_tokens.enabled=true",
     ):
         ConfigLoader.resolve_prompts(
             {
                 "custom": {
                     "object_field_order": "desc_first",
                     "coord_tokens": {"enabled": False},
-                    "detection_sequence_format": "compact_full",
+                    "detection_sequence_format": "compact",
                     "extra": {"prompt_variant": "default"},
                 }
             }
@@ -329,18 +331,18 @@ def test_coco_80_prompt_variant_has_compact_canonical_unique_list() -> None:
 @pytest.mark.parametrize(
     ("fmt", "expected_pattern"),
     [
-        ("compact_full", "<|object_ref_start|>{desc}<|box_start|><|coord_x1|><|coord_y1|><|coord_x2|><|coord_y2|>"),
-        ("compact_no_desc", "{desc}<|box_start|><|coord_x1|><|coord_y1|><|coord_x2|><|coord_y2|>"),
-        ("compact_no_bbox", "<|object_ref_start|>{desc}<|coord_x1|><|coord_y1|><|coord_x2|><|coord_y2|>"),
-        ("compact_min", "{desc}<|coord_x1|><|coord_y1|><|coord_x2|><|coord_y2|>"),
+        ("compact", "<|object_ref_start|>{desc}<|box_start|><|coord_x1|><|coord_y1|><|coord_x2|><|coord_y2|>"),
+        ("compact_box_closed", "<|object_ref_start|>{desc}<|box_start|><|coord_x1|><|coord_y1|><|coord_x2|><|coord_y2|><|box_end|>"),
+        ("compact_object_box_closed", "<|object_ref_start|>{desc}<|object_ref_end|><|box_start|><|coord_x1|><|coord_y1|><|coord_x2|><|coord_y2|><|box_end|>"),
+        ("compact_object_box_closed_lines", "<|object_ref_start|>{desc}<|object_ref_end|><|box_start|><|coord_x1|><|coord_y1|><|coord_x2|><|coord_y2|><|box_end|>\n"),
     ],
 )
-def test_coco_80_prompt_variant_renders_each_compact_format(
+def test_coco_80_prompt_variant_renders_each_compact_template(
     fmt: str, expected_pattern: str
 ) -> None:
     system_prompt, user_prompt = get_template_prompts(
         prompt_variant="coco_80",
-        detection_sequence_format=fmt,
+        detection_template_id=fmt,
     )
 
     assert expected_pattern in system_prompt

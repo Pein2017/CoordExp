@@ -6,7 +6,7 @@
 # - image root: COCO rescale_32_1024_bbox image-bearing tree
 # - checkpoint role: fullobj_random_pure_ce_ckpt3668
 # - decode policy: free text, unconstrained, deterministic greedy at temperature 0
-# - template contract: compact_full marker-delimited rows with no newline row separator
+# - template contract: compact marker-delimited rows
 
 run:
   name: fullobj_random_purece_ckpt3668_a3_2_rollout1024_greedy
@@ -44,27 +44,23 @@ a3_2_launch_spec:
   source_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl
   image_root: /data/CoordExp/public_data/coco/rescale_32_1024_bbox
   template_contract:
-    detection_sequence_format: compact_full
+    detection_template_id: compact
     coordinate_surface: coord_token
     bbox_format: xyxy
-    row_separator: none
-    compact_full_parse_mode: marker_delimited_strict
+    parser_mode: marker_delimited_strict
+
+detection_template:
+  id: compact
 
 infer:
   gt_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl
   model_checkpoint: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_fullobj_random_sft_bsz16_4epoch_tokenrows_v2/compact-full-fullobj-random-sft-bsz16-4epoch-tokenrows-v2/v1-20260601-062428/checkpoint-3668
 
   prompt_variant: coco_80
-  detection_sequence_format: compact_full
-  row_separator: none
   allow_diagnostic_gt_vs_pred: true
   bbox_format: xyxy
   object_field_order: desc_first
   object_ordering: random
-
-  parsing:
-    compact_full:
-      mode: marker_delimited_strict
 
   mode: coord
   pred_coord_mode: auto

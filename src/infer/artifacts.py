@@ -420,6 +420,27 @@ def _has_canonical_string_provenance(
     return False
 
 
+def _detection_template_id_from_payload(payload: Mapping[str, Any]) -> str | None:
+    from src.detection.template_contracts import resolve_detection_template_contract
+
+    candidates: list[Mapping[str, Any]] = [payload]
+    for key in ("infer", "provenance", "inference_provenance"):
+        value = payload.get(key)
+        if isinstance(value, Mapping):
+            candidates.append(value)
+
+    for candidate in candidates:
+        raw_id = candidate.get("detection_template_id")
+        if isinstance(raw_id, str) and raw_id.strip():
+            return resolve_detection_template_contract(raw_id).template_id
+        template = candidate.get("detection_template")
+        if isinstance(template, Mapping):
+            nested_id = template.get("id")
+            if isinstance(nested_id, str) and nested_id.strip():
+                return resolve_detection_template_contract(nested_id).template_id
+    return None
+
+
 def _artifact_path_matches(value: Any, *, carrier: Path, artifact_path: Path) -> bool:
     if not isinstance(value, str) or not value.strip():
         return False
@@ -488,6 +509,10 @@ def _validate_comparable_provenance(
         provenance,
         carrier=carrier,
     )
+    if _detection_template_id_from_payload(provenance) is None:
+        raise ValueError(
+            f"missing_provenance: {carrier} lacks detection_template.id"
+        )
     if not _has_canonical_string_provenance(
         provenance,
         require_score=require_score,
@@ -767,6 +792,7 @@ class InferArtifactFacts:
     pred_coord_mode: Any
     prompt_variant: Any
     bbox_format: Any
+    detection_template_id: str
     detection_sequence_format: str
     object_field_order: Any
     object_ordering: Any
@@ -792,14 +818,11 @@ def resolve_infer_artifact_facts_from_owner(
 
     checkpoint_meta = _checkpoint_meta(owner)
     generation_meta = _generation_meta(owner, backend=backend, batch_size=batch_size)
+    detection_template_id = str(
+        getattr(owner, "detection_template_id", "stage1_json_pretty")
+    )
     parsing = {
-        "compact_full": {
-            "mode": getattr(
-                owner.cfg,
-                "compact_full_parse_mode",
-                "marker_delimited_strict",
-            ),
-        },
+        "mode": str(getattr(owner, "parser_mode", "strict_expected")),
     }
     distributed: Optional[Dict[str, Any]] = None
     if bool(getattr(owner.cfg, "distributed_enabled", False)):
@@ -837,6 +860,7 @@ def resolve_infer_artifact_facts_from_owner(
         pred_coord_mode=owner.cfg.pred_coord_mode,
         prompt_variant=owner.prompt_variant,
         bbox_format=owner.bbox_format,
+        detection_template_id=detection_template_id,
         detection_sequence_format=getattr(owner, "detection_sequence_format", "coordjson"),
         object_field_order=owner.object_field_order,
         object_ordering=owner.object_ordering,
@@ -887,6 +911,10 @@ def build_infer_resolved_meta_from_facts(
         "pred_coord_mode": facts.pred_coord_mode,
         "prompt_variant": facts.prompt_variant,
         "bbox_format": facts.bbox_format,
+        "detection_template": {
+            "id": facts.detection_template_id,
+        },
+        "detection_template_id": facts.detection_template_id,
         "detection_sequence_format": facts.detection_sequence_format,
         "object_field_order": facts.object_field_order,
         "object_ordering": facts.object_ordering,
@@ -955,6 +983,10 @@ def build_infer_summary_payload_from_facts(
             "pred_coord_mode": facts.pred_coord_mode,
             "prompt_variant": facts.prompt_variant,
             "bbox_format": facts.bbox_format,
+            "detection_template": {
+                "id": facts.detection_template_id,
+            },
+            "detection_template_id": facts.detection_template_id,
             "detection_sequence_format": facts.detection_sequence_format,
             "object_field_order": facts.object_field_order,
             "object_ordering": facts.object_ordering,

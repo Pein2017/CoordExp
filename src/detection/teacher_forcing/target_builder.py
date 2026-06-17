@@ -1,4 +1,4 @@
-"""Build Stage-1 compact_full teacher-forcing target IR."""
+"""Build Stage-1 compact teacher-forcing target IR."""
 
 from __future__ import annotations
 
@@ -6,9 +6,11 @@ from dataclasses import dataclass
 from typing import Any, Literal, Mapping, NamedTuple, Sequence
 
 from src.common.detection_compact_rows import (
+    BOX_END_TOKEN,
     BOX_START_TOKEN,
     END_OF_TEXT_TOKEN,
     IM_END_TOKEN,
+    OBJECT_REF_END_TOKEN,
     OBJECT_REF_START_TOKEN,
 )
 from src.detection.data import (
@@ -37,7 +39,8 @@ from src.detection.teacher_forcing.trie import (
     next_token_ids_for_prefix,
     token_roles_for_prefix,
 )
-from src.detection.template import CompactFullTemplate
+from src.detection.template import DetectionSequenceTemplate, TemplateId, get_detection_template
+from src.detection.template_contracts import resolve_detection_template_contract
 from src.training.teacher_forcing.constants import (
     MARGINAL_SCOPE_SAMPLED_PATH_NEXT_TOKEN,
     TEACHER_FORCING_TARGET_IR_SCHEMA_VERSION,
@@ -77,12 +80,21 @@ class _InputPrefixToken(NamedTuple):
 @dataclass(frozen=True)
 class TeacherForcingTargetBuilder:
     tokenizer: Any
+    detection_template_id: TemplateId
     profile: TeacherForcingBuilderProfile = "valid_set"
     base_seed: int = DEFAULT_ROLLIN_BASE_SEED
     policy_name: str = ROLLIN_POLICY_NAME
     policy_version: int = ROLLIN_POLICY_VERSION
     serialization_policy: str = "marker_delimited"
     input_prefix_token_id: int | None = None
+
+    def __post_init__(self) -> None:
+        contract = resolve_detection_template_contract(self.detection_template_id)
+        if not contract.is_compact:
+            raise ValueError(
+                "teacher_forcing target IR requires a compact detection template; "
+                f"got detection_template.id={self.detection_template_id!r}"
+            )
 
     def build(
         self,
@@ -109,8 +121,13 @@ class TeacherForcingTargetBuilder:
         )
 
         try:
+            detection_template = get_detection_template(self.detection_template_id)
             prepared_by_index = {
-                index: _prepare_object(obj, self.tokenizer)
+                index: _prepare_object(
+                    obj,
+                    self.tokenizer,
+                    detection_template=detection_template,
+                )
                 for index, obj in enumerate(parsed.objects)
             }
             rollin_indices = random_permutation_rollin(
@@ -162,6 +179,7 @@ class TeacherForcingTargetBuilder:
                 "rollin_policy": self.policy_name,
                 "rollin_seed": seed,
                 "serialization_policy": self.serialization_policy,
+                "detection_template_id": detection_template.template_id,
                 "stop_token_text": IM_END_TOKEN,
                 "pad_token_text": END_OF_TEXT_TOKEN,
                 "parser_mode": "strict_expected",
@@ -187,6 +205,7 @@ def build_teacher_forcing_target(
     sample: DetectionScene | NormalizedDetectionSample | Mapping[str, Any],
     *,
     tokenizer: Any,
+    detection_template_id: TemplateId,
     profile: TeacherForcingBuilderProfile = "valid_set",
     epoch: int,
     stable_sample_id: str | None = None,
@@ -196,6 +215,7 @@ def build_teacher_forcing_target(
 ) -> TeacherForcingBuildResult:
     builder = TeacherForcingTargetBuilder(
         tokenizer=tokenizer,
+        detection_template_id=detection_template_id,
         profile=profile,
         base_seed=base_seed,
         input_prefix_token_id=input_prefix_token_id,
@@ -284,38 +304,65 @@ def _build_atoms(
     return tuple(atoms)
 
 
-def _prepare_object(obj: NormalizedDetectionObject, tokenizer: Any) -> _PreparedObject:
-    token_path = tokenize_description_context(obj.desc, tokenizer)
+def _prepare_object(
+    obj: NormalizedDetectionObject,
+    tokenizer: Any,
+    *,
+    detection_template: DetectionSequenceTemplate,
+) -> _PreparedObject:
+    contract = resolve_detection_template_contract(detection_template.template_id)
+    token_path = tokenize_description_context(
+        obj.desc,
+        tokenizer,
+        detection_template_id=detection_template.template_id,
+    )
     coord_tokens = obj.bbox_2d.tokens
     coord_token_ids = tuple(_single_token_id(tokenizer, token) for token in coord_tokens)
-    token_ids = (
+    token_ids: list[int] = [
         token_path.object_ref_start_token_id,
         *token_path.description_token_ids,
-        token_path.bbox_start_token_id,
-        *coord_token_ids,
-    )
-    token_roles = (
+    ]
+    token_roles: list[TokenRole] = [
         TokenRole.SCHEMA,
         *(TokenRole.TEXT for _ in token_path.description_token_ids),
-        TokenRole.SCHEMA,
-        *(TokenRole.COORD for _ in coord_token_ids),
-    )
-    coord_roles = (
+    ]
+    coord_roles: list[str | None] = [
         None,
         *(None for _ in token_path.description_token_ids),
-        None,
-        *_COORD_ROLES,
-    )
-    rendered_text = CompactFullTemplate().render_entry(obj)
+    ]
+    if token_path.object_ref_end_token_id is not None:
+        token_ids.append(token_path.object_ref_end_token_id)
+        token_roles.append(TokenRole.SCHEMA)
+        coord_roles.append(None)
+    token_ids.append(token_path.bbox_start_token_id)
+    token_roles.append(TokenRole.SCHEMA)
+    coord_roles.append(None)
+    token_ids.extend(coord_token_ids)
+    token_roles.extend(TokenRole.COORD for _ in coord_token_ids)
+    coord_roles.extend(_COORD_ROLES)
+    if contract.include_box_end:
+        token_ids.append(_single_token_id(tokenizer, BOX_END_TOKEN))
+        token_roles.append(TokenRole.SCHEMA)
+        coord_roles.append(None)
+    if contract.canonical_final_separator:
+        separator_ids = _encode_rendered_text(
+            tokenizer,
+            contract.canonical_final_separator,
+        )
+        token_ids.extend(separator_ids)
+        token_roles.extend(TokenRole.SCHEMA for _ in separator_ids)
+        coord_roles.extend(None for _ in separator_ids)
+
+    rendered_text = detection_template.render_entry(obj)
     _assert_context_matches_rendered_prefix(token_path, rendered_text, tokenizer)
     return _PreparedObject(
         obj=obj,
         branch=TokenBranch(
             object_index=obj.normalized_object_index,
             object_instance_id=obj.object_instance_id,
-            token_ids=token_ids,
-            token_roles=token_roles,
-            coord_roles=coord_roles,
+            token_ids=tuple(token_ids),
+            token_roles=tuple(token_roles),
+            coord_roles=tuple(coord_roles),
         ),
         rendered_text=rendered_text,
     )
@@ -331,7 +378,7 @@ def _assert_context_matches_rendered_prefix(
     if context_ids != token_path.context_token_ids:
         raise DescriptionTokenizationError(
             "tokenization_mismatch",
-            "rendered compact_full context tokenization changed",
+            "rendered compact context tokenization changed",
         )
 
 

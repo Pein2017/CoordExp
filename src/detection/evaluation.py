@@ -115,7 +115,7 @@ def parse_detection_output_strict_expected(
 ) -> dict[str, Any]:
     parser_mode = _require_string(parser_mode, field_name="parser_mode")
     template = get_detection_template(expected_template)
-    if template.template_id == "compact_full":
+    if template.template_id == "compact":
         if parser_mode == "strict_expected":
             parser_mode = "marker_delimited_strict"
         if parser_mode not in {"marker_delimited_strict", "legacy_compatible"}:
@@ -123,6 +123,13 @@ def parse_detection_output_strict_expected(
                 f"Unsupported detection parser_mode for metrics: {parser_mode!r}"
             )
         return _parse_compact_full_expected(text, parser_mode=parser_mode)
+    if template.capabilities.object_field_order == "compact_row":
+        if parser_mode != "strict_expected":
+            raise ValueError(
+                f"{template.template_id} evaluation does not support "
+                f"parser_mode={parser_mode!r}"
+            )
+        return _parse_expected_template(text, expected_template=template.template_id)
     if parser_mode != "strict_expected":
         raise ValueError(f"Unsupported detection parser_mode for metrics: {parser_mode!r}")
     return _parse_expected_template(text, expected_template=template.template_id)
@@ -152,14 +159,14 @@ def build_detection_template_eval_manifest(
             f"{template.template_id} evaluation requires coordinate_surface="
             f"{template.capabilities.coordinate_surface}"
         )
-    if template.template_id == "compact_full" and parser_mode == "strict_expected":
+    if template.template_id == "compact" and parser_mode == "strict_expected":
         parser_mode = "marker_delimited_strict"
     if parser_mode in {
         "strict_expected",
         "marker_delimited_strict",
         "legacy_compatible",
     }:
-        if template.template_id != "compact_full" and parser_mode != "strict_expected":
+        if template.template_id != "compact" and parser_mode != "strict_expected":
             raise ValueError(
                 f"{template.template_id} evaluation does not support "
                 f"parser_mode={parser_mode!r}"

@@ -7,7 +7,9 @@ from dataclasses import dataclass
 from typing import Literal, Sequence
 
 OBJECT_REF_START_TOKEN = "<|object_ref_start|>"
+OBJECT_REF_END_TOKEN = "<|object_ref_end|>"
 BOX_START_TOKEN = "<|box_start|>"
+BOX_END_TOKEN = "<|box_end|>"
 IM_END_TOKEN = "<|im_end|>"
 END_OF_TEXT_TOKEN = "<|endoftext|>"
 
@@ -16,7 +18,9 @@ COMPACT_DESC_FORBIDDEN_SUBSTRINGS = (
     "\r",
     "\t",
     OBJECT_REF_START_TOKEN,
+    OBJECT_REF_END_TOKEN,
     BOX_START_TOKEN,
+    BOX_END_TOKEN,
     "<|coord_",
     "<|im_start|>",
     IM_END_TOKEN,

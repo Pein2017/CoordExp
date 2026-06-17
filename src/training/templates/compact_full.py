@@ -1,4 +1,4 @@
-"""Compact-full detection encoding codec."""
+"""Semantic compact detection encoding codec."""
 
 from __future__ import annotations
 
@@ -17,16 +17,16 @@ else:
 
 
 def _compact_full_template() -> "DetectionSequenceTemplate":
-    """Return the compact-full detection template owner."""
+    """Return the semantic compact detection template owner."""
 
     from src.detection.template import get_detection_template
 
-    return get_detection_template("compact_full")
+    return get_detection_template("compact")
 
 
 @dataclass(frozen=True, slots=True)
 class CompactFullEncodingCodec(DetectionTemplateCodec):
-    """Codec wrapping the existing ``compact_full`` detection template."""
+    """Codec wrapping the semantic ``compact`` detection template."""
 
     template: "DetectionSequenceTemplate" = field(default_factory=_compact_full_template)
     options: DetectionTemplateRenderOptions = field(
@@ -38,12 +38,12 @@ def create_compact_full_codec(
     *,
     options: DetectionTemplateRenderOptions | None = None,
 ) -> CompactFullEncodingCodec:
-    """Return a compact-full codec with optional render/tokenization options."""
+    """Return a compact codec with optional render/tokenization options."""
 
     from src.detection.template import get_detection_template
 
     return CompactFullEncodingCodec(
-        template=get_detection_template("compact_full"),
+        template=get_detection_template("compact"),
         options=options or DetectionTemplateRenderOptions(),
     )
 

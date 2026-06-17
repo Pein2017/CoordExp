@@ -64,9 +64,11 @@ def _owner(
         mode_reason="requested",
         prompt_variant="coco_80",
         bbox_format="xyxy",
-        detection_sequence_format="compact_full",
-        object_field_order="compact_full_row",
-        object_ordering="original",
+        detection_template_id="compact",
+        detection_sequence_format="compact",
+        object_field_order="desc_first",
+        object_ordering="sorted",
+        parser_mode="marker_delimited_strict",
         prompt_template_hash="0" * 64,
         attn_implementation_requested=None,
         attn_implementation_selected=None,
@@ -96,7 +98,9 @@ def test_infer_artifacts_do_not_emit_grammar_decode_provenance() -> None:
         batch_size=1,
     )
 
-    assert resolved["detection_sequence_format"] == "compact_full"
+    assert resolved["detection_template"]["id"] == "compact"
+    assert resolved["detection_template_id"] == "compact"
+    assert resolved["parsing"]["mode"] == "marker_delimited_strict"
     assert "compact_grammar" not in resolved["generation"]
     assert resolved["generation"]["qwen_chat_generation"] == {
         "eos_token": "<|im_end|>",
@@ -106,7 +110,9 @@ def test_infer_artifacts_do_not_emit_grammar_decode_provenance() -> None:
         "stop_tokens": ["<|im_end|>"],
         "processor_do_resize": False,
     }
-    assert summary["infer"]["detection_sequence_format"] == "compact_full"
+    assert summary["infer"]["detection_template"]["id"] == "compact"
+    assert summary["infer"]["detection_template_id"] == "compact"
+    assert summary["infer"]["parsing"]["mode"] == "marker_delimited_strict"
     assert "compact_grammar" not in summary["generation"]
     assert summary["generation"]["qwen_chat_generation"] == {
         "eos_token": "<|im_end|>",
@@ -205,6 +211,7 @@ def test_comparable_artifact_loader_accepts_run_relative_artifact_bindings(
     (run_dir / "resolved_config.json").write_text(
         json.dumps(
             {
+                "detection_template": {"id": "stage1_json_pretty"},
                 "inference_provenance": {
                     "comparable": True,
                     "score_policy": "none",
@@ -223,6 +230,8 @@ def test_comparable_artifact_loader_accepts_run_relative_artifact_bindings(
             {
                 **generation_provenance,
                 "score_policy_fingerprint": "score_policy:v1:" + "d" * 64,
+                "detection_template": {"id": "stage1_json_pretty"},
+                "detection_template_id": "stage1_json_pretty",
                 "artifact_path": str(scored_path),
                 "metric_bearing": True,
             }

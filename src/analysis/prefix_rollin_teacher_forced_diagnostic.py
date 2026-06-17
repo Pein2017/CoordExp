@@ -566,7 +566,7 @@ def run_prefix_rollin_teacher_forced_probe(
     )
     validate_compact_coord_token_adapter_contract(
         scorer.resolved_checkpoint,
-        detection_sequence_format=training_config.detection_template.id,
+        detection_template_id=training_config.detection_template.id,
     )
 
     dataset_jsonl = _resolve_data_path(

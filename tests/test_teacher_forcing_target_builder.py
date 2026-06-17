@@ -8,8 +8,10 @@ import pytest
 import torch
 
 from src.common.detection_compact_rows import (
+    BOX_END_TOKEN,
     BOX_START_TOKEN,
     IM_END_TOKEN,
+    OBJECT_REF_END_TOKEN,
     OBJECT_REF_START_TOKEN,
 )
 from src.detection.data import (
@@ -25,6 +27,8 @@ from src.detection.teacher_forcing.target_builder import (
     TeacherForcingTargetBuilder,
     build_teacher_forcing_target,
 )
+from src.detection.template import get_detection_template
+from src.detection.template_contracts import COMPACT_TEMPLATE_IDS
 from src.training.teacher_forcing.roles import TokenRole
 from src.training.teacher_forcing.validation import validate_target_ir
 from src.training.teacher_forcing.vocab import RoleVocab
@@ -44,6 +48,8 @@ class TinyContextTokenizer:
             "<bos>": 1,
             OBJECT_REF_START_TOKEN: 10,
             BOX_START_TOKEN: 11,
+            OBJECT_REF_END_TOKEN: 12,
+            BOX_END_TOKEN: 13,
             IM_END_TOKEN: self.stop_token_id,
         }
         self._next_id = 100
@@ -77,12 +83,21 @@ class TinyContextTokenizer:
     def token_id(self, token: str) -> int:
         return self._id_for(token)
 
+    def token_text(self, token_id: int) -> str:
+        for token, value in self._ids.items():
+            if value == int(token_id):
+                return token
+        raise KeyError(token_id)
+
     def role_vocab(self) -> RoleVocab:
         return RoleVocab(
             schema_token_ids=frozenset(
                 {
                     self.token_id(OBJECT_REF_START_TOKEN),
+                    self.token_id(OBJECT_REF_END_TOKEN),
                     self.token_id(BOX_START_TOKEN),
+                    self.token_id(BOX_END_TOKEN),
+                    self.token_id("\n"),
                 }
             ),
             text_token_ids=frozenset(
@@ -104,7 +119,13 @@ class TinyContextTokenizer:
         cursor = 0
         while cursor < len(text):
             matched = False
-            for special in (OBJECT_REF_START_TOKEN, BOX_START_TOKEN, IM_END_TOKEN):
+            for special in (
+                OBJECT_REF_START_TOKEN,
+                OBJECT_REF_END_TOKEN,
+                BOX_START_TOKEN,
+                BOX_END_TOKEN,
+                IM_END_TOKEN,
+            ):
                 if text.startswith(special, cursor):
                     parts.append((special, (cursor, cursor + len(special))))
                     cursor += len(special)
@@ -229,6 +250,7 @@ def _object(
 def _build(
     sample: NormalizedDetectionSample | dict[str, Any],
     *,
+    detection_template_id: str = "compact",
     profile: str = "valid_set",
     epoch: int = 3,
     stable_sample_id: str = "sample-42",
@@ -239,6 +261,7 @@ def _build(
     result = build_teacher_forcing_target(
         sample,
         tokenizer=tok,
+        detection_template_id=detection_template_id,  # type: ignore[arg-type]
         profile=profile,
         epoch=epoch,
         stable_sample_id=stable_sample_id,
@@ -258,6 +281,47 @@ def _validate(result, tokenizer: TinyContextTokenizer) -> None:
         input_ids=torch.tensor([result.input_ids]),
         role_vocab=tokenizer.role_vocab(),
     )
+
+
+@pytest.mark.parametrize("template_id", COMPACT_TEMPLATE_IDS)
+def test_teacher_forcing_target_builder_uses_detection_template_contract(
+    template_id: str,
+) -> None:
+    sample = _sample((_object("cat", (1, 2, 10, 20)),))
+    result, tokenizer = _build(sample, detection_template_id=template_id)
+    rendered = get_detection_template(template_id).render_assistant(sample)
+
+    assert result.ok
+    assert result.rendered_text == rendered.text
+    assert result.target_ir.metadata["detection_template_id"] == template_id
+
+    selected_texts = tuple(
+        tokenizer.token_text(atom.selected_token_id)
+        for atom in result.target_ir.atoms[:-1]
+    )
+    assert OBJECT_REF_START_TOKEN in selected_texts
+    assert BOX_START_TOKEN in selected_texts
+    assert tuple(text for text in selected_texts if text.startswith("<|coord_")) == (
+        "<|coord_1|>",
+        "<|coord_2|>",
+        "<|coord_10|>",
+        "<|coord_20|>",
+    )
+    if template_id in {
+        "compact_object_box_closed",
+        "compact_object_box_closed_lines",
+    }:
+        assert OBJECT_REF_END_TOKEN in selected_texts
+    else:
+        assert OBJECT_REF_END_TOKEN not in selected_texts
+    if template_id == "compact":
+        assert BOX_END_TOKEN not in selected_texts
+    else:
+        assert BOX_END_TOKEN in selected_texts
+    assert ("\n" in selected_texts) is (
+        template_id == "compact_object_box_closed_lines"
+    )
+    _validate(result, tokenizer)
 
 
 def test_hard_sft_profile_emits_singleton_valid_token_ids() -> None:
@@ -384,6 +448,7 @@ def test_builder_accepts_detection_scene_with_sample_semantic_parity() -> None:
     sample_result = build_teacher_forcing_target(
         sample,
         tokenizer=tokenizer,
+        detection_template_id="compact",
         profile="valid_set",
         epoch=3,
         stable_sample_id="scene-parity",
@@ -391,6 +456,7 @@ def test_builder_accepts_detection_scene_with_sample_semantic_parity() -> None:
     scene_result = build_teacher_forcing_target(
         scene,
         tokenizer=tokenizer,
+        detection_template_id="compact",
         profile="valid_set",
         epoch=3,
         stable_sample_id="scene-parity",
@@ -415,6 +481,7 @@ def test_configured_input_prefix_source_is_recorded_in_target_metadata() -> None
     tokenizer = NoBosTokenizer()
     builder = TeacherForcingTargetBuilder(
         tokenizer=tokenizer,
+        detection_template_id="compact",
         profile="valid_set",
         input_prefix_token_id=777,
     )
@@ -600,7 +667,11 @@ def test_non_unique_marker_boundary_mapping_drops_sample_without_partial_ir() ->
 
 def test_builder_accepts_explicit_class_api() -> None:
     tokenizer = TinyContextTokenizer()
-    builder = TeacherForcingTargetBuilder(tokenizer=tokenizer, profile="valid_set")
+    builder = TeacherForcingTargetBuilder(
+        tokenizer=tokenizer,
+        detection_template_id="compact",
+        profile="valid_set",
+    )
     sample = _sample((_object("cat", (1, 2, 10, 20)),))
 
     result = builder.build(sample, epoch=0, stable_sample_id="class-api")

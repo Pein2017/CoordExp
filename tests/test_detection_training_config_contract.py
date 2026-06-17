@@ -9,8 +9,16 @@ import yaml
 
 from src.config.loader import ConfigLoader
 from src.config.schema import DebugConfig, DetectionTrainingConfig
-from src.detection.runtime import resolve_recursive_detection_ce_runtime_cfg
-from src.sft import _detection_objective_runtime_payload
+from src.detection.packing import resolve_detection_template_id_for_static_packing
+from src.detection.runtime import (
+    build_detection_runtime_custom_shim,
+    resolve_recursive_detection_ce_runtime_cfg,
+)
+from src.detection.template_contracts import resolve_detection_template_contract
+from src.sft import (
+    _build_encoded_sample_cache_fingerprint,
+    _detection_objective_runtime_payload,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -38,7 +46,7 @@ def _detection_payload() -> dict[str, object]:
             "prompt_variant_enabled": True,
         },
         "detection_template": {
-            "id": "compact_full",
+            "id": "compact",
             "coordinate_surface": "coord_token",
             "bbox_format": "xyxy",
             "strict_parse": True,
@@ -79,7 +87,7 @@ def _detection_payload() -> dict[str, object]:
             "padding_free_packed": False,
         },
         "evaluation": {
-            "expected_template": "compact_full",
+            "expected_template": "compact",
             "parser_mode": "strict_expected",
         },
         "validation": {
@@ -98,6 +106,190 @@ def _update_section(
     current = payload[section]
     assert isinstance(current, dict)
     payload[section] = {**current, **updates}
+
+
+def _with_template(payload: dict[str, object], template_id: str) -> dict[str, object]:
+    contract = resolve_detection_template_contract(template_id)
+    copied = dict(payload)
+    copied["detection_template"] = {
+        "id": template_id,
+        "coordinate_surface": "coord_token",
+        "bbox_format": "xyxy",
+        "strict_parse": True,
+    }
+    if not contract.is_compact:
+        copied["detection_template"] = {
+            **copied["detection_template"],  # type: ignore[arg-type]
+            "object_field_order": "desc_first",
+        }
+    copied["prompt"] = {
+        **copied["prompt"],  # type: ignore[arg-type]
+        "user_variant": "compact_detection" if contract.is_compact else "stage1_detection",
+    }
+    copied["evaluation"] = {
+        **copied["evaluation"],  # type: ignore[arg-type]
+        "expected_template": template_id,
+    }
+    copied["objective"] = {
+        "id": "teacher_forcing",
+        "profile": "pure_valid_set_marginal",
+        "target_ir": {
+            "rollin_policy": {
+                "name": "random_permutation",
+                "base_seed": 17,
+            },
+            "exact_packing_mapping": {
+                "enabled": False,
+            },
+        },
+        "modules": {
+            "token_type_mass": {"enabled": False},
+            "conditional_valid_set_likelihood": {"enabled": False},
+            "within_valid_coverage": {
+                "enabled": False,
+                "coverage_strength": 0.0,
+            },
+            "continuation_margin": {"enabled": False},
+        },
+    }
+    token_rows = dict(copied["token_rows"])  # type: ignore[arg-type]
+    groups = dict(token_rows["groups"])  # type: ignore[index]
+    if contract.is_compact:
+        groups["compact_structure"] = {
+            "role": "structural_ce_only",
+            "tokens": list(contract.required_structural_tokens),
+            "expected_ids": dict(
+                zip(
+                    contract.required_structural_tokens,
+                    contract.required_structural_token_ids,
+                )
+            ),
+        }
+    else:
+        groups.pop("compact_structure", None)
+    token_rows["groups"] = groups
+    copied["token_rows"] = token_rows
+    return copied
+
+
+@pytest.mark.parametrize(
+    "template_id",
+    [
+        "stage1_json_pretty",
+        "compact",
+        "compact_box_closed",
+        "compact_object_box_closed",
+        "compact_object_box_closed_lines",
+    ],
+)
+def test_detection_training_config_accepts_semantic_template_ids(
+    template_id: str,
+) -> None:
+    cfg = DetectionTrainingConfig.from_mapping(
+        _with_template(_detection_payload(), template_id)
+    )
+
+    assert cfg.detection_template.id == template_id
+    assert cfg.evaluation.expected_template == template_id
+
+
+def test_detection_training_config_rejects_compact_full_template_id() -> None:
+    with pytest.raises(ValueError, match="compact_full"):
+        DetectionTrainingConfig.from_mapping(
+            _with_template(_detection_payload(), "compact_full")
+        )
+
+
+@pytest.mark.parametrize(
+    ("template_id", "expected_tokens"),
+    [
+        ("compact", ("<|object_ref_start|>", "<|box_start|>")),
+        (
+            "compact_box_closed",
+            ("<|object_ref_start|>", "<|box_start|>", "<|box_end|>"),
+        ),
+        (
+            "compact_object_box_closed",
+            (
+                "<|object_ref_start|>",
+                "<|object_ref_end|>",
+                "<|box_start|>",
+                "<|box_end|>",
+            ),
+        ),
+        (
+            "compact_object_box_closed_lines",
+            (
+                "<|object_ref_start|>",
+                "<|object_ref_end|>",
+                "<|box_start|>",
+                "<|box_end|>",
+            ),
+        ),
+    ],
+)
+def test_detection_training_config_requires_exact_template_structural_rows(
+    template_id: str,
+    expected_tokens: tuple[str, ...],
+) -> None:
+    cfg = DetectionTrainingConfig.from_mapping(
+        _with_template(_detection_payload(), template_id)
+    )
+
+    structural = cfg.token_rows.groups["compact_structure"]
+    assert structural.tokens == expected_tokens
+
+    bad = _with_template(_detection_payload(), template_id)
+    token_rows = dict(bad["token_rows"])  # type: ignore[arg-type]
+    groups = dict(token_rows["groups"])  # type: ignore[index]
+    compact_structure = dict(groups["compact_structure"])  # type: ignore[index]
+    compact_structure["tokens"] = list(expected_tokens[:-1])
+    compact_structure["expected_ids"] = {
+        token: value
+        for token, value in compact_structure["expected_ids"].items()
+        if token in compact_structure["tokens"]
+    }
+    groups["compact_structure"] = compact_structure
+    token_rows["groups"] = groups
+    bad["token_rows"] = token_rows
+
+    with pytest.raises(ValueError, match="token_rows structural group"):
+        DetectionTrainingConfig.from_mapping(bad)
+
+
+def test_encoded_sample_cache_fingerprint_includes_detection_template_id() -> None:
+    compact_cfg = DetectionTrainingConfig.from_mapping(
+        _with_template(_detection_payload(), "compact")
+    )
+    closed_cfg = DetectionTrainingConfig.from_mapping(
+        _with_template(_detection_payload(), "compact_box_closed")
+    )
+
+    def fingerprint(cfg: DetectionTrainingConfig) -> dict[str, object]:
+        return _build_encoded_sample_cache_fingerprint(
+            training_config=cfg,
+            custom_config=build_detection_runtime_custom_shim(cfg),
+            template=SimpleNamespace(max_length=12000),
+            train_args=SimpleNamespace(max_model_len=12000),
+            dataset_seed=17,
+            dataset_jsonl=cfg.data.train_jsonl,
+            dataset_split="train",
+            dataset_mode="stage1_detection",
+        )
+
+    compact = fingerprint(compact_cfg)
+    closed = fingerprint(closed_cfg)
+
+    assert compact["detection_template_id"] == "compact"
+    assert closed["detection_template_id"] == "compact_box_closed"
+    assert compact != closed
+
+
+def test_static_packing_resolves_compact_format_to_semantic_template_id() -> None:
+    assert resolve_detection_template_id_for_static_packing("coordjson") == (
+        "stage1_json_pretty"
+    )
+    assert resolve_detection_template_id_for_static_packing("compact") == "compact"
 
 
 @pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
@@ -1368,8 +1560,8 @@ def test_stage1_detection_teacher_forcing_canonical_launch_configs_parse() -> No
         and not path.name.startswith("common_")
     }
     expected_configs = {
-        canonical_route / "prod/compact_full_support2.yaml",
-        canonical_route / "smoke/compact_full_tiny.yaml",
+        canonical_route / "prod/compact_support2.yaml",
+        canonical_route / "smoke/compact_tiny.yaml",
     }
     assert discovered_configs
     assert expected_configs <= discovered_configs
@@ -1382,7 +1574,8 @@ def test_stage1_detection_teacher_forcing_canonical_launch_configs_parse() -> No
         assert cfg.objective.profile == "pure_valid_set_marginal"
         assert cfg.objective.target_ir.rollin_policy.name == "random_permutation"
         assert cfg.data.object_ordering == "random_permutation"
-        assert cfg.detection_template.id == "compact_full"
+        assert cfg.detection_template.id == "compact"
+        assert cfg.to_mapping()["detection_template"]["id"] == "compact"
         assert cfg.packing.static_packing is False
         assert cfg.packing.padding_free_packed is False
         assert cfg.training["packing"] is False
@@ -1397,7 +1590,7 @@ def test_stage1_detection_teacher_forcing_rejects_hybrid_profile_early(
 ) -> None:
     config_path = (
         REPO_ROOT
-        / "configs/stage1/detection_teacher_forcing/prod/compact_full_support2.yaml"
+        / "configs/stage1/detection_teacher_forcing/prod/compact_support2.yaml"
     )
     payload = yaml.safe_load(config_path.read_text())
     payload["objective"]["profile"] = "hybrid_valid_set_marginal"
@@ -1416,7 +1609,7 @@ def test_stage1_detection_teacher_forcing_runtime_payload_keeps_target_ir_knobs(
     cfg = ConfigLoader.load_materialized_training_config(
         str(
             REPO_ROOT
-            / "configs/stage1/detection_teacher_forcing/prod/compact_full_support2.yaml"
+            / "configs/stage1/detection_teacher_forcing/prod/compact_support2.yaml"
         )
     )
 
@@ -1424,6 +1617,8 @@ def test_stage1_detection_teacher_forcing_runtime_payload_keeps_target_ir_knobs(
 
     assert payload is not None
     assert payload["id"] == "teacher_forcing"
+    assert payload["template_id"] == "compact"
+    assert payload["compact_grammar_enabled"] is True
     assert payload["target_ir"]["rollin_policy"]["name"] == "random_permutation"
     assert payload["target_ir"]["rollin_policy"]["base_seed"] == 17
     assert payload["target_ir"]["exact_packing_mapping"]["enabled"] is False

@@ -7,10 +7,14 @@ from typing import Literal, Optional, cast
 from src.common.geometry.bbox_parameterization import normalize_bbox_format
 from src.common.detection_sequence import (
     COORDJSON_FORMAT,
-    compact_pattern_for_detection_sequence_format,
     normalize_detection_sequence_format,
 )
 from src.common.object_field_order import normalize_object_field_order
+from src.detection.template_contracts import (
+    STAGE1_JSON_PRETTY_TEMPLATE_ID,
+    DetectionTemplateContract,
+    resolve_detection_template_contract,
+)
 
 from .prompt_variants import (
     COCO_80_CLASS_LIST_COMPACT,
@@ -194,6 +198,49 @@ def normalize_coord_mode(
 def coord_mode_from_coord_tokens_enabled(enabled: bool) -> CoordMode:
     return "coord_tokens" if bool(enabled) else "norm1000_text"
 
+
+def _resolve_prompt_detection_template_contract(
+    *,
+    detection_template_id: str | None,
+    detection_sequence_format: str,
+) -> DetectionTemplateContract:
+    if detection_template_id is not None:
+        return resolve_detection_template_contract(detection_template_id)
+
+    detection_format = normalize_detection_sequence_format(detection_sequence_format)
+    if detection_format == COORDJSON_FORMAT:
+        return resolve_detection_template_contract(STAGE1_JSON_PRETTY_TEMPLATE_ID)
+    if detection_format in {"compact", "compact_full"}:
+        return resolve_detection_template_contract("compact")
+    raise ValueError(
+        "compact prompt variants require semantic detection_template_id; "
+        f"got legacy detection_sequence_format={detection_sequence_format!r}"
+    )
+
+
+def _compact_system_separator_clause(contract: DetectionTemplateContract) -> str:
+    if contract.canonical_final_separator == "\n":
+        return (
+            "Output one compact detection row per object and terminate every row "
+            "with a single newline, including the final row, with no extra text."
+        )
+    return (
+        "Output one compact detection row per object by concatenating rows directly "
+        "with no separator, no newline, and no extra text."
+    )
+
+
+def _compact_user_separator_clause(contract: DetectionTemplateContract) -> str:
+    if contract.canonical_final_separator == "\n":
+        return (
+            "Use one row per object and end each row with a single newline, "
+            "including the final row."
+        )
+    return (
+        "Use one row per object; concatenate rows directly with no separator "
+        "and do not insert newline characters."
+    )
+
 # Defaults (coord-token, sorted)
 SYSTEM_PROMPT = SYSTEM_PROMPT_SORTED_TOKENS
 USER_PROMPT = USER_PROMPT_SORTED_TOKENS
@@ -324,19 +371,18 @@ def build_dense_system_prompt(
     bbox_format: str = "xyxy",
     detection_sequence_format: str = COORDJSON_FORMAT,
     row_separator: str = COMPACT_ROW_SEPARATOR_NEWLINE,
+    detection_template_id: str | None = None,
 ) -> str:
     """Return system prompt for dense mode."""
     coord_mode_key = normalize_coord_mode(coord_mode)
-    detection_format = normalize_detection_sequence_format(detection_sequence_format)
-    if detection_format != COORDJSON_FORMAT:
-        pattern = compact_pattern_for_detection_sequence_format(detection_format)
-        separator_key = normalize_compact_row_separator(row_separator)
-        row_separator_clause = (
-            "Output one compact detection row per object by concatenating rows directly "
-            "with no separator, no newline, and no extra text."
-            if separator_key == COMPACT_ROW_SEPARATOR_NONE
-            else "Output one newline-delimited compact detection row per object with no extra text."
-        )
+    del row_separator
+    detection_contract = _resolve_prompt_detection_template_contract(
+        detection_template_id=detection_template_id,
+        detection_sequence_format=detection_sequence_format,
+    )
+    if detection_contract.is_compact:
+        pattern = detection_contract.prompt_pattern
+        row_separator_clause = _compact_system_separator_clause(detection_contract)
         return (
             "You are a general-purpose object detection and grounding assistant. "
             f"{row_separator_clause} "
@@ -393,19 +439,19 @@ def build_dense_user_prompt(
     bbox_format: str = "xyxy",
     detection_sequence_format: str = COORDJSON_FORMAT,
     row_separator: str = COMPACT_ROW_SEPARATOR_NEWLINE,
+    detection_template_id: str | None = None,
 ) -> str:
     """Return user prompt for dense mode."""
     coord_mode_key = normalize_coord_mode(coord_mode)
-    detection_format = normalize_detection_sequence_format(detection_sequence_format)
-    if detection_format != COORDJSON_FORMAT:
-        pattern = compact_pattern_for_detection_sequence_format(detection_format)
+    del row_separator
+    detection_contract = _resolve_prompt_detection_template_contract(
+        detection_template_id=detection_template_id,
+        detection_sequence_format=detection_sequence_format,
+    )
+    if detection_contract.is_compact:
+        pattern = detection_contract.prompt_pattern
         variant = resolve_prompt_variant(prompt_variant)
-        separator_key = normalize_compact_row_separator(row_separator)
-        separator_clause = (
-            "Use one row per object; concatenate rows directly with no separator and do not insert newline characters."
-            if separator_key == COMPACT_ROW_SEPARATOR_NONE
-            else "Use one row per object and separate rows with a single newline."
-        )
+        separator_clause = _compact_user_separator_clause(detection_contract)
         class_clause = ""
         if variant.key == "coco_80":
             class_clause = (
@@ -468,6 +514,7 @@ def get_template_prompts(
     bbox_format: str = "xyxy",
     detection_sequence_format: str = COORDJSON_FORMAT,
     row_separator: str = COMPACT_ROW_SEPARATOR_NEWLINE,
+    detection_template_id: str | None = None,
 ) -> tuple[str, str]:
     """Return (system, user) prompts for dense mode with variant support."""
     return (
@@ -479,6 +526,7 @@ def get_template_prompts(
             bbox_format=bbox_format,
             detection_sequence_format=detection_sequence_format,
             row_separator=row_separator,
+            detection_template_id=detection_template_id,
         ),
         build_dense_user_prompt(
             ordering=ordering,
@@ -488,6 +536,7 @@ def get_template_prompts(
             bbox_format=bbox_format,
             detection_sequence_format=detection_sequence_format,
             row_separator=row_separator,
+            detection_template_id=detection_template_id,
         ),
     )
 
@@ -501,7 +550,12 @@ def get_template_prompt_hash(
     bbox_format: str = "xyxy",
     detection_sequence_format: str = COORDJSON_FORMAT,
     row_separator: str = COMPACT_ROW_SEPARATOR_NEWLINE,
+    detection_template_id: str | None = None,
 ) -> str:
+    detection_contract = _resolve_prompt_detection_template_contract(
+        detection_template_id=detection_template_id,
+        detection_sequence_format=detection_sequence_format,
+    )
     system_prompt, user_prompt = get_template_prompts(
         ordering=ordering,
         coord_mode=coord_mode,
@@ -510,8 +564,8 @@ def get_template_prompt_hash(
         bbox_format=bbox_format,
         detection_sequence_format=detection_sequence_format,
         row_separator=row_separator,
+        detection_template_id=detection_contract.template_id,
     )
-    separator_key = normalize_compact_row_separator(row_separator)
     payload = {
         "ordering": ordering,
         "coord_mode": coord_mode,
@@ -520,10 +574,7 @@ def get_template_prompt_hash(
             object_field_order, path="custom.object_field_order"
         ),
         "bbox_format": normalize_bbox_format(bbox_format, path="bbox_format"),
-        "detection_sequence_format": normalize_detection_sequence_format(
-            detection_sequence_format
-        ),
-        "row_separator": separator_key,
+        "detection_template_id": detection_contract.template_id,
         "system_prompt": system_prompt,
         "user_prompt": user_prompt,
         "do_resize": False,

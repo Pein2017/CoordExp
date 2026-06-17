@@ -60,7 +60,7 @@ Human support entrypoints:
   - [docs/training/STAGE1_OBJECTIVE.md](training/STAGE1_OBJECTIVE.md) for baseline Stage-1 behavior, canonical detection teacher forcing, legacy prefix-rollin ablation boundaries, and retired candidate-objective boundaries
   - [docs/data/PACKING.md](data/PACKING.md)
   - Current public Stage-1 detection teacher-forcing route: `stage1_detection_teacher_forcing` in `configs/stage1/detection_teacher_forcing/`.
-  - Implementation-only shadow surface IDs: `stage1_json_ce` for the JSON chat CE baseline and `stage1_compact_trie_ce` for compact-full objective research. These are not public config routes; use `stage1_detection_teacher_forcing` for current compact teacher-forcing configs.
+  - Implementation-only shadow surface IDs: `stage1_json_ce` for the JSON chat CE baseline and `stage1_compact_trie_ce` for compact objective research. These are not public config routes; use `stage1_detection_teacher_forcing` for current compact teacher-forcing configs.
   - Shadow resolver and pipeline map, private to architecture research: `src/training/surfaces.py`, `src/training/pipelines/stage1_json_ce.py`, and `src/training/pipelines/stage1_compact_trie_ce.py`.
   - Objective profile order: `token_ce`, `trie_ce`, `coord_soft_ce`; disabled objectives remain explicit.
   - Quarantined recursive-detection config roots and authoring snippets live under `configs/archive/detection_scene_clean_break/stage1/` for historical inspection only.

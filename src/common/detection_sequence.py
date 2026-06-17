@@ -13,10 +13,12 @@ from __future__ import annotations
 from typing import Any, Mapping, Sequence, cast
 
 from src.common.detection_compact_rows import (
+    BOX_END_TOKEN,
     BOX_START_TOKEN,
     COMPACT_DESC_FORBIDDEN_SUBSTRINGS,
     END_OF_TEXT_TOKEN,
     IM_END_TOKEN,
+    OBJECT_REF_END_TOKEN,
     OBJECT_REF_START_TOKEN,
     STRICT_COMPACT_ROW_COORD_TOKEN_RE,
     parse_compact_row,
@@ -27,6 +29,7 @@ from src.utils.assistant_json import dumps_coordjson
 DetectionSequenceFormat = str
 
 COORDJSON_FORMAT = "coordjson"
+COMPACT_FORMAT = "compact"
 COMPACT_FULL_FORMAT = "compact_full"
 COMPACT_NO_DESC_FORMAT = "compact_no_desc"
 COMPACT_NO_BBOX_FORMAT = "compact_no_bbox"
@@ -34,6 +37,7 @@ COMPACT_MIN_FORMAT = "compact_min"
 
 ALLOWED_DETECTION_SEQUENCE_FORMATS = {
     COORDJSON_FORMAT,
+    COMPACT_FORMAT,
     COMPACT_FULL_FORMAT,
     COMPACT_NO_DESC_FORMAT,
     COMPACT_NO_BBOX_FORMAT,
@@ -44,7 +48,7 @@ _FORBIDDEN_DESC_SUBSTRINGS = COMPACT_DESC_FORBIDDEN_SUBSTRINGS
 
 
 def _compact_marker_flags(fmt: DetectionSequenceFormat) -> tuple[bool, bool]:
-    if fmt == COMPACT_FULL_FORMAT:
+    if fmt in {COMPACT_FORMAT, COMPACT_FULL_FORMAT}:
         return True, True
     if fmt == COMPACT_NO_DESC_FORMAT:
         return False, True
@@ -71,7 +75,7 @@ def required_special_tokens_for_detection_sequence_format(
     detection_sequence_format: str,
 ) -> tuple[str, ...]:
     fmt = normalize_detection_sequence_format(detection_sequence_format)
-    if fmt == COMPACT_FULL_FORMAT:
+    if fmt in {COMPACT_FORMAT, COMPACT_FULL_FORMAT}:
         return (OBJECT_REF_START_TOKEN, BOX_START_TOKEN)
     if fmt == COMPACT_NO_DESC_FORMAT:
         return (BOX_START_TOKEN,)
@@ -129,7 +133,7 @@ def render_compact_detection_sequence(
     fmt = normalize_detection_sequence_format(detection_sequence_format)
     if fmt == COORDJSON_FORMAT:
         return dumps_coordjson(payload)
-    if fmt == COMPACT_FULL_FORMAT:
+    if fmt in {COMPACT_FORMAT, COMPACT_FULL_FORMAT}:
         from src.detection.teacher_forcing.compact_full_policy import (
             render_compact_full,
         )
@@ -178,7 +182,7 @@ def _auto_detect_format(text: str) -> DetectionSequenceFormat:
     has_object_ref = OBJECT_REF_START_TOKEN in text
     has_box = BOX_START_TOKEN in text
     if has_object_ref and has_box:
-        return COMPACT_FULL_FORMAT
+        return COMPACT_FORMAT
     if has_box:
         return COMPACT_NO_DESC_FORMAT
     if has_object_ref:
@@ -232,7 +236,7 @@ def parse_compact_detection_sequence(
     )
     if fmt == COORDJSON_FORMAT:
         return None
-    if fmt == COMPACT_FULL_FORMAT:
+    if fmt in {COMPACT_FORMAT, COMPACT_FULL_FORMAT}:
         from src.detection.teacher_forcing.compact_full_policy import parse_compact_full
 
         result = parse_compact_full(stripped, mode="legacy_compatible")
@@ -288,6 +292,7 @@ __all__ = [
     "ALLOWED_DETECTION_SEQUENCE_FORMATS",
     "BOX_START_TOKEN",
     "COMPACT_FULL_FORMAT",
+    "COMPACT_FORMAT",
     "COMPACT_MIN_FORMAT",
     "COMPACT_NO_BBOX_FORMAT",
     "COMPACT_NO_DESC_FORMAT",

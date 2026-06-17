@@ -245,9 +245,9 @@ artifacts into `training.output_dir` before training starts:
       `effective_batch_rounding`, because non-divisible launch shapes can require
       ceil-derived accumulation; the actual global value is the run-time truth.
     - `model_source`: best-effort path identity for the base model/cache path.
-    - `token_rows.expected_trainable_row_count`; compact-full token-row runs
-      should report `1002` rows (1000 coord rows plus
-      `<|object_ref_start|>` and `<|box_start|>`).
+    - `token_rows.expected_trainable_row_count`; compact token-row runs should
+      report the template-derived row count: `1002` for `compact`, `1003` for
+      `compact_box_closed`, and `1004` for the object/box-closed variants.
 - `pipeline_manifest.json`
   - First-class pipeline identity / manifest artifact assembled from
     `src/bootstrap/pipeline_manifest.py`.

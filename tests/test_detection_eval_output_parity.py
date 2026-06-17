@@ -29,7 +29,11 @@ def _write_jsonl(path: Path, records: list[dict]) -> None:
     )
 
 
-def _write_score_provenance_sidecar(path: Path) -> None:
+def _write_score_provenance_sidecar(
+    path: Path,
+    *,
+    detection_template_id: str = "stage1_json_pretty",
+) -> None:
     path.with_suffix(path.suffix + ".provenance.json").write_text(
         json.dumps(
             {
@@ -37,6 +41,8 @@ def _write_score_provenance_sidecar(path: Path) -> None:
                 "decode_policy_fingerprint": "decode:test",
                 "model_identity_fingerprint": "model:test",
                 "score_policy_fingerprint": "score:test",
+                "detection_template": {"id": detection_template_id},
+                "detection_template_id": detection_template_id,
                 "artifact_path": str(path),
             },
             ensure_ascii=True,
@@ -45,9 +51,17 @@ def _write_score_provenance_sidecar(path: Path) -> None:
     )
 
 
-def _write_scored_jsonl(path: Path, records: list[dict]) -> None:
+def _write_scored_jsonl(
+    path: Path,
+    records: list[dict],
+    *,
+    detection_template_id: str = "stage1_json_pretty",
+) -> None:
     _write_jsonl(path, records)
-    _write_score_provenance_sidecar(path)
+    _write_score_provenance_sidecar(
+        path,
+        detection_template_id=detection_template_id,
+    )
 
 
 def _one_record(*, image: str, gt_desc: str = "box", pred_desc: str = "box") -> dict:
@@ -112,6 +126,41 @@ def test_evaluate_and_save_writes_metrics_json(tmp_path: Path) -> None:
     assert (out_dir / "coco_gt.json").exists()
     assert (out_dir / "coco_preds.json").exists()
     assert (out_dir / "per_image.json").exists()
+
+
+@pytest.mark.parametrize(
+    "detection_template_id",
+    [
+        "compact",
+        "compact_box_closed",
+        "compact_object_box_closed",
+        "compact_object_box_closed_lines",
+    ],
+)
+def test_evaluate_and_save_accepts_each_compact_template_provenance(
+    tmp_path: Path,
+    detection_template_id: str,
+) -> None:
+    pred_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    _write_scored_jsonl(
+        pred_path,
+        [_one_record(image=f"{detection_template_id}.png")],
+        detection_template_id=detection_template_id,
+    )
+
+    summary = evaluate_and_save(
+        pred_path,
+        options=EvalOptions(
+            metrics="coco",
+            strict_parse=True,
+            use_segm=False,
+            output_dir=tmp_path / "eval",
+            overlay=False,
+            num_workers=0,
+        ),
+    )
+
+    assert summary["metrics"]["bbox_AP50"] > 0.9
 
 
 def test_evaluate_and_save_overlay_materializes_shared_vis_sidecar(

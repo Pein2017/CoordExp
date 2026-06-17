@@ -14,6 +14,7 @@ from transformers import (
 )
 
 from src.common.semantic_desc import normalize_desc
+from src.detection.template_contracts import resolve_detection_template_contract
 from src.eval.artifacts import with_constant_scores
 from src.eval.confidence_postop import ConfidencePostOpPaths, run_confidence_postop
 from src.eval.detection import EvalOptions, evaluate_and_save
@@ -413,6 +414,7 @@ class Stage1DetectionEvalCallback(TrainerCallback):
         output_root: str,
         model_checkpoint: str,
         prompt_variant: str,
+        detection_template_id: str = "stage1_json_pretty",
         bbox_format: str = "xyxy",
         object_field_order: str,
         object_ordering: str,
@@ -445,6 +447,9 @@ class Stage1DetectionEvalCallback(TrainerCallback):
         self.output_root = Path(output_root)
         self.model_checkpoint = str(model_checkpoint)
         self.prompt_variant = str(prompt_variant)
+        self.detection_template_id = resolve_detection_template_contract(
+            detection_template_id
+        ).template_id
         self.bbox_format = str(bbox_format)
         self.object_field_order = str(object_field_order)
         self.object_ordering = str(object_ordering)
@@ -579,7 +584,11 @@ class Stage1DetectionEvalCallback(TrainerCallback):
             ),
             source_raw_artifact_path=base_jsonl_path,
             parser_policy="stage1_detection_eval",
-            extra={"eval_surface": "stage1_detection_eval"},
+            extra={
+                "eval_surface": "stage1_detection_eval",
+                "detection_template": {"id": self.detection_template_id},
+                "detection_template_id": self.detection_template_id,
+            },
         )
 
     def on_evaluate(

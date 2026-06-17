@@ -75,12 +75,7 @@ def test_infer_stage_uses_shared_decode_request_validation(tmp_path: Path) -> No
 
 def test_infer_stage_propagates_decode_request_to_legacy_bridge(tmp_path: Path) -> None:
     cfg = _base_cfg(tmp_path)
-    cfg["infer"].update(
-        {
-            "detection_sequence_format": "compact_full",
-            "row_separator": "none",
-        }
-    )
+    cfg["detection_template"] = {"id": "compact"}
     cfg["infer"]["generation"].update(
         {
             "temperature": 0.7,
@@ -120,7 +115,7 @@ def test_infer_stage_propagates_decode_request_to_legacy_bridge(tmp_path: Path) 
     assert captures["generation_kwargs"]["repetition_penalty"] == 1.2
     assert captures["generation_kwargs"]["batch_size"] == 2
     assert captures["generation_kwargs"]["seed"] == 13
-    assert captures["inference_kwargs"]["row_separator"] == "none"
+    assert captures["inference_kwargs"]["detection_template_id"] == "compact"
     assert captures["inference_kwargs"]["prompt_policy_fingerprint"].startswith(
         "prompt_policy:"
     )

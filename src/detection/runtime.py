@@ -16,6 +16,7 @@ from src.config.schema import (
 )
 from src.detection.dataset import DetectionTrainingDataset
 from src.detection.coord_soft_targets import CoordSoftTargetRuntimeConfig
+from src.detection.template_contracts import resolve_detection_template_contract
 from src.detection.tokenizer_contract import resolve_compact_training_stop_contract
 
 DetectionRuntimeMode = Literal[
@@ -51,9 +52,10 @@ def is_detection_config(training_config: Any) -> bool:
 def detection_sequence_format(
     training_config: DetectionTrainingConfig,
 ) -> str:
-    if training_config.detection_template.id == "compact_full":
-        return "compact_full"
-    if training_config.detection_template.id == "stage1_json_pretty":
+    contract = resolve_detection_template_contract(training_config.detection_template.id)
+    if contract.is_compact:
+        return "compact"
+    if contract.template_id == "stage1_json_pretty":
         return "coordjson"
     raise ValueError(
         f"Unsupported detection_template.id={training_config.detection_template.id!r}"
@@ -74,12 +76,15 @@ def resolve_detection_prompts(
             "detection runtime currently supports only "
             "prompt.system_variant=stage1_detection"
         )
+    template_contract = resolve_detection_template_contract(
+        training_config.detection_template.id
+    )
     if (
-        training_config.detection_template.id == "compact_full"
+        template_contract.is_compact
         and training_config.prompt.user_variant != "compact_detection"
     ):
         raise ValueError(
-            "detection_template.id=compact_full requires "
+            f"detection_template.id={training_config.detection_template.id} requires "
             "prompt.user_variant=compact_detection"
         )
     if (
@@ -197,7 +202,9 @@ def resolve_detection_runtime_support(
     training_config: DetectionTrainingConfig,
 ) -> DetectionRuntimeSupport:
     objective_id = getattr(training_config.objective, "id", None)
-    is_compact = training_config.detection_template.id == "compact_full"
+    is_compact = resolve_detection_template_contract(
+        training_config.detection_template.id
+    ).is_compact
     return DetectionRuntimeSupport(
         recursive_sidecars_required=(
             is_compact and objective_id == "recursive_detection_ce"
