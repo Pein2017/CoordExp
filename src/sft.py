@@ -104,6 +104,7 @@ from .detection.runtime import (
     resolve_detection_prompts as _resolve_detection_prompts,
     resolve_recursive_detection_ce_runtime_cfg as _resolve_recursive_detection_ce_cfg,
 )
+from .detection.template_contracts import resolve_detection_template_contract
 from .infer.checkpoints import load_adapter_checkpoint_info
 from .trainers import with_final_checkpoint
 from .training_runtime import (
@@ -1163,6 +1164,10 @@ def _detection_objective_runtime_payload(training_config: Any) -> dict[str, Any]
         getattr(training_config, "prefix_denoising", None)
     )
     template_cfg = getattr(training_config, "detection_template", None)
+    template_id = _resolve_detection_template_id(training_config)
+    template_contract = (
+        resolve_detection_template_contract(template_id) if template_id is not None else None
+    )
     target_cfg = _get_section_value(objective_cfg, "target")
     rollin_cfg = _get_section_value(objective_cfg, "rollin")
     type_gate_cfg = _get_section_value(objective_cfg, "type_gate")
@@ -1180,7 +1185,9 @@ def _detection_objective_runtime_payload(training_config: Any) -> dict[str, Any]
         "pad_token_text": "<|endoftext|>",
         "serialization_policy": "marker_delimited",
         "parser_mode": "strict_expected",
-        "compact_grammar_enabled": _get_section_value(template_cfg, "id") == "compact_full",
+        "compact_grammar_enabled": bool(
+            template_contract is not None and template_contract.is_compact
+        ),
     }
     if target_cfg is not None:
         payload.update(
@@ -1445,6 +1452,14 @@ def _get_section_value(section: Any, key: str, default: Any = None) -> Any:
     return getattr(section, key, default)
 
 
+def _resolve_detection_template_id(training_config: Any) -> str | None:
+    template_cfg = getattr(training_config, "detection_template", None)
+    template_id = _get_section_value(template_cfg, "id")
+    if template_id is None:
+        return None
+    return str(template_id)
+
+
 def _resolve_object_ordering_fingerprint_value(
     *,
     training_config: Any,
@@ -1536,6 +1551,7 @@ def _build_static_packing_fingerprint(
         )
 
     runtime_fields = {
+        "detection_template_id": _resolve_detection_template_id(training_config),
         "dataset_seed": int(dataset_seed),
         "dataset_split": split,
         "packing_mode": packing_cfg.mode,
@@ -1787,9 +1803,11 @@ def _build_encoded_sample_cache_fingerprint(
         )
 
     coord_tokens_payload = _coord_tokens_fingerprint_payload(custom_config)
+    detection_template_id = _resolve_detection_template_id(training_config)
 
     return {
         "cache_schema_version": 1,
+        "detection_template_id": detection_template_id,
         "dataset_seed": int(dataset_seed),
         "dataset_split": split,
         "dataset_mode": str(dataset_mode),
@@ -3883,6 +3901,7 @@ def main():
                 output_root=str(getattr(train_args, "output_dir", ".") or "."),
                 model_checkpoint=str(model_checkpoint),
                 prompt_variant=str(prompt_variant),
+                detection_template_id=str(training_config.detection_template.id),
                 bbox_format=str(custom_config.bbox_format),
                 object_field_order=str(custom_config.object_field_order),
                 object_ordering=str(custom_config.object_ordering),

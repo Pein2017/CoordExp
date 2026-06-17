@@ -39,14 +39,23 @@ from src.tokens.roles import (
     unique_stable_ids,
 )
 from src.tokens.qwen_native import (
+    BOX_END_TOKEN,
     BOX_START_TOKEN,
     COORD_END_TOKEN,
     COORD_START_TOKEN,
+    EXPECTED_BOX_END_ID,
     EXPECTED_BOX_START_ID,
     EXPECTED_COORD_END_ID,
     EXPECTED_COORD_START_ID,
+    EXPECTED_OBJECT_REF_END_ID,
     EXPECTED_OBJECT_REF_START_ID,
+    OBJECT_REF_END_TOKEN,
     OBJECT_REF_START_TOKEN,
+)
+from src.detection.template_contracts import (
+    COMPACT_TEMPLATE_IDS,
+    SUPPORTED_DETECTION_TEMPLATE_IDS,
+    resolve_detection_template_contract,
 )
 from src.trainers.teacher_forcing.module_registry import (
     ALLOWED_DIAGNOSTIC_MODULES,
@@ -3196,10 +3205,11 @@ def _detection_validate_order_matches_objective(
     prefix_denoising: "PrefixDenoisingConfig",
 ) -> None:
     if prefix_denoising.enabled:
-        if data.object_ordering != "sorted":
+        if data.object_ordering not in {"sorted", "random_permutation"}:
             raise ValueError(
-                "prefix_denoising requires data.object_ordering='sorted' "
-                "for sorted clean-GT prefix construction, "
+                "prefix_denoising requires data.object_ordering in "
+                "{'sorted', 'random_permutation'} for shared clean/noisy "
+                "object ordering, "
                 f"got {data.object_ordering!r}"
             )
         return
@@ -3236,13 +3246,11 @@ def _detection_validate_prefix_rollin_contract(
     if objective.variant != "prefix_rollin_et_rmp_ce":
         return
 
-    if (
-        objective.variant == "prefix_rollin_et_rmp_ce"
-        and detection_template.id != "compact_full"
-    ):
+    template_contract = resolve_detection_template_contract(detection_template.id)
+    if objective.variant == "prefix_rollin_et_rmp_ce" and not template_contract.is_compact:
         raise ValueError(
             "objective.variant=prefix_rollin_et_rmp_ce requires "
-            "detection_template.id=compact_full"
+            f"detection_template.id to be one of {COMPACT_TEMPLATE_IDS}"
         )
     if experiment is None:
         raise ValueError(
@@ -3275,7 +3283,7 @@ def _detection_validate_prefix_denoising_raw_payload(
     target_ir_raw = objective_raw.get("target_ir")
     if isinstance(target_ir_raw, Mapping) and "rollin_policy" in target_ir_raw:
         raise ValueError(
-            "prefix_denoising owns sorted clean-GT ordering; remove "
+            "prefix_denoising owns clean/noisy object ordering; remove "
             "objective.target_ir.rollin_policy."
         )
 
@@ -3342,18 +3350,22 @@ def _detection_validate_prefix_denoising_contract(
     if not prefix_denoising.enabled:
         return
 
-    if detection_template.id != "compact_full":
-        raise ValueError("prefix_denoising requires detection_template.id=compact_full")
+    template_contract = resolve_detection_template_contract(detection_template.id)
+    if not template_contract.is_compact:
+        raise ValueError(
+            f"prefix_denoising requires detection_template.id to be one of {COMPACT_TEMPLATE_IDS}"
+        )
     if detection_template.coordinate_surface != "coord_token":
         raise ValueError(
             "prefix_denoising requires detection_template.coordinate_surface=coord_token"
         )
     if detection_template.bbox_format != "xyxy":
         raise ValueError("prefix_denoising requires detection_template.bbox_format=xyxy")
-    if data.object_ordering != "sorted":
+    if data.object_ordering not in {"sorted", "random_permutation"}:
         raise ValueError(
-            "prefix_denoising requires data.object_ordering='sorted' "
-            "for sorted clean-GT prefix construction"
+            "prefix_denoising requires data.object_ordering in "
+            "{'sorted', 'random_permutation'} for shared clean/noisy "
+            "object ordering"
         )
     if (
         getattr(objective, "id", None) != TEACHER_FORCING_OBJECTIVE_ID
@@ -3400,6 +3412,7 @@ def _detection_validate_token_rows(
             "token_rows.tie_head must be true for the current tied-head "
             "Qwen3-VL token-row adapter contract"
         )
+    template_contract = resolve_detection_template_contract(detection_template.id)
     if detection_template.coordinate_surface == "coord_token":
         has_coord_geometry = any(
             group.role is TokenRole.COORD_GEOMETRY
@@ -3420,11 +3433,15 @@ def _detection_validate_token_rows(
             for group in token_rows.groups.values()
             if group.role is TokenRole.STRUCTURAL_CE_ONLY
         ]
-        if len(token_rows.groups) != 2:
+        expected_group_count = 2 if template_contract.is_compact else 1
+        if len(token_rows.groups) != expected_group_count:
+            expected_count = len(template_contract.required_structural_token_ids) + 1000
             raise ValueError(
                 "token_rows for coord-token detection must contain exactly the "
-                "1002 allowed trainable rows: "
-                f"{OBJECT_REF_START_TOKEN}, {BOX_START_TOKEN}, and "
+                f"{expected_count} allowed trainable rows for "
+                f"detection_template.id={detection_template.id!r}: "
+                f"{', '.join(template_contract.required_structural_tokens)}"
+                f"{', and ' if template_contract.required_structural_tokens else ''}"
                 f"{COORD_START_TOKEN}..{COORD_END_TOKEN}; "
                 "extra natural-language rows are not allowed"
             )
@@ -3446,26 +3463,35 @@ def _detection_validate_token_rows(
                 f"{COORD_START_TOKEN}..{COORD_END_TOKEN} with expected ids "
                 f"{EXPECTED_COORD_START_ID}..{EXPECTED_COORD_END_ID}"
             )
+        if not template_contract.is_compact:
+            if structural_groups:
+                raise ValueError(
+                    "stage1_json_pretty must not configure compact structural "
+                    "token_rows"
+                )
+            return
         if len(structural_groups) != 1:
             raise ValueError(
                 "token_rows must include exactly the compact structural rows "
-                f"{OBJECT_REF_START_TOKEN} and {BOX_START_TOKEN}"
+                f"{', '.join(template_contract.required_structural_tokens)}"
             )
         structural_group = structural_groups[0]
-        expected_structural_ids = {
-            OBJECT_REF_START_TOKEN: EXPECTED_OBJECT_REF_START_ID,
-            BOX_START_TOKEN: EXPECTED_BOX_START_ID,
-        }
+        expected_structural_ids = dict(
+            zip(
+                template_contract.required_structural_tokens,
+                template_contract.required_structural_token_ids,
+            )
+        )
         if (
             structural_group.start_token is not None
             or structural_group.end_token is not None
-            or structural_group.tokens != (OBJECT_REF_START_TOKEN, BOX_START_TOKEN)
+            or structural_group.tokens != template_contract.required_structural_tokens
             or dict(structural_group.expected_ids) != expected_structural_ids
         ):
             raise ValueError(
                 "token_rows structural group must be exactly "
-                f"{OBJECT_REF_START_TOKEN} and {BOX_START_TOKEN} with expected "
-                f"ids {expected_structural_ids}"
+                f"{', '.join(template_contract.required_structural_tokens)} "
+                f"with expected ids {expected_structural_ids}"
             )
 
 
@@ -3520,7 +3546,13 @@ class DetectionPromptConfig:
 
 @dataclass(frozen=True)
 class DetectionTemplateConfig:
-    id: Literal["stage1_json_pretty", "compact_full"]
+    id: Literal[
+        "stage1_json_pretty",
+        "compact",
+        "compact_box_closed",
+        "compact_object_box_closed",
+        "compact_object_box_closed_lines",
+    ]
     coordinate_surface: Literal["coord_token"]
     bbox_format: Literal["xyxy"]
     object_field_order: Optional[Literal["desc_first"]] = None
@@ -3530,8 +3562,9 @@ class DetectionTemplateConfig:
         _detection_validate_choice(
             self.id,
             path="detection_template.id",
-            allowed={"stage1_json_pretty", "compact_full"},
+            allowed=set(SUPPORTED_DETECTION_TEMPLATE_IDS),
         )
+        contract = resolve_detection_template_contract(self.id)
         _detection_validate_choice(
             self.coordinate_surface,
             path="detection_template.coordinate_surface",
@@ -3557,10 +3590,10 @@ class DetectionTemplateConfig:
                 "detection_template.id=stage1_json_pretty requires "
                 "detection_template.object_field_order=desc_first"
             )
-        if self.id == "compact_full" and self.object_field_order is not None:
+        if contract.is_compact and self.object_field_order is not None:
             raise ValueError(
                 "detection_template.object_field_order must be omitted for "
-                "detection_template.id=compact_full"
+                f"detection_template.id={self.id}"
             )
 
     @classmethod
@@ -4492,14 +4525,20 @@ class PrefixDenoisingConfig:
 
 @dataclass(frozen=True)
 class DetectionEvaluationConfig:
-    expected_template: Literal["stage1_json_pretty", "compact_full"]
+    expected_template: Literal[
+        "stage1_json_pretty",
+        "compact",
+        "compact_box_closed",
+        "compact_object_box_closed",
+        "compact_object_box_closed_lines",
+    ]
     parser_mode: Literal["strict_expected", "diagnostic_salvage"] = "strict_expected"
 
     def __post_init__(self) -> None:
         _detection_validate_choice(
             self.expected_template,
             path="evaluation.expected_template",
-            allowed={"stage1_json_pretty", "compact_full"},
+            allowed=set(SUPPORTED_DETECTION_TEMPLATE_IDS),
         )
         _detection_validate_choice(
             self.parser_mode,

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import shutil
 from pathlib import Path
 from typing import List
@@ -21,6 +22,8 @@ import torch
 from transformers import AutoTokenizer, Qwen3VLForConditionalGeneration
 
 TRANSFORMERS_RESIZE_SEED = 0
+COORD_INIT_MEAN_RESIZE = "mean_resize"
+COORD_INIT_NATURAL_ADJACENT = "natural_adjacent"
 
 
 def build_coord_tokens(num_bins: int, include_wildcard: bool = True) -> List[str]:
@@ -60,6 +63,131 @@ def resize_token_embeddings_deterministically(
             torch.cuda.set_rng_state_all(cuda_rng_states)
 
 
+def iter_numeric_coord_tokens(coord_tokens: list[str]) -> list[str]:
+    """Return only canonical numeric coord tokens, ordered by numeric bin."""
+    numeric_tokens: list[tuple[int, str]] = []
+    prefix = "<|coord_"
+    suffix = "|>"
+    for token in coord_tokens:
+        if not token.startswith(prefix) or not token.endswith(suffix):
+            continue
+        raw_bin = token[len(prefix) : -len(suffix)]
+        if not raw_bin.isdigit():
+            continue
+        numeric_tokens.append((int(raw_bin), token))
+    numeric_tokens.sort(key=lambda item: item[0])
+    return [token for _, token in numeric_tokens]
+
+
+def build_coord_positional_features(
+    num_coords: int,
+    num_frequencies: int,
+    *,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    """Build smooth positional features for coord bins in their natural order."""
+    if num_coords <= 0:
+        raise ValueError("num_coords must be positive")
+    if num_frequencies < 0:
+        raise ValueError("num_frequencies must be non-negative")
+
+    denominator = max(num_coords - 1, 1)
+    positions = torch.arange(num_coords, device=device, dtype=dtype) / denominator
+    features = [positions]
+    for frequency_index in range(num_frequencies):
+        frequency = 2**frequency_index
+        phase = 2 * math.pi * frequency * positions
+        features.append(torch.sin(phase))
+        features.append(torch.cos(phase))
+    return torch.stack(features, dim=1)
+
+
+def _token_id_if_available(tokenizer: object, token: str, vocab_size: int) -> int | None:
+    vocab = tokenizer.get_vocab() if hasattr(tokenizer, "get_vocab") else None
+    if vocab is not None and token not in vocab:
+        return None
+    try:
+        token_id = tokenizer.convert_tokens_to_ids(token)
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not isinstance(token_id, int):
+        return None
+    if token_id < 0 or token_id >= vocab_size:
+        return None
+    return token_id
+
+
+def select_base_embedding(tokenizer: object, embedding_weight: torch.Tensor) -> torch.Tensor:
+    """Use digit-token rows as the coord baseline, falling back to the full mean."""
+    anchor_ids: list[int] = []
+    for token in (str(i) for i in range(10)):
+        token_id = _token_id_if_available(tokenizer, token, embedding_weight.shape[0])
+        if token_id is not None:
+            anchor_ids.append(token_id)
+
+    if anchor_ids:
+        anchor_index = torch.tensor(
+            anchor_ids,
+            device=embedding_weight.device,
+            dtype=torch.long,
+        )
+        return embedding_weight.index_select(0, anchor_index).mean(dim=0)
+    return embedding_weight.mean(dim=0)
+
+
+def initialize_natural_adjacent_coord_rows(
+    model: Qwen3VLForConditionalGeneration,
+    tokenizer: object,
+    coord_tokens: list[str],
+    *,
+    seed: int,
+    scale: float,
+    num_frequencies: int,
+) -> None:
+    """Overwrite numeric coord rows with a deterministic smooth positional prior."""
+    if scale < 0:
+        raise ValueError("scale must be non-negative")
+
+    numeric_coord_tokens = iter_numeric_coord_tokens(coord_tokens)
+    if not numeric_coord_tokens:
+        return
+
+    input_embeddings = model.get_input_embeddings()
+    embedding_weight = input_embeddings.weight
+    device = embedding_weight.device
+    dtype = embedding_weight.dtype
+
+    coord_token_ids: list[int] = []
+    for token in numeric_coord_tokens:
+        token_id = _token_id_if_available(tokenizer, token, embedding_weight.shape[0])
+        if token_id is None:
+            raise ValueError(f"numeric coord token {token!r} is missing from tokenizer")
+        coord_token_ids.append(token_id)
+
+    features = build_coord_positional_features(
+        len(coord_token_ids),
+        num_frequencies,
+        device=device,
+        dtype=dtype,
+    )
+    generator = torch.Generator(device=device)
+    generator.manual_seed(seed)
+    projection = torch.randn(
+        features.shape[1],
+        embedding_weight.shape[1],
+        device=device,
+        dtype=dtype,
+        generator=generator,
+    ) / math.sqrt(features.shape[1])
+    base_embedding = select_base_embedding(tokenizer, embedding_weight)
+    initialized_rows = base_embedding.unsqueeze(0) + scale * features.matmul(projection)
+    coord_index = torch.tensor(coord_token_ids, device=device, dtype=torch.long)
+
+    with torch.no_grad():
+        embedding_weight.index_copy_(0, coord_index, initialized_rows)
+
+
 def _default_2b_dir() -> Path:
     return Path(__file__).resolve().parents[2] / "model_cache" / "models" / "Qwen" / "Qwen3-VL-2B-Instruct"
 
@@ -93,6 +221,30 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Disable adding <|coord_*|> wildcard token.",
     )
+    parser.add_argument(
+        "--coord-init",
+        choices=(COORD_INIT_MEAN_RESIZE, COORD_INIT_NATURAL_ADJACENT),
+        default=COORD_INIT_MEAN_RESIZE,
+        help="Initialization strategy for numeric coord embedding rows after resize.",
+    )
+    parser.add_argument(
+        "--coord-init-frequencies",
+        type=int,
+        default=8,
+        help="Number of powers-of-two sinusoidal frequency bands for natural_adjacent init.",
+    )
+    parser.add_argument(
+        "--coord-init-scale",
+        type=float,
+        default=0.02,
+        help="Amplitude of the natural_adjacent offset added to the base embedding.",
+    )
+    parser.add_argument(
+        "--coord-init-seed",
+        type=int,
+        default=TRANSFORMERS_RESIZE_SEED,
+        help="Random seed for the natural_adjacent projection matrix.",
+    )
     return parser.parse_args()
 
 
@@ -123,6 +275,20 @@ def main() -> None:
         print(
             f"[+] Resized with Transformers mean-resizing under fixed seed {TRANSFORMERS_RESIZE_SEED}."
         )
+        if args.coord_init == COORD_INIT_NATURAL_ADJACENT:
+            initialize_natural_adjacent_coord_rows(
+                model,
+                tokenizer,
+                coord_tokens,
+                seed=args.coord_init_seed,
+                scale=args.coord_init_scale,
+                num_frequencies=args.coord_init_frequencies,
+            )
+            print(
+                "[+] Initialized numeric coord rows with natural_adjacent "
+                f"prior (seed={args.coord_init_seed}, scale={args.coord_init_scale}, "
+                f"frequencies={args.coord_init_frequencies})."
+            )
 
     # Qwen3-VL default: tie-head (single shared lookup table for embedding + lm_head).
     # After resizing, force tie_word_embeddings and re-tie weights so new tokens
@@ -174,6 +340,19 @@ def main() -> None:
     with tokens_path.open("w", encoding="utf-8") as f:
         json.dump(coord_tokens, f, ensure_ascii=True, indent=2)
     print(f"[+] Wrote token list to {tokens_path}")
+    if args.coord_init == COORD_INIT_NATURAL_ADJACENT and added > 0:
+        init_metadata_path = args.dst / "coord_init.json"
+        init_metadata = {
+            "schema_version": 1,
+            "coord_init": COORD_INIT_NATURAL_ADJACENT,
+            "num_numeric_coord_tokens": len(iter_numeric_coord_tokens(coord_tokens)),
+            "num_frequencies": args.coord_init_frequencies,
+            "scale": args.coord_init_scale,
+            "seed": args.coord_init_seed,
+        }
+        with init_metadata_path.open("w", encoding="utf-8") as f:
+            json.dump(init_metadata, f, ensure_ascii=True, indent=2)
+        print(f"[+] Wrote coord init metadata to {init_metadata_path}")
     print("[✓] Done. Point ms-swift configs to the new checkpoint.")
 
 

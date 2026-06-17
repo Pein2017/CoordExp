@@ -432,7 +432,7 @@ def _load_model_handle(
     resolved = resolve_inference_checkpoint(model_checkpoint=str(checkpoint_path))
     validate_compact_coord_token_adapter_contract(
         resolved,
-        detection_sequence_format="compact_full",
+        detection_template_id="compact",
     )
     processor_source = str(resolved.resolved_base_model_checkpoint)
     processor = AutoProcessor.from_pretrained(

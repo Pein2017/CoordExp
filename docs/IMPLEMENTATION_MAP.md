@@ -95,7 +95,9 @@ Stage-1 detection teacher-forcing ownership:
   `build_detection_training_dataset`.
 - `src/detection/objective.py`, `src/detection/rollin.py`, `src/detection/dataset.py`, `src/detection/token_types.py`, and `src/detection/loss.py` own the `prefix_rollin_et_rmp_ce` roll-in state, objectized sparse targets, compact type gates, ordinary teacher-forced `<|im_end|>` CE, and loss-sidecar behavior.
 - `src/sft.py` delegates policy and keeps backward-compatible private aliases.
-- `src/detection/template.py` owns strict templates; only `stage1_json_pretty` and `compact_full` are factory-visible strict IDs.
+- `src/detection/template.py` owns strict templates; factory-visible strict IDs
+  are `stage1_json_pretty`, `compact`, `compact_box_closed`,
+  `compact_object_box_closed`, and `compact_object_box_closed_lines`.
 - `src/common/detection_sequence.py` is the compatibility facade; malformed helper-format rows return `None`.
 - `src/common/detection_compact_rows.py` is the stdlib-only low-level marker/render/split helper.
 - `compact_no_desc`, `compact_no_bbox`, and `compact_min` stay compatibility/helper formats.

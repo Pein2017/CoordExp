@@ -22,13 +22,15 @@ from src.common.object_field_order import (
     normalize_object_field_order,
     normalize_object_ordering,
 )
-from src.common.detection_sequence import normalize_detection_sequence_format
 from src.config.prompts import (
     coord_mode_from_coord_tokens_enabled,
     get_template_prompt_hash,
     get_template_prompts,
-    normalize_compact_row_separator,
     resolve_dense_prompt_variant_key,
+)
+from src.detection.template_contracts import (
+    DetectionTemplateId,
+    resolve_detection_template_contract,
 )
 from src.eval.artifacts import (
     CXCY_LOGW_LOGH_CONSTANT_PRED_SCORE_SOURCE,
@@ -68,9 +70,8 @@ def _offline_prompt_policy_fingerprint(
     prompt_variant: str,
     object_field_order: ObjectFieldOrder,
     bbox_format: str,
-    detection_sequence_format: str,
+    detection_template_id: str,
     object_ordering: ObjectOrdering,
-    row_separator: str = "newline",
 ) -> str:
     system_prompt, user_prompt = get_template_prompts(
         ordering=object_ordering,
@@ -78,8 +79,7 @@ def _offline_prompt_policy_fingerprint(
         prompt_variant=prompt_variant,
         object_field_order=object_field_order,
         bbox_format=bbox_format,
-        detection_sequence_format=detection_sequence_format,
-        row_separator=row_separator,
+        detection_template_id=detection_template_id,
     )
     return prompt_policy_fingerprint(
         DetectionPromptPolicy(
@@ -158,34 +158,43 @@ def _require_choice(
     return v
 
 
-def _resolve_compact_full_parse_mode(cfg: Mapping[str, Any]) -> str:
-    infer_cfg = _get_map(cfg, "infer")
-    parsing_cfg = _get_map(infer_cfg, "parsing")
-    compact_cfg = _get_map(parsing_cfg, "compact_full")
-    raw_mode = compact_cfg.get("mode", "marker_delimited_strict")
-    if not isinstance(raw_mode, str):
-        raise ValueError("infer.parsing.compact_full.mode must be a string")
-    mode = raw_mode.strip().lower().replace("-", "_").replace(" ", "_")
-    if mode not in {
-        "marker_delimited_strict",
-        "marker_delimited_axis_sort_repair",
-        "legacy_compatible",
-    }:
-        raise ValueError(
-            "infer.parsing.compact_full.mode must be one of "
-            "{'marker_delimited_strict', "
-            "'marker_delimited_axis_sort_repair', "
-            "'legacy_compatible'}"
-        )
-    if mode == "legacy_compatible":
-        metadata = _get_map(cfg, "metadata")
-        namespace = metadata.get("compatibility_namespace")
-        if namespace != "legacy":
+def _reject_retired_infer_template_knobs(infer_cfg: Mapping[str, Any]) -> None:
+    for key in (
+        "detection_sequence_format",
+        "row_separator",
+        "compact_full_parse_mode",
+    ):
+        if key in infer_cfg:
             raise ValueError(
-                "infer.parsing.compact_full.mode=legacy_compatible requires "
-                "metadata.compatibility_namespace=legacy"
+                f"infer.{key} is retired; use top-level detection_template.id"
             )
-    return mode
+    parsing_cfg = _get_map(infer_cfg, "parsing")
+    if "compact_full" in parsing_cfg:
+        raise ValueError(
+            "infer.parsing.compact_full is retired; use top-level detection_template.id"
+        )
+
+
+def _resolve_detection_template_id(cfg: Mapping[str, Any]) -> DetectionTemplateId:
+    template_cfg = _get_map(cfg, "detection_template")
+    raw_id = template_cfg.get("id", "stage1_json_pretty")
+    if not isinstance(raw_id, str):
+        raise ValueError("detection_template.id must be a string")
+    return resolve_detection_template_contract(raw_id).template_id
+
+
+def _detection_sequence_format_for_template_id(template_id: str) -> str:
+    contract = resolve_detection_template_contract(template_id)
+    return "compact" if contract.is_compact else "coordjson"
+
+
+def _parser_mode_for_template_id(template_id: str) -> str:
+    contract = resolve_detection_template_contract(template_id)
+    if not contract.is_compact:
+        return "strict_expected"
+    if contract.template_id == "compact":
+        return "marker_delimited_strict"
+    return "strict_expected"
 
 
 def _get_int(cfg: Mapping[str, Any], key: str, default: int) -> int:
@@ -270,7 +279,7 @@ def _detect_infer_distributed_env() -> Tuple[int, int, int, bool]:
 
 def _resolve_infer_prompt_controls(
     infer_cfg: Mapping[str, Any],
-) -> Tuple[str, str, str, ObjectFieldOrder, ObjectOrdering, str]:
+) -> Tuple[str, str, ObjectFieldOrder, ObjectOrdering]:
     prompt_variant_raw = infer_cfg.get("prompt_variant", None)
     if prompt_variant_raw is not None and not isinstance(prompt_variant_raw, str):
         raise ValueError("infer.prompt_variant must be a string when provided")
@@ -279,10 +288,6 @@ def _resolve_infer_prompt_controls(
         infer_cfg.get("bbox_format", "xyxy"),
         path="infer.bbox_format",
     )
-    detection_sequence_format = normalize_detection_sequence_format(
-        infer_cfg.get("detection_sequence_format", "coordjson")
-    )
-
     object_ordering = normalize_object_ordering(
         infer_cfg.get("object_ordering", "sorted"),
         path="infer.object_ordering",
@@ -293,17 +298,12 @@ def _resolve_infer_prompt_controls(
         object_field_order_raw,
         path="infer.object_field_order",
     )
-    row_separator = normalize_compact_row_separator(
-        infer_cfg.get("row_separator", "newline"),
-    )
 
     return (
         prompt_variant,
         bbox_format,
-        detection_sequence_format,
         object_field_order,
         object_ordering,
-        row_separator,
     )
 
 
@@ -532,7 +532,8 @@ def _extract_generation_provenance(payload: Mapping[str, Any]) -> Dict[str, str]
 
 
 def _parser_policy_for_score_provenance(cfg: Mapping[str, Any]) -> str:
-    return f"compact_full:{_resolve_compact_full_parse_mode(cfg)}"
+    detection_template_id = _resolve_detection_template_id(cfg)
+    return f"{detection_template_id}:{_parser_mode_for_template_id(detection_template_id)}"
 
 
 def _write_scored_artifact_provenance(
@@ -568,6 +569,7 @@ def _write_scored_artifact_provenance(
         "sha256": _sha256_file(raw_path),
     }
     parser_policy = _parser_policy_for_score_provenance(cfg)
+    detection_template_id = _resolve_detection_template_id(cfg)
     score_policy_fingerprint = build_score_policy_fingerprint(
         policy_name=policy_name,
         score_source=score_source,
@@ -583,6 +585,10 @@ def _write_scored_artifact_provenance(
         "score_policy_fingerprint": score_policy_fingerprint,
         "metric_bearing": True,
         "artifact_path": str(scored_path),
+        "detection_template": {
+            "id": detection_template_id,
+        },
+        "detection_template_id": detection_template_id,
         "source_raw_artifact": str(raw_path),
         "source_raw_artifact_identity": raw_identity,
         "parser_policy": parser_policy,
@@ -820,6 +826,8 @@ def run_pipeline(
         cfg = apply_overrides(cfg, overrides)
 
     infer_cfg = _get_map(cfg, "infer")
+    _reject_retired_infer_template_knobs(infer_cfg)
+    resolved_detection_template_id = _resolve_detection_template_id(cfg)
     requested_model_checkpoint = _get_str(infer_cfg, "model_checkpoint")
     requested_adapter_checkpoint = _get_str(infer_cfg, "adapter_checkpoint")
     resolved_checkpoint = None
@@ -838,12 +846,10 @@ def run_pipeline(
     (
         resolved_prompt_variant,
         resolved_bbox_format,
-        resolved_detection_sequence_format,
         resolved_object_field_order,
         resolved_object_ordering,
-        resolved_row_separator,
     ) = _resolve_infer_prompt_controls(infer_cfg)
-    resolved_compact_full_parse_mode = _resolve_compact_full_parse_mode(cfg)
+    resolved_parser_mode = _parser_mode_for_template_id(resolved_detection_template_id)
     resolved_runtime_mode, resolved_mode_reason = _resolve_infer_runtime_mode(infer_cfg)
     resolved_coord_mode = coord_mode_from_coord_tokens_enabled(
         resolved_runtime_mode == "coord"
@@ -851,7 +857,7 @@ def run_pipeline(
     if resolved_checkpoint is not None:
         validate_compact_coord_token_adapter_contract(
             resolved_checkpoint,
-            detection_sequence_format=resolved_detection_sequence_format,
+            detection_template_id=resolved_detection_template_id,
         )
     resolved_prompt_hash = get_template_prompt_hash(
         ordering=resolved_object_ordering,
@@ -859,17 +865,15 @@ def run_pipeline(
         prompt_variant=resolved_prompt_variant,
         object_field_order=resolved_object_field_order,
         bbox_format=resolved_bbox_format,
-        detection_sequence_format=resolved_detection_sequence_format,
-        row_separator=resolved_row_separator,
+        detection_template_id=resolved_detection_template_id,
     )
     resolved_prompt_policy_fingerprint = _offline_prompt_policy_fingerprint(
         coord_mode=resolved_coord_mode,
         prompt_variant=resolved_prompt_variant,
         object_field_order=resolved_object_field_order,
         bbox_format=resolved_bbox_format,
-        detection_sequence_format=resolved_detection_sequence_format,
+        detection_template_id=resolved_detection_template_id,
         object_ordering=resolved_object_ordering,
-        row_separator=resolved_row_separator,
     )
     resolved_decode_request = None
     if _get_map(infer_cfg, "generation"):
@@ -911,6 +915,9 @@ def run_pipeline(
         "metadata": dict(_get_map(cfg, "metadata")),
         "root_image_dir": root_image_dir,
         "root_image_dir_source": root_image_dir_source,
+        "detection_template": {
+            "id": resolved_detection_template_id,
+        },
         "stages": {
             "infer": stages.infer,
             "eval": stages.eval,
@@ -953,14 +960,11 @@ def run_pipeline(
             "prompt_variant": resolved_prompt_variant,
             "coord_mode": resolved_coord_mode,
             "bbox_format": resolved_bbox_format,
-            "detection_sequence_format": resolved_detection_sequence_format,
+            "detection_template_id": resolved_detection_template_id,
             "object_field_order": resolved_object_field_order,
             "object_ordering": resolved_object_ordering,
-            "row_separator": resolved_row_separator,
             "parsing": {
-                "compact_full": {
-                    "mode": resolved_compact_full_parse_mode,
-                },
+                "mode": resolved_parser_mode,
             },
             "generation": {},
             "prompt_template_hash": resolved_prompt_hash,
@@ -1112,6 +1116,11 @@ def _run_infer_stage(
     infer_cfg = _get_map(cfg, "infer")
     if not infer_cfg:
         raise ValueError("infer section is required when stages.infer=true")
+    _reject_retired_infer_template_knobs(infer_cfg)
+    detection_template_id = _resolve_detection_template_id(cfg)
+    detection_sequence_format = _detection_sequence_format_for_template_id(
+        detection_template_id
+    )
 
     gt_jsonl = _require_str(infer_cfg, "gt_jsonl")
     model_checkpoint = _require_str(infer_cfg, "model_checkpoint")
@@ -1127,10 +1136,8 @@ def _run_infer_stage(
     (
         prompt_variant,
         bbox_format,
-        detection_sequence_format,
         object_field_order,
         object_ordering,
-        row_separator,
     ) = _resolve_infer_prompt_controls(infer_cfg)
 
     pred_coord_mode_raw = _require_choice(
@@ -1147,7 +1154,7 @@ def _run_infer_stage(
         raise ValueError(VLLM_ADAPTER_UNSUPPORTED_MESSAGE)
     validate_compact_coord_token_adapter_contract(
         resolved_checkpoint,
-        detection_sequence_format=detection_sequence_format,
+        detection_template_id=detection_template_id,
     )
 
     gen_cfg_map = _get_map(infer_cfg, "generation")
@@ -1324,7 +1331,6 @@ def _run_infer_stage(
             )
 
     rank, local_rank, world_size, distributed_enabled = _detect_infer_distributed_env()
-    compact_full_parse_mode = _resolve_compact_full_parse_mode(cfg)
     device = str(_get_str(infer_cfg, "device", "cuda:0") or "cuda:0").strip() or "cuda:0"
     if bool(distributed_enabled) and device.startswith("cuda"):
         device = f"cuda:{int(local_rank)}"
@@ -1343,11 +1349,10 @@ def _run_infer_stage(
         "mode_resolution_reason": mode_resolution_reason,
         "prompt_variant": prompt_variant,
         "bbox_format": bbox_format,
+        "detection_template_id": detection_template_id,
         "detection_sequence_format": detection_sequence_format,
         "object_field_order": object_field_order,
         "object_ordering": object_ordering,
-        "row_separator": row_separator,
-        "compact_full_parse_mode": compact_full_parse_mode,
         "allow_diagnostic_gt_vs_pred": _get_bool(
             infer_cfg,
             "allow_diagnostic_gt_vs_pred",
@@ -1367,9 +1372,8 @@ def _run_infer_stage(
             prompt_variant=prompt_variant,
             object_field_order=object_field_order,
             bbox_format=bbox_format,
-            detection_sequence_format=detection_sequence_format,
+            detection_template_id=detection_template_id,
             object_ordering=object_ordering,
-            row_separator=row_separator,
         ),
         "decode_policy_fingerprint": decode_request.decode_policy_fingerprint,
         "model_identity_fingerprint": build_model_identity_fingerprint(

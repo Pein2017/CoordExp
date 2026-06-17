@@ -119,7 +119,7 @@ def _sample() -> NormalizedDetectionSample:
     )
 
 
-def test_compact_recursive_targets_preserve_span_roles_and_separator_hard_ce() -> None:
+def test_compact_recursive_targets_preserve_span_roles_without_separator() -> None:
     tokenizer = SpecialTokenAwareTokenizer()
     prepared = prepare_detection_training_example(
         _sample(),
@@ -149,10 +149,30 @@ def test_compact_recursive_targets_preserve_span_roles_and_separator_hard_ce() -
         BOX_START_TOKEN,
     )
 
+    assert first_entry.separator_span is None
+
+
+def test_compact_line_variant_preserves_separator_hard_ce() -> None:
+    tokenizer = SpecialTokenAwareTokenizer()
+    prepared = prepare_detection_training_example(
+        _sample(),
+        template=CompactFullTemplate("compact_object_box_closed_lines"),
+        tokenizer=tokenizer,
+        mode="random_permutation_et_rmp_ce",
+    )
+
+    assert prepared.recursive_detection_targets is not None
+    targets = {
+        target.position: target
+        for target in prepared.recursive_detection_targets.token_targets
+    }
+    first_entry = prepared.tokenized.object_entries[0]
+
+    assert first_entry.separator_span is not None
     separator_target = targets[first_entry.separator_span.start]
     assert separator_target.kind == "hard_ce"
     assert separator_target.token_role is TokenRole.SEPARATOR
-    assert separator_target.object_instance_id is None
+    assert separator_target.object_instance_id == first_entry.object_instance_id
     assert tuple(tokenizer.token_text(token_id) for token_id in separator_target.valid_token_ids) == (
         "\n",
     )

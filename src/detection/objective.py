@@ -654,9 +654,15 @@ def _prepare_sample_for_mode(
         )
         return sample
     if mode == "prefix_denoising_sft":
-        if sample.object_ordering.strategy != "sorted":
+        if sample.object_ordering.strategy not in {"sorted", "random_permutation"}:
             raise ValueError(
-                "prefix_denoising_sft requires sample.object_ordering.strategy='sorted'"
+                "prefix_denoising_sft requires sample.object_ordering.strategy "
+                "in {'sorted', 'random_permutation'}"
+            )
+        if sample.object_ordering.strategy == "random_permutation":
+            _validate_random_permutation_sample(
+                sample,
+                mode_name="prefix_denoising_sft",
             )
         return sample
     if mode == "random_permutation_et_rmp_ce":

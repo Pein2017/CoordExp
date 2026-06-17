@@ -12,6 +12,7 @@ from src.infer.backend import DetectionDecodeResult
 from src.infer.runtime import (
     GenerationResult,
     InferenceRuntime,
+    create_offline_engine,
     make_offline_generation_config,
     make_offline_inference_config,
     run_offline_artifact_inference,
@@ -193,6 +194,52 @@ if loaded:
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_offline_engine_prompt_parity_across_backends_for_detection_template(
+    tmp_path: Path,
+) -> None:
+    base_kwargs = {
+        "gt_jsonl": str(tmp_path / "gt.jsonl"),
+        "model_checkpoint": "dummy",
+        "mode": "coord",
+        "prompt_variant": "coco_80",
+        "detection_template_id": "compact_object_box_closed_lines",
+        "pred_coord_mode": "auto",
+        "out_path": str(tmp_path / "gt_vs_pred.jsonl"),
+        "summary_path": str(tmp_path / "summary.json"),
+        "root_image_dir": str(tmp_path),
+    }
+    backend_cases = [
+        {"backend_type": "hf", "backend": {"type": "hf"}},
+        {"backend_type": "vllm", "backend": {"type": "vllm", "mode": "local"}},
+        {
+            "backend_type": "vllm",
+            "backend": {
+                "type": "vllm",
+                "mode": "server",
+                "base_url": "http://127.0.0.1:8000",
+                "model": "dummy",
+            },
+        },
+    ]
+
+    engines = [
+        create_offline_engine(
+            inference_kwargs={**base_kwargs, **backend_kwargs},
+            generation_kwargs={},
+        )
+        for backend_kwargs in backend_cases
+    ]
+
+    assert {engine.detection_template_id for engine in engines} == {
+        "compact_object_box_closed_lines"
+    }
+    assert len({engine.system_prompt for engine in engines}) == 1
+    assert len({engine.user_prompt for engine in engines}) == 1
+    assert len({engine.prompt_template_hash for engine in engines}) == 1
+    assert "<|object_ref_end|>" in engines[0].system_prompt
+    assert "<|box_end|>\n" in engines[0].user_prompt
 
 
 def test_run_offline_inference_uses_runtime_artifact_runner(monkeypatch) -> None:
@@ -407,11 +454,11 @@ def test_runtime_artifact_runner_emits_golden_row_trace_and_summary(
     trace = json.loads(
         (tmp_path / "pred_token_trace.jsonl").read_text(encoding="utf-8")
     )
-    assert trace == {
-        "line_idx": 0,
-        "generated_token_text": ["{", "}"],
-        "token_logprobs": [-0.1, -0.2],
-    }
+    assert trace["line_idx"] == 0
+    assert trace["generated_token_text"] == ["{", "}"]
+    assert trace["token_logprobs"] == [-0.1, -0.2]
+    assert isinstance(trace["raw_output_sha256"], str)
+    assert isinstance(trace["token_trace_sha256"], str)
 
     summary = json.loads((tmp_path / "summary.json").read_text(encoding="utf-8"))
     assert summary["total_read"] == 1

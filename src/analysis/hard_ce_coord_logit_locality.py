@@ -1260,7 +1260,7 @@ def load_model_handle(config: StudyConfig) -> ModelHandle:
     resolved = resolve_inference_checkpoint(model_checkpoint=str(config.paths.checkpoint))
     validate_compact_coord_token_adapter_contract(
         resolved,
-        detection_sequence_format=config.model.detection_sequence_format,
+        detection_template_id="compact",
     )
     processor_source = str(resolved.resolved_base_model_checkpoint)
     processor = AutoProcessor.from_pretrained(

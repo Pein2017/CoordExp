@@ -53,7 +53,7 @@ def _prefix_denoising_payload() -> dict[str, object]:
             "prompt_variant_enabled": True,
         },
         "detection_template": {
-            "id": "compact_full",
+            "id": "compact",
             "coordinate_surface": "coord_token",
             "bbox_format": "xyxy",
             "strict_parse": True,
@@ -111,7 +111,7 @@ def _prefix_denoising_payload() -> dict[str, object]:
             "padding_free_packed": False,
         },
         "evaluation": {
-            "expected_template": "compact_full",
+            "expected_template": "compact",
             "parser_mode": "strict_expected",
         },
         "validation": {
@@ -227,6 +227,31 @@ def test_prefix_denoising_production_leaf_resolves_base_sorted_val512() -> None:
     assert cfg.prefix_denoising.current_object_kl.weight == pytest.approx(0.05)
 
 
+def test_prefix_denoising_production_leaf_resolves_base_random_4epoch_val512() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    payload = ConfigLoader.load_yaml_with_extends(
+        str(
+            repo_root
+            / "configs/stage1/detection_teacher_forcing/prod/"
+            "compact_full_prefix_denoising_kl_w0p05_2b_base_random_4epoch.yaml"
+        )
+    )
+    cfg = _load(payload)
+
+    assert (
+        cfg.model["model"]
+        == "/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp"
+    )
+    assert cfg.model.get("adapters") in (None, [])
+    assert cfg.training["num_train_epochs"] == 4
+    assert cfg.training["eval_packing"] is False
+    assert cfg.data.object_ordering == "random_permutation"
+    assert cfg.debug.enabled is True
+    assert cfg.debug.val_sample_limit == 512
+    assert cfg.prefix_denoising.current_object_kl.weight == pytest.approx(0.05)
+    assert "random" in cfg.training["run_name"]
+
+
 def test_prefix_denoising_dataset_materialization_fails_before_teacher_forcing_builder(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -234,7 +259,7 @@ def test_prefix_denoising_dataset_materialization_fails_before_teacher_forcing_b
     dataset.config = SimpleNamespace(
         mode="prefix_denoising_sft",
         teacher_forcing_profile="hard_sft",
-        detection_template_id="compact_full",
+        detection_template_id="compact",
         teacher_forcing_rollin_base_seed=17,
     )
     dataset.tokenizer = object()
@@ -340,18 +365,17 @@ def test_prefix_denoising_accepts_zero_current_object_kl_weight_as_ce_only() -> 
     assert cfg.prefix_denoising.current_object_kl.weight == pytest.approx(0.0)
 
 
-def test_prefix_denoising_rejects_random_object_ordering() -> None:
+def test_prefix_denoising_accepts_random_object_ordering() -> None:
     payload = _prefix_denoising_payload()
     payload["data"] = {
         **payload["data"],  # type: ignore[arg-type]
         "object_ordering": "random_permutation",
     }
 
-    with pytest.raises(
-        ValueError,
-        match=r"prefix_denoising.*data\.object_ordering.*sorted",
-    ):
-        _load(payload)
+    cfg = _load(payload)
+
+    assert cfg.prefix_denoising.enabled is True
+    assert cfg.data.object_ordering == "random_permutation"
 
 
 def test_prefix_denoising_rejects_non_hard_sft_profile() -> None:

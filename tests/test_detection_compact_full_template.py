@@ -3,8 +3,10 @@ from dataclasses import replace
 import pytest
 
 from src.common.detection_sequence import (
+    BOX_END_TOKEN,
     BOX_START_TOKEN,
     END_OF_TEXT_TOKEN,
+    OBJECT_REF_END_TOKEN,
     OBJECT_REF_START_TOKEN,
 )
 from src.detection.data import (
@@ -15,7 +17,33 @@ from src.detection.data import (
     ObjectOrderingPlan,
 )
 from src.detection.scene import detection_scene_from_normalized_sample_bridge
-from src.detection.template import CompactFullTemplate
+from src.detection.template import CompactFullTemplate, get_detection_template
+
+
+EXPECTED_COMPACT = (
+    f"{OBJECT_REF_START_TOKEN}traffic light{BOX_START_TOKEN}"
+    "<|coord_10|><|coord_20|><|coord_30|><|coord_40|>"
+    f"{OBJECT_REF_START_TOKEN}person{BOX_START_TOKEN}"
+    "<|coord_100|><|coord_200|><|coord_300|><|coord_400|>"
+)
+EXPECTED_BOX_CLOSED = (
+    f"{OBJECT_REF_START_TOKEN}traffic light{BOX_START_TOKEN}"
+    f"<|coord_10|><|coord_20|><|coord_30|><|coord_40|>{BOX_END_TOKEN}"
+    f"{OBJECT_REF_START_TOKEN}person{BOX_START_TOKEN}"
+    f"<|coord_100|><|coord_200|><|coord_300|><|coord_400|>{BOX_END_TOKEN}"
+)
+EXPECTED_OBJECT_BOX_CLOSED = (
+    f"{OBJECT_REF_START_TOKEN}traffic light{OBJECT_REF_END_TOKEN}{BOX_START_TOKEN}"
+    f"<|coord_10|><|coord_20|><|coord_30|><|coord_40|>{BOX_END_TOKEN}"
+    f"{OBJECT_REF_START_TOKEN}person{OBJECT_REF_END_TOKEN}{BOX_START_TOKEN}"
+    f"<|coord_100|><|coord_200|><|coord_300|><|coord_400|>{BOX_END_TOKEN}"
+)
+EXPECTED_OBJECT_BOX_CLOSED_LINES = (
+    f"{OBJECT_REF_START_TOKEN}traffic light{OBJECT_REF_END_TOKEN}{BOX_START_TOKEN}"
+    f"<|coord_10|><|coord_20|><|coord_30|><|coord_40|>{BOX_END_TOKEN}\n"
+    f"{OBJECT_REF_START_TOKEN}person{OBJECT_REF_END_TOKEN}{BOX_START_TOKEN}"
+    f"<|coord_100|><|coord_200|><|coord_300|><|coord_400|>{BOX_END_TOKEN}\n"
+)
 
 
 def _sample(desc: str = "traffic light") -> NormalizedDetectionSample:
@@ -79,6 +107,77 @@ def _repeated_identical_sample() -> NormalizedDetectionSample:
     )
 
 
+@pytest.mark.parametrize(
+    ("template_id", "expected"),
+    [
+        ("compact", EXPECTED_COMPACT),
+        ("compact_box_closed", EXPECTED_BOX_CLOSED),
+        ("compact_object_box_closed", EXPECTED_OBJECT_BOX_CLOSED),
+        ("compact_object_box_closed_lines", EXPECTED_OBJECT_BOX_CLOSED_LINES),
+    ],
+)
+def test_semantic_compact_templates_render_exact_bytes(
+    template_id: str,
+    expected: str,
+) -> None:
+    rendered = get_detection_template(template_id).render_assistant(_sample())
+
+    assert rendered.text == expected
+    assert rendered.template_id == template_id
+
+
+@pytest.mark.parametrize(
+    ("template_id", "expected"),
+    [
+        ("compact", EXPECTED_COMPACT),
+        ("compact_box_closed", EXPECTED_BOX_CLOSED),
+        ("compact_object_box_closed", EXPECTED_OBJECT_BOX_CLOSED),
+        ("compact_object_box_closed_lines", EXPECTED_OBJECT_BOX_CLOSED_LINES),
+    ],
+)
+def test_semantic_compact_templates_strict_parse_roundtrip(
+    template_id: str,
+    expected: str,
+) -> None:
+    template = get_detection_template(template_id)
+
+    assert template.parse_assistant(expected) == {
+        "objects": [
+            {
+                "desc": "traffic light",
+                "bbox_2d": [
+                    "<|coord_10|>",
+                    "<|coord_20|>",
+                    "<|coord_30|>",
+                    "<|coord_40|>",
+                ],
+            },
+            {
+                "desc": "person",
+                "bbox_2d": [
+                    "<|coord_100|>",
+                    "<|coord_200|>",
+                    "<|coord_300|>",
+                    "<|coord_400|>",
+                ],
+            },
+        ]
+    }
+
+
+def test_semantic_compact_templates_reject_wrong_variant_structure() -> None:
+    with pytest.raises(ValueError):
+        get_detection_template("compact").parse_assistant(EXPECTED_BOX_CLOSED)
+
+    with pytest.raises(ValueError):
+        get_detection_template("compact_box_closed").parse_assistant(EXPECTED_COMPACT)
+
+    with pytest.raises(ValueError):
+        get_detection_template("compact_object_box_closed").parse_assistant(
+            EXPECTED_OBJECT_BOX_CLOSED_LINES
+        )
+
+
 def test_compact_full_renders_approved_token_grammar_without_json_closure() -> None:
     rendered = CompactFullTemplate().render_assistant(_sample())
 
@@ -91,7 +190,7 @@ def test_compact_full_renders_approved_token_grammar_without_json_closure() -> N
     assert "\n" not in rendered.text
     assert '{"objects"' not in rendered.text
     assert "]}" not in rendered.text
-    assert rendered.separator_spans[0].text(rendered.text) == ""
+    assert rendered.separator_spans == ()
     assert rendered.terminal_close_span.start == len(rendered.text)
     assert rendered.terminal_close_span.end == len(rendered.text)
     assert rendered.terminal_close_span.text(rendered.text) == ""
@@ -131,7 +230,8 @@ def test_compact_full_exposes_entry_marker_coordinate_and_trie_spans() -> None:
         BOX_START_TOKEN,
     ]
     assert first.structural_token_spans == first.control_spans
-    assert first.separator_span == rendered.separator_spans[0]
+    assert first.separator_span is None
+    assert rendered.separator_spans == ()
     assert first.trie_eligible_span == first.entry_span
 
     assert second.object_instance_id == "img-9:ann-502:src-3"
@@ -145,7 +245,6 @@ def test_compact_full_exposes_entry_marker_coordinate_and_trie_spans() -> None:
     assert [span.label for span in rendered.structural_token_spans] == [
         "object_ref_start",
         "bbox_start",
-        "object_separator",
         "object_ref_start",
         "bbox_start",
     ]
@@ -178,10 +277,10 @@ def test_compact_full_strict_parser_round_trips_rendered_text() -> None:
         ]
     }
 
-    with pytest.raises(ValueError, match="strict compact_full"):
+    with pytest.raises(ValueError, match="strict compact"):
         template.parse_assistant(rendered.text + "\n")
 
-    with pytest.raises(ValueError, match="strict compact_full"):
+    with pytest.raises(ValueError, match="strict compact"):
         template.parse_assistant(rendered.text.replace(OBJECT_REF_START_TOKEN, "", 1))
 
     for bad_coord in (
@@ -191,7 +290,7 @@ def test_compact_full_strict_parser_round_trips_rendered_text() -> None:
         "<|coord_x|>",
         "<|coord_10|>junk",
     ):
-        with pytest.raises(ValueError, match="strict compact_full"):
+        with pytest.raises(ValueError, match="strict compact"):
             template.parse_assistant(
                 rendered.text.replace("<|coord_10|>", bad_coord, 1)
             )

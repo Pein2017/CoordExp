@@ -314,7 +314,7 @@ def test_run_pipeline_writes_resolved_config_with_root_breadcrumbs(
     )
 
 
-def test_run_pipeline_records_compact_detection_sequence_format(
+def test_run_pipeline_records_compact_detection_template_id(
     tmp_path: Path, monkeypatch
 ) -> None:
     monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
@@ -326,9 +326,9 @@ def test_run_pipeline_records_compact_detection_sequence_format(
     cfg = {
         "run": {"name": "demo", "output_dir": str(tmp_path / "out")},
         "stages": {"infer": False, "eval": False, "vis": False},
+        "detection_template": {"id": "compact"},
         "infer": {
             "gt_jsonl": str(gt_jsonl),
-            "detection_sequence_format": "compact_full",
         },
     }
 
@@ -342,11 +342,9 @@ def test_run_pipeline_records_compact_detection_sequence_format(
     run_pipeline(config_path=config_path)
 
     resolved = load_resolved_config(artifacts.run_dir / "resolved_config.json")
-    assert resolved["infer"]["detection_sequence_format"] == "compact_full"
-    assert (
-        resolved["cfg"]["infer"]["detection_sequence_format"]
-        == "compact_full"
-    )
+    assert resolved["detection_template"]["id"] == "compact"
+    assert resolved["infer"]["detection_template_id"] == "compact"
+    assert resolved["cfg"]["detection_template"]["id"] == "compact"
 
 
 def test_distributed_nonzero_rank_skips_postprocess_eval_and_vis(
@@ -1520,6 +1518,7 @@ def test_official_eval_rejects_custom_scored_path_with_raw_provenance(
     (tmp_path / "resolved_config.json").write_text(
         json.dumps(
             {
+                "detection_template": {"id": "stage1_json_pretty"},
                 "prompt_policy_fingerprint": "prompt:1",
                 "decode_policy_fingerprint": "decode:1",
                 "model_identity_fingerprint": "model:1",

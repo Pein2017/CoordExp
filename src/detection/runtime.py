@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Literal, Mapping, cast
 
-from src.config.prompts import COMPACT_ROW_SEPARATOR_NONE, get_template_prompts
+from src.config.prompts import get_template_prompts
 from src.config.schema import (
     CoordOffsetConfig,
     CoordTokensConfig,
@@ -20,6 +20,7 @@ from src.detection.prefix_denoising import PrefixDenoisingTrainingDataset
 from src.detection.prefix_denoising.builder import (
     prefix_denoising_fast_estimator_fingerprint,
 )
+from src.detection.template_contracts import resolve_detection_template_contract
 from src.detection.tokenizer_contract import resolve_compact_training_stop_contract
 
 DetectionRuntimeMode = Literal[
@@ -56,9 +57,10 @@ def is_detection_config(training_config: Any) -> bool:
 def detection_sequence_format(
     training_config: DetectionTrainingConfig,
 ) -> str:
-    if training_config.detection_template.id == "compact_full":
-        return "compact_full"
-    if training_config.detection_template.id == "stage1_json_pretty":
+    contract = resolve_detection_template_contract(training_config.detection_template.id)
+    if contract.is_compact:
+        return "compact"
+    if contract.template_id == "stage1_json_pretty":
         return "coordjson"
     raise ValueError(
         f"Unsupported detection_template.id={training_config.detection_template.id!r}"
@@ -79,12 +81,15 @@ def resolve_detection_prompts(
             "detection runtime currently supports only "
             "prompt.system_variant=stage1_detection"
         )
+    template_contract = resolve_detection_template_contract(
+        training_config.detection_template.id
+    )
     if (
-        training_config.detection_template.id == "compact_full"
+        template_contract.is_compact
         and training_config.prompt.user_variant != "compact_detection"
     ):
         raise ValueError(
-            "detection_template.id=compact_full requires "
+            f"detection_template.id={training_config.detection_template.id} requires "
             "prompt.user_variant=compact_detection"
         )
     if (
@@ -104,20 +109,13 @@ def resolve_detection_prompts(
         if training_config.data.object_ordering == "random_permutation"
         else "sorted"
     )
-    sequence_format = detection_sequence_format(training_config)
-    row_separator = (
-        COMPACT_ROW_SEPARATOR_NONE
-        if sequence_format == "compact_full"
-        else None
-    )
     return get_template_prompts(
         ordering=ordering,
         coord_mode="coord_tokens",
         prompt_variant=detection_prompt_variant(training_config),
         object_field_order=str(object_field_order),
         bbox_format=str(training_config.detection_template.bbox_format),
-        detection_sequence_format=sequence_format,
-        row_separator=row_separator,
+        detection_sequence_format=detection_sequence_format(training_config),
     )
 
 
@@ -212,7 +210,9 @@ def resolve_detection_runtime_support(
     training_config: DetectionTrainingConfig,
 ) -> DetectionRuntimeSupport:
     objective_id = getattr(training_config.objective, "id", None)
-    is_compact = training_config.detection_template.id == "compact_full"
+    is_compact = resolve_detection_template_contract(
+        training_config.detection_template.id
+    ).is_compact
     return DetectionRuntimeSupport(
         recursive_sidecars_required=(
             is_compact and objective_id == "recursive_detection_ce"
@@ -512,6 +512,9 @@ def build_detection_dataset(
     prefix_denoising = getattr(training_config, "prefix_denoising", None)
     if getattr(prefix_denoising, "enabled", False):
         max_length = _resolve_detection_max_length(training_config)
+        object_ordering = str(
+            getattr(training_config.data, "object_ordering", "sorted") or "sorted"
+        )
         return PrefixDenoisingTrainingDataset.from_jsonl(
             jsonl_path,
             swift_template=swift_template,
@@ -519,6 +522,8 @@ def build_detection_dataset(
             user_prompt=custom_config.user_prompt,
             system_prompt=system_prompt,
             prefix_denoising=prefix_denoising,
+            detection_template_id=training_config.detection_template.id,
+            object_ordering=object_ordering,
             max_length=max_length,
             seed=seed,
             sample_limit=sample_limit,
@@ -654,6 +659,10 @@ def _prefix_denoising_eligibility_cache_kwargs(
         "user_prompt": str(custom_config.user_prompt),
         "system_prompt": system_prompt,
         "seed": int(seed),
+        "object_ordering": str(
+            getattr(training_config.data, "object_ordering", "sorted") or "sorted"
+        ),
+        "detection_template_id": str(training_config.detection_template.id),
         "max_length": int(max_length),
         "template": {
             "max_length": training_config.template.get("max_length"),

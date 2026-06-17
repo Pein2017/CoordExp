@@ -58,6 +58,33 @@ def prefix_denoising_fast_estimator_fingerprint(swift_template: Any) -> dict[str
     }
 
 
+def _resolve_object_ordering_plan(
+    object_ordering: str,
+    *,
+    seed: int | None,
+    seed_source: str,
+) -> ObjectOrderingPlan:
+    ordering = str(object_ordering or "sorted").strip().lower()
+    if ordering == "random":
+        ordering = "random_permutation"
+    if ordering == "sorted":
+        return ObjectOrderingPlan.sorted(seed_source=seed_source)
+    if ordering == "random_permutation":
+        if seed is None:
+            raise ValueError(
+                "prefix_denoising random_permutation object ordering requires seed"
+            )
+        return ObjectOrderingPlan.random_permutation(
+            seed=int(seed),
+            seed_source=seed_source,
+        )
+    raise ValueError(
+        "prefix_denoising object_ordering must be one of "
+        "{'sorted', 'random_permutation'}, "
+        f"got {object_ordering!r}"
+    )
+
+
 def build_hybrid_prefix_denoising_sample(
     row: Mapping[str, Any],
     *,
@@ -67,6 +94,9 @@ def build_hybrid_prefix_denoising_sample(
     user_prompt: str,
     system_prompt: str | None,
     prefix_denoising: PrefixDenoisingConfig,
+    detection_template_id: str = "compact",
+    object_ordering: str = "sorted",
+    object_ordering_seed: int | None = None,
     epoch: int,
     rng: random.Random,
     max_length: int,
@@ -94,12 +124,18 @@ def build_hybrid_prefix_denoising_sample(
 
     image_reference = _resolve_single_image(row, image_root=image_root)
     raw = parse_raw_detection_row(row)
+    ordering_plan = _resolve_object_ordering_plan(
+        object_ordering,
+        seed=object_ordering_seed,
+        seed_source=(
+            "prefix_denoising_hybrid_builder:"
+            f"sample={base_sample_id}:epoch={int(epoch)}"
+        ),
+    )
 
     scene = detection_scene_from_raw_row(
         raw,
-        object_ordering=ObjectOrderingPlan.sorted(
-            seed_source="prefix_denoising_hybrid_builder"
-        ),
+        object_ordering=ordering_plan,
         image_reference=image_reference,
     )
     clean_sample = normalized_detection_sample_from_scene(scene)
@@ -127,7 +163,7 @@ def build_hybrid_prefix_denoising_sample(
         clean_sample,
         objects=tuple(noised["objects"]),
     )
-    template = get_detection_template("compact_full")
+    template = get_detection_template(detection_template_id)
     clean_rendered = template.render_assistant(clean_sample)
     noisy_rendered = template.render_assistant(noisy_sample)
     clean_encoded = _encode_branch(
@@ -277,13 +313,16 @@ def estimate_hybrid_prefix_denoising_packing(
     user_prompt: str,
     system_prompt: str | None,
     prefix_denoising: PrefixDenoisingConfig,
+    detection_template_id: str = "compact",
+    object_ordering: str = "sorted",
+    object_ordering_seed: int | None = None,
     rng: random.Random,
     max_length: int,
 ) -> PrefixDenoisingPackingEstimate:
     """Estimate V1 hybrid sample eligibility and packed token length.
 
-    This mirrors the full builder's row parsing, sorted order, constructive
-    noising, compact-full rendering, and max-length skip policy, but it avoids
+    This mirrors the full builder's row parsing, realized order, constructive
+    noising, detection-template rendering, and max-length skip policy, but it avoids
     Swift multimodal image encoding. Qwen-VL visual token count is deterministic
     from the stored image dimensions when `do_resize=false`, so this is suitable
     for static-packing precompute.
@@ -302,11 +341,14 @@ def estimate_hybrid_prefix_denoising_packing(
 
     image_reference = _resolve_single_image(row, image_root=image_root)
     raw = parse_raw_detection_row(row)
+    ordering_plan = _resolve_object_ordering_plan(
+        object_ordering,
+        seed=object_ordering_seed,
+        seed_source="prefix_denoising_fast_packing_estimator",
+    )
     scene = detection_scene_from_raw_row(
         raw,
-        object_ordering=ObjectOrderingPlan.sorted(
-            seed_source="prefix_denoising_hybrid_builder"
-        ),
+        object_ordering=ordering_plan,
         image_reference=image_reference,
     )
     clean_sample = normalized_detection_sample_from_scene(scene)
@@ -332,7 +374,7 @@ def estimate_hybrid_prefix_denoising_packing(
         clean_sample,
         objects=tuple(noised["objects"]),
     )
-    template = get_detection_template("compact_full")
+    template = get_detection_template(detection_template_id)
     clean_rendered = template.render_assistant(clean_sample)
     noisy_rendered = template.render_assistant(noisy_sample)
     clean_token_ids = _estimate_branch_token_ids(

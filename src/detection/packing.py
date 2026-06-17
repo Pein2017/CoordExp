@@ -10,6 +10,7 @@ from types import MappingProxyType
 from typing import Any, Literal, Mapping, cast
 
 from src.common.detection_sequence import (
+    COMPACT_FORMAT,
     COMPACT_FULL_FORMAT,
     COORDJSON_FORMAT,
     normalize_detection_sequence_format,
@@ -104,11 +105,11 @@ def resolve_detection_template_id_for_static_packing(
     detection_format = normalize_detection_sequence_format(detection_sequence_format)
     if detection_format == COORDJSON_FORMAT:
         return "stage1_json_pretty"
-    if detection_format == COMPACT_FULL_FORMAT:
-        return "compact_full"
+    if detection_format in {COMPACT_FORMAT, COMPACT_FULL_FORMAT}:
+        return "compact"
     raise ValueError(
         "dataset-level static packing only supports detection templates "
-        "{'stage1_json_pretty', 'compact_full'}; got "
+        "{'stage1_json_pretty', 'compact'}; got "
         f"detection_sequence_format={detection_sequence_format!r}"
     )
 

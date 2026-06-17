@@ -39,11 +39,11 @@ config_surfaces:
       notes: "Active Stage-2 rollout-correction direction. Duplicate filtering runs before greedy-IoU assignment; unmatched GT becomes residual GT-correction events. Greedy IoU is the only live Stage-2 assignment strategy."
     - id: stage1_detection_teacher_forcing
       status: canonical
-      config: configs/stage1/detection_teacher_forcing/prod/compact_full_support2.yaml
-      smoke_config: configs/stage1/detection_teacher_forcing/smoke/compact_full_tiny.yaml
+      config: configs/stage1/detection_teacher_forcing/prod/compact_support2.yaml
+      smoke_config: configs/stage1/detection_teacher_forcing/smoke/compact_tiny.yaml
       parser: src/config/schema.py::DetectionTrainingConfig
       runtime: src/detection/runtime.py
-      notes: "Canonical clean-break Stage-1 detection teacher-forcing public route. New compact-full teacher-forcing configs should live under configs/stage1/detection_teacher_forcing/."
+      notes: "Canonical clean-break Stage-1 detection teacher-forcing public route. New compact teacher-forcing configs should live under configs/stage1/detection_teacher_forcing/."
     - id: stage1_retired_recursive_detection_archive
       status: historical-archive
       archive_root: configs/archive/detection_scene_clean_break/stage1/

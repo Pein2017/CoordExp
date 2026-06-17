@@ -251,6 +251,44 @@ def test_hybrid_builder_emits_two_segments_and_clean_labels(tmp_path: Path) -> N
     assert sample.kl_sites == ()
 
 
+def test_hybrid_builder_random_order_is_shared_by_clean_and_noisy(
+    tmp_path: Path,
+) -> None:
+    _touch_image(tmp_path)
+    cfg = PrefixDenoisingConfig.from_mapping(
+        {
+            "enabled": True,
+            "current_object_kl": {
+                "weight": 0.0,
+                "window_radius": 8,
+                "num_objects_per_image": 1,
+            },
+        }
+    )
+
+    sample = build_hybrid_prefix_denoising_sample(
+        _row(),
+        base_sample_id="unit-0",
+        image_root=tmp_path,
+        swift_template=FakeTemplate(),
+        user_prompt="find objects",
+        system_prompt=None,
+        prefix_denoising=cfg,
+        object_ordering="random_permutation",
+        object_ordering_seed=1,
+        epoch=0,
+        rng=random.Random(5),
+        max_length=12000,
+    )
+
+    assert sample.ok is True
+    clean_text = sample.clean_full.metadata["rendered_text"]
+    noisy_text = sample.noisy_full.metadata["rendered_text"]
+    assert clean_text.index("blue box") < clean_text.index("red box")
+    assert noisy_text.index("blue box") < noisy_text.index("red box")
+    assert sample.clean_full.labels == sample.noisy_full.labels
+
+
 def test_fast_packing_estimate_matches_full_hybrid_length(tmp_path: Path) -> None:
     _touch_image(tmp_path)
     cfg = PrefixDenoisingConfig.from_mapping({"enabled": True})

@@ -81,7 +81,9 @@ This is the layer to inspect when:
 
 Compact detection sequence ownership:
 - strict template behavior lives in `src/detection/template.py`;
-- the strict factory-visible template IDs are `stage1_json_pretty` and `compact_full`;
+- the strict factory-visible template IDs are `stage1_json_pretty`, `compact`,
+  `compact_box_closed`, `compact_object_box_closed`, and
+  `compact_object_box_closed_lines`;
 - `src/common/detection_sequence.py` is the common compatibility facade;
 - `src/common/detection_compact_rows.py` owns stdlib-only compact row markers, rendering, and splitting;
 - `compact_no_desc`, `compact_no_bbox`, and `compact_min` remain helper/compatibility formats, not strict factory IDs.

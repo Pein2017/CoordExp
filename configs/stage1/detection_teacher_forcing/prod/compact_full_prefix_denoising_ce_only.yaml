@@ -1,5 +1,5 @@
 extends:
-  - ./compact_full_support2.yaml
+  - ./compact_support2.yaml
 
 # Prefix-denoising CE-only ablation.
 # This uses the V1 hybrid A+B packed path:

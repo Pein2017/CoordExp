@@ -46,6 +46,52 @@ install_coord_offset_adapter = None
 reattach_coord_offset_hooks = None
 tqdm = None
 
+
+def _semantic_template_id_from_sequence_format(detection_sequence_format: str) -> str:
+    normalized = (
+        str(detection_sequence_format).strip().lower().replace("-", "_").replace(" ", "_")
+    )
+
+
+def _resolve_detection_template_contract(template_id: str) -> Any:
+    from src.detection.template_contracts import resolve_detection_template_contract
+
+    return resolve_detection_template_contract(template_id)
+
+
+def _resolve_runtime_detection_template_id(cfg: Any) -> str:
+    raw_template_id = getattr(cfg, "detection_template_id", None)
+    if raw_template_id is not None:
+        return _resolve_detection_template_contract(str(raw_template_id)).template_id
+    return _resolve_detection_template_contract(
+        _semantic_template_id_from_sequence_format(
+            getattr(cfg, "detection_sequence_format", COORDJSON_FORMAT)
+        )
+    ).template_id
+
+
+def _detection_sequence_format_for_template_id(template_id: str) -> str:
+    contract = _resolve_detection_template_contract(template_id)
+    return "compact" if contract.is_compact else COORDJSON_FORMAT
+
+
+def _parser_mode_for_template_id(template_id: str) -> str:
+    contract = _resolve_detection_template_contract(template_id)
+    if not contract.is_compact:
+        return "strict_expected"
+    if contract.template_id == "compact":
+        return "marker_delimited_strict"
+    return "strict_expected"
+    if normalized == COORDJSON_FORMAT:
+        return "stage1_json_pretty"
+    if normalized in {"compact", "compact_full"}:
+        return "compact"
+    raise ValueError(
+        "inference checkpoint validation requires a semantic detection template; "
+        f"unsupported detection_sequence_format={detection_sequence_format!r}"
+    )
+
+
 # Map fine-grained error tags to canonical counter buckets.
 ERROR_CANONICAL = {
     "geometry_keys": "invalid_geometry",
@@ -357,6 +403,72 @@ def process_offline_gt(
     return owner.coord.process_record_gt(record, width=width, height=height, errors=errors)
 
 
+def _strip_generation_terminal_preserving_template_text(
+    text: str,
+) -> tuple[str, str | None]:
+    from src.common.detection_sequence import END_OF_TEXT_TOKEN, IM_END_TOKEN
+
+    im_end_pos = text.find(IM_END_TOKEN)
+    if im_end_pos >= 0:
+        return text[:im_end_pos], IM_END_TOKEN
+    effective = str(text)
+    terminal_token: str | None = None
+    while effective.endswith(END_OF_TEXT_TOKEN):
+        effective = effective[: -len(END_OF_TEXT_TOKEN)]
+        terminal_token = END_OF_TEXT_TOKEN
+    return effective, terminal_token
+
+
+def parse_detection_template_output_artifact(
+    text: str,
+    *,
+    detection_template_id: str,
+) -> Dict[str, Any]:
+    contract = _resolve_detection_template_contract(detection_template_id)
+    if not contract.is_compact:
+        raise ValueError(
+            "parse_detection_template_output_artifact only handles compact templates"
+        )
+    if contract.template_id == "compact":
+        from src.detection.evaluation import parse_compact_full_output_artifact
+
+        artifact = parse_compact_full_output_artifact(
+            text,
+            parse_mode=_parser_mode_for_template_id(contract.template_id),
+        )
+        artifact["detection_template_id"] = contract.template_id
+        return artifact
+
+    from src.common.detection_sequence import OBJECT_REF_START_TOKEN
+    from src.detection.evaluation import parse_detection_output_strict_expected
+
+    effective_text, terminal_token = _strip_generation_terminal_preserving_template_text(
+        str(text)
+    )
+    try:
+        raw_output_json = parse_detection_output_strict_expected(
+            effective_text,
+            expected_template=contract.template_id,
+            parser_mode="strict_expected",
+        )
+        parse_error_code = None
+    except ValueError:
+        raw_output_json = None
+        parse_error_code = "strict_template_mismatch"
+    return {
+        "raw_output_json": raw_output_json,
+        "parse_mode": "strict_expected",
+        "serialization_policy": contract.template_id,
+        "object_separator": (
+            "\n" if contract.canonical_final_separator == "\n" else OBJECT_REF_START_TOKEN
+        ),
+        "terminal_token": terminal_token,
+        "parse_error_code": parse_error_code,
+        "parse_error_offset": None,
+        "detection_template_id": contract.template_id,
+    }
+
+
 def process_offline_pred(
     owner: Any,
     raw_text: str,
@@ -368,12 +480,16 @@ def process_offline_pred(
 ) -> List[Dict[str, Any]]:
     """Parse generated text into pixel-space prediction objects."""
 
-    if owner.detection_sequence_format == "compact_full":
-        from src.detection.evaluation import parse_compact_full_output_artifact
-
-        artifact = compact_parse_artifact or parse_compact_full_output_artifact(
+    if getattr(owner, "detection_template_contract", None) is not None:
+        contract = owner.detection_template_contract
+    else:
+        contract = _resolve_detection_template_contract(
+            getattr(owner, "detection_template_id", "stage1_json_pretty")
+        )
+    if contract.is_compact:
+        artifact = compact_parse_artifact or parse_detection_template_output_artifact(
             raw_text,
-            parse_mode=owner.cfg.compact_full_parse_mode,
+            detection_template_id=contract.template_id,
         )
         payload = artifact.get("raw_output_json")
         if not isinstance(payload, Mapping):
@@ -418,11 +534,7 @@ def decode_offline_detection_result(
         compact_parse_artifact=compact_parse_artifact,
     )
     predictions = tuple(compact_gt_vs_pred_objects(pred))
-    parser_id = (
-        "compact_full"
-        if getattr(owner, "detection_sequence_format", None) == "compact_full"
-        else "coordjson"
-    )
+    parser_id = str(getattr(owner, "detection_template_id", "stage1_json_pretty"))
     diagnostics: Dict[str, Any] = {
         "invalid_count": len(pred_errors),
         "dropped_invalid": len(pred_errors),
@@ -801,10 +913,12 @@ class InferenceConfig:
     mode_resolution_reason: Optional[str] = None
     prompt_variant: str = DEFAULT_PROMPT_VARIANT
     bbox_format: AllowedBBoxFormat = DEFAULT_BBOX_FORMAT
+    detection_template_id: str = "stage1_json_pretty"
     detection_sequence_format: str = COORDJSON_FORMAT
     object_field_order: ObjectFieldOrder = "desc_first"
     object_ordering: ObjectOrdering = "sorted"
     row_separator: str = "newline"
+    parser_mode: str = "strict_expected"
     compact_full_parse_mode: str = "marker_delimited_strict"
     allow_diagnostic_gt_vs_pred: bool = False
     pred_coord_mode: Literal["auto", "norm1000", "pixel"] = "auto"
@@ -1137,7 +1251,6 @@ class OfflineInferenceEngine:
     ) -> None:
         from src.common.geometry.bbox_parameterization import normalize_bbox_format
         from src.common.coord_standardizer import CoordinateStandardizer
-        from src.common.detection_sequence import normalize_detection_sequence_format
         from src.common.object_field_order import (
             normalize_object_field_order,
             normalize_object_ordering,
@@ -1146,7 +1259,6 @@ class OfflineInferenceEngine:
             coord_mode_from_coord_tokens_enabled,
             get_template_prompt_hash,
             get_template_prompts,
-            normalize_compact_row_separator,
             resolve_dense_prompt_variant_key,
         )
         from src.infer.checkpoints import resolve_inference_checkpoint
@@ -1191,8 +1303,13 @@ class OfflineInferenceEngine:
             cfg.bbox_format, path="infer.bbox_format"
         )
         self.cfg.bbox_format = self.bbox_format
-        self.detection_sequence_format = normalize_detection_sequence_format(
-            cfg.detection_sequence_format
+        self.detection_template_id = _resolve_runtime_detection_template_id(cfg)
+        self.detection_template_contract = _resolve_detection_template_contract(
+            self.detection_template_id
+        )
+        self.cfg.detection_template_id = self.detection_template_id
+        self.detection_sequence_format = _detection_sequence_format_for_template_id(
+            self.detection_template_id
         )
         self.cfg.detection_sequence_format = self.detection_sequence_format
         self.object_field_order = normalize_object_field_order(
@@ -1205,8 +1322,11 @@ class OfflineInferenceEngine:
             path="infer.object_ordering",
         )
         self.cfg.object_ordering = self.object_ordering
-        self.row_separator = normalize_compact_row_separator(cfg.row_separator)
+        self.row_separator = self.detection_template_contract.row_separator
         self.cfg.row_separator = self.row_separator
+        self.parser_mode = _parser_mode_for_template_id(self.detection_template_id)
+        self.cfg.parser_mode = self.parser_mode
+        self.cfg.compact_full_parse_mode = self.parser_mode
 
         self.requested_mode = cfg.requested_mode or cfg.mode
         self.resolved_mode = cfg.mode
@@ -1227,8 +1347,7 @@ class OfflineInferenceEngine:
             prompt_variant=self.prompt_variant,
             object_field_order=self.object_field_order,
             bbox_format=self.bbox_format,
-            detection_sequence_format=self.detection_sequence_format,
-            row_separator=self.row_separator,
+            detection_template_id=self.detection_template_id,
         )
         self.prompt_template_hash = get_template_prompt_hash(
             ordering=self.object_ordering,
@@ -1236,8 +1355,7 @@ class OfflineInferenceEngine:
             prompt_variant=self.prompt_variant,
             object_field_order=self.object_field_order,
             bbox_format=self.bbox_format,
-            detection_sequence_format=self.detection_sequence_format,
-            row_separator=self.row_separator,
+            detection_template_id=self.detection_template_id,
         )
 
         self.coord = CoordinateStandardizer(
@@ -1302,7 +1420,7 @@ class OfflineInferenceEngine:
             coord_offset_spec = self.resolved_checkpoint.adapter_info.coord_offset_spec
         validate_compact_coord_token_adapter_contract(
             self.resolved_checkpoint,
-            detection_sequence_format=self.cfg.detection_sequence_format,
+            detection_template_id=self.detection_template_id,
         )
 
         if backend == "vllm":
@@ -1558,9 +1676,7 @@ def run_offline_artifact_inference(owner: Any) -> Tuple[Path, Path]:
     from contextlib import nullcontext
     from tqdm import tqdm as default_tqdm
 
-    from src.common.detection_sequence import IM_END_TOKEN
     from src.common.prediction_parsing import extract_special_tokens, load_prediction_dict
-    from src.detection.evaluation import parse_compact_full_output_artifact
     from src.infer.artifacts import (
         build_infer_resolved_meta,
         build_infer_resolved_meta_from_facts,
@@ -1573,6 +1689,14 @@ def run_offline_artifact_inference(owner: Any) -> Tuple[Path, Path]:
     )
 
     self = owner
+    if not hasattr(self, "detection_template_id"):
+        self.detection_template_id = _resolve_runtime_detection_template_id(self.cfg)
+    if not hasattr(self, "detection_template_contract"):
+        self.detection_template_contract = _resolve_detection_template_contract(
+            self.detection_template_id
+        )
+    if not hasattr(self, "parser_mode"):
+        self.parser_mode = _parser_mode_for_template_id(self.detection_template_id)
     jsonl_path = Path(self.cfg.gt_jsonl)
     backend = str(self.cfg.backend_type).strip().lower()
     out_path, summary_path, trace_path = resolve_infer_artifact_paths(
@@ -1680,14 +1804,14 @@ def run_offline_artifact_inference(owner: Any) -> Tuple[Path, Path]:
                 raw_text, preserve_duplicates=True
             )
             compact_parse_artifact: Optional[Dict[str, Any]] = None
-            if self.detection_sequence_format == "compact_full":
-                compact_parse_artifact = parse_compact_full_output_artifact(
+            if self.detection_template_contract.is_compact:
+                compact_parse_artifact = parse_detection_template_output_artifact(
                     raw_text,
-                    parse_mode=self.cfg.compact_full_parse_mode,
+                    detection_template_id=self.detection_template_id,
                 )
                 raw_output_json = compact_parse_artifact["raw_output_json"]
                 raw_ends_with_im_end = (
-                    compact_parse_artifact.get("terminal_token") == IM_END_TOKEN
+                    compact_parse_artifact.get("terminal_token") == "<|im_end|>"
                 )
             else:
                 raw_ends_with_im_end = raw_text.endswith("<|im_end|>")
@@ -1736,6 +1860,7 @@ def run_offline_artifact_inference(owner: Any) -> Tuple[Path, Path]:
                         ],
                     }
                 )
+            output["detection_template_id"] = self.detection_template_id
             if p.get("image_id") is not None:
                 output["image_id"] = p.get("image_id")
             if isinstance(p.get("metadata"), Mapping):

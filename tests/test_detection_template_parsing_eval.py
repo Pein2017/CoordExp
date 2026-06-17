@@ -43,7 +43,7 @@ def test_compact_full_strict_expected_parses_valid_compact_output() -> None:
     }
     assert parse_detection_output_strict_expected(
         COMPACT_TEXT,
-        expected_template="compact_full",
+        expected_template="compact",
     ) == CompactFullTemplate().parse_assistant(COMPACT_TEXT)
 
 
@@ -56,13 +56,13 @@ def test_compact_full_eval_routes_marker_strict_and_legacy_compatible_modes() ->
     with pytest.raises(ValueError, match="legacy_separator_in_new_format"):
         parse_detection_output_strict_expected(
             COMPACT_LEGACY_TEXT,
-            expected_template="compact_full",
+            expected_template="compact",
             parser_mode="marker_delimited_strict",
         )
 
     assert parse_detection_output_strict_expected(
         COMPACT_LEGACY_TEXT,
-        expected_template="compact_full",
+        expected_template="compact",
         parser_mode="legacy_compatible",
     ) == {
         "objects": [
@@ -93,7 +93,7 @@ def test_compact_full_marker_strict_treats_im_end_as_terminal_not_endoftext() ->
 
     assert parse_detection_output_strict_expected(
         marker_with_padding,
-        expected_template="compact_full",
+        expected_template="compact",
         parser_mode="marker_delimited_strict",
     ) == {
         "objects": [
@@ -112,7 +112,7 @@ def test_compact_full_marker_strict_treats_im_end_as_terminal_not_endoftext() ->
     with pytest.raises(ValueError, match="trailing_garbage"):
         parse_detection_output_strict_expected(
             COMPACT_TEXT + "<|endoftext|>",
-            expected_template="compact_full",
+            expected_template="compact",
             parser_mode="marker_delimited_strict",
         )
 
@@ -177,14 +177,14 @@ def test_strict_expected_parse_rejects_non_string_parser_mode(
 
 def test_eval_manifest_records_metric_surface_contract() -> None:
     manifest = build_detection_template_eval_manifest(
-        expected_template="compact_full",
+        expected_template="compact",
         parser_mode="marker_delimited_strict",
         coordinate_surface="coord_token",
         benchmark_scope="val200",
     )
 
     assert manifest == DetectionTemplateEvalManifest(
-        expected_template="compact_full",
+        expected_template="compact",
         parser_mode="marker_delimited_strict",
         coordinate_surface="coord_token",
         benchmark_scope="val200",
@@ -196,7 +196,7 @@ def test_eval_manifest_records_metric_surface_contract() -> None:
         ),
     )
     assert manifest.to_manifest_dict() == {
-        "expected_template": "compact_full",
+            "expected_template": "compact",
         "parser_mode": "marker_delimited_strict",
         "coordinate_surface": "coord_token",
         "benchmark_scope": "val200",
@@ -261,7 +261,7 @@ def test_eval_manifest_rejects_accidental_types_and_empty_scope(
     match: str,
 ) -> None:
     payload = {
-        "expected_template": "compact_full",
+        "expected_template": "compact",
         "parser_mode": "strict_expected",
         "coordinate_surface": "coord_token",
         "benchmark_scope": "val200",
