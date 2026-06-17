@@ -395,6 +395,7 @@ class ConfigLoader:
         prompt_variant: Optional[str] = None
         bbox_format: str = "xyxy"
         detection_sequence_format = COORDJSON_FORMAT
+        detection_template_id: Optional[str] = None
 
         custom_section = config.get("custom")
         if custom_section is not None:
@@ -444,10 +445,31 @@ class ConfigLoader:
             detection_sequence_format = normalize_detection_sequence_format(
                 custom_section.get("detection_sequence_format", COORDJSON_FORMAT)
             )
-            if detection_sequence_format != COORDJSON_FORMAT and not coord_tokens_enabled:
+            detection_template_id_raw = custom_section.get("detection_template_id")
+            detection_template_id = (
+                None
+                if detection_template_id_raw is None
+                else str(detection_template_id_raw)
+            )
+            if detection_template_id is not None:
+                from src.detection.template_contracts import (
+                    resolve_detection_template_contract,
+                )
+
+                detection_template_contract = resolve_detection_template_contract(
+                    detection_template_id
+                )
+            else:
+                detection_template_contract = None
+            if (
+                detection_sequence_format != COORDJSON_FORMAT
+                or (
+                    detection_template_contract is not None
+                    and detection_template_contract.is_compact
+                )
+            ) and not coord_tokens_enabled:
                 raise ValueError(
-                    "custom.detection_sequence_format="
-                    f"{detection_sequence_format} requires custom.coord_tokens.enabled=true"
+                    "compact detection rendering requires custom.coord_tokens.enabled=true"
                 )
 
             skip_bbox_norm = ConfigLoader._coerce_bool(
@@ -488,6 +510,7 @@ class ConfigLoader:
                 object_field_order=object_field_order,
                 bbox_format=bbox_format,
                 detection_sequence_format=detection_sequence_format,
+                detection_template_id=detection_template_id,
             )
             output_variant = "dense"
 

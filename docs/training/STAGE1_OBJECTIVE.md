@@ -181,6 +181,12 @@ The current public compact teacher-forcing route is
 The old recursive-detection CE configs below remain legacy/comparator,
 migration, or ablation history only:
 
+For ordinary baseline SFT, keep the standard `TrainingConfig` surface under
+`configs/stage1/profiles/` rather than the detection teacher-forcing route.
+Closed compact assistant rows are selected with
+`custom.detection_template_id: compact_object_box_closed` while retaining
+`custom.object_ordering: sorted` and Stage-1 static packing.
+
 - `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2.yaml` remains the random-permutation ET-RMP-CE legacy comparator, not the active compact teacher-forcing route.
 - `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2_iou_gibbs_softce_a5.yaml` is historical A5-iou-gibbs negative-result/superseded provenance: A2/support2 plus `iou_gibbs_v0` coordinate soft targets with `tau=0.0090909091` from the train one-token IoU-loss median.
 - `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml` is historical paired A6-ciou-gibbs negative-result/superseded provenance: same setup as historical A5 but with `ciou_gibbs_v0`; production preparation assumed a separate 4-GPU slice for A5 and A6 rather than one 8-GPU run.

@@ -1402,6 +1402,9 @@ def _resolve_detection_template_id(training_config: Any) -> str | None:
     template_cfg = getattr(training_config, "detection_template", None)
     template_id = _get_section_value(template_cfg, "id")
     if template_id is None:
+        custom_cfg = getattr(training_config, "custom", None)
+        template_id = getattr(custom_cfg, "detection_template_id", None)
+    if template_id is None:
         return None
     return str(template_id)
 
@@ -1551,10 +1554,13 @@ def _build_static_packing_fingerprint(
     )
     return build_stage1_static_sft_packing_fingerprint(
         StaticSftPackingFingerprintRequest(
-            detection_sequence_format=getattr(
-                custom_config,
-                "detection_sequence_format",
-                "coordjson",
+            detection_sequence_format=(
+                _resolve_detection_template_id(training_config)
+                or getattr(
+                    custom_config,
+                    "detection_sequence_format",
+                    "coordjson",
+                )
             ),
             prompt_profile=prompt_profile,
             tokenizer_id=tokenizer_id,
@@ -1988,10 +1994,9 @@ def _validate_stage1_static_packing_policy(
         training_config=training_config,
     )
     require_static_sft_packing_eligibility(
-        detection_sequence_format=getattr(
-            custom_config,
-            "detection_sequence_format",
-            "coordjson",
+        detection_sequence_format=(
+            _resolve_detection_template_id(training_config)
+            or getattr(custom_config, "detection_sequence_format", "coordjson")
         ),
         object_ordering=str(getattr(custom_config, "object_ordering", "sorted") or "sorted"),
         objective_variant=objective_variant,
@@ -2933,6 +2938,7 @@ def main():
             object_field_order=custom_config.object_field_order,
             bbox_format=custom_config.bbox_format,
             detection_sequence_format=custom_config.detection_sequence_format,
+            detection_template_id=custom_config.detection_template_id,
             encoded_sample_cache=train_encoded_sample_cache_request,
         )
         if train_encoded_sample_cache_request is not None:
@@ -3542,6 +3548,7 @@ def main():
                 object_field_order=custom_config.object_field_order,
                 bbox_format=custom_config.bbox_format,
                 detection_sequence_format=custom_config.detection_sequence_format,
+                detection_template_id=custom_config.detection_template_id,
                 encoded_sample_cache=eval_encoded_sample_cache_request,
             )
         base_eval_len = len(eval_dataset)

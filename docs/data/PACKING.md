@@ -116,6 +116,10 @@ Current implementation:
 - Each length bucket also writes an `INDEX.json` marker at the base root. When prompt/order/template or other packing-relevant fingerprint fields change, the runner warns and rewrites that marker to the latest setup before rebuilding any affected cache artifacts.
 - `training.static_packing_cache.root_dir` is optional and only needed when you want to override the default dataset-local base root.
 - Stage-1 static packing uses one hard length cap: `global_max_length` / `template.max_length`.
+- Standard Stage-1 SFT may use `custom.detection_template_id` to select a
+  semantic compact assistant template such as `compact_object_box_closed`.
+  Static-packing fingerprints include that template ID, so closed-marker runs do
+  not reuse legacy compact packing caches.
 - Static packing probes each atomic sample at full length before building the pack plan. If any sample exceeds that hard cap, packing now fails fast instead of silently truncating or skipping it.
 - Latest compact recursive detection surfaces keep packing and encoded-sample cache fail-fast until sidecar target-position rewriting is explicitly implemented and validated.
 - Compact-full token-row runs train 1002 rows through the persisted

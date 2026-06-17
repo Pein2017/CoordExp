@@ -1430,6 +1430,7 @@ class CustomConfig:
     bbox_format: AllowedBBoxFormat = DEFAULT_BBOX_FORMAT
     object_ordering: ObjectOrdering = "sorted"
     detection_sequence_format: str = COORDJSON_FORMAT
+    detection_template_id: Optional[str] = None
     coord_tokens: CoordTokensConfig = field(default_factory=CoordTokensConfig)
     coord_offset: CoordOffsetConfig = field(default_factory=CoordOffsetConfig)
     trainable_token_rows: TrainableTokenRowsConfig = field(
@@ -1491,6 +1492,8 @@ class CustomConfig:
         if self.json_format not in ALLOWED_JSON_FORMATS:
             raise ValueError("custom.json_format must be 'standard'")
         normalize_detection_sequence_format(self.detection_sequence_format)
+        if self.detection_template_id is not None:
+            resolve_detection_template_contract(self.detection_template_id)
         normalize_bbox_format(self.bbox_format, path="custom.bbox_format")
         if self.offline_max_pixels is not None and int(self.offline_max_pixels) <= 0:
             raise ValueError("custom.offline_max_pixels must be > 0 when provided")
@@ -1640,6 +1643,15 @@ class CustomConfig:
         detection_sequence_format = normalize_detection_sequence_format(
             data.pop("detection_sequence_format", COORDJSON_FORMAT)
         )
+        detection_template_id_raw = data.pop("detection_template_id", None)
+        detection_template_id = (
+            None if detection_template_id_raw is None else str(detection_template_id_raw)
+        )
+        detection_template_contract = (
+            None
+            if detection_template_id is None
+            else resolve_detection_template_contract(detection_template_id)
+        )
 
         # `custom.extra` is the only intentional extension bucket.
         nested_extra_raw = data.pop("extra", None)
@@ -1667,10 +1679,18 @@ class CustomConfig:
             )
 
         coord_tokens = CoordTokensConfig.from_mapping(coord_tokens_raw)
-        if detection_sequence_format != COORDJSON_FORMAT and not coord_tokens.enabled:
+        if (
+            (
+                detection_sequence_format != COORDJSON_FORMAT
+                or (
+                    detection_template_contract is not None
+                    and detection_template_contract.is_compact
+                )
+            )
+            and not coord_tokens.enabled
+        ):
             raise ValueError(
-                "custom.detection_sequence_format="
-                f"{detection_sequence_format} requires custom.coord_tokens.enabled=true"
+                "compact detection rendering requires custom.coord_tokens.enabled=true"
             )
         coord_offset_raw = data.pop("coord_offset", None)
         coord_offset = CoordOffsetConfig.from_mapping(coord_offset_raw)
@@ -1723,6 +1743,7 @@ class CustomConfig:
             bbox_format=bbox_format,
             object_ordering=object_ordering,
             detection_sequence_format=detection_sequence_format,
+            detection_template_id=detection_template_id,
             coord_tokens=coord_tokens,
             coord_offset=coord_offset,
             trainable_token_rows=trainable_token_rows,

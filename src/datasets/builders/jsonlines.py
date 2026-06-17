@@ -66,6 +66,7 @@ class JSONLinesBuilder(BaseBuilder):
         object_field_order: ObjectFieldOrder = "desc_first",
         bbox_format: AllowedBBoxFormat = DEFAULT_BBOX_FORMAT,
         detection_sequence_format: str = COORDJSON_FORMAT,
+        detection_template_id: Optional[str] = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -78,6 +79,9 @@ class JSONLinesBuilder(BaseBuilder):
         self.bbox_format = normalize_bbox_format(bbox_format, path="bbox_format")
         self.detection_sequence_format = normalize_detection_sequence_format(
             detection_sequence_format
+        )
+        self.detection_template_id = (
+            None if detection_template_id is None else str(detection_template_id)
         )
 
     def _get_summary_text(self, record: ConversationRecord, record_index: int) -> str:
@@ -322,10 +326,11 @@ class JSONLinesBuilder(BaseBuilder):
         return points
 
     def _render_json_text(self, payload: Mapping[str, Any]) -> str:
-        if self.detection_sequence_format != COORDJSON_FORMAT:
+        render_format = self.detection_template_id or self.detection_sequence_format
+        if render_format != COORDJSON_FORMAT:
             return render_compact_detection_sequence(
                 payload,
-                detection_sequence_format=self.detection_sequence_format,
+                detection_sequence_format=render_format,
             )
         text_payload = self._prepare_text_payload(payload)
         assistant_text = dumps_coordjson(text_payload)

@@ -768,6 +768,7 @@ def test_lvis_stage1_config_keeps_canonical_recipe_and_desc_first_sorted_contrac
     assert cfg.custom.coord_soft_ce_w1.enabled is True
     assert cfg.custom.coord_soft_ce_w1.ce_weight == pytest.approx(1.0)
     assert cfg.custom.coord_soft_ce_w1.soft_ce_weight == pytest.approx(1.0)
+
     assert cfg.custom.coord_soft_ce_w1.w1_weight == pytest.approx(1.0)
     assert cfg.custom.coord_soft_ce_w1.gate_weight == pytest.approx(5.0)
     assert cfg.custom.bbox_geo.enabled is False
@@ -775,6 +776,47 @@ def test_lvis_stage1_config_keeps_canonical_recipe_and_desc_first_sorted_contrac
     assert cfg.training["artifact_subdir"] == "stage1/lvis_bbox_max60_1024_coord_softce_w1"
     assert cfg.training["output_dir"] == "./output/stage1/lvis_bbox_max60_1024_coord_softce_w1"
     assert cfg.training["logging_dir"] == "./tb/stage1/lvis_bbox_max60_1024_coord_softce_w1"
+
+
+def test_object_ref_close_box_close_standard_sft_config_contract() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    prod = ConfigLoader.load_materialized_training_config(
+        str(
+            repo_root
+            / "configs/stage1/profiles/2b/pure_ce_coco80_desc_first_1024_object_ref_close_box_close_sorted_packed_natural_adjacent.yaml"
+        )
+    )
+    smoke = ConfigLoader.load_materialized_training_config(
+        str(
+            repo_root
+            / "configs/stage1/smoke/pure_ce_coco80_desc_first_1024_object_ref_close_box_close_sorted_packed_natural_adjacent_tiny.yaml"
+        )
+    )
+
+    for cfg in (prod, smoke):
+        assert cfg.global_max_length == 12000
+        assert cfg.template["max_length"] == 12000
+        assert cfg.model["model"] == (
+            "model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent"
+        )
+        assert cfg.custom.object_ordering == "sorted"
+        assert cfg.custom.detection_sequence_format == "compact"
+        assert cfg.custom.detection_template_id == "compact_object_box_closed"
+        assert cfg.training["packing"] is True
+        assert cfg.training["packing_mode"] == "static"
+        assert cfg.training["eval_packing"] is True
+        assert cfg.tuner["freeze_llm"] is False
+        assert cfg.tuner["freeze_vit"] is True
+        assert cfg.tuner["freeze_aligner"] is True
+        assert cfg.custom.coord_soft_ce_w1.enabled is False
+        assert cfg.custom.trainable_token_rows.enabled is True
+        assert set(cfg.custom.trainable_token_rows.groups) == {
+            "coord_geometry",
+            "compact_structure",
+        }
+
+    assert prod.training["num_train_epochs"] == 4
+    assert smoke.training["max_steps"] == 2
 
 
 def test_lvis_stage1_smoke_config_only_overrides_runtime_limits() -> None:

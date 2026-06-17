@@ -276,7 +276,7 @@ def test_coord_mode_numeric_is_rejected() -> None:
 def test_training_prompt_resolution_rejects_compact_without_coord_tokens() -> None:
     with pytest.raises(
         ValueError,
-        match="custom.detection_sequence_format=compact requires custom.coord_tokens.enabled=true",
+        match="compact detection rendering requires custom.coord_tokens.enabled=true",
     ):
         ConfigLoader.resolve_prompts(
             {
