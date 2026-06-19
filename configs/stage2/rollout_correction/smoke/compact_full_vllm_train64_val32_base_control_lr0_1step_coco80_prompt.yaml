@@ -22,3 +22,6 @@ training:
 rollout_matching:
   prompt_variant: coco_80
   eval_prompt_variant: coco_80
+
+prompt:
+  variant: coco_80

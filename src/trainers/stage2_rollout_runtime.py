@@ -972,7 +972,7 @@ class Stage2RolloutRuntime(Seq2SeqTrainer):
         if pipeline_raw is not None:
             raise ValueError(
                 "rollout_matching.pipeline has been removed. "
-                "Use stage2_rollout_correction.pipeline with custom.trainer_variant=stage2_rollout_correction instead."
+                "Use stage2_rollout_correction.pipeline with pipeline.id=stage2_rollout_correction instead."
             )
 
         eval_det_raw = cfg.get("eval_detection", None)

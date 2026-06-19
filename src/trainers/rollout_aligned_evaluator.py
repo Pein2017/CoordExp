@@ -14,6 +14,7 @@ from src.common.geometry import denorm_and_clamp, flatten_points
 from src.common.object_field_order import build_object_payload
 from src.common.prediction_parsing import extract_special_tokens, load_prediction_dict
 from src.coord_tokens.codec import token_to_int
+from src.detection.template_contracts import resolve_detection_template_contract
 from src.eval.detection import EvalOptions, evaluate_and_save
 from src.infer.artifacts import write_score_provenance_sidecar
 from src.infer.parsing import DetectionParserResult, require_metric_bearing
@@ -81,6 +82,38 @@ def _stage2_eval_rollout_template_summary(owner: Any) -> Dict[str, Any]:
         if value is not None:
             out[key] = str(value)
     return out
+
+
+def _stage2_eval_detection_template_id(
+    prompt_provenance: Mapping[str, Any],
+) -> str:
+    raw_candidates: List[Any] = []
+    for key in ("detection_template_id", "detection_sequence_format"):
+        raw_candidates.append(prompt_provenance.get(key))
+    template = prompt_provenance.get("detection_template")
+    if isinstance(template, Mapping):
+        raw_candidates.append(template.get("id"))
+    rollout_policy = prompt_provenance.get("rollout_template_policy")
+    if isinstance(rollout_policy, Mapping):
+        raw_candidates.append(rollout_policy.get("detection_template_id"))
+        raw_candidates.append(rollout_policy.get("template_id"))
+        raw_candidates.append(rollout_policy.get("template_family"))
+
+    for raw in raw_candidates:
+        value = str(raw or "").strip()
+        if not value:
+            continue
+        normalized = value.lower()
+        if normalized == "compact_full":
+            return "compact"
+        if normalized == "coordjson":
+            return "stage1_json_pretty"
+        return resolve_detection_template_contract(value).template_id
+
+    raise ValueError(
+        "Stage-2 eval score sidecar cannot infer detection_template.id from "
+        "prompt provenance."
+    )
 
 
 def _coerce_stage2_eval_prompt_token_ids(
@@ -393,6 +426,9 @@ def _write_stage2_eval_score_provenance(
     )
     pred_score_version = int(eval_detection_cfg.get("pred_score_version", 1) or 1)
     constant_score = float(eval_detection_cfg.get("constant_score", 1.0) or 1.0)
+    detection_template_id = _stage2_eval_detection_template_id(
+        prompt_provenance_payload
+    )
     write_score_provenance_sidecar(
         scored_path=scored_path,
         prompt_policy_fingerprint=prompt_fingerprint,
@@ -433,6 +469,8 @@ def _write_stage2_eval_score_provenance(
         parser_policy="strict",
         extra={
             "eval_surface": "stage2_rollout_correction",
+            "detection_template": {"id": detection_template_id},
+            "detection_template_id": detection_template_id,
             "prompt_provenance": prompt_provenance_payload,
             "parser_provenance": parser_provenance_payload,
         },
@@ -456,10 +494,10 @@ def _resolve_stage2_eval_source_jsonl(owner: Any) -> Path | None:
     resolved = payload.get("resolved")
     if not isinstance(resolved, Mapping):
         return None
-    custom = resolved.get("custom")
-    if not isinstance(custom, Mapping):
+    data = resolved.get("data")
+    if not isinstance(data, Mapping):
         return None
-    val_jsonl_raw = custom.get("val_jsonl")
+    val_jsonl_raw = data.get("val_jsonl")
     if not isinstance(val_jsonl_raw, str) or not val_jsonl_raw.strip():
         return None
 

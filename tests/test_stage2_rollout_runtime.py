@@ -36,6 +36,7 @@ from src.trainers.rollout_aligned_evaluator import (
     _write_stage2_eval_score_provenance,
     build_eval_detection_record_confidence_postop_input,
     finalize_rollout_aligned_evaluation,
+    load_stage2_eval_source_rows_by_base_idx,
 )
 from src.trainers.stage2_rollout_runtime import (
     GTObject,
@@ -182,6 +183,50 @@ def test_stage2_eval_artifact_enrichment_restores_source_image_provenance() -> N
         enriched["base_record"]["provenance"]["stage2_eval_source_enriched"]
         is True
     )
+
+
+def test_stage2_eval_source_rows_resolve_from_migrated_data_surface(
+    tmp_path: Path,
+) -> None:
+    val_jsonl = tmp_path / "val.coord.jsonl"
+    val_jsonl.write_text(
+        json.dumps(
+            {
+                "images": ["images/val2017/000000000139.jpg"],
+                "width": 1248,
+                "height": 832,
+                "image_id": 139,
+                "file_name": "000000000139.jpg",
+                "metadata": {"source": "coco", "split": "val"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "run"
+    output_dir.mkdir()
+    (output_dir / "resolved_config.json").write_text(
+        json.dumps(
+            {
+                "resolved": {
+                    "data": {
+                        "train_jsonl": str(tmp_path / "train.coord.jsonl"),
+                        "val_jsonl": str(val_jsonl),
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    owner = types.SimpleNamespace(args=types.SimpleNamespace(output_dir=str(output_dir)))
+
+    rows = load_stage2_eval_source_rows_by_base_idx(owner)
+
+    assert rows[0]["images"] == ["images/val2017/000000000139.jpg"]
+    assert rows[0]["width"] == 1248
+    assert rows[0]["height"] == 832
+    assert rows[0]["image_id"] == 139
+    assert rows[0]["_source_jsonl"] == str(val_jsonl)
 
 
 def test_stage2_rollout_correction_reuses_rollout_aligned_eval_contract() -> None:
@@ -3159,7 +3204,7 @@ def test_stage2_eval_rehydrates_encoded_sample_source_identity(
         encoding="utf-8",
     )
     (tmp_path / "resolved_config.json").write_text(
-        json.dumps({"resolved": {"custom": {"val_jsonl": str(val_jsonl)}}}),
+        json.dumps({"resolved": {"data": {"val_jsonl": str(val_jsonl)}}}),
         encoding="utf-8",
     )
 
@@ -3757,6 +3802,8 @@ def test_evaluate_emits_coco_map_metrics_when_eval_detection_enabled(
     assert scored_provenance["provenance"]["score_policy_fingerprint"].startswith(
         "score_policy:"
     )
+    assert scored_provenance["provenance"]["detection_template"] == {"id": "compact"}
+    assert scored_provenance["provenance"]["detection_template_id"] == "compact"
     prompt_provenance = scored_provenance["provenance"]["prompt_provenance"]
     assert prompt_provenance["source"] == "stage2_eval_rollout_artifacts"
     assert prompt_provenance["detection_sequence_format"] == "compact_full"
@@ -4022,6 +4069,13 @@ def test_evaluate_emits_coco_map_metrics_with_confidence_postop(
     assert (
         scored_provenance["provenance"]["score_policy"]["policy_name"]
         == "confidence_postop"
+    )
+    assert scored_provenance["provenance"]["detection_template"] == {
+        "id": "stage1_json_pretty"
+    }
+    assert (
+        scored_provenance["provenance"]["detection_template_id"]
+        == "stage1_json_pretty"
     )
     trace_rows = [
         json.loads(line)

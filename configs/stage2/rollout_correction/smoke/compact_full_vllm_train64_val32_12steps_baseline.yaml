@@ -1,6 +1,8 @@
 extends: ../base.yaml
 
 experiment:
+  surface: smoke
+  claim_scope: smoke
   title: Stage-2 rollout-correction compact-full vLLM 12-step baseline
   purpose: >
     Short non-production baseline for duplication-burst research on the active
@@ -13,7 +15,8 @@ experiment:
     - Runs 12 optimizer steps with eval/materialized rollout artifacts.
     - Uses compact-full rollouts with four temperatures.
   runtime_settings:
-    - "custom.trainer_variant: stage2_rollout_correction"
+    - "pipeline.id: stage2_rollout_correction"
+    - "detection_template.id: compact_full"
     - "rollout_matching.rollout_backend: vllm"
 
 model:
@@ -42,13 +45,42 @@ training:
   effective_batch_size: 8
   logging_steps: 1
 
-custom:
-  train_jsonl: public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
-  val_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+prompt:
+  user_variant: compact_detection
+
+detection_template:
+  id: compact_full
+
+token_embeddings_adapter:
+  enabled: true
+  tie_head: true
+  groups:
+    coord_geometry:
+      role: coord_geometry
+      start_token: "<|coord_0|>"
+      end_token: "<|coord_999|>"
+      expected_start: 151670
+      expected_end: 152669
+    compact_structure:
+      role: structural_ce_only
+      tokens:
+        - "<|object_ref_start|>"
+        - "<|box_start|>"
+      expected_ids:
+        "<|object_ref_start|>": 151646
+        "<|box_start|>": 151648
+  embed_lr: 5.0e-5
+  head_lr: 5.0e-5
+  weight_decay: 0.0
+
+evaluation:
+  expected_template: compact_full
+  parser_mode: strict_expected
+
+debug:
+  enabled: true
   train_sample_limit: 64
   val_sample_limit: 32
-  detection_sequence_format: compact_full
-  object_field_order: desc_first
 
 stage2_rollout_correction:
   pipeline:

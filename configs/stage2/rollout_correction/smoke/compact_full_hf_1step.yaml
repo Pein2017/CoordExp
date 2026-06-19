@@ -1,6 +1,8 @@
 extends: ../base.yaml
 
 experiment:
+  surface: smoke
+  claim_scope: smoke
   title: Stage-2 rollout-correction compact-full ckpt3664 COCO-80 HF one-step smoke
   purpose: >
     Exercise the unified residual rollout prefix plus GT correction trainer with
@@ -13,8 +15,8 @@ experiment:
     - HF rollout backend.
     - Canonical residual_set_correction objective only.
   runtime_settings:
-    - "custom.trainer_variant: stage2_rollout_correction"
-    - "custom.detection_sequence_format: compact_full"
+    - "pipeline.id: stage2_rollout_correction"
+    - "detection_template.id: compact_full"
     - "rollout_matching.prompt_variant/eval_prompt_variant: coco_80"
 
 model:
@@ -33,11 +35,41 @@ training:
   effective_batch_size: 8
   logging_steps: 1
 
-custom:
-  train_jsonl: public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
-  val_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
-  detection_sequence_format: compact_full
-  object_field_order: desc_first
+prompt:
+  user_variant: compact_detection
+  variant: coco_80
+
+detection_template:
+  id: compact_full
+
+token_embeddings_adapter:
+  enabled: true
+  tie_head: true
+  groups:
+    coord_geometry:
+      role: coord_geometry
+      start_token: "<|coord_0|>"
+      end_token: "<|coord_999|>"
+      expected_start: 151670
+      expected_end: 152669
+    compact_structure:
+      role: structural_ce_only
+      tokens:
+        - "<|object_ref_start|>"
+        - "<|box_start|>"
+      expected_ids:
+        "<|object_ref_start|>": 151646
+        "<|box_start|>": 151648
+  embed_lr: 5.0e-5
+  head_lr: 5.0e-5
+  weight_decay: 0.0
+
+evaluation:
+  expected_template: compact_full
+  parser_mode: strict_expected
+
+debug:
+  enabled: true
   train_sample_limit: 8
   val_sample_limit: 0
 

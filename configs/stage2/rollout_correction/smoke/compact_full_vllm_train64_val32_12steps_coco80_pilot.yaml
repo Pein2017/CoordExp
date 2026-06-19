@@ -1,6 +1,8 @@
 extends: compact_full_vllm_train64_val32_12steps_baseline.yaml
 
 experiment:
+  surface: smoke
+  claim_scope: smoke
   title: Stage-2 rollout-correction compact-full ckpt3664 COCO-80 vLLM pilot
   purpose: >
     Run a short production-readiness pilot on the intended compact-full
@@ -17,7 +19,7 @@ experiment:
     - Keeps materialized eval artifacts and train monitor dumps enabled for
       visual inspection before scaling.
   runtime_settings:
-    - "custom.detection_sequence_format: compact_full"
+    - "detection_template.id: compact_full"
     - "rollout_matching.prompt_variant/eval_prompt_variant: coco_80"
     - "rollout_matching.eval_detection.materialize_artifacts: true"
 
@@ -28,3 +30,6 @@ training:
 rollout_matching:
   prompt_variant: coco_80
   eval_prompt_variant: coco_80
+
+prompt:
+  variant: coco_80

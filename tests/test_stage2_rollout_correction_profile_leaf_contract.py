@@ -50,11 +50,16 @@ def test_stage2_rollout_correction_profiles_pin_residual_objective_only(
         str(REPO_ROOT / config_relpath)
     )
 
-    assert cfg.custom.trainer_variant == "stage2_rollout_correction"
+    assert cfg.pipeline.id == "stage2_rollout_correction"
     assert cfg.stage2_rollout_correction is not None
     assert getattr(cfg, "stage2_ab", None) is None
+    assert not hasattr(cfg, "custom")
     assert "stage2_rollout_correction" in cfg.training["output_dir"]
     assert "stage2_rollout_correction" in cfg.training["logging_dir"]
+    assert cfg.sample_factory.id == "detection_sequence"
+    assert cfg.sample_factory.target_sequence.object_ordering == "sorted"
+    assert cfg.sample_factory.target_sequence.object_field_order == "desc_first"
+    assert cfg.sample_factory.target_sequence.coordinate_surface == "coord_token"
 
     pipeline = cfg.stage2_rollout_correction.pipeline
     assert [module.name for module in pipeline.objective] == [
@@ -82,12 +87,16 @@ def test_compact_full_ckpt3664_coco80_readiness_profiles_pin_same_surface(
         str(REPO_ROOT / config_relpath)
     )
 
-    assert cfg.custom.detection_sequence_format == "compact_full"
-    assert cfg.custom.object_field_order == "desc_first"
+    assert cfg.pipeline.id == "stage2_rollout_correction"
+    assert cfg.detection_template.id == "compact"
+    assert cfg.evaluation.expected_template == "compact"
+    assert cfg.sample_factory.target_sequence.object_field_order == "desc_first"
     assert cfg.model.get("model") == (
         "/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp"
     )
     assert cfg.model.get("adapters") == [CKPT3664_ADAPTER]
+    assert cfg.prompt.user_variant == "compact_detection"
+    assert cfg.prompt.variant == "coco_80"
     assert cfg.rollout_matching.prompt_variant == "coco_80"
     assert cfg.rollout_matching.eval_prompt_variant == "coco_80"
     assert cfg.stage2_rollout_correction.correction.rollout_template_family == (
