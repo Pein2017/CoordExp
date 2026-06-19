@@ -9,6 +9,13 @@ Source audits:
 - `/data/CoordExp/codebase-analysis-claude.md`
 - `/data/CoordExp/codebase-analysis-codex.md`
 
+Program artifacts:
+
+- `docs/architecture/proposals/2026-06-17-refactoring-program/lifecycle_registry.yaml`
+- `repo_lifecycle/`
+- `repo_lifecycle/report_lifecycle_registry.py`
+- `tests/test_lifecycle_registry_report.py`
+
 This charter merges the Claude and Codex codebase-level audits into one practical refactoring-program guide. Claude provides the sharper quantitative diagnosis and cleanup pressure. Codex provides the safety envelope around active template work, geometry correctness, Stage-2 stability, provenance, artifacts, and worktree discipline.
 
 The first principle is: lifecycle state before code motion.
@@ -36,7 +43,7 @@ The program should not:
 - break current chat/detection template variant work,
 - break current uncommitted standard-SFT launch prep for sorted/random ordering with object and bbox closure,
 - delete or archive the preserved recursive-detection / ET-RMP algorithm family,
-- prune or wholesale-merge worktrees,
+- prune or wholesale-merge worktrees without promotion evidence and owner review,
 - run expensive jobs as a default validation strategy,
 - turn historical evidence into current guidance,
 - treat all large files as bad or all small files as good.
@@ -61,7 +68,8 @@ The missing piece is enforcement. No cheap check currently prevents:
 - study configs from accumulating beside production configs,
 - compatibility shims from living forever,
 - stale docs/specs/tests from referencing retired names,
-- or worktree ideas from being promoted as whole branches instead of extracted slices.
+- or worktree ideas from being promoted as unreviewed whole branches instead of
+  evidence-backed promoted setups.
 
 The main cleanup target is unlabeled lifecycle state.
 
@@ -84,7 +92,7 @@ Snapshot evidence from the 2026-06-17 audits:
 | `configs/` | 218 YAML files | config-first is right; lifecycle labels are weak |
 | `configs/analysis/` | 91 YAML files | study-config mass |
 | `scripts/` | about 95 tracked `.py`/`.sh` scripts, 97 tracked files total | stable entrypoints mixed with wrappers |
-| `.worktrees/` | 7 linked worktrees | idea containers, not merge units |
+| `.worktrees/` | 7 linked worktrees | idea containers first; merge/promote only with evidence |
 
 Interpretation:
 
@@ -209,7 +217,106 @@ Preservation does not mean it should become the default new Stage-1 SFT route. T
 - typed teacher-forcing research objectives,
 - preserved recursive-detection / ET-RMP comparator and ablation routes.
 
-### 4.5 Infer, Eval, Artifacts, Provenance
+### 4.5 SFT Pipeline Lane Model
+
+The refactoring program should separate three active training lanes before code
+motion:
+
+1. **Standard SFT**
+   - Meaning: ordinary assistant-label teacher forcing with pure CE by default.
+   - Optional geometry/soft-CE auxiliaries remain explicit loss additions; they
+     do not by themselves make the lane a research teacher-forcing objective.
+   - Durable public objective identity should be `objective.id: standard_ce`.
+     Treat `token_ce` as an implementation or metric-component name during
+     migration, not the long-term authored objective id.
+   - The efficient packed-forward path should be broad and general here.
+   - Current object/bbox-closure launch prep belongs to this lane.
+
+2. **Research-Wise Teacher-Forcing Objective**
+   - Meaning: fine-grained token role/value/span tracing, valid sets, branch
+     state, force/weight policy, and exact label/logit positions.
+   - This is the clearer name for the current `objective.id: teacher_forcing`
+     concept. Active migrated configs should reject the old key rather than
+     accepting a rename alias because plain "teacher forcing" is too generic.
+   - Packing is not optional long-term for Stage-1. It remains invalid only
+     until exact atom-position remapping is implemented and tested.
+
+3. **Stage-2 Rollout Correction**
+   - Meaning: rollout/self-trajectory family rather than GT-sequence SFT
+     family. It prepares rollout-prefix/correction sequences based on roles,
+     assigns weights, and composes losses through pipeline-declared modules.
+   - Do not resurrect generic `custom.coord_soft_ce_w1.*` style Stage-2 knobs
+     after the pipeline surface exists.
+
+Sequence/template semantics should be treated as dataset/preprocessing-side
+configuration shared by these lanes, not as objective ownership. The current
+generic `custom.*` surface is a transition state: future configs should promote
+object ordering, object field order, bbox format, closure tokens, and token-row
+requirements into first-class sequence/data-format configuration while keeping
+template identity under the existing `detection_template.id` contract.
+
+Target authored hierarchy:
+
+```yaml
+pipeline:
+  id: stage1_standard_sft  # or stage1_research_teacher_forcing / stage2_rollout_correction
+
+detection_template:
+  id: compact_object_box_closed
+
+sample_factory:
+  id: detection_sequence
+  target_sequence:
+    task_family: detection
+    object_ordering: sorted
+    object_field_order: desc_first
+    bbox_format: xyxy
+    coordinate_surface: coord_token
+    strict_parse: true
+
+prompt:
+  variant: coco_80
+
+objective:
+  id: standard_ce  # or research_teacher_forcing for the research-wise lane
+
+token_embeddings_adapter:
+  enabled: true
+```
+
+Use `pipeline.id` as the authored training-family selector. Keep `surface` as
+documentation/lifecycle vocabulary, not the preferred public config field. Do
+not support `custom.trainer_variant` as a backward-compatible selector in the
+target hierarchy; active configs that author it should fail fast after the
+OpenSpec migration. Rename/refactor the current shadow
+`src/training/surfaces.py` concept toward pipeline vocabulary instead of
+preserving a long-term "surface" implementation layer. The SFT hierarchy
+OpenSpec resolves this as immediate migration/delete scope rather than a
+long-lived shim. Use `sample_factory` for
+universal row-to-example materialization, and `sample_factory.target_sequence`
+for assistant/label sequence construction.
+Use top-level `token_embeddings_adapter` for compact structural token embedding
+setup; after the SFT hierarchy migration, flat `token_rows` and
+`custom.token_embeddings_adapter` should not remain active config authoring
+paths.
+Do not make Phase 1.5 a broad rename from `detection` to a speculative
+umbrella term. Existing `detection` names are clear for the current object/bbox
+task family and appear throughout code, configs, tests, docs, and artifacts.
+The generalization should happen first through neutral structural fields such
+as `pipeline`, `sample_factory`, `target_sequence`, and `objective`. Candidate
+future umbrella terms such as `grounding` can be revisited only if they reduce
+real ambiguity enough to justify compatibility churn. Durable new configs
+should not put these controls under generic `custom.*`; any temporary
+compatibility for sequence controls must be explicitly scoped by OpenSpec and
+must fail if both old and new paths are authored.
+
+Recursive-detection / ET-RMP remains preserved comparator lineage. If parts of
+that algorithm can reuse the standard high-throughput packed-forward path, they
+may do so, but the resulting surface must remain labeled as research
+teacher-forcing/comparator behavior rather than becoming the default standard
+SFT path.
+
+### 4.6 Infer, Eval, Artifacts, Provenance
 
 Protected active surfaces:
 
@@ -297,6 +404,18 @@ Requirements:
 
 Short-lived local or experimental code. It should live outside durable current docs and should not become importable `src` without promotion.
 
+Temporary is a lifecycle reality, not a failure. Some research scripts and
+configs exist to answer one question once; when their evidence is preserved in
+`progress/` or artifacts, the scratch implementation does not need to remain a
+durable reusable surface.
+
+### Status Discipline
+
+Keep lifecycle statuses intentionally small. Prefer the existing statuses over
+inventing finer-grained types/classes for every research situation. Add a new
+status only if an existing one would repeatedly misroute real surfaces; too many
+lifecycle labels would become another navigation problem.
+
 ### Historical Evidence
 
 Evidence or rerun material preserved for research provenance. It should usually live in `progress/`, archive folders, or proposal/history docs, not as an active-looking production route.
@@ -317,11 +436,14 @@ Why:
 - biggest token/navigation cost,
 - audit scans found no core runtime/training/infer/eval importers outside analysis/test/script surfaces,
 - likely contains both valuable research helpers and completed-study residue.
+- some files are likely temporary study scaffolding, not reusable tools.
 
 Do first:
 
 - build a family inventory,
 - mark active/reusable/historical/delete-candidate,
+- explicitly mark one-off scratch scripts as non-durable when their evidence is
+  already preserved elsewhere,
 - preserve artifacts and progress links before moves.
 
 Do not:
@@ -353,6 +475,8 @@ Why:
 
 - one-off `run_*` and `launch_*_tmux.sh` wrappers encode machine/checkpoint/artifact assumptions,
 - stable entrypoints become harder to identify.
+- many wrappers are allowed to be temporary and should not be promoted merely
+  because they once produced useful evidence.
 
 Do first:
 
@@ -546,6 +670,84 @@ Actions:
 
 Risk: medium.
 
+### Phase 1.5: Specify The SFT Lane Split
+
+Goal: turn the SFT lane model into an OpenSpec proposal before implementation.
+Suggested change name: `refactor-sft-pipeline-hierarchy`.
+
+Actions:
+
+1. Define the target config hierarchy for sequence/data-format controls outside
+   `custom.*`.
+2. Adopt `pipeline.id` as the authored training-family selector and reserve
+   `surface` for docs/lifecycle language.
+   `custom.trainer_variant` should be rejected rather than used as a
+   compatibility reader in the target hierarchy.
+3. Adopt `sample_factory.id: detection_sequence` plus
+   `sample_factory.target_sequence` as the universal sequence-construction
+   owner for task family, ordering, field order, bbox format, coordinate
+   surface, and strict parsing.
+   Do not require a broad `detection` terminology migration in this phase.
+4. Keep `detection_template.id` as the stable template identity for this phase;
+   do not move it under `sample_factory.target_sequence`.
+5. Define `objective.id: standard_ce` as the public standard CE objective
+   identity, with `token_ce` retained only as an implementation/metric-component
+   term unless the OpenSpec explicitly proves otherwise.
+6. Define the fail-fast migration path from generic
+   `objective.id: teacher_forcing` to `objective.id:
+   research_teacher_forcing`.
+7. Rename/refactor the current shadow `src/training/surfaces.py` vocabulary
+   toward pipeline naming in the first implementation slice, rather than
+   leaving `surface` as a long-term implementation concept.
+8. Define the Stage-1 packing/remap contract required before research-wise
+   teacher-forcing can use packed forwards.
+9. Define how Stage-2 rollout-correction reuses sequence/teacher-forcing
+   machinery without becoming an SFT-family surface.
+10. Produce a superpower implementation roadmap with self-audit/review rounds
+   before code implementation.
+
+Risk: medium; mostly schema, naming, packing-alignment, and compatibility risk.
+
+OpenSpec shape constraints:
+
+- Treat `refactor-sft-pipeline-hierarchy` as a deliberately breaking change for
+  active repo-owned configs. Active configs should migrate in the same
+  implementation slice; archive/historical configs may remain as evidence but
+  should not be advertised as active runnable routes.
+- Use a top-level mapping shape, `pipeline.id`, rather than a scalar
+  `pipeline_id`.
+- Explicitly distinguish top-level training-family `pipeline.id` from the
+  existing Stage-2 internal namespace `stage2_rollout_correction.pipeline`.
+- Rename/refactor `src/training/surfaces.py` toward
+  `src/training/pipeline_registry.py`; keep `src/training/pipelines/` for
+  concrete pipeline implementations. Do not keep a long-lived compatibility
+  shim.
+- Standard SFT should author `objective.id: standard_ce`, with optional
+  auxiliary terms below it rather than separate public pipeline ids.
+- Research-wise teacher forcing should author
+  `objective.id: research_teacher_forcing` with internal weighted terms, rather
+  than creating a new public pipeline for every research tactic.
+- Active migrated configs should reject `objective.id: teacher_forcing`; keep
+  the old id only in historical/archive evidence or explicit rejection tests.
+- Compact structural token embedding setup should use top-level
+  `token_embeddings_adapter`; flat `token_rows` and
+  `custom.token_embeddings_adapter` should be rejected after migration.
+- Active config filenames should expose semantic axes such as pipeline,
+  objective, template, ordering, prompt, and packing, rather than ambiguous
+  numbers or version-like labels.
+- Keep Stage-2 `stage2_rollout_correction.pipeline.objective[]` unchanged in
+  this OpenSpec except for documenting its relationship to top-level
+  `pipeline.id`.
+- Resolved provenance and cache fingerprints should include the normalized
+  training identity: `pipeline.id`, `objective.id`, `detection_template.id`,
+  `sample_factory.id`, target-sequence ordering/field-order, bbox/coord
+  surface, packing length, and strict-parse mode.
+- Fail fast when old and new sequence-control paths are both authored, even if
+  their values match, outside explicit migration tests.
+- Keep this OpenSpec focused on config/schema/provenance/packing invariants.
+  Code-motion order and decomposition tasks belong in the later superpower
+  implementation roadmap.
+
 ### Phase 2: Add Lifecycle Registry And Hygiene Gates
 
 Goal: prevent new bloat before moving old bloat.
@@ -553,8 +755,9 @@ Goal: prevent new bloat before moving old bloat.
 Actions:
 
 1. Register lifecycle states for analysis/script/config/spec/compat surfaces.
-2. Add cheap checks for missing paths, retired keys, lifecycle metadata, study specs, and compat expiry.
-3. Start as report-only or xfail if needed, then make blocking once initial violations are resolved.
+2. Start from the proposal-scoped lifecycle registry at `docs/architecture/proposals/2026-06-17-refactoring-program/lifecycle_registry.yaml`.
+3. Add cheap checks for missing paths, retired keys, lifecycle metadata, study specs, and compat expiry.
+4. Start as report-only or xfail if needed, then make blocking once initial violations are resolved.
 
 Risk: low to medium.
 
@@ -655,6 +858,20 @@ Risk: high.
 ## 10. Verification And Hygiene Gates
 
 Use narrow gates first. Broaden only when shared contracts move.
+
+### Lifecycle Registry Gate
+
+```bash
+python -m repo_lifecycle.report_lifecycle_registry
+python -m pytest tests/test_lifecycle_registry_report.py -q
+```
+
+This gate is report-only while the first classifications settle. Registry
+syntax, duplicate ids, unknown statuses, and missing paths are errors.
+Unclassified analysis/script/config roots and active-doc `compact_full` mentions
+are warnings until owner review resolves or whitelists them. Use
+`python -m repo_lifecycle.report_lifecycle_registry --strict` only after those
+warnings are intentionally burned down.
 
 ### Template Gate
 
@@ -763,7 +980,12 @@ Update docs/specs in the same change whenever behavior, schema, artifact names, 
 
 ## 11. Worktree Promotion Policy
 
-Treat `.worktrees` as idea containers, not merge units.
+Treat `.worktrees` as idea containers first, not merge units by default.
+However, when a worktree demonstrates promising performance or a valuable
+research mechanism, it is acceptable to merge/promote it into `main` and make
+the idea part of the permanent setup. The promotion should be evidence-backed
+and should still curate the permanent surface instead of importing accidental
+branch scaffolding.
 
 Before promoting work from any worktree:
 
@@ -777,6 +999,7 @@ Require:
 
 - branch owner/status,
 - exact hypothesis,
+- performance or mechanism evidence when promotion is research-driven,
 - minimal promoted file slice,
 - files intentionally not promoted,
 - config lifecycle label,
@@ -784,7 +1007,9 @@ Require:
 - verification evidence,
 - artifact/progress pointer.
 
-Do not prune or merge worktrees based on this charter alone. Re-run `git worktree list`, `git cherry`, and owner review at the time of cleanup.
+Do not prune, merge, or permanently promote worktrees based on this charter
+alone. Re-run `git worktree list`, `git cherry`, and owner review at the time
+of cleanup or promotion.
 
 ## 12. Open Decisions For Research Owner
 
@@ -795,13 +1020,41 @@ Resolved for this charter:
 - Recursive-detection / ET-RMP is preserved. Refactoring may clarify ownership,
   lifecycle state, preflight, naming, and docs, but the algorithm family is not
   a deletion/archive target.
+- The target authored training-family selector is `pipeline.id`, not
+  `surface.id`; `surface` remains docs/lifecycle vocabulary. The implementation
+  should migrate away from a long-term `src/training/surfaces.py` "surface"
+  resolver and toward pipeline vocabulary.
+- `custom.trainer_variant` should not be a compatibility reader for
+  `pipeline.id`; target active configs that author it should fail fast.
+- The universal preprocessing/materialization owner is `sample_factory`, with
+  assistant/label sequence controls under `sample_factory.target_sequence`.
+- `detection_template.id` remains the stable template identity for this phase.
+  Sequence controls move under `sample_factory.target_sequence`, but template
+  identity does not move in the first migration.
+- The durable public standard CE objective id is `standard_ce`; `token_ce`
+  remains an implementation/metric-component term unless the OpenSpec finds a
+  stronger reason to expose it publicly.
+- No broad `detection` terminology migration is required for this phase.
+  Existing `detection` names remain the clear compatibility vocabulary for the
+  current object/bbox task family. The broader architecture should use neutral
+  structural fields such as `pipeline`, `sample_factory`, `target_sequence`,
+  and `objective`; future `grounding` aliases require explicit OpenSpec
+  justification.
+- The research-wise teacher-forcing objective should migrate toward
+  `objective.id: research_teacher_forcing`; avoid `typed_teacher_forcing`.
+  The old `teacher_forcing` id should be rejected for active migrated configs;
+  keep it only in historical/archive evidence or explicit rejection tests.
+- Durable new configs should avoid authoring sequence/objective-family behavior
+  under generic `custom.*`.
+- Compact structural token embedding setup should use top-level
+  `token_embeddings_adapter`, not flat `token_rows` or
+  `custom.token_embeddings_adapter`.
 
 1. Should `src/analysis` move outside importable `src`, or is lifecycle metadata/import gating enough?
 2. Which analysis studies are expected to be rerun?
-3. Should `src/training/surfaces.py` become the production launch owner, or should shadow surfaces retire?
-4. Should `vllm.mode: colocate` remain a supported fallback?
-5. How long should `compact_full` remain as a private compatibility term?
-6. Should prefix-rollin support all semantic compact variants now, or only `compact` until validated?
+3. Should `vllm.mode: colocate` remain a supported fallback?
+4. How long should `compact_full` remain as a private compatibility term?
+5. Should prefix-rollin support all semantic compact variants now, or only `compact` until validated?
 7. Should study-style OpenSpec specs be demoted retroactively, or only blocked going forward?
 8. Are pytest-based hygiene gates acceptable as enforcement?
 9. Which linked worktrees are still active research?
@@ -811,14 +1064,17 @@ Resolved for this charter:
 
 Recommended first slice:
 
-1. Choose lifecycle registry location.
-2. Add a report-only or xfail hygiene check for:
+1. Use the proposal-scoped lifecycle registry at `docs/architecture/proposals/2026-06-17-refactoring-program/lifecycle_registry.yaml`.
+2. Run the report-only lifecycle gate:
+   - `python -m repo_lifecycle.report_lifecycle_registry`
+   - `python -m pytest tests/test_lifecycle_registry_report.py -q`
+3. Use the gate output to track:
    - missing active doc paths,
    - retired template IDs in active specs/tests,
    - study specs under stable OpenSpec,
    - `src/analysis` families without lifecycle state.
-3. Finish active template migration inconsistencies.
-4. Convert the hygiene check to blocking once the first violations are resolved.
+4. Finish active template migration inconsistencies.
+5. Convert the hygiene check to blocking once the first violations are resolved.
 
 This creates a ratchet: the repo can still carry research complexity, but new complexity must be explicitly labeled.
 

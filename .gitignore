@@ -10,6 +10,7 @@
 !configs/
 !docs/
 !ops/
+!repo_lifecycle/
 !scripts/
 !manifests/
 !openspec/
@@ -25,6 +26,7 @@
 !configs/**
 !docs/**/*
 !ops/**
+!repo_lifecycle/**
 !scripts/**
 !manifests/**
 !openspec/**

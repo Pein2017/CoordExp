@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-06-15
+updated: 2026-06-17
 
 entrypoints:
   human: progress/README.md
@@ -111,6 +111,7 @@ groups:
     - progress/benchmarks/2026-03-11_stage2_rollout_temperature_refinement.md
   explorations:
     - progress/explorations/README.md
+    - progress/explorations/2026-06-17_codebase_refactoring_program_kickoff.md
     - progress/explorations/2026-06-12_coord_repel_stage1_sft_design_decisions.md
     - progress/explorations/2026-05-31_grid_anchor_pending_record.md
     - progress/explorations/2026-05-20_stage2_residual_set_self_prefix_ul_redesign.md
@@ -362,6 +363,11 @@ notes:
     kind: audit
     status: branch-provenance
     summary: Read-only design and plan audit for codex/prefix-denoising-sft; branch-scoped evidence only until the prefix-denoising surface lands in main.
+  - path: progress/explorations/2026-06-17_codebase_refactoring_program_kickoff.md
+    title: Codebase Refactoring Program Kickoff
+    kind: exploration
+    status: decision-record
+    summary: "Initial refactoring-program decisions: formal worktree, current standard-SFT launch prep protection, recursive-detection / ET-RMP preservation, and lifecycle-registry first slice."
   - path: progress/explorations/2026-05-31_grid_anchor_pending_record.md
     title: Grid Anchor Compact Detection Pending Record
     kind: exploration

@@ -1,0 +1,292 @@
+schema_version: 1
+updated: 2026-06-17
+status: proposal
+
+description: >
+  Initial lifecycle registry for the CoordExp codebase refactoring program.
+  This file is intentionally report-only at first: it labels the highest-value
+  active, preserved, and unclassified surfaces before code motion begins.
+
+target_config_model:
+  openspec_change_name: refactor-sft-pipeline-hierarchy
+  breaking_active_config_migration: true
+  selector_path: pipeline.id
+  selector_shape: top_level_mapping_with_id
+  legacy_selector_policy: >
+    `custom.trainer_variant` should fail fast for active target-hierarchy
+    configs; it is not a backward-compatible selector for `pipeline.id`.
+  sample_materialization_domain: sample_factory
+  target_sequence_path: sample_factory.target_sequence
+  template_identity_path: detection_template.id
+  pipeline_registry_target_path: src/training/pipeline_registry.py
+  standard_ce_objective_id: standard_ce
+  research_teacher_forcing_objective_id: research_teacher_forcing
+  stage2_internal_pipeline_policy: >
+    Keep `stage2_rollout_correction.pipeline.objective[]` unchanged in the
+    first OpenSpec except for documenting its relationship to top-level
+    `pipeline.id`.
+  provenance_identity_fields:
+    - pipeline.id
+    - objective.id
+    - detection_template.id
+    - sample_factory.id
+    - sample_factory.target_sequence.object_ordering
+    - sample_factory.target_sequence.object_field_order
+    - sample_factory.target_sequence.bbox_format
+    - sample_factory.target_sequence.coordinate_surface
+    - sample_factory.target_sequence.strict_parse
+    - packing.length
+  durable_custom_policy: >
+    New durable promoted configs should not author sequence, template,
+    ordering, bbox, pipeline-selector, or objective-family behavior under
+    generic `custom.*` keys. In the target hierarchy, `custom.trainer_variant`
+    should fail fast instead of acting as a compatibility reader for
+    `pipeline.id`. Temporary readers for sequence-control migration must be
+    explicitly scoped and must fail when old and new paths are both authored.
+  pipeline_ids:
+    - id: stage1_standard_sft
+      meaning: High-throughput GT-sequence SFT lane; pure CE by default with optional explicit auxiliaries.
+    - id: stage1_research_teacher_forcing
+      meaning: Research-wise teacher-forcing lane with fine-grained token tracing, valid sets, and force/weight policy.
+    - id: stage2_rollout_correction
+      meaning: Rollout/self-trajectory correction lane with pipeline-declared objective modules.
+  sample_factory_ids:
+    - id: detection_sequence
+      meaning: >
+        Row-to-detection-target-sequence materialization for the current
+        object/bbox task family. Do not require a broad `detection`
+        terminology migration in Phase 1.5; use neutral structural fields
+        (`pipeline`, `sample_factory`, `target_sequence`, `objective`) for
+        generality, and revisit broader aliases such as `grounding` only if
+        they clearly reduce ambiguity enough to justify compatibility churn.
+  objective_ids:
+    - id: standard_ce
+      meaning: >
+        Durable public id for ordinary assistant-label cross-entropy SFT.
+        Optional geometry or soft-CE auxiliaries should live beneath this
+        objective rather than becoming separate public pipeline ids.
+    - id: research_teacher_forcing
+      meaning: >
+        Durable public id for fine-grained research teacher forcing with
+        token-role/span tracing and force/weight policies. Internal weighted
+        terms are preferred over creating a new public pipeline for every
+        research tactic.
+    - id: token_ce
+      meaning: Implementation or metric-component name only unless a later OpenSpec explicitly promotes it as public config vocabulary.
+    - id: teacher_forcing
+      meaning: Rejected legacy objective id; use research_teacher_forcing for active Stage-1 research teacher forcing.
+
+status_taxonomy:
+  core:
+    meaning: Stable active runtime, schema, config, docs, or test surface.
+    rule: Behavior changes require targeted tests and docs/spec review.
+  active-research:
+    meaning: Current research implementation, launch prep, or diagnostic work.
+    rule: Do not delete or archive without owner review.
+  preserved-comparator:
+    meaning: Non-default research algorithm, config lineage, or diagnostic route kept for comparison, interpretation, reruns, or ablations.
+    rule: Keep runnable or inspectable; do not silently promote as the default new path.
+  compatibility:
+    meaning: Old name, path, import, or config preserved for staged migration, artifacts, callers, or tests.
+    rule: New callers need owner review; removal requires a documented condition.
+  historical-evidence:
+    meaning: Evidence or rerun material preserved for research provenance.
+    rule: Keep discoverable through docs/progress, but do not present as current guidance.
+  retired:
+    meaning: No new use; remaining references are docs/history/archive/rejection tests.
+    rule: Active invocation should fail fast with guidance.
+  needs-classification:
+    meaning: Surface family known to contain mixed useful and stale material.
+    rule: Classify by family before moving, archiving, deleting, or promoting.
+
+status_policy:
+  keep_small: true
+  rule: >
+    Prefer this fixed status set. Add a new lifecycle status only when an
+    existing status would systematically misroute multiple real surfaces.
+    Do not create many fine-grained status/classes/types; too many lifecycle
+    labels would recreate the navigation confusion this registry is meant to
+    reduce.
+
+entries:
+  - id: refactoring_program_charter
+    status: core
+    owner: repo-architecture
+    paths:
+      - docs/architecture/proposals/2026-06-17-refactoring-program/REFACTORING_PROGRAM_CHARTER.md
+      - docs/architecture/proposals/2026-06-17-refactoring-program/lifecycle_registry.yaml
+      - repo_lifecycle
+      - docs/AGENT_INDEX.md
+      - docs/catalog.yaml
+    notes: Initial guide and router metadata for this refactoring program.
+
+  - id: standard_sft_object_bbox_closure_launch_prep
+    status: active-research
+    owner: stage1-training
+    paths:
+      - configs/stage1/profiles/2b/pure_ce_coco80_desc_first_1024_object_ref_close_box_close_sorted_packed_natural_adjacent.yaml
+      - configs/stage1/smoke/pure_ce_coco80_desc_first_1024_object_ref_close_box_close_sorted_packed_natural_adjacent_tiny.yaml
+      - docs/data/PACKING.md
+      - docs/training/STAGE1_OBJECTIVE.md
+      - src/common/detection_sequence.py
+      - src/config/loader.py
+      - src/config/schema.py
+      - src/datasets/builders/jsonlines.py
+      - src/datasets/dense_caption.py
+      - src/detection/packing.py
+      - src/sft.py
+      - tests/test_dense_caption_prompt_override.py
+      - tests/test_packing_cache_fingerprints.py
+      - tests/test_prompt_variants.py
+      - tests/test_stage1_static_packing_runtime_config.py
+    notes: >
+      Current simple standard-SFT launch prep: labels-only CE first, sorted/random
+      ordering and object/bbox closure as data/template/config semantics.
+      Do not classify this as recursive-detection / ET-RMP, Stage-2 rollout
+      correction, or legacy compatibility merely because it touches detection
+      sequence code. The current implementation still uses generic `custom.*`
+      keys for several sequence/template controls; the target refactor should
+      promote those controls into `pipeline.id: stage1_standard_sft` plus
+      `sample_factory.target_sequence` configuration. The durable public CE
+      objective id should be `standard_ce`, with `token_ce` treated as
+      implementation/metric vocabulary unless separately promoted.
+
+  - id: stage1_research_teacher_forcing_objective
+    status: active-research
+    owner: stage1-training
+    paths:
+      - configs/stage1/detection_teacher_forcing
+      - src/detection/teacher_forcing
+      - src/trainers/teacher_forcing
+      - src/training/teacher_forcing
+      - src/training/objectives/teacher_forcing.py
+      - src/training/objectives/runner.py
+      - src/config/schema.py
+      - tests/test_detection_training_config_contract.py
+      - tests/test_teacher_forcing_token_ce.py
+    notes: >
+      Research-wise teacher-forcing objective surface: fine-grained token role,
+      value, span, valid-set, branch, force/weight, and exact label/logit
+      position tracing. It is distinct from standard SFT even though both are
+      teacher-forced in the generic ML sense. Current authored key
+      `objective.id: teacher_forcing` should be treated as a rename/migration
+      candidate toward `objective.id: research_teacher_forcing`, not the
+      desired long-term public name. A narrow alias is acceptable only as an
+      explicit OpenSpec migration choice. The target authored selector is
+      `pipeline.id: stage1_research_teacher_forcing`.
+
+  - id: recursive_detection_et_rmp_comparator
+    status: preserved-comparator
+    owner: stage1-training
+    paths:
+      - configs/infer/recursive_detection_ce
+      - configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce
+      - docs/training/STAGE1_OBJECTIVE.md
+      - docs/training/README.md
+      - openspec/specs/stage1-detection-objectives/spec.md
+      - src/detection/objective.py
+      - src/detection/loss.py
+      - src/detection/rollin.py
+      - tests/test_compact_et_rmp_span_contract.py
+      - tests/test_random_permutation_et_rmp_ce_contract.py
+      - tests/test_recursive_detection_ce_loss_adapter.py
+      - tests/test_recursive_detection_ce_target_builder.py
+      - tests/test_recursive_detection_targets.py
+      - tests/test_prefix_rollin_dataset_alignment.py
+      - tests/test_prefix_rollin_sampler.py
+    notes: >
+      Recursive-detection / ET-RMP remains preserved comparator and ablation
+      lineage. Archived Stage-1 training roots are historical evidence; current
+      infer/eval comparator lineage lives under configs/infer/recursive_detection_ce.
+      Do not make this the default new Stage-1 SFT route.
+
+  - id: stage2_rollout_correction
+    status: core
+    owner: stage2-training
+    paths:
+      - configs/stage2/rollout_correction
+      - docs/training/STAGE2_RUNBOOK.md
+      - openspec/specs/stage2-rollout-correction/spec.md
+      - src/trainers/stage2_rollout_correction.py
+      - src/trainers/stage2_rollout_correction_impl.py
+      - src/trainers/stage2_rollout_runtime.py
+      - src/trainers/rollout_correction
+      - src/trainers/rollout_matching
+      - src/training/stage2
+      - tests/test_stage2_rollout_correction_contract.py
+      - tests/test_stage2_residual_set_loss_module.py
+      - tests/test_stage2_rollout_correction_pack_schedule.py
+    notes: >
+      Active Stage-2 rollout-prefix plus residual GT-correction training route.
+      The target authored selector remains `pipeline.id: stage2_rollout_correction`;
+      this is a rollout/self-trajectory lane, not a GT-sequence SFT lane.
+
+  - id: analysis_surfaces_unclassified
+    status: needs-classification
+    owner: repo-architecture
+    paths:
+      - src/analysis
+      - scripts/analysis
+      - configs/analysis
+    notes: >
+      Largest known token/navigation mass. Classify by analysis family before
+      moving, archiving, deleting, or promoting any pieces. Some analysis
+      scripts/configs are expected to be temporary study scaffolding rather
+      than durable reusable tools; do not preserve them as active surfaces by
+      default.
+
+  - id: stable_entrypoint_scripts
+    status: needs-classification
+    owner: repo-architecture
+    paths:
+      - scripts
+    notes: >
+      Scripts mix stable entrypoints, reusable tools, and hardcoded launch
+      wrappers. Classify script families before cleanup.
+
+  - id: retired_training_surfaces
+    status: retired
+    owner: training-runtime
+    paths:
+      - src/training_runtime/plan.py
+      - src/config/schema.py
+      - tests/test_removed_training_mechanisms_absent.py
+      - tests/test_legacy_surface_absence.py
+    notes: >
+      Removed public variants should continue to fail fast with replacement
+      guidance. Do not remove guards just because implementations are gone.
+
+report_checks:
+  unclassified_roots:
+    - root: src/analysis
+      covered_by: analysis_surfaces_unclassified
+    - root: scripts/analysis
+      covered_by: analysis_surfaces_unclassified
+    - root: configs/analysis
+      covered_by: analysis_surfaces_unclassified
+  text_patterns:
+    - id: stale_stage2_rollout_config_root
+      pattern: configs/stage2_rollout_correction
+      include:
+        - docs
+        - configs
+        - src
+        - tests
+        - openspec/specs
+      allow:
+        - docs/history
+        - configs/archive
+        - docs/architecture/proposals/2026-06-17-refactoring-program
+    - id: compact_full_public_refs_need_owner_review
+      pattern: "compact_full_support2|compact_full_tiny|detection_template.id: compact_full|compact_detection_sequence"
+      include:
+        - docs
+        - configs
+        - src
+        - tests
+        - openspec/specs
+      allow:
+        - docs/history
+        - docs/training/drafts
+        - configs/archive
+        - docs/architecture/proposals/2026-06-17-refactoring-program
