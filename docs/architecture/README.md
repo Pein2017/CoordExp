@@ -5,7 +5,7 @@ doc_type: proposal-router
 status: proposal
 domain: architecture
 summary: Router for the CoordExp architecture simplification proposal documents.
-updated: 2026-06-15
+updated: 2026-06-17
 ---
 
 # CoordExp Architecture Notes
@@ -37,8 +37,13 @@ The documents are written for implementation agents working inside the repositor
    - Risk areas and migration concerns.
    - Suggested PR sequencing.
 
+5. [Refactoring Program Charter](proposals/2026-06-17-refactoring-program/REFACTORING_PROGRAM_CHARTER.md)
+   - Practical 2026-06-17 refactoring-program guide merged from the Claude and Codex broad audits.
+   - Protected surfaces, lifecycle categories, phased roadmap, and report-only hygiene gates.
+   - Companion lifecycle registry: [lifecycle_registry.yaml](proposals/2026-06-17-refactoring-program/lifecycle_registry.yaml).
+
 ## How to use these documents
 
-Start with `INDEPENDENT_ARCHITECTURE_REVIEW.md` to understand what is current-vs-target. Then use `proposals/2026-05-31-simplification/CODEBASE_SIMPLIFICATION_PROPOSAL.md` for the architectural diagnosis and target model, `proposals/2026-05-31-simplification/OWNERSHIP_BOUNDARIES.md` when deciding where a proposed change should live, and `proposals/2026-05-31-simplification/SIMPLIFICATION_ROADMAP.md` when turning the proposal into implementation tasks.
+Start with `INDEPENDENT_ARCHITECTURE_REVIEW.md` to understand what is current-vs-target. Then use `proposals/2026-05-31-simplification/CODEBASE_SIMPLIFICATION_PROPOSAL.md` for the architectural diagnosis and target model, `proposals/2026-05-31-simplification/OWNERSHIP_BOUNDARIES.md` when deciding where a proposed change should live, and `proposals/2026-05-31-simplification/SIMPLIFICATION_ROADMAP.md` when turning the proposal into implementation tasks. Use the 2026-06-17 refactoring-program charter when the question is deletion/archive/refactor sequencing, lifecycle labels, preserved comparator status, or how to start the large cleanup safely.
 
 When these documents conflict with existing canonical behavior, treat the current `docs/`, `openspec/specs/`, and tests as the executable source of truth. This proposal describes a migration direction, not a completed refactor.

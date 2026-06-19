@@ -34,7 +34,7 @@ def test_artifact_contract_docs_freeze_rank0_and_stage2_eval_surfaces() -> None:
 
     for policy_surface in (
         "stage2_policy_provenance.schema_version",
-        "stage2_policy_provenance.trainer_variant",
+        "stage2_policy_provenance.pipeline.id",
         "stage2_policy_provenance.assignment_strategy",
         "stage2_policy_provenance.duplicate_filter_strategy",
         "stage2_policy_provenance.object_ordering_policy",
@@ -101,6 +101,7 @@ def test_superpowers_architecture_spec_matches_stage2_shadow_ordering_contract()
     spec = (
         REPO_ROOT
         / "docs"
+        / "history"
         / "superpowers"
         / "specs"
         / "2026-05-15-unified-training-infrastructure-architecture-design.md"
@@ -118,19 +119,19 @@ def test_superpowers_architecture_spec_matches_stage2_shadow_ordering_contract()
     assert "AssignmentStrategy\n  -> AssignmentResult\n  -> DuplicateFilter" not in spec
 
 
-def test_catalog_unified_shadow_surfaces_share_closed_domains() -> None:
+def test_catalog_unified_pipeline_routes_share_closed_domains() -> None:
     catalog = yaml.safe_load(
         (REPO_ROOT / "docs" / "catalog.yaml").read_text(encoding="utf-8")
     )
-    training_surfaces = catalog["config_surfaces"]["training"]
-    shadow_surfaces = [
-        surface
-        for surface in training_surfaces
-        if surface["id"].startswith("unified_training_shadow_")
+    training_routes = catalog["config_surfaces"]["training"]
+    pipeline_routes = [
+        route
+        for route in training_routes
+        if route["id"].startswith("unified_training_pipeline_")
     ]
     expected_domains = [
         "run",
-        "surface",
+        "pipeline",
         "data",
         "template",
         "supervision",
@@ -140,10 +141,10 @@ def test_catalog_unified_shadow_surfaces_share_closed_domains() -> None:
         "runtime",
     ]
 
-    assert {surface["surface_id"] for surface in shadow_surfaces} == {
+    assert {route["pipeline_id"] for route in pipeline_routes} == {
         "stage2_rollout_correction",
     }
-    assert all(surface["domains"] == expected_domains for surface in shadow_surfaces)
+    assert all(route["domains"] == expected_domains for route in pipeline_routes)
 
 
 def test_catalog_does_not_advertise_removed_a2e_training_surface() -> None:

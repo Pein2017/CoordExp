@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-06-15
+updated: 2026-06-17
 
 entrypoints:
   human:
@@ -19,14 +19,14 @@ authority:
 
 config_surfaces:
   training:
-    - id: unified_training_shadow_stage2_rollout_correction
+    - id: unified_training_pipeline_stage2_rollout_correction
       status: active
-      surface_id: stage2_rollout_correction
-      resolver: src/training/surfaces.py::TrainingSurfaceResolver
+      pipeline_id: stage2_rollout_correction
+      resolver: src/training/pipeline_registry.py::TrainingPipelineRegistry
       pipeline: src/trainers/stage2_rollout_correction.py::Stage2RolloutCorrectionTrainer
       domains:
         - run
-        - surface
+        - pipeline
         - data
         - template
         - supervision
@@ -37,18 +37,23 @@ config_surfaces:
       assignment_strategy: greedy_iou
       duplicate_filter_order: before_assignment_and_target_realization
       residual_set_correction: true
-      notes: "Active Stage-2 rollout-correction direction. Duplicate filtering runs before greedy-IoU assignment; unmatched GT becomes residual GT-correction events. Greedy IoU is the only live Stage-2 assignment strategy."
-    - id: stage1_detection_teacher_forcing
+      notes: "Active Stage-2 rollout-correction direction selected by pipeline.id. Duplicate filtering runs before greedy-IoU assignment; unmatched GT becomes residual GT-correction events. Greedy IoU is the only live Stage-2 assignment strategy."
+    - id: stage1_research_teacher_forcing
       status: canonical
       config: configs/stage1/detection_teacher_forcing/prod/compact_support2.yaml
       smoke_config: configs/stage1/detection_teacher_forcing/smoke/compact_tiny.yaml
       parser: src/config/schema.py::DetectionTrainingConfig
       runtime: src/detection/runtime.py
-      notes: "Canonical clean-break Stage-1 detection teacher-forcing public route. New compact teacher-forcing configs should live under configs/stage1/detection_teacher_forcing/."
+      notes: "Canonical clean-break Stage-1 research teacher-forcing public route. New compact teacher-forcing configs should use pipeline.id: stage1_research_teacher_forcing under configs/stage1/detection_teacher_forcing/."
     - id: stage1_retired_recursive_detection_archive
       status: historical-archive
       archive_root: configs/archive/detection_scene_clean_break/stage1/
-      notes: "Retired recursive-detection and compact-bridge config roots are quarantined for historical inspection only. Use stage1_detection_teacher_forcing for current Stage-1 configs."
+      notes: "Retired recursive-detection and compact-bridge config roots are quarantined for historical inspection only. Use pipeline.id: stage1_research_teacher_forcing for current compact Stage-1 research teacher-forcing configs."
+    - id: stage1_preserved_recursive_detection_comparator
+      status: preserved-comparator
+      infer_config_root: configs/infer/recursive_detection_ce
+      archive_root: configs/archive/detection_scene_clean_break/stage1/
+      notes: "Recursive-detection / ET-RMP remains a preserved comparator and ablation family. Archived Stage-1 training roots are historical evidence, while current infer/eval comparator lineage is routed through configs/infer/recursive_detection_ce. Do not promote this family as the default new Stage-1 SFT route."
 
 docs:
   repo:
@@ -167,6 +172,14 @@ docs:
     - path: docs/architecture/proposals/2026-05-31-simplification/SIMPLIFICATION_ROADMAP.md
       title: CoordExp Architecture Simplification Roadmap
       type: architecture-roadmap
+      status: proposal
+    - path: docs/architecture/proposals/2026-06-17-refactoring-program/REFACTORING_PROGRAM_CHARTER.md
+      title: CoordExp Refactoring Program Charter
+      type: architecture-charter
+      status: proposal
+    - path: docs/architecture/proposals/2026-06-17-refactoring-program/lifecycle_registry.yaml
+      title: CoordExp Refactoring Program Lifecycle Registry
+      type: lifecycle-registry
       status: proposal
   standards:
     - path: docs/standards/README.md

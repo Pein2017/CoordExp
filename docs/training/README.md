@@ -14,51 +14,52 @@ updated: 2026-06-15
 Open this folder when you need current training behavior, recommended configs,
 or metric interpretation.
 
-## Current Training Surface Matrix
+## Current Training Pipeline Matrix
 
-The unified training architecture is currently a guarded shadow contract, not a
-wholesale replacement for every live launcher. Use it as the current design
-direction and validation surface when adding new training behavior. It has
+The unified training architecture is currently a guarded pipeline contract, not
+a wholesale replacement for every live launcher. Use it as the current design
+direction and validation route when adding new training behavior. It has
 closed top-level domains:
 
 ```text
-run, surface, data, template, supervision, objectives, observability, artifacts, runtime
+run, pipeline, data, template, supervision, objectives, observability, artifacts, runtime
 ```
 
 `experimental` is the only optional top-level domain and requires an explicit
-owner/expiry/opt-in. Supported `surface.id` values are:
+owner/expiry/opt-in. Supported public `pipeline.id` values are:
 
-- `stage1_json_ce`: JSON chat CE baseline.
-- `stage1_compact_trie_ce`: shadow architecture ID for compact-full
-  token-span supervision and trie/coordinate objective research. It is not the
-  canonical public config route; use `stage1_detection_teacher_forcing` under
-  `configs/stage1/detection_teacher_forcing/` for active compact
-  teacher-forcing configs.
+- `stage1_standard_sft`: Standard Stage-1 SFT / JSON chat CE baseline.
+- `stage1_research_teacher_forcing`: compact-full token-span supervision and
+  trie/coordinate objective research. Active compact teacher-forcing configs
+  live under `configs/stage1/detection_teacher_forcing/`.
 - `stage2_rollout_correction`: Stage-2 rollout-prefix plus GT-correction architecture.
 
-| Surface | Status | Primary config / route | Packing status | Notes |
+| Pipeline | Status | Primary config / route | Packing status | Notes |
 |---|---|---|---|---|
-| Stage-1 JSON CE | Current baseline and shadow `surface.id: stage1_json_ce` | `configs/stage1/sft_base.yaml`, shared Stage-1 profiles, and `src/training/pipelines/stage1_json_ce.py` | Static packing where supported | JSON chat CE remains the baseline/regression surface; do not treat it as the compact-full target architecture. |
-| Stage-1 compact teacher-forcing | Active canonical public route: `stage1_detection_teacher_forcing`; related shadow architecture ID: `surface.id: stage1_compact_trie_ce` | `configs/stage1/detection_teacher_forcing/`; runtime policy in `src/detection/runtime.py`; shared objective runner in `src/training/objectives/teacher_forcing.py` | Packing/cache fail fast until exact `teacher_forcing_target_ir` atom-position mapping is implemented and validated | Compact-full teacher-forcing is the active Stage-1 route: global token-role stability plus singleton hard SFT or valid-set marginal atoms. Treat `stage1_compact_trie_ce` as a separate shadow architecture ID, not the public config route. |
-| Stage-1 compact recursive detection | Legacy/comparator handle, not an active new-training route | `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2.yaml` | Legacy recursive sidecar packing/cache remain unsupported | Use only to interpret historical random-permutation ET-RMP-CE runs or explicit comparator reports. New active configs should use `objective.id: teacher_forcing`. |
+| Stage-1 standard SFT | Current baseline selected by `pipeline.id: stage1_standard_sft` | `configs/stage1/sft_base.yaml`, shared Stage-1 profiles, and `src/training/pipelines/stage1_json_ce.py` | Static packing where supported | JSON chat CE remains the baseline/regression path; do not treat it as the compact-full target architecture. |
+| Stage-1 compact teacher-forcing | Active canonical public route selected by `pipeline.id: stage1_research_teacher_forcing` | `configs/stage1/detection_teacher_forcing/`; runtime policy in `src/detection/runtime.py`; shared objective runner in `src/training/objectives/teacher_forcing.py` | Packing/cache fail fast until exact `teacher_forcing_target_ir` atom-position mapping is implemented and validated | Compact-full teacher-forcing is the active Stage-1 research route. Active migrated configs use `objective.id: research_teacher_forcing`. |
+| Stage-1 compact recursive detection | Legacy/comparator handle, not an active new-training route | `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2.yaml` | Legacy recursive sidecar packing/cache remain unsupported | Use only to interpret historical random-permutation ET-RMP-CE runs or explicit comparator reports. New active configs should use `objective.id: research_teacher_forcing`. |
 | Stage-1 compact recursive detection geometry-aware softCE | Legacy/comparator ablation candidates | `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2_iou_gibbs_softce_a5.yaml`; `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml` | Legacy recursive sidecar packing/cache remain unsupported | Historical/unlaunched comparator candidates; not part of the active teacher-forcing objective surface. |
 | Stage-1 compact prefix roll-in ET-RMP-CE | Legacy/comparator E1 ablation handle | `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml` | Packing/cache disabled; recursive sidecar offset rewriting is not implemented | Compact-full historical ablation only. EOS supervision uses ordinary teacher-forced `<|im_end|>` CE. |
 | Stage-1 compact detection bridge | Legacy bridge only | `configs/stage1/compact_detection_sequence/smoke/compact_full_tiny.yaml` | Legacy SFT smoke surface; not a latest packing example | Uses legacy `TrainingConfig` plus `custom.detection_sequence_format`; do not use as a current-schema example. |
-| Stage-2 rollout correction | Active Stage-2 operator path and shadow `surface.id: stage2_rollout_correction` | `configs/stage2/rollout_correction/`; trainer route in `src/trainers/stage2_rollout_correction.py` | Post-rollout trainer packing when configured; rollout generation remains unpacked | YAML-first rollout-prefix + GT-correction training. The only active objective is `residual_set_correction` with `application.preset: rollout_self_prefix`. |
+| Stage-2 rollout correction | Active Stage-2 operator path selected by `pipeline.id: stage2_rollout_correction` | `configs/stage2/rollout_correction/`; trainer route in `src/trainers/stage2_rollout_correction.py` | Post-rollout trainer packing when configured; rollout generation remains unpacked | YAML-first rollout-prefix + GT-correction training. The only active objective is `residual_set_correction` with `application.preset: rollout_self_prefix`. |
 | Retired Stage-2 rollout-aligned variants | Removed | `stage2_rollout_aligned`, `stage2_rollout_runtime`, `rollout_matching_sft` fail fast with guidance to `stage2_rollout_correction` | Removed | Shared prompt/decode/backend/trace behavior is owned by `src/infer/*`; Stage-2 trainer code owns residual correction orchestration. |
 | Runtime fusion config | Removed | `custom.fusion_config` fails fast; `configs/fusion/` was deleted | Removed | Merge JSONLs offline for multi-dataset training. |
 
 Current cleanup decisions:
 
-- New shadow surface configs reject removed training mechanisms anywhere in the
+- New pipeline registry configs reject removed training mechanisms anywhere in the
   payload, including duplicate-burst unlikelihood, adjacent repulsion,
   EOS-loosen/trust/weighted-loss variants, continuation forcing, separator
   forcing, and stop-signal gate/damping variants.
 - Historical diagnostics, old artifacts, and absence tests may still mention
   those names. Current guidance must not recommend them as active training
   strategy.
-- Objective profiles are keyed in YAML-like authoring, but resolve in canonical
-  order: `token_ce`, `trie_ce`, `coord_soft_ce`.
+- Public registry objective profiles are keyed in YAML-like authoring, but
+  resolve in canonical order `standard_ce`, `research_teacher_forcing`,
+  `residual_set_correction`. Internal term ids such as `token_ce`, `trie_ce`,
+  and `coord_soft_ce` may appear under `objective.terms`
+  or concrete objective modules/metrics only.
 
 ## Read Order
 
@@ -85,8 +86,8 @@ document implemented entrypoints and compatibility seams only; they do not imply
 that a benchmark, smoke, or validation run has completed.
 
 - Canonical active compact teacher-forcing configs live under
-  `configs/stage1/detection_teacher_forcing/` as
-  `stage1_detection_teacher_forcing` and parse through
+  `configs/stage1/detection_teacher_forcing/`, declare
+  `pipeline.id: stage1_research_teacher_forcing`, and parse through
   `DetectionTrainingConfig`.
 - Legacy recursive-detection authoring snippets live under
   `configs/archive/detection_scene_clean_break/stage1/shared_recursive_detection/` and
@@ -141,7 +142,7 @@ latest-detection objective subkeys, but no new CLI flags.
 ## Use This Router For
 
 - "How does current Stage-2 work?"
-- "Which Stage-1 surface should I run or compare?"
+- "Which Stage-1 pipeline should I run or compare?"
 - "What should I read before touching Stage-1 or Stage-2 configs?"
 - "What is the current Stage-1 packing and `global_max_length` contract?"
 - "How do I distinguish compact recursive detection and baseline SFT evidence?"
@@ -155,7 +156,7 @@ latest-detection objective subkeys, but no new CLI flags.
 - `src/common/detection_sequence.py`
 - `src/common/detection_compact_rows.py`
 - `src/bootstrap/`
-- `src/training/surfaces.py`
+- `src/training/pipeline_registry.py`
 - `src/training/pipelines/`
 - `src/training/objectives/`
 - `src/training/observability/`

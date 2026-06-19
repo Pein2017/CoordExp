@@ -564,7 +564,7 @@ Current Stage-1 has at least three important surfaces:
 | Surface | Current status | Canonical handles |
 | --- | --- | --- |
 | Stage-1 JSON CE baseline | Active baseline/regression surface | `configs/stage1/sft_base.yaml`, `configs/stage1/profiles/`, `src/datasets/dense_caption.py`, `src/trainers/losses/coord_soft_ce_w1.py` |
-| Stage-1 compact teacher-forcing | Active compact-full direction | `configs/stage1/teacher_forcing/`, `src/detection/runtime.py`, `src/detection/dataset.py`, `src/training/objectives/teacher_forcing.py` |
+| Stage-1 compact teacher-forcing | Active compact-full direction | `configs/stage1/detection_teacher_forcing/`, `src/detection/runtime.py`, `src/detection/dataset.py`, `src/training/objectives/teacher_forcing.py` |
 | Stage-1 compact recursive detection CE | Historical legacy/comparator and ablation surface; retired configs are archived, not active routing authority | `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/`, `src/detection/objective.py`, recursive detection metrics |
 
 Important distinction:

@@ -59,11 +59,11 @@ Human support entrypoints:
   - [docs/training/README.md](training/README.md)
   - [docs/training/STAGE1_OBJECTIVE.md](training/STAGE1_OBJECTIVE.md) for baseline Stage-1 behavior, canonical detection teacher forcing, legacy prefix-rollin ablation boundaries, and retired candidate-objective boundaries
   - [docs/data/PACKING.md](data/PACKING.md)
-  - Current public Stage-1 detection teacher-forcing route: `stage1_detection_teacher_forcing` in `configs/stage1/detection_teacher_forcing/`.
-  - Implementation-only shadow surface IDs: `stage1_json_ce` for the JSON chat CE baseline and `stage1_compact_trie_ce` for compact objective research. These are not public config routes; use `stage1_detection_teacher_forcing` for current compact teacher-forcing configs.
-  - Shadow resolver and pipeline map, private to architecture research: `src/training/surfaces.py`, `src/training/pipelines/stage1_json_ce.py`, and `src/training/pipelines/stage1_compact_trie_ce.py`.
-  - Objective profile order: `token_ce`, `trie_ce`, `coord_soft_ce`; disabled objectives remain explicit.
-  - Quarantined recursive-detection config roots and authoring snippets live under `configs/archive/detection_scene_clean_break/stage1/` for historical inspection only.
+  - Current public Stage-1 research teacher-forcing route: `pipeline.id: stage1_research_teacher_forcing`; configs live under `configs/stage1/detection_teacher_forcing/`.
+  - Public Stage-1 pipeline ids: `stage1_standard_sft` for standard assistant-label CE and `stage1_research_teacher_forcing` for compact objective research.
+  - Pipeline registry and descriptor map: `src/training/pipeline_registry.py::TrainingPipelineRegistry`, `src/training/pipelines/stage1_json_ce.py`, and `src/training/pipelines/stage1_compact_trie_ce.py`.
+  - Public Stage-1 objective ids: `standard_ce` and `research_teacher_forcing`; implementation terms such as `token_ce`, `trie_ce`, and `coord_soft_ce` stay internal to objective modules or term config.
+  - Recursive-detection / ET-RMP is a preserved comparator and ablation family, not the default new Stage-1 SFT route. Current infer/eval comparator lineage lives under `configs/infer/recursive_detection_ce`; quarantined Stage-1 training roots and authoring snippets under `configs/archive/detection_scene_clean_break/stage1/` remain historical evidence.
 - Stage-2 training:
   - [docs/training/README.md](training/README.md)
   - [docs/training/STAGE2_RUNBOOK.md](training/STAGE2_RUNBOOK.md) for current behavior, launcher workflow, and historical-context pointers
@@ -71,7 +71,7 @@ Human support entrypoints:
   - [`stage2-rollout-correction/spec.md`](../openspec/specs/stage2-rollout-correction/spec.md)
   - [`rollout-matching-sft/spec.md`](../openspec/specs/rollout-matching-sft/spec.md) for the retired rollout-matching trainer contract
   - [`runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md)
-  - Shadow surface ID: `stage2_rollout_correction`.
+  - Public Stage-2 pipeline id: `stage2_rollout_correction`, resolved through `src/training/pipeline_registry.py::TrainingPipelineRegistry`.
   - Planning direction: duplicate filtering before target realization, greedy-IoU assignment over retained rollout objects, and GT correction event construction for unmatched GT.
   - Greedy IoU is the only live Stage-2 assignment strategy; do not reintroduce alternate assignment mechanisms without a new spec.
 - Metrics, diagnostics, and artifacts:
@@ -115,7 +115,7 @@ Do not answer current-behavior questions from `docs/history/` unless a current d
 
 ```bash
 rg -n "stage2_rollout_correction|stage2_coordination|stage2_rollout_runtime|rollout_runtime|rollout_aligned_targets|rollout_aligned_evaluator|stage2_vllm_server" docs openspec src scripts configs  # search
-rg -n "stage1_detection_teacher_forcing|DetectionScene|DetectionSupervisionView|MetricEvent|DiagnosticEvent|DetectionAssignment|CorrectionEvent" docs src tests
+rg -n "stage1_research_teacher_forcing|DetectionScene|DetectionSupervisionView|MetricEvent|DiagnosticEvent|DetectionAssignment|CorrectionEvent" docs src tests
 rg -n "runtime-architecture-refactor-program|pipeline_manifest|run_metadata|trainer_setup|resolved_config.json|effective_runtime.json" docs openspec src tests
 rg -n "contract|jsonl|geometry|packing" docs/data src/datasets
 rg -n "infer|engine|backends|artifacts|orchestration|confidence|metrics" docs/eval docs/training src scripts

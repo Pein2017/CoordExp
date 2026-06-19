@@ -14,7 +14,7 @@ Use this page for the active Stage-2 path.
 
 The current contract is:
 
-- `custom.trainer_variant: stage2_rollout_correction`
+- `pipeline.id: stage2_rollout_correction`
 - `stage2_rollout_correction.pipeline.objective[]` contains exactly one enabled `residual_set_correction`
 - the training sequence is rollout prefix plus GT/residual correction
 - Stage-2 remains YAML-first; no new CLI flags are required
@@ -63,8 +63,7 @@ Current internal ownership seams:
 
 ## Current Supported Contract
 
-- `custom.trainer_variant: stage2_rollout_correction`
-- shadow architecture `surface.id: stage2_rollout_correction`
+- `pipeline.id: stage2_rollout_correction`
 - `stage2_rollout_correction.pipeline.objective[]` is required for active Stage-2 configs
 - `stage2_rollout_correction.pipeline.diagnostics[]` must be empty
 - the only active objective is `residual_set_correction`
@@ -164,6 +163,8 @@ Current internal ownership seams:
   - `stage2_rollout_correction.correction.invalid_rollout_policy: dump_and_continue` dumps and skips the offending pseudo-positive sample instead
   - zero-object peer attempts remain valid zero-support evidence
 - deprecated authored knobs fail fast in active/training configs:
+  - `custom.trainer_variant: stage2_rollout_correction` (use top-level
+    `pipeline.id: stage2_rollout_correction`)
   - `custom.trainer_variant: rollout_matching_sft`
   - `custom.trainer_variant: stage2_rollout_aligned`
   - `custom.trainer_variant: stage2_rollout_runtime`
@@ -372,7 +373,8 @@ experiment:
     - Uses the canonical residual_set_correction objective only.
     - Caps the run at two optimizer steps.
   runtime_settings:
-    - Runs `custom.trainer_variant: stage2_rollout_correction`.
+    - "pipeline.id: stage2_rollout_correction"
+    - "detection_template.id: compact_full"
   comments:
     - Use this for contract validation, not model-quality comparison.
 ```
