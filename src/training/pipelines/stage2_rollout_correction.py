@@ -1,4 +1,4 @@
-"""Stage-2 rollout-correction shadow pipeline descriptor."""
+"""Stage-2 rollout-correction pipeline descriptor."""
 
 from __future__ import annotations
 
@@ -12,15 +12,15 @@ from src.training.pipelines.base import (
 
 @dataclass(frozen=True, slots=True)
 class Stage2RolloutCorrectionPipeline:
-    """Descriptor for the Stage-2 rollout prefix plus GT correction surface."""
+    """Descriptor for the Stage-2 rollout prefix plus GT correction pipeline."""
 
     @property
     def identity(self) -> TrainingPipelineIdentity:
         """Return the stable Stage-2 rollout-correction pipeline identity."""
 
         return TrainingPipelineIdentity(
-            surface_id="stage2_rollout_correction",
             pipeline_id="stage2_rollout_correction",
-            lifecycle=PipelineLifecycle.SHADOW,
-            summary="Stage-2 rollout prefix plus GT correction shadow pipeline.",
+            implementation_id="stage2_rollout_correction",
+            lifecycle=PipelineLifecycle.ACTIVE,
+            summary="Stage-2 rollout prefix plus GT correction pipeline.",
         )

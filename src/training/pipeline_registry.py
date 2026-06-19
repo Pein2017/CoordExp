@@ -1,4 +1,4 @@
-"""Shadow config resolver for typed CoordExp training surfaces."""
+"""Discoverable registry for typed CoordExp training pipelines."""
 
 from __future__ import annotations
 
@@ -14,15 +14,14 @@ from src.training.pipelines.stage1_json_ce import Stage1JsonCEPipeline
 from src.training.pipelines.stage2_rollout_correction import (
     Stage2RolloutCorrectionPipeline,
 )
-from src.training.supervision.distributions import (
-    TargetObjectiveId,
-    validate_target_objective_id,
+PIPELINE_IDS: tuple[str, ...] = (
+    "stage1_standard_sft",
+    "stage1_research_teacher_forcing",
+    "stage2_rollout_correction",
 )
-
-
 CANONICAL_TOP_LEVEL_DOMAINS: tuple[str, ...] = (
     "run",
-    "surface",
+    "pipeline",
     "data",
     "template",
     "supervision",
@@ -75,17 +74,43 @@ REMOVED_MECHANISM_KEYS: frozenset[str] = frozenset(
     )
 )
 ORDERED_OBJECTIVE_IDS: tuple[str, ...] = (
-    "token_ce",
-    "trie_ce",
-    "coord_soft_ce",
-    "box_regression",
-    "teacher_forcing",
+    "standard_ce",
+    "research_teacher_forcing",
+    "residual_set_correction",
 )
+REJECTED_PUBLIC_OBJECTIVE_IDS: Mapping[str, str] = MappingProxyType(
+    {
+        "teacher_forcing": (
+            "objective key 'teacher_forcing' is not public registry behavior; "
+            "use 'research_teacher_forcing' for active Stage-1 configs or "
+            "'residual_set_correction' for Stage-2 rollout correction"
+        ),
+        "token_ce": (
+            "objective key 'token_ce' is internal implementation/metric "
+            "vocabulary; use public objective key 'standard_ce'"
+        ),
+    }
+)
+VALID_OBJECTIVE_IDS: frozenset[str] = frozenset(ORDERED_OBJECTIVE_IDS)
+
+
+def _validate_objective_id(objective_id: object) -> str:
+    """Return a registry objective id, rejecting retired public names."""
+
+    if type(objective_id) is not str:
+        raise TypeError("objective id must be a semantic string")
+    if objective_id in REJECTED_PUBLIC_OBJECTIVE_IDS:
+        raise ValueError(REJECTED_PUBLIC_OBJECTIVE_IDS[objective_id])
+    if objective_id not in VALID_OBJECTIVE_IDS:
+        supported = ", ".join(sorted(VALID_OBJECTIVE_IDS))
+        raise ValueError(f"unknown objective key {objective_id!r}; use one of: {supported}")
+
+    return objective_id
 
 
 @dataclass(frozen=True, slots=True)
 class ExperimentalConfig:
-    """Strict temporary escape hatch for shadow surface configs.
+    """Strict temporary escape hatch for pipeline registry configs.
 
     :param owner: Accountable owner for the temporary option.
     :param expiry: Expiry date or milestone for removing the temporary option.
@@ -114,7 +139,7 @@ class ExperimentalConfig:
         if self.surface_or_pipeline_opt_in is not True:
             raise ValueError(
                 "experimental.surface_or_pipeline_opt_in must be true for "
-                "shadow surface or pipeline experiments"
+                "pipeline registry experiments"
             )
 
 
@@ -128,7 +153,7 @@ class ResolvedObjectiveEntry:
     :param config: Frozen objective-local scalar metadata.
     """
 
-    objective_id: TargetObjectiveId
+    objective_id: str
     enabled: bool
     weight: float
     config: Mapping[str, object] = field(default_factory=dict)
@@ -136,12 +161,7 @@ class ResolvedObjectiveEntry:
     def __post_init__(self) -> None:
         """Validate and freeze one resolved objective entry."""
 
-        # normalize objective identity through the semantic objective registry.
-        object.__setattr__(
-            self,
-            "objective_id",
-            validate_target_objective_id(self.objective_id),
-        )
+        object.__setattr__(self, "objective_id", _validate_objective_id(self.objective_id))
 
         # validate opt-in and weight separately so disabled entries stay explicit.
         if type(self.enabled) is not bool:
@@ -179,10 +199,10 @@ class ResolvedObjectiveProfile:
 
 
 @dataclass(frozen=True, slots=True)
-class SurfaceObjectivePolicy:
-    """Objective compatibility policy for one shadow training surface.
+class PipelineObjectivePolicy:
+    """Objective compatibility policy for one training pipeline.
 
-    :param allowed_objectives: Objectives that may be authored for the surface.
+    :param allowed_objectives: Objectives that may be authored for the pipeline.
     :param required_enabled_objectives: Objectives that must be enabled.
     """
 
@@ -192,44 +212,42 @@ class SurfaceObjectivePolicy:
     def validate(
         self,
         *,
-        surface_id: str,
+        pipeline_id: str,
         profile: ResolvedObjectiveProfile,
     ) -> None:
-        """Validate that an objective profile matches one surface contract."""
+        """Validate that an objective profile matches one pipeline contract."""
 
         # reject objective/profile drift before downstream span realization.
         authored = {entry.objective_id for entry in profile.objectives}
         unsupported = sorted(authored - self.allowed_objectives)
         if unsupported:
             raise ValueError(
-                f"surface {surface_id!r} does not support objective keys: "
+                f"pipeline {pipeline_id!r} does not support objective keys: "
                 f"{unsupported}"
             )
 
-        # require the semantic primitive that gives the surface its meaning.
+        # require the semantic primitive that gives the pipeline its meaning.
         enabled = {entry.objective_id for entry in profile.enabled_objectives}
         missing = sorted(self.required_enabled_objectives - enabled)
         if missing:
             raise ValueError(
-                f"surface {surface_id!r} requires enabled objectives: {missing}"
+                f"pipeline {pipeline_id!r} requires enabled objectives: {missing}"
             )
 
 
-SURFACE_OBJECTIVE_POLICIES: Mapping[str, SurfaceObjectivePolicy] = MappingProxyType(
+PIPELINE_OBJECTIVE_POLICIES: Mapping[str, PipelineObjectivePolicy] = MappingProxyType(
     {
-        "stage1_json_ce": SurfaceObjectivePolicy(
-            allowed_objectives=frozenset(("token_ce",)),
-            required_enabled_objectives=frozenset(("token_ce",)),
+        "stage1_standard_sft": PipelineObjectivePolicy(
+            allowed_objectives=frozenset(("standard_ce",)),
+            required_enabled_objectives=frozenset(("standard_ce",)),
         ),
-        "stage1_compact_trie_ce": SurfaceObjectivePolicy(
-            allowed_objectives=frozenset(
-                ("token_ce", "trie_ce", "coord_soft_ce", "box_regression")
-            ),
-            required_enabled_objectives=frozenset(("trie_ce",)),
+        "stage1_research_teacher_forcing": PipelineObjectivePolicy(
+            allowed_objectives=frozenset(("research_teacher_forcing",)),
+            required_enabled_objectives=frozenset(("research_teacher_forcing",)),
         ),
-        "stage2_rollout_correction": SurfaceObjectivePolicy(
-            allowed_objectives=frozenset(("teacher_forcing",)),
-            required_enabled_objectives=frozenset(("teacher_forcing",)),
+        "stage2_rollout_correction": PipelineObjectivePolicy(
+            allowed_objectives=frozenset(("residual_set_correction",)),
+            required_enabled_objectives=frozenset(("residual_set_correction",)),
         ),
     }
 )
@@ -237,11 +255,11 @@ SURFACE_OBJECTIVE_POLICIES: Mapping[str, SurfaceObjectivePolicy] = MappingProxyT
 
 @dataclass(frozen=True, slots=True)
 class ResolvedTrainingRun:
-    """Resolved shadow training run metadata.
+    """Resolved training pipeline metadata.
 
     :param run: Frozen run-domain metadata.
-    :param surface: Frozen surface-domain metadata.
-    :param pipeline: Selected shadow training pipeline descriptor.
+    :param pipeline_config: Frozen pipeline-domain metadata.
+    :param pipeline: Selected training pipeline descriptor.
     :param objectives: Deterministically ordered objective profile.
     :param domains: Frozen top-level domain mappings.
     :param experimental: Optional strict experimental escape hatch.
@@ -249,7 +267,7 @@ class ResolvedTrainingRun:
     """
 
     run: Mapping[str, object]
-    surface: Mapping[str, object]
+    pipeline_config: Mapping[str, object]
     pipeline: TrainingPipeline
     objectives: ResolvedObjectiveProfile
     domains: Mapping[str, Mapping[str, object]]
@@ -257,42 +275,46 @@ class ResolvedTrainingRun:
     top_level_domains: tuple[str, ...]
 
 
-class TrainingSurfaceResolver:
-    """Resolve new shadow surface configs without affecting legacy loaders."""
+class TrainingPipelineRegistry:
+    """Resolve and validate public CoordExp training pipeline identities."""
 
     def __init__(self) -> None:
-        """Initialize the closed shadow surface registry."""
+        """Initialize the closed pipeline registry."""
 
         self._pipelines: Mapping[str, TrainingPipeline] = MappingProxyType(
             {
-                "stage1_json_ce": Stage1JsonCEPipeline(),
-                "stage1_compact_trie_ce": Stage1CompactTrieCEPipeline(),
+                "stage1_standard_sft": Stage1JsonCEPipeline(),
+                "stage1_research_teacher_forcing": Stage1CompactTrieCEPipeline(),
                 "stage2_rollout_correction": Stage2RolloutCorrectionPipeline(),
             }
         )
 
     def resolve(self, payload: Mapping[str, Any]) -> ResolvedTrainingRun:
-        """Resolve a raw shadow config mapping into typed run metadata."""
+        """Resolve a raw pipeline config mapping into typed run metadata."""
 
         # validate root shape and top-level contract.
         if not isinstance(payload, Mapping):
-            raise TypeError("training surface config must be a mapping")
+            raise TypeError("training pipeline config must be a mapping")
+        if "surface" in payload:
+            raise ValueError("surface.id is not public config; use top-level pipeline.id")
         self._reject_removed_mechanisms(payload, path="<root>")
+        if self._is_target_hierarchy_payload(payload):
+            payload = self._registry_payload_from_target_hierarchy(payload)
         top_level_domains = self._validate_top_level_domains(payload)
 
-        # validate strict domain mappings before surface-specific checks.
+        # validate strict domain mappings before pipeline-specific checks.
         domains = {
             domain: self._require_mapping(payload[domain], path=domain)
             for domain in REQUIRED_TOP_LEVEL_DOMAINS
         }
-        surface_id = self._resolve_surface_id(domains["surface"])
-        pipeline = self._resolve_pipeline(surface_id)
+        pipeline_id = self._resolve_pipeline_id(domains["pipeline"])
+        pipeline = self._resolve_pipeline(pipeline_id)
 
-        # validate selected surface sections and shared objective profile.
+        # validate selected pipeline sections and shared objective profile.
         self._validate_shared_domains(domains)
-        self._validate_surface_specific_domains(surface_id, domains)
+        self._validate_pipeline_specific_domains(pipeline_id, domains)
         objectives = self.resolve_objectives(domains["objectives"])
-        self._validate_surface_objective_profile(surface_id, objectives)
+        self._validate_pipeline_objective_profile(pipeline_id, objectives)
         frozen_domains = self._freeze_domains(domains)
 
         # validate optional escape hatch only when authored.
@@ -304,7 +326,7 @@ class TrainingSurfaceResolver:
 
         return ResolvedTrainingRun(
             run=frozen_domains["run"],
-            surface=frozen_domains["surface"],
+            pipeline_config=frozen_domains["pipeline"],
             pipeline=pipeline,
             objectives=objectives,
             domains=MappingProxyType(frozen_domains),
@@ -338,7 +360,7 @@ class TrainingSurfaceResolver:
             )
             entries.append(
                 ResolvedObjectiveEntry(
-                    objective_id=validate_target_objective_id(objective_id),
+                    objective_id=_validate_objective_id(objective_id),
                     enabled=self._objective_enabled(
                         entry_payload,
                         objective_id=objective_id,
@@ -351,6 +373,11 @@ class TrainingSurfaceResolver:
                 )
             )
 
+        # reject retired public names before generic unknown-key handling.
+        rejected = sorted(str(key) for key in mapping if key in REJECTED_PUBLIC_OBJECTIVE_IDS)
+        if rejected:
+            raise ValueError("; ".join(REJECTED_PUBLIC_OBJECTIVE_IDS[key] for key in rejected))
+
         # reject unsupported keys after canonical ordering has handled known ids.
         unknown = sorted(str(key) for key in mapping if key not in ORDERED_OBJECTIVE_IDS)
         if unknown:
@@ -362,23 +389,27 @@ class TrainingSurfaceResolver:
 
         return ResolvedObjectiveProfile(objectives=tuple(entries))
 
-    def _validate_surface_objective_profile(
+    def _validate_pipeline_objective_profile(
         self,
-        surface_id: str,
+        pipeline_id: str,
         objectives: ResolvedObjectiveProfile,
     ) -> None:
-        """Validate objective compatibility for the selected surface."""
+        """Validate objective compatibility for the selected pipeline."""
 
-        # keep semantic surface ids from drifting away from loss primitives.
+        # keep semantic pipeline ids from drifting away from loss primitives.
         try:
-            policy = SURFACE_OBJECTIVE_POLICIES[surface_id]
+            policy = PIPELINE_OBJECTIVE_POLICIES[pipeline_id]
         except KeyError as exc:
-            raise ValueError(f"missing objective policy for surface {surface_id!r}") from exc
+            raise ValueError(f"missing objective policy for pipeline {pipeline_id!r}") from exc
 
-        policy.validate(surface_id=surface_id, profile=objectives)
+        policy.validate(pipeline_id=pipeline_id, profile=objectives)
 
     def _validate_top_level_domains(self, payload: Mapping[str, Any]) -> tuple[str, ...]:
         """Return authored canonical top-level domains after strict validation."""
+
+        # reject the old public surface authoring path with migration guidance.
+        if "surface" in payload:
+            raise ValueError("surface.id is not public config; use top-level pipeline.id")
 
         # reject unexpected top-level domains.
         allowed = set(CANONICAL_TOP_LEVEL_DOMAINS)
@@ -399,15 +430,15 @@ class TrainingSurfaceResolver:
     ) -> None:
         """Validate strict shared domain keys."""
 
-        # keep surface descriptors closed while leaving scalar metadata lightweight.
+        # keep pipeline descriptors closed while leaving scalar metadata lightweight.
         self._validate_allowed_keys(
             domains["run"],
             path="run",
             allowed={"id", "scope", "name", "seed", "tags"},
         )
         self._validate_allowed_keys(
-            domains["surface"],
-            path="surface",
+            domains["pipeline"],
+            path="pipeline",
             allowed={"id", "version", "description"},
         )
         self._validate_allowed_keys(
@@ -433,29 +464,145 @@ class TrainingSurfaceResolver:
         self._validate_allowed_keys(
             domains["runtime"],
             path="runtime",
-            allowed={"trainer", "trainer_variant", "precision", "packing", "cache"},
+            allowed={"trainer", "precision", "packing", "cache"},
         )
 
-    def _validate_surface_specific_domains(
+    def _is_target_hierarchy_payload(self, payload: Mapping[str, Any]) -> bool:
+        pipeline_raw = payload.get("pipeline")
+        return isinstance(pipeline_raw, Mapping) and (
+            "sample_factory" in payload
+            or "detection_template" in payload
+            or "token_embeddings_adapter" in payload
+            or "stage2_rollout_correction" in payload
+        )
+
+    def _registry_payload_from_target_hierarchy(
         self,
-        surface_id: str,
+        payload: Mapping[str, Any],
+    ) -> dict[str, object]:
+        pipeline_raw = self._require_mapping(payload.get("pipeline"), path="pipeline")
+        pipeline_id = self._resolve_pipeline_id(pipeline_raw)
+        data_raw = self._require_mapping(payload.get("data"), path="data")
+        template_raw = self._require_mapping(
+            payload.get("detection_template"),
+            path="detection_template",
+        )
+        prompt_raw = payload.get("prompt", {})
+        prompt = prompt_raw if isinstance(prompt_raw, Mapping) else {}
+        training_raw = payload.get("training", {})
+        training = training_raw if isinstance(training_raw, Mapping) else {}
+        experiment_raw = payload.get("experiment", {})
+        experiment = experiment_raw if isinstance(experiment_raw, Mapping) else {}
+
+        if pipeline_id == "stage2_rollout_correction":
+            objectives = self._stage2_objectives_from_target_hierarchy(payload)
+            correction_raw = self._require_mapping(
+                self._require_mapping(
+                    payload.get("stage2_rollout_correction"),
+                    path="stage2_rollout_correction",
+                ).get("correction", {}),
+                path="stage2_rollout_correction.correction",
+            )
+            assignment_raw = correction_raw.get("assignment", {})
+            assignment = assignment_raw if isinstance(assignment_raw, Mapping) else {}
+            assignment_strategy = str(assignment.get("strategy", "greedy_iou") or "")
+            supervision = {
+                "mode": "rollout_correction",
+                "assignment": {"strategy": assignment_strategy},
+                "duplicate_filter": {
+                    "strategy": "rollout_correction_duplicate_control"
+                },
+                "target_ir": {"required": True},
+            }
+        else:
+            objective_raw = self._require_mapping(
+                payload.get("objective"),
+                path="objective",
+            )
+            objective_id = _validate_objective_id(objective_raw.get("id"))
+            objectives = {objective_id: {"enabled": True, "weight": 1.0}}
+            supervision = {
+                "mode": "compact_trie"
+                if objective_id == "research_teacher_forcing"
+                else "json_ce"
+            }
+
+        return {
+            "run": {
+                "id": str(training.get("run_name", pipeline_id) or pipeline_id),
+                "scope": str(experiment.get("claim_scope", "active") or "active"),
+            },
+            "pipeline": {"id": pipeline_id},
+            "data": {
+                "train_jsonl": data_raw.get("train_jsonl"),
+                "validation_jsonl": data_raw.get("val_jsonl"),
+            },
+            "template": {
+                "id": template_raw.get("id"),
+                "variant": prompt.get("variant"),
+            },
+            "supervision": supervision,
+            "objectives": objectives,
+            "observability": {"level": "minimal"},
+            "artifacts": {
+                "output_root": training.get("output_root", training.get("output_dir")),
+                "logging_root": training.get("logging_root", training.get("logging_dir")),
+                "artifact_subdir": training.get("artifact_subdir"),
+            },
+            "runtime": {"trainer": "pipeline"},
+        }
+
+    def _stage2_objectives_from_target_hierarchy(
+        self,
+        payload: Mapping[str, Any],
+    ) -> dict[str, dict[str, object]]:
+        stage2_raw = self._require_mapping(
+            payload.get("stage2_rollout_correction"),
+            path="stage2_rollout_correction",
+        )
+        pipeline_raw = self._require_mapping(
+            stage2_raw.get("pipeline"),
+            path="stage2_rollout_correction.pipeline",
+        )
+        objective_raw = pipeline_raw.get("objective")
+        if not isinstance(objective_raw, Sequence) or isinstance(
+            objective_raw, (str, bytes)
+        ):
+            raise TypeError("stage2_rollout_correction.pipeline.objective must be a list")
+        objectives: dict[str, dict[str, object]] = {}
+        for idx, item in enumerate(objective_raw):
+            spec = self._require_mapping(
+                item,
+                path=f"stage2_rollout_correction.pipeline.objective[{idx}]",
+            )
+            objective_id = _validate_objective_id(spec.get("name"))
+            objectives[objective_id] = {
+                "enabled": bool(spec.get("enabled", True)),
+                "weight": float(spec.get("weight", 1.0)),
+                "config": spec.get("config", {}),
+            }
+        return objectives
+
+    def _validate_pipeline_specific_domains(
+        self,
+        pipeline_id: str,
         domains: Mapping[str, Mapping[str, object]],
     ) -> None:
-        """Validate sections that are meaningful only for one surface."""
+        """Validate sections that are meaningful only for one pipeline."""
 
-        # dispatch to the surface-local supervision contract.
+        # dispatch to the pipeline-local supervision contract.
         supervision = domains["supervision"]
-        if surface_id == "stage1_json_ce":
+        if pipeline_id == "stage1_standard_sft":
             self._validate_stage1_json_supervision(supervision)
             return
-        if surface_id == "stage1_compact_trie_ce":
+        if pipeline_id == "stage1_research_teacher_forcing":
             self._validate_stage1_compact_supervision(supervision)
             return
-        if surface_id == "stage2_rollout_correction":
+        if pipeline_id == "stage2_rollout_correction":
             self._validate_stage2_rollout_correction_supervision(supervision)
             return
 
-        raise ValueError(f"unsupported surface.id: {surface_id!r}")
+        raise ValueError(f"unsupported pipeline.id: {pipeline_id!r}")
 
     def _validate_stage1_json_supervision(
         self,
@@ -463,7 +610,7 @@ class TrainingSurfaceResolver:
     ) -> None:
         """Validate Stage-1 JSON CE supervision metadata."""
 
-        # reject Stage-2-only assignment sections on the JSON baseline surface.
+        # reject Stage-2-only assignment sections on the JSON baseline pipeline.
         self._validate_allowed_keys(
             supervision,
             path="supervision",
@@ -497,27 +644,69 @@ class TrainingSurfaceResolver:
             allowed={"mode", "assignment", "duplicate_filter", "target_ir"},
         )
         self._require_mode(supervision, expected="rollout_correction")
+        assignment = self._require_mapping(
+            supervision.get("assignment"),
+            path="supervision.assignment",
+        )
+        self._validate_allowed_keys(
+            assignment,
+            path="supervision.assignment",
+            allowed={"strategy"},
+        )
+        if assignment.get("strategy") != "greedy_iou":
+            raise ValueError("supervision.assignment.strategy must be 'greedy_iou'")
 
-    def _resolve_surface_id(self, surface: Mapping[str, object]) -> str:
-        """Return the selected surface identifier."""
+        duplicate_filter = self._require_mapping(
+            supervision.get("duplicate_filter"),
+            path="supervision.duplicate_filter",
+        )
+        self._validate_allowed_keys(
+            duplicate_filter,
+            path="supervision.duplicate_filter",
+            allowed={"strategy"},
+        )
+        if duplicate_filter.get("strategy") not in {
+            "rollout_correction_duplicate_control",
+            "deterministic_duplicate_filter",
+        }:
+            raise ValueError(
+                "supervision.duplicate_filter.strategy must be "
+                "'rollout_correction_duplicate_control' or "
+                "'deterministic_duplicate_filter'"
+            )
 
-        # validate surface.id before pipeline lookup.
-        surface_id = surface.get("id")
-        if type(surface_id) is not str or not surface_id.strip():
-            raise ValueError("surface.id must be a non-empty string")
+        target_ir = self._require_mapping(
+            supervision.get("target_ir"),
+            path="supervision.target_ir",
+        )
+        self._validate_allowed_keys(
+            target_ir,
+            path="supervision.target_ir",
+            allowed={"required"},
+        )
+        if target_ir.get("required") is not True:
+            raise ValueError("supervision.target_ir.required must be true")
 
-        return surface_id.strip()
+    def _resolve_pipeline_id(self, pipeline: Mapping[str, object]) -> str:
+        """Return the selected pipeline identifier."""
 
-    def _resolve_pipeline(self, surface_id: str) -> TrainingPipeline:
-        """Return the pipeline descriptor registered for the surface."""
+        # validate pipeline.id before descriptor lookup.
+        pipeline_id = pipeline.get("id")
+        if type(pipeline_id) is not str or not pipeline_id.strip():
+            raise ValueError("pipeline.id must be a non-empty string")
 
-        # select from the closed shadow surface registry.
+        return pipeline_id.strip()
+
+    def _resolve_pipeline(self, pipeline_id: str) -> TrainingPipeline:
+        """Return the pipeline descriptor registered for the pipeline id."""
+
+        # select from the closed pipeline registry.
         try:
-            return self._pipelines[surface_id]
+            return self._pipelines[pipeline_id]
         except KeyError as exc:
             supported = sorted(self._pipelines)
             raise ValueError(
-                f"unsupported surface.id {surface_id!r}; use one of: {supported}"
+                f"unsupported pipeline.id {pipeline_id!r}; use one of: {supported}"
             ) from exc
 
     def _resolve_experimental(
@@ -616,9 +805,9 @@ class TrainingSurfaceResolver:
             raise ValueError(f"Unknown {path} keys: {dotted}")
 
     def _require_mode(self, supervision: Mapping[str, object], *, expected: str) -> None:
-        """Require a surface-specific supervision mode."""
+        """Require a pipeline-specific supervision mode."""
 
-        # keep surface identity and supervision mode aligned.
+        # keep pipeline identity and supervision mode aligned.
         mode = supervision.get("mode")
         if mode != expected:
             raise ValueError(f"supervision.mode must be {expected!r}")
@@ -634,7 +823,7 @@ class TrainingSurfaceResolver:
                 if key_text in REMOVED_MECHANISM_KEYS:
                     raise ValueError(
                         f"removed training mechanism {key_text!r} is not supported "
-                        f"in new surface configs at {child_path}"
+                        f"in new pipeline configs at {child_path}"
                     )
                 self._reject_removed_mechanisms(child, path=child_path)
             return
@@ -649,7 +838,7 @@ class TrainingSurfaceResolver:
         if isinstance(value, str) and value in REMOVED_MECHANISM_KEYS:
             raise ValueError(
                 f"removed training mechanism {value!r} is not supported "
-                f"in new surface configs at {path}"
+                f"in new pipeline configs at {path}"
             )
 
 

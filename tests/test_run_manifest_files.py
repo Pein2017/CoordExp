@@ -5,12 +5,14 @@ from typing import Any
 
 import pytest
 
+from src.config.schema import DetectionTrainingConfig
 from src.utils.run_manifest import (
     RUN_MANIFEST_SCHEMA_VERSION,
     collect_runtime_env_metadata,
     serialize_resolved_training_config,
     write_run_manifest_files,
 )
+from test_detection_training_config_contract import _detection_payload
 
 
 @dataclass
@@ -52,6 +54,7 @@ def test_write_run_manifest_files_writes_required_json(tmp_path: Path) -> None:
         base_config_path="configs/base.yaml",
         dataset_seed=17,
         effective_runtime={
+            "trainer_variant": "stage2_rollout_correction",
             "checkpoint_mode": "restartable",
             "save_model_only": True,
             "save_only_model": False,
@@ -86,6 +89,7 @@ def test_write_run_manifest_files_writes_required_json(tmp_path: Path) -> None:
     assert isinstance(env["env"], dict)
 
     effective_runtime = json.loads(effective_runtime_path.read_text(encoding="utf-8"))
+    assert "trainer_variant" not in effective_runtime["runtime"]
     assert effective_runtime["runtime"]["checkpoint_mode"] == "restartable"
     assert effective_runtime["runtime"]["save_model_only"] is True
     assert effective_runtime["runtime"]["save_only_model"] is False
@@ -103,6 +107,113 @@ def test_write_run_manifest_files_writes_required_json(tmp_path: Path) -> None:
     eval_provenance = json.loads(eval_provenance_path.read_text(encoding="utf-8"))
     assert eval_provenance["split"] == "eval"
     assert eval_provenance["provenance"]["dataset_jsonl"] == "val.jsonl"
+
+
+def test_write_run_manifest_files_copies_training_hierarchy_to_resolved_config(
+    tmp_path: Path,
+) -> None:
+    cfg = {
+        "pipeline": {"id": "stage1_standard_sft"},
+        "objective": {"id": "standard_ce"},
+    }
+    hierarchy = {
+        "pipeline": {"id": "stage1_standard_sft"},
+        "objective": {"id": "standard_ce"},
+        "sample_factory": {
+            "id": "detection_sequence",
+            "target_sequence": {
+                "object_ordering": "random_permutation",
+                "object_field_order": "desc_first",
+                "bbox_format": "xyxy",
+                "coordinate_surface": "coord_token",
+                "strict_parse": True,
+            },
+        },
+        "prompt": {"variant": "coco_80", "template_hash": "abc123"},
+        "tokenizer": {"id": "model_cache/models/Qwen/Qwen3-VL-2B-Instruct"},
+        "chat_template": {"identity": "unknown_chat_template"},
+        "packing": {"length": 1024},
+    }
+
+    written = write_run_manifest_files(
+        output_dir=tmp_path,
+        training_config=cfg,
+        config_path="configs/unit.yaml",
+        base_config_path=None,
+        dataset_seed=17,
+        effective_runtime={"training_hierarchy": hierarchy},
+        pipeline_manifest={"checksum": "abc123", "objective": [{"name": "standard_ce"}]},
+    )
+
+    resolved = json.loads(
+        (tmp_path / written["resolved_config"]).read_text(encoding="utf-8")
+    )
+    effective_runtime = json.loads(
+        (tmp_path / written["effective_runtime"]).read_text(encoding="utf-8")
+    )
+    pipeline_manifest = json.loads(
+        (tmp_path / written["pipeline_manifest"]).read_text(encoding="utf-8")
+    )
+
+    assert resolved["resolved"]["pipeline"]["id"] == "stage1_standard_sft"
+    assert resolved["resolved"]["objective"]["id"] == "standard_ce"
+    assert resolved["training_hierarchy"] == hierarchy
+    assert effective_runtime["runtime"]["training_hierarchy"] == hierarchy
+    assert pipeline_manifest["training_hierarchy"] == hierarchy
+
+
+def test_write_run_manifest_files_resolved_config_uses_target_hierarchy(
+    tmp_path: Path,
+) -> None:
+    cfg = DetectionTrainingConfig.from_mapping(_detection_payload())
+    hierarchy = {
+        "pipeline": {"id": "stage1_standard_sft"},
+        "objective": {"id": "standard_ce"},
+        "sample_factory": {
+            "id": "detection_sequence",
+            "target_sequence": {
+                "object_ordering": "random_permutation",
+                "object_field_order": "desc_first",
+                "bbox_format": "xyxy",
+                "coordinate_surface": "coord_token",
+                "strict_parse": True,
+            },
+        },
+        "detection_template": {"id": "compact"},
+        "prompt": {"variant": "coco_80", "template_hash": "abc123"},
+        "tokenizer": {"id": "model_cache/models/Qwen/Qwen3-VL-2B-Instruct"},
+        "chat_template": {"identity": "unknown_chat_template"},
+        "packing": {"length": 1024},
+    }
+
+    written = write_run_manifest_files(
+        output_dir=tmp_path,
+        training_config=cfg,
+        config_path="configs/stage1/standard_sft.yaml",
+        base_config_path=None,
+        dataset_seed=17,
+        effective_runtime={"training_hierarchy": hierarchy},
+    )
+
+    resolved = json.loads(
+        (tmp_path / written["resolved_config"]).read_text(encoding="utf-8")
+    )
+
+    payload = resolved["resolved"]
+    assert payload["pipeline"]["id"] == "stage1_standard_sft"
+    assert payload["objective"]["id"] == "standard_ce"
+    assert payload["sample_factory"]["id"] == "detection_sequence"
+    assert payload["sample_factory"]["target_sequence"]["object_ordering"] == (
+        "random_permutation"
+    )
+    assert payload["sample_factory"]["target_sequence"]["object_field_order"] == (
+        "desc_first"
+    )
+    assert payload["detection_template"]["id"] == "compact"
+    assert payload["token_embeddings_adapter"]["enabled"] is True
+    assert "custom" not in payload
+    assert "token_rows" not in payload
+    assert resolved["training_hierarchy"] == hierarchy
 
 
 def test_write_run_manifest_files_tracks_source_config_copies(tmp_path: Path) -> None:

@@ -1,9 +1,9 @@
 {
   "sample_id": "stage2-golden-rollout",
-  "surface": {
-    "surface_id": "stage2_rollout_correction",
+  "pipeline": {
     "pipeline_id": "stage2_rollout_correction",
-    "lifecycle": "shadow"
+    "implementation_id": "stage2_rollout_correction",
+    "lifecycle": "active"
   },
   "duplicate_decisions": [
     {
@@ -50,7 +50,10 @@
     ],
     "metadata": {
       "assignment_strategy": "greedy_iou",
-      "iou_threshold": 0.5
+      "iou_threshold": 0.5,
+      "matched_iou_sum": 0.9609765663300324,
+      "matched_iou_count": 1,
+      "gating_rejections": 0
     }
   },
   "plan": {

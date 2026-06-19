@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from types import SimpleNamespace
 
 import pytest
@@ -12,13 +13,28 @@ from src.sft import (
     PackingRuntimeConfig,
     _apply_sft_encoded_sample_cache_preflight,
     _build_pipeline_manifest,
+    _build_cfg_only_summary,
+    _build_effective_runtime_payload,
     _build_encoded_sample_cache_request,
+    _build_normalized_training_hierarchy_identity,
     _apply_rollout_decode_batch_size_override,
     _is_rollout_matching_variant,
+    _uses_stage1_detection_dataset_builder,
     _validate_sft_runtime_preflight,
     _validate_static_packing_accumulation_windows,
     _validate_stage1_static_packing_policy,
     resolve_trainer_cls,
+)
+from src.config.schema import DetectionTrainingConfig
+from src.config.loader import ConfigLoader
+from src.detection.runtime import (
+    build_detection_dataset,
+    build_detection_runtime_custom_shim,
+    detection_mode,
+)
+from test_detection_training_config_contract import (
+    _detection_payload,
+    _stage2_rollout_correction_payload,
 )
 from src.training_runtime import (
     validate_training_runtime_preflight,
@@ -33,6 +49,21 @@ from src.trainers.metrics.mixins import TeacherForcingObjectiveMixin
 from src.training.teacher_forcing.ir import SupervisionAtom, TeacherForcingTargetIR
 from src.training.teacher_forcing.roles import TokenRole
 from src.training.teacher_forcing.vocab import RoleVocab
+
+PUBLIC_RESEARCH_TF_EPOCH_VARYING_ROLLIN_BYPASS_REASON = (
+    "research_teacher_forcing_epoch_varying_rollin"
+)
+
+
+@dataclass(init=False)
+class _FakeTrainArguments:
+    tuner_type: str | None = None
+    training_args: SimpleNamespace = field(default_factory=SimpleNamespace)
+
+    def __init__(self, **kwargs):
+        self.training_args = SimpleNamespace()
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
 
 @pytest.mark.parametrize(
@@ -111,19 +142,173 @@ def test_validate_stage1_static_packing_policy_allows_stage2_trainer_owned_packi
 
 def test_teacher_forcing_stage2_packing_fails_runtime_preflight() -> None:
     config = SimpleNamespace(
-        objective=SimpleNamespace(id="teacher_forcing"),
+        objective=SimpleNamespace(id="research_teacher_forcing"),
         custom=SimpleNamespace(trainer_variant="stage2_rollout_correction"),
         training={"packing": True},
     )
 
     with pytest.raises(
         ValueError,
-        match=r"teacher_forcing.*stage2_rollout_correction.*packing",
+        match=r"research_teacher_forcing.*stage2_rollout_correction.*packing",
     ):
         validate_training_runtime_preflight(
             config,
             runtime_plan=resolve_training_runtime_plan("stage2_rollout_correction"),
         )
+
+
+def test_teacher_forcing_stage2_pipeline_packing_fails_default_runtime_preflight() -> None:
+    config = SimpleNamespace(
+        pipeline=SimpleNamespace(id="stage2_rollout_correction"),
+        objective=SimpleNamespace(id="research_teacher_forcing"),
+        training={"packing": True},
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"research_teacher_forcing.*pipeline\.id=stage2_rollout_correction.*packing",
+    ):
+        validate_training_runtime_preflight(config)
+
+
+@pytest.mark.parametrize(
+    ("pipeline_id", "objective_id"),
+    [
+        ("stage1_standard_sft", "standard_ce"),
+        ("stage1_research_teacher_forcing", "research_teacher_forcing"),
+    ],
+)
+def test_stage1_pipeline_ids_use_default_runtime_plan_without_explicit_runtime_plan(
+    pipeline_id: str,
+    objective_id: str,
+) -> None:
+    result = validate_training_runtime_preflight(
+        SimpleNamespace(
+            pipeline=SimpleNamespace(id=pipeline_id),
+            objective=SimpleNamespace(id=objective_id),
+            training={"packing": True},
+        )
+    )
+
+    assert result.runtime_plan.variant == ""
+    assert result.runtime_plan.post_rollout_packing_owner is None
+
+
+def test_detection_stage2_pipeline_id_builds_stage2_runtime_train_arguments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("src.config.loader.TrainArguments", _FakeTrainArguments)
+    cfg = DetectionTrainingConfig.from_mapping(_stage2_rollout_correction_payload())
+
+    train_args = ConfigLoader.build_train_arguments(cfg)
+
+    assert getattr(train_args, "trainer_variant", None) == "stage2_rollout_correction"
+    assert resolve_training_runtime_plan(train_args.trainer_variant).variant == (
+        "stage2_rollout_correction"
+    )
+    trainer_cls = resolve_trainer_cls(train_args)
+    assert trainer_cls.__name__ == "Stage2RolloutCorrectionTrainerWithFinalCheckpoint"
+    assert any(cls.__name__ == "Stage2RolloutCorrectionTrainer" for cls in trainer_cls.__mro__)
+
+
+def test_loader_materializes_stage2_pipeline_id_as_detection_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("src.config.loader.TrainArguments", _FakeTrainArguments)
+    payload = _stage2_rollout_correction_payload()
+    assert "objective" not in payload
+
+    prompts = ConfigLoader.resolve_prompts(payload)
+    cfg = ConfigLoader._materialize_training_config(payload, prompts)
+
+    assert isinstance(cfg, DetectionTrainingConfig)
+    assert cfg.pipeline.id == "stage2_rollout_correction"
+    assert cfg.objective is None
+
+    train_args = ConfigLoader.build_train_arguments(cfg)
+    assert getattr(train_args, "trainer_variant", None) == "stage2_rollout_correction"
+
+
+def test_cfg_only_summary_uses_pipeline_identity_not_trainer_variant() -> None:
+    cfg = DetectionTrainingConfig.from_mapping(_stage2_rollout_correction_payload())
+
+    summary = _build_cfg_only_summary(
+        config_path="configs/stage2/rollout_correction/smoke/unit.yaml",
+        training_config=cfg,
+        train_args=SimpleNamespace(
+            run_name="stage2-unit",
+            output_dir="output/stage2-unit",
+            max_steps=1,
+            eval_strategy="no",
+            eval_steps=0,
+            save_strategy="no",
+            save_steps=0,
+            per_device_train_batch_size=1,
+            gradient_accumulation_steps=1,
+        ),
+        rank_context={
+            "world_size": 1,
+            "local_world_size": 1,
+            "local_rank": 0,
+        },
+    )
+
+    assert "trainer_variant" not in summary
+    assert summary["pipeline"] == {"id": "stage2_rollout_correction"}
+
+
+def test_loader_routes_malformed_target_hierarchy_to_detection_schema() -> None:
+    payload = _stage2_rollout_correction_payload()
+    payload.pop("prompt")
+
+    prompts = ConfigLoader.resolve_prompts(payload)
+
+    with pytest.raises(ValueError, match=r"Missing detection config sections: .*prompt"):
+        ConfigLoader._materialize_training_config(payload, prompts)
+
+
+def test_stage2_target_hierarchy_rejects_stage1_detection_dataset_path() -> None:
+    cfg = DetectionTrainingConfig.from_mapping(_stage2_rollout_correction_payload())
+    custom_config = build_detection_runtime_custom_shim(cfg)
+
+    with pytest.raises(
+        ValueError,
+        match=r"stage2_rollout_correction.*Stage-1 detection dataset runtime",
+    ):
+        detection_mode(cfg)
+
+    with pytest.raises(
+        ValueError,
+        match=r"stage2_rollout_correction.*build_detection_dataset",
+    ):
+        build_detection_dataset(
+            "unused.jsonl",
+            swift_template=SimpleNamespace(),
+            training_config=cfg,
+            custom_config=custom_config,
+            system_prompt=None,
+            seed=17,
+            sample_limit=None,
+            dataset_name="stage2_guard",
+        )
+
+
+def test_sft_entrypoint_routes_stage2_target_hierarchy_away_from_stage1_builder() -> None:
+    stage1_cfg = DetectionTrainingConfig.from_mapping(_detection_payload())
+    stage2_cfg = DetectionTrainingConfig.from_mapping(_stage2_rollout_correction_payload())
+
+    assert _uses_stage1_detection_dataset_builder(
+        detection_config=stage1_cfg,
+        runtime_plan=resolve_training_runtime_plan(None),
+    )
+    assert not _uses_stage1_detection_dataset_builder(
+        detection_config=stage2_cfg,
+        runtime_plan=resolve_training_runtime_plan("stage2_rollout_correction"),
+    )
+    assert not _uses_stage1_detection_dataset_builder(
+        detection_config=None,
+        runtime_plan=resolve_training_runtime_plan(None),
+    )
 
 
 def test_non_teacher_forcing_stage2_packing_stays_trainer_owned() -> None:
@@ -144,7 +329,7 @@ def test_non_teacher_forcing_stage2_packing_stays_trainer_owned() -> None:
 def test_sft_runtime_preflight_rejects_teacher_forcing_encoded_sample_cache() -> None:
     config = SimpleNamespace(
         objective=SimpleNamespace(
-            id="teacher_forcing",
+            id="research_teacher_forcing",
             target_ir=SimpleNamespace(
                 rollin_policy=SimpleNamespace(
                     name="random_permutation",
@@ -160,7 +345,7 @@ def test_sft_runtime_preflight_rejects_teacher_forcing_encoded_sample_cache() ->
         },
     )
 
-    with pytest.raises(ValueError, match="teacher_forcing encoded training cache"):
+    with pytest.raises(ValueError, match="research_teacher_forcing encoded training cache"):
         _validate_sft_runtime_preflight(
             training_config=config,
             runtime_plan=resolve_training_runtime_plan("stage2_rollout_correction"),
@@ -170,7 +355,7 @@ def test_sft_runtime_preflight_rejects_teacher_forcing_encoded_sample_cache() ->
 def test_sft_runtime_preflight_bypasses_teacher_forcing_encoded_sample_cache() -> None:
     config = SimpleNamespace(
         objective=SimpleNamespace(
-            id="teacher_forcing",
+            id="research_teacher_forcing",
             target_ir=SimpleNamespace(
                 rollin_policy=SimpleNamespace(
                     name="random_permutation",
@@ -203,15 +388,16 @@ def test_sft_runtime_preflight_bypasses_teacher_forcing_encoded_sample_cache() -
     assert decision.encoded_sample_cache_cfg.enabled is False
     assert (
         decision.bypass_reason
-        == "teacher_forcing_epoch_varying_rollin"
+        == PUBLIC_RESEARCH_TF_EPOCH_VARYING_ROLLIN_BYPASS_REASON
     )
+    assert decision.bypass_reason != "teacher_forcing_epoch_varying_rollin"
     assert decision.bypass_info_for_split(
         dataset_split="train",
         dataset_jsonl="/tmp/train.jsonl",
     ) == {
         "enabled": True,
         "status": "bypassed",
-        "reason": "teacher_forcing_epoch_varying_rollin",
+        "reason": PUBLIC_RESEARCH_TF_EPOCH_VARYING_ROLLIN_BYPASS_REASON,
         "policy": "bypass",
         "dataset_split": "train",
         "dataset_jsonl": "/tmp/train.jsonl",
@@ -241,6 +427,244 @@ def test_sft_runtime_preflight_bypasses_teacher_forcing_encoded_sample_cache() -
         )
         is None
     )
+
+
+def test_effective_runtime_uses_token_embeddings_adapter_artifact_key() -> None:
+    training_config = DetectionTrainingConfig.from_mapping(_detection_payload())
+
+    payload = _build_effective_runtime_payload(
+        training_config=training_config,
+        train_args=SimpleNamespace(
+            run_name="test-run",
+            output_dir="/tmp/out",
+            logging_dir="/tmp/logs",
+            save_strategy="no",
+            save_last_epoch=False,
+            save_only_model=False,
+            seed=17,
+            per_device_train_batch_size=1,
+            per_device_eval_batch_size=1,
+            gradient_accumulation_steps=1,
+            eval_strategy="no",
+            eval_steps=0,
+            max_steps=-1,
+            num_train_epochs=1,
+            dataloader_drop_last=False,
+            max_model_len=1024,
+            group_by_length=False,
+        ),
+        trainer_variant=None,
+        dataset_seed=17,
+        checkpoint_mode="artifact_only",
+        packing_cfg=PackingRuntimeConfig(enabled=False),
+        encoded_sample_cache_cfg=EncodedSampleCacheRuntimeConfig(enabled=False),
+        train_jsonl=training_config.data.train_jsonl,
+        val_jsonl=training_config.data.val_jsonl,
+        pipeline_manifest={"checksum": "abc"},
+    )
+
+    assert "token_rows" not in payload
+    adapter = payload["token_embeddings_adapter"]
+    assert adapter["enabled"] is True
+    assert adapter["tie_head"] is True
+    assert adapter["expected_trainable_row_count"] == 1002
+    assert adapter["groups"]["coord_geometry"]["expected_row_count"] == 1000
+    assert adapter["groups"]["compact_structure"]["expected_row_count"] == 2
+
+
+def test_effective_runtime_omits_private_trainer_variant_selector() -> None:
+    training_config = DetectionTrainingConfig.from_mapping(
+        _stage2_rollout_correction_payload()
+    )
+
+    payload = _build_effective_runtime_payload(
+        training_config=training_config,
+        train_args=SimpleNamespace(
+            run_name="stage2-test-run",
+            output_dir="/tmp/out",
+            logging_dir="/tmp/logs",
+            save_strategy="no",
+            save_last_epoch=False,
+            save_only_model=False,
+            seed=17,
+            per_device_train_batch_size=1,
+            per_device_eval_batch_size=1,
+            gradient_accumulation_steps=1,
+            eval_strategy="no",
+            eval_steps=0,
+            max_steps=-1,
+            num_train_epochs=1,
+            dataloader_drop_last=False,
+            max_model_len=1024,
+            group_by_length=False,
+        ),
+        trainer_variant="stage2_rollout_correction",
+        dataset_seed=17,
+        checkpoint_mode="artifact_only",
+        packing_cfg=PackingRuntimeConfig(enabled=True, mode="dynamic"),
+        encoded_sample_cache_cfg=EncodedSampleCacheRuntimeConfig(enabled=False),
+        train_jsonl=training_config.data.train_jsonl,
+        val_jsonl=training_config.data.val_jsonl,
+        pipeline_manifest={"checksum": "abc"},
+    )
+
+    assert "trainer_variant" not in payload
+    assert payload["training_hierarchy"]["pipeline"]["id"] == (
+        "stage2_rollout_correction"
+    )
+
+
+def test_stage2_normalized_hierarchy_records_internal_objective_identity() -> None:
+    training_config = DetectionTrainingConfig.from_mapping(
+        _stage2_rollout_correction_payload()
+    )
+
+    hierarchy = _build_normalized_training_hierarchy_identity(
+        training_config=training_config,
+        template=SimpleNamespace(max_length=1024),
+        train_args=SimpleNamespace(max_model_len=1024),
+        packing_length=1024,
+    )
+
+    assert hierarchy["pipeline"]["id"] == "stage2_rollout_correction"
+    assert hierarchy["objective"]["id"] == "residual_set_correction"
+    assert hierarchy["objective"]["stage2_objectives"] == [
+        "residual_set_correction"
+    ]
+
+
+def test_effective_runtime_records_normalized_training_hierarchy_identity() -> None:
+    training_config = DetectionTrainingConfig.from_mapping(_detection_payload())
+
+    payload = _build_effective_runtime_payload(
+        training_config=training_config,
+        train_args=SimpleNamespace(
+            run_name="test-run",
+            output_dir="/tmp/out",
+            logging_dir="/tmp/logs",
+            save_strategy="no",
+            save_last_epoch=False,
+            save_only_model=False,
+            seed=17,
+            per_device_train_batch_size=1,
+            per_device_eval_batch_size=1,
+            gradient_accumulation_steps=1,
+            eval_strategy="no",
+            eval_steps=0,
+            max_steps=-1,
+            num_train_epochs=1,
+            dataloader_drop_last=False,
+            max_model_len=1024,
+            group_by_length=False,
+            model="model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp",
+        ),
+        trainer_variant=None,
+        dataset_seed=17,
+        checkpoint_mode="artifact_only",
+        packing_cfg=PackingRuntimeConfig(
+            enabled=True,
+            mode="static",
+            packing_length=1024,
+        ),
+        encoded_sample_cache_cfg=EncodedSampleCacheRuntimeConfig(enabled=False),
+        train_jsonl=training_config.data.train_jsonl,
+        val_jsonl=training_config.data.val_jsonl,
+        pipeline_manifest={"checksum": "abc"},
+    )
+
+    hierarchy = payload["training_hierarchy"]
+    assert hierarchy["pipeline"]["id"] == "stage1_standard_sft"
+    assert hierarchy["objective"]["id"] == "standard_ce"
+    assert hierarchy["detection_template"]["id"] == "compact"
+    assert hierarchy["sample_factory"]["id"] == "detection_sequence"
+    assert hierarchy["sample_factory"]["target_sequence"] == {
+        "object_ordering": "random_permutation",
+        "object_field_order": "desc_first",
+        "bbox_format": "xyxy",
+        "coordinate_surface": "coord_token",
+        "strict_parse": True,
+    }
+    assert hierarchy["prompt"]["variant"] == "coco_80"
+    assert isinstance(hierarchy["prompt"]["template_hash"], str)
+    assert hierarchy["tokenizer"]["id"].endswith("Qwen3-VL-2B-Instruct-coordexp")
+    assert hierarchy["chat_template"]["identity"] == "unknown_chat_template"
+    assert hierarchy["packing"]["length"] == 1024
+
+
+def test_effective_runtime_uses_public_encoded_sample_cache_bypass_reason() -> None:
+    config = SimpleNamespace(
+        objective=SimpleNamespace(
+            id="research_teacher_forcing",
+            target_ir=SimpleNamespace(
+                rollin_policy=SimpleNamespace(
+                    name="random_permutation",
+                    base_seed=17,
+                )
+            ),
+        ),
+        training={
+            "encoded_sample_cache": {
+                "enabled": True,
+                "root_dir": "/tmp/coordexp-cache",
+                "ineligible_policy": "bypass",
+            }
+        },
+    )
+    preflight = _validate_sft_runtime_preflight(
+        training_config=config,
+        runtime_plan=resolve_training_runtime_plan("stage2_rollout_correction"),
+    )
+    decision = _apply_sft_encoded_sample_cache_preflight(
+        encoded_sample_cache_cfg=EncodedSampleCacheRuntimeConfig(
+            enabled=True,
+            root_dir="/tmp/coordexp-cache",
+            ineligible_policy="bypass",
+        ),
+        preflight_result=preflight,
+    )
+
+    payload = _build_effective_runtime_payload(
+        training_config=config,
+        train_args=SimpleNamespace(
+            run_name="test-run",
+            output_dir="/tmp/out",
+            logging_dir="/tmp/logs",
+            save_strategy="no",
+            save_last_epoch=False,
+            save_only_model=False,
+            seed=17,
+            per_device_train_batch_size=1,
+            per_device_eval_batch_size=1,
+            gradient_accumulation_steps=1,
+            eval_strategy="no",
+            eval_steps=0,
+            max_steps=-1,
+            num_train_epochs=1,
+            dataloader_drop_last=False,
+            max_model_len=1024,
+            group_by_length=False,
+        ),
+        trainer_variant="stage2_rollout_correction",
+        dataset_seed=17,
+        checkpoint_mode="artifact_only",
+        packing_cfg=PackingRuntimeConfig(enabled=False),
+        encoded_sample_cache_cfg=decision.encoded_sample_cache_cfg,
+        train_jsonl="/tmp/train.jsonl",
+        val_jsonl=None,
+        pipeline_manifest={"checksum": "abc"},
+        train_encoded_sample_cache_info=decision.bypass_info_for_split(
+            dataset_split="train",
+            dataset_jsonl="/tmp/train.jsonl",
+        ),
+    )
+
+    encoded_cache = payload["encoded_sample_cache"]
+    assert (
+        encoded_cache["reason"]
+        == PUBLIC_RESEARCH_TF_EPOCH_VARYING_ROLLIN_BYPASS_REASON
+    )
+    assert encoded_cache["reason"] != "teacher_forcing_epoch_varying_rollin"
+    assert encoded_cache["train"]["reason"] == encoded_cache["reason"]
 
 
 def test_compose_trainer_class_adds_teacher_forcing_objective_mixin() -> None:
@@ -468,6 +892,7 @@ def _runtime_projection_packing_config() -> SimpleNamespace:
 def test_stage2_runtime_projection_records_authored_policy_sources() -> None:
     projection = resolve_stage2_runtime_projection(
         training_config=SimpleNamespace(
+            pipeline={"id": "stage2_rollout_correction"},
             rollout_matching={
                 "rollout_backend": "hf",
                 "eval_rollout_backend": "hf",
@@ -512,9 +937,30 @@ def test_stage2_runtime_projection_records_authored_policy_sources() -> None:
     assert projection.stage2_policy_provenance["runtime_compatibility_fallbacks"] == []
 
 
+def test_stage2_runtime_projection_rejects_removed_rollout_pipeline_with_target_hierarchy_guidance() -> None:
+    with pytest.raises(
+        ValueError,
+        match=r"rollout_matching\.pipeline.*stage2_rollout_correction\.pipeline.*pipeline\.id=stage2_rollout_correction",
+    ):
+        resolve_stage2_runtime_projection(
+            training_config=SimpleNamespace(
+                pipeline={"id": "stage2_rollout_correction"},
+                rollout_matching={"pipeline": {"objective": []}},
+                stage2_rollout_correction={"pipeline": {"objective": []}},
+            ),
+            custom_config=_runtime_projection_custom_config(),
+            packing_cfg=_runtime_projection_packing_config(),
+            trainer_variant="stage2_rollout_correction",
+            config_path="configs/stage2.yaml",
+            run_name="projection-test",
+            seed=17,
+        )
+
+
 def test_stage2_runtime_projection_marks_custom_extra_prompt_compat_fallback() -> None:
     projection = resolve_stage2_runtime_projection(
         training_config=SimpleNamespace(
+            pipeline={"id": "stage2_rollout_correction"},
             rollout_matching={
                 "rollout_backend": "hf",
                 "eval_rollout_backend": "hf",
@@ -556,6 +1002,57 @@ def test_stage2_runtime_projection_marks_custom_extra_prompt_compat_fallback() -
     ]
 
 
+def test_stage2_runtime_projection_labels_target_hierarchy_sources() -> None:
+    cfg = DetectionTrainingConfig.from_mapping(_stage2_rollout_correction_payload())
+    projection = resolve_stage2_runtime_projection(
+        training_config=cfg,
+        custom_config=build_detection_runtime_custom_shim(cfg),
+        packing_cfg=_runtime_projection_packing_config(),
+        trainer_variant="stage2_rollout_correction",
+        config_path="configs/stage2.yaml",
+        run_name="projection-test",
+        seed=17,
+    )
+
+    assert projection is not None
+    assert projection.rollout_matching_cfg["prompt_variant"] == "coco_80"
+    assert projection.rollout_matching_cfg["eval_prompt_variant"] == "coco_80"
+    assert projection.rollout_matching_cfg["object_ordering"] == "random_permutation"
+    assert projection.rollout_matching_cfg["object_field_order"] == "desc_first"
+    assert projection.rollout_matching_cfg["bbox_format"] == "xyxy"
+    assert projection.rollout_matching_cfg["detection_sequence_format"] == "compact_full"
+    assert projection.policy_sources["rollout_matching.prompt_variant"] == (
+        "prompt.variant"
+    )
+    assert projection.policy_sources["rollout_matching.eval_prompt_variant"] == (
+        "prompt.variant"
+    )
+    assert projection.policy_sources["object_ordering"] == (
+        "sample_factory.target_sequence.object_ordering"
+    )
+    assert projection.policy_sources["object_field_order"] == (
+        "sample_factory.target_sequence.object_field_order"
+    )
+    assert projection.policy_sources["bbox_format"] == (
+        "sample_factory.target_sequence.bbox_format"
+    )
+    assert projection.policy_sources["detection_sequence_format"] == (
+        "detection_template.id+sample_factory.id"
+    )
+    assert projection.stage2_policy_provenance[
+        "runtime_compatibility_fallbacks"
+    ] == []
+    assert projection.stage2_policy_provenance["pipeline"]["id"] == (
+        "stage2_rollout_correction"
+    )
+    assert "trainer_variant" not in projection.stage2_policy_provenance
+    assert all(
+        not source.startswith("custom.")
+        for key, source in projection.policy_sources.items()
+        if not key.startswith("packing.")
+    )
+
+
 def test_apply_stage2_runtime_projection_sets_trainer_boundary_attrs() -> None:
     calls: list[str] = []
 
@@ -566,6 +1063,7 @@ def test_apply_stage2_runtime_projection_sets_trainer_boundary_attrs() -> None:
     trainer = _Trainer()
     projection = resolve_stage2_runtime_projection(
         training_config=SimpleNamespace(
+            pipeline={"id": "stage2_rollout_correction"},
             rollout_matching={
                 "rollout_backend": "hf",
                 "eval_rollout_backend": "hf",

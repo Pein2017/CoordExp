@@ -13,6 +13,7 @@ from src.config.schema import (
     CoordTokensConfig,
     DetectionTrainingConfig,
 )
+from src.common.detection_sequence import COMPACT_FULL_FORMAT, COORDJSON_FORMAT
 from src.detection.dataset import DetectionTrainingDataset
 from src.detection.coord_soft_targets import CoordSoftTargetRuntimeConfig
 from src.detection.template_contracts import resolve_detection_template_contract
@@ -48,14 +49,21 @@ def is_detection_config(training_config: Any) -> bool:
     return isinstance(training_config, DetectionTrainingConfig)
 
 
+def _token_embeddings_adapter_config(training_config: DetectionTrainingConfig) -> Any:
+    adapter = getattr(training_config, "token_embeddings_adapter", None)
+    if adapter is not None:
+        return adapter
+    return getattr(training_config, "token_rows", None)
+
+
 def detection_sequence_format(
     training_config: DetectionTrainingConfig,
 ) -> str:
     contract = resolve_detection_template_contract(training_config.detection_template.id)
     if contract.is_compact:
-        return "compact"
+        return COMPACT_FULL_FORMAT
     if contract.template_id == "stage1_json_pretty":
-        return "coordjson"
+        return COORDJSON_FORMAT
     raise ValueError(
         f"Unsupported detection_template.id={training_config.detection_template.id!r}"
     )
@@ -64,7 +72,7 @@ def detection_sequence_format(
 def detection_prompt_variant(
     training_config: DetectionTrainingConfig,
 ) -> str | None:
-    return "coco_80" if training_config.prompt.prompt_variant_enabled else None
+    return training_config.prompt.variant
 
 
 def resolve_detection_prompts(
@@ -95,12 +103,13 @@ def resolve_detection_prompts(
             "prompt.user_variant=stage1_detection"
         )
 
-    object_field_order = training_config.detection_template.object_field_order
+    target_sequence = training_config.sample_factory.target_sequence
+    object_field_order = target_sequence.object_field_order
     if object_field_order is None:
         object_field_order = "desc_first"
     ordering = (
         "random"
-        if training_config.data.object_ordering == "random_permutation"
+        if target_sequence.object_ordering in {"random", "random_permutation"}
         else "sorted"
     )
     return get_template_prompts(
@@ -108,8 +117,9 @@ def resolve_detection_prompts(
         coord_mode="coord_tokens",
         prompt_variant=detection_prompt_variant(training_config),
         object_field_order=str(object_field_order),
-        bbox_format=str(training_config.detection_template.bbox_format),
+        bbox_format=str(target_sequence.bbox_format),
         detection_sequence_format=detection_sequence_format(training_config),
+        detection_template_id=training_config.detection_template.id,
     )
 
 
@@ -117,12 +127,11 @@ def build_detection_runtime_custom_shim(
     training_config: DetectionTrainingConfig,
 ) -> SimpleNamespace:
     _system_prompt, user_prompt = resolve_detection_prompts(training_config)
-    object_field_order = training_config.detection_template.object_field_order
-    if object_field_order is None:
-        object_field_order = "desc_first"
+    target_sequence = training_config.sample_factory.target_sequence
+    object_field_order = target_sequence.object_field_order
     object_ordering = (
         "random"
-        if training_config.data.object_ordering == "random_permutation"
+        if target_sequence.object_ordering in {"random", "random_permutation"}
         else "sorted"
     )
     prompt_variant = detection_prompt_variant(training_config)
@@ -145,25 +154,43 @@ def build_detection_runtime_custom_shim(
         offline_max_pixels=None,
         object_ordering=object_ordering,
         object_field_order=str(object_field_order),
-        bbox_format=str(training_config.detection_template.bbox_format),
+        bbox_format=str(target_sequence.bbox_format),
         detection_sequence_format=detection_sequence_format(training_config),
         eval_detection=None,
         token_type_metrics=None,
-        coord_soft_ce_w1=None,
+        coord_soft_ce_w1=_standard_ce_coord_soft_auxiliary(training_config),
         bbox_geo=None,
         bbox_size_aux=None,
         sft_structural_close=None,
         dump_conversation_text=False,
         dump_conversation_path=None,
-        token_embeddings_adapter=training_config.token_rows,
+        token_embeddings_adapter=_token_embeddings_adapter_config(training_config),
     )
+
+
+def _standard_ce_coord_soft_auxiliary(
+    training_config: DetectionTrainingConfig,
+) -> Any | None:
+    objective = getattr(training_config, "objective", None)
+    if getattr(objective, "id", None) != "standard_ce":
+        return None
+    auxiliaries = getattr(objective, "auxiliaries", None)
+    if auxiliaries is None:
+        return None
+    return getattr(auxiliaries, "coord_soft_ce", None)
 
 
 def detection_mode(
     training_config: DetectionTrainingConfig,
 ) -> DetectionRuntimeMode:
+    if _is_stage2_rollout_correction_config(training_config):
+        raise ValueError(
+            "pipeline.id=stage2_rollout_correction is not supported by the "
+            "Stage-1 detection dataset runtime; Stage-2 rollout correction "
+            "must use the rollout runtime projection path."
+        )
     objective_id = getattr(training_config.objective, "id", None)
-    if objective_id == "teacher_forcing":
+    if objective_id == "research_teacher_forcing":
         if training_config.objective.profile not in {
             "hard_sft",
             "pure_valid_set_marginal",
@@ -196,6 +223,15 @@ def detection_mode(
     )
 
 
+def _is_stage2_rollout_correction_config(
+    training_config: DetectionTrainingConfig,
+) -> bool:
+    return (
+        getattr(getattr(training_config, "pipeline", None), "id", None)
+        == "stage2_rollout_correction"
+    )
+
+
 def resolve_detection_runtime_support(
     training_config: DetectionTrainingConfig,
 ) -> DetectionRuntimeSupport:
@@ -208,7 +244,7 @@ def resolve_detection_runtime_support(
             is_compact and objective_id == "recursive_detection_ce"
         ),
         teacher_forcing_target_ir_required=(
-            is_compact and objective_id == "teacher_forcing"
+            is_compact and objective_id == "research_teacher_forcing"
         ),
     )
 
@@ -223,31 +259,31 @@ def assert_detection_runtime_supported(
     if support.teacher_forcing_target_ir_required:
         if bool(training_config.training.get("packing", False)):
             raise ValueError(
-                "latest teacher_forcing_target_ir requires "
+                "latest research_teacher_forcing target IR requires "
                 "training.packing=false; exact atom-position packing mapping "
                 "is not implemented yet"
             )
         if bool(training_config.training.get("eval_packing", False)):
             raise ValueError(
-                "latest teacher_forcing_target_ir requires "
+                "latest research_teacher_forcing target IR requires "
                 "training.eval_packing=false; exact atom-position packing "
                 "mapping is not implemented yet"
             )
         if training_config.packing.static_packing:
             raise ValueError(
-                "latest teacher_forcing_target_ir requires "
+                "latest research_teacher_forcing target IR requires "
                 "packing.static_packing=false; exact atom-position packing "
                 "mapping is not implemented yet"
             )
         if training_config.packing.padding_free_packed:
             raise ValueError(
-                "latest teacher_forcing_target_ir requires "
+                "latest research_teacher_forcing target IR requires "
                 "packing.padding_free_packed=false; exact atom-position "
                 "packing mapping is not implemented yet"
             )
         if getattr(encoded_sample_cache_cfg, "enabled", False):
             raise ValueError(
-                "latest teacher_forcing_target_ir requires "
+                "latest research_teacher_forcing target IR requires "
                 "training.encoded_sample_cache.enabled=false; exact "
                 "atom-position cache replay is not implemented yet"
             )
@@ -412,21 +448,22 @@ def _resolve_coord_soft_ce_runtime_config(
         return None
 
     coord_group = None
-    groups = getattr(training_config.token_rows, "groups", {})
+    adapter_cfg = _token_embeddings_adapter_config(training_config)
+    groups = getattr(adapter_cfg, "groups", {})
     coord_group = groups.get("coord_geometry") if isinstance(groups, Mapping) else None
     if coord_group is None:
-        for group in training_config.token_rows.groups.values():
+        for group in getattr(adapter_cfg, "groups", {}).values():
             role = getattr(group.role, "value", group.role)
             if str(role) == "coord_geometry":
                 coord_group = group
                 break
     if coord_group is None:
         raise ValueError(
-            "objective.coord_soft_ce requires a token_rows coord_geometry group"
+            "objective.coord_soft_ce requires a token_embeddings_adapter coord_geometry group"
         )
     if coord_group.expected_start is None or coord_group.expected_end is None:
         raise ValueError(
-            "objective.coord_soft_ce requires token_rows coord_geometry expected_start/end"
+            "objective.coord_soft_ce requires token_embeddings_adapter coord_geometry expected_start/end"
         )
 
     target_distribution = str(field_getter(raw_cfg, "target_distribution"))
@@ -479,6 +516,13 @@ def build_detection_dataset(
     sample_limit: int | None,
     dataset_name: str,
 ) -> DetectionTrainingDataset:
+    if _is_stage2_rollout_correction_config(training_config):
+        raise ValueError(
+            "pipeline.id=stage2_rollout_correction is not supported by "
+            "build_detection_dataset; Stage-2 rollout correction uses "
+            "rollout-owned sample preparation, not the Stage-1 detection "
+            "dataset builder."
+        )
     type_gate_config = None
     objective = training_config.objective
     objective_id = str(getattr(objective, "id", "") or "")
@@ -488,7 +532,7 @@ def build_detection_dataset(
         "prefix_rollin_et_rmp_ce",
     }:
         type_gate_config = getattr(objective, "type_gate", None)
-    if objective_id == "teacher_forcing":
+    if objective_id == "research_teacher_forcing":
         state_weighting = "uniform_permutation"
         normalization = "semantic_image_bucket_balanced"
         teacher_forcing_profile = str(getattr(objective, "profile"))
@@ -506,14 +550,14 @@ def build_detection_dataset(
         image_root=training_config.data.image_root,
         detection_template_id=training_config.detection_template.id,
         mode=detection_mode(training_config),
-        object_ordering=training_config.data.object_ordering,
+        object_ordering=training_config.sample_factory.target_sequence.object_ordering,
         user_prompt=custom_config.user_prompt,
         system_prompt=system_prompt,
         seed=seed,
         state_weighting=state_weighting,
         normalization=normalization,
         object_field_order=str(
-            training_config.detection_template.object_field_order or "desc_first"
+            training_config.sample_factory.target_sequence.object_field_order
         ),
         type_gate_config=type_gate_config,
         teacher_forcing_profile=teacher_forcing_profile,

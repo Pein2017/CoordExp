@@ -69,8 +69,12 @@ def build_experiment_manifest_payload(
 
     runtime_summary: dict[str, Any] = {}
     if isinstance(effective_runtime, Mapping):
+        if "token_rows" in effective_runtime:
+            raise ValueError(
+                "effective_runtime.token_rows has been removed; use "
+                "effective_runtime.token_embeddings_adapter."
+            )
         for key in (
-            "trainer_variant",
             "checkpoint_mode",
             "resume_from_checkpoint",
             "save_model_only",
@@ -101,7 +105,8 @@ def build_experiment_manifest_payload(
             "encoded_sample_cache",
             "model_source",
             "detection_objective",
-            "token_rows",
+            "training_hierarchy",
+            "token_embeddings_adapter",
             "dataset_source_train_jsonl",
             "dataset_source_val_jsonl",
             "launcher",
@@ -118,11 +123,20 @@ def build_experiment_manifest_payload(
                 runtime_summary[key] = copy.deepcopy(effective_runtime[key])
 
     if isinstance(pipeline_manifest, Mapping):
-        runtime_summary["pipeline"] = {
+        pipeline_summary = {
             "checksum": str(pipeline_manifest.get("checksum", "") or ""),
             "objective": _module_names(pipeline_manifest.get("objective")),
             "diagnostics": _module_names(pipeline_manifest.get("diagnostics")),
         }
+        hierarchy = runtime_summary.get("training_hierarchy")
+        pipeline_identity = (
+            hierarchy.get("pipeline") if isinstance(hierarchy, Mapping) else None
+        )
+        if isinstance(pipeline_identity, Mapping):
+            pipeline_id = str(pipeline_identity.get("id", "") or "").strip()
+            if pipeline_id:
+                pipeline_summary["id"] = pipeline_id
+        runtime_summary["pipeline"] = pipeline_summary
 
     provenance_summary: dict[str, Any] = {}
     if isinstance(run_metadata, Mapping):

@@ -30,7 +30,6 @@ ACTIVE_DOCS = (
     "docs/IMPLEMENTATION_MAP.md",
     "docs/training/README.md",
     "docs/training/STAGE1_OBJECTIVE.md",
-    "docs/training/STAGE1_ET_RMP_CE.md",
     "docs/training/METRICS.md",
     "docs/data/PACKING.md",
     "docs/catalog.yaml",
