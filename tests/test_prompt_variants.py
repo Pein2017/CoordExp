@@ -306,6 +306,138 @@ def test_training_prompt_resolution_uses_ordering_plus_variant() -> None:
     assert sorted_tokens.user != random_tokens.user
 
 
+def test_training_prompt_resolution_uses_target_hierarchy_prompt_variant() -> None:
+    prompts = ConfigLoader.resolve_prompts(
+        {
+            "prompt": {"variant": "coco_80"},
+            "detection_template": {"id": "compact_object_box_closed"},
+            "sample_factory": {
+                "id": "detection_sequence",
+                "target_sequence": {
+                    "object_ordering": "random_permutation",
+                    "object_field_order": "geometry_first",
+                    "bbox_format": "xyxy",
+                    "coordinate_surface": "coord_token",
+                },
+            },
+        }
+    )
+    expected_system, expected_user = get_template_prompts(
+        ordering="random",
+        prompt_variant="coco_80",
+        detection_template_id="compact_object_box_closed",
+        object_field_order="geometry_first",
+    )
+
+    assert prompts.system == expected_system
+    assert prompts.user == expected_user
+
+
+def test_target_hierarchy_prompt_resolution_rejects_prompt_variant_enabled() -> None:
+    with pytest.raises(
+        ValueError,
+        match=r"prompt\.prompt_variant_enabled.*prompt\.variant",
+    ):
+        ConfigLoader.resolve_prompts(
+            {
+                "prompt": {"prompt_variant_enabled": True},
+                "detection_template": {"id": "compact"},
+                "sample_factory": {
+                    "id": "detection_sequence",
+                    "target_sequence": {
+                        "object_ordering": "random_permutation",
+                        "object_field_order": "geometry_first",
+                        "bbox_format": "xyxy",
+                        "coordinate_surface": "coord_token",
+                    },
+                },
+            }
+        )
+
+
+@pytest.mark.parametrize("custom_section", [{}, {"unrelated": True}])
+def test_target_hierarchy_prompt_resolution_rejects_any_custom_mapping(
+    custom_section: dict[str, object],
+) -> None:
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"custom is obsolete for target-hierarchy detection prompt resolution.*"
+            r"prompt\.variant.*sample_factory\.target_sequence.*detection_template\.id"
+        ),
+    ):
+        ConfigLoader.resolve_prompts(
+            {
+                "prompt": {"variant": "coco_80"},
+                "detection_template": {"id": "compact"},
+                "sample_factory": {
+                    "id": "detection_sequence",
+                    "target_sequence": {
+                        "object_ordering": "random_permutation",
+                        "object_field_order": "geometry_first",
+                        "bbox_format": "xyxy",
+                        "coordinate_surface": "coord_token",
+                    },
+                },
+                "custom": custom_section,
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    ("legacy_custom", "match"),
+    [
+        (
+            {"object_ordering": "sorted", "object_field_order": "desc_first"},
+            r"custom\.object_ordering.*sample_factory\.target_sequence\.object_ordering",
+        ),
+        (
+            {"object_field_order": "desc_first"},
+            r"custom\.object_field_order.*sample_factory\.target_sequence\.object_field_order",
+        ),
+        (
+            {"object_field_order": "desc_first", "detection_template_id": "compact"},
+            r"custom\.detection_template_id.*detection_template\.id",
+        ),
+        (
+            {
+                "object_field_order": "desc_first",
+                "detection_sequence_format": "compact",
+            },
+            r"custom\.detection_sequence_format.*sample_factory",
+        ),
+        (
+            {
+                "object_field_order": "desc_first",
+                "extra": {"prompt_variant": "coco_80"},
+            },
+            r"custom\.extra\.prompt_variant.*prompt\.variant",
+        ),
+    ],
+)
+def test_target_hierarchy_prompt_resolution_rejects_legacy_custom_sequence_fields(
+    legacy_custom: dict[str, object],
+    match: str,
+) -> None:
+    config = {
+        "prompt": {"variant": "coco_80"},
+        "detection_template": {"id": "compact"},
+        "sample_factory": {
+            "id": "detection_sequence",
+            "target_sequence": {
+                "object_ordering": "random_permutation",
+                "object_field_order": "geometry_first",
+                "bbox_format": "xyxy",
+                "coordinate_surface": "coord_token",
+            },
+        },
+        "custom": legacy_custom,
+    }
+
+    with pytest.raises(ValueError, match=match):
+        ConfigLoader.resolve_prompts(config)
+
+
 def test_coord_mode_numeric_is_rejected() -> None:
     with pytest.raises(ValueError, match="must be one of"):
         get_template_prompts(coord_mode="numeric")

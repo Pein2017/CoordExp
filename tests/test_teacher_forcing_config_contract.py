@@ -9,7 +9,11 @@ from types import SimpleNamespace
 import pytest
 
 from src.config.loader import ConfigLoader
-from src.config.schema import DetectionTrainingConfig, TrainingConfig
+from src.config.schema import (
+    DetectionObjectiveConfig,
+    DetectionTrainingConfig,
+    TrainingConfig,
+)
 from src.detection.runtime import (
     assert_detection_runtime_supported,
     build_detection_dataset,
@@ -39,6 +43,7 @@ from test_stage2_rollout_correction_contract import (
 
 
 OLD_OBJECTIVE_IDS = (
+    "teacher_forcing",
     "recursive_detection_ce",
     "random_permutation_et_rmp_ce",
     "prefix_rollin_et_rmp_ce",
@@ -58,7 +63,7 @@ def _teacher_forcing_objective(
     exact_packing_mapping: bool = False,
 ) -> dict:
     return {
-        "id": "teacher_forcing",
+        "id": "research_teacher_forcing",
         "profile": profile,
         "target_ir": {
             "rollin_policy": {
@@ -69,7 +74,7 @@ def _teacher_forcing_objective(
                 "enabled": exact_packing_mapping,
             },
         },
-        "modules": {
+        "terms": {
             "token_type_mass": {"enabled": True},
             "conditional_valid_set_likelihood": {"enabled": True},
             "within_valid_coverage": {
@@ -83,6 +88,7 @@ def _teacher_forcing_objective(
 
 def _latest_teacher_payload(**objective_updates: object) -> dict:
     payload = _detection_payload()
+    payload["pipeline"] = {"id": "stage1_research_teacher_forcing"}
     objective = _teacher_forcing_objective()
     objective.update(objective_updates)
     payload["objective"] = objective
@@ -95,7 +101,7 @@ def _hard_sft_objective() -> dict:
         coverage_strength=0.0,
         coverage_enabled=False,
     ) | {
-        "modules": {
+        "terms": {
             "token_type_mass": {"enabled": False},
             "conditional_valid_set_likelihood": {"enabled": False},
             "within_valid_coverage": {
@@ -116,15 +122,15 @@ def _hard_sft_objective() -> dict:
 )
 def test_latest_teacher_forcing_accepts_supported_profiles(profile: str) -> None:
     coverage_enabled = profile == "hybrid_valid_set_marginal"
-    base_modules = (
-        _hard_sft_objective()["modules"]
+    base_terms = (
+        _hard_sft_objective()["terms"]
         if profile == "hard_sft"
-        else _teacher_forcing_objective()["modules"]
+        else _teacher_forcing_objective()["terms"]
     )
     payload = _latest_teacher_payload(
         profile=profile,
-        modules={
-            **base_modules,
+        terms={
+            **base_terms,
             "within_valid_coverage": {
                 "enabled": coverage_enabled,
                 "coverage_strength": 0.2 if coverage_enabled else 0.0,
@@ -134,68 +140,97 @@ def test_latest_teacher_forcing_accepts_supported_profiles(profile: str) -> None
 
     cfg = DetectionTrainingConfig.from_mapping(payload)
 
-    assert cfg.objective.id == "teacher_forcing"
+    assert cfg.objective.id == "research_teacher_forcing"
     assert cfg.objective.profile == profile
     assert cfg.objective.target_ir.rollin_policy.name == "random_permutation"
     assert cfg.objective.target_ir.rollin_policy.base_seed == 17
 
 
+def test_sft_runtime_payload_preserves_public_teacher_forcing_sidecars() -> None:
+    from src.sft import _detection_objective_runtime_payload
+
+    cfg = DetectionTrainingConfig.from_mapping(_latest_teacher_payload())
+
+    payload = _detection_objective_runtime_payload(cfg)
+
+    assert payload is not None
+    assert payload["id"] == "research_teacher_forcing"
+    assert payload["target_ir"]["rollin_policy"]["name"] == "random_permutation"
+    assert payload["target_ir"]["rollin_policy"]["base_seed"] == 17
+    assert payload["terms"]["conditional_valid_set_likelihood"]["enabled"] is True
+
+
+def test_research_teacher_forcing_rejects_retired_modules_authoring() -> None:
+    payload = _latest_teacher_payload()
+    objective = payload["objective"]
+    assert isinstance(objective, dict)
+    objective["modules"] = objective.pop("terms")
+
+    with pytest.raises(ValueError, match=r"objective\.modules.*objective\.terms"):
+        DetectionTrainingConfig.from_mapping(payload)
+
+
+def test_detection_objective_config_direct_construction_rejects_sft_id() -> None:
+    with pytest.raises(ValueError, match=r"objective\.id.*standard_ce"):
+        DetectionObjectiveConfig(id="sft")
+
+
 @pytest.mark.parametrize(
-    ("module_key", "module_payload", "expected_key"),
+    ("term_key", "term_payload", "expected_path"),
     [
         (
             "token_type_mass",
             {"enabled": True},
-            r"objective\.modules\.token_type_mass\.enabled",
+            r"objective\.terms\.token_type_mass\.enabled",
         ),
         (
             "conditional_valid_set_likelihood",
             {"enabled": True},
-            r"objective\.modules\.conditional_valid_set_likelihood\.enabled",
+            r"objective\.terms\.conditional_valid_set_likelihood\.enabled",
         ),
         (
             "within_valid_coverage",
             {"enabled": True, "coverage_strength": 0.0},
-            r"objective\.modules\.within_valid_coverage\.enabled",
+            r"objective\.terms\.within_valid_coverage\.enabled",
         ),
         (
             "within_valid_coverage",
             {"enabled": False, "coverage_strength": 0.1},
-            r"objective\.modules\.within_valid_coverage\.coverage_strength",
+            r"objective\.terms\.within_valid_coverage\.coverage_strength",
         ),
         (
             "continuation_margin",
             {"enabled": True},
-            r"objective\.modules\.continuation_margin\.enabled",
+            r"objective\.terms\.continuation_margin\.enabled",
         ),
     ],
 )
-def test_hard_sft_rejects_target_ir_only_modules(
-    module_key: str,
-    module_payload: dict[str, object],
-    expected_key: str,
+def test_hard_sft_rejects_target_ir_only_terms(
+    term_key: str,
+    term_payload: dict[str, object],
+    expected_path: str,
 ) -> None:
     objective = _hard_sft_objective()
-    objective["modules"] = {
-        **objective["modules"],
-        module_key: module_payload,
+    objective["terms"] = {
+        **objective["terms"],
+        term_key: term_payload,
     }
     payload = _latest_teacher_payload(
         profile="hard_sft",
-        modules=objective["modules"],
+        terms=objective["terms"],
     )
 
     with pytest.raises(
         ValueError,
-        match=rf"objective\.profile=hard_sft.*{expected_key}",
+        match=rf"objective\.profile=hard_sft.*{expected_path}",
     ):
         DetectionTrainingConfig.from_mapping(payload)
 
 
 def test_training_config_hard_sft_rejects_enabled_valid_set_likelihood_module() -> None:
     objective = _hard_sft_objective()
-    objective["modules"] = {
-        **objective["modules"],
+    objective["terms"] = {
+        **objective["terms"],
         "conditional_valid_set_likelihood": {"enabled": True},
     }
     raw = _stage2_rollout_correction_payload()
@@ -206,7 +241,7 @@ def test_training_config_hard_sft_rejects_enabled_valid_set_likelihood_module() 
         ValueError,
         match=(
             r"objective\.profile=hard_sft.*"
-            r"objective\.modules\.conditional_valid_set_likelihood\.enabled"
+            r"objective\.terms\.conditional_valid_set_likelihood\.enabled"
         ),
     ):
         TrainingConfig.from_mapping(raw, prompts)
@@ -215,7 +250,7 @@ def test_training_config_hard_sft_rejects_enabled_valid_set_likelihood_module() 
 def test_latest_teacher_forcing_accepts_minimal_hard_sft_profile() -> None:
     payload = _latest_teacher_payload(
         profile="hard_sft",
-        modules={
+        terms={
             "token_type_mass": {"enabled": False},
             "conditional_valid_set_likelihood": {"enabled": False},
         },
@@ -224,15 +259,15 @@ def test_latest_teacher_forcing_accepts_minimal_hard_sft_profile() -> None:
     cfg = DetectionTrainingConfig.from_mapping(payload)
 
     assert cfg.objective.profile == "hard_sft"
-    assert cfg.objective.modules.within_valid_coverage.enabled is False
-    assert cfg.objective.modules.within_valid_coverage.coverage_strength == 0.0
+    assert cfg.objective.terms.within_valid_coverage.enabled is False
+    assert cfg.objective.terms.within_valid_coverage.coverage_strength == 0.0
 
 
 def test_coverage_profile_requires_explicit_positive_coverage_strength() -> None:
     payload = _latest_teacher_payload(
         profile="hybrid_valid_set_marginal",
-        modules={
-            **_teacher_forcing_objective()["modules"],
+        terms={
+            **_teacher_forcing_objective()["terms"],
             "within_valid_coverage": {
                 "enabled": True,
                 "coverage_strength": 0.0,
@@ -249,8 +284,8 @@ def test_coverage_profile_requires_explicit_positive_coverage_strength() -> None
 
 def test_pure_profile_rejects_positive_coverage_strength() -> None:
     payload = _latest_teacher_payload(
-        modules={
-            **_teacher_forcing_objective()["modules"],
+        terms={
+            **_teacher_forcing_objective()["terms"],
             "within_valid_coverage": {
                 "enabled": True,
                 "coverage_strength": 0.1,
@@ -295,7 +330,7 @@ def test_latest_teacher_forcing_rejects_legacy_objective_ids(old_id: str) -> Non
     payload = _detection_payload()
     payload["objective"] = {"id": old_id}
 
-    with pytest.raises(ValueError, match=r"objective\.id.*teacher_forcing"):
+    with pytest.raises(ValueError, match=r"objective\.id.*research_teacher_forcing"):
         DetectionTrainingConfig.from_mapping(payload)
 
 
@@ -305,7 +340,7 @@ def test_training_config_rejects_legacy_objective_ids(old_id: str) -> None:
     raw["objective"] = {"id": old_id}
 
     prompts = ConfigLoader.resolve_prompts(raw)
-    with pytest.raises(ValueError, match=r"objective\.id.*teacher_forcing"):
+    with pytest.raises(ValueError, match=r"objective\.id.*research_teacher_forcing"):
         TrainingConfig.from_mapping(raw, prompts)
 
 
@@ -383,33 +418,40 @@ def test_training_config_accepts_teacher_forcing_objective_without_stage2() -> N
     cfg = TrainingConfig.from_mapping(raw, prompts)
 
     assert cfg.objective is not None
-    assert cfg.objective.id == "teacher_forcing"
+    assert cfg.objective.id == "research_teacher_forcing"
 
 
-def test_checked_in_latest_teacher_forcing_smoke_config_materializes() -> None:
-    config_path = (
-        Path(__file__).resolve().parents[1]
-        / "configs/stage1/teacher_forcing/smoke/compact_full_hard_sft_tiny.yaml"
+def test_target_hierarchy_teacher_forcing_smoke_config_materializes() -> None:
+    cfg = DetectionTrainingConfig.from_mapping(
+        _latest_teacher_payload(
+            profile="hard_sft",
+            terms={
+                "token_type_mass": {"enabled": False},
+                "conditional_valid_set_likelihood": {"enabled": False},
+            },
+        )
     )
 
-    cfg = ConfigLoader.load_materialized_training_config(str(config_path))
-
     assert isinstance(cfg, DetectionTrainingConfig)
-    assert cfg.objective.id == "teacher_forcing"
+    assert cfg.objective.id == "research_teacher_forcing"
     assert cfg.objective.profile == "hard_sft"
     assert cfg.objective.target_ir.rollin_policy.name == "random_permutation"
-    assert cfg.objective.modules.within_valid_coverage.enabled is False
+    assert cfg.objective.terms.within_valid_coverage.enabled is False
     assert cfg.training["packing"] is False
 
 
-def test_checked_in_latest_teacher_forcing_smoke_reaches_dataset_runtime(
+def test_target_hierarchy_teacher_forcing_smoke_reaches_dataset_runtime(
     tmp_path: Path,
 ) -> None:
-    config_path = (
-        Path(__file__).resolve().parents[1]
-        / "configs/stage1/teacher_forcing/smoke/compact_full_hard_sft_tiny.yaml"
+    cfg = DetectionTrainingConfig.from_mapping(
+        _latest_teacher_payload(
+            profile="hard_sft",
+            terms={
+                "token_type_mass": {"enabled": False},
+                "conditional_valid_set_likelihood": {"enabled": False},
+            },
+        )
     )
-    cfg = ConfigLoader.load_materialized_training_config(str(config_path))
     assert isinstance(cfg, DetectionTrainingConfig)
 
     jsonl_path = tmp_path / "train.coord.jsonl"
@@ -449,17 +491,18 @@ def test_detection_dataset_runtime_uses_configured_compact_field_order(
     payload = _latest_teacher_payload()
     payload["detection_template"] = {
         "id": "compact_object_box_closed",
-        "coordinate_surface": "coord_token",
-        "bbox_format": "xyxy",
-        "object_field_order": "geometry_first",
-        "strict_parse": True,
     }
+    sample_factory = payload["sample_factory"]
+    assert isinstance(sample_factory, dict)
+    target_sequence = sample_factory["target_sequence"]
+    assert isinstance(target_sequence, dict)
+    target_sequence["object_field_order"] = "geometry_first"
     payload["evaluation"] = {
         "expected_template": "compact_object_box_closed",
         "parser_mode": "strict_expected",
     }
     contract = resolve_detection_template_contract("compact_object_box_closed")
-    token_rows = dict(payload["token_rows"])  # type: ignore[arg-type]
+    token_rows = dict(payload["token_embeddings_adapter"])  # type: ignore[arg-type]
     groups = dict(token_rows["groups"])  # type: ignore[index]
     groups["compact_structure"] = {
         "role": "structural_ce_only",
@@ -472,7 +515,7 @@ def test_detection_dataset_runtime_uses_configured_compact_field_order(
         ),
     }
     token_rows["groups"] = groups
-    payload["token_rows"] = token_rows
+    payload["token_embeddings_adapter"] = token_rows
     cfg = DetectionTrainingConfig.from_mapping(payload)
 
     jsonl_path = tmp_path / "train.coord.jsonl"
@@ -568,6 +611,19 @@ def test_latest_teacher_forcing_runtime_rejects_packing_surfaces(
             encoded_sample_cache_cfg=SimpleNamespace(enabled=False),
             tokenizer=None,
         )
+
+
+def test_latest_teacher_forcing_schema_rejects_training_packing_with_public_id_message() -> None:
+    payload = _latest_teacher_payload()
+    training = payload["training"]
+    assert isinstance(training, dict)
+    training["packing"] = True
+
+    with pytest.raises(
+        ValueError,
+        match=r"objective\.id=research_teacher_forcing.*training\.packing=true",
+    ):
+        DetectionTrainingConfig.from_mapping(payload)
 
 
 def test_removed_stage2_teacher_forcing_config_tree_is_absent() -> None:

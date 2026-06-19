@@ -537,10 +537,11 @@ class DetectionTrainingDataset(Dataset):
                 messages=messages,
             )
             encoded = self._encode_messages(messages)
-            recursive_detection_targets = self._align_prepared_targets_to_encoded(
-                encoded,
-                prepared,
-            )
+            if prepared.recursive_detection_targets is not None:
+                recursive_detection_targets = self._align_prepared_targets_to_encoded(
+                    encoded,
+                    prepared,
+                )
 
         encoded["messages"] = copy.deepcopy(messages)
         encoded["assistant_payload"] = detection_template.parse_assistant(

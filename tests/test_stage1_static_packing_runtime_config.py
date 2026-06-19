@@ -8,6 +8,7 @@ import yaml
 
 from src.callbacks import DatasetEpochCallback
 from src.config.loader import ConfigLoader
+from src.config.schema import DetectionTrainingConfig
 from src.datasets.wrappers.packed_caption import _fingerprint_diff_keys
 import src.sft as sft_module
 from src.sft import (
@@ -830,6 +831,115 @@ def test_static_packing_fingerprint_tracks_template_and_field_order_axes() -> No
     assert baseline != prompt_changed
 
 
+def test_static_packing_fingerprint_tracks_normalized_hierarchy_axes() -> None:
+    common_custom = dict(
+        user_prompt="prompt",
+        emit_norm="none",
+        json_format="standard",
+        bbox_format="xyxy",
+        object_ordering="sorted",
+        detection_sequence_format="compact",
+        use_summary=False,
+        system_prompt_dense=None,
+        system_prompt_summary=None,
+        offline_max_pixels=1048576,
+        coord_tokens={"enabled": True, "skip_bbox_norm": True},
+        extra={"prompt_variant": "default"},
+    )
+
+    def fingerprint(
+        *,
+        pipeline_id: str = "stage1_standard_sft",
+        objective_id: str = "standard_ce",
+        sample_factory_id: str = "detection_sequence",
+        template_id: str = "compact_object_box_closed",
+        object_ordering: str = "sorted",
+        object_field_order: str = "desc_first",
+        bbox_format: str = "xyxy",
+        coordinate_surface: str = "coord_token",
+        strict_parse: bool = True,
+        prompt_variant: str = "default",
+        packing_length: int = 128,
+    ) -> dict[str, object]:
+        packing_cfg = _parse_packing_config(
+            training_cfg={"packing": True, "packing_mode": "static"},
+            template=_Template(max_length=packing_length),
+            train_args=SimpleNamespace(max_model_len=0),
+        )
+        training_cfg = SimpleNamespace(
+            global_max_length=12000,
+            pipeline={"id": pipeline_id},
+            objective={"id": objective_id},
+            sample_factory={
+                "id": sample_factory_id,
+                "target_sequence": {
+                    "object_ordering": object_ordering,
+                    "object_field_order": object_field_order,
+                    "bbox_format": bbox_format,
+                    "coordinate_surface": coordinate_surface,
+                    "strict_parse": strict_parse,
+                },
+            },
+            detection_template={"id": template_id},
+            prompt={"variant": prompt_variant},
+            template={"system": "sys", "truncation_strategy": "raise"},
+            training={"train_dataloader_shuffle": True},
+        )
+        custom_cfg = SimpleNamespace(
+            **{
+                **common_custom,
+                "object_ordering": object_ordering,
+                "object_field_order": object_field_order,
+                "bbox_format": bbox_format,
+                "extra": {"prompt_variant": prompt_variant},
+            }
+        )
+        return _build_static_packing_fingerprint(
+            training_config=training_cfg,
+            custom_config=custom_cfg,
+            template=_Template(max_length=128),
+            train_args=SimpleNamespace(model="model-a", max_model_len=512),
+            dataset_seed=7,
+            packing_cfg=packing_cfg,
+            train_jsonl="train.jsonl",
+        )
+
+    baseline = fingerprint()
+    research = fingerprint(
+        pipeline_id="stage1_research_teacher_forcing",
+        objective_id="research_teacher_forcing",
+    )
+    random_order = fingerprint(object_ordering="random_permutation")
+    geometry_first = fingerprint(object_field_order="geometry_first")
+    bbox_changed = fingerprint(bbox_format="cxcy_logw_logh")
+    strict_changed = fingerprint(strict_parse=False)
+    prompt_changed = fingerprint(prompt_variant="coco_80")
+    packing_changed = fingerprint(packing_length=256)
+
+    assert baseline["pipeline_id"] == "stage1_standard_sft"
+    assert baseline["objective_id"] == "standard_ce"
+    assert baseline["sample_factory_id"] == "detection_sequence"
+    assert baseline["sample_factory_target_sequence_object_ordering"] == "sorted"
+    assert baseline["sample_factory_target_sequence_object_field_order"] == "desc_first"
+    assert baseline["sample_factory_target_sequence_bbox_format"] == "xyxy"
+    assert baseline["sample_factory_target_sequence_coordinate_surface"] == "coord_token"
+    assert baseline["sample_factory_target_sequence_strict_parse"] is True
+    assert baseline["prompt_variant"] == "default"
+    assert baseline["prompt_template_hash"] == baseline["custom_prompt_template_hash"]
+    assert baseline["chat_template_identity"] == "unknown_chat_template"
+    assert baseline["tokenizer_id"] == "model-a"
+    assert baseline["packing_length"] == 128
+    assert "custom_object_field_order" in baseline
+    assert "coord_tokens" in baseline
+    assert baseline != research
+    assert baseline != random_order
+    assert baseline != geometry_first
+    assert baseline != bbox_changed
+    assert baseline != strict_changed
+    assert baseline != prompt_changed
+    assert baseline != packing_changed
+
+
 def test_fingerprint_diff_keys_reports_missing_vs_null() -> None:
     differing = _fingerprint_diff_keys(
         {"custom_prompt_variant": None},
@@ -921,43 +1031,85 @@ def test_lvis_stage1_config_keeps_canonical_recipe_and_desc_first_sorted_contrac
 
 def test_object_ref_close_box_close_standard_sft_config_contract() -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    prod = ConfigLoader.load_materialized_training_config(
-        str(
-            repo_root
-            / "configs/stage1/profiles/2b/pure_ce_coco80_desc_first_1024_object_ref_close_box_close_sorted_packed_natural_adjacent.yaml"
-        )
-    )
-    smoke = ConfigLoader.load_materialized_training_config(
-        str(
-            repo_root
-            / "configs/stage1/smoke/pure_ce_coco80_desc_first_1024_object_ref_close_box_close_sorted_packed_natural_adjacent_tiny.yaml"
-        )
-    )
+    configs = {
+        "desc_first_prod": ConfigLoader.load_materialized_training_config(
+            str(
+                repo_root
+                / "configs/stage1/profiles/2b/pure_ce_coco80_desc_first_1024_object_ref_close_box_close_sorted_packed_natural_adjacent.yaml"
+            )
+        ),
+        "desc_first_smoke": ConfigLoader.load_materialized_training_config(
+            str(
+                repo_root
+                / "configs/stage1/smoke/pure_ce_coco80_desc_first_1024_object_ref_close_box_close_sorted_packed_natural_adjacent_tiny.yaml"
+            )
+        ),
+        "geometry_first_prod": ConfigLoader.load_materialized_training_config(
+            str(
+                repo_root
+                / "configs/stage1/profiles/2b/pure_ce_coco80_geometry_first_1024_object_ref_close_box_close_sorted_packed_natural_adjacent.yaml"
+            )
+        ),
+        "geometry_first_smoke": ConfigLoader.load_materialized_training_config(
+            str(
+                repo_root
+                / "configs/stage1/smoke/pure_ce_coco80_geometry_first_1024_object_ref_close_box_close_sorted_packed_natural_adjacent_tiny.yaml"
+            )
+        ),
+    }
 
-    for cfg in (prod, smoke):
+    for name, cfg in configs.items():
+        assert isinstance(cfg, DetectionTrainingConfig)
         assert cfg.global_max_length == 12000
         assert cfg.template["max_length"] == 12000
         assert cfg.model["model"] == (
             "model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent"
         )
-        assert cfg.custom.object_ordering == "sorted"
-        assert cfg.custom.detection_sequence_format == "compact"
-        assert cfg.custom.detection_template_id == "compact_object_box_closed"
+        assert cfg.pipeline.id == "stage1_standard_sft"
+        assert cfg.objective.id == "standard_ce"
+        assert cfg.objective.auxiliaries.coord_soft_ce.enabled is False
+        assert cfg.objective.auxiliaries.geometry.enabled is False
+        assert cfg.sample_factory.target_sequence.object_ordering == "sorted"
+        expected_field_order = (
+            "geometry_first" if "geometry_first" in name else "desc_first"
+        )
+        assert cfg.sample_factory.target_sequence.object_field_order == (
+            expected_field_order
+        )
+        assert cfg.detection_template.id == "compact_object_box_closed"
+        assert cfg.evaluation.expected_template == "compact_object_box_closed"
         assert cfg.training["packing"] is True
         assert cfg.training["packing_mode"] == "static"
         assert cfg.training["eval_packing"] is True
         assert cfg.tuner["freeze_llm"] is False
         assert cfg.tuner["freeze_vit"] is True
         assert cfg.tuner["freeze_aligner"] is True
-        assert cfg.custom.coord_soft_ce_w1.enabled is False
-        assert cfg.custom.token_embeddings_adapter.enabled is True
-        assert set(cfg.custom.token_embeddings_adapter.groups) == {
+        assert cfg.token_embeddings_adapter.enabled is True
+        assert set(cfg.token_embeddings_adapter.groups) == {
             "coord_geometry",
             "compact_structure",
         }
+        structural = cfg.token_embeddings_adapter.groups["compact_structure"]
+        assert structural.tokens == (
+            "<|object_ref_start|>",
+            "<|object_ref_end|>",
+            "<|box_start|>",
+            "<|box_end|>",
+        )
+        assert dict(structural.expected_ids) == {
+            "<|object_ref_start|>": 151646,
+            "<|object_ref_end|>": 151647,
+            "<|box_start|>": 151648,
+            "<|box_end|>": 151649,
+        }
+        assert "custom" not in cfg.to_mapping()
 
-    assert prod.training["num_train_epochs"] == 4
-    assert smoke.training["max_steps"] == 2
+    assert configs["desc_first_prod"].training["num_train_epochs"] == 4
+    assert configs["geometry_first_prod"].training["num_train_epochs"] == 4
+    assert configs["desc_first_smoke"].training["max_steps"] == 2
+    assert configs["geometry_first_smoke"].training["max_steps"] == 2
+    assert configs["desc_first_smoke"].debug.train_sample_limit == 32
+    assert configs["geometry_first_smoke"].debug.val_sample_limit == 8
 
 
 def test_lvis_stage1_smoke_config_only_overrides_runtime_limits() -> None:
@@ -997,7 +1149,8 @@ def test_stage2_rollout_correction_prod_config_keeps_residual_pipeline_contract(
         )
     )
 
-    assert cfg.custom.trainer_variant == "stage2_rollout_correction"
+    assert cfg.pipeline.id == "stage2_rollout_correction"
+    assert not hasattr(cfg, "custom")
     assert cfg.rollout_matching.eval_detection.metrics == "coco"
     assert "stage2_rollout_correction" in cfg.training["output_dir"]
     objective = {
