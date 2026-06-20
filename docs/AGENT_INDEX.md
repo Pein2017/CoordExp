@@ -6,7 +6,7 @@ status: canonical
 domain: repo
 summary: Agent-first retrieval guide for CoordExp documentation and research notes.
 tags: [agents, retrieval, docs]
-updated: 2026-06-15
+updated: 2026-06-20
 ---
 
 # Agent Index
@@ -110,6 +110,18 @@ Use `docs/history/` only for non-normative provenance:
 - branch research planning that has not been promoted into current docs
 
 Do not answer current-behavior questions from `docs/history/` unless a current doc explicitly points there for historical context.
+
+## Research Knowledge Pilot
+
+Use [research/](../research/) for the OKF-style idea, investigation, and
+mechanism pilot.
+
+During the pilot, `progress/` remains the historical/evidence source of truth
+and `research/` is the synthesized reading path.
+
+Do not answer current coding, architecture, infrastructure, operator, schema,
+artifact, metric, or training/eval behavior from `research/` when `docs/` or
+`openspec/specs/` cover it.
 
 ## Suggested Search Seeds
 

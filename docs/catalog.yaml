@@ -1,14 +1,16 @@
 schema_version: 1
-updated: 2026-06-15
+updated: 2026-06-20
 
 entrypoints:
   human:
     docs: docs/README.md
     progress: progress/README.md
+    research: research/index.md
   agent:
     router: docs/AGENT_INDEX.md
     catalog: docs/catalog.yaml
     progress: progress/index.yaml
+    research: research/index.md
 
 authority:
   current_truth: docs/
@@ -16,6 +18,8 @@ authority:
   stable_contracts: openspec/specs/
   active_deltas: openspec/changes/<active-change>/
   historical_evidence: progress/
+  research_knowledge_pilot: research/
+  research_knowledge_pilot_status: pilot_synthesized_reading_path_not_current_behavior_authority
 
 config_surfaces:
   training:
@@ -527,6 +531,10 @@ progress:
       title: Explorations Index
       type: router
       status: canonical
+    - path: progress/explorations/2026-06-20_docs_progress_okf_upgrade_alignment.md
+      title: Docs/Progress OKF Upgrade Alignment
+      type: alignment-decision
+      status: active-decision
     - path: progress/explorations/2026-05-15_training_infrastructure_architecture_decisions.md
       title: Training Infrastructure Architecture Decisions
       type: exploration
