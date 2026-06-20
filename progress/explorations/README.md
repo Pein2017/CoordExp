@@ -21,6 +21,8 @@ contracts. Prefer `docs/` and `openspec/specs/` for current structure.
 
 ## Current Entry Points
 
+- [2026-06-20_docs_progress_okf_upgrade_alignment.md](2026-06-20_docs_progress_okf_upgrade_alignment.md)
+  - alignment decision for renaming `progress/` to `research/`, preserving `docs/` and `openspec/` boundaries, and using the future `research/ideas/`, `research/investigations/`, `research/mechanisms/`, and `research/archive/` convention
 - [2026-06-12_coord_repel_stage1_sft_design_decisions.md](2026-06-12_coord_repel_stage1_sft_design_decisions.md)
   - coord-repel Stage-1 design decisions imported from the conservative-design worktree; use as research provenance until current docs promote a stable surface
 - [2026-05-31_grid_anchor_pending_record.md](2026-05-31_grid_anchor_pending_record.md)
