@@ -25,4 +25,5 @@ Only use this archive when reconstructing history, reviewing why an implementati
 ## Contents
 
 - [superpowers/README.md](superpowers/README.md): dated agent implementation plans, design specs, and handoffs
+- [worktree-union/README.md](worktree-union/README.md): raw Markdown union intakes from linked worktrees before cleanup and migration
 - [training/](training/): superseded training design notes moved out of the current training docs layer

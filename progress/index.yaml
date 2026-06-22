@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-06-15
+updated: 2026-06-20
 
 entrypoints:
   human: progress/README.md
@@ -111,6 +111,7 @@ groups:
     - progress/benchmarks/2026-03-11_stage2_rollout_temperature_refinement.md
   explorations:
     - progress/explorations/README.md
+    - progress/explorations/2026-06-20_docs_progress_okf_upgrade_alignment.md
     - progress/explorations/2026-06-12_coord_repel_stage1_sft_design_decisions.md
     - progress/explorations/2026-05-31_grid_anchor_pending_record.md
     - progress/explorations/2026-05-20_stage2_residual_set_self_prefix_ul_redesign.md
@@ -162,6 +163,11 @@ notes:
     kind: direction
     status: superseded
     summary: Superseded Stage-1 plus Stage-2 pseudo-positive direction summary; preserve for design lineage and K=4 context, not current training guidance.
+  - path: progress/explorations/2026-06-20_docs_progress_okf_upgrade_alignment.md
+    title: Docs/Progress OKF Upgrade Alignment
+    kind: alignment-decision
+    status: active-decision
+    summary: Alignment decision for renaming progress to research, preserving docs and openspec authority boundaries, and adopting the ideas/investigations/mechanisms OKF-style hierarchy.
   - path: progress/diagnostics/README.md
     title: Diagnostics Index
     kind: router
