@@ -1,0 +1,18 @@
+extends:
+  - ../profiles/2b/pure_ce_coco80_desc_first_1024_object_ref_close_box_close_sorted_packed_natural_adjacent.yaml
+  - ./common_prodlike.yaml
+
+training:
+  output_root: temp/stage1_smoke_outputs
+  logging_root: temp/stage1_smoke_tb
+  artifact_subdir: stage1/smoke/coco_bbox_max60_1024-coco80-desc_first-compact_object_box_closed-sorted-packed12k-natural_adjacent-pure_ce
+  run_name: smoke_2steps-pure_ce-coco80-desc_first-1024-compact_object_box_closed-sorted-packed12k-natural_adjacent-llm_only
+  save_strategy: "no"
+  static_packing_cache:
+    root_dir: temp/static_packing_smoke/stage1_coco80_desc_first_1024_compact_object_box_closed_sorted_packed12k_natural_adjacent
+
+data:
+  dataloader_num_workers: 0
+  dataloader_pin_memory: false
+  dataloader_prefetch_factor: null
+  dataloader_persistent_workers: false

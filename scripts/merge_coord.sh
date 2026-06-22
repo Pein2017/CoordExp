@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Merge LoRA + coord_offset into a single checkpoint.
+# Merge LoRA + token_embeddings_adapter into a single checkpoint.
 #
-# Coord-offset note (tie-head):
-# - Newer runs default to a tie-head coord_offset adapter (single shared offset table),
+# Token-embeddings adapter note (tie-head):
+# - Newer runs default to a tie-head token_embeddings_adapter (single shared offset table),
 #   which is compatible with Qwen-family tied embeddings.
 # - Older/ablation runs may have separate embed_offset/head_offset; in that case the
 #   injector may materialize lm_head.weight and disable tying in the merged config
@@ -108,31 +108,31 @@ if [[ -f "$BASE_MODEL/coord_tokens.json" && ! -f "$OUTPUT_DIR/coord_tokens.json"
   cp "$BASE_MODEL/coord_tokens.json" "$OUTPUT_DIR/coord_tokens.json"
 fi
 
-# 2) Optionally bake coord_offset into embed_tokens/lm_head if present.
+# 2) Optionally bake token_embeddings_adapter into embed_tokens/lm_head if present.
 #    Tie-head adapters store only a shared embed_offset tensor; for tied Qwen-family
 #    checkpoints this is expected, and patching embed_tokens.weight is sufficient
 #    because lm_head resolves to the same underlying weights after load.
 #    Warn only when the merged output breaks that tie-head contract.
-COORD_OFFSETS_MODE=$("${COORDEXP_PYTHON[@]}" -c $'import sys\nfrom pathlib import Path\n\nadapter_dir = Path(sys.argv[1])\nweights = adapter_dir / \"adapter_model.safetensors\"\nif not weights.exists():\n    print(\"none\")\n    raise SystemExit(0)\n\ntry:\n    from safetensors import safe_open\nexcept Exception:\n    # If safetensors is missing, injection will fail anyway; treat as unknown and let the\n    # caller attempt injection (so we fail loudly rather than silently skipping).\n    print(\"unknown\")\n    raise SystemExit(0)\n\nhas_coord = False\nhas_head = False\nhas_embed = False\n\ntry:\n    with safe_open(str(weights), framework=\"pt\", device=\"cpu\") as f:\n        for k in f.keys():\n            if \"coord_offset_adapter\" not in k:\n                continue\n            has_coord = True\n            if \".head_offset\" in k or k.endswith(\"head_offset\"):\n                has_head = True\n            if \".embed_offset\" in k or k.endswith(\"embed_offset\"):\n                has_embed = True\nexcept Exception:\n    print(\"unknown\")\n    raise SystemExit(0)\n\nif not has_coord:\n    print(\"none\")\nelif has_head:\n    print(\"untied\")\nelif has_embed:\n    print(\"tied\")\nelse:\n    print(\"unknown\")\n' "$ADAPTERS")
+TOKEN_EMBEDDINGS_ADAPTER_MODE=$("${COORDEXP_PYTHON[@]}" -c $'import sys\nfrom pathlib import Path\n\nadapter_dir = Path(sys.argv[1])\nweights = adapter_dir / \"adapter_model.safetensors\"\nif not weights.exists():\n    print(\"none\")\n    raise SystemExit(0)\n\ntry:\n    from safetensors import safe_open\nexcept Exception:\n    # If safetensors is missing, injection will fail anyway; treat as unknown and let the\n    # caller attempt injection (so we fail loudly rather than silently skipping).\n    print(\"unknown\")\n    raise SystemExit(0)\n\nhas_token_embeddings_adapter = False\nhas_head = False\nhas_embed = False\n\ntry:\n    with safe_open(str(weights), framework=\"pt\", device=\"cpu\") as f:\n        for k in f.keys():\n            if \"token_embeddings_adapter\" not in k:\n                continue\n            has_token_embeddings_adapter = True\n            if \".head_offset\" in k or k.endswith(\"head_offset\"):\n                has_head = True\n            if \".embed_offset\" in k or k.endswith(\"embed_offset\"):\n                has_embed = True\nexcept Exception:\n    print(\"unknown\")\n    raise SystemExit(0)\n\nif not has_token_embeddings_adapter:\n    print(\"none\")\nelif has_head:\n    print(\"untied\")\nelif has_embed:\n    print(\"tied\")\nelse:\n    print(\"unknown\")\n' "$ADAPTERS")
 
-if [[ "$COORD_OFFSETS_MODE" != "none" ]]; then
-  if [[ "$COORD_OFFSETS_MODE" == "untied" ]]; then
-    echo "[WARN] Adapter contains separate coord_offset head updates (untied embed/head)." >&2
+if [[ "$TOKEN_EMBEDDINGS_ADAPTER_MODE" != "none" ]]; then
+  if [[ "$TOKEN_EMBEDDINGS_ADAPTER_MODE" == "untied" ]]; then
+    echo "[WARN] Adapter contains separate token_embeddings_adapter head updates (untied embed/head)." >&2
     echo "[WARN] This will likely DISABLE tie_word_embeddings in the merged checkpoint to preserve behavior." >&2
     echo "[WARN] Qwen3-VL default is tie-head (single shared lookup table)." >&2
-  elif [[ "$COORD_OFFSETS_MODE" == "tied" ]]; then
-    echo "[INFO] Adapter uses tie_head=True (shared coord offsets)." >&2
+  elif [[ "$TOKEN_EMBEDDINGS_ADAPTER_MODE" == "tied" ]]; then
+    echo "[INFO] Adapter uses tie_head=True (shared token embeddings offsets)." >&2
     echo "[INFO] For tied Qwen-family checkpoints, injecting embed_tokens.weight is the expected merge path." >&2
-  elif [[ "$COORD_OFFSETS_MODE" == "unknown" ]]; then
-    echo "[WARN] Could not determine coord_offset adapter mode; attempting injection anyway." >&2
+  elif [[ "$TOKEN_EMBEDDINGS_ADAPTER_MODE" == "unknown" ]]; then
+    echo "[WARN] Could not determine token_embeddings_adapter mode; attempting injection anyway." >&2
   fi
 
-  echo "Injecting coord_offset offsets into merged weights..."
-  "${COORDEXP_PYTHON[@]}" "$REPO_ROOT/scripts/tools/inject_coord_offsets.py" \
+  echo "Injecting token_embeddings_adapter offsets into merged weights..."
+  "${COORDEXP_PYTHON[@]}" "$REPO_ROOT/scripts/tools/inject_token_embeddings_adapter.py" \
     --merged_dir "$OUTPUT_DIR" \
     --adapter_dir "$ADAPTERS"
 else
-  echo "No coord_offset tensors found in adapter; skipping coord-token injection."
+  echo "No token_embeddings_adapter tensors found in adapter; skipping token_embeddings_adapter injection."
 fi
 
 # Best-effort: warn if the merged checkpoint config indicates tie-head is broken.
@@ -140,15 +140,15 @@ TIE_WORD_EMBEDDINGS=$("${COORDEXP_PYTHON[@]}" -c $'import json\nimport sys\nfrom
 
 if [[ "$TIE_WORD_EMBEDDINGS" == "true" ]]; then
   echo "[INFO] Merged config keeps tie_word_embeddings=true." >&2
-  echo "[INFO] For tie_head coord_offset adapters, a missing standalone lm_head.weight shard is expected." >&2
+  echo "[INFO] For tie_head token_embeddings_adapter checkpoints, a missing standalone lm_head.weight shard is expected." >&2
 elif [[ "$TIE_WORD_EMBEDDINGS" == "false" ]]; then
   echo "[WARN] tie-head appears disabled in merged config (tie_word_embeddings=${TIE_WORD_EMBEDDINGS})." >&2
-  echo "[WARN] This is expected if you merged an untied coord_offset adapter, but NOT Qwen3-VL default." >&2
+  echo "[WARN] This is expected if you merged an untied token_embeddings_adapter checkpoint, but NOT Qwen3-VL default." >&2
 else
   echo "[WARN] Could not determine tie_word_embeddings from merged config." >&2
-  echo "[WARN] If this was a tie_head coord_offset merge, verify the checkpoint reloads with tied embeddings before shipping it." >&2
+  echo "[WARN] If this was a tie_head token_embeddings_adapter merge, verify the checkpoint reloads with tied embeddings before shipping it." >&2
 fi
 
-echo "Merged model (with coord offsets) saved to: $OUTPUT_DIR"
+echo "Merged model (with token embeddings offsets) saved to: $OUTPUT_DIR"
 echo "Test inference:"
 echo "CUDA_VISIBLE_DEVICES=${GPU_DEVICES%%,*} ${COORDEXP_SWIFT[*]} infer --model $OUTPUT_DIR --stream true"

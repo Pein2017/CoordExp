@@ -1,20 +1,25 @@
 schema_version: 1
-updated: 2026-06-14
+updated: 2026-06-20
 
 entrypoints:
   human:
     docs: docs/README.md
     progress: progress/README.md
+    research: research/index.md
   agent:
     router: docs/AGENT_INDEX.md
     catalog: docs/catalog.yaml
     progress: progress/index.yaml
+    research: research/index.md
 
 authority:
   current_truth: docs/
+  non_normative_doc_history: docs/history/
   stable_contracts: openspec/specs/
   active_deltas: openspec/changes/<active-change>/
   historical_evidence: progress/
+  research_knowledge_pilot: research/
+  research_knowledge_pilot_status: pilot_synthesized_reading_path_not_current_behavior_authority
 
 config_surfaces:
   training:
@@ -75,6 +80,10 @@ docs:
       title: Artifacts & Provenance
       type: artifacts-reference
       status: canonical
+    - path: docs/history/README.md
+      title: Documentation History
+      type: history-router
+      status: historical-router
   data:
     - path: docs/data/README.md
       title: Data & Datasets
@@ -117,6 +126,10 @@ docs:
       title: Training Metrics and Losses
       type: reference
       status: canonical
+    - path: docs/training/drafts/INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md
+      title: Instance-Trie Gaussian SoftCE Draft
+      type: implementation-draft
+      status: draft
   eval:
     - path: docs/eval/README.md
       title: Evaluation & Inference
@@ -134,10 +147,31 @@ docs:
       title: COCO Test-Dev Submission
       type: runbook
       status: canonical
-    - path: docs/eval/UNMATCHED_PROPOSAL_VERIFIER_STUDY.md
+    - path: docs/eval/drafts/UNMATCHED_PROPOSAL_VERIFIER_STUDY.md
       title: Unmatched Proposal Verifier Study
       type: runbook
       status: draft
+  architecture:
+    - path: docs/architecture/README.md
+      title: CoordExp Architecture Notes
+      type: proposal-router
+      status: proposal
+    - path: docs/architecture/INDEPENDENT_ARCHITECTURE_REVIEW.md
+      title: CoordExp Independent Architecture Review
+      type: architecture-review
+      status: review
+    - path: docs/architecture/proposals/2026-05-31-simplification/CODEBASE_SIMPLIFICATION_PROPOSAL.md
+      title: CoordExp Codebase Simplification Proposal
+      type: architecture-proposal
+      status: proposal
+    - path: docs/architecture/proposals/2026-05-31-simplification/OWNERSHIP_BOUNDARIES.md
+      title: CoordExp Subsystem Ownership Boundaries
+      type: architecture-proposal
+      status: proposal
+    - path: docs/architecture/proposals/2026-05-31-simplification/SIMPLIFICATION_ROADMAP.md
+      title: CoordExp Architecture Simplification Roadmap
+      type: architecture-roadmap
+      status: proposal
   standards:
     - path: docs/standards/README.md
       title: Standards
@@ -183,8 +217,25 @@ docs:
       title: Output Sync And Data Provenance
       type: standard
       status: canonical
-  notes:
-    - path: docs/notes/patent/draft.md
+  history:
+    - path: docs/history/README.md
+      title: Documentation History
+      type: history-router
+      status: historical-router
+    - path: docs/history/superpowers/README.md
+      title: Superpowers Plan And Spec Archive
+      type: history-router
+      status: historical-router
+    - path: docs/history/training/STAGE1_ET_RMP_CE.md
+      title: Superseded Stage-1 Continuation Objective
+      type: historical-note
+      status: superseded
+    - path: docs/history/training/STAGE2_DESIGN.md
+      title: Stage-2 Design History
+      type: historical-note
+      status: historical
+  supplemental:
+    - path: docs/supplemental/patent/draft.md
       title: Patent Draft
       type: supplemental-note
       status: supplemental
@@ -200,14 +251,22 @@ progress:
       title: Directions Index
       type: router
       status: canonical
-    - path: progress/directions/prefix_denoising_sft_v1.md
-      title: Prefix-Denoising SFT V1
-      type: direction
-      status: active-draft
     - path: progress/directions/full_idea_v5.md
       title: Full Idea v5
       type: direction
       status: active-reference
+    - path: progress/directions/2026-06-07_segment_aware_packing_infra.md
+      title: Segment-Aware Packing Infrastructure
+      type: direction
+      status: draft-reference
+    - path: progress/directions/2026-06-05_row_conditioned_visual_coverage.md
+      title: Row-Conditioned Visual Coverage
+      type: direction
+      status: historical-reference
+    - path: progress/directions/prefix_denoising_sft_v1.md
+      title: Prefix-Denoising SFT V1
+      type: direction
+      status: branch-provenance
     - path: progress/directions/full_idea_v4.md
       title: Full Idea v4
       type: direction
@@ -215,11 +274,11 @@ progress:
     - path: progress/directions/full_idea_v3.md
       title: Full Idea v3
       type: direction
-      status: active-reference
+      status: historical-reference
     - path: progress/directions/stage2_clean_prefix_v2.md
       title: Full Idea v2
       type: direction
-      status: active-reference
+      status: historical-reference
     - path: progress/directions/stage2_emish_set_supervision_v1.md
       title: CoordExp + EM-ish Set-Supervision for V-LLM Detection (Qwen3-VL, norm1000)
       type: historical-direction
@@ -233,6 +292,30 @@ progress:
       title: Diagnostics Artifact Copies
       type: router
       status: canonical
+    - path: progress/diagnostics/2026-06-12_autoregressive_duplication_causal_chain_synthesis.md
+      title: Autoregressive Duplication Causal Chain Synthesis
+      type: diagnostic-synthesis
+      status: canonical
+    - path: progress/diagnostics/2026-06-12_fn_guidance_and_coord_basin_synthesis.md
+      title: False-Negative Guidance And Coordinate-Basin Synthesis
+      type: diagnostic-synthesis
+      status: canonical
+    - path: progress/diagnostics/2026-06-12_pre_onset_duplication_precursor_synthesis.md
+      title: Pre-Onset Duplication Precursor Synthesis
+      type: diagnostic-synthesis
+      status: canonical
+    - path: progress/diagnostics/2026-06-12_diagnostics_consolidation_summary.md
+      title: June 10-12 Diagnostics Consolidation Summary
+      type: consolidation-summary
+      status: canonical
+    - path: progress/diagnostics/2026-06-15_prefix_denoising_branch_isolation_repair.md
+      title: Prefix-Denoising Branch-Isolation Repair
+      type: launch-health
+      status: branch-provenance
+    - path: progress/diagnostics/2026-06-14_prefix_denoising_launch_health.md
+      title: Prefix-Denoising SFT V1 Launch-Health Smoke
+      type: launch-health
+      status: superseded-branch-evidence
     - path: progress/diagnostics/2026-04-21_raw_text_coordinate_mechanism_findings.md
       title: Raw-Text Coordinate Mechanism Findings
       type: mechanism-summary
@@ -257,6 +340,26 @@ progress:
       title: Stage-2 Birth-First Channel-B Decision Study
       type: diagnostic-study
       status: decision-evidence
+    - path: progress/diagnostics/2026-05-14_a5_a6_iou_gibbs_softce_negative_result.md
+      title: A5/A6 IoU-Gibbs Coordinate SoftCE Negative Result
+      type: diagnostic-study
+      status: concluded-negative
+    - path: progress/diagnostics/2026-06-03_candidate_field_cardinality_representative8192_analysis.md
+      title: Candidate Field Cardinality Representative8192 Analysis
+      type: diagnostic-study
+      status: active-diagnostic
+    - path: progress/diagnostics/2026-06-04_prefix_state_transition_phase_a3_1_analysis.md
+      title: Prefix-State Transition Tomography Phase A3.1 Analysis
+      type: diagnostic-study
+      status: completed-diagnostic
+    - path: progress/diagnostics/2026-06-04_a3_2_sorted_random_no_newline_smoke_findings.md
+      title: A3.2 Sorted-Random No-Newline Smoke Findings
+      type: diagnostic-evidence
+      status: diagnostic-evidence
+    - path: progress/diagnostics/2026-06-05_a3_3_post_x1_instance_basin_real_tiny_smoke.md
+      title: A3.3 Post-X1 Instance-Basin Tomography Real-Tiny Smoke
+      type: diagnostic-evidence
+      status: diagnostic-evidence
     - path: progress/diagnostics/2026-04-11_stage1_coord_basin_duplication_mechanism.md
       title: Stage-1 Coordinate-Basin Duplication Mechanism
       type: mechanism-summary
@@ -362,10 +465,18 @@ progress:
       title: Audits Index
       type: router
       status: canonical
+    - path: progress/audits/2026-06-14_prefix_denoising_sft_v1_audit.md
+      title: Prefix-Denoising SFT V1 Audit
+      type: audit
+      status: branch-provenance
     - path: progress/audits/2026-05-03_type_schema_architecture_audit.md
       title: Type-System And Schema-Boundary Audit
       type: audit
       status: active-audit
+    - path: progress/audits/2026-06-01_detection_scene_cleanup_validation.md
+      title: DetectionScene Cleanup And Validation Gate
+      type: audit
+      status: active
     - path: progress/audits/2026-01-22_stage1_softce_logging.md
       title: 'Stage-1 SoftCE (W1) Audit: Loss Dynamics, Logging Alignment, and Efficiency Notes (2026-01-22)'
       type: audit
@@ -420,10 +531,22 @@ progress:
       title: Explorations Index
       type: router
       status: canonical
+    - path: progress/explorations/2026-06-20_docs_progress_okf_upgrade_alignment.md
+      title: Docs/Progress OKF Upgrade Alignment
+      type: alignment-decision
+      status: active-decision
     - path: progress/explorations/2026-05-15_training_infrastructure_architecture_decisions.md
       title: Training Infrastructure Architecture Decisions
       type: exploration
       status: active-reference
+    - path: progress/explorations/2026-06-12_coord_repel_stage1_sft_design_decisions.md
+      title: Coord-Repel Stage-1 SFT Design Decisions
+      type: exploration
+      status: branch-provenance
+    - path: progress/explorations/2026-05-31_grid_anchor_pending_record.md
+      title: Grid Anchor Compact Detection Pending Record
+      type: exploration
+      status: historical-reference
     - path: progress/explorations/2026-03-19_runtime_refactor_architecture_program.md
       title: Runtime Refactor Architecture Program (2026-03-19)
       type: exploration

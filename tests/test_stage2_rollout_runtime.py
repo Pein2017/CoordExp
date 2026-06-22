@@ -508,7 +508,6 @@ def test_stage2_eval_prompt_provenance_binds_prompt_tokens_and_format(
             _detection_sequence_format=lambda: detection_sequence_format,
             _eval_rollout_template_policy=lambda: types.SimpleNamespace(
                 template_family=detection_sequence_format,
-                decode_policy="compact_grammar",
                 bbox_format="xyxy",
                 object_field_order="desc_first",
             ),
@@ -2698,12 +2697,7 @@ def test_rollout_many_hf_training_rollout_does_not_force_optimizer_offload(
     assert "force_offload_optimizer" not in kwargs
 
 
-def test_hf_rollout_logits_processor_does_not_wire_compact_grammar() -> None:
-    trainer = object.__new__(Stage2RolloutRuntime)
-    trainer._eval_rollout_template_policy = lambda: types.SimpleNamespace(
-        template_family="compact_full",
-    )
-
+def test_hf_rollout_logits_processor_keeps_only_trailing_processors() -> None:
     class _NoopProcessor:
         def __call__(self, input_ids, scores):
             return scores
@@ -2715,7 +2709,7 @@ def test_hf_rollout_logits_processor_does_not_wire_compact_grammar() -> None:
         tokenizer=tokenizer,
         prompt_pad_len=7,
         batch_size=3,
-        rollout_template_policy=trainer._eval_rollout_template_policy(),
+        rollout_template_policy=types.SimpleNamespace(template_family="compact_full"),
         trailing_processors=[trailing_processor],
     )
 

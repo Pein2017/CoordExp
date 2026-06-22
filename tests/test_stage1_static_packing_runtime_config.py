@@ -678,9 +678,63 @@ def test_static_packing_fingerprint_tracks_detection_sequence_format() -> None:
         train_jsonl="train.jsonl",
     )
 
-    assert coordjson["custom_detection_sequence_format"] == "coordjson"
-    assert compact["custom_detection_sequence_format"] == "compact_full"
+    assert coordjson["custom_detection_sequence_format"] == "stage1_json_pretty"
+    assert compact["custom_detection_sequence_format"] == "compact"
     assert coordjson != compact
+
+
+def test_static_packing_fingerprint_canonicalizes_legacy_compact_format() -> None:
+    packing_cfg = _parse_packing_config(
+        training_cfg={"packing": True, "packing_mode": "static"},
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=0),
+    )
+    training_cfg = SimpleNamespace(
+        global_max_length=1024,
+        template={"system": "sys", "truncation_strategy": "raise"},
+        training={"train_dataloader_shuffle": True},
+    )
+    common_custom = dict(
+        user_prompt="prompt",
+        emit_norm="none",
+        json_format="standard",
+        bbox_format="xyxy",
+        object_ordering="sorted",
+        object_field_order="desc_first",
+        use_summary=False,
+        system_prompt_dense=None,
+        system_prompt_summary=None,
+        offline_max_pixels=1048576,
+        coord_tokens={"enabled": True, "skip_bbox_norm": True},
+    )
+
+    compact = _build_static_packing_fingerprint(
+        training_config=training_cfg,
+        custom_config=SimpleNamespace(
+            **common_custom,
+            detection_sequence_format="compact",
+        ),
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=512),
+        dataset_seed=7,
+        packing_cfg=packing_cfg,
+        train_jsonl="train.jsonl",
+    )
+    compact_full = _build_static_packing_fingerprint(
+        training_config=training_cfg,
+        custom_config=SimpleNamespace(
+            **common_custom,
+            detection_sequence_format="compact_full",
+        ),
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=512),
+        dataset_seed=7,
+        packing_cfg=packing_cfg,
+        train_jsonl="train.jsonl",
+    )
+
+    assert compact["custom_detection_sequence_format"] == "compact"
+    assert compact == compact_full
 
 
 def test_static_packing_fingerprint_tracks_prompt_variant_and_template_hash() -> None:
@@ -739,6 +793,93 @@ def test_static_packing_fingerprint_tracks_prompt_variant_and_template_hash() ->
     assert isinstance(default_fp["custom_prompt_template_hash"], str)
     assert isinstance(lvis_fp["custom_prompt_template_hash"], str)
     assert default_fp["custom_prompt_template_hash"] != lvis_fp["custom_prompt_template_hash"]
+
+
+def test_static_packing_fingerprint_tracks_template_and_field_order_axes() -> None:
+    packing_cfg = _parse_packing_config(
+        training_cfg={"packing": True, "packing_mode": "static"},
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=0),
+    )
+    common_training = dict(
+        global_max_length=12000,
+        template={"system": "sys", "truncation_strategy": "raise"},
+        training={"train_dataloader_shuffle": True},
+    )
+    common_custom = dict(
+        user_prompt="prompt",
+        emit_norm="none",
+        json_format="standard",
+        bbox_format="xyxy",
+        object_ordering="sorted",
+        detection_sequence_format="compact",
+        use_summary=False,
+        system_prompt_dense=None,
+        system_prompt_summary=None,
+        offline_max_pixels=1048576,
+        coord_tokens={"enabled": True, "skip_bbox_norm": True},
+        extra={"prompt_variant": "default"},
+    )
+
+    def fingerprint(
+        *,
+        template_id: str = "compact_object_box_closed",
+        object_field_order: str = "desc_first",
+        global_max_length: int = 12000,
+        prompt_variant: str = "default",
+        packing_length: int = 128,
+    ) -> dict[str, object]:
+        local_packing_cfg = _parse_packing_config(
+            training_cfg={"packing": True, "packing_mode": "static"},
+            template=_Template(max_length=packing_length),
+            train_args=SimpleNamespace(max_model_len=0),
+        )
+        training_cfg = SimpleNamespace(
+            **{
+                **common_training,
+                "global_max_length": global_max_length,
+                "detection_template": {"id": template_id},
+            }
+        )
+        custom_cfg = SimpleNamespace(
+            **{
+                **common_custom,
+                "object_field_order": object_field_order,
+                "extra": {"prompt_variant": prompt_variant},
+            }
+        )
+        return _build_static_packing_fingerprint(
+            training_config=training_cfg,
+            custom_config=custom_cfg,
+            template=_Template(max_length=128),
+            train_args=SimpleNamespace(max_model_len=512),
+            dataset_seed=7,
+            packing_cfg=local_packing_cfg,
+            train_jsonl="train.jsonl",
+        )
+
+    baseline = fingerprint()
+    geometry_first = fingerprint(object_field_order="geometry_first")
+    object_closed = fingerprint(template_id="compact_object_closed")
+    longer = fingerprint(global_max_length=16000)
+    longer_packing = fingerprint(packing_length=256)
+    prompt_changed = fingerprint(prompt_variant="lvis_stage1_federated")
+
+    assert baseline["detection_template_id"] == "compact_object_box_closed"
+    assert baseline["custom_object_field_order"] == "desc_first"
+    assert baseline["global_max_length"] == 12000
+    assert baseline["packing_length"] == 128
+    assert baseline["custom_prompt_template_hash"]
+    assert geometry_first["custom_object_field_order"] == "geometry_first"
+    assert object_closed["detection_template_id"] == "compact_object_closed"
+    assert longer["global_max_length"] == 16000
+    assert longer_packing["packing_length"] == 256
+    assert prompt_changed["custom_prompt_template_hash"] != baseline["custom_prompt_template_hash"]
+    assert baseline != geometry_first
+    assert baseline != object_closed
+    assert baseline != longer
+    assert baseline != longer_packing
+    assert baseline != prompt_changed
 
 
 def test_fingerprint_diff_keys_reports_missing_vs_null() -> None:
@@ -805,7 +946,7 @@ def test_lvis_stage1_config_keeps_canonical_recipe_and_desc_first_sorted_contrac
         str(repo_root / "configs/stage1/lvis_bbox_max60_1024.yaml")
     )
 
-    assert cfg.training["optimizer"] == "multimodal_coord_offset"
+    assert cfg.training["optimizer"] == "multimodal_token_embeddings_adapter"
     assert cfg.training["run_name"] == "epoch_4-hard_ce_soft_ce_w1-2b"
     assert cfg.custom.train_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/train.coord.jsonl"
     assert cfg.custom.val_jsonl == "public_data/lvis/rescale_32_1024_bbox_max60/val.coord.jsonl"
@@ -820,6 +961,7 @@ def test_lvis_stage1_config_keeps_canonical_recipe_and_desc_first_sorted_contrac
     assert cfg.custom.coord_soft_ce_w1.enabled is True
     assert cfg.custom.coord_soft_ce_w1.ce_weight == pytest.approx(1.0)
     assert cfg.custom.coord_soft_ce_w1.soft_ce_weight == pytest.approx(1.0)
+
     assert cfg.custom.coord_soft_ce_w1.w1_weight == pytest.approx(1.0)
     assert cfg.custom.coord_soft_ce_w1.gate_weight == pytest.approx(5.0)
     assert cfg.custom.bbox_geo.enabled is False
@@ -827,6 +969,47 @@ def test_lvis_stage1_config_keeps_canonical_recipe_and_desc_first_sorted_contrac
     assert cfg.training["artifact_subdir"] == "stage1/lvis_bbox_max60_1024_coord_softce_w1"
     assert cfg.training["output_dir"] == "./output/stage1/lvis_bbox_max60_1024_coord_softce_w1"
     assert cfg.training["logging_dir"] == "./tb/stage1/lvis_bbox_max60_1024_coord_softce_w1"
+
+
+def test_object_ref_close_box_close_standard_sft_config_contract() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    prod = ConfigLoader.load_materialized_training_config(
+        str(
+            repo_root
+            / "configs/stage1/profiles/2b/pure_ce_coco80_desc_first_1024_object_ref_close_box_close_sorted_packed_natural_adjacent.yaml"
+        )
+    )
+    smoke = ConfigLoader.load_materialized_training_config(
+        str(
+            repo_root
+            / "configs/stage1/smoke/pure_ce_coco80_desc_first_1024_object_ref_close_box_close_sorted_packed_natural_adjacent_tiny.yaml"
+        )
+    )
+
+    for cfg in (prod, smoke):
+        assert cfg.global_max_length == 12000
+        assert cfg.template["max_length"] == 12000
+        assert cfg.model["model"] == (
+            "model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent"
+        )
+        assert cfg.custom.object_ordering == "sorted"
+        assert cfg.custom.detection_sequence_format == "compact"
+        assert cfg.custom.detection_template_id == "compact_object_box_closed"
+        assert cfg.training["packing"] is True
+        assert cfg.training["packing_mode"] == "static"
+        assert cfg.training["eval_packing"] is True
+        assert cfg.tuner["freeze_llm"] is False
+        assert cfg.tuner["freeze_vit"] is True
+        assert cfg.tuner["freeze_aligner"] is True
+        assert cfg.custom.coord_soft_ce_w1.enabled is False
+        assert cfg.custom.token_embeddings_adapter.enabled is True
+        assert set(cfg.custom.token_embeddings_adapter.groups) == {
+            "coord_geometry",
+            "compact_structure",
+        }
+
+    assert prod.training["num_train_epochs"] == 4
+    assert smoke.training["max_steps"] == 2
 
 
 def test_lvis_stage1_smoke_config_only_overrides_runtime_limits() -> None:

@@ -6,7 +6,7 @@ status: canonical
 domain: research-history
 summary: Human router for historical directions, diagnostics, audits, benchmarks, explorations, and pretraining history.
 tags: [progress, history, research]
-updated: 2026-05-03
+updated: 2026-06-15
 ---
 
 # Progress Index
@@ -34,6 +34,8 @@ the first entrypoint.
   - architecture, infrastructure, and implementation-planning explorations
 - [progress/pretrain/README.md](pretrain/README.md)
   - Stage-1 foundation history and early pretraining evidence
+- [progress/handoffs/](handoffs/)
+  - historical handoff notes preserved for continuation provenance
 
 ## Quick Routing
 
@@ -47,6 +49,8 @@ the first entrypoint.
   - start with [progress/explorations/README.md](explorations/README.md)
 - Stage-1 background:
   - start with [progress/pretrain/README.md](pretrain/README.md)
+- continuation provenance:
+  - start with `progress/handoffs/` when a branch handoff is explicitly relevant
 
 Use [progress/index.yaml](index.yaml) when you want the machine-readable
 category map.

@@ -49,6 +49,59 @@ def test_unknown_key_fails_fast_with_dotted_path(section: str):
     assert f"{section}.unknown_key" in str(exc.value)
 
 
+def test_custom_token_embeddings_adapter_is_the_active_special_token_surface():
+    payload = _base_training_payload()
+    payload["custom"]["token_embeddings_adapter"] = {
+        "enabled": True,
+        "tie_head": True,
+        "groups": {
+            "coord_geometry": {
+                "role": "coord_geometry",
+                "start_token": "<|coord_0|>",
+                "end_token": "<|coord_999|>",
+                "expected_start": 151670,
+                "expected_end": 152669,
+            },
+            "schema_tokens": {
+                "role": "structural_ce_only",
+                "tokens": [
+                    "<|object_ref_start|>",
+                    "<|object_ref_end|>",
+                    "<|box_start|>",
+                    "<|box_end|>",
+                ],
+                "expected_ids": {
+                    "<|object_ref_start|>": 151646,
+                    "<|object_ref_end|>": 151647,
+                    "<|box_start|>": 151648,
+                    "<|box_end|>": 151649,
+                },
+            },
+        },
+        "embed_lr": 1.0e-4,
+        "head_lr": 1.0e-4,
+        "weight_decay": 0.0,
+    }
+
+    cfg = TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    adapter_cfg = cfg.custom.token_embeddings_adapter
+    assert adapter_cfg.enabled is True
+    assert adapter_cfg.tie_head is True
+    assert set(adapter_cfg.groups) == {"coord_geometry", "schema_tokens"}
+    assert adapter_cfg.embed_lr == 1.0e-4
+    assert adapter_cfg.head_lr == 1.0e-4
+
+
+@pytest.mark.parametrize("legacy_key", ["coord_offset", "trainable_token_rows"])
+def test_custom_legacy_special_token_surfaces_are_rejected(legacy_key: str):
+    payload = _base_training_payload()
+    payload["custom"][legacy_key] = {"enabled": False}
+
+    with pytest.raises(ValueError, match=rf"custom\.{legacy_key}.*token_embeddings_adapter"):
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+
 def test_training_internal_packing_keys_are_allowed():
     payload = _base_training_payload()
     payload["training"] = {

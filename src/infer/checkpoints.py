@@ -16,7 +16,7 @@ from src.tokens.qwen_native import EXPECTED_COORD_END_ID, EXPECTED_COORD_START_I
 VLLM_ADAPTER_UNSUPPORTED_MESSAGE = (
     "Adapter-based inference is supported only with infer.backend.type=hf in "
     "this repo. Current Stage-1 adapters include DoRA + "
-    "coord_offset_adapter, which vLLM does not support natively; use a "
+    "token_embeddings_adapter, which vLLM does not support natively; use a "
     "merged checkpoint for vLLM."
 )
 
@@ -29,8 +29,8 @@ _STRUCTURAL_ROW_ID_TO_TOKEN = {
 
 
 @dataclass(frozen=True)
-class CoordOffsetAdapterSpec:
-    coord_ids: tuple[int, ...]
+class TokenEmbeddingsAdapterSpec:
+    token_ids: tuple[int, ...]
     tie_head: bool
     embed_offset_rows: int
     head_offset_rows: int | None = None
@@ -41,7 +41,7 @@ class AdapterCheckpointInfo:
     path: str
     base_model_name_or_path: Optional[str]
     modules_to_save: tuple[str, ...]
-    coord_offset_spec: Optional[CoordOffsetAdapterSpec]
+    token_embeddings_adapter_spec: Optional[TokenEmbeddingsAdapterSpec]
 
 
 @dataclass(frozen=True)
@@ -77,12 +77,12 @@ def _require_local_adapter_dir(path: str) -> Path:
     return adapter_dir
 
 
-def _load_coord_offset_spec(adapter_dir: Path) -> CoordOffsetAdapterSpec:
+def _load_token_embeddings_adapter_spec(adapter_dir: Path) -> TokenEmbeddingsAdapterSpec:
     try:
         from safetensors import safe_open
     except ImportError as exc:
         raise RuntimeError(
-            "coord_offset_adapter inference requires the 'safetensors' package "
+            "token_embeddings_adapter inference requires the 'safetensors' package "
             "in the active environment."
         ) from exc
 
@@ -92,42 +92,42 @@ def _load_coord_offset_spec(adapter_dir: Path) -> CoordOffsetAdapterSpec:
             f"adapter_model.safetensors not found under {adapter_dir}."
         )
 
-    coord_key: Optional[str] = None
+    token_ids_key: Optional[str] = None
     embed_key: Optional[str] = None
     head_key: Optional[str] = None
-    coord_ids: tuple[int, ...] = ()
+    token_ids: tuple[int, ...] = ()
     embed_offset_rows: int | None = None
     head_offset_rows: int | None = None
 
     with safe_open(str(weights_path), framework="pt", device="cpu") as handle:
         for key in handle.keys():
-            if key.endswith("coord_offset_adapter.coord_ids"):
-                coord_key = key
-            elif key.endswith("coord_offset_adapter.embed_offset"):
+            if key.endswith("token_embeddings_adapter.token_ids"):
+                token_ids_key = key
+            elif key.endswith("token_embeddings_adapter.embed_offset"):
                 embed_key = key
-            elif key.endswith("coord_offset_adapter.head_offset"):
+            elif key.endswith("token_embeddings_adapter.head_offset"):
                 head_key = key
 
-        if coord_key is None or embed_key is None:
+        if token_ids_key is None or embed_key is None:
             raise ValueError(
-                "coord_offset_adapter was declared in modules_to_save, but "
-                "adapter_model.safetensors is missing coord_ids/embed_offset."
+                "token_embeddings_adapter was declared in modules_to_save, but "
+                "adapter_model.safetensors is missing token_ids/embed_offset."
             )
 
-        coord_ids_tensor = handle.get_tensor(coord_key).reshape(-1).tolist()
-        coord_ids = tuple(int(value) for value in coord_ids_tensor)
+        token_ids_tensor = handle.get_tensor(token_ids_key).reshape(-1).tolist()
+        token_ids = tuple(int(value) for value in token_ids_tensor)
         embed_offset_rows = int(handle.get_tensor(embed_key).shape[0])
         if head_key is not None:
             head_offset_rows = int(handle.get_tensor(head_key).shape[0])
 
-    if not coord_ids:
-        raise ValueError("coord_offset_adapter.coord_ids must be non-empty.")
+    if not token_ids:
+        raise ValueError("token_embeddings_adapter.token_ids must be non-empty.")
 
     if embed_offset_rows is None:
-        raise ValueError("coord_offset_adapter.embed_offset row count is unavailable.")
+        raise ValueError("token_embeddings_adapter.embed_offset row count is unavailable.")
 
-    return CoordOffsetAdapterSpec(
-        coord_ids=coord_ids,
+    return TokenEmbeddingsAdapterSpec(
+        token_ids=token_ids,
         tie_head=head_key is None,
         embed_offset_rows=embed_offset_rows,
         head_offset_rows=head_offset_rows,
@@ -164,15 +164,15 @@ def load_adapter_checkpoint_info(adapter_checkpoint: str) -> AdapterCheckpointIn
     else:
         raise ValueError(f"{cfg_path}: modules_to_save must be a list when present.")
 
-    coord_offset_spec: Optional[CoordOffsetAdapterSpec] = None
-    if "coord_offset_adapter" in modules_to_save:
-        coord_offset_spec = _load_coord_offset_spec(adapter_dir)
+    token_embeddings_adapter_spec: Optional[TokenEmbeddingsAdapterSpec] = None
+    if "token_embeddings_adapter" in modules_to_save:
+        token_embeddings_adapter_spec = _load_token_embeddings_adapter_spec(adapter_dir)
 
     return AdapterCheckpointInfo(
         path=str(adapter_checkpoint),
         base_model_name_or_path=base_model_name_or_path,
         modules_to_save=modules_to_save,
-        coord_offset_spec=coord_offset_spec,
+        token_embeddings_adapter_spec=token_embeddings_adapter_spec,
     )
 
 
@@ -222,7 +222,7 @@ def resolve_inference_checkpoint(
     )
 
 
-def validate_compact_coord_token_adapter_contract(
+def validate_compact_token_embeddings_adapter_contract(
     resolved_checkpoint: ResolvedInferenceCheckpoint,
     *,
     detection_template_id: str,
@@ -237,16 +237,18 @@ def validate_compact_coord_token_adapter_contract(
         return
 
     adapter_info = resolved_checkpoint.adapter_info
-    coord_spec = adapter_info.coord_offset_spec if adapter_info is not None else None
-    if coord_spec is None:
+    adapter_spec = (
+        adapter_info.token_embeddings_adapter_spec if adapter_info is not None else None
+    )
+    if adapter_spec is None:
         raise ValueError(
             f"{contract.template_id} adapter inference requires adapter_config.json "
-            "modules_to_save to include coord_offset_adapter and "
-            "adapter_model.safetensors to contain coord_offset_adapter weights. "
+            "modules_to_save to include token_embeddings_adapter and "
+            "adapter_model.safetensors to contain token_embeddings_adapter weights. "
             "This checkpoint would otherwise run with coordinate/token-row offsets inactive."
         )
 
-    actual = tuple(int(token_id) for token_id in coord_spec.coord_ids)
+    actual = tuple(int(token_id) for token_id in adapter_spec.token_ids)
     expected = required_trainable_token_row_ids(contract.template_id)
     actual_set = set(actual)
     required_set = set(expected)
@@ -257,7 +259,7 @@ def validate_compact_coord_token_adapter_contract(
     )
     if len(actual) != len(required_set) or missing or extra or duplicates:
         raise ValueError(
-            f"{contract.template_id} coord_offset_adapter must contain exactly "
+            f"{contract.template_id} token_embeddings_adapter must contain exactly "
             f"{len(expected)} trainable token rows: "
             f"{_describe_required_rows(contract.template_id)}. "
             f"got={len(actual)} unique={len(actual_set)} "
@@ -265,17 +267,20 @@ def validate_compact_coord_token_adapter_contract(
             f"extra={_describe_row_id_list(extra[:8])} "
             f"duplicates={_describe_row_id_list(duplicates[:8])}"
         )
-    if coord_spec.embed_offset_rows != len(actual):
+    if adapter_spec.embed_offset_rows != len(actual):
         raise ValueError(
-            f"{contract.template_id} coord_offset_adapter embed_offset rows "
-            f"must match coord_ids; got embed_offset rows={coord_spec.embed_offset_rows} "
-            f"coord_ids={len(actual)}"
+            f"{contract.template_id} token_embeddings_adapter embed_offset rows "
+            f"must match token_ids; got embed_offset rows={adapter_spec.embed_offset_rows} "
+            f"token_ids={len(actual)}"
         )
-    if coord_spec.head_offset_rows is not None and coord_spec.head_offset_rows != len(actual):
+    if (
+        adapter_spec.head_offset_rows is not None
+        and adapter_spec.head_offset_rows != len(actual)
+    ):
         raise ValueError(
-            f"{contract.template_id} coord_offset_adapter head_offset rows "
-            f"must match coord_ids; got head_offset rows={coord_spec.head_offset_rows} "
-            f"coord_ids={len(actual)}"
+            f"{contract.template_id} token_embeddings_adapter head_offset rows "
+            f"must match token_ids; got head_offset rows={adapter_spec.head_offset_rows} "
+            f"token_ids={len(actual)}"
         )
 
 

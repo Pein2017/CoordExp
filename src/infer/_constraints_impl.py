@@ -3,11 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Sequence
-
-import torch
-from transformers import LogitsProcessor
-
 import re
 from typing import Callable, Iterable, Sequence
 

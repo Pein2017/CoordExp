@@ -6,7 +6,7 @@ status: canonical
 domain: research-history
 summary: Router for failure investigations, mechanism studies, threshold sweeps, and operator notes that support diagnosis.
 tags: [progress, diagnostics, investigations]
-updated: 2026-06-02
+updated: 2026-06-15
 ---
 
 # Diagnostics Index
@@ -22,6 +22,36 @@ Prefer `progress/benchmarks/` when the output is mainly a measured run-vs-run or
 
 ## Diagnostic Clusters
 
+- Active autoregressive duplication mechanism diagnosis
+  - Start with
+    [2026-06-12_autoregressive_duplication_causal_chain_synthesis.md](2026-06-12_autoregressive_duplication_causal_chain_synthesis.md)
+    for the consolidated June 10-11 causal-chain read on residual localization,
+    Layer 17/head-1 visual-basin routing, candidate-basin specificity, and x2
+    overcorrection. This document supersedes the one-probe Phase 4 fragments
+    from June 10-11.
+  - Use
+    [2026-06-12_fn_guidance_and_coord_basin_synthesis.md](2026-06-12_fn_guidance_and_coord_basin_synthesis.md)
+    for the consolidated June 11-12 false-negative guidance branch, including
+    prefix-state coordinate-basin lock, vase same-slot repair, hard book/chair
+    context-band probes, and selector follow-ups.
+  - Use
+    [2026-06-12_pre_onset_duplication_precursor_synthesis.md](2026-06-12_pre_onset_duplication_precursor_synthesis.md)
+    for the consolidated June 12 pre-onset branch, including coordinate-basin
+    precursor drift, rank-moving residual selectors, matched-pair sign splits,
+    and Layer 16/head-8 route-content evidence.
+  - See
+    [2026-06-12_diagnostics_consolidation_summary.md](2026-06-12_diagnostics_consolidation_summary.md)
+    for the source-to-merged-document map and loss-check method for the June
+    10-12 consolidation.
+- Prefix-denoising branch launch-health notes
+  - [2026-06-14_prefix_denoising_launch_health.md](2026-06-14_prefix_denoising_launch_health.md)
+    records the original tiny launch-health smoke on `codex/prefix-denoising-sft`;
+    it is superseded by the branch-isolation repair note for current branch
+    interpretation.
+  - [2026-06-15_prefix_denoising_branch_isolation_repair.md](2026-06-15_prefix_denoising_branch_isolation_repair.md)
+    records the post-audit branch-isolation repair and focused verification on
+    `codex/prefix-denoising-sft`. Treat it as branch provenance until the
+    prefix-denoising code/config surface lands in main.
 - Hard-CE coordinate-logit and token-embedding locality diagnostics
   - Start with
     [2026-05-18_hard_ce_coord_logit_embedding_locality.md](2026-05-18_hard_ce_coord_logit_embedding_locality.md)
@@ -34,6 +64,10 @@ Prefer `progress/benchmarks/` when the output is mainly a measured run-vs-run or
     for the Gaussian SoftCE A5/A6 follow-up on checkpoint `3664`, including
     A5 Gaussian/default versus A6 CE-anchored mix-0.2 teacher-forced,
     self-prefix, embedding-locality, and guarded `val200` rollout evidence.
+  - Use
+    [2026-05-14_a5_a6_iou_gibbs_softce_negative_result.md](2026-05-14_a5_a6_iou_gibbs_softce_negative_result.md)
+    for the earlier IoU/CIoU-Gibbs A5/A6 negative result and artifact-bundle
+    routing. Keep this distinct from the later Gaussian SoftCE follow-up.
 - Compact-full coord-confidence / stop-gate diagnostics
   - Start with
     [2026-05-08_compact_full_coord_confidence_stop_gate_diagnostics.md](2026-05-08_compact_full_coord_confidence_stop_gate_diagnostics.md)
@@ -71,6 +105,25 @@ Prefer `progress/benchmarks/` when the output is mainly a measured run-vs-run or
     `x1` misdirects binding, same-desc competitors are the sharpest failure
     surface, and attention remains background/context-heavy rather than a clean
     target-object spotlight.
+- Candidate-field, prefix-state, and post-X1 tomography diagnostics
+  - Start with
+    [2026-06-03_candidate_field_cardinality_representative8192_analysis.md](2026-06-03_candidate_field_cardinality_representative8192_analysis.md)
+    for the representative8192 candidate-field cardinality analysis.
+  - Use
+    [2026-06-04_prefix_state_transition_phase_a3_1_launch.md](2026-06-04_prefix_state_transition_phase_a3_1_launch.md)
+    and
+    [2026-06-04_prefix_state_transition_phase_a3_1_analysis.md](2026-06-04_prefix_state_transition_phase_a3_1_analysis.md)
+    for the A3.1 prefix-state transition launch and analysis notes.
+  - Use
+    [2026-06-04_a3_2_sorted_random_no_newline_smoke_findings.md](2026-06-04_a3_2_sorted_random_no_newline_smoke_findings.md)
+    for A3.2 sorted-random no-newline smoke evidence.
+  - Use
+    [2026-06-05_a3_3_post_x1_instance_basin_real_tiny_smoke.md](2026-06-05_a3_3_post_x1_instance_basin_real_tiny_smoke.md)
+    for the A3.3 post-X1 instance-basin real-tiny smoke note.
+- Stage-2 residual-set refactor and launch-health notes
+  - [2026-05-20_residual_set_stage2_smoke.md](2026-05-20_residual_set_stage2_smoke.md)
+  - [2026-05-22_residual_set_refactor_preflight.md](2026-05-22_residual_set_refactor_preflight.md)
+  - [2026-05-23_vllm_online_residual_trie_gate_and_prod_candidate.md](2026-05-23_vllm_online_residual_trie_gate_and_prod_candidate.md)
 - Stage-2 birth-first Channel-B decision evidence
   - Start with
     [2026-04-22_stage2_birth_first_channel_b_decision_study.md](2026-04-22_stage2_birth_first_channel_b_decision_study.md)

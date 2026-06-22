@@ -7,7 +7,7 @@ topics: [stage2, diagnostics, rollout, schedule, historical-stage2-ab]
 references:
   - docs/PROJECT_CONTEXT.md
   - progress/directions/stage2_clean_prefix_v2.md
-  - docs/training/STAGE2_DESIGN.md
+  - docs/history/training/STAGE2_DESIGN.md
 ---
 
 # Stage-2 (AB) symptoms after `b_ratio=0.85`: rollout length growth + stability crash
@@ -19,7 +19,7 @@ Note: referenced run artifacts may be pruned; paths are best-effort pointers.
 Status note:
 - this is a historical diagnosis note from the earlier `stage2_ab` config era,
 - config paths such as `configs/stage2_ab/...` are provenance handles for the runs analyzed here and are not current repo entrypoints,
-- for the current Stage-2 stack, start with `docs/training/STAGE2_DESIGN.md`, `docs/training/README.md`, and `configs/stage2_two_channel/`.
+- for the current Stage-2 stack, start with `docs/training/README.md` and `docs/training/STAGE2_RUNBOOK.md`.
 
 This note summarizes **what went wrong** in an earlier Stage-2 AB configuration when **Channel-B dominated** (`stage2_ab.schedule.b_ratio=0.85`) for a few hundred steps, especially when rollouts were allowed to grow long (e.g., `rollout_matching.max_new_tokens=3084`). It preserves the evidence and the historical lessons that later informed the cleaner v2 contract.
 
@@ -56,7 +56,7 @@ At the time of this note, `progress/directions/stage2_emish_set_supervision_v1.m
 
 The rationale stated there is that Stage-1/SFT already gives strong geometry/format stability, and Stage-2's main remaining instability is **self-context generation** (long JSON, permutation, missing/extras/format). Channel-B should target discrete/set-level failures, while Channel-A anchors the model and prevents drift.
 
-For the current clean-prefix Channel-B contract, use `docs/training/STAGE2_DESIGN.md` and `progress/directions/stage2_clean_prefix_v2.md` rather than this historical schedule discussion.
+For the historical clean-prefix Channel-B contract, use `docs/history/training/STAGE2_DESIGN.md` and `progress/directions/stage2_clean_prefix_v2.md` rather than this historical schedule discussion.
 
 This matters because the observed failures look exactly like what you'd expect when the "cold path" dominates the optimization.
 

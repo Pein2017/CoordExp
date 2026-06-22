@@ -23,7 +23,7 @@ Update scope for 2026-03-06:
 - Main new finding: the run is **not** a simple monotone collapse after step 900; it enters a late **oscillatory / two-mode regime** where average eval can improve while a few catastrophic duplicate-heavy samples remain or worsen.
 
 Related notes:
-- Design intent / algorithm: `docs/training/STAGE2_DESIGN.md` and `progress/directions/stage2_clean_prefix_v2.md`
+- Design intent / algorithm: `docs/history/training/STAGE2_DESIGN.md` and `progress/directions/stage2_clean_prefix_v2.md`
 - Prior failure mode summary (B-hot + length growth): `progress/diagnostics/2026-02-17_stage2_b_ratio_085_instability.md`
 - Visual duplication analysis patterns (crowded books/people): `progress/diagnostics/2026-02-25_stage2_channel_a_visual_audit.md`
 
@@ -279,7 +279,7 @@ Practical takeaway:
 
 ### 4.1 Where the flat direction comes from (FP-neutral Channel-B)
 
-Channel-B is designed to be **FP-neutral** (see `docs/training/STAGE2_DESIGN.md` and `progress/directions/stage2_clean_prefix_v2.md`):
+Channel-B is designed to be **FP-neutral** (see `docs/history/training/STAGE2_DESIGN.md` and `progress/directions/stage2_clean_prefix_v2.md`):
 - matched objects get geometry + (some) text supervision
 - FN-injected objects get text supervision
 - FP objects get *no* supervision inside their spans (to avoid punishing unlabeled true objects)

@@ -8,7 +8,7 @@ Features:
   - Coordinate token verification: Compares embeddings and lm_head weights for
     coordinate tokens (0-999, typically IDs 151670-152669) to confirm training
   - Adapter checkpoint inspection: Optionally checks adapter checkpoints for
-    coord_offset_adapter weights directly
+    token_embeddings_adapter weights directly
   - Layer update verification: Optionally checks if other layers (vision, LLM,
     aligner) were updated during training
 
@@ -617,10 +617,10 @@ def verify_tokenizer_coord_tokens(tokenizer, coord_ids: range):
     return True
 
 
-def check_adapter_coord_offsets(
+def check_adapter_token_embeddings_adapter(
     adapter_path: Path, coord_ids: range, threshold: float = 1e-6
 ):
-    """Check if coord_offset_adapter weights in adapter checkpoint were trained."""
+    """Check if token_embeddings_adapter weights in adapter checkpoint were trained."""
     print("\n" + "=" * 80)
     print("ADAPTER CHECKPOINT VERIFICATION")
     print("=" * 80)
@@ -638,16 +638,16 @@ def check_adapter_coord_offsets(
     with safe_open(str(adapter_file), framework="pt", device="cpu") as f:
         keys = list(f.keys())
 
-        # Find coord_offset keys
+        # Find token_embeddings_adapter keys
         for key in keys:
-            if "coord_offset_adapter" in key:
+            if "token_embeddings_adapter" in key:
                 if "embed_offset" in key:
                     embed_offset_key = key
                 elif "head_offset" in key:
                     head_offset_key = key
 
         if embed_offset_key is None:
-            print("[ERROR] Could not find coord_offset_adapter weights in adapter")
+            print("[ERROR] Could not find token_embeddings_adapter weights in adapter")
             coord_keys = [
                 k for k in keys if "coord" in k.lower() or "offset" in k.lower()
             ]
@@ -814,7 +814,7 @@ Examples:
         "--adapter",
         type=str,
         default=None,
-        help="Optional: Path to adapter checkpoint to verify coord_offset weights directly",
+        help="Optional: Path to adapter checkpoint to verify token_embeddings_adapter weights directly",
     )
     parser.add_argument(
         "--check-layers",
@@ -896,7 +896,7 @@ Examples:
         if not adapter_path.exists():
             print(f"[ERROR] Adapter checkpoint not found: {adapter_path}")
             return 1
-        adapter_trained = check_adapter_coord_offsets(
+        adapter_trained = check_adapter_token_embeddings_adapter(
             adapter_path, coord_ids, args.threshold
         )
         if not adapter_trained:

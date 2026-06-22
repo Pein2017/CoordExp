@@ -23,6 +23,12 @@ Use these terms consistently in suggestions. Full definitions live in
 - **Leverage** — what callers get from depth.
 - **Locality** — what maintainers get from depth: change, bugs, knowledge concentrated in one place.
 
+## Prompt And Comparison Modes
+
+When the user asks for a prompt to send to multiple architecture reviewers, produce one shared read-only prompt. Set background, purpose, scope, and evidence expectations, but do not force a traversal order, hierarchy, or checklist unless requested. The prompt should let each reviewer reveal its own architecture taste.
+
+When comparing review artifacts, give a direct verdict on the user's stated axis. Separate hierarchy/design taste, factual grounding, implementation safety, and actionability. Do not flatten "better" into a generic score.
+
 Key principles:
 
 - **Deletion test**: imagine deleting the module. If complexity vanishes, it was a pass-through. If complexity reappears across N callers, it was earning its keep.

@@ -29,7 +29,7 @@ Use when the user asks for any of:
 - "pressure-test, revise, and wait for approval"
 - "iterate until no blocking findings remain"
 
-Do not use for simple one-shot answers, narrow command output, or ordinary code review unless the user explicitly wants iteration.
+Do not use for simple one-shot answers, narrow command output, ordinary code review, ordinary implementation, or simple read-only audits unless the user explicitly wants iteration. Route one-shot work to `audit-review`, `model-diagnosis`, `model-innovation-risk-audit`, or the relevant workflow skill.
 
 ## Mode
 
@@ -160,6 +160,8 @@ Stop state must be one of:
 - `needs user decision`: the next fork changes research meaning, compatibility, cost, or irreversible behavior
 
 Never imply production readiness from skipped hardware smoke, timed-out review, partial tests, or narrow evidence.
+
+For each loop, record the artifact/version reviewed, review lanes used, accepted/rejected findings, revision made or reason skipped, and the next gate or convergence decision.
 
 ## Verification
 

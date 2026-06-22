@@ -2,9 +2,9 @@
 doc_id: progress.directions.prefix-denoising-sft-v1
 layer: progress
 doc_type: direction
-status: active-draft
+status: branch-provenance
 domain: training
-summary: Infra-aware hybrid V1 research direction for prefix-denoising SFT on Stage-1 compact detection teacher forcing.
+summary: Branch-scoped infra-aware hybrid V1 research direction for prefix-denoising SFT on Stage-1 compact detection teacher forcing.
 tags: [progress, directions, stage1, compact-full, teacher-forcing, prefix-denoising, hybrid-denoising, sparse-kl]
 updated: 2026-06-14
 ---

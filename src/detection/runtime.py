@@ -10,7 +10,6 @@ from typing import Any, Literal, Mapping, cast
 
 from src.config.prompts import get_template_prompts
 from src.config.schema import (
-    CoordOffsetConfig,
     CoordTokensConfig,
     DetectionTrainingConfig,
 )
@@ -161,8 +160,7 @@ def build_detection_runtime_custom_shim(
         sft_structural_close=None,
         dump_conversation_text=False,
         dump_conversation_path=None,
-        coord_offset=CoordOffsetConfig(enabled=False),
-        trainable_token_rows=training_config.token_rows,
+        token_embeddings_adapter=training_config.token_rows,
     )
 
 
@@ -574,6 +572,9 @@ def build_detection_dataset(
         seed=seed,
         state_weighting=state_weighting,
         normalization=normalization,
+        object_field_order=str(
+            training_config.detection_template.object_field_order or "desc_first"
+        ),
         type_gate_config=type_gate_config,
         teacher_forcing_profile=teacher_forcing_profile,
         teacher_forcing_rollin_base_seed=teacher_forcing_rollin_base_seed,

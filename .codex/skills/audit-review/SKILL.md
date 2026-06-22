@@ -15,6 +15,7 @@ Use this for severity-ranked audits, not implementation. If the user gives a con
 
 Name the mode before searching broadly:
 
+- `approval audit`: pre-implementation, pre-merge, pre-launch, or final approval review; return `approve`, `hold`, `reject`, or `needs user decision`.
 - `change/spec audit`: compare implementation, docs, stable specs, and active OpenSpec deltas.
 - `artifact/run audit`: start from the exact artifact root; label scope and do not generalize beyond it.
 - `launch gate`: decide `promote`, `hold`, `rerun gate`, or `needs user decision`.
@@ -68,6 +69,8 @@ Also include:
 - open questions only when they block a reliable conclusion
 - suggested next actions for an implementer
 
+For approval audits, also include the verdict, validation run, skipped checks, and residual risks. If the user asks for a report artifact, write a standalone Markdown report and verify section structure, placeholder markers, and whitespace.
+
 Use `references/report-template.md` when a skeleton is helpful.
 
 ## Read-Only Guardrails
@@ -78,6 +81,7 @@ Use `references/report-template.md` when a skeleton is helpful.
 - Do not use `progress/` as current behavior when `docs/` or stable specs cover the contract.
 - Use Git inspection only when the audit scope depends on dirty state, a PR/change diff, or the user asks for it; otherwise do not run Git by reflex.
 - For Python code exploration, route docs/configs first, then use a correct local CodeGraph index only for broad "where should I look?" maps. Once files or symbols are known, switch to Serena for exact references, bodies, declarations/implementations, diagnostics, and edit-risk checks. In linked worktrees, do not trust CodeGraph results from another checkout.
+- For broad approval audits, use independent read-only lanes when available: governance/spec, implementation-contract, config/runtime, artifact/eval, and lifecycle/docs. Reconcile subagent output into one verdict; a timed-out or vague lane is unresolved, not approval.
 - If a temporary probe is unavoidable, prefer `/tmp/`. Ask before writing under repo `temp/`.
 
 ## Audit Workflow

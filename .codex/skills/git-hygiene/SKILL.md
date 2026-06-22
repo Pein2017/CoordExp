@@ -26,10 +26,21 @@ Stop if secrets are tracked, remote identity is surprising, or the requested sco
 1. Inspect `rtk git diff --stat` and `rtk git diff --name-only`.
 2. Group changes by intent: feature, fix, tests, docs, config, formatting, or generated artifacts.
 3. Stage narrowly with `git add -p` or explicit paths.
-4. Verify staged diff with `git diff --cached`.
+4. Verify staged diff with `git diff --cached --stat`, `git diff --cached`, and `git diff --cached --check`.
 5. Run the smallest meaningful check for the staged scope.
 6. Commit with an imperative message; use minimal messages for mechanical config/arg/default changes.
 7. Repeat until only intentional leftovers remain.
+
+## Stale Worktree And Cleanup Checks
+
+Before branch deletion, worktree cleanup, grouped commits, or sync:
+
+- run `git worktree list --porcelain`;
+- compare branch refs against actual directories;
+- inspect ahead/behind before deleting local refs;
+- use `git worktree prune --dry-run` before cleanup when metadata looks stale.
+
+Stale `+` markers or branch lock errors are usually worktree-metadata problems, not proof that the branch is still active. Remove metadata only with explicit cleanup scope and after confirming no uncommitted work is being discarded.
 
 ## Sync with remote
 

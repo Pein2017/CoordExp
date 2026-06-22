@@ -73,7 +73,7 @@ def test_compact_full_renders_canonical_norm1000_bbox_as_coord_tokens() -> None:
 
     assert sample.objects[0].object_id == "coco:ann:1666628"
 
-    rendered = get_detection_template("compact_full").render_assistant(sample)
+    rendered = get_detection_template("compact").render_assistant(sample)
 
     assert "<|coord_699|>" in rendered.text
     assert "<|coord_336|>" in rendered.text

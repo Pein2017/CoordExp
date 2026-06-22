@@ -5,7 +5,7 @@ doc_type: architecture-review
 status: review
 domain: architecture
 summary: Independent architecture review of CoordExp current state, using the existing simplification proposal as hypothesis rather than ground truth.
-updated: 2026-05-31
+updated: 2026-06-15
 ---
 
 # CoordExp Independent Architecture Review
@@ -16,9 +16,9 @@ This document is an independent architecture review of the current CoordExp
 repository. It uses the proposal documents in this directory as one input source:
 
 - `docs/architecture/README.md`
-- `docs/architecture/CODEBASE_SIMPLIFICATION_PROPOSAL.md`
-- `docs/architecture/OWNERSHIP_BOUNDARIES.md`
-- `docs/architecture/SIMPLIFICATION_ROADMAP.md`
+- `docs/architecture/proposals/2026-05-31-simplification/CODEBASE_SIMPLIFICATION_PROPOSAL.md`
+- `docs/architecture/proposals/2026-05-31-simplification/OWNERSHIP_BOUNDARIES.md`
+- `docs/architecture/proposals/2026-05-31-simplification/SIMPLIFICATION_ROADMAP.md`
 
 Those proposal documents are treated as architectural hypotheses and migration
 material, not as proof of the current architecture.
@@ -304,7 +304,7 @@ not the primary implementation roadmap.
 The active OpenSpec planning surface for this decision is
 `openspec/changes/detection-scene-clean-break/`. The associated implementation
 roadmap surface is
-`docs/superpowers/plans/2026-05-31-detection-scene-clean-break.md`.
+`docs/history/superpowers/plans/2026-05-31-detection-scene-clean-break.md`.
 
 The OpenSpec change is implementation-ready only after it defines these gates:
 

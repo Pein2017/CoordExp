@@ -6,7 +6,7 @@ status: canonical
 domain: research-history
 summary: Router for historical research directions and Stage-2 design lineage.
 tags: [progress, directions, stage1, stage2]
-updated: 2026-06-14
+updated: 2026-06-15
 ---
 
 # Directions Index
@@ -26,11 +26,15 @@ Prefer `docs/` and `openspec/specs/` for the current contract. Use
 - [full_idea_v5.md](full_idea_v5.md)
   - current Stage-1 set-continuation direction note
   - source research note for subset-conditioned full-entry multi-positive supervision
+
+## Recent Draft Direction Notes
+
+- [2026-06-07_segment_aware_packing_infra.md](2026-06-07_segment_aware_packing_infra.md)
+  - segment-aware packing infrastructure direction; draft/provenance only until promoted into current packing docs
+- [2026-06-05_row_conditioned_visual_coverage.md](2026-06-05_row_conditioned_visual_coverage.md)
+  - row-conditioned visual coverage research direction; historical branch provenance, not current training guidance
 - [prefix_denoising_sft_v1.md](prefix_denoising_sft_v1.md)
-  - active draft for infra-aware hybrid prefix-denoising SFT on Stage-1
-    compact detection teacher forcing
-  - source note for full-sequence noisy-prefix CE plus sparse current-object
-    clean-to-noisy local KL
+  - prefix-denoising SFT V1 branch provenance from `codex/prefix-denoising-sft`; not current main guidance until the matching code/config surface lands
 
 ## Historical Direction Notes
 

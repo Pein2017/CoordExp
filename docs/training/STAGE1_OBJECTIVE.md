@@ -64,7 +64,9 @@ The new unified training architecture defines two Stage-1 shadow surfaces:
 
 - `surface.id: stage1_compact_trie_ce`
   - shadow architecture ID for compact-full Stage-1 objective research
-  - uses `template.id: compact_full`
+  - uses semantic compact template IDs such as `compact` or
+    `compact_object_box_closed`; legacy config-level `compact_full` is a
+    compatibility alias for semantic `compact`, not a low-level template id
   - supervises token spans, object-entry trie targets, coordinate soft targets,
     and optional decoded-box regression through typed objective atoms
   - not the canonical public compact teacher-forcing config route; use
@@ -181,13 +183,29 @@ The current public compact teacher-forcing route is
 The old recursive-detection CE configs below remain legacy/comparator,
 migration, or ablation history only:
 
+For ordinary baseline SFT, keep the standard `TrainingConfig` surface under
+`configs/stage1/profiles/` rather than the detection teacher-forcing route.
+Closed compact assistant rows are selected with
+`custom.detection_template_id: compact_object_box_closed` while retaining
+`custom.object_ordering: sorted` and Stage-1 static packing. For bbox-first
+versus desc-first ablations, keep the same semantic template id and switch
+`custom.object_field_order` / `detection_template.object_field_order` between
+`geometry_first` and `desc_first`; cache fingerprints and infer artifacts record
+both axes.
+
 - `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2.yaml` remains the random-permutation ET-RMP-CE legacy comparator, not the active compact teacher-forcing route.
 - `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2_iou_gibbs_softce_a5.yaml` is historical A5-iou-gibbs negative-result/superseded provenance: A2/support2 plus `iou_gibbs_v0` coordinate soft targets with `tau=0.0090909091` from the train one-token IoU-loss median.
 - `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml` is historical paired A6-ciou-gibbs negative-result/superseded provenance: same setup as historical A5 but with `ciou_gibbs_v0`; production preparation assumed a separate 4-GPU slice for A5 and A6 rather than one 8-GPU run.
-- `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1.yaml` is historical instance-trie/soft-CE ablation provenance, with `cap8_frac0p06_mix0p1` as the slope ablation and `cap8_frac0p04_mix0p2` as the strength ablation; see [`INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md`](INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md). These configs are not the new typed teacher-forcing objective surface.
+- `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2_instance_trie_focused_cap8_frac0p04_mix0p1.yaml` is historical instance-trie/soft-CE ablation provenance, with `cap8_frac0p06_mix0p1` as the slope ablation and `cap8_frac0p04_mix0p2` as the strength ablation; see [`drafts/INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md`](drafts/INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md). These configs are not the new typed teacher-forcing objective surface.
 - the archived prefix-rollin recursive-detection config is the legacy/comparator E1 `prefix_rollin_et_rmp_ce` ablation route for Prefix-Closed Multi-Target SFT.
 
-The legacy/comparator `prefix_rollin_et_rmp_ce` route is compact-full only. It requires `detection_template.id: compact_full`, masks roll-in prefix labels, samples `K` uniformly over `[0, object_count]`, keeps `suffix_order: same_sampled_permutation` for V1, and expresses support/balance weights under `objective.target`, not obsolete flat trie-weight aliases.
+The legacy/comparator `prefix_rollin_et_rmp_ce` route is compact-row only. It
+uses semantic `detection_template.id: compact` in current configs; old
+`compact_full` config mentions are migration aliases or archive provenance. The
+route masks roll-in prefix labels, samples `K` uniformly over `[0, object_count]`,
+keeps `suffix_order: same_sampled_permutation` for V1, and expresses
+support/balance weights under `objective.target`, not obsolete flat trie-weight
+aliases.
 
 EOS supervision for this variant targets the Qwen chat-template assistant stop marker `<|im_end|>` only, using ordinary teacher-forced CE. Text-level terminators such as `<|endoftext|>` or `<|end_of_text|>` must not be used as training EOS for this surface.
 
@@ -213,11 +231,11 @@ Separator, terminal, and chat-stop positions are ordinary recursive CE targets.
 They do not have a separate authored weighting section or metric; `<|im_end|>`
 is supervised with the same teacher-forced CE path as other hard targets.
 
-Compact-full token-row training uses 1002 trainable rows through the persisted
-`coord_offset_adapter` module name: the 1000 coord rows plus
-`<|object_ref_start|>` and `<|box_start|>`. Treat the persisted module name as
-historical; the current contract is token-row adaptation, not coord-only
-adaptation.
+Compact token-row training uses the persisted `token_embeddings_adapter` module
+name. The compact teacher-forcing route trains the 1000 coord rows plus required
+schema rows such as `<|object_ref_start|>` and `<|box_start|>`; the
+`compact_object_box_closed` route trains 1004 rows by also including
+`<|object_ref_end|>` and `<|box_end|>`.
 
 For legacy/comparator `prefix_rollin_et_rmp_ce` smoke and ablation monitoring, use
 `loss/recursive_detection_ce` as the comparable objective-loss scalar. The
@@ -399,23 +417,37 @@ before drawing boxes or scoring metrics. Score-aware mAP for this benchmark
 comes from numeric-span confidence post-op on the raw bbox integers rather than
 from constant-score compatibility artifacts.
 
-## Coord-offset adapter (tie-head / single shared table)
+## Token-embeddings adapter (tie-head / single shared table)
 
 When training with coord tokens, CoordExp can optionally avoid updating the full vocabulary embedding
-and instead learn a small **offset adapter** over just the coord-token id range.
+and instead learn a small **token_embeddings_adapter** over role-resolved token rows.
 
 **Key idea**:
 - Freeze the base `embed_tokens.weight` and `lm_head.weight`.
-- Train a compact offset table only for `<|coord_0|>.. <|coord_999|>` token ids.
+- Train compact token-row offsets for `<|coord_0|>.. <|coord_999|>` and any
+  schema tokens required by the active compact template.
 
 **Config**:
 ```yaml
 custom:
-  coord_offset:
+  token_embeddings_adapter:
     enabled: true
     # Default: Qwen3-VL-style tie-head (single/shared lookup table for embed + head).
     tie_head: true
-    ids: { start: 151670, end: 152669 }  # <|coord_0|>.. <|coord_999|>
+    groups:
+      coord_geometry:
+        role: coord_geometry
+        start_token: "<|coord_0|>"
+        end_token: "<|coord_999|>"
+        expected_start: 151670
+        expected_end: 152669
+      schema_tokens:
+        role: structural_ce_only
+        tokens:
+          - "<|object_ref_start|>"
+          - "<|object_ref_end|>"
+          - "<|box_start|>"
+          - "<|box_end|>"
     # Optional: learning-rate overrides for the offset parameters.
     # When tie_head: true, only embed_lr is used (head_lr is ignored).
     embed_lr: 1.0e-4
@@ -435,6 +467,6 @@ custom:
   - Export/merge may need to materialize `lm_head.weight` and disable tying to preserve separate behavior.
 
 **Export/merge**:
-- Use `scripts/merge_coord.sh` to merge LoRA/DoRA and bake the coord-offset adapter into a merged HF checkpoint.
+- Use `scripts/merge_coord.sh` to merge LoRA/DoRA and bake the token-embeddings adapter into a merged HF checkpoint.
   - With `tie_head: true`, the merged checkpoint can keep tied embeddings (single table).
   - With `tie_head: false`, the merged checkpoint may need an explicit `lm_head.weight` tensor and `tie_word_embeddings: false`.

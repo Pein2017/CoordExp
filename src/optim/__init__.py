@@ -1,10 +1,9 @@
-from .coord_offset_optimizer import (
-    create_multimodal_coord_offset_optimizer,
-    register_coord_offset_optimizer,
+from .token_embeddings_adapter_optimizer import (
+    create_multimodal_token_embeddings_adapter_optimizer,
+    register_token_embeddings_adapter_optimizer,
 )
 
 __all__ = [
-    "create_multimodal_coord_offset_optimizer",
-    "register_coord_offset_optimizer",
+    "create_multimodal_token_embeddings_adapter_optimizer",
+    "register_token_embeddings_adapter_optimizer",
 ]
-

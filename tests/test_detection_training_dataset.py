@@ -305,7 +305,7 @@ def _dataset(
         jsonl_path,
         swift_template=swift_template or FakeSwiftTemplate(),
         image_root=tmp_path / "image-root",
-        detection_template_id="compact_full",
+        detection_template_id="compact",
         mode="random_permutation_et_rmp_ce",
         object_ordering="random_permutation",
         user_prompt="Detect every object.",
@@ -338,7 +338,7 @@ def test_detection_training_dataset_returns_encoded_sample_with_recursive_sideca
     )
     assert sample["messages"][2]["role"] == "assistant"
     assert sample["assistant_payload"]["objects"]
-    assert sample["detection_metadata"]["template_id"] == "compact_full"
+    assert sample["detection_metadata"]["template_id"] == "compact"
     assert sample["detection_metadata"]["mode"] == "random_permutation_et_rmp_ce"
 
     supervised_positions = tuple(
@@ -432,7 +432,7 @@ def test_prefix_rollin_dataset_masks_prefix_and_keeps_im_end_target(
         jsonl_path,
         swift_template=FakeSwiftTemplate(),
         image_root=tmp_path / "image-root",
-        detection_template_id="compact_full",
+        detection_template_id="compact",
         mode="prefix_rollin_et_rmp_ce",
         object_ordering="random_permutation",
         user_prompt="Detect every object.",
@@ -482,7 +482,7 @@ def test_detection_training_dataset_rejects_missing_image_path(tmp_path: Path) -
         jsonl_path,
         swift_template=FakeSwiftTemplate(),
         image_root=tmp_path / "image-root",
-        detection_template_id="compact_full",
+        detection_template_id="compact",
         mode="random_permutation_et_rmp_ce",
         object_ordering="random_permutation",
         user_prompt="Detect every object.",
@@ -511,7 +511,7 @@ def test_detection_training_dataset_rejects_absolute_image_outside_root(
         jsonl_path,
         swift_template=FakeSwiftTemplate(),
         image_root=tmp_path / "image-root",
-        detection_template_id="compact_full",
+        detection_template_id="compact",
         mode="random_permutation_et_rmp_ce",
         object_ordering="random_permutation",
         user_prompt="Detect every object.",

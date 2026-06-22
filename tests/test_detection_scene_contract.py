@@ -263,7 +263,7 @@ def test_detection_training_dataset_exposes_resolved_scene_for_raw_jsonl_rows(
         swift_template=_FakeSwiftTemplate(),
         config=DetectionDatasetRuntimeConfig(
             image_root=str(tmp_path / "image-root"),
-            detection_template_id="compact_full",
+            detection_template_id="compact",
             mode="teacher_forcing",
             object_ordering="sorted",
             user_prompt="Detect every object.",

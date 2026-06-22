@@ -5,7 +5,7 @@ scope: stage2-channel-b
 topics: [stage2, channel-b, triage-posterior, train-dynamics, rollout-instability, resolution-1024]
 references:
   - docs/PROJECT_CONTEXT.md
-  - docs/training/STAGE2_DESIGN.md
+  - docs/history/training/STAGE2_DESIGN.md
   - docs/training/STAGE2_RUNBOOK.md
   - progress/directions/full_idea_v3.md
   - progress/diagnostics/2026-03-09_stage2_ul_capture_highres1024.md
@@ -29,7 +29,7 @@ The short version is:
 
 This note should be read together with:
 
-- the stable v3 design summary in `docs/training/STAGE2_DESIGN.md`,
+- the historical v3 design summary in `docs/history/training/STAGE2_DESIGN.md`,
 - the long-form direction in `progress/directions/full_idea_v3.md`,
 - and the earlier high-res Stage-2 diagnostic in `progress/diagnostics/2026-03-09_stage2_ul_capture_highres1024.md`.
 

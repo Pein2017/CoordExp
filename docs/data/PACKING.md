@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: data
 summary: Surface-specific packing policy, hard caps, cache behavior, and efficiency tradeoffs.
-updated: 2026-06-07
+updated: 2026-06-15
 ---
 
 # Packing Policy Matrix
@@ -38,6 +38,11 @@ Note:
 | Stage-1 compact recursive detection latest | `12000` | `128` | disabled | Packing remains disabled until sidecar target-position offset rewriting is implemented and validated. |
 | Stage-2 rollout-correction base | `12000` | `64` | post-rollout trainer packing | Rollout generation remains padded/unpacked; correction segments are atomic. |
 | Historical 12k packing probe | `12000` | `12` | historical probe | Useful as prior efficiency evidence, not the global default. |
+
+Branch-provenance notes for segment-aware packing, coord-repel exact remapping,
+and prefix-denoising hybrid packing live under `progress/` and `docs/history/`.
+They are not current packing contract until their code/config surfaces are
+merged and this matrix is updated.
 
 ## Effective Batch Source Of Truth
 
@@ -137,10 +142,16 @@ Current implementation:
 - Each length bucket also writes an `INDEX.json` marker at the base root. When prompt/order/template or other packing-relevant fingerprint fields change, the runner warns and rewrites that marker to the latest setup before rebuilding any affected cache artifacts.
 - `training.static_packing_cache.root_dir` is optional and only needed when you want to override the default dataset-local base root.
 - Stage-1 static packing uses one hard length cap: `global_max_length` / `template.max_length`.
+- Standard Stage-1 SFT may use `custom.detection_template_id` to select a
+  semantic compact assistant template such as `compact_object_box_closed`.
+  Static-packing and encoded-sample-cache fingerprints include that template ID,
+  `custom.object_field_order`, `custom.object_ordering`, prompt template hash,
+  tokenizer/model identity, and the hard length cap, so bbox-first/desc-first
+  ablations and closed-marker runs do not reuse incompatible compact caches.
 - Static packing probes each atomic sample at full length before building the pack plan. If any sample exceeds that hard cap, packing now fails fast instead of silently truncating or skipping it.
 - Latest compact recursive detection surfaces keep packing and encoded-sample cache fail-fast until sidecar target-position rewriting is explicitly implemented and validated.
 - Compact-full token-row runs train 1002 rows through the persisted
-  `coord_offset_adapter` module name: 1000 coord rows plus the two compact
+  `token_embeddings_adapter` module name: 1000 coord rows plus the two compact
   structural rows `<|object_ref_start|>` and `<|box_start|>`. The module name is
   historical; the current contract is token-row adaptation, not coord-only
   adaptation.

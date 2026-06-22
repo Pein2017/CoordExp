@@ -63,6 +63,13 @@ def test_template_registry_exposes_only_greenfield_template_ids() -> None:
     assert compact.capabilities.bbox_format == "xyxy"
     assert stage1.capabilities.object_field_order == "desc_first"
     assert compact.capabilities.object_field_order == "compact_row"
+    assert stage1.capabilities.default_object_field_order == "desc_first"
+    assert compact.capabilities.default_object_field_order == "desc_first"
+    assert stage1.capabilities.supported_object_field_orders == ("desc_first",)
+    assert compact.capabilities.supported_object_field_orders == (
+        "desc_first",
+        "geometry_first",
+    )
     assert stage1.capabilities.supports_recursive_detection_ce is True
     assert compact.capabilities.supports_recursive_detection_ce is True
     assert stage1.capabilities.supports_et_rmp_ce is True

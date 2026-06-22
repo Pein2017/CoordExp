@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass, replace
 from typing import Any, Literal, Mapping, Protocol, runtime_checkable
 
+from src.common.object_field_order import ObjectFieldOrder, normalize_object_field_order
 from src.common.detection_compact_rows import (
     BOX_END_TOKEN,
     BOX_START_TOKEN,
@@ -112,6 +113,8 @@ class TemplateCapabilities:
     coordinate_surface: Literal["coord_token"]
     bbox_format: Literal["xyxy"]
     object_field_order: Literal["desc_first", "compact_row"]
+    default_object_field_order: ObjectFieldOrder
+    supported_object_field_orders: tuple[ObjectFieldOrder, ...]
     object_separator: str
     terminal_close: str
     supports_sft: bool = True
@@ -243,11 +246,16 @@ class DetectionSequenceTemplate(Protocol):
         coordinate_surface: str = "coord_token",
         bbox_format: str = "xyxy",
         prompt_template_id: str | None = None,
+        object_field_order: str = "desc_first",
     ) -> RenderedDetectionSequence: ...
 
-    def parse_assistant(self, text: str) -> dict[str, Any]: ...
+    def parse_assistant(
+        self, text: str, *, object_field_order: str = "desc_first"
+    ) -> dict[str, Any]: ...
 
-    def render_entry(self, obj: NormalizedDetectionObject) -> str: ...
+    def render_entry(
+        self, obj: NormalizedDetectionObject, *, object_field_order: str = "desc_first"
+    ) -> str: ...
 
     def render_separator(self, before_index: int, after_index: int) -> str: ...
 
@@ -262,6 +270,8 @@ class Stage1JsonPrettyTemplate:
         coordinate_surface="coord_token",
         bbox_format="xyxy",
         object_field_order="desc_first",
+        default_object_field_order="desc_first",
+        supported_object_field_orders=("desc_first",),
         object_separator=", ",
         terminal_close="]}",
     )
@@ -292,7 +302,9 @@ class Stage1JsonPrettyTemplate:
         coordinate_surface: str = "coord_token",
         bbox_format: str = "xyxy",
         prompt_template_id: str | None = None,
+        object_field_order: str = "desc_first",
     ) -> RenderedDetectionSequence:
+        del object_field_order
         sample = _normalize_detection_sequence_input(sample)
         self.validate_sample(
             sample,
@@ -361,7 +373,10 @@ class Stage1JsonPrettyTemplate:
             event_builder=event_builder,
         )
 
-    def parse_assistant(self, text: str) -> dict[str, Any]:
+    def parse_assistant(
+        self, text: str, *, object_field_order: str = "desc_first"
+    ) -> dict[str, Any]:
+        del object_field_order
         if not text.endswith(self.render_terminal_close()):
             raise ValueError("stage1_json_pretty text must preserve strict terminal closure")
 
@@ -371,7 +386,10 @@ class Stage1JsonPrettyTemplate:
             raise ValueError("text is not canonical stage1_json_pretty")
         return payload
 
-    def render_entry(self, obj: NormalizedDetectionObject) -> str:
+    def render_entry(
+        self, obj: NormalizedDetectionObject, *, object_field_order: str = "desc_first"
+    ) -> str:
+        del object_field_order
         return dumps_coordjson({"objects": [_object_payload(obj)]})[
             len('{"objects": [') : -len("]}")
         ]
@@ -403,6 +421,8 @@ class CompactFullTemplate:
             coordinate_surface="coord_token",
             bbox_format="xyxy",
             object_field_order="compact_row",
+            default_object_field_order="desc_first",
+            supported_object_field_orders=("desc_first", "geometry_first"),
             object_separator="",
             terminal_close="",
         )
@@ -434,7 +454,12 @@ class CompactFullTemplate:
         coordinate_surface: str = "coord_token",
         bbox_format: str = "xyxy",
         prompt_template_id: str | None = None,
+        object_field_order: str = "desc_first",
     ) -> RenderedDetectionSequence:
+        field_order = normalize_object_field_order(
+            object_field_order,
+            path="custom.object_field_order",
+        )
         sample = _normalize_detection_sequence_input(sample)
         self.validate_sample(
             sample,
@@ -469,6 +494,7 @@ class CompactFullTemplate:
                 obj,
                 object_index,
                 self.contract,
+                object_field_order=field_order,
             )
             entries.append(entry)
             structural_spans.extend(entry.control_spans)
@@ -488,18 +514,27 @@ class CompactFullTemplate:
             event_builder=event_builder,
         )
 
-    def parse_assistant(self, text: str) -> dict[str, Any]:
+    def parse_assistant(
+        self, text: str, *, object_field_order: str = "desc_first"
+    ) -> dict[str, Any]:
         if not text:
             return {"objects": []}
-        return _parse_compact_contract_text(text, self.contract)
+        return _parse_compact_contract_text(
+            text,
+            self.contract,
+            object_field_order=object_field_order,
+        )
 
-    def render_entry(self, obj: NormalizedDetectionObject) -> str:
+    def render_entry(
+        self, obj: NormalizedDetectionObject, *, object_field_order: str = "desc_first"
+    ) -> str:
         _validate_compact_desc(obj.desc)
         _validate_compact_full_bbox_geometry(obj)
         return render_compact_contract_row(
             self.contract,
             desc=obj.desc,
             bbox_tokens=_render_bbox_coord_tokens(obj.bbox_2d),
+            object_field_order=object_field_order,
         )
 
     def render_separator(self, before_index: int, after_index: int) -> str:
@@ -608,6 +643,7 @@ def get_detection_template(template_id: TemplateId | str) -> DetectionSequenceTe
     if template_id in {
         "compact",
         "compact_box_closed",
+        "compact_object_closed",
         "compact_object_box_closed",
         "compact_object_box_closed_lines",
     }:
@@ -678,24 +714,44 @@ def _append_compact_contract_entry(
     obj: NormalizedDetectionObject,
     object_index: int,
     contract: DetectionTemplateContract,
+    *,
+    object_field_order: ObjectFieldOrder,
 ) -> RenderedObjectEntry:
     entry_start = len(builder)
-    object_ref_span = builder.append(OBJECT_REF_START_TOKEN, "object_ref_start")
-    desc_span = builder.append(obj.desc, "desc")
-    control_spans: list[CharSpan] = [object_ref_span]
-    if contract.include_object_ref_end:
-        control_spans.append(builder.append(OBJECT_REF_END_TOKEN, "object_ref_end"))
-    bbox_start_span = builder.append(BOX_START_TOKEN, "bbox_start")
-    control_spans.append(bbox_start_span)
+    control_spans: list[CharSpan] = []
+    object_ref_span: CharSpan
+    desc_span: CharSpan
+    bbox_start_span: CharSpan
+    coordinate_spans: tuple[CharSpan, ...]
+    box_end_span: CharSpan | None = None
 
-    coordinate_spans = tuple(
-        builder.append(token, f"coord_{coord_index}")
-        for coord_index, token in enumerate(_render_bbox_coord_tokens(obj.bbox_2d))
-    )
-    box_end_span = None
-    if contract.include_box_end:
-        box_end_span = builder.append(BOX_END_TOKEN, "box_end")
-        control_spans.append(box_end_span)
+    def append_object_segment() -> None:
+        nonlocal object_ref_span, desc_span
+        object_ref_span = builder.append(OBJECT_REF_START_TOKEN, "object_ref_start")
+        control_spans.append(object_ref_span)
+        desc_span = builder.append(obj.desc, "desc")
+        if contract.include_object_ref_end:
+            control_spans.append(builder.append(OBJECT_REF_END_TOKEN, "object_ref_end"))
+
+    def append_box_segment() -> None:
+        nonlocal bbox_start_span, coordinate_spans, box_end_span
+        bbox_start_span = builder.append(BOX_START_TOKEN, "bbox_start")
+        control_spans.append(bbox_start_span)
+        coordinate_spans = tuple(
+            builder.append(token, f"coord_{coord_index}")
+            for coord_index, token in enumerate(_render_bbox_coord_tokens(obj.bbox_2d))
+        )
+        if contract.include_box_end:
+            box_end_span = builder.append(BOX_END_TOKEN, "box_end")
+            control_spans.append(box_end_span)
+
+    if object_field_order == "geometry_first":
+        append_box_segment()
+        append_object_segment()
+    else:
+        append_object_segment()
+        append_box_segment()
+
     separator_span = None
     if contract.canonical_final_separator:
         separator_span = builder.append(
@@ -704,8 +760,13 @@ def _append_compact_contract_entry(
         )
         control_spans.append(separator_span)
     entry_span = CharSpan(entry_start, len(builder), "object_entry")
-    bbox_end = box_end_span.start if box_end_span is not None else len(builder)
-    if separator_span is not None and box_end_span is None:
+    if box_end_span is not None:
+        bbox_end = box_end_span.start
+    elif object_field_order == "geometry_first":
+        bbox_end = object_ref_span.start
+    else:
+        bbox_end = len(builder)
+    if separator_span is not None and box_end_span is None and object_field_order != "geometry_first":
         bbox_end = separator_span.start
     bbox_span = CharSpan(bbox_start_span.end, bbox_end, "bbox")
     return RenderedObjectEntry(
@@ -736,9 +797,15 @@ def _append_compact_contract_entry(
 def _parse_compact_contract_text(
     text: str,
     contract: DetectionTemplateContract,
+    *,
+    object_field_order: str = "desc_first",
 ) -> dict[str, Any]:
     if not contract.is_compact:
         raise ValueError(f"detection_template.id={contract.template_id!r} is not compact")
+    field_order = normalize_object_field_order(
+        object_field_order,
+        path="custom.object_field_order",
+    )
 
     if contract.canonical_final_separator == "\n":
         if not text.endswith("\n"):
@@ -758,18 +825,27 @@ def _parse_compact_contract_text(
             raise ValueError(
                 f"strict {contract.template_id} parse failed: unexpected newline"
             )
-        if not text.startswith(OBJECT_REF_START_TOKEN):
+        row_start_marker = (
+            BOX_START_TOKEN
+            if field_order == "geometry_first"
+            else OBJECT_REF_START_TOKEN
+        )
+        if not text.startswith(row_start_marker):
             raise ValueError(
-                f"strict {contract.template_id} parse failed: missing object ref start"
+                f"strict {contract.template_id} parse failed: missing row start"
             )
         row_bodies = [
-            f"{OBJECT_REF_START_TOKEN}{part}"
-            for part in text.split(OBJECT_REF_START_TOKEN)[1:]
+            f"{row_start_marker}{part}"
+            for part in text.split(row_start_marker)[1:]
         ]
 
     return {
         "objects": [
-            _parse_compact_contract_row(row, contract)
+            _parse_compact_contract_row(
+                row,
+                contract,
+                object_field_order=field_order,
+            )
             for row in row_bodies
             if row
         ]
@@ -777,6 +853,17 @@ def _parse_compact_contract_text(
 
 
 def _parse_compact_contract_row(
+    row: str,
+    contract: DetectionTemplateContract,
+    *,
+    object_field_order: ObjectFieldOrder,
+) -> dict[str, Any]:
+    if object_field_order == "geometry_first":
+        return _parse_compact_contract_row_geometry_first(row, contract)
+    return _parse_compact_contract_row_desc_first(row, contract)
+
+
+def _parse_compact_contract_row_desc_first(
     row: str,
     contract: DetectionTemplateContract,
 ) -> dict[str, Any]:
@@ -826,6 +913,68 @@ def _parse_compact_contract_row(
         raise ValueError(
             f"strict {contract.template_id} parse failed: invalid bbox geometry"
         )
+    return {"desc": desc, "bbox_2d": list(bbox_tokens)}
+
+
+def _parse_compact_contract_row_geometry_first(
+    row: str,
+    contract: DetectionTemplateContract,
+) -> dict[str, Any]:
+    body = row
+    if not body.startswith(BOX_START_TOKEN):
+        raise ValueError(
+            f"strict {contract.template_id} parse failed: missing box start"
+        )
+    body = body[len(BOX_START_TOKEN) :]
+
+    if contract.include_box_end:
+        if BOX_END_TOKEN not in body:
+            raise ValueError(
+                f"strict {contract.template_id} parse failed: missing box end"
+            )
+        coord_tail, object_tail = body.split(BOX_END_TOKEN, maxsplit=1)
+    else:
+        if BOX_END_TOKEN in body:
+            raise ValueError(
+                f"strict {contract.template_id} parse failed: unexpected box end"
+            )
+        if OBJECT_REF_START_TOKEN not in body:
+            raise ValueError(
+                f"strict {contract.template_id} parse failed: missing object ref start"
+            )
+        coord_tail, object_tail = body.split(OBJECT_REF_START_TOKEN, maxsplit=1)
+        object_tail = f"{OBJECT_REF_START_TOKEN}{object_tail}"
+
+    bbox_tokens = _parse_strict_coord_tail(coord_tail, contract.template_id)
+    if not valid_xyxy_positive_area(bbox_tokens):
+        raise ValueError(
+            f"strict {contract.template_id} parse failed: invalid bbox geometry"
+        )
+
+    if not object_tail.startswith(OBJECT_REF_START_TOKEN):
+        raise ValueError(
+            f"strict {contract.template_id} parse failed: missing object ref start"
+        )
+    desc_tail = object_tail[len(OBJECT_REF_START_TOKEN) :]
+    if contract.include_object_ref_end:
+        if not desc_tail.endswith(OBJECT_REF_END_TOKEN):
+            raise ValueError(
+                f"strict {contract.template_id} parse failed: missing object ref end"
+            )
+        desc = desc_tail[: -len(OBJECT_REF_END_TOKEN)]
+    else:
+        if OBJECT_REF_END_TOKEN in desc_tail:
+            raise ValueError(
+                f"strict {contract.template_id} parse failed: unexpected object ref end"
+            )
+        desc = desc_tail
+
+    try:
+        _validate_compact_desc(desc)
+    except ValueError as exc:
+        raise ValueError(
+            f"strict {contract.template_id} parse failed: invalid desc"
+        ) from exc
     return {"desc": desc, "bbox_2d": list(bbox_tokens)}
 
 

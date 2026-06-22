@@ -127,8 +127,35 @@ def render_compact_detection_sequence(
     payload: Mapping[str, Any],
     *,
     detection_sequence_format: str = COORDJSON_FORMAT,
+    object_field_order: str = "desc_first",
 ) -> str:
     """Render canonical ``{"objects": [...]}`` payload as a detection sequence."""
+
+    from src.detection.template_contracts import (
+        COMPACT_TEMPLATE_IDS,
+        render_compact_contract_row,
+        resolve_detection_template_contract,
+    )
+
+    if str(detection_sequence_format) in COMPACT_TEMPLATE_IDS:
+        contract = resolve_detection_template_contract(str(detection_sequence_format))
+        objects = payload.get("objects")
+        if not isinstance(objects, Sequence) or isinstance(objects, (str, bytes)):
+            raise ValueError("payload.objects must be a sequence")
+
+        rows: list[str] = []
+        for entry in objects:
+            if not isinstance(entry, Mapping):
+                raise ValueError("payload.objects entries must be mappings")
+            rows.append(
+                render_compact_contract_row(
+                    contract,
+                    desc=_validate_desc(entry.get("desc")),
+                    bbox_tokens=_validate_bbox_tokens(entry.get("bbox_2d")),
+                    object_field_order=object_field_order,
+                )
+            )
+        return "".join(rows)
 
     fmt = normalize_detection_sequence_format(detection_sequence_format)
     if fmt == COORDJSON_FORMAT:

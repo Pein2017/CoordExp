@@ -8,10 +8,16 @@ import torch
 import yaml
 
 from src.config.loader import ConfigLoader
-from src.config.schema import DebugConfig, DetectionTrainingConfig
+from src.config.schema import (
+    DebugConfig,
+    DetectionEvaluationConfig,
+    DetectionTemplateConfig,
+    DetectionTrainingConfig,
+)
 from src.detection.packing import resolve_detection_template_id_for_static_packing
 from src.detection.runtime import (
     build_detection_runtime_custom_shim,
+    detection_mode,
     resolve_recursive_detection_ce_runtime_cfg,
 )
 from src.detection.template_contracts import resolve_detection_template_contract
@@ -178,6 +184,7 @@ def _with_template(payload: dict[str, object], template_id: str) -> dict[str, ob
         "stage1_json_pretty",
         "compact",
         "compact_box_closed",
+        "compact_object_closed",
         "compact_object_box_closed",
         "compact_object_box_closed_lines",
     ],
@@ -193,11 +200,61 @@ def test_detection_training_config_accepts_semantic_template_ids(
     assert cfg.evaluation.expected_template == template_id
 
 
-def test_detection_training_config_rejects_compact_full_template_id() -> None:
-    with pytest.raises(ValueError, match="compact_full"):
-        DetectionTrainingConfig.from_mapping(
-            _with_template(_detection_payload(), "compact_full")
-        )
+def test_detection_training_config_accepts_compact_geometry_first_field_order() -> None:
+    payload = _with_template(_detection_payload(), "compact_object_closed")
+    payload["detection_template"] = {
+        **payload["detection_template"],  # type: ignore[arg-type]
+        "object_field_order": "geometry_first",
+    }
+
+    cfg = DetectionTrainingConfig.from_mapping(payload)
+
+    assert cfg.detection_template.id == "compact_object_closed"
+    assert cfg.detection_template.object_field_order == "geometry_first"
+    assert cfg.evaluation.expected_template == "compact_object_closed"
+
+
+def test_detection_training_config_canonicalizes_compact_full_template_alias() -> None:
+    template_cfg = DetectionTemplateConfig.from_mapping(
+        {
+            "id": "compact_full",
+            "coordinate_surface": "coord_token",
+            "bbox_format": "xyxy",
+            "strict_parse": True,
+        }
+    )
+    eval_cfg = DetectionEvaluationConfig.from_mapping(
+        {
+            "expected_template": "compact_full",
+            "parser_mode": "strict_expected",
+        }
+    )
+
+    assert template_cfg.id == "compact"
+    assert eval_cfg.expected_template == "compact"
+
+
+def test_detection_training_config_canonicalizes_compact_full_template_alias_end_to_end() -> None:
+    payload = _detection_payload()
+    payload["objective"] = {
+        "id": "teacher_forcing",
+        "profile": "hard_sft",
+    }
+    payload["detection_template"] = {
+        "id": "compact_full",
+        "coordinate_surface": "coord_token",
+        "bbox_format": "xyxy",
+        "strict_parse": True,
+    }
+    payload["evaluation"] = {
+        "expected_template": "compact_full",
+        "parser_mode": "strict_expected",
+    }
+
+    cfg = DetectionTrainingConfig.from_mapping(payload)
+
+    assert cfg.detection_template.id == "compact"
+    assert cfg.evaluation.expected_template == "compact"
 
 
 @pytest.mark.parametrize(
@@ -1066,7 +1123,7 @@ def test_detection_requires_exact_coord_row_range() -> None:
 
 
 @pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
-def test_detection_rejects_extra_trainable_token_rows() -> None:
+def test_detection_rejects_extra_token_rows() -> None:
     payload = _detection_payload()
     token_rows = dict(payload["token_rows"])  # type: ignore[arg-type]
     groups = dict(token_rows["groups"])  # type: ignore[index]
@@ -1275,6 +1332,35 @@ def test_stage1_json_pretty_template_requires_desc_first_field_order() -> None:
     }
     cfg = DetectionTrainingConfig.from_mapping(payload)
     assert cfg.detection_template.object_field_order == "desc_first"
+
+
+def test_stage1_json_pretty_template_defaults_to_desc_first_when_field_order_omitted() -> None:
+    payload = _with_template(_detection_payload(), "stage1_json_pretty")
+    payload["detection_template"] = {
+        "id": "stage1_json_pretty",
+        "coordinate_surface": "coord_token",
+        "bbox_format": "xyxy",
+        "strict_parse": True,
+    }
+
+    cfg = DetectionTrainingConfig.from_mapping(payload)
+
+    assert cfg.detection_template.id == "stage1_json_pretty"
+    assert cfg.detection_template.object_field_order is None
+
+
+def test_stage1_json_pretty_template_rejects_explicit_geometry_first_field_order() -> None:
+    payload = _with_template(_detection_payload(), "stage1_json_pretty")
+    payload["detection_template"] = {
+        "id": "stage1_json_pretty",
+        "coordinate_surface": "coord_token",
+        "bbox_format": "xyxy",
+        "object_field_order": "geometry_first",
+        "strict_parse": True,
+    }
+
+    with pytest.raises(ValueError, match="stage1_json_pretty.*desc_first"):
+        DetectionTrainingConfig.from_mapping(payload)
 
 
 @pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")
@@ -1545,7 +1631,7 @@ def test_detection_recursive_detection_launch_configs_parse_without_custom() -> 
         assert cfg.packing.static_packing is False
         assert cfg.packing.padding_free_packed is False
         assert cfg.training["packing"] is False
-        assert cfg.training["optimizer"] == "multimodal_coord_offset"
+        assert cfg.training["optimizer"] == "multimodal_token_embeddings_adapter"
 
 
 def test_stage1_detection_teacher_forcing_canonical_launch_configs_parse() -> None:
@@ -1585,7 +1671,7 @@ def test_stage1_detection_teacher_forcing_canonical_launch_configs_parse() -> No
         assert "detection_teacher_forcing" in str(cfg.training["logging_dir"])
 
 
-def test_stage1_detection_teacher_forcing_rejects_hybrid_profile_early(
+def test_stage1_detection_teacher_forcing_accepts_hybrid_profile_at_schema_boundary(
     tmp_path: Path,
 ) -> None:
     config_path = (
@@ -1601,8 +1687,11 @@ def test_stage1_detection_teacher_forcing_rejects_hybrid_profile_early(
     authored = tmp_path / "hybrid_teacher_forcing.yaml"
     authored.write_text(yaml.safe_dump(payload, sort_keys=False))
 
-    with pytest.raises(ValueError, match="hybrid_valid_set_marginal is unsupported"):
-        ConfigLoader.load_materialized_training_config(str(authored))
+    cfg = ConfigLoader.load_materialized_training_config(str(authored))
+
+    assert cfg.objective.profile == "hybrid_valid_set_marginal"
+    with pytest.raises(ValueError, match=r"currently supports objective\.profile"):
+        detection_mode(cfg)
 
 
 def test_stage1_detection_teacher_forcing_runtime_payload_keeps_target_ir_knobs() -> None:

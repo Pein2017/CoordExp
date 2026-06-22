@@ -42,14 +42,22 @@ _DISTRIBUTED_MANIFEST_TIMEOUT_S = 1800.0
 # intentionally default to None so importing this module stays lightweight.
 AutoProcessor = None
 Qwen3VLForConditionalGeneration = None
-install_coord_offset_adapter = None
-reattach_coord_offset_hooks = None
+install_token_embeddings_adapter = None
+reattach_token_embeddings_adapter_hooks = None
 tqdm = None
 
 
 def _semantic_template_id_from_sequence_format(detection_sequence_format: str) -> str:
     normalized = (
         str(detection_sequence_format).strip().lower().replace("-", "_").replace(" ", "_")
+    )
+    if normalized == COORDJSON_FORMAT:
+        return "stage1_json_pretty"
+    if normalized in {"compact", "compact_full"}:
+        return "compact"
+    raise ValueError(
+        "inference checkpoint validation requires a semantic detection template; "
+        f"unsupported detection_sequence_format={detection_sequence_format!r}"
     )
 
 
@@ -82,14 +90,6 @@ def _parser_mode_for_template_id(template_id: str) -> str:
     if contract.template_id == "compact":
         return "marker_delimited_strict"
     return "strict_expected"
-    if normalized == COORDJSON_FORMAT:
-        return "stage1_json_pretty"
-    if normalized in {"compact", "compact_full"}:
-        return "compact"
-    raise ValueError(
-        "inference checkpoint validation requires a semantic detection template; "
-        f"unsupported detection_sequence_format={detection_sequence_format!r}"
-    )
 
 
 # Map fine-grained error tags to canonical counter buckets.
@@ -423,23 +423,15 @@ def parse_detection_template_output_artifact(
     text: str,
     *,
     detection_template_id: str,
+    object_field_order: str = "desc_first",
 ) -> Dict[str, Any]:
     contract = _resolve_detection_template_contract(detection_template_id)
     if not contract.is_compact:
         raise ValueError(
             "parse_detection_template_output_artifact only handles compact templates"
         )
-    if contract.template_id == "compact":
-        from src.detection.evaluation import parse_compact_full_output_artifact
 
-        artifact = parse_compact_full_output_artifact(
-            text,
-            parse_mode=_parser_mode_for_template_id(contract.template_id),
-        )
-        artifact["detection_template_id"] = contract.template_id
-        return artifact
-
-    from src.common.detection_sequence import OBJECT_REF_START_TOKEN
+    from src.common.detection_sequence import BOX_START_TOKEN, OBJECT_REF_START_TOKEN
     from src.detection.evaluation import parse_detection_output_strict_expected
 
     effective_text, terminal_token = _strip_generation_terminal_preserving_template_text(
@@ -450,6 +442,7 @@ def parse_detection_template_output_artifact(
             effective_text,
             expected_template=contract.template_id,
             parser_mode="strict_expected",
+            object_field_order=object_field_order,
         )
         parse_error_code = None
     except ValueError:
@@ -459,8 +452,15 @@ def parse_detection_template_output_artifact(
         "raw_output_json": raw_output_json,
         "parse_mode": "strict_expected",
         "serialization_policy": contract.template_id,
+        "object_field_order": object_field_order,
         "object_separator": (
-            "\n" if contract.canonical_final_separator == "\n" else OBJECT_REF_START_TOKEN
+            "\n"
+            if contract.canonical_final_separator == "\n"
+            else (
+                BOX_START_TOKEN
+                if str(object_field_order) == "geometry_first"
+                else OBJECT_REF_START_TOKEN
+            )
         ),
         "terminal_token": terminal_token,
         "parse_error_code": parse_error_code,
@@ -490,6 +490,7 @@ def process_offline_pred(
         artifact = compact_parse_artifact or parse_detection_template_output_artifact(
             raw_text,
             detection_template_id=contract.template_id,
+            object_field_order=str(getattr(owner, "object_field_order", "desc_first")),
         )
         payload = artifact.get("raw_output_json")
         if not isinstance(payload, Mapping):
@@ -1170,13 +1171,8 @@ def _infer_generation_constraints(
     infer_cfg: Mapping[str, Any],
     generation_cfg: Mapping[str, Any],
 ) -> tuple[tuple[str, Any], ...]:
+    _ = infer_cfg
     constraints: dict[str, Any] = {}
-    if "compact_grammar" in generation_cfg:
-        raise ValueError(
-            "infer.generation.compact_grammar has been removed; decode-time "
-            "compact grammar constraints are no longer supported for new runs."
-        )
-
     stop_pressure_cfg = _get_nested_mapping(
         generation_cfg,
         "stop_pressure",
@@ -1405,7 +1401,7 @@ class OfflineInferenceEngine:
         )
         from src.infer.checkpoints import (
             VLLM_ADAPTER_UNSUPPORTED_MESSAGE,
-            validate_compact_coord_token_adapter_contract,
+            validate_compact_token_embeddings_adapter_contract,
         )
 
         backend = str(self.cfg.backend_type).lower().strip()
@@ -1415,10 +1411,10 @@ class OfflineInferenceEngine:
         resolved_adapter_checkpoint = str(
             self.cfg.resolved_adapter_checkpoint or ""
         ).strip()
-        coord_offset_spec = None
+        token_embeddings_adapter_spec = None
         if self.resolved_checkpoint.adapter_info is not None:
-            coord_offset_spec = self.resolved_checkpoint.adapter_info.coord_offset_spec
-        validate_compact_coord_token_adapter_contract(
+            token_embeddings_adapter_spec = self.resolved_checkpoint.adapter_info.token_embeddings_adapter_spec
+        validate_compact_token_embeddings_adapter_contract(
             self.resolved_checkpoint,
             detection_template_id=self.detection_template_id,
         )
@@ -1450,18 +1446,18 @@ class OfflineInferenceEngine:
             if qwen_model_cls is None:
                 qwen_model_cls = _Qwen3VLForConditionalGeneration
 
-        install_coord_offset_adapter_fn = install_coord_offset_adapter
-        reattach_coord_offset_hooks_fn = reattach_coord_offset_hooks
-        if install_coord_offset_adapter_fn is None or reattach_coord_offset_hooks_fn is None:
-            from src.coord_tokens.offset_adapter import (
-                install_coord_offset_adapter as _install_coord_offset_adapter,
-                reattach_coord_offset_hooks as _reattach_coord_offset_hooks,
+        install_token_embeddings_adapter_fn = install_token_embeddings_adapter
+        reattach_token_embeddings_adapter_hooks_fn = reattach_token_embeddings_adapter_hooks
+        if install_token_embeddings_adapter_fn is None or reattach_token_embeddings_adapter_hooks_fn is None:
+            from src.tokens.row_offsets import (
+                install_token_embeddings_adapter as _install_token_embeddings_adapter,
+                reattach_token_embeddings_adapter_hooks as _reattach_token_embeddings_adapter_hooks,
             )
 
-            if install_coord_offset_adapter_fn is None:
-                install_coord_offset_adapter_fn = _install_coord_offset_adapter
-            if reattach_coord_offset_hooks_fn is None:
-                reattach_coord_offset_hooks_fn = _reattach_coord_offset_hooks
+            if install_token_embeddings_adapter_fn is None:
+                install_token_embeddings_adapter_fn = _install_token_embeddings_adapter
+            if reattach_token_embeddings_adapter_hooks_fn is None:
+                reattach_token_embeddings_adapter_hooks_fn = _reattach_token_embeddings_adapter_hooks
 
         self._seed()
         if self.model is None:
@@ -1494,11 +1490,11 @@ class OfflineInferenceEngine:
                     )
                     model = base_model.to(self.cfg.device)
                     if resolved_adapter_checkpoint:
-                        if coord_offset_spec is not None:
-                            install_coord_offset_adapter_fn(
+                        if token_embeddings_adapter_spec is not None:
+                            install_token_embeddings_adapter_fn(
                                 model,
-                                coord_ids=coord_offset_spec.coord_ids,
-                                tie_head=coord_offset_spec.tie_head,
+                                token_ids=token_embeddings_adapter_spec.token_ids,
+                                tie_head=token_embeddings_adapter_spec.tie_head,
                             )
                         try:
                             from swift import Swift
@@ -1519,11 +1515,11 @@ class OfflineInferenceEngine:
                                 f"{resolved_adapter_checkpoint!r} onto base model "
                                 f"{resolved_base_model_checkpoint!r}."
                             ) from exc
-                        if coord_offset_spec is not None:
-                            reattached = reattach_coord_offset_hooks_fn(model)
+                        if token_embeddings_adapter_spec is not None:
+                            reattached = reattach_token_embeddings_adapter_hooks_fn(model)
                             if reattached is None:
                                 raise RuntimeError(
-                                    "coord_offset_adapter was declared in the adapter "
+                                    "token_embeddings_adapter was declared in the adapter "
                                     "checkpoint, but its runtime hooks could not be "
                                     "reattached after Swift loading."
                                 )
@@ -1808,6 +1804,7 @@ def run_offline_artifact_inference(owner: Any) -> Tuple[Path, Path]:
                 compact_parse_artifact = parse_detection_template_output_artifact(
                     raw_text,
                     detection_template_id=self.detection_template_id,
+                    object_field_order=self.object_field_order,
                 )
                 raw_output_json = compact_parse_artifact["raw_output_json"]
                 raw_ends_with_im_end = (
@@ -1858,9 +1855,13 @@ def run_offline_artifact_inference(owner: Any) -> Tuple[Path, Path]:
                         "parse_error_offset": compact_parse_artifact[
                             "parse_error_offset"
                         ],
+                        "object_field_order": compact_parse_artifact[
+                            "object_field_order"
+                        ],
                     }
                 )
             output["detection_template_id"] = self.detection_template_id
+            output["object_field_order"] = self.object_field_order
             if p.get("image_id") is not None:
                 output["image_id"] = p.get("image_id")
             if isinstance(p.get("metadata"), Mapping):

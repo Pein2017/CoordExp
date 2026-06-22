@@ -52,7 +52,7 @@ class ResidualBoundaryAdapter:
         self,
         *,
         tokenizer: Any,
-        template_mode: str = "compact_full",
+        template_mode: str = "compact",
         system_prompt: str | None = None,
         user_content: str = "<image>",
         messages: Sequence[Mapping[str, Any]] | None = None,

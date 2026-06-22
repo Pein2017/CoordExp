@@ -1,6 +1,6 @@
 ---
 title: Full Idea v4
-status: active
+status: superseded
 scope: stage1-stage2
 topics: [stage1, stage2, pseudo-positive, pseudo-label, clean-prefix, triage-posterior, k4]
 supersedes: progress/directions/full_idea_v3.md

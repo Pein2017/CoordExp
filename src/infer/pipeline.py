@@ -50,7 +50,7 @@ from src.infer.artifacts import (
 from src.infer.checkpoints import (
     VLLM_ADAPTER_UNSUPPORTED_MESSAGE,
     resolve_inference_checkpoint,
-    validate_compact_coord_token_adapter_contract,
+    validate_compact_token_embeddings_adapter_contract,
 )
 from src.infer.prompt import DetectionPromptPolicy, prompt_policy_fingerprint
 from src.infer.runtime import (
@@ -512,7 +512,7 @@ def _candidate_inference_provenance_payloads(
     payload: Mapping[str, Any],
 ) -> tuple[Mapping[str, Any], ...]:
     candidates: list[Mapping[str, Any]] = [payload]
-    for key in ("provenance", "inference_provenance"):
+    for key in ("infer", "provenance", "inference_provenance"):
         value = payload.get(key)
         if isinstance(value, Mapping):
             candidates.append(value)
@@ -531,9 +531,63 @@ def _extract_generation_provenance(payload: Mapping[str, Any]) -> Dict[str, str]
     raise ValueError("missing_provenance: raw artifact lacks generation fingerprints")
 
 
-def _parser_policy_for_score_provenance(cfg: Mapping[str, Any]) -> str:
+def _extract_detection_template_id_from_provenance(
+    payload: Mapping[str, Any],
+) -> DetectionTemplateId:
+    for candidate in _candidate_inference_provenance_payloads(payload):
+        raw_id = candidate.get("detection_template_id")
+        if isinstance(raw_id, str) and raw_id.strip():
+            return resolve_detection_template_contract(raw_id).template_id
+        template = candidate.get("detection_template")
+        if isinstance(template, Mapping):
+            nested_id = template.get("id")
+            if isinstance(nested_id, str) and nested_id.strip():
+                return resolve_detection_template_contract(nested_id).template_id
+    raise ValueError("missing_provenance: raw artifact lacks detection_template.id")
+
+
+def _extract_object_field_order_from_provenance(
+    payload: Mapping[str, Any],
+) -> ObjectFieldOrder:
+    for candidate in _candidate_inference_provenance_payloads(payload):
+        if "object_field_order" in candidate:
+            return normalize_object_field_order(
+                candidate.get("object_field_order"),
+                path="raw_artifact.object_field_order",
+            )
+    raise ValueError("missing_provenance: raw artifact lacks object_field_order")
+
+
+def _scoring_config_parser_axes(
+    cfg: Mapping[str, Any],
+) -> tuple[DetectionTemplateId, ObjectFieldOrder]:
     detection_template_id = _resolve_detection_template_id(cfg)
-    return f"{detection_template_id}:{_parser_mode_for_template_id(detection_template_id)}"
+    infer_cfg = _get_map(cfg, "infer")
+    object_field_order = normalize_object_field_order(
+        infer_cfg.get("object_field_order", "desc_first"),
+        path="infer.object_field_order",
+    )
+    return detection_template_id, object_field_order
+
+
+def _parser_policy_from_axes(
+    *,
+    detection_template_id: str,
+    object_field_order: str,
+) -> str:
+    return (
+        f"{detection_template_id}:"
+        f"{_parser_mode_for_template_id(detection_template_id)}:"
+        f"{object_field_order}"
+    )
+
+
+def _parser_policy_for_score_provenance(cfg: Mapping[str, Any]) -> str:
+    detection_template_id, object_field_order = _scoring_config_parser_axes(cfg)
+    return _parser_policy_from_axes(
+        detection_template_id=detection_template_id,
+        object_field_order=object_field_order,
+    )
 
 
 def _write_scored_artifact_provenance(
@@ -549,12 +603,45 @@ def _write_scored_artifact_provenance(
 ) -> bool:
     """Write a score-bearing sidecar when exact raw provenance is available."""
 
+    sidecar_path = scored_path.with_suffix(scored_path.suffix + ".provenance.json")
     try:
         raw_loaded = load_comparable_artifact(raw_path)
+        raw_provenance = cast(Mapping[str, Any], raw_loaded["provenance"])
         generation_provenance = _extract_generation_provenance(
-            cast(Mapping[str, Any], raw_loaded["provenance"])
+            raw_provenance
         )
+        raw_detection_template_id = _extract_detection_template_id_from_provenance(
+            raw_provenance
+        )
+        raw_object_field_order = _extract_object_field_order_from_provenance(
+            raw_provenance
+        )
+        cfg_detection_template_id, cfg_object_field_order = _scoring_config_parser_axes(
+            cfg
+        )
+        if raw_detection_template_id != cfg_detection_template_id:
+            raise ValueError(
+                "parser_provenance_mismatch: raw artifact detection_template.id "
+                f"{raw_detection_template_id!r} does not match scoring config "
+                f"{cfg_detection_template_id!r}"
+            )
+        if raw_object_field_order != cfg_object_field_order:
+            raise ValueError(
+                "parser_provenance_mismatch: raw artifact object_field_order "
+                f"{raw_object_field_order!r} does not match scoring config "
+                f"{cfg_object_field_order!r}"
+            )
     except ValueError as exc:
+        try:
+            sidecar_path.unlink(missing_ok=True)
+        except OSError as unlink_exc:
+            logger.warning(
+                "Could not remove stale score provenance sidecar %s after refusing "
+                "to stamp %s: %s",
+                sidecar_path,
+                scored_path,
+                unlink_exc,
+            )
         logger.warning(
             "Could not stamp score provenance for %s because raw artifact %s "
             "is not comparable: %s",
@@ -568,8 +655,12 @@ def _write_scored_artifact_provenance(
         "path": str(raw_path),
         "sha256": _sha256_file(raw_path),
     }
-    parser_policy = _parser_policy_for_score_provenance(cfg)
-    detection_template_id = _resolve_detection_template_id(cfg)
+    detection_template_id = raw_detection_template_id
+    object_field_order = raw_object_field_order
+    parser_policy = _parser_policy_from_axes(
+        detection_template_id=detection_template_id,
+        object_field_order=object_field_order,
+    )
     score_policy_fingerprint = build_score_policy_fingerprint(
         policy_name=policy_name,
         score_source=score_source,
@@ -589,6 +680,7 @@ def _write_scored_artifact_provenance(
             "id": detection_template_id,
         },
         "detection_template_id": detection_template_id,
+        "object_field_order": object_field_order,
         "source_raw_artifact": str(raw_path),
         "source_raw_artifact_identity": raw_identity,
         "parser_policy": parser_policy,
@@ -600,7 +692,6 @@ def _write_scored_artifact_provenance(
             "constant_score_value": constant_score_value,
         },
     }
-    sidecar_path = scored_path.with_suffix(scored_path.suffix + ".provenance.json")
     sidecar_path.write_text(
         json.dumps(sidecar, ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -855,7 +946,7 @@ def run_pipeline(
         resolved_runtime_mode == "coord"
     )
     if resolved_checkpoint is not None:
-        validate_compact_coord_token_adapter_contract(
+        validate_compact_token_embeddings_adapter_contract(
             resolved_checkpoint,
             detection_template_id=resolved_detection_template_id,
         )
@@ -1152,7 +1243,7 @@ def _run_infer_stage(
     backend_type = cast(Literal["hf", "vllm"], backend_type_raw)
     if resolved_checkpoint.resolved_adapter_checkpoint is not None and backend_type != "hf":
         raise ValueError(VLLM_ADAPTER_UNSUPPORTED_MESSAGE)
-    validate_compact_coord_token_adapter_contract(
+    validate_compact_token_embeddings_adapter_contract(
         resolved_checkpoint,
         detection_template_id=detection_template_id,
     )

@@ -7,7 +7,12 @@ from types import SimpleNamespace
 import pytest
 from PIL import Image
 
-from src.common.detection_sequence import BOX_START_TOKEN, OBJECT_REF_START_TOKEN
+from src.common.detection_sequence import (
+    BOX_END_TOKEN,
+    BOX_START_TOKEN,
+    OBJECT_REF_END_TOKEN,
+    OBJECT_REF_START_TOKEN,
+)
 from src.config.prompts import (
     build_dense_system_prompt,
     build_dense_user_prompt,
@@ -22,8 +27,19 @@ from src.detection.data import (
 )
 from src.detection.evaluation import parse_compact_full_output_artifact
 from src.detection.template import get_detection_template
-from src.infer.runtime import create_offline_engine, make_offline_generation_result
-from src.infer.pipeline import load_resolved_config, run_pipeline
+from src.infer.runtime import (
+    create_offline_engine,
+    make_offline_generation_result,
+    parse_detection_template_output_artifact,
+    _resolve_runtime_detection_template_id,
+    _semantic_template_id_from_sequence_format,
+)
+from src.infer.pipeline import (
+    _parser_policy_for_score_provenance,
+    _write_scored_artifact_provenance,
+    load_resolved_config,
+    run_pipeline,
+)
 
 
 def _compact_row(desc: str, x1: int, y1: int, x2: int, y2: int) -> str:
@@ -172,6 +188,84 @@ def test_parse_artifact_records_policy_and_separator() -> None:
     ]
 
 
+def test_semantic_compact_parse_artifact_uses_configured_field_order() -> None:
+    geometry_first_output = (
+        f"{BOX_START_TOKEN}<|coord_1|><|coord_2|><|coord_10|><|coord_20|>{BOX_END_TOKEN}"
+        f"{OBJECT_REF_START_TOKEN}cat{OBJECT_REF_END_TOKEN}"
+    )
+
+    artifact = parse_detection_template_output_artifact(
+        geometry_first_output,
+        detection_template_id="compact_object_box_closed",
+        object_field_order="geometry_first",
+    )
+    default_artifact = parse_detection_template_output_artifact(
+        geometry_first_output,
+        detection_template_id="compact_object_box_closed",
+    )
+
+    assert artifact["raw_output_json"]["objects"] == [
+        {
+            "desc": "cat",
+            "bbox_2d": [
+                "<|coord_1|>",
+                "<|coord_2|>",
+                "<|coord_10|>",
+                "<|coord_20|>",
+            ],
+        }
+    ]
+    assert artifact["parse_error_code"] is None
+    assert default_artifact["raw_output_json"] is None
+    assert default_artifact["parse_error_code"] == "strict_template_mismatch"
+
+
+def test_base_compact_parse_artifact_uses_configured_field_order() -> None:
+    geometry_first_output = (
+        f"{BOX_START_TOKEN}<|coord_1|><|coord_2|><|coord_10|><|coord_20|>"
+        f"{OBJECT_REF_START_TOKEN}cat"
+    )
+
+    artifact = parse_detection_template_output_artifact(
+        geometry_first_output,
+        detection_template_id="compact",
+        object_field_order="geometry_first",
+    )
+    default_artifact = parse_detection_template_output_artifact(
+        geometry_first_output,
+        detection_template_id="compact",
+    )
+
+    assert artifact["object_field_order"] == "geometry_first"
+    assert artifact["object_separator"] == BOX_START_TOKEN
+    assert artifact["raw_output_json"]["objects"] == [
+        {
+            "desc": "cat",
+            "bbox_2d": [
+                "<|coord_1|>",
+                "<|coord_2|>",
+                "<|coord_10|>",
+                "<|coord_20|>",
+            ],
+        }
+    ]
+    assert artifact["parse_error_code"] is None
+    assert default_artifact["raw_output_json"] is None
+    assert default_artifact["parse_error_code"] == "strict_template_mismatch"
+
+
+def test_runtime_detection_template_fallback_canonicalizes_sequence_format() -> None:
+    assert _semantic_template_id_from_sequence_format("coordjson") == "stage1_json_pretty"
+    assert _semantic_template_id_from_sequence_format("compact") == "compact"
+    assert _semantic_template_id_from_sequence_format("compact_full") == "compact"
+    assert (
+        _resolve_runtime_detection_template_id(
+            SimpleNamespace(detection_sequence_format="compact_full")
+        )
+        == "compact"
+    )
+
+
 def test_compact_prompt_uses_template_newline_semantics() -> None:
     system_prompt = build_dense_system_prompt(
         prompt_variant="coco_80",
@@ -272,13 +366,99 @@ def test_infer_artifact_writer_records_detection_template_parse_policy(
     engine.infer()
 
     row = json.loads(out_path.read_text(encoding="utf-8").splitlines()[0])
-    assert row["parse_mode"] == "marker_delimited_strict"
-    assert row["serialization_policy"] == "marker_delimited"
+    assert row["parse_mode"] == "strict_expected"
+    assert row["serialization_policy"] == "compact"
     assert row["object_separator"] == "<|object_ref_start|>"
     assert row["terminal_token"] == "<|im_end|>"
     assert row["parse_error_code"] is None
     assert row["raw_ends_with_im_end"] is True
     assert row["detection_template_id"] == "compact"
+    assert row["object_field_order"] == "desc_first"
+
+
+def test_infer_artifact_writer_records_geometry_first_base_compact_policy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    img_path = tmp_path / "img.png"
+    Image.new("RGB", (100, 100), color=(128, 128, 128)).save(img_path)
+
+    gt_jsonl = tmp_path / "gt.jsonl"
+    gt_jsonl.write_text(
+        json.dumps(
+            {
+                "images": [img_path.name],
+                "width": 100,
+                "height": 100,
+                "objects": [
+                    {
+                        "desc": "cat",
+                        "bbox_2d": [
+                            "<|coord_1|>",
+                            "<|coord_2|>",
+                            "<|coord_10|>",
+                            "<|coord_20|>",
+                        ],
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    raw_output = (
+        f"{BOX_START_TOKEN}<|coord_1|><|coord_2|><|coord_10|><|coord_20|>"
+        f"{OBJECT_REF_START_TOKEN}cat<|im_end|><|endoftext|>"
+    )
+    out_path = tmp_path / "out" / "gt_vs_pred.jsonl"
+    summary_path = tmp_path / "out" / "summary.json"
+
+    engine = create_offline_engine(
+        inference_kwargs={
+            "gt_jsonl": str(gt_jsonl),
+            "model_checkpoint": "dummy",
+            "mode": "coord",
+            "detection_template_id": "compact",
+            "object_field_order": "geometry_first",
+            "pred_coord_mode": "auto",
+            "out_path": str(out_path),
+            "summary_path": str(summary_path),
+            "root_image_dir": str(tmp_path),
+        },
+        generation_kwargs={},
+    )
+    monkeypatch.setattr(type(engine), "load_model", lambda self: None)
+    monkeypatch.setattr(
+        type(engine),
+        "_generate_batch",
+        lambda self, images: [
+            make_offline_generation_result(text=raw_output) for _ in images
+        ],
+    )
+    engine.infer()
+
+    row = json.loads(out_path.read_text(encoding="utf-8").splitlines()[0])
+    assert row["parse_mode"] == "strict_expected"
+    assert row["serialization_policy"] == "compact"
+    assert row["object_separator"] == BOX_START_TOKEN
+    assert row["terminal_token"] == "<|im_end|>"
+    assert row["parse_error_code"] is None
+    assert row["raw_ends_with_im_end"] is True
+    assert row["detection_template_id"] == "compact"
+    assert row["object_field_order"] == "geometry_first"
+    assert row["raw_output_json"]["objects"] == [
+        {
+            "desc": "cat",
+            "bbox_2d": [
+                "<|coord_1|>",
+                "<|coord_2|>",
+                "<|coord_10|>",
+                "<|coord_20|>",
+            ],
+        }
+    ]
 
 
 @pytest.mark.parametrize(
@@ -383,3 +563,168 @@ def test_infer_artifact_writer_parses_each_compact_template_variant(
     assert row["detection_template_id"] == detection_template_id
     assert row["parse_error_code"] is None
     assert row["pred"][0]["desc"] == "cat"
+
+
+def test_score_provenance_binds_parser_policy_to_object_field_order(
+    tmp_path: Path,
+) -> None:
+    cfg = {
+        "detection_template": {"id": "compact"},
+        "infer": {"object_field_order": "geometry_first"},
+    }
+    raw_path = tmp_path / "gt_vs_pred.jsonl"
+    scored_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    raw_path.write_text('{"gt":[],"pred":[],"width":1,"height":1}\n', encoding="utf-8")
+    scored_path.write_text(
+        '{"gt":[],"pred":[],"width":1,"height":1,"score":1.0}\n',
+        encoding="utf-8",
+    )
+    raw_path.with_suffix(raw_path.suffix + ".provenance.json").write_text(
+        json.dumps(
+            {
+                "prompt_policy_fingerprint": "prompt:unit",
+                "decode_policy_fingerprint": "decode:unit",
+                "model_identity_fingerprint": "model:unit",
+                "score_policy": "none",
+                "detection_template": {"id": "compact"},
+                "detection_template_id": "compact",
+                "object_field_order": "geometry_first",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    assert (
+        _parser_policy_for_score_provenance(cfg)
+        == "compact:marker_delimited_strict:geometry_first"
+    )
+    assert _parser_policy_for_score_provenance(
+        {
+            "detection_template": {"id": "compact"},
+            "infer": {"object_field_order": "desc_first"},
+        }
+    ) == "compact:marker_delimited_strict:desc_first"
+    assert _write_scored_artifact_provenance(
+        cfg=cfg,
+        raw_path=raw_path,
+        scored_path=scored_path,
+        policy_name="unit_score",
+        score_source="unit",
+        aggregation_rule="unit",
+        token_span_rule="none",
+        constant_score_value=1.0,
+    )
+
+    sidecar = json.loads(
+        scored_path.with_suffix(scored_path.suffix + ".provenance.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert sidecar["detection_template_id"] == "compact"
+    assert sidecar["detection_template"] == {"id": "compact"}
+    assert sidecar["object_field_order"] == "geometry_first"
+    assert sidecar["parser_policy"] == "compact:marker_delimited_strict:geometry_first"
+
+
+def test_score_provenance_rejects_raw_config_object_field_order_mismatch(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "gt_vs_pred.jsonl"
+    scored_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    raw_path.write_text('{"gt":[],"pred":[],"width":1,"height":1}\n', encoding="utf-8")
+    scored_path.write_text(
+        '{"gt":[],"pred":[],"width":1,"height":1,"score":1.0}\n',
+        encoding="utf-8",
+    )
+    raw_path.with_suffix(raw_path.suffix + ".provenance.json").write_text(
+        json.dumps(
+            {
+                "prompt_policy_fingerprint": "prompt:unit",
+                "decode_policy_fingerprint": "decode:unit",
+                "model_identity_fingerprint": "model:unit",
+                "score_policy": "none",
+                "detection_template": {"id": "compact"},
+                "detection_template_id": "compact",
+                "object_field_order": "geometry_first",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    assert not _write_scored_artifact_provenance(
+        cfg={
+            "detection_template": {"id": "compact"},
+            "infer": {"object_field_order": "desc_first"},
+        },
+        raw_path=raw_path,
+        scored_path=scored_path,
+        policy_name="unit_score",
+        score_source="unit",
+        aggregation_rule="unit",
+        token_span_rule="none",
+        constant_score_value=1.0,
+    )
+    assert not scored_path.with_suffix(scored_path.suffix + ".provenance.json").exists()
+
+
+def test_score_provenance_removes_stale_sidecar_on_object_field_order_mismatch(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "gt_vs_pred.jsonl"
+    scored_path = tmp_path / "gt_vs_pred_scored.jsonl"
+    sidecar_path = scored_path.with_suffix(scored_path.suffix + ".provenance.json")
+    raw_path.write_text('{"gt":[],"pred":[],"width":1,"height":1}\n', encoding="utf-8")
+    scored_path.write_text(
+        '{"gt":[],"pred":[],"width":1,"height":1,"score":1.0}\n',
+        encoding="utf-8",
+    )
+    raw_path.with_suffix(raw_path.suffix + ".provenance.json").write_text(
+        json.dumps(
+            {
+                "prompt_policy_fingerprint": "prompt:unit",
+                "decode_policy_fingerprint": "decode:unit",
+                "model_identity_fingerprint": "model:unit",
+                "score_policy": "none",
+                "detection_template": {"id": "compact"},
+                "detection_template_id": "compact",
+                "object_field_order": "geometry_first",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    sidecar_path.write_text(
+        json.dumps(
+            {
+                "prompt_policy_fingerprint": "prompt:stale",
+                "decode_policy_fingerprint": "decode:stale",
+                "model_identity_fingerprint": "model:stale",
+                "score_policy_fingerprint": "score_policy:v1:" + "a" * 64,
+                "metric_bearing": True,
+                "artifact_path": str(scored_path),
+                "detection_template": {"id": "compact"},
+                "detection_template_id": "compact",
+                "object_field_order": "desc_first",
+                "parser_policy": "compact:marker_delimited_strict:desc_first",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    assert not _write_scored_artifact_provenance(
+        cfg={
+            "detection_template": {"id": "compact"},
+            "infer": {"object_field_order": "desc_first"},
+        },
+        raw_path=raw_path,
+        scored_path=scored_path,
+        policy_name="unit_score",
+        score_source="unit",
+        aggregation_rule="unit",
+        token_span_rule="none",
+        constant_score_value=1.0,
+    )
+    assert not sidecar_path.exists()

@@ -144,7 +144,7 @@ def test_sft_live_bootstrap_attaches_recursive_ce_cfg_to_trainer() -> None:
     )
 
 
-def test_sft_fails_fast_if_coord_offset_hooks_are_missing_after_peft_wrap() -> None:
+def test_sft_fails_fast_if_token_embeddings_adapter_hooks_are_missing_after_peft_wrap() -> None:
     tree = ast.parse(SFT_PATH.read_text(encoding="utf-8"))
     raise_messages: list[str] = []
     for ast_node in ast.walk(tree):
@@ -162,7 +162,7 @@ def test_sft_fails_fast_if_coord_offset_hooks_are_missing_after_peft_wrap() -> N
             raise_messages.append(message.value)
 
     assert any(
-        "coord_offset_adapter not found after prepare_model" in message
+        "token_embeddings_adapter not found after prepare_model" in message
         for message in raise_messages
     )
 
@@ -198,14 +198,15 @@ def test_detection_runtime_constructs_dataset_and_sft_delegates() -> None:
     assert build_dataset_calls
 
 
-def test_detection_runtime_shim_preserves_trainable_token_rows() -> None:
+def test_detection_runtime_shim_preserves_token_embeddings_adapter() -> None:
     cfg = _prod_detection_config()
     custom_config = _detection_runtime_custom_shim(cfg)
 
-    assert custom_config.trainable_token_rows is cfg.token_rows
-    assert custom_config.trainable_token_rows.enabled is True
-    assert "coord_geometry" in custom_config.trainable_token_rows.groups
-    assert getattr(custom_config.coord_offset, "enabled", None) is False
+    assert custom_config.token_embeddings_adapter is cfg.token_rows
+    assert custom_config.token_embeddings_adapter.enabled is True
+    assert "coord_geometry" in custom_config.token_embeddings_adapter.groups
+    assert not hasattr(custom_config, "coord_offset")
+    assert not hasattr(custom_config, "trainable_token_rows")
 
 
 def test_sft_does_not_apply_recursive_sidecar_guard_to_other_current_objectives() -> None:

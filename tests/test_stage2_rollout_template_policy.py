@@ -13,7 +13,7 @@ from src.training.stage2.rollout_codec import (
 )
 
 
-def test_compact_full_policy_is_explicit_and_unconstrained_by_default() -> None:
+def test_compact_full_policy_is_explicit_and_has_no_decode_policy_knob() -> None:
     policy = resolve_stage2_rollout_template_policy(
         "compact_full",
         custom_json_format="standard",
@@ -36,20 +36,6 @@ def test_compact_full_policy_is_explicit_and_unconstrained_by_default() -> None:
     }
 
 
-def test_compact_full_policy_rejects_removed_decode_policy_knobs() -> None:
-    with pytest.raises(ValueError, match="rollout_decode_policy.*removed"):
-        resolve_stage2_rollout_template_policy(
-            "compact_full",
-            rollout_decode_policy="compact-grammar",
-        )
-
-    with pytest.raises(ValueError, match="compact_decode_policy.*removed"):
-        resolve_stage2_rollout_template_policy(
-            "compact_full",
-            compact_decode_policy="compact-grammar",
-        )
-
-
 def test_compact_full_policy_accepts_explicit_fallback_runtime_knobs() -> None:
     policy = resolve_stage2_rollout_template_policy(
         "compact_full",
@@ -59,6 +45,7 @@ def test_compact_full_policy_accepts_explicit_fallback_runtime_knobs() -> None:
     )
 
     assert policy.template_family == "compact_full"
+    assert not hasattr(policy, "decode_policy")
     assert policy.invalid_rollout_policy == "fallback_gt_fn_append_only"
     assert policy.fallback_loss_weight == pytest.approx(0.5)
     assert policy.strict_rollout_preflight is True
@@ -86,17 +73,12 @@ def test_coordjson_policy_is_explicit_legacy_surface() -> None:
     assert policy.template_family == "coordjson"
     assert policy.parser_id == "coordjson_legacy"
     assert policy.append_policy_id == "coordjson_legacy_fn_append"
+    assert not hasattr(policy, "decode_policy")
     assert policy.invalid_rollout_policy == "abort"
     assert policy.fallback_loss_weight == 1.0
 
 
-def test_coordjson_policy_rejects_removed_decode_policy_knobs() -> None:
-    with pytest.raises(ValueError, match="rollout_decode_policy.*removed"):
-        resolve_stage2_rollout_template_policy(
-            "coordjson",
-            rollout_decode_policy="unconstrained",
-        )
-
+def test_coordjson_policy_rejects_compact_only_invalid_rollout_policy() -> None:
     with pytest.raises(ValueError, match="fallback_gt_fn_append_only.*coordjson"):
         resolve_stage2_rollout_template_policy(
             "coordjson",

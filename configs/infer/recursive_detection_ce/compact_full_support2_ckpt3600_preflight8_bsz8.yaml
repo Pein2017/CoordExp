@@ -36,6 +36,7 @@ infer:
     repetition_penalty: 1.05
     batch_size: 8
     seed: 42
+
   device: cuda:0
   limit: 8
   detect_samples: 128

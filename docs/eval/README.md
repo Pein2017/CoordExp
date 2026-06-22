@@ -6,7 +6,7 @@ status: canonical
 domain: eval
 summary: Router for inference and evaluation contracts, workflows, and artifacts.
 tags: [eval, infer, workflow]
-updated: 2026-05-03
+updated: 2026-06-15
 ---
 
 # Evaluation & Inference
@@ -31,7 +31,7 @@ COCO export, and additive analysis studies.
   - full infer/eval/training artifact inventory, provenance, helper ownership, and run-directory expectations
 - [COCO_TEST_SUBMISSION.md](COCO_TEST_SUBMISSION.md)
   - end-to-end runbook for 1024-budget COCO test-dev inference and official submission export
-- [UNMATCHED_PROPOSAL_VERIFIER_STUDY.md](UNMATCHED_PROPOSAL_VERIFIER_STUDY.md)
+- [drafts/UNMATCHED_PROPOSAL_VERIFIER_STUDY.md](drafts/UNMATCHED_PROPOSAL_VERIFIER_STUDY.md)
   - draft supplementary study; not part of the default infer -> score -> evaluate path
 
 ## Normative Specs

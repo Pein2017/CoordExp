@@ -6,7 +6,7 @@ status: canonical
 domain: repo
 summary: Agent-first retrieval guide for CoordExp documentation and research notes.
 tags: [agents, retrieval, docs]
-updated: 2026-05-16
+updated: 2026-06-20
 ---
 
 # Agent Index
@@ -21,6 +21,7 @@ Human support entrypoints:
 
 - [docs/README.md](README.md)
 - [progress/README.md](../progress/README.md)
+- [docs/history/README.md](history/README.md) for non-normative implementation-plan and design provenance
 
 ## Default Read Order
 
@@ -41,6 +42,10 @@ Human support entrypoints:
   - [IMPLEMENTATION_MAP.md](IMPLEMENTATION_MAP.md)
   - [catalog.yaml](catalog.yaml)
   - [`runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md)
+- Architecture proposals and archived plan provenance:
+  - [docs/architecture/README.md](architecture/README.md) for proposal/review routing
+  - [docs/history/README.md](history/README.md) for non-normative historical docs
+  - [docs/history/superpowers/README.md](history/superpowers/README.md) for dated plans/specs/handoffs moved out of current docs
 - End-to-end system flow:
   - [SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md)
 - Code and test entrypoints:
@@ -94,6 +99,29 @@ Use `progress/` only for:
 - historical derivations
 
 Do not answer current-behavior questions from `progress/` if `docs/` or `openspec/specs/` already cover them.
+
+## Historical Docs Usage Rule
+
+Use `docs/history/` only for non-normative provenance:
+
+- dated implementation plans and design specs
+- migration handoffs
+- superseded training notes
+- branch research planning that has not been promoted into current docs
+
+Do not answer current-behavior questions from `docs/history/` unless a current doc explicitly points there for historical context.
+
+## Research Knowledge Pilot
+
+Use [research/](../research/) for the OKF-style idea, investigation, and
+mechanism pilot.
+
+During the pilot, `progress/` remains the historical/evidence source of truth
+and `research/` is the synthesized reading path.
+
+Do not answer current coding, architecture, infrastructure, operator, schema,
+artifact, metric, or training/eval behavior from `research/` when `docs/` or
+`openspec/specs/` cover it.
 
 ## Suggested Search Seeds
 

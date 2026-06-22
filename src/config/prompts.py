@@ -13,6 +13,7 @@ from src.common.object_field_order import normalize_object_field_order
 from src.detection.template_contracts import (
     STAGE1_JSON_PRETTY_TEMPLATE_ID,
     DetectionTemplateContract,
+    render_compact_contract_row,
     resolve_detection_template_contract,
 )
 
@@ -241,6 +242,24 @@ def _compact_user_separator_clause(contract: DetectionTemplateContract) -> str:
         "and do not insert newline characters."
     )
 
+
+def _compact_prompt_pattern(
+    contract: DetectionTemplateContract,
+    *,
+    object_field_order: str,
+) -> str:
+    return render_compact_contract_row(
+        contract,
+        desc="{desc}",
+        bbox_tokens=(
+            "<|coord_x1|>",
+            "<|coord_y1|>",
+            "<|coord_x2|>",
+            "<|coord_y2|>",
+        ),
+        object_field_order=object_field_order,
+    )
+
 # Defaults (coord-token, sorted)
 SYSTEM_PROMPT = SYSTEM_PROMPT_SORTED_TOKENS
 USER_PROMPT = USER_PROMPT_SORTED_TOKENS
@@ -381,7 +400,13 @@ def build_dense_system_prompt(
         detection_sequence_format=detection_sequence_format,
     )
     if detection_contract.is_compact:
-        pattern = detection_contract.prompt_pattern
+        field_order = normalize_object_field_order(
+            object_field_order, path="custom.object_field_order"
+        )
+        pattern = _compact_prompt_pattern(
+            detection_contract,
+            object_field_order=field_order,
+        )
         row_separator_clause = _compact_system_separator_clause(detection_contract)
         return (
             "You are a general-purpose object detection and grounding assistant. "
@@ -449,7 +474,13 @@ def build_dense_user_prompt(
         detection_sequence_format=detection_sequence_format,
     )
     if detection_contract.is_compact:
-        pattern = detection_contract.prompt_pattern
+        field_order = normalize_object_field_order(
+            object_field_order, path="custom.object_field_order"
+        )
+        pattern = _compact_prompt_pattern(
+            detection_contract,
+            object_field_order=field_order,
+        )
         variant = resolve_prompt_variant(prompt_variant)
         separator_clause = _compact_user_separator_clause(detection_contract)
         class_clause = ""

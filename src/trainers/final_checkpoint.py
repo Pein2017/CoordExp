@@ -302,9 +302,9 @@ def _build_model_artifact_manifest(checkpoint_dir: Path) -> dict[str, Any]:
             else []
         ),
         "token_embedding_policy": (
-            "external_base_model_plus_coord_offset_adapter"
+            "external_base_model_plus_token_embeddings_adapter"
             if isinstance(modules_to_save, list)
-            and "coord_offset_adapter" in {str(item) for item in modules_to_save}
+            and "token_embeddings_adapter" in {str(item) for item in modules_to_save}
             else "checkpoint_model_weights"
         ),
     }
@@ -501,23 +501,23 @@ def _validate_adapter_checkpoint(checkpoint_dir: Path) -> None:
         if isinstance(modules_to_save_raw, list)
         else set()
     )
-    if "coord_offset_adapter" not in modules_to_save:
+    if "token_embeddings_adapter" not in modules_to_save:
         return
 
     keys = _adapter_state_keys(checkpoint_dir)
     if not keys:
         raise ValueError(
-            "coord_offset_adapter is declared in adapter_config.json, but no "
+            "token_embeddings_adapter is declared in adapter_config.json, but no "
             "unsharded adapter_model.safetensors/bin payload was found for validation"
         )
-    has_coord_ids = any(key.endswith("coord_offset_adapter.coord_ids") for key in keys)
+    has_token_ids = any(key.endswith("token_embeddings_adapter.token_ids") for key in keys)
     has_embed_offset = any(
-        key.endswith("coord_offset_adapter.embed_offset") for key in keys
+        key.endswith("token_embeddings_adapter.embed_offset") for key in keys
     )
-    if not has_coord_ids or not has_embed_offset:
+    if not has_token_ids or not has_embed_offset:
         raise ValueError(
-            "coord_offset_adapter is declared in adapter_config.json, but adapter "
-            "weights are missing coord_ids/embed_offset tensors"
+            "token_embeddings_adapter is declared in adapter_config.json, but adapter "
+            "weights are missing token_ids/embed_offset tensors"
         )
 
 

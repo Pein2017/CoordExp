@@ -215,8 +215,9 @@ def build_hf_rollout_logits_processor(
     rollout_template_policy: Any,
     trailing_processors: Optional[Sequence[Any]] = None,
 ) -> Any:
-    """Build HF logits processors for shared rollout decoding."""
+    """Build retained non-grammar HF logits processors for rollout decoding."""
 
+    _ = tokenizer, prompt_pad_len, batch_size, rollout_template_policy
     processors: List[Any] = []
     if trailing_processors:
         processors.extend(trailing_processors)

@@ -50,8 +50,8 @@ from swift.utils import get_dist_setting
 from .data_collators import build_dataset_metrics_collator
 from .tokens.coord.template_adapter import apply_coord_template_adapter
 from .tokens.row_offsets import (
-    install_coord_offset_adapter,
-    reattach_coord_offset_hooks,
+    install_token_embeddings_adapter,
+    reattach_token_embeddings_adapter_hooks,
 )
 from .bootstrap.pipeline_manifest import build_pipeline_manifest
 from .bootstrap.experiment_manifest import write_experiment_manifest_file
@@ -61,7 +61,7 @@ from .bootstrap.trainer_setup import (
     instantiate_trainer,
 )
 from .config import ConfigLoader
-from .config.schema import CoordOffsetConfig
+from .config.schema import TokenEmbeddingsAdapterConfig
 from .config.schema import CoordTokensConfig, DebugConfig, DetectionTrainingConfig
 from .config.prompts import (
     coord_mode_from_coord_tokens_enabled,
@@ -82,6 +82,7 @@ from .detection.packing import (
     StaticSftPackingFingerprintRequest,
     build_stage1_static_sft_packing_fingerprint,
     require_static_sft_packing_eligibility,
+    resolve_detection_template_id_for_static_packing,
 )
 from .detection.dataset import (
     DetectionTrainingDataset,
@@ -125,7 +126,7 @@ from .utils import (
     get_logger,
     set_log_level,
 )
-from .optim import register_coord_offset_optimizer
+from .optim import register_token_embeddings_adapter_optimizer
 from .bootstrap.run_metadata import (
     attach_encoded_sample_cache_run_metadata as _attach_encoded_sample_cache_run_metadata_impl,
     build_run_metadata_payload,
@@ -202,8 +203,21 @@ def _adapter_checkpoint_paths_from_train_args(train_args: Any) -> list[str]:
     return paths
 
 
-def _resolve_adapter_coord_offset_config(train_args: Any) -> CoordOffsetConfig | None:
-    """Resolve saved coord-offset adapter metadata from loaded adapter checkpoints."""
+@dataclass(frozen=True)
+class _TokenEmbeddingsAdapterRuntimeConfig:
+    enabled: bool
+    tie_head: bool
+    token_ids: tuple[int, ...]
+    embed_lr: float | None = None
+    head_lr: float | None = None
+    weight_decay: float = 0.0
+    dtype: str | None = None
+
+
+def _resolve_loaded_token_embeddings_adapter_config(
+    train_args: Any,
+) -> _TokenEmbeddingsAdapterRuntimeConfig | None:
+    """Resolve saved token_embeddings_adapter metadata from loaded adapter checkpoints."""
 
     adapter_paths = _adapter_checkpoint_paths_from_train_args(train_args)
     if not adapter_paths:
@@ -215,23 +229,23 @@ def _resolve_adapter_coord_offset_config(train_args: Any) -> CoordOffsetConfig |
         if not adapter_dir.is_dir() or not (adapter_dir / "adapter_config.json").is_file():
             raise ValueError(
                 "Loaded adapter checkpoints must be local adapter directories "
-                f"containing adapter_config.json for coord-offset validation: {adapter_path}"
+                f"containing adapter_config.json for token_embeddings_adapter validation: {adapter_path}"
             )
 
         adapter_info = load_adapter_checkpoint_info(str(adapter_dir))
-        coord_spec = adapter_info.coord_offset_spec
-        if coord_spec is None:
+        adapter_spec = adapter_info.token_embeddings_adapter_spec
+        if adapter_spec is None:
             raise ValueError(
-                "Loaded adapter checkpoint does not declare coord_offset_adapter in "
+                "Loaded adapter checkpoint does not declare token_embeddings_adapter in "
                 f"adapter_config.json.modules_to_save: {adapter_dir}. "
-                "Coord-offset is required for adapter-based training in this repo; "
-                "train from the base model only if a fresh coord-offset adapter is intended."
+                "The token-embeddings adapter is required for adapter-based training "
+                "in this repo; train from the base model only if a fresh adapter is intended."
             )
         resolved_specs.append(
             (
                 str(adapter_dir),
-                tuple(int(token_id) for token_id in coord_spec.coord_ids),
-                bool(coord_spec.tie_head),
+                tuple(int(token_id) for token_id in adapter_spec.token_ids),
+                bool(adapter_spec.tie_head),
             )
         )
 
@@ -239,49 +253,49 @@ def _resolve_adapter_coord_offset_config(train_args: Any) -> CoordOffsetConfig |
         return None
 
     first_path, first_ids, first_tie_head = resolved_specs[0]
-    for adapter_path, coord_ids, tie_head in resolved_specs[1:]:
-        if coord_ids != first_ids or tie_head != first_tie_head:
+    for adapter_path, token_ids, tie_head in resolved_specs[1:]:
+        if token_ids != first_ids or tie_head != first_tie_head:
             raise ValueError(
-                "Loaded adapter checkpoints declare incompatible coord_offset_adapter specs: "
+                "Loaded adapter checkpoints declare incompatible token_embeddings_adapter specs: "
                 f"{first_path} ids={len(first_ids)} tie_head={first_tie_head}; "
-                f"{adapter_path} ids={len(coord_ids)} tie_head={tie_head}."
+                f"{adapter_path} ids={len(token_ids)} tie_head={tie_head}."
             )
 
-    return CoordOffsetConfig(
+    return _TokenEmbeddingsAdapterRuntimeConfig(
         enabled=True,
         tie_head=first_tie_head,
-        ids=first_ids,
+        token_ids=first_ids,
     )
 
 
-def _require_coord_offset_compatible_with_loaded_adapter(
+def _require_token_embeddings_adapter_compatible_with_loaded_adapter(
     *,
-    requested_cfg: CoordOffsetConfig,
-    adapter_cfg: CoordOffsetConfig,
+    requested_cfg: _TokenEmbeddingsAdapterRuntimeConfig,
+    adapter_cfg: _TokenEmbeddingsAdapterRuntimeConfig,
     context: str,
 ) -> None:
-    requested_ids = tuple(sorted(int(token_id) for token_id in requested_cfg.ids))
-    adapter_ids = tuple(sorted(int(token_id) for token_id in adapter_cfg.ids))
+    requested_ids = tuple(sorted(int(token_id) for token_id in requested_cfg.token_ids))
+    adapter_ids = tuple(sorted(int(token_id) for token_id in adapter_cfg.token_ids))
     if requested_ids and requested_ids != adapter_ids:
         raise ValueError(
-            f"{context} resolves {len(requested_ids)} coord-offset ids, but the "
+            f"{context} resolves {len(requested_ids)} token embeddings adapter ids, but the "
             f"loaded adapter checkpoint declares {len(adapter_ids)} ids. "
-            "Loaded adapter coord-offset ids must match the training token-row policy."
+            "Loaded adapter token ids must match the training token-row policy."
         )
     if bool(requested_cfg.tie_head) != bool(adapter_cfg.tie_head):
         raise ValueError(
             f"{context}.tie_head={bool(requested_cfg.tie_head)} conflicts with "
-            f"loaded coord_offset_adapter.tie_head={bool(adapter_cfg.tie_head)}."
+            f"loaded token_embeddings_adapter.tie_head={bool(adapter_cfg.tie_head)}."
         )
 
 
-def _attach_coord_offset_config_to_train_args(
-    train_args: Any, coord_offset_cfg: CoordOffsetConfig
+def _attach_token_embeddings_adapter_config_to_train_args(
+    train_args: Any, adapter_cfg: TokenEmbeddingsAdapterConfig
 ) -> None:
-    setattr(train_args, "coord_offset_config", coord_offset_cfg)
+    setattr(train_args, "token_embeddings_adapter_config", adapter_cfg)
     inner_args = getattr(train_args, "training_args", None)
     if inner_args is not None:
-        setattr(inner_args, "coord_offset_config", coord_offset_cfg)
+        setattr(inner_args, "token_embeddings_adapter_config", adapter_cfg)
 
 
 def _resolve_dense_prompt_identity(custom_config: Any) -> dict[str, Any]:
@@ -1456,8 +1470,16 @@ def _resolve_detection_template_id(training_config: Any) -> str | None:
     template_cfg = getattr(training_config, "detection_template", None)
     template_id = _get_section_value(template_cfg, "id")
     if template_id is None:
+        custom_cfg = getattr(training_config, "custom", None)
+        template_id = getattr(custom_cfg, "detection_template_id", None)
+    if template_id is None:
         return None
-    return str(template_id)
+    return str(resolve_detection_template_id_for_static_packing(template_id))
+
+
+def _resolve_detection_sequence_format_fingerprint_value(custom_config: Any) -> str:
+    raw_format = getattr(custom_config, "detection_sequence_format", "coordjson")
+    return str(resolve_detection_template_id_for_static_packing(raw_format))
 
 
 def _resolve_object_ordering_fingerprint_value(
@@ -1569,8 +1591,8 @@ def _build_static_packing_fingerprint(
         "custom_emit_norm": getattr(custom_config, "emit_norm", None),
         "custom_json_format": getattr(custom_config, "json_format", None),
         "custom_bbox_format": getattr(custom_config, "bbox_format", None),
-        "custom_detection_sequence_format": getattr(
-            custom_config, "detection_sequence_format", "coordjson"
+        "custom_detection_sequence_format": (
+            _resolve_detection_sequence_format_fingerprint_value(custom_config)
         ),
         "custom_object_ordering": getattr(custom_config, "object_ordering", None),
         "custom_object_field_order": getattr(custom_config, "object_field_order", None),
@@ -1615,10 +1637,13 @@ def _build_static_packing_fingerprint(
     )
     return build_stage1_static_sft_packing_fingerprint(
         StaticSftPackingFingerprintRequest(
-            detection_sequence_format=getattr(
-                custom_config,
-                "detection_sequence_format",
-                "coordjson",
+            detection_sequence_format=(
+                _resolve_detection_template_id(training_config)
+                or getattr(
+                    custom_config,
+                    "detection_sequence_format",
+                    "coordjson",
+                )
             ),
             prompt_profile=prompt_profile,
             tokenizer_id=tokenizer_id,
@@ -1804,10 +1829,16 @@ def _build_encoded_sample_cache_fingerprint(
 
     coord_tokens_payload = _coord_tokens_fingerprint_payload(custom_config)
     detection_template_id = _resolve_detection_template_id(training_config)
+    tokenizer_id = (
+        _resolve_model_checkpoint_path(training_config)
+        or str(getattr(train_args, "model", "") or "")
+        or "unknown_tokenizer"
+    )
 
     return {
         "cache_schema_version": 1,
         "detection_template_id": detection_template_id,
+        "tokenizer_id": tokenizer_id,
         "dataset_seed": int(dataset_seed),
         "dataset_split": split,
         "dataset_mode": str(dataset_mode),
@@ -1827,8 +1858,8 @@ def _build_encoded_sample_cache_fingerprint(
         "custom_emit_norm": getattr(custom_config, "emit_norm", None),
         "custom_json_format": getattr(custom_config, "json_format", None),
         "custom_bbox_format": getattr(custom_config, "bbox_format", None),
-        "custom_detection_sequence_format": getattr(
-            custom_config, "detection_sequence_format", "coordjson"
+        "custom_detection_sequence_format": (
+            _resolve_detection_sequence_format_fingerprint_value(custom_config)
         ),
         "custom_object_ordering": getattr(custom_config, "object_ordering", None),
         "custom_object_field_order": getattr(custom_config, "object_field_order", None),
@@ -2053,10 +2084,9 @@ def _validate_stage1_static_packing_policy(
         training_config=training_config,
     )
     require_static_sft_packing_eligibility(
-        detection_sequence_format=getattr(
-            custom_config,
-            "detection_sequence_format",
-            "coordjson",
+        detection_sequence_format=(
+            _resolve_detection_template_id(training_config)
+            or getattr(custom_config, "detection_sequence_format", "coordjson")
         ),
         object_ordering=str(getattr(custom_config, "object_ordering", "sorted") or "sorted"),
         objective_variant=objective_variant,
@@ -2494,7 +2524,7 @@ def main():
         if training_args is not None:
             setattr(training_args, "model", normalized_model_path)
     # Ensure custom optimizer variant is available before trainer setup
-    register_coord_offset_optimizer()
+    register_token_embeddings_adapter_optimizer()
     detection_config = (
         training_config if _is_detection_config(training_config) else None
     )
@@ -2636,93 +2666,77 @@ def main():
     if coord_cfg.enabled:
         apply_coord_template_adapter(sft.template, coord_cfg)
 
-    coord_offset_cfg = getattr(custom_config, "coord_offset", None)
-    trainable_rows_cfg = getattr(custom_config, "trainable_token_rows", None)
-    adapter_coord_offset_cfg = _resolve_adapter_coord_offset_config(train_args)
-    if trainable_rows_cfg and trainable_rows_cfg.enabled:
+    token_embeddings_adapter_cfg = getattr(
+        custom_config, "token_embeddings_adapter", None
+    )
+    loaded_adapter_cfg = _resolve_loaded_token_embeddings_adapter_config(train_args)
+    adapter_token_ids: tuple[int, ...] = ()
+    if token_embeddings_adapter_cfg and token_embeddings_adapter_cfg.enabled:
         tokenizer = getattr(sft.template, "tokenizer", None)
         if tokenizer is None:
             raise ValueError(
-                "custom.trainable_token_rows.enabled=true requires the training template to expose a tokenizer"
+                "custom.token_embeddings_adapter.enabled=true requires the training template to expose a tokenizer"
             )
-        token_role_sets = trainable_rows_cfg.resolve_role_sets(tokenizer)
+        token_role_sets = token_embeddings_adapter_cfg.resolve_role_sets(tokenizer)
         trainable_row_ids = token_role_sets.trainable_row_ids
         if not trainable_row_ids:
             raise ValueError(
-                "custom.trainable_token_rows.enabled=true resolved no trainable token ids"
+                "custom.token_embeddings_adapter.enabled=true resolved no trainable token ids"
             )
-        requested_coord_offset_cfg = CoordOffsetConfig(
+        requested_adapter_cfg = _TokenEmbeddingsAdapterRuntimeConfig(
             enabled=True,
-            tie_head=trainable_rows_cfg.tie_head,
-            ids=trainable_row_ids,
-            embed_lr=trainable_rows_cfg.embed_lr
-            if trainable_rows_cfg.embed_lr is not None
-            else getattr(coord_offset_cfg, "embed_lr", None),
-            head_lr=trainable_rows_cfg.head_lr
-            if trainable_rows_cfg.head_lr is not None
-            else getattr(coord_offset_cfg, "head_lr", None),
-            weight_decay=trainable_rows_cfg.weight_decay,
-            dtype=trainable_rows_cfg.dtype or getattr(coord_offset_cfg, "dtype", None),
+            tie_head=token_embeddings_adapter_cfg.tie_head,
+            token_ids=tuple(int(token_id) for token_id in trainable_row_ids),
+            embed_lr=token_embeddings_adapter_cfg.embed_lr,
+            head_lr=token_embeddings_adapter_cfg.head_lr,
+            weight_decay=token_embeddings_adapter_cfg.weight_decay,
+            dtype=token_embeddings_adapter_cfg.dtype,
         )
-        if adapter_coord_offset_cfg is not None:
-            _require_coord_offset_compatible_with_loaded_adapter(
-                requested_cfg=requested_coord_offset_cfg,
-                adapter_cfg=adapter_coord_offset_cfg,
-                context="custom.trainable_token_rows",
+        if loaded_adapter_cfg is not None:
+            _require_token_embeddings_adapter_compatible_with_loaded_adapter(
+                requested_cfg=requested_adapter_cfg,
+                adapter_cfg=loaded_adapter_cfg,
+                context="custom.token_embeddings_adapter",
             )
-        coord_offset_cfg = CoordOffsetConfig(
-            enabled=True,
-            tie_head=trainable_rows_cfg.tie_head,
-            ids=trainable_row_ids,
-            embed_lr=trainable_rows_cfg.embed_lr
-            if trainable_rows_cfg.embed_lr is not None
-            else getattr(coord_offset_cfg, "embed_lr", None),
-            head_lr=trainable_rows_cfg.head_lr
-            if trainable_rows_cfg.head_lr is not None
-            else getattr(coord_offset_cfg, "head_lr", None),
-            weight_decay=trainable_rows_cfg.weight_decay,
-            dtype=trainable_rows_cfg.dtype or getattr(coord_offset_cfg, "dtype", None),
+        adapter_token_ids = tuple(int(token_id) for token_id in trainable_row_ids)
+        _attach_token_embeddings_adapter_config_to_train_args(
+            train_args, token_embeddings_adapter_cfg
         )
-        _attach_coord_offset_config_to_train_args(train_args, coord_offset_cfg)
         setattr(train_args, "token_role_sets", token_role_sets)
         inner_args = getattr(train_args, "training_args", None)
         if inner_args is not None:
             setattr(inner_args, "token_role_sets", token_role_sets)
         logger.info(
-            "Trainable token rows resolved: total=%s coord_geometry=%s structural_ce_only=%s coord_loss=%s",
+            "Token-embeddings adapter resolved: total=%s coord_geometry=%s structural_ce_only=%s coord_loss=%s",
             len(trainable_row_ids),
             len(token_role_sets.coord_geometry_ids),
             len(token_role_sets.structural_ce_only_ids),
             len(token_role_sets.coord_loss_ids),
         )
-    elif adapter_coord_offset_cfg is not None:
-        if coord_offset_cfg is not None:
-            _require_coord_offset_compatible_with_loaded_adapter(
-                requested_cfg=coord_offset_cfg,
-                adapter_cfg=adapter_coord_offset_cfg,
-                context="custom.coord_offset",
-            )
-        coord_offset_cfg = CoordOffsetConfig(
+    elif loaded_adapter_cfg is not None:
+        token_embeddings_adapter_cfg = TokenEmbeddingsAdapterConfig(
             enabled=True,
-            tie_head=adapter_coord_offset_cfg.tie_head,
-            ids=adapter_coord_offset_cfg.ids,
-            embed_lr=getattr(coord_offset_cfg, "embed_lr", None),
-            head_lr=getattr(coord_offset_cfg, "head_lr", None),
-            weight_decay=getattr(coord_offset_cfg, "weight_decay", 0.0),
-            dtype=getattr(coord_offset_cfg, "dtype", None),
+            tie_head=loaded_adapter_cfg.tie_head,
+            embed_lr=None,
+            head_lr=None,
+            weight_decay=0.0,
+            dtype=None,
         )
-        _attach_coord_offset_config_to_train_args(train_args, coord_offset_cfg)
+        adapter_token_ids = tuple(int(token_id) for token_id in loaded_adapter_cfg.token_ids)
+        _attach_token_embeddings_adapter_config_to_train_args(
+            train_args, token_embeddings_adapter_cfg
+        )
         logger.info(
-            "Coord-offset adapter loaded from adapter checkpoint: ids=%s tie_head=%s",
-            len(coord_offset_cfg.ids),
-            coord_offset_cfg.tie_head,
+            "Token-embeddings adapter loaded from adapter checkpoint: ids=%s tie_head=%s",
+            len(adapter_token_ids),
+            token_embeddings_adapter_cfg.tie_head,
         )
-    if coord_offset_cfg and coord_offset_cfg.enabled:
-        adapter = install_coord_offset_adapter(
+    if token_embeddings_adapter_cfg and token_embeddings_adapter_cfg.enabled:
+        adapter = install_token_embeddings_adapter(
             sft.model,
-            coord_ids=coord_offset_cfg.ids or None,
-            tie_head=getattr(coord_offset_cfg, "tie_head", True),
-            dtype=coord_offset_cfg.dtype,
+            token_ids=adapter_token_ids or None,
+            tie_head=getattr(token_embeddings_adapter_cfg, "tie_head", True),
+            dtype=token_embeddings_adapter_cfg.dtype,
         )
         modules_to_save: list[str] = list(
             getattr(train_args, "modules_to_save", []) or []
@@ -2732,18 +2746,18 @@ def main():
             setattr(train_args, "modules_to_save", modules_to_save)
         # Sanity check against vocab size when available
         vocab_size = getattr(getattr(sft.model, "config", None), "vocab_size", None)
-        max_id = int(adapter.coord_ids.max().item())
+        max_id = int(adapter.token_ids.max().item())
         if isinstance(vocab_size, int) and max_id >= vocab_size:
             raise ValueError(
-                f"coord_offset id {max_id} exceeds model vocab_size={vocab_size}. "
-                "Adjust coord_offset.ids to fit the loaded tokenizer."
+                f"token_embeddings_adapter id {max_id} exceeds model vocab_size={vocab_size}. "
+                "Adjust custom.token_embeddings_adapter groups to fit the loaded tokenizer."
             )
         logger.info(
-            f"Coord-offset adapter enabled: ids={adapter.coord_ids.numel()}, "
-            f"embed_lr={coord_offset_cfg.embed_lr or getattr(train_args, 'learning_rate', None)}, "
-            f"head_lr={coord_offset_cfg.head_lr or getattr(train_args, 'learning_rate', None)}, "
-            f"tie_head={getattr(coord_offset_cfg, 'tie_head', True)}, "
-            f"dtype={coord_offset_cfg.dtype or 'auto'}"
+            f"Token-embeddings adapter enabled: ids={adapter.token_ids.numel()}, "
+            f"embed_lr={token_embeddings_adapter_cfg.embed_lr or getattr(train_args, 'learning_rate', None)}, "
+            f"head_lr={token_embeddings_adapter_cfg.head_lr or getattr(train_args, 'learning_rate', None)}, "
+            f"tie_head={getattr(token_embeddings_adapter_cfg, 'tie_head', True)}, "
+            f"dtype={token_embeddings_adapter_cfg.dtype or 'auto'}"
         )
     logger.info(f"Model: {train_args.model}")
     logger.info(f"Training type: {train_args.train_type}")
@@ -3003,6 +3017,7 @@ def main():
             object_field_order=custom_config.object_field_order,
             bbox_format=custom_config.bbox_format,
             detection_sequence_format=custom_config.detection_sequence_format,
+            detection_template_id=custom_config.detection_template_id,
             encoded_sample_cache=train_encoded_sample_cache_request,
         )
         if train_encoded_sample_cache_request is not None:
@@ -3619,6 +3634,7 @@ def main():
                 object_field_order=custom_config.object_field_order,
                 bbox_format=custom_config.bbox_format,
                 detection_sequence_format=custom_config.detection_sequence_format,
+                detection_template_id=custom_config.detection_template_id,
                 encoded_sample_cache=eval_encoded_sample_cache_request,
             )
         base_eval_len = len(eval_dataset)
@@ -3734,15 +3750,15 @@ def main():
     sft.model = sft.prepare_model(
         train_args, sft.model, template=sft.template, train_dataset=dataset
     )
-    # After PEFT wrapping, reattach coord-offset hooks to active modules so offsets train/save correctly
-    if coord_offset_cfg and coord_offset_cfg.enabled:
-        reattached = reattach_coord_offset_hooks(sft.model)
+    # After PEFT wrapping, reattach token-embedding hooks to active modules so offsets train/save correctly
+    if token_embeddings_adapter_cfg and token_embeddings_adapter_cfg.enabled:
+        reattached = reattach_token_embeddings_adapter_hooks(sft.model)
         if reattached is None:
             raise RuntimeError(
-                "coord_offset_adapter not found after prepare_model; hooks not reattached. "
+                "token_embeddings_adapter not found after prepare_model; hooks not reattached. "
                 "This would leave coordinate/token-row offsets unsaved or inactive."
             )
-        logger.info("Reattached coord_offset hooks on wrapped model")
+        logger.info("Reattached token_embeddings_adapter hooks on wrapped model")
     logger.info(f"Model after tuner: {type(sft.model).__name__}")
 
     # Setup trainer

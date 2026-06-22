@@ -240,9 +240,48 @@ def test_encoded_sample_cache_fingerprint_tracks_detection_sequence_format(
         system_prompt_summary=None,
     )
 
-    assert coordjson["custom_detection_sequence_format"] == "coordjson"
-    assert compact["custom_detection_sequence_format"] == "compact_full"
+    assert coordjson["custom_detection_sequence_format"] == "stage1_json_pretty"
+    assert compact["custom_detection_sequence_format"] == "compact"
     assert coordjson != compact
+
+
+def test_encoded_sample_cache_fingerprint_canonicalizes_legacy_compact_format(
+    tmp_path,
+) -> None:
+    train_jsonl = tmp_path / "train.jsonl"
+    train_jsonl.write_text('{"id": 1}\n', encoding="utf-8")
+    common_training = SimpleNamespace(
+        global_max_length=1024,
+        template={"system": "sys", "truncation_strategy": "raise"},
+    )
+    common_kwargs = dict(
+        training_config=common_training,
+        template=_Template(max_length=128),
+        train_args=SimpleNamespace(max_model_len=512),
+        dataset_seed=7,
+        dataset_jsonl=str(train_jsonl),
+        dataset_split="train",
+        dataset_mode="dense",
+        sample_limit=64,
+        system_prompt_dense="sys",
+        system_prompt_summary=None,
+    )
+
+    compact = _build_encoded_sample_cache_fingerprint(
+        custom_config=SimpleNamespace(
+            **{**_custom_config().__dict__, "detection_sequence_format": "compact"}
+        ),
+        **common_kwargs,
+    )
+    compact_full = _build_encoded_sample_cache_fingerprint(
+        custom_config=SimpleNamespace(
+            **{**_custom_config().__dict__, "detection_sequence_format": "compact_full"}
+        ),
+        **common_kwargs,
+    )
+
+    assert compact["custom_detection_sequence_format"] == "compact"
+    assert compact == compact_full
 
 
 def test_encoded_sample_cache_fingerprint_tracks_prompt_variant_and_template_hash(
@@ -295,6 +334,121 @@ def test_encoded_sample_cache_fingerprint_tracks_prompt_variant_and_template_has
     assert isinstance(default_fp["custom_prompt_template_hash"], str)
     assert isinstance(lvis_fp["custom_prompt_template_hash"], str)
     assert default_fp["custom_prompt_template_hash"] != lvis_fp["custom_prompt_template_hash"]
+
+
+def test_encoded_sample_cache_fingerprint_tracks_template_and_field_order_axes(
+    tmp_path,
+) -> None:
+    train_jsonl = tmp_path / "train.jsonl"
+    train_jsonl.write_text('{"id": 1}\n', encoding="utf-8")
+    common_template = _Template(max_length=128)
+    common_train_args = SimpleNamespace(max_model_len=512)
+
+    def fingerprint(
+        *,
+        template_id: str = "compact_object_box_closed",
+        object_field_order: str = "desc_first",
+        global_max_length: int = 12000,
+        prompt_variant: str = "default",
+    ) -> dict[str, object]:
+        return _build_encoded_sample_cache_fingerprint(
+            training_config=SimpleNamespace(
+                global_max_length=global_max_length,
+                template={"system": "sys", "truncation_strategy": "raise"},
+                detection_template={"id": template_id},
+            ),
+            custom_config=SimpleNamespace(
+                **{
+                    **_custom_config().__dict__,
+                    "detection_sequence_format": "compact",
+                    "object_field_order": object_field_order,
+                    "extra": {"prompt_variant": prompt_variant},
+                }
+            ),
+            template=common_template,
+            train_args=common_train_args,
+            dataset_seed=7,
+            dataset_jsonl=str(train_jsonl),
+            dataset_split="train",
+            dataset_mode="dense",
+            sample_limit=64,
+            system_prompt_dense="sys",
+            system_prompt_summary=None,
+        )
+
+    baseline = fingerprint()
+    geometry_first = fingerprint(object_field_order="geometry_first")
+    object_closed = fingerprint(template_id="compact_object_closed")
+    longer = fingerprint(global_max_length=16000)
+    prompt_changed = fingerprint(prompt_variant="lvis_stage1_federated")
+    legacy_alias = fingerprint(template_id="compact_full")
+
+    assert baseline["detection_template_id"] == "compact_object_box_closed"
+    assert baseline["tokenizer_id"] == "unknown_tokenizer"
+    assert baseline["custom_object_field_order"] == "desc_first"
+    assert baseline["global_max_length"] == 12000
+    assert baseline["custom_prompt_template_hash"]
+    assert geometry_first["custom_object_field_order"] == "geometry_first"
+    assert object_closed["detection_template_id"] == "compact_object_closed"
+    assert longer["global_max_length"] == 16000
+    assert prompt_changed["custom_prompt_template_hash"] != baseline["custom_prompt_template_hash"]
+    assert legacy_alias["detection_template_id"] == "compact"
+    assert baseline != geometry_first
+    assert baseline != object_closed
+    assert baseline != longer
+    assert baseline != prompt_changed
+
+
+def test_encoded_sample_cache_fingerprint_tracks_tokenizer_identity(
+    tmp_path,
+) -> None:
+    train_jsonl = tmp_path / "train.jsonl"
+    train_jsonl.write_text('{"id": 1}\n', encoding="utf-8")
+    common_custom = _custom_config()
+    common_kwargs = dict(
+        custom_config=common_custom,
+        template=_Template(max_length=128),
+        dataset_seed=7,
+        dataset_jsonl=str(train_jsonl),
+        dataset_split="train",
+        dataset_mode="dense",
+        sample_limit=64,
+        system_prompt_dense="sys",
+        system_prompt_summary=None,
+    )
+
+    model_a = _build_encoded_sample_cache_fingerprint(
+        training_config=SimpleNamespace(
+            global_max_length=12000,
+            template={"system": "sys", "truncation_strategy": "raise"},
+            model={"model": "model-a"},
+        ),
+        train_args=SimpleNamespace(model="fallback-model", max_model_len=512),
+        **common_kwargs,
+    )
+    model_b = _build_encoded_sample_cache_fingerprint(
+        training_config=SimpleNamespace(
+            global_max_length=12000,
+            template={"system": "sys", "truncation_strategy": "raise"},
+            model={"model": "model-b"},
+        ),
+        train_args=SimpleNamespace(model="fallback-model", max_model_len=512),
+        **common_kwargs,
+    )
+    fallback = _build_encoded_sample_cache_fingerprint(
+        training_config=SimpleNamespace(
+            global_max_length=12000,
+            template={"system": "sys", "truncation_strategy": "raise"},
+        ),
+        train_args=SimpleNamespace(model="fallback-model", max_model_len=512),
+        **common_kwargs,
+    )
+
+    assert model_a["tokenizer_id"] == "model-a"
+    assert model_b["tokenizer_id"] == "model-b"
+    assert fallback["tokenizer_id"] == "fallback-model"
+    assert model_a != model_b
+    assert model_a != fallback
 
 
 def test_attach_encoded_sample_cache_run_metadata_scopes_train_and_eval() -> None:

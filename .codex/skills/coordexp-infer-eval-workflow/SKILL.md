@@ -56,6 +56,12 @@ Treat these as the default reproducibility settings for ordinary CoordExp infer/
 - Raw-text `xyxy` norm1000: set `infer.mode: text`, `infer.pred_coord_mode: norm1000`; confidence post-op must use numeric-text alignment, not coord-token geometry.
 - `cxcy_logw_logh` or `cxcywh`: do not run confidence post-op; use deterministic constant-score compatibility only for checkpoints trained on that serialization.
 
+## Diagnostic Completion
+
+When the user wants raw rollout behavior inspected, prefer completing the rollout and preserving invalid or non-metric-bearing rows with parser metadata over aborting on the first malformed output, unless the official eval contract requires strict failure. Label diagnostic artifacts as non-metric-bearing unless strict parser, source image identity, dimensions, coordinate surface, and metric-bearing provenance all pass.
+
+Before launch, compare training-side names with infer/eval schema names. Do not pass training-only enum values into infer configs; if translation is needed, record the mapping in the generated config or run note.
+
 ## Proxy Bundle
 
 For COCO + LVIS-proxy runs:

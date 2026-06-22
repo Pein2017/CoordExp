@@ -4,9 +4,9 @@
 - **Mode:** change/spec audit + implementation-vs-contract audit (read-only)
 - **Scope:** `/data/CoordExp/.worktrees/geometry-aware-denoising-sft/` (branch `codex/prefix-denoising-sft`)
 - **Artifacts reviewed:**
-  - `docs/superpowers/plans/2026-06-14-prefix-denoising-sft-v1.md` (the plan)
+  - `docs/history/superpowers/plans/2026-06-14-prefix-denoising-sft-v1.md` (the plan)
   - `progress/directions/prefix_denoising_sft_v1.md` (the direction note)
-  - `docs/superpowers/specs/2026-06-14-prefix-denoising-sft-v1-design.md` (the design spec)
+  - `docs/history/superpowers/specs/2026-06-14-prefix-denoising-sft-v1-design.md` (the design spec)
 - **Code truth checked against (this worktree):** `src/config/schema.py`, `src/datasets/geometry.py`,
   `src/detection/packing.py`, `src/detection/runtime.py`, `src/detection/dataset.py`,
   `src/training_runtime/plan.py`, `src/data_collators/enrichers.py`,

@@ -6,7 +6,7 @@ status: canonical
 domain: training
 summary: Router for Stage-1 and Stage-2 training documentation, metrics, and runbooks.
 tags: [training, stage1, stage2]
-updated: 2026-05-16
+updated: 2026-06-15
 ---
 
 # Training Docs
@@ -71,6 +71,13 @@ Current cleanup decisions:
 7. [`rollout-matching-sft/spec.md`](../../openspec/specs/rollout-matching-sft/spec.md) when checking the retired rollout-matching trainer contract
 8. [`runtime-architecture-refactor-program/spec.md`](../../openspec/specs/runtime-architecture-refactor-program/spec.md) when the question is about runtime ownership seams or compatibility-preserving refactors
 
+Draft and historical training notes are intentionally outside this current read
+order:
+
+- [drafts/INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md](drafts/INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md): active implementation draft, not canonical behavior
+- [../history/training/STAGE1_ET_RMP_CE.md](../history/training/STAGE1_ET_RMP_CE.md): superseded Stage-1 continuation objective note
+- [../history/training/STAGE2_DESIGN.md](../history/training/STAGE2_DESIGN.md): historical Stage-2 design note
+
 ## Compact Detection Sequence Contracts
 
 These are source-owned contracts for the compact detection sequence work. They
@@ -126,6 +133,10 @@ latest-detection objective subkeys, but no new CLI flags.
   - LVIS federated-label design note plus migration guide for Stage-1, Stage-2, and evaluation
 - [METRICS.md](METRICS.md)
   - canonical training metric and loss interpretation; metric claims must include exact scope
+- [drafts/INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md](drafts/INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md)
+  - active implementation draft; use only when explicitly investigating that draft objective
+- [../history/training/](../history/training/)
+  - superseded training notes preserved for provenance, not current guidance
 
 ## Use This Router For
 

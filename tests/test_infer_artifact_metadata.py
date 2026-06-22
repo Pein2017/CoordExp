@@ -79,7 +79,7 @@ def _owner(
     )
 
 
-def test_infer_artifacts_do_not_record_compact_grammar_decode_provenance() -> None:
+def test_infer_artifacts_do_not_emit_grammar_decode_provenance() -> None:
     owner = _owner()
 
     resolved = build_infer_resolved_meta(

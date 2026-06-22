@@ -6,6 +6,12 @@ import pytest
 
 from src.config.schema import CoordTokensConfig
 from src.datasets.dense_caption import BaseCaptionDataset
+from src.tokens.qwen_native import (
+    BOX_END_TOKEN,
+    BOX_START_TOKEN,
+    OBJECT_REF_END_TOKEN,
+    OBJECT_REF_START_TOKEN,
+)
 
 
 class _FakeTokenizer:
@@ -150,6 +156,31 @@ def test_prompt_override_restoration_no_leakage_across_sequential_encodes() -> N
     assert encoded_b["messages"][0]["role"] == "system"
     assert encoded_b["messages"][0]["content"] == "SYSTEM_B"
     assert template.system == "BASE_SYSTEM"
+
+
+def test_standard_sft_dataset_renders_semantic_closed_compact_template() -> None:
+    ds = BaseCaptionDataset(
+        base_records=[_record()],
+        template=_FakeTemplate(),
+        user_prompt="Describe objects",
+        emit_norm="none",
+        json_format="standard",
+        use_summary=False,
+        system_prompt_dense="BASE_SYSTEM",
+        coord_tokens=CoordTokensConfig(enabled=True),
+        object_ordering="sorted",
+        detection_sequence_format="compact",
+        detection_template_id="compact_object_box_closed",
+    )
+
+    encoded = ds[0]
+    assistant_text = encoded["messages"][2]["content"][0]["text"]
+
+    assert assistant_text == (
+        f"{OBJECT_REF_START_TOKEN}cat{OBJECT_REF_END_TOKEN}"
+        f"{BOX_START_TOKEN}<|coord_1|><|coord_1|><|coord_10|><|coord_10|>"
+        f"{BOX_END_TOKEN}"
+    )
 
 
 def test_sorted_ordering_raises_on_unsorted_objects() -> None:

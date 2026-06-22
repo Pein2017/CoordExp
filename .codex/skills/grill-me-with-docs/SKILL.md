@@ -15,7 +15,9 @@ use `grill-me`; for architecture-specific refactor discovery, use
 - Start from the repo route: `docs/AGENT_INDEX.md`, `docs/catalog.yaml`, then the relevant docs, specs, configs, artifacts, or `progress/` notes.
 - Interview the user relentlessly until the plan, design, or decision reaches shared understanding.
 - Walk the decision tree branch by branch, resolving dependencies between decisions in order.
-- Ask exactly one question at a time, include your recommended answer, and wait for feedback before continuing.
+- Batch simple, independent questions and recommendations when they can be answered together without changing upstream meaning.
+- Ask exactly one question at a time only for crucial or high-impact decisions that gate later branches or change research meaning, reproducibility, eval validity, cost, compatibility, durable records, or next action.
+- Include your recommended answer for every question or batched item, and make clear when "all yes" is a valid response.
 - If the repo or artifacts can answer the question, inspect them before asking.
 - Separate hypothesis, mechanism, implementation plan, experiment result, interpretation, and stable contract.
 - Stress-test the plan against concrete scenarios: data edge cases, geometry/order preservation, config inheritance, eval validity, artifact completeness, cost, and rollback.
@@ -39,6 +41,11 @@ Prefer questions that expose a real fork:
 - which default must remain backward-compatible;
 - what belongs in docs, progress notes, OpenSpec, configs, tests, or executable manifests.
 
+For simple independent items, batch them as a short checklist grouped by surface
+such as naming, config defaults, metrics, artifacts, docs, or verification. Move
+back to one-at-a-time only when the answer must be known before the next
+question is meaningful.
+
 Avoid questions whose answer is already present in `docs/`, `openspec/specs/`,
 configs, tests, artifacts, or the current conversation.
 
@@ -49,6 +56,9 @@ placeholder docs, generic ADRs, root `CONTEXT.md`, or duplicate summaries.
 
 Records should be compact and link-rich: decision, rationale, consequence,
 exact paths or artifacts, evidence scope, and open follow-up.
+
+When a batch is approved, record the resolved outcomes in one compact pass
+rather than creating one durable note per micro-decision.
 
 Offer a durable decision record only when the decision is hard to reverse,
 surprising without context, and the result of a real trade-off. Record measured

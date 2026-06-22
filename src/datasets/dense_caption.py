@@ -220,6 +220,7 @@ class BaseCaptionDataset(Dataset):
         object_field_order: ObjectFieldOrder = "desc_first",
         bbox_format: AllowedBBoxFormat = DEFAULT_BBOX_FORMAT,
         detection_sequence_format: str = COORDJSON_FORMAT,
+        detection_template_id: str | None = None,
         encoded_sample_cache: Optional[Mapping[str, Any]] = None,
     ):
         self.use_summary = bool(use_summary)
@@ -246,6 +247,9 @@ class BaseCaptionDataset(Dataset):
         )
         self.detection_sequence_format = normalize_detection_sequence_format(
             detection_sequence_format
+        )
+        self.detection_template_id = (
+            None if detection_template_id is None else str(detection_template_id)
         )
 
         if self.use_summary:
@@ -433,6 +437,7 @@ class BaseCaptionDataset(Dataset):
             object_field_order=self.object_field_order,
             bbox_format=self.bbox_format,
             detection_sequence_format=self.detection_sequence_format,
+            detection_template_id=self.detection_template_id,
         )
 
 

@@ -3,8 +3,13 @@
 Detection training, inference, and evaluation currently treat the compact detection
 serialization as a mostly implicit `compact_full` contract. We need several
 compact wrapper variants for ablation and anchoring experiments, but the public
-surface should stay small: one semantic template id must drive rendering,
+surface should stay small: semantic template metadata must drive rendering,
 parsing, prompt text, token-row adaptation, artifacts, and post-hoc metrics.
+
+Supersession note: `compact-template-field-order-ablation` amends this change
+for bbox-first compact rows. In that follow-on contract, `detection_template.id`
+owns closure/separator/template-family behavior, while `custom.object_field_order`
+owns desc-first versus geometry-first row layout.
 
 ## What Changes
 
@@ -16,10 +21,13 @@ parsing, prompt text, token-row adaptation, artifacts, and post-hoc metrics.
 - Keep `stage1_json_pretty` supported as a separate non-compact template id.
 - Treat `compact_full` as the old name for `compact` during active config/doc
   cleanup, but do not keep it as an accepted schema alias after the change.
-- **BREAKING**: make `detection_template.id` the single authored source of truth
-  for detection serialization; reject independent authored parse modes,
+- **BREAKING, AMENDED**: make `detection_template.id` the authored source of
+  truth for compact template family, closure tokens, row separator, parser
+  family, and structural token rows; reject independent authored parse modes,
   serialization policies, row separators, or compact-format aliases that
-  duplicate the selected template.
+  duplicate the selected template. The follow-on
+  `compact-template-field-order-ablation` change keeps `custom.object_field_order`
+  as the authored source for desc-first versus geometry-first row layout.
 - Derive renderer, parser, prompt row pattern, row separator, required structural
   tokens, trainable token rows, artifact metadata, inference materialization,
   and post-hoc mAP preflight from the selected semantic template id.
@@ -50,9 +58,9 @@ parsing, prompt text, token-row adaptation, artifacts, and post-hoc metrics.
 - `stage1-detection-objectives`: Update the compact recursive detection contract
   from `compact_full` to `compact`, and make compact structural token rows
   template-derived for the new variants.
-- `coord_offset`: Extend the offset-adapter contract from coord-only rows to the
-  selected template's required structural rows when compact detection token-row
-  adaptation is enabled.
+- `token_embeddings_adapter`: Extend the adapter contract from coord-only rows
+  to the selected template's required structural rows when compact detection
+  token-row adaptation is enabled.
 - `dataset-prompt-variants`: Include the selected detection template id in dense
   prompt resolution so prompt examples and row separators match the renderer.
 - `inference-engine`: Persist resolved detection template metadata in inference
@@ -70,7 +78,7 @@ parsing, prompt text, token-row adaptation, artifacts, and post-hoc metrics.
   inference configs, active compact detection examples, token-row validation, and
   resolved artifact metadata.
 - Affected runtime surfaces include detection template rendering/parsing,
-  teacher-forcing target construction, dense prompt construction, offset-adapter
+  teacher-forcing target construction, dense prompt construction, token_embeddings_adapter
   row selection, inference artifact materialization, and evaluator post-hoc mAP
   parsing.
 - Existing checkpoints or old artifacts that still say `compact_full` or omit

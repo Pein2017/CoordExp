@@ -13,7 +13,7 @@ manual/debug.
 - Confidence scoring / score materialization (YAML-first): `scripts/postop_confidence.py`.
 - Offline detection evaluation (YAML-first): `scripts/evaluate_detection.py`.
 - One-run proxy bundle evaluation (YAML-first): `scripts/evaluate_proxy_detection_bundle.py`.
-- Export helper (merge LoRA + coord offsets): `scripts/merge_coord.sh`.
+- Export helper (merge LoRA + token-embeddings adapter offsets): `scripts/merge_coord.sh`.
 
 ## Compatibility / debug wrappers
 

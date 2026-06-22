@@ -10,11 +10,11 @@ import pytest
 import torch
 import torch.nn as nn
 
-from src.tokens.row_offsets import CoordOffsetAdapter
+from src.tokens.row_offsets import TokenEmbeddingsAdapter
 from src.infer.backend_vllm_server import (
     _build_vllm_adapter_sync_provenance,
     _filter_vllm_adapter_lora_tensors,
-    _sync_vllm_server_coord_offset_adapter,
+    _sync_vllm_server_token_embeddings_adapter,
     _vllm_adapter_peft_config,
     sync_vllm_server_adapter,
     sync_vllm_server_rollout_model_if_needed,
@@ -27,13 +27,13 @@ def test_vllm_adapter_payload_strips_modules_to_save_config() -> None:
             to_dict=lambda: {
                 "r": 16,
                 "target_modules": ["q_proj"],
-                "modules_to_save": ["coord_offset_adapter"],
+                "modules_to_save": ["token_embeddings_adapter"],
             }
         )
     )
 
     assert payload["modules_to_save"] is None
-    assert dropped == ("coord_offset_adapter",)
+    assert dropped == ("token_embeddings_adapter",)
 
 
 def test_vllm_adapter_payload_keeps_only_lora_tensors() -> None:
@@ -42,9 +42,9 @@ def test_vllm_adapter_payload_keeps_only_lora_tensors() -> None:
             [
                 ("base_model.model.q_proj.lora_A.default.weight", torch.ones(1)),
                 ("base_model.model.q_proj.lora_B.default.weight", torch.ones(1)),
-                ("modules_to_save.default.coord_ids", torch.ones(1)),
+                ("modules_to_save.default.token_ids", torch.ones(1)),
                 (
-                    "base_model.model.coord_offset_adapter.modules_to_save.default.coord_embed_offsets",
+                    "base_model.model.token_embeddings_adapter.modules_to_save.default.embed_offset",
                     torch.ones(1),
                 ),
             ]
@@ -56,16 +56,16 @@ def test_vllm_adapter_payload_keeps_only_lora_tensors() -> None:
         "base_model.model.q_proj.lora_B.default.weight",
     ]
     assert dropped == (
-        "modules_to_save.default.coord_ids",
-        "base_model.model.coord_offset_adapter.modules_to_save.default.coord_embed_offsets",
+        "modules_to_save.default.token_ids",
+        "base_model.model.token_embeddings_adapter.modules_to_save.default.embed_offset",
     )
 
 
 class _TinyCoordModel(nn.Module):
-    def __init__(self, adapter: CoordOffsetAdapter | None = None) -> None:
+    def __init__(self, adapter: TokenEmbeddingsAdapter | None = None) -> None:
         super().__init__()
         if adapter is not None:
-            self.coord_offset_adapter = adapter
+            self.token_embeddings_adapter = adapter
 
 
 class _FakeClient:
@@ -74,7 +74,7 @@ class _FakeClient:
 
     def update_token_row_offsets(
         self,
-        coord_ids: torch.Tensor,
+        token_ids: torch.Tensor,
         embed_offset: torch.Tensor,
         *,
         head_offset: torch.Tensor | None = None,
@@ -82,7 +82,7 @@ class _FakeClient:
     ) -> None:
         self.calls.append(
             {
-                "coord_ids": coord_ids.detach().cpu().clone(),
+                "token_ids": token_ids.detach().cpu().clone(),
                 "embed_offset": embed_offset.detach().cpu().clone(),
                 "head_offset": (
                     head_offset.detach().cpu().clone()
@@ -94,9 +94,9 @@ class _FakeClient:
         )
 
 
-def test_vllm_adapter_coord_offset_sync_sends_row_payload() -> None:
-    adapter = CoordOffsetAdapter(
-        coord_ids=[2, 5],
+def test_vllm_adapter_token_embeddings_adapter_sync_sends_row_payload() -> None:
+    adapter = TokenEmbeddingsAdapter(
+        token_ids=[2, 5],
         tie_head=True,
         embed_dim=4,
         head_dim=4,
@@ -112,36 +112,36 @@ def test_vllm_adapter_coord_offset_sync_sends_row_payload() -> None:
         )
     client = _FakeClient()
 
-    _sync_vllm_server_coord_offset_adapter(
+    _sync_vllm_server_token_embeddings_adapter(
         owner=SimpleNamespace(model=_TinyCoordModel(adapter)),
         client=client,
         logger=SimpleNamespace(info=lambda *args, **kwargs: None),
-        dropped_modules_to_save=("coord_offset_adapter",),
-        dropped_param_names=("base_model.model.coord_offset_adapter.embed_offset",),
+        dropped_modules_to_save=("token_embeddings_adapter",),
+        dropped_param_names=("base_model.model.token_embeddings_adapter.embed_offset",),
     )
 
     assert len(client.calls) == 1
     call = client.calls[0]
-    assert torch.equal(call["coord_ids"], torch.tensor([2, 5]))
+    assert torch.equal(call["token_ids"], torch.tensor([2, 5]))
     assert torch.allclose(call["embed_offset"], adapter.embed_offset.detach())
     assert call["head_offset"] is None
     assert call["tie_head"] is True
 
 
-def test_vllm_adapter_coord_offset_sync_fails_if_declared_but_missing() -> None:
+def test_vllm_adapter_token_embeddings_adapter_sync_fails_if_declared_but_missing() -> None:
     with pytest.raises(RuntimeError, match="Refusing to run rollouts"):
-        _sync_vllm_server_coord_offset_adapter(
+        _sync_vllm_server_token_embeddings_adapter(
             owner=SimpleNamespace(model=_TinyCoordModel(None)),
             client=_FakeClient(),
             logger=SimpleNamespace(info=lambda *args, **kwargs: None),
-            dropped_modules_to_save=("coord_offset_adapter",),
+            dropped_modules_to_save=("token_embeddings_adapter",),
             dropped_param_names=(),
         )
 
 
-def test_vllm_adapter_coord_offset_sync_fails_with_unpatched_client() -> None:
-    adapter = CoordOffsetAdapter(
-        coord_ids=[2],
+def test_vllm_adapter_token_embeddings_adapter_sync_fails_with_unpatched_client() -> None:
+    adapter = TokenEmbeddingsAdapter(
+        token_ids=[2],
         tie_head=True,
         embed_dim=2,
         head_dim=2,
@@ -150,36 +150,36 @@ def test_vllm_adapter_coord_offset_sync_fails_with_unpatched_client() -> None:
     )
 
     with pytest.raises(RuntimeError, match="update_token_row_offsets"):
-        _sync_vllm_server_coord_offset_adapter(
+        _sync_vllm_server_token_embeddings_adapter(
             owner=SimpleNamespace(model=_TinyCoordModel(adapter)),
             client=SimpleNamespace(),
             logger=SimpleNamespace(info=lambda *args, **kwargs: None),
-            dropped_modules_to_save=("coord_offset_adapter",),
+            dropped_modules_to_save=("token_embeddings_adapter",),
             dropped_param_names=(),
         )
 
 
-def test_vllm_adapter_sync_provenance_records_stable_lora_and_coord_digests() -> None:
+def test_vllm_adapter_sync_provenance_records_stable_lora_and_token_row_digests() -> None:
     lora_params = OrderedDict(
         [
             ("base_model.model.q_proj.lora_A.default.weight", torch.ones(2, 2)),
             ("base_model.model.q_proj.lora_B.default.weight", torch.arange(4).reshape(2, 2)),
         ]
     )
-    coord_ids = torch.tensor([2, 5], dtype=torch.long)
+    token_ids = torch.tensor([2, 5], dtype=torch.long)
     embed_offset = torch.tensor([[0.25, -0.5], [0.75, 1.0]], dtype=torch.float32)
 
     provenance = _build_vllm_adapter_sync_provenance(
         sync_mode="adapter",
         lora_params=lora_params,
         vllm_peft_config={"r": 16, "target_modules": ["q_proj"]},
-        dropped_modules_to_save=("coord_offset_adapter",),
-        dropped_param_names=("coord_offset_adapter.embed_offset",),
-        coord_ids=coord_ids,
+        dropped_modules_to_save=("token_embeddings_adapter",),
+        dropped_param_names=("token_embeddings_adapter.embed_offset",),
+        token_ids=token_ids,
         embed_offset=embed_offset,
         head_offset=None,
         tie_head=True,
-        coord_row_status="requested",
+        token_row_status="requested",
         worker_verified=False,
         worker_verified_status="unavailable_fire_and_forget",
         rank_symmetric_failure=True,
@@ -188,13 +188,13 @@ def test_vllm_adapter_sync_provenance_records_stable_lora_and_coord_digests() ->
         sync_mode="adapter",
         lora_params=lora_params,
         vllm_peft_config={"target_modules": ["q_proj"], "r": 16},
-        dropped_modules_to_save=("coord_offset_adapter",),
-        dropped_param_names=("coord_offset_adapter.embed_offset",),
-        coord_ids=coord_ids,
+        dropped_modules_to_save=("token_embeddings_adapter",),
+        dropped_param_names=("token_embeddings_adapter.embed_offset",),
+        token_ids=token_ids,
         embed_offset=embed_offset,
         head_offset=None,
         tie_head=True,
-        coord_row_status="requested",
+        token_row_status="requested",
         worker_verified=False,
         worker_verified_status="unavailable_fire_and_forget",
         rank_symmetric_failure=True,
@@ -208,13 +208,13 @@ def test_vllm_adapter_sync_provenance_records_stable_lora_and_coord_digests() ->
             ]
         ),
         vllm_peft_config={"r": 16, "target_modules": ["q_proj"]},
-        dropped_modules_to_save=("coord_offset_adapter",),
-        dropped_param_names=("coord_offset_adapter.embed_offset",),
-        coord_ids=coord_ids,
+        dropped_modules_to_save=("token_embeddings_adapter",),
+        dropped_param_names=("token_embeddings_adapter.embed_offset",),
+        token_ids=token_ids,
         embed_offset=embed_offset,
         head_offset=None,
         tie_head=True,
-        coord_row_status="requested",
+        token_row_status="requested",
         worker_verified=False,
         worker_verified_status="unavailable_fire_and_forget",
         rank_symmetric_failure=True,
@@ -225,14 +225,14 @@ def test_vllm_adapter_sync_provenance_records_stable_lora_and_coord_digests() ->
     assert provenance["sync_policy"]["mode"] == "adapter"
     assert provenance["server_identity"] == {
         "sync_schema": "coordexp_vllm_adapter_sync_v1",
-        "coord_row_api": "coordexp_token_row_offsets_v1",
+        "token_row_api": "coordexp_token_row_offsets_v1",
         "client_patch": "coordexp_vllm_client_token_row_offsets_v1",
         "worker_extension_cls": "src.infer.backend_sync.CoordExpWeightSyncWorkerExtension",
     }
     assert provenance["lora"]["tensor_count"] == 2
     assert provenance["lora"]["digest"].startswith("sha256:")
-    assert provenance["coord_rows"]["status"] == "requested"
-    assert provenance["coord_rows"]["digest"].startswith("sha256:")
+    assert provenance["token_rows"]["status"] == "requested"
+    assert provenance["token_rows"]["digest"].startswith("sha256:")
     assert provenance["worker_verified"]["verified"] is False
     assert (
         provenance["worker_verified"]["status"]
@@ -243,16 +243,16 @@ def test_vllm_adapter_sync_provenance_records_stable_lora_and_coord_digests() ->
 
 
 class _TinyPeftCoordModel(nn.Module):
-    def __init__(self, adapter: CoordOffsetAdapter) -> None:
+    def __init__(self, adapter: TokenEmbeddingsAdapter) -> None:
         super().__init__()
         self.weight = nn.Parameter(torch.ones(1))
-        self.coord_offset_adapter = adapter
+        self.token_embeddings_adapter = adapter
         self.peft_config = {
             "default": SimpleNamespace(
                 to_dict=lambda: {
                     "r": 16,
                     "target_modules": ["q_proj"],
-                    "modules_to_save": ["coord_offset_adapter"],
+                    "modules_to_save": ["token_embeddings_adapter"],
                 }
             )
         }
@@ -304,7 +304,7 @@ class _RecordingAdapterSyncClient:
 
     def update_token_row_offsets(
         self,
-        coord_ids: torch.Tensor,
+        token_ids: torch.Tensor,
         embed_offset: torch.Tensor,
         *,
         head_offset: torch.Tensor | None = None,
@@ -312,9 +312,9 @@ class _RecordingAdapterSyncClient:
     ) -> None:
         self.events.append(
             (
-                "coord_rows",
+                "token_rows",
                 {
-                    "coord_ids": coord_ids.detach().cpu().clone(),
+                    "token_ids": token_ids.detach().cpu().clone(),
                     "embed_offset": embed_offset.detach().cpu().clone(),
                     "head_offset": (
                         head_offset.detach().cpu().clone()
@@ -360,8 +360,8 @@ def _install_fake_peft_sync_modules(
 def test_vllm_adapter_sync_stores_backend_identity_without_reordering_endpoints(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    adapter = CoordOffsetAdapter(
-        coord_ids=[2, 5],
+    adapter = TokenEmbeddingsAdapter(
+        token_ids=[2, 5],
         tie_head=True,
         embed_dim=2,
         head_dim=2,
@@ -379,7 +379,7 @@ def test_vllm_adapter_sync_stores_backend_identity_without_reordering_endpoints(
         [
             ("base_model.model.q_proj.lora_A.default.weight", torch.ones(2, 2)),
             ("base_model.model.q_proj.lora_B.default.weight", torch.arange(4).reshape(2, 2)),
-            ("base_model.model.coord_offset_adapter.embed_offset", adapter.embed_offset),
+            ("base_model.model.token_embeddings_adapter.embed_offset", adapter.embed_offset),
         ]
     )
     _install_fake_peft_sync_modules(monkeypatch, lora_params)
@@ -404,7 +404,7 @@ def test_vllm_adapter_sync_stores_backend_identity_without_reordering_endpoints(
 
     assert [event[0] for event in client.events] == [
         "adapter",
-        "coord_rows",
+        "token_rows",
         "reset_prefix_cache",
         "reset_mm_cache",
     ]
@@ -416,11 +416,11 @@ def test_vllm_adapter_sync_stores_backend_identity_without_reordering_endpoints(
     assert provenance["sync_policy"]["frequency"] == "per_global_step"
     assert provenance["sync_policy"]["global_step"] == 17
     assert provenance["lora"]["tensor_count"] == 2
-    assert provenance["lora"]["dropped_modules_to_save"] == ["coord_offset_adapter"]
-    assert provenance["coord_rows"]["status"] == "requested"
+    assert provenance["lora"]["dropped_modules_to_save"] == ["token_embeddings_adapter"]
+    assert provenance["token_rows"]["status"] == "requested"
     assert provenance["requested"] == {
         "adapter_update": True,
-        "coord_row_update": True,
+        "token_row_update": True,
     }
     assert provenance["worker_verified"] == {
         "verified": False,

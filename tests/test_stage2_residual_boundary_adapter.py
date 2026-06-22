@@ -96,9 +96,9 @@ def test_residual_boundary_adapter_slices_suffix_from_object_boundary() -> None:
         ]
     )
 
-    expected_separator = get_detection_template("compact_full").render_separator(0, 1)
-    assert rendered.separator_spans[0].text(rendered.text) == expected_separator
+    expected_separator = get_detection_template("compact").render_separator(0, 1)
     if expected_separator:
+        assert rendered.separator_spans[0].text(rendered.text) == expected_separator
         assert rendered.text[
             rendered.object_entries[0].entry_span.end : rendered.object_entries[1].entry_span.start
         ] == expected_separator

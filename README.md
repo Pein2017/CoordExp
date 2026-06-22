@@ -79,27 +79,33 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
 - `custom.object_field_order`: required (`desc_first|geometry_first`); keep train/infer parity with `infer.object_field_order`
 - `training.*`: ms-swift trainer settings (deepspeed, schedulers, etc.)
 
-### Coord-offset tuning (opt-in)
-- Purpose: lets coord token rows learn without touching the rest of the vocab. Adds trainable offsets on `embed_tokens` and `lm_head` for coord IDs 151670–152669 (skips 151669 `<|coord_*|>`).
+### Token-embeddings adapter tuning (opt-in)
+- Purpose: lets role-resolved special token rows learn without touching the rest of the vocab. Adds trainable offsets on `embed_tokens` and `lm_head` for coord IDs 151670-152669 and any compact schema tokens required by the template.
 - How to enable:
   ```yaml
   extends: configs/stage1/sft_base.yaml
   training:
-    optimizer: multimodal_coord_offset   # keeps multimodal buckets + coord offsets
+    optimizer: multimodal_token_embeddings_adapter
   custom:
-    coord_offset:
+    token_embeddings_adapter:
       enabled: true
-      ids: { start: 151670, end: 152669 }   # override if you changed vocab
+      groups:
+        coord_geometry:
+          role: coord_geometry
+          start_token: "<|coord_0|>"
+          end_token: "<|coord_999|>"
+          expected_start: 151670
+          expected_end: 152669
       embed_lr: 4.0e-4                      # tune per run
       head_lr: 4.0e-4
       weight_decay: 0.0
       dtype: auto                           # use model dtype by default
   ```
-- Saved with the adapter: coord offsets live under `coord_offset_adapter` and are included via `modules_to_save`; no sidecar files.
-- Defaults are no-op when `coord_offset.enabled: false` and optimizer stays `multimodal`.
+- Saved with the adapter: token offsets live under `token_embeddings_adapter` and are included via `modules_to_save`; no sidecar files.
+- Defaults are no-op when `token_embeddings_adapter.enabled: false` and optimizer stays `multimodal`.
 
-### Merging LoRA + coord offsets (export)
-Standard `swift export --merge_lora` drops the coord offsets, so use the helper script that patches shards in-place:
+### Merging LoRA + token-embeddings adapter offsets (export)
+Standard `swift export --merge_lora` drops the token-embeddings adapter offsets, so use the helper script that patches shards in-place:
 ```bash
 ADAPTERS=outputs/debug/coord/<run>/checkpoint-* \
 OUTPUT_DIR=outputs/debug/coord_merged \
@@ -108,7 +114,7 @@ bash scripts/merge_coord.sh
 ```
 What it does:
 - Runs `swift export` to merge LoRA.
-- Patches `embed_tokens.weight` and `lm_head.weight` shards with the trained coord offsets (no full model load).
+- Patches `embed_tokens.weight` and `lm_head.weight` shards with the trained token-embeddings adapter offsets (no full model load).
 - Rewrites only the affected safetensor shards; final merged model lives in `$OUTPUT_DIR`.
 Notes:
 - If `$OUTPUT_DIR` already exists, `scripts/merge_coord.sh` will refuse to overwrite it unless you set `ALLOW_OVERWRITE=1`.

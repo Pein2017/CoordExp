@@ -243,8 +243,6 @@ def resolve_stage2_rollout_template_policy(
     rollout_template_family: str | None = None,
     *,
     custom_json_format: str | None = None,
-    compact_decode_policy: str | None = None,
-    rollout_decode_policy: str | None = None,
     invalid_rollout_policy: str | None = None,
     fallback_loss_weight: float = 1.0,
     strict_rollout_preflight: bool | str | int = False,
@@ -302,16 +300,6 @@ def resolve_stage2_rollout_template_policy(
             "stage2_rollout_correction.correction.strict_rollout_preflight must be boolean"
         )
 
-    if rollout_decode_policy is not None:
-        raise ValueError(
-            "stage2_rollout_correction.correction.rollout_decode_policy has been "
-            "removed; Stage-2 rollouts no longer expose decode-policy selectors."
-        )
-    if compact_decode_policy is not None:
-        raise ValueError(
-            "stage2_rollout_correction.correction.compact_decode_policy has been "
-            "removed; Stage-2 rollouts no longer expose decode-policy selectors."
-        )
     invalid_policy = (
         None
         if invalid_rollout_policy is None

@@ -1,0 +1,63 @@
+extends:
+  - ../../_shared/coord_soft_ce_gate_2b.yaml
+  - ../../../_shared/datasets/coco_1024_bbox_max60.yaml
+  - ../../../_shared/prompts/coco80_desc_first.yaml
+  - ../../_shared/loss_pure_ce.yaml
+
+global_max_length: 12000
+
+model:
+  model: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent
+  model_type: qwen3_vl
+
+template:
+  max_length: 12000
+  max_pixels: 1048576
+
+tuner:
+  freeze_llm: false
+  freeze_vit: true
+  freeze_aligner: true
+
+training:
+  artifact_subdir: stage1_2b/coco_bbox_max60_1024-coco80-desc_first-compact_object_box_closed-sorted-packed12k-natural_adjacent-pure_ce
+  run_name: epoch_4-pure_ce-coco80-desc_first-1024-compact_object_box_closed-sorted-packed12k-natural_adjacent-llm_only
+  num_train_epochs: 4
+  packing: true
+  packing_mode: static
+  eval_packing: true
+  effective_batch_size: 64
+  static_packing_cache:
+    root_dir: null
+
+custom:
+  object_ordering: sorted
+  detection_sequence_format: compact
+  detection_template_id: compact_object_box_closed
+  token_embeddings_adapter:
+    enabled: true
+    tie_head: true
+    groups:
+      coord_geometry:
+        role: coord_geometry
+        start_token: "<|coord_0|>"
+        end_token: "<|coord_999|>"
+        expected_start: 151670
+        expected_end: 152669
+      compact_structure:
+        role: structural_ce_only
+        tokens:
+          - "<|object_ref_start|>"
+          - "<|object_ref_end|>"
+          - "<|box_start|>"
+          - "<|box_end|>"
+        expected_ids:
+          "<|object_ref_start|>": 151646
+          "<|object_ref_end|>": 151647
+          "<|box_start|>": 151648
+          "<|box_end|>": 151649
+    embed_lr: 1.0e-4
+    head_lr: 1.0e-4
+    weight_decay: 0.0
+  eval_detection:
+    enabled: false

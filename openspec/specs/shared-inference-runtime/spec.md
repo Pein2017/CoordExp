@@ -309,7 +309,7 @@ Historical artifact migration contract:
 
 ### Requirement: Backend sync identity is part of model identity
 
-The shared backend layer SHALL include vLLM adapter/coord-row sync identity in
+The shared backend layer SHALL include vLLM adapter/token-row sync identity in
 model identity provenance whenever server or colocate sync affects generation.
 
 Normative behavior:
@@ -317,7 +317,7 @@ Normative behavior:
 - model identity MUST include base/checkpoint/adapter/tokenizer/processor
   identity and backend sync identity when applicable;
 - vLLM server adapter sync MUST preserve current CoordExp/ms-swift behavior:
-  LoRA-compatible tensors sync through the LoRA path and CoordExp coord-row
+  LoRA-compatible tensors sync through the LoRA path and token_embeddings_adapter
   offsets sync through the patched token-row update path;
 - active Stage-2 vLLM server rollout MUST use
   `rollout_matching.vllm.mode=server`,
@@ -325,9 +325,9 @@ Normative behavior:
   `rollout_matching.vllm.enable_lora=true`;
 - native `sync.mode=full` materialization is superseded for active unified
   Stage-2 rollout-correction server training unless a later OpenSpec revives it;
-- PEFT `modules_to_save` and `coord_offset_adapter` MUST NOT be sent as
+- PEFT `modules_to_save` and `token_embeddings_adapter` MUST NOT be sent as
   ordinary LoRA tensors;
-- missing coord-row sync support MUST hard-fail for coord-adapter checkpoints;
+- missing token-row sync support MUST hard-fail for token_embeddings_adapter checkpoints;
 - Stage-2 train vLLM server rollouts require `sync_policy:
   per_global_step`;
 - offline inference and fixed eval use `sync_policy: static`;
@@ -337,19 +337,41 @@ Normative behavior:
   worker-side verification; without a worker acknowledgement, sync status MUST
   be recorded as requested/learner-side rather than `worker_verified`.
 
-#### Scenario: Coord-row sync support is missing
+#### Scenario: Token-row sync support is missing
 
-- **GIVEN** a checkpoint contains `coord_offset_adapter`
+- **GIVEN** a checkpoint contains `token_embeddings_adapter`
 - **AND** the selected vLLM server path lacks the patched token-row sync
   endpoint
 - **WHEN** backend sync prepares generation
 - **THEN** the run fails before rollout generation
-- **AND** no artifact claims a model identity that omitted coord-row state.
+- **AND** no artifact claims a model identity that omitted token-row state.
 
 #### Scenario: Worker verification is not claimed from fire-and-forget sync
 
-- **GIVEN** the coord-row sync endpoint acknowledges request receipt before
+- **GIVEN** the token-row sync endpoint acknowledges request receipt before
   worker-side application is proven
 - **WHEN** the backend records sync provenance
 - **THEN** it records requested/learner-side sync status
 - **AND** it does not stamp `worker_verified` model identity.
+
+### Requirement: Shared runtime provenance carries compact row axes
+The shared inference runtime SHALL include resolved compact template id and
+object field order in prompt, parser, backend request, and artifact provenance.
+
+Parser policy metadata MAY contain internal parser ids, but those ids MUST be
+derived from the two resolved axes rather than independently authored config
+knobs.
+
+#### Scenario: Runtime parser policy includes field order
+- **GIVEN** `detection_template.id: compact_object_box_closed`
+- **AND** object field order `geometry_first`
+- **WHEN** the shared runtime builds parser policy metadata
+- **THEN** the metadata records the compact template id and `geometry_first`
+- **AND** no independent compact parse-mode or separator knob is accepted as the
+  source of truth.
+
+#### Scenario: Comparable artifacts require both axes
+- **GIVEN** a compact artifact family missing object field order provenance
+- **WHEN** a comparable evaluation path loads the artifact
+- **THEN** loading fails before metrics are compared
+- **AND** the diagnostic names the missing object field order metadata.

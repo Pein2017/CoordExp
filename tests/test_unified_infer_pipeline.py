@@ -1038,7 +1038,7 @@ def test_run_pipeline_rejects_vllm_adapter_shorthand(
     config_path = tmp_path / "pipeline.json"
     config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
 
-    with pytest.raises(ValueError, match="DoRA \\+ coord_offset_adapter"):
+    with pytest.raises(ValueError, match="DoRA \\+ token_embeddings_adapter"):
         run_pipeline(config_path=config_path)
 
 

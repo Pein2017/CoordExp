@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-06-14
+updated: 2026-06-20
 
 entrypoints:
   human: progress/README.md
@@ -18,8 +18,10 @@ groups:
     - progress/README.md
   directions:
     - progress/directions/README.md
-    - progress/directions/prefix_denoising_sft_v1.md
     - progress/directions/full_idea_v5.md
+    - progress/directions/2026-06-07_segment_aware_packing_infra.md
+    - progress/directions/2026-06-05_row_conditioned_visual_coverage.md
+    - progress/directions/prefix_denoising_sft_v1.md
     - progress/directions/full_idea_v4.md
     - progress/directions/full_idea_v3.md
     - progress/directions/stage2_clean_prefix_v2.md
@@ -27,9 +29,24 @@ groups:
   diagnostics:
     - progress/diagnostics/README.md
     - progress/diagnostics/artifacts/README.md
+    - progress/diagnostics/2026-06-12_autoregressive_duplication_causal_chain_synthesis.md
+    - progress/diagnostics/2026-06-12_fn_guidance_and_coord_basin_synthesis.md
+    - progress/diagnostics/2026-06-12_pre_onset_duplication_precursor_synthesis.md
+    - progress/diagnostics/2026-06-12_diagnostics_consolidation_summary.md
+    - progress/diagnostics/2026-06-15_prefix_denoising_branch_isolation_repair.md
+    - progress/diagnostics/2026-06-14_prefix_denoising_launch_health.md
     - progress/diagnostics/2026-05-18_hard_ce_coord_logit_embedding_locality.md
     - progress/diagnostics/2026-05-18_gaussian_softce_a5_a6_coord_logit_locality.md
+    - progress/diagnostics/2026-05-14_a5_a6_iou_gibbs_softce_negative_result.md
     - progress/diagnostics/2026-06-02_fn_rescue_attention_binding_findings.md
+    - progress/diagnostics/2026-06-05_a3_3_post_x1_instance_basin_real_tiny_smoke.md
+    - progress/diagnostics/2026-06-04_a3_2_sorted_random_no_newline_smoke_findings.md
+    - progress/diagnostics/2026-06-04_prefix_state_transition_phase_a3_1_analysis.md
+    - progress/diagnostics/2026-06-04_prefix_state_transition_phase_a3_1_launch.md
+    - progress/diagnostics/2026-06-03_candidate_field_cardinality_representative8192_analysis.md
+    - progress/diagnostics/2026-05-23_vllm_online_residual_trie_gate_and_prod_candidate.md
+    - progress/diagnostics/2026-05-22_residual_set_refactor_preflight.md
+    - progress/diagnostics/2026-05-20_residual_set_stage2_smoke.md
     - progress/diagnostics/2026-05-08_compact_full_coord_confidence_stop_gate_diagnostics.md
     - progress/diagnostics/artifacts/et_rmp_continuation_diagnostics_2026-05-01/README.md
     - progress/diagnostics/2026-04-29_et_rmp_rp_continuation_bias_hypothesis.md
@@ -68,6 +85,10 @@ groups:
     - progress/diagnostics/2026-03-11_visualization_tools_index.md
   audits:
     - progress/audits/README.md
+    - progress/audits/2026-06-14_prefix_denoising_sft_v1_audit.md
+    - progress/audits/2026-06-01_detection_scene_cleanup_validation.md
+    - progress/audits/2026-05-31_detection_scene_phase0_surface_classification.md
+    - progress/audits/2026-05-31_detection_scene_clean_break_archive_checkpoint.md
     - progress/audits/2026-05-20_repository_stewardship_audit.md
     - progress/audits/2026-05-19_openspec_reactivation_audit.md
     - progress/audits/2026-05-03_type_schema_architecture_audit.md
@@ -90,9 +111,17 @@ groups:
     - progress/benchmarks/2026-03-11_stage2_rollout_temperature_refinement.md
   explorations:
     - progress/explorations/README.md
+    - progress/explorations/2026-06-20_docs_progress_okf_upgrade_alignment.md
+    - progress/explorations/2026-06-12_coord_repel_stage1_sft_design_decisions.md
+    - progress/explorations/2026-05-31_grid_anchor_pending_record.md
+    - progress/explorations/2026-05-20_stage2_residual_set_self_prefix_ul_redesign.md
+    - progress/explorations/2026-05-19_unified_teacher_forcing_objective_architecture_decisions.md
     - progress/explorations/2026-05-15_training_infrastructure_architecture_decisions.md
     - progress/explorations/2026-03-19_runtime_refactor_architecture_program.md
     - progress/explorations/2026-01-26_stage2_infrastructure.md
+  handoffs:
+    - progress/handoffs/README.md
+    - progress/handoffs/2026-06-11-packed-gaussian-sft-retrain.md
   pretrain:
     - progress/pretrain/README.md
     - progress/pretrain/stage1_foundation.md
@@ -109,26 +138,71 @@ notes:
     kind: router
     status: canonical
     summary: Router for historical research directions and Stage-2 design lineage.
-  - path: progress/directions/prefix_denoising_sft_v1.md
-    title: Prefix-Denoising SFT V1
-    kind: direction
-    status: active-draft
-    summary: Infra-aware Stage-1 prefix-denoising direction using clean/noisy full-sequence CE plus sparse clean-to-noisy coordinate KL.
   - path: progress/directions/full_idea_v5.md
     title: Full Idea v5
     kind: direction
     status: active-reference
     summary: Current Stage-1 set-continuation direction note for subset-conditioned full-entry multi-positive supervision.
+  - path: progress/directions/2026-06-07_segment_aware_packing_infra.md
+    title: Segment-Aware Packing Infrastructure
+    kind: direction
+    status: draft-reference
+    summary: Branch-provenance direction for segment-aware packing infrastructure; route as draft until promoted into current packing docs.
+  - path: progress/directions/2026-06-05_row_conditioned_visual_coverage.md
+    title: Row-Conditioned Visual Coverage
+    kind: direction
+    status: historical-reference
+    summary: Branch-provenance row-conditioned visual coverage direction note; not current training guidance.
+  - path: progress/directions/prefix_denoising_sft_v1.md
+    title: Prefix-Denoising SFT V1
+    kind: direction
+    status: branch-provenance
+    summary: Branch-provenance research rationale and checklist for prefix-denoising SFT V1 on codex/prefix-denoising-sft; not current main training guidance until the matching code/config surface lands.
   - path: progress/directions/full_idea_v4.md
     title: Full Idea v4
     kind: direction
     status: superseded
     summary: Superseded Stage-1 plus Stage-2 pseudo-positive direction summary; preserve for design lineage and K=4 context, not current training guidance.
+  - path: progress/explorations/2026-06-20_docs_progress_okf_upgrade_alignment.md
+    title: Docs/Progress OKF Upgrade Alignment
+    kind: alignment-decision
+    status: active-decision
+    summary: Alignment decision for renaming progress to research, preserving docs and openspec authority boundaries, and adopting the ideas/investigations/mechanisms OKF-style hierarchy.
   - path: progress/diagnostics/README.md
     title: Diagnostics Index
     kind: router
     status: canonical
     summary: Router for mechanism studies, failure investigations, threshold sweeps, and operator notes.
+  - path: progress/diagnostics/2026-06-12_autoregressive_duplication_causal_chain_synthesis.md
+    title: Autoregressive Duplication Causal Chain Synthesis
+    kind: diagnostic-synthesis
+    status: canonical
+    summary: Consolidated June 10-11 causal-chain read for compact-full coordinate-token duplication, covering residual localization, Layer 17/head-1 visual-basin routing, candidate-basin specificity, and x2 overcorrection.
+  - path: progress/diagnostics/2026-06-12_fn_guidance_and_coord_basin_synthesis.md
+    title: False-Negative Guidance And Coordinate-Basin Synthesis
+    kind: diagnostic-synthesis
+    status: canonical
+    summary: Consolidated June 11-12 false-negative guidance branch covering prefix-state coordinate-basin lock, vase same-slot repair, hard book/chair context-band probes, and selector follow-ups.
+  - path: progress/diagnostics/2026-06-12_pre_onset_duplication_precursor_synthesis.md
+    title: Pre-Onset Duplication Precursor Synthesis
+    kind: diagnostic-synthesis
+    status: canonical
+    summary: Consolidated June 12 pre-onset branch covering coordinate-basin precursor drift, rank-moving residual selectors, matched-pair sign splits, and Layer 16/head-8 route-content evidence.
+  - path: progress/diagnostics/2026-06-12_diagnostics_consolidation_summary.md
+    title: June 10-12 Diagnostics Consolidation Summary
+    kind: consolidation-summary
+    status: canonical
+    summary: Source-to-merged-document map and loss-check method for the June 10-12 diagnostics consolidation.
+  - path: progress/diagnostics/2026-06-15_prefix_denoising_branch_isolation_repair.md
+    title: Prefix-Denoising Branch-Isolation Repair
+    kind: launch-health
+    status: branch-provenance
+    summary: Post-audit prefix-denoising branch-isolation repair and focused verification on codex/prefix-denoising-sft; branch evidence only until the code/config surface lands in main.
+  - path: progress/diagnostics/2026-06-14_prefix_denoising_launch_health.md
+    title: Prefix-Denoising SFT V1 Launch-Health Smoke
+    kind: launch-health
+    status: superseded-branch-evidence
+    summary: Original tiny prefix-denoising launch-health smoke, superseded by the 2026-06-15 branch-isolation repair note.
   - path: progress/diagnostics/2026-05-18_hard_ce_coord_logit_embedding_locality.md
     title: Hard-CE Coordinate-Logit And Embedding Locality Diagnosis
     kind: diagnostic-study
@@ -139,11 +213,56 @@ notes:
     kind: diagnostic-study
     status: active-reference
     summary: Val200 follow-up for Gaussian SoftCE A5/A6 checkpoint 3664, showing A6 CE-anchored mix-0.2 is much healthier than A5 Gaussian/default but still does not beat the ET-RMP-CE baseline, while embedding locality remains strong across all runs.
+  - path: progress/diagnostics/2026-05-14_a5_a6_iou_gibbs_softce_negative_result.md
+    title: A5/A6 IoU-Gibbs Coordinate SoftCE Negative Result
+    kind: diagnostic-study
+    status: concluded-negative
+    summary: Negative-result parent note for A5/A6 IoU/CIoU-Gibbs coord SoftCE with copied artifact bundle preserved under diagnostics/artifacts.
   - path: progress/diagnostics/2026-06-02_fn_rescue_attention_binding_findings.md
     title: FN-Rescue Attention And Instance-Binding Findings
     kind: diagnostic-study
     status: active-reference
     summary: Full linked checkpoint-3664 FN-rescue continuation mechanism note showing desc-first rescue can recover many rollout false negatives, correct x1 is a strong instance-binding seed, wrong-control x1 misdirects binding, same-desc competitors are the sharpest failure surface, and attention remains background/context-heavy rather than a clean target-object spotlight.
+  - path: progress/diagnostics/2026-06-03_candidate_field_cardinality_representative8192_analysis.md
+    title: Candidate Field Cardinality Representative8192 Analysis
+    kind: diagnostic-study
+    status: active-diagnostic
+    summary: Candidate-field cardinality analysis for the representative8192 tomography line.
+  - path: progress/diagnostics/2026-06-04_prefix_state_transition_phase_a3_1_launch.md
+    title: Prefix-State Transition Tomography Phase A3.1 Launch
+    kind: diagnostic-note
+    status: completed-diagnostic
+    summary: Launch note for A3.1 prefix-state transition tomography.
+  - path: progress/diagnostics/2026-06-04_prefix_state_transition_phase_a3_1_analysis.md
+    title: Prefix-State Transition Tomography Phase A3.1 Analysis
+    kind: diagnostic-study
+    status: completed-diagnostic
+    summary: Analysis note for A3.1 prefix-state transition tomography.
+  - path: progress/diagnostics/2026-06-04_a3_2_sorted_random_no_newline_smoke_findings.md
+    title: A3.2 Sorted-Random No-Newline Smoke Findings
+    kind: diagnostic-evidence
+    status: diagnostic-evidence
+    summary: Smoke findings for the A3.2 sorted-random no-newline phenotype line.
+  - path: progress/diagnostics/2026-06-05_a3_3_post_x1_instance_basin_real_tiny_smoke.md
+    title: A3.3 Post-X1 Instance-Basin Tomography Real-Tiny Smoke
+    kind: diagnostic-evidence
+    status: diagnostic-evidence
+    summary: Real-tiny smoke note for post-X1 instance-basin tomography.
+  - path: progress/diagnostics/2026-05-20_residual_set_stage2_smoke.md
+    title: Residual-Set Stage-2 Smoke
+    kind: diagnostic-note
+    status: historical
+    summary: Historical residual-set Stage-2 smoke note.
+  - path: progress/diagnostics/2026-05-22_residual_set_refactor_preflight.md
+    title: Residual-Set Refactor Preflight
+    kind: diagnostic-note
+    status: current
+    summary: Residual-set refactor preflight note for Stage-2 launch readiness context.
+  - path: progress/diagnostics/2026-05-23_vllm_online_residual_trie_gate_and_prod_candidate.md
+    title: vLLM Online Residual-Trie Gate And Production Candidate
+    kind: diagnostic-note
+    status: current
+    summary: vLLM online residual-trie gate and production-candidate note.
   - path: progress/diagnostics/2026-04-21_raw_text_coordinate_mechanism_findings.md
     title: Raw-Text Coordinate Mechanism Findings
     kind: diagnostic-study
@@ -239,6 +358,31 @@ notes:
     kind: router
     status: canonical
     summary: Router for architecture, infrastructure, and implementation-planning explorations.
+  - path: progress/explorations/2026-06-12_coord_repel_stage1_sft_design_decisions.md
+    title: Coord-Repel Stage-1 SFT Design Decisions
+    kind: exploration
+    status: branch-provenance
+    summary: Coord-repel Stage-1 design decision record imported from the conservative-design worktree.
+  - path: progress/audits/2026-06-14_prefix_denoising_sft_v1_audit.md
+    title: Prefix-Denoising SFT V1 Audit
+    kind: audit
+    status: branch-provenance
+    summary: Read-only design and plan audit for codex/prefix-denoising-sft; branch-scoped evidence only until the prefix-denoising surface lands in main.
+  - path: progress/explorations/2026-05-31_grid_anchor_pending_record.md
+    title: Grid Anchor Compact Detection Pending Record
+    kind: exploration
+    status: historical-reference
+    summary: Pending/deprecated grid-anchor compact-detection record; use as historical design evidence.
+  - path: progress/explorations/2026-05-20_stage2_residual_set_self_prefix_ul_redesign.md
+    title: Stage-2 Residual-Set Self-Prefix / UL Redesign Decisions
+    kind: exploration
+    status: decision-record
+    summary: Stage-2 residual-set self-prefix and UL redesign decision record.
+  - path: progress/explorations/2026-05-19_unified_teacher_forcing_objective_architecture_decisions.md
+    title: Unified Teacher-Forcing Objective Architecture Decisions
+    kind: exploration
+    status: decision-record
+    summary: Unified teacher-forcing objective architecture discussion and decision record.
   - path: progress/explorations/2026-05-15_training_infrastructure_architecture_decisions.md
     title: Training Infrastructure Architecture Decisions
     kind: exploration
@@ -254,3 +398,13 @@ notes:
     kind: router
     status: canonical
     summary: Router for Stage-1 foundation history and early pretraining evidence.
+  - path: progress/handoffs/README.md
+    title: Handoffs Index
+    kind: router
+    status: canonical
+    summary: Router for historical continuation notes preserved as branch or experiment provenance.
+  - path: progress/handoffs/2026-06-11-packed-gaussian-sft-retrain.md
+    title: Packed Gaussian SFT Retrain Handoff
+    kind: handoff
+    status: historical-handoff
+    summary: Optional handoff imported from the fully-compact 2x2 ablation worktree for retrain provenance.

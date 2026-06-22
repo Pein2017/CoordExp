@@ -658,98 +658,6 @@ class BBoxSizeAuxConfig:
 
 
 @dataclass(frozen=True)
-class CoordOffsetConfig:
-    enabled: bool = True
-    tie_head: bool = True
-    ids: tuple[int, ...] = ()
-    embed_lr: Optional[float] = None
-    head_lr: Optional[float] = None
-    weight_decay: float = 0.0
-    dtype: Optional[str] = None  # "auto"/None defaults to model dtype
-
-    def __post_init__(self) -> None:
-        if self.weight_decay < 0:
-            raise ValueError("coord_offset.weight_decay must be >= 0")
-
-    @classmethod
-    def from_mapping(cls, payload: Optional[Mapping[str, Any]]) -> "CoordOffsetConfig":
-        if payload is None:
-            return cls()
-        if not isinstance(payload, Mapping):
-            raise TypeError("coord_offset section must be a mapping when provided")
-
-        enabled = bool(payload.get("enabled", True))
-
-        tie_head_raw = payload.get("tie_head", True)
-        if tie_head_raw is None:
-            tie_head = True
-        elif isinstance(tie_head_raw, bool):
-            tie_head = tie_head_raw
-        else:
-            raise TypeError("coord_offset.tie_head must be a boolean when provided")
-
-        ids_raw = payload.get("ids")
-        ids: tuple[int, ...]
-        if ids_raw is None:
-            ids = ()
-        elif isinstance(ids_raw, (list, tuple, set)):
-            try:
-                ids = tuple(int(v) for v in ids_raw)
-            except (TypeError, ValueError) as exc:
-                raise ValueError("coord_offset.ids must be a list of integers") from exc
-        elif isinstance(ids_raw, Mapping):
-            start = ids_raw.get("start")
-            end = ids_raw.get("end")
-            try:
-                start_i = int(start)
-                end_i = int(end)
-            except (TypeError, ValueError) as exc:
-                raise ValueError(
-                    "coord_offset.ids mapping must provide integer start/end"
-                ) from exc
-            if end_i < start_i:
-                raise ValueError("coord_offset.ids.end must be >= start")
-            ids = tuple(range(start_i, end_i + 1))
-        else:
-            raise TypeError(
-                "coord_offset.ids must be a list, mapping with start/end, or omitted"
-            )
-
-        def _parse_lr(key: str) -> Optional[float]:
-            raw = payload.get(key)
-            if raw is None:
-                return None
-            try:
-                return float(raw)
-            except (TypeError, ValueError) as exc:
-                raise ValueError(f"coord_offset.{key} must be numeric") from exc
-
-        embed_lr = _parse_lr("embed_lr")
-        head_lr = _parse_lr("head_lr")
-
-        weight_decay_raw = payload.get("weight_decay", 0.0)
-        try:
-            weight_decay = float(weight_decay_raw)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("coord_offset.weight_decay must be numeric") from exc
-        if weight_decay < 0:
-            raise ValueError("coord_offset.weight_decay must be >= 0")
-
-        dtype_raw = payload.get("dtype")
-        dtype = str(dtype_raw) if dtype_raw is not None else None
-
-        return cls(
-            enabled=enabled,
-            tie_head=tie_head,
-            ids=ids,
-            embed_lr=embed_lr,
-            head_lr=head_lr,
-            weight_decay=weight_decay,
-            dtype=dtype,
-        )
-
-
-@dataclass(frozen=True)
 class TrainableTokenRowGroupConfig:
     role: TokenRole
     start_token: Optional[str] = None
@@ -877,7 +785,7 @@ class TrainableTokenRowGroupConfig:
 
 
 @dataclass(frozen=True)
-class TrainableTokenRowsConfig:
+class TokenEmbeddingsAdapterConfig:
     enabled: bool = False
     tie_head: bool = True
     groups: Mapping[str, TrainableTokenRowGroupConfig] = field(default_factory=dict)
@@ -888,15 +796,15 @@ class TrainableTokenRowsConfig:
 
     def __post_init__(self) -> None:
         if self.weight_decay < 0:
-            raise ValueError("custom.trainable_token_rows.weight_decay must be >= 0")
+            raise ValueError("custom.token_embeddings_adapter.weight_decay must be >= 0")
 
     @classmethod
     def from_mapping(
         cls,
         payload: Optional[Mapping[str, Any]],
         *,
-        path: str = "custom.trainable_token_rows",
-    ) -> "TrainableTokenRowsConfig":
+        path: str = "custom.token_embeddings_adapter",
+    ) -> "TokenEmbeddingsAdapterConfig":
         if payload is None:
             return cls()
         if not isinstance(payload, Mapping):
@@ -958,7 +866,7 @@ class TrainableTokenRowsConfig:
         structural_ce_only: list[int] = []
         for name, group in self.groups.items():
             ids = group.resolve_ids(
-                tokenizer, path=f"trainable_token_rows.groups.{name}"
+                tokenizer, path=f"token_embeddings_adapter.groups.{name}"
             )
             if group.role is TokenRole.COORD_GEOMETRY:
                 coord_geometry.extend(ids)
@@ -1430,10 +1338,10 @@ class CustomConfig:
     bbox_format: AllowedBBoxFormat = DEFAULT_BBOX_FORMAT
     object_ordering: ObjectOrdering = "sorted"
     detection_sequence_format: str = COORDJSON_FORMAT
+    detection_template_id: Optional[str] = None
     coord_tokens: CoordTokensConfig = field(default_factory=CoordTokensConfig)
-    coord_offset: CoordOffsetConfig = field(default_factory=CoordOffsetConfig)
-    trainable_token_rows: TrainableTokenRowsConfig = field(
-        default_factory=TrainableTokenRowsConfig
+    token_embeddings_adapter: TokenEmbeddingsAdapterConfig = field(
+        default_factory=TokenEmbeddingsAdapterConfig
     )
     coord_soft_ce_w1: CoordSoftCEW1Config = field(default_factory=CoordSoftCEW1Config)
     bbox_geo: BBoxGeoConfig = field(default_factory=BBoxGeoConfig)
@@ -1491,6 +1399,8 @@ class CustomConfig:
         if self.json_format not in ALLOWED_JSON_FORMATS:
             raise ValueError("custom.json_format must be 'standard'")
         normalize_detection_sequence_format(self.detection_sequence_format)
+        if self.detection_template_id is not None:
+            resolve_detection_template_contract(self.detection_template_id)
         normalize_bbox_format(self.bbox_format, path="custom.bbox_format")
         if self.offline_max_pixels is not None and int(self.offline_max_pixels) <= 0:
             raise ValueError("custom.offline_max_pixels must be > 0 when provided")
@@ -1640,6 +1550,15 @@ class CustomConfig:
         detection_sequence_format = normalize_detection_sequence_format(
             data.pop("detection_sequence_format", COORDJSON_FORMAT)
         )
+        detection_template_id_raw = data.pop("detection_template_id", None)
+        detection_template_id = (
+            None if detection_template_id_raw is None else str(detection_template_id_raw)
+        )
+        detection_template_contract = (
+            None
+            if detection_template_id is None
+            else resolve_detection_template_contract(detection_template_id)
+        )
 
         # `custom.extra` is the only intentional extension bucket.
         nested_extra_raw = data.pop("extra", None)
@@ -1667,16 +1586,32 @@ class CustomConfig:
             )
 
         coord_tokens = CoordTokensConfig.from_mapping(coord_tokens_raw)
-        if detection_sequence_format != COORDJSON_FORMAT and not coord_tokens.enabled:
-            raise ValueError(
-                "custom.detection_sequence_format="
-                f"{detection_sequence_format} requires custom.coord_tokens.enabled=true"
+        if (
+            (
+                detection_sequence_format != COORDJSON_FORMAT
+                or (
+                    detection_template_contract is not None
+                    and detection_template_contract.is_compact
+                )
             )
-        coord_offset_raw = data.pop("coord_offset", None)
-        coord_offset = CoordOffsetConfig.from_mapping(coord_offset_raw)
-        trainable_token_rows_raw = data.pop("trainable_token_rows", None)
-        trainable_token_rows = TrainableTokenRowsConfig.from_mapping(
-            trainable_token_rows_raw
+            and not coord_tokens.enabled
+        ):
+            raise ValueError(
+                "compact detection rendering requires custom.coord_tokens.enabled=true"
+            )
+        if "coord_offset" in data:
+            raise ValueError(
+                "custom.coord_offset has been removed; use "
+                "custom.token_embeddings_adapter instead."
+            )
+        if "trainable_token_rows" in data:
+            raise ValueError(
+                "custom.trainable_token_rows has been removed; use "
+                "custom.token_embeddings_adapter instead."
+            )
+        token_embeddings_adapter_raw = data.pop("token_embeddings_adapter", None)
+        token_embeddings_adapter = TokenEmbeddingsAdapterConfig.from_mapping(
+            token_embeddings_adapter_raw
         )
         if "coord_loss" in data:
             raise ValueError(
@@ -1723,9 +1658,9 @@ class CustomConfig:
             bbox_format=bbox_format,
             object_ordering=object_ordering,
             detection_sequence_format=detection_sequence_format,
+            detection_template_id=detection_template_id,
             coord_tokens=coord_tokens,
-            coord_offset=coord_offset,
-            trainable_token_rows=trainable_token_rows,
+            token_embeddings_adapter=token_embeddings_adapter,
             coord_soft_ce_w1=coord_soft_ce_w1,
             bbox_geo=bbox_geo,
             bbox_size_aux=bbox_size_aux,
@@ -3399,7 +3334,7 @@ def _detection_validate_prefix_denoising_contract(
 
 def _detection_validate_token_rows(
     detection_template: "DetectionTemplateConfig",
-    token_rows: TrainableTokenRowsConfig,
+    token_rows: TokenEmbeddingsAdapterConfig,
 ) -> None:
     if not token_rows.enabled:
         raise ValueError(
@@ -3550,12 +3485,13 @@ class DetectionTemplateConfig:
         "stage1_json_pretty",
         "compact",
         "compact_box_closed",
+        "compact_object_closed",
         "compact_object_box_closed",
         "compact_object_box_closed_lines",
     ]
     coordinate_surface: Literal["coord_token"]
     bbox_format: Literal["xyxy"]
-    object_field_order: Optional[Literal["desc_first"]] = None
+    object_field_order: Optional[Literal["desc_first", "geometry_first"]] = None
     strict_parse: bool = True
 
     def __post_init__(self) -> None:
@@ -3579,25 +3515,25 @@ class DetectionTemplateConfig:
             _detection_validate_choice(
                 self.object_field_order,
                 path="detection_template.object_field_order",
-                allowed={"desc_first"},
+                allowed={"desc_first", "geometry_first"},
             )
         _detection_validate_bool(
             self.strict_parse,
             path="detection_template.strict_parse",
         )
-        if self.id == "stage1_json_pretty" and self.object_field_order != "desc_first":
+        if (
+            self.id == "stage1_json_pretty"
+            and self.object_field_order not in {None, "desc_first"}
+        ):
             raise ValueError(
                 "detection_template.id=stage1_json_pretty requires "
                 "detection_template.object_field_order=desc_first"
             )
-        if contract.is_compact and self.object_field_order is not None:
-            raise ValueError(
-                "detection_template.object_field_order must be omitted for "
-                f"detection_template.id={self.id}"
-            )
 
     @classmethod
     def from_mapping(cls, payload: Any) -> "DetectionTemplateConfig":
+        if isinstance(payload, Mapping) and payload.get("id") == "compact_full":
+            payload = {**dict(payload), "id": "compact"}
         return parse_dataclass_strict(cls, payload, path="detection_template")
 
 
@@ -4132,14 +4068,19 @@ class TeacherForcingObjectiveConfig:
             path="objective.profile",
             allowed=TEACHER_FORCING_PROFILES,
         )
-        if self.profile == "hybrid_valid_set_marginal":
-            raise ValueError(
-                "objective.profile=hybrid_valid_set_marginal is unsupported "
-                "for stage1_detection_teacher_forcing until hybrid runtime "
-                "support is implemented"
-            )
         coverage = self.modules.within_valid_coverage
         coverage_strength = float(coverage.coverage_strength)
+        if self.profile == "hybrid_valid_set_marginal":
+            if not bool(coverage.enabled) or coverage_strength <= 0.0:
+                raise ValueError(
+                    "objective.profile=hybrid_valid_set_marginal requires "
+                    "objective.modules.within_valid_coverage.coverage_strength > 0"
+                )
+        elif coverage_strength > 0.0:
+            raise ValueError(
+                f"objective.profile={self.profile} requires "
+                "objective.modules.within_valid_coverage.coverage_strength=0"
+            )
         if self.profile == "hard_sft":
             hard_sft_module_checks = (
                 (
@@ -4170,12 +4111,6 @@ class TeacherForcingObjectiveConfig:
                         f"{module_key}; target-IR teacher-forcing modules "
                         "require a valid-set runtime path"
                     )
-        if coverage_strength > 0.0:
-            raise ValueError(
-                f"objective.profile={self.profile} requires "
-                "objective.modules.within_valid_coverage.coverage_strength=0"
-            )
-
     @classmethod
     def from_mapping(cls, payload: Any) -> "TeacherForcingObjectiveConfig":
         if not isinstance(payload, Mapping):
@@ -4529,6 +4464,7 @@ class DetectionEvaluationConfig:
         "stage1_json_pretty",
         "compact",
         "compact_box_closed",
+        "compact_object_closed",
         "compact_object_box_closed",
         "compact_object_box_closed_lines",
     ]
@@ -4548,6 +4484,8 @@ class DetectionEvaluationConfig:
 
     @classmethod
     def from_mapping(cls, payload: Any) -> "DetectionEvaluationConfig":
+        if isinstance(payload, Mapping) and payload.get("expected_template") == "compact_full":
+            payload = {**dict(payload), "expected_template": "compact"}
         return parse_dataclass_strict(cls, payload, path="evaluation")
 
 
@@ -4578,7 +4516,7 @@ class DetectionTrainingConfig:
     data: DetectionDataConfig
     prompt: DetectionPromptConfig
     detection_template: DetectionTemplateConfig
-    token_rows: TrainableTokenRowsConfig
+    token_rows: TokenEmbeddingsAdapterConfig
     objective: DetectionObjectiveConfig | TeacherForcingObjectiveConfig
     packing: DetectionPackingConfig
     evaluation: DetectionEvaluationConfig
@@ -4689,7 +4627,7 @@ class DetectionTrainingConfig:
             objective=objective,
             experiment=experiment,
         )
-        token_rows = TrainableTokenRowsConfig.from_mapping(
+        token_rows = TokenEmbeddingsAdapterConfig.from_mapping(
             payload["token_rows"],
             path="token_rows",
         )

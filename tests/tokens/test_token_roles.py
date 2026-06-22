@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.config.schema import TrainableTokenRowsConfig
+from src.config.schema import TokenEmbeddingsAdapterConfig
 from src.coord_tokens.codec import get_coord_token_ids
 from src.tokens.roles import TokenRole, TokenRoleSets
 
@@ -23,8 +23,8 @@ class FakeTokenizer:
         return self.token_to_id[token]
 
 
-def _compact_trainable_rows_config() -> TrainableTokenRowsConfig:
-    return TrainableTokenRowsConfig.from_mapping(
+def _compact_token_embeddings_adapter_config() -> TokenEmbeddingsAdapterConfig:
+    return TokenEmbeddingsAdapterConfig.from_mapping(
         {
             "enabled": True,
             "tie_head": True,
@@ -49,9 +49,9 @@ def _compact_trainable_rows_config() -> TrainableTokenRowsConfig:
     )
 
 
-def test_trainable_token_rows_resolves_structural_markers_separately_from_coord_loss_ids():
+def test_token_embeddings_adapter_resolves_structural_markers_separately_from_coord_loss_ids():
     tokenizer = FakeTokenizer()
-    role_sets = _compact_trainable_rows_config().resolve_role_sets(tokenizer)
+    role_sets = _compact_token_embeddings_adapter_config().resolve_role_sets(tokenizer)
 
     assert isinstance(role_sets, TokenRoleSets)
     assert role_sets.coord_geometry_ids == tuple(range(151670, 152670))
@@ -74,9 +74,9 @@ def test_structural_ce_only_ids_are_not_coord_codec_ids():
     assert {151646, 151648}.isdisjoint(coord_ids)
 
 
-def test_trainable_token_rows_rejects_unknown_role():
-    with pytest.raises(ValueError, match="custom.trainable_token_rows.groups.bad.role"):
-        TrainableTokenRowsConfig.from_mapping(
+def test_token_embeddings_adapter_rejects_unknown_role():
+    with pytest.raises(ValueError, match="custom.token_embeddings_adapter.groups.bad.role"):
+        TokenEmbeddingsAdapterConfig.from_mapping(
             {
                 "enabled": True,
                 "groups": {
@@ -89,9 +89,9 @@ def test_trainable_token_rows_rejects_unknown_role():
         )
 
 
-def test_trainable_token_rows_rejects_expected_id_mismatch():
+def test_token_embeddings_adapter_rejects_expected_id_mismatch():
     tokenizer = FakeTokenizer()
-    cfg = TrainableTokenRowsConfig.from_mapping(
+    cfg = TokenEmbeddingsAdapterConfig.from_mapping(
         {
             "enabled": True,
             "groups": {

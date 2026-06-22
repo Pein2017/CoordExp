@@ -27,7 +27,7 @@ class _TensorRowOffsetMetadata(BaseModel):
 
 
 class _UpdateTokenRowOffsetsRequest(BaseModel):
-    coord_ids: _TensorRowOffsetMetadata
+    token_ids: _TensorRowOffsetMetadata
     embed_offset: _TensorRowOffsetMetadata
     head_offset: _TensorRowOffsetMetadata | None = None
     tie_head: bool = True
@@ -40,7 +40,7 @@ class CoordExpWeightSyncWorkerExtension(_SwiftWeightSyncWorkerExtension):
 
     def update_token_row_offsets(
         self,
-        coord_ids_metadata: dict[str, Any],
+        token_ids_metadata: dict[str, Any],
         embed_offset_metadata: dict[str, Any],
         head_offset_metadata: dict[str, Any] | None,
         tie_head: bool = True,
@@ -49,7 +49,7 @@ class CoordExpWeightSyncWorkerExtension(_SwiftWeightSyncWorkerExtension):
     ) -> None:
         return _worker_update_token_row_offsets(
             self,
-            coord_ids_metadata,
+            token_ids_metadata,
             embed_offset_metadata,
             head_offset_metadata,
             tie_head,
@@ -61,11 +61,11 @@ class CoordExpWeightSyncWorkerExtension(_SwiftWeightSyncWorkerExtension):
         self,
         key: str,
         param: torch.nn.Parameter,
-        coord_ids: torch.Tensor,
+        token_ids: torch.Tensor,
         offset: torch.Tensor,
     ) -> None:
         return _worker_apply_token_row_offsets_to_param(
-            self, key, param, coord_ids, offset
+            self, key, param, token_ids, offset
         )
 
     def _find_module_for_param(self, param_key: str) -> Any:
@@ -81,20 +81,20 @@ def _dump_metadata(value: Any) -> dict[str, Any]:
 
 
 def _coordexp_llm_worker(args: Any, data_parallel_rank: int, master_port: int, connection: Any) -> Any:
-    apply_coord_row_patch_for_rollout_server()
+    apply_token_row_patch_for_rollout_server()
     from swift.pipelines.infer.rollout import llm_worker
 
     return llm_worker(args, data_parallel_rank, master_port, connection)
 
 
 def _coordexp_llm_worker_entry(args: Any, data_parallel_rank: int, master_port: int, connection: Any) -> Any:
-    apply_coord_row_patch_for_rollout_server()
+    apply_token_row_patch_for_rollout_server()
     from swift.pipelines.infer.rollout import llm_worker_entry
 
     return llm_worker_entry(args, data_parallel_rank, master_port, connection)
 
 
-def apply_coord_row_patch_for_vllm_client() -> type:
+def apply_token_row_patch_for_vllm_client() -> type:
     """Install CoordExp's token-row offset sender on ms-swift's VLLMClient."""
     try:
         from swift.rlhf_trainers.vllm_client import VLLMClient
@@ -104,11 +104,11 @@ def apply_coord_row_patch_for_vllm_client() -> type:
     if getattr(VLLMClient, "_coordexp_token_row_offsets_patch", False):
         return VLLMClient
 
-    def update_token_row_offsets(self, coord_ids, embed_offset, head_offset=None, tie_head: bool = True):
+    def update_token_row_offsets(self, token_ids, embed_offset, head_offset=None, tie_head: bool = True):
         from swift.utils import get_torch_device, synchronize
 
         errors = [None] * self.num_servers
-        named_tensors = [("coord_ids", coord_ids), ("embed_offset", embed_offset)]
+        named_tensors = [("token_ids", token_ids), ("embed_offset", embed_offset)]
         if head_offset is not None:
             named_tensors.append(("head_offset", head_offset))
 
@@ -127,7 +127,7 @@ def apply_coord_row_patch_for_vllm_client() -> type:
                 response = self.sessions[i].post(
                     f"{self.base_urls[i]}/update_token_row_offsets/",
                     json={
-                        "coord_ids": metadata["coord_ids"],
+                        "token_ids": metadata["token_ids"],
                         "embed_offset": metadata["embed_offset"],
                         "head_offset": metadata.get("head_offset"),
                         "tie_head": bool(tie_head),
@@ -164,7 +164,7 @@ def apply_coord_row_patch_for_vllm_client() -> type:
     return VLLMClient
 
 
-def apply_coord_row_patch_for_rollout_server() -> None:
+def apply_token_row_patch_for_rollout_server() -> None:
     """Install CoordExp's rollout-server endpoint and worker row patch locally."""
     from swift.pipelines.infer import rollout as rollout_mod
 
@@ -182,7 +182,7 @@ def apply_coord_row_patch_for_rollout_server() -> None:
         original_register = deploy_cls._register_rl_rollout_app
 
         async def update_token_row_offsets(self, request: _UpdateTokenRowOffsetsRequest):
-            coord_ids_metadata = _dump_metadata(request.coord_ids)
+            token_ids_metadata = _dump_metadata(request.token_ids)
             embed_offset_metadata = _dump_metadata(request.embed_offset)
             head_offset_metadata = (
                 None
@@ -192,7 +192,7 @@ def apply_coord_row_patch_for_rollout_server() -> None:
             kwargs = {
                 "method": "update_token_row_offsets",
                 "args": (
-                    coord_ids_metadata,
+                    token_ids_metadata,
                     embed_offset_metadata,
                     head_offset_metadata,
                     bool(request.tie_head),
@@ -273,7 +273,7 @@ def apply_coord_row_patch_for_rollout_server() -> None:
 
 def _worker_update_token_row_offsets(
     self,
-    coord_ids_metadata: dict[str, Any],
+    token_ids_metadata: dict[str, Any],
     embed_offset_metadata: dict[str, Any],
     head_offset_metadata: dict[str, Any] | None,
     tie_head: bool = True,
@@ -298,21 +298,21 @@ def _worker_update_token_row_offsets(
         synchronize()
         return tensor
 
-    coord_ids = _recv_tensor(coord_ids_metadata).to(dtype=torch.long)
+    token_ids = _recv_tensor(token_ids_metadata).to(dtype=torch.long)
     embed_offset = _recv_tensor(embed_offset_metadata)
     head_offset = None if head_offset_metadata is None else _recv_tensor(head_offset_metadata)
     self.communicator.group.barrier()
 
-    if coord_ids.ndim != 1 or coord_ids.numel() == 0:
-        raise RuntimeError("coord_ids must be a non-empty 1D tensor for token row offset sync")
-    if embed_offset.ndim != 2 or embed_offset.shape[0] != coord_ids.numel():
-        raise RuntimeError("embed_offset must be [num_coord_ids, hidden] for token row offset sync")
+    if token_ids.ndim != 1 or token_ids.numel() == 0:
+        raise RuntimeError("token_ids must be a non-empty 1D tensor for token row offset sync")
+    if embed_offset.ndim != 2 or embed_offset.shape[0] != token_ids.numel():
+        raise RuntimeError("embed_offset must be [num_token_ids, hidden] for token row offset sync")
     if not tie_head and head_offset is None:
         raise RuntimeError("untied token row offset sync requires head_offset")
     if head_offset is not None and (
-        head_offset.ndim != 2 or head_offset.shape[0] != coord_ids.numel()
+        head_offset.ndim != 2 or head_offset.shape[0] != token_ids.numel()
     ):
-        raise RuntimeError("head_offset must be [num_coord_ids, hidden] for token row offset sync")
+        raise RuntimeError("head_offset must be [num_token_ids, hidden] for token row offset sync")
 
     named_parameters = dict(self.model_runner.model.named_parameters())
     embed_param = named_parameters.get(embed_key)
@@ -327,18 +327,18 @@ def _worker_update_token_row_offsets(
 
     if self._token_row_offset_base_rows is None:
         self._token_row_offset_base_rows = {}
-    self._apply_token_row_offsets_to_param(embed_key, embed_param, coord_ids, embed_offset)
+    self._apply_token_row_offsets_to_param(embed_key, embed_param, token_ids, embed_offset)
 
     head_delta = embed_offset if bool(tie_head) else head_offset
     if head_param is not embed_param or not bool(tie_head):
-        self._apply_token_row_offsets_to_param(head_key, head_param, coord_ids, head_delta)
+        self._apply_token_row_offsets_to_param(head_key, head_param, token_ids, head_delta)
 
 
 def _worker_apply_token_row_offsets_to_param(
     self,
     key: str,
     param: torch.nn.Parameter,
-    coord_ids: torch.Tensor,
+    token_ids: torch.Tensor,
     offset: torch.Tensor,
 ) -> None:
     if offset is None:
@@ -354,14 +354,14 @@ def _worker_apply_token_row_offsets_to_param(
     module = self._find_module_for_param(key)
     shard_indices = getattr(module, "shard_indices", None)
     if shard_indices is None:
-        local_mask = (coord_ids >= 0) & (coord_ids < param.shape[0])
-        local_indices = coord_ids[local_mask]
+        local_mask = (token_ids >= 0) & (token_ids < param.shape[0])
+        local_indices = token_ids[local_mask]
         local_offsets = offset[local_mask]
     else:
         start = int(shard_indices.org_vocab_start_index)
         end = int(shard_indices.org_vocab_end_index)
-        local_mask = (coord_ids >= start) & (coord_ids < end)
-        local_indices = coord_ids[local_mask] - start
+        local_mask = (token_ids >= start) & (token_ids < end)
+        local_indices = token_ids[local_mask] - start
         local_offsets = offset[local_mask]
 
     if local_indices.numel() == 0:

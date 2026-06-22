@@ -37,7 +37,7 @@ from src.detection.objective import PreparedPrefixRollinExample, TokenTarget
 from src.detection.objective import build_compact_prefix_rollin_example
 from src.detection.runtime import resolve_detection_prompts
 from src.detection.template import CompactFullTemplate
-from src.infer.checkpoints import validate_compact_coord_token_adapter_contract
+from src.infer.checkpoints import validate_compact_token_embeddings_adapter_contract
 
 
 @dataclass(frozen=True)
@@ -564,7 +564,7 @@ def run_prefix_rollin_teacher_forced_probe(
         attn_implementation=attn_implementation,
         coord_mode="coord_tokens",
     )
-    validate_compact_coord_token_adapter_contract(
+    validate_compact_token_embeddings_adapter_contract(
         scorer.resolved_checkpoint,
         detection_template_id=training_config.detection_template.id,
     )

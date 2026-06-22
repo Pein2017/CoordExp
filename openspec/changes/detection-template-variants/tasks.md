@@ -55,7 +55,7 @@
 - [x] 3.3 Update token-row schema/runtime validation to fail fast when the
   selected compact template's exact structural rows are missing, extra,
   duplicated, or not trainable.
-- [x] 3.4 Update offset-adapter row selection/checkpoint validation so adapter
+- [x] 3.4 Update token_embeddings_adapter row selection/checkpoint validation so adapter
   checkpoints require the exact template-derived row set with no missing, extra,
   or duplicate ids.
 - [x] 3.5 Validate `coord_ids`, embedding offset rows, lm-head offset rows when

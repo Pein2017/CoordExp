@@ -7,7 +7,7 @@ topics: [stage2, channel-a, eval, infer, repetition-penalty, historical-stage2-a
 references:
   - docs/PROJECT_CONTEXT.md
   - docs/training/README.md
-  - docs/training/STAGE2_DESIGN.md
+  - docs/history/training/STAGE2_DESIGN.md
 ---
 
 # Stage-2 (AB) Channel-A Only — Inference/Eval Notes (2026-02-01)
@@ -19,7 +19,7 @@ Note: referenced run artifacts may be pruned; paths are best-effort pointers.
 Status note:
 - this is a historical benchmark note from the earlier `stage2_ab` config era,
 - config paths under `configs/stage2_ab/...` are provenance handles for the runs analyzed here and are not current repo entrypoints,
-- for current Stage-2 work, use `docs/training/README.md`, `docs/training/STAGE2_DESIGN.md`, and `configs/stage2_two_channel/`.
+- for current Stage-2 work, use `docs/training/README.md`, `docs/training/STAGE2_RUNBOOK.md`, and current Stage-2 config docs.
 
 This note summarizes what we observed when benchmarking **Channel-A only** Stage-2 checkpoints on LVIS bbox-only validation, focusing on:
 

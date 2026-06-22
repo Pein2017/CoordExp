@@ -18,11 +18,12 @@ def test_coord_token_mode_invariants_for_anchored_configs() -> None:
     assert stage2.custom.coord_tokens.enabled is True
     assert stage2.custom.coord_tokens.skip_bbox_norm is True
 
-    # Stage-1 uses the coord-offset adapter to train only the 1000 coord-token IDs.
-    assert stage1.custom.coord_offset.enabled is True
-    ids = list(stage1.custom.coord_offset.ids)
-    assert len(ids) == 1000
-    assert ids == list(range(int(ids[0]), int(ids[0]) + 1000))
+    # Stage-1 uses the token-embeddings adapter to train only the coord-token IDs.
+    assert stage1.custom.token_embeddings_adapter.enabled is True
+    groups = stage1.custom.token_embeddings_adapter.groups
+    assert set(groups) == {"coord_geometry"}
+    assert groups["coord_geometry"].start_token == "<|coord_0|>"
+    assert groups["coord_geometry"].end_token == "<|coord_999|>"
 
-    # Stage-2 rollout correction should not enable the coord-offset adapter.
-    assert stage2.custom.coord_offset.enabled is False
+    # Stage-2 rollout correction should not enable the token-embeddings adapter.
+    assert stage2.custom.token_embeddings_adapter.enabled is False

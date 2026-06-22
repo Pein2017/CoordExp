@@ -27,7 +27,7 @@ training:
   warmup_ratio: 0.1
   weight_decay: 0.1
   lr_scheduler_type: cosine
-  optimizer: multimodal_coord_offset
+  optimizer: multimodal_token_embeddings_adapter
   optim: adamw_torch_fused
   train_type: lora
   freeze_vit: true

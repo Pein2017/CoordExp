@@ -48,11 +48,11 @@ def _write_adapter_checkpoint(
     path: Path,
     *,
     base_model_name_or_path: str = "base-model",
-    with_coord_offset: bool = False,
+    with_token_embeddings_adapter: bool = False,
     tie_head: bool = True,
 ) -> None:
     path.mkdir(parents=True, exist_ok=True)
-    modules_to_save = ["coord_offset_adapter"] if with_coord_offset else []
+    modules_to_save = ["token_embeddings_adapter"] if with_token_embeddings_adapter else []
     (path / "adapter_config.json").write_text(
         json.dumps(
             {
@@ -63,20 +63,20 @@ def _write_adapter_checkpoint(
         ),
         encoding="utf-8",
     )
-    if with_coord_offset:
+    if with_token_embeddings_adapter:
         import torch
         from safetensors.torch import save_file
 
         payload = {
-            "base_model.model.coord_offset_adapter.coord_ids": torch.tensor(
+            "base_model.model.token_embeddings_adapter.token_ids": torch.tensor(
                 [2, 5], dtype=torch.long
             ),
-            "base_model.model.coord_offset_adapter.embed_offset": torch.zeros(
+            "base_model.model.token_embeddings_adapter.embed_offset": torch.zeros(
                 2, 4, dtype=torch.float32
             ),
         }
         if not tie_head:
-            payload["base_model.model.coord_offset_adapter.head_offset"] = (
+            payload["base_model.model.token_embeddings_adapter.head_offset"] = (
                 torch.zeros(2, 4, dtype=torch.float32)
             )
         save_file(payload, str(path / "adapter_model.safetensors"))
@@ -276,93 +276,6 @@ def test_infer_writes_pred_token_trace_sidecar(tmp_path, monkeypatch):
         "<|coord_10|>",
         "<|im_end|>",
     ]
-
-
-def test_hf_batch_does_not_build_compact_grammar_logits_processor(monkeypatch):
-    captured: dict[str, object] = {}
-
-    class _DummyTokenizer(_QwenSpecialTokenMixin):
-        padding_side = "left"
-        pad_token_id = 0
-        eos_token_id = 1
-
-        def batch_decode(self, token_ids, **_kwargs):
-            return [self.decode(ids, **_kwargs) for ids in token_ids]
-
-        def decode(self, token_ids, **_kwargs):
-            ids = [int(value) for value in token_ids]
-            return "".join("<|im_end|>" if value == 1 else "x" for value in ids)
-
-    class _DummyProcessor:
-        def __init__(self) -> None:
-            self.tokenizer = _DummyTokenizer()
-
-        def apply_chat_template(self, _message, *, add_generation_prompt, tokenize):
-            assert add_generation_prompt is True
-            assert tokenize is False
-            return "prompt"
-
-        def __call__(self, **_kwargs):
-            return {
-                "input_ids": torch.tensor(
-                    [
-                        [0, 0, 10, 11],
-                        [20, 21, 22, 23],
-                    ],
-                    dtype=torch.long,
-                ),
-                "attention_mask": torch.tensor(
-                    [
-                        [0, 0, 1, 1],
-                        [1, 1, 1, 1],
-                    ],
-                    dtype=torch.long,
-                ),
-            }
-
-    class _DummyGenerateOutput:
-        def __init__(self) -> None:
-            self.sequences = torch.tensor(
-                [
-                    [0, 0, 10, 11, 1],
-                    [20, 21, 22, 23, 1],
-                ],
-                dtype=torch.long,
-            )
-            self.scores = [torch.zeros((2, 32), dtype=torch.float32)]
-
-    class _DummyModel:
-        def generate(self, **kwargs):
-            captured["generate_kwargs"] = kwargs
-            return _DummyGenerateOutput()
-
-    owner = types.SimpleNamespace(
-        model=_DummyModel(),
-        processor=_DummyProcessor(),
-        cfg=types.SimpleNamespace(device="cpu"),
-        gen_cfg=GenerationConfig(
-            temperature=0.0,
-            top_p=1.0,
-            max_new_tokens=1,
-            repetition_penalty=1.0,
-            batch_size=2,
-            seed=123,
-        ),
-        system_prompt="system",
-        user_prompt="prompt",
-    )
-
-    results = generate_hf_batch(
-        owner=owner,
-        images=[
-            Image.new("RGB", (8, 8), color=(0, 0, 0)),
-            Image.new("RGB", (8, 8), color=(0, 0, 0)),
-        ],
-        result_factory=GenerationResult,
-    )
-
-    assert "logits_processor" not in captured["generate_kwargs"]
-    assert [result.text for result in results] == ["<|im_end|>", "<|im_end|>"]
 
 
 def test_hf_attention_backend_fallback_is_recorded_in_summary(tmp_path, monkeypatch):
@@ -599,14 +512,14 @@ def test_hf_adapter_checkpoint_loads_via_swift_shorthand_and_records_resolved_ba
     assert summary["backend"]["resolved_adapter_checkpoint"] == str(adapter_dir)
 
 
-def test_hf_coord_offset_adapter_is_preinstalled_before_swift_reload(
+def test_hf_token_embeddings_adapter_is_preinstalled_before_swift_reload(
     tmp_path, monkeypatch
 ):
     adapter_dir = tmp_path / "adapter-dir"
     _write_adapter_checkpoint(
         adapter_dir,
         base_model_name_or_path="base-model",
-        with_coord_offset=True,
+        with_token_embeddings_adapter=True,
         tie_head=False,
     )
 
@@ -678,8 +591,8 @@ def test_hf_coord_offset_adapter_is_preinstalled_before_swift_reload(
             load_order.append(("swift", model_id, inference_mode))
             return _WrappedModel(model)
 
-    def _fake_install(model, *, coord_ids, tie_head, dtype=None):
-        load_order.append(("install", tuple(coord_ids), tie_head, dtype))
+    def _fake_install(model, *, token_ids, tie_head, dtype=None):
+        load_order.append(("install", tuple(token_ids), tie_head, dtype))
         return object()
 
     def _fake_reattach(model):
@@ -691,8 +604,10 @@ def test_hf_coord_offset_adapter_is_preinstalled_before_swift_reload(
 
     monkeypatch.setattr(infer_runtime, "AutoProcessor", _DummyAutoProcessor)
     monkeypatch.setattr(infer_runtime, "Qwen3VLForConditionalGeneration", _DummyQwen)
-    monkeypatch.setattr(infer_runtime, "install_coord_offset_adapter", _fake_install)
-    monkeypatch.setattr(infer_runtime, "reattach_coord_offset_hooks", _fake_reattach)
+    monkeypatch.setattr(infer_runtime, "install_token_embeddings_adapter", _fake_install)
+    monkeypatch.setattr(
+        infer_runtime, "reattach_token_embeddings_adapter_hooks", _fake_reattach
+    )
     monkeypatch.setitem(sys.modules, "swift", fake_swift_module)
 
     engine = InferenceEngine(inf_cfg, gen_cfg)

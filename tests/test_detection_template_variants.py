@@ -10,11 +10,37 @@ from src.detection.template_contracts import (
     resolve_detection_template_contract,
 )
 
+CAT_BBOX_TOKENS = ("<|coord_1|>", "<|coord_2|>", "<|coord_3|>", "<|coord_4|>")
+EXPECTED_COMPACT_ROW = (
+    "<|object_ref_start|>cat<|box_start|>"
+    "<|coord_1|><|coord_2|><|coord_3|><|coord_4|>"
+)
+EXPECTED_BOX_CLOSED_ROW = (
+    "<|object_ref_start|>cat<|box_start|>"
+    "<|coord_1|><|coord_2|><|coord_3|><|coord_4|><|box_end|>"
+)
+EXPECTED_OBJECT_CLOSED_ROW = (
+    "<|object_ref_start|>cat<|object_ref_end|><|box_start|>"
+    "<|coord_1|><|coord_2|><|coord_3|><|coord_4|>"
+)
+EXPECTED_OBJECT_BOX_CLOSED_DESC_FIRST_ROW = (
+    "<|object_ref_start|>cat<|object_ref_end|><|box_start|>"
+    "<|coord_1|><|coord_2|><|coord_3|><|coord_4|><|box_end|>"
+)
+EXPECTED_OBJECT_BOX_CLOSED_GEOMETRY_FIRST_ROW = (
+    "<|box_start|><|coord_1|><|coord_2|><|coord_3|><|coord_4|><|box_end|>"
+    "<|object_ref_start|>cat<|object_ref_end|>"
+)
+EXPECTED_OBJECT_BOX_CLOSED_LINES_ROW = (
+    f"{EXPECTED_OBJECT_BOX_CLOSED_DESC_FIRST_ROW}\n"
+)
+
 
 def test_semantic_template_ids_are_exact() -> None:
     assert COMPACT_TEMPLATE_IDS == (
         "compact",
         "compact_box_closed",
+        "compact_object_closed",
         "compact_object_box_closed",
         "compact_object_box_closed_lines",
     )
@@ -25,19 +51,23 @@ def test_semantic_template_ids_are_exact() -> None:
     [
         (
             "compact",
-            "<|object_ref_start|>cat<|box_start|><|coord_1|><|coord_2|><|coord_3|><|coord_4|>",
+            EXPECTED_COMPACT_ROW,
         ),
         (
             "compact_box_closed",
-            "<|object_ref_start|>cat<|box_start|><|coord_1|><|coord_2|><|coord_3|><|coord_4|><|box_end|>",
+            EXPECTED_BOX_CLOSED_ROW,
+        ),
+        (
+            "compact_object_closed",
+            EXPECTED_OBJECT_CLOSED_ROW,
         ),
         (
             "compact_object_box_closed",
-            "<|object_ref_start|>cat<|object_ref_end|><|box_start|><|coord_1|><|coord_2|><|coord_3|><|coord_4|><|box_end|>",
+            EXPECTED_OBJECT_BOX_CLOSED_DESC_FIRST_ROW,
         ),
         (
             "compact_object_box_closed_lines",
-            "<|object_ref_start|>cat<|object_ref_end|><|box_start|><|coord_1|><|coord_2|><|coord_3|><|coord_4|><|box_end|>\n",
+            EXPECTED_OBJECT_BOX_CLOSED_LINES_ROW,
         ),
     ],
 )
@@ -46,7 +76,34 @@ def test_contract_row_rendering(template_id: str, expected: str) -> None:
     row = render_compact_contract_row(
         contract,
         desc="cat",
-        bbox_tokens=("<|coord_1|>", "<|coord_2|>", "<|coord_3|>", "<|coord_4|>"),
+        bbox_tokens=CAT_BBOX_TOKENS,
+    )
+    assert row == expected
+
+
+@pytest.mark.parametrize(
+    ("object_field_order", "expected"),
+    [
+        (
+            "desc_first",
+            EXPECTED_OBJECT_BOX_CLOSED_DESC_FIRST_ROW,
+        ),
+        (
+            "geometry_first",
+            EXPECTED_OBJECT_BOX_CLOSED_GEOMETRY_FIRST_ROW,
+        ),
+    ],
+)
+def test_compact_object_box_closed_contract_row_rendering_respects_field_order(
+    object_field_order: str,
+    expected: str,
+) -> None:
+    contract = resolve_detection_template_contract("compact_object_box_closed")
+    row = render_compact_contract_row(
+        contract,
+        desc="cat",
+        bbox_tokens=CAT_BBOX_TOKENS,
+        object_field_order=object_field_order,
     )
     assert row == expected
 
@@ -56,6 +113,7 @@ def test_contract_row_rendering(template_id: str, expected: str) -> None:
     [
         ("compact", 1002),
         ("compact_box_closed", 1003),
+        ("compact_object_closed", 1003),
         ("compact_object_box_closed", 1004),
         ("compact_object_box_closed_lines", 1004),
     ],
@@ -69,6 +127,7 @@ def test_required_trainable_token_count(template_id: str, count: int) -> None:
     [
         ("compact", (151646, 151648)),
         ("compact_box_closed", (151646, 151648, 151649)),
+        ("compact_object_closed", (151646, 151647, 151648)),
         ("compact_object_box_closed", (151646, 151647, 151648, 151649)),
         ("compact_object_box_closed_lines", (151646, 151647, 151648, 151649)),
     ],

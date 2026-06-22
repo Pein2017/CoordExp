@@ -1,0 +1,52 @@
+# Diagnostic capture for geometry-first compact object/box-closed checkpoint-928 val200.
+#
+# This preserves non-metric-bearing parser outputs for model-behavior diagnosis.
+# It intentionally disables official eval because diagnostic rows are not
+# benchmark metric-bearing artifacts.
+
+run:
+  name: geometry_first_object_box_closed_ckpt928_val200_bsz4_temp0_rep1p10_max3084_8gpu_diag
+  output_dir: /data/CoordExp/outputs/infer/recursive_detection_ce
+
+stages:
+  infer: true
+  eval: false
+  vis: false
+
+detection_template:
+  id: compact_object_box_closed
+
+infer:
+  gt_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+  model_checkpoint: /data/CoordExp/output/stage1_2b/coco_bbox_max60_1024-coco80-geometry_first-compact_object_box_closed-sorted-packed12k-natural_adjacent-pure_ce/epoch_4-pure_ce-coco80-geometry_first-1024-compact_object_box_closed-sorted-packed12k-natural_adjacent-llm_only/v5-20260617-141636/checkpoint-928
+
+  prompt_variant: coco_80
+  allow_diagnostic_gt_vs_pred: true
+  bbox_format: xyxy
+  object_field_order: geometry_first
+  object_ordering: sorted
+
+  mode: coord
+  pred_coord_mode: auto
+
+  backend:
+    type: hf
+    attn_implementation: flash_attention_2
+
+  generation:
+    temperature: 0.0
+    top_p: 0.9
+    max_new_tokens: 3084
+    repetition_penalty: 1.10
+    batch_size: 4
+    seed: 42
+
+  device: cuda:0
+  limit: 200
+  detect_samples: 128
+
+confidence:
+  fusion_w_geom: 1.0
+  fusion_w_desc: 0.0
+  desc_span_policy: best_effort
+  empty_desc_policy: geom_only

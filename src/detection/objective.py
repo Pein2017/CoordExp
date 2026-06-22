@@ -290,6 +290,7 @@ def prepare_detection_training_example(
     state_weighting: StateWeightingStrategy = "uniform_permutation",
     normalization: LossNormalizationStrategy = "semantic_image_bucket_balanced",
     type_gate_config: Any | None = None,
+    object_field_order: str = "desc_first",
     system_prompt: str | None = None,
     user_content: str = "<image>",
     messages: Sequence[Mapping[str, Any]] | None = None,
@@ -303,7 +304,10 @@ def prepare_detection_training_example(
     _validate_template_capabilities(template, mode=mode)
 
     # rendering and tokenizing the teacher-forced full sequence
-    rendered_assistant = template.render_assistant(prepared_sample)
+    rendered_assistant = template.render_assistant(
+        prepared_sample,
+        object_field_order=object_field_order,
+    )
     tokenized = tokenize_rendered_detection_conversation(
         rendered_assistant,
         tokenizer=tokenizer,

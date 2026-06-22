@@ -313,10 +313,27 @@ def test_stage1_static_sft_request_resolves_behavioral_contract_fields() -> None
     )
 
     contract = fingerprint["detection_packing_contract"]
-    assert contract["metadata"]["template_id"] == "compact_full"
+    assert contract["metadata"]["template_id"] == "compact"
     assert contract["metadata"]["objective_variant"] == "random_order_sft"
     assert contract["metadata"]["state_weighting_policy"] == "none"
     assert contract["metadata"]["normalization_policy"] == "token_mean"
+
+
+def test_stage1_static_sft_request_accepts_semantic_compact_template_id() -> None:
+    fingerprint = build_stage1_static_sft_packing_fingerprint(
+        StaticSftPackingFingerprintRequest(
+            detection_sequence_format="compact_object_box_closed",
+            prompt_profile="closed-compact-prompt",
+            tokenizer_id="tokenizer-v1",
+            object_ordering="sorted",
+            profile=PackingProfile(mode="static", packing_length=12000),
+            runtime_fields={"dataset_split": "train"},
+        )
+    )
+
+    contract = fingerprint["detection_packing_contract"]
+    assert contract["metadata"]["template_id"] == "compact_object_box_closed"
+    assert contract["metadata"]["objective_variant"] == "sorted_sft"
 
 
 def test_static_sft_eligibility_rejects_recursive_request_before_runtime_work() -> None:

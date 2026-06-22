@@ -8,10 +8,14 @@ names, row separators, parse modes, serialization policies, and token-row
 groups.
 
 This change introduces compact wrapper variants for ablation and anchoring
-experiments while keeping one authored decision: `detection_template.id`. The
-implementation must keep Qwen chat-template behavior intact, keep `do_resize`
-false for detection training, preserve geometry order and coordinates, and avoid
-editing upstream HF model internals.
+experiments while keeping compact wrapper authoring centralized under
+`detection_template.id`. The follow-on
+`compact-template-field-order-ablation` change amends field-order authoring:
+`custom.object_field_order` remains the authored source for desc-first versus
+geometry-first compact row layout. The implementation must keep Qwen
+chat-template behavior intact, keep `do_resize` false for detection training,
+preserve geometry order and coordinates, and avoid editing upstream HF model
+internals.
 
 Current high-impact code owners include:
 
@@ -28,7 +32,7 @@ Current high-impact code owners include:
   inference message construction.
 - `src/infer/runtime.py` and the shared inference runtime contract for parser
   provenance and backend prompt parity.
-- `src/infer/checkpoints.py` and token-row validation for offset-adapter row
+- `src/infer/checkpoints.py` and token-row validation for token_embeddings_adapter row
   contracts.
 - `src/detection/evaluation.py` and infer artifact metadata for post-hoc mAP
   preflight and scoring.
@@ -40,7 +44,7 @@ training/inference YAML
 -> typed config resolves detection_template.id
 -> template registry derives render/parser/prompt/token-row contract
 -> dataset and teacher-forcing builders render canonical assistant text
--> offset adapter trains exactly the required token rows
+-> token_embeddings_adapter trains exactly the required token rows
 -> inference renders matching prompts and parses generated text by template id
 -> artifacts persist detection_template.id
 -> post-hoc mAP scores the existing normalized pixel geometry schema
@@ -50,8 +54,11 @@ training/inference YAML
 
 **Goals:**
 
-- Make `detection_template.id` the single authored source of truth for detection
-  serialization.
+- Make `detection_template.id` the authored source of truth for compact template
+  family, closure tokens, row separator, parser family, structural token rows,
+  and template provenance; `compact-template-field-order-ablation` adds
+  `custom.object_field_order` as the companion authored source for desc-first
+  versus geometry-first row layout.
 - Rename the current compact surface from `compact_full` to `compact` in active
   configs/docs without keeping `compact_full` as a schema alias.
 - Support semantic compact template ids:
@@ -61,7 +68,7 @@ training/inference YAML
   - `compact_object_box_closed_lines`
 - Keep `stage1_json_pretty` supported as a separate non-compact template.
 - Derive parser, renderer, prompt row pattern, row separator, required special
-  tokens, trainable offset-adapter rows, artifact metadata, and post-hoc mAP
+  tokens, trainable token_embeddings_adapter rows, artifact metadata, and post-hoc mAP
   preflight from the selected template id.
 - Validate that compact token-row adaptation supports the selected 1002, 1003,
   or 1004 row contract.
@@ -164,9 +171,9 @@ Alternative considered: infer the variant from generated text. This would make
 old artifacts easier to inspect but would weaken ablation interpretation and
 would hide config/artifact mismatches.
 
-### Decision: Derive offset-adapter rows from the template id
+### Decision: Derive token_embeddings_adapter rows from the template id
 
-The offset adapter remains the mechanism for trainable token rows, but the row
+The token_embeddings_adapter remains the mechanism for trainable token rows, but the row
 set is no longer coord-only on compact detection runs. The selected compact
 template derives the required row count:
 
@@ -175,15 +182,15 @@ template derives the required row count:
 - `compact_object_box_closed`: 1004 rows.
 - `compact_object_box_closed_lines`: 1004 rows.
 
-The persisted module name may remain `coord_offset_adapter` for checkpoint file
-compatibility, but docs/specs should describe this surface as token-row
-adaptation when compact detection structural rows are included.
+The persisted module name is `token_embeddings_adapter`; docs/specs should
+describe this surface as token-row adaptation when compact detection structural
+rows are included.
 
 Adapter checkpoint validation for compact templates applies when an adapter
-checkpoint carries the offset-adapter module. It must validate the exact
+checkpoint carries the token_embeddings_adapter module. It must validate the exact
 template-derived row id set, reject missing/extra/duplicate ids, and ensure saved
 offset tensor row counts agree with the resolved ids. Full or merged checkpoints
-that do not carry an offset-adapter module still need resolved template metadata,
+that do not carry a token_embeddings_adapter module still need resolved template metadata,
 but adapter tensor validation is not applicable to them.
 
 ### Decision: Persist template metadata in artifacts for mAP

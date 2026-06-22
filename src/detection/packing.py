@@ -15,6 +15,10 @@ from src.common.detection_sequence import (
     COORDJSON_FORMAT,
     normalize_detection_sequence_format,
 )
+from src.detection.template_contracts import (
+    SUPPORTED_DETECTION_TEMPLATE_IDS,
+    resolve_detection_template_contract,
+)
 from src.detection.objective import DetectionTrainingMode
 from src.detection.template import DetectionSequenceTemplate, TemplateId, get_detection_template
 from src.detection.tokenization import TokenSpan
@@ -102,6 +106,11 @@ def _require_non_negative_int(value: Any, *, field_name: str) -> int:
 def resolve_detection_template_id_for_static_packing(
     detection_sequence_format: Any,
 ) -> TemplateId:
+    if isinstance(detection_sequence_format, str):
+        value = detection_sequence_format.strip()
+        if value in SUPPORTED_DETECTION_TEMPLATE_IDS:
+            resolve_detection_template_contract(value)
+            return cast(TemplateId, value)
     detection_format = normalize_detection_sequence_format(detection_sequence_format)
     if detection_format == COORDJSON_FORMAT:
         return "stage1_json_pretty"
@@ -109,7 +118,7 @@ def resolve_detection_template_id_for_static_packing(
         return "compact"
     raise ValueError(
         "dataset-level static packing only supports detection templates "
-        "{'stage1_json_pretty', 'compact'}; got "
+        "{'stage1_json_pretty', 'compact', semantic compact template ids}; got "
         f"detection_sequence_format={detection_sequence_format!r}"
     )
 

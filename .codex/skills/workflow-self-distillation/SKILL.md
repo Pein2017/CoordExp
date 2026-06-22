@@ -16,6 +16,15 @@ Use this to turn recent repeated work into durable agent assets without creating
 
 Prefer a 30-day window unless the user gives another window. If history is shorter, say so.
 
+Classify provenance before recommending skill changes:
+
+- personal/repo-local;
+- official/plugin-managed;
+- generated/vendor-provided;
+- local wrapper around an official workflow.
+
+Do not recommend removing or merging official/plugin-managed skills unless the user explicitly puts them in scope.
+
 ## Parallel Split
 
 When subagents are available, split read-only lanes by evidence source:
@@ -35,6 +44,8 @@ Act only when the candidate:
 - has stable inputs, repeatable steps, and a clear output or stopping condition;
 - improves speed, consistency, reliability, or correctness;
 - is not already adequately covered.
+
+Search recent memories and rollout summaries for prior consolidation, retirement, or restoration decisions. If prior decisions conflict with current state, report the conflict and explain whether provenance changes the recommendation.
 
 Choose the smallest form:
 

@@ -2,17 +2,18 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Implement semantic detection template variants so `detection_template.id` is the single training, inference, artifact, token-row, and evaluator contract.
+**Goal:** Implement semantic detection template variants so `detection_template.id` owns compact template-family, closure, separator, token-row, and evaluator provenance contracts. Superseded field-order note: `compact-template-field-order-ablation` adds `custom.object_field_order` as the companion authored source for desc-first versus geometry-first row layout.
 
-**Architecture:** Add a small template contract resolver that maps semantic ids to render, parse, prompt, token-row, and provenance behavior. Update existing strict template, teacher-forcing, prompt, inference, and evaluator surfaces to consume that resolver instead of independently authored compact format knobs. Keep standard post-hoc mAP on normalized `gt_vs_pred.pred` objects while using template metadata for inference materialization and evaluation preflight.
+**Architecture:** Add a small template contract resolver that maps semantic ids to closure/separator render policy, parser family, prompt wrapper pattern, token rows, and provenance behavior. Update existing strict template, teacher-forcing, prompt, inference, and evaluator surfaces to consume that resolver instead of independently authored compact format knobs. Keep standard post-hoc mAP on normalized `gt_vs_pred.pred` objects while using template metadata for inference materialization and evaluation preflight.
 
-**Tech Stack:** Python, pytest, OpenSpec, Qwen3-VL tokenizer special tokens, CoordExp detection template/rendering stack, PEFT coord-offset adapter metadata.
+**Tech Stack:** Python, pytest, OpenSpec, Qwen3-VL tokenizer special tokens, CoordExp detection template/rendering stack, PEFT token-embeddings adapter metadata.
 
 ---
 
 ## Source Of Truth
 
 - OpenSpec change: `openspec/changes/detection-template-variants/`
+- Follow-on amendment: `openspec/changes/compact-template-field-order-ablation/`
 - Normative implementation tasks: `openspec/changes/detection-template-variants/tasks.md`
 - Current strict template owner: `src/detection/template.py`
 - Compatibility facade boundary: `src/common/detection_sequence.py`
@@ -49,8 +50,10 @@
   entrypoint imports them.
 - 2026-06-17 convergence recheck found no P0/P1 blockers after these revisions;
   `openspec validate detection-template-variants --type change --strict` passed.
-- Per user approval, implementation may start after this revised roadmap and
-  OpenSpec validation pass.
+- Supersession gate: do not use this older roadmap alone to implement
+  bbox-first/geometry-first compact rows. Use
+  `docs/superpowers/plans/2026-06-17-compact-template-field-order-ablation.md`
+  and wait for explicit user approval of that amendment.
 
 ## File Structure
 
@@ -544,11 +547,11 @@ Expected: all selected tests pass.
 - Modify: `src/infer/checkpoints.py`
 - Modify: `src/config/schema.py`
 - Test: `tests/test_infer_checkpoint_resolution.py`
-- Test: `tests/test_inject_coord_offsets_script.py`
+- Test: `tests/test_inject_token_embeddings_adapter_script.py`
 
 - [x] **Step 1: Add adapter validation tests**
 
-Extend checkpoint tests to cover exact row sets. Use an existing checkpoint fixture if the file already has one; otherwise add a test-local helper named `_adapter_checkpoint_with_coord_ids(tmp_path, coord_ids) -> ResolvedInferenceCheckpoint` that writes the minimal adapter metadata and tensors, resolves them through `resolve_inference_checkpoint(...)` when needed, and returns the resolved checkpoint object consumed by `validate_compact_coord_token_adapter_contract`.
+Extend checkpoint tests to cover exact row sets. Use an existing checkpoint fixture if the file already has one; otherwise add a test-local helper named `_adapter_checkpoint_with_token_ids(tmp_path, token_ids) -> ResolvedInferenceCheckpoint` that writes the minimal adapter metadata and tensors, resolves them through `resolve_inference_checkpoint(...)` when needed, and returns the resolved checkpoint object consumed by `validate_compact_token_embeddings_adapter_contract`.
 
 ```python
 @pytest.mark.parametrize(
@@ -565,13 +568,13 @@ def test_compact_adapter_checkpoint_accepts_exact_template_rows(
     template_id: str,
     expected_count: int,
 ) -> None:
-    coord_ids = required_trainable_token_row_ids(template_id)
-    checkpoint = _adapter_checkpoint_with_coord_ids(tmp_path, coord_ids)
-    validate_compact_coord_token_adapter_contract(
+    token_ids = required_trainable_token_row_ids(template_id)
+    checkpoint = _adapter_checkpoint_with_token_ids(tmp_path, token_ids)
+    validate_compact_token_embeddings_adapter_contract(
         checkpoint,
         detection_template_id=template_id,
     )
-    assert len(coord_ids) == expected_count
+    assert len(token_ids) == expected_count
 ```
 
 Also add rejection tests for missing `<|box_end|>`, missing `<|object_ref_end|>`, duplicate ids, extra ids, tensor shape mismatch, and `compact` not bypassing validation.
@@ -581,14 +584,14 @@ Also add rejection tests for missing `<|box_end|>`, missing `<|object_ref_end|>`
 Run:
 
 ```bash
-python -m pytest tests/test_infer_checkpoint_resolution.py tests/test_inject_coord_offsets_script.py -q
+python -m pytest tests/test_infer_checkpoint_resolution.py tests/test_inject_token_embeddings_adapter_script.py -q
 ```
 
 Expected: failures because validation still keys on `detection_sequence_format == "compact_full"` and 1002 rows.
 
 - [x] **Step 3: Implement template-derived row validation**
 
-Update `validate_compact_coord_token_adapter_contract` to accept `detection_template_id`. If an adapter checkpoint has `coord_offset_adapter`, validate:
+Update `validate_compact_token_embeddings_adapter_contract` to accept `detection_template_id`. If an adapter checkpoint has `token_embeddings_adapter`, validate:
 
 - exact required row id set,
 - no missing ids,
@@ -596,7 +599,7 @@ Update `validate_compact_coord_token_adapter_contract` to accept `detection_temp
 - no duplicates,
 - coord id count matches embedding offset row count,
 - untied head offset row count matches when present,
-- `modules_to_save` contains `coord_offset_adapter` when adapter rows are expected.
+- `modules_to_save` contains `token_embeddings_adapter` when adapter rows are expected.
 
 Keep full or merged checkpoint exemption for tensor row validation, but require template metadata elsewhere.
 
@@ -605,7 +608,7 @@ Keep full or merged checkpoint exemption for tensor row validation, but require 
 Run:
 
 ```bash
-python -m pytest tests/test_infer_checkpoint_resolution.py tests/test_inject_coord_offsets_script.py -q
+python -m pytest tests/test_infer_checkpoint_resolution.py tests/test_inject_token_embeddings_adapter_script.py -q
 ```
 
 Expected: all selected tests pass.
@@ -804,7 +807,7 @@ python -m pytest \
   tests/test_detection_template_span_alignment.py \
   tests/test_token_span_masks_from_templates.py \
   tests/test_infer_checkpoint_resolution.py \
-  tests/test_inject_coord_offsets_script.py \
+  tests/test_inject_token_embeddings_adapter_script.py \
   tests/test_infer_compact_full_policy_contract.py \
   tests/test_infer_artifact_metadata.py \
   tests/test_unified_infer_pipeline.py \
@@ -864,7 +867,7 @@ Expected: any remaining active `compact_full` or old compact-knob references are
 
 - [x] Every OpenSpec requirement in `openspec/changes/detection-template-variants/specs/detection-template-variants/spec.md` maps to Tasks 1, 2, 3, 5, 6, or 7.
 - [x] `stage1-detection-objectives` deltas map to Tasks 3, 4, and 8.
-- [x] `coord_offset` deltas map to Task 5.
+- [x] `token_embeddings_adapter` deltas map to Task 5.
 - [x] `dataset-prompt-variants`, `inference-engine`, and `shared-inference-runtime` deltas map to Task 6.
 - [x] `detection-evaluator` deltas map to Task 7.
 - [x] No implementation starts before this plan and OpenSpec docs converge through subagent review.
