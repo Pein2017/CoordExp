@@ -7,6 +7,8 @@ description: Use when CoordExp work needs current repo routing, docs/spec/code e
 
 Use this as the compact routing layer for CoordExp. It replaces the old split between current codebase navigation, research-history context, broad maps, CodeGraph routing, RTK selection, and Serena navigation.
 
+This skill owns detailed CoordExp navigation and MCP/tool-routing policy. Other skills may keep one-line reminders, but CodeGraph/Serena/RTK/raw-shell rules should be centralized here to avoid drift.
+
 ## Mode Selector
 
 - `current-route`: find current docs, configs, code entrypoints, tests, or artifact contracts.
@@ -69,7 +71,7 @@ Search `.codex/memories/MEMORY.md` only when prior session context is relevant. 
 ## Tool Choice
 
 - Route by phase, not by habit: CodeGraph answers "where should I look?", Serena answers "what exactly is this live Python symbol and who depends on it?", and shell/tests answer "what is the exact current state?" Do not maximize MCP call count; maximize the value of the right tool at the right phase.
-- Default handoff: docs/catalog or `rg` for the named surface -> at most 1-2 capped CodeGraph map calls for unknown code areas -> Serena for exact Python symbols/references/diagnostics -> patch or symbolic edit -> narrow verification.
+- Default handoff: docs/catalog or `rg` for the named surface -> at most 1-2 capped CodeGraph map calls for unknown code areas -> Serena for exact Python symbols/references/diagnostics -> patch or symbolic edit -> raw shell/tests/artifact checks for exact state and narrow verification.
 - Once a CodeGraph call returns enough file/symbol candidates, freeze that shortlist. Do not issue adjacent broad `codegraph_explore` queries over the same subsystem just to get another angle; switch to Serena, `rg`, or exact reads.
 - Use CodeGraph for first-pass repository-scale orientation before token-heavy exploration: symbol search, file/package maps, call chains, grouped source context, and impact radius.
 - Use CodeGraph CLI for index lifecycle and reproducible setup checks:

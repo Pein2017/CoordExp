@@ -1,4 +1,0 @@
-interface:
-  display_name: "Loss Numerics Sanity"
-  short_description: "Audit loss math, scaling, and training signals"
-  default_prompt: "Use $loss-numerics-sanity to audit this training objective or launch for loss math, numerical stability, scaling, masking, metrics, and early-warning signals."

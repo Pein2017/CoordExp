@@ -13,6 +13,8 @@ sprite sheets, grids, collages, or any other image that packs multiple samples
 into one large figure unless the user explicitly asks for a multi-sample summary
 image.
 
+Optimize for human inspection over compactness. If multiple records are selected, render multiple separate PNGs plus a manifest; combined figures are user-requested exceptions only.
+
 ## Primary Entry Points
 
 - single-run render:

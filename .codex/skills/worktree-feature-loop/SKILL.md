@@ -7,6 +7,8 @@ description: Use when starting CoordExp feature, fix, or research work where a d
 
 Choose `execution_mode=worktree|inplace`, then own the lifecycle through verification and cleanup. Delegate creation details to `using-git-worktrees` when a worktree is chosen.
 
+This skill owns isolation, lifecycle state, checkout identity, and cleanup readiness. It does not own commit grouping, staging, remote sync, or conflict resolution; delegate those to `git-hygiene`.
+
 ## Preflight Snapshot
 
 Before edits, commits, sync, or cleanup, inspect root, branch, linked worktree state, `git status --short --branch`, and `git worktree list`.
@@ -57,7 +59,7 @@ Branch prefix defaults to `codex/`.
 6. Use absolute or shared-root paths for heavy data, checkpoints, caches, and outputs.
 7. Put one-off debug artifacts under `temp/` and clean them after durable evidence is extracted.
 8. Validate the smallest realistic surface.
-9. For commits or sync, delegate detailed staging, PAT, fetch/pull/push, and conflict handling to `git-hygiene`; keep this skill focused on lifecycle state.
+9. For commits or sync, invoke `git-hygiene` before staging anything and delegate detailed staging, PAT, fetch/pull/push, and conflict handling there; keep this skill focused on lifecycle state.
 10. For OpenSpec contract artifacts, delegate mode-specific workflow to `openspec-lifecycle`.
 11. Finish with `finishing-a-development-branch` or the user's requested commit/push/merge flow.
 12. Remove worktree only after merge/discard, from the main root, with provenance check and no uncommitted work.

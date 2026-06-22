@@ -1,6 +1,6 @@
 ---
 name: model-innovation-risk-audit
-description: "Use when a planned or newly wired CoordExp mechanism needs a pre-launch or pre-interpretation trust gate before training/eval claims, especially for silent train/eval/config/artifact mismatch risk."
+description: "Use when a planned or newly wired CoordExp mechanism, objective, loss, or eval path needs a pre-launch or pre-interpretation trust gate before training/eval claims, especially for silent train/eval/config/artifact mismatch risk."
 ---
 
 # Model Innovation Risk Audit
@@ -55,6 +55,12 @@ Extract the intended algorithm contract, then compare it across:
 - Verify raw loss terms and effective weighted contributions are both logged.
 - Check zero-weight targets, EOS/type-gate composition, duplicate multiplicity, and teacher-token membership.
 - Use deterministic tiny-logit tests for scalar formulas before trusting training curves.
+
+## Loss/Numerics Gate
+
+For new or changed objectives, verify one authored config, one resolved config, one encoded sample, one collated batch, and one deterministic tiny-logit formula probe before trusting training curves.
+
+Report raw and weighted loss terms, valid-count denominators, mask density, zero-mask behavior, target support membership, finite checks, dtype/fp32 islands, gradient path, accumulation, distributed reduction semantics, and metric/logging names for each term. If wiring is correct but behavior is already abnormal, hand off to `model-diagnosis`.
 
 ## Probes
 
