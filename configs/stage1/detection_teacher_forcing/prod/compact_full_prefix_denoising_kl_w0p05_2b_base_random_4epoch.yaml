@@ -1,0 +1,37 @@
+extends:
+  - ./compact_full_prefix_denoising_kl_w0p05.yaml
+
+# Production launch leaf for prefix-denoising SFT V1, random-order variant.
+#
+# Contract:
+# - start from the 2B coord base checkpoint in model_cache, with no warm-start adapter
+# - train 4 epochs on random-permutation compact-full data
+# - use marker-delimited compact rows, i.e. no "\n" object separator
+# - evaluate on a deterministic 512-row validation subset
+# - keep eval packing disabled: current teacher_forcing guard rejects eval_packing=true
+# - optimize branch-balanced clean/noisy hard CE plus local coord KL at weight 0.05
+# - use a separate static packing cache root from the sorted run
+
+training:
+  artifact_subdir: compact_full_prefix_denoising_kl_w0p05_2b_base_random_marker_bsz1x128_4epoch
+  run_name: compact-full-prefix-denoising-kl-w0p05-2b-base-random-marker-bsz1x128-4epoch
+  num_train_epochs: 4
+  per_device_train_batch_size: 1
+  effective_batch_size: 128
+  per_device_eval_batch_size: 1
+  dataloader_num_workers: 0
+  dataloader_pin_memory: false
+  dataloader_persistent_workers: false
+  dataloader_prefetch_factor: null
+  eval_packing: false
+  save_delay_steps: 200
+  static_packing_cache:
+    root_dir: /data/CoordExp/outputs/stage1_2b/detection_teacher_forcing/static_packing/compact_full_prefix_denoising_2b_base_random_marker
+
+data:
+  object_ordering: random_permutation
+
+debug:
+  # Detection configs currently route {train,val}_sample_limit through debug.
+  enabled: true
+  val_sample_limit: 512
