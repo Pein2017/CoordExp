@@ -1,0 +1,17 @@
+extends:
+  - ./compact_object_box_closed_prefix_denoising_ce_only.yaml
+
+# Prefix-denoising V1 full-wrapper target:
+#   branch-balanced clean/noisy hard CE + sparse clean-to-noisy local coord KL.
+# The active full-wrapper leaf strengthens KL coverage by aligning two selected
+# objects per image trajectory while keeping the original 0.05 KL scale.
+
+training:
+  artifact_subdir: compact_object_box_closed_prefix_denoising_kl_w0p05_k2_bsz1x128_4epoch
+  run_name: compact-object-box-closed-prefix-denoising-kl-w0p05-k2-bsz1x128-4epoch
+
+prefix_denoising:
+  current_object_kl:
+    weight: 0.05
+    window_radius: 8
+    num_objects_per_image: 2

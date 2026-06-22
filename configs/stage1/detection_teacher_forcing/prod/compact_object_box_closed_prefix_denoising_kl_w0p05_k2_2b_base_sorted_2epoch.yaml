@@ -1,0 +1,34 @@
+extends:
+  - ./compact_object_box_closed_prefix_denoising_kl_w0p05_k2.yaml
+
+# Production launch leaf for prefix-denoising SFT V1 with full schema wrappers.
+#
+# Contract:
+# - start from the natural-adjacent 2B coord base checkpoint in model_cache
+# - train 2 epochs on sorted compact_object_box_closed data
+# - use full wrapper tokens: <|object_ref_end|> and <|box_end|>
+# - keep marker-delimited rows with no "\n" object separator
+# - evaluate on a deterministic 512-row validation subset
+# - keep eval packing disabled: current teacher_forcing guard rejects eval_packing=true
+# - strengthen local next-coordinate KL by using K=2 selected objects per image
+
+training:
+  artifact_subdir: compact_object_box_closed_prefix_denoising_kl_w0p05_k2_2b_base_sorted_bsz1x128_2epoch
+  run_name: compact-object-box-closed-prefix-denoising-kl-w0p05-k2-2b-base-sorted-bsz1x128-2epoch
+  num_train_epochs: 2
+  per_device_train_batch_size: 1
+  effective_batch_size: 128
+  per_device_eval_batch_size: 1
+  dataloader_num_workers: 0
+  dataloader_pin_memory: false
+  dataloader_persistent_workers: false
+  dataloader_prefetch_factor: null
+  eval_packing: false
+  save_delay_steps: 200
+  static_packing_cache:
+    root_dir: /data/CoordExp/outputs/stage1_2b/detection_teacher_forcing/static_packing/compact_object_box_closed_prefix_denoising_2b_base_sorted
+
+debug:
+  # Detection configs currently route {train,val}_sample_limit through debug.
+  enabled: true
+  val_sample_limit: 512

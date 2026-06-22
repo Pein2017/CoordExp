@@ -38,13 +38,15 @@ precompute rebuild. Rank 0 may promote a compatible eligibility cache into the
 current exact-fingerprint directory so other ranks can load the same alias.
 Production cache-root names should stay loss-neutral, for example omitting
 `kl_w0p05`, so CE-only and KL ablations can share the same family cache.
-For `detection_template.id: compact_full`, both the assistant target renderer
-and the user prompt use marker-delimited compact rows: object rows are
-concatenated directly with no `\n` separator.
-Production configs start from:
+For the current full-wrapper retraining target, `detection_template.id` is
+`compact_object_box_closed`. The assistant target renderer emits the full
+schema wrapper tokens `<|object_ref_end|>` and `<|box_end|>`, while preserving
+marker-delimited compact rows: object rows are concatenated directly with no
+`\n` separator.
+Production full-wrapper configs start from:
 
 ```text
-/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent
 ```
 
 The authored leaves also set `model.model_type: qwen3_vl` so cfg-only launch
@@ -52,22 +54,34 @@ checks do not have to infer the local checkpoint family.
 
 Use these leaves for the first launch-health ladder:
 
-- `prod/compact_full_prefix_denoising_kl_w0p05_2b_base_sorted_2epoch.yaml`:
-  production launch leaf for 2B coord-base, sorted compact-full, no-newline
-  marker-delimited rows, 2 epochs, KL weight `0.05`, deterministic
+- `prod/compact_object_box_closed_prefix_denoising_kl_w0p05_k2_2b_base_sorted_2epoch.yaml`:
+  production launch leaf for natural-adjacent 2B coord-base, sorted
+  full-wrapper compact rows, no-newline marker-delimited rows, 2 epochs, KL
+  weight `0.05`, `num_objects_per_image: 2`, deterministic
   `debug.val_sample_limit: 512`, static packing for grouped train sampling,
   shared-memory-safe dataloader settings, and `training.eval_packing: false`.
   Eval packing is intentionally disabled because the current
   `teacher_forcing` schema guard rejects `training.eval_packing=true` until
   exact atom-position packing mapping is implemented for eval.
-- `prod/compact_full_prefix_denoising_ce_only.yaml`: packed clean/noisy hard CE,
+- `prod/compact_object_box_closed_prefix_denoising_kl_w0p05_k2_2b_base_random_4epoch.yaml`:
+  random-permutation full-wrapper variant. Clean and noisy branches share the
+  same sampled object order per image.
+- `prod/compact_object_box_closed_prefix_denoising_ce_only.yaml`: packed
+  clean/noisy hard CE on full-wrapper compact rows,
   with `prefix_denoising.current_object_kl.weight: 0.0`.
-- `prod/compact_full_prefix_denoising_kl_w0p05.yaml`: the same packed CE path
-  plus sparse local coordinate KL with weight `0.05`.
+- `prod/compact_object_box_closed_prefix_denoising_kl_w0p05_k2.yaml`: the same
+  packed CE path plus sparse local coordinate KL with weight `0.05` over two
+  selected objects per image. This strengthens KL coverage across a trajectory
+  instead of increasing the KL scale at one sampled object.
+- The older `prod/compact_full_prefix_denoising_*` leaves remain as historical
+  compact marker-only references and are not the preferred full-wrapper target.
+- `smoke/compact_object_box_closed_prefix_denoising_kl_w0p05_k2_tiny.yaml`:
+  tiny full-wrapper launch-health check for config resolution, packed sidecars,
+  finite CE/KL, and wrapper-token rendering.
 - `smoke/compact_full_prefix_denoising_ce_only_tiny.yaml`: tiny packed CE-only
-  launch check.
+  legacy compact marker-only launch check.
 - `smoke/compact_full_prefix_denoising_kl_w0p05_tiny.yaml`: tiny packed CE+KL
-  launch check.
+  legacy compact marker-only launch check.
 
 The clean baseline is not recreated here. Compare against the existing matched
 or historical clean teacher-forcing artifact, and label that comparison scope

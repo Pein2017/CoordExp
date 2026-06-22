@@ -21,7 +21,7 @@ from src.detection.runtime import (
 def _prefix_denoising_payload() -> dict[str, object]:
     return {
         "model": {
-            "model": "model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp",
+            "model": "model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent",
         },
         "template": {
             "template": "qwen3_vl",
@@ -53,7 +53,7 @@ def _prefix_denoising_payload() -> dict[str, object]:
             "prompt_variant_enabled": True,
         },
         "detection_template": {
-            "id": "compact",
+            "id": "compact_object_box_closed",
             "coordinate_surface": "coord_token",
             "bbox_format": "xyxy",
             "strict_parse": True,
@@ -71,10 +71,17 @@ def _prefix_denoising_payload() -> dict[str, object]:
                 },
                 "compact_structure": {
                     "role": "structural_ce_only",
-                    "tokens": ["<|object_ref_start|>", "<|box_start|>"],
+                    "tokens": [
+                        "<|object_ref_start|>",
+                        "<|object_ref_end|>",
+                        "<|box_start|>",
+                        "<|box_end|>",
+                    ],
                     "expected_ids": {
                         "<|object_ref_start|>": 151646,
+                        "<|object_ref_end|>": 151647,
                         "<|box_start|>": 151648,
+                        "<|box_end|>": 151649,
                     },
                 },
             },
@@ -111,7 +118,7 @@ def _prefix_denoising_payload() -> dict[str, object]:
             "padding_free_packed": False,
         },
         "evaluation": {
-            "expected_template": "compact",
+            "expected_template": "compact_object_box_closed",
             "parser_mode": "strict_expected",
         },
         "validation": {
@@ -199,22 +206,24 @@ def test_prefix_denoising_compact_prompt_matches_marker_delimited_rows() -> None
     assert "single newline" not in user_prompt
 
 
-def test_prefix_denoising_production_leaf_resolves_base_sorted_val512() -> None:
+def test_prefix_denoising_wrapper_production_leaf_resolves_base_sorted_val512() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     payload = ConfigLoader.load_yaml_with_extends(
         str(
             repo_root
             / "configs/stage1/detection_teacher_forcing/prod/"
-            "compact_full_prefix_denoising_kl_w0p05_2b_base_sorted_2epoch.yaml"
+            "compact_object_box_closed_prefix_denoising_kl_w0p05_k2_2b_base_sorted_2epoch.yaml"
         )
     )
     cfg = _load(payload)
 
     assert (
         cfg.model["model"]
-        == "/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp"
+        == "/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent"
     )
     assert cfg.model.get("adapters") in (None, [])
+    assert cfg.detection_template.id == "compact_object_box_closed"
+    assert cfg.evaluation.expected_template == "compact_object_box_closed"
     assert cfg.training["num_train_epochs"] == 2
     assert cfg.training["dataloader_num_workers"] == 0
     assert cfg.training["dataloader_pin_memory"] is False
@@ -225,30 +234,34 @@ def test_prefix_denoising_production_leaf_resolves_base_sorted_val512() -> None:
     assert cfg.debug.enabled is True
     assert cfg.debug.val_sample_limit == 512
     assert cfg.prefix_denoising.current_object_kl.weight == pytest.approx(0.05)
+    assert cfg.prefix_denoising.current_object_kl.num_objects_per_image == 2
 
 
-def test_prefix_denoising_production_leaf_resolves_base_random_4epoch_val512() -> None:
+def test_prefix_denoising_wrapper_production_leaf_resolves_base_random_4epoch_val512() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     payload = ConfigLoader.load_yaml_with_extends(
         str(
             repo_root
             / "configs/stage1/detection_teacher_forcing/prod/"
-            "compact_full_prefix_denoising_kl_w0p05_2b_base_random_4epoch.yaml"
+            "compact_object_box_closed_prefix_denoising_kl_w0p05_k2_2b_base_random_4epoch.yaml"
         )
     )
     cfg = _load(payload)
 
     assert (
         cfg.model["model"]
-        == "/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp"
+        == "/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent"
     )
     assert cfg.model.get("adapters") in (None, [])
+    assert cfg.detection_template.id == "compact_object_box_closed"
+    assert cfg.evaluation.expected_template == "compact_object_box_closed"
     assert cfg.training["num_train_epochs"] == 4
     assert cfg.training["eval_packing"] is False
     assert cfg.data.object_ordering == "random_permutation"
     assert cfg.debug.enabled is True
     assert cfg.debug.val_sample_limit == 512
     assert cfg.prefix_denoising.current_object_kl.weight == pytest.approx(0.05)
+    assert cfg.prefix_denoising.current_object_kl.num_objects_per_image == 2
     assert "random" in cfg.training["run_name"]
 
 
