@@ -62,6 +62,73 @@ def test_artifact_contract_docs_freeze_rank0_and_stage2_eval_surfaces() -> None:
         assert diagnostic_surface in artifacts
 
 
+def test_coverage_ledger_launch_prep_docs_freeze_smoke_artifacts_and_metrics() -> None:
+    stage1 = (REPO_ROOT / "docs" / "training" / "STAGE1_OBJECTIVE.md").read_text(
+        encoding="utf-8"
+    )
+    metrics = (REPO_ROOT / "docs" / "training" / "METRICS.md").read_text(
+        encoding="utf-8"
+    )
+    artifacts = (REPO_ROOT / "docs" / "ARTIFACTS.md").read_text(encoding="utf-8")
+    research_index = (
+        REPO_ROOT / "research" / "ideas" / "ledger-auxiliary-loss" / "index.md"
+    ).read_text(encoding="utf-8")
+
+    assert "closed-wrapper hard-SFT ledger smoke route" in stage1
+    assert (
+        "configs/stage1/detection_teacher_forcing/smoke/"
+        "coverage_ledger_closed_hard_sft_128_baseline.yaml"
+    ) in stage1
+    assert (
+        "configs/stage1/detection_teacher_forcing/smoke/"
+        "coverage_ledger_closed_hard_sft_128.yaml"
+    ) in stage1
+    assert "launch-prep / not-yet-run" in stage1
+    assert "missing local assets" in stage1
+    assert "Do not launch tiny smoke training" in stage1
+
+    for metric_key in (
+        "teacher_forcing/loss/coverage_ledger_auxiliary_weighted",
+        "teacher_forcing/ledger/coverage_bce",
+        "teacher_forcing/ledger/region_anchor_positive",
+        "teacher_forcing/ledger/coverage_auc",
+        "teacher_forcing/ledger/coverage_accuracy",
+        "teacher_forcing/ledger/coverage_state_count",
+        "teacher_forcing/ledger/coverage_pair_count",
+        "teacher_forcing/ledger/object_count",
+        "teacher_forcing/ledger/region_anchor_pair_count",
+    ):
+        assert metric_key in metrics
+
+    assert "Reducer summary for coverage-ledger keys" in metrics
+    assert "weighted_mean" in metrics
+    assert "ratio" in metrics
+    assert "sum" in metrics
+    assert "diagnostic_only=true" in metrics
+    assert "diagnostic_only=false" in metrics
+
+    for artifact_name in (
+        "ledger/selected_samples.json",
+        "ledger/alignment_debug.jsonl",
+        "ledger/overlays/",
+    ):
+        assert artifact_name in artifacts
+
+    assert "Smoke launch status: launch-prep / not-yet-run" in artifacts
+    assert "all-128 `ledger/alignment_debug.jsonl`" in artifacts
+    assert "16 overlays" in artifacts
+    assert "baseline and ledger config diff remains allowlisted" in artifacts
+    assert "ledger metrics appear in train logs" in artifacts
+    assert "runtime-cost confirmation" in artifacts
+
+    assert (
+        "../../../docs/superpowers/plans/"
+        "2026-06-23-coverage-ledger-auxiliary-loss.md"
+    ) in research_index
+    assert "OpenSpec is deferred" in research_index
+    assert "not current stable behavior" in research_index
+
+
 def test_stage2_rollout_correction_spec_rejects_removed_scheduler_and_channel_keys() -> None:
     spec = (
         REPO_ROOT / "openspec" / "specs" / "stage2-rollout-correction" / "spec.md"

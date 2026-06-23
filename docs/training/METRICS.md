@@ -218,6 +218,20 @@ Canonical coverage-ledger auxiliary keys:
 - `teacher_forcing/ledger/object_count`
 - `teacher_forcing/ledger/region_anchor_pair_count`
 
+Reducer summary for coverage-ledger keys:
+
+| Key | Reducer | Diagnostic flag | Denominator / aggregation |
+| --- | --- | --- | --- |
+| `teacher_forcing/loss/coverage_ledger_auxiliary_weighted` | `weighted_mean` | `diagnostic_only=false` | `coverage_pair_count + region_anchor_pair_count`; cross-batch aggregation is count-weighted. |
+| `teacher_forcing/ledger/coverage_bce` | `weighted_mean` | `diagnostic_only=true` | Valid coverage pairs; cross-batch aggregation is count-weighted. |
+| `teacher_forcing/ledger/region_anchor_positive` | `weighted_mean` | `diagnostic_only=true` | Valid current-row region-anchor pairs; cross-batch aggregation is count-weighted. |
+| `teacher_forcing/ledger/coverage_auc` | `ratio` | `diagnostic_only=true` | Comparable positive-negative coverage pairs `n_pos * n_neg`; omitted when no comparable pairs exist. |
+| `teacher_forcing/ledger/coverage_accuracy` | `ratio` | `diagnostic_only=true` | Correct thresholded coverage predictions divided by valid coverage pairs. |
+| `teacher_forcing/ledger/coverage_state_count` | `sum` | `diagnostic_only=true` | Sums observed coverage-state spans. |
+| `teacher_forcing/ledger/coverage_pair_count` | `sum` | `diagnostic_only=true` | Sums observed coverage pairs. |
+| `teacher_forcing/ledger/object_count` | `sum` | `diagnostic_only=true` | Sums observed objects. |
+| `teacher_forcing/ledger/region_anchor_pair_count` | `sum` | `diagnostic_only=true` | Sums observed region-anchor pairs. |
+
 `teacher_forcing/loss/coverage_ledger_auxiliary_weighted` is the only
 objective-relevant coverage-ledger metric (`diagnostic_only=false`). It uses a
 weighted-mean reducer whose denominator is

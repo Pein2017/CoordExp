@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: training
 summary: Stage-1 objective surfaces and coord-token training behavior.
-updated: 2026-05-25
+updated: 2026-06-23
 ---
 
 # Coord Objective & Adapter
@@ -101,6 +101,43 @@ Cleanup boundary:
   compatibility readers, or absence tests only.
 - Continue-vs-EOS probes remain diagnostic-only and must not be converted into
   production training mechanisms.
+
+## Experimental Closed-Wrapper Hard-SFT Ledger Smoke Route
+
+The experimental closed-wrapper hard-SFT ledger smoke route is a launch-prep /
+not-yet-run Stage-1 route for the coverage-ledger auxiliary loss. It is a
+paired smoke comparison, not a production default and not validation evidence.
+
+Config pair:
+
+- Baseline:
+  `configs/stage1/detection_teacher_forcing/smoke/coverage_ledger_closed_hard_sft_128_baseline.yaml`
+- Ledger:
+  `configs/stage1/detection_teacher_forcing/smoke/coverage_ledger_closed_hard_sft_128.yaml`
+
+Both configs use `pipeline.id: stage1_research_teacher_forcing`,
+`detection_template.id: compact_object_box_closed`, `objective.profile:
+hard_sft`, per-device train batch size 1, no packing, no static packing, and no
+padding-free packing. The ledger config additionally enables
+`objective.terms.coverage_ledger`; the baseline keeps the term present but
+disabled so resolved-config comparison can stay narrow and allowlisted.
+
+The gated preflight command is:
+
+```bash
+python scripts/training/coverage_ledger_preflight.py \
+  --config configs/stage1/detection_teacher_forcing/smoke/coverage_ledger_closed_hard_sft_128.yaml \
+  --baseline-config configs/stage1/detection_teacher_forcing/smoke/coverage_ledger_closed_hard_sft_128_baseline.yaml \
+  --output-root temp/coverage_ledger_preflight_smoke
+```
+
+Current status in this worktree is launch-prep / not-yet-run. Do not claim a
+successful real preflight or smoke run from this state: the full local preflight
+requires missing local assets, including
+`public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl` and local model
+cache `model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp`.
+Do not launch tiny smoke training until the user gives runtime-cost
+confirmation and the preflight assets are complete.
 
 ## Current Mechanism Note (Interpretation, Not Stable Contract)
 

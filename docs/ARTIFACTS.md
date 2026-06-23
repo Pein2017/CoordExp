@@ -5,7 +5,7 @@ doc_type: artifacts-reference
 status: canonical
 domain: repo
 summary: Runtime artifacts, logging controls, and provenance surfaces.
-updated: 2026-05-16
+updated: 2026-06-23
 ---
 
 # Artifacts & Provenance
@@ -54,6 +54,24 @@ preflight output root before any training starts:
 - `ledger/overlays/index.json`
   - Index of the 16 overlay files, including their source sample IDs, source
     object indices, emitted object indices, and template ID.
+
+Smoke launch status: launch-prep / not-yet-run. These artifacts describe the
+required preflight and later approved smoke packet; they do not imply a
+successful local preflight or training run. Tiny smoke training still requires
+runtime-cost confirmation and complete local dataset/model assets.
+
+When the smoke run is later approved and executed, required post-run checks are:
+
+- both baseline and ledger runs contain `resolved_config.json`
+- both baseline and ledger runs contain `effective_runtime.json`
+- both baseline and ledger runs contain `experiment_manifest.json`
+- both baseline and ledger runs contain `run_metadata.json`
+- both baseline and ledger runs contain `train_data_provenance.json`
+- the ledger run contains `ledger/selected_samples.json`
+- the ledger run contains all-128 `ledger/alignment_debug.jsonl`
+- the ledger run contains 16 overlays under `ledger/overlays/`
+- ledger metrics appear in train logs
+- baseline and ledger config diff remains allowlisted
 
 ## Non-Code Asset Ownership
 
