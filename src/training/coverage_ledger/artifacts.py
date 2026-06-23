@@ -27,7 +27,7 @@ class CoverageLedgerOverlayCandidate:
     row_index: int
     object_entry: CoverageLedgerObjectEntry
     visual_region: VisualTokenRegion
-    image_path: Path
+    render_image_path: Path
 
 
 @dataclass(frozen=True, slots=True)
@@ -247,7 +247,7 @@ def _write_overlays(
         grid_rows, grid_cols = grid_shapes_by_sample_id[candidate.sample_id]
         overlay_path = overlays_root / f"overlay_{overlay_index:04d}.png"
         _render_overlay(
-            image_path=candidate.image_path,
+            image_path=candidate.render_image_path,
             output_path=overlay_path,
             sidecar=sidecar,
             object_entry=candidate.object_entry,

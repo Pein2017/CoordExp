@@ -2,21 +2,28 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any, Mapping
 
 from PIL import Image
 
 from src.config.loader import ConfigLoader
+from src.detection.dataset import DetectionTrainingDataset
 from src.training.coverage_ledger.artifacts import (
     CoverageLedgerOverlayCandidate,
     CoverageLedgerPreflightArtifactInputs,
     write_coverage_ledger_preflight_artifacts,
 )
-from src.training.coverage_ledger.preflight import assert_smoke_config_diff_allowed
+from src.training.coverage_ledger.preflight import (
+    assert_smoke_config_diff_allowed,
+    resolve_overlay_render_image_path,
+)
 from src.training.coverage_ledger.sidecars import (
     CoverageLedgerObjectEntry,
     CoverageLedgerSidecar,
 )
+from src.training.sidecars import TrainingSidecars
 from src.training.coverage_ledger.visual_regions import VisualTokenRegion
+from test_detection_training_dataset import FakeSwiftTemplate, _raw_row, _write_jsonl
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -112,7 +119,7 @@ def _make_artifact_inputs(tmp_path: Path) -> CoverageLedgerPreflightArtifactInpu
                     row_index=index,
                     object_entry=sidecar.object_entries[0],
                     visual_region=region,
-                    image_path=image_path,
+                    render_image_path=image_path,
                 )
             )
     return CoverageLedgerPreflightArtifactInputs(
@@ -202,3 +209,57 @@ def test_preflight_enforces_smoke_config_diff_allowlist() -> None:
     ledger = ConfigLoader.load_materialized_training_config(str(LEDGER_CONFIG))
 
     assert_smoke_config_diff_allowed(baseline, ledger)
+
+
+class _ImageGridSwiftTemplate(FakeSwiftTemplate):
+    def encode(
+        self,
+        payload: Mapping[str, Any],
+        *,
+        return_length: bool,
+        do_resize: bool | None = None,
+    ) -> dict[str, Any]:
+        encoded = super().encode(payload, return_length=return_length)
+        encoded["image_grid_thw"] = (1, 8, 8)
+        return encoded
+
+
+def test_preflight_overlay_render_path_uses_resolved_dataset_image_path(
+    tmp_path: Path,
+) -> None:
+    row = _raw_row()
+    row["file_name"] = "images/train2017/example.jpg"
+    row["images"] = ["images/train2017/example.jpg"]
+    jsonl_path = tmp_path / "train.coord.jsonl"
+    _write_jsonl(jsonl_path, [row])
+    image_path = tmp_path / "image-root/images/train2017/example.jpg"
+    image_path.parent.mkdir(parents=True)
+    Image.new("RGB", (640, 480), color=(245, 245, 245)).save(image_path)
+
+    dataset = DetectionTrainingDataset.from_jsonl(
+        jsonl_path,
+        swift_template=_ImageGridSwiftTemplate(),
+        image_root=tmp_path / "image-root",
+        detection_template_id="compact_object_box_closed",
+        mode="random_order_sft",
+        object_ordering="sorted",
+        user_prompt="Detect every object.",
+        system_prompt="You are a detector.",
+        seed=20260623,
+        state_weighting="uniform_permutation",
+        normalization="semantic_image_bucket_balanced",
+        object_field_order="desc_first",
+        teacher_forcing_profile="hard_sft",
+        teacher_forcing_rollin_base_seed=17,
+        coverage_ledger_enabled=True,
+        dataset_name="unit",
+    )
+
+    sample = dataset[0]
+    training_sidecars = sample["training_sidecars"]
+    assert isinstance(training_sidecars, TrainingSidecars)
+    sidecar = training_sidecars.supervision.payloads[0]
+    assert isinstance(sidecar, CoverageLedgerSidecar)
+    assert sidecar.image_identity == "images/train2017/example.jpg"
+
+    assert resolve_overlay_render_image_path(sample) == image_path.resolve()

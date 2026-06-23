@@ -162,7 +162,7 @@ def run_coverage_ledger_preflight(
                     row_index=int(row_index),
                     object_entry=entry,
                     visual_region=region,
-                    image_path=Path(sidecar.image_identity),
+                    render_image_path=resolve_overlay_render_image_path(sample),
                 )
             )
 
@@ -281,6 +281,31 @@ def resolve_visual_grid_geometry(swift_template: Any) -> tuple[int, int]:
     return int(patch_size), int(spatial_merge_size)
 
 
+def resolve_overlay_render_image_path(sample: Mapping[str, Any]) -> Path:
+    """Return the resolved image path from the dataset-rendered chat messages."""
+
+    messages = sample.get("messages")
+    if not isinstance(messages, Sequence) or isinstance(messages, (str, bytes)):
+        raise ValueError("coverage ledger overlay preflight requires sample messages")
+    for message in messages:
+        if not isinstance(message, Mapping) or message.get("role") != "user":
+            continue
+        content = message.get("content")
+        if not isinstance(content, Sequence) or isinstance(content, (str, bytes)):
+            continue
+        for item in content:
+            if (
+                isinstance(item, Mapping)
+                and item.get("type") == "image"
+                and isinstance(item.get("image"), str)
+                and str(item.get("image")).strip()
+            ):
+                return Path(str(item["image"])).expanduser().resolve(strict=True)
+    raise ValueError(
+        "coverage ledger overlay preflight could not find a resolved user image path"
+    )
+
+
 def _load_detection_config(path: str | Path) -> DetectionTrainingConfig:
     cfg = ConfigLoader.load_materialized_training_config(str(path))
     if not isinstance(cfg, DetectionTrainingConfig):
@@ -386,6 +411,7 @@ __all__ = [
     "CoverageLedgerPreflightResult",
     "assert_smoke_config_diff_allowed",
     "build_preflight_swift_template",
+    "resolve_overlay_render_image_path",
     "resolve_visual_grid_geometry",
     "run_coverage_ledger_preflight",
     "select_preflight_row_indices",
