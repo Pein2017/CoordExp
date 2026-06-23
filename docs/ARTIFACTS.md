@@ -30,6 +30,31 @@ start with:
 
 ---
 
+## Stage-1 Coverage-Ledger Preflight Artifacts
+
+The coverage-ledger smoke preflight writes a strict debug tree under the chosen
+preflight output root before any training starts:
+
+- `ledger/selected_samples.json`
+  - Manifest for the 128 selected training rows. It records the source JSONL
+    path and SHA-256, dataset/split identity, selected row indices and sample
+    IDs, selection seed and algorithm, template and object-field order,
+    tokenizer/model identity, `processor_do_resize`, image-grid metadata
+    version, and per-sample processed image/grid metadata.
+- `ledger/alignment_debug.jsonl`
+  - One line per selected sample. Each line records the prompt end position,
+    each object row's `<|object_ref_end|>`, `<|box_start|>`, coordinate token
+    positions, `<|box_end|>`, norm-1000 bbox, mapped visual-token cells, and
+    strict alignment status. Passing V0 preflights have exactly 128 lines with
+    `failure_status: "ok"`.
+- `ledger/overlays/`
+  - Sixteen PNG overlays for smoke inspection. Each overlay renders the original
+    image with the GT bbox, mapped visual-token cell rectangle, sample ID,
+    object index, and template ID.
+- `ledger/overlays/index.json`
+  - Index of the 16 overlay files, including their source sample IDs, source
+    object indices, emitted object indices, and template ID.
+
 ## Non-Code Asset Ownership
 
 CoordExp separates large non-code assets by whether they are recoverable,
