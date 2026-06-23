@@ -6,13 +6,17 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from src.objective_ids import (
+    LEGACY_TEACHER_FORCING_OBJECTIVE_ID,
+    TEACHER_FORCING_OBJECTIVE_ID,
+)
 from src.training_runtime.plan import (
     TrainingRuntimePlan,
     resolve_training_runtime_plan,
 )
 
 TEACHER_FORCING_EPOCH_VARYING_ROLLIN_BYPASS_REASON = (
-    "teacher_forcing_epoch_varying_rollin"
+    "research_teacher_forcing_epoch_varying_rollin"
 )
 
 
@@ -42,9 +46,7 @@ def collect_training_runtime_preflight(
 ) -> TrainingRuntimePreflightResult:
     """Collect runtime preflight diagnostics without raising eligibility errors."""
 
-    plan = runtime_plan or resolve_training_runtime_plan(
-        _read_path(config, ("custom", "trainer_variant"))
-    )
+    plan = _resolve_runtime_plan_for_preflight(config, runtime_plan=runtime_plan)
     encoded_cache_cfg = _encoded_cache_config(config)
     bypass_reason = None
     allowed = encoded_cache_cfg.enabled
@@ -62,6 +64,25 @@ def collect_training_runtime_preflight(
             bypass_reason=bypass_reason,
             namespace=encoded_cache_cfg.namespace,
         ),
+    )
+
+
+def _resolve_runtime_plan_for_preflight(
+    config: Any,
+    *,
+    runtime_plan: TrainingRuntimePlan | None,
+) -> TrainingRuntimePlan:
+    if runtime_plan is not None:
+        return runtime_plan
+
+    pipeline_id = _read_path(config, ("pipeline", "id"))
+    if pipeline_id in {"stage1_standard_sft", "stage1_research_teacher_forcing"}:
+        return resolve_training_runtime_plan(None)
+    if pipeline_id == "stage2_rollout_correction":
+        return resolve_training_runtime_plan("stage2_rollout_correction")
+
+    return resolve_training_runtime_plan(
+        _read_path(config, ("custom", "trainer_variant"))
     )
 
 
@@ -85,7 +106,7 @@ def validate_training_runtime_preflight(
         and result.encoded_cache.ineligible_policy == "error"
     ):
         raise ValueError(
-            "teacher_forcing encoded training cache is unsupported for v1 "
+            "research_teacher_forcing encoded training cache is unsupported for v1 "
             "epoch-varying random roll-in because atom positions change across "
             "epochs; bypass_reason="
             f"{TEACHER_FORCING_EPOCH_VARYING_ROLLIN_BYPASS_REASON}"
@@ -98,7 +119,11 @@ def _validate_teacher_forcing_stage2_packing(
     *,
     runtime_plan: TrainingRuntimePlan,
 ) -> None:
-    if _read_path(config, ("objective", "id")) != "teacher_forcing":
+    objective_id = _read_path(config, ("objective", "id"))
+    if objective_id not in {
+        TEACHER_FORCING_OBJECTIVE_ID,
+        LEGACY_TEACHER_FORCING_OBJECTIVE_ID,
+    }:
         return
     if runtime_plan.variant != "stage2_rollout_correction":
         return
@@ -107,16 +132,17 @@ def _validate_teacher_forcing_stage2_packing(
     training = _read_path(config, ("training",))
     if bool(_read_value(training, "packing")):
         raise ValueError(
-            "objective.id=teacher_forcing with custom.trainer_variant="
-            "stage2_rollout_correction rejects training.packing=true before rollout "
-            "setup or model forward; exact atom-position packing mapping is not "
-            "implemented. Set training.packing=false for teacher_forcing."
+            f"objective.id={objective_id} with "
+            "pipeline.id=stage2_rollout_correction rejects "
+            "training.packing=true before rollout setup or model forward; "
+            "exact atom-position packing mapping is not implemented. Set "
+            f"training.packing=false for {objective_id}."
         )
 
 
 def _is_epoch_varying_teacher_forcing_rollin(config: Any) -> bool:
     objective_id = _read_path(config, ("objective", "id"))
-    if objective_id != "teacher_forcing":
+    if objective_id != TEACHER_FORCING_OBJECTIVE_ID:
         return False
     rollin_policy = _read_path(
         config,

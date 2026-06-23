@@ -13,7 +13,7 @@ updated: 2026-06-15
 Note:
 - This guide applies to baseline SFT runs (stage_1 style) where training uses standard
   padding/packing dataset wrappers.
-- Stage-2 rollout-correction training (`custom.trainer_variant:
+- Stage-2 rollout-correction training (`pipeline.id:
   stage2_rollout_correction`) supports **post-rollout packing inside the
   trainer** when `training.packing: true`:
   - rollout generation remains un-packed (padded batch),

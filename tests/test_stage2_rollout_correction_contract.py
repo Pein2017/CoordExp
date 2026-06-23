@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from src.config.loader import ConfigLoader
-from src.config.schema import TrainingConfig
+from src.config.schema import DetectionTrainingConfig, TrainingConfig
 from src.training_runtime.plan import resolve_training_runtime_plan
 from src.training_runtime.profile import resolve_training_runtime_profile
 
@@ -72,6 +72,74 @@ def _base_payload() -> dict:
             "correction": {},
         },
     }
+
+
+def _target_hierarchy_payload() -> dict:
+    payload = {
+        "global_max_length": 12000,
+        "model": {"model": "toy-model"},
+        "template": {"template": "qwen3_vl", "max_length": 12000},
+        "pipeline": {"id": "stage2_rollout_correction"},
+        "sample_factory": {
+            "id": "detection_sequence",
+            "target_sequence": {
+                "task_family": "detection",
+                "object_ordering": "sorted",
+                "object_field_order": "desc_first",
+                "bbox_format": "xyxy",
+                "coordinate_surface": "coord_token",
+                "strict_parse": True,
+            },
+        },
+        "data": {
+            "train_jsonl": "toy/train.jsonl",
+            "val_jsonl": "toy/val.jsonl",
+        },
+        "prompt": {
+            "system_variant": "stage1_detection",
+            "user_variant": "stage1_detection",
+        },
+        "detection_template": {"id": "stage1_json_pretty"},
+        "token_embeddings_adapter": {
+            "enabled": True,
+            "tie_head": True,
+            "groups": {
+                "coord_geometry": {
+                    "role": "coord_geometry",
+                    "start_token": "<|coord_0|>",
+                    "end_token": "<|coord_999|>",
+                    "expected_start": 151670,
+                    "expected_end": 152669,
+                },
+            },
+        },
+        "packing": {"static_packing": False, "padding_free_packed": False},
+        "evaluation": {
+            "expected_template": "stage1_json_pretty",
+            "parser_mode": "strict_expected",
+        },
+        "validation": {
+            "validate_span_alignment": True,
+            "validate_template_capabilities": True,
+            "fail_fast": True,
+        },
+        "training": {
+            "per_device_train_batch_size": 1,
+            "effective_batch_size": 1,
+            "packing": True,
+        },
+        "rollout_matching": {
+            "rollout_backend": "hf",
+            "eval_rollout_backend": "hf",
+            "rollout_decode_batch_size": 1,
+            "eval_decode_batch_size": 1,
+        },
+        "stage2_rollout_correction": {
+            "pipeline": _rollout_correction_pipeline(),
+            "correction": {},
+        },
+    }
+    return payload
 
 
 def _load(payload: dict) -> TrainingConfig:
@@ -161,12 +229,21 @@ def test_stage2_rollout_correction_rejects_ab_era_keys(
 
 
 def test_minimal_stage2_rollout_correction_config_loads() -> None:
-    cfg = _load(_base_payload())
+    cfg = DetectionTrainingConfig.from_mapping(_target_hierarchy_payload())
 
-    assert cfg.custom.trainer_variant == "stage2_rollout_correction"
+    assert cfg.pipeline.id == "stage2_rollout_correction"
+    assert cfg.objective is None
     assert cfg.stage2_rollout_correction.pipeline.objective[0].name == (
         "residual_set_correction"
     )
     assert cfg.stage2_rollout_correction.correction.rollout_template_family == (
         "coordjson"
     )
+
+
+def test_stage2_rollout_correction_rejects_legacy_custom_selector() -> None:
+    raw = _target_hierarchy_payload()
+    raw["custom"] = {"trainer_variant": "stage2_rollout_correction"}
+
+    with pytest.raises(ValueError, match=r"custom\.trainer_variant.*pipeline\.id"):
+        DetectionTrainingConfig.from_mapping(raw)

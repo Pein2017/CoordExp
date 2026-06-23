@@ -1,6 +1,7 @@
 extends: ../base.yaml
 
 experiment:
+  surface: production
   title: Stage-2 rollout-correction COCO1024 vLLM tail-append production profile
   purpose: >
     Train the unified Stage-2 residual rollout prefix plus GT correction objective
@@ -12,7 +13,8 @@ experiment:
     - Uses the canonical residual_set_correction objective only.
     - Uses tail_append ordering for recovered GT objects.
   runtime_settings:
-    - "custom.trainer_variant: stage2_rollout_correction"
+    - "pipeline.id: stage2_rollout_correction"
+    - "detection_template.id: stage1_json_pretty"
     - "rollout_matching.vllm.sync.mode: adapter"
 
 training:
@@ -25,12 +27,6 @@ training:
   learning_rate: 1.0e-5
   vit_lr: 1.0e-5
   aligner_lr: 5.0e-5
-
-custom:
-  train_jsonl: public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
-  val_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
-  detection_sequence_format: coordjson
-  object_field_order: desc_first
 
 stage2_rollout_correction:
   pipeline:

@@ -1,5 +1,6 @@
 """Pure YAML config loader - directly instantiates ms-swift objects"""
 
+import copy
 import logging
 import math
 from dataclasses import fields
@@ -19,9 +20,11 @@ from src.common.object_field_order import (
 )
 from src.common.geometry.bbox_parameterization import normalize_bbox_format
 from src.common.detection_sequence import (
+    COMPACT_FULL_FORMAT,
     COORDJSON_FORMAT,
     normalize_detection_sequence_format,
 )
+from src.training.pipeline_registry import TrainingPipelineRegistry
 
 from .prompts import (
     SYSTEM_PROMPT_SUMMARY,
@@ -393,15 +396,94 @@ class ConfigLoader:
         object_field_order: str | None = None
         bbox_format: str = "xyxy"
         prompt_variant: Optional[str] = None
-        bbox_format: str = "xyxy"
         detection_sequence_format = COORDJSON_FORMAT
         detection_template_id: Optional[str] = None
+        coord_tokens_enabled = True
+
+        sample_factory = config.get("sample_factory")
+        if sample_factory is not None:
+            if not isinstance(sample_factory, dict):
+                raise TypeError("sample_factory section must be a mapping")
+            target_sequence = sample_factory.get("target_sequence")
+            if not isinstance(target_sequence, dict):
+                raise TypeError(
+                    "sample_factory.target_sequence must be a mapping"
+                )
+            ordering_raw = target_sequence.get("object_ordering", "sorted")
+            ordering_hint = (
+                "random"
+                if ordering_raw == "random_permutation"
+                else normalize_object_ordering(
+                    ordering_raw,
+                    path="sample_factory.target_sequence.object_ordering",
+                )
+            )
+            object_field_order = normalize_object_field_order(
+                target_sequence.get("object_field_order", "desc_first"),
+                path="sample_factory.target_sequence.object_field_order",
+            )
+            bbox_format = normalize_bbox_format(
+                target_sequence.get("bbox_format", "xyxy"),
+                path="sample_factory.target_sequence.bbox_format",
+            )
+            detection_template = config.get("detection_template") or {}
+            if not isinstance(detection_template, dict):
+                raise TypeError("detection_template section must be a mapping")
+            detection_template_id_raw = detection_template.get("id")
+            detection_template_id = (
+                None
+                if detection_template_id_raw is None
+                else str(detection_template_id_raw)
+            )
+            if detection_template_id is not None:
+                from src.detection.template_contracts import (
+                    resolve_detection_template_contract,
+                )
+
+                contract = resolve_detection_template_contract(detection_template_id)
+                detection_sequence_format = (
+                    COMPACT_FULL_FORMAT if contract.is_compact else COORDJSON_FORMAT
+                )
+            prompt = config.get("prompt") or {}
+            if not isinstance(prompt, dict):
+                raise TypeError("prompt section must be a mapping")
+            if "prompt_variant_enabled" in prompt:
+                raise ValueError(
+                    "prompt.prompt_variant_enabled is retired; use prompt.variant"
+                )
+            prompt_variant_raw = prompt.get("variant")
+            if prompt_variant_raw is not None and not isinstance(prompt_variant_raw, str):
+                raise TypeError("prompt.variant must be a string when provided")
+            prompt_variant = prompt_variant_raw
 
         custom_section = config.get("custom")
         if custom_section is not None:
             if not isinstance(custom_section, dict):
                 raise TypeError(
                     "custom section must be a mapping when resolving prompts"
+                )
+            if sample_factory is not None:
+                extra_cfg = custom_section.get("extra")
+                if isinstance(extra_cfg, dict) and "prompt_variant" in extra_cfg:
+                    raise ValueError(
+                        "custom.extra.prompt_variant is retired; use prompt.variant"
+                    )
+                guidance = (
+                    ("detection_template_id", "detection_template.id"),
+                    ("detection_sequence_format", "sample_factory.id"),
+                    ("object_ordering", "sample_factory.target_sequence.object_ordering"),
+                    (
+                        "object_field_order",
+                        "sample_factory.target_sequence.object_field_order",
+                    ),
+                )
+                for key, new_path in guidance:
+                    if key in custom_section:
+                        raise ValueError(f"custom.{key} is retired; use {new_path}")
+                raise ValueError(
+                    "custom is obsolete for target-hierarchy detection prompt "
+                    "resolution; use prompt.variant, "
+                    "sample_factory.target_sequence, and detection_template.id"
                 )
             if "summary_ratio" in custom_section:
                 raise ValueError(
@@ -524,6 +606,17 @@ class ConfigLoader:
         )
 
     @staticmethod
+    def _runtime_trainer_variant_for_config(
+        config: TrainingConfig | DetectionTrainingConfig,
+    ) -> str | None:
+        if isinstance(config, DetectionTrainingConfig):
+            pipeline_id = getattr(getattr(config, "pipeline", None), "id", None)
+            if pipeline_id == "stage2_rollout_correction":
+                return "stage2_rollout_correction"
+            return None
+        return str(getattr(config.custom, "trainer_variant", "") or "") or None
+
+    @staticmethod
     def build_train_arguments(config: TrainingConfig | DetectionTrainingConfig) -> TrainArguments:
         """Directly instantiate TrainArguments from config.
 
@@ -546,6 +639,7 @@ class ConfigLoader:
             Fully initialized TrainArguments object
         """
         is_detection = isinstance(config, DetectionTrainingConfig)
+        runtime_trainer_variant = ConfigLoader._runtime_trainer_variant_for_config(config)
         model_section = dict(config.model)
         quant_section = dict(config.quantization)
         data_section = (
@@ -616,10 +710,7 @@ class ConfigLoader:
         # Stage-2 rollout correction standardizes step semantics around a true
         # (exact) global effective batch.
         is_stage2_rollout_correction = bool(
-            not is_detection
-            and
-            str(getattr(getattr(config, "custom", None), "trainer_variant", "") or "")
-            == "stage2_rollout_correction"
+            runtime_trainer_variant == "stage2_rollout_correction"
         )
 
         effective_batch_size = training_section.pop("effective_batch_size", None)
@@ -773,9 +864,9 @@ class ConfigLoader:
                 "Unable to attach save_last_epoch to TrainArguments; ensure ms-swift exposes this attribute."
             ) from exc
 
-        if not is_detection and config.custom.trainer_variant:
+        if runtime_trainer_variant:
             try:
-                setattr(train_args, "trainer_variant", config.custom.trainer_variant)
+                setattr(train_args, "trainer_variant", runtime_trainer_variant)
             except (AttributeError, TypeError) as exc:  # pragma: no cover - explicit failure
                 raise RuntimeError(
                     "Unable to attach trainer_variant to TrainArguments; update ms-swift if interface changed."
@@ -858,7 +949,11 @@ class ConfigLoader:
         raw_config: Dict[str, Any], prompts: PromptOverrides
     ) -> TrainingConfig | DetectionTrainingConfig:
         if ConfigLoader._is_detection_training_config_payload(raw_config):
-            return DetectionTrainingConfig.from_mapping(raw_config)
+            detection_config = ConfigLoader._sanitize_detection_training_config_payload(
+                raw_config
+            )
+            TrainingPipelineRegistry().resolve(detection_config)
+            return DetectionTrainingConfig.from_mapping(detection_config)
         try:
             return TrainingConfig.from_mapping(raw_config, prompts)
         except TypeError as exc:
@@ -867,8 +962,79 @@ class ConfigLoader:
             ) from exc
 
     @staticmethod
+    def _sanitize_detection_training_config_payload(
+        raw_config: Mapping[str, Any],
+    ) -> Dict[str, Any]:
+        config = copy.deepcopy(dict(raw_config))
+        custom = config.pop("custom", None)
+        if custom is not None:
+            if not isinstance(custom, Mapping):
+                raise TypeError("custom must be a mapping when provided")
+            allowed_universal_residue = {
+                "json_format",
+                "emit_norm",
+                "dump_conversation_path",
+            }
+            retired_guidance = {
+                "trainer_variant": "pipeline.id",
+                "object_ordering": "sample_factory.target_sequence.object_ordering",
+                "object_field_order": "sample_factory.target_sequence.object_field_order",
+                "detection_template_id": "detection_template.id",
+                "detection_sequence_format": "sample_factory.id",
+                "token_embeddings_adapter": "token_embeddings_adapter",
+            }
+            for key, new_path in retired_guidance.items():
+                if key in custom:
+                    raise ValueError(f"custom.{key} is retired; use {new_path}")
+            unknown_custom = sorted(set(custom) - allowed_universal_residue)
+            if unknown_custom:
+                rendered = [f"custom.{key}" for key in unknown_custom]
+                raise ValueError(
+                    "custom is obsolete for target-hierarchy detection configs; "
+                    f"unexpected keys: {rendered}"
+                )
+        data = config.get("data")
+        if isinstance(data, dict):
+            allowed_data_keys = {
+                "train_jsonl",
+                "val_jsonl",
+                "image_root",
+                "object_ordering",
+            }
+            config["data"] = {
+                key: value for key, value in data.items() if key in allowed_data_keys
+            }
+        return config
+
+    @staticmethod
     def _is_detection_training_config_payload(raw_config: Mapping[str, Any]) -> bool:
-        detection_markers = {
+        keys = set(raw_config.keys())
+        target_hierarchy_sentinels = {
+            "sample_factory",
+            "detection_template",
+            "token_embeddings_adapter",
+        }
+        if "pipeline" in keys and (
+            target_hierarchy_sentinels.intersection(keys)
+            or "stage2_rollout_correction" in keys
+            or "rollout_matching" in keys
+        ):
+            return True
+        if target_hierarchy_sentinels.intersection(keys):
+            return True
+
+        target_hierarchy_markers = {
+            "data",
+            "pipeline",
+            "sample_factory",
+            "prompt",
+            "detection_template",
+            "token_embeddings_adapter",
+            "packing",
+            "evaluation",
+            "validation",
+        }
+        legacy_detection_markers = {
             "data",
             "prompt",
             "detection_template",
@@ -877,7 +1043,9 @@ class ConfigLoader:
             "evaluation",
             "validation",
         }
-        return detection_markers.issubset(set(raw_config.keys()))
+        return target_hierarchy_markers.issubset(
+            keys
+        ) or legacy_detection_markers.issubset(keys)
 
     @staticmethod
     def load_materialized_training_config(

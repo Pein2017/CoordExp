@@ -1,4 +1,4 @@
-"""Stage-1 JSON cross-entropy shadow pipeline descriptor."""
+"""Stage-1 standard SFT pipeline descriptor."""
 
 from __future__ import annotations
 
@@ -12,15 +12,15 @@ from src.training.pipelines.base import (
 
 @dataclass(frozen=True, slots=True)
 class Stage1JsonCEPipeline:
-    """Descriptor for the Stage-1 JSON CE training surface."""
+    """Descriptor for the Stage-1 standard SFT training pipeline."""
 
     @property
     def identity(self) -> TrainingPipelineIdentity:
-        """Return the stable Stage-1 JSON CE pipeline identity."""
+        """Return the stable Stage-1 standard SFT pipeline identity."""
 
         return TrainingPipelineIdentity(
-            surface_id="stage1_json_ce",
-            pipeline_id="stage1_json_ce",
-            lifecycle=PipelineLifecycle.SHADOW,
-            summary="Stage-1 JSON chat-template token CE shadow pipeline.",
+            pipeline_id="stage1_standard_sft",
+            implementation_id="stage1_json_ce",
+            lifecycle=PipelineLifecycle.ACTIVE,
+            summary="Stage-1 standard SFT pipeline backed by JSON chat-template CE.",
         )

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field, fields, replace
 from functools import lru_cache
 import math
 from pathlib import Path
@@ -67,6 +67,12 @@ from src.trainers.teacher_forcing.module_registry import (
 )
 from src.training.stage2.rollout_codec import (
     resolve_stage2_rollout_template_policy,
+)
+from src.objective_ids import (
+    LEGACY_TEACHER_FORCING_OBJECTIVE_ID,
+    RESEARCH_TEACHER_FORCING_OBJECTIVE_ID,
+    STANDARD_CE_OBJECTIVE_ID,
+    TEACHER_FORCING_OBJECTIVE_ID,
 )
 
 from .eval_monitor_dump_schema import EvalMonitorDumpConfig
@@ -139,13 +145,13 @@ STAGE2_RESIDUAL_SET_BOOL_CONFIG_KEYS: set[str] = {
     "strict_builder_invariants",
     "duplicate_burst_prefix_rollback",
 }
-TEACHER_FORCING_OBJECTIVE_ID = "teacher_forcing"
 TEACHER_FORCING_PROFILES: set[str] = {
     "hard_sft",
     "pure_valid_set_marginal",
     "hybrid_valid_set_marginal",
 }
 LEGACY_TEACHER_FORCING_OBJECTIVE_IDS: set[str] = {
+    LEGACY_TEACHER_FORCING_OBJECTIVE_ID,
     "recursive_detection_ce",
     "random_permutation_et_rmp_ce",
     "prefix_rollin_et_rmp_ce",
@@ -518,12 +524,15 @@ class CoordSoftCEW1Config:
 
     @classmethod
     def from_mapping(
-        cls, payload: Optional[Mapping[str, Any]]
+        cls,
+        payload: Optional[Mapping[str, Any]],
+        *,
+        path: str = "coord_soft_ce_w1",
     ) -> "CoordSoftCEW1Config":
         if payload is None:
             return cls()
         if not isinstance(payload, Mapping):
-            raise TypeError("coord_soft_ce_w1 section must be a mapping when provided")
+            raise TypeError(f"{path} section must be a mapping when provided")
 
         allowed_keys = {
             "enabled",
@@ -539,7 +548,7 @@ class CoordSoftCEW1Config:
         unknown = sorted(str(k) for k in payload.keys() if str(k) not in allowed_keys)
         if unknown:
             raise ValueError(
-                f"Unknown coord_soft_ce_w1 keys: {[f'coord_soft_ce_w1.{key}' for key in unknown]}"
+                f"Unknown {path} keys: {[f'{path}.{key}' for key in unknown]}"
             )
 
         enabled = bool(payload.get("enabled", False))
@@ -549,7 +558,7 @@ class CoordSoftCEW1Config:
             try:
                 return float(raw)
             except (TypeError, ValueError) as exc:
-                raise ValueError(f"coord_soft_ce_w1.{key} must be numeric") from exc
+                raise ValueError(f"{path}.{key} must be numeric") from exc
 
         ce_weight = _parse_float("ce_weight", cls.ce_weight)
         soft_ce_weight = _parse_float("soft_ce_weight", cls.soft_ce_weight)
@@ -568,19 +577,19 @@ class CoordSoftCEW1Config:
                 target_truncate = int(target_truncate_raw)
             except (TypeError, ValueError) as exc:
                 raise ValueError(
-                    "coord_soft_ce_w1.target_truncate must be an integer or null"
+                    f"{path}.target_truncate must be an integer or null"
                 ) from exc
 
         if ce_weight < 0:
-            raise ValueError("coord_soft_ce_w1.ce_weight must be >= 0")
+            raise ValueError(f"{path}.ce_weight must be >= 0")
         if soft_ce_weight < 0:
-            raise ValueError("coord_soft_ce_w1.soft_ce_weight must be >= 0")
+            raise ValueError(f"{path}.soft_ce_weight must be >= 0")
         if w1_weight < 0:
-            raise ValueError("coord_soft_ce_w1.w1_weight must be >= 0")
+            raise ValueError(f"{path}.w1_weight must be >= 0")
         if gate_weight < 0:
-            raise ValueError("coord_soft_ce_w1.gate_weight must be >= 0")
+            raise ValueError(f"{path}.gate_weight must be >= 0")
         if text_gate_weight < 0:
-            raise ValueError("coord_soft_ce_w1.text_gate_weight must be >= 0")
+            raise ValueError(f"{path}.text_gate_weight must be >= 0")
         if (
             enabled
             and ce_weight == 0
@@ -590,14 +599,14 @@ class CoordSoftCEW1Config:
             and text_gate_weight == 0
         ):
             raise ValueError(
-                "coord_soft_ce_w1 is enabled but ce_weight, soft_ce_weight, w1_weight, gate_weight, and text_gate_weight are all 0"
+                f"{path} is enabled but ce_weight, soft_ce_weight, w1_weight, gate_weight, and text_gate_weight are all 0"
             )
         if temperature <= 0:
-            raise ValueError("coord_soft_ce_w1.temperature must be > 0")
+            raise ValueError(f"{path}.temperature must be > 0")
         if target_sigma <= 0:
-            raise ValueError("coord_soft_ce_w1.target_sigma must be > 0")
+            raise ValueError(f"{path}.target_sigma must be > 0")
         if target_truncate is not None and target_truncate < 0:
-            raise ValueError("coord_soft_ce_w1.target_truncate must be >= 0 or null")
+            raise ValueError(f"{path}.target_truncate must be >= 0 or null")
 
         return cls(
             enabled=enabled,
@@ -2523,10 +2532,8 @@ class Stage2RolloutCorrectionModuleSpec:
             raise ValueError(f"{path}.enabled must be provided")
         enabled = bool(data.pop("enabled"))
 
-        if "weight" not in data:
-            raise ValueError(f"{path}.weight must be provided")
         try:
-            weight = float(data.pop("weight"))
+            weight = float(data.pop("weight", cls.weight))
         except (TypeError, ValueError) as exc:
             raise TypeError(f"{path}.weight must be numeric") from exc
         if weight < 0.0:
@@ -2547,9 +2554,7 @@ class Stage2RolloutCorrectionModuleSpec:
                 f"{path}.application.preset must be 'rollout_self_prefix'; got {preset!r}"
             )
 
-        if "config" not in data:
-            raise ValueError(f"{path}.config must be provided")
-        cfg_raw = data.pop("config")
+        cfg_raw = data.pop("config", None)
         if cfg_raw is None:
             cfg_raw = {}
         if not isinstance(cfg_raw, Mapping):
@@ -2813,11 +2818,11 @@ def _validate_teacher_forcing_training_packing_contract(
         return
     if not isinstance(packing_raw, bool):
         raise TypeError(
-            "training.packing must be boolean when objective.id=teacher_forcing"
+            f"training.packing must be boolean when objective.id={TEACHER_FORCING_OBJECTIVE_ID}"
         )
     if packing_raw:
         raise ValueError(
-            "objective.id=teacher_forcing currently rejects training.packing=true; "
+            f"objective.id={TEACHER_FORCING_OBJECTIVE_ID} currently rejects training.packing=true; "
             "exact atom-position packing mapping is not implemented"
         )
 
@@ -2827,9 +2832,11 @@ def _validate_teacher_forcing_training_packing_contract(
 
 _DETECTION_REQUIRED_SECTIONS: set[str] = {
     "data",
+    "pipeline",
+    "sample_factory",
     "prompt",
     "detection_template",
-    "token_rows",
+    "token_embeddings_adapter",
     "objective",
     "packing",
     "evaluation",
@@ -2850,6 +2857,8 @@ _DETECTION_OPTIONAL_SECTIONS: set[str] = {
     "debug",
     "experiment",
     "global_max_length",
+    "stage2_rollout_correction",
+    "rollout_matching",
 }
 
 _DETECTION_OBSOLETE_KEYS: set[str] = {
@@ -3022,7 +3031,7 @@ def _detection_runtime_bool(
 
 def _detection_validate_packing_runtime_contract(
     *,
-    objective: "DetectionObjectiveConfig | TeacherForcingObjectiveConfig",
+    objective: "DetectionObjectiveConfig | TeacherForcingObjectiveConfig | None",
     packing: "DetectionPackingConfig",
     training: Mapping[str, Any],
 ) -> None:
@@ -3032,24 +3041,24 @@ def _detection_validate_packing_runtime_contract(
     if getattr(objective, "id", None) == TEACHER_FORCING_OBJECTIVE_ID:
         if training_packing:
             raise ValueError(
-                "objective.id=teacher_forcing currently rejects training.packing=true; "
+                f"objective.id={TEACHER_FORCING_OBJECTIVE_ID} currently rejects training.packing=true; "
                 "exact atom-position packing mapping is not implemented"
             )
         if training_eval_packing:
             raise ValueError(
-                "objective.id=teacher_forcing currently rejects "
+                f"objective.id={TEACHER_FORCING_OBJECTIVE_ID} currently rejects "
                 "training.eval_packing=true; exact atom-position packing mapping "
                 "is not implemented"
             )
         if packing.static_packing:
             raise ValueError(
-                "objective.id=teacher_forcing currently rejects "
+                f"objective.id={TEACHER_FORCING_OBJECTIVE_ID} currently rejects "
                 "packing.static_packing=true; exact atom-position packing mapping "
                 "is not implemented"
             )
         if packing.padding_free_packed:
             raise ValueError(
-                "objective.id=teacher_forcing currently rejects "
+                f"objective.id={TEACHER_FORCING_OBJECTIVE_ID} currently rejects "
                 "packing.padding_free_packed=true; exact atom-position packing "
                 "mapping is not implemented"
             )
@@ -3059,6 +3068,9 @@ def _detection_validate_packing_runtime_contract(
         raise ValueError(
             "packing.static_packing=true requires training.packing=true for detection runtime materialization."
         )
+
+    if objective is None:
+        return
 
     if objective.id != "recursive_detection_ce":
         return
@@ -3113,10 +3125,16 @@ def _detection_validate_order_matches_objective(
 ) -> None:
     if getattr(objective, "id", None) == TEACHER_FORCING_OBJECTIVE_ID:
         required_order = objective.target_ir.rollin_policy.name
-        if data.object_ordering != required_order:
+        accepted_orders = (
+            {"random", "random_permutation"}
+            if required_order == "random_permutation"
+            else {required_order}
+        )
+        if data.object_ordering not in accepted_orders:
             raise ValueError(
-                "data.object_ordering must be "
-                f"{required_order!r} for objective.id='teacher_forcing', "
+                "sample_factory.target_sequence.object_ordering must be "
+                f"one of {sorted(accepted_orders)!r} for "
+                "objective.id='research_teacher_forcing', "
                 f"got {data.object_ordering!r}"
             )
         return
@@ -3124,10 +3142,16 @@ def _detection_validate_order_matches_objective(
     required_order = (
         "sorted" if objective.variant == "sorted_sft" else "random_permutation"
     )
-    if data.object_ordering != required_order:
+    accepted_orders = (
+        {"random", "random_permutation"}
+        if required_order == "random_permutation"
+        else {required_order}
+    )
+    if data.object_ordering not in accepted_orders:
         raise ValueError(
-            "data.object_ordering must be "
-            f"{required_order!r} for objective.variant={objective.variant!r}, "
+            "sample_factory.target_sequence.object_ordering must be "
+            f"one of {sorted(accepted_orders)!r} for "
+            f"objective.variant={objective.variant!r}, "
             f"got {data.object_ordering!r}"
         )
 
@@ -3135,9 +3159,11 @@ def _detection_validate_order_matches_objective(
 def _detection_validate_prefix_rollin_contract(
     *,
     detection_template: "DetectionTemplateConfig",
-    objective: "DetectionObjectiveConfig | TeacherForcingObjectiveConfig",
+    objective: "DetectionObjectiveConfig | TeacherForcingObjectiveConfig | None",
     experiment: "DetectionExperimentConfig | None",
 ) -> None:
+    if objective is None:
+        return
     if getattr(objective, "id", None) == TEACHER_FORCING_OBJECTIVE_ID:
         return
     if objective.variant != "prefix_rollin_et_rmp_ce":
@@ -3161,13 +3187,13 @@ def _detection_validate_token_rows(
 ) -> None:
     if not token_rows.enabled:
         raise ValueError(
-            "token_rows.enabled must be true for detection coord-token training; "
+            "token_embeddings_adapter.enabled must be true for detection coord-token training; "
             "otherwise coordinate special-token rows stay frozen and cannot be saved "
             "in the adapter"
         )
     if not token_rows.tie_head:
         raise ValueError(
-            "token_rows.tie_head must be true for the current tied-head "
+            "token_embeddings_adapter.tie_head must be true for the current tied-head "
             "Qwen3-VL token-row adapter contract"
         )
     template_contract = resolve_detection_template_contract(detection_template.id)
@@ -3178,7 +3204,7 @@ def _detection_validate_token_rows(
         )
         if not has_coord_geometry:
             raise ValueError(
-                "token_rows must include at least one group with "
+                "token_embeddings_adapter must include at least one group with "
                 "role=coord_geometry for coord-token detection"
             )
         coord_groups = [
@@ -3195,7 +3221,7 @@ def _detection_validate_token_rows(
         if len(token_rows.groups) != expected_group_count:
             expected_count = len(template_contract.required_structural_token_ids) + 1000
             raise ValueError(
-                "token_rows for coord-token detection must contain exactly the "
+                "token_embeddings_adapter for coord-token detection must contain exactly the "
                 f"{expected_count} allowed trainable rows for "
                 f"detection_template.id={detection_template.id!r}: "
                 f"{', '.join(template_contract.required_structural_tokens)}"
@@ -3205,7 +3231,7 @@ def _detection_validate_token_rows(
             )
         if len(coord_groups) != 1:
             raise ValueError(
-                "token_rows must contain exactly one coord_geometry group for "
+                "token_embeddings_adapter must contain exactly one coord_geometry group for "
                 f"{COORD_START_TOKEN}..{COORD_END_TOKEN}"
             )
         coord_group = coord_groups[0]
@@ -3217,7 +3243,7 @@ def _detection_validate_token_rows(
             or coord_group.expected_end != EXPECTED_COORD_END_ID
         ):
             raise ValueError(
-                "token_rows coord_geometry must be exactly "
+                "token_embeddings_adapter coord_geometry must be exactly "
                 f"{COORD_START_TOKEN}..{COORD_END_TOKEN} with expected ids "
                 f"{EXPECTED_COORD_START_ID}..{EXPECTED_COORD_END_ID}"
             )
@@ -3225,12 +3251,12 @@ def _detection_validate_token_rows(
             if structural_groups:
                 raise ValueError(
                     "stage1_json_pretty must not configure compact structural "
-                    "token_rows"
+                    "token_embeddings_adapter rows"
                 )
             return
         if len(structural_groups) != 1:
             raise ValueError(
-                "token_rows must include exactly the compact structural rows "
+                "token_embeddings_adapter must include exactly the compact structural rows "
                 f"{', '.join(template_contract.required_structural_tokens)}"
             )
         structural_group = structural_groups[0]
@@ -3247,10 +3273,110 @@ def _detection_validate_token_rows(
             or dict(structural_group.expected_ids) != expected_structural_ids
         ):
             raise ValueError(
-                "token_rows structural group must be exactly "
+                "token_embeddings_adapter structural group must be exactly "
                 f"{', '.join(template_contract.required_structural_tokens)} "
                 f"with expected ids {expected_structural_ids}"
             )
+
+
+@dataclass(frozen=True)
+class DetectionPipelineConfig:
+    id: Literal[
+        "stage1_standard_sft",
+        "stage1_research_teacher_forcing",
+        "stage2_rollout_correction",
+    ]
+
+    def __post_init__(self) -> None:
+        _detection_validate_choice(
+            self.id,
+            path="pipeline.id",
+            allowed={
+                "stage1_standard_sft",
+                "stage1_research_teacher_forcing",
+                "stage2_rollout_correction",
+            },
+        )
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "DetectionPipelineConfig":
+        return parse_dataclass_strict(cls, payload, path="pipeline")
+
+
+@dataclass(frozen=True)
+class DetectionTargetSequenceConfig:
+    task_family: Literal["detection"]
+    object_ordering: Literal["sorted", "random", "random_permutation"] = "sorted"
+    object_field_order: Literal["desc_first", "geometry_first"] = "desc_first"
+    bbox_format: Literal["xyxy"] = "xyxy"
+    coordinate_surface: Literal["coord_token"] = "coord_token"
+    strict_parse: bool = True
+
+    def __post_init__(self) -> None:
+        _detection_validate_choice(
+            self.task_family,
+            path="sample_factory.target_sequence.task_family",
+            allowed={"detection"},
+        )
+        _detection_validate_choice(
+            self.object_ordering,
+            path="sample_factory.target_sequence.object_ordering",
+            allowed={"sorted", "random", "random_permutation"},
+        )
+        _detection_validate_choice(
+            self.object_field_order,
+            path="sample_factory.target_sequence.object_field_order",
+            allowed={"desc_first", "geometry_first"},
+        )
+        _detection_validate_choice(
+            self.bbox_format,
+            path="sample_factory.target_sequence.bbox_format",
+            allowed={"xyxy"},
+        )
+        _detection_validate_choice(
+            self.coordinate_surface,
+            path="sample_factory.target_sequence.coordinate_surface",
+            allowed={"coord_token"},
+        )
+        _detection_validate_bool(
+            self.strict_parse,
+            path="sample_factory.target_sequence.strict_parse",
+        )
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "DetectionTargetSequenceConfig":
+        return parse_dataclass_strict(
+            cls, payload, path="sample_factory.target_sequence"
+        )
+
+
+@dataclass(frozen=True)
+class DetectionSampleFactoryConfig:
+    id: Literal["detection_sequence"]
+    target_sequence: DetectionTargetSequenceConfig
+
+    def __post_init__(self) -> None:
+        _detection_validate_choice(
+            self.id,
+            path="sample_factory.id",
+            allowed={"detection_sequence"},
+        )
+        if self.target_sequence.task_family != "detection":
+            raise ValueError(
+                "sample_factory.id=detection_sequence requires "
+                "sample_factory.target_sequence.task_family='detection'"
+            )
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "DetectionSampleFactoryConfig":
+        if not isinstance(payload, Mapping):
+            raise TypeError("sample_factory must be a mapping")
+        data: MutableMapping[str, Any] = dict(payload)
+        if "target_sequence" in data:
+            data["target_sequence"] = DetectionTargetSequenceConfig.from_mapping(
+                data["target_sequence"]
+            )
+        return parse_dataclass_strict(cls, data, path="sample_factory")
 
 
 @dataclass(frozen=True)
@@ -3258,7 +3384,7 @@ class DetectionDataConfig:
     train_jsonl: str
     val_jsonl: str
     image_root: str | None = None
-    object_ordering: Literal["sorted", "random_permutation"] = "sorted"
+    object_ordering: Literal["sorted", "random", "random_permutation"] = "sorted"
 
     def __post_init__(self) -> None:
         for field_name in ("train_jsonl", "val_jsonl"):
@@ -3269,7 +3395,7 @@ class DetectionDataConfig:
         _detection_validate_choice(
             self.object_ordering,
             path="data.object_ordering",
-            allowed={"sorted", "random_permutation"},
+            allowed={"sorted", "random", "random_permutation"},
         )
 
     @classmethod
@@ -3282,7 +3408,7 @@ class DetectionPromptConfig:
     system_variant: str
     user_variant: str
     include_template_summary: bool = True
-    prompt_variant_enabled: bool = False
+    variant: Optional[str] = None
 
     def __post_init__(self) -> None:
         for field_name in ("system_variant", "user_variant"):
@@ -3292,10 +3418,12 @@ class DetectionPromptConfig:
             self.include_template_summary,
             path="prompt.include_template_summary",
         )
-        _detection_validate_bool(
-            self.prompt_variant_enabled,
-            path="prompt.prompt_variant_enabled",
-        )
+        if self.variant is not None and not isinstance(self.variant, str):
+            raise TypeError("prompt.variant must be a string when provided")
+
+    @property
+    def prompt_variant_enabled(self) -> bool:
+        return self.variant is not None
 
     @classmethod
     def from_mapping(cls, payload: Any) -> "DetectionPromptConfig":
@@ -3312,10 +3440,6 @@ class DetectionTemplateConfig:
         "compact_object_box_closed",
         "compact_object_box_closed_lines",
     ]
-    coordinate_surface: Literal["coord_token"]
-    bbox_format: Literal["xyxy"]
-    object_field_order: Optional[Literal["desc_first", "geometry_first"]] = None
-    strict_parse: bool = True
 
     def __post_init__(self) -> None:
         _detection_validate_choice(
@@ -3323,41 +3447,28 @@ class DetectionTemplateConfig:
             path="detection_template.id",
             allowed=set(SUPPORTED_DETECTION_TEMPLATE_IDS),
         )
-        contract = resolve_detection_template_contract(self.id)
-        _detection_validate_choice(
-            self.coordinate_surface,
-            path="detection_template.coordinate_surface",
-            allowed={"coord_token"},
-        )
-        _detection_validate_choice(
-            self.bbox_format,
-            path="detection_template.bbox_format",
-            allowed={"xyxy"},
-        )
-        if self.object_field_order is not None:
-            _detection_validate_choice(
-                self.object_field_order,
-                path="detection_template.object_field_order",
-                allowed={"desc_first", "geometry_first"},
-            )
-        _detection_validate_bool(
-            self.strict_parse,
-            path="detection_template.strict_parse",
-        )
-        if (
-            self.id == "stage1_json_pretty"
-            and self.object_field_order not in {None, "desc_first"}
-        ):
-            raise ValueError(
-                "detection_template.id=stage1_json_pretty requires "
-                "detection_template.object_field_order=desc_first"
-            )
 
     @classmethod
     def from_mapping(cls, payload: Any) -> "DetectionTemplateConfig":
         if isinstance(payload, Mapping) and payload.get("id") == "compact_full":
             payload = {**dict(payload), "id": "compact"}
         return parse_dataclass_strict(cls, payload, path="detection_template")
+
+    @property
+    def coordinate_surface(self) -> Literal["coord_token"]:
+        return "coord_token"
+
+    @property
+    def bbox_format(self) -> Literal["xyxy"]:
+        return "xyxy"
+
+    @property
+    def object_field_order(self) -> None:
+        return None
+
+    @property
+    def strict_parse(self) -> bool:
+        return True
 
 
 @dataclass(frozen=True)
@@ -3498,6 +3609,11 @@ class DetectionExperimentConfig:
     surface: Literal["smoke", "ablation", "production"]
     ablation_id: Optional[str] = None
     claim_scope: Optional[Literal["none", "smoke", "paper", "production"]] = None
+    title: Optional[str] = None
+    purpose: Optional[str] = None
+    hypothesis: Optional[str] = None
+    key_deviations: tuple[str, ...] = ()
+    runtime_settings: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         _detection_validate_choice(
@@ -3525,12 +3641,18 @@ class DetectionExperimentConfig:
                 f"experiment.claim_scope={self.claim_scope!r} is not allowed for "
                 f"experiment.surface={self.surface!r}; allowed: {allowed_s}"
             )
-        for field_name in ("ablation_id",):
+        for field_name in ("ablation_id", "title", "purpose", "hypothesis"):
             value = getattr(self, field_name)
             if value is not None and not isinstance(value, str):
                 raise TypeError(
                     f"experiment.{field_name} must be a string when provided"
                 )
+        for field_name in ("key_deviations", "runtime_settings"):
+            value = getattr(self, field_name)
+            if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+                raise TypeError(f"experiment.{field_name} must be a list of strings")
+            normalized = tuple(str(item) for item in value)
+            object.__setattr__(self, field_name, normalized)
 
     @classmethod
     def from_mapping(
@@ -3779,7 +3901,7 @@ class TeacherForcingEnabledModuleConfig:
     def __post_init__(self) -> None:
         _detection_validate_bool(
             self.enabled,
-            path="objective.modules.*.enabled",
+            path="objective.terms.*.enabled",
         )
 
 
@@ -3791,22 +3913,22 @@ class TeacherForcingWithinValidCoverageConfig:
     def __post_init__(self) -> None:
         _detection_validate_bool(
             self.enabled,
-            path="objective.modules.within_valid_coverage.enabled",
+            path="objective.terms.within_valid_coverage.enabled",
         )
         if not isinstance(self.coverage_strength, (int, float)) or isinstance(
             self.coverage_strength, bool
         ):
             raise TypeError(
-                "objective.modules.within_valid_coverage.coverage_strength must be numeric"
+                "objective.terms.within_valid_coverage.coverage_strength must be numeric"
             )
         value = float(self.coverage_strength)
         if not math.isfinite(value):
             raise ValueError(
-                "objective.modules.within_valid_coverage.coverage_strength must be finite"
+                "objective.terms.within_valid_coverage.coverage_strength must be finite"
             )
         if value < 0.0:
             raise ValueError(
-                "objective.modules.within_valid_coverage.coverage_strength must be >= 0"
+                "objective.terms.within_valid_coverage.coverage_strength must be >= 0"
             )
         object.__setattr__(self, "coverage_strength", value)
 
@@ -3831,34 +3953,34 @@ class TeacherForcingModulesConfig:
         if payload is None:
             payload = {}
         if not isinstance(payload, Mapping):
-            raise TypeError("objective.modules must be a mapping")
+            raise TypeError("objective.terms must be a mapping")
         data: MutableMapping[str, Any] = dict(payload)
         token_type_mass = parse_dataclass_strict(
             TeacherForcingEnabledModuleConfig,
             data.pop("token_type_mass", {}),
-            path="objective.modules.token_type_mass",
+            path="objective.terms.token_type_mass",
         )
         conditional_valid_set_likelihood = parse_dataclass_strict(
             TeacherForcingEnabledModuleConfig,
             data.pop("conditional_valid_set_likelihood", {}),
-            path="objective.modules.conditional_valid_set_likelihood",
+            path="objective.terms.conditional_valid_set_likelihood",
         )
         within_valid_coverage = parse_dataclass_strict(
             TeacherForcingWithinValidCoverageConfig,
             data.pop("within_valid_coverage", {}),
-            path="objective.modules.within_valid_coverage",
+            path="objective.terms.within_valid_coverage",
         )
         continuation_margin = parse_dataclass_strict(
             TeacherForcingEnabledModuleConfig,
             data.pop("continuation_margin", {}),
-            path="objective.modules.continuation_margin",
+            path="objective.terms.continuation_margin",
         )
         if data:
             unknown = [
-                f"objective.modules.{str(k)}"
+                f"objective.terms.{str(k)}"
                 for k in sorted(data.keys(), key=lambda x: str(x))
             ]
-            raise ValueError(f"Unknown objective.modules keys: {unknown}")
+            raise ValueError(f"Unknown objective.terms keys: {unknown}")
         return cls(
             token_type_mass=token_type_mass,
             conditional_valid_set_likelihood=conditional_valid_set_likelihood,
@@ -3869,7 +3991,7 @@ class TeacherForcingModulesConfig:
 
 @dataclass(frozen=True)
 class TeacherForcingObjectiveConfig:
-    id: Literal["teacher_forcing"]
+    id: Literal["research_teacher_forcing"]
     profile: Literal[
         "hard_sft",
         "pure_valid_set_marginal",
@@ -3878,12 +4000,16 @@ class TeacherForcingObjectiveConfig:
     target_ir: TeacherForcingTargetIRConfig = field(
         default_factory=TeacherForcingTargetIRConfig
     )
-    modules: TeacherForcingModulesConfig = field(default_factory=TeacherForcingModulesConfig)
+    terms: TeacherForcingModulesConfig = field(default_factory=TeacherForcingModulesConfig)
+
+    @property
+    def modules(self) -> TeacherForcingModulesConfig:
+        return self.terms
 
     def __post_init__(self) -> None:
         if self.id != TEACHER_FORCING_OBJECTIVE_ID:
             raise ValueError(
-                "objective.id must be exactly 'teacher_forcing'; "
+                "objective.id must be exactly 'research_teacher_forcing'; "
                 f"got {self.id!r}"
             )
         _detection_validate_choice(
@@ -3891,48 +4017,48 @@ class TeacherForcingObjectiveConfig:
             path="objective.profile",
             allowed=TEACHER_FORCING_PROFILES,
         )
-        coverage = self.modules.within_valid_coverage
+        coverage = self.terms.within_valid_coverage
         coverage_strength = float(coverage.coverage_strength)
         if self.profile == "hybrid_valid_set_marginal":
             if not bool(coverage.enabled) or coverage_strength <= 0.0:
                 raise ValueError(
                     "objective.profile=hybrid_valid_set_marginal requires "
-                    "objective.modules.within_valid_coverage.coverage_strength > 0"
+                    "objective.terms.within_valid_coverage.coverage_strength > 0"
                 )
         elif coverage_strength > 0.0:
             raise ValueError(
                 f"objective.profile={self.profile} requires "
-                "objective.modules.within_valid_coverage.coverage_strength=0"
+                "objective.terms.within_valid_coverage.coverage_strength=0"
             )
         if self.profile == "hard_sft":
             hard_sft_module_checks = (
                 (
-                    "objective.modules.token_type_mass.enabled",
-                    bool(self.modules.token_type_mass.enabled),
+                    "objective.terms.token_type_mass.enabled",
+                    bool(self.terms.token_type_mass.enabled),
                 ),
                 (
-                    "objective.modules.conditional_valid_set_likelihood.enabled",
-                    bool(self.modules.conditional_valid_set_likelihood.enabled),
+                    "objective.terms.conditional_valid_set_likelihood.enabled",
+                    bool(self.terms.conditional_valid_set_likelihood.enabled),
                 ),
                 (
-                    "objective.modules.within_valid_coverage.enabled",
+                    "objective.terms.within_valid_coverage.enabled",
                     bool(coverage.enabled),
                 ),
                 (
-                    "objective.modules.within_valid_coverage.coverage_strength",
+                    "objective.terms.within_valid_coverage.coverage_strength",
                     coverage_strength > 0.0,
                 ),
                 (
-                    "objective.modules.continuation_margin.enabled",
-                    bool(self.modules.continuation_margin.enabled),
+                    "objective.terms.continuation_margin.enabled",
+                    bool(self.terms.continuation_margin.enabled),
                 ),
             )
             for module_key, is_enabled in hard_sft_module_checks:
                 if is_enabled:
                     raise ValueError(
-                        "objective.profile=hard_sft does not support "
-                        f"{module_key}; target-IR teacher-forcing modules "
-                        "require a valid-set runtime path"
+                            "objective.profile=hard_sft does not support "
+                            f"{module_key}; target-IR teacher-forcing modules "
+                            "require a valid-set runtime path"
                     )
     @classmethod
     def from_mapping(cls, payload: Any) -> "TeacherForcingObjectiveConfig":
@@ -3941,8 +4067,14 @@ class TeacherForcingObjectiveConfig:
         data: MutableMapping[str, Any] = dict(payload)
         raw_id = data.get("id")
         if raw_id != TEACHER_FORCING_OBJECTIVE_ID:
+            if raw_id == LEGACY_TEACHER_FORCING_OBJECTIVE_ID:
+                raise ValueError(
+                    "objective.id='teacher_forcing' has been retired for active "
+                    "target-hierarchy configs; use objective.id: "
+                    "'research_teacher_forcing'"
+                )
             raise ValueError(
-                "objective.id must be exactly 'teacher_forcing'; "
+                "objective.id must be exactly 'research_teacher_forcing'; "
                 f"legacy objective ids are unsupported, got {raw_id!r}"
             )
         if "target_ir" in data:
@@ -3950,20 +4082,85 @@ class TeacherForcingObjectiveConfig:
                 data["target_ir"]
             )
         if "modules" in data:
-            data["modules"] = TeacherForcingModulesConfig.from_mapping(data["modules"])
+            raise ValueError(
+                "objective.modules is retired for active research_teacher_forcing "
+                "configs; use objective.terms"
+            )
+        if "terms" in data:
+            data["terms"] = TeacherForcingModulesConfig.from_mapping(data["terms"])
         return parse_dataclass_strict(cls, data, path="objective")
 
 
 @dataclass(frozen=True)
+class StandardCECoordSoftAuxiliaryConfig(CoordSoftCEW1Config):
+    """Optional coord-token auxiliary under the public Standard SFT objective."""
+
+    soft_ce_weight: float = 0.0
+    w1_weight: float = 0.0
+    gate_weight: float = 0.0
+
+
+@dataclass(frozen=True)
+class StandardCEGeometryAuxiliaryConfig:
+    enabled: bool = False
+
+    def __post_init__(self) -> None:
+        _detection_validate_bool(
+            self.enabled,
+            path="objective.auxiliaries.geometry.enabled",
+        )
+        if self.enabled:
+            raise ValueError(
+                "objective.auxiliaries.geometry.enabled=true is not implemented "
+                "for standard_ce; keep objective.auxiliaries.geometry.enabled=false "
+                "until a geometry auxiliary has an audited loss/runtime path"
+            )
+
+
+@dataclass(frozen=True)
+class StandardCEAuxiliariesConfig:
+    coord_soft_ce: StandardCECoordSoftAuxiliaryConfig = field(
+        default_factory=StandardCECoordSoftAuxiliaryConfig
+    )
+    geometry: StandardCEGeometryAuxiliaryConfig = field(
+        default_factory=StandardCEGeometryAuxiliaryConfig
+    )
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "StandardCEAuxiliariesConfig":
+        if payload is None:
+            payload = {}
+        if not isinstance(payload, Mapping):
+            raise TypeError("objective.auxiliaries must be a mapping")
+        data: MutableMapping[str, Any] = dict(payload)
+        coord_soft_ce = StandardCECoordSoftAuxiliaryConfig.from_mapping(
+            data.pop("coord_soft_ce", None),
+            path="objective.auxiliaries.coord_soft_ce",
+        )
+        geometry = parse_dataclass_strict(
+            StandardCEGeometryAuxiliaryConfig,
+            data.pop("geometry", {}),
+            path="objective.auxiliaries.geometry",
+        )
+        if data:
+            unknown = [
+                f"objective.auxiliaries.{str(k)}"
+                for k in sorted(data.keys(), key=lambda x: str(x))
+            ]
+            raise ValueError(f"Unknown objective.auxiliaries keys: {unknown}")
+        return cls(coord_soft_ce=coord_soft_ce, geometry=geometry)
+
+
+@dataclass(frozen=True)
 class DetectionObjectiveConfig:
-    id: Literal["sft", "recursive_detection_ce"]
+    id: Literal["standard_ce", "recursive_detection_ce"]
     variant: Literal[
         "sorted_sft",
         "random_order_sft",
         "random_permutation_et_rmp_ce",
         "trie_disabled_full_suffix_ce",
         "prefix_rollin_et_rmp_ce",
-    ]
+    ] = "random_order_sft"
     trie_support_weight: float = 0.0
     trie_balance_weight: float = 0.0
     state_weighting: str = "none"
@@ -3972,12 +4169,13 @@ class DetectionObjectiveConfig:
     target: Optional[EntryTrieSupportBalanceConfig] = None
     type_gate: Optional[CompactTypeGateConfig] = None
     coord_soft_ce: Optional[CoordSoftCEConfig] = None
+    auxiliaries: Optional[StandardCEAuxiliariesConfig] = None
 
     def __post_init__(self) -> None:
         _detection_validate_choice(
             self.id,
             path="objective.id",
-            allowed={"sft", "recursive_detection_ce"},
+            allowed={STANDARD_CE_OBJECTIVE_ID, "recursive_detection_ce"},
         )
         _detection_validate_choice(
             self.variant,
@@ -4096,8 +4294,19 @@ class DetectionObjectiveConfig:
                     "objective.type_gate is only supported for latest "
                     "recursive_detection_ce ET-RMP variants"
                 )
-        if self.id == "sft" and self.variant not in {"sorted_sft", "random_order_sft"}:
-            raise ValueError("objective.id=sft requires an SFT objective.variant")
+        if self.id == STANDARD_CE_OBJECTIVE_ID and self.variant not in {
+            "sorted_sft",
+            "random_order_sft",
+        }:
+            raise ValueError(
+                f"objective.id={self.id} requires an SFT objective.variant"
+            )
+        if self.id == STANDARD_CE_OBJECTIVE_ID and self.auxiliaries is None:
+            object.__setattr__(
+                self,
+                "auxiliaries",
+                StandardCEAuxiliariesConfig(),
+            )
         if self.id == "recursive_detection_ce" and self.variant in {
             "sorted_sft",
             "random_order_sft",
@@ -4105,6 +4314,10 @@ class DetectionObjectiveConfig:
             raise ValueError(
                 "objective.id=recursive_detection_ce requires a recursive detection "
                 "objective.variant"
+            )
+        if self.id != STANDARD_CE_OBJECTIVE_ID and self.auxiliaries is not None:
+            raise ValueError(
+                "objective.auxiliaries is only supported for objective.id=standard_ce"
             )
         if self.coord_soft_ce is not None:
             if self.id != "recursive_detection_ce" or self.variant not in {
@@ -4138,13 +4351,30 @@ class DetectionObjectiveConfig:
         raw_id = payload.get("id")
         if raw_id == TEACHER_FORCING_OBJECTIVE_ID:
             return TeacherForcingObjectiveConfig.from_mapping(payload)
+        if raw_id == STANDARD_CE_OBJECTIVE_ID:
+            data: MutableMapping[str, Any] = dict(payload)
+            data["auxiliaries"] = StandardCEAuxiliariesConfig.from_mapping(
+                data.get("auxiliaries")
+            )
+            return parse_dataclass_strict(cls, data, path="objective")
+        if raw_id == LEGACY_TEACHER_FORCING_OBJECTIVE_ID:
+            raise ValueError(
+                "objective.id='teacher_forcing' has been retired for active "
+                "target-hierarchy configs; use objective.id: "
+                "'research_teacher_forcing'"
+            )
+        if raw_id == "token_ce":
+            raise ValueError(
+                "objective.id='token_ce' is internal implementation/metric "
+                "vocabulary; use objective.id: 'standard_ce'"
+            )
         if raw_id in LEGACY_TEACHER_FORCING_OBJECTIVE_IDS or raw_id in {"sft"}:
             raise ValueError(
-                "objective.id must be exactly 'teacher_forcing'; "
+                "objective.id must be 'standard_ce' or 'research_teacher_forcing'; "
                 f"legacy objective ids are unsupported, got {raw_id!r}"
             )
         raise ValueError(
-            "objective.id must be exactly 'teacher_forcing'; "
+            "objective.id must be 'standard_ce' or 'research_teacher_forcing'; "
             f"got {raw_id!r}"
         )
 
@@ -4221,13 +4451,110 @@ class DetectionValidationConfig:
         return parse_dataclass_strict(cls, payload, path="validation")
 
 
+def _detection_reject_removed_target_hierarchy_paths(payload: Mapping[str, Any]) -> None:
+    if "pipeline_id" in payload:
+        raise ValueError("pipeline_id is retired; use top-level pipeline.id")
+    surface = payload.get("surface")
+    if isinstance(surface, Mapping) and "id" in surface:
+        raise ValueError("surface.id is not public config; use top-level pipeline.id")
+    if "token_rows" in payload:
+        raise ValueError(
+            "flat token_rows is retired; use top-level token_embeddings_adapter"
+        )
+
+    data = payload.get("data")
+    if isinstance(data, Mapping) and "object_ordering" in data:
+        raise ValueError(
+            "data.object_ordering is retired for target-hierarchy configs; use "
+            "sample_factory.target_sequence.object_ordering"
+        )
+
+    custom = payload.get("custom")
+    if custom is not None:
+        if not isinstance(custom, Mapping):
+            raise TypeError("custom must be a mapping when provided")
+        guidance = {
+            "trainer_variant": "pipeline.id",
+            "object_ordering": "sample_factory.target_sequence.object_ordering",
+            "object_field_order": "sample_factory.target_sequence.object_field_order",
+            "detection_template_id": "detection_template.id",
+            "detection_sequence_format": "sample_factory.id",
+            "token_embeddings_adapter": "token_embeddings_adapter",
+        }
+        for key, new_path in guidance.items():
+            if key in custom:
+                raise ValueError(f"custom.{key} is retired; use {new_path}")
+        raise ValueError("custom is obsolete for target-hierarchy detection configs")
+
+    prompt = payload.get("prompt")
+    if isinstance(prompt, Mapping) and "prompt_variant_enabled" in prompt:
+        raise ValueError(
+            "prompt.prompt_variant_enabled is retired; use prompt.variant"
+        )
+
+    sample_factory = payload.get("sample_factory")
+    target_sequence = None
+    if isinstance(sample_factory, Mapping):
+        target_sequence = sample_factory.get("target_sequence")
+    if isinstance(target_sequence, Mapping) and "template_id" in target_sequence:
+        raise ValueError(
+            "sample_factory.target_sequence.template_id is retired; use "
+            "top-level detection_template.id"
+        )
+
+    detection_template = payload.get("detection_template")
+    if (
+        isinstance(detection_template, Mapping)
+        and "strict_parse" in detection_template
+        and isinstance(target_sequence, Mapping)
+        and "strict_parse" in target_sequence
+    ):
+        raise ValueError(
+            "detection_template.strict_parse is retired for active training configs; "
+            "use sample_factory.target_sequence.strict_parse"
+        )
+
+
+def _detection_validate_pipeline_objective_pairing(
+    pipeline: "DetectionPipelineConfig",
+    objective: "DetectionObjectiveConfig | TeacherForcingObjectiveConfig | None",
+) -> None:
+    objective_id = getattr(objective, "id", None)
+    if pipeline.id == "stage1_standard_sft":
+        if objective_id != STANDARD_CE_OBJECTIVE_ID:
+            raise ValueError(
+                "pipeline.id=stage1_standard_sft requires "
+                f"objective.id={STANDARD_CE_OBJECTIVE_ID}; got {objective_id!r}"
+            )
+        return
+
+    if pipeline.id == "stage1_research_teacher_forcing":
+        if objective_id != TEACHER_FORCING_OBJECTIVE_ID:
+            raise ValueError(
+                "pipeline.id=stage1_research_teacher_forcing requires "
+                f"objective.id={TEACHER_FORCING_OBJECTIVE_ID}; got {objective_id!r}"
+            )
+        return
+
+    if pipeline.id == "stage2_rollout_correction":
+        if objective_id in {STANDARD_CE_OBJECTIVE_ID, TEACHER_FORCING_OBJECTIVE_ID}:
+            raise ValueError(
+                "pipeline.id=stage2_rollout_correction does not accept "
+                f"objective.id={objective_id} in Slice 1A; use the Stage-2 "
+                "rollout_correction runtime objective namespace instead of "
+                "top-level Stage-1 objective.id"
+            )
+
+
 @dataclass(frozen=True)
 class DetectionTrainingConfig:
+    pipeline: DetectionPipelineConfig
+    sample_factory: DetectionSampleFactoryConfig
     data: DetectionDataConfig
     prompt: DetectionPromptConfig
     detection_template: DetectionTemplateConfig
-    token_rows: TokenEmbeddingsAdapterConfig
-    objective: DetectionObjectiveConfig | TeacherForcingObjectiveConfig
+    token_embeddings_adapter: TokenEmbeddingsAdapterConfig
+    objective: DetectionObjectiveConfig | TeacherForcingObjectiveConfig | None
     packing: DetectionPackingConfig
     evaluation: DetectionEvaluationConfig
     validation: DetectionValidationConfig
@@ -4241,23 +4568,14 @@ class DetectionTrainingConfig:
     tuner: Mapping[str, Any] = field(default_factory=dict)
     quantization: Mapping[str, Any] = field(default_factory=dict)
     global_max_length: Optional[int] = None
+    stage2_rollout_correction: Optional[Stage2RolloutCorrectionConfig] = None
+    rollout_matching: Optional[RolloutMatchingConfig] = None
 
     @classmethod
     def from_mapping(cls, payload: Any) -> "DetectionTrainingConfig":
         if not isinstance(payload, Mapping):
             raise TypeError("detection config payload must be a mapping")
-        if "custom" in payload:
-            custom_raw = payload.get("custom")
-            if isinstance(custom_raw, Mapping) and (
-                "stage1_set_continuation" in custom_raw
-                or custom_raw.get("trainer_variant") == "stage1_set_continuation"
-            ):
-                raise ValueError(
-                    "custom is obsolete for detection configs; "
-                    "custom.trainer_variant=stage1_set_continuation and "
-                    "custom.stage1_set_continuation have been removed"
-                )
-            raise ValueError("custom is obsolete for detection configs")
+        _detection_reject_removed_target_hierarchy_paths(payload)
 
         obsolete_paths = _detection_find_obsolete_keys_on_latest_surface(payload)
         if obsolete_paths:
@@ -4279,10 +4597,10 @@ class DetectionTrainingConfig:
                 f"Unknown detection config top-level keys: {unknown_top_level}"
             )
 
+        required_sections = set(_DETECTION_REQUIRED_SECTIONS)
+        required_sections.discard("objective")
         missing_sections = sorted(
-            section
-            for section in _DETECTION_REQUIRED_SECTIONS
-            if section not in payload
+            section for section in required_sections if section not in payload
         )
         if missing_sections:
             raise ValueError(
@@ -4298,20 +4616,77 @@ class DetectionTrainingConfig:
             ):
                 raise ValueError("global_max_length must be a positive integer")
 
+        pipeline = DetectionPipelineConfig.from_mapping(payload["pipeline"])
+        objective = (
+            DetectionObjectiveConfig.from_mapping(payload["objective"])
+            if "objective" in payload
+            else None
+        )
+        _detection_validate_pipeline_objective_pairing(pipeline, objective)
+        if pipeline.id != "stage2_rollout_correction" and objective is None:
+            raise ValueError(
+                f"pipeline.id={pipeline.id} requires top-level objective.id"
+            )
+        stage2_rollout_correction = None
+        rollout_matching = None
+        if pipeline.id == "stage2_rollout_correction":
+            stage2_rollout_correction_raw = payload.get("stage2_rollout_correction")
+            if stage2_rollout_correction_raw is None:
+                raise ValueError(
+                    "pipeline.id=stage2_rollout_correction requires "
+                    "stage2_rollout_correction.pipeline"
+                )
+            stage2_rollout_correction = Stage2RolloutCorrectionConfig.from_mapping(
+                stage2_rollout_correction_raw
+            )
+            rollout_matching_raw = payload.get("rollout_matching")
+            if rollout_matching_raw is None:
+                raise ValueError(
+                    "pipeline.id=stage2_rollout_correction requires rollout_matching"
+                )
+            if not isinstance(rollout_matching_raw, Mapping):
+                raise TypeError("rollout_matching must be a mapping when provided")
+            if "pipeline" in rollout_matching_raw:
+                raise ValueError(
+                    "rollout_matching.pipeline has been removed. Use "
+                    "stage2_rollout_correction.pipeline with "
+                    "pipeline.id=stage2_rollout_correction instead."
+                )
+            rollout_matching = parse_dataclass_strict(
+                RolloutMatchingConfig,
+                dict(rollout_matching_raw),
+                path="rollout_matching",
+            )
+        sample_factory = DetectionSampleFactoryConfig.from_mapping(
+            payload["sample_factory"]
+        )
+        target_sequence = sample_factory.target_sequence
         detection_template = DetectionTemplateConfig.from_mapping(
             payload["detection_template"]
         )
+        if (
+            detection_template.id == "stage1_json_pretty"
+            and target_sequence.object_field_order != "desc_first"
+        ):
+            raise ValueError(
+                "detection_template.id=stage1_json_pretty requires "
+                "sample_factory.target_sequence.object_field_order=desc_first"
+            )
         evaluation = DetectionEvaluationConfig.from_mapping(payload["evaluation"])
         if evaluation.expected_template != detection_template.id:
             raise ValueError(
                 "evaluation.expected_template must match detection_template.id "
                 f"({evaluation.expected_template!r} != {detection_template.id!r})"
             )
-        data_config = DetectionDataConfig.from_mapping(payload["data"])
-        objective = DetectionObjectiveConfig.from_mapping(payload["objective"])
-        _detection_validate_order_matches_objective(data_config, objective)
+        data_config = replace(
+            DetectionDataConfig.from_mapping(payload["data"]),
+            object_ordering=target_sequence.object_ordering,
+        )
+        if objective is not None:
+            _detection_validate_order_matches_objective(data_config, objective)
         if (
-            getattr(objective, "id", None) != TEACHER_FORCING_OBJECTIVE_ID
+            objective is not None
+            and getattr(objective, "id", None) != TEACHER_FORCING_OBJECTIVE_ID
             and objective.variant == "prefix_rollin_et_rmp_ce"
         ):
             required_experiment_variant = "prefix_rollin_et_rmp_ce"
@@ -4327,8 +4702,8 @@ class DetectionTrainingConfig:
             experiment=experiment,
         )
         token_rows = TokenEmbeddingsAdapterConfig.from_mapping(
-            payload["token_rows"],
-            path="token_rows",
+            payload["token_embeddings_adapter"],
+            path="token_embeddings_adapter",
         )
         _detection_validate_token_rows(detection_template, token_rows)
         packing = DetectionPackingConfig.from_mapping(payload["packing"])
@@ -4340,10 +4715,12 @@ class DetectionTrainingConfig:
         )
 
         return cls(
+            pipeline=pipeline,
+            sample_factory=sample_factory,
             data=data_config,
             prompt=DetectionPromptConfig.from_mapping(payload["prompt"]),
             detection_template=detection_template,
-            token_rows=token_rows,
+            token_embeddings_adapter=token_rows,
             objective=objective,
             packing=packing,
             evaluation=evaluation,
@@ -4380,14 +4757,23 @@ class DetectionTrainingConfig:
                 allowed=_train_arguments_allowed_keys(),
             ),
             global_max_length=global_max_length,
+            stage2_rollout_correction=stage2_rollout_correction,
+            rollout_matching=rollout_matching,
         )
+
+    @property
+    def token_rows(self) -> TokenEmbeddingsAdapterConfig:
+        return self.token_embeddings_adapter
 
     def to_mapping(self) -> dict[str, Any]:
         payload = dataclass_asdict_no_none(self)
         for section in _DETECTION_RUNTIME_SECTIONS:
             if payload.get(section) == {}:
                 payload.pop(section, None)
-        token_groups = payload.get("token_rows", {}).get("groups", {})
+        data_payload = payload.get("data")
+        if isinstance(data_payload, dict):
+            data_payload.pop("object_ordering", None)
+        token_groups = payload.get("token_embeddings_adapter", {}).get("groups", {})
         if isinstance(token_groups, dict):
             for group in token_groups.values():
                 if not isinstance(group, dict):
@@ -4607,7 +4993,7 @@ class TrainingConfig:
                 raise ValueError(
                     "rollout_matching.pipeline has been removed. "
                     "Use stage2_rollout_correction.pipeline with "
-                    "custom.trainer_variant=stage2_rollout_correction instead."
+                    "pipeline.id=stage2_rollout_correction instead."
                 )
 
             # Preserve prior strictness: an explicitly empty mapping counts as "missing".

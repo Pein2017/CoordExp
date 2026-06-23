@@ -88,7 +88,10 @@ def _to_jsonable(value: Any) -> Any:
 
 
 def serialize_resolved_training_config(training_config: Any) -> dict[str, Any]:
-    if is_dataclass(training_config):
+    to_mapping = getattr(training_config, "to_mapping", None)
+    if callable(to_mapping):
+        resolved = to_mapping()
+    elif is_dataclass(training_config):
         resolved = dataclass_asdict_no_none(training_config)
     elif isinstance(training_config, Mapping):
         resolved = dict(training_config)
@@ -136,16 +139,21 @@ def write_run_manifest_files(
 
     resolved_cfg = serialize_resolved_training_config(training_config)
     resolved_path = out_dir / "resolved_config.json"
-    _write_json(
-        resolved_path,
-        {
-            "schema_version": RUN_MANIFEST_SCHEMA_VERSION,
-            "config_path": str(config_path),
-            "base_config_path": str(base_config_path or ""),
-            "dataset_seed": int(dataset_seed),
-            "resolved": resolved_cfg,
-        },
-    )
+    resolved_payload: dict[str, Any] = {
+        "schema_version": RUN_MANIFEST_SCHEMA_VERSION,
+        "config_path": str(config_path),
+        "base_config_path": str(base_config_path or ""),
+        "dataset_seed": int(dataset_seed),
+        "resolved": resolved_cfg,
+    }
+    if isinstance(effective_runtime, Mapping) and isinstance(
+        effective_runtime.get("training_hierarchy"),
+        Mapping,
+    ):
+        resolved_payload["training_hierarchy"] = dict(
+            effective_runtime["training_hierarchy"]
+        )
+    _write_json(resolved_path, resolved_payload)
 
     env_path = out_dir / "runtime_env.json"
     _write_json(
@@ -163,9 +171,11 @@ def write_run_manifest_files(
 
     if effective_runtime is not None:
         effective_runtime_path = out_dir / "effective_runtime.json"
+        runtime_payload = dict(effective_runtime)
+        runtime_payload.pop("trainer_variant", None)
         effective_runtime_payload: dict[str, Any] = {
             "schema_version": RUN_MANIFEST_SCHEMA_VERSION,
-            "runtime": dict(effective_runtime),
+            "runtime": runtime_payload,
         }
         if stage2_policy_provenance is not None:
             effective_runtime_payload["stage2_policy_provenance"] = dict(
@@ -183,6 +193,13 @@ def write_run_manifest_files(
             "schema_version": RUN_MANIFEST_SCHEMA_VERSION,
             "pipeline": dict(pipeline_manifest),
         }
+        if isinstance(effective_runtime, Mapping) and isinstance(
+            effective_runtime.get("training_hierarchy"),
+            Mapping,
+        ):
+            pipeline_manifest_payload["training_hierarchy"] = dict(
+                effective_runtime["training_hierarchy"]
+            )
         if stage2_policy_provenance is not None:
             pipeline_manifest_payload["stage2_policy_provenance"] = dict(
                 stage2_policy_provenance

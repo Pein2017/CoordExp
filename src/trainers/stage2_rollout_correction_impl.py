@@ -5614,8 +5614,9 @@ class Stage2RolloutCorrectionTrainer(
             )
             if packing_enabled:
                 raise ValueError(
-                    "objective.id=teacher_forcing with custom.trainer_variant="
-                    "stage2_rollout_correction rejects packing before model forward; "
+                    "objective.id=research_teacher_forcing with "
+                    "pipeline.id=stage2_rollout_correction rejects packing before "
+                    "model forward; "
                     "exact atom-position packing mapping is not implemented."
                 )
 

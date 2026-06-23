@@ -227,8 +227,8 @@ runtime behavior:
   back to authoritative sibling artifacts.
 - `config_source.yaml` and `base_config_source.yaml` keep best-effort authored
   YAML copies when the source files are readable.
-- Shadow unified-training configs record the `surface.id` direction through the
-  resolved domains `run`, `surface`, `data`, `template`, `supervision`,
+- Pipeline registry configs record the `pipeline.id` direction through the
+  resolved domains `run`, `pipeline`, `data`, `template`, `supervision`,
   `objectives`, `observability`, `artifacts`, and `runtime`; optional
   `experimental` remains an explicit opt-in escape hatch, not a hidden store.
 
@@ -422,7 +422,7 @@ field; new Stage-2 runs record sampling/backend details in decode provenance
 instead of `stage2_policy_provenance`:
 
 - `stage2_policy_provenance.schema_version`
-- `stage2_policy_provenance.trainer_variant`
+- `stage2_policy_provenance.pipeline.id`
 - `stage2_policy_provenance.assignment_strategy`
 - `stage2_policy_provenance.assignment_iou_threshold`
 - `stage2_policy_provenance.assignment_iou_threshold_effective`

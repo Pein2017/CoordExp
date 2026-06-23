@@ -1,15 +1,73 @@
-extends: ../../base.yaml
-
 # Stage-2 rollout-correction canonical runtime base.
+
+extends: ../../base.yaml
 
 global_max_length: 12000
 
 template:
   template: qwen3_vl
   truncation_strategy: raise
+  max_length: 12000
+  max_pixels: 1048576
 
 model:
   model: /data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+  model_type: qwen3_vl
+  torch_dtype: bfloat16
+  attn_impl: flash_attention_2
+
+pipeline:
+  id: stage2_rollout_correction
+
+sample_factory:
+  id: detection_sequence
+  target_sequence:
+    task_family: detection
+    object_ordering: sorted
+    object_field_order: desc_first
+    bbox_format: xyxy
+    coordinate_surface: coord_token
+    strict_parse: true
+
+prompt:
+  system_variant: stage1_detection
+  user_variant: stage1_detection
+  include_template_summary: true
+
+detection_template:
+  id: stage1_json_pretty
+
+token_embeddings_adapter:
+  enabled: true
+  tie_head: true
+  groups:
+    coord_geometry:
+      role: coord_geometry
+      start_token: "<|coord_0|>"
+      end_token: "<|coord_999|>"
+      expected_start: 151670
+      expected_end: 152669
+  embed_lr: 5.0e-5
+  head_lr: 5.0e-5
+  weight_decay: 0.0
+
+packing:
+  static_packing: false
+  padding_free_packed: false
+
+evaluation:
+  expected_template: stage1_json_pretty
+  parser_mode: strict_expected
+
+validation:
+  validate_span_alignment: true
+  validate_template_capabilities: true
+  fail_fast: true
+
+data:
+  train_jsonl: public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
+  val_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+  image_root: public_data/coco
 
 tuner:
   train_type: lora
@@ -111,19 +169,6 @@ stage2_rollout_correction:
       explorer_top_k: 64
       unlabeled_consistent_iou_threshold: 0.9
       recovered_ground_truth_weight_multiplier: 2.0
-
-custom:
-  json_format: standard
-  emit_norm: none
-  detection_sequence_format: coordjson
-  object_field_order: desc_first
-  trainer_variant: stage2_rollout_correction
-  train_jsonl: public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
-  train_sample_limit: null
-  val_sample_limit: null
-  coord_tokens:
-    enabled: true
-    skip_bbox_norm: true
 
 debug:
   enabled: false

@@ -14,8 +14,8 @@ Purpose: map the end-to-end CoordExp flow from data intake to training, inferenc
 Authority: explanatory system guide for the current codebase; if this page conflicts with a spec or runbook, defer to `docs/PROJECT_CONTEXT.md` and `openspec/specs/`.
 Read this after: `docs/PROJECT_CONTEXT.md`
 Read this before: domain runbooks under `docs/data/`, `docs/training/`, and `docs/eval/`
-Primary code handles: `src/config/loader.py`, `src/datasets/`, `src/sft.py`, `src/detection/runtime.py`, `src/detection/template.py`, `src/common/detection_sequence.py`, `src/common/detection_compact_rows.py`, `src/bootstrap/`, `src/trainers/metrics/`, `src/metrics/events.py`, `src/training/`, `src/training/surfaces.py::TrainingSurfaceResolver`, `src/trainers/stage2_rollout_correction.py`, `src/trainers/rollout_aligned_targets.py`, `src/trainers/rollout_aligned_evaluator.py`, `src/launchers/stage2_vllm_server.py`, `src/infer/pipeline.py`, `src/infer/runtime.py`, `src/infer/backend.py`, `src/infer/backend_sync.py`, `src/infer/backend_vllm_server.py`, `src/infer/constraints.py`, `src/infer/artifacts.py`, `src/eval/detection.py`, `src/eval/detection_records.py`, `src/eval/detection_geometry.py`, `src/eval/detection_coco.py`, `src/eval/detection_lvis.py`, `src/eval/detection_duplicate_guard.py`, `src/eval/detection_f1ish.py`, `src/eval/detection_orchestrator.py`, `src/eval/orchestration.py`, `src/eval/artifacts.py`
-Verification search: `rg -n "detection/runtime|detection_sequence|detection_compact_rows|MetricEvent|flatten_metric_events|TrainingSurfaceResolver|stage1_compact_trie_ce|stage2_rollout_correction|stage2_rollout_runtime|pipeline_manifest|run_metadata|backends|artifacts|orchestration" src scripts configs docs`
+Primary code handles: `src/config/loader.py`, `src/datasets/`, `src/sft.py`, `src/detection/runtime.py`, `src/detection/template.py`, `src/common/detection_sequence.py`, `src/common/detection_compact_rows.py`, `src/bootstrap/`, `src/trainers/metrics/`, `src/metrics/events.py`, `src/training/`, `src/training/pipeline_registry.py::TrainingPipelineRegistry`, `src/trainers/stage2_rollout_correction.py`, `src/trainers/rollout_aligned_targets.py`, `src/trainers/rollout_aligned_evaluator.py`, `src/launchers/stage2_vllm_server.py`, `src/infer/pipeline.py`, `src/infer/runtime.py`, `src/infer/backend.py`, `src/infer/backend_sync.py`, `src/infer/backend_vllm_server.py`, `src/infer/constraints.py`, `src/infer/artifacts.py`, `src/eval/detection.py`, `src/eval/detection_records.py`, `src/eval/detection_geometry.py`, `src/eval/detection_coco.py`, `src/eval/detection_lvis.py`, `src/eval/detection_duplicate_guard.py`, `src/eval/detection_f1ish.py`, `src/eval/detection_orchestrator.py`, `src/eval/orchestration.py`, `src/eval/artifacts.py`
+Verification search: `rg -n "detection/runtime|detection_sequence|detection_compact_rows|MetricEvent|flatten_metric_events|TrainingPipelineRegistry|stage1_research_teacher_forcing|stage2_rollout_correction|stage2_rollout_runtime|pipeline_manifest|run_metadata|backends|artifacts|orchestration" src scripts configs docs`
 
 ## Flow At A Glance
 
@@ -131,7 +131,7 @@ Use Stage-1 when you want teacher-forced baseline training without rollout-aware
 ### Stage-1 Detection Teacher Forcing
 
 Use this surface for the canonical clean-break Stage-1 detection
-teacher-forcing route, `stage1_detection_teacher_forcing`.
+teacher-forcing route, `pipeline.id: stage1_research_teacher_forcing`.
 
 - Current config route: `configs/stage1/detection_teacher_forcing/`
 - Runtime policy owner: `src/detection/runtime.py`

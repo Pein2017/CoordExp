@@ -51,12 +51,14 @@ def resolve_stage2_runtime_projection(
     rollout_cfg["decoding"] = _resolve_decoding_cfg(rollout_cfg)
     _resolve_prompt_variants(
         rollout_cfg,
+        training_config=training_config,
         custom_config=custom_config,
         policy_sources=policy_sources,
         compatibility_fallbacks=compatibility_fallbacks,
     )
     _inject_packing_and_geometry(
         rollout_cfg,
+        training_config=training_config,
         custom_config=custom_config,
         packing_cfg=packing_cfg,
         policy_sources=policy_sources,
@@ -65,7 +67,6 @@ def resolve_stage2_runtime_projection(
     rollout_cfg["_compatibility_fallbacks"] = list(compatibility_fallbacks)
 
     rollout_manifest = _empty_rollout_manifest(
-        trainer_variant=str(trainer_variant or ""),
         config_path=config_path,
         run_name=run_name,
         seed=seed,
@@ -164,7 +165,7 @@ def _validate_removed_rollout_matching_surfaces(rollout_cfg: Mapping[str, Any]) 
         raise ValueError(
             "rollout_matching.pipeline has been removed. "
             "Use stage2_rollout_correction.pipeline with "
-            "custom.trainer_variant=stage2_rollout_correction instead."
+            "pipeline.id=stage2_rollout_correction instead."
         )
     legacy_decoding_keys = [
         k for k in ("temperature", "top_p", "top_k") if k in rollout_cfg
@@ -195,10 +196,12 @@ def _resolve_decoding_cfg(rollout_cfg: Mapping[str, Any]) -> dict[str, Any]:
 def _resolve_prompt_variants(
     rollout_cfg: dict[str, Any],
     *,
+    training_config: Any,
     custom_config: Any,
     policy_sources: dict[str, str],
     compatibility_fallbacks: list[str],
 ) -> None:
+    prompt_variant_from_hierarchy = _target_hierarchy_prompt_variant(training_config)
     custom_extra = _read_value(custom_config, "extra") or {}
     prompt_variant_from_extra = None
     if isinstance(custom_extra, Mapping):
@@ -220,7 +223,12 @@ def _resolve_prompt_variants(
                 continue
             rollout_cfg[key] = None
 
-        if prompt_variant_from_extra is not None:
+        if prompt_variant_from_hierarchy is not None:
+            rollout_cfg[key] = resolve_dense_prompt_variant_key(
+                prompt_variant_from_hierarchy
+            )
+            policy_sources[f"rollout_matching.{key}"] = "prompt.variant"
+        elif prompt_variant_from_extra is not None:
             rollout_cfg[key] = resolve_dense_prompt_variant_key(
                 prompt_variant_from_extra
             )
@@ -237,10 +245,38 @@ def _resolve_prompt_variants(
 def _inject_packing_and_geometry(
     rollout_cfg: dict[str, Any],
     *,
+    training_config: Any,
     custom_config: Any,
     packing_cfg: Any,
     policy_sources: dict[str, str],
 ) -> None:
+    target_sequence = _target_sequence_mapping(training_config)
+    detection_template = _to_mapping(_read_value(training_config, "detection_template"))
+    if target_sequence is not None:
+        template_id = str(detection_template.get("id") or "").strip()
+        if template_id in {"compact", "compact_full"}:
+            detection_sequence_format = "compact_full"
+        elif template_id == "stage1_json_pretty":
+            detection_sequence_format = "coordjson"
+        else:
+            detection_sequence_format = template_id or str(
+                _read_value(custom_config, "detection_sequence_format")
+            )
+        sequence_fields = {
+            "object_ordering": str(target_sequence.get("object_ordering")),
+            "object_field_order": str(target_sequence.get("object_field_order")),
+            "bbox_format": str(target_sequence.get("bbox_format")),
+            "detection_sequence_format": detection_sequence_format,
+        }
+    else:
+        sequence_fields = {
+            "object_ordering": str(_read_value(custom_config, "object_ordering")),
+            "object_field_order": str(_read_value(custom_config, "object_field_order")),
+            "bbox_format": str(_read_value(custom_config, "bbox_format")),
+            "detection_sequence_format": str(
+                _read_value(custom_config, "detection_sequence_format")
+            ),
+        }
     resolved = {
         "packing_enabled": bool(_read_value(packing_cfg, "enabled")),
         "packing_length": int(_read_value(packing_cfg, "packing_length") or 0),
@@ -249,32 +285,56 @@ def _inject_packing_and_geometry(
             _read_value(packing_cfg, "min_fill_ratio") or 0.0
         ),
         "packing_drop_last": bool(_read_value(packing_cfg, "drop_last")),
-        "object_ordering": str(_read_value(custom_config, "object_ordering")),
-        "object_field_order": str(_read_value(custom_config, "object_field_order")),
-        "bbox_format": str(_read_value(custom_config, "bbox_format")),
-        "detection_sequence_format": str(
-            _read_value(custom_config, "detection_sequence_format")
-        ),
+        **sequence_fields,
     }
     rollout_cfg.update(resolved)
-    policy_sources.update(
-        {
-            "packing.enabled": "training.packing",
-            "packing.length": "training.packing_length",
-            "packing.buffer": "training.packing_buffer",
-            "packing.min_fill_ratio": "training.packing_min_fill_ratio",
-            "packing.drop_last": "training.packing_drop_last",
-            "object_ordering": "custom.object_ordering",
-            "object_field_order": "custom.object_field_order",
-            "bbox_format": "custom.bbox_format",
-            "detection_sequence_format": "custom.detection_sequence_format",
-        }
-    )
+    sources = {
+        "packing.enabled": "training.packing",
+        "packing.length": "training.packing_length",
+        "packing.buffer": "training.packing_buffer",
+        "packing.min_fill_ratio": "training.packing_min_fill_ratio",
+        "packing.drop_last": "training.packing_drop_last",
+    }
+    if target_sequence is not None:
+        sources.update(
+            {
+                "object_ordering": "sample_factory.target_sequence.object_ordering",
+                "object_field_order": "sample_factory.target_sequence.object_field_order",
+                "bbox_format": "sample_factory.target_sequence.bbox_format",
+                "detection_sequence_format": "detection_template.id+sample_factory.id",
+            }
+        )
+    else:
+        sources.update(
+            {
+                "object_ordering": "custom.object_ordering",
+                "object_field_order": "custom.object_field_order",
+                "bbox_format": "custom.bbox_format",
+                "detection_sequence_format": "custom.detection_sequence_format",
+            }
+        )
+    policy_sources.update(sources)
+
+
+def _target_hierarchy_prompt_variant(training_config: Any) -> str | None:
+    prompt = _read_value(training_config, "prompt")
+    raw_variant = _read_value(prompt, "variant")
+    if isinstance(raw_variant, str) and raw_variant.strip():
+        return raw_variant.strip()
+    return None
+
+
+def _target_sequence_mapping(training_config: Any) -> dict[str, Any] | None:
+    sample_factory = _read_value(training_config, "sample_factory")
+    target_sequence = _read_value(sample_factory, "target_sequence")
+    if target_sequence is None:
+        return None
+    mapped = _to_mapping(target_sequence)
+    return mapped or None
 
 
 def _empty_rollout_manifest(
     *,
-    trainer_variant: str,
     config_path: str,
     run_name: str,
     seed: int,
@@ -283,11 +343,17 @@ def _empty_rollout_manifest(
         "payload": {
             "objective": [],
             "diagnostics": [],
-            "extra": {"variant": trainer_variant},
+            "extra": {
+                "pipeline_id": "stage2_rollout_correction",
+                "runtime_stage": "stage2",
+            },
         },
         "objective": [],
         "diagnostics": [],
-        "extra": {"variant": trainer_variant},
+        "extra": {
+            "pipeline_id": "stage2_rollout_correction",
+            "runtime_stage": "stage2",
+        },
         "checksum": "",
         "run_context": {
             "config": str(config_path),
@@ -305,8 +371,12 @@ def _training_config_payload(
     stage2_cfg: Mapping[str, Any],
 ) -> dict[str, Any]:
     custom_payload = _to_mapping(custom_config)
-    custom_payload["trainer_variant"] = STAGE2_TRAINER_VARIANT
     return {
+        "pipeline": _to_mapping(_read_value(training_config, "pipeline")),
+        "sample_factory": _to_mapping(_read_value(training_config, "sample_factory")),
+        "detection_template": _to_mapping(
+            _read_value(training_config, "detection_template")
+        ),
         "custom": custom_payload,
         "rollout_matching": dict(rollout_matching_cfg),
         "stage2_rollout_correction": dict(stage2_cfg),

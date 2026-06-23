@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 from typing import Any, Optional
 
 from src.config.loader import ConfigLoader
-from src.config.schema import TrainingConfig
+from src.config.schema import DetectionTrainingConfig, TrainingConfig
 from src.config.strict_dataclass import dataclass_asdict_no_none
 from src.infer.backend import validate_vllm_engine_kwargs
 
@@ -61,7 +61,9 @@ def resolve_stage2_launcher_preflight(
     return build_stage2_launcher_preflight(training_config, config_path=config_path)
 
 
-def build_rollout_matching_contract(training_config: TrainingConfig) -> RolloutContract:
+def build_rollout_matching_contract(
+    training_config: TrainingConfig | DetectionTrainingConfig,
+) -> RolloutContract:
     """Normalize the rollout sub-namespace into the preflight contract."""
 
     rollout_cfg = _extract_rollout_mapping(training_config)
@@ -168,7 +170,7 @@ def build_rollout_matching_contract(training_config: TrainingConfig) -> RolloutC
 
 
 def build_stage2_launcher_preflight(
-    training_config: TrainingConfig,
+    training_config: TrainingConfig | DetectionTrainingConfig,
     config_path: Optional[str] = None,
 ) -> Stage2LauncherPreflight:
     """Build the single preflight payload consumed by `scripts/train_stage2.sh`.
@@ -201,20 +203,26 @@ def build_stage2_launcher_preflight(
             raise TypeError("model.model_type must be a string when set")
         server_model_type = model_type_raw.strip()
 
-    train_jsonl_raw = getattr(training_config.custom, "train_jsonl", None)
+    train_jsonl_raw = _config_value(
+        training_config, ("data", "train_jsonl"), ("custom", "train_jsonl")
+    )
     if not isinstance(train_jsonl_raw, str) or not train_jsonl_raw.strip():
         raise ValueError(
-            "custom.train_jsonl must be set to resolve ROOT_IMAGE_DIR for server-mode rollouts."
+            "data.train_jsonl must be set to resolve ROOT_IMAGE_DIR for server-mode rollouts."
         )
     train_jsonl_path = _resolve_path_for_config(train_jsonl_raw.strip(), config_path)
     root_image_dir = train_jsonl_path.parent
 
-    val_jsonl_raw = getattr(training_config.custom, "val_jsonl", None)
+    val_jsonl_raw = _config_value(
+        training_config, ("data", "val_jsonl"), ("custom", "val_jsonl")
+    )
     val_jsonl_path = None
     if isinstance(val_jsonl_raw, str) and val_jsonl_raw.strip():
         val_jsonl_path = _resolve_path_for_config(val_jsonl_raw.strip(), config_path)
 
-    offline_max_pixels_raw = getattr(training_config.custom, "offline_max_pixels", None)
+    offline_max_pixels_raw = _config_value(
+        training_config, ("custom", "offline_max_pixels")
+    )
     max_pixels_source = "custom.offline_max_pixels"
     if offline_max_pixels_raw is None:
         max_pixels_raw = training_config.template.get("max_pixels")
@@ -478,7 +486,29 @@ def _resolve_path_for_config(raw_path: str, config_path: Optional[str]) -> Path:
     return (Path.cwd() / path).resolve()
 
 
-def _extract_rollout_mapping(training_config: TrainingConfig) -> Mapping[str, Any]:
+def _config_value(config: Any, *paths: tuple[str, ...]) -> Any:
+    for path in paths:
+        current = config
+        missing = False
+        for key in path:
+            if isinstance(current, Mapping):
+                if key not in current:
+                    missing = True
+                    break
+                current = current[key]
+                continue
+            current = getattr(current, key, None)
+            if current is None:
+                missing = True
+                break
+        if not missing:
+            return current
+    return None
+
+
+def _extract_rollout_mapping(
+    training_config: TrainingConfig | DetectionTrainingConfig,
+) -> Mapping[str, Any]:
     canonical = getattr(training_config, "rollout_matching", None)
     if canonical is None:
         raise ValueError(

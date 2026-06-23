@@ -1,4 +1,4 @@
-"""Stage-1 compact-full trie CE shadow pipeline descriptor."""
+"""Stage-1 research teacher-forcing pipeline descriptor."""
 
 from __future__ import annotations
 
@@ -12,15 +12,18 @@ from src.training.pipelines.base import (
 
 @dataclass(frozen=True, slots=True)
 class Stage1CompactTrieCEPipeline:
-    """Descriptor for the Stage-1 compact-full trie CE training surface."""
+    """Descriptor for the Stage-1 research teacher-forcing pipeline."""
 
     @property
     def identity(self) -> TrainingPipelineIdentity:
-        """Return the stable Stage-1 compact trie CE pipeline identity."""
+        """Return the stable Stage-1 research teacher-forcing pipeline identity."""
 
         return TrainingPipelineIdentity(
-            surface_id="stage1_compact_trie_ce",
-            pipeline_id="stage1_compact_trie_ce",
-            lifecycle=PipelineLifecycle.SHADOW,
-            summary="Stage-1 compact-full trie CE shadow pipeline.",
+            pipeline_id="stage1_research_teacher_forcing",
+            implementation_id="stage1_compact_trie_ce",
+            lifecycle=PipelineLifecycle.ACTIVE,
+            summary=(
+                "Stage-1 research teacher-forcing pipeline backed by compact-full "
+                "trie/coordinate objectives."
+            ),
         )

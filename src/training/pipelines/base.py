@@ -1,4 +1,4 @@
-"""Lightweight training pipeline contracts for shadow surface resolution."""
+"""Lightweight training pipeline descriptor contracts."""
 
 from __future__ import annotations
 
@@ -19,14 +19,14 @@ class PipelineLifecycle(str, Enum):
 class TrainingPipelineIdentity:
     """Stable identity for a selectable training pipeline.
 
-    :param surface_id: Public training surface identifier selected by config.
-    :param pipeline_id: Internal pipeline identifier resolved for the surface.
+    :param pipeline_id: Public training pipeline identifier selected by config.
+    :param implementation_id: Concrete descriptor or implementation handle.
     :param lifecycle: Migration lifecycle for the pipeline descriptor.
     :param summary: Human-readable one-line descriptor.
     """
 
-    surface_id: str
     pipeline_id: str
+    implementation_id: str
     lifecycle: PipelineLifecycle
     summary: str
 
@@ -34,7 +34,7 @@ class TrainingPipelineIdentity:
         """Validate pipeline identity fields."""
 
         # validate stable string identity.
-        for field_name in ("surface_id", "pipeline_id", "summary"):
+        for field_name in ("pipeline_id", "implementation_id", "summary"):
             value = getattr(self, field_name)
             if type(value) is not str or not value.strip():
                 raise ValueError(f"{field_name} must be a non-empty string")

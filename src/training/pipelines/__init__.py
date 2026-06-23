@@ -1,4 +1,4 @@
-"""Shadow training pipeline descriptors."""
+"""Training pipeline descriptors."""
 
 from src.training.pipelines.base import (
     PipelineLifecycle,

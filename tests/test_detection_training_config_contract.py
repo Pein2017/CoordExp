@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -25,6 +26,7 @@ from src.sft import (
     _build_encoded_sample_cache_fingerprint,
     _detection_objective_runtime_payload,
 )
+from src.utils.run_manifest import serialize_resolved_training_config
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -38,26 +40,35 @@ def _detection_payload() -> dict[str, object]:
         "training": {
             "run_name": "test-detection-training",
             "num_train_epochs": 1,
+            "packing": False,
         },
         "data": {
             "train_jsonl": "public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl",
             "val_jsonl": "public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl",
             "image_root": "public_data/coco",
-            "object_ordering": "random_permutation",
+        },
+        "pipeline": {"id": "stage1_standard_sft"},
+        "sample_factory": {
+            "id": "detection_sequence",
+            "target_sequence": {
+                "task_family": "detection",
+                "object_ordering": "random_permutation",
+                "object_field_order": "desc_first",
+                "bbox_format": "xyxy",
+                "coordinate_surface": "coord_token",
+                "strict_parse": True,
+            },
         },
         "prompt": {
             "system_variant": "stage1_detection",
             "user_variant": "compact_detection",
             "include_template_summary": True,
-            "prompt_variant_enabled": True,
+            "variant": "coco_80",
         },
         "detection_template": {
             "id": "compact",
-            "coordinate_surface": "coord_token",
-            "bbox_format": "xyxy",
-            "strict_parse": True,
         },
-        "token_rows": {
+        "token_embeddings_adapter": {
             "enabled": True,
             "tie_head": True,
             "groups": {
@@ -81,12 +92,7 @@ def _detection_payload() -> dict[str, object]:
             "weight_decay": 0.0,
         },
         "objective": {
-            "id": "recursive_detection_ce",
-            "variant": "random_permutation_et_rmp_ce",
-            "trie_support_weight": 2.0,
-            "trie_balance_weight": 1.0,
-            "state_weighting": "legacy_row_mean_prefix_mixture_equivalence",
-            "normalization": "legacy_row_mean_equivalence",
+            "id": "standard_ce",
         },
         "packing": {
             "static_packing": False,
@@ -114,19 +120,61 @@ def _update_section(
     payload[section] = {**current, **updates}
 
 
+def _target_sequence(payload: dict[str, object]) -> dict[str, object]:
+    sample_factory = payload["sample_factory"]
+    assert isinstance(sample_factory, dict)
+    target_sequence = sample_factory["target_sequence"]
+    assert isinstance(target_sequence, dict)
+    return target_sequence
+
+
+def _stage2_rollout_correction_payload() -> dict[str, object]:
+    payload = copy.deepcopy(_detection_payload())
+    payload["pipeline"] = {"id": "stage2_rollout_correction"}
+    payload.pop("objective")
+    training = payload["training"]
+    assert isinstance(training, dict)
+    training["effective_batch_size"] = 1
+    payload["stage2_rollout_correction"] = {
+        "pipeline": {
+            "objective": [
+                {
+                    "name": "residual_set_correction",
+                    "enabled": True,
+                    "application": {"preset": "rollout_self_prefix"},
+                }
+            ],
+        },
+    }
+    payload["rollout_matching"] = {
+        "rollout_backend": "hf",
+        "eval_rollout_backend": "hf",
+        "rollout_decode_batch_size": 1,
+        "eval_decode_batch_size": 1,
+    }
+    return payload
+
+
 def _with_template(payload: dict[str, object], template_id: str) -> dict[str, object]:
     contract = resolve_detection_template_contract(template_id)
     copied = dict(payload)
     copied["detection_template"] = {
         "id": template_id,
-        "coordinate_surface": "coord_token",
-        "bbox_format": "xyxy",
-        "strict_parse": True,
+    }
+    copied["sample_factory"] = {
+        **copied["sample_factory"],  # type: ignore[arg-type]
+        "target_sequence": {
+            **_target_sequence(copied),
+            "object_field_order": "desc_first",
+        },
     }
     if not contract.is_compact:
-        copied["detection_template"] = {
-            **copied["detection_template"],  # type: ignore[arg-type]
-            "object_field_order": "desc_first",
+        copied["sample_factory"] = {
+            **copied["sample_factory"],  # type: ignore[arg-type]
+            "target_sequence": {
+                **_target_sequence(copied),
+                "object_field_order": "desc_first",
+            },
         }
     copied["prompt"] = {
         **copied["prompt"],  # type: ignore[arg-type]
@@ -136,8 +184,9 @@ def _with_template(payload: dict[str, object], template_id: str) -> dict[str, ob
         **copied["evaluation"],  # type: ignore[arg-type]
         "expected_template": template_id,
     }
+    copied["pipeline"] = {"id": "stage1_research_teacher_forcing"}
     copied["objective"] = {
-        "id": "teacher_forcing",
+        "id": "research_teacher_forcing",
         "profile": "pure_valid_set_marginal",
         "target_ir": {
             "rollin_policy": {
@@ -148,7 +197,7 @@ def _with_template(payload: dict[str, object], template_id: str) -> dict[str, ob
                 "enabled": False,
             },
         },
-        "modules": {
+        "terms": {
             "token_type_mass": {"enabled": False},
             "conditional_valid_set_likelihood": {"enabled": False},
             "within_valid_coverage": {
@@ -158,7 +207,7 @@ def _with_template(payload: dict[str, object], template_id: str) -> dict[str, ob
             "continuation_margin": {"enabled": False},
         },
     }
-    token_rows = dict(copied["token_rows"])  # type: ignore[arg-type]
+    token_rows = dict(copied["token_embeddings_adapter"])  # type: ignore[arg-type]
     groups = dict(token_rows["groups"])  # type: ignore[index]
     if contract.is_compact:
         groups["compact_structure"] = {
@@ -174,8 +223,378 @@ def _with_template(payload: dict[str, object], template_id: str) -> dict[str, ob
     else:
         groups.pop("compact_structure", None)
     token_rows["groups"] = groups
-    copied["token_rows"] = token_rows
+    copied["token_embeddings_adapter"] = token_rows
     return copied
+
+
+def test_detection_config_parses_target_hierarchy_standard_ce_payload() -> None:
+    cfg = DetectionTrainingConfig.from_mapping(_detection_payload())
+
+    assert cfg.pipeline.id == "stage1_standard_sft"
+    assert cfg.sample_factory.id == "detection_sequence"
+    assert cfg.sample_factory.target_sequence.task_family == "detection"
+    assert cfg.sample_factory.target_sequence.object_ordering == "random_permutation"
+    assert cfg.sample_factory.target_sequence.object_field_order == "desc_first"
+    assert cfg.sample_factory.target_sequence.bbox_format == "xyxy"
+    assert cfg.sample_factory.target_sequence.coordinate_surface == "coord_token"
+    assert cfg.sample_factory.target_sequence.strict_parse is True
+    assert cfg.data.object_ordering == "random_permutation"
+    assert cfg.prompt.variant == "coco_80"
+    assert cfg.detection_template.id == "compact"
+    assert cfg.token_embeddings_adapter.enabled is True
+    assert cfg.token_rows is cfg.token_embeddings_adapter
+    assert cfg.objective.id == "standard_ce"
+    assert cfg.to_mapping()["objective"]["id"] == "standard_ce"
+
+
+def test_detection_config_standard_ce_auxiliaries_round_trip() -> None:
+    payload = _detection_payload()
+    payload["objective"] = {
+        "id": "standard_ce",
+        "auxiliaries": {
+            "coord_soft_ce": {
+                "enabled": False,
+                "soft_ce_weight": 0.0,
+                "w1_weight": 0.0,
+                "gate_weight": 0.0,
+            },
+            "geometry": {"enabled": False},
+        },
+    }
+
+    cfg = DetectionTrainingConfig.from_mapping(payload)
+    serialized = cfg.to_mapping()
+
+    assert cfg.objective.id == "standard_ce"
+    assert cfg.objective.auxiliaries.coord_soft_ce.enabled is False
+    assert cfg.objective.auxiliaries.geometry.enabled is False
+    assert serialized["objective"]["id"] == "standard_ce"
+    assert serialized["objective"]["auxiliaries"]["coord_soft_ce"]["enabled"] is False
+    assert serialized["objective"]["auxiliaries"]["geometry"]["enabled"] is False
+
+
+def test_detection_config_standard_ce_rejects_enabled_geometry_auxiliary() -> None:
+    payload = _detection_payload()
+    payload["objective"] = {
+        "id": "standard_ce",
+        "auxiliaries": {
+            "geometry": {"enabled": True},
+        },
+    }
+
+    with pytest.raises(ValueError, match=r"objective\.auxiliaries\.geometry"):
+        DetectionTrainingConfig.from_mapping(payload)
+
+
+def test_detection_config_standard_ce_coord_soft_auxiliary_reaches_runtime_shim() -> None:
+    payload = _detection_payload()
+    payload["objective"] = {
+        "id": "standard_ce",
+        "auxiliaries": {
+            "coord_soft_ce": {
+                "enabled": True,
+                "soft_ce_weight": 1.0,
+                "w1_weight": 0.0,
+                "gate_weight": 2.0,
+                "temperature": 0.9,
+                "target_sigma": 1.5,
+                "target_truncate": 8,
+            },
+            "geometry": {"enabled": False},
+        },
+    }
+
+    cfg = DetectionTrainingConfig.from_mapping(payload)
+    shim = build_detection_runtime_custom_shim(cfg)
+
+    assert shim.coord_soft_ce_w1 is cfg.objective.auxiliaries.coord_soft_ce
+    assert shim.coord_soft_ce_w1.enabled is True
+    assert shim.coord_soft_ce_w1.soft_ce_weight == pytest.approx(1.0)
+    assert shim.coord_soft_ce_w1.gate_weight == pytest.approx(2.0)
+    assert shim.coord_soft_ce_w1.target_truncate == 8
+
+
+def test_detection_config_rejects_internal_token_ce_public_objective_id() -> None:
+    payload = _detection_payload()
+    payload["objective"] = {"id": "token_ce"}
+
+    with pytest.raises(ValueError, match=r"token_ce.*standard_ce"):
+        DetectionTrainingConfig.from_mapping(payload)
+
+
+def test_detection_config_to_mapping_omits_retired_data_object_ordering_and_round_trips() -> None:
+    cfg = DetectionTrainingConfig.from_mapping(_detection_payload())
+
+    serialized = cfg.to_mapping()
+    data = serialized["data"]
+    assert isinstance(data, dict)
+    assert "object_ordering" not in data
+
+    round_tripped = DetectionTrainingConfig.from_mapping(serialized)
+
+    assert round_tripped.sample_factory.target_sequence.object_ordering == (
+        cfg.sample_factory.target_sequence.object_ordering
+    )
+    assert round_tripped.data.object_ordering == cfg.data.object_ordering
+
+
+def test_resolved_manifest_serialization_omits_retired_data_object_ordering() -> None:
+    cfg = DetectionTrainingConfig.from_mapping(_detection_payload())
+
+    serialized = serialize_resolved_training_config(cfg)
+
+    data = serialized["data"]
+    assert isinstance(data, dict)
+    assert "object_ordering" not in data
+    assert (
+        serialized["sample_factory"]["target_sequence"]["object_ordering"]
+        == "random_permutation"
+    )
+
+
+def test_detection_config_validates_stage1_research_pipeline_objective_pairing() -> None:
+    cfg = DetectionTrainingConfig.from_mapping(
+        _with_template(_detection_payload(), "compact")
+    )
+
+    assert cfg.pipeline.id == "stage1_research_teacher_forcing"
+    assert cfg.objective.id == "research_teacher_forcing"
+
+
+def test_detection_config_parses_stage2_pipeline_without_top_level_objective() -> None:
+    cfg = DetectionTrainingConfig.from_mapping(_stage2_rollout_correction_payload())
+
+    assert cfg.pipeline.id == "stage2_rollout_correction"
+    assert cfg.objective is None
+    assert cfg.stage2_rollout_correction is not None
+    objective = cfg.stage2_rollout_correction.pipeline.objective
+    assert len(objective) == 1
+    assert objective[0].name == "residual_set_correction"
+    assert objective[0].enabled is True
+    assert objective[0].application["preset"] == "rollout_self_prefix"
+    assert cfg.rollout_matching is not None
+
+    serialized = cfg.to_mapping()
+    assert "objective" not in serialized
+    assert serialized["pipeline"] == {"id": "stage2_rollout_correction"}
+    assert (
+        serialized["stage2_rollout_correction"]["pipeline"]["objective"][0]["name"]
+        == "residual_set_correction"
+    )
+
+    round_tripped = DetectionTrainingConfig.from_mapping(serialized)
+    assert round_tripped.pipeline.id == "stage2_rollout_correction"
+    assert round_tripped.objective is None
+    assert round_tripped.stage2_rollout_correction is not None
+
+
+def test_detection_config_rejects_stage2_pipeline_without_rollout_matching() -> None:
+    payload = _stage2_rollout_correction_payload()
+    payload.pop("rollout_matching")
+
+    with pytest.raises(
+        ValueError,
+        match=r"pipeline\.id=stage2_rollout_correction.*rollout_matching",
+    ):
+        DetectionTrainingConfig.from_mapping(payload)
+
+
+@pytest.mark.parametrize(
+    ("payload", "match"),
+    [
+        (
+            {
+                **_detection_payload(),
+                "pipeline": {"id": "stage1_research_teacher_forcing"},
+            },
+            r"pipeline\.id=stage1_research_teacher_forcing.*objective\.id=research_teacher_forcing",
+        ),
+        (
+            {
+                **_with_template(_detection_payload(), "compact"),
+                "pipeline": {"id": "stage1_standard_sft"},
+            },
+            r"pipeline\.id=stage1_standard_sft.*objective\.id=standard_ce",
+        ),
+        (
+            {
+                **_detection_payload(),
+                "pipeline": {"id": "stage2_rollout_correction"},
+            },
+            r"pipeline\.id=stage2_rollout_correction.*does not accept objective\.id=standard_ce",
+        ),
+        (
+            {
+                **_with_template(_detection_payload(), "compact"),
+                "pipeline": {"id": "stage2_rollout_correction"},
+            },
+            r"pipeline\.id=stage2_rollout_correction.*does not accept objective\.id=research_teacher_forcing",
+        ),
+    ],
+)
+def test_detection_config_rejects_pipeline_objective_mismatches(
+    payload: dict[str, object],
+    match: str,
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        DetectionTrainingConfig.from_mapping(payload)
+
+
+@pytest.mark.parametrize("legacy_ordering", ["random_permutation", "sorted"])
+def test_detection_config_rejects_authored_data_object_ordering_when_target_sequence_owns_it(
+    legacy_ordering: str,
+) -> None:
+    payload = _detection_payload()
+    data = payload["data"]
+    assert isinstance(data, dict)
+    data["object_ordering"] = legacy_ordering
+
+    with pytest.raises(
+        ValueError,
+        match=r"data\.object_ordering.*sample_factory\.target_sequence\.object_ordering",
+    ):
+        DetectionTrainingConfig.from_mapping(payload)
+
+
+def test_object_ordering_mismatch_names_target_sequence_owner() -> None:
+    payload = _detection_payload()
+    _target_sequence(payload)["object_ordering"] = "sorted"
+
+    with pytest.raises(
+        ValueError,
+        match=r"sample_factory\.target_sequence\.object_ordering.*random_permutation",
+    ):
+        DetectionTrainingConfig.from_mapping(payload)
+
+
+def test_sft_runtime_metadata_uses_target_sequence_geometry_fields() -> None:
+    cfg = DetectionTrainingConfig.from_mapping(_detection_payload())
+
+    payload = _detection_objective_runtime_payload(cfg)
+
+    assert payload is not None
+    assert payload["coordinate_surface"] == "coord_token"
+    assert payload["bbox_format"] == "xyxy"
+
+
+def test_detection_config_accepts_random_target_sequence_object_ordering() -> None:
+    payload = _detection_payload()
+    _target_sequence(payload)["object_ordering"] = "random"
+
+    cfg = DetectionTrainingConfig.from_mapping(payload)
+
+    assert cfg.sample_factory.target_sequence.object_ordering == "random"
+
+
+@pytest.mark.parametrize(
+    ("mutate", "match"),
+    [
+        (
+            lambda payload: payload.__setitem__("pipeline_id", "stage1_standard_sft"),
+            r"pipeline_id.*pipeline\.id",
+        ),
+        (
+            lambda payload: payload.__setitem__(
+                "surface", {"id": "stage1_standard_sft"}
+            ),
+            r"surface\.id.*pipeline\.id",
+        ),
+        (
+            lambda payload: payload.__setitem__(
+                "custom", {"trainer_variant": "stage1_standard_sft"}
+            ),
+            r"custom\.trainer_variant.*pipeline\.id",
+        ),
+        (
+            lambda payload: payload.__setitem__(
+                "custom", {"object_ordering": "random_permutation"}
+            ),
+            r"custom\.object_ordering.*sample_factory\.target_sequence\.object_ordering",
+        ),
+        (
+            lambda payload: payload.__setitem__(
+                "custom", {"object_field_order": "desc_first"}
+            ),
+            r"custom\.object_field_order.*sample_factory\.target_sequence\.object_field_order",
+        ),
+        (
+            lambda payload: payload.__setitem__(
+                "custom", {"detection_template_id": "compact"}
+            ),
+            r"custom\.detection_template_id.*detection_template\.id",
+        ),
+        (
+            lambda payload: payload.__setitem__(
+                "custom", {"detection_sequence_format": "compact"}
+            ),
+            r"custom\.detection_sequence_format.*sample_factory\.id",
+        ),
+        (
+            lambda payload: payload.__setitem__(
+                "custom", {"token_embeddings_adapter": {"enabled": True}}
+            ),
+            r"custom\.token_embeddings_adapter.*token_embeddings_adapter",
+        ),
+        (
+            lambda payload: payload.__setitem__(
+                "token_rows", payload["token_embeddings_adapter"]
+            ),
+            r"token_rows.*token_embeddings_adapter",
+        ),
+        (
+            lambda payload: payload["prompt"].__setitem__(  # type: ignore[index,union-attr]
+                "prompt_variant_enabled", True
+            ),
+            r"prompt\.prompt_variant_enabled.*prompt\.variant",
+        ),
+        (
+            lambda payload: _target_sequence(payload).__setitem__(
+                "template_id", "compact"
+            ),
+            r"sample_factory\.target_sequence\.template_id.*detection_template\.id",
+        ),
+        (
+            lambda payload: payload["detection_template"].__setitem__(  # type: ignore[index,union-attr]
+                "strict_parse", True
+            ),
+            r"detection_template\.strict_parse.*sample_factory\.target_sequence\.strict_parse",
+        ),
+    ],
+)
+def test_target_hierarchy_removed_authoring_paths_fail_fast(
+    mutate,
+    match: str,
+) -> None:
+    payload = _detection_payload()
+    mutate(payload)
+
+    with pytest.raises(ValueError, match=match):
+        DetectionTrainingConfig.from_mapping(payload)
+
+
+def test_detection_config_rejects_legacy_teacher_forcing_objective_id() -> None:
+    payload = _detection_payload()
+    payload["pipeline"] = {"id": "stage1_research_teacher_forcing"}
+    payload["objective"] = {
+        "id": "teacher_forcing",
+        "profile": "hard_sft",
+    }
+
+    with pytest.raises(ValueError, match=r"teacher_forcing.*research_teacher_forcing"):
+        DetectionTrainingConfig.from_mapping(payload)
+
+
+def test_detection_config_parses_research_teacher_forcing_public_objective_id() -> None:
+    cfg = DetectionTrainingConfig.from_mapping(
+        _with_template(_detection_payload(), "compact")
+    )
+
+    assert cfg.pipeline.id == "stage1_research_teacher_forcing"
+    assert cfg.objective.id == "research_teacher_forcing"
+    assert cfg.objective.profile == "pure_valid_set_marginal"
+    assert cfg.objective.target_ir.rollin_policy.name == "random_permutation"
+    assert cfg.objective.target_ir.rollin_policy.base_seed == 17
+    assert cfg.objective.terms.token_type_mass.enabled is False
 
 
 @pytest.mark.parametrize(
@@ -202,15 +621,12 @@ def test_detection_training_config_accepts_semantic_template_ids(
 
 def test_detection_training_config_accepts_compact_geometry_first_field_order() -> None:
     payload = _with_template(_detection_payload(), "compact_object_closed")
-    payload["detection_template"] = {
-        **payload["detection_template"],  # type: ignore[arg-type]
-        "object_field_order": "geometry_first",
-    }
+    _target_sequence(payload)["object_field_order"] = "geometry_first"
 
     cfg = DetectionTrainingConfig.from_mapping(payload)
 
     assert cfg.detection_template.id == "compact_object_closed"
-    assert cfg.detection_template.object_field_order == "geometry_first"
+    assert cfg.sample_factory.target_sequence.object_field_order == "geometry_first"
     assert cfg.evaluation.expected_template == "compact_object_closed"
 
 
@@ -218,9 +634,6 @@ def test_detection_training_config_canonicalizes_compact_full_template_alias() -
     template_cfg = DetectionTemplateConfig.from_mapping(
         {
             "id": "compact_full",
-            "coordinate_surface": "coord_token",
-            "bbox_format": "xyxy",
-            "strict_parse": True,
         }
     )
     eval_cfg = DetectionEvaluationConfig.from_mapping(
@@ -235,16 +648,9 @@ def test_detection_training_config_canonicalizes_compact_full_template_alias() -
 
 
 def test_detection_training_config_canonicalizes_compact_full_template_alias_end_to_end() -> None:
-    payload = _detection_payload()
-    payload["objective"] = {
-        "id": "teacher_forcing",
-        "profile": "hard_sft",
-    }
+    payload = _with_template(_detection_payload(), "compact")
     payload["detection_template"] = {
         "id": "compact_full",
-        "coordinate_surface": "coord_token",
-        "bbox_format": "xyxy",
-        "strict_parse": True,
     }
     payload["evaluation"] = {
         "expected_template": "compact_full",
@@ -297,7 +703,7 @@ def test_detection_training_config_requires_exact_template_structural_rows(
     assert structural.tokens == expected_tokens
 
     bad = _with_template(_detection_payload(), template_id)
-    token_rows = dict(bad["token_rows"])  # type: ignore[arg-type]
+    token_rows = dict(bad["token_embeddings_adapter"])  # type: ignore[arg-type]
     groups = dict(token_rows["groups"])  # type: ignore[index]
     compact_structure = dict(groups["compact_structure"])  # type: ignore[index]
     compact_structure["tokens"] = list(expected_tokens[:-1])
@@ -308,9 +714,9 @@ def test_detection_training_config_requires_exact_template_structural_rows(
     }
     groups["compact_structure"] = compact_structure
     token_rows["groups"] = groups
-    bad["token_rows"] = token_rows
+    bad["token_embeddings_adapter"] = token_rows
 
-    with pytest.raises(ValueError, match="token_rows structural group"):
+    with pytest.raises(ValueError, match="token_embeddings_adapter structural group"):
         DetectionTrainingConfig.from_mapping(bad)
 
 
@@ -1336,28 +1742,16 @@ def test_stage1_json_pretty_template_requires_desc_first_field_order() -> None:
 
 def test_stage1_json_pretty_template_defaults_to_desc_first_when_field_order_omitted() -> None:
     payload = _with_template(_detection_payload(), "stage1_json_pretty")
-    payload["detection_template"] = {
-        "id": "stage1_json_pretty",
-        "coordinate_surface": "coord_token",
-        "bbox_format": "xyxy",
-        "strict_parse": True,
-    }
 
     cfg = DetectionTrainingConfig.from_mapping(payload)
 
     assert cfg.detection_template.id == "stage1_json_pretty"
-    assert cfg.detection_template.object_field_order is None
+    assert cfg.sample_factory.target_sequence.object_field_order == "desc_first"
 
 
 def test_stage1_json_pretty_template_rejects_explicit_geometry_first_field_order() -> None:
     payload = _with_template(_detection_payload(), "stage1_json_pretty")
-    payload["detection_template"] = {
-        "id": "stage1_json_pretty",
-        "coordinate_surface": "coord_token",
-        "bbox_format": "xyxy",
-        "object_field_order": "geometry_first",
-        "strict_parse": True,
-    }
+    _target_sequence(payload)["object_field_order"] = "geometry_first"
 
     with pytest.raises(ValueError, match="stage1_json_pretty.*desc_first"):
         DetectionTrainingConfig.from_mapping(payload)
@@ -1634,9 +2028,9 @@ def test_detection_recursive_detection_launch_configs_parse_without_custom() -> 
         assert cfg.training["optimizer"] == "multimodal_token_embeddings_adapter"
 
 
-def test_stage1_detection_teacher_forcing_canonical_launch_configs_parse() -> None:
+def test_stage1_detection_teacher_forcing_canonical_launch_configs_are_migrated() -> None:
     canonical_route = REPO_ROOT / "configs/stage1/detection_teacher_forcing"
-    assert "stage1_detection_teacher_forcing" in (
+    assert "stage1_research_teacher_forcing" in (
         canonical_route / "README.md"
     ).read_text()
     discovered_configs = {
@@ -1655,67 +2049,51 @@ def test_stage1_detection_teacher_forcing_canonical_launch_configs_parse() -> No
     for config_path in sorted(discovered_configs):
         cfg = ConfigLoader.load_materialized_training_config(str(config_path))
         assert isinstance(cfg, DetectionTrainingConfig)
-        assert cfg.objective.id == "teacher_forcing"
-        assert config_path.is_relative_to(canonical_route)
+        assert cfg.pipeline.id == "stage1_research_teacher_forcing"
+        assert cfg.objective.id == "research_teacher_forcing"
         assert cfg.objective.profile == "pure_valid_set_marginal"
-        assert cfg.objective.target_ir.rollin_policy.name == "random_permutation"
-        assert cfg.data.object_ordering == "random_permutation"
+        assert cfg.sample_factory.id == "detection_sequence"
+        assert cfg.sample_factory.target_sequence.object_ordering == "random_permutation"
+        assert cfg.sample_factory.target_sequence.object_field_order == "desc_first"
+        assert cfg.sample_factory.target_sequence.bbox_format == "xyxy"
+        assert cfg.sample_factory.target_sequence.coordinate_surface == "coord_token"
+        assert cfg.sample_factory.target_sequence.strict_parse is True
+        assert cfg.prompt.variant == "coco_80"
         assert cfg.detection_template.id == "compact"
-        assert cfg.to_mapping()["detection_template"]["id"] == "compact"
-        assert cfg.packing.static_packing is False
-        assert cfg.packing.padding_free_packed is False
-        assert cfg.training["packing"] is False
-        assert cfg.training["eval_packing"] is False
-        assert cfg.training["encoded_sample_cache"]["enabled"] is False
-        assert "detection_teacher_forcing" in str(cfg.training["output_dir"])
-        assert "detection_teacher_forcing" in str(cfg.training["logging_dir"])
+        assert cfg.token_embeddings_adapter.enabled is True
+        assert "custom" not in cfg.to_mapping()
+        assert "token_rows" not in cfg.to_mapping()
 
 
-def test_stage1_detection_teacher_forcing_accepts_hybrid_profile_at_schema_boundary(
-    tmp_path: Path,
-) -> None:
-    config_path = (
-        REPO_ROOT
-        / "configs/stage1/detection_teacher_forcing/prod/compact_support2.yaml"
-    )
-    payload = yaml.safe_load(config_path.read_text())
+def test_stage1_detection_teacher_forcing_accepts_hybrid_profile_at_schema_boundary() -> None:
+    payload = _with_template(_detection_payload(), "compact")
     payload["objective"]["profile"] = "hybrid_valid_set_marginal"
-    payload["objective"]["modules"]["within_valid_coverage"] = {
+    payload["objective"]["terms"]["within_valid_coverage"] = {
         "enabled": True,
         "coverage_strength": 0.25,
     }
-    authored = tmp_path / "hybrid_teacher_forcing.yaml"
-    authored.write_text(yaml.safe_dump(payload, sort_keys=False))
 
-    cfg = ConfigLoader.load_materialized_training_config(str(authored))
+    cfg = DetectionTrainingConfig.from_mapping(payload)
 
     assert cfg.objective.profile == "hybrid_valid_set_marginal"
     with pytest.raises(ValueError, match=r"currently supports objective\.profile"):
         detection_mode(cfg)
 
 
-def test_stage1_detection_teacher_forcing_runtime_payload_keeps_target_ir_knobs() -> None:
-    cfg = ConfigLoader.load_materialized_training_config(
-        str(
-            REPO_ROOT
-            / "configs/stage1/detection_teacher_forcing/prod/compact_support2.yaml"
-        )
+def test_stage1_detection_teacher_forcing_schema_keeps_target_ir_knobs() -> None:
+    cfg = DetectionTrainingConfig.from_mapping(
+        _with_template(_detection_payload(), "compact")
     )
 
-    payload = _detection_objective_runtime_payload(cfg)
-
-    assert payload is not None
-    assert payload["id"] == "teacher_forcing"
-    assert payload["template_id"] == "compact"
-    assert payload["compact_grammar_enabled"] is True
-    assert payload["target_ir"]["rollin_policy"]["name"] == "random_permutation"
-    assert payload["target_ir"]["rollin_policy"]["base_seed"] == 17
-    assert payload["target_ir"]["exact_packing_mapping"]["enabled"] is False
-    assert payload["modules"]["token_type_mass"]["enabled"] is False
-    assert payload["modules"]["conditional_valid_set_likelihood"]["enabled"] is False
-    assert payload["modules"]["within_valid_coverage"]["enabled"] is False
-    assert payload["modules"]["within_valid_coverage"]["coverage_strength"] == 0.0
-    assert payload["modules"]["continuation_margin"]["enabled"] is False
+    assert cfg.objective.id == "research_teacher_forcing"
+    assert cfg.objective.target_ir.rollin_policy.name == "random_permutation"
+    assert cfg.objective.target_ir.rollin_policy.base_seed == 17
+    assert cfg.objective.target_ir.exact_packing_mapping.enabled is False
+    assert cfg.objective.terms.token_type_mass.enabled is False
+    assert cfg.objective.terms.conditional_valid_set_likelihood.enabled is False
+    assert cfg.objective.terms.within_valid_coverage.enabled is False
+    assert cfg.objective.terms.within_valid_coverage.coverage_strength == 0.0
+    assert cfg.objective.terms.continuation_margin.enabled is False
 
 
 @pytest.mark.skip(reason="legacy recursive_detection_ce config contract retired by teacher_forcing objective")

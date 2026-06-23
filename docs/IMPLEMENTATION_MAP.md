@@ -47,7 +47,7 @@ Open these docs first:
 - [`docs/training/README.md`](training/README.md)
 - [`docs/training/STAGE1_OBJECTIVE.md`](training/STAGE1_OBJECTIVE.md)
 - [`docs/data/PACKING.md`](data/PACKING.md)
-- [`configs/stage1/detection_teacher_forcing/`](../configs/stage1/detection_teacher_forcing/) for the canonical `stage1_detection_teacher_forcing` compact Stage-1 detection teacher-forcing route
+- [`configs/stage1/detection_teacher_forcing/`](../configs/stage1/detection_teacher_forcing/) for canonical compact Stage-1 research teacher-forcing configs using `pipeline.id: stage1_research_teacher_forcing`
 - [`configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2.yaml`](../configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/prod/compact_full_support2.yaml) only as a quarantined historical recursive-detection CE handle, not the current public teacher-forcing route
 - [`configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml`](../configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/ablation/compact_full_prefix_rollin_balance2.yaml) only as a quarantined historical compact-full prefix-rollin E1 ablation handle
 
@@ -62,7 +62,7 @@ Open these configs first:
 - `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/ablation/` only for quarantined historical ablation references
 
 Open these code files first:
-- `src/training/surfaces.py`
+- `src/training/pipeline_registry.py`
 - `src/training/pipelines/stage1_json_ce.py`
 - `src/training/pipelines/stage1_compact_trie_ce.py`
 - `src/training/objectives/`
@@ -85,9 +85,9 @@ Open these code files first:
 - `src/data_collators/batch_extras_collator.py`
 
 Stage-1 detection teacher-forcing ownership:
-- `src/training/surfaces.py` owns the guarded shadow resolver and supported
-  `surface.id` values: `stage1_json_ce`, `stage1_compact_trie_ce`, and
-  `stage2_rollout_correction`.
+- `src/training/pipeline_registry.py` owns the guarded pipeline registry and
+  supported public `pipeline.id` values: `stage1_standard_sft`,
+  `stage1_research_teacher_forcing`, and `stage2_rollout_correction`.
 - Shadow objective profiles resolve through text/trie teacher-forcing modules;
   geometry regularizers are not part of the active Stage-2 objective surface.
 - `src/detection/runtime.py` owns detection runtime support/preflight,
@@ -101,7 +101,7 @@ Stage-1 detection teacher-forcing ownership:
 - `src/common/detection_sequence.py` is the compatibility facade; malformed helper-format rows return `None`.
 - `src/common/detection_compact_rows.py` is the stdlib-only low-level marker/render/split helper.
 - `compact_no_desc`, `compact_no_bbox`, and `compact_min` stay compatibility/helper formats.
-- `stage1_detection_teacher_forcing` keeps packing/cache fail-fast policy and
+- `pipeline.id: stage1_research_teacher_forcing` keeps packing/cache fail-fast policy and
   remains config-first under `configs/stage1/detection_teacher_forcing/`.
   Quarantined recursive-detection CE configs under
   `configs/archive/detection_scene_clean_break/stage1/` remain only as archive history,
@@ -124,7 +124,7 @@ Run these tests first:
 - `tests/test_compact_type_gate.py`
 - `tests/test_recursive_detection_ce_loss_adapter.py` for legacy/comparator recursive_detection_ce loss-adapter checks
 - `tests/test_recursive_detection_ce_sft_wiring.py` for legacy/comparator recursive_detection_ce wiring checks
-- `tests/test_training_surface_resolver.py`
+- `tests/test_training_pipeline_registry.py`
 - `tests/test_objective_profile_resolution.py`
 - `tests/test_compact_full_encoding_contract.py`
 - `tests/test_compact_span_projector.py`
@@ -155,7 +155,7 @@ Key v3 config handles:
 - `rollout_matching.decoding.*`
 
 Open these code files first:
-- `src/training/surfaces.py`
+- `src/training/pipeline_registry.py`
 - `src/trainers/stage2_rollout_correction.py`
 - `src/training/stage2/assignment.py`
 - `src/training/stage2/duplicate_filter.py`

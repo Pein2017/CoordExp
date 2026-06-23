@@ -36,7 +36,7 @@ from src.training.stage2.planners import (
 from src.training.supervision.batch import SupervisionBatch
 from src.training.supervision.plans import SupervisionObject, SupervisionPlan
 from src.training.templates.compact_full import create_compact_full_codec
-from src.training.surfaces import TrainingSurfaceResolver
+from src.training.pipeline_registry import TrainingPipelineRegistry
 
 
 class SnapshotTokenizer:
@@ -123,8 +123,8 @@ def build_stage1_golden_thread(source: Mapping[str, Any]) -> Stage1GoldenThread:
     """Build the Stage-1 compact-full golden thread through real owners."""
 
     sample_id = _require_string(source, "sample_id")
-    resolved_surface = TrainingSurfaceResolver().resolve(
-        _require_mapping(source, "surface_config")
+    resolved_pipeline = TrainingPipelineRegistry().resolve(
+        _require_mapping(source, "pipeline_config")
     )
     sample = _build_detection_sample(source)
     encoded = create_compact_full_codec().encode_sample(
@@ -183,7 +183,7 @@ def build_stage1_golden_thread(source: Mapping[str, Any]) -> Stage1GoldenThread:
     )
     trie_target_id = int(encoded.labels[trie_position])
     coordinate_target_id = int(encoded.labels[coordinate_position])
-    objectives = _objective_specs_from_resolved_surface(resolved_surface)
+    objectives = _objective_specs_from_resolved_pipeline(resolved_pipeline)
     supervision = Stage1CompactSpanAdapter().build_batch(
         sample_id=sample_id,
         projection=projection,
@@ -225,13 +225,13 @@ def build_stage1_golden_thread(source: Mapping[str, Any]) -> Stage1GoldenThread:
 
     snapshot = {
         "sample_id": sample_id,
-        "surface": {
-            "surface_id": resolved_surface.pipeline.identity.surface_id,
-            "pipeline_id": resolved_surface.pipeline.identity.pipeline_id,
-            "lifecycle": resolved_surface.pipeline.identity.lifecycle.value,
+        "pipeline": {
+            "pipeline_id": resolved_pipeline.pipeline.identity.pipeline_id,
+            "implementation_id": resolved_pipeline.pipeline.identity.implementation_id,
+            "lifecycle": resolved_pipeline.pipeline.identity.lifecycle.value,
             "enabled_objectives": [
                 entry.objective_id
-                for entry in resolved_surface.objectives.enabled_objectives
+                for entry in resolved_pipeline.objectives.enabled_objectives
             ],
         },
         "supervision_plan": {
@@ -331,8 +331,8 @@ def build_stage2_golden_thread(source: Mapping[str, Any]) -> Stage2GoldenThread:
     """Build the Stage-2 rollout-planning golden thread through real owners."""
 
     sample_id = _require_string(source, "sample_id")
-    resolved_surface = TrainingSurfaceResolver().resolve(
-        _require_mapping(source, "surface_config")
+    resolved_pipeline = TrainingPipelineRegistry().resolve(
+        _require_mapping(source, "pipeline_config")
     )
     predicted_objects = tuple(
         _build_stage2_object(item, default_provenance="rollout_accepted")
@@ -363,10 +363,10 @@ def build_stage2_golden_thread(source: Mapping[str, Any]) -> Stage2GoldenThread:
 
     snapshot = {
         "sample_id": sample_id,
-        "surface": {
-            "surface_id": resolved_surface.pipeline.identity.surface_id,
-            "pipeline_id": resolved_surface.pipeline.identity.pipeline_id,
-            "lifecycle": resolved_surface.pipeline.identity.lifecycle.value,
+        "pipeline": {
+            "pipeline_id": resolved_pipeline.pipeline.identity.pipeline_id,
+            "implementation_id": resolved_pipeline.pipeline.identity.implementation_id,
+            "lifecycle": resolved_pipeline.pipeline.identity.lifecycle.value,
         },
         "duplicate_decisions": [
             {
@@ -661,19 +661,68 @@ def _select_stage1_target_position(
     raise ValueError(f"unsupported stage1 target label selector: {selector!r}")
 
 
-def _objective_specs_from_resolved_surface(
-    resolved_surface: Any,
+def _objective_specs_from_resolved_pipeline(
+    resolved_pipeline: Any,
 ) -> tuple[ObjectiveSpec, ...]:
-    """Return enabled objective specs from a resolved fixture surface."""
+    """Return enabled objective specs from a resolved fixture pipeline."""
 
-    return tuple(
-        ObjectiveSpec(
-            objective_id=entry.objective_id,
-            weight=entry.weight,
-            config=entry.config,
+    specs: list[ObjectiveSpec] = []
+    for entry in resolved_pipeline.objectives.enabled_objectives:
+        if entry.objective_id == "standard_ce":
+            specs.append(
+                ObjectiveSpec(
+                    objective_id="token_ce",
+                    weight=entry.weight,
+                    config=entry.config,
+                )
+            )
+            continue
+        if entry.objective_id == "research_teacher_forcing":
+            terms = entry.config.get("terms", {})
+            if not isinstance(terms, Mapping):
+                raise TypeError(
+                    "research_teacher_forcing fixture objective config.terms must be a mapping"
+                )
+            for term_id, term_config in terms.items():
+                if not isinstance(term_config, Mapping):
+                    raise TypeError(
+                        f"research_teacher_forcing term {term_id!r} must be a mapping"
+                    )
+                enabled = term_config.get("enabled", True)
+                if enabled is False:
+                    continue
+                if type(enabled) is not bool:
+                    raise TypeError(
+                        f"research_teacher_forcing term {term_id!r}.enabled must be a boolean"
+                    )
+                term_weight = term_config.get("weight", 1.0)
+                if not isinstance(term_weight, (int, float)) or isinstance(
+                    term_weight, bool
+                ):
+                    raise TypeError(
+                        f"research_teacher_forcing term {term_id!r}.weight must be numeric"
+                    )
+                specs.append(
+                    ObjectiveSpec(
+                        objective_id=str(term_id),
+                        weight=entry.weight * float(term_weight),
+                        config={
+                            key: value
+                            for key, value in term_config.items()
+                            if key not in {"enabled", "weight"}
+                        },
+                    )
+                )
+            continue
+        specs.append(
+            ObjectiveSpec(
+                objective_id=entry.objective_id,
+                weight=entry.weight,
+                config=entry.config,
+            )
         )
-        for entry in resolved_surface.objectives.enabled_objectives
-    )
+
+    return tuple(specs)
 
 
 def _row_gradient_sums(

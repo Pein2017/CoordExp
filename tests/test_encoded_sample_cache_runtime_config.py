@@ -399,6 +399,100 @@ def test_encoded_sample_cache_fingerprint_tracks_template_and_field_order_axes(
     assert baseline != prompt_changed
 
 
+def test_encoded_sample_cache_fingerprint_tracks_normalized_hierarchy_axes(
+    tmp_path,
+) -> None:
+    train_jsonl = tmp_path / "train.jsonl"
+    train_jsonl.write_text('{"id": 1}\n', encoding="utf-8")
+    common_template = _Template(max_length=128)
+    common_train_args = SimpleNamespace(model="model-a", max_model_len=512)
+
+    def fingerprint(
+        *,
+        pipeline_id: str = "stage1_standard_sft",
+        objective_id: str = "standard_ce",
+        sample_factory_id: str = "detection_sequence",
+        template_id: str = "compact_object_box_closed",
+        object_ordering: str = "sorted",
+        object_field_order: str = "desc_first",
+        bbox_format: str = "xyxy",
+        coordinate_surface: str = "coord_token",
+        strict_parse: bool = True,
+        prompt_variant: str = "default",
+    ) -> dict[str, object]:
+        return _build_encoded_sample_cache_fingerprint(
+            training_config=SimpleNamespace(
+                global_max_length=12000,
+                pipeline={"id": pipeline_id},
+                objective={"id": objective_id},
+                sample_factory={
+                    "id": sample_factory_id,
+                    "target_sequence": {
+                        "object_ordering": object_ordering,
+                        "object_field_order": object_field_order,
+                        "bbox_format": bbox_format,
+                        "coordinate_surface": coordinate_surface,
+                        "strict_parse": strict_parse,
+                    },
+                },
+                detection_template={"id": template_id},
+                prompt={"variant": prompt_variant},
+                template={"system": "sys", "truncation_strategy": "raise"},
+            ),
+            custom_config=SimpleNamespace(
+                **{
+                    **_custom_config().__dict__,
+                    "object_ordering": object_ordering,
+                    "object_field_order": object_field_order,
+                    "bbox_format": bbox_format,
+                    "extra": {"prompt_variant": prompt_variant},
+                }
+            ),
+            template=common_template,
+            train_args=common_train_args,
+            dataset_seed=7,
+            dataset_jsonl=str(train_jsonl),
+            dataset_split="train",
+            dataset_mode="dense",
+            sample_limit=64,
+            system_prompt_dense="sys",
+            system_prompt_summary=None,
+        )
+
+    baseline = fingerprint()
+    research = fingerprint(
+        pipeline_id="stage1_research_teacher_forcing",
+        objective_id="research_teacher_forcing",
+    )
+    random_order = fingerprint(object_ordering="random_permutation")
+    geometry_first = fingerprint(object_field_order="geometry_first")
+    bbox_changed = fingerprint(bbox_format="cxcy_logw_logh")
+    strict_changed = fingerprint(strict_parse=False)
+    prompt_changed = fingerprint(prompt_variant="coco_80")
+
+    assert baseline["pipeline_id"] == "stage1_standard_sft"
+    assert baseline["objective_id"] == "standard_ce"
+    assert baseline["sample_factory_id"] == "detection_sequence"
+    assert baseline["sample_factory_target_sequence_object_ordering"] == "sorted"
+    assert baseline["sample_factory_target_sequence_object_field_order"] == "desc_first"
+    assert baseline["sample_factory_target_sequence_bbox_format"] == "xyxy"
+    assert baseline["sample_factory_target_sequence_coordinate_surface"] == "coord_token"
+    assert baseline["sample_factory_target_sequence_strict_parse"] is True
+    assert baseline["prompt_variant"] == "default"
+    assert baseline["prompt_template_hash"] == baseline["custom_prompt_template_hash"]
+    assert baseline["chat_template_identity"] == "unknown_chat_template"
+    assert baseline["tokenizer_id"] == "model-a"
+    assert baseline["packing_length"] == 128
+    assert "custom_object_field_order" in baseline
+    assert "coord_tokens" in baseline
+    assert baseline != research
+    assert baseline != random_order
+    assert baseline != geometry_first
+    assert baseline != bbox_changed
+    assert baseline != strict_changed
+    assert baseline != prompt_changed
+
+
 def test_encoded_sample_cache_fingerprint_tracks_tokenizer_identity(
     tmp_path,
 ) -> None:

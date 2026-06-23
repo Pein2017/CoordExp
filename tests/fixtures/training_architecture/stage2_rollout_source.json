@@ -1,12 +1,12 @@
 {
   "sample_id": "stage2-golden-rollout",
-  "surface_config": {
+  "pipeline_config": {
     "run": {
       "id": "stage2-golden-rollout",
       "scope": "tiny",
       "seed": 12
     },
-    "surface": {
+    "pipeline": {
       "id": "stage2_rollout_correction",
       "version": "golden-v1",
       "description": "Golden Stage-2 rollout planning fixture."
@@ -22,20 +22,20 @@
     },
     "supervision": {
       "mode": "rollout_correction",
-      "rollout_prefix_source": "rollout",
-      "correction_scope": "rollout_plus_false_negative",
-      "planner": "greedy_iou_shadow",
-      "assignment": "greedy_iou",
-      "duplicate_filter": "deterministic_duplicate_filter"
+      "assignment": {
+        "strategy": "greedy_iou"
+      },
+      "duplicate_filter": {
+        "strategy": "deterministic_duplicate_filter"
+      },
+      "target_ir": {
+        "required": true
+      }
     },
     "objectives": {
       "residual_set_correction": {
         "enabled": true,
         "weight": 1.0
-      },
-      "coord_soft_ce": {
-        "enabled": false,
-        "weight": 0.0
       }
     },
     "observability": {
@@ -46,7 +46,6 @@
     },
     "runtime": {
       "trainer": "fixture",
-      "trainer_variant": "stage2_rollout_correction",
       "precision": "float32"
     }
   },

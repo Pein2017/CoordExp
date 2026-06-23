@@ -18,7 +18,7 @@ Scope note:
   one hard `global_max_length` cap, offline static packing, full-length probing before plan build,
   and fail-fast when any atomic sample exceeds the cap.
 - For Stage-2 pipeline-declared training, the canonical objective surface now lives under:
-  - `stage2_rollout_correction.pipeline` for `custom.trainer_variant: stage2_rollout_correction`
+  - `stage2_rollout_correction.pipeline` for `pipeline.id: stage2_rollout_correction`
 - In those Stage-2 paths, active objective ownership is residual rollout
   correction through the pipeline surface described in:
   - `docs/training/STAGE2_RUNBOOK.md`
@@ -29,8 +29,8 @@ Scope note:
 - Raw-text norm1000 ablations remain legacy Stage-1 SFT surfaces, not latest
   compact detection overlays. Materialization verification should include:
   - `configs/stage1/profiles/2b/raw_text_xyxy_pure_ce_coco80_desc_first_1024_lvis_proxy.yaml`
-- The canonical compact Stage-1 detection teacher-forcing public route is
-  `stage1_detection_teacher_forcing` under
+- The canonical compact Stage-1 research teacher-forcing public route is
+  `pipeline.id: stage1_research_teacher_forcing`; active configs live under
   `configs/stage1/detection_teacher_forcing/`.
 - Compact prefix roll-in multi-positive training remains only a legacy
   recursive-detection CE comparator/ablation surface, not the active compact
@@ -54,39 +54,43 @@ Scope note:
 
 ## Current Stage-1 Direction
 
-The current public compact Stage-1 detection teacher-forcing route is
-`stage1_detection_teacher_forcing` under
-`configs/stage1/detection_teacher_forcing/`. The shadow surface IDs below are
-architecture/research resolver IDs, not replacements for that public config
-route.
+The current public compact Stage-1 research teacher-forcing route is
+`pipeline.id: stage1_research_teacher_forcing`; active configs live under
+`configs/stage1/detection_teacher_forcing/`. Pipeline registry ids select the
+public training family, while implementation ids preserve concrete descriptor
+handles under `src/training/pipelines/`.
 
-The new unified training architecture defines two Stage-1 shadow surfaces:
+The new unified training architecture defines two Stage-1 pipeline ids:
 
-- `surface.id: stage1_compact_trie_ce`
-  - shadow architecture ID for compact-full Stage-1 objective research
+- `pipeline.id: stage1_research_teacher_forcing`
+  - public pipeline ID for compact-full Stage-1 objective research
+  - implementation descriptor handle: `stage1_compact_trie_ce`
   - uses semantic compact template IDs such as `compact` or
     `compact_object_box_closed`; legacy config-level `compact_full` is a
     compatibility alias for semantic `compact`, not a low-level template id
   - supervises token spans, object-entry trie targets, coordinate soft targets,
     and optional decoded-box regression through typed objective atoms
-  - not the canonical public compact teacher-forcing config route; use
-    `stage1_detection_teacher_forcing` under
-    `configs/stage1/detection_teacher_forcing/` for active compact
-    teacher-forcing configs
-- `surface.id: stage1_json_ce`
+  - canonical public compact teacher-forcing route; active configs under
+    `configs/stage1/detection_teacher_forcing/` use
+    `objective.id: research_teacher_forcing`
+- `pipeline.id: stage1_standard_sft`
+  - implementation descriptor handle: `stage1_json_ce`
   - JSON chat CE baseline for regression and fallback comparison
-  - keeps the baseline teacher-forced JSON surface available without making it
+  - keeps the baseline teacher-forced JSON pipeline available without making it
     the compact-full default
 
-The canonical objective profile order is:
+The public registry objective profile order is:
 
 ```text
-token_ce, trie_ce, coord_soft_ce
+standard_ce, research_teacher_forcing, residual_set_correction
 ```
 
-Objective authoring is keyed, but the resolver emits this deterministic order.
-Disabled objectives remain explicit so ablations preserve their intended
-contract instead of silently deleting siblings.
+Objective authoring is keyed, but the registry emits this deterministic public
+order. Internal term ids such as `token_ce`, `trie_ce`, and `coord_soft_ce` may
+appear under `objective.terms` or concrete objective
+modules/metrics only. Disabled terms remain explicit inside that objective
+family so ablations preserve their intended contract instead of silently
+deleting siblings.
 
 Cleanup boundary:
 
@@ -177,7 +181,7 @@ custom:
 
 The active compact Stage-1 owner is the detection stack under `src/detection/`.
 The current public compact teacher-forcing route is
-`stage1_detection_teacher_forcing` under
+`pipeline.id: stage1_research_teacher_forcing`; active configs live under
 `configs/stage1/detection_teacher_forcing/`.
 
 The old recursive-detection CE configs below remain legacy/comparator,

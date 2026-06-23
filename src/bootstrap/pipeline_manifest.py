@@ -79,7 +79,7 @@ def build_pipeline_manifest(
         if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
             if runtime_profile.explicit_pipeline_required:
                 raise TypeError(f"pipeline.{path} must be a list of module specs")
-            raw = None
+            raw = [{"name": str(name)} for name in defaults]
 
         if raw is None:
             return []
@@ -124,7 +124,10 @@ def build_pipeline_manifest(
     objective = _resolve("objective", default_objective)
     diagnostics = _resolve("diagnostics", default_diagnostics)
 
-    extra: dict[str, Any] = {"variant": runtime_profile.variant}
+    extra: dict[str, Any] = {
+        "runtime_stage": runtime_profile.runtime_stage,
+        "manifest_family": runtime_profile.manifest_family,
+    }
 
     payload = _normalize_json_value(
         {"objective": objective, "diagnostics": diagnostics, "extra": extra}

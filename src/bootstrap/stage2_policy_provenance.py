@@ -55,17 +55,23 @@ def build_stage2_policy_provenance(
     """Return rollout-correction policy provenance for rank-0 manifests.
 
     :param training_config: Resolved typed training config or equivalent mapping.
-    :param trainer_variant: Resolved trainer variant. When omitted, the helper
-        falls back to ``custom.trainer_variant`` from ``training_config``.
+    :param trainer_variant: Deprecated caller context retained for API stability;
+        the provenance gate uses ``pipeline.id`` from ``training_config``.
     :returns: A JSON-serializable policy block for ``stage2_rollout_correction``
         runs, or ``None`` when the active run is not the unified Stage-2 surface.
     """
 
     root = _as_mapping(training_config)
-    custom = _as_mapping(root.get("custom"))
-    variant = str(trainer_variant or custom.get("trainer_variant") or "").strip()
+    pipeline = _as_mapping(root.get("pipeline"))
+    pipeline_id = _string_field(
+        pipeline,
+        "id",
+        "",
+    )
+    variant = str(pipeline_id or "").strip()
     if variant != STAGE2_ROLLOUT_CORRECTION_TRAINER_VARIANT:
         return None
+    pipeline_id = STAGE2_ROLLOUT_CORRECTION_TRAINER_VARIANT
 
     stage2_cfg = _as_mapping(root.get("stage2_rollout_correction"))
     if not stage2_cfg:
@@ -106,10 +112,12 @@ def build_stage2_policy_provenance(
     fallback_loss_weight = _optional_finite_float(
         correction.get("fallback_loss_weight", 1.0)
     )
+    sample_factory = _as_mapping(root.get("sample_factory"))
+    target_sequence = _as_mapping(sample_factory.get("target_sequence"))
 
     return {
         "schema_version": STAGE2_POLICY_PROVENANCE_SCHEMA_VERSION,
-        "trainer_variant": variant,
+        "pipeline": {"id": pipeline_id},
         "assignment_strategy": assignment_strategy,
         "assignment_iou_threshold": configured_assignment_iou,
         "assignment_iou_threshold_effective": effective_assignment_iou,
@@ -119,7 +127,11 @@ def build_stage2_policy_provenance(
         "duplicate_center_radius_scale": duplicate_center_radius_scale,
         "object_ordering_policy": insertion_order,
         "object_ordering_strategy_id": _object_ordering_strategy_id(insertion_order),
-        "sample_object_ordering": _string_field(custom, "object_ordering", "sorted"),
+        "sample_object_ordering": _string_field(
+            target_sequence,
+            "object_ordering",
+            "sorted",
+        ),
         "rollout_template_family": _string_field(
             correction,
             "rollout_template_family",

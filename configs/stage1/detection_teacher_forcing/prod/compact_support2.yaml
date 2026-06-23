@@ -1,8 +1,8 @@
-# Canonical clean-break Stage-1 detection teacher-forcing config.
+# Canonical Stage-1 research teacher-forcing config.
 #
-# This replaces the public recursive_detection_ce vocabulary for the retained
-# compact Stage-1 teacher-forcing surface while keeping the same data,
-# prompt, template, token-row, no-resize, and no-packing runtime invariants.
+# This keeps the retained compact target-IR path runnable while using the
+# target-hierarchy config surface: public pipeline/objective ids, top-level
+# token_embeddings_adapter, and fail-fast no-packing semantics.
 model:
   model: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
   attn_impl: flash_attention_2
@@ -14,11 +14,87 @@ template:
   max_length: 12000
   max_pixels: 1048576
 
+pipeline:
+  id: stage1_research_teacher_forcing
+
+sample_factory:
+  id: detection_sequence
+  target_sequence:
+    task_family: detection
+    object_ordering: random_permutation
+    object_field_order: desc_first
+    bbox_format: xyxy
+    coordinate_surface: coord_token
+    strict_parse: true
+
+prompt:
+  system_variant: stage1_detection
+  user_variant: compact_detection
+  include_template_summary: true
+  variant: coco_80
+
+detection_template:
+  id: compact
+
+token_embeddings_adapter:
+  enabled: true
+  tie_head: true
+  groups:
+    coord_geometry:
+      role: coord_geometry
+      start_token: "<|coord_0|>"
+      end_token: "<|coord_999|>"
+      expected_start: 151670
+      expected_end: 152669
+    compact_structure:
+      role: structural_ce_only
+      tokens:
+        - "<|object_ref_start|>"
+        - "<|box_start|>"
+      expected_ids:
+        "<|object_ref_start|>": 151646
+        "<|box_start|>": 151648
+  embed_lr: 5.0e-5
+  weight_decay: 0.0
+
+objective:
+  id: research_teacher_forcing
+  profile: pure_valid_set_marginal
+  target_ir:
+    rollin_policy:
+      name: random_permutation
+      base_seed: 17
+    exact_packing_mapping:
+      enabled: false
+  terms:
+    token_type_mass:
+      enabled: false
+    conditional_valid_set_likelihood:
+      enabled: false
+    within_valid_coverage:
+      enabled: false
+      coverage_strength: 0.0
+    continuation_margin:
+      enabled: false
+
+packing:
+  static_packing: false
+  padding_free_packed: false
+
+evaluation:
+  expected_template: compact
+  parser_mode: strict_expected
+
+validation:
+  validate_span_alignment: true
+  validate_template_capabilities: true
+  fail_fast: true
+
 training:
   output_root: /data/CoordExp/outputs/stage1_2b/detection_teacher_forcing
   logging_root: /data/CoordExp/outputs/stage1_2b/detection_teacher_forcing/tb
-  artifact_subdir: compact_valid_set_teacher_forcing_bsz16_4epoch_tokenrows_v2
-  run_name: compact-valid-set-teacher-forcing-bsz16-4epoch-tokenrows-v2
+  artifact_subdir: compact_valid_set_research_teacher_forcing_bsz16_4epoch
+  run_name: compact-valid-set-research-teacher-forcing-bsz16-4epoch
   num_train_epochs: 4
   per_device_train_batch_size: 16
   effective_batch_size: 128
@@ -57,75 +133,10 @@ training:
   ddp_find_unused_parameters: false
   ddp_broadcast_buffers: false
 
-deepspeed:
-  enabled: false
-
 data:
   train_jsonl: public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
   val_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
   image_root: public_data/coco/rescale_32_1024_bbox_max60
-  object_ordering: random_permutation
 
-prompt:
-  system_variant: stage1_detection
-  user_variant: compact_detection
-  include_template_summary: true
-  prompt_variant_enabled: true
-
-detection_template:
-  id: compact
-  coordinate_surface: coord_token
-  bbox_format: xyxy
-  strict_parse: true
-
-token_rows:
-  enabled: true
-  tie_head: true
-  groups:
-    coord_geometry:
-      role: coord_geometry
-      start_token: "<|coord_0|>"
-      end_token: "<|coord_999|>"
-      expected_start: 151670
-      expected_end: 152669
-    compact_structure:
-      role: structural_ce_only
-      tokens: ["<|object_ref_start|>", "<|box_start|>"]
-      expected_ids:
-        "<|object_ref_start|>": 151646
-        "<|box_start|>": 151648
-  embed_lr: 5.0e-5
-  weight_decay: 0.0
-
-objective:
-  id: teacher_forcing
-  profile: pure_valid_set_marginal
-  target_ir:
-    rollin_policy:
-      name: random_permutation
-      base_seed: 17
-    exact_packing_mapping:
-      enabled: false
-  modules:
-    token_type_mass:
-      enabled: false
-    conditional_valid_set_likelihood:
-      enabled: false
-    within_valid_coverage:
-      enabled: false
-      coverage_strength: 0.0
-    continuation_margin:
-      enabled: false
-
-packing:
-  static_packing: false
-  padding_free_packed: false
-
-evaluation:
-  expected_template: compact
-  parser_mode: strict_expected
-
-validation:
-  validate_span_alignment: true
-  validate_template_capabilities: true
-  fail_fast: true
+deepspeed:
+  enabled: false

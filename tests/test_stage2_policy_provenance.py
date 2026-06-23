@@ -7,9 +7,9 @@ from src.config.loader import ConfigLoader
 def test_stage2_policy_provenance_records_effective_greedy_threshold() -> None:
     provenance = build_stage2_policy_provenance(
         {
-            "custom": {
-                "trainer_variant": "stage2_rollout_correction",
-                "object_ordering": "sorted",
+            "pipeline": {"id": "stage2_rollout_correction"},
+            "sample_factory": {
+                "target_sequence": {"object_ordering": "random_permutation"}
             },
             "stage2_rollout_correction": {
                 "correction": {
@@ -28,6 +28,8 @@ def test_stage2_policy_provenance_records_effective_greedy_threshold() -> None:
     )
 
     assert provenance is not None
+    assert provenance["pipeline"]["id"] == "stage2_rollout_correction"
+    assert "trainer_variant" not in provenance
     assert provenance["assignment_strategy"] == "greedy_iou"
     assert provenance["assignment_iou_threshold"] is None
     assert provenance["assignment_iou_threshold_effective"] == 0.55
@@ -37,7 +39,7 @@ def test_stage2_policy_provenance_records_effective_greedy_threshold() -> None:
     assert provenance["duplicate_center_radius_scale"] == 0.75
     assert provenance["object_ordering_policy"] == "tail_append"
     assert provenance["object_ordering_strategy_id"] == "legacy_tail_append"
-    assert provenance["sample_object_ordering"] == "sorted"
+    assert provenance["sample_object_ordering"] == "random_permutation"
     assert provenance["rollout_template_family"] == "compact_full"
     assert "rollout_decode_policy" not in provenance
     assert provenance["invalid_rollout_policy"] == "fallback_to_gt_fn_append"
@@ -47,7 +49,7 @@ def test_stage2_policy_provenance_records_effective_greedy_threshold() -> None:
 def test_stage2_policy_provenance_prefers_explicit_assignment_threshold() -> None:
     provenance = build_stage2_policy_provenance(
         {
-            "custom": {"trainer_variant": "stage2_rollout_correction"},
+            "pipeline": {"id": "stage2_rollout_correction"},
             "stage2_rollout_correction": {
                 "correction": {
                     "assignment": {
@@ -75,8 +77,7 @@ def test_stage2_policy_provenance_prefers_explicit_assignment_threshold() -> Non
 
 def test_stage2_policy_provenance_omits_non_stage2_rollout_correction_runs() -> None:
     provenance = build_stage2_policy_provenance(
-        {"custom": {"trainer_variant": "sft"}},
-        trainer_variant="sft",
+        {"pipeline": {"id": "stage1_standard_sft"}},
     )
 
     assert provenance is None
@@ -87,12 +88,11 @@ def test_stage2_policy_provenance_reads_real_typed_stage2_config() -> None:
         "configs/stage2/rollout_correction/smoke/compact_full_hf_1step.yaml"
     )
 
-    provenance = build_stage2_policy_provenance(
-        cfg,
-        trainer_variant="stage2_rollout_correction",
-    )
+    provenance = build_stage2_policy_provenance(cfg)
 
     assert provenance is not None
+    assert provenance["pipeline"]["id"] == "stage2_rollout_correction"
+    assert "trainer_variant" not in provenance
     assert provenance["assignment_strategy"] == "greedy_iou"
     assert provenance["assignment_iou_threshold"] is None
     assert provenance["assignment_iou_threshold_effective"] == 0.5

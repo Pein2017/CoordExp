@@ -1,63 +1,169 @@
-extends:
-  - ../../_shared/coord_soft_ce_gate_2b.yaml
-  - ../../../_shared/datasets/coco_1024_bbox_max60.yaml
-  - ../../../_shared/prompts/coco80_geometry_first.yaml
-  - ../../_shared/loss_pure_ce.yaml
-
 global_max_length: 12000
 
 model:
   model: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent
   model_type: qwen3_vl
+  torch_dtype: bfloat16
+  attn_impl: flash_attention_2
 
 template:
+  template: qwen3_vl
+  truncation_strategy: right
   max_length: 12000
   max_pixels: 1048576
 
-tuner:
-  freeze_llm: false
-  freeze_vit: true
-  freeze_aligner: true
+pipeline:
+  id: stage1_standard_sft
+
+sample_factory:
+  id: detection_sequence
+  target_sequence:
+    task_family: detection
+    object_ordering: sorted
+    object_field_order: geometry_first
+    bbox_format: xyxy
+    coordinate_surface: coord_token
+    strict_parse: true
+
+prompt:
+  system_variant: stage1_detection
+  user_variant: compact_detection
+  include_template_summary: true
+  variant: coco_80
+
+detection_template:
+  id: compact_object_box_closed
+
+token_embeddings_adapter:
+  enabled: true
+  tie_head: true
+  groups:
+    coord_geometry:
+      role: coord_geometry
+      start_token: "<|coord_0|>"
+      end_token: "<|coord_999|>"
+      expected_start: 151670
+      expected_end: 152669
+    compact_structure:
+      role: structural_ce_only
+      tokens:
+        - "<|object_ref_start|>"
+        - "<|object_ref_end|>"
+        - "<|box_start|>"
+        - "<|box_end|>"
+      expected_ids:
+        "<|object_ref_start|>": 151646
+        "<|object_ref_end|>": 151647
+        "<|box_start|>": 151648
+        "<|box_end|>": 151649
+  embed_lr: 1.0e-4
+  head_lr: 1.0e-4
+  weight_decay: 0.0
+
+objective:
+  id: standard_ce
+  variant: sorted_sft
+  auxiliaries:
+    coord_soft_ce:
+      enabled: false
+      ce_weight: 0.0
+      soft_ce_weight: 0.0
+      w1_weight: 0.0
+      gate_weight: 0.0
+      text_gate_weight: 0.0
+    geometry:
+      enabled: false
+
+packing:
+  static_packing: true
+  padding_free_packed: false
+
+evaluation:
+  expected_template: compact_object_box_closed
+  parser_mode: strict_expected
+
+validation:
+  validate_span_alignment: true
+  validate_template_capabilities: true
+  fail_fast: true
+
+data:
+  train_jsonl: public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
+  val_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+  image_root: public_data/coco
 
 training:
+  output_root: ./output
+  logging_root: ./tb
   artifact_subdir: stage1_2b/coco_bbox_max60_1024-coco80-geometry_first-compact_object_box_closed-sorted-packed12k-natural_adjacent-pure_ce
   run_name: epoch_4-pure_ce-coco80-geometry_first-1024-compact_object_box_closed-sorted-packed12k-natural_adjacent-llm_only
   num_train_epochs: 4
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  effective_batch_size: 64
+  optimizer: multimodal_token_embeddings_adapter
+  learning_rate: 2.0e-4
+  vit_lr: 1.0e-4
+  aligner_lr: 4.0e-4
+  gradient_checkpointing: true
+  lr_scheduler_type: cosine_warmup_with_min_lr
+  lr_scheduler_kwargs:
+    min_lr: 1.0e-6
+  bf16: true
+  report_to:
+    - tensorboard
+  seed: 17
+  warmup_ratio: 0.1
+  max_grad_norm: 0.5
+  weight_decay: 0.0
+  add_version: true
+  save_safetensors: true
+  eval_strategy: steps
+  eval_steps: 40
+  save_strategy: best
+  save_steps: 200
+  save_total_limit: 2
+  save_last_epoch: true
+  save_model_only: false
+  metric_for_best_model: eval_token_acc
+  greater_is_better: true
+  save_delay_steps: 800
+  logging_steps: 10
+  logging_first_step: true
+  dataset_num_proc: 8
+  dataloader_num_workers: 4
+  dataloader_pin_memory: true
+  dataloader_prefetch_factor: 2
+  dataloader_persistent_workers: false
   packing: true
   packing_mode: static
+  packing_buffer: 512
+  packing_min_fill_ratio: 0.7
+  packing_drop_last: true
+  packing_length_precompute_workers: 8
   eval_packing: true
-  effective_batch_size: 64
   static_packing_cache:
     root_dir: null
 
-custom:
-  object_ordering: sorted
-  detection_sequence_format: compact
-  detection_template_id: compact_object_box_closed
-  token_embeddings_adapter:
-    enabled: true
-    tie_head: true
-    groups:
-      coord_geometry:
-        role: coord_geometry
-        start_token: "<|coord_0|>"
-        end_token: "<|coord_999|>"
-        expected_start: 151670
-        expected_end: 152669
-      compact_structure:
-        role: structural_ce_only
-        tokens:
-          - "<|object_ref_start|>"
-          - "<|object_ref_end|>"
-          - "<|box_start|>"
-          - "<|box_end|>"
-        expected_ids:
-          "<|object_ref_start|>": 151646
-          "<|object_ref_end|>": 151647
-          "<|box_start|>": 151648
-          "<|box_end|>": 151649
-    embed_lr: 1.0e-4
-    head_lr: 1.0e-4
-    weight_decay: 0.0
-  eval_detection:
-    enabled: false
+deepspeed:
+  enabled: true
+  config: zero2
+
+tuner:
+  train_type: lora
+  use_swift_lora: false
+  use_dora: true
+  freeze_llm: false
+  freeze_vit: true
+  freeze_aligner: true
+  target_modules:
+    - all-linear
+  target_regex: null
+  modules_to_save: []
+  lora_rank: 16
+  lora_alpha: 32
+  lora_dropout: 0.0
+  lora_bias: none
+
+debug:
+  enabled: false

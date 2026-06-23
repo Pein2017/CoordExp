@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.config.schema import TrainingConfig
+from src.config.schema import PromptOverrides, TrainingConfig
 
 
 def _minimal_stage2_payload() -> dict[str, object]:
@@ -13,6 +13,10 @@ def _minimal_stage2_payload() -> dict[str, object]:
             "trainer_variant": "stage2_rollout_correction",
             "train_jsonl": "train.jsonl",
             "val_jsonl": "val.jsonl",
+            "object_field_order": "desc_first",
+            "user_prompt": "prompt",
+            "emit_norm": "none",
+            "json_format": "standard",
         },
         "training": {"output_dir": "out"},
         "stage2_rollout_correction": {
@@ -43,9 +47,9 @@ def test_stage2_rollout_correction_rejects_ab_scheduler_keys(
     )
 
     with pytest.raises(ValueError) as exc_info:
-        TrainingConfig.from_dict(payload)
+        TrainingConfig.from_mapping(payload, PromptOverrides())
 
     message = str(exc_info.value)
     assert "stage2_rollout_correction" in message
     assert removed_key in message
-    assert "has no A/B scheduler" in message
+    assert "has been removed" in message

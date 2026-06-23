@@ -1,13 +1,13 @@
 {
   "sample_id": "stage1-golden-compact",
-  "surface_config": {
+  "pipeline_config": {
     "run": {
       "id": "stage1-golden-compact",
       "scope": "tiny",
       "seed": 12
     },
-    "surface": {
-      "id": "stage1_compact_trie_ce",
+    "pipeline": {
+      "id": "stage1_research_teacher_forcing",
       "version": "golden-v1",
       "description": "Golden compact-full Stage-1 fixture."
     },
@@ -27,13 +27,21 @@
       "coordinate_format": "coord_token_xyxy"
     },
     "objectives": {
-      "trie_ce": {
+      "research_teacher_forcing": {
         "enabled": true,
-        "weight": 1.0
-      },
-      "coord_soft_ce": {
-        "enabled": true,
-        "weight": 0.25
+        "weight": 1.0,
+        "config": {
+          "terms": {
+            "trie_ce": {
+              "enabled": true,
+              "weight": 1.0
+            },
+            "coord_soft_ce": {
+              "enabled": true,
+              "weight": 0.25
+            }
+          }
+        }
       }
     },
     "observability": {

@@ -20,10 +20,14 @@ from src.training_runtime import (
     validate_training_runtime_preflight,
 )
 
+PUBLIC_RESEARCH_TF_EPOCH_VARYING_ROLLIN_BYPASS_REASON = (
+    "research_teacher_forcing_epoch_varying_rollin"
+)
+
 
 def make_training_config(
     *,
-    objective_id: str = "teacher_forcing",
+    objective_id: str = "research_teacher_forcing",
     rollin_policy: str = "random_permutation",
     cache_namespace: str = "encoded_sample_cache",
     ineligible_policy: str = "error",
@@ -95,12 +99,12 @@ def make_target_ir(
 
 def test_epoch_varying_training_rollin_rejects_encoded_cache_enabled() -> None:
     config = make_training_config(
-        objective_id="teacher_forcing",
+        objective_id="research_teacher_forcing",
         rollin_policy="random_permutation",
     )
     config.training.encoded_sample_cache.enabled = True
 
-    with pytest.raises(ValueError, match="teacher_forcing encoded training cache"):
+    with pytest.raises(ValueError, match="research_teacher_forcing encoded training cache"):
         validate_training_runtime_preflight(
             config,
             runtime_plan=resolve_training_runtime_plan(
@@ -111,7 +115,7 @@ def test_epoch_varying_training_rollin_rejects_encoded_cache_enabled() -> None:
 
 def test_collect_preflight_records_teacher_forcing_cache_bypass_reason() -> None:
     config = make_training_config(
-        objective_id="teacher_forcing",
+        objective_id="research_teacher_forcing",
         rollin_policy="random_permutation",
         ineligible_policy="bypass",
     )
@@ -127,8 +131,9 @@ def test_collect_preflight_records_teacher_forcing_cache_bypass_reason() -> None
     assert result.encoded_cache.ineligible_policy == "bypass"
     assert (
         result.encoded_cache.bypass_reason
-        == "teacher_forcing_epoch_varying_rollin"
+        == PUBLIC_RESEARCH_TF_EPOCH_VARYING_ROLLIN_BYPASS_REASON
     )
+    assert result.encoded_cache.bypass_reason != "teacher_forcing_epoch_varying_rollin"
     assert result.encoded_cache.namespace == "encoded_sample_cache"
 
 
@@ -145,15 +150,16 @@ def test_validate_preflight_allows_teacher_forcing_cache_bypass_policy() -> None
     assert result.encoded_cache.ineligible_policy == "bypass"
     assert (
         result.encoded_cache.bypass_reason
-        == "teacher_forcing_epoch_varying_rollin"
+        == PUBLIC_RESEARCH_TF_EPOCH_VARYING_ROLLIN_BYPASS_REASON
     )
+    assert result.encoded_cache.bypass_reason != "teacher_forcing_epoch_varying_rollin"
 
 
 def test_encoded_cache_alias_remains_compatibility_only() -> None:
     config = make_training_config(cache_namespace="encoded_cache")
     config.training.encoded_cache.enabled = True
 
-    with pytest.raises(ValueError, match="teacher_forcing encoded training cache"):
+    with pytest.raises(ValueError, match="research_teacher_forcing encoded training cache"):
         validate_training_runtime_preflight(
             config,
             runtime_plan=resolve_training_runtime_plan(

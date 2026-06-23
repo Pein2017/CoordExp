@@ -734,9 +734,9 @@ def main() -> int:
         offline_max_pixels = int(preflight["offline_max_pixels"])
 
         if not train_jsonl:
-            raise ValueError("custom.train_jsonl is required (resolved empty)")
+            raise ValueError("data.train_jsonl is required (resolved empty)")
         if not val_jsonl:
-            raise ValueError("custom.val_jsonl is required (resolved empty)")
+            raise ValueError("data.val_jsonl is required (resolved empty)")
 
         server_tp = int(preflight.get("vllm_tensor_parallel_size") or 1)
         server_gpus, train_gpus, server_dp = validate_gpu_split(

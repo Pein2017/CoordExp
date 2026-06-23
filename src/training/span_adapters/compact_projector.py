@@ -6,6 +6,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
+from src.detection.template_contracts import is_compact_template_id
 from src.training.encoding.view import EncodedDetectionView
 from src.training.supervision.spans import SupervisionSpanRole
 
@@ -112,7 +113,7 @@ class CompactSpanProjection:
 
 
 class CompactFullSpanProjector:
-    """Project ``compact_full`` encoded views into supervised span positions."""
+    """Project semantic compact encoded views into supervised span positions."""
 
     def project(self, view: EncodedDetectionView) -> CompactSpanProjection:
         """Return a compact projection for *view*.
@@ -120,14 +121,14 @@ class CompactFullSpanProjector:
         :param view: Encoded detection view owned by the template/tokenizer layer.
         :returns: Label-position-only compact span projection.
         :raises TypeError: If *view* is not an ``EncodedDetectionView``.
-        :raises ValueError: If the view was not rendered by ``compact_full``.
+        :raises ValueError: If the view was not rendered by a compact template.
         """
 
         # validate template ownership.
         if type(view) is not EncodedDetectionView:
             raise TypeError("compact span projection requires EncodedDetectionView")
-        if view.template_id != "compact_full":
-            raise ValueError("compact span projection requires template_id=compact_full")
+        if not is_compact_template_id(view.template_id):
+            raise ValueError("compact span projection requires a compact template_id")
 
         # project global semantic regions.
         label_positions = tuple(view.label_positions)

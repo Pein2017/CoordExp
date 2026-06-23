@@ -70,6 +70,33 @@ def _all_non_smoke_training_configs() -> list[Path]:
     return _stage1_non_smoke_leaves() + _stage2_non_smoke_leaves()
 
 
+def _is_active_leaf_config(path: Path) -> bool:
+    rel = path.relative_to(REPO_ROOT).as_posix()
+    if "/_shared/" in rel or "/negative/" in rel:
+        return False
+    if path.name == "common_prodlike.yaml":
+        return False
+    if rel in {
+        "configs/stage1/sft_base.yaml",
+        "configs/stage2/rollout_correction/base.yaml",
+    }:
+        return False
+    if rel.startswith("configs/stage1/recursive_detection_ce/"):
+        return False
+    return rel.startswith("configs/stage1/") or rel.startswith(
+        "configs/stage2/rollout_correction/"
+    )
+
+
+def _active_leaf_training_configs() -> list[Path]:
+    return sorted(
+        path
+        for root in (STAGE1_ROOT, STAGE2_ROOT)
+        for path in root.rglob("*.yaml")
+        if _is_active_leaf_config(path)
+    )
+
+
 def _representative_migrated_leaves() -> list[Path]:
     return [
         STAGE1_ROOT / "profiles/4b/coord_soft_ce_gate_coco80_desc_first_1024_lvis_proxy.yaml",
@@ -110,6 +137,19 @@ def test_stage1_canonical_profiles_load_under_current_hierarchy() -> None:
 
     for path in profiles:
         ConfigLoader.load_materialized_training_config(str(path))
+
+
+def test_active_stage1_stage2_leaf_configs_materialize_under_current_hierarchy() -> None:
+    leaves = _active_leaf_training_configs()
+    assert leaves, "Expected active Stage-1/Stage-2 training config leaves."
+
+    for path in leaves:
+        ConfigLoader.load_materialized_training_config(str(path))
+
+
+def test_retired_teacher_forcing_config_root_is_not_active() -> None:
+    retired_root = STAGE1_ROOT / "teacher_forcing"
+    assert not list(retired_root.rglob("*.yaml"))
 
 
 def test_stage2_rollout_correction_hierarchy_uses_single_active_root() -> None:

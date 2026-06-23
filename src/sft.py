@@ -61,7 +61,7 @@ from .bootstrap.trainer_setup import (
     instantiate_trainer,
 )
 from .config import ConfigLoader
-from .config.schema import TokenEmbeddingsAdapterConfig
+from .config.schema import TEACHER_FORCING_OBJECTIVE_ID, TokenEmbeddingsAdapterConfig
 from .config.schema import CoordTokensConfig, DebugConfig, DetectionTrainingConfig
 from .config.prompts import (
     coord_mode_from_coord_tokens_enabled,
@@ -756,31 +756,84 @@ def _config_to_mapping(value: Any) -> dict[str, Any]:
     return {}
 
 
+def _clean_authored_experiment_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        str(key): copy.deepcopy(value)
+        for key, value in payload.items()
+        if not (
+            isinstance(value, Sequence)
+            and not isinstance(value, (str, bytes, bytearray))
+            and len(value) == 0
+        )
+    }
+
+
 def _resolve_authored_experiment_payload(training_config: Any) -> dict[str, Any] | None:
     """Return authored experiment metadata for run manifests, if configured."""
 
-    to_mapping = getattr(training_config, "to_mapping", None)
-    if callable(to_mapping):
-        mapped = to_mapping()
-        if isinstance(mapped, Mapping):
-            experiment = mapped.get("experiment")
-            if isinstance(experiment, Mapping):
-                return dict(experiment)
-
     experiment_cfg = getattr(training_config, "experiment", None)
     if experiment_cfg is None:
+        to_mapping = getattr(training_config, "to_mapping", None)
+        if callable(to_mapping):
+            mapped = to_mapping()
+            if isinstance(mapped, Mapping):
+                experiment = mapped.get("experiment")
+                if isinstance(experiment, Mapping):
+                    return _clean_authored_experiment_payload(experiment)
         return None
     to_mapping = getattr(experiment_cfg, "to_mapping", None)
     if callable(to_mapping):
         mapped = to_mapping()
         if isinstance(mapped, Mapping):
-            return dict(mapped)
+            return _clean_authored_experiment_payload(mapped)
     if is_dataclass(experiment_cfg):
         mapped = dataclass_asdict_no_none(experiment_cfg)
-        return dict(mapped) if isinstance(mapped, Mapping) else None
+        return (
+            _clean_authored_experiment_payload(mapped)
+            if isinstance(mapped, Mapping)
+            else None
+        )
     if isinstance(experiment_cfg, Mapping):
-        return dict(experiment_cfg)
+        return _clean_authored_experiment_payload(experiment_cfg)
     return None
+
+
+def _build_cfg_only_summary(
+    *,
+    config_path: str,
+    training_config: Any,
+    train_args: Any,
+    rank_context: Mapping[str, int],
+) -> dict[str, Any]:
+    pipeline_cfg = getattr(training_config, "pipeline", None)
+    objective_cfg = getattr(training_config, "objective", None)
+    return {
+        "status": "ok",
+        "cfg_only": True,
+        "config": str(config_path),
+        "run_name": str(getattr(train_args, "run_name", "") or ""),
+        "output_dir": str(getattr(train_args, "output_dir", "") or ""),
+        "pipeline": {"id": _get_section_value(pipeline_cfg, "id")},
+        "objective": {"id": _get_section_value(objective_cfg, "id")},
+        "max_steps": getattr(train_args, "max_steps", None),
+        "eval_strategy": str(getattr(train_args, "eval_strategy", "") or ""),
+        "eval_steps": getattr(train_args, "eval_steps", None),
+        "save_strategy": str(getattr(train_args, "save_strategy", "") or ""),
+        "save_steps": getattr(train_args, "save_steps", None),
+        "per_device_train_batch_size": getattr(
+            train_args,
+            "per_device_train_batch_size",
+            None,
+        ),
+        "gradient_accumulation_steps": getattr(
+            train_args,
+            "gradient_accumulation_steps",
+            None,
+        ),
+        "world_size": int(rank_context["world_size"]),
+        "local_world_size": int(rank_context["local_world_size"]),
+        "local_rank": int(rank_context["local_rank"]),
+    }
 
 
 def _coerce_debug_config(debug_config: Any) -> DebugConfig:
@@ -954,6 +1007,16 @@ def _build_detection_length_bucketing_config(
     )
 
 
+def _uses_stage1_detection_dataset_builder(
+    *,
+    detection_config: Any | None,
+    runtime_plan: TrainingRuntimePlan,
+) -> bool:
+    """Whether SFT should materialize rows through the Stage-1 detection builder."""
+
+    return detection_config is not None and runtime_plan.post_rollout_packing_owner is None
+
+
 def _build_effective_runtime_payload(
     *,
     training_config: Any,
@@ -1038,7 +1101,6 @@ def _build_effective_runtime_payload(
         else "ceil"
     )
     payload = {
-        "trainer_variant": str(trainer_variant or ""),
         "dataset_seed": int(dataset_seed),
         "run_name": str(getattr(train_args, "run_name", "") or ""),
         "output_dir": str(getattr(train_args, "output_dir", "") or ""),
@@ -1088,13 +1150,23 @@ def _build_effective_runtime_payload(
             packing_cfg=packing_cfg,
         ),
         "encoded_sample_cache": encoded_sample_cache_runtime,
+        "training_hierarchy": _build_normalized_training_hierarchy_identity(
+            training_config=training_config,
+            template=SimpleNamespace(
+                max_length=getattr(train_args, "max_model_len", None)
+            ),
+            train_args=train_args,
+            packing_length=int(packing_cfg.packing_length),
+        ),
         "dataset_source_train_jsonl": _build_source_path_identity(train_jsonl),
         "dataset_source_val_jsonl": _build_source_path_identity(val_jsonl),
         "model_source": _build_source_path_identity(model_path),
         "detection_objective": _detection_objective_runtime_payload(
             training_config
         ),
-        "token_rows": _detection_token_rows_runtime_payload(training_config),
+        "token_embeddings_adapter": _detection_token_embeddings_adapter_runtime_payload(
+            training_config
+        ),
         "pipeline_manifest_checksum": str(pipeline_manifest.get("checksum", ""))
         if isinstance(pipeline_manifest, Mapping)
         else "",
@@ -1111,11 +1183,17 @@ def _build_effective_runtime_payload(
     return payload
 
 
+def _is_teacher_forcing_objective_config(objective_cfg: Any) -> bool:
+    return _get_section_value(objective_cfg, "id") == TEACHER_FORCING_OBJECTIVE_ID
+
+
 def _detection_objective_runtime_payload(training_config: Any) -> dict[str, Any] | None:
     objective_cfg = getattr(training_config, "objective", None)
     if objective_cfg is None:
         return None
     template_cfg = getattr(training_config, "detection_template", None)
+    sample_factory_cfg = getattr(training_config, "sample_factory", None)
+    target_sequence_cfg = _get_section_value(sample_factory_cfg, "target_sequence")
     template_id = _resolve_detection_template_id(training_config)
     template_contract = (
         resolve_detection_template_contract(template_id) if template_id is not None else None
@@ -1131,8 +1209,11 @@ def _detection_objective_runtime_payload(training_config: Any) -> dict[str, Any]
         "state_weighting": _get_section_value(objective_cfg, "state_weighting"),
         "normalization": _get_section_value(objective_cfg, "normalization"),
         "template_id": _get_section_value(template_cfg, "id"),
-        "coordinate_surface": _get_section_value(template_cfg, "coordinate_surface"),
-        "bbox_format": _get_section_value(template_cfg, "bbox_format"),
+        "coordinate_surface": _get_section_value(
+            target_sequence_cfg,
+            "coordinate_surface",
+        ),
+        "bbox_format": _get_section_value(target_sequence_cfg, "bbox_format"),
         "stop_token_text": "<|im_end|>",
         "pad_token_text": "<|endoftext|>",
         "serialization_policy": "marker_delimited",
@@ -1158,22 +1239,22 @@ def _detection_objective_runtime_payload(training_config: Any) -> dict[str, Any]
         )
     if type_gate_cfg is not None:
         payload["type_gate_mode"] = _get_section_value(type_gate_cfg, "mode")
-    if _get_section_value(objective_cfg, "id") == "teacher_forcing":
+    if _is_teacher_forcing_objective_config(objective_cfg):
         target_ir_cfg = _get_section_value(objective_cfg, "target_ir")
         rollin_policy_cfg = _get_section_value(target_ir_cfg, "rollin_policy")
         exact_packing_mapping_cfg = _get_section_value(
             target_ir_cfg, "exact_packing_mapping"
         )
-        modules_cfg = _get_section_value(objective_cfg, "modules")
-        token_type_mass_cfg = _get_section_value(modules_cfg, "token_type_mass")
+        terms_cfg = _get_section_value(objective_cfg, "terms")
+        token_type_mass_cfg = _get_section_value(terms_cfg, "token_type_mass")
         conditional_valid_set_cfg = _get_section_value(
-            modules_cfg, "conditional_valid_set_likelihood"
+            terms_cfg, "conditional_valid_set_likelihood"
         )
         within_valid_coverage_cfg = _get_section_value(
-            modules_cfg, "within_valid_coverage"
+            terms_cfg, "within_valid_coverage"
         )
         continuation_margin_cfg = _get_section_value(
-            modules_cfg, "continuation_margin"
+            terms_cfg, "continuation_margin"
         )
         payload.update(
             {
@@ -1190,7 +1271,7 @@ def _detection_objective_runtime_payload(training_config: Any) -> dict[str, Any]
                         )
                     },
                 },
-                "modules": {
+                "terms": {
                     "token_type_mass": {
                         "enabled": _get_section_value(
                             token_type_mass_cfg, "enabled"
@@ -1220,11 +1301,15 @@ def _detection_objective_runtime_payload(training_config: Any) -> dict[str, Any]
     return payload
 
 
-def _detection_token_rows_runtime_payload(training_config: Any) -> dict[str, Any] | None:
-    token_rows_cfg = getattr(training_config, "token_rows", None)
-    if token_rows_cfg is None or not bool(_get_section_value(token_rows_cfg, "enabled", False)):
+def _detection_token_embeddings_adapter_runtime_payload(
+    training_config: Any,
+) -> dict[str, Any] | None:
+    adapter_cfg = getattr(training_config, "token_embeddings_adapter", None)
+    if adapter_cfg is None:
+        adapter_cfg = getattr(training_config, "token_rows", None)
+    if adapter_cfg is None or not bool(_get_section_value(adapter_cfg, "enabled", False)):
         return None
-    groups = _get_section_value(token_rows_cfg, "groups", {}) or {}
+    groups = _get_section_value(adapter_cfg, "groups", {}) or {}
     if not isinstance(groups, Mapping):
         return None
     group_payload: dict[str, Any] = {}
@@ -1249,7 +1334,7 @@ def _detection_token_rows_runtime_payload(training_config: Any) -> dict[str, Any
         }
     return {
         "enabled": True,
-        "tie_head": bool(_get_section_value(token_rows_cfg, "tie_head", True)),
+        "tie_head": bool(_get_section_value(adapter_cfg, "tie_head", True)),
         "expected_trainable_row_count": int(expected_count),
         "groups": group_payload,
     }
@@ -1455,6 +1540,211 @@ def _resolve_objective_fingerprint_fields(
     )
 
 
+def _resolve_training_hierarchy_custom_config(
+    *,
+    training_config: Any,
+    custom_config: Any | None,
+) -> Any:
+    if custom_config is not None:
+        return custom_config
+    if _is_detection_config(training_config):
+        return _detection_runtime_custom_shim(training_config)
+    existing_custom = getattr(training_config, "custom", None)
+    if existing_custom is not None:
+        return existing_custom
+    return SimpleNamespace(extra={})
+
+
+def _build_normalized_training_hierarchy_identity(
+    *,
+    training_config: Any,
+    custom_config: Any | None = None,
+    template: Any | None = None,
+    train_args: Any | None = None,
+    packing_length: int | None = None,
+) -> dict[str, Any]:
+    custom_config = _resolve_training_hierarchy_custom_config(
+        training_config=training_config,
+        custom_config=custom_config,
+    )
+    if template is None:
+        template = SimpleNamespace()
+    if train_args is None:
+        train_args = SimpleNamespace()
+
+    pipeline_cfg = getattr(training_config, "pipeline", None)
+    objective_cfg = getattr(training_config, "objective", None)
+    sample_factory_cfg = getattr(training_config, "sample_factory", None)
+    target_sequence_cfg = _get_section_value(
+        sample_factory_cfg,
+        "target_sequence",
+        {},
+    )
+    prompt_cfg = getattr(training_config, "prompt", None)
+    objective_identity = _normalized_objective_identity(training_config)
+    prompt_identity = _resolve_dense_prompt_identity(custom_config)
+    prompt_variant = _get_section_value(prompt_cfg, "variant")
+    if prompt_variant is None:
+        prompt_variant = prompt_identity["prompt_variant"]
+    else:
+        prompt_variant = resolve_dense_prompt_variant_key(prompt_variant)
+    tokenizer_id = (
+        _resolve_model_checkpoint_path(training_config)
+        or str(getattr(train_args, "model", "") or "")
+        or "unknown_tokenizer"
+    )
+    chat_template_identity = (
+        _get_section_value(prompt_cfg, "chat_template_identity")
+        or _get_section_value(prompt_cfg, "chat_template")
+        or getattr(template, "chat_template_identity", None)
+        or getattr(template, "chat_template", None)
+        or "unknown_chat_template"
+    )
+
+    object_ordering = _get_section_value(target_sequence_cfg, "object_ordering")
+    if object_ordering is None:
+        object_ordering = _resolve_object_ordering_fingerprint_value(
+            training_config=training_config,
+            custom_config=custom_config,
+        )
+    object_field_order = _get_section_value(target_sequence_cfg, "object_field_order")
+    if object_field_order is None:
+        object_field_order = getattr(custom_config, "object_field_order", None)
+    bbox_format = _get_section_value(target_sequence_cfg, "bbox_format")
+    if bbox_format is None:
+        bbox_format = getattr(custom_config, "bbox_format", None)
+    coordinate_surface = _get_section_value(target_sequence_cfg, "coordinate_surface")
+    if coordinate_surface is None:
+        coord_mode = _resolve_custom_coord_mode(custom_config)
+        coordinate_surface = "coord_token" if coord_mode == "coord_tokens" else None
+    strict_parse = _get_section_value(target_sequence_cfg, "strict_parse")
+
+    return {
+        "pipeline": {"id": _get_section_value(pipeline_cfg, "id")},
+        "objective": objective_identity,
+        "detection_template": {"id": _resolve_detection_template_id(training_config)},
+        "sample_factory": {
+            "id": _get_section_value(sample_factory_cfg, "id"),
+            "target_sequence": {
+                "object_ordering": (
+                    str(object_ordering) if object_ordering is not None else None
+                ),
+                "object_field_order": (
+                    str(object_field_order) if object_field_order is not None else None
+                ),
+                "bbox_format": str(bbox_format) if bbox_format is not None else None,
+                "coordinate_surface": (
+                    str(coordinate_surface) if coordinate_surface is not None else None
+                ),
+                "strict_parse": bool(strict_parse)
+                if strict_parse is not None
+                else None,
+            },
+        },
+        "prompt": {
+            "variant": prompt_variant,
+            "template_hash": prompt_identity["prompt_template_hash"],
+        },
+        "tokenizer": {"id": tokenizer_id},
+        "chat_template": {"identity": str(chat_template_identity)},
+        "packing": {
+            "length": int(packing_length)
+            if packing_length is not None
+            else getattr(template, "max_length", None),
+        },
+    }
+
+
+def _normalized_objective_identity(training_config: Any) -> dict[str, Any]:
+    objective_cfg = getattr(training_config, "objective", None)
+    objective_id = _get_section_value(objective_cfg, "id")
+    pipeline_id = _get_section_value(getattr(training_config, "pipeline", None), "id")
+    if objective_id is not None or pipeline_id != "stage2_rollout_correction":
+        return {"id": objective_id}
+
+    stage2_cfg = getattr(training_config, "stage2_rollout_correction", None)
+    stage2_pipeline = _get_section_value(stage2_cfg, "pipeline", {}) or {}
+    objective_specs = _get_section_value(stage2_pipeline, "objective", ()) or ()
+    names: list[str] = []
+    if isinstance(objective_specs, Sequence) and not isinstance(
+        objective_specs,
+        (str, bytes),
+    ):
+        for spec in objective_specs:
+            name = _get_section_value(spec, "name")
+            if name is not None:
+                names.append(str(name))
+    return {
+        "id": names[0] if len(names) == 1 else None,
+        "stage2_objectives": names,
+        "source": "stage2_rollout_correction.pipeline.objective",
+    }
+
+
+def _flatten_normalized_training_hierarchy_identity(
+    identity: Mapping[str, Any],
+) -> dict[str, Any]:
+    pipeline = _get_section_value(identity, "pipeline", {}) or {}
+    objective = _get_section_value(identity, "objective", {}) or {}
+    detection_template = _get_section_value(identity, "detection_template", {}) or {}
+    sample_factory = _get_section_value(identity, "sample_factory", {}) or {}
+    target_sequence = _get_section_value(sample_factory, "target_sequence", {}) or {}
+    prompt = _get_section_value(identity, "prompt", {}) or {}
+    tokenizer = _get_section_value(identity, "tokenizer", {}) or {}
+    chat_template = _get_section_value(identity, "chat_template", {}) or {}
+    packing = _get_section_value(identity, "packing", {}) or {}
+    return {
+        "pipeline_id": _get_section_value(pipeline, "id"),
+        "objective_id": _get_section_value(objective, "id"),
+        "detection_template_id": _get_section_value(detection_template, "id"),
+        "sample_factory_id": _get_section_value(sample_factory, "id"),
+        "sample_factory_target_sequence_object_ordering": _get_section_value(
+            target_sequence,
+            "object_ordering",
+        ),
+        "sample_factory_target_sequence_object_field_order": _get_section_value(
+            target_sequence,
+            "object_field_order",
+        ),
+        "sample_factory_target_sequence_bbox_format": _get_section_value(
+            target_sequence,
+            "bbox_format",
+        ),
+        "sample_factory_target_sequence_coordinate_surface": _get_section_value(
+            target_sequence,
+            "coordinate_surface",
+        ),
+        "sample_factory_target_sequence_strict_parse": _get_section_value(
+            target_sequence,
+            "strict_parse",
+        ),
+        "prompt_variant": _get_section_value(prompt, "variant"),
+        "prompt_template_hash": _get_section_value(prompt, "template_hash"),
+        "tokenizer_id": _get_section_value(tokenizer, "id"),
+        "chat_template_identity": _get_section_value(chat_template, "identity"),
+        "packing_length": _get_section_value(packing, "length"),
+    }
+
+
+def _resolve_normalized_training_hierarchy_fingerprint_fields(
+    *,
+    training_config: Any,
+    custom_config: Any,
+    template: Any,
+    train_args: Any,
+    packing_length: int | None = None,
+) -> dict[str, Any]:
+    return _flatten_normalized_training_hierarchy_identity(
+        _build_normalized_training_hierarchy_identity(
+            training_config=training_config,
+            custom_config=custom_config,
+            template=template,
+            train_args=train_args,
+            packing_length=packing_length,
+        )
+    )
+
+
 def _detection_packing_profile_from_runtime(
     packing_cfg: PackingRuntimeConfig,
 ) -> DetectionPackingProfile:
@@ -1494,6 +1784,13 @@ def _build_static_packing_fingerprint(
     coord_mode = _resolve_custom_coord_mode(custom_config)
     prompt_identity = _resolve_dense_prompt_identity(custom_config)
     trainer_variant = getattr(custom_config, "trainer_variant", None)
+    normalized_hierarchy_fields = _resolve_normalized_training_hierarchy_fingerprint_fields(
+        training_config=training_config,
+        custom_config=custom_config,
+        template=template,
+        train_args=train_args,
+        packing_length=int(packing_cfg.packing_length),
+    )
     (
         objective_variant,
         state_weighting_policy,
@@ -1561,6 +1858,7 @@ def _build_static_packing_fingerprint(
         if isinstance(training_cfg, Mapping)
         else None,
     }
+    runtime_fields.update(normalized_hierarchy_fields)
     prompt_profile = (
         f"variant={prompt_identity['prompt_variant']};"
         f"template_hash={prompt_identity['prompt_template_hash']};"
@@ -1764,16 +2062,17 @@ def _build_encoded_sample_cache_fingerprint(
 
     coord_tokens_payload = _coord_tokens_fingerprint_payload(custom_config)
     detection_template_id = _resolve_detection_template_id(training_config)
-    tokenizer_id = (
-        _resolve_model_checkpoint_path(training_config)
-        or str(getattr(train_args, "model", "") or "")
-        or "unknown_tokenizer"
+    normalized_hierarchy_fields = _resolve_normalized_training_hierarchy_fingerprint_fields(
+        training_config=training_config,
+        custom_config=custom_config,
+        template=template,
+        train_args=train_args,
     )
 
-    return {
+    fingerprint = {
         "cache_schema_version": 1,
         "detection_template_id": detection_template_id,
-        "tokenizer_id": tokenizer_id,
+        "tokenizer_id": normalized_hierarchy_fields["tokenizer_id"],
         "dataset_seed": int(dataset_seed),
         "dataset_split": split,
         "dataset_mode": str(dataset_mode),
@@ -1807,6 +2106,8 @@ def _build_encoded_sample_cache_fingerprint(
         "system_prompt_dense": system_prompt_dense,
         "system_prompt_summary": system_prompt_summary,
     }
+    fingerprint.update(normalized_hierarchy_fields)
+    return fingerprint
 
 
 def _build_encoded_sample_cache_request(
@@ -2279,10 +2580,10 @@ def parse_args():
 Examples:
   # Basic training with config
   python -m src.sft --config configs/qwen3vl_lora.yaml
-  
+
   # With inheritance from base config
   python -m src.sft --config configs/qwen3vl_lora.yaml --base_config configs/base.yaml
-  
+
   # Debug mode
   python -m src.sft --config configs/debug.yaml --debug
         """,
@@ -2347,6 +2648,14 @@ def _build_pipeline_manifest(
         seed=seed,
         coord_soft_cfg=coord_soft_cfg,
     )
+
+
+def _default_detection_pipeline_objective_names(training_config: Any) -> list[str]:
+    objective_cfg = getattr(training_config, "objective", None)
+    objective_id = _get_section_value(objective_cfg, "id")
+    if objective_id is None:
+        return []
+    return [str(objective_id)]
 
 
 def _scope_logging_dir_under_run_name(train_args: Any) -> str | None:
@@ -2496,30 +2805,16 @@ def main():
     if args.cfg_only:
         rank, local_rank, world_size, local_world_size = get_dist_setting()
         if int(rank) in {-1, 0}:
-            cfg_summary = {
-                "status": "ok",
-                "cfg_only": True,
-                "config": str(config_path),
-                "run_name": str(getattr(train_args, "run_name", "") or ""),
-                "output_dir": str(getattr(train_args, "output_dir", "") or ""),
-                "trainer_variant": str(
-                    getattr(custom_config, "trainer_variant", "") or ""
-                ),
-                "max_steps": getattr(train_args, "max_steps", None),
-                "eval_strategy": str(getattr(train_args, "eval_strategy", "") or ""),
-                "eval_steps": getattr(train_args, "eval_steps", None),
-                "save_strategy": str(getattr(train_args, "save_strategy", "") or ""),
-                "save_steps": getattr(train_args, "save_steps", None),
-                "per_device_train_batch_size": getattr(
-                    train_args, "per_device_train_batch_size", None
-                ),
-                "gradient_accumulation_steps": getattr(
-                    train_args, "gradient_accumulation_steps", None
-                ),
-                "world_size": int(world_size),
-                "local_world_size": int(local_world_size),
-                "local_rank": int(local_rank),
-            }
+            cfg_summary = _build_cfg_only_summary(
+                config_path=config_path,
+                training_config=training_config,
+                train_args=train_args,
+                rank_context={
+                    "world_size": int(world_size),
+                    "local_world_size": int(local_world_size),
+                    "local_rank": int(local_rank),
+                },
+            )
             print(json.dumps(cfg_summary, sort_keys=True))
         return
 
@@ -2610,13 +2905,13 @@ def main():
         tokenizer = getattr(sft.template, "tokenizer", None)
         if tokenizer is None:
             raise ValueError(
-                "custom.token_embeddings_adapter.enabled=true requires the training template to expose a tokenizer"
+                "token_embeddings_adapter.enabled=true requires the training template to expose a tokenizer"
             )
         token_role_sets = token_embeddings_adapter_cfg.resolve_role_sets(tokenizer)
         trainable_row_ids = token_role_sets.trainable_row_ids
         if not trainable_row_ids:
             raise ValueError(
-                "custom.token_embeddings_adapter.enabled=true resolved no trainable token ids"
+                "token_embeddings_adapter.enabled=true resolved no trainable token ids"
             )
         requested_adapter_cfg = _TokenEmbeddingsAdapterRuntimeConfig(
             enabled=True,
@@ -2631,7 +2926,7 @@ def main():
             _require_token_embeddings_adapter_compatible_with_loaded_adapter(
                 requested_cfg=requested_adapter_cfg,
                 adapter_cfg=loaded_adapter_cfg,
-                context="custom.token_embeddings_adapter",
+                context="token_embeddings_adapter",
             )
         adapter_token_ids = tuple(int(token_id) for token_id in trainable_row_ids)
         _attach_token_embeddings_adapter_config_to_train_args(
@@ -2685,7 +2980,7 @@ def main():
         if isinstance(vocab_size, int) and max_id >= vocab_size:
             raise ValueError(
                 f"token_embeddings_adapter id {max_id} exceeds model vocab_size={vocab_size}. "
-                "Adjust custom.token_embeddings_adapter groups to fit the loaded tokenizer."
+                "Adjust top-level token_embeddings_adapter groups to fit the loaded tokenizer."
             )
         logger.info(
             f"Token-embeddings adapter enabled: ids={adapter.token_ids.numel()}, "
@@ -2867,7 +3162,11 @@ def main():
             dataset_jsonl=str(train_jsonl) if train_jsonl else None,
         )
     )
-    if detection_config is not None:
+    use_stage1_detection_dataset_builder = _uses_stage1_detection_dataset_builder(
+        detection_config=detection_config,
+        runtime_plan=runtime_plan,
+    )
+    if use_stage1_detection_dataset_builder:
         _assert_detection_runtime_supported(
             detection_config,
             encoded_sample_cache_cfg=encoded_sample_cache_cfg,
@@ -2911,7 +3210,7 @@ def main():
         custom_config.object_field_order,
     )
     logger.info(f"Loading training dataset: {train_jsonl}")
-    if detection_config is not None:
+    if use_stage1_detection_dataset_builder:
         if train_encoded_sample_cache_request is not None:
             raise ValueError(
                 "detection dataset rejects encoded sample cache requests"
@@ -2947,7 +3246,7 @@ def main():
             object_field_order=custom_config.object_field_order,
             bbox_format=custom_config.bbox_format,
             detection_sequence_format=custom_config.detection_sequence_format,
-            detection_template_id=custom_config.detection_template_id,
+            detection_template_id=_resolve_detection_template_id(training_config),
             encoded_sample_cache=train_encoded_sample_cache_request,
         )
         if train_encoded_sample_cache_request is not None:
@@ -3522,7 +3821,7 @@ def main():
     if val_jsonl:
         logger.info(f"Loading validation dataset: {val_jsonl}")
         eval_sample_limit = None if val_sample_with_replacement else val_sample_limit
-        if detection_config is not None:
+        if use_stage1_detection_dataset_builder:
             if eval_encoded_sample_cache_request is not None:
                 raise ValueError(
                     "detection eval dataset rejects encoded sample cache requests"
@@ -3557,7 +3856,7 @@ def main():
                 object_field_order=custom_config.object_field_order,
                 bbox_format=custom_config.bbox_format,
                 detection_sequence_format=custom_config.detection_sequence_format,
-                detection_template_id=custom_config.detection_template_id,
+                detection_template_id=_resolve_detection_template_id(training_config),
                 encoded_sample_cache=eval_encoded_sample_cache_request,
             )
         base_eval_len = len(eval_dataset)
@@ -3689,9 +3988,9 @@ def main():
     runtime_profile = resolve_training_runtime_profile(trainer_variant)
     recursive_detection_ce_cfg = _resolve_recursive_detection_ce_cfg(training_config)
     teacher_forcing_objective_cfg = None
-    if detection_config is not None and getattr(
-        detection_config.objective, "id", None
-    ) == "teacher_forcing":
+    if detection_config is not None and _is_teacher_forcing_objective_config(
+        detection_config.objective
+    ):
         teacher_forcing_objective_cfg = detection_config.objective
     if (
         runtime_profile.preserve_raw_sample_metadata
@@ -4098,6 +4397,16 @@ def main():
         selected_pipeline_manifest = getattr(trainer, "rollout_pipeline_manifest", None)
     if not isinstance(selected_pipeline_manifest, Mapping):
         selected_pipeline_manifest = None
+    if selected_pipeline_manifest is None and _is_detection_config(training_config):
+        to_mapping = getattr(training_config, "to_mapping", None)
+        selected_pipeline_manifest = _resolve_pipeline_manifest(
+            to_mapping() if callable(to_mapping) else None,
+            default_objective=_default_detection_pipeline_objective_names(
+                training_config
+            ),
+            default_diagnostics=[],
+            coord_soft_cfg=coord_soft_cfg_for_manifest,
+        )
 
     stage2_policy_provenance = getattr(trainer, "stage2_policy_provenance", None)
     if not isinstance(stage2_policy_provenance, Mapping):
