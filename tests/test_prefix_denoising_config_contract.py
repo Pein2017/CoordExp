@@ -13,6 +13,7 @@ import src.detection.dataset as detection_dataset_mod
 from src.detection.dataset import DetectionTrainingDataset
 from src.detection.runtime import (
     assert_detection_runtime_supported,
+    build_detection_runtime_custom_shim,
     detection_mode,
     resolve_detection_prompts,
 )
@@ -199,11 +200,30 @@ def test_prefix_denoising_detection_mode_is_distinct_from_random_order_sft() -> 
 def test_prefix_denoising_compact_prompt_matches_marker_delimited_rows() -> None:
     cfg = _load(_prefix_denoising_payload())
 
-    _system_prompt, user_prompt = resolve_detection_prompts(cfg)
+    system_prompt, user_prompt = resolve_detection_prompts(cfg)
 
     assert "concatenate rows directly with no separator" in user_prompt
     assert "do not insert newline characters" in user_prompt
     assert "single newline" not in user_prompt
+    assert "<|object_ref_start|>{desc}<|object_ref_end|><|box_start|>" in user_prompt
+    assert "<|coord_x1|><|coord_y1|><|coord_x2|><|coord_y2|><|box_end|>" in user_prompt
+    assert "<|object_ref_end|>" in system_prompt
+    assert "<|box_end|>" in system_prompt
+
+
+def test_prefix_denoising_custom_shim_uses_semantic_closed_template_prompt() -> None:
+    cfg = _load(_prefix_denoising_payload())
+
+    shim = build_detection_runtime_custom_shim(cfg)
+
+    assert shim.detection_template_id == "compact_object_box_closed"
+    assert "<|object_ref_end|>" in shim.user_prompt
+    assert "<|box_end|>" in shim.user_prompt
+    assert (
+        "<|object_ref_start|>{desc}<|box_start|>"
+        "<|coord_x1|><|coord_y1|><|coord_x2|><|coord_y2|>"
+        not in shim.user_prompt
+    )
 
 
 def test_prefix_denoising_wrapper_production_leaf_resolves_base_sorted_val512() -> None:
@@ -262,6 +282,36 @@ def test_prefix_denoising_wrapper_production_leaf_resolves_base_random_4epoch_va
     assert cfg.debug.val_sample_limit == 512
     assert cfg.prefix_denoising.current_object_kl.weight == pytest.approx(0.05)
     assert cfg.prefix_denoising.current_object_kl.num_objects_per_image == 2
+    assert "random" in cfg.training["run_name"]
+
+
+def test_prefix_denoising_desc_first_wrapper_production_leaf_resolves_random_4epoch_val512() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    payload = ConfigLoader.load_yaml_with_extends(
+        str(
+            repo_root
+            / "configs/stage1/detection_teacher_forcing/prod/"
+            "compact_object_box_closed_desc_first_prefix_denoising_kl_w0p05_k2_2b_base_random_4epoch.yaml"
+        )
+    )
+    cfg = _load(payload)
+
+    assert (
+        cfg.model["model"]
+        == "/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent"
+    )
+    assert cfg.model.get("adapters") in (None, [])
+    assert cfg.detection_template.id == "compact_object_box_closed"
+    assert cfg.detection_template.object_field_order == "desc_first"
+    assert cfg.evaluation.expected_template == "compact_object_box_closed"
+    assert cfg.training["num_train_epochs"] == 4
+    assert cfg.training["eval_packing"] is False
+    assert cfg.data.object_ordering == "random_permutation"
+    assert cfg.debug.enabled is True
+    assert cfg.debug.val_sample_limit == 512
+    assert cfg.prefix_denoising.current_object_kl.weight == pytest.approx(0.05)
+    assert cfg.prefix_denoising.current_object_kl.num_objects_per_image == 2
+    assert "desc-first" in cfg.training["run_name"]
     assert "random" in cfg.training["run_name"]
 
 

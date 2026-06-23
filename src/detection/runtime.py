@@ -72,6 +72,33 @@ def detection_prompt_variant(
     return "coco_80" if training_config.prompt.prompt_variant_enabled else None
 
 
+def _validate_compact_prompt_contract(
+    *,
+    template_id: str,
+    system_prompt: str,
+    user_prompt: str,
+) -> None:
+    contract = resolve_detection_template_contract(template_id)
+    if not contract.is_compact:
+        return
+
+    missing: dict[str, list[str]] = {}
+    for prompt_name, prompt in (
+        ("system", system_prompt),
+        ("user", user_prompt),
+    ):
+        missing_tokens = [
+            token for token in contract.required_structural_tokens if token not in prompt
+        ]
+        if missing_tokens:
+            missing[prompt_name] = missing_tokens
+    if missing:
+        raise ValueError(
+            f"detection_template.id={template_id} prompt is missing required "
+            f"structural tokens: {missing}"
+        )
+
+
 def resolve_detection_prompts(
     training_config: DetectionTrainingConfig,
 ) -> tuple[str, str]:
@@ -108,14 +135,21 @@ def resolve_detection_prompts(
         if training_config.data.object_ordering == "random_permutation"
         else "sorted"
     )
-    return get_template_prompts(
+    system_prompt, user_prompt = get_template_prompts(
         ordering=ordering,
         coord_mode="coord_tokens",
         prompt_variant=detection_prompt_variant(training_config),
         object_field_order=str(object_field_order),
         bbox_format=str(training_config.detection_template.bbox_format),
         detection_sequence_format=detection_sequence_format(training_config),
+        detection_template_id=training_config.detection_template.id,
     )
+    _validate_compact_prompt_contract(
+        template_id=training_config.detection_template.id,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+    )
+    return system_prompt, user_prompt
 
 
 def build_detection_runtime_custom_shim(
@@ -152,6 +186,7 @@ def build_detection_runtime_custom_shim(
         object_field_order=str(object_field_order),
         bbox_format=str(training_config.detection_template.bbox_format),
         detection_sequence_format=detection_sequence_format(training_config),
+        detection_template_id=training_config.detection_template.id,
         eval_detection=None,
         token_type_metrics=None,
         coord_soft_ce_w1=None,

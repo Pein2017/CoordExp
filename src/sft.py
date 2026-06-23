@@ -324,6 +324,11 @@ def _resolve_dense_prompt_identity(custom_config: Any) -> dict[str, Any]:
                 getattr(custom_config, "detection_sequence_format", "coordjson")
                 or "coordjson"
             ),
+            detection_template_id=(
+                str(getattr(custom_config, "detection_template_id"))
+                if getattr(custom_config, "detection_template_id", None)
+                else None
+            ),
         )
     return {
         "prompt_variant": prompt_variant,

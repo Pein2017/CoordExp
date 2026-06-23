@@ -8,6 +8,7 @@ import yaml
 
 from src.callbacks import DatasetEpochCallback
 from src.config.loader import ConfigLoader
+from src.config.prompts import get_template_prompt_hash
 from src.datasets.wrappers.packed_caption import _fingerprint_diff_keys
 import src.sft as sft_module
 from src.sft import (
@@ -819,6 +820,7 @@ def test_static_packing_fingerprint_tracks_template_and_field_order_axes() -> No
         offline_max_pixels=1048576,
         coord_tokens={"enabled": True, "skip_bbox_norm": True},
         extra={"prompt_variant": "default"},
+        detection_template_id="compact_object_box_closed",
     )
 
     def fingerprint(
@@ -844,6 +846,7 @@ def test_static_packing_fingerprint_tracks_template_and_field_order_axes() -> No
         custom_cfg = SimpleNamespace(
             **{
                 **common_custom,
+                "detection_template_id": template_id,
                 "object_field_order": object_field_order,
                 "extra": {"prompt_variant": prompt_variant},
             }
@@ -869,7 +872,15 @@ def test_static_packing_fingerprint_tracks_template_and_field_order_axes() -> No
     assert baseline["custom_object_field_order"] == "desc_first"
     assert baseline["global_max_length"] == 12000
     assert baseline["packing_length"] == 128
-    assert baseline["custom_prompt_template_hash"]
+    assert baseline["custom_prompt_template_hash"] == get_template_prompt_hash(
+        ordering="sorted",
+        coord_mode="coord_tokens",
+        prompt_variant="default",
+        object_field_order="desc_first",
+        bbox_format="xyxy",
+        detection_sequence_format="compact",
+        detection_template_id="compact_object_box_closed",
+    )
     assert geometry_first["custom_object_field_order"] == "geometry_first"
     assert object_closed["detection_template_id"] == "compact_object_closed"
     assert longer["global_max_length"] == 16000
