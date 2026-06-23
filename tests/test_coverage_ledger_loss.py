@@ -92,16 +92,16 @@ def test_build_coverage_ledger_targets_for_three_objects() -> None:
 
 def test_region_anchor_uses_only_current_object_positive_pairs() -> None:
     sidecar = _sidecar()
-    head = _identity_head()
-    hidden_states = _hidden_states()
-    hidden_states[11] = torch.zeros(3)
-    hidden_states[18] = torch.zeros(3)
-    current_only_visuals = _visual_objects()
-    perturbed_non_current_visuals = torch.tensor(
+    head = _identity_head(dim=4)
+    hidden_states = torch.zeros((24, 4), dtype=torch.float32)
+    hidden_states[4] = torch.tensor([1.0, 0.0, 0.0, 0.0])
+    hidden_states[11] = torch.tensor([0.0, 1.0, 0.0, 0.0])
+    hidden_states[18] = torch.tensor([0.0, 0.0, 1.0, 0.0])
+    current_only_visuals = torch.tensor(
         [
-            [1.0, 0.0, 0.0],
-            [-800.0, 1.0, 600.0],
-            [500.0, -400.0, 1.0],
+            [0.6, 0.0, 0.0, 0.8],
+            [0.0, 0.6, 0.0, 0.8],
+            [0.0, 0.0, 0.6, 0.8],
         ],
         dtype=torch.float32,
     )
@@ -119,10 +119,24 @@ def test_region_anchor_uses_only_current_object_positive_pairs() -> None:
         sidecar=sidecar,
         config=config,
     )
+
+    assert baseline.debug_rows.region_anchor_object_indices == (0, 1, 2)
+    assert baseline.debug_rows.region_anchor_positive_logits.tolist() == pytest.approx(
+        [1.2, 1.2, 1.2]
+    )
+
+    non_current_perturbed_visuals = torch.tensor(
+        [
+            [0.6, 0.8, 0.0, 0.0],
+            [0.0, 0.6, 0.8, 0.0],
+            [0.8, 0.0, 0.6, 0.0],
+        ],
+        dtype=torch.float32,
+    )
     perturbed = compute_coverage_ledger_loss(
         head=head,
         final_hidden_states=hidden_states,
-        pooled_visual_object_embeddings=perturbed_non_current_visuals,
+        pooled_visual_object_embeddings=non_current_perturbed_visuals,
         sidecar=sidecar,
         config=config,
     )
