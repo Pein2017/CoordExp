@@ -26,7 +26,9 @@ def _result(
     *,
     coverage_loss: float = 0.25,
     region_anchor_loss: float = 0.5,
-    weighted_loss: float = 0.35,
+    weighted_loss: float = 0.75,
+    coverage_weight: float = 1.0,
+    region_anchor_weight: float = 1.0,
     coverage_logits: torch.Tensor | None = None,
     coverage_targets: torch.Tensor | None = None,
     region_anchor_positive_logits: torch.Tensor | None = None,
@@ -52,6 +54,8 @@ def _result(
         coverage_loss=torch.tensor(coverage_loss, dtype=torch.float32),
         region_anchor_loss=torch.tensor(region_anchor_loss, dtype=torch.float32),
         weighted_loss=torch.tensor(weighted_loss, dtype=torch.float32),
+        coverage_weight=coverage_weight,
+        region_anchor_weight=region_anchor_weight,
         metric_events=(),
         debug_rows=CoverageLedgerDebugRows(
             coverage_state_positions=tuple(range(int(targets.shape[0]))),
@@ -97,28 +101,73 @@ def test_coverage_ledger_metric_events_publish_canonical_keys_and_metadata() -> 
 
 
 def test_loss_events_use_weighted_mean_values_and_explicit_denominators() -> None:
-    by_key = _events_by_key(_result())
+    by_key = _events_by_key(
+        _result(
+            coverage_loss=2.0,
+            region_anchor_loss=10.0,
+            weighted_loss=999.0,
+            coverage_weight=0.5,
+            region_anchor_weight=2.0,
+        )
+    )
 
     coverage_bce = by_key[COVERAGE_BCE_KEY]
     assert coverage_bce.reducer == "weighted_mean"
-    assert coverage_bce.value == pytest.approx(0.25)
+    assert coverage_bce.value == pytest.approx(2.0)
     assert coverage_bce.denominator == pytest.approx(4.0)
-    assert coverage_bce.numerator == pytest.approx(1.0)
+    assert coverage_bce.numerator == pytest.approx(8.0)
     assert coverage_bce.diagnostic_only is True
 
     region_anchor = by_key[REGION_ANCHOR_KEY]
     assert region_anchor.reducer == "weighted_mean"
-    assert region_anchor.value == pytest.approx(0.5)
+    assert region_anchor.value == pytest.approx(10.0)
     assert region_anchor.denominator == pytest.approx(3.0)
-    assert region_anchor.numerator == pytest.approx(1.5)
+    assert region_anchor.numerator == pytest.approx(30.0)
     assert region_anchor.diagnostic_only is True
 
     weighted_loss = by_key[WEIGHTED_LOSS_KEY]
     assert weighted_loss.reducer == "weighted_mean"
-    assert weighted_loss.value == pytest.approx(0.35)
+    assert weighted_loss.value == pytest.approx(64.0 / 7.0)
     assert weighted_loss.denominator == pytest.approx(7.0)
-    assert weighted_loss.numerator == pytest.approx(2.45)
+    assert weighted_loss.numerator == pytest.approx(64.0)
     assert weighted_loss.diagnostic_only is False
+
+
+def test_weighted_auxiliary_loss_reduces_by_component_weighted_pair_sums() -> None:
+    first = _events_by_key(
+        _result(
+            coverage_loss=2.0,
+            region_anchor_loss=10.0,
+            weighted_loss=999.0,
+            coverage_weight=0.5,
+            region_anchor_weight=2.0,
+            coverage_logits=torch.zeros((2, 2), dtype=torch.float32),
+            coverage_targets=torch.tensor([[1.0, 0.0], [1.0, 0.0]]),
+            region_anchor_positive_logits=torch.zeros((3,), dtype=torch.float32),
+            object_count=2,
+        )
+    )[WEIGHTED_LOSS_KEY]
+    second = _events_by_key(
+        _result(
+            coverage_loss=1.0,
+            region_anchor_loss=4.0,
+            weighted_loss=777.0,
+            coverage_weight=3.0,
+            region_anchor_weight=0.25,
+            coverage_logits=torch.zeros((1, 5), dtype=torch.float32),
+            coverage_targets=torch.tensor([[1.0, 0.0, 1.0, 0.0, 1.0]]),
+            region_anchor_positive_logits=torch.zeros((1,), dtype=torch.float32),
+            object_count=5,
+        )
+    )[WEIGHTED_LOSS_KEY]
+
+    assert first.numerator == pytest.approx(64.0)
+    assert first.denominator == pytest.approx(7.0)
+    assert second.numerator == pytest.approx(16.0)
+    assert second.denominator == pytest.approx(6.0)
+    assert reduce_metric_events([first, second])[WEIGHTED_LOSS_KEY] == pytest.approx(
+        80.0 / 13.0
+    )
 
 
 def test_auc_uses_positive_negative_pairs_and_tie_credit() -> None:

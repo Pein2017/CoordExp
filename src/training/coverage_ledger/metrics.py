@@ -39,14 +39,12 @@ def coverage_ledger_metric_events(
         int(debug_rows.coverage_pair_count)
         + int(debug_rows.region_anchor_pair_count)
     )
-    _append_weighted_mean(
+    _append_weighted_auxiliary_loss(
         events,
-        WEIGHTED_LOSS_KEY,
-        result.weighted_loss,
-        total_loss_count,
-        field_name="weighted_loss",
-        semantic_role="auxiliary_weighted_loss",
-        diagnostic_only=False,
+        result,
+        coverage_pair_count=int(debug_rows.coverage_pair_count),
+        region_anchor_pair_count=int(debug_rows.region_anchor_pair_count),
+        total_pair_count=total_loss_count,
     )
     _append_weighted_mean(
         events,
@@ -128,6 +126,42 @@ def _append_weighted_mean(
             stage=COVERAGE_LEDGER_STAGE,
             objective_id=COVERAGE_LEDGER_OBJECTIVE_ID,
             diagnostic_only=diagnostic_only,
+        )
+    )
+
+
+def _append_weighted_auxiliary_loss(
+    events: list[MetricEvent],
+    result: CoverageLedgerLossResult,
+    *,
+    coverage_pair_count: int,
+    region_anchor_pair_count: int,
+    total_pair_count: int,
+) -> None:
+    if total_pair_count <= 0:
+        return
+    numerator = (
+        _finite_float(result.coverage_weight, field_name="coverage_weight")
+        * _scalar(result.coverage_loss, field_name="coverage_loss")
+        * float(coverage_pair_count)
+        + _finite_float(
+            result.region_anchor_weight,
+            field_name="region_anchor_weight",
+        )
+        * _scalar(result.region_anchor_loss, field_name="region_anchor_loss")
+        * float(region_anchor_pair_count)
+    )
+    events.append(
+        weighted_mean_event(
+            WEIGHTED_LOSS_KEY,
+            numerator / float(total_pair_count),
+            total_pair_count,
+            unit="object",
+            semantic_role="auxiliary_weighted_loss",
+            metric_surface=COVERAGE_LEDGER_SURFACE,
+            stage=COVERAGE_LEDGER_STAGE,
+            objective_id=COVERAGE_LEDGER_OBJECTIVE_ID,
+            diagnostic_only=False,
         )
     )
 
@@ -223,6 +257,15 @@ def _scalar(value: torch.Tensor, *, field_name: str) -> float:
     if value.numel() != 1:
         raise ValueError(f"{field_name} must be scalar")
     scalar = float(value.detach().to(dtype=torch.float64, device="cpu").item())
+    if not math.isfinite(scalar):
+        raise FloatingPointError(f"coverage ledger {field_name} is non-finite")
+    return scalar
+
+
+def _finite_float(value: float, *, field_name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (float, int)):
+        raise TypeError(f"{field_name} must be numeric")
+    scalar = float(value)
     if not math.isfinite(scalar):
         raise FloatingPointError(f"coverage ledger {field_name} is non-finite")
     return scalar

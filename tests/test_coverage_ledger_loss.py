@@ -256,6 +256,10 @@ def test_zero_component_weights_disable_contributions_but_keep_diagnostic_counts
     assert anchor_disabled.weighted_loss.item() == pytest.approx(
         anchor_disabled.coverage_loss.item()
     )
+    assert coverage_disabled.coverage_weight == pytest.approx(0.0)
+    assert coverage_disabled.region_anchor_weight == pytest.approx(1.0)
+    assert anchor_disabled.coverage_weight == pytest.approx(1.0)
+    assert anchor_disabled.region_anchor_weight == pytest.approx(0.0)
     assert coverage_disabled.debug_rows.object_count == 3
     assert coverage_disabled.debug_rows.coverage_state_count == 4
     assert coverage_disabled.debug_rows.coverage_pair_count == 12

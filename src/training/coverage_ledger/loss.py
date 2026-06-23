@@ -93,6 +93,8 @@ class CoverageLedgerLossResult:
     coverage_loss: torch.Tensor
     region_anchor_loss: torch.Tensor
     weighted_loss: torch.Tensor
+    coverage_weight: float
+    region_anchor_weight: float
     metric_events: tuple[MetricEvent, ...]
     debug_rows: CoverageLedgerDebugRows
 
@@ -275,6 +277,8 @@ def compute_coverage_ledger_loss(
         coverage_loss=coverage_loss,
         region_anchor_loss=region_anchor_loss,
         weighted_loss=weighted_loss,
+        coverage_weight=float(config.coverage_weight),
+        region_anchor_weight=float(config.region_anchor_weight),
         metric_events=_diagnostic_count_events(debug_rows),
         debug_rows=debug_rows,
     )

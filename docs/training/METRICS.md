@@ -220,9 +220,14 @@ Canonical coverage-ledger auxiliary keys:
 
 `teacher_forcing/loss/coverage_ledger_auxiliary_weighted` is the only
 objective-relevant coverage-ledger metric (`diagnostic_only=false`). It uses a
-weighted-mean reducer whose value is the scalar auxiliary loss added to the
-teacher-forcing objective and whose weight is
-`coverage_pair_count + region_anchor_pair_count`.
+weighted-mean reducer whose denominator is
+`coverage_pair_count + region_anchor_pair_count`. Its numerator is the
+component weighted loss sum over observed ledger pairs:
+`coverage_weight * coverage_bce * coverage_pair_count +
+region_anchor_weight * region_anchor_positive * region_anchor_pair_count`. The
+event value is that numerator divided by the total observed ledger-pair count,
+so it is count-normalized for cross-batch reduction rather than the raw scalar
+auxiliary objective sum.
 
 All `teacher_forcing/ledger/*` keys are diagnostic-only. `coverage_bce` is a
 weighted mean over coverage pairs, and `region_anchor_positive` is a weighted
