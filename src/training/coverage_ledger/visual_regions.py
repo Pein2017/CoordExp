@@ -45,6 +45,7 @@ def map_norm1000_bbox_to_visual_token_region(
     image_grid_thw: Any,
     processed_width: Any,
     processed_height: Any,
+    patch_size: int,
     spatial_merge_size: int,
 ) -> VisualTokenRegion:
     """Return the minimal enclosing post-merger token-cell region for a bbox."""
@@ -58,6 +59,7 @@ def map_norm1000_bbox_to_visual_token_region(
         spatial_merge_size,
         field_name="spatial_merge_size",
     )
+    patch = _require_positive_int(patch_size, field_name="patch_size")
     if grid_h % merge_size != 0 or grid_w % merge_size != 0:
         raise ValueError("image_grid_thw h/w must be divisible by spatial_merge_size")
 
@@ -75,25 +77,33 @@ def map_norm1000_bbox_to_visual_token_region(
         raise ValueError("processed_width must be an integer pixel dimension")
     if not height.is_integer():
         raise ValueError("processed_height must be an integer pixel dimension")
-    if int(width) % post_cols != 0:
+    expected_width = grid_w * patch
+    expected_height = grid_h * patch
+    if int(width) != expected_width:
         raise ValueError(
-            "processed_width is inconsistent with post-merger visual token columns"
+            "processed_width must equal grid_w * patch_size; "
+            f"got processed_width={int(width)}, grid_w={grid_w}, patch_size={patch}"
         )
-    if int(height) % post_rows != 0:
+    if int(height) != expected_height:
         raise ValueError(
-            "processed_height is inconsistent with post-merger visual token rows"
+            "processed_height must equal grid_h * patch_size; "
+            f"got processed_height={int(height)}, grid_h={grid_h}, patch_size={patch}"
         )
-    if int(width) % grid_w != 0:
-        raise ValueError(
-            "processed_width is inconsistent with image grid pre-merge patch columns"
-        )
-    if int(height) % grid_h != 0:
-        raise ValueError(
-            "processed_height is inconsistent with image grid pre-merge patch rows"
-        )
-
     cell_width = width / post_cols
     cell_height = height / post_rows
+    expected_cell_size = patch * merge_size
+    if cell_width != expected_cell_size:
+        raise ValueError(
+            "cell_width must equal patch_size * spatial_merge_size; "
+            f"got cell_width={cell_width}, patch_size={patch}, "
+            f"spatial_merge_size={merge_size}"
+        )
+    if cell_height != expected_cell_size:
+        raise ValueError(
+            "cell_height must equal patch_size * spatial_merge_size; "
+            f"got cell_height={cell_height}, patch_size={patch}, "
+            f"spatial_merge_size={merge_size}"
+        )
     x1_px = x1 / 1000.0 * width
     y1_px = y1 / 1000.0 * height
     x2_px = x2 / 1000.0 * width

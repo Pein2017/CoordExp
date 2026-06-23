@@ -15,6 +15,7 @@ def test_full_image_bbox_maps_to_every_post_merger_visual_token_cell() -> None:
         image_grid_thw=(1, 8, 8),
         processed_width=80,
         processed_height=80,
+        patch_size=10,
         spatial_merge_size=2,
     )
 
@@ -29,6 +30,7 @@ def test_centered_bbox_maps_to_minimal_enclosing_half_open_token_rectangle() -> 
         image_grid_thw=(1, 8, 8),
         processed_width=80,
         processed_height=80,
+        patch_size=10,
         spatial_merge_size=2,
     )
 
@@ -43,6 +45,7 @@ def test_tiny_valid_bbox_maps_to_at_least_one_cell_after_clamping() -> None:
         image_grid_thw=(1, 8, 8),
         processed_width=80,
         processed_height=80,
+        patch_size=10,
         spatial_merge_size=2,
     )
 
@@ -57,6 +60,7 @@ def test_right_bottom_edge_bbox_clamps_within_grid_bounds() -> None:
         image_grid_thw=(1, 8, 8),
         processed_width=80,
         processed_height=80,
+        patch_size=10,
         spatial_merge_size=2,
     )
 
@@ -83,28 +87,43 @@ def test_degenerate_or_out_of_bounds_bbox_hard_fails(
             image_grid_thw=(1, 8, 8),
             processed_width=80,
             processed_height=80,
+            patch_size=10,
             spatial_merge_size=2,
         )
 
 
 def test_processed_dimensions_inconsistent_with_grid_and_cell_size_hard_fail() -> None:
-    with pytest.raises(ValueError, match="processed_width.*post-merger"):
+    with pytest.raises(ValueError, match="processed_width.*grid_w.*patch_size"):
         map_norm1000_bbox_to_visual_token_region(
             (0, 0, 1000, 1000),
             image_grid_thw=(1, 8, 8),
             processed_width=82,
             processed_height=80,
+            patch_size=10,
             spatial_merge_size=2,
         )
 
 
 def test_processed_dimensions_inconsistent_with_pre_merge_patch_size_hard_fail() -> None:
-    with pytest.raises(ValueError, match="processed_width.*pre-merge patch"):
+    with pytest.raises(ValueError, match="processed_width.*grid_w.*patch_size"):
         map_norm1000_bbox_to_visual_token_region(
             (0, 0, 1000, 1000),
             image_grid_thw=(1, 8, 8),
             processed_width=84,
             processed_height=80,
+            patch_size=10,
+            spatial_merge_size=2,
+        )
+
+
+def test_mismatched_width_height_patch_geometry_hard_fails() -> None:
+    with pytest.raises(ValueError, match="processed_width.*grid_w.*patch_size"):
+        map_norm1000_bbox_to_visual_token_region(
+            (0, 0, 1000, 1000),
+            image_grid_thw=(1, 30, 40),
+            processed_width=800,
+            processed_height=480,
+            patch_size=16,
             spatial_merge_size=2,
         )
 
@@ -125,6 +144,7 @@ def test_multi_frame_or_multi_image_grid_hard_fails_in_v0(
             image_grid_thw=image_grid_thw,
             processed_width=80,
             processed_height=80,
+            patch_size=10,
             spatial_merge_size=2,
         )
 
@@ -136,6 +156,7 @@ def test_pooling_detaches_gathered_embeddings_and_returns_average_over_indices()
         image_grid_thw=torch.tensor([[1, 4, 6]], dtype=torch.long),
         processed_width=60,
         processed_height=40,
+        patch_size=10,
         spatial_merge_size=2,
     )
 
