@@ -1,0 +1,60 @@
+extends:
+  - ../prod/compact_support2.yaml
+  - ./common_prodlike.yaml
+
+detection_template:
+  id: compact_object_box_closed
+
+token_embeddings_adapter:
+  groups:
+    compact_structure:
+      role: structural_ce_only
+      tokens:
+        - "<|object_ref_start|>"
+        - "<|object_ref_end|>"
+        - "<|box_start|>"
+        - "<|box_end|>"
+      expected_ids:
+        "<|object_ref_start|>": 151646
+        "<|object_ref_end|>": 151647
+        "<|box_start|>": 151648
+        "<|box_end|>": 151649
+
+objective:
+  profile: hard_sft
+  terms:
+    token_type_mass:
+      enabled: false
+    conditional_valid_set_likelihood:
+      enabled: false
+    within_valid_coverage:
+      enabled: false
+      coverage_strength: 0.0
+    continuation_margin:
+      enabled: false
+    coverage_ledger:
+      enabled: false
+
+packing:
+  static_packing: false
+  padding_free_packed: false
+
+evaluation:
+  expected_template: compact_object_box_closed
+  parser_mode: strict_expected
+
+training:
+  artifact_subdir: coverage_ledger_closed_hard_sft_128_baseline
+  run_name: smoke-coverage-ledger-closed-hard-sft-128-baseline
+  max_steps: 256
+  per_device_train_batch_size: 1
+  effective_batch_size: 1
+  per_device_eval_batch_size: 1
+  seed: 20260623
+  packing: false
+  eval_packing: false
+
+debug:
+  enabled: true
+  train_sample_limit: 128
+  val_sample_limit: 128
