@@ -57,7 +57,7 @@ def create_multimodal_token_embeddings_adapter_optimizer(args, model, dataset):
         return create_multimodal_optimizer(args, model, dataset)
 
     decay_parameters = set(Trainer.get_decay_parameter_names(None, model))
-    rejected_prefix = ["token_embeddings_adapter"]
+    rejected_prefix = ["token_embeddings_adapter", "coverage_ledger_head"]
 
     seen_params: set[int] = set()
 
@@ -70,13 +70,27 @@ def create_multimodal_token_embeddings_adapter_optimizer(args, model, dataset):
             seen_params.add(id(p))
         return uniq
 
+    def _is_token_embeddings_adapter_param(name: str) -> bool:
+        return "token_embeddings_adapter" in name
+
+    def _is_coverage_ledger_head_param(name: str) -> bool:
+        return (
+            name.startswith("coverage_ledger_head.")
+            or ".coverage_ledger_head." in name
+        )
+
     adapter_params = [
         (n, p)
         for n, p in model.named_parameters()
-        if p.requires_grad and "token_embeddings_adapter" in n
+        if p.requires_grad and _is_token_embeddings_adapter_param(n)
     ]
     embed_params = [p for n, p in adapter_params if "embed_offset" in n]
     head_params = [p for n, p in adapter_params if "head_offset" in n]
+    coverage_ledger_head_params = [
+        (n, p)
+        for n, p in model.named_parameters()
+        if p.requires_grad and _is_coverage_ledger_head_param(n)
+    ]
 
     embed_lr = adapter_cfg.embed_lr if adapter_cfg.embed_lr is not None else args.learning_rate
     head_lr = adapter_cfg.head_lr if adapter_cfg.head_lr is not None else args.learning_rate
@@ -91,19 +105,36 @@ def create_multimodal_token_embeddings_adapter_optimizer(args, model, dataset):
         optimizer_grouped_parameters.append(
             {"params": _dedup(head_params), "lr": head_lr, "weight_decay": offset_wd}
         )
+    ledger_head_groups = _split_decay(
+        coverage_ledger_head_params,
+        decay_parameters,
+        args.learning_rate,
+        args.weight_decay,
+    )
+    for group in ledger_head_groups:
+        group["params"] = _dedup(group["params"])
+        if group["params"]:
+            optimizer_grouped_parameters.append(group)
 
     model_arch = getattr(getattr(model, "model_meta", None), "model_arch", None)
-    def _strip_adapter(params: List[Tuple[str, torch.nn.Parameter]]) -> List[Tuple[str, torch.nn.Parameter]]:
-        return [(n, p) for n, p in params if "token_embeddings_adapter" not in n]
+    def _strip_special_params(
+        params: List[Tuple[str, torch.nn.Parameter]]
+    ) -> List[Tuple[str, torch.nn.Parameter]]:
+        return [
+            (n, p)
+            for n, p in params
+            if not _is_token_embeddings_adapter_param(n)
+            and not _is_coverage_ledger_head_param(n)
+        ]
 
     if model_arch is not None:
-        vit_parameters = _strip_adapter(
+        vit_parameters = _strip_special_params(
             get_param_startswith(model, model_arch.vision_tower, rejected_prefix)
         )
-        aligner_parameters = _strip_adapter(
+        aligner_parameters = _strip_special_params(
             get_param_startswith(model, model_arch.aligner, rejected_prefix)
         )
-        llm_parameters = _strip_adapter(
+        llm_parameters = _strip_special_params(
             get_param_startswith(model, model_arch.language_model, rejected_prefix)
         )
         for lr, parameters in zip(
@@ -120,7 +151,9 @@ def create_multimodal_token_embeddings_adapter_optimizer(args, model, dataset):
         remaining = [
             (n, p)
             for n, p in model.named_parameters()
-            if p.requires_grad and "token_embeddings_adapter" not in n
+            if p.requires_grad
+            and not _is_token_embeddings_adapter_param(n)
+            and not _is_coverage_ledger_head_param(n)
         ]
         dedup_remaining = []
         for name, param in remaining:

@@ -119,6 +119,7 @@ from .training_runtime.stage2_projection import (
     apply_stage2_runtime_projection,
     resolve_stage2_runtime_projection,
 )
+from .training.coverage_ledger.head import install_coverage_ledger_head
 from .utils import (
     FileLoggingConfig,
     enable_output_dir_file_logging,
@@ -2753,6 +2754,24 @@ def _reject_coverage_ledger_without_loss_consumer(coverage_ledger_cfg: Any) -> N
     )
 
 
+def _coverage_ledger_cfg_from_training_config(training_config: Any) -> Any | None:
+    objective_cfg = getattr(training_config, "objective", None)
+    objective_terms_cfg = getattr(objective_cfg, "terms", None)
+    if objective_terms_cfg is None:
+        return None
+    if isinstance(objective_terms_cfg, Mapping):
+        return objective_terms_cfg.get("coverage_ledger")
+    return getattr(objective_terms_cfg, "coverage_ledger", None)
+
+
+def _install_coverage_ledger_head_for_training(
+    model: torch.nn.Module,
+    training_config: Any,
+):
+    coverage_ledger_cfg = _coverage_ledger_cfg_from_training_config(training_config)
+    return install_coverage_ledger_head(model, coverage_ledger_cfg)
+
+
 @_torch_elastic_record
 def main():
     """Main training entry point - pure config-driven."""
@@ -4000,6 +4019,12 @@ def main():
                 "This would leave coordinate/token-row offsets unsaved or inactive."
             )
         logger.info("Reattached token_embeddings_adapter hooks on wrapped model")
+    coverage_ledger_head = _install_coverage_ledger_head_for_training(
+        sft.model,
+        training_config,
+    )
+    if coverage_ledger_head is not None:
+        logger.info("Installed coverage_ledger_head on wrapped trainable model")
     logger.info(f"Model after tuner: {type(sft.model).__name__}")
 
     # Setup trainer
@@ -4046,11 +4071,7 @@ def main():
     token_type_cfg = getattr(custom_config, "token_type_metrics", None)
     coord_soft_ce_w1_cfg = getattr(custom_config, "coord_soft_ce_w1", None)
     sft_structural_close_cfg = getattr(custom_config, "sft_structural_close", None)
-    coverage_ledger_cfg = None
-    objective_cfg = getattr(training_config, "objective", None)
-    objective_terms_cfg = getattr(objective_cfg, "terms", None)
-    if objective_terms_cfg is not None:
-        coverage_ledger_cfg = getattr(objective_terms_cfg, "coverage_ledger", None)
+    coverage_ledger_cfg = _coverage_ledger_cfg_from_training_config(training_config)
     _reject_coverage_ledger_without_loss_consumer(coverage_ledger_cfg)
     instability_monitor_cfg = None
     loss_gradient_monitor_cfg = None
