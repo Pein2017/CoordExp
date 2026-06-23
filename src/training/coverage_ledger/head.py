@@ -55,12 +55,12 @@ class CoverageLedgerHead(nn.Module):
             bias=False,
         )
         self.region_anchor_state_projection = nn.Linear(
-            self.visual_dim,
+            self.hidden_size,
             self.ledger_projection_dim,
             bias=False,
         )
         self.object_projection = nn.Linear(
-            self.hidden_size,
+            self.visual_dim,
             self.ledger_projection_dim,
             bias=False,
         )
@@ -153,11 +153,19 @@ def _require_matching_spec(
 ) -> None:
     actual = CoverageLedgerHeadSpec(
         hidden_size=int(existing.state_projection.in_features),
-        visual_dim=int(existing.region_anchor_state_projection.in_features),
+        visual_dim=int(existing.object_projection.in_features),
         ledger_projection_dim=int(existing.state_projection.out_features),
         normalize_eps=float(existing.normalize_eps),
     )
-    if actual != expected:
+    if (
+        actual != expected
+        or int(existing.region_anchor_state_projection.in_features)
+        != expected.hidden_size
+        or int(existing.region_anchor_state_projection.out_features)
+        != expected.ledger_projection_dim
+        or int(existing.object_projection.out_features)
+        != expected.ledger_projection_dim
+    ):
         raise ValueError(
             "coverage_ledger_head already exists with incompatible dimensions: "
             f"actual={actual}, expected={expected}"

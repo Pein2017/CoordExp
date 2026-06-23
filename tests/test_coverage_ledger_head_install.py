@@ -61,6 +61,9 @@ def test_enabled_config_installs_coverage_ledger_head_on_prepared_model() -> Non
     assert "coverage_ledger_head.state_projection.weight" in parameters
     assert "coverage_ledger_head.region_anchor_state_projection.weight" in parameters
     assert "coverage_ledger_head.object_projection.weight" in parameters
+    assert head.state_projection.in_features == 8
+    assert head.region_anchor_state_projection.in_features == 8
+    assert head.object_projection.in_features == 6
     assert all(param.requires_grad for param in head.parameters())
 
 
@@ -87,8 +90,8 @@ def test_coverage_ledger_head_params_update_and_round_trip_state_dict() -> None:
     visual = torch.ones((2, 6), dtype=next(model.parameters()).dtype)
     loss = (
         head.state_projection(hidden).sum()
-        + head.region_anchor_state_projection(visual).sum()
-        + head.object_projection(hidden).sum()
+        + head.region_anchor_state_projection(hidden).sum()
+        + head.object_projection(visual).sum()
     )
     loss.backward()
     optimizer.step()
@@ -142,7 +145,8 @@ def test_install_infers_visual_dim_from_sample_embeddings_when_config_lacks_fiel
     )
 
     assert head is not None
-    assert head.region_anchor_state_projection.in_features == 7
+    assert head.region_anchor_state_projection.in_features == 8
+    assert head.object_projection.in_features == 7
 
 
 def test_install_prefers_vision_out_hidden_size_for_post_merger_visual_dim() -> None:
@@ -153,4 +157,5 @@ def test_install_prefers_vision_out_hidden_size_for_post_merger_visual_dim() -> 
     head = install_coverage_ledger_head(model, _ledger_cfg())
 
     assert head is not None
-    assert head.region_anchor_state_projection.in_features == 9
+    assert head.region_anchor_state_projection.in_features == 8
+    assert head.object_projection.in_features == 9

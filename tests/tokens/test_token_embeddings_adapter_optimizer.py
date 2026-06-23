@@ -190,8 +190,8 @@ def test_optimizer_ledger_head_step_updates_param_when_arch_prefixes_would_miss_
     visual = torch.ones((1, 4))
     loss = (
         ledger_head.state_projection(hidden).sum()
-        + ledger_head.region_anchor_state_projection(visual).sum()
-        + ledger_head.object_projection(hidden).sum()
+        + ledger_head.region_anchor_state_projection(hidden).sum()
+        + ledger_head.object_projection(visual).sum()
     )
     loss.backward()
     optimizer.step()
