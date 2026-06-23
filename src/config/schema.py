@@ -3111,6 +3111,78 @@ def _detection_validate_packing_runtime_contract(
         )
 
 
+def _detection_validate_teacher_forcing_coverage_ledger_contract(
+    *,
+    objective: "DetectionObjectiveConfig | TeacherForcingObjectiveConfig | None",
+    detection_template: "DetectionTemplateConfig",
+    packing: "DetectionPackingConfig",
+    training: Mapping[str, Any],
+    raw_detection_template_id: Any,
+) -> None:
+    if getattr(objective, "id", None) != TEACHER_FORCING_OBJECTIVE_ID:
+        return
+    coverage_ledger = getattr(
+        getattr(objective, "terms", None),
+        "coverage_ledger",
+        None,
+    )
+    if not bool(getattr(coverage_ledger, "enabled", False)):
+        return
+
+    if raw_detection_template_id == "compact_full":
+        raise ValueError(
+            "objective.terms.coverage_ledger.enabled=true rejects "
+            "detection_template.id=compact_full from old chat-template/schema "
+            "usage; use detection_template.id=compact_object_box_closed"
+        )
+
+    contract = resolve_detection_template_contract(detection_template.id)
+    if (
+        contract.template_id != "compact_object_box_closed"
+        or contract.include_object_ref_end is not True
+        or contract.include_box_end is not True
+    ):
+        raise ValueError(
+            "objective.terms.coverage_ledger.enabled=true requires "
+            "detection_template.id=compact_object_box_closed with "
+            "include_object_ref_end=true and include_box_end=true; "
+            f"got detection_template.id={detection_template.id!r}"
+        )
+
+    if _detection_runtime_bool(training, "packing"):
+        raise ValueError(
+            "objective.terms.coverage_ledger.enabled=true requires "
+            "training.packing=false"
+        )
+    if _detection_runtime_bool(training, "eval_packing"):
+        raise ValueError(
+            "objective.terms.coverage_ledger.enabled=true requires "
+            "training.eval_packing=false"
+        )
+    if packing.static_packing:
+        raise ValueError(
+            "objective.terms.coverage_ledger.enabled=true requires "
+            "packing.static_packing=false"
+        )
+    if packing.padding_free_packed:
+        raise ValueError(
+            "objective.terms.coverage_ledger.enabled=true requires "
+            "packing.padding_free_packed=false"
+        )
+
+    batch_size = training.get("per_device_train_batch_size")
+    if batch_size not in (None, ""):
+        if (
+            not isinstance(batch_size, int)
+            or isinstance(batch_size, bool)
+            or batch_size != 1
+        ):
+            raise ValueError(
+                "objective.terms.coverage_ledger.enabled=true requires "
+                "training.per_device_train_batch_size == 1 when provided"
+            )
+
+
 def _detection_validate_deepspeed_mapping(value: Any) -> dict[str, Any]:
     if value is None:
         return {}
@@ -3933,6 +4005,123 @@ class TeacherForcingWithinValidCoverageConfig:
         object.__setattr__(self, "coverage_strength", value)
 
 
+def _teacher_forcing_finite_float(
+    value: Any,
+    *,
+    path: str,
+    minimum: float,
+    minimum_label: str,
+    inclusive: bool = True,
+) -> float:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise TypeError(f"{path} must be numeric")
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise ValueError(f"{path} must be finite")
+    if inclusive:
+        if parsed < minimum:
+            raise ValueError(f"{path} must be >= {minimum_label}")
+    elif parsed <= minimum:
+        raise ValueError(f"{path} must be > {minimum_label}")
+    return parsed
+
+
+@dataclass(frozen=True)
+class TeacherForcingCoverageLedgerConfig:
+    enabled: bool = False
+    coverage_weight: float = 0.1
+    region_anchor_weight: float = 0.1
+    ledger_projection_dim: int = 256
+    temperature: float = 0.2
+    normalize_eps: float = 1.0e-6
+    pos_weight: float = 1.0
+    log_auc: bool = True
+    log_accuracy: bool = True
+    overlay_sample_count: int = 16
+    smoke_sample_count: int = 128
+    smoke_sample_seed: int = 20260623
+
+    def __post_init__(self) -> None:
+        _detection_validate_bool(
+            self.enabled,
+            path="objective.terms.coverage_ledger.enabled",
+        )
+        for field_name in ("coverage_weight", "region_anchor_weight"):
+            object.__setattr__(
+                self,
+                field_name,
+                _teacher_forcing_finite_float(
+                    getattr(self, field_name),
+                    path=f"objective.terms.coverage_ledger.{field_name}",
+                    minimum=0.0,
+                    minimum_label="0",
+                ),
+            )
+        if (
+            not isinstance(self.ledger_projection_dim, int)
+            or isinstance(self.ledger_projection_dim, bool)
+            or self.ledger_projection_dim <= 0
+        ):
+            raise ValueError(
+                "objective.terms.coverage_ledger.ledger_projection_dim "
+                "must be a positive integer"
+            )
+        object.__setattr__(
+            self,
+            "temperature",
+            _teacher_forcing_finite_float(
+                self.temperature,
+                path="objective.terms.coverage_ledger.temperature",
+                minimum=0.05,
+                minimum_label="0.05",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "normalize_eps",
+            _teacher_forcing_finite_float(
+                self.normalize_eps,
+                path="objective.terms.coverage_ledger.normalize_eps",
+                minimum=1.0e-8,
+                minimum_label="1e-8",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "pos_weight",
+            _teacher_forcing_finite_float(
+                self.pos_weight,
+                path="objective.terms.coverage_ledger.pos_weight",
+                minimum=0.0,
+                minimum_label="0",
+                inclusive=False,
+            ),
+        )
+        _detection_validate_bool(
+            self.log_auc,
+            path="objective.terms.coverage_ledger.log_auc",
+        )
+        _detection_validate_bool(
+            self.log_accuracy,
+            path="objective.terms.coverage_ledger.log_accuracy",
+        )
+        expected_exact_counts = {
+            "overlay_sample_count": 16,
+            "smoke_sample_count": 128,
+            "smoke_sample_seed": 20260623,
+        }
+        for field_name, expected in expected_exact_counts.items():
+            if (
+                not isinstance(getattr(self, field_name), int)
+                or isinstance(getattr(self, field_name), bool)
+                or getattr(self, field_name) != expected
+            ):
+                raise ValueError(
+                    f"objective.terms.coverage_ledger.{field_name} "
+                    f"must be exactly {expected}"
+                )
+
+
 @dataclass(frozen=True)
 class TeacherForcingModulesConfig:
     token_type_mass: TeacherForcingEnabledModuleConfig = field(
@@ -3946,6 +4135,9 @@ class TeacherForcingModulesConfig:
     )
     continuation_margin: TeacherForcingEnabledModuleConfig = field(
         default_factory=TeacherForcingEnabledModuleConfig
+    )
+    coverage_ledger: TeacherForcingCoverageLedgerConfig = field(
+        default_factory=TeacherForcingCoverageLedgerConfig
     )
 
     @classmethod
@@ -3975,6 +4167,11 @@ class TeacherForcingModulesConfig:
             data.pop("continuation_margin", {}),
             path="objective.terms.continuation_margin",
         )
+        coverage_ledger = parse_dataclass_strict(
+            TeacherForcingCoverageLedgerConfig,
+            data.pop("coverage_ledger", {}),
+            path="objective.terms.coverage_ledger",
+        )
         if data:
             unknown = [
                 f"objective.terms.{str(k)}"
@@ -3986,6 +4183,7 @@ class TeacherForcingModulesConfig:
             conditional_valid_set_likelihood=conditional_valid_set_likelihood,
             within_valid_coverage=within_valid_coverage,
             continuation_margin=continuation_margin,
+            coverage_ledger=coverage_ledger,
         )
 
 
@@ -4661,8 +4859,14 @@ class DetectionTrainingConfig:
             payload["sample_factory"]
         )
         target_sequence = sample_factory.target_sequence
+        raw_detection_template = payload["detection_template"]
+        raw_detection_template_id = (
+            raw_detection_template.get("id")
+            if isinstance(raw_detection_template, Mapping)
+            else None
+        )
         detection_template = DetectionTemplateConfig.from_mapping(
-            payload["detection_template"]
+            raw_detection_template
         )
         if (
             detection_template.id == "stage1_json_pretty"
@@ -4701,13 +4905,20 @@ class DetectionTrainingConfig:
             objective=objective,
             experiment=experiment,
         )
+        packing = DetectionPackingConfig.from_mapping(payload["packing"])
+        training = _detection_validate_training_mapping(payload.get("training"))
+        _detection_validate_teacher_forcing_coverage_ledger_contract(
+            objective=objective,
+            detection_template=detection_template,
+            packing=packing,
+            training=training,
+            raw_detection_template_id=raw_detection_template_id,
+        )
         token_rows = TokenEmbeddingsAdapterConfig.from_mapping(
             payload["token_embeddings_adapter"],
             path="token_embeddings_adapter",
         )
         _detection_validate_token_rows(detection_template, token_rows)
-        packing = DetectionPackingConfig.from_mapping(payload["packing"])
-        training = _detection_validate_training_mapping(payload.get("training"))
         _detection_validate_packing_runtime_contract(
             objective=objective,
             packing=packing,

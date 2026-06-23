@@ -49,6 +49,25 @@ def test_unknown_key_fails_fast_with_dotted_path(section: str):
     assert f"{section}.unknown_key" in str(exc.value)
 
 
+def test_teacher_forcing_coverage_ledger_unknown_nested_key_fails_fast() -> None:
+    payload = _base_training_payload()
+    payload["objective"] = {
+        "id": "research_teacher_forcing",
+        "profile": "hard_sft",
+        "terms": {
+            "coverage_ledger": {
+                "enabled": True,
+                "unknown_flag": True,
+            },
+        },
+    }
+
+    with pytest.raises(ValueError) as exc:
+        TrainingConfig.from_mapping(payload, PromptOverrides())
+
+    assert "objective.terms.coverage_ledger.unknown_flag" in str(exc.value)
+
+
 def test_custom_token_embeddings_adapter_is_the_active_special_token_surface():
     payload = _base_training_payload()
     payload["custom"]["token_embeddings_adapter"] = {

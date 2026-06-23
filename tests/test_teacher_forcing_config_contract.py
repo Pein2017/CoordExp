@@ -112,6 +112,59 @@ def _hard_sft_objective() -> dict:
         }
     }
 
+
+def _set_detection_template(payload: dict[str, object], template_id: str) -> None:
+    payload["detection_template"] = {"id": template_id}
+    payload["evaluation"] = {
+        "expected_template": template_id,
+        "parser_mode": "strict_expected",
+    }
+    try:
+        contract = resolve_detection_template_contract(template_id)
+    except ValueError:
+        return
+    token_rows = dict(payload["token_embeddings_adapter"])  # type: ignore[arg-type]
+    groups = dict(token_rows["groups"])  # type: ignore[index]
+    groups["compact_structure"] = {
+        "role": "structural_ce_only",
+        "tokens": list(contract.required_structural_tokens),
+        "expected_ids": dict(
+            zip(
+                contract.required_structural_tokens,
+                contract.required_structural_token_ids,
+            )
+        ),
+    }
+    token_rows["groups"] = groups
+    payload["token_embeddings_adapter"] = token_rows
+
+
+def _coverage_ledger_payload(
+    *,
+    template_id: str = "compact_object_box_closed",
+    coverage_ledger: dict[str, object] | None = None,
+) -> dict:
+    objective = _hard_sft_objective()
+    objective["terms"] = {
+        **objective["terms"],
+        "coverage_ledger": (
+            {"enabled": True}
+            if coverage_ledger is None
+            else {"enabled": True, **coverage_ledger}
+        ),
+    }
+    payload = _latest_teacher_payload(
+        profile="hard_sft",
+        terms=objective["terms"],
+    )
+    training = payload["training"]
+    assert isinstance(training, dict)
+    training["per_device_train_batch_size"] = 1
+    training["effective_batch_size"] = 1
+    _set_detection_template(payload, template_id)
+    return payload
+
+
 @pytest.mark.parametrize(
     "profile",
     [
@@ -261,6 +314,188 @@ def test_latest_teacher_forcing_accepts_minimal_hard_sft_profile() -> None:
     assert cfg.objective.profile == "hard_sft"
     assert cfg.objective.terms.within_valid_coverage.enabled is False
     assert cfg.objective.terms.within_valid_coverage.coverage_strength == 0.0
+
+
+def test_hard_sft_accepts_coverage_ledger_with_required_template() -> None:
+    cfg = DetectionTrainingConfig.from_mapping(_coverage_ledger_payload())
+
+    assert cfg.objective.profile == "hard_sft"
+    assert cfg.objective.terms.coverage_ledger.enabled is True
+    assert cfg.objective.terms.coverage_ledger.coverage_weight == 0.1
+    assert cfg.objective.terms.coverage_ledger.region_anchor_weight == 0.1
+    assert cfg.objective.terms.coverage_ledger.ledger_projection_dim == 256
+    assert cfg.objective.terms.coverage_ledger.temperature == 0.2
+    assert cfg.objective.terms.coverage_ledger.normalize_eps == 1.0e-6
+    assert cfg.objective.terms.coverage_ledger.pos_weight == 1.0
+    assert cfg.objective.terms.coverage_ledger.log_auc is True
+    assert cfg.objective.terms.coverage_ledger.log_accuracy is True
+    assert cfg.objective.terms.coverage_ledger.overlay_sample_count == 16
+    assert cfg.objective.terms.coverage_ledger.smoke_sample_count == 128
+    assert cfg.objective.terms.coverage_ledger.smoke_sample_seed == 20260623
+
+
+@pytest.mark.parametrize(
+    ("field_name", "value", "match"),
+    [
+        ("enabled", 1, r"objective\.terms\.coverage_ledger\.enabled.*boolean"),
+        (
+            "coverage_weight",
+            "0.1",
+            r"objective\.terms\.coverage_ledger\.coverage_weight.*numeric",
+        ),
+        (
+            "coverage_weight",
+            -0.1,
+            r"objective\.terms\.coverage_ledger\.coverage_weight.*>= 0",
+        ),
+        (
+            "coverage_weight",
+            float("inf"),
+            r"objective\.terms\.coverage_ledger\.coverage_weight.*finite",
+        ),
+        (
+            "region_anchor_weight",
+            "0.1",
+            r"objective\.terms\.coverage_ledger\.region_anchor_weight.*numeric",
+        ),
+        (
+            "region_anchor_weight",
+            -0.1,
+            r"objective\.terms\.coverage_ledger\.region_anchor_weight.*>= 0",
+        ),
+        (
+            "region_anchor_weight",
+            float("inf"),
+            r"objective\.terms\.coverage_ledger\.region_anchor_weight.*finite",
+        ),
+        (
+            "ledger_projection_dim",
+            0,
+            r"objective\.terms\.coverage_ledger\.ledger_projection_dim"
+            r".*positive integer",
+        ),
+        (
+            "ledger_projection_dim",
+            1.5,
+            r"objective\.terms\.coverage_ledger\.ledger_projection_dim"
+            r".*positive integer",
+        ),
+        ("temperature", "0.2", r"objective\.terms\.coverage_ledger\.temperature.*numeric"),
+        ("temperature", 0.049, r"objective\.terms\.coverage_ledger\.temperature.*>= 0\.05"),
+        ("temperature", float("inf"), r"objective\.terms\.coverage_ledger\.temperature.*finite"),
+        ("normalize_eps", "1e-6", r"objective\.terms\.coverage_ledger\.normalize_eps.*numeric"),
+        ("normalize_eps", 9.0e-9, r"objective\.terms\.coverage_ledger\.normalize_eps.*>= 1e-8"),
+        (
+            "normalize_eps",
+            float("inf"),
+            r"objective\.terms\.coverage_ledger\.normalize_eps.*finite",
+        ),
+        ("pos_weight", "1.0", r"objective\.terms\.coverage_ledger\.pos_weight.*numeric"),
+        ("pos_weight", 0.0, r"objective\.terms\.coverage_ledger\.pos_weight.*> 0"),
+        ("pos_weight", float("inf"), r"objective\.terms\.coverage_ledger\.pos_weight.*finite"),
+        ("log_auc", 1, r"objective\.terms\.coverage_ledger\.log_auc.*boolean"),
+        ("log_accuracy", 1, r"objective\.terms\.coverage_ledger\.log_accuracy.*boolean"),
+        (
+            "overlay_sample_count",
+            15,
+            r"objective\.terms\.coverage_ledger\.overlay_sample_count"
+            r".*exactly 16",
+        ),
+        (
+            "smoke_sample_count",
+            127,
+            r"objective\.terms\.coverage_ledger\.smoke_sample_count.*exactly 128",
+        ),
+        (
+            "smoke_sample_seed",
+            20260622,
+            r"objective\.terms\.coverage_ledger\.smoke_sample_seed"
+            r".*exactly 20260623",
+        ),
+    ],
+)
+def test_coverage_ledger_rejects_invalid_field_values(
+    field_name: str,
+    value: object,
+    match: str,
+) -> None:
+    payload = _coverage_ledger_payload(coverage_ledger={field_name: value})
+
+    with pytest.raises((TypeError, ValueError), match=match):
+        DetectionTrainingConfig.from_mapping(payload)
+
+
+@pytest.mark.parametrize(
+    "template_id",
+    [
+        "compact",
+        "compact_box_closed",
+        "compact_object_closed",
+    ],
+)
+def test_coverage_ledger_requires_compact_object_box_closed_template(
+    template_id: str,
+) -> None:
+    payload = _coverage_ledger_payload(template_id=template_id)
+
+    with pytest.raises(
+        ValueError,
+        match=rf"coverage_ledger.*compact_object_box_closed.*{template_id}",
+    ):
+        DetectionTrainingConfig.from_mapping(payload)
+
+
+def test_coverage_ledger_rejects_compact_full_with_legacy_message() -> None:
+    payload = _coverage_ledger_payload(template_id="compact_full")
+
+    with pytest.raises(
+        ValueError,
+        match=r"coverage_ledger.*compact_full.*old chat-template/schema",
+    ):
+        DetectionTrainingConfig.from_mapping(payload)
+
+
+@pytest.mark.parametrize(
+    ("section", "key", "match"),
+    [
+        ("training", "packing", r"coverage_ledger.*training\.packing=false"),
+        (
+            "packing",
+            "static_packing",
+            r"coverage_ledger.*packing\.static_packing=false",
+        ),
+        (
+            "packing",
+            "padding_free_packed",
+            r"coverage_ledger.*packing\.padding_free_packed=false",
+        ),
+    ],
+)
+def test_coverage_ledger_rejects_packing_modes(
+    section: str,
+    key: str,
+    match: str,
+) -> None:
+    payload = _coverage_ledger_payload()
+    nested = payload[section]
+    assert isinstance(nested, dict)
+    nested[key] = True
+
+    with pytest.raises(ValueError, match=match):
+        DetectionTrainingConfig.from_mapping(payload)
+
+
+def test_coverage_ledger_rejects_resolved_train_batch_size_above_one() -> None:
+    payload = _coverage_ledger_payload()
+    training = payload["training"]
+    assert isinstance(training, dict)
+    training["per_device_train_batch_size"] = 2
+
+    with pytest.raises(
+        ValueError,
+        match=r"coverage_ledger.*per_device_train_batch_size.*1",
+    ):
+        DetectionTrainingConfig.from_mapping(payload)
 
 
 def test_coverage_profile_requires_explicit_positive_coverage_strength() -> None:
