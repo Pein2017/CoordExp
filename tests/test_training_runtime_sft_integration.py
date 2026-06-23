@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass, field
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 import torch
 
+import src.trainers.metrics.teacher_forcing as teacher_forcing_metrics
 import src.sft as sft_module
 from src.bootstrap.trainer_setup import compose_trainer_class
 from src.sft import (
@@ -49,6 +52,8 @@ from src.trainers.metrics.mixins import TeacherForcingObjectiveMixin
 from src.training.teacher_forcing.ir import SupervisionAtom, TeacherForcingTargetIR
 from src.training.teacher_forcing.roles import TokenRole
 from src.training.teacher_forcing.vocab import RoleVocab
+from src.metrics.events import weighted_mean_event
+from src.training.sidecars import SupervisionSidecars, TrainingSidecars
 
 PUBLIC_RESEARCH_TF_EPOCH_VARYING_ROLLIN_BYPASS_REASON = (
     "research_teacher_forcing_epoch_varying_rollin"
@@ -762,6 +767,120 @@ def test_teacher_forcing_objective_mixin_computes_loss_through_runner() -> None:
     assert "labels" not in model.calls[0]
     assert model.calls[0]["position_ids"] is inputs["position_ids"]
     assert model.calls[0]["output_router_logits"] is True
+
+
+def test_teacher_forcing_objective_mixin_passes_coverage_ledger_to_bridge_and_logs_metrics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Metric:
+        def __init__(self) -> None:
+            self.values: list[float] = []
+
+        def update(self, value: float) -> None:
+            self.values.append(float(value))
+
+    class _BaseTrainer:
+        def compute_loss(self, *args, **kwargs):  # pragma: no cover - must not run
+            raise AssertionError("base trainer CE path should not own teacher_forcing")
+
+    class _Trainer(TeacherForcingObjectiveMixin, _BaseTrainer):
+        pass
+
+    class _FakeBridge:
+        settings_seen: Any = None
+        training_sidecars_seen: Any = None
+        raw_batch_seen: Any = None
+
+        def __init__(self, *, settings=None, **_kwargs: Any) -> None:
+            self.__class__.settings_seen = settings
+
+        def compute_loss(self, **kwargs: Any):
+            self.__class__.training_sidecars_seen = kwargs.get("training_sidecars")
+            self.__class__.raw_batch_seen = dict(kwargs["raw_batch"])
+            return SimpleNamespace(
+                loss=torch.tensor(1.25, dtype=torch.float32),
+                outputs=SimpleNamespace(marker="bridge-outputs"),
+                metric_events=(
+                    weighted_mean_event(
+                        "teacher_forcing/loss/coverage_ledger_auxiliary_weighted",
+                        0.5,
+                        2.0,
+                        unit="object",
+                        objective_id="coverage_ledger",
+                    ),
+                ),
+            )
+
+    monkeypatch.setattr(teacher_forcing_metrics, "TrainerLossBridge", _FakeBridge)
+    atom = SupervisionAtom(
+        batch_index=0,
+        logit_position=0,
+        target_position=1,
+        allowed_token_roles=frozenset({TokenRole.TEXT}),
+        selected_token_role=TokenRole.TEXT,
+        valid_token_ids=frozenset({1, 2}),
+        selected_token_id=1,
+        latent_valid_token_ids=frozenset({1, 2}),
+        coverage_target_weights=None,
+        loss_tags=frozenset({"pure_valid_set_marginal"}),
+        loss_weight=1.0,
+        coord_role=None,
+        provenance={},
+    )
+    target_ir = TeacherForcingTargetIR(
+        schema_version=1,
+        atoms=(atom,),
+        metadata={"serialization_policy": "marker_delimited"},
+    )
+    sidecars = TrainingSidecars(
+        supervision=SupervisionSidecars(payloads=("ledger-sidecar-placeholder",))
+    )
+    inputs = {
+        "input_ids": torch.tensor([[0, 1]], dtype=torch.long),
+        "attention_mask": torch.tensor([[1, 1]], dtype=torch.long),
+        "labels": torch.tensor([[-100, 1]], dtype=torch.long),
+        "teacher_forcing_target_ir": (target_ir,),
+        "training_sidecars": sidecars,
+    }
+    trainer = _Trainer()
+    trainer.teacher_forcing_objective_cfg = SimpleNamespace(
+        profile="pure_valid_set_marginal",
+        modules=SimpleNamespace(
+            within_valid_coverage=SimpleNamespace(coverage_strength=0.0),
+            coverage_ledger=SimpleNamespace(
+                enabled=True,
+                coverage_weight=0.5,
+                region_anchor_weight=0.25,
+                temperature=1.0,
+                pos_weight=1.0,
+            ),
+        ),
+    )
+    trainer.teacher_forcing_role_vocab = RoleVocab(
+        text_token_ids=frozenset({1, 2}),
+        schema_token_ids=frozenset(),
+        coord_token_ids=frozenset(),
+        stop_token_id=9,
+    )
+    metrics = defaultdict(_Metric)
+    trainer.custom_metrics = {"train": metrics}
+
+    loss, outputs = trainer.compute_loss(
+        SimpleNamespace(),
+        inputs,
+        return_outputs=True,
+    )
+
+    assert loss.item() == pytest.approx(1.25)
+    assert outputs.marker == "bridge-outputs"
+    assert _FakeBridge.settings_seen.coverage_ledger is (
+        trainer.teacher_forcing_objective_cfg.modules.coverage_ledger
+    )
+    assert _FakeBridge.training_sidecars_seen is sidecars
+    assert "training_sidecars" not in _FakeBridge.raw_batch_seen
+    assert metrics[
+        "teacher_forcing/loss/coverage_ledger_auxiliary_weighted"
+    ].values == [pytest.approx(0.5)]
 
 
 def test_static_packing_accumulation_warning_is_skipped_for_trainer_owned_packing(

@@ -9,7 +9,7 @@ import torch
 
 from src.data_collators.dataset_metrics import build_dataset_metrics_collator
 from src.trainers.batch_extras import BatchExtras, pop_batch_extras
-from src.training.bridge import TrainerLossBridge
+from src.training.bridge import TrainerLossBridge, TrainerLossBridgeSettings
 from src.training.coverage_ledger import (
     CoverageLedgerObjectEntry,
     CoverageLedgerSidecar,
@@ -292,13 +292,36 @@ def test_coverage_ledger_rejects_packed_sidecar_offset_rewriting() -> None:
         )
 
 
-def test_coverage_ledger_full_training_runtime_fails_fast_until_loss_consumer_exists() -> None:
-    from src.sft import _reject_coverage_ledger_without_loss_consumer
+def test_coverage_ledger_full_training_runtime_uses_bridge_consumer_guards() -> None:
+    import src.sft as sft_module
 
-    with pytest.raises(RuntimeError, match="coverage_ledger.*loss consumer"):
-        _reject_coverage_ledger_without_loss_consumer({"enabled": True})
+    assert not hasattr(sft_module, "_reject_coverage_ledger_without_loss_consumer")
 
-    _reject_coverage_ledger_without_loss_consumer({"enabled": False})
+    enabled_settings = TrainerLossBridgeSettings(
+        coverage_ledger={"enabled": True}
+    )
+    with pytest.raises(ValueError, match="exactly one CoverageLedgerSidecar"):
+        TrainerLossBridge(settings=enabled_settings).compute_loss(
+            model=_FakeModel(torch.zeros((1, 2, 5), dtype=torch.float32)),
+            raw_batch=_minimal_raw_batch(),
+            supervision=SupervisionBatch(),
+            objectives=(ObjectiveSpec("token_ce"),),
+        )
+
+    with pytest.raises(ValueError, match="exactly one coverage_ledger_head"):
+        TrainerLossBridge(settings=enabled_settings).compute_loss(
+            model=_FakeModel(torch.zeros((1, 2, 5), dtype=torch.float32)),
+            raw_batch={
+                **_minimal_raw_batch(),
+                "training_sidecars": TrainingSidecars(
+                    supervision=SupervisionSidecars(
+                        payloads=(_coverage_ledger_sidecar(),)
+                    )
+                ),
+            },
+            supervision=SupervisionBatch(),
+            objectives=(ObjectiveSpec("token_ce"),),
+        )
 
 
 def test_teacher_forcing_target_ir_has_semantic_supervision_sidecar_home() -> None:

@@ -4,8 +4,9 @@ from dataclasses import replace
 from typing import Any, Mapping, MutableMapping, Sequence
 
 from src.detection.token_types import build_compact_token_type_groups
-from src.training.bridge import TrainerLossBridge
+from src.training.bridge import TrainerLossBridge, TrainerLossBridgeSettings
 from src.training.objectives.types import ObjectiveSpec
+from src.training.sidecars import TrainingSidecars
 from src.training.supervision.batch import SupervisionBatch
 from src.training.supervision.distributions import TeacherForcingTargetDistribution
 from src.training.supervision.spans import SupervisionSpan
@@ -25,6 +26,12 @@ class TeacherForcingObjectiveMixin:
         extras = maybe_pop_and_stash_batch_extras(self, inputs)
         target_irs = _require_teacher_forcing_irs(extras.teacher_forcing_target_ir)
         sample_ids = _resolve_sample_ids(inputs.get("sample_id"), count=len(target_irs))
+        raw_training_sidecars = inputs.get("training_sidecars")
+        training_sidecars = (
+            raw_training_sidecars
+            if type(raw_training_sidecars) is TrainingSidecars
+            else None
+        )
 
         strip_non_model_detection_sidecars(inputs)
         input_ids = inputs.get("input_ids")
@@ -34,11 +41,16 @@ class TeacherForcingObjectiveMixin:
             sample_ids=sample_ids,
         )
         objective_cfg = getattr(self, "teacher_forcing_objective_cfg", None)
-        bridge = TrainerLossBridge()
+        bridge = TrainerLossBridge(
+            settings=TrainerLossBridgeSettings(
+                coverage_ledger=_coverage_ledger_config(objective_cfg),
+            )
+        )
         result = bridge.compute_loss(
             model=model,
             raw_batch=inputs,
             batch_extras=extras,
+            training_sidecars=training_sidecars,
             supervision=supervision,
             objectives=(
                 ObjectiveSpec(
@@ -52,6 +64,7 @@ class TeacherForcingObjectiveMixin:
             ),
             sample_id_to_batch_index=sample_id_to_batch_index,
         )
+        _log_metric_events(self, result.metric_events)
         return (result.loss, result.outputs) if return_outputs else result.loss
 
 
@@ -165,6 +178,30 @@ def _coverage_strength(objective_cfg: Any) -> float:
     coverage = getattr(modules, "within_valid_coverage", None)
     value = getattr(coverage, "coverage_strength", 0.0)
     return float(value or 0.0)
+
+
+def _coverage_ledger_config(objective_cfg: Any) -> Any:
+    terms = getattr(objective_cfg, "terms", None)
+    if terms is None:
+        terms = getattr(objective_cfg, "modules", None)
+    return getattr(terms, "coverage_ledger", None)
+
+
+def _log_metric_events(trainer: Any, metric_events: Any) -> None:
+    if not metric_events:
+        return
+    from src.metrics.events import flatten_metric_events
+    from src.metrics.reporter import SwiftMetricReporter, best_effort
+
+    updates = flatten_metric_events(metric_events)
+    if not updates:
+        return
+    reporter = SwiftMetricReporter(trainer)
+    best_effort(
+        trainer,
+        name="teacher_forcing_objective_metric_events",
+        fn=lambda: reporter.update_many(updates),
+    )
 
 
 __all__ = ["TeacherForcingObjectiveMixin"]

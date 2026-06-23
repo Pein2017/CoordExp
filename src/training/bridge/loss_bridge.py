@@ -8,11 +8,26 @@ from typing import Any
 
 import torch
 
+from src.metrics.events import MetricEvent
 from src.trainers.batch_extras import BatchExtras
 from src.trainers.teacher_forcing.forwards import prepare_forward_inputs
 from src.training.bridge.coordinate_mapper import PredictionCoordinateMapper
+from src.training.coverage_ledger.head import CoverageLedgerHead
+from src.training.coverage_ledger.loss import (
+    CoverageLedgerLossConfig,
+    compute_coverage_ledger_loss,
+)
+from src.training.coverage_ledger.metrics import (
+    COVERAGE_ACCURACY_KEY,
+    COVERAGE_AUC_KEY,
+    coverage_ledger_metric_events,
+)
 from src.training.coverage_ledger.qwen_capture import CoverageLedgerForwardCapture
 from src.training.coverage_ledger.sidecars import CoverageLedgerSidecar
+from src.training.coverage_ledger.visual_regions import (
+    map_norm1000_bbox_to_visual_token_region,
+    pool_object_visual_embeddings,
+)
 from src.training.encoding.model_inputs import (
     ModelInputBundle,
     SIDECAR_ONLY_KEYS,
@@ -39,6 +54,7 @@ class TrainerLossBridgeSettings:
     runner_owns_loss: bool = True
     packing_enabled: bool = False
     allow_logits_projection: bool = False
+    coverage_ledger: Any | None = None
 
     def __post_init__(self) -> None:
         """Validate settings with plain booleans only."""
@@ -62,6 +78,7 @@ class TrainerLossBridgeResult:
     model_inputs: ModelInputBundle
     coordinate_mapper: PredictionCoordinateMapper
     training_sidecars: TrainingSidecars
+    metric_events: tuple[MetricEvent, ...] = ()
 
 
 class TrainerLossBridge:
@@ -125,15 +142,23 @@ class TrainerLossBridge:
         ]
 
         # call the model exactly once and require full, unsliced logits.
-        if self._requires_coverage_ledger_capture(resolved_sidecars):
-            outputs = CoverageLedgerForwardCapture().capture(
+        coverage_ledger_enabled = self._coverage_ledger_enabled()
+        coverage_ledger_sidecar: CoverageLedgerSidecar | None = None
+        coverage_ledger_head: CoverageLedgerHead | None = None
+        if coverage_ledger_enabled:
+            coverage_ledger_sidecar = self._require_coverage_ledger_sidecar(
+                resolved_sidecars
+            )
+            coverage_ledger_head = self._require_coverage_ledger_head(model)
+            captured = CoverageLedgerForwardCapture().capture(
                 model=model,
                 inputs=model_inputs.payload,
                 ignored_keys=ignored_keys,
                 packing_enabled=self._settings.packing_enabled,
                 where="TrainerLossBridge",
             )
-            logits = outputs.logits
+            outputs = captured
+            logits = captured.logits
         else:
             core_model, inputs_for_model, _model_type = prepare_forward_inputs(
                 model=model,
@@ -161,15 +186,50 @@ class TrainerLossBridge:
             objectives=tuple(objectives),
             label_rows=coordinate_mapper.label_rows,
         )
+        loss = objective_result.loss
+        metric_events = tuple(objective_result.metric_events)
+
+        if coverage_ledger_enabled:
+            assert coverage_ledger_sidecar is not None
+            assert coverage_ledger_head is not None
+            visual_config = self._resolve_coverage_ledger_visual_config(model)
+            regions = tuple(
+                map_norm1000_bbox_to_visual_token_region(
+                    entry.bbox_norm1000_xyxy,
+                    image_grid_thw=coverage_ledger_sidecar.image_grid_thw,
+                    processed_width=coverage_ledger_sidecar.processed_width,
+                    processed_height=coverage_ledger_sidecar.processed_height,
+                    patch_size=visual_config["patch_size"],
+                    spatial_merge_size=visual_config["spatial_merge_size"],
+                )
+                for entry in coverage_ledger_sidecar.object_entries
+            )
+            pooled_visual_object_embeddings = pool_object_visual_embeddings(
+                captured.image_embeds,
+                regions,
+            )
+            coverage_ledger_result = compute_coverage_ledger_loss(
+                head=coverage_ledger_head,
+                final_hidden_states=captured.final_hidden_states,
+                pooled_visual_object_embeddings=pooled_visual_object_embeddings,
+                sidecar=coverage_ledger_sidecar,
+                config=self._coverage_ledger_loss_config(),
+                sample_id_to_batch_index=sample_id_to_batch_index,
+            )
+            loss = loss + coverage_ledger_result.weighted_loss
+            metric_events = metric_events + self._filter_coverage_ledger_metric_events(
+                coverage_ledger_metric_events(coverage_ledger_result)
+            )
 
         # return only the runner-owned objective loss, ignoring model-provided loss.
         return TrainerLossBridgeResult(
-            loss=objective_result.loss,
+            loss=loss,
             outputs=outputs,
             objective_result=objective_result,
             model_inputs=model_inputs,
             coordinate_mapper=coordinate_mapper,
             training_sidecars=resolved_sidecars,
+            metric_events=metric_events,
         )
 
     def _strip_sidecars(self, raw_batch: Mapping[str, Any]) -> dict[str, Any]:
@@ -278,16 +338,188 @@ class TrainerLossBridge:
             return batch_ir
         return raw_ir
 
-    def _requires_coverage_ledger_capture(
+    def _coverage_ledger_enabled(self) -> bool:
+        """Return whether the bridge-local coverage ledger auxiliary is enabled."""
+
+        cfg = self._settings.coverage_ledger
+        if cfg is None:
+            return False
+        if isinstance(cfg, Mapping):
+            return bool(cfg.get("enabled", False))
+        return bool(getattr(cfg, "enabled", False))
+
+    def _require_coverage_ledger_sidecar(
         self,
         sidecars: TrainingSidecars,
-    ) -> bool:
-        """Return whether same-forward Qwen image capture is needed."""
+    ) -> CoverageLedgerSidecar:
+        """Return the one V0 coverage-ledger sidecar required by enabled config."""
 
-        return any(
-            type(payload) is CoverageLedgerSidecar
+        payloads = tuple(
+            payload
             for payload in sidecars.supervision.payloads
+            if type(payload) is CoverageLedgerSidecar
         )
+        if len(payloads) != 1:
+            raise ValueError(
+                "coverage_ledger.enabled=true requires exactly one "
+                f"CoverageLedgerSidecar; got {len(payloads)}"
+            )
+        return payloads[0]
+
+    def _require_coverage_ledger_head(self, model: Any) -> CoverageLedgerHead:
+        """Return the one trainable coverage-ledger head attached to the model."""
+
+        heads: list[CoverageLedgerHead] = []
+        direct_head = getattr(model, "coverage_ledger_head", None)
+        if isinstance(direct_head, CoverageLedgerHead):
+            heads.append(direct_head)
+
+        named_modules = getattr(model, "named_modules", None)
+        if callable(named_modules):
+            for name, module in named_modules():
+                if (
+                    (name == "coverage_ledger_head" or name.endswith(".coverage_ledger_head"))
+                    and isinstance(module, CoverageLedgerHead)
+                    and all(id(module) != id(existing) for existing in heads)
+                ):
+                    heads.append(module)
+
+        if len(heads) != 1:
+            raise ValueError(
+                "coverage_ledger.enabled=true requires exactly one "
+                f"coverage_ledger_head; got {len(heads)}"
+            )
+        return heads[0]
+
+    def _coverage_ledger_loss_config(self) -> CoverageLedgerLossConfig:
+        """Translate bridge settings into the coverage-ledger loss config."""
+
+        cfg = self._settings.coverage_ledger
+        return CoverageLedgerLossConfig(
+            coverage_weight=self._coverage_ledger_float(
+                cfg,
+                "coverage_weight",
+                default=0.1,
+            ),
+            region_anchor_weight=self._coverage_ledger_float(
+                cfg,
+                "region_anchor_weight",
+                default=0.1,
+            ),
+            temperature=self._coverage_ledger_float(
+                cfg,
+                "temperature",
+                default=0.2,
+            ),
+            pos_weight=self._coverage_ledger_float(
+                cfg,
+                "pos_weight",
+                default=1.0,
+            ),
+        )
+
+    def _filter_coverage_ledger_metric_events(
+        self,
+        events: tuple[MetricEvent, ...],
+    ) -> tuple[MetricEvent, ...]:
+        """Apply optional bridge metric toggles to ledger diagnostic events."""
+
+        cfg = self._settings.coverage_ledger
+        log_auc = self._coverage_ledger_bool(cfg, "log_auc", default=True)
+        log_accuracy = self._coverage_ledger_bool(
+            cfg,
+            "log_accuracy",
+            default=True,
+        )
+        filtered = []
+        for event in events:
+            if event.key == COVERAGE_AUC_KEY and not log_auc:
+                continue
+            if event.key == COVERAGE_ACCURACY_KEY and not log_accuracy:
+                continue
+            filtered.append(event)
+        return tuple(filtered)
+
+    def _resolve_coverage_ledger_visual_config(self, model: Any) -> dict[str, int]:
+        """Resolve Qwen visual patch and merge sizes from the active model tree."""
+
+        candidates = self._iter_model_config_candidates(model)
+        patch_size = self._first_positive_int_attr(candidates, "patch_size")
+        spatial_merge_size = self._first_positive_int_attr(
+            candidates,
+            "spatial_merge_size",
+        )
+        missing = []
+        if patch_size is None:
+            missing.append("patch_size")
+        if spatial_merge_size is None:
+            missing.append("spatial_merge_size")
+        if missing:
+            raise ValueError(
+                "coverage_ledger.enabled=true requires Qwen visual config fields "
+                + ", ".join(missing)
+            )
+        return {
+            "patch_size": patch_size,
+            "spatial_merge_size": spatial_merge_size,
+        }
+
+    def _iter_model_config_candidates(self, model: Any) -> tuple[Any, ...]:
+        """Return model/config/visual candidates without assuming wrapper shape."""
+
+        seen: set[int] = set()
+        stack: list[Any] = [model]
+        candidates: list[Any] = []
+        while stack:
+            current = stack.pop(0)
+            if current is None or id(current) in seen:
+                continue
+            seen.add(id(current))
+            candidates.append(current)
+            config = getattr(current, "config", None)
+            if config is not None and id(config) not in seen:
+                candidates.append(config)
+            visual = getattr(current, "visual", None)
+            if visual is not None and id(visual) not in seen:
+                candidates.append(visual)
+                visual_config = getattr(visual, "config", None)
+                if visual_config is not None and id(visual_config) not in seen:
+                    candidates.append(visual_config)
+            get_base_model = getattr(current, "get_base_model", None)
+            if callable(get_base_model):
+                try:
+                    base_model = get_base_model()
+                except TypeError:
+                    base_model = None
+                if base_model is not None:
+                    stack.append(base_model)
+            for attr_name in ("module", "base_model", "model"):
+                child = getattr(current, attr_name, None)
+                if child is not None:
+                    stack.append(child)
+        return tuple(candidates)
+
+    @staticmethod
+    def _first_positive_int_attr(candidates: tuple[Any, ...], name: str) -> int | None:
+        for candidate in candidates:
+            value = getattr(candidate, name, None)
+            if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+                return int(value)
+        return None
+
+    @staticmethod
+    def _coverage_ledger_float(cfg: Any, field_name: str, *, default: float) -> float:
+        if cfg is None:
+            return float(default)
+        value = cfg.get(field_name, default) if isinstance(cfg, Mapping) else getattr(cfg, field_name, default)
+        return float(value)
+
+    @staticmethod
+    def _coverage_ledger_bool(cfg: Any, field_name: str, *, default: bool) -> bool:
+        if cfg is None:
+            return bool(default)
+        value = cfg.get(field_name, default) if isinstance(cfg, Mapping) else getattr(cfg, field_name, default)
+        return bool(value)
 
     @staticmethod
     def _teacher_forcing_target_ir_equal(left: Any, right: Any) -> bool:
