@@ -59,6 +59,9 @@ class CoverageLedgerForwardCapture:
         )
 
         captured_image_embeds: list[torch.Tensor] = []
+        lower_model_vars = vars(lower_model)
+        had_instance_get_image_features = "get_image_features" in lower_model_vars
+        instance_get_image_features = lower_model_vars.get("get_image_features")
         original_get_image_features = lower_model.get_image_features
 
         def wrapped_get_image_features(*args: Any, **kwargs: Any) -> Any:
@@ -72,7 +75,10 @@ class CoverageLedgerForwardCapture:
             lower_model.get_image_features = wrapped_get_image_features
             outputs = lower_model(**inputs_for_model)
         finally:
-            lower_model.get_image_features = original_get_image_features
+            if had_instance_get_image_features:
+                lower_model.get_image_features = instance_get_image_features
+            elif "get_image_features" in vars(lower_model):
+                delattr(lower_model, "get_image_features")
 
         if len(captured_image_embeds) != 1:
             raise ValueError(

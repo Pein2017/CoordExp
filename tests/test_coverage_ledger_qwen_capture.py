@@ -36,6 +36,7 @@ class _FakeLowerQwen:
         self.get_image_features_calls = 0
         self.forward_calls: list[dict[str, Any]] = []
         self.image_embeds = torch.arange(8, dtype=torch.float32).reshape(2, 4)
+        self.fail_after_image_features = False
 
     def get_image_features(
         self,
@@ -49,6 +50,8 @@ class _FakeLowerQwen:
         self.forward_calls.append(dict(kwargs))
         if kwargs.get("pixel_values") is not None:
             self.get_image_features(kwargs["pixel_values"], kwargs.get("image_grid_thw"))
+            if self.fail_after_image_features:
+                raise RuntimeError("forced lower-Qwen failure")
         input_ids = kwargs["input_ids"]
         hidden = torch.arange(
             input_ids.numel() * self.hidden_size,
@@ -170,6 +173,24 @@ def test_capture_unwraps_trainable_wrapper_without_copying_base_model() -> None:
     assert capture.logits.shape == (1, 4, model.config.text_config.vocab_size)
     assert model.model.get_image_features_calls == 1
     assert len(model.model.forward_calls) == 1
+
+
+def test_capture_restores_class_defined_get_image_features_after_exception() -> None:
+    model = _FakeQwenForConditionalGeneration()
+    model.model.fail_after_image_features = True
+    assert "get_image_features" not in vars(model.model)
+
+    with pytest.raises(RuntimeError, match="forced lower-Qwen failure"):
+        CoverageLedgerForwardCapture().capture(
+            model=model,
+            inputs=_qwen_inputs(),
+            ignored_keys=("labels", "training_sidecars", "supervision_spans"),
+            packing_enabled=False,
+            where="test",
+        )
+
+    assert "get_image_features" not in vars(model.model)
+    assert model.model.get_image_features_calls == 1
 
 
 def test_capture_rejects_missing_empty_or_count_mismatched_image_embeds() -> None:
