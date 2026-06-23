@@ -181,9 +181,23 @@ def _coverage_strength(objective_cfg: Any) -> float:
 
 
 def _coverage_ledger_config(objective_cfg: Any) -> Any:
-    terms = getattr(objective_cfg, "terms", None)
+    if objective_cfg is None:
+        return None
+    terms = (
+        objective_cfg.get("terms")
+        if isinstance(objective_cfg, Mapping)
+        else getattr(objective_cfg, "terms", None)
+    )
     if terms is None:
-        terms = getattr(objective_cfg, "modules", None)
+        terms = (
+            objective_cfg.get("modules")
+            if isinstance(objective_cfg, Mapping)
+            else getattr(objective_cfg, "modules", None)
+        )
+    if terms is None:
+        return None
+    if isinstance(terms, Mapping):
+        return terms.get("coverage_ledger")
     return getattr(terms, "coverage_ledger", None)
 
 

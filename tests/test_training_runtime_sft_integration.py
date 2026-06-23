@@ -769,7 +769,7 @@ def test_teacher_forcing_objective_mixin_computes_loss_through_runner() -> None:
     assert model.calls[0]["output_router_logits"] is True
 
 
-def test_teacher_forcing_objective_mixin_passes_coverage_ledger_to_bridge_and_logs_metrics(
+def test_teacher_forcing_objective_mixin_passes_mapping_coverage_ledger_to_bridge_and_logs_metrics(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class _Metric:
@@ -843,19 +843,20 @@ def test_teacher_forcing_objective_mixin_passes_coverage_ledger_to_bridge_and_lo
         "training_sidecars": sidecars,
     }
     trainer = _Trainer()
-    trainer.teacher_forcing_objective_cfg = SimpleNamespace(
-        profile="pure_valid_set_marginal",
-        modules=SimpleNamespace(
-            within_valid_coverage=SimpleNamespace(coverage_strength=0.0),
-            coverage_ledger=SimpleNamespace(
-                enabled=True,
-                coverage_weight=0.5,
-                region_anchor_weight=0.25,
-                temperature=1.0,
-                pos_weight=1.0,
-            ),
-        ),
-    )
+    coverage_ledger_cfg = {
+        "enabled": True,
+        "coverage_weight": 0.5,
+        "region_anchor_weight": 0.25,
+        "temperature": 1.0,
+        "pos_weight": 1.0,
+    }
+    trainer.teacher_forcing_objective_cfg = {
+        "profile": "pure_valid_set_marginal",
+        "terms": {
+            "within_valid_coverage": {"coverage_strength": 0.0},
+            "coverage_ledger": coverage_ledger_cfg,
+        },
+    }
     trainer.teacher_forcing_role_vocab = RoleVocab(
         text_token_ids=frozenset({1, 2}),
         schema_token_ids=frozenset(),
@@ -873,9 +874,7 @@ def test_teacher_forcing_objective_mixin_passes_coverage_ledger_to_bridge_and_lo
 
     assert loss.item() == pytest.approx(1.25)
     assert outputs.marker == "bridge-outputs"
-    assert _FakeBridge.settings_seen.coverage_ledger is (
-        trainer.teacher_forcing_objective_cfg.modules.coverage_ledger
-    )
+    assert _FakeBridge.settings_seen.coverage_ledger is coverage_ledger_cfg
     assert _FakeBridge.training_sidecars_seen is sidecars
     assert "training_sidecars" not in _FakeBridge.raw_batch_seen
     assert metrics[

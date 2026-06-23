@@ -8,6 +8,7 @@ import pytest
 import torch
 
 from src.training.bridge import TrainerLossBridge, TrainerLossBridgeSettings
+from src.training.coverage_ledger.head import CoverageLedgerHead
 from src.training.coverage_ledger.sidecars import (
     CoverageLedgerObjectEntry,
     CoverageLedgerSidecar,
@@ -53,9 +54,9 @@ class _FakeBackboneOutput:
 class _FakeLowerQwen:
     def __init__(self, *, hidden_size: int, image_token_id: int) -> None:
         self.config = SimpleNamespace(image_token_id=image_token_id)
-        self.visual = SimpleNamespace(spatial_merge_size=1)
+        self.visual = SimpleNamespace(patch_size=16, spatial_merge_size=1)
         self.hidden_size = hidden_size
-        self.image_embeds = torch.arange(8, dtype=torch.float32).reshape(2, 4)
+        self.image_embeds = torch.arange(16, dtype=torch.float32).reshape(4, 4)
         self.get_image_features_calls = 0
         self.forward_calls: list[dict[str, Any]] = []
 
@@ -93,6 +94,12 @@ class _FakeQwenConditionalModel:
                 torch.arange(vocab_size * 4, dtype=torch.float32).reshape(vocab_size, 4)
                 / 10.0
             )
+        self.coverage_ledger_head = CoverageLedgerHead(
+            hidden_size=4,
+            visual_dim=4,
+            ledger_projection_dim=4,
+            normalize_eps=1.0e-6,
+        )
 
 
 def _span(
@@ -113,7 +120,12 @@ def _batch(*spans: SupervisionSpan) -> SupervisionBatch:
     return SupervisionBatch(spans=spans, batch_id="batch-1")
 
 
-def _coverage_ledger_sidecars() -> TrainingSidecars:
+def _coverage_ledger_sidecars(
+    *,
+    image_grid_thw: tuple[int, int, int] = (1, 1, 2),
+    processed_width: int = 32,
+    processed_height: int = 16,
+) -> TrainingSidecars:
     return TrainingSidecars(
         supervision=SupervisionSidecars(
             payloads=(
@@ -126,16 +138,16 @@ def _coverage_ledger_sidecars() -> TrainingSidecars:
                             source_object_index=0,
                             emitted_order_index=0,
                             image_index=0,
-                            bbox_norm1000_xyxy=(10, 20, 30, 40),
+                            bbox_norm1000_xyxy=(10, 20, 900, 900),
                             box_start_position=2,
-                            coord_label_positions=(3, 4, 5, 6),
-                            object_ref_end_position=7,
-                            box_end_position=8,
+                            coord_label_positions=(3, 3, 3, 3),
+                            object_ref_end_position=1,
+                            box_end_position=3,
                         ),
                     ),
-                    image_grid_thw=(1, 1, 2),
-                    processed_width=32,
-                    processed_height=32,
+                    image_grid_thw=image_grid_thw,
+                    processed_width=processed_width,
+                    processed_height=processed_height,
                     image_identity="fake-image",
                 ),
             )
@@ -180,21 +192,39 @@ def test_trainer_loss_bridge_calls_model_once_and_uses_runner_loss_not_output_lo
     assert result.coordinate_mapper.logits_shape == tuple(logits.shape)
 
 
-def test_trainer_loss_bridge_uses_qwen_capture_for_coverage_ledger_sidecars() -> None:
+def test_trainer_loss_bridge_uses_qwen_capture_when_coverage_ledger_enabled() -> None:
     model = _FakeQwenConditionalModel()
     image_token_id = model.config.image_token_id
     raw_batch = {
-        "input_ids": torch.tensor([[11, image_token_id, image_token_id, 12]]),
-        "attention_mask": torch.ones((1, 4), dtype=torch.long),
+        "input_ids": torch.tensor(
+            [[11, image_token_id, image_token_id, image_token_id, image_token_id]]
+        ),
+        "attention_mask": torch.ones((1, 5), dtype=torch.long),
         "pixel_values": torch.ones((1, 3, 2, 2), dtype=torch.float32),
-        "image_grid_thw": torch.tensor([[1, 1, 2]], dtype=torch.long),
-        "labels": torch.tensor([[11, image_token_id, image_token_id, 12]]),
-        "training_sidecars": _coverage_ledger_sidecars(),
+        "image_grid_thw": torch.tensor([[1, 2, 2]], dtype=torch.long),
+        "labels": torch.tensor(
+            [[11, image_token_id, image_token_id, image_token_id, image_token_id]]
+        ),
+        "training_sidecars": _coverage_ledger_sidecars(
+            image_grid_thw=(1, 2, 2),
+            processed_width=32,
+            processed_height=32,
+        ),
         "supervision_spans": ("sidecar-only",),
         "duplicate_filter_result": {"sidecar": True},
     }
 
-    result = TrainerLossBridge().compute_loss(
+    result = TrainerLossBridge(
+        settings=TrainerLossBridgeSettings(
+            coverage_ledger={
+                "enabled": True,
+                "coverage_weight": 0.5,
+                "region_anchor_weight": 0.25,
+                "temperature": 1.0,
+                "pos_weight": 1.0,
+            }
+        )
+    ).compute_loss(
         model=model,
         raw_batch=raw_batch,
         supervision=_batch(_span(sample_id="sample-1", label_positions=(1,), token_id=2)),
@@ -211,9 +241,11 @@ def test_trainer_loss_bridge_uses_qwen_capture_for_coverage_ledger_sidecars() ->
         "image_grid_thw",
     }
     assert result.outputs.logits.shape[:2] == raw_batch["input_ids"].shape
-    assert result.outputs.final_hidden_states.shape == (1, 4, 4)
+    assert result.outputs.final_hidden_states.shape == (1, 5, 4)
     assert torch.equal(result.outputs.image_embeds, model.model.image_embeds)
-    assert result.loss is result.objective_result.loss
+    assert result.loss.item() > result.objective_result.loss.item()
+    assert "training_sidecars" not in model.model.forward_calls[0]
+    assert "supervision_spans" not in model.model.forward_calls[0]
     assert result.coordinate_mapper.logits_shape == tuple(result.outputs.logits.shape)
 
 
