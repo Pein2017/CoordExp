@@ -11,37 +11,87 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 _MARKDOWN_LINK_PATTERN = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
+_REPO_DOC_HANDLE_PATTERN = re.compile(
+    r"(?<![\w./-])((?:docs|research)/(?:[A-Za-z0-9_./@+-]+))"
+)
 
 
 def _assert_local_markdown_links_are_tracked(markdown_path: Path) -> None:
     content = markdown_path.read_text(encoding="utf-8")
-    base_dir = markdown_path.parent
+    _assert_repo_relative_targets_are_tracked(
+        markdown_path,
+        _local_markdown_targets(content),
+    )
+    _assert_repo_relative_targets_are_tracked(
+        markdown_path,
+        _repo_doc_handles(content),
+    )
+
+
+def _local_markdown_targets(content: str) -> list[str]:
+    targets: list[str] = []
     for raw_target in _MARKDOWN_LINK_PATTERN.findall(content):
         target = raw_target.split("#", 1)[0].strip()
         if not target or "://" in target or target.startswith("mailto:"):
             continue
+        targets.append(target)
+    return targets
+
+
+def _repo_doc_handles(content: str) -> list[str]:
+    targets: list[str] = []
+    for raw_target in _REPO_DOC_HANDLE_PATTERN.findall(content):
+        target = raw_target.rstrip(".,;:")
+        if target:
+            targets.append(target)
+    return targets
+
+
+def _assert_repo_relative_targets_are_tracked(
+    markdown_path: Path,
+    targets: list[str],
+) -> None:
+    base_dir = markdown_path.parent
+    for target in targets:
         resolved = (base_dir / target).resolve()
+        if target.startswith(("docs/", "research/")):
+            resolved = (REPO_ROOT / target).resolve()
         try:
             relative = resolved.relative_to(REPO_ROOT)
         except ValueError as exc:
             raise AssertionError(
-                f"{markdown_path.relative_to(REPO_ROOT)} links outside repo: {raw_target}"
+                f"{markdown_path.relative_to(REPO_ROOT)} references outside repo: "
+                f"{target}"
             ) from exc
-        assert resolved.is_file(), (
-            f"{markdown_path.relative_to(REPO_ROOT)} links to missing file: "
-            f"{raw_target}"
+        assert resolved.exists(), (
+            f"{markdown_path.relative_to(REPO_ROOT)} references missing path: "
+            f"{target}"
         )
-        tracked = subprocess.run(
-            ["git", "ls-files", "--error-unmatch", str(relative)],
-            cwd=REPO_ROOT,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-        assert tracked.returncode == 0, (
-            f"{markdown_path.relative_to(REPO_ROOT)} links to untracked file: "
-            f"{raw_target}"
-        )
+        if resolved.is_dir():
+            tracked = subprocess.run(
+                ["git", "ls-files", str(relative)],
+                cwd=REPO_ROOT,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                check=False,
+            )
+            assert tracked.stdout.strip(), (
+                f"{markdown_path.relative_to(REPO_ROOT)} references directory "
+                f"without tracked files: {target}"
+            )
+        else:
+            tracked = subprocess.run(
+                ["git", "ls-files", "--error-unmatch", str(relative)],
+                cwd=REPO_ROOT,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            assert tracked.returncode == 0, (
+                f"{markdown_path.relative_to(REPO_ROOT)} references untracked file: "
+                f"{target}"
+            )
 
 
 def test_artifact_contract_docs_freeze_rank0_and_stage2_eval_surfaces() -> None:
@@ -163,9 +213,18 @@ def test_coverage_ledger_launch_prep_docs_freeze_smoke_artifacts_and_metrics() -
     ) in research_index
     assert "OpenSpec is deferred" in research_index
     assert "not current stable behavior" in research_index
-    _assert_local_markdown_links_are_tracked(
-        REPO_ROOT / "research" / "ideas" / "ledger-auxiliary-loss" / "index.md"
-    )
+    for markdown_path in (
+        REPO_ROOT / "research" / "ideas" / "ledger-auxiliary-loss" / "index.md",
+        REPO_ROOT / "research" / "ideas" / "ledger-auxiliary-loss" / "overview.md",
+        REPO_ROOT / "research" / "ideas" / "ledger-auxiliary-loss" / "draft.md",
+        REPO_ROOT / "research" / "ideas" / "ledger-auxiliary-loss" / "discussion.md",
+        REPO_ROOT
+        / "docs"
+        / "superpowers"
+        / "plans"
+        / "2026-06-23-coverage-ledger-auxiliary-loss.md",
+    ):
+        _assert_local_markdown_links_are_tracked(markdown_path)
 
 
 def test_stage2_rollout_correction_spec_rejects_removed_scheduler_and_channel_keys() -> None:

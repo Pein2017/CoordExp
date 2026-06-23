@@ -143,8 +143,7 @@ This idea is active and does not yet have a final `experiments/` packet or
 - Current design spec:
   `docs/superpowers/specs/2026-06-23-coverage-ledger-auxiliary-loss-design.md`
 - Future implementation plan:
-  `docs/superpowers/plans/2026-06-23-ledger-auxiliary-loss.md` once the design
-  spec is approved.
+  `docs/superpowers/plans/2026-06-23-coverage-ledger-auxiliary-loss.md`
 
 ## Next Action
 
