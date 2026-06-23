@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Mapping
 
 import pytest
@@ -16,6 +17,10 @@ from src.training.coverage_ledger.artifacts import (
 )
 from src.training.coverage_ledger.preflight import (
     assert_smoke_config_diff_allowed,
+    build_preflight_swift_template,
+    _require_existing_file,
+    _require_existing_path,
+    _resolve_local_model_path,
     resolve_overlay_render_image_path,
 )
 from src.training.coverage_ledger.sidecars import (
@@ -226,6 +231,77 @@ def test_preflight_enforces_smoke_config_diff_allowlist() -> None:
     ledger = ConfigLoader.load_materialized_training_config(str(LEDGER_CONFIG))
 
     assert_smoke_config_diff_allowed(baseline, ledger)
+
+
+def test_preflight_swift_template_builder_uses_current_swift_api(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: dict[str, Any] = {}
+
+    class _Template:
+        def normalize_bbox(self, inputs: Any) -> None:
+            raise AssertionError("coord adapter did not patch normalize_bbox")
+
+    processor = object()
+    template = _Template()
+
+    def _fake_get_model_processor(*args: Any, **kwargs: Any) -> tuple[None, object]:
+        calls["model_processor"] = (args, kwargs)
+        return None, processor
+
+    def _fake_get_template(*args: Any, **kwargs: Any) -> _Template:
+        calls["template"] = (args, kwargs)
+        assert args == ()
+        assert kwargs["processor"] is processor
+        return template
+
+    monkeypatch.setattr(
+        "swift.model.get_model_processor",
+        _fake_get_model_processor,
+    )
+    monkeypatch.setattr("swift.template.get_template", _fake_get_template)
+
+    training_config = SimpleNamespace(
+        model={
+            "model": "local-model",
+            "torch_dtype": "float32",
+        },
+        template={
+            "template": "qwen3_vl",
+            "max_length": 4096,
+            "truncation_strategy": "raise",
+            "max_pixels": 1048576,
+        },
+    )
+
+    result = build_preflight_swift_template(
+        training_config,  # type: ignore[arg-type]
+        system_prompt="system",
+    )
+
+    assert result is template
+    assert calls["model_processor"][0] == ("local-model",)
+    assert calls["model_processor"][1]["load_model"] is False
+    assert calls["model_processor"][1]["download_model"] is False
+    assert calls["template"][1]["template_type"] == "qwen3_vl"
+    assert getattr(template, "_coord_tokens_skip_norm") is True
+
+
+def test_preflight_prerequisite_guards_fail_before_swift_download(
+    tmp_path: Path,
+) -> None:
+    missing_jsonl = tmp_path / "missing.coord.jsonl"
+    with pytest.raises(FileNotFoundError, match="training JSONL"):
+        _require_existing_file(missing_jsonl, "training JSONL")
+
+    missing_model = tmp_path / "model-cache"
+    with pytest.raises(FileNotFoundError, match="model cache"):
+        _require_existing_path(missing_model, "model cache")
+
+    assert _resolve_local_model_path("model_cache/models/local") == (
+        REPO_ROOT / "model_cache/models/local"
+    ).resolve(strict=False)
+    assert _resolve_local_model_path("Qwen/Qwen3-VL-2B-Instruct") is None
 
 
 class _ImageGridSwiftTemplate(FakeSwiftTemplate):

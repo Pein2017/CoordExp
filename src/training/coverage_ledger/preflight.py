@@ -95,6 +95,10 @@ def run_coverage_ledger_preflight(
     system_prompt, _user_prompt = resolve_detection_prompts(ledger_config)
     custom_config = build_detection_runtime_custom_shim(ledger_config)
     train_jsonl_path = _resolve_repo_path(ledger_config.data.train_jsonl)
+    _require_existing_file(train_jsonl_path, "training JSONL")
+    local_model_path = _resolve_local_model_path(ledger_config.model["model"])
+    if local_model_path is not None:
+        _require_existing_path(local_model_path, "model cache")
 
     template = swift_template or build_preflight_swift_template(
         ledger_config,
@@ -305,11 +309,16 @@ def build_preflight_swift_template(
     """Create a Swift template with no model load and coord-token adaptation."""
 
     import torch
-    from swift.llm import get_model_tokenizer
-    from swift.llm.template import get_template
+
+    try:
+        from swift.llm import get_model_tokenizer as get_model_processor
+        from swift.llm.template import get_template
+    except ImportError:
+        from swift.model import get_model_processor
+        from swift.template import get_template
 
     dtype = _torch_dtype(training_config.model.get("torch_dtype"))
-    _model, processor = get_model_tokenizer(
+    _model, processor = get_model_processor(
         str(training_config.model["model"]),
         torch_dtype=dtype,
         load_model=False,
@@ -397,6 +406,26 @@ def _resolve_repo_path(path_value: str | Path) -> Path:
     if path.is_absolute():
         return path.resolve(strict=False)
     return (REPO_ROOT / path).resolve(strict=False)
+
+
+def _resolve_local_model_path(path_value: str | Path) -> Path | None:
+    text = str(path_value)
+    path = Path(path_value).expanduser()
+    if path.is_absolute():
+        return path.resolve(strict=False)
+    if text.startswith(("model_cache/", "./", "../")):
+        return (REPO_ROOT / path).resolve(strict=False)
+    return None
+
+
+def _require_existing_file(path: Path, label: str) -> None:
+    if not path.is_file():
+        raise FileNotFoundError(f"coverage ledger preflight {label} not found: {path}")
+
+
+def _require_existing_path(path: Path, label: str) -> None:
+    if not path.exists():
+        raise FileNotFoundError(f"coverage ledger preflight {label} not found: {path}")
 
 
 def _tokenizer_id(swift_template: Any) -> str:
