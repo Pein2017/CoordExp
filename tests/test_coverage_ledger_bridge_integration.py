@@ -297,6 +297,10 @@ def test_enabled_coverage_ledger_uses_capture_sums_loss_and_combines_events(
     )
     metric_keys = {event.key for event in result.metric_events}
     assert "training/objectives/token_ce/loss" in metric_keys
+    assert "training/objectives/coverage_ledger/object_count" in metric_keys
+    assert "training/objectives/coverage_ledger/coverage_state_count" in metric_keys
+    assert "training/objectives/coverage_ledger/coverage_pair_count" in metric_keys
+    assert "training/objectives/coverage_ledger/region_anchor_pair_count" in metric_keys
     assert WEIGHTED_LOSS_KEY in metric_keys
 
 

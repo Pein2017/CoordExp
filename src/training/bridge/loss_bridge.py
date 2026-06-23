@@ -217,8 +217,12 @@ class TrainerLossBridge:
                 sample_id_to_batch_index=sample_id_to_batch_index,
             )
             loss = loss + coverage_ledger_result.weighted_loss
-            metric_events = metric_events + self._filter_coverage_ledger_metric_events(
-                coverage_ledger_metric_events(coverage_ledger_result)
+            metric_events = (
+                metric_events
+                + tuple(coverage_ledger_result.metric_events)
+                + self._filter_coverage_ledger_metric_events(
+                    coverage_ledger_metric_events(coverage_ledger_result)
+                )
             )
 
         # return only the runner-owned objective loss, ignoring model-provided loss.
