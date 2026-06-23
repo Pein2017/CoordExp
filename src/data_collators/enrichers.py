@@ -273,7 +273,11 @@ class TeacherForcingTargetIREnricher:
 
 
 class CoverageLedgerSidecarEnricher:
-    """Attach coverage-ledger sidecars through TrainingSidecars payloads."""
+    """Attach coverage-ledger sidecars through TrainingSidecars payloads.
+
+    Row-level ``supervision.payloads`` are flattened in sample order. Other
+    row sidecar fields fail fast until batch aggregation semantics are defined.
+    """
 
     def __init__(self, *, enabled: bool) -> None:
         if type(enabled) is not bool:
@@ -306,9 +310,10 @@ class CoverageLedgerSidecarEnricher:
                 "CoverageLedgerSidecar per sample"
             )
 
-        per_sample_payloads: list[CoverageLedgerSidecar] = []
+        batch_payloads: list[Any] = []
         for sample_index, row in enumerate(raw_batch):
-            payloads = self._coverage_payloads(row)
+            sidecars = self._training_sidecars(row)
+            payloads = self._coverage_payloads_from_sidecars(sidecars)
             if len(payloads) > 1:
                 raise ValueError(
                     "duplicate CoverageLedgerSidecar payloads are not allowed "
@@ -319,10 +324,14 @@ class CoverageLedgerSidecarEnricher:
                     "CoverageLedgerSidecar payload must be present for every "
                     "sample when coverage ledger is enabled"
                 )
-            per_sample_payloads.append(payloads[0])
+            self._validate_aggregatable_row_sidecars(
+                sidecars,
+                sample_index=sample_index,
+            )
+            batch_payloads.extend(sidecars.supervision.payloads)
 
         collated["training_sidecars"] = TrainingSidecars(
-            supervision=SupervisionSidecars(payloads=tuple(per_sample_payloads))
+            supervision=SupervisionSidecars(payloads=tuple(batch_payloads))
         )
 
     @classmethod
@@ -331,16 +340,85 @@ class CoverageLedgerSidecarEnricher:
 
     @staticmethod
     def _coverage_payloads(row: Any) -> tuple[CoverageLedgerSidecar, ...]:
+        return CoverageLedgerSidecarEnricher._coverage_payloads_from_sidecars(
+            CoverageLedgerSidecarEnricher._training_sidecars(row)
+        )
+
+    @staticmethod
+    def _training_sidecars(row: Any) -> TrainingSidecars | None:
         if not isinstance(row, Mapping):
-            return ()
+            return None
         sidecars = row.get("training_sidecars")
         if type(sidecars) is not TrainingSidecars:
+            return None
+        return sidecars
+
+    @staticmethod
+    def _coverage_payloads_from_sidecars(
+        sidecars: TrainingSidecars | None,
+    ) -> tuple[CoverageLedgerSidecar, ...]:
+        if sidecars is None:
             return ()
         return tuple(
             payload
             for payload in sidecars.supervision.payloads
             if type(payload) is CoverageLedgerSidecar
         )
+
+    @staticmethod
+    def _validate_aggregatable_row_sidecars(
+        sidecars: TrainingSidecars | None,
+        *,
+        sample_index: int,
+    ) -> None:
+        if sidecars is None:
+            return
+
+        unsupported: list[str] = []
+        supervision = sidecars.supervision
+        if supervision.spans:
+            unsupported.append("supervision.spans")
+        if supervision.teacher_forcing_target_ir is not None:
+            unsupported.append("supervision.teacher_forcing_target_ir")
+        if supervision.metadata:
+            unsupported.append("supervision.metadata")
+
+        diagnostics = sidecars.diagnostics
+        if diagnostics.rendered_assistant_text is not None:
+            unsupported.append("diagnostics.rendered_assistant_text")
+        if diagnostics.token_roles:
+            unsupported.append("diagnostics.token_roles")
+        if diagnostics.metadata:
+            unsupported.append("diagnostics.metadata")
+
+        dataset = sidecars.dataset
+        if dataset.sample_id is not None:
+            unsupported.append("dataset.sample_id")
+        if dataset.dataset_id is not None:
+            unsupported.append("dataset.dataset_id")
+        if dataset.split is not None:
+            unsupported.append("dataset.split")
+        if dataset.base_idx is not None:
+            unsupported.append("dataset.base_idx")
+        if dataset.metadata:
+            unsupported.append("dataset.metadata")
+
+        stage2 = sidecars.stage2
+        if stage2.assignment_result is not None:
+            unsupported.append("stage2.assignment_result")
+        if stage2.duplicate_filter_result is not None:
+            unsupported.append("stage2.duplicate_filter_result")
+        if stage2.rollout_payload is not None:
+            unsupported.append("stage2.rollout_payload")
+        if stage2.metadata:
+            unsupported.append("stage2.metadata")
+
+        if unsupported:
+            raise ValueError(
+                "coverage ledger collator cannot aggregate row TrainingSidecars "
+                "fields beyond supervision.payloads yet; "
+                f"sample index {sample_index} has {unsupported}"
+            )
 
 
 class TokenTypesEnricher:

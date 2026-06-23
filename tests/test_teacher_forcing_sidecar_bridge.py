@@ -173,6 +173,68 @@ def test_coverage_ledger_sidecar_survives_collator_to_training_sidecars() -> Non
     assert result.training_sidecars.supervision.payloads == (ledger_sidecar,)
 
 
+def test_coverage_ledger_collator_preserves_existing_supervision_payloads() -> None:
+    collator = build_dataset_metrics_collator(
+        _DummyTemplate(),
+        _base_collator,
+        coverage_ledger_cfg={"enabled": True},
+    )
+    first_ledger_sidecar = _coverage_ledger_sidecar("coco:0")
+    second_ledger_sidecar = _coverage_ledger_sidecar("coco:1")
+
+    collated = collator(
+        [
+            {
+                "dataset": "coco",
+                "training_sidecars": TrainingSidecars(
+                    supervision=SupervisionSidecars(
+                        payloads=("non-ledger-a", first_ledger_sidecar)
+                    )
+                ),
+            },
+            {
+                "dataset": "coco",
+                "training_sidecars": TrainingSidecars(
+                    supervision=SupervisionSidecars(
+                        payloads=("non-ledger-b", second_ledger_sidecar)
+                    )
+                ),
+            },
+        ]
+    )
+
+    assert collated["training_sidecars"].supervision.payloads == (
+        "non-ledger-a",
+        first_ledger_sidecar,
+        "non-ledger-b",
+        second_ledger_sidecar,
+    )
+
+
+def test_coverage_ledger_collator_rejects_unaggregated_row_sidecar_fields() -> None:
+    collator = build_dataset_metrics_collator(
+        _DummyTemplate(),
+        _base_collator,
+        coverage_ledger_cfg={"enabled": True},
+    )
+    ledger_sidecar = _coverage_ledger_sidecar()
+
+    with pytest.raises(ValueError, match="coverage ledger.*cannot aggregate"):
+        collator(
+            [
+                {
+                    "dataset": "coco",
+                    "training_sidecars": TrainingSidecars(
+                        supervision=SupervisionSidecars(
+                            payloads=(ledger_sidecar,),
+                            teacher_forcing_target_ir=("ir-a",),
+                        )
+                    ),
+                }
+            ]
+        )
+
+
 def test_coverage_ledger_enabled_requires_one_payload_per_unpacked_sample() -> None:
     collator = build_dataset_metrics_collator(
         _DummyTemplate(),
@@ -228,6 +290,15 @@ def test_coverage_ledger_rejects_packed_sidecar_offset_rewriting() -> None:
                 ]
             ]
         )
+
+
+def test_coverage_ledger_full_training_runtime_fails_fast_until_loss_consumer_exists() -> None:
+    from src.sft import _reject_coverage_ledger_without_loss_consumer
+
+    with pytest.raises(RuntimeError, match="coverage_ledger.*loss consumer"):
+        _reject_coverage_ledger_without_loss_consumer({"enabled": True})
+
+    _reject_coverage_ledger_without_loss_consumer({"enabled": False})
 
 
 def test_teacher_forcing_target_ir_has_semantic_supervision_sidecar_home() -> None:

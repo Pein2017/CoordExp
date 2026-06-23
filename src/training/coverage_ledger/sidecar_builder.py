@@ -98,6 +98,8 @@ def _coord_value_from_span(tokenized: DetectionSupervisionView, span: TokenSpan)
         raise ValueError(
             f"coord span {span.label!r} must use canonical integer text"
         )
+    # The ledger sidecar stores norm-1000 geometry, whose valid upper boundary
+    # is 1000 even while current trainable coord-token adapter rows are 0..999.
     if coord_value > 1000:
         raise ValueError(
             f"coord span {span.label!r} must be in the 0..1000 range"

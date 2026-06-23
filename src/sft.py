@@ -2733,6 +2733,26 @@ def _strip_trailing_trainer_state_logging_row(logging_path: str | Path) -> bool:
     return True
 
 
+def _reject_coverage_ledger_without_loss_consumer(coverage_ledger_cfg: Any) -> None:
+    """Temporary Task-3 guard until coverage-ledger loss integration exists."""
+
+    if coverage_ledger_cfg is None:
+        return
+    if isinstance(coverage_ledger_cfg, Mapping):
+        enabled = bool(coverage_ledger_cfg.get("enabled", False))
+    else:
+        enabled = bool(getattr(coverage_ledger_cfg, "enabled", False))
+    if not enabled:
+        return
+
+    raise RuntimeError(
+        "coverage_ledger.enabled=true has sidecar extraction wired, but no "
+        "coverage-ledger loss consumer is integrated in this branch yet. "
+        "Task 9 should replace _reject_coverage_ledger_without_loss_consumer "
+        "when the bridge consumes CoverageLedgerSidecar payloads."
+    )
+
+
 @_torch_elastic_record
 def main():
     """Main training entry point - pure config-driven."""
@@ -4031,6 +4051,7 @@ def main():
     objective_terms_cfg = getattr(objective_cfg, "terms", None)
     if objective_terms_cfg is not None:
         coverage_ledger_cfg = getattr(objective_terms_cfg, "coverage_ledger", None)
+    _reject_coverage_ledger_without_loss_consumer(coverage_ledger_cfg)
     instability_monitor_cfg = None
     loss_gradient_monitor_cfg = None
     proxy_supervision_cfg = None
