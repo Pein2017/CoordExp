@@ -13,10 +13,24 @@ from src.config.schema import DetectionTrainingConfig
 from src.config.strict_dataclass import dataclass_asdict_no_none
 from src.detection.dataset import DetectionTrainingDataset
 from src.detection.dataset_selection import select_dataset_row_indices
+from src.detection.runtime import (
+    build_detection_runtime_custom_shim,
+    detection_mode,
+    resolve_detection_prompts,
+)
 from src.training.coverage_ledger.preflight import (
+    build_coverage_ledger_preflight_training_dataset,
     resolve_coverage_ledger_train_selection,
 )
-from test_detection_training_dataset import FakeSwiftTemplate, _raw_row, _write_jsonl
+from src.training.coverage_ledger.sidecars import CoverageLedgerSidecar
+from src.training.teacher_forcing.constants import TEACHER_FORCING_TARGET_IR_KEY
+from test_detection_training_dataset import (
+    FakeSwiftTemplate,
+    ImageExpandingSwiftTemplate,
+    _ensure_image,
+    _raw_row,
+    _write_jsonl,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -65,6 +79,18 @@ EXPECTED_TRAIN_SAMPLE_SELECTION = {
     "count": 128,
     "seed": 20260623,
 }
+
+
+class _ImageGridExpandingSwiftTemplate(ImageExpandingSwiftTemplate):
+    def encode(
+        self,
+        payload: Mapping[str, Any],
+        *,
+        return_length: bool,
+    ) -> dict[str, Any]:
+        encoded = super().encode(payload, return_length=return_length)
+        encoded["image_grid_thw"] = (1, 8, 8)
+        return encoded
 
 
 def _load_resolved(path: Path) -> dict[str, Any]:
@@ -286,3 +312,91 @@ def test_coverage_ledger_smoke_training_selection_matches_preflight_manifest_ind
     )
 
     assert dataset.source_row_indices == selected_row_indices
+
+
+def test_coverage_ledger_preflight_dataset_matches_smoke_training_samples(
+    tmp_path: Path,
+) -> None:
+    ledger_cfg = ConfigLoader.load_materialized_training_config(str(LEDGER_CONFIG))
+    assert isinstance(ledger_cfg, DetectionTrainingConfig)
+    selection = resolve_coverage_ledger_train_selection(ledger_cfg)
+    selected_row_indices = select_dataset_row_indices(
+        total_rows=256,
+        selection=selection,
+    )
+    jsonl_path = tmp_path / "train.coord.jsonl"
+    _write_jsonl(jsonl_path, [_raw_row() for _ in range(256)])
+    _ensure_image(tmp_path)
+
+    preflight_template = _ImageGridExpandingSwiftTemplate()
+    training_template = _ImageGridExpandingSwiftTemplate()
+    preflight_dataset = build_coverage_ledger_preflight_training_dataset(
+        ledger_cfg,
+        train_jsonl_path=jsonl_path,
+        swift_template=preflight_template,
+        selection=selection,
+        image_root=tmp_path / "image-root",
+    )
+
+    system_prompt, _user_prompt = resolve_detection_prompts(ledger_cfg)
+    custom_config = build_detection_runtime_custom_shim(ledger_cfg)
+    training_dataset = DetectionTrainingDataset.from_jsonl(
+        jsonl_path,
+        swift_template=training_template,
+        image_root=tmp_path / "image-root",
+        detection_template_id=ledger_cfg.detection_template.id,
+        mode=detection_mode(ledger_cfg),
+        object_ordering=ledger_cfg.sample_factory.target_sequence.object_ordering,
+        user_prompt=custom_config.user_prompt,
+        system_prompt=system_prompt,
+        seed=int(ledger_cfg.training["seed"]),
+        state_weighting="uniform_permutation",
+        normalization="semantic_image_bucket_balanced",
+        object_field_order=str(
+            ledger_cfg.sample_factory.target_sequence.object_field_order
+        ),
+        teacher_forcing_profile=str(ledger_cfg.objective.profile),
+        teacher_forcing_rollin_base_seed=int(
+            ledger_cfg.objective.target_ir.rollin_policy.base_seed
+        ),
+        coverage_ledger_enabled=True,
+        sample_limit=selection.count,
+        sample_selection=selection,
+        dataset_name="detection_train",
+    )
+
+    assert preflight_dataset.source_row_indices == selected_row_indices
+    assert preflight_dataset.source_row_indices == training_dataset.source_row_indices
+    preflight_sample = preflight_dataset[0]
+    training_sample = training_dataset[0]
+
+    assert preflight_sample["dataset"] == training_sample["dataset"] == "detection_train"
+    assert preflight_sample["base_idx"] == training_sample["base_idx"]
+    assert preflight_sample["sample_id"] == training_sample["sample_id"]
+    assert (
+        preflight_sample["detection_metadata"]["object_ordering_seed"]
+        == training_sample["detection_metadata"]["object_ordering_seed"]
+    )
+    assert (
+        preflight_sample["detection_metadata"]["realized_source_object_indices"]
+        == training_sample["detection_metadata"]["realized_source_object_indices"]
+    )
+
+    preflight_ir = preflight_sample[TEACHER_FORCING_TARGET_IR_KEY]
+    training_ir = training_sample[TEACHER_FORCING_TARGET_IR_KEY]
+    assert preflight_ir.metadata["stable_sample_id"] == training_ir.metadata[
+        "stable_sample_id"
+    ]
+    assert preflight_ir.metadata["rollin_seed"] == training_ir.metadata["rollin_seed"]
+    assert (
+        preflight_ir.metadata["selected_source_object_indices"]
+        == training_ir.metadata["selected_source_object_indices"]
+    )
+
+    preflight_sidecar = preflight_sample["training_sidecars"].supervision.payloads[0]
+    training_sidecar = training_sample["training_sidecars"].supervision.payloads[0]
+    assert isinstance(preflight_sidecar, CoverageLedgerSidecar)
+    assert isinstance(training_sidecar, CoverageLedgerSidecar)
+    assert preflight_sidecar.sample_id == training_sidecar.sample_id
+    assert preflight_sidecar.prompt_end_position == training_sidecar.prompt_end_position
+    assert preflight_sidecar.object_entries == training_sidecar.object_entries

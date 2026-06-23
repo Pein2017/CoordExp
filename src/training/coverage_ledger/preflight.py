@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from src.common.io import load_jsonl_with_diagnostics
 from src.config.loader import ConfigLoader
 from src.config.schema import CoordTokensConfig, DetectionTrainingConfig
 from src.config.strict_dataclass import dataclass_asdict_no_none
@@ -18,7 +17,7 @@ from src.detection.dataset_selection import (
     normalize_dataset_row_selection,
     select_dataset_row_indices,
 )
-from src.detection.dataset import DetectionDatasetRuntimeConfig, DetectionTrainingDataset
+from src.detection.dataset import DetectionTrainingDataset
 from src.detection.runtime import (
     build_detection_runtime_custom_shim,
     detection_mode,
@@ -96,42 +95,22 @@ def run_coverage_ledger_preflight(
     system_prompt, _user_prompt = resolve_detection_prompts(ledger_config)
     custom_config = build_detection_runtime_custom_shim(ledger_config)
     train_jsonl_path = _resolve_repo_path(ledger_config.data.train_jsonl)
-    rows, _invalid_count = load_jsonl_with_diagnostics(train_jsonl_path, strict=True)
-    selected_row_indices = select_dataset_row_indices(
-        total_rows=len(rows),
-        selection=selection,
-    )
-    selected_rows = [rows[index] for index in selected_row_indices]
 
     template = swift_template or build_preflight_swift_template(
         ledger_config,
         system_prompt=system_prompt,
     )
     patch_size, spatial_merge_size = resolve_visual_grid_geometry(template)
-    dataset = DetectionTrainingDataset(
-        selected_rows,
+    dataset = build_coverage_ledger_preflight_training_dataset(
+        ledger_config,
+        train_jsonl_path=train_jsonl_path,
         swift_template=template,
-        config=DetectionDatasetRuntimeConfig(
-            image_root=str(_resolve_repo_path(ledger_config.data.image_root)),
-            detection_template_id=ledger_config.detection_template.id,
-            mode=detection_mode(ledger_config),
-            object_ordering=ledger_config.sample_factory.target_sequence.object_ordering,
-            user_prompt=custom_config.user_prompt,
-            system_prompt=system_prompt,
-            seed=int(ledger_config.training.get("seed", selection_seed)),
-            state_weighting="uniform_permutation",
-            normalization="semantic_image_bucket_balanced",
-            object_field_order=str(
-                ledger_config.sample_factory.target_sequence.object_field_order
-            ),
-            teacher_forcing_profile=str(ledger_config.objective.profile),
-            teacher_forcing_rollin_base_seed=int(
-                ledger_config.objective.target_ir.rollin_policy.base_seed
-            ),
-            coverage_ledger_enabled=True,
-        ),
-        dataset_name=DATASET_ID,
+        selection=selection,
+        system_prompt=system_prompt,
+        user_prompt=custom_config.user_prompt,
+        seed=int(ledger_config.training.get("seed", selection_seed)),
     )
+    selected_row_indices = dataset.source_row_indices
 
     sidecars: list[CoverageLedgerSidecar] = []
     visual_regions_by_sample_id: dict[str, tuple[VisualTokenRegion, ...]] = {}
@@ -260,6 +239,62 @@ def resolve_coverage_ledger_train_selection(
             "debug.train_sample_selection.seed"
         )
     return selection
+
+
+def build_coverage_ledger_preflight_training_dataset(
+    training_config: DetectionTrainingConfig,
+    *,
+    train_jsonl_path: str | Path,
+    swift_template: Any,
+    selection: DatasetRowSelectionConfig,
+    image_root: str | Path | None = None,
+    system_prompt: str | None = None,
+    user_prompt: str | None = None,
+    seed: int | None = None,
+) -> DetectionTrainingDataset:
+    """Build the preflight dataset with the same sample identity as smoke training."""
+
+    if system_prompt is None or user_prompt is None:
+        resolved_system_prompt, _resolved_user_prompt = resolve_detection_prompts(
+            training_config
+        )
+        custom_config = build_detection_runtime_custom_shim(training_config)
+        if system_prompt is None:
+            system_prompt = resolved_system_prompt
+        if user_prompt is None:
+            user_prompt = custom_config.user_prompt
+    return DetectionTrainingDataset.from_jsonl(
+        train_jsonl_path,
+        swift_template=swift_template,
+        image_root=(
+            _resolve_repo_path(training_config.data.image_root)
+            if image_root is None
+            else image_root
+        ),
+        detection_template_id=training_config.detection_template.id,
+        mode=detection_mode(training_config),
+        object_ordering=training_config.sample_factory.target_sequence.object_ordering,
+        user_prompt=str(user_prompt),
+        system_prompt=system_prompt,
+        seed=int(
+            seed
+            if seed is not None
+            else training_config.training.get("seed", selection.seed)
+        ),
+        state_weighting="uniform_permutation",
+        normalization="semantic_image_bucket_balanced",
+        object_field_order=str(
+            training_config.sample_factory.target_sequence.object_field_order
+        ),
+        teacher_forcing_profile=str(training_config.objective.profile),
+        teacher_forcing_rollin_base_seed=int(
+            training_config.objective.target_ir.rollin_policy.base_seed
+        ),
+        coverage_ledger_enabled=True,
+        sample_limit=selection.count,
+        sample_selection=selection,
+        dataset_name="detection_train",
+    )
 
 
 def build_preflight_swift_template(
