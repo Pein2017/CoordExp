@@ -170,18 +170,10 @@ def _coverage_auc_event(result: CoverageLedgerLossResult) -> MetricEvent | None:
     logits, targets = _coverage_logits_and_targets(result)
     if logits.numel() == 0:
         return None
-    positive_logits = logits[targets >= 0.5]
-    negative_logits = logits[targets < 0.5]
-    if positive_logits.numel() == 0 or negative_logits.numel() == 0:
+    auc_counts = _coverage_auc_counts(logits, targets)
+    if auc_counts is None:
         return None
-
-    comparisons = positive_logits[:, None] - negative_logits[None, :]
-    wins = (comparisons > 0).to(dtype=torch.float64).sum()
-    ties = (comparisons == 0).to(dtype=torch.float64).sum()
-    numerator = float((wins + 0.5 * ties).item())
-    denominator = int(positive_logits.numel() * negative_logits.numel())
-    if denominator <= 0:
-        return None
+    numerator, denominator = auc_counts
     return ratio_event(
         COVERAGE_AUC_KEY,
         numerator,
@@ -193,6 +185,41 @@ def _coverage_auc_event(result: CoverageLedgerLossResult) -> MetricEvent | None:
         objective_id=COVERAGE_LEDGER_OBJECTIVE_ID,
         diagnostic_only=True,
     )
+
+
+def _coverage_auc_counts(
+    logits: torch.Tensor,
+    targets: torch.Tensor,
+) -> tuple[float, int] | None:
+    positive_mask = targets >= 0.5
+    positive_count = int(positive_mask.sum().item())
+    total_count = int(positive_mask.numel())
+    negative_count = total_count - positive_count
+    if positive_count == 0 or negative_count == 0:
+        return None
+
+    order = torch.argsort(logits)
+    sorted_logits = logits.index_select(0, order)
+    sorted_positive = positive_mask.index_select(0, order)
+    _, group_counts = torch.unique_consecutive(sorted_logits, return_counts=True)
+
+    numerator = 0.0
+    lower_negative_count = 0
+    group_start = 0
+    for group_count in group_counts.tolist():
+        group_end = group_start + int(group_count)
+        group_positive_count = int(
+            sorted_positive[group_start:group_end].sum().item()
+        )
+        group_negative_count = int(group_count) - group_positive_count
+        numerator += (
+            group_positive_count * lower_negative_count
+            + 0.5 * group_positive_count * group_negative_count
+        )
+        lower_negative_count += group_negative_count
+        group_start = group_end
+
+    return numerator, positive_count * negative_count
 
 
 def _coverage_accuracy_event(result: CoverageLedgerLossResult) -> MetricEvent | None:

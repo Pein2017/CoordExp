@@ -202,6 +202,49 @@ def test_auc_reduces_by_comparable_pairs_across_batches() -> None:
     assert reduced[COVERAGE_AUC_KEY] == pytest.approx(3.0 / 5.0)
 
 
+def test_auc_for_large_matrix_does_not_use_positive_negative_outer_broadcast(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    side = 256
+    coverage_targets = torch.zeros((side, side), dtype=torch.float32)
+    coverage_targets[:, ::2] = 1.0
+    coverage_logits = torch.where(
+        coverage_targets > 0.5,
+        torch.ones_like(coverage_targets),
+        torch.zeros_like(coverage_targets),
+    )
+    original_sub = torch.Tensor.__sub__
+
+    def guarded_sub(self, other):
+        if (
+            isinstance(other, torch.Tensor)
+            and self.ndim == 2
+            and other.ndim == 2
+            and self.shape[1] == 1
+            and other.shape[0] == 1
+            and self.numel() * other.numel() > 100_000
+        ):
+            raise AssertionError("coverage AUC used dense positive-negative broadcast")
+        return original_sub(self, other)
+
+    monkeypatch.setattr(torch.Tensor, "__sub__", guarded_sub)
+
+    event = _events_by_key(
+        _result(
+            coverage_logits=coverage_logits,
+            coverage_targets=coverage_targets,
+            region_anchor_positive_logits=torch.ones((side,), dtype=torch.float32),
+            object_count=side,
+        )
+    )[COVERAGE_AUC_KEY]
+
+    positive_count = int(coverage_targets.sum().item())
+    negative_count = int(coverage_targets.numel() - positive_count)
+    assert event.numerator == pytest.approx(float(positive_count * negative_count))
+    assert event.denominator == pytest.approx(float(positive_count * negative_count))
+    assert reduce_metric_events([event])[COVERAGE_AUC_KEY] == pytest.approx(1.0)
+
+
 def test_auc_is_omitted_when_coverage_targets_have_only_one_class() -> None:
     events = coverage_ledger_metric_events(
         _result(
