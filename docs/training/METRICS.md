@@ -199,6 +199,51 @@ registered identities. New compact recursive-detection diagnostics should follow
 the same typed-event-first contract instead of adding direct `compact/*` scalar
 side channels.
 
+### Coverage Ledger Auxiliary Metrics
+
+The coverage-ledger auxiliary objective publishes canonical typed
+`MetricEvent`s from `src/training/coverage_ledger/metrics.py`. These keys are
+teacher-forced training metrics for the ledger auxiliary loss surface; they are
+not rollout, parse, duplicate-control, or mAP metrics.
+
+Canonical coverage-ledger auxiliary keys:
+
+- `teacher_forcing/loss/coverage_ledger_auxiliary_weighted`
+- `teacher_forcing/ledger/coverage_bce`
+- `teacher_forcing/ledger/region_anchor_positive`
+- `teacher_forcing/ledger/coverage_auc`
+- `teacher_forcing/ledger/coverage_accuracy`
+- `teacher_forcing/ledger/coverage_state_count`
+- `teacher_forcing/ledger/coverage_pair_count`
+- `teacher_forcing/ledger/object_count`
+- `teacher_forcing/ledger/region_anchor_pair_count`
+
+`teacher_forcing/loss/coverage_ledger_auxiliary_weighted` is the only
+objective-relevant coverage-ledger metric (`diagnostic_only=false`). It uses a
+weighted-mean reducer whose value is the scalar auxiliary loss added to the
+teacher-forcing objective and whose weight is
+`coverage_pair_count + region_anchor_pair_count`.
+
+All `teacher_forcing/ledger/*` keys are diagnostic-only. `coverage_bce` is a
+weighted mean over coverage pairs, and `region_anchor_positive` is a weighted
+mean over current-row positive region-anchor pairs. Their event values are the
+per-forward mean losses from the auxiliary result; their event weights are the
+corresponding valid pair counts, so cross-batch reduction is count-weighted
+instead of last-value logging.
+
+`coverage_auc` is exact rank AUC from one forward pass over
+`debug_rows.coverage_logits` and `debug_rows.coverage_targets`. Its denominator
+is the comparable positive-negative pair count `n_pos * n_neg`; ties contribute
+`0.5` to the numerator. The AUC event is omitted when a forward has only one
+class or no comparable pairs. `coverage_accuracy` thresholds
+`sigmoid(coverage_logit) >= 0.5` and reduces as correct coverage pairs divided
+by coverage pairs.
+
+Zero-denominator ratio and weighted-mean coverage-ledger metrics are omitted by
+the producer rather than emitted as `0.0`. Count metrics use `sum` reducers and
+may explicitly flatten to zero counts when the producer observes an empty debug
+surface.
+
 ### Trainer Metric Module Boundaries
 
 `src/trainers/metrics/mixins.py` is a compatibility re-export facade. Current
