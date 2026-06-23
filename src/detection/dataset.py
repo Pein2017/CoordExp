@@ -48,6 +48,8 @@ from src.detection.tokenization import (
     TokenSpan,
     tokenize_rendered_detection_conversation,
 )
+from src.training.coverage_ledger import build_coverage_ledger_sidecar
+from src.training.sidecars import SupervisionSidecars, TrainingSidecars
 from src.training.teacher_forcing.constants import TEACHER_FORCING_TARGET_IR_KEY
 from src.training.teacher_forcing.ir import TeacherForcingTargetIR
 
@@ -61,6 +63,7 @@ REGISTERED_DETECTION_SIDECAR_KEYS: tuple[str, ...] = (
     "detection_metadata",
     "assistant_payload",
     "sample_id",
+    "training_sidecars",
     "dataset",
     "base_idx",
 )
@@ -220,6 +223,7 @@ class DetectionDatasetRuntimeConfig:
     type_gate_config: Any | None = None
     teacher_forcing_profile: str | None = None
     teacher_forcing_rollin_base_seed: int | None = None
+    coverage_ledger_enabled: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -230,6 +234,8 @@ class DetectionDatasetRuntimeConfig:
                 path="detection_template.object_field_order",
             ),
         )
+        if type(self.coverage_ledger_enabled) is not bool:
+            raise TypeError("coverage_ledger_enabled must be a plain bool")
 
 
 def _encode_swift_template_no_resize(
@@ -308,6 +314,7 @@ class DetectionTrainingDataset(Dataset):
         type_gate_config: Any | None = None,
         teacher_forcing_profile: str | None = None,
         teacher_forcing_rollin_base_seed: int | None = None,
+        coverage_ledger_enabled: bool = False,
         sample_limit: int | None = None,
         dataset_name: str | None = None,
     ) -> "DetectionTrainingDataset":
@@ -342,6 +349,7 @@ class DetectionTrainingDataset(Dataset):
                 type_gate_config=type_gate_config,
                 teacher_forcing_profile=teacher_forcing_profile,
                 teacher_forcing_rollin_base_seed=teacher_forcing_rollin_base_seed,
+                coverage_ledger_enabled=coverage_ledger_enabled,
             ),
             dataset_name=dataset_name or path.stem,
         )
@@ -419,11 +427,13 @@ class DetectionTrainingDataset(Dataset):
 
     def __getitem__(self, index: int) -> dict[str, Any]:
         base_idx = self._base_index(index)
+        sample_id = _make_sample_id(self.dataset_name, base_idx)
         scene = self._scene_for_base_index(base_idx)
         normalized = normalized_detection_sample_from_scene(scene)
         detection_template = get_detection_template(self.config.detection_template_id)
         recursive_detection_targets = None
         teacher_forcing_target_ir = None
+        supervision_view: DetectionSupervisionView | None = None
         metadata_object_ordering = normalized.object_ordering
         if self.config.teacher_forcing_profile is not None:
             if not resolve_detection_template_contract(
@@ -440,7 +450,7 @@ class DetectionTrainingDataset(Dataset):
                     self.config.teacher_forcing_profile,
                 ),
                 epoch=self._epoch,
-                stable_sample_id=str(_make_sample_id(self.dataset_name, base_idx)),
+                stable_sample_id=str(sample_id),
                 base_seed=int(self.config.teacher_forcing_rollin_base_seed or 17),
                 input_prefix_token_id=self._teacher_forcing_input_prefix_token_id(),
             )
@@ -594,13 +604,37 @@ class DetectionTrainingDataset(Dataset):
         encoded["rendered_span_sources"] = _rendered_span_sources(
             rendered_assistant.render_span_events
         )
-        encoded["sample_id"] = _make_sample_id(self.dataset_name, base_idx)
+        encoded["sample_id"] = sample_id
         encoded["dataset"] = self.dataset_name
         encoded["base_idx"] = base_idx
         if recursive_detection_targets is not None:
             encoded["recursive_detection_targets"] = recursive_detection_targets
         if teacher_forcing_target_ir is not None:
             encoded[TEACHER_FORCING_TARGET_IR_KEY] = teacher_forcing_target_ir
+        if self.config.coverage_ledger_enabled:
+            if supervision_view is None:
+                supervision_view = tokenize_rendered_detection_conversation(
+                    rendered_assistant,
+                    tokenizer=self.tokenizer,
+                    messages=messages,
+                )
+            image_grid_thw = encoded.get("image_grid_thw")
+            if image_grid_thw is None:
+                raise ValueError("coverage ledger sidecar requires image_grid_thw")
+            encoded["training_sidecars"] = TrainingSidecars(
+                supervision=SupervisionSidecars(
+                    payloads=(
+                        build_coverage_ledger_sidecar(
+                            supervision_view,
+                            sample_id=str(sample_id),
+                            image_grid_thw=image_grid_thw,
+                            processed_width=normalized.width,
+                            processed_height=normalized.height,
+                            image_identity=scene.file_name or str(scene.image_id),
+                        ),
+                    )
+                )
+            )
         return dict(encoded)
 
     def _scene_for_base_index(

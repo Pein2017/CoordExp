@@ -11,6 +11,10 @@ from src.training.encoding.model_inputs import (
     backend_key_registry,
     classify_backend_key,
 )
+from src.training.coverage_ledger import (
+    CoverageLedgerObjectEntry,
+    CoverageLedgerSidecar,
+)
 from src.training.sidecars import (
     DatasetSidecars,
     DiagnosticSidecars,
@@ -163,10 +167,31 @@ def test_backend_registry_classifies_current_qwen3_vl_boundary() -> None:
 
 
 def test_training_sidecars_group_semantic_payloads_and_are_not_model_inputs() -> None:
+    coverage_ledger_sidecar = CoverageLedgerSidecar(
+        sample_id="coco:0",
+        prompt_end_position=9,
+        object_entries=(
+            CoverageLedgerObjectEntry(
+                object_instance_id="object-1",
+                source_object_index=7,
+                emitted_order_index=0,
+                image_index=0,
+                bbox_norm1000_xyxy=(10, 20, 300, 400),
+                box_start_position=11,
+                coord_label_positions=(12, 13, 14, 15),
+                object_ref_end_position=10,
+                box_end_position=16,
+            ),
+        ),
+        image_grid_thw=(1, 16, 16),
+        processed_width=640,
+        processed_height=480,
+        image_identity="image.jpg",
+    )
     sidecars = TrainingSidecars(
         supervision=SupervisionSidecars(
             spans=("span-1",),
-            payloads=("payload-1",),
+            payloads=("payload-1", coverage_ledger_sidecar),
             teacher_forcing_target_ir=("ir-1",),
             metadata={"source": "unit"},
         ),
@@ -187,7 +212,7 @@ def test_training_sidecars_group_semantic_payloads_and_are_not_model_inputs() ->
     )
 
     assert sidecars.supervision.spans == ("span-1",)
-    assert sidecars.supervision.payloads == ("payload-1",)
+    assert sidecars.supervision.payloads == ("payload-1", coverage_ledger_sidecar)
     assert sidecars.supervision.teacher_forcing_target_ir == ("ir-1",)
     assert sidecars.diagnostics.rendered_assistant_text == "assistant text"
     assert sidecars.dataset.sample_id == "sample-1"

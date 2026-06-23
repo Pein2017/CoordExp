@@ -539,11 +539,17 @@ def build_detection_dataset(
         teacher_forcing_rollin_base_seed = int(
             getattr(objective.target_ir.rollin_policy, "base_seed")
         )
+        objective_terms = getattr(objective, "terms", None)
+        coverage_ledger_cfg = getattr(objective_terms, "coverage_ledger", None)
+        coverage_ledger_enabled = bool(
+            getattr(coverage_ledger_cfg, "enabled", False)
+        )
     else:
         state_weighting = getattr(objective, "state_weighting")
         normalization = getattr(objective, "normalization")
         teacher_forcing_profile = None
         teacher_forcing_rollin_base_seed = None
+        coverage_ledger_enabled = False
     return DetectionTrainingDataset.from_jsonl(
         jsonl_path,
         swift_template=swift_template,
@@ -562,6 +568,7 @@ def build_detection_dataset(
         type_gate_config=type_gate_config,
         teacher_forcing_profile=teacher_forcing_profile,
         teacher_forcing_rollin_base_seed=teacher_forcing_rollin_base_seed,
+        coverage_ledger_enabled=coverage_ledger_enabled,
         sample_limit=sample_limit,
         dataset_name=dataset_name,
     )

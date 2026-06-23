@@ -16,6 +16,8 @@ from src.trainers.batch_extras import (
     SFT_STRUCTURAL_CLOSE_TOKEN_WEIGHTS_KEY,
     TEACHER_FORCING_TARGET_IR_KEY,
 )
+from src.training.coverage_ledger import CoverageLedgerSidecar
+from src.training.sidecars import SupervisionSidecars, TrainingSidecars
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -268,6 +270,77 @@ class TeacherForcingTargetIREnricher:
             collated["sample_id"] = tuple(
                 row["sample_id"] for row in raw_batch if isinstance(row, Mapping)
             )
+
+
+class CoverageLedgerSidecarEnricher:
+    """Attach coverage-ledger sidecars through TrainingSidecars payloads."""
+
+    def __init__(self, *, enabled: bool) -> None:
+        if type(enabled) is not bool:
+            raise TypeError("coverage ledger enabled flag must be a plain bool")
+        self._enabled = enabled
+
+    def __call__(
+        self,
+        *,
+        collated: dict[str, Any],
+        raw_batch: Sequence[Any],
+        packed: bool,
+    ) -> None:
+        if not self._enabled:
+            return
+
+        if packed:
+            has_packed_sidecar = any(
+                self._coverage_payload_count(sample) > 0
+                for pack in raw_batch
+                for sample in (pack if isinstance(pack, (list, tuple)) else [pack])
+            )
+            if has_packed_sidecar:
+                raise ValueError(
+                    "CoverageLedgerSidecar sidecars are incompatible with packing "
+                    "until sidecar position offsets are preserved"
+                )
+            raise ValueError(
+                "coverage ledger requires unpacked batches with one "
+                "CoverageLedgerSidecar per sample"
+            )
+
+        per_sample_payloads: list[CoverageLedgerSidecar] = []
+        for sample_index, row in enumerate(raw_batch):
+            payloads = self._coverage_payloads(row)
+            if len(payloads) > 1:
+                raise ValueError(
+                    "duplicate CoverageLedgerSidecar payloads are not allowed "
+                    f"for sample index {sample_index}"
+                )
+            if len(payloads) != 1:
+                raise ValueError(
+                    "CoverageLedgerSidecar payload must be present for every "
+                    "sample when coverage ledger is enabled"
+                )
+            per_sample_payloads.append(payloads[0])
+
+        collated["training_sidecars"] = TrainingSidecars(
+            supervision=SupervisionSidecars(payloads=tuple(per_sample_payloads))
+        )
+
+    @classmethod
+    def _coverage_payload_count(cls, row: Any) -> int:
+        return len(cls._coverage_payloads(row))
+
+    @staticmethod
+    def _coverage_payloads(row: Any) -> tuple[CoverageLedgerSidecar, ...]:
+        if not isinstance(row, Mapping):
+            return ()
+        sidecars = row.get("training_sidecars")
+        if type(sidecars) is not TrainingSidecars:
+            return ()
+        return tuple(
+            payload
+            for payload in sidecars.supervision.payloads
+            if type(payload) is CoverageLedgerSidecar
+        )
 
 
 class TokenTypesEnricher:

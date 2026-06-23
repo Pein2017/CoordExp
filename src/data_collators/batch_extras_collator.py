@@ -16,6 +16,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from src.config.schema import TokenTypeMetricsConfig
 from src.data_collators.enrichers import (
+    CoverageLedgerSidecarEnricher,
     DatasetMetaEnricher,
     InstabilityMetaEnricher,
     ProxySupervisionEnricher,
@@ -33,6 +34,7 @@ def build_batch_extras_collator(
     instability_monitor_cfg: Optional[Mapping[str, Any]] = None,
     proxy_supervision_cfg: Optional[Mapping[str, Any]] = None,
     sft_structural_close_cfg: Any = None,
+    coverage_ledger_cfg: Any = None,
 ) -> Callable[[List[Dict[str, Any]]], Dict[str, Any]]:
     """Wrap the template collator to attach debug/diagnostics batch extras.
 
@@ -80,6 +82,9 @@ def build_batch_extras_collator(
         instab_enricher = InstabilityMetaEnricher(max_meta_samples=max_meta_samples)
     recursive_detection_targets_enricher = RecursiveDetectionTargetsEnricher()
     teacher_forcing_target_ir_enricher = TeacherForcingTargetIREnricher()
+    coverage_ledger_enricher = CoverageLedgerSidecarEnricher(
+        enabled=_coverage_ledger_enabled(coverage_ledger_cfg)
+    )
 
     def _collate(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
         collated = collate_fn(batch)
@@ -95,6 +100,11 @@ def build_batch_extras_collator(
             packed=meta.packed,
         )
         teacher_forcing_target_ir_enricher(
+            collated=collated,
+            raw_batch=batch,
+            packed=meta.packed,
+        )
+        coverage_ledger_enricher(
             collated=collated,
             raw_batch=batch,
             packed=meta.packed,
@@ -136,6 +146,7 @@ def build_dataset_metrics_collator(
     instability_monitor_cfg: Optional[Mapping[str, Any]] = None,
     proxy_supervision_cfg: Optional[Mapping[str, Any]] = None,
     sft_structural_close_cfg: Any = None,
+    coverage_ledger_cfg: Any = None,
 ) -> Callable[[List[Dict[str, Any]]], Dict[str, Any]]:
     return build_batch_extras_collator(
         template,
@@ -144,7 +155,18 @@ def build_dataset_metrics_collator(
         instability_monitor_cfg=instability_monitor_cfg,
         proxy_supervision_cfg=proxy_supervision_cfg,
         sft_structural_close_cfg=sft_structural_close_cfg,
+        coverage_ledger_cfg=coverage_ledger_cfg,
     )
+
+
+def _coverage_ledger_enabled(cfg: Any) -> bool:
+    if cfg is None:
+        return False
+    if type(cfg) is bool:
+        return cfg
+    if isinstance(cfg, Mapping):
+        return bool(cfg.get("enabled", False))
+    return bool(getattr(cfg, "enabled", False))
 
 
 __all__ = [

@@ -10,6 +10,10 @@ import torch
 from src.data_collators.dataset_metrics import build_dataset_metrics_collator
 from src.trainers.batch_extras import BatchExtras, pop_batch_extras
 from src.training.bridge import TrainerLossBridge
+from src.training.coverage_ledger import (
+    CoverageLedgerObjectEntry,
+    CoverageLedgerSidecar,
+)
 from src.training.objectives.types import ObjectiveSpec
 from src.training.sidecars import (
     DatasetSidecars,
@@ -34,6 +38,30 @@ def _base_collator(batch: list[dict[str, Any]]) -> dict[str, Any]:
         "labels": labels,
         "attention_mask": torch.ones_like(labels),
     }
+
+
+def _coverage_ledger_sidecar(sample_id: str = "coco:0") -> CoverageLedgerSidecar:
+    return CoverageLedgerSidecar(
+        sample_id=sample_id,
+        prompt_end_position=9,
+        object_entries=(
+            CoverageLedgerObjectEntry(
+                object_instance_id=f"{sample_id}:object-0",
+                source_object_index=7,
+                emitted_order_index=0,
+                image_index=0,
+                bbox_norm1000_xyxy=(10, 20, 300, 400),
+                box_start_position=11,
+                coord_label_positions=(12, 13, 14, 15),
+                object_ref_end_position=10,
+                box_end_position=16,
+            ),
+        ),
+        image_grid_thw=(1, 16, 16),
+        processed_width=640,
+        processed_height=480,
+        image_identity=f"{sample_id}.jpg",
+    )
 
 
 @dataclass
@@ -110,6 +138,96 @@ def test_teacher_forcing_target_ir_survives_collator_to_batch_extras() -> None:
 
     assert extras.teacher_forcing_target_ir == (target_ir,)
     assert TEACHER_FORCING_TARGET_IR_KEY not in collated
+
+
+def test_coverage_ledger_sidecar_survives_collator_to_training_sidecars() -> None:
+    collator = build_dataset_metrics_collator(
+        _DummyTemplate(),
+        _base_collator,
+        coverage_ledger_cfg={"enabled": True},
+    )
+    ledger_sidecar = _coverage_ledger_sidecar()
+
+    collated = collator(
+        [
+            {
+                "dataset": "coco",
+                "training_sidecars": TrainingSidecars(
+                    supervision=SupervisionSidecars(payloads=(ledger_sidecar,))
+                ),
+            },
+        ]
+    )
+    model = _FakeModel(torch.zeros((1, 4, 5), dtype=torch.float32))
+
+    result = TrainerLossBridge().compute_loss(
+        model=model,
+        raw_batch=collated,
+        batch_extras=pop_batch_extras(collated),
+        supervision=SupervisionBatch(),
+        objectives=(ObjectiveSpec("token_ce"),),
+    )
+
+    assert "training_sidecars" not in model.calls[0]
+    assert "training_sidecars" not in result.model_inputs.payload
+    assert result.training_sidecars.supervision.payloads == (ledger_sidecar,)
+
+
+def test_coverage_ledger_enabled_requires_one_payload_per_unpacked_sample() -> None:
+    collator = build_dataset_metrics_collator(
+        _DummyTemplate(),
+        _base_collator,
+        coverage_ledger_cfg={"enabled": True},
+    )
+
+    with pytest.raises(ValueError, match="CoverageLedgerSidecar.*every sample"):
+        collator([{"dataset": "coco"}])
+
+
+def test_coverage_ledger_rejects_duplicate_payloads_per_sample() -> None:
+    collator = build_dataset_metrics_collator(
+        _DummyTemplate(),
+        _base_collator,
+        coverage_ledger_cfg={"enabled": True},
+    )
+    ledger_sidecar = _coverage_ledger_sidecar()
+
+    with pytest.raises(ValueError, match="duplicate CoverageLedgerSidecar"):
+        collator(
+            [
+                {
+                    "dataset": "coco",
+                    "training_sidecars": TrainingSidecars(
+                        supervision=SupervisionSidecars(
+                            payloads=(ledger_sidecar, ledger_sidecar)
+                        )
+                    ),
+                }
+            ]
+        )
+
+
+def test_coverage_ledger_rejects_packed_sidecar_offset_rewriting() -> None:
+    collator = build_dataset_metrics_collator(
+        _DummyTemplate(),
+        lambda batch: _base_collator([{"dataset": "pack"} for _pack in batch]),
+        coverage_ledger_cfg={"enabled": True},
+    )
+    ledger_sidecar = _coverage_ledger_sidecar()
+
+    with pytest.raises(ValueError, match="CoverageLedgerSidecar.*packing"):
+        collator(
+            [
+                [
+                    {
+                        "dataset": "coco",
+                        "training_sidecars": TrainingSidecars(
+                            supervision=SupervisionSidecars(payloads=(ledger_sidecar,))
+                        ),
+                    }
+                ]
+            ]
+        )
 
 
 def test_teacher_forcing_target_ir_has_semantic_supervision_sidecar_home() -> None:
@@ -279,6 +397,32 @@ def test_explicit_and_raw_training_sidecars_full_payload_conflict_fails() -> Non
     raw_batch["training_sidecars"] = TrainingSidecars(
         dataset=DatasetSidecars(sample_id="raw-sample"),
         stage2=Stage2OwnershipSidecars(assignment_result={"matched": 1}),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="training_sidecars.*raw_batch\\.training_sidecars",
+    ):
+        TrainerLossBridge().compute_loss(
+            model=_FakeModel(torch.zeros((1, 2, 5), dtype=torch.float32)),
+            raw_batch=raw_batch,
+            training_sidecars=explicit_sidecars,
+            supervision=SupervisionBatch(),
+            objectives=(ObjectiveSpec("token_ce"),),
+        )
+
+
+def test_explicit_and_raw_training_sidecars_coverage_payload_conflict_fails() -> None:
+    explicit_sidecars = TrainingSidecars(
+        supervision=SupervisionSidecars(
+            payloads=(_coverage_ledger_sidecar("explicit"),)
+        )
+    )
+    raw_batch = _minimal_raw_batch()
+    raw_batch["training_sidecars"] = TrainingSidecars(
+        supervision=SupervisionSidecars(
+            payloads=(_coverage_ledger_sidecar("raw"),)
+        )
     )
 
     with pytest.raises(

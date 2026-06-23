@@ -4026,6 +4026,11 @@ def main():
     token_type_cfg = getattr(custom_config, "token_type_metrics", None)
     coord_soft_ce_w1_cfg = getattr(custom_config, "coord_soft_ce_w1", None)
     sft_structural_close_cfg = getattr(custom_config, "sft_structural_close", None)
+    coverage_ledger_cfg = None
+    objective_cfg = getattr(training_config, "objective", None)
+    objective_terms_cfg = getattr(objective_cfg, "terms", None)
+    if objective_terms_cfg is not None:
+        coverage_ledger_cfg = getattr(objective_terms_cfg, "coverage_ledger", None)
     instability_monitor_cfg = None
     loss_gradient_monitor_cfg = None
     proxy_supervision_cfg = None
@@ -4051,6 +4056,7 @@ def main():
             instability_monitor_cfg=instability_monitor_cfg,
             proxy_supervision_cfg=proxy_supervision_cfg,
             sft_structural_close_cfg=sft_structural_close_cfg,
+            coverage_ledger_cfg=coverage_ledger_cfg,
         )
 
     heartbeat_writer = None
