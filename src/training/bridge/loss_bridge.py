@@ -11,6 +11,8 @@ import torch
 from src.trainers.batch_extras import BatchExtras
 from src.trainers.teacher_forcing.forwards import prepare_forward_inputs
 from src.training.bridge.coordinate_mapper import PredictionCoordinateMapper
+from src.training.coverage_ledger.qwen_capture import CoverageLedgerForwardCapture
+from src.training.coverage_ledger.sidecars import CoverageLedgerSidecar
 from src.training.encoding.model_inputs import (
     ModelInputBundle,
     SIDECAR_ONLY_KEYS,
@@ -121,20 +123,30 @@ class TrainerLossBridge:
             for key in model_inputs.payload
             if model_inputs.classification_for(key) != "forwarded"
         ]
-        core_model, inputs_for_model, _model_type = prepare_forward_inputs(
-            model=model,
-            inputs=model_inputs.payload,
-            ignored_keys=ignored_keys,
-            packing_enabled=self._settings.packing_enabled,
-            where="TrainerLossBridge",
-        )
 
         # call the model exactly once and require full, unsliced logits.
-        outputs = core_model(**inputs_for_model)
-        logits = self._extract_logits(outputs)
+        if self._requires_coverage_ledger_capture(resolved_sidecars):
+            outputs = CoverageLedgerForwardCapture().capture(
+                model=model,
+                inputs=model_inputs.payload,
+                ignored_keys=ignored_keys,
+                packing_enabled=self._settings.packing_enabled,
+                where="TrainerLossBridge",
+            )
+            logits = outputs.logits
+        else:
+            core_model, inputs_for_model, _model_type = prepare_forward_inputs(
+                model=model,
+                inputs=model_inputs.payload,
+                ignored_keys=ignored_keys,
+                packing_enabled=self._settings.packing_enabled,
+                where="TrainerLossBridge",
+            )
+            outputs = core_model(**inputs_for_model)
+            logits = self._extract_logits(outputs)
         self._validate_full_logits(
             logits=logits,
-            input_ids=inputs_for_model.get("input_ids"),
+            input_ids=model_inputs.payload.get("input_ids"),
         )
 
         # construct bridge-level coordinates before delegating objective math.
@@ -265,6 +277,17 @@ class TrainerLossBridge:
         if batch_ir is not None:
             return batch_ir
         return raw_ir
+
+    def _requires_coverage_ledger_capture(
+        self,
+        sidecars: TrainingSidecars,
+    ) -> bool:
+        """Return whether same-forward Qwen image capture is needed."""
+
+        return any(
+            type(payload) is CoverageLedgerSidecar
+            for payload in sidecars.supervision.payloads
+        )
 
     @staticmethod
     def _teacher_forcing_target_ir_equal(left: Any, right: Any) -> bool:
