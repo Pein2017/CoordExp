@@ -1,11 +1,47 @@
 from __future__ import annotations
 
+import re
+import subprocess
 from pathlib import Path
 
 import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+_MARKDOWN_LINK_PATTERN = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
+
+
+def _assert_local_markdown_links_are_tracked(markdown_path: Path) -> None:
+    content = markdown_path.read_text(encoding="utf-8")
+    base_dir = markdown_path.parent
+    for raw_target in _MARKDOWN_LINK_PATTERN.findall(content):
+        target = raw_target.split("#", 1)[0].strip()
+        if not target or "://" in target or target.startswith("mailto:"):
+            continue
+        resolved = (base_dir / target).resolve()
+        try:
+            relative = resolved.relative_to(REPO_ROOT)
+        except ValueError as exc:
+            raise AssertionError(
+                f"{markdown_path.relative_to(REPO_ROOT)} links outside repo: {raw_target}"
+            ) from exc
+        assert resolved.is_file(), (
+            f"{markdown_path.relative_to(REPO_ROOT)} links to missing file: "
+            f"{raw_target}"
+        )
+        tracked = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", str(relative)],
+            cwd=REPO_ROOT,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        assert tracked.returncode == 0, (
+            f"{markdown_path.relative_to(REPO_ROOT)} links to untracked file: "
+            f"{raw_target}"
+        )
 
 
 def test_artifact_contract_docs_freeze_rank0_and_stage2_eval_surfaces() -> None:
@@ -127,6 +163,9 @@ def test_coverage_ledger_launch_prep_docs_freeze_smoke_artifacts_and_metrics() -
     ) in research_index
     assert "OpenSpec is deferred" in research_index
     assert "not current stable behavior" in research_index
+    _assert_local_markdown_links_are_tracked(
+        REPO_ROOT / "research" / "ideas" / "ledger-auxiliary-loss" / "index.md"
+    )
 
 
 def test_stage2_rollout_correction_spec_rejects_removed_scheduler_and_channel_keys() -> None:
