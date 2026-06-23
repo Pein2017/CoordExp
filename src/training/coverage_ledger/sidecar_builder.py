@@ -16,7 +16,7 @@ from src.training.coverage_ledger.sidecars import (
     CoverageLedgerSidecar,
 )
 
-_COORD_TOKEN_RE = re.compile(r"<\|coord_(\d{1,3})\|>")
+_COORD_TOKEN_RE = re.compile(r"<\|coord_(\d+)\|>")
 
 
 def build_coverage_ledger_sidecar(
@@ -92,7 +92,17 @@ def _coord_value_from_span(tokenized: DetectionSupervisionView, span: TokenSpan)
         raise ValueError(
             f"coord span {span.label!r} must align to a <|coord_N|> token"
         )
-    return int(match.group(1))
+    coord_text = match.group(1)
+    coord_value = int(coord_text)
+    if str(coord_value) != coord_text:
+        raise ValueError(
+            f"coord span {span.label!r} must use canonical integer text"
+        )
+    if coord_value > 1000:
+        raise ValueError(
+            f"coord span {span.label!r} must be in the 0..1000 range"
+        )
+    return coord_value
 
 
 def _required_control_positions(

@@ -97,6 +97,28 @@ def _tokenized(template_id: str):
     )
 
 
+def _with_coord_token_texts(coord_tokens: tuple[str, str, str, str]):
+    tokenized = _tokenized("compact_object_box_closed")
+    entry = tokenized.object_entries[0]
+    token_texts = [
+        tokenized.chat_text[start:end] for start, end in tokenized.offset_mapping
+    ]
+    for span, coord_token in zip(entry.coord_spans, coord_tokens, strict=True):
+        token_texts[span.start] = coord_token
+
+    cursor = 0
+    offsets: list[tuple[int, int]] = []
+    for token_text in token_texts:
+        offsets.append((cursor, cursor + len(token_text)))
+        cursor += len(token_text)
+
+    return replace(
+        tokenized,
+        chat_text="".join(token_texts),
+        offset_mapping=tuple(offsets),
+    )
+
+
 def _control_position(entry, label: str) -> int:
     matches = [span for span in entry.control_spans if span.label == label]
     assert len(matches) == 1
@@ -140,6 +162,55 @@ def test_build_coverage_ledger_sidecar_from_tokenized_closed_template() -> None:
         "object_ref_end",
     )
     assert ledger_entry.box_end_position == _control_position(tokenized_entry, "box_end")
+
+
+def test_build_coverage_ledger_sidecar_accepts_canonical_norm1000_edge() -> None:
+    tokenized = _with_coord_token_texts(
+        (
+            "<|coord_0|>",
+            "<|coord_0|>",
+            "<|coord_1000|>",
+            "<|coord_1000|>",
+        ),
+    )
+
+    sidecar = build_coverage_ledger_sidecar(
+        tokenized,
+        sample_id="coco:0",
+        image_grid_thw=(1, 16, 16),
+        processed_width=640,
+        processed_height=480,
+        image_identity="image.jpg",
+    )
+
+    assert sidecar.object_entries[0].bbox_norm1000_xyxy == (0, 0, 1000, 1000)
+
+
+@pytest.mark.parametrize(
+    "coord_token",
+    (
+        "<|coord_1001|>",
+        "<|coord_001|>",
+        "<|coord_+1|>",
+        "<|coord_1.0|>",
+    ),
+)
+def test_build_coverage_ledger_sidecar_rejects_invalid_coord_token_text(
+    coord_token: str,
+) -> None:
+    tokenized = _with_coord_token_texts(
+        ("<|coord_0|>", "<|coord_0|>", coord_token, "<|coord_1000|>"),
+    )
+
+    with pytest.raises(ValueError, match="coord"):
+        build_coverage_ledger_sidecar(
+            tokenized,
+            sample_id="coco:0",
+            image_grid_thw=(1, 16, 16),
+            processed_width=640,
+            processed_height=480,
+            image_identity="image.jpg",
+        )
 
 
 @pytest.mark.parametrize(
