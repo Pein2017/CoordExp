@@ -10,9 +10,11 @@ tokens, and must not change production launch defaults. It deliberately selects
 an existing closed compact detection template that emits both
 `<|object_ref_end|>` and `<|box_end|>` so row-completion states are real tokens.
 
-The implementation state after this design packet is `ready for user approval`.
-No code implementation, production training, or stable contract promotion is
-approved by this document.
+The implementation state after this design packet is `unit-implementation
+scope only`. Unit tests can support implementation confidence, but they do not
+claim preflight success, smoke success, production readiness, or stable
+contract promotion. Production training remains blocked until an asset-backed
+preflight and the approved smoke packet both pass.
 
 ## Source Of Truth
 
@@ -589,7 +591,8 @@ introduces a named region-anchor weighting rule.
 Because projections are L2-normalized, `score` is bounded near `[-1, 1]` and
 logit magnitude is bounded near `1 / temperature`. The implementation must fail
 fast on non-finite raw projections, normalized vectors, scores, logits, or
-losses. It should debug-fail if `score_abs_max > 1.001`.
+losses. Internal debug assertions may check normalized score bounds, but V0 does
+not require score-bound metrics in the logged contract.
 
 Total auxiliary loss:
 
@@ -611,30 +614,20 @@ Required metric contract:
 
 | key | reducer | unit | numerator / denominator | notes |
 | --- | --- | --- | --- | --- |
-| `teacher_forcing/loss/coverage_state` | `weighted_mean` | `slot` | raw BCE sum / valid coverage pair count | unweighted coverage-state BCE |
-| `teacher_forcing/loss/coverage_state_weighted` | `weighted_mean` | `slot` | weighted BCE sum / valid coverage pair count | includes `coverage_weight`; exact scalar contribution before batch summation |
-| `teacher_forcing/loss/region_anchor` | `weighted_mean` | `object` | raw positive loss sum / current-row object count | positive-only anchor loss |
-| `teacher_forcing/loss/region_anchor_weighted` | `weighted_mean` | `object` | weighted positive loss sum / current-row object count | includes `region_anchor_weight` |
 | `teacher_forcing/loss/coverage_ledger_auxiliary_weighted` | `last` | `batch` | value only | exact scalar added to runner CE/objective loss |
-| `teacher_forcing/ledger/pair_count` | `sum` | `slot` | value only | coverage-state valid state-object pairs |
-| `teacher_forcing/ledger/positive_count` | `sum` | `slot` | value only | coverage-state positives |
-| `teacher_forcing/ledger/negative_count` | `sum` | `slot` | value only | coverage-state negatives |
-| `teacher_forcing/ledger/positive_frac` | `ratio` | `slot` | positive count / pair count | coverage-state class balance |
-| `teacher_forcing/ledger/covered_score_mean` | `weighted_mean` | `slot` | positive score sum / positive count | omit or zero-denominator when no positives |
-| `teacher_forcing/ledger/uncovered_score_mean` | `weighted_mean` | `slot` | negative score sum / negative count | omit or zero-denominator when no negatives |
-| `teacher_forcing/ledger/covered_minus_uncovered_margin` | `last` | `batch` | value only | local diagnostic margin |
-| `teacher_forcing/ledger/accuracy` | `ratio` | `slot` | correct thresholded predictions / pair count | coverage-state only |
-| `teacher_forcing/ledger/auc_batch` | `weighted_mean` | `slot` | `auc * n_pos * n_neg` / `n_pos * n_neg` | exact local rank AUC; omit when one class is absent |
-| `teacher_forcing/ledger/logit_abs_max` | `last` | `batch` | value only | finite guard |
-| `teacher_forcing/ledger/score_min` | `last` | `batch` | value only | normalized score lower bound |
-| `teacher_forcing/ledger/score_max` | `last` | `batch` | value only | normalized score upper bound |
-| `teacher_forcing/ledger/score_abs_max` | `last` | `batch` | value only | debug-fail if `> 1.001` |
+| `teacher_forcing/ledger/coverage_ledger_auxiliary_pair_normalized` | `weighted_mean` | `object` | component weighted pair sum / valid ledger pair count | diagnostic-only count-weighted view |
+| `teacher_forcing/ledger/coverage_bce` | `weighted_mean` | `object` | coverage BCE mean with valid coverage-pair count weight | diagnostic-only |
+| `teacher_forcing/ledger/region_anchor_positive` | `weighted_mean` | `object` | positive region-anchor mean with valid region-anchor-pair count weight | diagnostic-only |
+| `teacher_forcing/ledger/coverage_auc` | `ratio` | `object` | tie-aware positive-negative rank numerator / comparable pairs | omit when one class is absent |
+| `teacher_forcing/ledger/coverage_accuracy` | `ratio` | `object` | correct thresholded predictions / valid coverage pairs | diagnostic-only |
+| `teacher_forcing/ledger/coverage_state_count` | `sum` | `span` | value only | coverage-state spans |
+| `teacher_forcing/ledger/coverage_pair_count` | `sum` | `object` | value only | coverage-state valid state-object pairs |
+| `teacher_forcing/ledger/object_count` | `sum` | `object` | value only | rendered objects |
 | `teacher_forcing/ledger/region_anchor_pair_count` | `sum` | `object` | value only | current-row positive pairs |
-| `teacher_forcing/ledger/region_anchor_positive_score_mean` | `weighted_mean` | `object` | score sum / current-row object count | positive-only |
-| `teacher_forcing/ledger/region_anchor_positive_logit_mean` | `weighted_mean` | `object` | logit sum / current-row object count | positive-only |
 
 Every event must set `objective_id="coverage_ledger"`,
-`metric_surface="teacher_forcing"`, and `diagnostic_only=true`, except
+`metric_surface="coverage_ledger_auxiliary"`, `stage="teacher_forcing"`, and
+`diagnostic_only=true`, except
 `teacher_forcing/loss/coverage_ledger_auxiliary_weighted`, which is the exact
 scalar the bridge adds to the runner-owned loss and must use
 `diagnostic_only=false`. Raw and weighted subterm metrics remain diagnostic
@@ -650,6 +643,11 @@ convention.
 
 Thresholded accuracy uses logit threshold `0.0`, equivalent to sigmoid
 probability `0.5`.
+
+Score means, covered-minus-uncovered margins, score bounds, and logit-bound
+gauges are future optional diagnostics. They are not V0 contract metrics and
+must not be used as required smoke or production gates unless implemented and
+documented in `docs/training/METRICS.md`.
 
 Producer examples for `MetricEvent` helpers:
 
@@ -699,7 +697,8 @@ The first 128-sample smoke/overfit phase must emit:
   when present;
 - `pipeline_manifest.json` only if the runtime already writes it for this route;
   do not fabricate a new canonical-looking manifest;
-- `ledger/selected_samples.json` with random seed `20260623`;
+- `ledger/selected_samples.json` from `debug.train_sample_selection` using
+  random seed `20260623`;
 - `ledger/alignment_debug.jsonl` for all 128 samples;
 - `ledger/overlays/` containing 16 rendered overlay samples;
 - `ledger/smoke_interpretation.md` with a smoke-scoped interpretation;
@@ -756,7 +755,9 @@ processed-dimension, bbox, or object-row alignment requirements.
 `ledger/selected_samples.json` schema:
 
 - schema version;
-- source JSONL path and digest;
+- source JSONL path (`source_jsonl_path`), repo-relative source identity when
+  available (`source_jsonl_repo_path`), resolved host path
+  (`source_jsonl_resolved_path`), and digest;
 - selected row indices;
 - selected sample ids when available;
 - dataset id and split when available;
@@ -770,6 +771,10 @@ processed-dimension, bbox, or object-row alignment requirements.
 - per-sample object count;
 - per-sample `image_grid_thw`, processed width, processed height, and image
   identity/digest when available.
+
+The preflight writer must fail fast if `ledger/` or `ledger/overlays/` already
+exists with stale files. Do not merge new preflight output into an existing
+non-empty ledger tree.
 
 The implementation must provide a preflight command before the trainer launch
 path is considered usable. Planned command shape:
@@ -963,13 +968,9 @@ Expected mechanism observables:
 
 - raw and weighted coverage-state losses decrease;
 - raw and weighted region-anchor losses decrease;
-- covered-minus-uncovered margin becomes positive;
 - AUC and accuracy improve when both classes are present;
 - positive and negative coverage-state counts are nonzero for interpretable AUC
   windows;
-- covered/uncovered score means, score/logit bounds, and region-anchor
-  positive score/logit means remain finite;
-- `score_abs_max <= 1.001`;
 - overlay gallery confirms bbox-to-visual-token mapping.
 
 ### Phase 3: Review Gate Before Production Training
@@ -981,11 +982,11 @@ Production training is blocked until the smoke packet includes:
 - JSONL alignment dump at `ledger/alignment_debug.jsonl`;
 - 16-sample overlay gallery at `ledger/overlays/`;
 - metric stream with coverage-state, region-anchor, auxiliary scalar, count,
-  class-balance, score, logit, AUC, and accuracy metrics;
+  AUC, and accuracy metrics;
 - failure-free strict validation;
 - nonzero positive and negative coverage-state pair counts for interpretable AUC
   windows;
-- no nonfinite metrics and no `score_abs_max > 1.001`;
+- no nonfinite emitted metrics;
 - written interpretation that stays within smoke evidence scope.
 
 The production phase should be specified separately after the smoke packet is

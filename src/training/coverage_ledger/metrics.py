@@ -6,7 +6,13 @@ import math
 
 import torch
 
-from src.metrics.events import MetricEvent, ratio_event, sum_event, weighted_mean_event
+from src.metrics.events import (
+    MetricEvent,
+    last_event,
+    ratio_event,
+    sum_event,
+    weighted_mean_event,
+)
 from src.training.coverage_ledger.loss import CoverageLedgerLossResult
 
 COVERAGE_LEDGER_OBJECTIVE_ID = "coverage_ledger"
@@ -14,6 +20,9 @@ COVERAGE_LEDGER_STAGE = "teacher_forcing"
 COVERAGE_LEDGER_SURFACE = "coverage_ledger_auxiliary"
 
 WEIGHTED_LOSS_KEY = "teacher_forcing/loss/coverage_ledger_auxiliary_weighted"
+AUXILIARY_PAIR_NORMALIZED_KEY = (
+    "teacher_forcing/ledger/coverage_ledger_auxiliary_pair_normalized"
+)
 COVERAGE_BCE_KEY = "teacher_forcing/ledger/coverage_bce"
 REGION_ANCHOR_KEY = "teacher_forcing/ledger/region_anchor_positive"
 COVERAGE_AUC_KEY = "teacher_forcing/ledger/coverage_auc"
@@ -39,7 +48,12 @@ def coverage_ledger_metric_events(
         int(debug_rows.coverage_pair_count)
         + int(debug_rows.region_anchor_pair_count)
     )
-    _append_weighted_auxiliary_loss(
+    if total_loss_count > 0:
+        _append_weighted_auxiliary_loss(
+            events,
+            result,
+        )
+    _append_pair_normalized_auxiliary_loss(
         events,
         result,
         coverage_pair_count=int(debug_rows.coverage_pair_count),
@@ -133,6 +147,24 @@ def _append_weighted_mean(
 def _append_weighted_auxiliary_loss(
     events: list[MetricEvent],
     result: CoverageLedgerLossResult,
+) -> None:
+    events.append(
+        last_event(
+            WEIGHTED_LOSS_KEY,
+            _scalar(result.weighted_loss, field_name="weighted_loss"),
+            unit="batch",
+            semantic_role="auxiliary_weighted_loss",
+            metric_surface=COVERAGE_LEDGER_SURFACE,
+            stage=COVERAGE_LEDGER_STAGE,
+            objective_id=COVERAGE_LEDGER_OBJECTIVE_ID,
+            diagnostic_only=False,
+        )
+    )
+
+
+def _append_pair_normalized_auxiliary_loss(
+    events: list[MetricEvent],
+    result: CoverageLedgerLossResult,
     *,
     coverage_pair_count: int,
     region_anchor_pair_count: int,
@@ -153,15 +185,15 @@ def _append_weighted_auxiliary_loss(
     )
     events.append(
         weighted_mean_event(
-            WEIGHTED_LOSS_KEY,
+            AUXILIARY_PAIR_NORMALIZED_KEY,
             numerator / float(total_pair_count),
             total_pair_count,
             unit="object",
-            semantic_role="auxiliary_weighted_loss",
+            semantic_role="auxiliary_weighted_loss_pair_normalized",
             metric_surface=COVERAGE_LEDGER_SURFACE,
             stage=COVERAGE_LEDGER_STAGE,
             objective_id=COVERAGE_LEDGER_OBJECTIVE_ID,
-            diagnostic_only=False,
+            diagnostic_only=True,
         )
     )
 
@@ -300,6 +332,7 @@ def _finite_float(value: float, *, field_name: str) -> float:
 
 __all__ = [
     "COVERAGE_ACCURACY_KEY",
+    "AUXILIARY_PAIR_NORMALIZED_KEY",
     "COVERAGE_AUC_KEY",
     "COVERAGE_BCE_KEY",
     "COVERAGE_LEDGER_OBJECTIVE_ID",

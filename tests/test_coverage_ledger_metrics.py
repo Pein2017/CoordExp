@@ -14,6 +14,9 @@ from src.training.coverage_ledger.metrics import coverage_ledger_metric_events
 WEIGHTED_LOSS_KEY = "teacher_forcing/loss/coverage_ledger_auxiliary_weighted"
 COVERAGE_BCE_KEY = "teacher_forcing/ledger/coverage_bce"
 REGION_ANCHOR_KEY = "teacher_forcing/ledger/region_anchor_positive"
+AUXILIARY_PAIR_NORMALIZED_KEY = (
+    "teacher_forcing/ledger/coverage_ledger_auxiliary_pair_normalized"
+)
 COVERAGE_AUC_KEY = "teacher_forcing/ledger/coverage_auc"
 COVERAGE_ACCURACY_KEY = "teacher_forcing/ledger/coverage_accuracy"
 COVERAGE_STATE_COUNT_KEY = "teacher_forcing/ledger/coverage_state_count"
@@ -82,6 +85,7 @@ def test_coverage_ledger_metric_events_publish_canonical_keys_and_metadata() -> 
 
     assert tuple(by_key) == (
         WEIGHTED_LOSS_KEY,
+        AUXILIARY_PAIR_NORMALIZED_KEY,
         COVERAGE_BCE_KEY,
         REGION_ANCHOR_KEY,
         COVERAGE_AUC_KEY,
@@ -100,7 +104,7 @@ def test_coverage_ledger_metric_events_publish_canonical_keys_and_metadata() -> 
             assert event.diagnostic_only is True
 
 
-def test_loss_events_use_weighted_mean_values_and_explicit_denominators() -> None:
+def test_loss_events_report_exact_auxiliary_scalar_and_diagnostic_denominators() -> None:
     by_key = _events_by_key(
         _result(
             coverage_loss=2.0,
@@ -126,15 +130,22 @@ def test_loss_events_use_weighted_mean_values_and_explicit_denominators() -> Non
     assert region_anchor.diagnostic_only is True
 
     weighted_loss = by_key[WEIGHTED_LOSS_KEY]
-    assert weighted_loss.reducer == "weighted_mean"
-    assert weighted_loss.value == pytest.approx(64.0 / 7.0)
-    assert weighted_loss.denominator == pytest.approx(7.0)
-    assert weighted_loss.numerator == pytest.approx(64.0)
+    assert weighted_loss.reducer == "last"
+    assert weighted_loss.value == pytest.approx(999.0)
+    assert weighted_loss.denominator is None
+    assert weighted_loss.numerator is None
     assert weighted_loss.diagnostic_only is False
 
+    pair_normalized = by_key[AUXILIARY_PAIR_NORMALIZED_KEY]
+    assert pair_normalized.reducer == "weighted_mean"
+    assert pair_normalized.value == pytest.approx(64.0 / 7.0)
+    assert pair_normalized.denominator == pytest.approx(7.0)
+    assert pair_normalized.numerator == pytest.approx(64.0)
+    assert pair_normalized.diagnostic_only is True
 
-def test_weighted_auxiliary_loss_reduces_by_component_weighted_pair_sums() -> None:
-    first = _events_by_key(
+
+def test_weighted_auxiliary_loss_reduces_as_exact_last_scalar_not_pair_mean() -> None:
+    first_events = _events_by_key(
         _result(
             coverage_loss=2.0,
             region_anchor_loss=10.0,
@@ -146,8 +157,8 @@ def test_weighted_auxiliary_loss_reduces_by_component_weighted_pair_sums() -> No
             region_anchor_positive_logits=torch.zeros((3,), dtype=torch.float32),
             object_count=2,
         )
-    )[WEIGHTED_LOSS_KEY]
-    second = _events_by_key(
+    )
+    second_events = _events_by_key(
         _result(
             coverage_loss=1.0,
             region_anchor_loss=4.0,
@@ -159,15 +170,21 @@ def test_weighted_auxiliary_loss_reduces_by_component_weighted_pair_sums() -> No
             region_anchor_positive_logits=torch.zeros((1,), dtype=torch.float32),
             object_count=5,
         )
-    )[WEIGHTED_LOSS_KEY]
-
-    assert first.numerator == pytest.approx(64.0)
-    assert first.denominator == pytest.approx(7.0)
-    assert second.numerator == pytest.approx(16.0)
-    assert second.denominator == pytest.approx(6.0)
-    assert reduce_metric_events([first, second])[WEIGHTED_LOSS_KEY] == pytest.approx(
-        80.0 / 13.0
     )
+
+    assert reduce_metric_events(
+        [first_events[WEIGHTED_LOSS_KEY], second_events[WEIGHTED_LOSS_KEY]]
+    )[WEIGHTED_LOSS_KEY] == pytest.approx(777.0)
+
+    first_pair = first_events[AUXILIARY_PAIR_NORMALIZED_KEY]
+    second_pair = second_events[AUXILIARY_PAIR_NORMALIZED_KEY]
+    assert first_pair.numerator == pytest.approx(64.0)
+    assert first_pair.denominator == pytest.approx(7.0)
+    assert second_pair.numerator == pytest.approx(16.0)
+    assert second_pair.denominator == pytest.approx(6.0)
+    assert reduce_metric_events([first_pair, second_pair])[
+        AUXILIARY_PAIR_NORMALIZED_KEY
+    ] == pytest.approx(80.0 / 13.0)
 
 
 def test_auc_uses_positive_negative_pairs_and_tie_credit() -> None:

@@ -70,6 +70,11 @@ _FULL_MODEL_WEIGHT_NAMES = {
     "pytorch_model.bin",
     "pytorch_model.bin.index.json",
 }
+_COVERAGE_LEDGER_HEAD_REQUIRED_TENSORS = (
+    "state_projection.weight",
+    "region_anchor_state_projection.weight",
+    "object_projection.weight",
+)
 
 
 def _callback_state_key(callback: Any) -> str:
@@ -501,24 +506,60 @@ def _validate_adapter_checkpoint(checkpoint_dir: Path) -> None:
         if isinstance(modules_to_save_raw, list)
         else set()
     )
-    if "token_embeddings_adapter" not in modules_to_save:
+    requires_semantic_validation = bool(
+        {"token_embeddings_adapter", "coverage_ledger_head"} & modules_to_save
+    )
+    if not requires_semantic_validation:
         return
 
     keys = _adapter_state_keys(checkpoint_dir)
     if not keys:
         raise ValueError(
-            "token_embeddings_adapter is declared in adapter_config.json, but no "
-            "unsharded adapter_model.safetensors/bin payload was found for validation"
+            "adapter_config.json declares modules_to_save entries requiring validation, "
+            "but no unsharded adapter_model.safetensors/bin payload was found"
         )
-    has_token_ids = any(key.endswith("token_embeddings_adapter.token_ids") for key in keys)
-    has_embed_offset = any(
-        key.endswith("token_embeddings_adapter.embed_offset") for key in keys
-    )
-    if not has_token_ids or not has_embed_offset:
-        raise ValueError(
-            "token_embeddings_adapter is declared in adapter_config.json, but adapter "
-            "weights are missing token_ids/embed_offset tensors"
+    if "token_embeddings_adapter" in modules_to_save:
+        has_token_ids = any(key.endswith("token_embeddings_adapter.token_ids") for key in keys)
+        has_embed_offset = any(
+            key.endswith("token_embeddings_adapter.embed_offset") for key in keys
         )
+        if not has_token_ids or not has_embed_offset:
+            raise ValueError(
+                "token_embeddings_adapter is declared in adapter_config.json, but adapter "
+                "weights are missing token_ids/embed_offset tensors"
+            )
+    if "coverage_ledger_head" in modules_to_save:
+        missing = [
+            tensor_name
+            for tensor_name in _COVERAGE_LEDGER_HEAD_REQUIRED_TENSORS
+            if not _has_modules_to_save_tensor(
+                keys,
+                module_name="coverage_ledger_head",
+                tensor_name=tensor_name,
+            )
+        ]
+        if missing:
+            raise ValueError(
+                "coverage_ledger_head is declared in adapter_config.json, but adapter "
+                "weights are missing required tensors: "
+                + ", ".join(missing)
+            )
+
+
+def _has_modules_to_save_tensor(
+    keys: set[str],
+    *,
+    module_name: str,
+    tensor_name: str,
+) -> bool:
+    direct_suffix = f"{module_name}.{tensor_name}"
+    wrapped_fragment = f"{module_name}.modules_to_save."
+    for key in keys:
+        if key.endswith(direct_suffix):
+            return True
+        if wrapped_fragment in key and key.endswith(f".{tensor_name}"):
+            return True
+    return False
 
 
 def _validate_schema2_artifacts(checkpoint_dir: Path, payload: Mapping[str, Any]) -> None:

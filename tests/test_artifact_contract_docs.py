@@ -156,6 +156,13 @@ def test_coverage_ledger_launch_prep_docs_freeze_smoke_artifacts_and_metrics() -
         encoding="utf-8"
     )
     artifacts = (REPO_ROOT / "docs" / "ARTIFACTS.md").read_text(encoding="utf-8")
+    design = (
+        REPO_ROOT
+        / "docs"
+        / "superpowers"
+        / "specs"
+        / "2026-06-23-coverage-ledger-auxiliary-loss-design.md"
+    ).read_text(encoding="utf-8")
     research_index = (
         REPO_ROOT / "research" / "ideas" / "ledger-auxiliary-loss" / "index.md"
     ).read_text(encoding="utf-8")
@@ -175,6 +182,7 @@ def test_coverage_ledger_launch_prep_docs_freeze_smoke_artifacts_and_metrics() -
 
     for metric_key in (
         "teacher_forcing/loss/coverage_ledger_auxiliary_weighted",
+        "teacher_forcing/ledger/coverage_ledger_auxiliary_pair_normalized",
         "teacher_forcing/ledger/coverage_bce",
         "teacher_forcing/ledger/region_anchor_positive",
         "teacher_forcing/ledger/coverage_auc",
@@ -187,6 +195,7 @@ def test_coverage_ledger_launch_prep_docs_freeze_smoke_artifacts_and_metrics() -
         assert metric_key in metrics
 
     assert "Reducer summary for coverage-ledger keys" in metrics
+    assert "exact weighted auxiliary scalar" in metrics
     assert "weighted_mean" in metrics
     assert "ratio" in metrics
     assert "sum" in metrics
@@ -201,6 +210,10 @@ def test_coverage_ledger_launch_prep_docs_freeze_smoke_artifacts_and_metrics() -
         assert artifact_name in artifacts
 
     assert "Smoke launch status: launch-prep / not-yet-run" in artifacts
+    assert "source_jsonl_repo_path" in design
+    assert "source_jsonl_resolved_path" in design
+    assert "debug.train_sample_selection" in artifacts
+    assert "must not already contain files" in artifacts
     assert "all-128 `ledger/alignment_debug.jsonl`" in artifacts
     assert "16 overlays" in artifacts
     assert "baseline and ledger config diff remains allowlisted" in artifacts

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
+import pytest
 from PIL import Image
 
 from src.config.loader import ConfigLoader
@@ -34,6 +35,8 @@ LEDGER_CONFIG = SMOKE_ROOT / "coverage_ledger_closed_hard_sft_128.yaml"
 REQUIRED_MANIFEST_KEYS = {
     "schema_version",
     "source_jsonl_path",
+    "source_jsonl_repo_path",
+    "source_jsonl_resolved_path",
     "source_jsonl_sha256",
     "dataset_id",
     "split",
@@ -161,6 +164,10 @@ def test_artifact_writer_materializes_manifest_alignment_jsonl_and_overlay_index
 
     manifest = json.loads((ledger_root / "selected_samples.json").read_text())
     assert REQUIRED_MANIFEST_KEYS <= set(manifest)
+    assert manifest["source_jsonl_repo_path"] is None
+    assert manifest["source_jsonl_resolved_path"] == str(
+        (tmp_path / "train.coord.jsonl").resolve()
+    )
     assert manifest["source_jsonl_sha256"]
     assert manifest["selected_row_indices"] == list(range(128))
     assert manifest["selected_sample_ids"] == [
@@ -202,6 +209,16 @@ def test_artifact_writer_materializes_manifest_alignment_jsonl_and_overlay_index
     assert overlay_index["overlays"][0]["source_object_index"] == 0
     assert overlay_index["overlays"][0]["emitted_order_index"] == 0
     assert overlay_index["overlays"][0]["template_id"] == "compact_object_box_closed"
+
+
+def test_artifact_writer_rejects_stale_overlay_files(tmp_path: Path) -> None:
+    inputs = _make_artifact_inputs(tmp_path)
+    stale_overlay = inputs.output_root / "ledger" / "overlays" / "stale.png"
+    stale_overlay.parent.mkdir(parents=True)
+    Image.new("RGB", (4, 4), color=(255, 0, 0)).save(stale_overlay)
+
+    with pytest.raises(ValueError, match="stale|non-empty|overlays"):
+        write_coverage_ledger_preflight_artifacts(inputs)
 
 
 def test_preflight_enforces_smoke_config_diff_allowlist() -> None:

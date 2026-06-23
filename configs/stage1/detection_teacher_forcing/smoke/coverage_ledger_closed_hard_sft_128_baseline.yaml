@@ -58,3 +58,7 @@ debug:
   enabled: true
   train_sample_limit: 128
   val_sample_limit: 128
+  train_sample_selection:
+    algorithm: seeded_random_without_replacement_v0
+    count: 128
+    seed: 20260623

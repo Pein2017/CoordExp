@@ -52,6 +52,7 @@ class CoverageLedgerForwardCapture:
             packing_enabled=packing_enabled,
             where=where,
         )
+        _validate_v0_media_inputs(inputs_for_model, where=where)
         lower_model = self._require_qwen_conditional_generation(
             core_model,
             model_type=model_type,
@@ -280,8 +281,7 @@ def _expected_image_tokens_from_grid(
 ) -> int:
     if not isinstance(image_grid_thw, torch.Tensor):
         raise ValueError(f"{where}: image_grid_thw is required")
-    if image_grid_thw.ndim != 2 or int(image_grid_thw.shape[-1]) != 3:
-        raise ValueError(f"{where}: image_grid_thw must have shape (num_images, 3)")
+    _validate_image_grid_thw_v0(image_grid_thw, where=where)
 
     merge_size = _resolve_spatial_merge_size(lower_model, where=where)
     merge_area = merge_size * merge_size
@@ -291,6 +291,25 @@ def _expected_image_tokens_from_grid(
             f"{where}: image_grid_thw is not divisible by spatial_merge_size^2"
         )
     return int((per_image_patches // merge_area).sum().item())
+
+
+def _validate_v0_media_inputs(inputs_for_model: Mapping[str, Any], *, where: str) -> None:
+    if inputs_for_model.get("pixel_values_videos") is not None:
+        raise ValueError(f"{where}: pixel_values_videos is unsupported in coverage-ledger v0")
+    if inputs_for_model.get("video_grid_thw") is not None:
+        raise ValueError(f"{where}: video_grid_thw is unsupported in coverage-ledger v0")
+    image_grid_thw = inputs_for_model.get("image_grid_thw")
+    if not isinstance(image_grid_thw, torch.Tensor):
+        raise ValueError(f"{where}: image_grid_thw is required")
+    _validate_image_grid_thw_v0(image_grid_thw, where=where)
+
+
+def _validate_image_grid_thw_v0(image_grid_thw: torch.Tensor, *, where: str) -> None:
+    if tuple(image_grid_thw.shape) != (1, 3):
+        raise ValueError(f"{where}: image_grid_thw must have shape (1, 3)")
+    grid_t = int(image_grid_thw[0, 0].item())
+    if grid_t != 1:
+        raise ValueError(f"{where}: image_grid_thw T must be 1 for coverage-ledger v0")
 
 
 def _resolve_spatial_merge_size(lower_model: Any, *, where: str) -> int:

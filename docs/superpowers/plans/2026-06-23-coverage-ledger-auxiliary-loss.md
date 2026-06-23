@@ -631,6 +631,7 @@ codex/ledger-auxiliary-loss
 
   ```text
   teacher_forcing/loss/coverage_ledger_auxiliary_weighted
+  teacher_forcing/ledger/coverage_ledger_auxiliary_pair_normalized
   teacher_forcing/ledger/coverage_bce
   teacher_forcing/ledger/region_anchor_positive
   teacher_forcing/ledger/coverage_auc
@@ -644,7 +645,8 @@ codex/ledger-auxiliary-loss
   Required reducer tests:
 
   - BCE producer calls `weighted_mean_event` with `key`, `value=loss_sum / valid_count`, `weight=valid_count`, and the required metric metadata
-  - weighted loss producer uses the same mean-value convention
+  - weighted loss producer emits `CoverageLedgerLossResult.weighted_loss` as the exact `last` scalar added to runner loss
+  - pair-normalized weighted loss reconstruction is diagnostic-only under `teacher_forcing/ledger/coverage_ledger_auxiliary_pair_normalized`
   - AUC is omitted when a batch has only one class
   - AUC denominator is comparable positive-negative pairs `n_pos * n_neg`
   - AUC tie credit is `0.5`
@@ -663,7 +665,7 @@ codex/ledger-auxiliary-loss
 
 - [ ] Mark diagnostic versus objective metrics correctly.
 
-  Only `teacher_forcing/loss/coverage_ledger_auxiliary_weighted` is objective-relevant. Coverage BCE, region-anchor positive loss, AUC, accuracy, counts, and debug gauges are diagnostic metrics.
+  Only `teacher_forcing/loss/coverage_ledger_auxiliary_weighted` is objective-relevant and it reports the exact scalar added to training loss. Coverage BCE, region-anchor positive loss, pair-normalized auxiliary loss, AUC, accuracy, counts, and debug gauges are diagnostic metrics.
 
 ## Task 9: Bridge And Trainer Integration
 
@@ -752,6 +754,8 @@ codex/ledger-auxiliary-loss
   ```text
   schema_version
   source_jsonl_path
+  source_jsonl_repo_path
+  source_jsonl_resolved_path
   source_jsonl_sha256
   dataset_id
   split
@@ -767,6 +771,9 @@ codex/ledger-auxiliary-loss
   image_grid_metadata_version
   samples[]
   ```
+
+  The writer must fail fast instead of merging output when `ledger/` or
+  `ledger/overlays/` already contains stale files.
 
   Required per-sample fields:
 
@@ -906,7 +913,9 @@ codex/ledger-auxiliary-loss
 
 ## Final Verification Bundle
 
-Run this bundle before claiming implementation is complete:
+Run this unit implementation bundle before claiming the code/config/docs portion
+is complete. Passing this pytest bundle alone does not claim preflight success,
+smoke success, production readiness, or usable local launch state.
 
 ```bash
 python -m pytest \
@@ -931,7 +940,7 @@ python -m pytest \
   -q
 ```
 
-Then run:
+Then run the preflight only when the local public-data/model assets exist:
 
 ```bash
 python scripts/training/coverage_ledger_preflight.py \
@@ -945,6 +954,7 @@ Final implementation summary must report:
 - changed files
 - verification commands and outcomes
 - preflight artifact root
+- whether preflight was run or skipped because local assets were unavailable
 - whether real-Qwen capture parity was run or skipped
 - whether smoke training was run or still awaiting approval
 - residual risks, especially small-object visual-token alignment and smoke-only evidence scope

@@ -11,6 +11,12 @@ import src.config.loader as config_loader
 from src.config.loader import ConfigLoader
 from src.config.schema import DetectionTrainingConfig
 from src.config.strict_dataclass import dataclass_asdict_no_none
+from src.detection.dataset import DetectionTrainingDataset
+from src.detection.dataset_selection import select_dataset_row_indices
+from src.training.coverage_ledger.preflight import (
+    resolve_coverage_ledger_train_selection,
+)
+from test_detection_training_dataset import FakeSwiftTemplate, _raw_row, _write_jsonl
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -52,6 +58,12 @@ ALLOWED_BASELINE_LEDGER_DIFFS = {
     "/debug/train_artifact_subdir",
     "/debug/val_artifact_subdir",
     "/debug/preflight_artifact_subdir",
+}
+
+EXPECTED_TRAIN_SAMPLE_SELECTION = {
+    "algorithm": "seeded_random_without_replacement_v0",
+    "count": 128,
+    "seed": 20260623,
 }
 
 
@@ -154,6 +166,7 @@ def _assert_shared_closed_hard_sft_smoke_config(resolved: dict[str, Any]) -> Non
 
     assert resolved["debug"]["train_sample_limit"] == 128
     assert resolved["debug"]["val_sample_limit"] == 128
+    assert resolved["debug"]["train_sample_selection"] == EXPECTED_TRAIN_SAMPLE_SELECTION
     assert resolved["training"]["seed"] == 20260623
     assert resolved["training"]["max_steps"] == 256
     assert resolved["training"]["per_device_train_batch_size"] == 1
@@ -228,3 +241,48 @@ def test_coverage_ledger_smoke_config_pair_only_differs_on_allowlisted_fields() 
         "eval_packing",
     ):
         assert ledger["training"][training_key] == baseline["training"][training_key]
+
+
+def test_coverage_ledger_smoke_training_selection_matches_preflight_manifest_indices(
+    tmp_path: Path,
+) -> None:
+    baseline_cfg = ConfigLoader.load_materialized_training_config(str(BASELINE_CONFIG))
+    ledger_cfg = ConfigLoader.load_materialized_training_config(str(LEDGER_CONFIG))
+    assert isinstance(baseline_cfg, DetectionTrainingConfig)
+    assert isinstance(ledger_cfg, DetectionTrainingConfig)
+
+    baseline_selection = resolve_coverage_ledger_train_selection(baseline_cfg)
+    ledger_selection = resolve_coverage_ledger_train_selection(ledger_cfg)
+    assert baseline_selection == ledger_selection
+
+    selected_row_indices = select_dataset_row_indices(
+        total_rows=256,
+        selection=ledger_selection,
+    )
+    assert len(selected_row_indices) == 128
+    assert selected_row_indices != tuple(range(128))
+
+    jsonl_path = tmp_path / "train.coord.jsonl"
+    _write_jsonl(jsonl_path, [_raw_row() for _ in range(256)])
+    dataset = DetectionTrainingDataset.from_jsonl(
+        jsonl_path,
+        swift_template=FakeSwiftTemplate(),
+        image_root=tmp_path / "image-root",
+        detection_template_id="compact_object_box_closed",
+        mode="random_order_sft",
+        object_ordering="sorted",
+        user_prompt="Detect every object.",
+        system_prompt="You are a detector.",
+        seed=20260623,
+        state_weighting="uniform_permutation",
+        normalization="semantic_image_bucket_balanced",
+        object_field_order="desc_first",
+        teacher_forcing_profile="hard_sft",
+        teacher_forcing_rollin_base_seed=17,
+        coverage_ledger_enabled=True,
+        sample_limit=128,
+        sample_selection=ledger_selection,
+        dataset_name="detection_train",
+    )
+
+    assert dataset.source_row_indices == selected_row_indices

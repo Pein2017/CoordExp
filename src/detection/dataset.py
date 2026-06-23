@@ -23,6 +23,10 @@ from src.detection.data import (
     ObjectOrderingPlan,
     parse_raw_detection_row,
 )
+from src.detection.dataset_selection import (
+    normalize_dataset_row_selection,
+    select_dataset_row_indices,
+)
 from src.detection.scene import (
     DetectionScene,
     detection_scene_from_raw_row,
@@ -48,7 +52,11 @@ from src.detection.tokenization import (
     TokenSpan,
     tokenize_rendered_detection_conversation,
 )
-from src.training.coverage_ledger import build_coverage_ledger_sidecar
+from src.training.coverage_ledger import (
+    CoverageLedgerObjectEntry,
+    CoverageLedgerSidecar,
+    build_coverage_ledger_sidecar,
+)
 from src.training.sidecars import SupervisionSidecars, TrainingSidecars
 from src.training.teacher_forcing.constants import TEACHER_FORCING_TARGET_IR_KEY
 from src.training.teacher_forcing.ir import TeacherForcingTargetIR
@@ -66,6 +74,7 @@ REGISTERED_DETECTION_SIDECAR_KEYS: tuple[str, ...] = (
     "training_sidecars",
     "dataset",
     "base_idx",
+    "local_idx",
 )
 
 DETECTION_DROPPED_BEFORE_MODEL_KEYS: tuple[str, ...] = (
@@ -276,15 +285,26 @@ class DetectionTrainingDataset(Dataset):
         swift_template: Any,
         config: DetectionDatasetRuntimeConfig,
         dataset_name: str = "detection",
+        source_row_indices: Sequence[int] | None = None,
     ) -> None:
         if not rows:
             raise ValueError("DetectionTrainingDataset requires at least one row")
+        if source_row_indices is None:
+            source_row_indices = tuple(range(len(rows)))
+        else:
+            source_row_indices = tuple(int(index) for index in source_row_indices)
+            if len(source_row_indices) != len(rows):
+                raise ValueError(
+                    "source_row_indices length must match rows length; "
+                    f"got {len(source_row_indices)} indices for {len(rows)} rows"
+                )
         if config.image_root is None:
             raise ValueError(
                 "DetectionTrainingDataset requires resolved image_root; call "
                 "from_jsonl with data.image_root or a sibling view meta.json"
             )
         self.rows = tuple(copy.deepcopy(dict(row)) for row in rows)
+        self._source_row_indices = tuple(source_row_indices)
         self.swift_template = swift_template
         self.template = swift_template
         self.tokenizer = getattr(swift_template, "tokenizer", None)
@@ -316,6 +336,7 @@ class DetectionTrainingDataset(Dataset):
         teacher_forcing_rollin_base_seed: int | None = None,
         coverage_ledger_enabled: bool = False,
         sample_limit: int | None = None,
+        sample_selection: Any | None = None,
         dataset_name: str | None = None,
     ) -> "DetectionTrainingDataset":
         path = Path(jsonl_path)
@@ -325,10 +346,28 @@ class DetectionTrainingDataset(Dataset):
         )
 
         rows, _invalid_count = load_jsonl_with_diagnostics(path, strict=True)
-        if sample_limit is not None:
+        source_row_indices: tuple[int, ...] | None = None
+        selection = normalize_dataset_row_selection(
+            sample_selection,
+            path="sample_selection",
+        )
+        if selection is not None:
+            if sample_limit is not None and int(sample_limit) != selection.count:
+                raise ValueError(
+                    "sample_limit must match sample_selection.count when both "
+                    f"are provided; got sample_limit={sample_limit!r}, "
+                    f"count={selection.count}"
+                )
+            source_row_indices = select_dataset_row_indices(
+                total_rows=len(rows),
+                selection=selection,
+            )
+            rows = [rows[index] for index in source_row_indices]
+        elif sample_limit is not None:
             if sample_limit <= 0:
                 raise ValueError("sample_limit must be positive when provided")
             rows = rows[: int(sample_limit)]
+            source_row_indices = tuple(range(len(rows)))
         return cls(
             rows,
             swift_template=swift_template,
@@ -352,10 +391,15 @@ class DetectionTrainingDataset(Dataset):
                 coverage_ledger_enabled=coverage_ledger_enabled,
             ),
             dataset_name=dataset_name or path.stem,
+            source_row_indices=source_row_indices,
         )
 
     def __len__(self) -> int:
         return len(self.rows)
+
+    @property
+    def source_row_indices(self) -> tuple[int, ...]:
+        return self._source_row_indices
 
     def _base_index(self, index: int) -> int:
         """Validated row index for map-style dataset access."""
@@ -427,7 +471,8 @@ class DetectionTrainingDataset(Dataset):
 
     def __getitem__(self, index: int) -> dict[str, Any]:
         base_idx = self._base_index(index)
-        sample_id = _make_sample_id(self.dataset_name, base_idx)
+        source_row_index = self._source_row_indices[base_idx]
+        sample_id = _make_sample_id(self.dataset_name, source_row_index)
         scene = self._scene_for_base_index(base_idx)
         normalized = normalized_detection_sample_from_scene(scene)
         detection_template = get_detection_template(self.config.detection_template_id)
@@ -560,7 +605,8 @@ class DetectionTrainingDataset(Dataset):
         )
         detection_metadata = {
             "dataset": self.dataset_name,
-            "base_idx": base_idx,
+            "base_idx": source_row_index,
+            "local_idx": base_idx,
             "template_id": rendered_assistant.template_id,
             "template_version": rendered_assistant.template_version,
             "mode": self.config.mode,
@@ -606,7 +652,8 @@ class DetectionTrainingDataset(Dataset):
         )
         encoded["sample_id"] = sample_id
         encoded["dataset"] = self.dataset_name
-        encoded["base_idx"] = base_idx
+        encoded["base_idx"] = source_row_index
+        encoded["local_idx"] = base_idx
         if recursive_detection_targets is not None:
             encoded["recursive_detection_targets"] = recursive_detection_targets
         if teacher_forcing_target_ir is not None:
@@ -618,21 +665,34 @@ class DetectionTrainingDataset(Dataset):
                     tokenizer=self.tokenizer,
                     messages=messages,
                 )
+            encoded_position_delta = 0
+            if teacher_forcing_target_ir is not None:
+                encoded_position_delta = int(
+                    teacher_forcing_target_ir.metadata.get(
+                        "swift_encoded_position_delta",
+                        0,
+                    )
+                )
             image_grid_thw = encoded.get("image_grid_thw")
             if image_grid_thw is None:
                 raise ValueError("coverage ledger sidecar requires image_grid_thw")
+            coverage_sidecar = build_coverage_ledger_sidecar(
+                supervision_view,
+                sample_id=str(sample_id),
+                image_grid_thw=image_grid_thw,
+                processed_width=normalized.width,
+                processed_height=normalized.height,
+                image_identity=scene.file_name or str(scene.image_id),
+            )
+            coverage_sidecar = _adapt_coverage_ledger_sidecar_to_encoded(
+                coverage_sidecar,
+                supervision_view=supervision_view,
+                encoded=encoded,
+                position_delta=encoded_position_delta,
+            )
             encoded["training_sidecars"] = TrainingSidecars(
                 supervision=SupervisionSidecars(
-                    payloads=(
-                        build_coverage_ledger_sidecar(
-                            supervision_view,
-                            sample_id=str(sample_id),
-                            image_grid_thw=image_grid_thw,
-                            processed_width=normalized.width,
-                            processed_height=normalized.height,
-                            image_identity=scene.file_name or str(scene.image_id),
-                        ),
-                    )
+                    payloads=(coverage_sidecar,)
                 )
             )
         return dict(encoded)
@@ -644,7 +704,10 @@ class DetectionTrainingDataset(Dataset):
         epoch: int | None = None,
     ) -> DetectionScene:
         raw = parse_raw_detection_row(self.rows[base_idx])
-        ordering_plan = self._ordering_plan(base_idx=base_idx, epoch=epoch)
+        ordering_plan = self._ordering_plan(
+            base_idx=self._source_row_indices[base_idx],
+            epoch=epoch,
+        )
         return detection_scene_from_raw_row(
             raw,
             object_ordering=ordering_plan,
@@ -1116,6 +1179,108 @@ def _validate_teacher_forcing_target_ir_against_supervision_view(
                 "teacher_forcing coordinate atom is not backed by "
                 "DetectionSupervisionView coord_mask"
             )
+
+
+def _adapt_coverage_ledger_sidecar_to_encoded(
+    sidecar: CoverageLedgerSidecar,
+    *,
+    supervision_view: DetectionSupervisionView,
+    encoded: Mapping[str, Any],
+    position_delta: int,
+) -> CoverageLedgerSidecar:
+    delta = int(position_delta)
+
+    def shift(position: int) -> int:
+        return int(position) + delta
+
+    shifted_entries: list[CoverageLedgerObjectEntry] = []
+    for sidecar_entry, tokenized_entry in zip(
+        sidecar.object_entries,
+        supervision_view.object_entries,
+        strict=True,
+    ):
+        shifted_entry = replace(
+            sidecar_entry,
+            box_start_position=shift(sidecar_entry.box_start_position),
+            coord_label_positions=tuple(
+                shift(position) for position in sidecar_entry.coord_label_positions
+            ),
+            object_ref_end_position=shift(sidecar_entry.object_ref_end_position),
+            box_end_position=shift(sidecar_entry.box_end_position),
+        )
+        _validate_encoded_sidecar_token(
+            encoded,
+            supervision_view,
+            raw_position=sidecar_entry.object_ref_end_position,
+            encoded_position=shifted_entry.object_ref_end_position,
+            label="object_ref_end",
+        )
+        _validate_encoded_sidecar_token(
+            encoded,
+            supervision_view,
+            raw_position=sidecar_entry.box_start_position,
+            encoded_position=shifted_entry.box_start_position,
+            label="box_start",
+        )
+        if shifted_entry.coord_label_positions[0] != shifted_entry.box_start_position + 1:
+            raise ValueError(
+                "coverage ledger first coordinate is not immediately after "
+                "encoded box_start_position"
+            )
+        for raw_span, encoded_position in zip(
+            tokenized_entry.coord_spans,
+            shifted_entry.coord_label_positions,
+            strict=True,
+        ):
+            _validate_encoded_sidecar_token(
+                encoded,
+                supervision_view,
+                raw_position=raw_span.start,
+                encoded_position=encoded_position,
+                label=raw_span.label,
+            )
+        _validate_encoded_sidecar_token(
+            encoded,
+            supervision_view,
+            raw_position=sidecar_entry.box_end_position,
+            encoded_position=shifted_entry.box_end_position,
+            label="box_end",
+        )
+        shifted_entries.append(shifted_entry)
+
+    shifted_sidecar = replace(
+        sidecar,
+        prompt_end_position=shift(sidecar.prompt_end_position),
+        object_entries=tuple(shifted_entries),
+    )
+    return shifted_sidecar
+
+
+def _validate_encoded_sidecar_token(
+    encoded: Mapping[str, Any],
+    supervision_view: DetectionSupervisionView,
+    *,
+    raw_position: int,
+    encoded_position: int,
+    label: str,
+) -> None:
+    encoded_input_ids = _as_int_tuple(encoded.get("input_ids"), path="encoded.input_ids")
+    encoded_labels = _as_int_tuple(encoded.get("labels"), path="encoded.labels")
+    raw_position = int(raw_position)
+    encoded_position = int(encoded_position)
+    if not (0 <= raw_position < len(supervision_view.input_ids)):
+        raise ValueError(f"coverage ledger raw {label} position is outside supervision")
+    if not (0 <= encoded_position < len(encoded_input_ids)):
+        raise ValueError(f"coverage ledger encoded {label} position is outside input_ids")
+    expected_token_id = int(supervision_view.input_ids[raw_position])
+    if int(encoded_input_ids[encoded_position]) != expected_token_id:
+        raise ValueError(
+            f"coverage ledger encoded {label} position does not match input_ids"
+        )
+    if int(encoded_labels[encoded_position]) != expected_token_id:
+        raise ValueError(
+            f"coverage ledger encoded {label} position is not supervised by labels"
+        )
 
 
 def _detection_supervision_view_metadata(

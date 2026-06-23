@@ -23,11 +23,30 @@ from src.training.sidecars import (
 )
 from src.training.supervision.batch import SupervisionBatch
 from src.training.teacher_forcing.constants import TEACHER_FORCING_TARGET_IR_KEY
+from test_detection_training_dataset import (
+    ImageExpandingSwiftTemplate,
+    _ensure_image,
+    _raw_row,
+    _write_jsonl,
+)
+from src.detection.dataset import DetectionTrainingDataset
 
 
 class _DummyTemplate:
     tokenizer = None
     template_meta = None
+
+
+class _ImageGridExpandingSwiftTemplate(ImageExpandingSwiftTemplate):
+    def encode(
+        self,
+        payload: dict[str, Any],
+        *,
+        return_length: bool,
+    ) -> dict[str, Any]:
+        encoded = super().encode(payload, return_length=return_length)
+        encoded["image_grid_thw"] = (1, 8, 8)
+        return encoded
 
 
 def _base_collator(batch: list[dict[str, Any]]) -> dict[str, Any]:
@@ -171,6 +190,68 @@ def test_coverage_ledger_sidecar_survives_collator_to_training_sidecars() -> Non
     assert "training_sidecars" not in model.calls[0]
     assert "training_sidecars" not in result.model_inputs.payload
     assert result.training_sidecars.supervision.payloads == (ledger_sidecar,)
+
+
+def test_coverage_ledger_dataset_sidecar_positions_follow_swift_encoded_labels(
+    tmp_path,
+) -> None:
+    jsonl_path = tmp_path / "train.coord.jsonl"
+    _write_jsonl(jsonl_path, [_raw_row()])
+    _ensure_image(tmp_path)
+    dataset = DetectionTrainingDataset.from_jsonl(
+        jsonl_path,
+        swift_template=_ImageGridExpandingSwiftTemplate(),
+        image_root=tmp_path / "image-root",
+        detection_template_id="compact_object_box_closed",
+        mode="random_order_sft",
+        object_ordering="sorted",
+        user_prompt="Detect every object.",
+        system_prompt="You are a detector.",
+        seed=20260623,
+        state_weighting="uniform_permutation",
+        normalization="semantic_image_bucket_balanced",
+        object_field_order="desc_first",
+        teacher_forcing_profile="hard_sft",
+        teacher_forcing_rollin_base_seed=17,
+        coverage_ledger_enabled=True,
+        dataset_name="unit",
+    )
+
+    sample = dataset[0]
+    sidecar = sample["training_sidecars"].supervision.payloads[0]
+    assert isinstance(sidecar, CoverageLedgerSidecar)
+    ledger_entry = sidecar.object_entries[0]
+
+    raw_coord_positions = tuple(
+        sample["detection_supervision_view_metadata"]["coord_token_positions"]
+    )
+    assert ledger_entry.coord_label_positions[0] != raw_coord_positions[0]
+
+    tokenizer = dataset.tokenizer
+    input_ids = tuple(int(token_id) for token_id in sample["input_ids"])
+    labels = tuple(int(token_id) for token_id in sample["labels"])
+    expected_control_ids = {
+        ledger_entry.object_ref_end_position: tokenizer.convert_tokens_to_ids(
+            "<|object_ref_end|>"
+        ),
+        ledger_entry.box_start_position: tokenizer.convert_tokens_to_ids(
+            "<|box_start|>"
+        ),
+        ledger_entry.box_end_position: tokenizer.convert_tokens_to_ids("<|box_end|>"),
+    }
+    for position, token_id in expected_control_ids.items():
+        assert input_ids[position] == token_id
+        assert labels[position] == token_id
+
+    assert ledger_entry.coord_label_positions[0] == ledger_entry.box_start_position + 1
+    for position, coord_value in zip(
+        ledger_entry.coord_label_positions,
+        ledger_entry.bbox_norm1000_xyxy,
+        strict=True,
+    ):
+        coord_token_id = tokenizer.convert_tokens_to_ids(f"<|coord_{coord_value}|>")
+        assert input_ids[position] == coord_token_id
+        assert labels[position] == coord_token_id
 
 
 def test_coverage_ledger_collator_preserves_existing_supervision_payloads() -> None:

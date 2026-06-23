@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import random
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +12,12 @@ from src.config.loader import ConfigLoader
 from src.config.schema import CoordTokensConfig, DetectionTrainingConfig
 from src.config.strict_dataclass import dataclass_asdict_no_none
 from src.coord_tokens.template_adapter import apply_coord_template_adapter
+from src.detection.dataset_selection import (
+    DatasetRowSelectionConfig,
+    SEEDED_RANDOM_WITHOUT_REPLACEMENT,
+    normalize_dataset_row_selection,
+    select_dataset_row_indices,
+)
 from src.detection.dataset import DetectionDatasetRuntimeConfig, DetectionTrainingDataset
 from src.detection.runtime import (
     build_detection_runtime_custom_shim,
@@ -33,7 +38,7 @@ from src.training.coverage_ledger.visual_regions import (
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SELECTION_ALGORITHM = "seeded_random_without_replacement_v0"
+SELECTION_ALGORITHM = SEEDED_RANDOM_WITHOUT_REPLACEMENT
 IMAGE_GRID_METADATA_VERSION = "qwen3_vl_image_grid_thw_v0"
 DATASET_ID = "coverage_ledger_preflight"
 
@@ -83,18 +88,18 @@ def run_coverage_ledger_preflight(
     ledger_term = ledger_config.objective.terms.coverage_ledger
     if not ledger_term.enabled:
         raise ValueError("coverage_ledger preflight requires ledger config enabled")
-    expected_sample_count = int(ledger_term.smoke_sample_count)
+    selection = resolve_coverage_ledger_train_selection(ledger_config)
+    expected_sample_count = int(selection.count)
     expected_overlay_count = int(ledger_term.overlay_sample_count)
-    selection_seed = int(ledger_term.smoke_sample_seed)
+    selection_seed = int(selection.seed)
 
     system_prompt, _user_prompt = resolve_detection_prompts(ledger_config)
     custom_config = build_detection_runtime_custom_shim(ledger_config)
     train_jsonl_path = _resolve_repo_path(ledger_config.data.train_jsonl)
     rows, _invalid_count = load_jsonl_with_diagnostics(train_jsonl_path, strict=True)
-    selected_row_indices = select_preflight_row_indices(
+    selected_row_indices = select_dataset_row_indices(
         total_rows=len(rows),
-        count=expected_sample_count,
-        seed=selection_seed,
+        selection=selection,
     )
     selected_rows = [rows[index] for index in selected_row_indices]
 
@@ -174,7 +179,7 @@ def run_coverage_ledger_preflight(
             split="train",
             selected_row_indices=selected_row_indices,
             selection_seed=selection_seed,
-            selection_algorithm=SELECTION_ALGORITHM,
+            selection_algorithm=selection.algorithm,
             template_id=ledger_config.detection_template.id,
             object_field_order=str(
                 ledger_config.sample_factory.target_sequence.object_field_order
@@ -221,14 +226,40 @@ def select_preflight_row_indices(
     count: int,
     seed: int,
 ) -> tuple[int, ...]:
-    if count <= 0:
-        raise ValueError("preflight sample count must be positive")
-    if total_rows < count:
+    return select_dataset_row_indices(
+        total_rows=total_rows,
+        selection=DatasetRowSelectionConfig(
+            algorithm=SELECTION_ALGORITHM,
+            count=int(count),
+            seed=int(seed),
+        ),
+    )
+
+
+def resolve_coverage_ledger_train_selection(
+    training_config: DetectionTrainingConfig,
+) -> DatasetRowSelectionConfig:
+    selection = normalize_dataset_row_selection(
+        getattr(training_config.debug, "train_sample_selection", None),
+        path="debug.train_sample_selection",
+    )
+    if selection is None:
         raise ValueError(
-            f"preflight requires {count} rows but source JSONL has {total_rows}"
+            "coverage ledger smoke/preflight requires debug.train_sample_selection "
+            "as the single source of truth for train rows"
         )
-    rng = random.Random(int(seed))
-    return tuple(rng.sample(range(int(total_rows)), k=int(count)))
+    ledger_term = training_config.objective.terms.coverage_ledger
+    if int(ledger_term.smoke_sample_count) != selection.count:
+        raise ValueError(
+            "objective.terms.coverage_ledger.smoke_sample_count must match "
+            "debug.train_sample_selection.count"
+        )
+    if int(ledger_term.smoke_sample_seed) != selection.seed:
+        raise ValueError(
+            "objective.terms.coverage_ledger.smoke_sample_seed must match "
+            "debug.train_sample_selection.seed"
+        )
+    return selection
 
 
 def build_preflight_swift_template(
@@ -411,6 +442,7 @@ __all__ = [
     "CoverageLedgerPreflightResult",
     "assert_smoke_config_diff_allowed",
     "build_preflight_swift_template",
+    "resolve_coverage_ledger_train_selection",
     "resolve_overlay_render_image_path",
     "resolve_visual_grid_geometry",
     "run_coverage_ledger_preflight",

@@ -19,6 +19,7 @@ from src.training.coverage_ledger.visual_regions import VisualTokenRegion
 
 
 SCHEMA_VERSION = "coverage_ledger_preflight_artifacts_v0"
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +91,8 @@ def write_coverage_ledger_preflight_artifacts(
 
     ledger_root = Path(inputs.output_root) / "ledger"
     overlays_root = ledger_root / "overlays"
+    _reject_existing_nonempty_tree(ledger_root, label="ledger")
+    _reject_existing_nonempty_tree(overlays_root, label="ledger/overlays")
     overlays_root.mkdir(parents=True, exist_ok=True)
 
     selected_samples_path = ledger_root / "selected_samples.json"
@@ -145,6 +148,8 @@ def _selected_samples_payload(
     return {
         "schema_version": SCHEMA_VERSION,
         "source_jsonl_path": str(Path(inputs.source_jsonl_path)),
+        "source_jsonl_repo_path": _repo_relative_path(Path(inputs.source_jsonl_path)),
+        "source_jsonl_resolved_path": str(Path(inputs.source_jsonl_path).resolve()),
         "source_jsonl_sha256": _sha256_file(Path(inputs.source_jsonl_path)),
         "dataset_id": inputs.dataset_id,
         "split": inputs.split,
@@ -345,6 +350,25 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _repo_relative_path(path: Path) -> str | None:
+    resolved = path.expanduser().resolve(strict=False)
+    try:
+        return resolved.relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return None
+
+
+def _reject_existing_nonempty_tree(path: Path, *, label: str) -> None:
+    if not path.exists():
+        return
+    if not path.is_dir():
+        raise ValueError(f"coverage ledger preflight {label} exists and is not a directory")
+    if any(path.iterdir()):
+        raise ValueError(
+            f"coverage ledger preflight refuses to overwrite non-empty {label}: {path}"
+        )
 
 
 __all__ = [

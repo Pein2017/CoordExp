@@ -515,6 +515,7 @@ def build_detection_dataset(
     seed: int,
     sample_limit: int | None,
     dataset_name: str,
+    sample_selection: Any | None = None,
 ) -> DetectionTrainingDataset:
     if _is_stage2_rollout_correction_config(training_config):
         raise ValueError(
@@ -570,6 +571,7 @@ def build_detection_dataset(
         teacher_forcing_rollin_base_seed=teacher_forcing_rollin_base_seed,
         coverage_ledger_enabled=coverage_ledger_enabled,
         sample_limit=sample_limit,
+        sample_selection=sample_selection,
         dataset_name=dataset_name,
     )
 

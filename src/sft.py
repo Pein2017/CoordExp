@@ -3146,6 +3146,8 @@ def main():
     if debug_enabled:
         train_sample_limit = debug_config.train_sample_limit
         val_sample_limit = debug_config.val_sample_limit
+        train_sample_selection = debug_config.train_sample_selection
+        val_sample_selection = debug_config.val_sample_selection
         sample_limit_ns = "debug"
         if train_sample_limit is None and val_sample_limit is None:
             logger.warning(
@@ -3155,6 +3157,8 @@ def main():
     else:
         train_sample_limit = custom_config.train_sample_limit
         val_sample_limit = custom_config.val_sample_limit
+        train_sample_selection = None
+        val_sample_selection = None
         sample_limit_ns = "custom"
 
     val_sample_with_replacement = bool(
@@ -3302,6 +3306,7 @@ def main():
             seed=dataset_seed,
             sample_limit=_normalize_optional_sample_limit(train_sample_limit),
             dataset_name="detection_train",
+            sample_selection=train_sample_selection,
         )
     else:
         dataset = BaseCaptionDataset.from_jsonl(
@@ -3913,6 +3918,7 @@ def main():
                 seed=dataset_seed + 11,
                 sample_limit=_normalize_optional_sample_limit(eval_sample_limit),
                 dataset_name="detection_eval",
+                sample_selection=val_sample_selection,
             )
         else:
             eval_dataset = BaseCaptionDataset.from_jsonl(

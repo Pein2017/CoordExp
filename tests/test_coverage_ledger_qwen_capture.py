@@ -158,6 +158,52 @@ def test_capture_rejects_logits_to_keep_before_qwen_forward() -> None:
     assert model.model.get_image_features_calls == 0
 
 
+@pytest.mark.parametrize(
+    ("field_name", "bad_value", "message"),
+    (
+        (
+            "pixel_values_videos",
+            torch.ones((1, 3, 2, 2), dtype=torch.float32),
+            "pixel_values_videos",
+        ),
+        (
+            "video_grid_thw",
+            torch.tensor([[1, 1, 1]], dtype=torch.long),
+            "video_grid_thw",
+        ),
+        (
+            "image_grid_thw",
+            torch.tensor([[1, 1, 1], [1, 1, 1]], dtype=torch.long),
+            r"image_grid_thw.*shape.*\(1, 3\)",
+        ),
+        (
+            "image_grid_thw",
+            torch.tensor([[2, 1, 1]], dtype=torch.long),
+            r"image_grid_thw.*T.*1",
+        ),
+    ),
+)
+def test_capture_rejects_v0_unsupported_media_before_qwen_forward(
+    field_name: str,
+    bad_value: Any,
+    message: str,
+) -> None:
+    model = _FakeQwenForConditionalGeneration()
+    inputs = {**_qwen_inputs(), field_name: bad_value}
+
+    with pytest.raises(ValueError, match=message):
+        CoverageLedgerForwardCapture().capture(
+            model=model,
+            inputs=inputs,
+            ignored_keys=("labels", "training_sidecars", "supervision_spans"),
+            packing_enabled=False,
+            where="test",
+        )
+
+    assert model.model.forward_calls == []
+    assert model.model.get_image_features_calls == 0
+
+
 def test_capture_unwraps_trainable_wrapper_without_copying_base_model() -> None:
     model = _FakeQwenForConditionalGeneration()
     wrapper = _FakeTrainableWrapper(model)

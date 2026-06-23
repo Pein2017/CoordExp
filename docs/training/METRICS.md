@@ -209,6 +209,7 @@ not rollout, parse, duplicate-control, or mAP metrics.
 Canonical coverage-ledger auxiliary keys:
 
 - `teacher_forcing/loss/coverage_ledger_auxiliary_weighted`
+- `teacher_forcing/ledger/coverage_ledger_auxiliary_pair_normalized`
 - `teacher_forcing/ledger/coverage_bce`
 - `teacher_forcing/ledger/region_anchor_positive`
 - `teacher_forcing/ledger/coverage_auc`
@@ -222,7 +223,8 @@ Reducer summary for coverage-ledger keys:
 
 | Key | Reducer | Diagnostic flag | Denominator / aggregation |
 | --- | --- | --- | --- |
-| `teacher_forcing/loss/coverage_ledger_auxiliary_weighted` | `weighted_mean` | `diagnostic_only=false` | `coverage_pair_count + region_anchor_pair_count`; cross-batch aggregation is count-weighted. |
+| `teacher_forcing/loss/coverage_ledger_auxiliary_weighted` | `last` | `diagnostic_only=false` | Exact `CoverageLedgerLossResult.weighted_loss` scalar added to the runner CE/objective loss for the forward. |
+| `teacher_forcing/ledger/coverage_ledger_auxiliary_pair_normalized` | `weighted_mean` | `diagnostic_only=true` | `coverage_pair_count + region_anchor_pair_count`; cross-batch aggregation is count-weighted. |
 | `teacher_forcing/ledger/coverage_bce` | `weighted_mean` | `diagnostic_only=true` | Valid coverage pairs; cross-batch aggregation is count-weighted. |
 | `teacher_forcing/ledger/region_anchor_positive` | `weighted_mean` | `diagnostic_only=true` | Valid current-row region-anchor pairs; cross-batch aggregation is count-weighted. |
 | `teacher_forcing/ledger/coverage_auc` | `ratio` | `diagnostic_only=true` | Comparable positive-negative coverage pairs `n_pos * n_neg`; omitted when no comparable pairs exist. |
@@ -233,15 +235,11 @@ Reducer summary for coverage-ledger keys:
 | `teacher_forcing/ledger/region_anchor_pair_count` | `sum` | `diagnostic_only=true` | Sums observed region-anchor pairs. |
 
 `teacher_forcing/loss/coverage_ledger_auxiliary_weighted` is the only
-objective-relevant coverage-ledger metric (`diagnostic_only=false`). It uses a
-weighted-mean reducer whose denominator is
-`coverage_pair_count + region_anchor_pair_count`. Its numerator is the
-component weighted loss sum over observed ledger pairs:
-`coverage_weight * coverage_bce * coverage_pair_count +
-region_anchor_weight * region_anchor_positive * region_anchor_pair_count`. The
-event value is that numerator divided by the total observed ledger-pair count,
-so it is count-normalized for cross-batch reduction rather than the raw scalar
-auxiliary objective sum.
+objective-relevant coverage-ledger metric (`diagnostic_only=false`). It reports
+the exact weighted auxiliary scalar added to the runner CE/objective loss in
+that forward. The pair-normalized reconstruction is diagnostic-only under
+`teacher_forcing/ledger/coverage_ledger_auxiliary_pair_normalized`; use it for
+count-weighted dashboards, not for training-loss accounting.
 
 All `teacher_forcing/ledger/*` keys are diagnostic-only. `coverage_bce` is a
 weighted mean over coverage pairs, and `region_anchor_positive` is a weighted

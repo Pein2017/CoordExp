@@ -37,10 +37,13 @@ preflight output root before any training starts:
 
 - `ledger/selected_samples.json`
   - Manifest for the 128 selected training rows. It records the source JSONL
-    path and SHA-256, dataset/split identity, selected row indices and sample
-    IDs, selection seed and algorithm, template and object-field order,
+    path, repo-relative source identity when available, host-resolved path, and
+    SHA-256, dataset/split identity, selected row indices and sample IDs,
+    selection seed and algorithm, template and object-field order,
     tokenizer/model identity, `processor_do_resize`, image-grid metadata
-    version, and per-sample processed image/grid metadata.
+    version, and per-sample processed image/grid metadata. The row selection is
+    shared with the smoke training configs through
+    `debug.train_sample_selection`.
 - `ledger/alignment_debug.jsonl`
   - One line per selected sample. Each line records the prompt end position,
     each object row's `<|object_ref_end|>`, `<|box_start|>`, coordinate token
@@ -59,6 +62,10 @@ Smoke launch status: launch-prep / not-yet-run. These artifacts describe the
 required preflight and later approved smoke packet; they do not imply a
 successful local preflight or training run. Tiny smoke training still requires
 runtime-cost confirmation and complete local dataset/model assets.
+
+The preflight writer is strict about stale output: `ledger/` and
+`ledger/overlays/` must not already contain files. Remove or choose a fresh
+output root before rerunning preflight.
 
 When the smoke run is later approved and executed, required post-run checks are:
 

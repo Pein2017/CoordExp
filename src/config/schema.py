@@ -1720,6 +1720,8 @@ class DebugConfig:
     # When debug.enabled=true, these replace custom.{train,val}_sample_limit in the runner.
     train_sample_limit: Optional[Any] = None
     val_sample_limit: Optional[Any] = None
+    train_sample_selection: Optional[Mapping[str, Any]] = None
+    val_sample_selection: Optional[Mapping[str, Any]] = None
 
     @classmethod
     def from_mapping(cls, payload: Optional[Mapping[str, Any]]) -> "DebugConfig":
@@ -1769,6 +1771,14 @@ class DebugConfig:
 
         train_sample_limit = data.pop("train_sample_limit", None)
         val_sample_limit = data.pop("val_sample_limit", None)
+        train_sample_selection = data.pop("train_sample_selection", None)
+        val_sample_selection = data.pop("val_sample_selection", None)
+        for field_name, selection in (
+            ("train_sample_selection", train_sample_selection),
+            ("val_sample_selection", val_sample_selection),
+        ):
+            if selection is not None and not isinstance(selection, Mapping):
+                raise TypeError(f"debug.{field_name} must be a mapping when provided")
 
         if data:
             unknown = sorted(str(k) for k in data.keys())
@@ -1780,6 +1790,14 @@ class DebugConfig:
             output_dir=output_dir,
             train_sample_limit=train_sample_limit,
             val_sample_limit=val_sample_limit,
+            train_sample_selection=(
+                None
+                if train_sample_selection is None
+                else dict(train_sample_selection)
+            ),
+            val_sample_selection=(
+                None if val_sample_selection is None else dict(val_sample_selection)
+            ),
         )
 
 
