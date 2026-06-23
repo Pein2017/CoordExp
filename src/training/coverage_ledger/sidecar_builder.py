@@ -4,23 +4,25 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from src.detection.tokenization import (
-    DetectionSupervisionView,
-    TokenSpan,
-    TokenizedObjectEntry,
-)
 from src.training.coverage_ledger.sidecars import (
     CoverageLedgerObjectEntry,
     CoverageLedgerSidecar,
 )
 
+if TYPE_CHECKING:
+    from src.detection.tokenization import (
+        DetectionSupervisionView,
+        TokenSpan,
+        TokenizedObjectEntry,
+    )
+
 _COORD_TOKEN_RE = re.compile(r"<\|coord_(\d+)\|>")
 
 
 def build_coverage_ledger_sidecar(
-    tokenized: DetectionSupervisionView,
+    tokenized: "DetectionSupervisionView",
     *,
     sample_id: str,
     image_grid_thw: Sequence[Any],
@@ -30,8 +32,7 @@ def build_coverage_ledger_sidecar(
 ) -> CoverageLedgerSidecar:
     """Extract coverage-ledger supervision from tokenized detection metadata."""
 
-    if type(tokenized) is not DetectionSupervisionView:
-        raise TypeError("tokenized must be a DetectionSupervisionView")
+    _require_detection_supervision_view(tokenized)
     if not tokenized.object_entries:
         raise ValueError("coverage ledger requires at least one tokenized object entry")
 
@@ -78,7 +79,17 @@ def build_coverage_ledger_sidecar(
     )
 
 
-def _coord_value_from_span(tokenized: DetectionSupervisionView, span: TokenSpan) -> int:
+def _require_detection_supervision_view(tokenized: Any) -> None:
+    required_attrs = (
+        "chat_text",
+        "offset_mapping",
+        "object_entries",
+    )
+    if not all(hasattr(tokenized, attr) for attr in required_attrs):
+        raise TypeError("tokenized must be a DetectionSupervisionView")
+
+
+def _coord_value_from_span(tokenized: Any, span: "TokenSpan") -> int:
     _require_one_token_span(span, label=span.label)
     try:
         char_start, char_end = tokenized.offset_mapping[span.start]
@@ -108,7 +119,7 @@ def _coord_value_from_span(tokenized: DetectionSupervisionView, span: TokenSpan)
 
 
 def _required_control_positions(
-    entry: TokenizedObjectEntry,
+    entry: "TokenizedObjectEntry",
     *,
     labels: tuple[str, ...],
 ) -> dict[str, int]:
@@ -137,7 +148,7 @@ def _required_control_positions(
     return positions
 
 
-def _require_one_token_span(span: TokenSpan, *, label: str) -> None:
+def _require_one_token_span(span: "TokenSpan", *, label: str) -> None:
     if span.end - span.start != 1:
         raise ValueError(
             f"coverage ledger requires {label!r} to cover exactly one token; "

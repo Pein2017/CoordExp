@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 from types import SimpleNamespace
 
 import pytest
 import torch
 import torch.nn as nn
+from peft import LoraConfig, get_peft_model
+from peft.utils.save_and_load import get_peft_model_state_dict
 
-from src.sft import _install_coverage_ledger_head_for_training
+from src.sft import (
+    _append_train_arg_module_to_save,
+    _install_coverage_ledger_head_for_training,
+    _require_wrapped_coverage_ledger_head_for_training,
+)
 from src.training.coverage_ledger.head import (
     CoverageLedgerHead,
     install_coverage_ledger_head,
@@ -45,6 +53,24 @@ def _training_config(coverage_ledger_cfg: object) -> SimpleNamespace:
             terms=SimpleNamespace(coverage_ledger=coverage_ledger_cfg)
         )
     )
+
+
+def test_public_sidecar_builder_imports_do_not_cycle() -> None:
+    script = """
+from src.training.coverage_ledger import build_coverage_ledger_sidecar
+from src.training.coverage_ledger.sidecar_builder import build_coverage_ledger_sidecar as direct
+import src.sft
+assert build_coverage_ledger_sidecar is direct
+print("ok")
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    assert "ok" in result.stdout
 
 
 def test_enabled_config_installs_coverage_ledger_head_on_prepared_model() -> None:
@@ -159,3 +185,46 @@ def test_install_prefers_vision_out_hidden_size_for_post_merger_visual_dim() -> 
     assert head is not None
     assert head.region_anchor_state_projection.in_features == 8
     assert head.object_projection.in_features == 9
+
+
+def test_modules_to_save_append_preserves_token_embeddings_adapter_entry() -> None:
+    train_args = SimpleNamespace(
+        modules_to_save=["token_embeddings_adapter"],
+        training_args=SimpleNamespace(modules_to_save=["token_embeddings_adapter"]),
+    )
+
+    _append_train_arg_module_to_save(train_args, "coverage_ledger_head")
+    _append_train_arg_module_to_save(train_args, "coverage_ledger_head")
+
+    assert train_args.modules_to_save == [
+        "token_embeddings_adapter",
+        "coverage_ledger_head",
+    ]
+    assert train_args.training_args.modules_to_save == [
+        "token_embeddings_adapter",
+        "coverage_ledger_head",
+    ]
+
+
+def test_peft_adapter_state_dict_includes_coverage_ledger_head_modules_to_save() -> None:
+    model = _PreparedToyModel(hidden_size=4, visual_dim=None)
+    install_coverage_ledger_head(model, _ledger_cfg(), visual_dim=3)
+    model.config = {"tie_word_embeddings": False, "model_type": "toy"}
+    peft_model = get_peft_model(
+        model,
+        LoraConfig(
+            target_modules=["backbone"],
+            r=2,
+            lora_alpha=2,
+            modules_to_save=["coverage_ledger_head"],
+        ),
+    )
+
+    _require_wrapped_coverage_ledger_head_for_training(peft_model, _ledger_cfg())
+    adapter_state = get_peft_model_state_dict(peft_model)
+
+    assert {
+        "base_model.model.coverage_ledger_head.state_projection.weight",
+        "base_model.model.coverage_ledger_head.region_anchor_state_projection.weight",
+        "base_model.model.coverage_ledger_head.object_projection.weight",
+    }.issubset(adapter_state)

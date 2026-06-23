@@ -2764,12 +2764,69 @@ def _coverage_ledger_cfg_from_training_config(training_config: Any) -> Any | Non
     return getattr(objective_terms_cfg, "coverage_ledger", None)
 
 
+def _append_train_arg_module_to_save(train_args: Any, module_name: str) -> list[str]:
+    modules_to_save: list[str] = list(
+        getattr(train_args, "modules_to_save", []) or []
+    )
+    if module_name not in modules_to_save:
+        modules_to_save.append(module_name)
+    setattr(train_args, "modules_to_save", modules_to_save)
+
+    inner_args = getattr(train_args, "training_args", None)
+    if inner_args is not None:
+        inner_modules_to_save: list[str] = list(
+            getattr(inner_args, "modules_to_save", modules_to_save) or []
+        )
+        for existing_module_name in modules_to_save:
+            if existing_module_name not in inner_modules_to_save:
+                inner_modules_to_save.append(existing_module_name)
+        setattr(inner_args, "modules_to_save", inner_modules_to_save)
+    return modules_to_save
+
+
 def _install_coverage_ledger_head_for_training(
     model: torch.nn.Module,
     training_config: Any,
 ):
     coverage_ledger_cfg = _coverage_ledger_cfg_from_training_config(training_config)
     return install_coverage_ledger_head(model, coverage_ledger_cfg)
+
+
+def _require_wrapped_coverage_ledger_head_for_training(
+    model: torch.nn.Module,
+    coverage_ledger_cfg: Any,
+) -> None:
+    if coverage_ledger_cfg is None:
+        return
+    if isinstance(coverage_ledger_cfg, Mapping):
+        enabled = bool(coverage_ledger_cfg.get("enabled", False))
+    else:
+        enabled = bool(getattr(coverage_ledger_cfg, "enabled", False))
+    if not enabled:
+        return
+
+    required_suffixes = {
+        "state_projection.weight",
+        "region_anchor_state_projection.weight",
+        "object_projection.weight",
+    }
+    found_trainable = {suffix: False for suffix in required_suffixes}
+    for name, parameter in model.named_parameters():
+        if ".coverage_ledger_head." not in f".{name}.":
+            continue
+        for suffix in required_suffixes:
+            if name == suffix or name.endswith(f".{suffix}"):
+                found_trainable[suffix] = found_trainable[suffix] or bool(
+                    parameter.requires_grad
+                )
+    missing_trainable = sorted(
+        suffix for suffix, is_trainable in found_trainable.items() if not is_trainable
+    )
+    if missing_trainable:
+        raise RuntimeError(
+            "coverage_ledger_head was not active after prepare_model; "
+            f"missing_trainable={missing_trainable}"
+        )
 
 
 @_torch_elastic_record
@@ -3007,12 +3064,7 @@ def main():
             tie_head=getattr(token_embeddings_adapter_cfg, "tie_head", True),
             dtype=token_embeddings_adapter_cfg.dtype,
         )
-        modules_to_save: list[str] = list(
-            getattr(train_args, "modules_to_save", []) or []
-        )
-        if adapter.module_name not in modules_to_save:
-            modules_to_save.append(adapter.module_name)
-            setattr(train_args, "modules_to_save", modules_to_save)
+        _append_train_arg_module_to_save(train_args, adapter.module_name)
         # Sanity check against vocab size when available
         vocab_size = getattr(getattr(sft.model, "config", None), "vocab_size", None)
         max_id = int(adapter.token_ids.max().item())
@@ -3028,6 +3080,13 @@ def main():
             f"tie_head={getattr(token_embeddings_adapter_cfg, 'tie_head', True)}, "
             f"dtype={token_embeddings_adapter_cfg.dtype or 'auto'}"
         )
+    coverage_ledger_head = _install_coverage_ledger_head_for_training(
+        sft.model,
+        training_config,
+    )
+    if coverage_ledger_head is not None:
+        _append_train_arg_module_to_save(train_args, "coverage_ledger_head")
+        logger.info("Coverage ledger head installed before tuner wrapping")
     logger.info(f"Model: {train_args.model}")
     logger.info(f"Training type: {train_args.train_type}")
     if rlhf_type:
@@ -4019,12 +4078,10 @@ def main():
                 "This would leave coordinate/token-row offsets unsaved or inactive."
             )
         logger.info("Reattached token_embeddings_adapter hooks on wrapped model")
-    coverage_ledger_head = _install_coverage_ledger_head_for_training(
+    _require_wrapped_coverage_ledger_head_for_training(
         sft.model,
-        training_config,
+        _coverage_ledger_cfg_from_training_config(training_config),
     )
-    if coverage_ledger_head is not None:
-        logger.info("Installed coverage_ledger_head on wrapped trainable model")
     logger.info(f"Model after tuner: {type(sft.model).__name__}")
 
     # Setup trainer
