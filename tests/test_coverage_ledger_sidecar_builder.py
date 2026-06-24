@@ -169,8 +169,8 @@ def test_build_coverage_ledger_sidecar_accepts_canonical_norm1000_edge() -> None
         (
             "<|coord_0|>",
             "<|coord_0|>",
-            "<|coord_1000|>",
-            "<|coord_1000|>",
+            "<|coord_999|>",
+            "<|coord_999|>",
         ),
     )
 
@@ -183,13 +183,14 @@ def test_build_coverage_ledger_sidecar_accepts_canonical_norm1000_edge() -> None
         image_identity="image.jpg",
     )
 
-    assert sidecar.object_entries[0].bbox_norm1000_xyxy == (0, 0, 1000, 1000)
+    assert sidecar.object_entries[0].bbox_norm1000_xyxy == (0, 0, 999, 999)
 
 
 @pytest.mark.parametrize(
     "coord_token",
     (
         "<|coord_1001|>",
+        "<|coord_1000|>",
         "<|coord_001|>",
         "<|coord_+1|>",
         "<|coord_1.0|>",
@@ -199,7 +200,7 @@ def test_build_coverage_ledger_sidecar_rejects_invalid_coord_token_text(
     coord_token: str,
 ) -> None:
     tokenized = _with_coord_token_texts(
-        ("<|coord_0|>", "<|coord_0|>", coord_token, "<|coord_1000|>"),
+        ("<|coord_0|>", "<|coord_0|>", coord_token, "<|coord_999|>"),
     )
 
     with pytest.raises(ValueError, match="coord"):
@@ -286,6 +287,17 @@ def test_coverage_ledger_sidecar_validates_object_contract() -> None:
             sample_id="coco:0",
             prompt_end_position=9,
             object_entries=(replace(entry, bbox_norm1000_xyxy=(10, 20, 10, 400)),),
+            image_grid_thw=(1, 16, 16),
+            processed_width=640,
+            processed_height=480,
+            image_identity="image.jpg",
+        )
+
+    with pytest.raises(ValueError, match="bbox_norm1000_xyxy"):
+        CoverageLedgerSidecar(
+            sample_id="coco:0",
+            prompt_end_position=9,
+            object_entries=(replace(entry, bbox_norm1000_xyxy=(10, 20, 999, 1000)),),
             image_grid_thw=(1, 16, 16),
             processed_width=640,
             processed_height=480,

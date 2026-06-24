@@ -9,6 +9,7 @@ import pytest
 
 import src.config.loader as config_loader
 from src.config.loader import ConfigLoader
+from src.common.model_paths import canonical_coordexp_repo_root
 from src.config.schema import DetectionTrainingConfig
 from src.config.strict_dataclass import dataclass_asdict_no_none
 from src.detection.dataset import DetectionTrainingDataset
@@ -184,6 +185,8 @@ def _assert_shared_closed_hard_sft_smoke_config(resolved: dict[str, Any]) -> Non
     assert resolved["evaluation"]["expected_template"] == "compact_object_box_closed"
     assert resolved["objective"]["id"] == "research_teacher_forcing"
     assert resolved["objective"]["profile"] == "hard_sft"
+    assert resolved["objective"]["target_ir"]["rollin_policy"]["name"] == "sorted"
+    assert resolved["sample_factory"]["target_sequence"]["object_ordering"] == "sorted"
 
     assert resolved["training"]["packing"] is False
     assert resolved["training"]["eval_packing"] is False
@@ -232,6 +235,30 @@ def test_coverage_ledger_smoke_config_pair_loads_closed_hard_sft_contract(
     ledger_args = _load_runtime_args(LEDGER_CONFIG, monkeypatch)
     assert baseline_args.gradient_accumulation_steps == 1
     assert ledger_args.gradient_accumulation_steps == 1
+    assert baseline_args.model_type == "qwen3_vl"
+    assert ledger_args.model_type == "qwen3_vl"
+    assert baseline_args.model == ledger_args.model
+    assert baseline_args.model == str(
+        canonical_coordexp_repo_root()
+        / "model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp"
+    )
+
+
+def test_coverage_ledger_smoke_configs_load_real_swift_train_arguments() -> None:
+    expected_model = str(
+        canonical_coordexp_repo_root()
+        / "model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp"
+    )
+    for path in (BASELINE_CONFIG, LEDGER_CONFIG):
+        args, cfg = ConfigLoader.load_training_config(str(path))
+
+        assert isinstance(cfg, DetectionTrainingConfig)
+        assert args.model == expected_model
+        assert args.model_type == "qwen3_vl"
+        assert args.gradient_accumulation_steps == 1
+        assert cfg.detection_template.id == "compact_object_box_closed"
+        assert cfg.sample_factory.target_sequence.object_ordering == "sorted"
+        assert cfg.objective.target_ir.rollin_policy.name == "sorted"
 
 
 def test_coverage_ledger_smoke_config_pair_only_differs_on_allowlisted_fields() -> None:
@@ -356,6 +383,9 @@ def test_coverage_ledger_preflight_dataset_matches_smoke_training_samples(
             ledger_cfg.sample_factory.target_sequence.object_field_order
         ),
         teacher_forcing_profile=str(ledger_cfg.objective.profile),
+        teacher_forcing_rollin_policy=str(
+            ledger_cfg.objective.target_ir.rollin_policy.name
+        ),
         teacher_forcing_rollin_base_seed=int(
             ledger_cfg.objective.target_ir.rollin_policy.base_seed
         ),
@@ -367,6 +397,8 @@ def test_coverage_ledger_preflight_dataset_matches_smoke_training_samples(
 
     assert preflight_dataset.source_row_indices == selected_row_indices
     assert preflight_dataset.source_row_indices == training_dataset.source_row_indices
+    assert preflight_dataset.config.teacher_forcing_rollin_policy == "sorted"
+    assert training_dataset.config.teacher_forcing_rollin_policy == "sorted"
     preflight_sample = preflight_dataset[0]
     training_sample = training_dataset[0]
 

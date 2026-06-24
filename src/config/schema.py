@@ -3891,14 +3891,14 @@ class GibbsCoordSoftCEConfig(CoordSoftCEConfig):
 
 @dataclass(frozen=True)
 class TeacherForcingRollinPolicyConfig:
-    name: Literal["random_permutation"] = "random_permutation"
+    name: Literal["random_permutation", "sorted"] = "random_permutation"
     base_seed: int = 17
 
     def __post_init__(self) -> None:
         _detection_validate_choice(
             self.name,
             path="objective.target_ir.rollin_policy.name",
-            allowed={"random_permutation"},
+            allowed={"random_permutation", "sorted"},
         )
         if not isinstance(self.base_seed, int) or isinstance(self.base_seed, bool):
             raise TypeError(

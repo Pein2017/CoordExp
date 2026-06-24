@@ -18,6 +18,7 @@ from src.common.object_field_order import (
     normalize_object_field_order,
     normalize_object_ordering,
 )
+from src.common.model_paths import normalize_coordexp_base_model_path
 from src.common.geometry.bbox_parameterization import normalize_bbox_format
 from src.common.detection_sequence import (
     COMPACT_FULL_FORMAT,
@@ -641,6 +642,9 @@ class ConfigLoader:
         is_detection = isinstance(config, DetectionTrainingConfig)
         runtime_trainer_variant = ConfigLoader._runtime_trainer_variant_for_config(config)
         model_section = dict(config.model)
+        model_path = model_section.get("model")
+        if model_path is not None:
+            model_section["model"] = normalize_coordexp_base_model_path(str(model_path))
         quant_section = dict(config.quantization)
         data_section = (
             {"dataset": ["dummy"], "val_dataset": ["dummy"]}

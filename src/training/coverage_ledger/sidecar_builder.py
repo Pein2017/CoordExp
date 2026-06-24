@@ -6,6 +6,7 @@ import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
+from src.training.coverage_ledger.geometry import MAX_BIN
 from src.training.coverage_ledger.sidecars import (
     CoverageLedgerObjectEntry,
     CoverageLedgerSidecar,
@@ -109,11 +110,9 @@ def _coord_value_from_span(tokenized: Any, span: "TokenSpan") -> int:
         raise ValueError(
             f"coord span {span.label!r} must use canonical integer text"
         )
-    # The ledger sidecar stores norm-1000 geometry, whose valid upper boundary
-    # is 1000 even while current trainable coord-token adapter rows are 0..999.
-    if coord_value > 1000:
+    if not (0 <= coord_value <= MAX_BIN):
         raise ValueError(
-            f"coord span {span.label!r} must be in the 0..1000 range"
+            f"coord span {span.label!r} must be in the 0..{MAX_BIN} range"
         )
     return coord_value
 

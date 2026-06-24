@@ -5,6 +5,10 @@ extends:
 detection_template:
   id: compact_object_box_closed
 
+sample_factory:
+  target_sequence:
+    object_ordering: sorted
+
 token_embeddings_adapter:
   groups:
     compact_structure:
@@ -22,6 +26,9 @@ token_embeddings_adapter:
 
 objective:
   profile: hard_sft
+  target_ir:
+    rollin_policy:
+      name: sorted
   terms:
     token_type_mass:
       enabled: false

@@ -15,6 +15,7 @@ from src.sft import (
     _install_coverage_ledger_head_for_training,
     _require_wrapped_coverage_ledger_head_for_training,
 )
+from src.training.bridge import TrainerLossBridge, TrainerLossBridgeSettings
 from src.training.coverage_ledger.head import (
     CoverageLedgerHead,
     install_coverage_ledger_head,
@@ -228,3 +229,42 @@ def test_peft_adapter_state_dict_includes_coverage_ledger_head_modules_to_save()
         "base_model.model.coverage_ledger_head.region_anchor_state_projection.weight",
         "base_model.model.coverage_ledger_head.object_projection.weight",
     }.issubset(adapter_state)
+
+
+def test_loss_bridge_resolves_and_updates_active_peft_coverage_ledger_head() -> None:
+    model = _PreparedToyModel(hidden_size=4, visual_dim=None)
+    install_coverage_ledger_head(model, _ledger_cfg(), visual_dim=3)
+    model.config = {"tie_word_embeddings": False, "model_type": "toy"}
+    peft_model = get_peft_model(
+        model,
+        LoraConfig(
+            target_modules=["backbone"],
+            r=2,
+            lora_alpha=2,
+            modules_to_save=["coverage_ledger_head"],
+        ),
+    )
+    wrapper = peft_model.base_model.model.coverage_ledger_head
+    active_adapter = wrapper.active_adapter
+    assert isinstance(active_adapter, str)
+    active_head = wrapper.modules_to_save[active_adapter]
+
+    bridge = TrainerLossBridge(
+        settings=TrainerLossBridgeSettings(coverage_ledger=_ledger_cfg())
+    )
+    resolved_head = bridge._require_coverage_ledger_head(peft_model)
+
+    assert resolved_head is active_head
+    assert isinstance(resolved_head, CoverageLedgerHead)
+
+    before = active_head.state_projection.weight.detach().clone()
+    optimizer = torch.optim.SGD(active_head.parameters(), lr=0.1)
+    loss = (
+        resolved_head.state_projection(torch.ones((1, 4))).sum()
+        + resolved_head.region_anchor_state_projection(torch.ones((1, 4))).sum()
+        + resolved_head.object_projection(torch.ones((1, 3))).sum()
+    )
+    loss.backward()
+    optimizer.step()
+
+    assert not torch.equal(before, active_head.state_projection.weight)

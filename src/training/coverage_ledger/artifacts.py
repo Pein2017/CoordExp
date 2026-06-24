@@ -15,6 +15,7 @@ from src.training.coverage_ledger.sidecars import (
     CoverageLedgerObjectEntry,
     CoverageLedgerSidecar,
 )
+from src.training.coverage_ledger.geometry import norm1000_bbox_to_pixel_bbox
 from src.training.coverage_ledger.visual_regions import VisualTokenRegion
 
 
@@ -325,13 +326,11 @@ def _render_overlay(
                 width=1,
             )
 
-    x1, y1, x2, y2 = object_entry.bbox_norm1000_xyxy
-    bbox = [
-        round(x1 / 1000.0 * width),
-        round(y1 / 1000.0 * height),
-        round(x2 / 1000.0 * width),
-        round(y2 / 1000.0 * height),
-    ]
+    bbox = _norm1000_bbox_to_pixel_bbox(
+        object_entry.bbox_norm1000_xyxy,
+        width=width,
+        height=height,
+    )
     draw.rectangle(bbox, outline=(255, 48, 48, 255), width=3)
     label = (
         f"{sample_id} obj={object_entry.emitted_order_index} "
@@ -342,6 +341,19 @@ def _render_overlay(
     draw.text((8, 8), label, fill=(255, 255, 255, 255))
 
     Image.alpha_composite(base, overlay).convert("RGB").save(output_path)
+
+
+def _norm1000_bbox_to_pixel_bbox(
+    bbox_norm1000_xyxy: Sequence[Any],
+    *,
+    width: int,
+    height: int,
+) -> list[int]:
+    return norm1000_bbox_to_pixel_bbox(
+        bbox_norm1000_xyxy,
+        width=int(width),
+        height=int(height),
+    )
 
 
 def _sha256_file(path: Path) -> str:

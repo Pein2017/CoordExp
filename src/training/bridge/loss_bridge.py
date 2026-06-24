@@ -375,18 +375,22 @@ class TrainerLossBridge:
 
         heads: list[CoverageLedgerHead] = []
         direct_head = getattr(model, "coverage_ledger_head", None)
-        if isinstance(direct_head, CoverageLedgerHead):
-            heads.append(direct_head)
+        resolved_direct = self._resolve_coverage_ledger_head_module(direct_head)
+        if resolved_direct is not None:
+            heads.append(resolved_direct)
 
         named_modules = getattr(model, "named_modules", None)
         if callable(named_modules):
             for name, module in named_modules():
-                if (
-                    (name == "coverage_ledger_head" or name.endswith(".coverage_ledger_head"))
-                    and isinstance(module, CoverageLedgerHead)
-                    and all(id(module) != id(existing) for existing in heads)
+                if name != "coverage_ledger_head" and not name.endswith(
+                    ".coverage_ledger_head"
                 ):
-                    heads.append(module)
+                    continue
+                resolved = self._resolve_coverage_ledger_head_module(module)
+                if resolved is not None and all(
+                    id(resolved) != id(existing) for existing in heads
+                ):
+                    heads.append(resolved)
 
         if len(heads) != 1:
             raise ValueError(
@@ -394,6 +398,46 @@ class TrainerLossBridge:
                 f"coverage_ledger_head; got {len(heads)}"
             )
         return heads[0]
+
+    @staticmethod
+    def _resolve_coverage_ledger_head_module(module: Any) -> CoverageLedgerHead | None:
+        """Resolve a bare head or PEFT modules_to_save wrapper to the active head."""
+
+        if isinstance(module, CoverageLedgerHead):
+            return module
+        if module is None:
+            return None
+
+        modules_to_save = getattr(module, "modules_to_save", None)
+        active_names = TrainerLossBridge._active_adapter_names(module)
+        if modules_to_save is not None:
+            for adapter_name in active_names:
+                try:
+                    candidate = modules_to_save[adapter_name]
+                except (KeyError, TypeError, AttributeError):
+                    continue
+                if isinstance(candidate, CoverageLedgerHead):
+                    return candidate
+
+        original = getattr(module, "original_module", None)
+        if isinstance(original, CoverageLedgerHead):
+            return original
+        return None
+
+    @staticmethod
+    def _active_adapter_names(module: Any) -> tuple[str, ...]:
+        active = getattr(module, "active_adapter", None)
+        if isinstance(active, str) and active:
+            return (active,)
+        if isinstance(active, Sequence) and not isinstance(active, (str, bytes)):
+            return tuple(str(item) for item in active if str(item))
+        active_adapters = getattr(module, "active_adapters", None)
+        if isinstance(active_adapters, Sequence) and not isinstance(
+            active_adapters,
+            (str, bytes),
+        ):
+            return tuple(str(item) for item in active_adapters if str(item))
+        return ("default",)
 
     def _coverage_ledger_loss_config(self) -> CoverageLedgerLossConfig:
         """Translate bridge settings into the coverage-ledger loss config."""

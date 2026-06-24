@@ -10,6 +10,7 @@ from typing import Any
 from src.config.loader import ConfigLoader
 from src.config.schema import CoordTokensConfig, DetectionTrainingConfig
 from src.config.strict_dataclass import dataclass_asdict_no_none
+from src.common.model_paths import canonical_coordexp_repo_root
 from src.coord_tokens.template_adapter import apply_coord_template_adapter
 from src.detection.dataset_selection import (
     DatasetRowSelectionConfig,
@@ -291,6 +292,9 @@ def build_coverage_ledger_preflight_training_dataset(
             training_config.sample_factory.target_sequence.object_field_order
         ),
         teacher_forcing_profile=str(training_config.objective.profile),
+        teacher_forcing_rollin_policy=str(
+            training_config.objective.target_ir.rollin_policy.name
+        ),
         teacher_forcing_rollin_base_seed=int(
             training_config.objective.target_ir.rollin_policy.base_seed
         ),
@@ -405,7 +409,15 @@ def _resolve_repo_path(path_value: str | Path) -> Path:
     path = Path(path_value).expanduser()
     if path.is_absolute():
         return path.resolve(strict=False)
-    return (REPO_ROOT / path).resolve(strict=False)
+    worktree_path = (REPO_ROOT / path).resolve(strict=False)
+    if path.parts and path.parts[0] in {"model_cache", "public_data"}:
+        return (canonical_coordexp_repo_root() / path).resolve(strict=False)
+    if worktree_path.exists():
+        return worktree_path
+    canonical_path = (canonical_coordexp_repo_root() / path).resolve(strict=False)
+    if canonical_path.exists():
+        return canonical_path
+    return worktree_path
 
 
 def _resolve_local_model_path(path_value: str | Path) -> Path | None:
@@ -414,7 +426,7 @@ def _resolve_local_model_path(path_value: str | Path) -> Path | None:
     if path.is_absolute():
         return path.resolve(strict=False)
     if text.startswith(("model_cache/", "./", "../")):
-        return (REPO_ROOT / path).resolve(strict=False)
+        return _resolve_repo_path(path)
     return None
 
 

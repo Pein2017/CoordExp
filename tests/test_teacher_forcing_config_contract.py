@@ -199,6 +199,18 @@ def test_latest_teacher_forcing_accepts_supported_profiles(profile: str) -> None
     assert cfg.objective.target_ir.rollin_policy.base_seed == 17
 
 
+def test_teacher_forcing_accepts_sorted_rollin_policy() -> None:
+    payload = _latest_teacher_payload()
+    payload["sample_factory"]["target_sequence"]["object_ordering"] = "sorted"
+    payload["objective"]["target_ir"]["rollin_policy"]["name"] = "sorted"
+
+    cfg = DetectionTrainingConfig.from_mapping(payload)
+
+    assert cfg.objective.id == "research_teacher_forcing"
+    assert cfg.objective.target_ir.rollin_policy.name == "sorted"
+    assert cfg.sample_factory.target_sequence.object_ordering == "sorted"
+
+
 def test_sft_runtime_payload_preserves_public_teacher_forcing_sidecars() -> None:
     from src.sft import _detection_objective_runtime_payload
 

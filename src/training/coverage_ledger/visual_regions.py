@@ -10,6 +10,11 @@ from typing import Any
 
 import torch
 
+from src.training.coverage_ledger.geometry import (
+    norm1000_bbox_to_pixel_bbox,
+    validate_norm1000_bbox_xyxy,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class VisualTokenRegion:
@@ -50,7 +55,7 @@ def map_norm1000_bbox_to_visual_token_region(
 ) -> VisualTokenRegion:
     """Return the minimal enclosing post-merger token-cell region for a bbox."""
 
-    x1, y1, x2, y2 = _validate_norm1000_bbox(bbox_norm1000_xyxy)
+    bbox = validate_norm1000_bbox_xyxy(bbox_norm1000_xyxy)
     grid_t, grid_h, grid_w = _normalize_single_image_grid(image_grid_thw)
     if grid_t != 1:
         raise ValueError("coverage ledger v0 supports exactly one image and one frame")
@@ -104,10 +109,11 @@ def map_norm1000_bbox_to_visual_token_region(
             f"got cell_height={cell_height}, patch_size={patch}, "
             f"spatial_merge_size={merge_size}"
         )
-    x1_px = x1 / 1000.0 * width
-    y1_px = y1 / 1000.0 * height
-    x2_px = x2 / 1000.0 * width
-    y2_px = y2 / 1000.0 * height
+    x1_px, y1_px, x2_px, y2_px = norm1000_bbox_to_pixel_bbox(
+        bbox,
+        width=int(width),
+        height=int(height),
+    )
 
     col_start = _clamp(math.floor(x1_px / cell_width), 0, post_cols - 1)
     row_start = _clamp(math.floor(y1_px / cell_height), 0, post_rows - 1)
@@ -160,24 +166,6 @@ def pool_object_visual_embeddings(
         )
         pooled.append(detached.index_select(0, index_tensor).mean(dim=0))
     return torch.stack(pooled, dim=0)
-
-
-def _validate_norm1000_bbox(values: Sequence[Any]) -> tuple[float, float, float, float]:
-    if isinstance(values, (str, bytes)) or not isinstance(values, Sequence):
-        raise TypeError("bbox_norm1000_xyxy must be a sequence")
-    bbox = tuple(values)
-    if len(bbox) != 4:
-        raise ValueError("bbox_norm1000_xyxy must contain exactly four values")
-    x1, y1, x2, y2 = (
-        _require_finite_real(value, field_name=f"bbox_norm1000_xyxy[{index}]")
-        for index, value in enumerate(bbox)
-    )
-    if not (0.0 <= x1 < x2 <= 1000.0 and 0.0 <= y1 < y2 <= 1000.0):
-        raise ValueError(
-            "bbox_norm1000_xyxy must satisfy "
-            "0 <= x1 < x2 <= 1000 and 0 <= y1 < y2 <= 1000"
-        )
-    return x1, y1, x2, y2
 
 
 def _normalize_single_image_grid(image_grid_thw: Any) -> tuple[int, int, int]:

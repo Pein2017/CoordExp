@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from src.training.coverage_ledger.geometry import validate_norm1000_bbox_xyxy
+
 
 def _require_plain_int(value: object, *, field_name: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool):
@@ -198,18 +200,7 @@ class CoverageLedgerSidecar:
 
 
 def _validate_bbox(value: Sequence[object]) -> tuple[int, int, int, int]:
-    bbox = _freeze_int_tuple(
-        value,
-        field_name="bbox_norm1000_xyxy",
-        expected_len=4,
-    )
-    x1, y1, x2, y2 = bbox
-    if not (0 <= x1 < x2 <= 1000 and 0 <= y1 < y2 <= 1000):
-        raise ValueError(
-            "bbox_norm1000_xyxy must satisfy "
-            "0 <= x1 < x2 <= 1000 and 0 <= y1 < y2 <= 1000"
-        )
-    return bbox
+    return validate_norm1000_bbox_xyxy(value)
 
 
 def _freeze_object_entries(

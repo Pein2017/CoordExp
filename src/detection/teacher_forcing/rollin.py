@@ -44,10 +44,15 @@ def random_permutation_rollin(
     return tuple(ordered)
 
 
+def ordered_rollin(items: Sequence[T]) -> tuple[T, ...]:
+    return tuple(items)
+
+
 __all__ = [
     "DEFAULT_ROLLIN_BASE_SEED",
     "ROLLIN_POLICY_NAME",
     "ROLLIN_POLICY_VERSION",
     "derive_rollin_seed",
+    "ordered_rollin",
     "random_permutation_rollin",
 ]

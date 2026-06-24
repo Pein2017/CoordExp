@@ -200,12 +200,16 @@ def detection_mode(
                 "objective.profile in {'hard_sft', 'pure_valid_set_marginal'}"
             )
         rollin_policy = training_config.objective.target_ir.rollin_policy
+        if rollin_policy.name == "random_permutation":
+            return "random_order_sft"
+        if rollin_policy.name == "sorted":
+            return "sorted_sft"
         if rollin_policy.name != "random_permutation":
             raise ValueError(
                 "teacher_forcing detection runtime currently supports only "
-                "objective.target_ir.rollin_policy.name=random_permutation"
+                "objective.target_ir.rollin_policy.name in "
+                "{'random_permutation', 'sorted'}"
             )
-        return "random_order_sft"
 
     variant = training_config.objective.variant
     supported = {
@@ -537,6 +541,9 @@ def build_detection_dataset(
         state_weighting = "uniform_permutation"
         normalization = "semantic_image_bucket_balanced"
         teacher_forcing_profile = str(getattr(objective, "profile"))
+        teacher_forcing_rollin_policy = str(
+            getattr(objective.target_ir.rollin_policy, "name")
+        )
         teacher_forcing_rollin_base_seed = int(
             getattr(objective.target_ir.rollin_policy, "base_seed")
         )
@@ -549,6 +556,7 @@ def build_detection_dataset(
         state_weighting = getattr(objective, "state_weighting")
         normalization = getattr(objective, "normalization")
         teacher_forcing_profile = None
+        teacher_forcing_rollin_policy = "random_permutation"
         teacher_forcing_rollin_base_seed = None
         coverage_ledger_enabled = False
     return DetectionTrainingDataset.from_jsonl(
@@ -568,6 +576,7 @@ def build_detection_dataset(
         ),
         type_gate_config=type_gate_config,
         teacher_forcing_profile=teacher_forcing_profile,
+        teacher_forcing_rollin_policy=teacher_forcing_rollin_policy,
         teacher_forcing_rollin_base_seed=teacher_forcing_rollin_base_seed,
         coverage_ledger_enabled=coverage_ledger_enabled,
         sample_limit=sample_limit,

@@ -231,6 +231,7 @@ class DetectionDatasetRuntimeConfig:
     object_field_order: ObjectFieldOrder = "desc_first"
     type_gate_config: Any | None = None
     teacher_forcing_profile: str | None = None
+    teacher_forcing_rollin_policy: str = "random_permutation"
     teacher_forcing_rollin_base_seed: int | None = None
     coverage_ledger_enabled: bool = False
 
@@ -333,6 +334,7 @@ class DetectionTrainingDataset(Dataset):
         object_field_order: str = "desc_first",
         type_gate_config: Any | None = None,
         teacher_forcing_profile: str | None = None,
+        teacher_forcing_rollin_policy: str = "random_permutation",
         teacher_forcing_rollin_base_seed: int | None = None,
         coverage_ledger_enabled: bool = False,
         sample_limit: int | None = None,
@@ -387,6 +389,7 @@ class DetectionTrainingDataset(Dataset):
                 normalization=str(normalization),
                 type_gate_config=type_gate_config,
                 teacher_forcing_profile=teacher_forcing_profile,
+                teacher_forcing_rollin_policy=str(teacher_forcing_rollin_policy),
                 teacher_forcing_rollin_base_seed=teacher_forcing_rollin_base_seed,
                 coverage_ledger_enabled=coverage_ledger_enabled,
             ),
@@ -497,6 +500,7 @@ class DetectionTrainingDataset(Dataset):
                 epoch=self._epoch,
                 stable_sample_id=str(sample_id),
                 base_seed=int(self.config.teacher_forcing_rollin_base_seed or 17),
+                policy_name=str(self.config.teacher_forcing_rollin_policy),
                 input_prefix_token_id=self._teacher_forcing_input_prefix_token_id(),
             )
             if not build_result.ok:

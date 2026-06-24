@@ -5,6 +5,7 @@
 # token_embeddings_adapter, and fail-fast no-packing semantics.
 model:
   model: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+  model_type: qwen3_vl
   attn_impl: flash_attention_2
   torch_dtype: bfloat16
 

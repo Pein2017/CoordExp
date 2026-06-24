@@ -255,6 +255,7 @@ def _build(
     epoch: int = 3,
     stable_sample_id: str = "sample-42",
     max_length: int | None = None,
+    policy_name: str = "random_permutation",
     tokenizer: TinyContextTokenizer | None = None,
 ):
     tok = tokenizer or TinyContextTokenizer()
@@ -266,6 +267,7 @@ def _build(
         epoch=epoch,
         stable_sample_id=stable_sample_id,
         max_length=max_length,
+        policy_name=policy_name,
     )
     return result, tok
 
@@ -671,6 +673,22 @@ def test_rollin_seed_derives_from_base_seed_epoch_sample_id_policy_name_and_vers
         policy_version=1,
     )
     assert changed != expected
+
+
+def test_sorted_rollin_policy_preserves_source_order() -> None:
+    sample = _sample(
+        (
+            _object("cat", (1, 2, 10, 20), index=0, source_index=20),
+            _object("dog", (3, 4, 30, 40), index=1, source_index=10),
+        )
+    )
+
+    result, _tokenizer = _build(sample, policy_name="sorted")
+
+    assert result.target_ir is not None
+    assert result.target_ir.metadata["rollin_policy"] == "sorted"
+    assert result.target_ir.metadata["selected_normalized_object_indices"] == (0, 1)
+    assert result.target_ir.metadata["selected_source_object_indices"] == (20, 10)
 
 
 def test_invalid_description_drops_sample_without_partial_ir() -> None:

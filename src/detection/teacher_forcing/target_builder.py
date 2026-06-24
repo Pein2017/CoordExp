@@ -32,6 +32,7 @@ from src.detection.teacher_forcing.rollin import (
     ROLLIN_POLICY_NAME,
     ROLLIN_POLICY_VERSION,
     derive_rollin_seed,
+    ordered_rollin,
     random_permutation_rollin,
 )
 from src.detection.teacher_forcing.trie import (
@@ -138,10 +139,16 @@ class TeacherForcingTargetBuilder:
                 )
                 for index, obj in enumerate(parsed.objects)
             }
-            rollin_indices = random_permutation_rollin(
-                tuple(range(len(parsed.objects))),
-                seed=seed,
-            )
+            source_indices = tuple(range(len(parsed.objects)))
+            if self.policy_name == "random_permutation":
+                rollin_indices = random_permutation_rollin(source_indices, seed=seed)
+            elif self.policy_name == "sorted":
+                rollin_indices = ordered_rollin(source_indices)
+            else:
+                raise ValueError(
+                    "teacher-forcing rollin policy must be one of "
+                    "{'random_permutation', 'sorted'}"
+                )
             rendered_text = "".join(
                 prepared_by_index[index].rendered_text for index in rollin_indices
             )
@@ -221,6 +228,7 @@ def build_teacher_forcing_target(
     stable_sample_id: str | None = None,
     max_length: int | None = None,
     base_seed: int = DEFAULT_ROLLIN_BASE_SEED,
+    policy_name: str = ROLLIN_POLICY_NAME,
     input_prefix_token_id: int | None = None,
 ) -> TeacherForcingBuildResult:
     builder = TeacherForcingTargetBuilder(
@@ -232,6 +240,7 @@ def build_teacher_forcing_target(
         ),
         profile=profile,
         base_seed=base_seed,
+        policy_name=policy_name,
         input_prefix_token_id=input_prefix_token_id,
     )
     return builder.build(

@@ -9,10 +9,12 @@ import pytest
 from PIL import Image
 
 from src.config.loader import ConfigLoader
+from src.common.model_paths import canonical_coordexp_repo_root
 from src.detection.dataset import DetectionTrainingDataset
 from src.training.coverage_ledger.artifacts import (
     CoverageLedgerOverlayCandidate,
     CoverageLedgerPreflightArtifactInputs,
+    _norm1000_bbox_to_pixel_bbox,
     write_coverage_ledger_preflight_artifacts,
 )
 from src.training.coverage_ledger.preflight import (
@@ -226,6 +228,21 @@ def test_artifact_writer_rejects_stale_overlay_files(tmp_path: Path) -> None:
         write_coverage_ledger_preflight_artifacts(inputs)
 
 
+def test_overlay_bbox_conversion_uses_coordexp_norm999_contract() -> None:
+    assert _norm1000_bbox_to_pixel_bbox(
+        (0, 0, 999, 999),
+        width=80,
+        height=80,
+    ) == [0, 0, 79, 79]
+
+    with pytest.raises(ValueError, match="bbox_norm1000_xyxy"):
+        _norm1000_bbox_to_pixel_bbox(
+            (0, 0, 1000, 999),
+            width=80,
+            height=80,
+        )
+
+
 def test_preflight_enforces_smoke_config_diff_allowlist() -> None:
     baseline = ConfigLoader.load_materialized_training_config(str(BASELINE_CONFIG))
     ledger = ConfigLoader.load_materialized_training_config(str(LEDGER_CONFIG))
@@ -299,7 +316,7 @@ def test_preflight_prerequisite_guards_fail_before_swift_download(
         _require_existing_path(missing_model, "model cache")
 
     assert _resolve_local_model_path("model_cache/models/local") == (
-        REPO_ROOT / "model_cache/models/local"
+        canonical_coordexp_repo_root() / "model_cache/models/local"
     ).resolve(strict=False)
     assert _resolve_local_model_path("Qwen/Qwen3-VL-2B-Instruct") is None
 

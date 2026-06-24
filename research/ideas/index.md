@@ -7,4 +7,5 @@ or a final conclusion to live here.
 
 ## Current Pilots
 
+- [Ledger Auxiliary Loss](ledger-auxiliary-loss/)
 - [Prefix Denoising SFT](prefix-denoising-sft/)
