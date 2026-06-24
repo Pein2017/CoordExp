@@ -94,6 +94,51 @@ class _FakeTrainableWrapper:
         return self.base_model
 
 
+class _FakeLoraFacade:
+    def __init__(self, base_model: _FakeQwenForConditionalGeneration) -> None:
+        self.config = base_model.config
+        self.model = base_model
+        self.get_image_features_calls = 0
+        self.peft_config = {"default": object()}
+
+    @property
+    def lm_head(self) -> torch.nn.Linear:
+        return self.model.lm_head
+
+    def get_image_features(
+        self,
+        pixel_values: torch.Tensor,
+        image_grid_thw: torch.Tensor | None = None,
+    ) -> Any:
+        self.get_image_features_calls += 1
+        return self.model.get_image_features(pixel_values, image_grid_thw)
+
+    def __call__(self, **kwargs: Any) -> _FakeConditionalOutput:
+        return self.model(**kwargs)
+
+
+class _FakePeftConditionalWrapper:
+    def __init__(self, base_model: _FakeQwenForConditionalGeneration) -> None:
+        self.config = base_model.config
+        self.base_model = _FakeLoraFacade(base_model)
+        self.model = self.base_model
+        self.peft_config = {"default": object()}
+
+    @property
+    def lm_head(self) -> torch.nn.Linear:
+        return self.base_model.lm_head
+
+    def get_base_model(self) -> _FakeQwenForConditionalGeneration:
+        return self.base_model.model
+
+    def __call__(self, **kwargs: Any) -> _FakeConditionalOutput:
+        return self.base_model(**kwargs)
+
+
+_FakeLoraFacade.__module__ = "peft.tuners.lora.model"
+_FakePeftConditionalWrapper.__module__ = "peft.peft_model"
+
+
 def _qwen_inputs(*, image_token_id: int = 32000) -> dict[str, Any]:
     return {
         "input_ids": torch.tensor([[11, image_token_id, image_token_id, 12]]),
@@ -218,6 +263,24 @@ def test_capture_unwraps_trainable_wrapper_without_copying_base_model() -> None:
 
     assert capture.logits.shape == (1, 4, model.config.text_config.vocab_size)
     assert model.model.get_image_features_calls == 1
+    assert len(model.model.forward_calls) == 1
+
+
+def test_capture_unwraps_peft_facade_before_hooking_image_features() -> None:
+    model = _FakeQwenForConditionalGeneration()
+    wrapper = _FakePeftConditionalWrapper(model)
+
+    capture = CoverageLedgerForwardCapture().capture(
+        model=wrapper,
+        inputs=_qwen_inputs(),
+        ignored_keys=("labels", "training_sidecars", "supervision_spans"),
+        packing_enabled=False,
+        where="test",
+    )
+
+    assert capture.logits.shape == (1, 4, model.config.text_config.vocab_size)
+    assert model.model.get_image_features_calls == 1
+    assert wrapper.model.get_image_features_calls == 0
     assert len(model.model.forward_calls) == 1
 
 

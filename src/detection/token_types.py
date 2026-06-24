@@ -6,7 +6,12 @@ from dataclasses import dataclass
 import re
 from typing import Any
 
-from src.common.detection_sequence import BOX_START_TOKEN, OBJECT_REF_START_TOKEN
+from src.common.detection_sequence import (
+    BOX_END_TOKEN,
+    BOX_START_TOKEN,
+    OBJECT_REF_END_TOKEN,
+    OBJECT_REF_START_TOKEN,
+)
 
 _COORD_TOKEN_RE = re.compile(r"^<\|coord_(\d{1,3})\|>$")
 _CONTROL_SPECIAL_RE = re.compile(r"^<\|[^|]+\|>$")
@@ -19,7 +24,12 @@ _CONTROL_SPECIAL_TOKENS = (
     "<|video_pad|>",
     *_TEXT_TERMINATORS,
 )
-_COMPACT_STRUCT_TOKENS = (OBJECT_REF_START_TOKEN, BOX_START_TOKEN)
+_COMPACT_STRUCT_TOKENS = (
+    OBJECT_REF_START_TOKEN,
+    OBJECT_REF_END_TOKEN,
+    BOX_START_TOKEN,
+    BOX_END_TOKEN,
+)
 _COMPACT_SEPARATOR_TOKENS = ("\n", "\r\n")
 
 

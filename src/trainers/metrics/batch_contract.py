@@ -86,6 +86,10 @@ def _validate_batch_contract(
                 "Batch image_grid_thw must have shape [num_images, 3] before model forward: "
                 f"shape={tuple(image_grid.shape)}"
             )
+        if not (isinstance(pixel_values, torch.Tensor) and pixel_values.ndim >= 1):
+            raise ValueError(
+                "Batch image_grid_thw is present but pixel_values are missing before model forward"
+            )
         if isinstance(pixel_values, torch.Tensor) and pixel_values.ndim >= 1:
             expected_visual_rows = int(image_grid.prod(dim=-1).sum().item())
             actual_visual_rows = int(pixel_values.shape[0])

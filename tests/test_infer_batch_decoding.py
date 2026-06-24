@@ -50,9 +50,14 @@ def _write_adapter_checkpoint(
     base_model_name_or_path: str = "base-model",
     with_token_embeddings_adapter: bool = False,
     tie_head: bool = True,
+    with_coverage_ledger_head: bool = False,
 ) -> None:
     path.mkdir(parents=True, exist_ok=True)
-    modules_to_save = ["token_embeddings_adapter"] if with_token_embeddings_adapter else []
+    modules_to_save = []
+    if with_token_embeddings_adapter:
+        modules_to_save.append("token_embeddings_adapter")
+    if with_coverage_ledger_head:
+        modules_to_save.append("coverage_ledger_head")
     (path / "adapter_config.json").write_text(
         json.dumps(
             {
@@ -63,22 +68,36 @@ def _write_adapter_checkpoint(
         ),
         encoding="utf-8",
     )
-    if with_token_embeddings_adapter:
+    if with_token_embeddings_adapter or with_coverage_ledger_head:
         import torch
         from safetensors.torch import save_file
 
-        payload = {
-            "base_model.model.token_embeddings_adapter.token_ids": torch.tensor(
-                [2, 5], dtype=torch.long
-            ),
-            "base_model.model.token_embeddings_adapter.embed_offset": torch.zeros(
-                2, 4, dtype=torch.float32
-            ),
-        }
-        if not tie_head:
+        payload = {}
+        if with_token_embeddings_adapter:
+            payload.update(
+                {
+                    "base_model.model.token_embeddings_adapter.token_ids": torch.tensor(
+                        [2, 5], dtype=torch.long
+                    ),
+                    "base_model.model.token_embeddings_adapter.embed_offset": torch.zeros(
+                        2, 4, dtype=torch.float32
+                    ),
+                }
+            )
+        if with_token_embeddings_adapter and not tie_head:
             payload["base_model.model.token_embeddings_adapter.head_offset"] = (
                 torch.zeros(2, 4, dtype=torch.float32)
             )
+        if with_coverage_ledger_head:
+            payload[
+                "base_model.model.coverage_ledger_head.state_projection.weight"
+            ] = torch.zeros(8, 4, dtype=torch.float32)
+            payload[
+                "base_model.model.coverage_ledger_head.region_anchor_state_projection.weight"
+            ] = torch.zeros(8, 4, dtype=torch.float32)
+            payload[
+                "base_model.model.coverage_ledger_head.object_projection.weight"
+            ] = torch.zeros(8, 4, dtype=torch.float32)
         save_file(payload, str(path / "adapter_model.safetensors"))
 
 
@@ -618,6 +637,135 @@ def test_hf_token_embeddings_adapter_is_preinstalled_before_swift_reload(
         ("swift", str(adapter_dir), True),
         ("reattach", "_WrappedModel"),
     ]
+    assert isinstance(engine.model, _WrappedModel)
+    assert engine.model.eval_called is True
+
+
+def test_hf_adapter_inference_drops_training_only_ledger_head_before_swift(
+    tmp_path, monkeypatch
+):
+    adapter_dir = tmp_path / "adapter-dir"
+    _write_adapter_checkpoint(
+        adapter_dir,
+        base_model_name_or_path="base-model",
+        with_token_embeddings_adapter=True,
+        with_coverage_ledger_head=True,
+    )
+
+    inf_cfg = InferenceConfig(
+        gt_jsonl=str(tmp_path / "gt.jsonl"),
+        model_checkpoint=str(adapter_dir),
+        mode="text",
+        pred_coord_mode="auto",
+        out_path=str(tmp_path / "gt_vs_pred.jsonl"),
+        summary_path=str(tmp_path / "summary.json"),
+        device="cpu",
+        limit=0,
+        backend_type="hf",
+        backend={},
+        detect_samples=1,
+    )
+    gen_cfg = GenerationConfig(
+        temperature=0.0,
+        top_p=1.0,
+        max_new_tokens=16,
+        repetition_penalty=1.0,
+        batch_size=1,
+        seed=123,
+    )
+
+    load_order: list[tuple[object, ...]] = []
+
+    class _DummyBaseModel:
+        def to(self, _device: str):
+            return self
+
+        def eval(self):
+            return self
+
+    class _WrappedModel:
+        def __init__(self, base_model) -> None:
+            self.base_model = base_model
+            self.eval_called = False
+
+        def eval(self):
+            self.eval_called = True
+            return self
+
+    class _DummyTokenizer(_QwenSpecialTokenMixin):
+        padding_side = "right"
+        pad_token_id = None
+        eos_token_id = 1
+
+    class _DummyProcessor:
+        def __init__(self) -> None:
+            self.tokenizer = _DummyTokenizer()
+
+    class _DummyAutoProcessor:
+        @staticmethod
+        def from_pretrained(model_checkpoint: str, **_kwargs):
+            assert model_checkpoint == "base-model"
+            return _DummyProcessor()
+
+    class _DummyQwen:
+        @staticmethod
+        def from_pretrained(model_checkpoint: str, **kwargs):
+            assert model_checkpoint == "base-model"
+            assert kwargs["attn_implementation"] == "sdpa"
+            return _DummyBaseModel()
+
+    class _DummySwift:
+        @staticmethod
+        def from_pretrained(model, *, model_id: str, inference_mode: bool, **_kwargs):
+            model_path = Path(model_id)
+            assert model_path != adapter_dir
+            view_cfg = json.loads((model_path / "adapter_config.json").read_text())
+            assert view_cfg["modules_to_save"] == ["token_embeddings_adapter"]
+
+            from safetensors import safe_open
+
+            with safe_open(
+                str(model_path / "adapter_model.safetensors"),
+                framework="pt",
+            ) as handle:
+                keys = set(handle.keys())
+            assert "base_model.model.token_embeddings_adapter.token_ids" in keys
+            assert all("coverage_ledger_head" not in key for key in keys)
+            load_order.append(("swift", model_id, inference_mode))
+            return _WrappedModel(model)
+
+    def _fake_install(model, *, token_ids, tie_head, dtype=None):
+        load_order.append(("install", tuple(token_ids), tie_head, dtype))
+        return object()
+
+    def _fake_reattach(model):
+        load_order.append(("reattach", type(model).__name__))
+        return object()
+
+    fake_swift_module = types.ModuleType("swift")
+    fake_swift_module.Swift = _DummySwift
+
+    monkeypatch.setattr(infer_runtime, "AutoProcessor", _DummyAutoProcessor)
+    monkeypatch.setattr(infer_runtime, "Qwen3VLForConditionalGeneration", _DummyQwen)
+    monkeypatch.setattr(infer_runtime, "install_token_embeddings_adapter", _fake_install)
+    monkeypatch.setattr(
+        infer_runtime, "reattach_token_embeddings_adapter_hooks", _fake_reattach
+    )
+    monkeypatch.setitem(sys.modules, "swift", fake_swift_module)
+
+    engine = InferenceEngine(inf_cfg, gen_cfg)
+    engine.load_model()
+
+    source_cfg = json.loads((adapter_dir / "adapter_config.json").read_text())
+    assert source_cfg["modules_to_save"] == [
+        "token_embeddings_adapter",
+        "coverage_ledger_head",
+    ]
+    assert load_order[0] == ("install", (2, 5), True, None)
+    assert load_order[1][0] == "swift"
+    assert load_order[1][1] != str(adapter_dir)
+    assert load_order[1][2] is True
+    assert load_order[2] == ("reattach", "_WrappedModel")
     assert isinstance(engine.model, _WrappedModel)
     assert engine.model.eval_called is True
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import tempfile
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,6 +28,7 @@ _STRUCTURAL_ROW_ID_TO_TOKEN = {
     151648: "<|box_start|>",
     151649: "<|box_end|>",
 }
+TRAINING_ONLY_MODULES_TO_DROP_FOR_INFERENCE = ("coverage_ledger_head",)
 
 
 @dataclass(frozen=True)
@@ -42,6 +45,14 @@ class AdapterCheckpointInfo:
     base_model_name_or_path: Optional[str]
     modules_to_save: tuple[str, ...]
     token_embeddings_adapter_spec: Optional[TokenEmbeddingsAdapterSpec]
+
+
+@dataclass(frozen=True)
+class AdapterCheckpointInferenceView:
+    path: str
+    source_path: str
+    dropped_modules_to_save: tuple[str, ...]
+    dropped_tensor_keys: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -75,6 +86,127 @@ def _require_local_adapter_dir(path: str) -> Path:
             "adapter_config.json."
         )
     return adapter_dir
+
+
+def _safetensor_key_belongs_to_module(key: str, module_name: str) -> bool:
+    return str(module_name) in str(key).split(".")
+
+
+def _filter_adapter_safetensors_for_inference(
+    *,
+    source_path: Path,
+    target_path: Path,
+    dropped_modules: tuple[str, ...],
+) -> tuple[str, ...]:
+    try:
+        from safetensors import safe_open
+        from safetensors.torch import save_file
+    except ImportError as exc:
+        raise RuntimeError(
+            "adapter checkpoint inference filtering requires the 'safetensors' "
+            "package in the active environment."
+        ) from exc
+
+    import torch
+
+    kept: dict[str, torch.Tensor] = {}
+    dropped: list[str] = []
+    with safe_open(str(source_path), framework="pt", device="cpu") as handle:
+        for key in handle.keys():
+            key_s = str(key)
+            if any(
+                _safetensor_key_belongs_to_module(key_s, module)
+                for module in dropped_modules
+            ):
+                dropped.append(key_s)
+                continue
+            kept[key_s] = handle.get_tensor(key_s)
+
+    if kept:
+        save_file(kept, str(target_path))
+    return tuple(dropped)
+
+
+def prepare_adapter_checkpoint_for_inference(
+    adapter_checkpoint: str,
+    *,
+    cache_root: str | Path | None = None,
+    training_only_modules: tuple[str, ...] = TRAINING_ONLY_MODULES_TO_DROP_FOR_INFERENCE,
+) -> AdapterCheckpointInferenceView:
+    """Return an adapter directory that is loadable for inference.
+
+    Training-only PEFT modules, such as the coverage ledger auxiliary head, are
+    useful for checkpoint resume/debugging but are not part of generation.
+    Inference should load the LoRA/token-row state without requiring those
+    auxiliary modules to exist on the base model.
+    """
+
+    adapter_dir = _require_local_adapter_dir(adapter_checkpoint)
+    cfg_path = adapter_dir / "adapter_config.json"
+    cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+    if not isinstance(cfg, dict):
+        raise ValueError(f"{cfg_path} must contain a JSON object.")
+
+    modules_raw = cfg.get("modules_to_save")
+    if modules_raw is None:
+        modules_to_save: list[str] = []
+    elif isinstance(modules_raw, list):
+        modules_to_save = [
+            str(item).strip() for item in modules_raw if str(item).strip()
+        ]
+    else:
+        raise ValueError(f"{cfg_path}: modules_to_save must be a list when present.")
+
+    drop_set = {str(item).strip() for item in training_only_modules if str(item).strip()}
+    dropped_modules = tuple(module for module in modules_to_save if module in drop_set)
+    if not dropped_modules:
+        return AdapterCheckpointInferenceView(
+            path=str(adapter_dir),
+            source_path=str(adapter_dir),
+            dropped_modules_to_save=(),
+            dropped_tensor_keys=(),
+        )
+
+    if cache_root is None:
+        cache_parent = Path(tempfile.gettempdir()) / "coordexp_infer_adapter_views"
+    else:
+        cache_parent = Path(cache_root).expanduser()
+    cache_parent.mkdir(parents=True, exist_ok=True)
+    view_dir = Path(
+        tempfile.mkdtemp(prefix=f"{adapter_dir.name}-", dir=str(cache_parent))
+    )
+    shutil.copytree(
+        adapter_dir,
+        view_dir,
+        symlinks=True,
+        ignore=shutil.ignore_patterns("adapter_config.json", "adapter_model.safetensors"),
+        dirs_exist_ok=True,
+    )
+
+    view_cfg = dict(cfg)
+    view_cfg["modules_to_save"] = [
+        module for module in modules_to_save if module not in set(dropped_modules)
+    ]
+    (view_dir / "adapter_config.json").write_text(
+        json.dumps(view_cfg, ensure_ascii=True, indent=2),
+        encoding="utf-8",
+    )
+
+    dropped_tensor_keys: tuple[str, ...] = ()
+    weights_path = adapter_dir / "adapter_model.safetensors"
+    if weights_path.is_file():
+        dropped_tensor_keys = _filter_adapter_safetensors_for_inference(
+            source_path=weights_path,
+            target_path=view_dir / "adapter_model.safetensors",
+            dropped_modules=dropped_modules,
+        )
+
+    return AdapterCheckpointInferenceView(
+        path=str(view_dir),
+        source_path=str(adapter_dir),
+        dropped_modules_to_save=dropped_modules,
+        dropped_tensor_keys=dropped_tensor_keys,
+    )
 
 
 def _load_token_embeddings_adapter_spec(adapter_dir: Path) -> TokenEmbeddingsAdapterSpec:

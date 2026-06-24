@@ -256,6 +256,12 @@ def test_preflight_swift_template_builder_uses_current_swift_api(
     calls: dict[str, Any] = {}
 
     class _Template:
+        def __init__(self) -> None:
+            self.modes: list[str] = []
+
+        def set_mode(self, mode: str) -> None:
+            self.modes.append(mode)
+
         def normalize_bbox(self, inputs: Any) -> None:
             raise AssertionError("coord adapter did not patch normalize_bbox")
 
@@ -273,14 +279,15 @@ def test_preflight_swift_template_builder_uses_current_swift_api(
         return template
 
     monkeypatch.setattr(
-        "swift.model.get_model_processor",
+        "swift.llm.get_model_tokenizer",
         _fake_get_model_processor,
     )
-    monkeypatch.setattr("swift.template.get_template", _fake_get_template)
+    monkeypatch.setattr("swift.llm.template.get_template", _fake_get_template)
 
     training_config = SimpleNamespace(
         model={
             "model": "local-model",
+            "model_type": "qwen3_vl",
             "torch_dtype": "float32",
         },
         template={
@@ -298,9 +305,11 @@ def test_preflight_swift_template_builder_uses_current_swift_api(
 
     assert result is template
     assert calls["model_processor"][0] == ("local-model",)
+    assert calls["model_processor"][1]["model_type"] == "qwen3_vl"
     assert calls["model_processor"][1]["load_model"] is False
     assert calls["model_processor"][1]["download_model"] is False
     assert calls["template"][1]["template_type"] == "qwen3_vl"
+    assert template.modes == ["train"]
     assert getattr(template, "_coord_tokens_skip_norm") is True
 
 

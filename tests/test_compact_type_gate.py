@@ -6,7 +6,12 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from src.common.detection_sequence import BOX_START_TOKEN, OBJECT_REF_START_TOKEN
+from src.common.detection_sequence import (
+    BOX_END_TOKEN,
+    BOX_START_TOKEN,
+    OBJECT_REF_END_TOKEN,
+    OBJECT_REF_START_TOKEN,
+)
 from src.detection.token_types import (
     allowed_type_token_ids_for_target,
     build_compact_token_type_groups,
@@ -29,6 +34,8 @@ class TypeGateTokenizer:
             "<|end_of_text|>": 4,
             OBJECT_REF_START_TOKEN: 5,
             BOX_START_TOKEN: 6,
+            OBJECT_REF_END_TOKEN: 8,
+            BOX_END_TOKEN: 9,
             "<|vision_start|>": 7,
             "<|coord_0|>": 10,
             "<|coord_999|>": 1009,
@@ -80,7 +87,9 @@ def test_compact_token_groups_classify_struct_coord_desc_and_eos() -> None:
     groups = build_compact_token_type_groups(tokenizer)
 
     assert tokenizer.convert_tokens_to_ids(OBJECT_REF_START_TOKEN) in groups.struct
+    assert tokenizer.convert_tokens_to_ids(OBJECT_REF_END_TOKEN) in groups.struct
     assert tokenizer.convert_tokens_to_ids(BOX_START_TOKEN) in groups.struct
+    assert tokenizer.convert_tokens_to_ids(BOX_END_TOKEN) in groups.struct
     assert tokenizer.convert_tokens_to_ids("<|coord_0|>") in groups.coord
     assert tokenizer.convert_tokens_to_ids("<|coord_999|>") in groups.coord
     assert tokenizer.convert_tokens_to_ids("<|im_end|>") in groups.eos

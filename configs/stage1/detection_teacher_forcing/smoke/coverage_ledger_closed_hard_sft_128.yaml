@@ -62,13 +62,19 @@ evaluation:
   parser_mode: strict_expected
 
 training:
-  artifact_subdir: coverage_ledger_closed_hard_sft_128
-  run_name: smoke-coverage-ledger-closed-hard-sft-128-ledger
+  artifact_subdir: coverage_ledger_closed_hard_sft_128_adapter_save
+  run_name: smoke-coverage-ledger-closed-hard-sft-128-ledger-adapter-save
   max_steps: 256
   per_device_train_batch_size: 1
   effective_batch_size: 1
   per_device_eval_batch_size: 1
   seed: 20260623
+  save_strategy: steps
+  save_steps: 128
+  save_total_limit: 2
+  save_delay_steps: 0
+  save_last_epoch: true
+  save_model_only: false
   packing: false
   eval_packing: false
 

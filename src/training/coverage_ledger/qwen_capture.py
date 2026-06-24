@@ -234,6 +234,8 @@ def _find_qwen_conditional_generation(root: Any) -> Any | None:
 
 
 def _is_qwen_conditional_generation(candidate: Any) -> bool:
+    if _is_peft_like_wrapper(candidate):
+        return False
     config = getattr(candidate, "config", None)
     if getattr(config, "model_type", None) != "qwen3_vl":
         return False
@@ -243,6 +245,13 @@ def _is_qwen_conditional_generation(candidate: Any) -> bool:
         and callable(getattr(candidate, "lm_head", None))
         and callable(getattr(lower_model, "get_image_features", None))
     )
+
+
+def _is_peft_like_wrapper(candidate: Any) -> bool:
+    module_name = type(candidate).__module__
+    if module_name == "peft" or module_name.startswith("peft."):
+        return True
+    return False
 
 
 def _extract_final_hidden_states(outputs: Any, *, where: str) -> torch.Tensor:

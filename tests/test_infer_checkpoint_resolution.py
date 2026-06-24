@@ -8,6 +8,7 @@ import pytest
 
 from src.common.model_paths import canonical_coordexp_repo_root
 from src.infer.checkpoints import (
+    prepare_adapter_checkpoint_for_inference,
     resolve_inference_checkpoint,
     validate_compact_token_embeddings_adapter_contract,
 )
@@ -39,6 +40,7 @@ def _write_token_embeddings_adapter_weights(
     tie_head: bool = True,
     embed_rows: int | None = None,
     head_rows: int | None = None,
+    include_coverage_ledger_head: bool = False,
 ) -> None:
     import torch
     from safetensors.torch import save_file
@@ -57,6 +59,16 @@ def _write_token_embeddings_adapter_weights(
         payload["base_model.model.token_embeddings_adapter.head_offset"] = torch.zeros(
             head_row_count, 4, dtype=torch.float32
         )
+    if include_coverage_ledger_head:
+        payload[
+            "base_model.model.coverage_ledger_head.state_projection.weight"
+        ] = torch.zeros(8, 4, dtype=torch.float32)
+        payload[
+            "base_model.model.coverage_ledger_head.region_anchor_state_projection.weight"
+        ] = torch.zeros(8, 4, dtype=torch.float32)
+        payload[
+            "base_model.model.coverage_ledger_head.object_projection.weight"
+        ] = torch.zeros(8, 4, dtype=torch.float32)
     save_file(payload, str(path / "adapter_model.safetensors"))
 
 
@@ -363,3 +375,71 @@ def test_compact_token_embeddings_adapter_allows_full_or_merged_checkpoint() -> 
         resolved,
         detection_template_id="compact_object_box_closed",
     )
+
+
+def test_prepare_adapter_checkpoint_for_inference_drops_training_only_ledger_head(
+    tmp_path: Path,
+) -> None:
+    adapter_dir = tmp_path / "adapter"
+    _write_adapter_checkpoint(
+        adapter_dir,
+        base_model_name_or_path="base-model",
+        modules_to_save=["token_embeddings_adapter", "coverage_ledger_head"],
+    )
+    _write_token_embeddings_adapter_weights(
+        adapter_dir,
+        token_ids=[2, 5],
+        include_coverage_ledger_head=True,
+    )
+
+    view = prepare_adapter_checkpoint_for_inference(
+        str(adapter_dir),
+        cache_root=tmp_path / "views",
+    )
+
+    assert view.source_path == str(adapter_dir)
+    assert view.path != str(adapter_dir)
+    assert view.dropped_modules_to_save == ("coverage_ledger_head",)
+    assert set(view.dropped_tensor_keys) == {
+        "base_model.model.coverage_ledger_head.state_projection.weight",
+        "base_model.model.coverage_ledger_head.region_anchor_state_projection.weight",
+        "base_model.model.coverage_ledger_head.object_projection.weight",
+    }
+
+    source_cfg = json.loads((adapter_dir / "adapter_config.json").read_text())
+    view_dir = Path(view.path)
+    view_cfg = json.loads((view_dir / "adapter_config.json").read_text())
+    assert source_cfg["modules_to_save"] == [
+        "token_embeddings_adapter",
+        "coverage_ledger_head",
+    ]
+    assert view_cfg["modules_to_save"] == ["token_embeddings_adapter"]
+
+    from safetensors import safe_open
+
+    with safe_open(str(view_dir / "adapter_model.safetensors"), framework="pt") as handle:
+        keys = set(handle.keys())
+    assert "base_model.model.token_embeddings_adapter.token_ids" in keys
+    assert all("coverage_ledger_head" not in key for key in keys)
+
+
+def test_prepare_adapter_checkpoint_for_inference_keeps_plain_adapter_path(
+    tmp_path: Path,
+) -> None:
+    adapter_dir = tmp_path / "adapter"
+    _write_adapter_checkpoint(
+        adapter_dir,
+        base_model_name_or_path="base-model",
+        modules_to_save=["token_embeddings_adapter"],
+    )
+    _write_token_embeddings_adapter_weights(adapter_dir, token_ids=[2, 5])
+
+    view = prepare_adapter_checkpoint_for_inference(
+        str(adapter_dir),
+        cache_root=tmp_path / "views",
+    )
+
+    assert view.path == str(adapter_dir)
+    assert view.source_path == str(adapter_dir)
+    assert view.dropped_modules_to_save == ()
+    assert view.dropped_tensor_keys == ()

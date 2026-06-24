@@ -1401,6 +1401,7 @@ class OfflineInferenceEngine:
         )
         from src.infer.checkpoints import (
             VLLM_ADAPTER_UNSUPPORTED_MESSAGE,
+            prepare_adapter_checkpoint_for_inference,
             validate_compact_token_embeddings_adapter_contract,
         )
 
@@ -1418,6 +1419,7 @@ class OfflineInferenceEngine:
             self.resolved_checkpoint,
             detection_template_id=self.detection_template_id,
         )
+        runtime_adapter_checkpoint = resolved_adapter_checkpoint
 
         if backend == "vllm":
             if resolved_adapter_checkpoint:
@@ -1460,6 +1462,20 @@ class OfflineInferenceEngine:
                 reattach_token_embeddings_adapter_hooks_fn = _reattach_token_embeddings_adapter_hooks
 
         self._seed()
+        if resolved_adapter_checkpoint:
+            adapter_view = prepare_adapter_checkpoint_for_inference(
+                resolved_adapter_checkpoint
+            )
+            runtime_adapter_checkpoint = adapter_view.path
+            if adapter_view.dropped_modules_to_save:
+                self.logger.info(
+                    "HF adapter inference is ignoring training-only modules_to_save: "
+                    "modules=%s source=%s runtime_view=%s dropped_tensors=%d",
+                    list(adapter_view.dropped_modules_to_save),
+                    adapter_view.source_path,
+                    adapter_view.path,
+                    len(adapter_view.dropped_tensor_keys),
+                )
         if self.model is None:
             attn_requested_raw = (self.cfg.backend or {}).get("attn_implementation")
             attn_requested = str(attn_requested_raw or "").strip()
@@ -1489,7 +1505,7 @@ class OfflineInferenceEngine:
                         attn_implementation=cand,
                     )
                     model = base_model.to(self.cfg.device)
-                    if resolved_adapter_checkpoint:
+                    if runtime_adapter_checkpoint:
                         if token_embeddings_adapter_spec is not None:
                             install_token_embeddings_adapter_fn(
                                 model,
@@ -1506,7 +1522,7 @@ class OfflineInferenceEngine:
                         try:
                             model = Swift.from_pretrained(
                                 model,
-                                model_id=resolved_adapter_checkpoint,
+                                model_id=runtime_adapter_checkpoint,
                                 inference_mode=True,
                             )
                         except Exception as exc:

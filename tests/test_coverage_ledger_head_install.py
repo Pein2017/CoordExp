@@ -14,6 +14,8 @@ from src.sft import (
     _append_train_arg_module_to_save,
     _install_coverage_ledger_head_for_training,
     _require_wrapped_coverage_ledger_head_for_training,
+    _remove_missing_peft_module_to_save,
+    _remove_train_arg_module_to_save,
 )
 from src.training.bridge import TrainerLossBridge, TrainerLossBridgeSettings
 from src.training.coverage_ledger.head import (
@@ -202,6 +204,76 @@ def test_modules_to_save_append_preserves_token_embeddings_adapter_entry() -> No
         "coverage_ledger_head",
     ]
     assert train_args.training_args.modules_to_save == [
+        "token_embeddings_adapter",
+        "coverage_ledger_head",
+    ]
+
+
+def test_modules_to_save_remove_strips_stale_coverage_ledger_entry() -> None:
+    train_args = SimpleNamespace(
+        modules_to_save=[
+            "token_embeddings_adapter",
+            "coverage_ledger_head",
+        ],
+        training_args=SimpleNamespace(
+            modules_to_save=[
+                "coverage_ledger_head",
+                "token_embeddings_adapter",
+            ]
+        ),
+    )
+
+    modules_to_save = _remove_train_arg_module_to_save(
+        train_args, "coverage_ledger_head"
+    )
+
+    assert modules_to_save == ["token_embeddings_adapter"]
+    assert train_args.modules_to_save == ["token_embeddings_adapter"]
+    assert train_args.training_args.modules_to_save == ["token_embeddings_adapter"]
+
+
+def test_missing_peft_module_remove_strips_stale_saved_config_entry() -> None:
+    model = SimpleNamespace(
+        peft_config={
+            "default": SimpleNamespace(
+                modules_to_save=[
+                    "token_embeddings_adapter",
+                    "coverage_ledger_head",
+                ]
+            )
+        },
+        named_modules=lambda: [
+            ("", SimpleNamespace()),
+            ("token_embeddings_adapter", SimpleNamespace()),
+        ],
+    )
+
+    removed = _remove_missing_peft_module_to_save(model, "coverage_ledger_head")
+
+    assert removed is True
+    assert model.peft_config["default"].modules_to_save == ["token_embeddings_adapter"]
+
+
+def test_existing_peft_module_keeps_saved_config_entry() -> None:
+    model = SimpleNamespace(
+        peft_config={
+            "default": SimpleNamespace(
+                modules_to_save=[
+                    "token_embeddings_adapter",
+                    "coverage_ledger_head",
+                ]
+            )
+        },
+        named_modules=lambda: [
+            ("", SimpleNamespace()),
+            ("coverage_ledger_head", SimpleNamespace()),
+        ],
+    )
+
+    removed = _remove_missing_peft_module_to_save(model, "coverage_ledger_head")
+
+    assert removed is False
+    assert model.peft_config["default"].modules_to_save == [
         "token_embeddings_adapter",
         "coverage_ledger_head",
     ]

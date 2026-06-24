@@ -110,6 +110,24 @@ def test_validate_batch_contract_rejects_image_token_count_mismatch() -> None:
         raise AssertionError("expected ValueError for image token/grid mismatch")
 
 
+def test_validate_batch_contract_rejects_image_grid_without_pixel_values() -> None:
+    model = _DummyModel(vocab_size=64)
+    template = _DummyTemplate(image_token_id=9, merge_size=2)
+    inputs = {
+        "input_ids": torch.tensor([[9, 9, 1, 9, 2, 3]], dtype=torch.long),
+        "labels": torch.tensor([[-100, -100, 1, -100, 2, 3]], dtype=torch.long),
+        "image_grid_thw": torch.tensor([[1, 2, 4], [1, 2, 2]], dtype=torch.long),
+    }
+
+    try:
+        _validate_batch_contract(model=model, inputs=inputs, template=template)
+    except ValueError as exc:
+        assert "pixel_values" in str(exc)
+        assert "image_grid_thw" in str(exc)
+    else:
+        raise AssertionError("expected ValueError for missing pixel_values")
+
+
 def test_validate_batch_contract_rejects_cu_seq_reset_mismatch() -> None:
     model = _DummyModel(vocab_size=64)
     template = _DummyTemplate(image_token_id=9, merge_size=2)

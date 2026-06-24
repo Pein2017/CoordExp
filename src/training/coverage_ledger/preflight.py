@@ -322,11 +322,16 @@ def build_preflight_swift_template(
         from swift.template import get_template
 
     dtype = _torch_dtype(training_config.model.get("torch_dtype"))
+    model_type = training_config.model.get("model_type")
+    model_kwargs = {}
+    if model_type is not None:
+        model_kwargs["model_type"] = str(model_type)
     _model, processor = get_model_processor(
         str(training_config.model["model"]),
         torch_dtype=dtype,
         load_model=False,
         download_model=False,
+        **model_kwargs,
     )
     template = get_template(
         template_type=str(training_config.template.get("template", "qwen3_vl")),
@@ -342,6 +347,8 @@ def build_preflight_swift_template(
         template,
         CoordTokensConfig(enabled=True, skip_bbox_norm=True),
     )
+    if hasattr(template, "set_mode"):
+        template.set_mode("train")
     return template
 
 

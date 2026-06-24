@@ -4,7 +4,7 @@ title: Ledger Auxiliary Loss Discussion
 description: Durable discussion decisions and open design gates for the ledger auxiliary loss pilot.
 tags: [stage1, compact-detection, teacher-forcing, auxiliary-loss, design-gates]
 state: active
-updated: 2026-06-23
+updated: 2026-06-24
 ---
 
 # Ledger Auxiliary Loss Discussion
@@ -21,9 +21,11 @@ teacher-forced autoregressive detection. Stage-1 teacher forcing is the narrow
 surface that can expose prompt-end and row-completion hidden states without
 changing rollout policy, inference, decoding, or production eval behavior.
 
-Stage-2 rollout correction, inference-time decoding, and stable OpenSpec
-promotion are deferred until v0 produces enough evidence to justify broader
-contract work.
+Stage-2 rollout correction and inference-time decoding are deferred until v0
+produces enough evidence to justify broader contract work. For the 2026-06-24
+loss/config/metric/artifact surface, OpenSpec is a pre-implementation governance
+choice rather than an implicit deferral: choose the OpenSpec path or record an
+explicit experiment-only exception before code edits.
 
 ## Philosophy
 
@@ -40,7 +42,8 @@ localization, missing annotations, or router/commitment failures.
 - Keep v0 training-only.
 - Keep inference and decoding unchanged.
 - Use research and super-power docs before implementation.
-- Do not create an OpenSpec change yet.
+- Do not create an OpenSpec change unless the user chooses the OpenSpec path;
+  otherwise record an explicit experiment-only exception before code edits.
 - Treat ledger diagnostics as mechanism evidence, not as a direct guarantee of
   lower duplication or higher recall.
 
@@ -670,3 +673,370 @@ The super-power spec was refined to add a `CoverageLedgerHead(nn.Module)`
 ownership contract, concrete Qwen same-forward capture requirements, metric
 producer examples, structured sidecar extraction rules, and a reproducible
 128-sample smoke recipe.
+
+## 2026-06-24 Adopted Design: Exclusive Type Partition And Continuation Loss
+
+### Keep Stop/EOS Separate From Schema
+
+The compact teacher-forcing vocabulary should preserve four mutually exclusive
+supervised token families:
+
+- `SCHEMA` / `STRUCT`: compact structural tokens such as
+  `<|object_ref_start|>`, `<|object_ref_end|>`, `<|box_start|>`,
+  `<|box_end|>`, plus template separators when present.
+- `COORD`: the 1000 coordinate tokens `<|coord_0|>` through
+  `<|coord_999|>`.
+- `TEXT` / `DESC`: free description vocabulary after excluding schema,
+  coordinate, stop, pad, and other control tokens.
+- `STOP` / `EOS`: the semantic assistant stop token `<|im_end|>`.
+
+`<|im_end|>` must not be folded into schema, even though operators may
+informally describe the compact control-token set as structural tokens plus
+the semantic stop token. The model has to choose between continuing with
+another object and stopping at object-list boundaries; merging `<|im_end|>`
+with schema would hide that decision from the type-family objective.
+
+Qwen text terminators such as `<|endoftext|>` and `<|end_of_text|>` remain
+excluded or pad/control tokens for this surface. They are not semantic
+detection EOS targets.
+
+### Rationale
+
+The current teacher-forcing path already represents compact token roles as
+`SCHEMA`, `TEXT`, `COORD`, and `STOP`. `RoleVocab` rejects a stop token that
+also appears in schema, text, or coordinate vocabularies. The target builder
+appends `<|im_end|>` as a dedicated stop atom after all rendered object
+entries. Preserving that invariant keeps semantic stop supervision distinct
+from ordinary compact structure supervision.
+
+Functionally, the object-count decision is not "is this a control token?" It
+is "should the next action start another object or terminate the assistant
+detection sequence?" That decision crosses token families and should remain
+visible to a separate boundary objective.
+
+### Consequence
+
+- The planned bidirectional exclusive type loss should be a four-way
+  family-mass objective over `schema`, `coord`, `desc`, and `stop`.
+- At a schema position, the objective should raise schema mass and suppress
+  coord, desc, and stop mass.
+- At a stop position, the objective should raise stop mass and suppress
+  schema, coord, and desc mass.
+- Existing control/pad tokens outside these families should remain excluded
+  from the trainable family partition.
+
+### Replace The Current Decomposition With A Mandatory Added Type Term
+
+The exclusive type-family objective should be mandatory for the active
+teacher-forcing surface. It should not remain an optional experiment-only
+module and should not be represented as a mere decomposition of ordinary
+token-level cross entropy.
+
+The current teacher-forcing objective computes a type component and a
+conditional valid-token component whose sum algebraically collapses to ordinary
+full-vocabulary valid-token negative log-likelihood. That decomposition is
+useful for diagnostics, but it is not stronger than pure CE. The intended new
+behavior is an added supervised family-partition pressure, for example:
+
+```text
+loss = valid_token_nll + lambda_type * exclusive_type_partition_nll + ...
+```
+
+where `exclusive_type_partition_nll` is the four-way mass objective over
+`schema`, `coord`, `desc`, and `stop`. The exact implementation can still log
+conditional-within-type likelihoods for analysis, but the optimization target
+must include extra type-family pressure beyond the raw token CE term.
+
+### Consequence
+
+- Active teacher-forcing profiles should treat the type partition as mandatory.
+- A pure-CE or no-type-loss run should be an explicit ablation/comparator, not
+  the default active objective semantics.
+- Config/schema work should either remove the active on/off meaning of
+  `objective.terms.token_type_mass.enabled` or reject `false` for the new
+  active profile while preserving a clearly named ablation path.
+- Metrics should separately report raw valid-token NLL, exclusive type
+  partition NLL, and total weighted loss so improvements are not mistaken for a
+  bookkeeping decomposition.
+
+### Mixed-Role Target Policy
+
+For the current `hard_sft` / sorted / 128-sample overfit pilot, the mandatory
+exclusive type-family objective should use the one-hot `selected_token_role` as
+the target. This is the strongest version of the type consolidation signal and
+matches the realized teacher-forced sequence.
+
+For `pure_valid_set_marginal` and other valid-set profiles, do not silently use
+one-hot selected-role type targets on mixed-role atoms. The current target IR
+allows the specific mixed role set `TEXT + SCHEMA`, for example when one valid
+object branch can continue a description token while another can close the
+description and emit a schema token. For those atoms, one-hot selected-role
+pressure would penalize alternate valid objects and partially undo the
+marginal valid-set semantics.
+
+The valid-set path must either derive a soft family target from valid
+token/candidate weights or explicitly skip/fail/diagnose mixed-role atoms until
+that target is designed. The initial hard-SFT pilot does not need to solve the
+mixed-role marginal case before launch.
+
+### Add Boundary-Specific Continue-Vs-Stop Calibration
+
+Object-list continuation should be trained or at least measured as a separate
+boundary objective, not by collapsing stop into schema or by relying only on
+the generic type-family loss.
+
+At semantic object-list boundaries, compare full-vocabulary probability mass
+for the valid continuation action against `<|im_end|>`:
+
+```text
+L_continue = logsumexp(logits over valid next-object opener tokens)
+L_stop     = logit(<|im_end|>)
+```
+
+Use `CONTINUE` when objects remain and `STOP` when the object list is complete.
+For the common `desc_first` `compact_object_box_closed` surface, the
+continuation action is `<|object_ref_start|>`, so the boundary is
+`<|object_ref_start|>` versus `<|im_end|>`.
+
+Do not hard-code `<|object_ref_start|>` as the only continuation action across
+all compact variants. In `geometry_first`, a new object can begin with
+`<|box_start|>`. In `compact_object_box_closed_lines`, the free autoregressive
+boundary can be newline versus `<|im_end|>`, while the after-separator
+diagnostic boundary is `<|object_ref_start|>` versus `<|im_end|>`.
+
+### Consequence
+
+- The continuation term should resolve its positive continuation set from the
+  active template, field order, prefix state, and target IR rather than from a
+  global literal token id.
+- The existing `objective.terms.continuation_margin` name is the natural
+  config slot for this behavior, but implementation must audit whether it is
+  metric-only, margin-only, or binary-CE in the first version.
+- Boundary metrics should report continue mass, stop mass, and
+  continue-minus-stop margin separately from generic type-family loss.
+- Inference should not require a ledger head for this mechanism. The intended
+  effect is internalized in LLM hidden states and LoRA/token-row updates during
+  training.
+
+### Evidence Handles
+
+- `docs/training/STAGE1_OBJECTIVE.md`
+- `src/training/teacher_forcing/vocab.py`
+- `src/training/teacher_forcing/roles.py`
+- `src/trainers/metrics/teacher_forcing.py`
+- `src/training/objectives/teacher_forcing.py`
+- `src/training/teacher_forcing/probabilities.py`
+- `src/detection/teacher_forcing/target_builder.py`
+- `src/detection/template_contracts.py`
+
+## 2026-06-24 Adopted Design: Hard Geometry Penalty
+
+Use a simple hard valid-region penalty for rectangular bbox geometry. Do not
+start with a pairwise distribution regularizer, decoded argmax penalty, or
+other complex geometry-aware objective.
+
+For the initial hard-SFT pilot, apply the geometry term only to tail-coordinate
+slots:
+
+```text
+x2 slot: valid bins are x2 > x1
+y2 slot: valid bins are y2 > y1
+```
+
+Equivalently, for a selected/teacher bbox `(x1, y1, x2, y2)` in coord-token
+bins, the auxiliary punishes coordinate probability mass on:
+
+```text
+x2 <= x1
+y2 <= y1
+```
+
+This keeps the loss causal and simple: at the `x2` position, `x1` is already
+in the teacher-forced prefix; at the `y2` position, `y1` is already in the
+teacher-forced prefix. Do not add symmetric penalties at `x1` or `y1` against
+future `x2` or `y2` in v0.
+
+### Suggested Loss Shape
+
+Use the coordinate-vocabulary conditional distribution for the active coord
+slot, since the mandatory type-family objective already handles coord-vs-
+noncoord pressure:
+
+```text
+L_x2_valid = -log sum_{bin > x1} P_coord_x2(bin)
+L_y2_valid = -log sum_{bin > y1} P_coord_y2(bin)
+```
+
+Skip the term when the required prefix coordinate cannot be resolved from the
+structured teacher-forcing target metadata. For the active v0 hard-SFT pilot,
+that should be treated as a construction bug rather than normal behavior.
+
+### Consequence
+
+- Geometry v0 is a hard support-mass penalty, not a soft IoU/Gibbs/CIoU-style
+  coordinate loss.
+- The term reinforces valid positive-area rectangles while preserving ordinary
+  hard coordinate CE for the exact target bin.
+- The first implementation should normalize by eligible tail-coordinate atoms
+  or completed objects and log eligible/skip counts.
+- Valid-set marginal and mixed-candidate geometry semantics remain deferred
+  unless the builder can provide unambiguous selected-object prefix coordinates
+  for the tail slot.
+
+## 2026-06-24 Batch Decisions: V0 Loss Launch Shape
+
+The first implementation target is the standard SFT-style hard teacher-forced
+surface: `research_teacher_forcing` with `profile: hard_sft`, sorted object
+order, and the closed compact template required by the ledger pilot. This is
+the "standard sft" scope for these decisions; it does not mean the older
+`objective.id: standard_ce` path unless a later decision explicitly changes
+the implementation surface.
+
+Resolved v0 decisions:
+
+- Use the existing `objective.terms.token_type_mass` key for the mandatory
+  exclusive type-family term.
+- Do not add a `mode` key for type-family behavior in v0; the exclusive
+  partition is the default behavior for this active surface.
+- Use `lambda_type = 1.0`.
+- Use one-hot `selected_token_role` targets for hard-SFT type-family
+  supervision.
+- Use hard geometry penalty with `lambda_geometry = 0.1`.
+- Use coord-conditional probability for geometry support mass.
+- Train `objective.terms.continuation_margin` in v0 as object-list
+  continue-vs-stop calibration with `lambda_continuation = 0.2`.
+- Add diagnostic post-hoc invalid-span salvage that drops invalid object spans
+  instead of dropping the whole row, while keeping strict row-level metrics
+  separate and official.
+- For the first benchmark run, use only the ledger arm with mandatory type
+  loss, geometry loss, and continuation loss. Do not run the full
+  baseline/ledger/no-loss/loss matrix as the first pass.
+- Tiny/train128 success criteria are mechanism-scoped: improved F1 versus the
+  matching baseline, fewer strict malformed rows, better salvaged diagnostic
+  F1, clearer type-family metrics, lower invalid-tail geometry mass,
+  separated continuation/stop margins, and saved-adapter reload for inference.
+- Implement in staged slices on the same branch: type partition, continuation,
+  geometry, config/preflight smoke, then train128 comparison.
+
+`objective.terms.continuation_margin` means object-list boundary calibration:
+compare the model's mass for valid continuation actions against semantic stop
+`<|im_end|>`, train/measure `CONTINUE` while objects remain and `STOP` when
+the object list is complete.
+
+## 2026-06-24 Batch Decisions: Implementation Contracts
+
+The v0 objective is additive. The intended loss shape is:
+
+```text
+total =
+  valid_token_nll
+  + 1.0 * token_type_mass
+  + 0.2 * continuation_margin
+  + 0.1 * geometry_valid_tail
+  + coverage_ledger terms when enabled
+```
+
+Do not fold auxiliary terms into the valid-token CE denominator.
+
+Use the existing `objective.terms` family for config:
+
+```yaml
+objective:
+  terms:
+    token_type_mass:
+      enabled: true
+      weight: 1.0
+    continuation_margin:
+      enabled: true
+      weight: 0.2
+    geometry_valid_tail:
+      enabled: true
+      weight: 0.1
+```
+
+`objective.terms.token_type_mass.enabled=false` should be rejected for the new
+active v0 config surface, but old configs should not be globally broken during
+the first implementation pass. Pure CE or no-type-loss behavior must be a
+clearly named ablation/comparator, not the default.
+
+Continuation eligibility:
+
+- apply only at object-list boundary atoms where the target IR knows whether
+  objects remain;
+- `CONTINUE` when a valid next-object opener is expected;
+- `STOP` for the final `<|im_end|>` atom;
+- do not apply this term to every schema token.
+
+Geometry eligibility:
+
+- apply only to `coord_role == "x2"` and `coord_role == "y2"` atoms;
+- require selected-object bbox metadata;
+- fail fast in the hard-SFT v0 pilot when required metadata is absent.
+
+Metric naming should follow the existing unsuffixed convention. Do not add
+parallel metric names ending in `_weighted`. Use canonical component names such
+as:
+
+```text
+teacher_forcing/loss/token_type_mass
+teacher_forcing/loss/continuation_margin
+teacher_forcing/loss/geometry_valid_tail
+teacher_forcing/type/schema_mass_at_schema
+teacher_forcing/type/coord_mass_at_coord
+teacher_forcing/type/desc_mass_at_desc
+teacher_forcing/type/stop_mass_at_stop
+teacher_forcing/continuation/continue_minus_stop_margin
+teacher_forcing/continuation/continue_accuracy
+teacher_forcing/geometry/invalid_tail_mass
+teacher_forcing/geometry/eligible_tail_count
+```
+
+If raw-vs-contribution accounting is needed, keep the distinction in the
+metric payload/reduction metadata or an explicit non-`_weighted` name rather
+than creating a second `_weighted` metric family.
+
+Diagnostic post-hoc span salvage should use the named view
+`compact_span_drop_salvage`. It should report strict row-level metrics
+separately from salvaged span-drop diagnostics and include counters such as:
+
+```text
+rows_strict_malformed
+rows_salvaged
+objects_dropped_invalid_span
+objects_kept_valid_span
+```
+
+The first training config should stay aligned with the existing smoke YAML
+naming family instead of stacking every enabled term into the filename. The
+existing local anchors are:
+
+```text
+configs/stage1/detection_teacher_forcing/smoke/coverage_ledger_closed_hard_sft_128.yaml
+configs/stage1/detection_teacher_forcing/smoke/coverage_ledger_closed_hard_sft_128_baseline.yaml
+```
+
+During implementation, derive the active v0 config name from this pair and keep
+it concise. Avoid names like
+`coverage_ledger_closed_hard_sft_128_type_geom_cont.yaml`. Preserve comparator
+provenance explicitly if the existing file is migrated.
+
+The first smoke should require saved adapter reload before inference
+comparison. Implement in staged order: token type loss and tests first,
+continuation loss and tests second, geometry loss and tests third, then config
+parse/preflight and the train128 comparison.
+
+## 2026-06-24 Governance Decision: Split OpenSpec And Experiment
+
+stable contract path: bidirectional type-family gating loss
+experiment-only path: coverage ledger, continuation, geometry-tail penalty, saved-adapter train128 smoke, and diagnostic span salvage
+production eligible: no
+required follow-up before promotion: archive/sync the type-gating OpenSpec after implementation evidence; separately promote any non-type ledger mechanisms before production use
+approval: user correction after initially selecting experiment-only exception
+
+The user corrected the governance split: bidirectional type gating losses should
+be promoted through OpenSpec, while the ledger mechanism remains experimental.
+This means the four-family exclusive type gate (`schema`, `coord`, `desc`,
+`stop`) is a stable compatibility-sensitive contract. The coverage ledger,
+continuation boundary loss, hard geometry-tail penalty, saved-adapter train128
+smoke, and `compact_span_drop_salvage` diagnostic view remain research-only
+unless separately promoted.

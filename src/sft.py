@@ -2764,6 +2764,62 @@ def _append_train_arg_module_to_save(train_args: Any, module_name: str) -> list[
     return modules_to_save
 
 
+def _remove_train_arg_module_to_save(train_args: Any, module_name: str) -> list[str]:
+    modules_to_save: list[str] = [
+        str(item)
+        for item in (getattr(train_args, "modules_to_save", []) or [])
+        if str(item) != module_name
+    ]
+    setattr(train_args, "modules_to_save", modules_to_save)
+
+    inner_args = getattr(train_args, "training_args", None)
+    if inner_args is not None:
+        inner_modules_to_save: list[str] = [
+            str(item)
+            for item in (getattr(inner_args, "modules_to_save", []) or [])
+            if str(item) != module_name
+        ]
+        setattr(inner_args, "modules_to_save", inner_modules_to_save)
+    return modules_to_save
+
+
+def _model_has_named_module(model: Any, module_name: str) -> bool:
+    named_modules_fn = getattr(model, "named_modules", None)
+    if not callable(named_modules_fn):
+        return False
+    for name, _module in named_modules_fn():
+        name_s = str(name)
+        if name_s == module_name or name_s.endswith(f".{module_name}"):
+            return True
+    return False
+
+
+def _remove_missing_peft_module_to_save(model: Any, module_name: str) -> bool:
+    if _model_has_named_module(model, module_name):
+        return False
+
+    peft_config = getattr(model, "peft_config", None)
+    if isinstance(peft_config, Mapping):
+        configs = peft_config.values()
+    elif peft_config is not None:
+        configs = [peft_config]
+    else:
+        return False
+
+    removed = False
+    for config in configs:
+        modules_raw = getattr(config, "modules_to_save", None)
+        if not modules_raw:
+            continue
+        modules_to_save = [str(item) for item in modules_raw]
+        filtered = [item for item in modules_to_save if item != module_name]
+        if filtered == modules_to_save:
+            continue
+        setattr(config, "modules_to_save", filtered or None)
+        removed = True
+    return removed
+
+
 def _install_coverage_ledger_head_for_training(
     model: torch.nn.Module,
     training_config: Any,
@@ -3067,6 +3123,8 @@ def main():
     if coverage_ledger_head is not None:
         _append_train_arg_module_to_save(train_args, "coverage_ledger_head")
         logger.info("Coverage ledger head installed before tuner wrapping")
+    else:
+        _remove_train_arg_module_to_save(train_args, "coverage_ledger_head")
     logger.info(f"Model: {train_args.model}")
     logger.info(f"Training type: {train_args.train_type}")
     if rlhf_type:
@@ -4064,6 +4122,10 @@ def main():
                 "This would leave coordinate/token-row offsets unsaved or inactive."
             )
         logger.info("Reattached token_embeddings_adapter hooks on wrapped model")
+    if _remove_missing_peft_module_to_save(sft.model, "coverage_ledger_head"):
+        logger.info(
+            "Removed stale coverage_ledger_head from PEFT modules_to_save because the wrapped model has no coverage_ledger_head module."
+        )
     _require_wrapped_coverage_ledger_head_for_training(
         sft.model,
         _coverage_ledger_cfg_from_training_config(training_config),
