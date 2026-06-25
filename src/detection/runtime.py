@@ -261,29 +261,30 @@ def assert_detection_runtime_supported(
 ) -> None:
     support = resolve_detection_runtime_support(training_config)
     if support.teacher_forcing_target_ir_required:
-        if bool(training_config.training.get("packing", False)):
-            raise ValueError(
-                "latest research_teacher_forcing target IR requires "
-                "training.packing=false; exact atom-position packing mapping "
-                "is not implemented yet"
-            )
-        if bool(training_config.training.get("eval_packing", False)):
-            raise ValueError(
-                "latest research_teacher_forcing target IR requires "
-                "training.eval_packing=false; exact atom-position packing "
-                "mapping is not implemented yet"
-            )
-        if training_config.packing.static_packing:
-            raise ValueError(
-                "latest research_teacher_forcing target IR requires "
-                "packing.static_packing=false; exact atom-position packing "
-                "mapping is not implemented yet"
-            )
+        training_packing = bool(training_config.training.get("packing", False))
+        training_eval_packing = bool(training_config.training.get("eval_packing", False))
         if training_config.packing.padding_free_packed:
             raise ValueError(
                 "latest research_teacher_forcing target IR requires "
-                "packing.padding_free_packed=false; exact atom-position "
-                "packing mapping is not implemented yet"
+                "packing.padding_free_packed=false; exact atom-position packing "
+                "mapping is implemented only for static dataset packing"
+            )
+        if training_packing and not training_config.packing.static_packing:
+            raise ValueError(
+                "latest research_teacher_forcing target IR requires "
+                "packing.static_packing=true when training.packing=true"
+            )
+        if training_config.packing.static_packing and not training_packing:
+            raise ValueError(
+                "latest research_teacher_forcing target IR requires "
+                "training.packing=true when packing.static_packing=true"
+            )
+        if training_eval_packing and not (
+            training_packing and training_config.packing.static_packing
+        ):
+            raise ValueError(
+                "latest research_teacher_forcing target IR requires "
+                "static training packing when training.eval_packing=true"
             )
         if getattr(encoded_sample_cache_cfg, "enabled", False):
             raise ValueError(

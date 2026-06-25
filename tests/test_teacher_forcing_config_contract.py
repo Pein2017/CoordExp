@@ -608,12 +608,6 @@ def test_coverage_ledger_rejects_compact_full_with_legacy_message() -> None:
 @pytest.mark.parametrize(
     ("section", "key", "match"),
     [
-        ("training", "packing", r"coverage_ledger.*training\.packing=false"),
-        (
-            "packing",
-            "static_packing",
-            r"coverage_ledger.*packing\.static_packing=false",
-        ),
         (
             "packing",
             "padding_free_packed",
@@ -633,6 +627,28 @@ def test_coverage_ledger_rejects_packing_modes(
 
     with pytest.raises(ValueError, match=match):
         DetectionTrainingConfig.from_mapping(payload)
+
+
+def test_coverage_ledger_allows_stage1_static_packing_and_eval_packing() -> None:
+    payload = _coverage_ledger_payload()
+    training = payload["training"]
+    packing = payload["packing"]
+    assert isinstance(training, dict)
+    assert isinstance(packing, dict)
+    training["packing"] = True
+    training["eval_packing"] = True
+    packing["static_packing"] = True
+
+    cfg = DetectionTrainingConfig.from_mapping(payload)
+
+    assert cfg.training["packing"] is True
+    assert cfg.training["eval_packing"] is True
+    assert cfg.packing.static_packing is True
+    assert_detection_runtime_supported(
+        cfg,
+        encoded_sample_cache_cfg=SimpleNamespace(enabled=False),
+        tokenizer=None,
+    )
 
 
 def test_coverage_ledger_rejects_resolved_train_batch_size_above_one() -> None:
@@ -973,9 +989,6 @@ def test_latest_teacher_forcing_coverage_profile_still_requires_runtime_wiring()
 @pytest.mark.parametrize(
     ("section", "key", "match"),
     [
-        ("training", "packing", r"training\.packing=false"),
-        ("training", "eval_packing", r"training\.eval_packing=false"),
-        ("packing", "static_packing", r"packing\.static_packing=false"),
         ("packing", "padding_free_packed", r"packing\.padding_free_packed=false"),
     ],
 )
@@ -998,17 +1011,21 @@ def test_latest_teacher_forcing_runtime_rejects_packing_surfaces(
         )
 
 
-def test_latest_teacher_forcing_schema_rejects_training_packing_with_public_id_message() -> None:
+def test_latest_teacher_forcing_schema_allows_stage1_static_packing() -> None:
     payload = _latest_teacher_payload()
     training = payload["training"]
+    packing = payload["packing"]
     assert isinstance(training, dict)
+    assert isinstance(packing, dict)
     training["packing"] = True
+    training["eval_packing"] = True
+    packing["static_packing"] = True
 
-    with pytest.raises(
-        ValueError,
-        match=r"objective\.id=research_teacher_forcing.*training\.packing=true",
-    ):
-        DetectionTrainingConfig.from_mapping(payload)
+    cfg = DetectionTrainingConfig.from_mapping(payload)
+
+    assert cfg.training["packing"] is True
+    assert cfg.training["eval_packing"] is True
+    assert cfg.packing.static_packing is True
 
 
 def test_removed_stage2_teacher_forcing_config_tree_is_absent() -> None:

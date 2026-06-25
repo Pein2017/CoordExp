@@ -2838,11 +2838,7 @@ def _validate_teacher_forcing_training_packing_contract(
         raise TypeError(
             f"training.packing must be boolean when objective.id={TEACHER_FORCING_OBJECTIVE_ID}"
         )
-    if packing_raw:
-        raise ValueError(
-            f"objective.id={TEACHER_FORCING_OBJECTIVE_ID} currently rejects training.packing=true; "
-            "exact atom-position packing mapping is not implemented"
-        )
+    return
 
 
 
@@ -3057,28 +3053,26 @@ def _detection_validate_packing_runtime_contract(
     training_eval_packing = _detection_runtime_bool(training, "eval_packing")
 
     if getattr(objective, "id", None) == TEACHER_FORCING_OBJECTIVE_ID:
-        if training_packing:
-            raise ValueError(
-                f"objective.id={TEACHER_FORCING_OBJECTIVE_ID} currently rejects training.packing=true; "
-                "exact atom-position packing mapping is not implemented"
-            )
-        if training_eval_packing:
-            raise ValueError(
-                f"objective.id={TEACHER_FORCING_OBJECTIVE_ID} currently rejects "
-                "training.eval_packing=true; exact atom-position packing mapping "
-                "is not implemented"
-            )
-        if packing.static_packing:
-            raise ValueError(
-                f"objective.id={TEACHER_FORCING_OBJECTIVE_ID} currently rejects "
-                "packing.static_packing=true; exact atom-position packing mapping "
-                "is not implemented"
-            )
         if packing.padding_free_packed:
             raise ValueError(
                 f"objective.id={TEACHER_FORCING_OBJECTIVE_ID} currently rejects "
                 "packing.padding_free_packed=true; exact atom-position packing "
-                "mapping is not implemented"
+                "mapping is implemented only for static dataset packing"
+            )
+        if training_packing and not packing.static_packing:
+            raise ValueError(
+                f"objective.id={TEACHER_FORCING_OBJECTIVE_ID} with "
+                "training.packing=true requires packing.static_packing=true"
+            )
+        if packing.static_packing and not training_packing:
+            raise ValueError(
+                f"objective.id={TEACHER_FORCING_OBJECTIVE_ID} with "
+                "packing.static_packing=true requires training.packing=true"
+            )
+        if training_eval_packing and not (training_packing and packing.static_packing):
+            raise ValueError(
+                f"objective.id={TEACHER_FORCING_OBJECTIVE_ID} with "
+                "training.eval_packing=true requires static training packing"
             )
         return
 
@@ -3167,20 +3161,16 @@ def _detection_validate_teacher_forcing_coverage_ledger_contract(
             f"got detection_template.id={detection_template.id!r}"
         )
 
-    if _detection_runtime_bool(training, "packing"):
+    coverage_packing = _detection_runtime_bool(training, "packing")
+    if coverage_packing and not packing.static_packing:
         raise ValueError(
             "objective.terms.coverage_ledger.enabled=true requires "
-            "training.packing=false"
+            "packing.static_packing=true when training.packing=true"
         )
-    if _detection_runtime_bool(training, "eval_packing"):
+    if packing.static_packing and not coverage_packing:
         raise ValueError(
             "objective.terms.coverage_ledger.enabled=true requires "
-            "training.eval_packing=false"
-        )
-    if packing.static_packing:
-        raise ValueError(
-            "objective.terms.coverage_ledger.enabled=true requires "
-            "packing.static_packing=false"
+            "training.packing=true when packing.static_packing=true"
         )
     if packing.padding_free_packed:
         raise ValueError(
