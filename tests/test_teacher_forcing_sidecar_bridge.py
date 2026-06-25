@@ -132,9 +132,12 @@ class _ModelInputOnlyDataset:
         return len(self._order)
 
     def __getitem__(self, index: int) -> dict[str, Any]:
-        sample = self._dataset[self._order[int(index)]]
+        base_idx = self._order[int(index)]
+        sample = self._dataset[base_idx]
         return {
             "dataset": "unit",
+            "base_idx": sample.get("base_idx", base_idx),
+            "sample_id": sample.get("sample_id", f"unit:{base_idx}"),
             "input_ids": list(sample["input_ids"]),
             "labels": list(sample["labels"]),
             "attention_mask": list(sample["attention_mask"]),
