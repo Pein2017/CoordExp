@@ -5,6 +5,10 @@
 extends:
   - ./compact_support2.yaml
 
+model:
+  adapters:
+    - /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_fullobj_sorted_sft_bsz16_4epoch_tokenrows_v2/compact-full-fullobj-sorted-sft-bsz16-4epoch-tokenrows-v2/v1-20260601-062429/checkpoint-3600
+
 detection_template:
   id: compact_object_box_closed
 
