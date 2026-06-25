@@ -52,7 +52,11 @@ class CoverageLedgerForwardCapture:
             packing_enabled=packing_enabled,
             where=where,
         )
-        _validate_v0_media_inputs(inputs_for_model, where=where)
+        _validate_v0_media_inputs(
+            inputs_for_model,
+            packing_enabled=packing_enabled,
+            where=where,
+        )
         lower_model = self._require_qwen_conditional_generation(
             core_model,
             model_type=model_type,
@@ -93,6 +97,7 @@ class CoverageLedgerForwardCapture:
             inputs_for_model=inputs_for_model,
             core_model=core_model,
             lower_model=lower_model,
+            packing_enabled=packing_enabled,
             where=where,
         )
 
@@ -154,6 +159,7 @@ class CoverageLedgerForwardCapture:
         inputs_for_model: Mapping[str, Any],
         core_model: Any,
         lower_model: Any,
+        packing_enabled: bool,
         where: str,
     ) -> None:
         if (
@@ -172,6 +178,7 @@ class CoverageLedgerForwardCapture:
         grid_token_count = _expected_image_tokens_from_grid(
             inputs_for_model.get("image_grid_thw"),
             lower_model=lower_model,
+            packing_enabled=packing_enabled,
             where=where,
         )
         embed_count = int(image_embeds.shape[0])
@@ -286,11 +293,16 @@ def _expected_image_tokens_from_grid(
     image_grid_thw: Any,
     *,
     lower_model: Any,
+    packing_enabled: bool,
     where: str,
 ) -> int:
     if not isinstance(image_grid_thw, torch.Tensor):
         raise ValueError(f"{where}: image_grid_thw is required")
-    _validate_image_grid_thw_v0(image_grid_thw, where=where)
+    _validate_image_grid_thw_v0(
+        image_grid_thw,
+        packing_enabled=packing_enabled,
+        where=where,
+    )
 
     merge_size = _resolve_spatial_merge_size(lower_model, where=where)
     merge_area = merge_size * merge_size
@@ -302,7 +314,12 @@ def _expected_image_tokens_from_grid(
     return int((per_image_patches // merge_area).sum().item())
 
 
-def _validate_v0_media_inputs(inputs_for_model: Mapping[str, Any], *, where: str) -> None:
+def _validate_v0_media_inputs(
+    inputs_for_model: Mapping[str, Any],
+    *,
+    packing_enabled: bool,
+    where: str,
+) -> None:
     if inputs_for_model.get("pixel_values_videos") is not None:
         raise ValueError(f"{where}: pixel_values_videos is unsupported in coverage-ledger v0")
     if inputs_for_model.get("video_grid_thw") is not None:
@@ -310,15 +327,35 @@ def _validate_v0_media_inputs(inputs_for_model: Mapping[str, Any], *, where: str
     image_grid_thw = inputs_for_model.get("image_grid_thw")
     if not isinstance(image_grid_thw, torch.Tensor):
         raise ValueError(f"{where}: image_grid_thw is required")
-    _validate_image_grid_thw_v0(image_grid_thw, where=where)
+    _validate_image_grid_thw_v0(
+        image_grid_thw,
+        packing_enabled=packing_enabled,
+        where=where,
+    )
 
 
-def _validate_image_grid_thw_v0(image_grid_thw: torch.Tensor, *, where: str) -> None:
-    if tuple(image_grid_thw.shape) != (1, 3):
-        raise ValueError(f"{where}: image_grid_thw must have shape (1, 3)")
-    grid_t = int(image_grid_thw[0, 0].item())
-    if grid_t != 1:
-        raise ValueError(f"{where}: image_grid_thw T must be 1 for coverage-ledger v0")
+def _validate_image_grid_thw_v0(
+    image_grid_thw: torch.Tensor,
+    *,
+    packing_enabled: bool,
+    where: str,
+) -> None:
+    if image_grid_thw.ndim != 2 or int(image_grid_thw.shape[1]) != 3:
+        raise ValueError(f"{where}: image_grid_thw must have shape (N, 3)")
+    row_count = int(image_grid_thw.shape[0])
+    if row_count <= 0:
+        raise ValueError(f"{where}: image_grid_thw must contain at least one image row")
+    if not packing_enabled and row_count != 1:
+        raise ValueError(
+            f"{where}: image_grid_thw must have shape (1, 3) when packing is disabled"
+        )
+    for row_index in range(row_count):
+        grid_t = int(image_grid_thw[row_index, 0].item())
+        if grid_t != 1:
+            raise ValueError(
+                f"{where}: image_grid_thw row {row_index} T must be 1 "
+                "for coverage-ledger v0"
+            )
 
 
 def _resolve_spatial_merge_size(lower_model: Any, *, where: str) -> int:

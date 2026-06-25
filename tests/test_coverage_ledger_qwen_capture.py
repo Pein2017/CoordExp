@@ -151,6 +151,25 @@ def _qwen_inputs(*, image_token_id: int = 32000) -> dict[str, Any]:
     }
 
 
+def _packed_qwen_inputs(*, image_token_id: int = 32000) -> dict[str, Any]:
+    input_ids = torch.tensor(
+        [[11, image_token_id, image_token_id, 12, 13, image_token_id, image_token_id, 14]]
+    )
+    seq_len = int(input_ids.shape[1])
+    return {
+        "input_ids": input_ids,
+        "attention_mask": torch.ones((1, seq_len), dtype=torch.long),
+        "pixel_values": torch.ones((2, 3, 2, 2), dtype=torch.float32),
+        "image_grid_thw": torch.tensor([[1, 1, 2], [1, 1, 2]], dtype=torch.long),
+        "position_ids": torch.arange(seq_len, dtype=torch.long)
+        .reshape(1, 1, seq_len)
+        .repeat(4, 1, 1),
+        "labels": input_ids.clone(),
+        "training_sidecars": object(),
+        "supervision_spans": ("sidecar-only",),
+    }
+
+
 def test_capture_returns_full_products_with_same_forward_parity() -> None:
     model = _FakeQwenForConditionalGeneration()
     inputs = _qwen_inputs()
@@ -184,6 +203,27 @@ def test_capture_returns_full_products_with_same_forward_parity() -> None:
     assert capture.logits.shape[:2] == inputs["input_ids"].shape
     assert model.model.get_image_features_calls == 2
     assert len(model.model.forward_calls) == 2
+
+
+def test_capture_accepts_packed_multi_image_grid_when_each_segment_is_one_frame() -> None:
+    model = _FakeQwenForConditionalGeneration()
+    model.model.image_embeds = torch.arange(16, dtype=torch.float32).reshape(4, 4)
+    inputs = _packed_qwen_inputs()
+
+    capture = CoverageLedgerForwardCapture().capture(
+        model=model,
+        inputs=inputs,
+        ignored_keys=("labels", "training_sidecars", "supervision_spans"),
+        packing_enabled=True,
+        where="test",
+    )
+
+    assert model.model.get_image_features_calls == 1
+    assert len(model.model.forward_calls) == 1
+    assert model.model.forward_calls[0]["image_grid_thw"].shape == (2, 3)
+    assert model.model.forward_calls[0]["position_ids"].shape[0] == 4
+    assert capture.image_embeds.shape == (4, 4)
+    assert capture.logits.shape[:2] == inputs["input_ids"].shape
 
 
 def test_capture_rejects_logits_to_keep_before_qwen_forward() -> None:

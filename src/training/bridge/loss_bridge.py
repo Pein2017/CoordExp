@@ -8,7 +8,7 @@ from typing import Any
 
 import torch
 
-from src.metrics.events import MetricEvent
+from src.metrics.events import MetricEvent, last_event
 from src.trainers.batch_extras import BatchExtras
 from src.trainers.teacher_forcing.forwards import prepare_forward_inputs
 from src.training.bridge.coordinate_mapper import PredictionCoordinateMapper
@@ -20,12 +20,17 @@ from src.training.coverage_ledger.loss import (
 from src.training.coverage_ledger.metrics import (
     COVERAGE_ACCURACY_KEY,
     COVERAGE_AUC_KEY,
+    COVERAGE_LEDGER_OBJECTIVE_ID,
+    COVERAGE_LEDGER_STAGE,
+    COVERAGE_LEDGER_SURFACE,
+    WEIGHTED_LOSS_KEY,
     coverage_ledger_metric_events,
 )
 from src.training.coverage_ledger.qwen_capture import CoverageLedgerForwardCapture
 from src.training.coverage_ledger.sidecars import CoverageLedgerSidecar
 from src.training.coverage_ledger.visual_regions import (
     map_norm1000_bbox_to_visual_token_region,
+    offset_visual_token_region,
     pool_object_visual_embeddings,
 )
 from src.training.encoding.model_inputs import (
@@ -37,6 +42,7 @@ from src.training.objectives.types import ObjectiveRunResult, ObjectiveSpec
 from src.training.sidecars import TrainingSidecars
 from src.training.supervision.batch import SupervisionBatch
 from src.training.teacher_forcing.constants import TEACHER_FORCING_TARGET_IR_KEY
+from src.training.teacher_forcing.packing_offsets import PackedSegmentOffset
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,11 +149,20 @@ class TrainerLossBridge:
 
         # call the model exactly once and require full, unsliced logits.
         coverage_ledger_enabled = self._coverage_ledger_enabled()
-        coverage_ledger_sidecar: CoverageLedgerSidecar | None = None
+        packed_segment_offsets = self._normalize_packed_segment_offsets(
+            None if batch_extras is None else batch_extras.packed_segment_offsets
+        )
+        coverage_ledger_sidecars: tuple[CoverageLedgerSidecar, ...] = ()
         coverage_ledger_head: CoverageLedgerHead | None = None
         if coverage_ledger_enabled:
-            coverage_ledger_sidecar = self._require_coverage_ledger_sidecar(
-                resolved_sidecars
+            coverage_ledger_sidecars = self._require_coverage_ledger_sidecars(
+                resolved_sidecars,
+                packed_segment_offsets=packed_segment_offsets,
+            )
+            self._validate_coverage_ledger_packed_contract(
+                sidecars=coverage_ledger_sidecars,
+                packed_segment_offsets=packed_segment_offsets,
+                model_inputs=model_inputs.payload,
             )
             coverage_ledger_head = self._require_coverage_ledger_head(model)
             captured = CoverageLedgerForwardCapture().capture(
@@ -190,37 +205,56 @@ class TrainerLossBridge:
         metric_events = tuple(objective_result.metric_events)
 
         if coverage_ledger_enabled:
-            assert coverage_ledger_sidecar is not None
+            assert coverage_ledger_sidecars
             assert coverage_ledger_head is not None
             visual_config = self._resolve_coverage_ledger_visual_config(model)
-            regions = tuple(
-                map_norm1000_bbox_to_visual_token_region(
-                    entry.bbox_norm1000_xyxy,
-                    image_grid_thw=coverage_ledger_sidecar.image_grid_thw,
-                    processed_width=coverage_ledger_sidecar.processed_width,
-                    processed_height=coverage_ledger_sidecar.processed_height,
-                    patch_size=visual_config["patch_size"],
-                    spatial_merge_size=visual_config["spatial_merge_size"],
+            coverage_ledger_results = []
+            visual_token_start = 0
+            for sidecar in coverage_ledger_sidecars:
+                regions = tuple(
+                    offset_visual_token_region(
+                        map_norm1000_bbox_to_visual_token_region(
+                            entry.bbox_norm1000_xyxy,
+                            image_grid_thw=sidecar.image_grid_thw,
+                            processed_width=sidecar.processed_width,
+                            processed_height=sidecar.processed_height,
+                            patch_size=visual_config["patch_size"],
+                            spatial_merge_size=visual_config["spatial_merge_size"],
+                        ),
+                        visual_token_start=visual_token_start,
+                    )
+                    for entry in sidecar.object_entries
                 )
-                for entry in coverage_ledger_sidecar.object_entries
+                pooled_visual_object_embeddings = pool_object_visual_embeddings(
+                    captured.image_embeds,
+                    regions,
+                )
+                coverage_ledger_results.append(
+                    compute_coverage_ledger_loss(
+                        head=coverage_ledger_head,
+                        final_hidden_states=captured.final_hidden_states,
+                        pooled_visual_object_embeddings=pooled_visual_object_embeddings,
+                        sidecar=sidecar,
+                        config=self._coverage_ledger_loss_config(),
+                        sample_id_to_batch_index=sample_id_to_batch_index,
+                    )
+                )
+                visual_token_start += self._coverage_ledger_visual_token_count(
+                    sidecar,
+                    visual_config,
+                )
+
+            coverage_ledger_result = self._aggregate_coverage_ledger_results(
+                coverage_ledger_results
             )
-            pooled_visual_object_embeddings = pool_object_visual_embeddings(
-                captured.image_embeds,
-                regions,
-            )
-            coverage_ledger_result = compute_coverage_ledger_loss(
-                head=coverage_ledger_head,
-                final_hidden_states=captured.final_hidden_states,
-                pooled_visual_object_embeddings=pooled_visual_object_embeddings,
-                sidecar=coverage_ledger_sidecar,
-                config=self._coverage_ledger_loss_config(),
-                sample_id_to_batch_index=sample_id_to_batch_index,
-            )
-            loss = loss + coverage_ledger_result.weighted_loss
+            loss = loss + coverage_ledger_result
             metric_events = (
                 metric_events
                 + self._filter_coverage_ledger_metric_events(
-                    coverage_ledger_metric_events(coverage_ledger_result)
+                    self._coverage_ledger_metric_events_for_results(
+                        coverage_ledger_results,
+                        weighted_loss=coverage_ledger_result,
+                    )
                 )
             )
 
@@ -351,23 +385,192 @@ class TrainerLossBridge:
             return bool(cfg.get("enabled", False))
         return bool(getattr(cfg, "enabled", False))
 
-    def _require_coverage_ledger_sidecar(
+    def _require_coverage_ledger_sidecars(
         self,
         sidecars: TrainingSidecars,
-    ) -> CoverageLedgerSidecar:
-        """Return the one V0 coverage-ledger sidecar required by enabled config."""
+        *,
+        packed_segment_offsets: tuple[PackedSegmentOffset, ...] | None,
+    ) -> tuple[CoverageLedgerSidecar, ...]:
+        """Return coverage-ledger sidecars allowed by the packed/unpacked contract."""
 
         payloads = tuple(
             payload
             for payload in sidecars.supervision.payloads
             if type(payload) is CoverageLedgerSidecar
         )
-        if len(payloads) != 1:
+        if packed_segment_offsets is None:
+            if len(payloads) != 1:
+                raise ValueError(
+                    "coverage_ledger.enabled=true requires exactly one "
+                    "CoverageLedgerSidecar when packed_segment_offsets are absent; "
+                    f"got {len(payloads)}"
+                )
+            return payloads
+        if len(payloads) != len(packed_segment_offsets):
             raise ValueError(
-                "coverage_ledger.enabled=true requires exactly one "
-                f"CoverageLedgerSidecar; got {len(payloads)}"
+                "packed coverage-ledger sidecar count must match "
+                "packed_segment_offsets; "
+                f"sidecars={len(payloads)} offsets={len(packed_segment_offsets)}"
             )
-        return payloads[0]
+        return payloads
+
+    @staticmethod
+    def _normalize_packed_segment_offsets(
+        payload: Any,
+    ) -> tuple[PackedSegmentOffset, ...] | None:
+        if payload is None:
+            return None
+        if isinstance(payload, PackedSegmentOffset):
+            offsets = (payload,)
+        elif isinstance(payload, Sequence) and not isinstance(payload, (str, bytes)):
+            offsets = tuple(payload)
+        else:
+            raise TypeError("packed_segment_offsets must be a PackedSegmentOffset sequence")
+        if not offsets:
+            raise ValueError("packed_segment_offsets must be non-empty when provided")
+        for offset in offsets:
+            if type(offset) is not PackedSegmentOffset:
+                raise TypeError("packed_segment_offsets entries must be PackedSegmentOffset")
+        sample_ids = [offset.sample_id for offset in offsets]
+        if len(set(sample_ids)) != len(sample_ids):
+            raise ValueError("packed_segment_offsets sample_id values must be unique")
+        return offsets
+
+    def _validate_coverage_ledger_packed_contract(
+        self,
+        *,
+        sidecars: tuple[CoverageLedgerSidecar, ...],
+        packed_segment_offsets: tuple[PackedSegmentOffset, ...] | None,
+        model_inputs: Mapping[str, Any],
+    ) -> None:
+        if packed_segment_offsets is None:
+            if len(sidecars) != 1:
+                raise ValueError(
+                    "coverage_ledger.enabled=true requires exactly one "
+                    "CoverageLedgerSidecar when packed_segment_offsets are absent"
+                )
+            return
+        if not self._settings.packing_enabled:
+            raise ValueError(
+                "packed coverage ledger sidecars require packing_enabled=True"
+            )
+        image_grid_thw = model_inputs.get("image_grid_thw")
+        if not isinstance(image_grid_thw, torch.Tensor):
+            raise ValueError(
+                "packed coverage ledger requires tensor image_grid_thw metadata"
+            )
+        if image_grid_thw.ndim != 2 or int(image_grid_thw.shape[1]) != 3:
+            raise ValueError("packed coverage ledger image_grid_thw must have shape (N, 3)")
+        if int(image_grid_thw.shape[0]) != len(sidecars):
+            raise ValueError(
+                "packed coverage ledger image_grid_thw row count must match "
+                "CoverageLedgerSidecar count"
+            )
+        for flat_index, (sidecar, offset) in enumerate(
+            zip(sidecars, packed_segment_offsets, strict=True)
+        ):
+            if sidecar.sample_id != offset.sample_id:
+                raise ValueError(
+                    "packed coverage ledger sidecar order must match "
+                    "packed_segment_offsets sample_id order"
+                )
+            if sidecar.packed_source_sample_id != offset.sample_id:
+                raise ValueError(
+                    "packed coverage ledger sidecar metadata must preserve sample_id"
+                )
+            if sidecar.packed_row_index != offset.packed_row_index:
+                raise ValueError(
+                    "packed coverage ledger sidecar row index must match offset"
+                )
+            if sidecar.packed_segment_index != offset.segment_index:
+                raise ValueError(
+                    "packed coverage ledger sidecar segment index must match offset"
+                )
+            if sidecar.packed_token_start != offset.token_start:
+                raise ValueError(
+                    "packed coverage ledger sidecar token_start must match offset"
+                )
+            if sidecar.packed_token_end != offset.token_end:
+                raise ValueError(
+                    "packed coverage ledger sidecar token_end must match offset"
+                )
+            grid_row = tuple(
+                int(value)
+                for value in image_grid_thw[flat_index].detach().cpu().tolist()
+            )
+            if grid_row != sidecar.image_grid_thw:
+                raise ValueError(
+                    "packed coverage ledger sidecar image_grid_thw must match "
+                    "model image_grid_thw row order"
+                )
+            if int(grid_row[0]) != 1:
+                raise ValueError(
+                    "packed coverage ledger supports exactly one frame per segment"
+                )
+            for entry in sidecar.object_entries:
+                if int(entry.image_index) != 0:
+                    raise ValueError(
+                        "packed coverage ledger object entries must keep "
+                        "sidecar-local image_index=0"
+                    )
+
+    @staticmethod
+    def _coverage_ledger_visual_token_count(
+        sidecar: CoverageLedgerSidecar,
+        visual_config: Mapping[str, int],
+    ) -> int:
+        grid_t, grid_h, grid_w = sidecar.image_grid_thw
+        merge = int(visual_config["spatial_merge_size"])
+        if merge <= 0:
+            raise ValueError("coverage ledger spatial_merge_size must be positive")
+        merge_area = merge * merge
+        patch_count = int(grid_t) * int(grid_h) * int(grid_w)
+        if patch_count % merge_area != 0:
+            raise ValueError(
+                "coverage ledger packed image grid must be divisible by "
+                "spatial_merge_size^2"
+            )
+        return patch_count // merge_area
+
+    @staticmethod
+    def _aggregate_coverage_ledger_results(results: Sequence[Any]) -> torch.Tensor:
+        frozen = tuple(results)
+        if not frozen:
+            raise ValueError("coverage ledger result aggregation requires results")
+        weighted_terms = []
+        total_weight = 0
+        for result in frozen:
+            object_count = int(result.debug_rows.object_count)
+            if object_count <= 0:
+                raise ValueError(
+                    "coverage ledger result object_count must be positive"
+                )
+            weighted_terms.append(result.weighted_loss * float(object_count))
+            total_weight += object_count
+        return (sum(weighted_terms) / float(total_weight)).to(dtype=torch.float32)
+
+    def _coverage_ledger_metric_events_for_results(
+        self,
+        results: Sequence[Any],
+        *,
+        weighted_loss: torch.Tensor,
+    ) -> tuple[MetricEvent, ...]:
+        frozen = tuple(results)
+        if len(frozen) == 1:
+            return coverage_ledger_metric_events(frozen[0])
+        value = float(weighted_loss.detach().float().item())
+        return (
+            last_event(
+                WEIGHTED_LOSS_KEY,
+                value,
+                unit="batch",
+                semantic_role="auxiliary_weighted_loss",
+                metric_surface=COVERAGE_LEDGER_SURFACE,
+                stage=COVERAGE_LEDGER_STAGE,
+                objective_id=COVERAGE_LEDGER_OBJECTIVE_ID,
+                diagnostic_only=False,
+            ),
+        )
 
     def _require_coverage_ledger_head(self, model: Any) -> CoverageLedgerHead:
         """Return the one trainable coverage-ledger head attached to the model."""
