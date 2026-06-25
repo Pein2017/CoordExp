@@ -196,22 +196,22 @@ def _assert_shared_closed_hard_sft_smoke_config(resolved: dict[str, Any]) -> Non
     assert resolved["objective"]["target_ir"]["rollin_policy"]["name"] == "sorted"
     assert resolved["sample_factory"]["target_sequence"]["object_ordering"] == "sorted"
 
-    assert resolved["training"]["packing"] is False
-    assert resolved["training"]["eval_packing"] is False
-    assert resolved["packing"]["static_packing"] is False
+    assert resolved["training"]["packing"] is True
+    assert resolved["training"]["eval_packing"] is True
+    assert resolved["packing"]["static_packing"] is True
     assert resolved["packing"]["padding_free_packed"] is False
 
     assert resolved["debug"]["train_sample_limit"] == 128
     assert resolved["debug"]["val_sample_limit"] == 128
     assert resolved["debug"]["train_sample_selection"] == EXPECTED_TRAIN_SAMPLE_SELECTION
     assert resolved["training"]["seed"] == 20260623
-    assert resolved["training"]["max_steps"] == 256
+    assert resolved["training"]["max_steps"] == 4
     assert resolved["training"]["per_device_train_batch_size"] == 1
-    assert resolved["training"]["effective_batch_size"] == 1
+    assert resolved["training"]["effective_batch_size"] == 32
     assert resolved["training"]["save_strategy"] == "steps"
-    assert resolved["training"]["save_steps"] == 128
+    assert resolved["training"]["save_steps"] == 2
     assert resolved["training"]["eval_strategy"] == "steps"
-    assert resolved["training"]["eval_steps"] == 128
+    assert resolved["training"]["eval_steps"] == 2
 
     group = resolved["token_embeddings_adapter"]["groups"]["compact_structure"]
     assert tuple(group["tokens"]) == STRUCTURAL_TOKENS
@@ -236,7 +236,7 @@ def test_coverage_ledger_smoke_config_pair_loads_closed_hard_sft_contract(
     ledger_terms = ledger["objective"]["terms"]
     assert ledger_terms["token_type_mass"] == {"enabled": True, "weight": 1.0}
     assert ledger_terms["continuation_margin"] == {"enabled": True, "weight": 0.2}
-    assert ledger_terms["bbox_positive_area"] == {"enabled": True, "weight": 0.1}
+    assert ledger_terms["bbox_positive_area"] == {"enabled": False}
     assert ledger["objective"]["terms"]["coverage_ledger"] == {
         "enabled": True,
         "coverage_weight": 0.1,
@@ -254,8 +254,8 @@ def test_coverage_ledger_smoke_config_pair_loads_closed_hard_sft_contract(
 
     baseline_args = _load_runtime_args(BASELINE_CONFIG, monkeypatch)
     ledger_args = _load_runtime_args(LEDGER_CONFIG, monkeypatch)
-    assert baseline_args.gradient_accumulation_steps == 1
-    assert ledger_args.gradient_accumulation_steps == 1
+    assert baseline_args.gradient_accumulation_steps == 32
+    assert ledger_args.gradient_accumulation_steps == 32
     assert baseline_args.model_type == "qwen3_vl"
     assert ledger_args.model_type == "qwen3_vl"
     assert baseline_args.model == ledger_args.model
@@ -265,7 +265,7 @@ def test_coverage_ledger_smoke_config_pair_loads_closed_hard_sft_contract(
     )
 
 
-def test_coverage_ledger_smoke_effective_batch_one_requires_single_rank(
+def test_coverage_ledger_smoke_effective_batch32_resolves_on_eight_ranks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(config_loader, "TrainArguments", _FakeTrainArguments)
@@ -274,8 +274,13 @@ def test_coverage_ledger_smoke_effective_batch_one_requires_single_rank(
     for path in (BASELINE_CONFIG, LEDGER_CONFIG):
         cfg = ConfigLoader.load_materialized_training_config(str(path))
         assert isinstance(cfg, DetectionTrainingConfig)
-        with pytest.raises(ValueError, match=r"effective_batch_size.*divisible"):
-            ConfigLoader.build_train_arguments(cfg)
+        args = ConfigLoader.build_train_arguments(cfg)
+        assert cfg.training["per_device_train_batch_size"] == 1
+        assert cfg.training["effective_batch_size"] == 32
+        assert cfg.training["packing"] is True
+        assert cfg.training["eval_packing"] is True
+        assert args.per_device_train_batch_size == 1
+        assert args.gradient_accumulation_steps == 4
 
 
 def test_coverage_ledger_prod_config_resolves_batch32_on_eight_ranks(
@@ -301,8 +306,7 @@ def test_coverage_ledger_prod_config_resolves_batch32_on_eight_ranks(
     assert cfg.objective.terms.token_type_mass.weight == pytest.approx(1.0)
     assert cfg.objective.terms.continuation_margin.enabled is True
     assert cfg.objective.terms.continuation_margin.weight == pytest.approx(0.2)
-    assert cfg.objective.terms.bbox_positive_area.enabled is True
-    assert cfg.objective.terms.bbox_positive_area.weight == pytest.approx(0.1)
+    assert cfg.objective.terms.bbox_positive_area.enabled is False
     assert cfg.objective.terms.coverage_ledger.enabled is True
 
 
@@ -329,7 +333,7 @@ def test_coverage_ledger_smoke_configs_load_real_swift_train_arguments() -> None
         assert isinstance(cfg, DetectionTrainingConfig)
         assert args.model == expected_model
         assert args.model_type == "qwen3_vl"
-        assert args.gradient_accumulation_steps == 1
+        assert args.gradient_accumulation_steps == 32
         assert cfg.detection_template.id == "compact_object_box_closed"
         assert cfg.sample_factory.target_sequence.object_ordering == "sorted"
         assert cfg.objective.target_ir.rollin_policy.name == "sorted"
