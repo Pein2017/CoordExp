@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
+from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 import pytest
 import torch
 
 from src.data_collators.dataset_metrics import build_dataset_metrics_collator
+from src.datasets.wrappers.packed_caption import build_static_packed_dataset
 from src.trainers.batch_extras import BatchExtras, pop_batch_extras
+from src.trainers.teacher_forcing.forwards import prepare_forward_inputs
 from src.training.bridge import TrainerLossBridge, TrainerLossBridgeSettings
 from src.training.coverage_ledger import (
     CoverageLedgerObjectEntry,
@@ -47,6 +51,166 @@ class _ImageGridExpandingSwiftTemplate(ImageExpandingSwiftTemplate):
         encoded = super().encode(payload, return_length=return_length)
         encoded["image_grid_thw"] = (1, 8, 8)
         return encoded
+
+
+class _QwenStaticPackingSwiftTemplate(_ImageGridExpandingSwiftTemplate):
+    def __init__(self) -> None:
+        super().__init__()
+        self.max_length = 4096
+        self.packing = False
+        self.padding_free = False
+
+    def data_collator(self, batch: list[Any]) -> dict[str, Any]:
+        assert self.packing is True
+        assert self.padding_free is True
+
+        input_rows: list[list[int]] = []
+        label_rows: list[list[int]] = []
+        attention_rows: list[list[int]] = []
+        packed_offsets_rows: list[list[int]] = []
+
+        for pack in batch:
+            pack_seq = pack if isinstance(pack, (list, tuple)) else [pack]
+            input_ids: list[int] = []
+            labels: list[int] = []
+            attention_mask: list[int] = []
+            offsets = [0]
+            for sample in pack_seq:
+                sample_ids = [int(x) for x in sample["input_ids"]]
+                sample_labels = [int(x) for x in sample["labels"]]
+                sample_attention = [
+                    int(x)
+                    for x in sample.get("attention_mask", [1 for _ in sample_ids])
+                ]
+                assert len(sample_ids) == len(sample_labels) == len(sample_attention)
+                input_ids.extend(sample_ids)
+                labels.extend(sample_labels)
+                attention_mask.extend(sample_attention)
+                offsets.append(len(input_ids))
+            input_rows.append(input_ids)
+            label_rows.append(labels)
+            attention_rows.append(attention_mask)
+            packed_offsets_rows.append(offsets)
+
+        assert len(input_rows) == 1
+        offsets = packed_offsets_rows[0]
+        seq_len = len(input_rows[0])
+        text_position_ids = torch.empty((1, seq_len), dtype=torch.long)
+        for start, end in zip(offsets, offsets[1:]):
+            text_position_ids[0, start:end] = torch.arange(end - start, dtype=torch.long)
+
+        return {
+            "input_ids": torch.tensor(input_rows, dtype=torch.long),
+            "labels": torch.tensor(label_rows, dtype=torch.long),
+            "attention_mask": torch.tensor(attention_rows, dtype=torch.long),
+            "position_ids": text_position_ids.unsqueeze(0).repeat(3, 1, 1),
+            "text_position_ids": text_position_ids,
+            "cu_seq_lens_q": torch.tensor(offsets, dtype=torch.int32),
+            "cu_seq_lens_k": torch.tensor(offsets, dtype=torch.int32),
+            "max_length_q": max(b - a for a, b in zip(offsets, offsets[1:])),
+            "max_length_k": max(b - a for a, b in zip(offsets, offsets[1:])),
+            "packed_segment_offsets": torch.tensor(offsets, dtype=torch.int32),
+        }
+
+
+class _ModelInputOnlyDataset:
+    object_ordering = "sorted"
+
+    def __init__(
+        self,
+        dataset: DetectionTrainingDataset,
+        *,
+        order: Sequence[int],
+    ) -> None:
+        self._dataset = dataset
+        self._order = tuple(int(x) for x in order)
+
+    def __len__(self) -> int:
+        return len(self._order)
+
+    def __getitem__(self, index: int) -> dict[str, Any]:
+        sample = self._dataset[self._order[int(index)]]
+        return {
+            "dataset": "unit",
+            "input_ids": list(sample["input_ids"]),
+            "labels": list(sample["labels"]),
+            "attention_mask": list(sample["attention_mask"]),
+            "length": int(sample["length"]),
+        }
+
+    def _static_packing_precompute_info(self) -> dict[str, object]:
+        return {"thread_safe": True}
+
+
+@dataclass(frozen=True)
+class _PackedDirection:
+    name: str
+    target_label: str
+    source_label: str
+    target_range: tuple[int, int]
+    source_range: tuple[int, int]
+
+
+@dataclass
+class _QwenProbeOutputs:
+    logits: torch.Tensor
+    final_hidden_state: torch.Tensor
+
+
+class _QwenCompatibleAttentionProbe(torch.nn.Module):
+    def __init__(
+        self,
+        *,
+        vocab_size: int,
+        hidden_size: int = 16,
+        use_packed_boundaries: bool,
+    ) -> None:
+        super().__init__()
+        self.config = SimpleNamespace(model_type="qwen3_vl")
+        self.use_packed_boundaries = bool(use_packed_boundaries)
+        self.embed = torch.nn.Embedding(int(vocab_size), int(hidden_size))
+        self.lm_head = torch.nn.Linear(int(hidden_size), int(vocab_size), bias=False)
+        with torch.no_grad():
+            token = torch.arange(int(vocab_size), dtype=torch.float32).unsqueeze(1)
+            dim = torch.arange(1, int(hidden_size) + 1, dtype=torch.float32).unsqueeze(0)
+            self.embed.weight.copy_(((token + 1.0) * dim).remainder(97.0) / 97.0)
+            self.lm_head.weight.copy_(
+                torch.sin((token + 1.0) * dim / float(hidden_size + 3))
+            )
+
+    def forward(
+        self,
+        *,
+        input_ids: torch.Tensor,
+        position_ids: torch.Tensor,
+        cu_seq_lens_q: torch.Tensor,
+        cu_seq_lens_k: torch.Tensor,
+        max_length_q: int,
+        max_length_k: int,
+        **_: Any,
+    ) -> _QwenProbeOutputs:
+        assert tuple(cu_seq_lens_q.tolist()) == tuple(cu_seq_lens_k.tolist())
+        assert int(max_length_q) == int(max_length_k)
+        assert position_ids.ndim == 3
+        assert int(position_ids.shape[0]) == 4
+
+        x = self.embed(input_ids)
+        scores = torch.matmul(x, x.transpose(-1, -2)) / (x.shape[-1] ** 0.5)
+        seq_len = int(input_ids.shape[1])
+        visible = torch.tril(torch.ones((seq_len, seq_len), dtype=torch.bool))
+        if self.use_packed_boundaries:
+            segment_mask = torch.zeros_like(visible)
+            offsets = [int(x) for x in cu_seq_lens_q.detach().cpu().tolist()]
+            for start, end in zip(offsets, offsets[1:]):
+                segment_mask[start:end, start:end] = True
+            visible &= segment_mask
+        scores = scores.masked_fill(~visible.unsqueeze(0), torch.finfo(scores.dtype).min)
+        weights = torch.softmax(scores, dim=-1)
+        final_hidden = torch.matmul(weights, x)
+        return _QwenProbeOutputs(
+            logits=self.lm_head(final_hidden),
+            final_hidden_state=final_hidden,
+        )
 
 
 def _base_collator(batch: list[dict[str, Any]]) -> dict[str, Any]:
@@ -141,6 +305,253 @@ def _run_bridge(
         training_sidecars=training_sidecars,
         supervision=SupervisionBatch(),
         objectives=(ObjectiveSpec("token_ce"),),
+    )
+
+
+def _raw_row_variant(desc_prefix: str, image_id: int) -> dict[str, Any]:
+    row = copy.deepcopy(_raw_row())
+    row["image_id"] = int(image_id)
+    for index, obj in enumerate(row["objects"]):
+        obj["desc"] = f"{desc_prefix}-{index}"
+        obj["category_name"] = f"{desc_prefix}-{index}"
+        obj["coco_ann_id"] = int(image_id * 100 + index)
+    return row
+
+
+def _build_static_packed_detection_batch(
+    tmp_path: Path,
+    *,
+    order: Sequence[int],
+) -> tuple[dict[str, Any], tuple[int, int, int]]:
+    jsonl_path = tmp_path / f"train-{'-'.join(str(x) for x in order)}.coord.jsonl"
+    _write_jsonl(
+        jsonl_path,
+        [
+            _raw_row_variant("alpha", 101),
+            _raw_row_variant("beta", 202),
+        ],
+    )
+    _ensure_image(tmp_path)
+    swift_template = _QwenStaticPackingSwiftTemplate()
+    detection_dataset = DetectionTrainingDataset.from_jsonl(
+        jsonl_path,
+        swift_template=swift_template,
+        image_root=tmp_path / "image-root",
+        detection_template_id="compact_object_box_closed",
+        mode="random_order_sft",
+        object_ordering="sorted",
+        user_prompt="Detect every object.",
+        system_prompt="You are a detector.",
+        seed=20260625,
+        state_weighting="uniform_permutation",
+        normalization="semantic_image_bucket_balanced",
+        object_field_order="desc_first",
+        teacher_forcing_profile="hard_sft",
+        coverage_ledger_enabled=False,
+        dataset_name="unit",
+    )
+    model_input_dataset = _ModelInputOnlyDataset(detection_dataset, order=order)
+    packing_length = sum(int(model_input_dataset[i]["length"]) for i in range(2))
+    packed_dataset = build_static_packed_dataset(
+        model_input_dataset,
+        template=swift_template,
+        packing_length=packing_length,
+        min_fill_ratio=0.01,
+        packing_drop_last=False,
+        dataloader_drop_last=False,
+        allow_single_long=True,
+        cache_dir=tmp_path / f"static-pack-cache-{'-'.join(str(x) for x in order)}",
+        fingerprint={"test": "static_packed_forward_attention_isolation"},
+        length_precompute_workers=1,
+    )
+    assert len(packed_dataset) == 1
+    pack = packed_dataset[0]
+    assert len(pack) == 2
+
+    collator = build_dataset_metrics_collator(
+        swift_template,
+        swift_template.data_collator,
+    )
+    batch = collator([pack])
+    offsets = tuple(int(x) for x in batch["packed_segment_offsets"].tolist())
+    return batch, offsets
+
+
+def _assert_packed_metadata_matches_offsets(
+    batch: Mapping[str, Any],
+    offsets: Sequence[int],
+) -> None:
+    expected = [int(x) for x in offsets]
+    assert batch["cu_seq_lens_q"].tolist() == expected
+    assert batch["cu_seq_lens_k"].tolist() == expected
+    max_segment_len = max(b - a for a, b in zip(expected, expected[1:]))
+    assert int(batch["max_length_q"]) == int(max_segment_len)
+    assert int(batch["max_length_k"]) == int(max_segment_len)
+    assert batch["packed_segment_offsets"].tolist() == expected
+
+    text_position_ids = batch["text_position_ids"]
+    reset_points = torch.nonzero(text_position_ids[0] == 0, as_tuple=False).flatten()
+    assert reset_points.tolist() == expected[:-1]
+    position_ids = batch["position_ids"]
+    assert tuple(position_ids.shape) == (3, 1, expected[-1])
+    for start, end in zip(expected, expected[1:]):
+        local_positions = torch.arange(end - start, dtype=torch.long)
+        assert torch.equal(text_position_ids[0, start:end], local_positions)
+        for component in range(3):
+            assert torch.equal(position_ids[component, 0, start:end], local_positions)
+
+
+def _supervised_positions_in_range(
+    labels: torch.Tensor,
+    segment_range: tuple[int, int],
+) -> torch.Tensor:
+    start, end = segment_range
+    segment_labels = labels[0, start:end]
+    positions = torch.nonzero(segment_labels != -100, as_tuple=False).flatten() + start
+    assert int(positions.numel()) > 0
+    return positions
+
+
+def _perturb_source_text_tokens(
+    batch: Mapping[str, Any],
+    source_range: tuple[int, int],
+) -> dict[str, Any]:
+    perturbed = {
+        key: value.clone() if isinstance(value, torch.Tensor) else value
+        for key, value in batch.items()
+    }
+    labels = perturbed["labels"]
+    input_ids = perturbed["input_ids"]
+    start, end = source_range
+    candidates = torch.nonzero(labels[0, start:end] == -100, as_tuple=False).flatten()
+    assert int(candidates.numel()) >= 2
+    positions = candidates[: min(8, int(candidates.numel()))] + start
+    input_ids[0, positions] = input_ids[0, positions] + 211
+    return perturbed
+
+
+def _run_probe(
+    probe: _QwenCompatibleAttentionProbe,
+    batch: Mapping[str, Any],
+) -> _QwenProbeOutputs:
+    _, inputs_for_model, _ = prepare_forward_inputs(
+        model=probe,
+        inputs=batch,
+        ignored_keys=(
+            "labels",
+            "attention_mask",
+            "dataset_labels",
+            "dataset_segments",
+            "pack_num_samples",
+            "packed_segment_offsets",
+        ),
+        packing_enabled=True,
+        where="static packed attention isolation test",
+    )
+    return probe(**inputs_for_model)
+
+
+def _max_delta_at_positions(
+    before: torch.Tensor,
+    after: torch.Tensor,
+    positions: torch.Tensor,
+) -> float:
+    return float((before[0, positions] - after[0, positions]).abs().max().item())
+
+
+def _assert_direction_isolated(
+    *,
+    batch: Mapping[str, Any],
+    direction: _PackedDirection,
+    vocab_size: int,
+) -> None:
+    supervised_positions = _supervised_positions_in_range(
+        batch["labels"],
+        direction.target_range,
+    )
+    perturbed = _perturb_source_text_tokens(batch, direction.source_range)
+
+    isolated_probe = _QwenCompatibleAttentionProbe(
+        vocab_size=vocab_size,
+        use_packed_boundaries=True,
+    )
+    baseline = _run_probe(isolated_probe, batch)
+    changed = _run_probe(isolated_probe, perturbed)
+
+    hidden_delta = _max_delta_at_positions(
+        baseline.final_hidden_state,
+        changed.final_hidden_state,
+        supervised_positions,
+    )
+    logits_delta = _max_delta_at_positions(
+        baseline.logits,
+        changed.logits,
+        supervised_positions,
+    )
+    assert hidden_delta <= 1e-7, (
+        f"{direction.name}: segment {direction.target_label} hidden states changed "
+        f"after perturbing segment {direction.source_label}: delta={hidden_delta}"
+    )
+    assert logits_delta <= 1e-6, (
+        f"{direction.name}: segment {direction.target_label} logits changed "
+        f"after perturbing segment {direction.source_label}: delta={logits_delta}"
+    )
+
+    leaky_probe = _QwenCompatibleAttentionProbe(
+        vocab_size=vocab_size,
+        use_packed_boundaries=False,
+    )
+    leaky_baseline = _run_probe(leaky_probe, batch)
+    leaky_changed = _run_probe(leaky_probe, perturbed)
+    leaky_hidden_delta = _max_delta_at_positions(
+        leaky_baseline.final_hidden_state,
+        leaky_changed.final_hidden_state,
+        supervised_positions,
+    )
+    assert leaky_hidden_delta > 1e-5, (
+        f"{direction.name}: sensitivity check failed; an unsegmented causal "
+        f"attention pass did not expose leakage at supervised positions"
+    )
+
+
+def test_static_packed_forward_has_no_cross_segment_attention_leakage(tmp_path) -> None:
+    batch_ab, offsets_ab = _build_static_packed_detection_batch(tmp_path, order=(0, 1))
+    _assert_packed_metadata_matches_offsets(batch_ab, offsets_ab)
+    assert len(offsets_ab) == 3
+    assert int(batch_ab["pack_num_samples"].reshape(-1)[0].item()) == 2
+
+    vocab_size = int(batch_ab["input_ids"].max().item()) + 512
+    _assert_direction_isolated(
+        batch=batch_ab,
+        direction=_PackedDirection(
+            name="segment_0_to_segment_1",
+            target_label="segment_1",
+            source_label="segment_0",
+            target_range=(offsets_ab[1], offsets_ab[2]),
+            source_range=(offsets_ab[0], offsets_ab[1]),
+        ),
+        vocab_size=vocab_size,
+    )
+
+    # Qwen decoder attention is causal, so future segment text cannot affect an
+    # earlier segment even without packed boundaries. Reversing the static pack
+    # order puts the other sample in the previous-segment leakage-risk position.
+    batch_ba, offsets_ba = _build_static_packed_detection_batch(tmp_path, order=(1, 0))
+    _assert_packed_metadata_matches_offsets(batch_ba, offsets_ba)
+    assert len(offsets_ba) == 3
+    assert int(batch_ba["pack_num_samples"].reshape(-1)[0].item()) == 2
+
+    vocab_size = max(vocab_size, int(batch_ba["input_ids"].max().item()) + 512)
+    _assert_direction_isolated(
+        batch=batch_ba,
+        direction=_PackedDirection(
+            name="segment_1_to_segment_0_when_ordered_first",
+            target_label="segment_0",
+            source_label="segment_1",
+            target_range=(offsets_ba[1], offsets_ba[2]),
+            source_range=(offsets_ba[0], offsets_ba[1]),
+        ),
+        vocab_size=vocab_size,
     )
 
 
