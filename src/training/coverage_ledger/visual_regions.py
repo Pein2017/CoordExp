@@ -168,6 +168,29 @@ def pool_object_visual_embeddings(
     return torch.stack(pooled, dim=0)
 
 
+def offset_visual_token_region(
+    region: VisualTokenRegion,
+    visual_token_start: int,
+) -> VisualTokenRegion:
+    """Offset flattened visual-token indices by a cumulative visual-token start."""
+
+    if type(region) is not VisualTokenRegion:
+        raise TypeError("region must be a VisualTokenRegion")
+    start = _require_non_negative_int(
+        visual_token_start,
+        field_name="visual_token_start",
+    )
+    return VisualTokenRegion(
+        row_start=region.row_start,
+        row_end=region.row_end,
+        col_start=region.col_start,
+        col_end=region.col_end,
+        flattened_indices=tuple(
+            int(index) + start for index in region.flattened_indices
+        ),
+    )
+
+
 def _normalize_single_image_grid(image_grid_thw: Any) -> tuple[int, int, int]:
     if isinstance(image_grid_thw, torch.Tensor):
         if image_grid_thw.ndim == 1 and int(image_grid_thw.shape[0]) == 3:
@@ -219,6 +242,12 @@ def _freeze_positive_int_triplet(
 def _require_positive_int(value: Any, *, field_name: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
         raise ValueError(f"{field_name} must be a positive integer")
+    return int(value)
+
+
+def _require_non_negative_int(value: Any, *, field_name: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise ValueError(f"{field_name} must be a non-negative integer")
     return int(value)
 
 
@@ -282,5 +311,6 @@ def _clamp(value: int, lower: int, upper: int) -> int:
 __all__ = [
     "VisualTokenRegion",
     "map_norm1000_bbox_to_visual_token_region",
+    "offset_visual_token_region",
     "pool_object_visual_embeddings",
 ]

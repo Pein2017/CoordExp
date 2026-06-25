@@ -13,6 +13,10 @@ from src.training.coverage_ledger.sidecars import (
     CoverageLedgerObjectEntry,
     CoverageLedgerSidecar,
 )
+from src.training.coverage_ledger.visual_regions import (
+    VisualTokenRegion,
+    offset_visual_token_region,
+)
 
 
 def _entry(index: int, *, box_start: int, box_end: int) -> CoverageLedgerObjectEntry:
@@ -315,3 +319,24 @@ def test_backward_reaches_head_and_hidden_states_but_not_detached_visual_embeddi
     assert hidden_states.grad[4].abs().sum() > 0
     assert hidden_states.grad[9].abs().sum() > 0
     assert pooled_visuals.grad is None
+
+
+def test_offset_visual_token_region_adds_visual_token_start() -> None:
+    region = VisualTokenRegion(
+        row_start=1,
+        row_end=3,
+        col_start=2,
+        col_end=4,
+        flattened_indices=(6, 7, 10, 11),
+    )
+
+    shifted = offset_visual_token_region(region, visual_token_start=100)
+
+    assert shifted == VisualTokenRegion(
+        row_start=1,
+        row_end=3,
+        col_start=2,
+        col_end=4,
+        flattened_indices=(106, 107, 110, 111),
+    )
+    assert region.flattened_indices == (6, 7, 10, 11)

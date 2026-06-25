@@ -19,6 +19,8 @@ from src.training.coverage_ledger import (
     CoverageLedgerSidecar,
     build_coverage_ledger_sidecar,
 )
+from src.training.coverage_ledger.sidecars import shift_coverage_ledger_sidecar
+from src.training.teacher_forcing.packing_offsets import PackedSegmentOffset
 
 
 class _LedgerTokenizer:
@@ -303,3 +305,58 @@ def test_coverage_ledger_sidecar_validates_object_contract() -> None:
             processed_height=480,
             image_identity="image.jpg",
         )
+
+
+def test_shift_coverage_ledger_sidecar_offsets_all_token_positions() -> None:
+    entry = CoverageLedgerObjectEntry(
+        object_instance_id="object-1",
+        source_object_index=7,
+        emitted_order_index=0,
+        image_index=0,
+        bbox_norm1000_xyxy=(10, 20, 300, 400),
+        box_start_position=11,
+        coord_label_positions=(12, 13, 14, 15),
+        object_ref_end_position=10,
+        box_end_position=16,
+    )
+    sidecar = CoverageLedgerSidecar(
+        sample_id="coco:0",
+        prompt_end_position=9,
+        object_entries=(entry,),
+        image_grid_thw=(1, 16, 16),
+        processed_width=640,
+        processed_height=480,
+        image_identity="image.jpg",
+    )
+    offset = PackedSegmentOffset(
+        sample_id="coco:0",
+        packed_row_index=3,
+        segment_index=1,
+        token_start=40,
+        token_end=57,
+    )
+
+    shifted = shift_coverage_ledger_sidecar(sidecar, offset)
+
+    assert shifted.sample_id == "coco:0"
+    assert shifted.prompt_end_position == 49
+    assert shifted.image_grid_thw == sidecar.image_grid_thw
+    assert shifted.processed_width == sidecar.processed_width
+    assert shifted.processed_height == sidecar.processed_height
+    assert shifted.image_identity == sidecar.image_identity
+    assert shifted.packed_source_sample_id == "coco:0"
+    assert shifted.packed_row_index == 3
+    assert shifted.packed_segment_index == 1
+    assert shifted.packed_token_start == 40
+    assert shifted.packed_token_end == 57
+
+    shifted_entry = shifted.object_entries[0]
+    assert shifted_entry.image_index == 0
+    assert shifted_entry.bbox_norm1000_xyxy == (10, 20, 300, 400)
+    assert shifted_entry.object_ref_end_position == 50
+    assert shifted_entry.box_start_position == 51
+    assert shifted_entry.coord_label_positions == (52, 53, 54, 55)
+    assert shifted_entry.box_end_position == 56
+
+    assert sidecar.prompt_end_position == 9
+    assert sidecar.object_entries[0].coord_label_positions == (12, 13, 14, 15)

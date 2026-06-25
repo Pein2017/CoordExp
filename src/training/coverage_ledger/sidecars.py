@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from src.training.coverage_ledger.geometry import validate_norm1000_bbox_xyxy
+from src.training.teacher_forcing.packing_offsets import PackedSegmentOffset
 
 
 def _require_plain_int(value: object, *, field_name: str) -> int:
@@ -34,6 +35,26 @@ def _require_non_empty_str(value: object, *, field_name: str) -> str:
     if not value:
         raise ValueError(f"{field_name} must be non-empty")
     return value
+
+
+def _require_optional_non_empty_str(
+    value: object | None,
+    *,
+    field_name: str,
+) -> str | None:
+    if value is None:
+        return None
+    return _require_non_empty_str(value, field_name=field_name)
+
+
+def _require_optional_non_negative_int(
+    value: object | None,
+    *,
+    field_name: str,
+) -> int | None:
+    if value is None:
+        return None
+    return _require_non_negative_int(value, field_name=field_name)
 
 
 def _freeze_int_tuple(
@@ -148,6 +169,11 @@ class CoverageLedgerSidecar:
     processed_width: int
     processed_height: int
     image_identity: str
+    packed_source_sample_id: str | None = None
+    packed_row_index: int | None = None
+    packed_segment_index: int | None = None
+    packed_token_start: int | None = None
+    packed_token_end: int | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -197,6 +223,47 @@ class CoverageLedgerSidecar:
         object_entries = _freeze_object_entries(self.object_entries)
         _validate_sidecar_object_entries(object_entries)
         object.__setattr__(self, "object_entries", object_entries)
+        object.__setattr__(
+            self,
+            "packed_source_sample_id",
+            _require_optional_non_empty_str(
+                self.packed_source_sample_id,
+                field_name="packed_source_sample_id",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "packed_row_index",
+            _require_optional_non_negative_int(
+                self.packed_row_index,
+                field_name="packed_row_index",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "packed_segment_index",
+            _require_optional_non_negative_int(
+                self.packed_segment_index,
+                field_name="packed_segment_index",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "packed_token_start",
+            _require_optional_non_negative_int(
+                self.packed_token_start,
+                field_name="packed_token_start",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "packed_token_end",
+            _require_optional_non_negative_int(
+                self.packed_token_end,
+                field_name="packed_token_end",
+            ),
+        )
+        _validate_packed_metadata(self)
 
 
 def _validate_bbox(value: Sequence[object]) -> tuple[int, int, int, int]:
@@ -235,7 +302,68 @@ def _validate_sidecar_object_entries(
         )
 
 
+def _validate_packed_metadata(sidecar: CoverageLedgerSidecar) -> None:
+    fields = (
+        "packed_source_sample_id",
+        "packed_row_index",
+        "packed_segment_index",
+        "packed_token_start",
+        "packed_token_end",
+    )
+    values = tuple(getattr(sidecar, field_name) for field_name in fields)
+    if all(value is None for value in values):
+        return
+    if any(value is None for value in values):
+        raise ValueError("packed sidecar metadata fields must be all set or all unset")
+    if sidecar.packed_token_end <= sidecar.packed_token_start:  # type: ignore[operator]
+        raise ValueError("packed_token_end must be greater than packed_token_start")
+
+
+def shift_coverage_ledger_sidecar(
+    sidecar: CoverageLedgerSidecar,
+    offset: PackedSegmentOffset,
+) -> CoverageLedgerSidecar:
+    """Shift sidecar token positions into a packed row-local span."""
+
+    if type(sidecar) is not CoverageLedgerSidecar:
+        raise TypeError("sidecar must be a CoverageLedgerSidecar")
+    if type(offset) is not PackedSegmentOffset:
+        raise TypeError("offset must be a PackedSegmentOffset")
+    if sidecar.sample_id != offset.sample_id:
+        raise ValueError(
+            "coverage ledger sidecar sample_id must match packed offset sample_id; "
+            f"sidecar={sidecar.sample_id!r} offset={offset.sample_id!r}"
+        )
+
+    def shift(position: int) -> int:
+        return int(position) + offset.token_start
+
+    shifted_entries = tuple(
+        replace(
+            entry,
+            box_start_position=shift(entry.box_start_position),
+            coord_label_positions=tuple(
+                shift(position) for position in entry.coord_label_positions
+            ),
+            object_ref_end_position=shift(entry.object_ref_end_position),
+            box_end_position=shift(entry.box_end_position),
+        )
+        for entry in sidecar.object_entries
+    )
+    return replace(
+        sidecar,
+        prompt_end_position=shift(sidecar.prompt_end_position),
+        object_entries=shifted_entries,
+        packed_source_sample_id=offset.sample_id,
+        packed_row_index=offset.packed_row_index,
+        packed_segment_index=offset.segment_index,
+        packed_token_start=offset.token_start,
+        packed_token_end=offset.token_end,
+    )
+
+
 __all__ = [
     "CoverageLedgerObjectEntry",
     "CoverageLedgerSidecar",
+    "shift_coverage_ledger_sidecar",
 ]
