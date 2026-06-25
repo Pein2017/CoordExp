@@ -6,8 +6,9 @@ extends:
   - ./compact_support2.yaml
 
 model:
+  model: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent
   adapters:
-    - /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_fullobj_sorted_sft_bsz16_4epoch_tokenrows_v2/compact-full-fullobj-sorted-sft-bsz16-4epoch-tokenrows-v2/v1-20260601-062429/checkpoint-3600
+    - /data/CoordExp/outputs/stage1_2b/adapter_views/pure_ce_sorted_checkpoint_928_token_embeddings_adapter-5e5zj73f
 
 detection_template:
   id: compact_object_box_closed
