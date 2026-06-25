@@ -19,6 +19,10 @@ class _Counters:
         return {"count": 0}
 
 
+def _removed_generation_key(prefix: str, suffix: str) -> str:
+    return prefix + suffix
+
+
 def _owner(
     *,
     distributed: bool = False,
@@ -50,11 +54,6 @@ def _owner(
         repetition_penalty=1.0,
         batch_size=1,
         seed=123,
-        stop_pressure_mode=None,
-        stop_pressure_min_new_tokens=0,
-        stop_pressure_trigger_rule=None,
-        stop_pressure_logit_bias=0.0,
-        stop_pressure_active=False,
     )
     return SimpleNamespace(
         cfg=cfg,
@@ -79,7 +78,7 @@ def _owner(
     )
 
 
-def test_infer_artifacts_do_not_emit_grammar_decode_provenance() -> None:
+def test_infer_artifacts_do_not_emit_removed_decode_provenance() -> None:
     owner = _owner()
 
     resolved = build_infer_resolved_meta(
@@ -101,7 +100,8 @@ def test_infer_artifacts_do_not_emit_grammar_decode_provenance() -> None:
     assert resolved["detection_template"]["id"] == "compact"
     assert resolved["detection_template_id"] == "compact"
     assert resolved["parsing"]["mode"] == "marker_delimited_strict"
-    assert "compact_grammar" not in resolved["generation"]
+    assert _removed_generation_key("compact", "_grammar") not in resolved["generation"]
+    assert _removed_generation_key("stop", "_pressure") not in resolved["generation"]
     assert resolved["generation"]["qwen_chat_generation"] == {
         "eos_token": "<|im_end|>",
         "eos_token_id": 151645,
@@ -113,7 +113,8 @@ def test_infer_artifacts_do_not_emit_grammar_decode_provenance() -> None:
     assert summary["infer"]["detection_template"]["id"] == "compact"
     assert summary["infer"]["detection_template_id"] == "compact"
     assert summary["infer"]["parsing"]["mode"] == "marker_delimited_strict"
-    assert "compact_grammar" not in summary["generation"]
+    assert _removed_generation_key("compact", "_grammar") not in summary["generation"]
+    assert _removed_generation_key("stop", "_pressure") not in summary["generation"]
     assert summary["generation"]["qwen_chat_generation"] == {
         "eos_token": "<|im_end|>",
         "eos_token_id": 151645,

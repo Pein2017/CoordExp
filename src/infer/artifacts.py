@@ -738,13 +738,6 @@ def _generation_meta(owner: Any, *, backend: str, batch_size: int) -> Dict[str, 
         "repetition_penalty": owner.gen_cfg.repetition_penalty,
         "batch_size": batch_size,
         "seed": owner.gen_cfg.seed,
-        "stop_pressure": {
-            "mode": owner.gen_cfg.stop_pressure_mode,
-            "min_new_tokens": owner.gen_cfg.stop_pressure_min_new_tokens,
-            "trigger_rule": owner.gen_cfg.stop_pressure_trigger_rule,
-            "logit_bias": owner.gen_cfg.stop_pressure_logit_bias,
-            "active": backend == "hf" and owner.gen_cfg.stop_pressure_active,
-        },
         "qwen_chat_generation": _qwen_chat_generation_meta(owner),
     }
 

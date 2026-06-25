@@ -174,7 +174,7 @@ class RecursiveInferEvalSpec:
     python: Path = DEFAULT_PYTHON
     run_prefix: str = "compact_full_prefix_rollin_balance2"
     prompt_variant: str = "coco_80"
-    detection_sequence_format: str = "compact_full"
+    detection_template_id: str = "compact_object_box_closed"
     bbox_format: str = "xyxy"
     object_field_order: str = "desc_first"
     object_ordering: str = "random"
@@ -277,11 +277,13 @@ class RecursiveInferEvalSpec:
                 "eval": True,
                 "vis": False,
             },
+            "detection_template": {
+                "id": self.detection_template_id,
+            },
             "infer": {
                 "gt_jsonl": str(self.gt_jsonl),
                 "model_checkpoint": str(self.checkpoint),
                 "prompt_variant": self.prompt_variant,
-                "detection_sequence_format": self.detection_sequence_format,
                 "bbox_format": self.bbox_format,
                 "object_field_order": self.object_field_order,
                 "object_ordering": self.object_ordering,
@@ -293,19 +295,16 @@ class RecursiveInferEvalSpec:
                 },
                 "generation": {
                     "temperature": float(self.temperature),
-                    "top_p": 0.9,
+                    "top_p": 1.0,
                     "max_new_tokens": self.max_new_tokens,
                     "repetition_penalty": float(self.repetition_penalty),
                     "batch_size": self.batch_size,
                     "seed": self.seed,
-                    "compact_grammar": {
-                        "enabled": True,
-                        "force_row_start": True,
-                    },
                 },
                 "device": "cuda:0",
                 "limit": self.limit,
                 "detect_samples": self.detect_samples,
+                "allow_diagnostic_gt_vs_pred": True,
             },
             "confidence": {
                 "fusion_w_geom": 1.0,

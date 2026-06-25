@@ -7,18 +7,6 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Literal, Mapping, Optional, Sequence, Tuple, cast
 
 from src.infer.backend import DetectionDecodeResult
-from src.infer.constraints import (
-    STOP_PRESSURE_MODE_MIN_NEW_TOKENS_AFTER_OBJECT_OPEN,
-    STOP_PRESSURE_MODE_STEER_BBOX_TAIL_CLOSURE_TO_NEXT_OBJECT,
-    STOP_PRESSURE_MODE_STEER_BBOX_TAIL_THEN_OBJECT_OPEN,
-    STOP_PRESSURE_MODE_STEER_BBOX_TAIL_THEN_OBJECT_OPEN_ONCE,
-    STOP_PRESSURE_MODE_STEER_FIRST_ARRAY_BRANCH_TO_NEXT_OBJECT_AFTER_OBJECT_BOUNDARY,
-    STOP_PRESSURE_MODE_SUPPRESS_FIRST_STRUCTURAL_CLOSURE_AFTER_OBJECT_BOUNDARY,
-    STOP_PRESSURE_MODE_SUPPRESS_SPECIAL_TERMINATING_TOKENS_AFTER_OBJECT_BOUNDARY,
-    STOP_PRESSURE_MODE_SUPPRESS_TERMINATING_TOKENS_AFTER_OBJECT_BOUNDARY,
-    STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_BOUNDARY,
-    STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_OPEN,
-)
 from src.infer.parsing import (
     DecodedDetectionResult,
     diagnostic_parser_result,
@@ -732,167 +720,7 @@ class GenerationConfig:
     # Keep at 1 by default to preserve memory headroom.
     batch_size: int = 1
     seed: Optional[int] = None
-    stop_pressure_mode: Optional[str] = None
-    stop_pressure_min_new_tokens: int = 0
-    stop_pressure_trigger_rule: Optional[str] = None
-    stop_pressure_logit_bias: float = 0.0
     trace_logprobs: bool = False
-
-    @property
-    def stop_pressure_active(self) -> bool:
-        return (
-            self.stop_pressure_mode
-            == STOP_PRESSURE_MODE_MIN_NEW_TOKENS_AFTER_OBJECT_OPEN
-            and self.stop_pressure_trigger_rule
-            == STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_OPEN
-            and int(self.stop_pressure_min_new_tokens) > 0
-        ) or (
-            self.stop_pressure_mode
-            == STOP_PRESSURE_MODE_SUPPRESS_TERMINATING_TOKENS_AFTER_OBJECT_BOUNDARY
-            and self.stop_pressure_trigger_rule
-            == STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_BOUNDARY
-        ) or (
-            self.stop_pressure_mode
-            == STOP_PRESSURE_MODE_SUPPRESS_SPECIAL_TERMINATING_TOKENS_AFTER_OBJECT_BOUNDARY
-            and self.stop_pressure_trigger_rule
-            == STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_BOUNDARY
-        ) or (
-            self.stop_pressure_mode
-            == STOP_PRESSURE_MODE_SUPPRESS_FIRST_STRUCTURAL_CLOSURE_AFTER_OBJECT_BOUNDARY
-            and self.stop_pressure_trigger_rule
-            == STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_BOUNDARY
-        ) or (
-            self.stop_pressure_mode
-            == STOP_PRESSURE_MODE_STEER_FIRST_ARRAY_BRANCH_TO_NEXT_OBJECT_AFTER_OBJECT_BOUNDARY
-            and self.stop_pressure_trigger_rule
-            == STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_BOUNDARY
-            and float(self.stop_pressure_logit_bias) > 0.0
-        ) or (
-            self.stop_pressure_mode
-            == STOP_PRESSURE_MODE_STEER_BBOX_TAIL_CLOSURE_TO_NEXT_OBJECT
-            and self.stop_pressure_trigger_rule
-            == STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_BOUNDARY
-            and float(self.stop_pressure_logit_bias) > 0.0
-        ) or (
-            self.stop_pressure_mode
-            == STOP_PRESSURE_MODE_STEER_BBOX_TAIL_THEN_OBJECT_OPEN
-            and self.stop_pressure_trigger_rule
-            == STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_BOUNDARY
-            and float(self.stop_pressure_logit_bias) > 0.0
-        ) or (
-            self.stop_pressure_mode
-            == STOP_PRESSURE_MODE_STEER_BBOX_TAIL_THEN_OBJECT_OPEN_ONCE
-            and self.stop_pressure_trigger_rule
-            == STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_BOUNDARY
-            and float(self.stop_pressure_logit_bias) > 0.0
-        )
-
-    def apply_hf_stop_pressure(self, gen_kwargs: dict[str, Any]) -> None:
-        if (
-            self.stop_pressure_mode
-            == STOP_PRESSURE_MODE_MIN_NEW_TOKENS_AFTER_OBJECT_OPEN
-            and self.stop_pressure_trigger_rule
-            == STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_OPEN
-            and int(self.stop_pressure_min_new_tokens) > 0
-        ):
-            gen_kwargs["min_new_tokens"] = int(self.stop_pressure_min_new_tokens)
-
-    def build_hf_stop_pressure_logits_processor(
-        self,
-        *,
-        tokenizer: object,
-        prompt_lengths: Sequence[int],
-    ) -> object | None:
-        if self.stop_pressure_trigger_rule != STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_BOUNDARY:
-            return None
-        suppress_structural_close_tokens: bool
-        if (
-            self.stop_pressure_mode
-            == STOP_PRESSURE_MODE_SUPPRESS_TERMINATING_TOKENS_AFTER_OBJECT_BOUNDARY
-        ):
-            suppress_structural_close_tokens = True
-            suppress_special_terminators = True
-            fresh_boundary_only = False
-        elif (
-            self.stop_pressure_mode
-            == STOP_PRESSURE_MODE_SUPPRESS_SPECIAL_TERMINATING_TOKENS_AFTER_OBJECT_BOUNDARY
-        ):
-            suppress_structural_close_tokens = False
-            suppress_special_terminators = True
-            fresh_boundary_only = False
-        elif (
-            self.stop_pressure_mode
-            == STOP_PRESSURE_MODE_SUPPRESS_FIRST_STRUCTURAL_CLOSURE_AFTER_OBJECT_BOUNDARY
-        ):
-            suppress_structural_close_tokens = True
-            suppress_special_terminators = False
-            fresh_boundary_only = True
-        elif (
-            self.stop_pressure_mode
-            == STOP_PRESSURE_MODE_STEER_FIRST_ARRAY_BRANCH_TO_NEXT_OBJECT_AFTER_OBJECT_BOUNDARY
-        ):
-            from src.infer.constraints import (
-                build_array_branch_continuation_steering_logits_processor,
-            )
-
-            return build_array_branch_continuation_steering_logits_processor(
-                tokenizer=tokenizer,
-                prompt_lengths=prompt_lengths,
-                continuation_bias=float(self.stop_pressure_logit_bias),
-            )
-        elif (
-            self.stop_pressure_mode
-            == STOP_PRESSURE_MODE_STEER_BBOX_TAIL_CLOSURE_TO_NEXT_OBJECT
-        ):
-            from src.infer.constraints import (
-                build_bbox_tail_closure_steering_logits_processor,
-            )
-
-            return build_bbox_tail_closure_steering_logits_processor(
-                tokenizer=tokenizer,
-                prompt_lengths=prompt_lengths,
-                continuation_bias=float(self.stop_pressure_logit_bias),
-            )
-        elif (
-            self.stop_pressure_mode
-            == STOP_PRESSURE_MODE_STEER_BBOX_TAIL_THEN_OBJECT_OPEN
-        ):
-            from src.infer.constraints import (
-                build_bbox_tail_then_object_open_steering_logits_processor,
-            )
-
-            return build_bbox_tail_then_object_open_steering_logits_processor(
-                tokenizer=tokenizer,
-                prompt_lengths=prompt_lengths,
-                continuation_bias=float(self.stop_pressure_logit_bias),
-            )
-        elif (
-            self.stop_pressure_mode
-            == STOP_PRESSURE_MODE_STEER_BBOX_TAIL_THEN_OBJECT_OPEN_ONCE
-        ):
-            from src.infer.constraints import (
-                build_bbox_tail_then_object_open_once_steering_logits_processor,
-            )
-
-            return build_bbox_tail_then_object_open_once_steering_logits_processor(
-                tokenizer=tokenizer,
-                prompt_lengths=prompt_lengths,
-                continuation_bias=float(self.stop_pressure_logit_bias),
-            )
-        else:
-            return None
-        from src.infer.constraints import (
-            build_terminating_token_suppression_logits_processor,
-        )
-
-        return build_terminating_token_suppression_logits_processor(
-            tokenizer=tokenizer,
-            prompt_lengths=prompt_lengths,
-            suppress_structural_close_tokens=suppress_structural_close_tokens,
-            suppress_special_terminators=suppress_special_terminators,
-            fresh_boundary_only=fresh_boundary_only,
-        )
-
 
 @dataclass
 class GenerationResult:
@@ -1047,7 +875,6 @@ class DetectionDecodeRequest:
     stop_strings: tuple[str, ...] = ()
     trace_logprobs: bool = False
     trace_prompt_logprobs: bool = False
-    generation_constraints: tuple[tuple[str, Any], ...] = ()
     decode_policy_fingerprint: str = ""
 
 
@@ -1070,9 +897,6 @@ def build_decode_policy_fingerprint(request: DetectionDecodeRequest) -> str:
         "stop_strings": list(request.stop_strings),
         "trace_logprobs": bool(request.trace_logprobs),
         "trace_prompt_logprobs": bool(request.trace_prompt_logprobs),
-        "generation_constraints": _canonicalize_for_json(
-            dict(request.generation_constraints)
-        ),
     }
     encoded = json.dumps(
         payload,
@@ -1160,53 +984,10 @@ def _canonical_backend_sync_identity(mapping: Mapping[str, Any]) -> dict[str, An
     )
 
 
-def _constraint_items(mapping: Mapping[str, Any]) -> tuple[tuple[str, Any], ...]:
-    return tuple(
-        (str(key), _canonicalize_for_json(mapping[key]))
-        for key in sorted(mapping.keys(), key=lambda item: str(item))
-    )
-
-
-def _infer_generation_constraints(
-    infer_cfg: Mapping[str, Any],
-    generation_cfg: Mapping[str, Any],
-) -> tuple[tuple[str, Any], ...]:
-    _ = infer_cfg
-    constraints: dict[str, Any] = {}
-    stop_pressure_cfg = _get_nested_mapping(
-        generation_cfg,
-        "stop_pressure",
-        path="infer.generation.stop_pressure",
-    )
-    stop_pressure_mode = stop_pressure_cfg.get("mode")
-    if stop_pressure_mode is not None:
-        constraints["stop_pressure"] = {
-            "mode": str(stop_pressure_mode),
-            "min_new_tokens": _get_int(
-                stop_pressure_cfg,
-                "min_new_tokens",
-                0,
-                path_prefix="infer.generation.stop_pressure",
-            ),
-            "trigger_rule": stop_pressure_cfg.get("trigger_rule"),
-            "logit_bias": _get_float(
-                stop_pressure_cfg,
-                "logit_bias",
-                0.0,
-                path_prefix="infer.generation.stop_pressure",
-            ),
-        }
-    return _constraint_items(constraints)
-
-
 def legacy_generation_kwargs_from_decode_request(
     request: DetectionDecodeRequest,
     *,
     batch_size: int,
-    stop_pressure_mode: Optional[str] = None,
-    stop_pressure_min_new_tokens: int = 0,
-    stop_pressure_trigger_rule: Optional[str] = None,
-    stop_pressure_logit_bias: float = 0.0,
 ) -> dict[str, Any]:
     """Project the shared decode request into the legacy engine config shape.
 
@@ -1221,10 +1002,6 @@ def legacy_generation_kwargs_from_decode_request(
         "repetition_penalty": request.repetition_penalty,
         "batch_size": int(batch_size),
         "seed": request.seed,
-        "stop_pressure_mode": stop_pressure_mode,
-        "stop_pressure_min_new_tokens": int(stop_pressure_min_new_tokens),
-        "stop_pressure_trigger_rule": stop_pressure_trigger_rule,
-        "stop_pressure_logit_bias": float(stop_pressure_logit_bias),
         "trace_logprobs": bool(request.trace_logprobs),
     }
 
@@ -2787,6 +2564,16 @@ def _validate_temperature_matches_decode_mode(
         )
 
 
+def _reject_removed_infer_generation_knobs(gen_cfg: Mapping[str, Any]) -> None:
+    for prefix, suffix in (
+        ("compact", "_grammar"),
+        ("stop", "_pressure"),
+    ):
+        key = prefix + suffix
+        if key in gen_cfg:
+            raise ValueError(f"infer.generation.{key} is removed; use free decode")
+
+
 def build_decode_request_from_infer_config(
     infer_cfg: Mapping[str, Any],
 ) -> DetectionDecodeRequest:
@@ -2815,6 +2602,7 @@ def build_decode_request_from_infer_config(
     gen_cfg = _get_mapping(infer_cfg, "generation")
     if not gen_cfg:
         raise ValueError("infer.generation section is required")
+    _reject_removed_infer_generation_knobs(gen_cfg)
 
     temperature = _get_float(gen_cfg, "temperature", 0.01)
     num_beams = _get_int(gen_cfg, "num_beams", 1)
@@ -2868,7 +2656,6 @@ def build_decode_request_from_infer_config(
         stop_strings=("<|im_end|>",),
         trace_logprobs=_get_bool(gen_cfg, "trace_logprobs", False),
         trace_prompt_logprobs=_get_bool(gen_cfg, "trace_prompt_logprobs", False),
-        generation_constraints=_infer_generation_constraints(infer_cfg, gen_cfg),
     )
     return replace(
         request,

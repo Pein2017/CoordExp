@@ -1218,9 +1218,6 @@ def _detection_objective_runtime_payload(training_config: Any) -> dict[str, Any]
         "pad_token_text": "<|endoftext|>",
         "serialization_policy": "marker_delimited",
         "parser_mode": "strict_expected",
-        "compact_grammar_enabled": bool(
-            template_contract is not None and template_contract.is_compact
-        ),
     }
     if target_cfg is not None:
         payload.update(

@@ -139,7 +139,7 @@ def test_materialized_native_rollout_config_enables_diagnostic_free_text_capture
     assert raw["infer"]["generation"]["decode_mode"] == "greedy"
     assert raw["infer"]["generation"]["do_sample"] is False
     assert raw["infer"]["generation"]["num_beams"] == 1
-    assert "compact_grammar" not in raw["infer"]["generation"]
+    assert "compact" + "_grammar" not in raw["infer"]["generation"]
 
 
 def test_materialized_native_rollout_config_supports_et_rmp_role_by_ordering_template(

@@ -432,7 +432,7 @@ Stage-2 has special behavior around identity collators, raw metadata preservatio
 
 ### 3. Prompt and token parity risk
 
-Prompt templates, chat templates, coord tokens, stop tokens, and compact grammar must remain aligned between training, inference, and rollout.
+Prompt templates, chat templates, coord tokens, stop tokens, and compact row syntax must remain aligned between training, inference, and rollout.
 
 **Mitigation:** require prompt-token and visual parity tests for decode runtime changes.
 

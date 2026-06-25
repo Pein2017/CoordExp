@@ -85,9 +85,9 @@ Normative behavior:
   normalization, or parser policy; any remaining Stage-2 module with that
   responsibility must be renamed or reduced to a thin trainer-owned facade;
 - final active code MUST NOT depend on legacy infer engine/backend aliases;
-- final active caller-facing code MUST NOT import `src.infer.compact_grammar`
-  or `src.infer.stop_pressure`; compact grammar and stop-pressure behavior must
-  be exposed through the shared constraints facade or private helper modules;
+- final active caller-facing code MUST NOT import retired infer decode-constraint
+  modules or facades; compact-row inference uses free decode unless a future
+  change introduces a new explicitly scoped mechanism;
 - scripts, callbacks, analysis utilities, tests, configs, docs, and
   non-archived OpenSpec references in scope MUST be updated rather than routed
   through compatibility aliases;
@@ -101,7 +101,7 @@ Normative behavior:
 - **THEN** search gates over active `src`, `scripts`, `tests`, `configs`,
   `docs`, and non-archived OpenSpec surfaces find no active imports of retired
   trainer rollout-runtime, legacy Stage-2 rollout-runtime, legacy infer engine,
-  infer backend alias, compact-grammar, or stop-pressure import surfaces
+  infer backend alias, or retired infer decode-constraint import surfaces
 - **AND** archived records are the only allowed remaining historical mentions.
 
 ### Requirement: Shared runtime stays small and caller boundaries remain explicit

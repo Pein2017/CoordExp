@@ -818,11 +818,7 @@ def generate_hf_batch(
     model_inputs = {
         key: value.to(owner.cfg.device) for key, value in model_inputs.items()
     }
-    # Logits processors slice ``input_ids[:, prompt_offset:]`` to inspect only
-    # generated history. With decoder-only left padding, the correct offset is
-    # the padded prompt width, not each sample's unpadded attention length.
     prompt_padded_len = int(model_inputs["input_ids"].shape[1])
-    prompt_lengths = [prompt_padded_len for _ in images]
 
     do_sample = owner.gen_cfg.temperature > 0
     gen_kwargs = dict(
@@ -839,22 +835,6 @@ def generate_hf_batch(
         gen_kwargs,
         tokenizer=owner.processor.tokenizer,
     )
-
-    logits_processors: list[object] = []
-    stop_pressure_processor = owner.gen_cfg.build_hf_stop_pressure_logits_processor(
-        tokenizer=owner.processor.tokenizer,
-        prompt_lengths=prompt_lengths,
-    )
-    if stop_pressure_processor is not None:
-        logits_processors.append(stop_pressure_processor)
-    if logits_processors:
-        if len(logits_processors) == 1:
-            gen_kwargs["logits_processor"] = logits_processors[0]
-        else:
-            from transformers import LogitsProcessorList
-
-            gen_kwargs["logits_processor"] = LogitsProcessorList(logits_processors)
-    owner.gen_cfg.apply_hf_stop_pressure(gen_kwargs)
 
     trace_logprobs = bool(getattr(owner.gen_cfg, "trace_logprobs", False))
 

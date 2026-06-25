@@ -6,7 +6,7 @@
 # - checkpoint: adapter shorthand checkpoint-3664 from the tokenrows_v2 4-epoch support-2 run
 # - template surface: compact_full coord-token detection rows
 # - comparison knob: generation.repetition_penalty = 1.10
-# - diagnostic knob: run on code with HF compact-grammar prompt offsets set to padded prompt width
+# - diagnostic knob: run on code with HF compact-row prompt offsets set to padded prompt width
 
 run:
   name: compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_prompt_offset_fix_8gpu

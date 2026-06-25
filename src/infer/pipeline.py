@@ -175,6 +175,16 @@ def _reject_retired_infer_template_knobs(infer_cfg: Mapping[str, Any]) -> None:
         )
 
 
+def _reject_retired_infer_generation_knobs(gen_cfg: Mapping[str, Any]) -> None:
+    for prefix, suffix in (
+        ("compact", "_grammar"),
+        ("stop", "_pressure"),
+    ):
+        key = prefix + suffix
+        if key in gen_cfg:
+            raise ValueError(f"infer.generation.{key} is removed; use free decode")
+
+
 def _resolve_detection_template_id(cfg: Mapping[str, Any]) -> DetectionTemplateId:
     template_cfg = _get_map(cfg, "detection_template")
     raw_id = template_cfg.get("id", "stage1_json_pretty")
@@ -1192,18 +1202,6 @@ def _run_infer_stage(
     *,
     root_image_dir: Optional[str],
 ) -> None:
-    from src.infer.constraints import (
-        STOP_PRESSURE_MODE_MIN_NEW_TOKENS_AFTER_OBJECT_OPEN,
-        STOP_PRESSURE_MODE_STEER_BBOX_TAIL_CLOSURE_TO_NEXT_OBJECT,
-        STOP_PRESSURE_MODE_STEER_BBOX_TAIL_THEN_OBJECT_OPEN,
-        STOP_PRESSURE_MODE_STEER_BBOX_TAIL_THEN_OBJECT_OPEN_ONCE,
-        STOP_PRESSURE_MODE_STEER_FIRST_ARRAY_BRANCH_TO_NEXT_OBJECT_AFTER_OBJECT_BOUNDARY,
-        STOP_PRESSURE_MODE_SUPPRESS_FIRST_STRUCTURAL_CLOSURE_AFTER_OBJECT_BOUNDARY,
-        STOP_PRESSURE_MODE_SUPPRESS_SPECIAL_TERMINATING_TOKENS_AFTER_OBJECT_BOUNDARY,
-        STOP_PRESSURE_MODE_SUPPRESS_TERMINATING_TOKENS_AFTER_OBJECT_BOUNDARY,
-        STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_BOUNDARY,
-        STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_OPEN,
-    )
     infer_cfg = _get_map(cfg, "infer")
     if not infer_cfg:
         raise ValueError("infer section is required when stages.infer=true")
@@ -1251,6 +1249,7 @@ def _run_infer_stage(
     gen_cfg_map = _get_map(infer_cfg, "generation")
     if not gen_cfg_map:
         raise ValueError("infer.generation section is required when stages.infer=true")
+    _reject_retired_infer_generation_knobs(gen_cfg_map)
     decode_request = build_decode_request_from_infer_config(infer_cfg)
 
     def _i(key: str, default: int) -> int:
@@ -1262,164 +1261,10 @@ def _run_infer_stage(
         except (TypeError, ValueError) as exc:
             raise ValueError(f"infer.generation.{key} must be an int") from exc
 
-    stop_pressure_cfg = _get_map(gen_cfg_map, "stop_pressure")
-    stop_pressure_min_new_tokens_raw = stop_pressure_cfg.get("min_new_tokens", 0)
-    if stop_pressure_min_new_tokens_raw is None:
-        stop_pressure_min_new_tokens = 0
-    else:
-        try:
-            stop_pressure_min_new_tokens = int(stop_pressure_min_new_tokens_raw)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(
-                "infer.generation.stop_pressure.min_new_tokens must be an int"
-            ) from exc
-    stop_pressure_mode = _get_str(stop_pressure_cfg, "mode")
-    stop_pressure_trigger_rule = _get_str(stop_pressure_cfg, "trigger_rule")
-    stop_pressure_logit_bias_raw = stop_pressure_cfg.get("logit_bias", 0.0)
-    if stop_pressure_logit_bias_raw is None:
-        stop_pressure_logit_bias = 0.0
-    else:
-        try:
-            stop_pressure_logit_bias = float(stop_pressure_logit_bias_raw)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(
-                "infer.generation.stop_pressure.logit_bias must be a float"
-            ) from exc
-
     generation_kwargs = legacy_generation_kwargs_from_decode_request(
         decode_request,
         batch_size=_i("batch_size", 1),
-        stop_pressure_mode=stop_pressure_mode,
-        stop_pressure_min_new_tokens=stop_pressure_min_new_tokens,
-        stop_pressure_trigger_rule=stop_pressure_trigger_rule,
-        stop_pressure_logit_bias=stop_pressure_logit_bias,
     )
-    if stop_pressure_mode not in (
-        None,
-        STOP_PRESSURE_MODE_MIN_NEW_TOKENS_AFTER_OBJECT_OPEN,
-        STOP_PRESSURE_MODE_STEER_BBOX_TAIL_CLOSURE_TO_NEXT_OBJECT,
-        STOP_PRESSURE_MODE_STEER_BBOX_TAIL_THEN_OBJECT_OPEN,
-        STOP_PRESSURE_MODE_STEER_BBOX_TAIL_THEN_OBJECT_OPEN_ONCE,
-        STOP_PRESSURE_MODE_STEER_FIRST_ARRAY_BRANCH_TO_NEXT_OBJECT_AFTER_OBJECT_BOUNDARY,
-        STOP_PRESSURE_MODE_SUPPRESS_FIRST_STRUCTURAL_CLOSURE_AFTER_OBJECT_BOUNDARY,
-        STOP_PRESSURE_MODE_SUPPRESS_SPECIAL_TERMINATING_TOKENS_AFTER_OBJECT_BOUNDARY,
-        STOP_PRESSURE_MODE_SUPPRESS_TERMINATING_TOKENS_AFTER_OBJECT_BOUNDARY,
-    ):
-        raise ValueError(
-            "infer.generation.stop_pressure.mode must be "
-            "'min_new_tokens_after_object_open' or "
-            "'steer_bbox_tail_closure_to_next_object' or "
-            "'steer_bbox_tail_then_object_open' or "
-            "'steer_bbox_tail_then_object_open_once' or "
-            "'steer_first_array_branch_to_next_object_after_object_boundary' or "
-            "'suppress_first_structural_closure_after_object_boundary' or "
-            "'suppress_special_terminating_tokens_after_object_boundary' or "
-            "'suppress_terminating_tokens_after_object_boundary'"
-        )
-    if stop_pressure_trigger_rule not in (
-        None,
-        STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_OPEN,
-        STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_BOUNDARY,
-    ):
-        raise ValueError(
-            "infer.generation.stop_pressure.trigger_rule must be "
-            "'raw_text_object_open' or 'raw_text_object_boundary'"
-        )
-    if stop_pressure_mode is None:
-        if (
-            int(stop_pressure_min_new_tokens) != 0
-            or stop_pressure_trigger_rule is not None
-            or float(stop_pressure_logit_bias) != 0.0
-        ):
-            raise ValueError(
-                "infer.generation.stop_pressure.mode is required when "
-                "stop-pressure fields are set"
-            )
-    else:
-        if backend_type != "hf":
-            raise ValueError(
-                "infer.generation.stop_pressure is only supported for "
-                "infer.backend.type=hf"
-            )
-        if (
-            stop_pressure_mode == STOP_PRESSURE_MODE_MIN_NEW_TOKENS_AFTER_OBJECT_OPEN
-            and int(stop_pressure_min_new_tokens) <= 0
-        ):
-            raise ValueError(
-                "infer.generation.stop_pressure.min_new_tokens must be > 0 "
-                "when stop pressure is enabled"
-            )
-        if (
-            stop_pressure_mode == STOP_PRESSURE_MODE_MIN_NEW_TOKENS_AFTER_OBJECT_OPEN
-            and stop_pressure_trigger_rule != STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_OPEN
-        ):
-            raise ValueError(
-                "infer.generation.stop_pressure.trigger_rule must be "
-                "'raw_text_object_open' when stop pressure is enabled"
-            )
-        if (
-            stop_pressure_mode
-            in (
-                STOP_PRESSURE_MODE_STEER_BBOX_TAIL_CLOSURE_TO_NEXT_OBJECT,
-                STOP_PRESSURE_MODE_STEER_BBOX_TAIL_THEN_OBJECT_OPEN,
-                STOP_PRESSURE_MODE_STEER_BBOX_TAIL_THEN_OBJECT_OPEN_ONCE,
-                STOP_PRESSURE_MODE_STEER_FIRST_ARRAY_BRANCH_TO_NEXT_OBJECT_AFTER_OBJECT_BOUNDARY,
-                STOP_PRESSURE_MODE_SUPPRESS_FIRST_STRUCTURAL_CLOSURE_AFTER_OBJECT_BOUNDARY,
-                STOP_PRESSURE_MODE_SUPPRESS_TERMINATING_TOKENS_AFTER_OBJECT_BOUNDARY,
-                STOP_PRESSURE_MODE_SUPPRESS_SPECIAL_TERMINATING_TOKENS_AFTER_OBJECT_BOUNDARY,
-            )
-            and int(stop_pressure_min_new_tokens) != 0
-        ):
-            raise ValueError(
-                "infer.generation.stop_pressure.min_new_tokens must be 0 "
-                "for raw-text boundary stop pressure"
-            )
-        if (
-            stop_pressure_mode
-            in (
-                STOP_PRESSURE_MODE_STEER_BBOX_TAIL_CLOSURE_TO_NEXT_OBJECT,
-                STOP_PRESSURE_MODE_STEER_BBOX_TAIL_THEN_OBJECT_OPEN,
-                STOP_PRESSURE_MODE_STEER_BBOX_TAIL_THEN_OBJECT_OPEN_ONCE,
-                STOP_PRESSURE_MODE_STEER_FIRST_ARRAY_BRANCH_TO_NEXT_OBJECT_AFTER_OBJECT_BOUNDARY,
-                STOP_PRESSURE_MODE_SUPPRESS_FIRST_STRUCTURAL_CLOSURE_AFTER_OBJECT_BOUNDARY,
-                STOP_PRESSURE_MODE_SUPPRESS_TERMINATING_TOKENS_AFTER_OBJECT_BOUNDARY,
-                STOP_PRESSURE_MODE_SUPPRESS_SPECIAL_TERMINATING_TOKENS_AFTER_OBJECT_BOUNDARY,
-            )
-            and stop_pressure_trigger_rule
-            != STOP_PRESSURE_TRIGGER_RULE_RAW_TEXT_OBJECT_BOUNDARY
-        ):
-            raise ValueError(
-                "infer.generation.stop_pressure.trigger_rule must be "
-                "'raw_text_object_boundary' for raw-text boundary stop pressure"
-            )
-        if (
-            stop_pressure_mode
-            in (
-                STOP_PRESSURE_MODE_STEER_BBOX_TAIL_CLOSURE_TO_NEXT_OBJECT,
-                STOP_PRESSURE_MODE_STEER_BBOX_TAIL_THEN_OBJECT_OPEN,
-                STOP_PRESSURE_MODE_STEER_BBOX_TAIL_THEN_OBJECT_OPEN_ONCE,
-                STOP_PRESSURE_MODE_STEER_FIRST_ARRAY_BRANCH_TO_NEXT_OBJECT_AFTER_OBJECT_BOUNDARY,
-            )
-            and float(stop_pressure_logit_bias) <= 0.0
-        ):
-            raise ValueError(
-                "infer.generation.stop_pressure.logit_bias must be > 0 "
-                "for continuation steering stop pressure"
-            )
-        if (
-            stop_pressure_mode
-            not in (
-                STOP_PRESSURE_MODE_STEER_BBOX_TAIL_CLOSURE_TO_NEXT_OBJECT,
-                STOP_PRESSURE_MODE_STEER_BBOX_TAIL_THEN_OBJECT_OPEN,
-                STOP_PRESSURE_MODE_STEER_BBOX_TAIL_THEN_OBJECT_OPEN_ONCE,
-                STOP_PRESSURE_MODE_STEER_FIRST_ARRAY_BRANCH_TO_NEXT_OBJECT_AFTER_OBJECT_BOUNDARY,
-            )
-            and float(stop_pressure_logit_bias) != 0.0
-        ):
-            raise ValueError(
-                "infer.generation.stop_pressure.logit_bias must be 0 "
-                "unless continuation steering stop pressure is enabled"
-            )
 
     rank, local_rank, world_size, distributed_enabled = _detect_infer_distributed_env()
     device = str(_get_str(infer_cfg, "device", "cuda:0") or "cuda:0").strip() or "cuda:0"

@@ -448,7 +448,6 @@ def test_teacher_forcing_hard_sft_dataset_emits_aligned_target_ir(
     assert target_ir.metadata["stop_token_text"] == IM_END_TOKEN
     assert target_ir.metadata["pad_token_text"] == "<|endoftext|>"
     assert target_ir.metadata["parser_mode"] == "strict_expected"
-    assert target_ir.metadata["compact_grammar_enabled"] is True
     assert all(
         atom.valid_token_ids == frozenset({atom.selected_token_id})
         for atom in target_ir.atoms

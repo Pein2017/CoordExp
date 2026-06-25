@@ -1533,9 +1533,6 @@ def _stage2_rollout_decode_provenance_from_request(
             "stop_strings": list(request.stop_strings),
             "trace_logprobs": bool(request.trace_logprobs),
             "trace_prompt_logprobs": bool(request.trace_prompt_logprobs),
-            "generation_constraints": [
-                (str(key), value) for key, value in request.generation_constraints
-            ],
         },
         "decode_policy_fingerprint": decode_policy_fingerprint,
         "decode_request_type": type(request).__name__,

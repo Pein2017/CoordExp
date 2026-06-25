@@ -291,7 +291,7 @@ def _compact_object_and_desc_spans(
         if not row.startswith(OBJECT_REF_START_TOKEN) or box_pos < len(
             OBJECT_REF_START_TOKEN
         ):
-            raise ValueError("compact-full rollout-correction target row lost grammar markers")
+            raise ValueError("compact-full rollout-correction target row lost template markers")
 
         desc_start = int(row_start + len(OBJECT_REF_START_TOKEN))
         desc_end = int(row_start + box_pos)

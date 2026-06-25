@@ -192,7 +192,6 @@ class TeacherForcingTargetBuilder:
                 "stop_token_text": IM_END_TOKEN,
                 "pad_token_text": END_OF_TEXT_TOKEN,
                 "parser_mode": "strict_expected",
-                "compact_grammar_enabled": True,
                 "rollin_policy_version": self.policy_version,
                 "stable_sample_id": sample_id,
                 "input_prefix_token_source": prefix.source,

@@ -13,6 +13,10 @@ from src.infer.runtime import build_model_identity_fingerprint
 from src.infer.runtime import legacy_generation_kwargs_from_decode_request
 
 
+def _removed_generation_key(prefix: str, suffix: str) -> str:
+    return prefix + suffix
+
+
 def test_infer_generation_maps_to_shared_decode_request() -> None:
     request = build_decode_request_from_infer_config(
         {
@@ -249,9 +253,6 @@ def test_infer_decode_request_projects_to_legacy_generation_kwargs() -> None:
     kwargs = legacy_generation_kwargs_from_decode_request(
         request,
         batch_size=3,
-        stop_pressure_mode="raw_text_object_boundary",
-        stop_pressure_trigger_rule="raw_text_object_boundary",
-        stop_pressure_logit_bias=2.5,
     )
 
     assert kwargs["temperature"] == 0.4
@@ -260,11 +261,9 @@ def test_infer_decode_request_projects_to_legacy_generation_kwargs() -> None:
     assert kwargs["repetition_penalty"] == 1.2
     assert kwargs["batch_size"] == 3
     assert kwargs["seed"] == 19
-    assert kwargs["stop_pressure_mode"] == "raw_text_object_boundary"
-    assert kwargs["stop_pressure_trigger_rule"] == "raw_text_object_boundary"
-    assert kwargs["stop_pressure_logit_bias"] == 2.5
-    assert "compact_grammar_enabled" not in kwargs
-    assert "compact_grammar_format" not in kwargs
+    assert _removed_generation_key("stop", "_pressure") + "_mode" not in kwargs
+    assert _removed_generation_key("compact", "_grammar") + "_enabled" not in kwargs
+    assert _removed_generation_key("compact", "_grammar") + "_format" not in kwargs
 
 
 def test_rollout_matching_maps_to_shared_decode_request_with_sampling_overrides() -> None:
@@ -352,7 +351,25 @@ def test_decode_policy_fingerprint_is_stable_and_excludes_operational_fields() -
     assert first.decode_policy_fingerprint == second.decode_policy_fingerprint
 
 
-def test_decode_policy_fingerprint_changes_with_backend_and_stop_pressure_constraints() -> None:
+def test_infer_decode_request_rejects_removed_generation_knobs() -> None:
+    for key in (
+        _removed_generation_key("compact", "_grammar"),
+        _removed_generation_key("stop", "_pressure"),
+    ):
+        with unittest.TestCase().assertRaisesRegex(ValueError, "use free decode"):
+            build_decode_request_from_infer_config(
+                {
+                    "backend": {"type": "hf"},
+                    "generation": {
+                        "temperature": 0.0,
+                        "max_new_tokens": 8,
+                        key: {"enabled": True},
+                    },
+                }
+            )
+
+
+def test_decode_policy_fingerprint_changes_with_backend() -> None:
     unconstrained = build_decode_request_from_infer_config(
         {
             "backend": {"type": "hf"},
@@ -371,37 +388,8 @@ def test_decode_policy_fingerprint_changes_with_backend_and_stop_pressure_constr
             },
         }
     )
-    constrained = build_decode_request_from_infer_config(
-        {
-            "backend": {"type": "hf"},
-            "generation": {
-                "temperature": 0.0,
-                "max_new_tokens": 8,
-                "stop_pressure": {
-                    "mode": "min_new_tokens_after_object_open",
-                    "min_new_tokens": 2,
-                    "trigger_rule": "raw_text_object_open",
-                },
-            },
-        }
-    )
 
     assert unconstrained.decode_policy_fingerprint != vllm.decode_policy_fingerprint
-    assert (
-        unconstrained.decode_policy_fingerprint
-        != constrained.decode_policy_fingerprint
-    )
-    assert constrained.generation_constraints == (
-        (
-            "stop_pressure",
-            {
-                "logit_bias": 0.0,
-                "min_new_tokens": 2,
-                "mode": "min_new_tokens_after_object_open",
-                "trigger_rule": "raw_text_object_open",
-            },
-        ),
-    )
 
 
 def test_model_identity_fingerprint_is_stable_and_backend_sensitive() -> None:

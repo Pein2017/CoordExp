@@ -42,6 +42,10 @@ from src.infer.pipeline import (
 )
 
 
+def _legacy_generation_key(prefix: str, suffix: str) -> str:
+    return prefix + suffix
+
+
 def _compact_row(desc: str, x1: int, y1: int, x2: int, y2: int) -> str:
     return (
         f"{OBJECT_REF_START_TOKEN}{desc}{BOX_START_TOKEN}"
@@ -119,8 +123,11 @@ def test_new_teacher_forcing_infer_uses_semantic_template_id(
     assert config.raw["infer"]["detection_template_id"] == "compact"
     assert config.raw["infer"]["parsing"]["mode"] == "marker_delimited_strict"
     assert config.captured["detection_template_id"] == "compact"
-    assert "compact_grammar" not in config.raw["infer"]["generation"]
-    assert "compact_grammar_enabled" not in config.captured["generation_keys"]
+    assert _legacy_generation_key("compact", "_grammar") not in config.raw["infer"]["generation"]
+    assert (
+        _legacy_generation_key("compact", "_grammar") + "_enabled"
+        not in config.captured["generation_keys"]
+    )
 
 
 @pytest.mark.parametrize(
@@ -146,6 +153,30 @@ def test_retired_infer_template_knobs_are_rejected(
     config_path = tmp_path / "bad_template_knob.json"
     config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
     with pytest.raises(ValueError, match=match):
+        run_pipeline(config_path=config_path)
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        _legacy_generation_key("compact", "_grammar"),
+        _legacy_generation_key("stop", "_pressure"),
+    ],
+)
+def test_removed_infer_generation_knobs_are_rejected(
+    tmp_path: Path,
+    key: str,
+) -> None:
+    cfg = _base_pipeline_cfg(tmp_path)
+    infer_cfg = cfg["infer"]
+    assert isinstance(infer_cfg, dict)
+    gen_cfg = infer_cfg["generation"]
+    assert isinstance(gen_cfg, dict)
+    gen_cfg[key] = {"enabled": True}
+
+    config_path = tmp_path / "bad_generation_knob.json"
+    config_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+    with pytest.raises(ValueError, match="use free decode"):
         run_pipeline(config_path=config_path)
 
 

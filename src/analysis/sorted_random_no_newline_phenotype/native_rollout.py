@@ -161,7 +161,6 @@ def materialize_role_infer_config(
             "trace_logprobs": True,
         }
     )
-    infer["generation"].pop("compact_grammar", None)
     cfg.setdefault("metadata", {})
     cfg["metadata"].update(
         {

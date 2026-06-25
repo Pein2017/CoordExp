@@ -115,10 +115,10 @@ complete.
 
 Status update (2026-05-26): incremental deletion-phase cuts are verified but
 not complete enough to close 6.1/6.3. `src.infer.runtime` no longer imports
-`src.infer.engine` for legacy generation result construction. Stop-pressure
-policy constants moved from `src.infer.engine` to the shared
-`src.infer.constraints` facade, and `src.infer.pipeline` now imports those
-policy literals from the facade. vLLM EngineArgs compatibility validation moved
+`src.infer.engine` for legacy generation result construction. The earlier
+decode-constraint facade migration was later retired in favor of free decode,
+so current infer code no longer imports policy literals for that path. vLLM
+EngineArgs compatibility validation moved
 from `src.trainers.rollout_runtime.vllm_compat` into `src.infer.backend`, and
 the old trainer-local `vllm_compat.py` module was deleted with an import gate.
 Stage-2 rollout metrics also no longer use the duplicate

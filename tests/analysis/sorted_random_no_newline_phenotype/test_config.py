@@ -138,7 +138,7 @@ def test_load_config_rejects_non_none_constraint_policy(tmp_path: Path) -> None:
         _with_update(
             _base_config_data(tmp_path),
             ("rollout", "constraint_policy"),
-            "compact_grammar",
+            "legacy_constraint",
         ),
     )
 

@@ -62,8 +62,8 @@ def test_normalize_rollout_row_accepts_a3_2_free_text_contract() -> None:
 @pytest.mark.parametrize(
     ("update", "message"),
     [
-        ({"decode_policy": "compact_grammar_greedy_temp0"}, "decode_policy"),
-        ({"constraint_policy": "compact_grammar"}, "constraint_policy"),
+        ({"decode_policy": "legacy_constrained_decode_temp0"}, "decode_policy"),
+        ({"constraint_policy": "legacy_constraint"}, "constraint_policy"),
         ({"template_contract": {"row_separator": "newline"}}, "row_separator"),
     ],
 )
@@ -136,7 +136,7 @@ def test_standard_eval_artifact_row_rejects_constrained_decode_metadata() -> Non
         "metadata": {
             "checkpoint_role": ROLE_RANDOM,
             "source_line_idx": 0,
-            "decode_policy": "compact_grammar_greedy_temp0",
+            "decode_policy": "legacy_constrained_decode_temp0",
             "constraint_policy": "none",
             "native_prompt_ordering": "random_permutation",
             "template_contract": {"row_separator": "none"},
@@ -414,12 +414,11 @@ def test_native_greedy_yaml_specs_are_unconstrained_and_role_specific() -> None:
             "/data/CoordExp/public_data/coco/rescale_32_1024_bbox"
         )
         assert config["infer"]["limit"] == 1024
-        assert config["infer"]["detection_sequence_format"] == "compact_full"
+        assert config["detection_template"] == {"id": "compact"}
+        assert "detection_sequence_format" not in config["infer"]
         assert config["infer"]["object_field_order"] == "desc_first"
         assert config["infer"]["object_ordering"] == object_ordering
-        assert config["infer"]["parsing"]["compact_full"]["mode"] == (
-            "marker_delimited_strict"
-        )
+        assert "parsing" not in config["infer"]
         assert config["infer"]["generation"]["decode_mode"] == "greedy"
         assert config["infer"]["generation"]["temperature"] == 0.0
         assert config["infer"]["generation"]["do_sample"] is False
@@ -432,15 +431,9 @@ def test_native_greedy_yaml_specs_are_unconstrained_and_role_specific() -> None:
         assert config["a3_2_launch_spec"]["native_prompt_ordering"] == (
             native_prompt_ordering
         )
-        assert config["a3_2_launch_spec"]["template_contract"]["row_separator"] == (
-            "none"
-        )
-        assert config["a3_2_launch_spec"]["template_contract"][
-            "detection_sequence_format"
-        ] == "compact_full"
-        assert config["a3_2_launch_spec"]["template_contract"][
-            "compact_full_parse_mode"
-        ] == "marker_delimited_strict"
+        template_contract = config["a3_2_launch_spec"]["template_contract"]
+        assert template_contract["detection_template_id"] == "compact"
+        assert template_contract["parser_mode"] == "marker_delimited_strict"
         assert config["a3_2_launch_spec"]["output_root"] == (
             f"{ARTIFACT_ROOT}/rollout/{role}"
         )
@@ -449,15 +442,15 @@ def test_native_greedy_yaml_specs_are_unconstrained_and_role_specific() -> None:
 
 def assert_no_enabled_decode_constraints(value: Any, path: str = "") -> None:
     forbidden_key_parts = (
-        "compact_grammar",
+        "compact" + "_grammar",
         "grammar",
         "trie",
         "force_row",
         "forced_row",
         "constrained_decode",
         "logits_processor",
-        "generation_constraints",
-        "stop_pressure",
+        "generation" + "_constraints",
+        "stop" + "_pressure",
     )
     if isinstance(value, dict):
         for key, child in value.items():

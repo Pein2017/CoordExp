@@ -32,11 +32,6 @@ def _fake_infer_owner() -> SimpleNamespace:
         max_new_tokens=128,
         repetition_penalty=None,
         seed=7,
-        stop_pressure_mode="off",
-        stop_pressure_min_new_tokens=0,
-        stop_pressure_trigger_rule="none",
-        stop_pressure_logit_bias=0.0,
-        stop_pressure_active=False,
     )
     cfg = SimpleNamespace(
         checkpoint_mode="full_model",

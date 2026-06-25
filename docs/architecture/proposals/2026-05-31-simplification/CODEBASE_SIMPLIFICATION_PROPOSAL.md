@@ -50,7 +50,7 @@ The target set of core concepts should be:
    Runtime does not resize images or convert bbox formats.
 
 4. DetectionTemplate
-   Renderer, parser, token spans, compact grammar, and terminal semantics.
+   Renderer, parser, token spans, compact row syntax, and terminal semantics.
 
 5. Objective
    Surface-bound loss or supervision primitive.
@@ -151,7 +151,7 @@ src/data/
   Own JSONL loading, image resolution, record IR, and offline geometry validation.
 
 src/detection/
-  Own detection templates, render/parse, token spans, compact grammar, and sequence semantics.
+  Own detection templates, render/parse, token spans, compact row syntax, and sequence semantics.
 
 src/infer/
   Own prompt policy, decode requests/results, backend execution, rollout decode, and inference artifacts.

@@ -107,8 +107,6 @@ def test_hf_batch_generation_uses_qwen_chat_eos_pad_and_disables_resize() -> Non
             temperature=0.0,
             top_p=1.0,
             repetition_penalty=None,
-            build_hf_stop_pressure_logits_processor=lambda **_: None,
-            apply_hf_stop_pressure=lambda kwargs: None,
         ),
         logger=SimpleNamespace(warning=lambda *args, **kwargs: None),
         system_prompt="system",
