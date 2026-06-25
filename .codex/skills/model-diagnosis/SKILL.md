@@ -69,6 +69,25 @@ Track innovation-specific probability mass:
 
 Healthy launch signal: intended terms move, valid mass rises, schema health holds, free rollout agrees with teacher-forced trend, and no provenance/mask/precision contradiction is visible.
 
+## Mechanism-Conditioned Probe Gate
+
+Use this before interpreting weak or negative results from denoising, robustness, prefix, hidden-state, coordinate-basin, binding, or duplicate-control experiments.
+
+Do not infer "the mechanism is irrelevant" from low average CE/KL deltas, mild metric movement, or a valid-looking perturbation until you verify the probe actually targets the documented mechanism surface.
+
+Check:
+
+- known healthy baseline quality gate, such as the user's expected mAP/AP/F1 range;
+- authored config, resolved runtime, and exact artifact root;
+- whether the perturbation can move the state basin or only stays inside a local valid-bbox neighborhood;
+- slot-wise effects for `x1`, `y1`, `x2`, `y2`, boundary/control tokens, and stop/continue sites;
+- mechanism-sensitive rows, not only aggregate averages;
+- wrong-control or same-desc competitor prefixes when prefix/binding is the claimed handle;
+- hidden-state patch, visual-region mask, or rollout-generated bad-prefix evidence when prior notes identify those as causal handles;
+- sparse sampling traps such as `num_objects_per_image=1`, identical-prefix cases, or mostly insensitive rows.
+
+If prior mechanism notes conflict with the new aggregate result, reconcile them explicitly. Prefer the verdict "probe handle mismatch" or "inconclusive-needs-mechanism-panel" over broad causal claims when the perturbation family does not match the documented failure mode.
+
 ## Stage-1 Coordinate Locality
 
 For SoftCE, Gaussian, or hard-CE coordinate objective decisions, keep the readout slot-wise and rollout-aware:
