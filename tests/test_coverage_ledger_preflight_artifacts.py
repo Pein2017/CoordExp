@@ -463,6 +463,49 @@ def test_preflight_swift_template_builder_uses_current_swift_api(
     assert getattr(template, "_coord_tokens_skip_norm") is True
 
 
+def test_preflight_packing_dummy_model_is_bound_to_qwen_template_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: dict[str, Any] = {}
+    dummy_model = object()
+
+    class _Template:
+        model = None
+        dummy_model = None
+        model_info = SimpleNamespace(model_type="qwen3_vl")
+
+    def _fake_get_model_processor(*args: Any, **kwargs: Any) -> tuple[object, None]:
+        calls["model_processor"] = (args, kwargs)
+        return dummy_model, None
+
+    monkeypatch.setattr(
+        preflight_module,
+        "get_model_processor",
+        _fake_get_model_processor,
+    )
+
+    template = _Template()
+    training_config = SimpleNamespace(
+        model={
+            "model": "local-model",
+            "model_type": "qwen3_vl",
+            "torch_dtype": "float32",
+        }
+    )
+
+    preflight_module._ensure_preflight_packing_dummy_model(  # type: ignore[attr-defined]
+        training_config,
+        template,
+    )
+
+    assert calls["model_processor"][0] == ("local-model",)
+    assert calls["model_processor"][1]["return_dummy_model"] is True
+    assert calls["model_processor"][1]["model_type"] == "qwen3_vl"
+    assert calls["model_processor"][1]["download_model"] is False
+    assert template.dummy_model is dummy_model
+    assert template.model is dummy_model
+
+
 def test_preflight_prerequisite_guards_fail_before_swift_download(
     tmp_path: Path,
 ) -> None:

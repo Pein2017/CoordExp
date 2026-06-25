@@ -342,15 +342,10 @@ def test_enabled_coverage_ledger_uses_capture_sums_loss_and_combines_events(
     assert len(_FakeCapture.calls) == 1
     assert model.calls == []
     assert "training_sidecars" not in _FakeCapture.calls[0]["inputs"]
-    assert result.outputs is not _FakeCapture.result
-    assert result.outputs == {"logits": logits}
-    assert result.outputs["logits"] is logits
-    hf_eval_logits = tuple(
-        value
-        for key, value in result.outputs.items()
-        if key not in {"loss"}
-    )
-    assert hf_eval_logits == (logits,)
+    assert result.outputs is _FakeCapture.result
+    assert result.outputs.logits is logits
+    assert result.outputs.final_hidden_states is hidden
+    assert result.outputs.image_embeds is image_embeds
     assert result.loss.item() == pytest.approx(
         result.objective_result.loss.item() + expected_ledger.weighted_loss.item()
     )

@@ -609,33 +609,34 @@ def _ensure_preflight_packing_dummy_model(
 ) -> None:
     if getattr(swift_template, "model", None) is not None:
         return
-    if getattr(swift_template, "dummy_model", None) is not None:
-        return
-    if getattr(swift_template, "model_info", None) is None:
-        return
-    model_type = training_config.model.get("model_type")
-    if model_type is None:
-        model_type = getattr(swift_template.model_info, "model_type", None)
-    if model_type is None:
-        return
+    dummy_model = getattr(swift_template, "dummy_model", None)
+    if dummy_model is None:
+        if getattr(swift_template, "model_info", None) is None:
+            return
+        model_type = training_config.model.get("model_type")
+        if model_type is None:
+            model_type = getattr(swift_template.model_info, "model_type", None)
+        if model_type is None:
+            return
 
-    import torch
+        import torch
 
-    local_model_path = _resolve_local_model_path(training_config.model["model"])
-    model_path = (
-        str(local_model_path)
-        if local_model_path is not None
-        else str(training_config.model["model"])
-    )
-    with torch.device("meta"):
-        dummy_model, _processor = get_model_processor(
-            model_path,
-            return_dummy_model=True,
-            model_type=str(model_type),
-            torch_dtype=_torch_dtype(training_config.model.get("torch_dtype")),
-            download_model=False,
+        local_model_path = _resolve_local_model_path(training_config.model["model"])
+        model_path = (
+            str(local_model_path)
+            if local_model_path is not None
+            else str(training_config.model["model"])
         )
+        with torch.device("meta"):
+            dummy_model, _processor = get_model_processor(
+                model_path,
+                return_dummy_model=True,
+                model_type=str(model_type),
+                torch_dtype=_torch_dtype(training_config.model.get("torch_dtype")),
+                download_model=False,
+            )
     swift_template.dummy_model = dummy_model
+    swift_template.model = dummy_model
 
 
 def _select_two_segment_pack(packed_dataset: Any) -> tuple[int, Sequence[Mapping[str, Any]]]:

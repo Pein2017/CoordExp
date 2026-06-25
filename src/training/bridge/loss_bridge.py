@@ -173,7 +173,7 @@ class TrainerLossBridge:
                 where="TrainerLossBridge",
             )
             logits = captured.logits
-            outputs = {"logits": logits}
+            outputs = captured
         else:
             core_model, inputs_for_model, _model_type = prepare_forward_inputs(
                 model=model,
