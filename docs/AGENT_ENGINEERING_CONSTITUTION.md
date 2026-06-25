@@ -2,15 +2,15 @@
 doc_id: docs.agent-engineering-constitution
 layer: docs
 doc_type: agent-guide
-status: draft
+status: canonical
 domain: repo
-summary: Lightweight engineering principles and workflow checklist for future Codex agents working in CoordExp.
+summary: Lightweight engineering principles for agents working in CoordExp.
 updated: 2026-05-04
 ---
 
 # Agent Engineering Constitution
 
-Purpose: give future Codex agents a shared engineering posture for CoordExp.
+Purpose: give future coding agents a shared engineering posture for CoordExp.
 This is a lightweight constitution, not a rigid lawbook. Prefer these
 principles unless a task, experiment, or compatibility constraint gives a clear
 reason to deviate.
@@ -34,8 +34,6 @@ Default posture:
 - State uncertainty and scope instead of inventing certainty.
 - Treat benchmark claims as invalid unless scope, config, checkpoint, artifact
   root, and metric surface are clear.
-- Keep future agents in mind: a good change should be easier to inspect than
-  the change it replaces.
 
 ## 2. Authority And Ownership
 
@@ -367,87 +365,33 @@ Useful extension-point language:
 
 ## 12. Documentation Principles
 
-Docs should route agents to truth. They should not become a second
-implementation.
+Docs should route agents to truth, not mirror implementation.
 
-Good docs:
-
-- Say what the current stable behavior is.
-- Link exact source owners.
-- Explain comparability boundaries.
-- Distinguish hypothesis, plan, result, interpretation, and stable contract.
-- Name artifact roots, configs, checkpoints, metric files, and scope when
-  reporting results.
-- Stay short enough that future agents will read them.
-
-Risky docs:
-
-- Duplicate long lists of volatile constants.
-- Make benchmark claims without scope.
-- Preserve old experimental interpretation as current guidance.
-- Hide whether evidence is proxy, tiny, partial, or full validation.
-- Copy implementation checklists that belong in super-power plans.
-
-Decision rule:
-
-- Put durable current behavior in docs.
-- Put detailed execution checklists in super-power plans.
-- Put coarse progress and blockers in `progress/` when needed.
-- Put research interpretation and durable decisions in `docs/` when appropriate.
-- Keep executable truth in the repo.
+- Current behavior, workflows, artifact names, and source-owner links belong in
+  `docs/`.
+- Stable contract semantics belong in `openspec/specs/`.
+- Dated diagnostics, benchmarks, and design derivations belong in `progress/`.
+- Research synthesis may live in `research/`, but it is not authority for
+  current operator/schema/artifact behavior.
+- Do not duplicate volatile constants, benchmark claims without scope, or
+  execution checklists already owned by `AGENTS.md`, `.codex/skills/`, or active
+  plan artifacts.
 
 ## 13. Future-Agent Workflow Checklist
 
-Use this checklist before nontrivial edits.
+Use `AGENTS.md` for shared agent routine and `.codex/skills/` for workflow
+mechanics. This page adds only CoordExp engineering invariants:
 
-Orient:
-
-- Identify the surface: data, config, template, objective, runtime, trainer,
-  inference, eval, metrics, artifacts, docs, or workflow records.
-- Read the relevant routing docs before broad source search.
-- Locate the owner module for the concept.
-- Identify whether the change is strict, compatibility, diagnostic, or
-  temporary.
-- Check whether a facade or entrypoint is only adapting an owner module.
-
-Design:
-
-- State the concept being changed in one sentence.
-- Choose the canonical vocabulary.
-- Decide which aliases are allowed.
-- Decide which container or schema owns the shape.
-- Decide which invalid combinations must fail fast.
-- Decide which metrics, artifacts, docs, or manifests are affected.
-- Choose the smallest viable change.
-
-Implement:
-
-- Edit the owner module first.
-- Keep facades thin.
-- Keep entrypoints orchestration-focused.
-- Preserve old imports unless the task explicitly breaks compatibility.
-- Keep strict and diagnostic paths separate.
-- Avoid broad abstractions until repeated use justifies them.
-
-Verify when verification is in scope:
-
-- Prefer the narrowest realistic test or artifact check.
-- Verify config parsing before launching expensive training.
-- Verify geometry, parser, metric, or artifact contracts before broad suites.
-- Report exact scope and command shape.
-- Do not claim full validation from partial evidence.
-
-Document:
-
-- Update docs when user-facing behavior, config schema, artifact names, metrics,
-  or recommended workflows change.
-- Link source owners instead of restating large code details.
-- Record exact metric scope for experiment results.
-- Keep management records short, link-rich, and non-duplicative.
+- locate the source owner before editing a facade or entrypoint;
+- classify the change as strict, compatibility, diagnostic, or temporary;
+- keep config schema, runtime policy, metrics, artifacts, and docs in sync when
+  a stable surface moves;
+- verify the narrowest contract that can prove geometry, parser, metric,
+  config, or artifact behavior.
 
 ## 14. Pause And Escalate Triggers
 
-Future agents should pause for alignment when:
+Pause for alignment when:
 
 - A change would alter metric comparability.
 - A change would alter geometry or object ordering.
@@ -463,7 +407,6 @@ Escalation should be concrete:
 
 - Name the trade-off.
 - Offer one recommended path.
-- Keep the user unblocked.
 - Do not turn uncertainty into silent behavior.
 
 ## 15. Good Patterns To Preserve

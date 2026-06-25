@@ -13,6 +13,12 @@ updated: 2026-06-07
 Source scope: local `flash_attn==2.8.3`, `transformers==4.57.1`,
 `torch==2.9.1+cu128`, `triton==3.5.1`. Runtime check on 2026-06-07 reported
 CUDA available on `NVIDIA A100 80GB PCIe`, compute capability `(8, 0)`.
+Resolve local roots with:
+
+```bash
+python -c "import pathlib, flash_attn; print(pathlib.Path(flash_attn.__file__).parent)"
+python -c "import pathlib, transformers; print(pathlib.Path(transformers.__file__).parent)"
+```
 
 ## Architecture Map
 
@@ -92,17 +98,17 @@ max_seqlen_k: Python int
 ## Handles
 
 - Local API exports:
-  `/root/miniconda3/envs/ms/lib/python3.12/site-packages/flash_attn/__init__.py`
+  `${FLASH_ATTN_ROOT}/__init__.py`
 - Local FA2 interface:
-  `/root/miniconda3/envs/ms/lib/python3.12/site-packages/flash_attn/flash_attn_interface.py`
+  `${FLASH_ATTN_ROOT}/flash_attn_interface.py`
 - Local padding helpers:
-  `/root/miniconda3/envs/ms/lib/python3.12/site-packages/flash_attn/bert_padding.py`
+  `${FLASH_ATTN_ROOT}/bert_padding.py`
 - Transformers utility:
-  `/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/modeling_flash_attention_utils.py`
+  `${TRANSFORMERS_ROOT}/modeling_flash_attention_utils.py`
 - Transformers wrapper:
-  `/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/integrations/flash_attention.py`
+  `${TRANSFORMERS_ROOT}/integrations/flash_attention.py`
 - Transformers support checks:
-  `/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/modeling_utils.py`
+  `${TRANSFORMERS_ROOT}/modeling_utils.py`
 - Upstream FA2 tag:
   [Dao-AILab/flash-attention v2.8.3](https://github.com/Dao-AILab/flash-attention/tree/v2.8.3)
 - Upstream attention docs:

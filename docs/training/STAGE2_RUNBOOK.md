@@ -50,7 +50,6 @@ Current internal ownership seams:
   - `src/bootstrap/run_metadata.py`
 - Stage-2 trainer/runtime:
   - `src/trainers/stage2_rollout_correction.py`
-  - `src/trainers/stage2_rollout_correction/` when package-local helpers are present
   - `src/trainers/rollout_aligned_targets.py`
   - `src/trainers/rollout_aligned_evaluator.py`
   - `src/infer/runtime.py`

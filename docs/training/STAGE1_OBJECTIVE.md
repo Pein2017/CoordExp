@@ -27,16 +27,16 @@ Scope note:
 - For standard Stage-1 SFT, the active non-pipeline teacher-forcing surface is:
   - `custom.coord_soft_ce_w1.*`
 - Raw-text norm1000 ablations remain legacy Stage-1 SFT surfaces, not latest
-  compact detection overlays. Materialization verification should include:
-  - `configs/stage1/profiles/2b/raw_text_xyxy_pure_ce_coco80_desc_first_1024_lvis_proxy.yaml`
+  compact detection overlays. They are expressed through ordinary Stage-1 SFT
+  configs plus `custom.coord_tokens.enabled: false`; no checked-in canonical
+  raw-text profile is maintained.
 - The canonical compact Stage-1 research teacher-forcing public route is
   `pipeline.id: stage1_research_teacher_forcing`; active configs live under
   `configs/stage1/detection_teacher_forcing/`.
 - Compact prefix roll-in multi-positive training remains only a legacy
   recursive-detection CE comparator/ablation surface, not the active compact
-  teacher-forcing route. The checked-in route
-  the archived prefix-rollin recursive-detection config
-  should be treated as E1 ablation/smoke validation, not production.
+  teacher-forcing route. The archived prefix-rollin recursive-detection config
+  is E1 ablation/smoke validation, not production.
 - Geometry-aware coordinate SoftCE for legacy compact recursive detection is
   scoped to historical A5-iou-gibbs/A6-ciou-gibbs and focused cap8
   instance-trie provenance configs under
@@ -397,11 +397,9 @@ Evaluation note:
 The minimal raw-text benchmark keeps canonical `xyxy` geometry and the shared
 norm1000 lattice, but removes coord-token rendering:
 
-Materialized legacy profile:
-
-```text
-configs/stage1/profiles/2b/raw_text_xyxy_pure_ce_coco80_desc_first_1024_lvis_proxy.yaml
-```
+No checked-in canonical raw-text profile is maintained. To rerun this legacy
+ablation, author an ordinary Stage-1 SFT profile from `configs/stage1/sft_base.yaml`
+with the invariants below.
 
 - train from canonical `train.norm.jsonl` / `val.norm.jsonl`
 - set `custom.coord_tokens.enabled: false`

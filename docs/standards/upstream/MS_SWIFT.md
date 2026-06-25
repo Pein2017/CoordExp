@@ -10,7 +10,7 @@ updated: 2026-06-07
 
 # ms-swift
 
-Source scope: local checkout `/data/ms-swift`, version `4.2.2`, commit
+Source scope: local checkout `${MS_SWIFT_ROOT}`, version `4.2.2`, commit
 `f2797138dba0e224cfff735cd89a528a08d8732a`.
 
 ## Live Route
@@ -52,11 +52,11 @@ Source scope: local checkout `/data/ms-swift`, version `4.2.2`, commit
 
 Important files:
 
-- `/data/ms-swift/swift/pipelines/train/sft.py`
-- `/data/ms-swift/swift/arguments/sft_args.py`
-- `/data/ms-swift/swift/trainers/trainer_factory.py`
-- `/data/ms-swift/swift/trainers/seq2seq_trainer.py`
-- `/data/ms-swift/swift/trainers/mixin.py`
+- `${MS_SWIFT_ROOT}/swift/pipelines/train/sft.py`
+- `${MS_SWIFT_ROOT}/swift/arguments/sft_args.py`
+- `${MS_SWIFT_ROOT}/swift/trainers/trainer_factory.py`
+- `${MS_SWIFT_ROOT}/swift/trainers/seq2seq_trainer.py`
+- `${MS_SWIFT_ROOT}/swift/trainers/mixin.py`
 
 ## Template And Geometry
 
@@ -129,16 +129,16 @@ Distinguish:
 
 ## Handles
 
-- Local checkout identity: `/data/ms-swift/swift/version.py`
-- CLI/config: `/data/ms-swift/swift/cli/main.py`
-- SFT pipeline: `/data/ms-swift/swift/pipelines/train/sft.py`
-- SFT args: `/data/ms-swift/swift/arguments/sft_args.py`
-- Template args: `/data/ms-swift/swift/arguments/base_args/template_args.py`
-- Data args: `/data/ms-swift/swift/arguments/base_args/data_args.py`
-- Packing: `/data/ms-swift/swift/dataset/packing.py`
-- Qwen template: `/data/ms-swift/swift/template/templates/qwen.py`
-- Trainer/loss: `/data/ms-swift/swift/trainers/seq2seq_trainer.py`
-- Sequence parallel: `/data/ms-swift/swift/sequence_parallel/ulysses.py`
+- Local checkout identity: `${MS_SWIFT_ROOT}/swift/version.py`
+- CLI/config: `${MS_SWIFT_ROOT}/swift/cli/main.py`
+- SFT pipeline: `${MS_SWIFT_ROOT}/swift/pipelines/train/sft.py`
+- SFT args: `${MS_SWIFT_ROOT}/swift/arguments/sft_args.py`
+- Template args: `${MS_SWIFT_ROOT}/swift/arguments/base_args/template_args.py`
+- Data args: `${MS_SWIFT_ROOT}/swift/arguments/base_args/data_args.py`
+- Packing: `${MS_SWIFT_ROOT}/swift/dataset/packing.py`
+- Qwen template: `${MS_SWIFT_ROOT}/swift/template/templates/qwen.py`
+- Trainer/loss: `${MS_SWIFT_ROOT}/swift/trainers/seq2seq_trainer.py`
+- Sequence parallel: `${MS_SWIFT_ROOT}/swift/sequence_parallel/ulysses.py`
 - Upstream repo: [modelscope/ms-swift](https://github.com/modelscope/ms-swift)
 - Upstream command-line docs:
   [Command-line parameters](https://github.com/modelscope/ms-swift/blob/main/docs/source_en/Instruction/Command-line-parameters.md)

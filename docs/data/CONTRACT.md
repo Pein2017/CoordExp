@@ -159,12 +159,15 @@ canonical views.
 }
 ```
 
-## Current Sources (checked)
-- `public_data/*`: LVIS/COCO/Objects365-style exports; polygons include `poly_points`; descriptions are English classes/phrases.
-- The cached LVIS bbox Stage-1 exports under `public_data/lvis/rescale_32_1024_bbox_max60/{train,val}.coord.jsonl`
-  already satisfy the default sorted-order invariant above.
-  - verification status: full-row scan, `0` unsorted rows in train and `0` unsorted rows in val
-  - comparator used: `(minY, minX)` from bbox top-left, matching the runtime loader contract
+## Source Families
+
+- `public_data/*` converters produce LVIS/COCO/Objects365-style exports;
+  polygons include `poly_points`; descriptions are English classes/phrases.
+- Generated LVIS bbox Stage-1 exports are expected under
+  `public_data/lvis/rescale_32_1024_bbox_max60/{train,val}.coord.jsonl` after
+  `bash public_data/lvis/reproduce_max60_exports.sh`.
+- Before citing a generated export, verify sorted-order and contract validity on
+  the actual files present in the checkout or artifact root.
 
 All future domains MUST emit this contract to remain compatible with the shared chat template pipeline.
 

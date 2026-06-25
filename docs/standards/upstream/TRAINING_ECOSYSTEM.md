@@ -10,7 +10,7 @@ updated: 2026-06-07
 
 # Training Ecosystem
 
-Source scope: active `ms` environment and local `/data/ms-swift`.
+Source scope: active `ms` environment and local `${MS_SWIFT_ROOT}`.
 
 ## Boundary
 
@@ -162,16 +162,16 @@ lorap_lr_ratio
 - Liger docs:
   [TRL Liger integration](https://huggingface.co/docs/trl/main/liger_kernel_integration)
 - ms-swift adapter/config:
-  `/data/ms-swift/swift/arguments/tuner_args.py`
+  `${MS_SWIFT_ROOT}/swift/arguments/tuner_args.py`
 - ms-swift tuner:
-  `/data/ms-swift/swift/pipelines/train/tuner.py`
+  `${MS_SWIFT_ROOT}/swift/pipelines/train/tuner.py`
 - ms-swift PEFT shim:
-  `/data/ms-swift/swift/tuners/peft.py`
+  `${MS_SWIFT_ROOT}/swift/tuners/peft.py`
 - ms-swift trainer factory:
-  `/data/ms-swift/swift/trainers/trainer_factory.py`
+  `${MS_SWIFT_ROOT}/swift/trainers/trainer_factory.py`
 - ms-swift supervised loss:
-  `/data/ms-swift/swift/trainers/seq2seq_trainer.py`
+  `${MS_SWIFT_ROOT}/swift/trainers/seq2seq_trainer.py`
 - ms-swift RLHF trainers:
-  `/data/ms-swift/swift/rlhf_trainers/`
+  `${MS_SWIFT_ROOT}/swift/rlhf_trainers/`
 - ms-swift sequence parallel:
-  `/data/ms-swift/swift/sequence_parallel/`
+  `${MS_SWIFT_ROOT}/swift/sequence_parallel/`

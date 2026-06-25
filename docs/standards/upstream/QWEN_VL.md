@@ -10,9 +10,12 @@ updated: 2026-06-07
 
 # Transformers Qwen-VL
 
-Source scope: local `transformers==4.57.1` under
-`/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers`, with
-primary focus on `qwen3_vl`, `qwen2_5_vl`, and `qwen2_vl`.
+Source scope: local `transformers==4.57.1`, with primary focus on `qwen3_vl`,
+`qwen2_5_vl`, and `qwen2_vl`. Resolve `${TRANSFORMERS_ROOT}` with:
+
+```bash
+python -c "import pathlib, transformers; print(pathlib.Path(transformers.__file__).parent)"
+```
 
 ## Architecture Map
 
@@ -97,13 +100,13 @@ primary focus on `qwen3_vl`, `qwen2_5_vl`, and `qwen2_vl`.
 ## Handles
 
 - Local config:
-  `/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/models/qwen3_vl/configuration_qwen3_vl.py`
+  `${TRANSFORMERS_ROOT}/models/qwen3_vl/configuration_qwen3_vl.py`
 - Local model:
-  `/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/models/qwen3_vl/modeling_qwen3_vl.py`
+  `${TRANSFORMERS_ROOT}/models/qwen3_vl/modeling_qwen3_vl.py`
 - Local processor:
-  `/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/models/qwen3_vl/processing_qwen3_vl.py`
+  `${TRANSFORMERS_ROOT}/models/qwen3_vl/processing_qwen3_vl.py`
 - Local video processor:
-  `/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/models/qwen3_vl/video_processing_qwen3_vl.py`
+  `${TRANSFORMERS_ROOT}/models/qwen3_vl/video_processing_qwen3_vl.py`
 - Upstream docs:
   [Qwen3-VL v4.57.1](https://huggingface.co/docs/transformers/v4.57.1/model_doc/qwen3_vl)
 - Upstream source:

@@ -237,8 +237,8 @@ bash public_data/lvis/reproduce_max60_exports.sh
 
 Current Stage-1 pretraining JSONLs:
 
-- `/data/CoordExp/public_data/lvis/rescale_32_1024_bbox_max60/train.coord.jsonl`
-- `/data/CoordExp/public_data/lvis/rescale_32_1024_bbox_max60/val.coord.jsonl`
+- generated under `public_data/lvis/rescale_32_1024_bbox_max60/`
+- expected leaves: `train.coord.jsonl` and `val.coord.jsonl`
 
 ### 2. Stage-1 Training
 

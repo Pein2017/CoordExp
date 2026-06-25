@@ -300,6 +300,12 @@ artifacts into `training.output_dir` before training starts:
   - treat this as the detailed provenance sidecar; use
     `experiment_manifest.json` as the first run-level orientation artifact.
   - emitted via `src/bootstrap/run_metadata.py`
+- `logging.jsonl`
+  - Rank-0 ms-swift metric/log stream under `training.output_dir`.
+  - CoordExp strips only the trailing upstream trainer-state payload after
+    training so downstream readers see a flat metric JSONL stream.
+  - Treat this as telemetry, not a manifest; use `run_metadata.json`,
+    `effective_runtime.json`, and `experiment_manifest.json` for provenance.
 - `config_source.yaml` / `base_config_source.yaml`
   - Best-effort copies of the YAML sources used to build the run.
 - `monitor_dumps/` when either retained migration handle

@@ -12,8 +12,14 @@ updated: 2026-06-07
 
 Use this page as the upstream dependency router. Detailed notes live under
 [`upstream/`](upstream/). The current source of truth is the active `ms`
-environment plus the local `/data/ms-swift` checkout, not stale paths from older
+environment plus the current ms-swift checkout, not stale paths from older
 CoordExp runs.
+
+Local handle variables used below:
+
+- `TRANSFORMERS_ROOT`: `python -c "import pathlib, transformers; print(pathlib.Path(transformers.__file__).parent)"`
+- `FLASH_ATTN_ROOT`: `python -c "import pathlib, flash_attn; print(pathlib.Path(flash_attn.__file__).parent)"`
+- `MS_SWIFT_ROOT`: local ms-swift checkout.
 
 ## Version Stamp
 
@@ -22,9 +28,9 @@ Last reviewed locally on 2026-06-07:
 | Package | Version / state | Primary local handle |
 |---|---|---|
 | `torch` | `2.9.1+cu128` | active `ms` Python |
-| `transformers` | `4.57.1` | `/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers` |
-| `flash_attn` | `2.8.3` | `/root/miniconda3/envs/ms/lib/python3.12/site-packages/flash_attn` |
-| `ms-swift` | `4.2.2`, local checkout commit `f2797138dba0e224cfff735cd89a528a08d8732a` | `/data/ms-swift` |
+| `transformers` | `4.57.1` | `${TRANSFORMERS_ROOT}` |
+| `flash_attn` | `2.8.3` | `${FLASH_ATTN_ROOT}` |
+| `ms-swift` | `4.2.2`, local checkout commit `f2797138dba0e224cfff735cd89a528a08d8732a` | `${MS_SWIFT_ROOT}` |
 | `accelerate` | `1.10.1` | active `ms` Python |
 | `peft` | `0.17.1` | active `ms` Python |
 | `trl` | `0.23.1` | active `ms` Python |
@@ -89,16 +95,16 @@ supervision ownership -> CoordExp sidecars / loss metadata
 
 Local upstream:
 
-- Qwen3-VL model: `/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/models/qwen3_vl/modeling_qwen3_vl.py`
+- Qwen3-VL model: `${TRANSFORMERS_ROOT}/models/qwen3_vl/modeling_qwen3_vl.py`
 - Transformers FlashAttention utility:
-  `/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/modeling_flash_attention_utils.py`
+  `${TRANSFORMERS_ROOT}/modeling_flash_attention_utils.py`
 - FlashAttention interface:
-  `/root/miniconda3/envs/ms/lib/python3.12/site-packages/flash_attn/flash_attn_interface.py`
-- ms-swift SFT pipeline: `/data/ms-swift/swift/pipelines/train/sft.py`
-- ms-swift SFT args: `/data/ms-swift/swift/arguments/sft_args.py`
-- ms-swift Qwen templates: `/data/ms-swift/swift/template/templates/qwen.py`
-- ms-swift trainer loss path: `/data/ms-swift/swift/trainers/seq2seq_trainer.py`
-- ms-swift sequence parallel: `/data/ms-swift/swift/sequence_parallel/ulysses.py`
+  `${FLASH_ATTN_ROOT}/flash_attn_interface.py`
+- ms-swift SFT pipeline: `${MS_SWIFT_ROOT}/swift/pipelines/train/sft.py`
+- ms-swift SFT args: `${MS_SWIFT_ROOT}/swift/arguments/sft_args.py`
+- ms-swift Qwen templates: `${MS_SWIFT_ROOT}/swift/template/templates/qwen.py`
+- ms-swift trainer loss path: `${MS_SWIFT_ROOT}/swift/trainers/seq2seq_trainer.py`
+- ms-swift sequence parallel: `${MS_SWIFT_ROOT}/swift/sequence_parallel/ulysses.py`
 
 Upstream links:
 
