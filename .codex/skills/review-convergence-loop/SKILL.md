@@ -68,7 +68,7 @@ Create or inspect the work product appropriate to the mode:
 - audit/launch gate: severity-ranked findings and verification handles
 - packaging: shortlist first, asset only after approval
 
-Keep work scoped. Use current repo/docs/artifacts as authority.
+Use current repo/docs/artifacts as authority.
 
 ### 3. Dispatch Independent Review Lanes
 
@@ -224,5 +224,3 @@ Report:
 - verification run
 - remaining gates
 - exact next state: `ready for user approval`, `hold`, `needs user decision`, or `implemented and verified`
-
-Keep the final report concise and evidence-backed.

@@ -2,8 +2,8 @@
 name: openspec-bulk-archive-change
 description: Archive multiple completed changes at once. Use when archiving several parallel changes.
 license: MIT
-compatibility: Requires openspec CLI.
 metadata:
+  compatibility: Requires openspec CLI.
   author: openspec
   version: "1.0"
   generatedBy: "1.4.1"

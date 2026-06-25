@@ -11,8 +11,6 @@ resolved discussion must update durable repo records, use
 
 ## Core Loop
 
-- Interview the user relentlessly until the plan, design, or decision reaches
-  shared understanding.
 - Walk the decision tree branch by branch, resolving dependencies between
   decisions in order.
 - Batch simple, independent clarification questions and recommendations when
@@ -24,8 +22,8 @@ resolved discussion must update durable repo records, use
   clear when "all yes" is a valid response.
 - If repo context can answer the question, inspect the repo or artifacts first
   instead of asking.
-- Stop grilling once the remaining uncertainty no longer changes the decision,
-  evidence plan, compatibility story, or next action.
+- Stop once the remaining uncertainty no longer changes the decision, evidence
+  plan, compatibility story, or next action.
 
 ## CoordExp Ground Rules
 

@@ -13,7 +13,6 @@ use `grill-me`; for architecture-specific refactor discovery, use
 ## Operating Loop
 
 - Start from the repo route: `docs/AGENT_INDEX.md`, `docs/catalog.yaml`, then the relevant docs, specs, configs, artifacts, or `progress/` notes.
-- Interview the user relentlessly until the plan, design, or decision reaches shared understanding.
 - Walk the decision tree branch by branch, resolving dependencies between decisions in order.
 - Batch simple, independent questions and recommendations when they can be answered together without changing upstream meaning.
 - Ask exactly one question at a time only for crucial or high-impact decisions that gate later branches or change research meaning, reproducibility, eval validity, cost, compatibility, durable records, or next action.
@@ -25,7 +24,7 @@ use `grill-me`; for architecture-specific refactor discovery, use
 
 ## Domain Awareness
 
-- Treat CoordExp docs, specs, configs, tests, manifests, artifacts, and progress notes as the project language model.
+- Use CoordExp docs, specs, configs, tests, manifests, artifacts, and progress notes as the discussion vocabulary.
 - When the user uses a term that conflicts with existing repo language, call out the conflict immediately and ask which meaning should win.
 - When language is vague or overloaded, propose a precise canonical term tied to the relevant code, config key, artifact, metric, or doc path.
 - Cross-reference claims with code and artifacts. If the code says something different from the discussion, surface the contradiction as the next question.

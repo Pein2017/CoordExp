@@ -5,7 +5,7 @@ description: "Use when producing a read-only CoordExp audit of code, configs, sp
 
 # Audit Review
 
-Produce read-only audits that help another implementer change CoordExp safely. Optimize for correctness, reproducibility, governance, pipeline integrity, and eval validity over style commentary.
+Produce read-only audits for another implementer. Prioritize correctness, reproducibility, governance, pipeline integrity, and eval validity over style commentary.
 
 ## Role Boundary
 

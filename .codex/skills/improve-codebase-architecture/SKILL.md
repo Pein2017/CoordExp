@@ -57,7 +57,7 @@ references, declarations/implementations, diagnostics, and symbolic edits. Use
 logs. Use subagents when parallel architecture audits materially help or the
 user explicitly asks for parallel agent work.
 
-Explore organically and note where you experience friction:
+Look for friction:
 
 - Where does understanding one concept require bouncing between many small modules?
 - Where are modules **shallow** — interface nearly as complex as the implementation?

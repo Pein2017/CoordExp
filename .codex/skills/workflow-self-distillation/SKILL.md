@@ -5,7 +5,7 @@ description: Use when asked to review recent Codex work, memories, sessions, or 
 
 # Workflow Self-Distillation
 
-Use this to turn recent repeated work into durable agent assets without creating speculative clutter.
+Use this to turn repeated work into durable agent assets.
 
 ## Evidence Order
 
@@ -65,7 +65,7 @@ Before creating assets, produce a compact shortlist with:
 - recommended form;
 - why it is or is not worth creating.
 
-Create only when the user explicitly asks for asset creation or approves the shortlist. Keep changes small, source-aware, and validator-clean.
+Create only when the user explicitly asks for asset creation or approves the shortlist. Validate changed skill/agent assets before reporting them complete.
 
 ## Verification
 

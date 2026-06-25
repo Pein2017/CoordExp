@@ -5,7 +5,7 @@ description: Use when the user asks for a handoff, continuation prompt, compact 
 
 # Handoff
 
-Write a concise continuation document for a fresh agent or another machine.
+Write a continuation document containing only the state a fresh agent or another machine needs.
 
 ## Output Target
 
@@ -16,7 +16,7 @@ Write a concise continuation document for a fresh agent or another machine.
 
 ## CoordExp Content
 
-Include only portable, actionable state:
+Include:
 
 - repo root, branch if relevant, and dirty-file scope;
 - exact artifact/config/checkpoint paths that matter;
@@ -25,7 +25,7 @@ Include only portable, actionable state:
 - which skills or repo docs the next agent should use;
 - verification that still needs to run.
 
-Do not duplicate large artifacts, PRDs, plans, metrics, or docs. Link exact paths instead. Keep references short and navigational; repo files, docs, and artifacts remain executable truth.
+Do not duplicate large artifacts, PRDs, plans, metrics, or docs. Link exact paths instead; repo files, docs, and artifacts remain executable truth.
 
 ## Common CoordExp Templates
 
