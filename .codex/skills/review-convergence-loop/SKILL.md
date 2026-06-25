@@ -74,15 +74,16 @@ Keep work scoped. Use current repo/docs/artifacts as authority.
 
 Use subagents only when the user explicitly requested subagents or the active workflow already permits them.
 
-Use 2-6 lanes. Keep them independent. Common lanes:
+Use 2-6 lanes. Keep them independent. Prefer project custom-agent roles when they fit:
 
-- architecture/code-boundary reviewer
-- upstream dependency reviewer
-- test/verification reviewer
-- docs/governance reviewer
-- artifact/eval-validity reviewer
-- implementation quality reviewer
-- research failure-mode reviewer
+- `coordexp_mapper`: unknown surface map before other lanes spend tokens.
+- `upstream_relation_tracer`: upstream/library or cross-root dependency claims.
+- `contract_auditor`: governance/spec, implementation-contract, config/runtime, artifact/eval, docs, or launch-gate risks.
+- `model_diagnostician`: abnormal model behavior, rollout symptoms, metric drops, or artifact-root diagnosis.
+- `research_synthesizer`: research-note clustering, supervisor packets, or OKF-style hub drafts.
+- `implementation_worker`: assigned patch lane after the parent gives owned files/modules and verification target.
+
+Use generic lanes only when no custom role fits the work.
 
 Each subagent prompt must include:
 
@@ -189,6 +190,23 @@ import pathlib, yaml
 for path in pathlib.Path(".codex/skills").glob("*/agents/openai.yaml"):
     yaml.safe_load(path.read_text())
 PY
+git diff --check
+```
+
+For custom-agent changes:
+
+```bash
+python - <<'PY'
+import pathlib, tomllib
+required = {"name", "description", "developer_instructions"}
+for path in pathlib.Path(".codex/agents").glob("*.toml"):
+    data = tomllib.loads(path.read_text())
+    missing = required - data.keys()
+    if missing:
+        raise SystemExit(f"{path}: missing {sorted(missing)}")
+    print(f"{path}: ok")
+PY
+git check-ignore -v .codex/agents/coordexp_mapper.toml || true
 git diff --check
 ```
 

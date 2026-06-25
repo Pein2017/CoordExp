@@ -19,6 +19,8 @@ Do **not** use this skill as the first pass when the user is asking whether a pl
 
 Switch to `model-innovation-risk-audit` when symptom evidence suggests silent train/eval/config/runtime mismatch, stale artifacts, wrong adapter, prompt/template drift, schema drift, or metric-contract ambiguity.
 
+For large or independent diagnosis lanes, delegate to the `model_diagnostician` custom agent. Add `upstream_relation_tracer` only when the symptom depends on upstream library behavior, and add `contract_auditor` only when artifact/eval validity or launch approval is the question.
+
 ## Artifact Triage First
 
 Start from the exact artifact root named by the user before interpreting metrics.

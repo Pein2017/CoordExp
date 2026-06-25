@@ -83,6 +83,8 @@
 
 # Codex skills are tracked; local memories and plugin caches stay per-environment
 !.codex/
+!.codex/agents/
+!.codex/agents/**
 !.codex/skills/
 !.codex/skills/**
 .codex/.tmp/

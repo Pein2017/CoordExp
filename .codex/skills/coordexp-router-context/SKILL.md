@@ -18,6 +18,19 @@ This skill owns detailed CoordExp navigation and MCP/tool-routing policy. Other 
 
 Exact leaf skills win over this router: use `coordexp-infer-eval-workflow` for launch/repair/eval artifacts, `coordexp-public-data-provenance` for `public_data`, `model-diagnosis` for abnormal behavior, `model-innovation-risk-audit` for pre-launch trust gates, `audit-review` for findings-first audits, and `worktree-feature-loop` for isolation.
 
+## Custom Agent Handoff
+
+Use project agents as role boundaries, not as tool identities:
+
+- `coordexp_mapper`: first-pass read-only map of docs, configs, code owners, artifacts, and likely checks.
+- `upstream_relation_tracer`: read-only cross-root or upstream-library dependency tracing.
+- `contract_auditor`: read-only severity-ranked contract, reproducibility, artifact, metric, docs/spec, or launch-gate audit.
+- `model_diagnostician`: read-only artifact-first diagnosis of abnormal model behavior.
+- `research_synthesizer`: research/progress note synthesis, supervisor packets, and OKF-style research hubs.
+- `implementation_worker`: bounded code/config/docs patch when the parent supplies owned files/modules and verification target.
+
+Do not create MCP-specific agents such as "Serena agent" or "CodeGraph agent"; choose the role first and let this router pick CodeGraph, codebase-memory, Serena, RTK, or shell by phase.
+
 ## Authority Spine
 
 Use current repo truth in this order:

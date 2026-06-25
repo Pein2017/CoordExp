@@ -25,6 +25,8 @@ Do not use this as the first skill for:
 - isolated feature branches or cleanup lifecycle: use `worktree-feature-loop` and `git-hygiene`;
 - infer/eval launch or artifact repair: use `coordexp-infer-eval-workflow`.
 
+Use the `research_synthesizer` custom agent for large note clustering, cross-worktree Markdown collection, supervisor packets, or OKF-style hub drafts. Keep the agent on research/provenance surfaces; use `contract_auditor` before promoting any synthesized claim into current docs or stable specs.
+
 ## Authority Rules
 
 - `docs/` explains current behavior and operator guidance.

@@ -81,7 +81,7 @@ Use `references/report-template.md` when a skeleton is helpful.
 - Do not use `progress/` as current behavior when `docs/` or stable specs cover the contract.
 - Use Git inspection only when the audit scope depends on dirty state, a PR/change diff, or the user asks for it; otherwise do not run Git by reflex.
 - For Python code exploration, route docs/configs first, then use a correct local CodeGraph index only for broad "where should I look?" maps. Once files or symbols are known, switch to Serena for exact references, bodies, declarations/implementations, diagnostics, and edit-risk checks. In linked worktrees, do not trust CodeGraph results from another checkout.
-- For broad approval audits, use independent read-only lanes when available: governance/spec, implementation-contract, config/runtime, artifact/eval, and lifecycle/docs. Reconcile subagent output into one verdict; a timed-out or vague lane is unresolved, not approval.
+- For broad approval audits, use `contract_auditor` as the default custom-agent role. Add `coordexp_mapper` for unknown surfaces and `upstream_relation_tracer` for cross-root dependencies; reconcile every lane into one verdict. A timed-out or vague lane is unresolved, not approval.
 - If a temporary probe is unavoidable, prefer `/tmp/`. Ask before writing under repo `temp/`.
 
 ## Audit Workflow
