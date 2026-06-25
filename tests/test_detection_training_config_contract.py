@@ -2041,6 +2041,7 @@ def test_stage1_detection_teacher_forcing_canonical_launch_configs_are_migrated(
     }
     expected_configs = {
         canonical_route / "prod/compact_support2.yaml",
+        canonical_route / "prod/coverage_ledger_closed_hard_sft.yaml",
         canonical_route / "smoke/compact_tiny.yaml",
     }
     assert discovered_configs
@@ -2051,15 +2052,24 @@ def test_stage1_detection_teacher_forcing_canonical_launch_configs_are_migrated(
         assert isinstance(cfg, DetectionTrainingConfig)
         assert cfg.pipeline.id == "stage1_research_teacher_forcing"
         assert cfg.objective.id == "research_teacher_forcing"
-        assert cfg.objective.profile == "pure_valid_set_marginal"
         assert cfg.sample_factory.id == "detection_sequence"
-        assert cfg.sample_factory.target_sequence.object_ordering == "random_permutation"
+        is_coverage_ledger_closed_hard_sft = config_path.stem.startswith(
+            "coverage_ledger_closed_hard_sft"
+        )
+        if is_coverage_ledger_closed_hard_sft:
+            assert cfg.objective.profile == "hard_sft"
+            assert cfg.sample_factory.target_sequence.object_ordering == "sorted"
+            assert cfg.objective.target_ir.rollin_policy.name == "sorted"
+            assert cfg.detection_template.id == "compact_object_box_closed"
+        else:
+            assert cfg.objective.profile == "pure_valid_set_marginal"
+            assert cfg.sample_factory.target_sequence.object_ordering == "random_permutation"
+            assert cfg.detection_template.id == "compact"
         assert cfg.sample_factory.target_sequence.object_field_order == "desc_first"
         assert cfg.sample_factory.target_sequence.bbox_format == "xyxy"
         assert cfg.sample_factory.target_sequence.coordinate_surface == "coord_token"
         assert cfg.sample_factory.target_sequence.strict_parse is True
         assert cfg.prompt.variant == "coco_80"
-        assert cfg.detection_template.id == "compact"
         assert cfg.token_embeddings_adapter.enabled is True
         assert "custom" not in cfg.to_mapping()
         assert "token_rows" not in cfg.to_mapping()

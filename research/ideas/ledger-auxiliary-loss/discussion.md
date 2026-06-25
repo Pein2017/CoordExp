@@ -355,12 +355,13 @@ metrics. Object embeddings stay visual-only in v0; do not concatenate class
 text or object description embeddings before the visual alignment path is
 trusted.
 
-For v0 simplicity, the row `<box_start>` region-anchor subterm should bind the
-only current row object instance as positive and mask all non-current objects.
-Do not punish previous or future objects in this subterm. The goal is to bind
-the unique teacher-forced object row to its language-side coordinate-start
-state and selected visual region, without turning the anchor term into a
-full one-vs-all object classifier.
+The 2026-06-24 implementation refinement supersedes the earlier positive-only
+anchor note: for row `<box_start>` of object `k`, the region-anchor subterm uses
+a one-vs-all row-object binding target. Object `k` is positive and every other
+annotated object is negative. The goal is to bind the unique teacher-forced
+object row to its language-side coordinate-start state and selected visual
+region, while keeping this binding term distinct from the cumulative coverage
+inventory target.
 
 Use a separate trainable state projection for the region-anchor subterm while
 sharing the visual object projection with the main coverage-ledger scoring
@@ -385,14 +386,16 @@ during the 128-sample smoke/overfit run.
 
 Consequences:
 
-- Region-anchor pairs are positive-only in v0.
+- Region-anchor / row-object binding pairs are one-vs-all in v0: current object
+  positive, all other annotated objects negative.
 - Region-anchor has its own state projection and reuses the shared visual
   object projection.
 - Coverage and region-anchor subterms have separate configurable weights.
-- AUC and thresholded accuracy belong to the main coverage-ledger state/object
-  pairs, not to the positive-only region-anchor subterm.
-- Region-anchor monitoring should focus on raw loss, weighted loss, positive
-  score/logit mean, pair count, and non-finite/shape checks.
+- AUC and thresholded accuracy are logged separately for cumulative coverage and
+  row-object binding; both are diagnostic-only.
+- Region-anchor monitoring should focus on raw loss, weighted loss, binding
+  AUC/accuracy when comparable classes exist, pair count, and non-finite/shape
+  checks.
 
 ## 2026-06-23 Marked Review A: Bbox To Visual Tokens
 
@@ -438,13 +441,14 @@ cell_w = patch_size * merge
 ```
 
 For v0, require `T == 1`; video is not supported. Convert norm1000 endpoints
-to processed-image pixel floats without early rounding:
+through the shared CoordExp rounded pixel helper used by both loss pooling and
+overlay artifacts:
 
 ```text
-x1_px = x1 / 999 * (W_proc - 1)
-x2_px = x2 / 999 * (W_proc - 1)
-y1_px = y1 / 999 * (H_proc - 1)
-y2_px = y2 / 999 * (H_proc - 1)
+x1_px = clamp_and_round(x1 / 999 * (W_proc - 1), 0, W_proc - 1)
+x2_px = clamp_and_round(x2 / 999 * (W_proc - 1), 0, W_proc - 1)
+y1_px = clamp_and_round(y1 / 999 * (H_proc - 1), 0, H_proc - 1)
+y2_px = clamp_and_round(y2 / 999 * (H_proc - 1), 0, H_proc - 1)
 ```
 
 Select the minimal half-open post-merge cell rectangle:
@@ -913,7 +917,7 @@ Resolved v0 decisions:
   baseline/ledger/no-loss/loss matrix as the first pass.
 - Tiny/train128 success criteria are mechanism-scoped: improved F1 versus the
   matching baseline, fewer strict malformed rows, better salvaged diagnostic
-  F1, clearer type-family metrics, lower invalid-tail geometry mass,
+  F1, clearer type-family metrics, lower bbox-positive-area invalid mass,
   separated continuation/stop margins, and saved-adapter reload for inference.
 - Implement in staged slices on the same branch: type partition, continuation,
   geometry, config/preflight smoke, then train128 comparison.
@@ -932,7 +936,7 @@ total =
   valid_token_nll
   + 1.0 * token_type_mass
   + 0.2 * continuation_margin
-  + 0.1 * geometry_valid_tail
+  + 0.1 * bbox_positive_area
   + coverage_ledger terms when enabled
 ```
 
@@ -949,7 +953,7 @@ objective:
     continuation_margin:
       enabled: true
       weight: 0.2
-    geometry_valid_tail:
+    bbox_positive_area:
       enabled: true
       weight: 0.1
 ```
@@ -980,15 +984,15 @@ as:
 ```text
 teacher_forcing/loss/token_type_mass
 teacher_forcing/loss/continuation_margin
-teacher_forcing/loss/geometry_valid_tail
+teacher_forcing/loss/bbox_positive_area
 teacher_forcing/type/schema_mass_at_schema
 teacher_forcing/type/coord_mass_at_coord
 teacher_forcing/type/desc_mass_at_desc
 teacher_forcing/type/stop_mass_at_stop
 teacher_forcing/continuation/continue_minus_stop_margin
 teacher_forcing/continuation/continue_accuracy
-teacher_forcing/geometry/invalid_tail_mass
-teacher_forcing/geometry/eligible_tail_count
+teacher_forcing/geometry/bbox_positive_area_invalid_mass
+teacher_forcing/geometry/bbox_positive_area_eligible_count
 ```
 
 If raw-vs-contribution accounting is needed, keep the distinction in the
@@ -1028,7 +1032,7 @@ parse/preflight and the train128 comparison.
 ## 2026-06-24 Governance Decision: Split OpenSpec And Experiment
 
 stable contract path: bidirectional type-family gating loss
-experiment-only path: coverage ledger, continuation, geometry-tail penalty, saved-adapter train128 smoke, and diagnostic span salvage
+experiment-only path: coverage ledger, continuation, bbox positive-area penalty, saved-adapter train128 smoke, and diagnostic span salvage
 production eligible: no
 required follow-up before promotion: archive/sync the type-gating OpenSpec after implementation evidence; separately promote any non-type ledger mechanisms before production use
 approval: user correction after initially selecting experiment-only exception
@@ -1037,6 +1041,59 @@ The user corrected the governance split: bidirectional type gating losses should
 be promoted through OpenSpec, while the ledger mechanism remains experimental.
 This means the four-family exclusive type gate (`schema`, `coord`, `desc`,
 `stop`) is a stable compatibility-sensitive contract. The coverage ledger,
-continuation boundary loss, hard geometry-tail penalty, saved-adapter train128
+continuation boundary loss, hard bbox positive-area penalty, saved-adapter train128
 smoke, and `compact_span_drop_salvage` diagnostic view remain research-only
 unless separately promoted.
+
+## 2026-06-25 Grill Resolution: Simple Type Surface And Bbox Positive Area
+
+Decision: keep the config surface simple. `objective.terms.token_type_mass`
+does not get a `mode` key in v0. Under the active hard-SFT ledger surface,
+`token_type_mass.enabled: true` means the bidirectional four-family exclusive
+type objective over `schema`, `coord`, `desc`, and `stop`, trained with
+one-hot `selected_token_role` targets. The public optimization stack is:
+
+```text
+sorted hard CE
++ token_type_mass
++ continuation_margin
++ bbox_positive_area
++ coverage_ledger
+```
+
+Do not enable `conditional_valid_set_likelihood` or `within_valid_coverage`
+for this stack.
+
+Rename the planned geometry term from `geometry_valid_tail` to
+`bbox_positive_area`. The term enforces the positive-area xyxy invariant
+`x2 > x1` and `y2 > y1` with a coord-conditional support-mass penalty only at
+tail-coordinate slots:
+
+```text
+x2: -log P_coord(coord > x1)
+y2: -log P_coord(coord > y1)
+```
+
+It should fail fast in the active hard-SFT pilot when required selected-bbox or
+prefix-coordinate metadata is missing. Use initial weights:
+
+```yaml
+token_type_mass:
+  enabled: true
+  weight: 1.0
+continuation_margin:
+  enabled: true
+  weight: 0.2
+bbox_positive_area:
+  enabled: true
+  weight: 0.1
+coverage_ledger:
+  coverage_weight: 0.1
+  region_anchor_weight: 0.1
+```
+
+Consequences: update the implementation plan, config schema, target-builder
+metadata, objective metrics, smoke configs, and preflight allowlists to use
+`bbox_positive_area`. Do not add `mode: bidirectional_family_ce`; the stronger
+exclusive type-family semantics are the canonical `token_type_mass` behavior
+for this active surface.

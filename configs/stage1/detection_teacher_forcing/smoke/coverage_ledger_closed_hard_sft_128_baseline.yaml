@@ -60,6 +60,8 @@ training:
   seed: 20260623
   save_strategy: steps
   save_steps: 128
+  eval_strategy: steps
+  eval_steps: 128
   save_total_limit: 2
   save_delay_steps: 0
   save_last_epoch: true

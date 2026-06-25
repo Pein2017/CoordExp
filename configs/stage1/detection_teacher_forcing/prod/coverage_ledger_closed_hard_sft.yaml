@@ -1,6 +1,9 @@
+# Production Stage-1 coverage-ledger teacher-forcing config.
+#
+# This keeps the physical-forward contract strict: one long, unpadded sample per
+# rank, no packing, and an exact global effective batch through accumulation.
 extends:
-  - ../prod/compact_support2.yaml
-  - ./common_prodlike.yaml
+  - ./compact_support2.yaml
 
 detection_template:
   id: compact_object_box_closed
@@ -62,29 +65,10 @@ evaluation:
   parser_mode: strict_expected
 
 training:
-  artifact_subdir: coverage_ledger_closed_hard_sft_128_adapter_save
-  run_name: smoke-coverage-ledger-closed-hard-sft-128-ledger-adapter-save
-  max_steps: 256
+  artifact_subdir: coverage_ledger_closed_hard_sft_bsz32_4epoch
+  run_name: coverage-ledger-closed-hard-sft-bsz32-4epoch
   per_device_train_batch_size: 1
-  effective_batch_size: 1
+  effective_batch_size: 32
   per_device_eval_batch_size: 1
-  seed: 20260623
-  save_strategy: steps
-  save_steps: 128
-  eval_strategy: steps
-  eval_steps: 128
-  save_total_limit: 2
-  save_delay_steps: 0
-  save_last_epoch: true
-  save_model_only: false
   packing: false
   eval_packing: false
-
-debug:
-  enabled: true
-  train_sample_limit: 128
-  val_sample_limit: 128
-  train_sample_selection:
-    algorithm: seeded_random_without_replacement_v0
-    count: 128
-    seed: 20260623

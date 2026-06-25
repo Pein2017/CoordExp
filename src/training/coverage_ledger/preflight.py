@@ -65,6 +65,26 @@ ALLOWED_BASELINE_LEDGER_DIFFS = {
 }
 
 
+def _load_swift_template_dependencies() -> tuple[Any, Any]:
+    try:
+        from swift.llm import get_model_tokenizer as resolved_get_model_processor
+        from swift.llm.template import get_template as resolved_get_template
+    except ImportError:
+        from swift.model import get_model_processor as resolved_get_model_processor
+        from swift.template import get_template as resolved_get_template
+    return resolved_get_model_processor, resolved_get_template
+
+
+def get_model_processor(*args: Any, **kwargs: Any) -> Any:
+    resolved_get_model_processor, _resolved_get_template = _load_swift_template_dependencies()
+    return resolved_get_model_processor(*args, **kwargs)
+
+
+def get_template(*args: Any, **kwargs: Any) -> Any:
+    _resolved_get_model_processor, resolved_get_template = _load_swift_template_dependencies()
+    return resolved_get_template(*args, **kwargs)
+
+
 @dataclass(frozen=True, slots=True)
 class CoverageLedgerPreflightResult:
     artifact_result: CoverageLedgerPreflightArtifactResult
@@ -314,20 +334,19 @@ def build_preflight_swift_template(
 
     import torch
 
-    try:
-        from swift.llm import get_model_tokenizer as get_model_processor
-        from swift.llm.template import get_template
-    except ImportError:
-        from swift.model import get_model_processor
-        from swift.template import get_template
-
     dtype = _torch_dtype(training_config.model.get("torch_dtype"))
     model_type = training_config.model.get("model_type")
     model_kwargs = {}
     if model_type is not None:
         model_kwargs["model_type"] = str(model_type)
+    local_model_path = _resolve_local_model_path(training_config.model["model"])
+    model_path = (
+        str(local_model_path)
+        if local_model_path is not None
+        else str(training_config.model["model"])
+    )
     _model, processor = get_model_processor(
-        str(training_config.model["model"]),
+        model_path,
         torch_dtype=dtype,
         load_model=False,
         download_model=False,

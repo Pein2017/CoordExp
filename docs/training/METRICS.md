@@ -211,28 +211,32 @@ Canonical coverage-ledger auxiliary keys:
 - `teacher_forcing/loss/coverage_ledger_auxiliary_weighted`
 - `teacher_forcing/ledger/coverage_ledger_auxiliary_pair_normalized`
 - `teacher_forcing/ledger/coverage_bce`
-- `teacher_forcing/ledger/region_anchor_positive`
+- `teacher_forcing/ledger/row_object_binding_bce`
 - `teacher_forcing/ledger/coverage_auc`
 - `teacher_forcing/ledger/coverage_accuracy`
+- `teacher_forcing/ledger/row_object_binding_auc`
+- `teacher_forcing/ledger/row_object_binding_accuracy`
 - `teacher_forcing/ledger/coverage_state_count`
 - `teacher_forcing/ledger/coverage_pair_count`
 - `teacher_forcing/ledger/object_count`
-- `teacher_forcing/ledger/region_anchor_pair_count`
+- `teacher_forcing/ledger/row_object_binding_pair_count`
 
 Reducer summary for coverage-ledger keys:
 
 | Key | Reducer | Diagnostic flag | Denominator / aggregation |
 | --- | --- | --- | --- |
 | `teacher_forcing/loss/coverage_ledger_auxiliary_weighted` | `last` | `diagnostic_only=false` | Exact `CoverageLedgerLossResult.weighted_loss` scalar added to the runner CE/objective loss for the forward. |
-| `teacher_forcing/ledger/coverage_ledger_auxiliary_pair_normalized` | `weighted_mean` | `diagnostic_only=true` | `coverage_pair_count + region_anchor_pair_count`; cross-batch aggregation is count-weighted. |
+| `teacher_forcing/ledger/coverage_ledger_auxiliary_pair_normalized` | `weighted_mean` | `diagnostic_only=true` | `coverage_pair_count + row_object_binding_pair_count`; cross-batch aggregation is count-weighted. |
 | `teacher_forcing/ledger/coverage_bce` | `weighted_mean` | `diagnostic_only=true` | Valid coverage pairs; cross-batch aggregation is count-weighted. |
-| `teacher_forcing/ledger/region_anchor_positive` | `weighted_mean` | `diagnostic_only=true` | Valid current-row region-anchor pairs; cross-batch aggregation is count-weighted. |
+| `teacher_forcing/ledger/row_object_binding_bce` | `weighted_mean` | `diagnostic_only=true` | Current-row object positive and all other objects negative; cross-batch aggregation is count-weighted. |
 | `teacher_forcing/ledger/coverage_auc` | `ratio` | `diagnostic_only=true` | Comparable positive-negative coverage pairs `n_pos * n_neg`; omitted when no comparable pairs exist. |
 | `teacher_forcing/ledger/coverage_accuracy` | `ratio` | `diagnostic_only=true` | Correct thresholded coverage predictions divided by valid coverage pairs. |
+| `teacher_forcing/ledger/row_object_binding_auc` | `ratio` | `diagnostic_only=true` | Comparable positive-negative row-object binding pairs `n_pos * n_neg`; omitted when no comparable pairs exist. |
+| `teacher_forcing/ledger/row_object_binding_accuracy` | `ratio` | `diagnostic_only=true` | Correct thresholded row-object binding predictions divided by valid binding pairs. |
 | `teacher_forcing/ledger/coverage_state_count` | `sum` | `diagnostic_only=true` | Sums observed coverage-state spans. |
 | `teacher_forcing/ledger/coverage_pair_count` | `sum` | `diagnostic_only=true` | Sums observed coverage pairs. |
 | `teacher_forcing/ledger/object_count` | `sum` | `diagnostic_only=true` | Sums observed objects. |
-| `teacher_forcing/ledger/region_anchor_pair_count` | `sum` | `diagnostic_only=true` | Sums observed region-anchor pairs. |
+| `teacher_forcing/ledger/row_object_binding_pair_count` | `sum` | `diagnostic_only=true` | Sums observed row-object binding pairs. |
 
 `teacher_forcing/loss/coverage_ledger_auxiliary_weighted` is the only
 objective-relevant coverage-ledger metric (`diagnostic_only=false`). It reports
@@ -242,11 +246,12 @@ that forward. The pair-normalized reconstruction is diagnostic-only under
 count-weighted dashboards, not for training-loss accounting.
 
 All `teacher_forcing/ledger/*` keys are diagnostic-only. `coverage_bce` is a
-weighted mean over coverage pairs, and `region_anchor_positive` is a weighted
-mean over current-row positive region-anchor pairs. Their event values are the
-per-forward mean losses from the auxiliary result; their event weights are the
-corresponding valid pair counts, so cross-batch reduction is count-weighted
-instead of last-value logging.
+weighted mean over cumulative inventory-state pairs. `row_object_binding_bce`
+is a weighted mean over the row-object binding matrix where the current row
+object is positive and every other annotated object is negative. Their event
+values are the per-forward mean losses from the auxiliary result; their event
+weights are the corresponding valid pair counts, so cross-batch reduction is
+count-weighted instead of last-value logging.
 
 `coverage_auc` is exact rank AUC from one forward pass over
 `debug_rows.coverage_logits` and `debug_rows.coverage_targets`. Its denominator
@@ -254,7 +259,11 @@ is the comparable positive-negative pair count `n_pos * n_neg`; ties contribute
 `0.5` to the numerator. The AUC event is omitted when a forward has only one
 class or no comparable pairs. `coverage_accuracy` thresholds
 `sigmoid(coverage_logit) >= 0.5` and reduces as correct coverage pairs divided
-by coverage pairs.
+by coverage pairs. `row_object_binding_auc` and
+`row_object_binding_accuracy` use the same reduction rules over
+`debug_rows.region_anchor_logits` and `debug_rows.region_anchor_targets`; they
+are binding diagnostics, not evidence that the model will emit a new valid
+object during rollout.
 
 Zero-denominator ratio and weighted-mean coverage-ledger metrics are omitted by
 the producer rather than emitted as `0.0`. Count metrics use `sum` reducers and

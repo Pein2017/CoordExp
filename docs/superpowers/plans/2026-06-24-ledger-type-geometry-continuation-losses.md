@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add the review-selected mandatory type-family partition loss, trainable continuation-vs-stop loss, hard coordinate geometry tail penalty, and diagnostic span-drop salvage view to the active Stage-1 ledger hard-SFT pilot, pending explicit user implementation approval.
+**Goal:** Add the review-selected mandatory type-family partition loss, trainable continuation-vs-stop loss, hard bbox positive-area penalty, and diagnostic span-drop salvage view to the active Stage-1 ledger hard-SFT pilot, pending explicit user implementation approval.
 
 **Architecture:** Keep the existing `research_teacher_forcing` hard-SFT teacher-forcing objective as the owner of token-level loss math. Add explicit target-builder provenance for continuation boundaries and selected bbox geometry, pass simple term weights from `objective.terms`, and compute each auxiliary as an additive objective component with unsuffixed metric names. Keep ledger inference unchanged; the new losses train the same adapter/model path and require saved-adapter reload before benchmark interpretation.
 
@@ -19,7 +19,7 @@ Do not edit code, edit configs, commit implementation changes, launch train128, 
 Before implementation:
 
 - Bidirectional type gating is OpenSpec-promoted: create and validate `openspec/changes/bidirectional-type-gating-losses` for the four-family exclusive type objective, its config term, and metric semantics before code edits to that stable surface.
-- Ledger mechanisms remain experiment-only: coverage ledger, continuation boundary loss, hard geometry-tail penalty, saved-adapter train128 smoke, and diagnostic span salvage are research-only smoke implementation work, not stable contracts and not production eligible unless later promoted separately.
+- Ledger mechanisms remain experiment-only: coverage ledger, continuation boundary loss, hard bbox positive-area penalty, saved-adapter train128 smoke, and diagnostic span salvage are research-only smoke implementation work, not stable contracts and not production eligible unless later promoted separately.
 
 Worktree:
 
@@ -81,7 +81,7 @@ Record the ledger-specific experiment-only scope in `research/ideas/ledger-auxil
 
 ```text
 stable contract path: bidirectional type-family gating loss
-experiment-only path: coverage ledger, continuation, geometry-tail penalty, saved-adapter train128 smoke, and diagnostic span salvage
+experiment-only path: coverage ledger, continuation, bbox positive-area penalty, saved-adapter train128 smoke, and diagnostic span salvage
 production eligible: no
 required follow-up before promotion: archive/sync the type-gating OpenSpec after implementation evidence; separately promote any non-type ledger mechanisms before production use
 ```
@@ -152,7 +152,7 @@ No P0 findings were reported. Implementation remains unapproved until the user e
 - This does not target the older `objective.id: standard_ce` implementation surface.
 - `token_type_mass` is mandatory in the active v0 smoke config, uses no `mode` key, and has `weight: 1.0`.
 - `continuation_margin` is trainable in v0 and has `weight: 0.2`.
-- `geometry_valid_tail` is trainable in v0 and has `weight: 0.1`.
+- `bbox_positive_area` is trainable in v0 and has `weight: 0.1`.
 - Metric names do not get `_weighted` suffixes.
 - The first config name should stay aligned with the existing `coverage_ledger_closed_hard_sft_128*` family. Do not create long stacked suffixes such as `coverage_ledger_closed_hard_sft_128_type_geom_cont.yaml`.
 - Old configs should keep parsing during the first implementation pass unless they opt into the new active v0 loss stack.
@@ -163,7 +163,7 @@ No P0 findings were reported. Implementation remains unapproved until the user e
 
 ## File Structure
 
-- `src/config/schema.py`: add reusable weighted teacher-forcing term config and the `geometry_valid_tail` term; allow hard-SFT to opt into the new v0 terms.
+- `src/config/schema.py`: add reusable weighted teacher-forcing term config and the `bbox_positive_area` term; allow hard-SFT to opt into the new v0 terms.
 - `src/detection/teacher_forcing/trie.py`: add selected object bbox and coordinate-bin metadata to `TokenBranch` so loss metadata does not parse token strings.
 - `src/detection/teacher_forcing/target_builder.py`: attach continuation-boundary, selected-bbox, and geometry valid/invalid token-id provenance to atoms.
 - `src/training/teacher_forcing/probabilities.py`: compute direct valid-token NLL plus optional additive four-family type, continuation, geometry, and coverage terms with per-term denominators.
@@ -205,8 +205,8 @@ def test_coverage_ledger_hard_sft_128_enables_v0_loss_stack() -> None:
     assert cfg.objective.terms.token_type_mass.weight == pytest.approx(1.0)
     assert cfg.objective.terms.continuation_margin.enabled is True
     assert cfg.objective.terms.continuation_margin.weight == pytest.approx(0.2)
-    assert cfg.objective.terms.geometry_valid_tail.enabled is True
-    assert cfg.objective.terms.geometry_valid_tail.weight == pytest.approx(0.1)
+    assert cfg.objective.terms.bbox_positive_area.enabled is True
+    assert cfg.objective.terms.bbox_positive_area.weight == pytest.approx(0.1)
 
     assert cfg.training["save_strategy"] == "steps"
     assert cfg.training["save_steps"] == 128
@@ -227,7 +227,7 @@ def test_coverage_ledger_hard_sft_128_baseline_saves_adapter_but_keeps_aux_losse
     assert cfg.objective.profile == "hard_sft"
     assert cfg.objective.terms.token_type_mass.enabled is False
     assert cfg.objective.terms.continuation_margin.enabled is False
-    assert cfg.objective.terms.geometry_valid_tail.enabled is False
+    assert cfg.objective.terms.bbox_positive_area.enabled is False
     assert cfg.objective.terms.coverage_ledger.enabled is False
     assert cfg.training["save_strategy"] == "steps"
     assert cfg.training["save_steps"] == 128
@@ -239,7 +239,7 @@ def test_coverage_ledger_hard_sft_128_baseline_saves_adapter_but_keeps_aux_losse
 Add an invalid-weight test:
 
 ```python
-@pytest.mark.parametrize("term", ["token_type_mass", "continuation_margin", "geometry_valid_tail"])
+@pytest.mark.parametrize("term", ["token_type_mass", "continuation_margin", "bbox_positive_area"])
 def test_teacher_forcing_weighted_terms_reject_negative_weight(term: str) -> None:
     payload = _coverage_ledger_payload()
     payload["objective"]["terms"][term] = {"enabled": True, "weight": -0.1}
@@ -251,7 +251,7 @@ def test_teacher_forcing_weighted_terms_reject_negative_weight(term: str) -> Non
 Add an active-smoke mandatory-stack launch-blocker test. This is a config/preflight contract, not a new `mode` key:
 
 ```python
-@pytest.mark.parametrize("term", ["token_type_mass", "continuation_margin", "geometry_valid_tail"])
+@pytest.mark.parametrize("term", ["token_type_mass", "continuation_margin", "bbox_positive_area"])
 def test_active_ledger_smoke_rejects_disabled_required_v0_terms(term: str) -> None:
     payload = _coverage_ledger_payload()
     payload["objective"]["terms"][term]["enabled"] = False
@@ -266,7 +266,7 @@ Run:
 python -m pytest tests/test_teacher_forcing_config_contract.py -q
 ```
 
-Expected before implementation: tests fail because term configs do not expose `weight`, `geometry_valid_tail` is unknown, or hard-SFT rejects enabled terms.
+Expected before implementation: tests fail because term configs do not expose `weight`, `bbox_positive_area` is unknown, or hard-SFT rejects enabled terms.
 
 - [ ] **Step 2: Add a weighted term config dataclass**
 
@@ -299,7 +299,7 @@ token_type_mass: TeacherForcingWeightedModuleConfig = field(
 continuation_margin: TeacherForcingWeightedModuleConfig = field(
     default_factory=TeacherForcingWeightedModuleConfig
 )
-geometry_valid_tail: TeacherForcingWeightedModuleConfig = field(
+bbox_positive_area: TeacherForcingWeightedModuleConfig = field(
     default_factory=lambda: TeacherForcingWeightedModuleConfig(weight=0.1)
 )
 ```
@@ -307,10 +307,10 @@ geometry_valid_tail: TeacherForcingWeightedModuleConfig = field(
 In `from_mapping`, parse:
 
 ```python
-geometry_valid_tail = parse_dataclass_strict(
+bbox_positive_area = parse_dataclass_strict(
     TeacherForcingWeightedModuleConfig,
-    data.pop("geometry_valid_tail", {}),
-    path="objective.terms.geometry_valid_tail",
+    data.pop("bbox_positive_area", {}),
+    path="objective.terms.bbox_positive_area",
 )
 ```
 
@@ -327,7 +327,7 @@ if self.profile == "hard_sft":
     for module_key, cfg in (
         ("objective.terms.token_type_mass", self.terms.token_type_mass),
         ("objective.terms.continuation_margin", self.terms.continuation_margin),
-        ("objective.terms.geometry_valid_tail", self.terms.geometry_valid_tail),
+        ("objective.terms.bbox_positive_area", self.terms.bbox_positive_area),
     ):
         if bool(cfg.enabled) and float(cfg.weight) <= 0.0:
             raise ValueError(f"{module_key}.weight must be > 0 when enabled")
@@ -348,7 +348,7 @@ detection_template.id == compact_object_box_closed
 debug.train_sample_limit == 128
 objective.terms.token_type_mass.enabled is true and weight == 1.0
 objective.terms.continuation_margin.enabled is true and weight == 0.2
-objective.terms.geometry_valid_tail.enabled is true and weight == 0.1
+objective.terms.bbox_positive_area.enabled is true and weight == 0.1
 ```
 
 It must not reject `coverage_ledger_closed_hard_sft_128_baseline.yaml`, because that file is the explicit no-ledger/no-new-loss comparator.
@@ -362,8 +362,8 @@ Update the paired baseline-vs-ledger preflight diff allowlist so the exact inten
 /objective/terms/token_type_mass/weight
 /objective/terms/continuation_margin/enabled
 /objective/terms/continuation_margin/weight
-/objective/terms/geometry_valid_tail/enabled
-/objective/terms/geometry_valid_tail/weight
+/objective/terms/bbox_positive_area/enabled
+/objective/terms/bbox_positive_area/weight
 ```
 
 Add or update preflight tests proving the active ledger-vs-baseline pair passes this allowlist and an unrelated objective/training/template change still fails.
@@ -381,7 +381,7 @@ objective:
     continuation_margin:
       enabled: true
       weight: 0.2
-    geometry_valid_tail:
+    bbox_positive_area:
       enabled: true
       weight: 0.1
 training:
@@ -482,8 +482,8 @@ def test_coord_tail_atoms_carry_selected_bbox_for_geometry() -> None:
     y2_atom = next(atom for atom in tail_atoms if atom.coord_role == "y2")
     assert x2_atom.provenance["geometry_axis"] == "x"
     assert x2_atom.provenance["geometry_threshold_bin"] == 1
-    assert x2_atom.provenance["geometry_valid_tail_token_ids"]
-    assert x2_atom.provenance["geometry_invalid_tail_token_ids"]
+    assert x2_atom.provenance["bbox_positive_area_valid_token_ids"]
+    assert x2_atom.provenance["bbox_positive_area_invalid_token_ids"]
     assert y2_atom.provenance["geometry_axis"] == "y"
     assert y2_atom.provenance["geometry_threshold_bin"] == 2
 ```
@@ -544,8 +544,8 @@ if coord_role in {"x2", "y2"}:
     coord_ids = selected_branch.coord_token_id_by_bin
     provenance["geometry_axis"] = axis
     provenance["geometry_threshold_bin"] = int(threshold_bin)
-    provenance["geometry_valid_tail_token_ids"] = tuple(coord_ids[int(threshold_bin) + 1 :])
-    provenance["geometry_invalid_tail_token_ids"] = tuple(coord_ids[: int(threshold_bin) + 1])
+    provenance["bbox_positive_area_valid_token_ids"] = tuple(coord_ids[int(threshold_bin) + 1 :])
+    provenance["bbox_positive_area_invalid_token_ids"] = tuple(coord_ids[: int(threshold_bin) + 1])
 if branch_position == 0:
     provenance.update(
         {
@@ -618,7 +618,7 @@ def _run(
     coverage_strength: float = 0.0,
     token_type_mass_weight: float = 0.0,
     continuation_margin_weight: float = 0.0,
-    geometry_valid_tail_weight: float = 0.0,
+    bbox_positive_area_weight: float = 0.0,
     label_rows: LabelLogitRowMap | None = None,
 ) -> torch.Tensor:
 ```
@@ -798,7 +798,7 @@ def test_continuation_margin_requires_nonempty_boundary_opener_ids() -> None:
 Add geometry test:
 
 ```python
-def test_geometry_valid_tail_penalizes_invalid_x2_mass() -> None:
+def test_bbox_positive_area_penalizes_invalid_x2_mass() -> None:
     logits = torch.full((1, 2, 12), -5.0, dtype=torch.float32)
     logits[0, 0, 6] = 2.0
     logits[0, 0, 7] = 1.0
@@ -812,8 +812,8 @@ def test_geometry_valid_tail_penalizes_invalid_x2_mass() -> None:
             "selected_bbox_xyxy": (7, 1, 8, 9),
             "geometry_axis": "x",
             "geometry_threshold_bin": 7,
-            "geometry_valid_tail_token_ids": (8, 9),
-            "geometry_invalid_tail_token_ids": (6, 7),
+            "bbox_positive_area_valid_token_ids": (8, 9),
+            "bbox_positive_area_invalid_token_ids": (6, 7),
         },
     )
     atom = replace(atom, coord_role="x2")
@@ -825,7 +825,7 @@ def test_geometry_valid_tail_penalizes_invalid_x2_mass() -> None:
         input_ids=input_ids,
         ir=_ir(atom),
         role_vocab=role_vocab,
-        geometry_valid_tail_weight=0.1,
+        bbox_positive_area_weight=0.1,
     )
 
     log_probs = torch.log_softmax(logits[0, 0], dim=-1)
@@ -839,7 +839,7 @@ def test_geometry_valid_tail_penalizes_invalid_x2_mass() -> None:
 Add a nonmonotonic coord-id regression test:
 
 ```python
-def test_geometry_valid_tail_uses_explicit_coord_bins_not_sorted_token_ids() -> None:
+def test_bbox_positive_area_uses_explicit_coord_bins_not_sorted_token_ids() -> None:
     logits = torch.full((1, 2, 50), -5.0, dtype=torch.float32)
     logits[0, 0, 10] = 4.0
     logits[0, 0, 20] = 1.0
@@ -854,8 +854,8 @@ def test_geometry_valid_tail_uses_explicit_coord_bins_not_sorted_token_ids() -> 
             "selected_bbox_xyxy": (1, 0, 3, 2),
             "geometry_axis": "x",
             "geometry_threshold_bin": 1,
-            "geometry_valid_tail_token_ids": (40, 20),
-            "geometry_invalid_tail_token_ids": (30, 10),
+            "bbox_positive_area_valid_token_ids": (40, 20),
+            "bbox_positive_area_invalid_token_ids": (30, 10),
         },
     )
     atom = replace(atom, coord_role="x2")
@@ -865,7 +865,7 @@ def test_geometry_valid_tail_uses_explicit_coord_bins_not_sorted_token_ids() -> 
         input_ids=torch.tensor([[0, 40]], dtype=torch.long),
         ir=_ir(atom),
         role_vocab=_role_vocab(coord_ids={10, 20, 30, 40}, stop_id=49),
-        geometry_valid_tail_weight=0.1,
+        bbox_positive_area_weight=0.1,
     )
 
     log_probs = torch.log_softmax(logits[0, 0], dim=-1)
@@ -890,24 +890,24 @@ test_continuation_margin_uses_boundary_denominator_not_all_atoms:
   expected: final objective contribution is continuation_margin_weight * that one boundary loss
   rejected behavior: continuation_margin_weight * that one boundary loss / 3
 
-test_geometry_valid_tail_uses_eligible_tail_denominator_not_all_atoms:
+test_bbox_positive_area_uses_eligible_tail_denominator_not_all_atoms:
   fixture: four supervised atoms; exactly two atoms are x2/y2 geometry-eligible
-  expected: final objective contribution is geometry_valid_tail_weight * mean(two eligible geometry losses)
+  expected: final objective contribution is bbox_positive_area_weight * mean(two eligible geometry losses)
   rejected behavior: averaging the two geometry losses across all four supervised atoms
 ```
 
 Add geometry partition-integrity regressions with concrete fixtures:
 
 ```text
-test_geometry_valid_tail_rejects_overlapping_valid_invalid_sets:
+test_bbox_positive_area_rejects_overlapping_valid_invalid_sets:
   fixture: valid set and invalid set share one coord token id
   expected: ValueError naming disjoint geometry valid/invalid ids
 
-test_geometry_valid_tail_rejects_partial_coord_partition:
+test_bbox_positive_area_rejects_partial_coord_partition:
   fixture: role_vocab.coord_token_ids has four ids but valid union invalid covers only three
   expected: ValueError naming coord-token partition
 
-test_geometry_valid_tail_requires_selected_tail_inside_valid_set:
+test_bbox_positive_area_requires_selected_tail_inside_valid_set:
   fixture: selected_token_id is in invalid ids for an x2/y2 atom
   expected: ValueError naming selected tail coord token
 ```
@@ -923,11 +923,11 @@ class TeacherForcingAtomLoss:
     valid: torch.Tensor
     token_type_mass: torch.Tensor
     continuation_margin: torch.Tensor
-    geometry_valid_tail: torch.Tensor
+    bbox_positive_area: torch.Tensor
     coverage: torch.Tensor
     selected_type_probability: torch.Tensor
     valid_probability: torch.Tensor
-    invalid_tail_mass: torch.Tensor
+    invalid_area_mass: torch.Tensor
 ```
 
 `total` is a per-atom diagnostic/compatibility field only. The optimizer loss must be assembled in `src/training/objectives/teacher_forcing.py` from per-term means and must not average `atom_loss.total` across all atoms.
@@ -1003,35 +1003,35 @@ def _continuation_loss(log_probs: torch.Tensor, atom: SupervisionAtom, *, device
 ```
 
 ```python
-def _geometry_valid_tail_loss(log_probs: torch.Tensor, atom: SupervisionAtom, role_vocab: RoleVocab, *, device: torch.device, vocab_size: int) -> tuple[torch.Tensor, torch.Tensor]:
+def _bbox_positive_area_loss(log_probs: torch.Tensor, atom: SupervisionAtom, role_vocab: RoleVocab, *, device: torch.device, vocab_size: int) -> tuple[torch.Tensor, torch.Tensor]:
     if atom.coord_role not in {"x2", "y2"}:
         zero = log_probs.new_tensor(0.0)
         return zero, zero
-    valid_ids_raw = frozenset(int(i) for i in atom.provenance.get("geometry_valid_tail_token_ids", ()))
-    invalid_ids_raw = frozenset(int(i) for i in atom.provenance.get("geometry_invalid_tail_token_ids", ()))
+    valid_ids_raw = frozenset(int(i) for i in atom.provenance.get("bbox_positive_area_valid_token_ids", ()))
+    invalid_ids_raw = frozenset(int(i) for i in atom.provenance.get("bbox_positive_area_invalid_token_ids", ()))
     if not valid_ids_raw:
-        raise ValueError("geometry_valid_tail requires nonempty geometry_valid_tail_token_ids")
+        raise ValueError("bbox_positive_area requires nonempty bbox_positive_area_valid_token_ids")
     if not invalid_ids_raw:
-        raise ValueError("geometry_valid_tail requires nonempty geometry_invalid_tail_token_ids")
+        raise ValueError("bbox_positive_area requires nonempty bbox_positive_area_invalid_token_ids")
     if not valid_ids_raw.issubset(role_vocab.coord_token_ids):
-        raise ValueError("geometry_valid_tail_token_ids must be coord token ids")
+        raise ValueError("bbox_positive_area_valid_token_ids must be coord token ids")
     if not invalid_ids_raw.issubset(role_vocab.coord_token_ids):
-        raise ValueError("geometry_invalid_tail_token_ids must be coord token ids")
+        raise ValueError("bbox_positive_area_invalid_token_ids must be coord token ids")
     if valid_ids_raw & invalid_ids_raw:
-        raise ValueError("geometry valid and invalid tail token ids must be disjoint")
+        raise ValueError("bbox positive-area valid and invalid token ids must be disjoint")
     coord_ids_raw = frozenset(int(i) for i in role_vocab.coord_token_ids)
     if valid_ids_raw | invalid_ids_raw != coord_ids_raw:
-        raise ValueError("geometry valid and invalid tail token ids must partition coord token ids")
+        raise ValueError("bbox positive-area valid and invalid token ids must partition coord token ids")
     if int(atom.selected_token_id) not in valid_ids_raw:
-        raise ValueError("selected tail coord token must be inside geometry_valid_tail_token_ids")
+        raise ValueError("selected tail coord token must be inside bbox_positive_area_valid_token_ids")
     coord_tensor = _token_ids_tensor(coord_ids_raw, device=device, vocab_size=vocab_size, field_name="geometry_coord_token_ids")
-    valid_tensor = _token_ids_tensor(valid_ids_raw, device=device, vocab_size=vocab_size, field_name="geometry_valid_tail_token_ids")
-    invalid_tensor = _token_ids_tensor(invalid_ids_raw, device=device, vocab_size=vocab_size, field_name="geometry_invalid_tail_token_ids")
+    valid_tensor = _token_ids_tensor(valid_ids_raw, device=device, vocab_size=vocab_size, field_name="bbox_positive_area_valid_token_ids")
+    invalid_tensor = _token_ids_tensor(invalid_ids_raw, device=device, vocab_size=vocab_size, field_name="bbox_positive_area_invalid_token_ids")
     coord_log_probs = log_probs.index_select(0, coord_tensor)
     coord_denominator = torch.logsumexp(coord_log_probs, dim=0)
     valid_mass_loss = -(torch.logsumexp(log_probs.index_select(0, valid_tensor), dim=0) - coord_denominator)
-    invalid_tail_mass = (torch.logsumexp(log_probs.index_select(0, invalid_tensor), dim=0) - coord_denominator).exp()
-    return valid_mass_loss, invalid_tail_mass
+    invalid_area_mass = (torch.logsumexp(log_probs.index_select(0, invalid_tensor), dim=0) - coord_denominator).exp()
+    return valid_mass_loss, invalid_area_mass
 ```
 
 Do not infer geometry bins from sorted token ids. The target builder owns tokenizer-aware coord-bin resolution and must provide explicit valid/invalid token-id sets.
@@ -1067,7 +1067,7 @@ type_loss, selected_type_probability = _type_family_loss(
 )
 
 continuation_loss = _continuation_loss(log_probs, atom, device=device, vocab_size=vocab_size)
-geometry_loss, invalid_tail_mass = _geometry_valid_tail_loss(
+geometry_loss, invalid_area_mass = _bbox_positive_area_loss(
     log_probs,
     atom,
     role_vocab,
@@ -1087,7 +1087,7 @@ In `src/training/objectives/teacher_forcing.py`, read config floats:
 ```python
 token_type_mass_weight = config_float(spec.config, "token_type_mass_weight", default=0.0, minimum=0.0)
 continuation_margin_weight = config_float(spec.config, "continuation_margin_weight", default=0.0, minimum=0.0)
-geometry_valid_tail_weight = config_float(spec.config, "geometry_valid_tail_weight", default=0.0, minimum=0.0)
+bbox_positive_area_weight = config_float(spec.config, "bbox_positive_area_weight", default=0.0, minimum=0.0)
 ```
 
 Use these weights only in the objective aggregation. Do not pass them into `teacher_forcing_atom_loss`; the atom helper returns raw component losses and metadata.
@@ -1099,7 +1099,7 @@ denominators = {
     "valid": 0,
     "token_type_mass": 0,
     "continuation_margin": 0,
-    "geometry_valid_tail": 0,
+    "bbox_positive_area": 0,
     "coverage": 0,
 }
 ```
@@ -1110,7 +1110,7 @@ Denominator rules:
 valid: all supervised atoms
 token_type_mass: all supervised hard-SFT atoms
 continuation_margin: atoms with provenance.continuation_boundary is true
-geometry_valid_tail: atoms whose coord_role is x2 or y2 and that carry geometry_valid_tail_token_ids
+bbox_positive_area: atoms whose coord_role is x2 or y2 and that carry bbox_positive_area_valid_token_ids
 coverage: atoms with coverage target when coverage_strength > 0
 ```
 
@@ -1122,13 +1122,13 @@ Assemble the final optimizer loss from per-term means:
 valid_mean = component_totals["valid"] / denominators["valid"]
 token_type_mass_mean = component_totals["token_type_mass"] / denominators["token_type_mass"]
 continuation_margin_mean = component_totals["continuation_margin"] / denominators["continuation_margin"]
-geometry_valid_tail_mean = component_totals["geometry_valid_tail"] / denominators["geometry_valid_tail"]
+bbox_positive_area_mean = component_totals["bbox_positive_area"] / denominators["bbox_positive_area"]
 
 loss = (
     valid_mean
     + token_type_mass_weight * token_type_mass_mean
     + continuation_margin_weight * continuation_margin_mean
-    + geometry_valid_tail_weight * geometry_valid_tail_mean
+    + bbox_positive_area_weight * bbox_positive_area_mean
 )
 if coverage_strength > 0.0:
     coverage_mean = component_totals["coverage"] / denominators["coverage"]
@@ -1143,7 +1143,7 @@ Update raw component totals:
 _add_component(component_totals, "valid", atom_loss.valid)
 _add_component(component_totals, "token_type_mass", atom_loss.token_type_mass)
 _add_component(component_totals, "continuation_margin", atom_loss.continuation_margin)
-_add_component(component_totals, "geometry_valid_tail", atom_loss.geometry_valid_tail)
+_add_component(component_totals, "bbox_positive_area", atom_loss.bbox_positive_area)
 _add_component(component_totals, "coverage", atom_loss.coverage)
 ```
 
@@ -1154,8 +1154,8 @@ teacher_forcing/loss/token_type_mass = raw mean over token_type_mass denominator
 teacher_forcing/loss/token_type_mass/contribution = token_type_mass_weight * raw mean
 teacher_forcing/loss/continuation_margin = raw mean over continuation boundary denominator
 teacher_forcing/loss/continuation_margin/contribution = continuation_margin_weight * raw mean
-teacher_forcing/loss/geometry_valid_tail = raw mean over eligible tail denominator
-teacher_forcing/loss/geometry_valid_tail/contribution = geometry_valid_tail_weight * raw mean
+teacher_forcing/loss/bbox_positive_area = raw mean over eligible tail denominator
+teacher_forcing/loss/bbox_positive_area/contribution = bbox_positive_area_weight * raw mean
 ```
 
 - [ ] **Step 8: Run objective tests**
@@ -1191,16 +1191,16 @@ git commit -m "feat: add teacher forcing type continuation geometry losses"
 In `tests/test_teacher_forcing_metric_contract.py`, add expected keys:
 
 ```python
-assert "teacher_forcing/loss/geometry_valid_tail" in required
-assert "teacher_forcing/loss/geometry_valid_tail/contribution" in required
+assert "teacher_forcing/loss/bbox_positive_area" in required
+assert "teacher_forcing/loss/bbox_positive_area/contribution" in required
 assert "teacher_forcing/type/schema_mass_at_schema" in required
 assert "teacher_forcing/continuation/continue_minus_stop_margin" in required
 assert "teacher_forcing/continuation/continue_accuracy" in required
 assert "teacher_forcing/continuation/continue_mass" in required
 assert "teacher_forcing/continuation/stop_mass" in required
 assert "teacher_forcing/continuation/boundary_count" in required
-assert "teacher_forcing/geometry/invalid_tail_mass" in required
-assert "teacher_forcing/geometry/eligible_tail_count" in required
+assert "teacher_forcing/geometry/bbox_positive_area_invalid_mass" in required
+assert "teacher_forcing/geometry/bbox_positive_area_eligible_count" in required
 assert not any(key.endswith("_weighted") for key in required)
 ```
 
@@ -1217,23 +1217,23 @@ events = teacher_forcing_diagnostic_events(
     continue_mass=0.61,
     stop_mass=0.39,
     continuation_boundary_count=4,
-    geometry_valid_tail=0.1,
-    geometry_valid_tail_contribution=0.01,
-    invalid_tail_mass=0.04,
+    bbox_positive_area=0.1,
+    bbox_positive_area_contribution=0.01,
+    invalid_area_mass=0.04,
     eligible_tail_count=8,
 )
 flat = flatten_metric_events(events)
 assert flat["teacher_forcing/loss/continuation_margin"] == pytest.approx(0.25)
 assert flat["teacher_forcing/loss/continuation_margin/contribution"] == pytest.approx(0.05)
-assert flat["teacher_forcing/loss/geometry_valid_tail"] == pytest.approx(0.1)
-assert flat["teacher_forcing/loss/geometry_valid_tail/contribution"] == pytest.approx(0.01)
+assert flat["teacher_forcing/loss/bbox_positive_area"] == pytest.approx(0.1)
+assert flat["teacher_forcing/loss/bbox_positive_area/contribution"] == pytest.approx(0.01)
 assert flat["teacher_forcing/continuation/continue_minus_stop_margin"] == pytest.approx(0.22)
 assert flat["teacher_forcing/continuation/continue_accuracy"] == pytest.approx(0.75)
 assert flat["teacher_forcing/continuation/continue_mass"] == pytest.approx(0.61)
 assert flat["teacher_forcing/continuation/stop_mass"] == pytest.approx(0.39)
 assert flat["teacher_forcing/continuation/boundary_count"] == pytest.approx(4)
-assert flat["teacher_forcing/geometry/invalid_tail_mass"] == pytest.approx(0.04)
-assert flat["teacher_forcing/geometry/eligible_tail_count"] == pytest.approx(8)
+assert flat["teacher_forcing/geometry/bbox_positive_area_invalid_mass"] == pytest.approx(0.04)
+assert flat["teacher_forcing/geometry/bbox_positive_area_eligible_count"] == pytest.approx(8)
 assert not any(key.endswith("_weighted") for key in flat)
 ```
 
@@ -1263,7 +1263,7 @@ Add to the `ObjectiveSpec.config`:
 ```python
 "token_type_mass_weight": _term_weight(objective_cfg, "token_type_mass"),
 "continuation_margin_weight": _term_weight(objective_cfg, "continuation_margin"),
-"geometry_valid_tail_weight": _term_weight(objective_cfg, "geometry_valid_tail"),
+"bbox_positive_area_weight": _term_weight(objective_cfg, "bbox_positive_area"),
 ```
 
 - [ ] **Step 3: Emit component metrics**
@@ -1278,14 +1278,14 @@ metric_events = (
         token_type_mass_contribution=token_type_mass_weight * token_type_mass_mean,
         continuation_margin=continuation_margin_mean,
         continuation_margin_contribution=continuation_margin_weight * continuation_margin_mean,
-        geometry_valid_tail=geometry_valid_tail_mean,
-        geometry_valid_tail_contribution=geometry_valid_tail_weight * geometry_valid_tail_mean,
+        bbox_positive_area=bbox_positive_area_mean,
+        bbox_positive_area_contribution=bbox_positive_area_weight * bbox_positive_area_mean,
         continue_minus_stop_margin=continue_minus_stop_margin_mean,
         continue_accuracy=continue_accuracy_mean,
         continue_mass=continue_mass_mean,
         stop_mass=stop_mass_mean,
         continuation_boundary_count=continuation_denominator,
-        invalid_tail_mass=invalid_tail_mass_mean,
+        invalid_area_mass=invalid_area_mass_mean,
         eligible_tail_count=geometry_denominator,
     ),
 )
@@ -1298,15 +1298,15 @@ teacher_forcing/loss/token_type_mass
 teacher_forcing/loss/token_type_mass/contribution
 teacher_forcing/loss/continuation_margin
 teacher_forcing/loss/continuation_margin/contribution
-teacher_forcing/loss/geometry_valid_tail
-teacher_forcing/loss/geometry_valid_tail/contribution
+teacher_forcing/loss/bbox_positive_area
+teacher_forcing/loss/bbox_positive_area/contribution
 teacher_forcing/continuation/continue_minus_stop_margin
 teacher_forcing/continuation/continue_accuracy
 teacher_forcing/continuation/continue_mass
 teacher_forcing/continuation/stop_mass
 teacher_forcing/continuation/boundary_count
-teacher_forcing/geometry/invalid_tail_mass
-teacher_forcing/geometry/eligible_tail_count
+teacher_forcing/geometry/bbox_positive_area_invalid_mass
+teacher_forcing/geometry/bbox_positive_area_eligible_count
 ```
 
 - [ ] **Step 4: Preserve term weights in runtime payload**
@@ -1322,9 +1322,9 @@ In `src/sft.py`, extend the existing `terms` payload for:
     "enabled": _get_section_value(continuation_margin_cfg, "enabled"),
     "weight": _get_section_value(continuation_margin_cfg, "weight"),
 },
-"geometry_valid_tail": {
-    "enabled": _get_section_value(geometry_valid_tail_cfg, "enabled"),
-    "weight": _get_section_value(geometry_valid_tail_cfg, "weight"),
+"bbox_positive_area": {
+    "enabled": _get_section_value(bbox_positive_area_cfg, "enabled"),
+    "weight": _get_section_value(bbox_positive_area_cfg, "weight"),
 },
 ```
 
@@ -1609,7 +1609,7 @@ The first smoke benchmark is:
 
 ```text
 baseline = hard-SFT comparator with no ledger/no new losses
-ledger = mandatory token_type_mass + continuation_margin + geometry_valid_tail + coverage ledger
+ledger = mandatory token_type_mass + continuation_margin + bbox_positive_area + coverage ledger
 train split = same selected 128 training samples
 inference/eval split = same selected 128 training rows materialized from preflight selected_samples.json
 checkpoint saving = enabled for both adapters
@@ -1934,8 +1934,8 @@ def sha256(path: Path) -> str:
 required_train_metric_keys = {
     "teacher_forcing/loss/token_type_mass",
     "teacher_forcing/loss/continuation_margin",
-    "teacher_forcing/loss/geometry_valid_tail",
-    "teacher_forcing/geometry/invalid_tail_mass",
+    "teacher_forcing/loss/bbox_positive_area",
+    "teacher_forcing/geometry/bbox_positive_area_invalid_mass",
     "teacher_forcing/continuation/continue_minus_stop_margin",
     "teacher_forcing/continuation/continue_accuracy",
 }
@@ -2045,8 +2045,8 @@ baseline compact_span_drop_salvage metrics
 ledger compact_span_drop_salvage metrics
 teacher_forcing/loss/token_type_mass
 teacher_forcing/loss/continuation_margin
-teacher_forcing/loss/geometry_valid_tail
-teacher_forcing/geometry/invalid_tail_mass
+teacher_forcing/loss/bbox_positive_area
+teacher_forcing/geometry/bbox_positive_area_invalid_mass
 teacher_forcing/continuation/continue_minus_stop_margin
 teacher_forcing/continuation/continue_accuracy
 teacher_forcing/ledger/auc_batch
@@ -2100,7 +2100,7 @@ baseline strict parse counters: numeric parse counters copied from baseline summ
 ledger strict parse counters: numeric parse counters copied from ledger summary
 baseline salvage counters: numeric counters copied from baseline compact_span_drop_salvage_metrics.json
 ledger salvage counters: numeric counters copied from ledger compact_span_drop_salvage_metrics.json
-teacher forcing losses: token_type_mass, continuation_margin, geometry_valid_tail
+teacher forcing losses: token_type_mass, continuation_margin, bbox_positive_area
 continuation metrics: continue_minus_stop_margin and continue_accuracy
 ledger metrics: auc_batch and accuracy if logged
 paired train128 deltas: ledger minus baseline for raw f1ish and diagnostic salvage f1ish when available
@@ -2142,4 +2142,4 @@ If the per-task commits already committed all implementation files, this final c
 
 - Spec coverage: the plan covers mandatory type partition, continuation, hard geometry, unsuffixed metrics, concise config naming, span-drop salvage, adapter reload, and train128 launch scope.
 - Placeholder scan: no angle-bracket placeholders remain. Commands name the expected implementation files directly.
-- Type consistency: the plan consistently uses `token_type_mass_weight`, `continuation_margin_weight`, `geometry_valid_tail_weight`, `selected_bbox_xyxy`, `continuation_boundary`, `continuation_target`, `continuation_token_ids`, and `stop_token_id`.
+- Type consistency: the plan consistently uses `token_type_mass_weight`, `continuation_margin_weight`, `bbox_positive_area_weight`, `selected_bbox_xyxy`, `continuation_boundary`, `continuation_target`, `continuation_token_ids`, and `stop_token_id`.

@@ -131,13 +131,18 @@ python scripts/training/coverage_ledger_preflight.py \
   --output-root temp/coverage_ledger_preflight_smoke
 ```
 
-Current status in this worktree is launch-prep / not-yet-run. Do not claim a
-successful real preflight or smoke run from this state: the full local preflight
-requires missing local assets, including
-`public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl` and local model
-cache `model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp`.
-Do not launch tiny smoke training until the user gives runtime-cost
-confirmation and the preflight assets are complete.
+Current status in this worktree: a prior adapter-save smoke pair completed under
+the older positive-only anchor semantics. After the one-vs-all row-object
+binding change, rerun the approved smoke before interpreting ledger effects.
+Do not launch production training until the user explicitly approves it.
+
+The production ledger config surface is:
+
+- `configs/stage1/detection_teacher_forcing/prod/coverage_ledger_closed_hard_sft.yaml`
+
+It keeps `per_device_train_batch_size: 1`, authors
+`effective_batch_size: 32`, and resolves to `gradient_accumulation_steps: 4` on
+the intended 8-GPU topology.
 
 ## Current Mechanism Note (Interpretation, Not Stable Contract)
 

@@ -1095,6 +1095,18 @@ def _build_effective_runtime_payload(
     requested_effective_batch_size = (
         int(effective_batch_size) if effective_batch_size is not None else None
     )
+    if (
+        requested_effective_batch_size is not None
+        and requested_effective_batch_size != actual_global_effective_batch_size
+    ):
+        raise ValueError(
+            "Resolved training batch shape does not match training.effective_batch_size: "
+            f"requested={requested_effective_batch_size}, "
+            f"per_device_train_batch_size={per_device_train_batch_size}, "
+            f"gradient_accumulation_steps={gradient_accumulation_steps}, "
+            f"world_size={runtime_world_size}, "
+            f"actual_global_effective_batch_size={actual_global_effective_batch_size}."
+        )
     effective_batch_rounding = (
         "exact"
         if requested_effective_batch_size is None

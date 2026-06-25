@@ -4,7 +4,7 @@
 
 **Goal:** Implement a strict Stage-1 Qwen3-VL coverage-ledger auxiliary loss that trains hidden states to encode emitted-object coverage and binds each current row to its visual region, with a paired 128-sample closed-template hard-SFT smoke baseline before any production training.
 
-**Architecture:** Keep the active teacher-forcing CE path intact, add a `CoverageLedgerSidecar` under `TrainingSidecars.supervision.payloads`, register a trainable `CoverageLedgerHead` on the actual model before optimizer construction, capture final Qwen hidden states and post-merger image embeddings from the same forward pass, compute coverage BCE plus positive-only region-anchor loss in a bridge-owned auxiliary path, and publish explicit metric events and smoke/debug artifacts.
+**Architecture:** Keep the active teacher-forcing CE path intact, add a `CoverageLedgerSidecar` under `TrainingSidecars.supervision.payloads`, register a trainable `CoverageLedgerHead` on the actual model before optimizer construction, capture final Qwen hidden states and post-merger image embeddings from the same forward pass, compute coverage BCE plus one-vs-all row-object binding loss in a bridge-owned auxiliary path, and publish explicit metric events and smoke/debug artifacts.
 
 **Tech Stack:** Python, PyTorch, pytest, ms-swift trainer integration, Hugging Face Qwen3-VL model conventions, CoordExp Stage-1 research teacher-forcing configs, CoordExp metric events, PIL/Matplotlib-compatible overlay artifact generation.
 
@@ -54,8 +54,8 @@ codex/ledger-auxiliary-loss
 - The bridge does not own trainable modules. `CoverageLedgerHead` is attached to the trainable model before optimizer creation.
 - The Qwen visual tower is not recomputed for the ledger path. Capture happens from the helpful same-forward hook/wrapper around `get_image_features`.
 - Visual-region mapping uses projected post-merger `image_embeds`, processed image dimensions, and a minimal half-open token-cell rectangle enclosing object pixels.
-- Region anchor is positive-only for the current row object. Non-current objects are masked, not punished.
-- Coverage AUC and accuracy are monitoring metrics from the same forward pass. Region-anchor AUC and accuracy are not logged in V0.
+- Row-object binding marks the current row object positive and all other annotated objects negative.
+- Coverage and row-object binding AUC/accuracy are monitoring metrics from the same forward pass, not rollout-quality claims.
 - Smoke artifacts must include all-128 alignment debug records and 16 overlay images.
 - OpenSpec is deferred until the experimental loss/config/artifact contract is promoted to stable behavior.
 
@@ -592,16 +592,16 @@ codex/ledger-auxiliary-loss
   - apply `binary_cross_entropy_with_logits` with `pos_weight`
   - compute in `torch.float32` using `ObjectivePrecisionPolicy`
 
-- [ ] Implement positive-only region anchor.
+- [ ] Implement one-vs-all row-object binding.
 
   Required computation:
 
   - project `<box_start>` hidden states with `CoverageLedgerHead.region_anchor_state_projection`
   - project detached pooled visual object embeddings with the shared `CoverageLedgerHead.object_projection`
   - L2-normalize both projections using `normalize_eps`
-  - for row `k`, use only object `k`
-  - compute `softplus(-positive_logit)` or equivalent BCE-with-logits positive loss
-  - do not add negatives for previous, future, or non-current objects
+  - for row `k`, score against every annotated object
+  - set object `k` target to 1 and all other objects to 0
+  - compute BCE-with-logits over the full row-object matrix
 
 - [ ] Return a typed result.
 
@@ -630,17 +630,19 @@ codex/ledger-auxiliary-loss
   Required flat keys:
 
   ```text
-  teacher_forcing/loss/coverage_ledger_auxiliary_weighted
-  teacher_forcing/ledger/coverage_ledger_auxiliary_pair_normalized
-  teacher_forcing/ledger/coverage_bce
-  teacher_forcing/ledger/region_anchor_positive
-  teacher_forcing/ledger/coverage_auc
-  teacher_forcing/ledger/coverage_accuracy
-  teacher_forcing/ledger/coverage_state_count
-  teacher_forcing/ledger/coverage_pair_count
-  teacher_forcing/ledger/object_count
-  teacher_forcing/ledger/region_anchor_pair_count
-  ```
+	  teacher_forcing/loss/coverage_ledger_auxiliary_weighted
+	  teacher_forcing/ledger/coverage_ledger_auxiliary_pair_normalized
+	  teacher_forcing/ledger/coverage_bce
+	  teacher_forcing/ledger/row_object_binding_bce
+	  teacher_forcing/ledger/coverage_auc
+	  teacher_forcing/ledger/coverage_accuracy
+	  teacher_forcing/ledger/row_object_binding_auc
+	  teacher_forcing/ledger/row_object_binding_accuracy
+	  teacher_forcing/ledger/coverage_state_count
+	  teacher_forcing/ledger/coverage_pair_count
+	  teacher_forcing/ledger/object_count
+	  teacher_forcing/ledger/row_object_binding_pair_count
+	  ```
 
   Required reducer tests:
 
@@ -665,7 +667,7 @@ codex/ledger-auxiliary-loss
 
 - [ ] Mark diagnostic versus objective metrics correctly.
 
-  Only `teacher_forcing/loss/coverage_ledger_auxiliary_weighted` is objective-relevant and it reports the exact scalar added to training loss. Coverage BCE, region-anchor positive loss, pair-normalized auxiliary loss, AUC, accuracy, counts, and debug gauges are diagnostic metrics.
+  Only `teacher_forcing/loss/coverage_ledger_auxiliary_weighted` is objective-relevant and it reports the exact scalar added to training loss. Coverage BCE, row-object binding BCE, pair-normalized auxiliary loss, AUC, accuracy, counts, and debug gauges are diagnostic metrics.
 
 ## Task 9: Bridge And Trainer Integration
 

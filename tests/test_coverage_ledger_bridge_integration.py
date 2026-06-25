@@ -290,17 +290,28 @@ def test_enabled_coverage_ledger_uses_capture_sums_loss_and_combines_events(
     assert len(_FakeCapture.calls) == 1
     assert model.calls == []
     assert "training_sidecars" not in _FakeCapture.calls[0]["inputs"]
-    assert result.outputs is _FakeCapture.result
-    assert result.outputs.outputs is capture_outputs
+    assert result.outputs is not _FakeCapture.result
+    assert result.outputs == {"logits": logits}
+    assert result.outputs["logits"] is logits
+    hf_eval_logits = tuple(
+        value
+        for key, value in result.outputs.items()
+        if key not in {"loss"}
+    )
+    assert hf_eval_logits == (logits,)
     assert result.loss.item() == pytest.approx(
         result.objective_result.loss.item() + expected_ledger.weighted_loss.item()
     )
     metric_keys = {event.key for event in result.metric_events}
     assert "training/objectives/token_ce/loss" in metric_keys
-    assert "training/objectives/coverage_ledger/object_count" in metric_keys
-    assert "training/objectives/coverage_ledger/coverage_state_count" in metric_keys
-    assert "training/objectives/coverage_ledger/coverage_pair_count" in metric_keys
-    assert "training/objectives/coverage_ledger/region_anchor_pair_count" in metric_keys
+    assert not any(
+        key.startswith("training/objectives/coverage_ledger/")
+        for key in metric_keys
+    )
+    assert "teacher_forcing/ledger/object_count" in metric_keys
+    assert "teacher_forcing/ledger/coverage_state_count" in metric_keys
+    assert "teacher_forcing/ledger/coverage_pair_count" in metric_keys
+    assert "teacher_forcing/ledger/row_object_binding_pair_count" in metric_keys
     assert WEIGHTED_LOSS_KEY in metric_keys
 
 

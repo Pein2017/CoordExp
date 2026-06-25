@@ -58,7 +58,7 @@ objective:
 The new objective is a training-only coverage-ledger term with two subterms:
 
 - coverage-state BCE over prompt-end and row-completion states;
-- region-anchor positive binding at row `<box_start>` states.
+- one-vs-all row-object binding at row `<box_start>` states.
 
 The implementation must be config-first, strict once enabled, and limited to
 single-image detection examples in v0.
@@ -459,14 +459,18 @@ processed_height == H_grid
 ```
 
 This keeps `do_resize=false` alignment explicit and catches image/grid drift
-before loss math. Convert norm1000 `xyxy` endpoints to processed-image pixel
-floats without early rounding:
+before loss math. V0 routes norm1000 `xyxy` endpoint conversion through the
+shared CoordExp geometry helper (`norm1000_bbox_to_pixel_bbox` /
+`denorm_and_clamp`). That helper uses the `v / 999 * (dim - 1)` mapping and then
+clamps and rounds to integer pixel endpoints. Loss pooling and overlay artifacts
+must use the same helper so debug images faithfully show the region used by the
+auxiliary loss.
 
 ```text
-x1_px = x1 / 999 * (processed_width  - 1)
-x2_px = x2 / 999 * (processed_width  - 1)
-y1_px = y1 / 999 * (processed_height - 1)
-y2_px = y2 / 999 * (processed_height - 1)
+x1_px = clamp_and_round(x1 / 999 * (processed_width  - 1), 0, processed_width  - 1)
+x2_px = clamp_and_round(x2 / 999 * (processed_width  - 1), 0, processed_width  - 1)
+y1_px = clamp_and_round(y1 / 999 * (processed_height - 1), 0, processed_height - 1)
+y2_px = clamp_and_round(y2 / 999 * (processed_height - 1), 0, processed_height - 1)
 ```
 
 Select the minimal half-open post-merge visual-token rectangle:
@@ -535,26 +539,34 @@ a large `B x Kmax x Nmax` tensor.
 
 ### Region-Anchor Binding
 
-For every rendered object row, the row `<box_start>` state binds only the
-current row object as positive. All non-current objects are masked for this
-subterm.
+For every rendered object row, the row `<box_start>` state scores against every
+annotated visual object. The current row object is positive and all other
+objects are negative:
 
-This is not a one-vs-all object classifier. Its purpose is to bind the unique
-teacher-forced object instance to the language-side coordinate-start state and
-the selected visual region.
+```text
+row k target for object j:
+  y = 1 if j == k
+  y = 0 otherwise
+```
+
+This is a row-object binding diagnostic, distinct from the cumulative coverage
+inventory target. Its purpose is to bind the unique teacher-forced object
+instance to the language-side coordinate-start state and selected visual region;
+it still does not guarantee that free rollout will select a new valid object.
 
 Region-anchor uses:
 
 - separate trainable state projection;
 - shared visual object projection;
-- positive-only BCE or equivalent positive-logit loss over current-row pairs.
+- one-vs-all BCE over the current-row/object matrix.
 
 Use `coverage_ledger_head.region_anchor_state_projection` for the
 region-anchor state side and `coverage_ledger_head.object_projection` for the
 shared visual object side.
 
-AUC and thresholded accuracy are not defined for the positive-only
-region-anchor subterm.
+Row-object binding AUC and thresholded accuracy are diagnostic-only and are
+computed over the one-vs-all binding matrix. Do not interpret them as rollout
+recall or mAP.
 
 ## Numerical Formula
 
@@ -584,9 +596,9 @@ with torch.autocast(device_type=h.device.type, enabled=False):
     )
 ```
 
-`pos_weight` applies only to the coverage-state BCE term. The region-anchor
-positive-only subterm must not silently reuse `pos_weight` unless a later design
-introduces a named region-anchor weighting rule.
+`pos_weight` applies only to the coverage-state BCE term. The row-object
+binding subterm must not silently reuse `pos_weight` unless a later design
+introduces a named binding weighting rule.
 
 Because projections are L2-normalized, `score` is bounded near `[-1, 1]` and
 logit magnitude is bounded near `1 / temperature`. The implementation must fail
@@ -617,13 +629,15 @@ Required metric contract:
 | `teacher_forcing/loss/coverage_ledger_auxiliary_weighted` | `last` | `batch` | value only | exact scalar added to runner CE/objective loss |
 | `teacher_forcing/ledger/coverage_ledger_auxiliary_pair_normalized` | `weighted_mean` | `object` | component weighted pair sum / valid ledger pair count | diagnostic-only count-weighted view |
 | `teacher_forcing/ledger/coverage_bce` | `weighted_mean` | `object` | coverage BCE mean with valid coverage-pair count weight | diagnostic-only |
-| `teacher_forcing/ledger/region_anchor_positive` | `weighted_mean` | `object` | positive region-anchor mean with valid region-anchor-pair count weight | diagnostic-only |
+| `teacher_forcing/ledger/row_object_binding_bce` | `weighted_mean` | `object` | one-vs-all row-object BCE mean with valid binding-pair count weight | diagnostic-only |
 | `teacher_forcing/ledger/coverage_auc` | `ratio` | `object` | tie-aware positive-negative rank numerator / comparable pairs | omit when one class is absent |
 | `teacher_forcing/ledger/coverage_accuracy` | `ratio` | `object` | correct thresholded predictions / valid coverage pairs | diagnostic-only |
+| `teacher_forcing/ledger/row_object_binding_auc` | `ratio` | `object` | tie-aware binding positive-negative rank numerator / comparable pairs | omit when one class is absent |
+| `teacher_forcing/ledger/row_object_binding_accuracy` | `ratio` | `object` | correct thresholded predictions / valid binding pairs | diagnostic-only |
 | `teacher_forcing/ledger/coverage_state_count` | `sum` | `span` | value only | coverage-state spans |
 | `teacher_forcing/ledger/coverage_pair_count` | `sum` | `object` | value only | coverage-state valid state-object pairs |
 | `teacher_forcing/ledger/object_count` | `sum` | `object` | value only | rendered objects |
-| `teacher_forcing/ledger/region_anchor_pair_count` | `sum` | `object` | value only | current-row positive pairs |
+| `teacher_forcing/ledger/row_object_binding_pair_count` | `sum` | `object` | value only | current-row/object binding pairs |
 
 Every event must set `objective_id="coverage_ledger"`,
 `metric_surface="coverage_ledger_auxiliary"`, `stage="teacher_forcing"`, and
@@ -636,10 +650,10 @@ scalar. Do not add a new `MetricUnit`; use existing `slot`, `object`, and
 `batch` units.
 
 AUC must be exact local rank AUC with tie handling and no `sklearn` dependency.
-If a batch has no positives or no negatives for coverage-state pairs, omit AUC
-or emit a zero-denominator event; do not log `0.0`. Positive-negative tied
-scores receive `0.5` credit, equivalent to the standard average-rank AUC
-convention.
+If a batch has no positives or no negatives for coverage-state or row-object
+binding pairs, omit that AUC or emit a zero-denominator event; do not log `0.0`.
+Positive-negative tied scores receive `0.5` credit, equivalent to the standard
+average-rank AUC convention.
 
 Thresholded accuracy uses logit threshold `0.0`, equivalent to sigmoid
 probability `0.5`.
@@ -720,7 +734,7 @@ JSONL rows must include:
 - `spatial_merge_size`;
 - processed width and height;
 - norm1000 bbox;
-- pixel-float bbox;
+- rounded pixel bbox;
 - selected post-merge rectangle;
 - selected visual-token count;
 - image placeholder span;
@@ -730,7 +744,7 @@ JSONL rows must include:
 - `<box_end>` position;
 - coverage-state count;
 - coverage pair count;
-- region-anchor pair count;
+- row-object binding pair count;
 - tensor shapes used by the loss.
 
 Overlay images must be rendered from the actual processed image with:
@@ -901,8 +915,8 @@ Bridge/objective-runner tests:
 Loss tests:
 
 - coverage-state targets match prompt-end and row-completion semantics;
-- region-anchor subterm scores only current-row positive pairs;
-- non-current region-anchor objects are masked;
+- region-anchor / row-object binding targets mark current-row object positive
+  and all other annotated objects negative;
 - active bf16 autocast does not leak into the ledger projection math: the
   objective returns fp32 loss, finite gradients, and no dtype mismatch;
 - fp32 loss path rejects non-finite values;
@@ -923,7 +937,8 @@ Metric tests:
 - accuracy uses threshold `0.0`;
 - metric events set `diagnostic_only=false` only for
   `teacher_forcing/loss/coverage_ledger_auxiliary_weighted`;
-- region-anchor metrics do not emit AUC or accuracy.
+- row-object binding metrics emit diagnostic-only AUC and accuracy when both
+  classes are present.
 
 Debug artifact tests:
 
@@ -948,11 +963,18 @@ tests pass.
 ### Phase 2: 128-Sample Smoke/Overfit
 
 Use random 128-sample selection with seed `20260623`, `per_device=1`, and one
-long unpadded physical sequence per forward pass. V0 smoke uses
-`gradient_accumulation_steps=1`, effective batch size `1`, static packing
-disabled, padding-free packing disabled, and a pinned initial budget of
+long unpadded physical sequence per forward pass. The 128-sample smoke configs
+author `effective_batch_size: 1`, so they must be launched on a single rank; an
+8-rank launch is an intentional fail-fast topology mismatch. Static packing and
+padding-free packing remain disabled, with a pinned initial budget of
 `max_steps=256` optimizer steps for both the no-ledger baseline and ledger run.
 The run is a debug and efficiency check, not validation evidence.
+
+Production ledger training uses
+`configs/stage1/detection_teacher_forcing/prod/coverage_ledger_closed_hard_sft.yaml`.
+That config authors `per_device_train_batch_size: 1` and
+`effective_batch_size: 32`; on the intended 8-GPU topology the derived
+`gradient_accumulation_steps` is `4`.
 
 The smoke comparison packet must include:
 
@@ -967,8 +989,9 @@ The smoke comparison packet must include:
 Expected mechanism observables:
 
 - raw and weighted coverage-state losses decrease;
-- raw and weighted region-anchor losses decrease;
-- AUC and accuracy improve when both classes are present;
+- raw and weighted row-object binding losses decrease;
+- coverage and row-object binding AUC/accuracy improve when both classes are
+  present;
 - positive and negative coverage-state counts are nonzero for interpretable AUC
   windows;
 - overlay gallery confirms bbox-to-visual-token mapping.
@@ -981,8 +1004,8 @@ Production training is blocked until the smoke packet includes:
 - selected-sample manifest at `ledger/selected_samples.json`;
 - JSONL alignment dump at `ledger/alignment_debug.jsonl`;
 - 16-sample overlay gallery at `ledger/overlays/`;
-- metric stream with coverage-state, region-anchor, auxiliary scalar, count,
-  AUC, and accuracy metrics;
+- metric stream with coverage-state, row-object binding, auxiliary scalar,
+  count, AUC, and accuracy metrics;
 - failure-free strict validation;
 - nonzero positive and negative coverage-state pair counts for interpretable AUC
   windows;

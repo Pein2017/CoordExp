@@ -230,17 +230,25 @@ as evidence against the ledger adapter inference path.
 Do not launch if another training run is occupying GPU memory. The user asked
 to stop actual launch in that case.
 
-Recommended order when GPUs are available:
+Continuation note: an older 8-rank adapter-save smoke completed before the
+one-vs-all row-object binding refinement. Treat it as launch-health evidence
+only; rerun smoke before interpreting the current binding implementation.
+
+Recommended order when one GPU is available. The smoke configs author
+`effective_batch_size: 1`, so they should run on a single rank. In
+`scripts/train.sh`, `gpus=8` means device id 8, not eight GPUs; use
+`gpus=all` or `gpus=0,1,2,3,4,5,6,7` only for configs whose authored effective
+batch is divisible by eight ranks.
 
 ```bash
 cd /data/CoordExp/.worktrees/ledger-auxiliary-loss
 
 config=configs/stage1/detection_teacher_forcing/smoke/coverage_ledger_closed_hard_sft_128_baseline.yaml \
-gpus=8 \
+gpus=0 \
 scripts/train.sh
 
 config=configs/stage1/detection_teacher_forcing/smoke/coverage_ledger_closed_hard_sft_128.yaml \
-gpus=8 \
+gpus=0 \
 scripts/train.sh
 ```
 

@@ -157,8 +157,8 @@ class TrainerLossBridge:
                 packing_enabled=self._settings.packing_enabled,
                 where="TrainerLossBridge",
             )
-            outputs = captured
             logits = captured.logits
+            outputs = {"logits": logits}
         else:
             core_model, inputs_for_model, _model_type = prepare_forward_inputs(
                 model=model,
@@ -219,7 +219,6 @@ class TrainerLossBridge:
             loss = loss + coverage_ledger_result.weighted_loss
             metric_events = (
                 metric_events
-                + tuple(coverage_ledger_result.metric_events)
                 + self._filter_coverage_ledger_metric_events(
                     coverage_ledger_metric_events(coverage_ledger_result)
                 )

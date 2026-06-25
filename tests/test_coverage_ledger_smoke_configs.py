@@ -36,8 +36,10 @@ from test_detection_training_dataset import (
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SMOKE_ROOT = REPO_ROOT / "configs/stage1/detection_teacher_forcing/smoke"
+PROD_ROOT = REPO_ROOT / "configs/stage1/detection_teacher_forcing/prod"
 BASELINE_CONFIG = SMOKE_ROOT / "coverage_ledger_closed_hard_sft_128_baseline.yaml"
 LEDGER_CONFIG = SMOKE_ROOT / "coverage_ledger_closed_hard_sft_128.yaml"
+PROD_LEDGER_CONFIG = PROD_ROOT / "coverage_ledger_closed_hard_sft.yaml"
 
 STRUCTURAL_TOKENS = (
     "<|object_ref_start|>",
@@ -200,6 +202,10 @@ def _assert_shared_closed_hard_sft_smoke_config(resolved: dict[str, Any]) -> Non
     assert resolved["training"]["max_steps"] == 256
     assert resolved["training"]["per_device_train_batch_size"] == 1
     assert resolved["training"]["effective_batch_size"] == 1
+    assert resolved["training"]["save_strategy"] == "steps"
+    assert resolved["training"]["save_steps"] == 128
+    assert resolved["training"]["eval_strategy"] == "steps"
+    assert resolved["training"]["eval_steps"] == 128
 
     group = resolved["token_embeddings_adapter"]["groups"]["compact_structure"]
     assert tuple(group["tokens"]) == STRUCTURAL_TOKENS
@@ -242,6 +248,48 @@ def test_coverage_ledger_smoke_config_pair_loads_closed_hard_sft_contract(
         canonical_coordexp_repo_root()
         / "model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp"
     )
+
+
+def test_coverage_ledger_smoke_effective_batch_one_requires_single_rank(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(config_loader, "TrainArguments", _FakeTrainArguments)
+    monkeypatch.setattr(config_loader, "get_dist_setting", lambda: (0, 0, 8, 0))
+
+    for path in (BASELINE_CONFIG, LEDGER_CONFIG):
+        cfg = ConfigLoader.load_materialized_training_config(str(path))
+        assert isinstance(cfg, DetectionTrainingConfig)
+        with pytest.raises(ValueError, match=r"effective_batch_size.*divisible"):
+            ConfigLoader.build_train_arguments(cfg)
+
+
+def test_coverage_ledger_prod_config_resolves_batch32_on_eight_ranks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(config_loader, "TrainArguments", _FakeTrainArguments)
+    monkeypatch.setattr(config_loader, "get_dist_setting", lambda: (0, 0, 8, 0))
+
+    cfg = ConfigLoader.load_materialized_training_config(str(PROD_LEDGER_CONFIG))
+    assert isinstance(cfg, DetectionTrainingConfig)
+    args = ConfigLoader.build_train_arguments(cfg)
+
+    assert cfg.training["per_device_train_batch_size"] == 1
+    assert cfg.training["effective_batch_size"] == 32
+    assert args.per_device_train_batch_size == 1
+    assert args.gradient_accumulation_steps == 4
+    assert cfg.objective.terms.coverage_ledger.enabled is True
+
+
+def test_coverage_ledger_prod_config_fails_for_impossible_topology(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(config_loader, "TrainArguments", _FakeTrainArguments)
+    monkeypatch.setattr(config_loader, "get_dist_setting", lambda: (0, 0, 6, 0))
+
+    cfg = ConfigLoader.load_materialized_training_config(str(PROD_LEDGER_CONFIG))
+    assert isinstance(cfg, DetectionTrainingConfig)
+    with pytest.raises(ValueError, match=r"effective_batch_size.*world_size"):
+        ConfigLoader.build_train_arguments(cfg)
 
 
 def test_coverage_ledger_smoke_configs_load_real_swift_train_arguments() -> None:

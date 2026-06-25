@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn.functional as F
 
-from src.metrics.events import MetricEvent, sum_event
+from src.metrics.events import MetricEvent
 from src.training.coverage_ledger.head import CoverageLedgerHead
 from src.training.coverage_ledger.sidecars import CoverageLedgerSidecar
 from src.training.objectives.types import DEFAULT_PRECISION_POLICY
@@ -78,7 +78,8 @@ class CoverageLedgerDebugRows:
     region_anchor_object_indices: tuple[int, ...]
     coverage_targets: torch.Tensor
     coverage_logits: torch.Tensor
-    region_anchor_positive_logits: torch.Tensor
+    region_anchor_targets: torch.Tensor
+    region_anchor_logits: torch.Tensor
     object_count: int
     coverage_state_count: int
     coverage_pair_count: int
@@ -143,7 +144,7 @@ def compute_coverage_ledger_loss(
     config: CoverageLedgerLossConfig,
     sample_id_to_batch_index: Mapping[str, int] | None = None,
 ) -> CoverageLedgerLossResult:
-    """Compute coverage BCE and positive-only region-anchor loss for one sidecar."""
+    """Compute cumulative coverage BCE and one-vs-all row-object binding loss."""
 
     if not isinstance(head, CoverageLedgerHead):
         raise TypeError("head must be a CoverageLedgerHead")
@@ -237,15 +238,27 @@ def compute_coverage_ledger_loss(
             dtype=torch.long,
             device=object_norm.device,
         )
-        anchor_object_norm = object_norm.index_select(dim=0, index=anchor_indices)
-        region_anchor_positive_logits = (
-            anchor_state_norm * anchor_object_norm
-        ).sum(dim=-1) / float(config.temperature)
+        region_anchor_logits = anchor_state_norm @ object_norm.transpose(0, 1)
+        region_anchor_logits = region_anchor_logits / float(config.temperature)
         _raise_non_finite(
-            region_anchor_positive_logits,
+            region_anchor_logits,
             name="coverage ledger region-anchor logits",
         )
-        region_anchor_loss = F.softplus(-region_anchor_positive_logits).mean()
+        region_anchor_targets = torch.zeros(
+            (anchor_state_norm.shape[0], object_count),
+            dtype=torch.float32,
+            device=region_anchor_logits.device,
+        )
+        row_indices = torch.arange(
+            anchor_state_norm.shape[0],
+            dtype=torch.long,
+            device=region_anchor_logits.device,
+        )
+        region_anchor_targets[row_indices, anchor_indices] = 1.0
+        region_anchor_loss = F.binary_cross_entropy_with_logits(
+            region_anchor_logits.reshape(-1),
+            region_anchor_targets.reshape(-1),
+        )
         region_anchor_loss = region_anchor_loss.to(dtype=torch.float32)
         _raise_non_finite(
             region_anchor_loss,
@@ -265,11 +278,12 @@ def compute_coverage_ledger_loss(
         region_anchor_object_indices=targets.region_anchor_object_indices,
         coverage_targets=coverage_targets.detach(),
         coverage_logits=coverage_logits.detach(),
-        region_anchor_positive_logits=region_anchor_positive_logits.detach(),
+        region_anchor_targets=region_anchor_targets.detach(),
+        region_anchor_logits=region_anchor_logits.detach(),
         object_count=object_count,
         coverage_state_count=int(coverage_targets.shape[0]),
         coverage_pair_count=int(coverage_targets.numel()),
-        region_anchor_pair_count=int(region_anchor_positive_logits.numel()),
+        region_anchor_pair_count=int(region_anchor_targets.numel()),
     )
 
     return CoverageLedgerLossResult(
@@ -279,7 +293,7 @@ def compute_coverage_ledger_loss(
         weighted_loss=weighted_loss,
         coverage_weight=float(config.coverage_weight),
         region_anchor_weight=float(config.region_anchor_weight),
-        metric_events=_diagnostic_count_events(debug_rows),
+        metric_events=(),
         debug_rows=debug_rows,
     )
 
@@ -341,44 +355,6 @@ def _resolve_batch_index(
             f"is outside batch size {batch_size}"
         )
     return int(batch_index)
-
-
-def _diagnostic_count_events(
-    debug_rows: CoverageLedgerDebugRows,
-) -> tuple[MetricEvent, ...]:
-    kwargs = {
-        "unit": "object",
-        "objective_id": "coverage_ledger",
-        "diagnostic_only": True,
-    }
-    return (
-        sum_event(
-            "training/objectives/coverage_ledger/object_count",
-            debug_rows.object_count,
-            **kwargs,
-        ),
-        sum_event(
-            "training/objectives/coverage_ledger/coverage_state_count",
-            debug_rows.coverage_state_count,
-            unit="span",
-            objective_id="coverage_ledger",
-            diagnostic_only=True,
-        ),
-        sum_event(
-            "training/objectives/coverage_ledger/coverage_pair_count",
-            debug_rows.coverage_pair_count,
-            unit="object",
-            objective_id="coverage_ledger",
-            diagnostic_only=True,
-        ),
-        sum_event(
-            "training/objectives/coverage_ledger/region_anchor_pair_count",
-            debug_rows.region_anchor_pair_count,
-            unit="object",
-            objective_id="coverage_ledger",
-            diagnostic_only=True,
-        ),
-    )
 
 
 def _validate_sidecar(sidecar: CoverageLedgerSidecar) -> None:

@@ -176,21 +176,25 @@ def test_coverage_ledger_launch_prep_docs_freeze_smoke_artifacts_and_metrics() -
         "configs/stage1/detection_teacher_forcing/smoke/"
         "coverage_ledger_closed_hard_sft_128.yaml"
     ) in stage1
-    assert "launch-prep / not-yet-run" in stage1
-    assert "missing local assets" in stage1
-    assert "Do not launch tiny smoke training" in stage1
+    assert "older positive-only anchor semantics" in stage1
+    assert "one-vs-all row-object" in stage1
+    assert "binding change" in stage1
+    assert "Do not launch production training" in stage1
+    assert "coverage_ledger_closed_hard_sft.yaml" in stage1
 
     for metric_key in (
         "teacher_forcing/loss/coverage_ledger_auxiliary_weighted",
         "teacher_forcing/ledger/coverage_ledger_auxiliary_pair_normalized",
         "teacher_forcing/ledger/coverage_bce",
-        "teacher_forcing/ledger/region_anchor_positive",
+        "teacher_forcing/ledger/row_object_binding_bce",
         "teacher_forcing/ledger/coverage_auc",
         "teacher_forcing/ledger/coverage_accuracy",
+        "teacher_forcing/ledger/row_object_binding_auc",
+        "teacher_forcing/ledger/row_object_binding_accuracy",
         "teacher_forcing/ledger/coverage_state_count",
         "teacher_forcing/ledger/coverage_pair_count",
         "teacher_forcing/ledger/object_count",
-        "teacher_forcing/ledger/region_anchor_pair_count",
+        "teacher_forcing/ledger/row_object_binding_pair_count",
     ):
         assert metric_key in metrics
 
@@ -209,7 +213,7 @@ def test_coverage_ledger_launch_prep_docs_freeze_smoke_artifacts_and_metrics() -
     ):
         assert artifact_name in artifacts
 
-    assert "Smoke launch status: launch-prep / not-yet-run" in artifacts
+    assert "Smoke launch status: a prior adapter-save smoke pair completed" in artifacts
     assert "source_jsonl_repo_path" in design
     assert "source_jsonl_resolved_path" in design
     assert "debug.train_sample_selection" in artifacts
@@ -218,7 +222,7 @@ def test_coverage_ledger_launch_prep_docs_freeze_smoke_artifacts_and_metrics() -
     assert "16 overlays" in artifacts
     assert "baseline and ledger config diff remains allowlisted" in artifacts
     assert "ledger metrics appear in train logs" in artifacts
-    assert "runtime-cost confirmation" in artifacts
+    assert "training/objectives/coverage_ledger/*" in artifacts
 
     assert (
         "../../../docs/superpowers/plans/"

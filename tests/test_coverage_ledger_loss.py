@@ -90,7 +90,7 @@ def test_build_coverage_ledger_targets_for_three_objects() -> None:
     ]
 
 
-def test_region_anchor_uses_only_current_object_positive_pairs() -> None:
+def test_row_object_binding_uses_current_positive_and_all_other_objects_negative() -> None:
     sidecar = _sidecar()
     head = _identity_head(dim=4)
     hidden_states = torch.zeros((24, 4), dtype=torch.float32)
@@ -121,9 +121,23 @@ def test_region_anchor_uses_only_current_object_positive_pairs() -> None:
     )
 
     assert baseline.debug_rows.region_anchor_object_indices == (0, 1, 2)
-    assert baseline.debug_rows.region_anchor_positive_logits.tolist() == pytest.approx(
-        [1.2, 1.2, 1.2]
+    assert baseline.debug_rows.region_anchor_targets.tolist() == [
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+    ]
+    torch.testing.assert_close(
+        baseline.debug_rows.region_anchor_logits,
+        torch.tensor(
+            [
+                [1.2, 0.0, 0.0],
+                [0.0, 1.2, 0.0],
+                [0.0, 0.0, 1.2],
+            ],
+            dtype=torch.float32,
+        ),
     )
+    assert baseline.debug_rows.region_anchor_pair_count == 9
 
     non_current_perturbed_visuals = torch.tensor(
         [
@@ -141,12 +155,12 @@ def test_region_anchor_uses_only_current_object_positive_pairs() -> None:
         config=config,
     )
 
-    assert perturbed.debug_rows.region_anchor_positive_logits.tolist() == pytest.approx(
-        baseline.debug_rows.region_anchor_positive_logits.tolist()
+    assert torch.diag(perturbed.debug_rows.region_anchor_logits).tolist() == pytest.approx(
+        torch.diag(baseline.debug_rows.region_anchor_logits).tolist()
     )
-    assert perturbed.region_anchor_loss.item() == pytest.approx(
-        baseline.region_anchor_loss.item()
-    )
+    off_diagonal_mask = ~torch.eye(3, dtype=torch.bool)
+    assert perturbed.debug_rows.region_anchor_logits[off_diagonal_mask].max().item() > 0
+    assert perturbed.region_anchor_loss.item() > baseline.region_anchor_loss.item()
 
 
 def test_lower_temperature_increases_abs_logits() -> None:
@@ -178,8 +192,8 @@ def test_lower_temperature_increases_abs_logits() -> None:
 
     assert cool.debug_rows.coverage_logits.abs().max() > warm.debug_rows.coverage_logits.abs().max()
     assert (
-        cool.debug_rows.region_anchor_positive_logits.abs().max()
-        > warm.debug_rows.region_anchor_positive_logits.abs().max()
+        cool.debug_rows.region_anchor_logits.abs().max()
+        > warm.debug_rows.region_anchor_logits.abs().max()
     )
 
 
@@ -202,7 +216,8 @@ def test_zero_vectors_produce_finite_float32_losses() -> None:
     assert result.region_anchor_loss.dtype == torch.float32
     assert torch.isfinite(result.total_loss)
     assert torch.isfinite(result.debug_rows.coverage_logits).all()
-    assert torch.isfinite(result.debug_rows.region_anchor_positive_logits).all()
+    assert torch.isfinite(result.debug_rows.region_anchor_logits).all()
+    assert torch.equal(result.debug_rows.region_anchor_targets, torch.eye(3))
 
 
 def test_non_finite_logits_or_losses_raise_floating_point_error() -> None:
@@ -263,13 +278,8 @@ def test_zero_component_weights_disable_contributions_but_keep_diagnostic_counts
     assert coverage_disabled.debug_rows.object_count == 3
     assert coverage_disabled.debug_rows.coverage_state_count == 4
     assert coverage_disabled.debug_rows.coverage_pair_count == 12
-    assert coverage_disabled.debug_rows.region_anchor_pair_count == 3
-    assert {event.key: event.value for event in coverage_disabled.metric_events} == {
-        "training/objectives/coverage_ledger/object_count": 3.0,
-        "training/objectives/coverage_ledger/coverage_state_count": 4.0,
-        "training/objectives/coverage_ledger/coverage_pair_count": 12.0,
-        "training/objectives/coverage_ledger/region_anchor_pair_count": 3.0,
-    }
+    assert coverage_disabled.debug_rows.region_anchor_pair_count == 9
+    assert coverage_disabled.metric_events == ()
 
 
 def test_backward_reaches_head_and_hidden_states_but_not_detached_visual_embeddings() -> None:

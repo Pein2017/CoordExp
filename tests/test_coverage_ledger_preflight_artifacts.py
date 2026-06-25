@@ -8,6 +8,7 @@ from typing import Any, Mapping
 import pytest
 from PIL import Image
 
+import src.training.coverage_ledger.preflight as preflight_module
 from src.config.loader import ConfigLoader
 from src.common.model_paths import canonical_coordexp_repo_root
 from src.detection.dataset import DetectionTrainingDataset
@@ -279,10 +280,11 @@ def test_preflight_swift_template_builder_uses_current_swift_api(
         return template
 
     monkeypatch.setattr(
-        "swift.llm.get_model_tokenizer",
+        preflight_module,
+        "get_model_processor",
         _fake_get_model_processor,
     )
-    monkeypatch.setattr("swift.llm.template.get_template", _fake_get_template)
+    monkeypatch.setattr(preflight_module, "get_template", _fake_get_template)
 
     training_config = SimpleNamespace(
         model={

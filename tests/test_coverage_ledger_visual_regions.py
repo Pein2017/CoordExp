@@ -39,6 +39,21 @@ def test_centered_bbox_maps_to_minimal_enclosing_half_open_token_rectangle() -> 
     assert region.flattened_indices == (5, 6, 9, 10)
 
 
+def test_visual_region_uses_shared_integer_rounded_pixel_contract() -> None:
+    region = map_norm1000_bbox_to_visual_token_region(
+        (1, 1, 258, 258),
+        image_grid_thw=(1, 8, 8),
+        processed_width=80,
+        processed_height=80,
+        patch_size=10,
+        spatial_merge_size=2,
+    )
+
+    assert (region.row_start, region.row_end) == (0, 1)
+    assert (region.col_start, region.col_end) == (0, 1)
+    assert region.flattened_indices == (0,)
+
+
 def test_tiny_valid_bbox_maps_to_at_least_one_cell_after_clamping() -> None:
     region = map_norm1000_bbox_to_visual_token_region(
         (1, 1, 2, 2),

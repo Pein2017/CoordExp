@@ -766,21 +766,16 @@ class ConfigLoader:
             if denominator <= 0:
                 denominator = 1
 
-            if is_stage2_rollout_correction and (effective_batch_size % denominator != 0):
+            if effective_batch_size % denominator != 0:
                 raise ValueError(
-                    "For stage2_rollout_correction, training.effective_batch_size must be divisible by "
+                    "training.effective_batch_size must be divisible by "
                     f"training.per_device_train_batch_size*world_size ({per_device_train_batch_size}*{world_size}={denominator}). "
-                    f"Got effective_batch_size={effective_batch_size}."
+                    f"Got effective_batch_size={effective_batch_size}. This keeps derived "
+                    "gradient_accumulation_steps exact; change the launch topology or "
+                    "the authored effective batch."
                 )
 
-            if is_stage2_rollout_correction:
-                gradient_accumulation_steps = max(
-                    1, int(effective_batch_size // denominator)
-                )
-            else:
-                gradient_accumulation_steps = max(
-                    1, math.ceil(effective_batch_size / denominator)
-                )
+            gradient_accumulation_steps = max(1, int(effective_batch_size // denominator))
 
             training_section["gradient_accumulation_steps"] = gradient_accumulation_steps
 
@@ -788,7 +783,8 @@ class ConfigLoader:
                 f"Auto-calculated gradient_accumulation_steps={gradient_accumulation_steps} "
                 f"from effective_batch_size={effective_batch_size}, "
                 f"per_device_train_batch_size={per_device_train_batch_size}, "
-                f"world_size={world_size}"
+                f"world_size={world_size}, "
+                f"actual_global_effective_batch_size={denominator * gradient_accumulation_steps}"
             )
 
         if config.global_max_length is not None:

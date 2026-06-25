@@ -56,8 +56,9 @@ batch:
 - `effective_batch_size`: requested/source value from YAML when authored.
 - `actual_global_effective_batch_size`: `per_device_train_batch_size *
   gradient_accumulation_steps * world_size` after derivation.
-- `effective_batch_rounding`: `exact` when the realized value matches the
-  request, otherwise `ceil`.
+- `effective_batch_rounding`: `exact` when an authored request is present and
+  matches the realized value. Non-divisible requested batches fail fast instead
+  of silently rounding up.
 
 Two execution regimes use the same source-of-truth rule:
 

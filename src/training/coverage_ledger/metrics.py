@@ -24,13 +24,15 @@ AUXILIARY_PAIR_NORMALIZED_KEY = (
     "teacher_forcing/ledger/coverage_ledger_auxiliary_pair_normalized"
 )
 COVERAGE_BCE_KEY = "teacher_forcing/ledger/coverage_bce"
-REGION_ANCHOR_KEY = "teacher_forcing/ledger/region_anchor_positive"
+ROW_OBJECT_BINDING_BCE_KEY = "teacher_forcing/ledger/row_object_binding_bce"
 COVERAGE_AUC_KEY = "teacher_forcing/ledger/coverage_auc"
 COVERAGE_ACCURACY_KEY = "teacher_forcing/ledger/coverage_accuracy"
+ROW_OBJECT_BINDING_AUC_KEY = "teacher_forcing/ledger/row_object_binding_auc"
+ROW_OBJECT_BINDING_ACCURACY_KEY = "teacher_forcing/ledger/row_object_binding_accuracy"
 COVERAGE_STATE_COUNT_KEY = "teacher_forcing/ledger/coverage_state_count"
 COVERAGE_PAIR_COUNT_KEY = "teacher_forcing/ledger/coverage_pair_count"
 OBJECT_COUNT_KEY = "teacher_forcing/ledger/object_count"
-REGION_ANCHOR_PAIR_COUNT_KEY = "teacher_forcing/ledger/region_anchor_pair_count"
+ROW_OBJECT_BINDING_PAIR_COUNT_KEY = "teacher_forcing/ledger/row_object_binding_pair_count"
 
 
 def coverage_ledger_metric_events(
@@ -71,11 +73,11 @@ def coverage_ledger_metric_events(
     )
     _append_weighted_mean(
         events,
-        REGION_ANCHOR_KEY,
+        ROW_OBJECT_BINDING_BCE_KEY,
         result.region_anchor_loss,
         int(debug_rows.region_anchor_pair_count),
         field_name="region_anchor_loss",
-        semantic_role="region_anchor_positive_loss",
+        semantic_role="row_object_binding_bce_loss",
         diagnostic_only=True,
     )
 
@@ -85,6 +87,12 @@ def coverage_ledger_metric_events(
     accuracy = _coverage_accuracy_event(result)
     if accuracy is not None:
         events.append(accuracy)
+    binding_auc = _row_object_binding_auc_event(result)
+    if binding_auc is not None:
+        events.append(binding_auc)
+    binding_accuracy = _row_object_binding_accuracy_event(result)
+    if binding_accuracy is not None:
+        events.append(binding_accuracy)
 
     events.extend(
         (
@@ -107,10 +115,10 @@ def coverage_ledger_metric_events(
                 semantic_role="object_count",
             ),
             _count_event(
-                REGION_ANCHOR_PAIR_COUNT_KEY,
+                ROW_OBJECT_BINDING_PAIR_COUNT_KEY,
                 int(debug_rows.region_anchor_pair_count),
                 unit="object",
-                semantic_role="region_anchor_pair_count",
+                semantic_role="row_object_binding_pair_count",
             ),
         )
     )
@@ -202,7 +210,7 @@ def _coverage_auc_event(result: CoverageLedgerLossResult) -> MetricEvent | None:
     logits, targets = _coverage_logits_and_targets(result)
     if logits.numel() == 0:
         return None
-    auc_counts = _coverage_auc_counts(logits, targets)
+    auc_counts = _binary_auc_counts(logits, targets)
     if auc_counts is None:
         return None
     numerator, denominator = auc_counts
@@ -219,7 +227,30 @@ def _coverage_auc_event(result: CoverageLedgerLossResult) -> MetricEvent | None:
     )
 
 
-def _coverage_auc_counts(
+def _row_object_binding_auc_event(
+    result: CoverageLedgerLossResult,
+) -> MetricEvent | None:
+    logits, targets = _row_object_binding_logits_and_targets(result)
+    if logits.numel() == 0:
+        return None
+    auc_counts = _binary_auc_counts(logits, targets)
+    if auc_counts is None:
+        return None
+    numerator, denominator = auc_counts
+    return ratio_event(
+        ROW_OBJECT_BINDING_AUC_KEY,
+        numerator,
+        denominator,
+        unit="object",
+        semantic_role="row_object_binding_auc",
+        metric_surface=COVERAGE_LEDGER_SURFACE,
+        stage=COVERAGE_LEDGER_STAGE,
+        objective_id=COVERAGE_LEDGER_OBJECTIVE_ID,
+        diagnostic_only=True,
+    )
+
+
+def _binary_auc_counts(
     logits: torch.Tensor,
     targets: torch.Tensor,
 ) -> tuple[float, int] | None:
@@ -256,6 +287,33 @@ def _coverage_auc_counts(
 
 def _coverage_accuracy_event(result: CoverageLedgerLossResult) -> MetricEvent | None:
     logits, targets = _coverage_logits_and_targets(result)
+    return _accuracy_event(
+        key=COVERAGE_ACCURACY_KEY,
+        semantic_role="coverage_accuracy",
+        logits=logits,
+        targets=targets,
+    )
+
+
+def _row_object_binding_accuracy_event(
+    result: CoverageLedgerLossResult,
+) -> MetricEvent | None:
+    logits, targets = _row_object_binding_logits_and_targets(result)
+    return _accuracy_event(
+        key=ROW_OBJECT_BINDING_ACCURACY_KEY,
+        semantic_role="row_object_binding_accuracy",
+        logits=logits,
+        targets=targets,
+    )
+
+
+def _accuracy_event(
+    *,
+    key: str,
+    semantic_role: str,
+    logits: torch.Tensor,
+    targets: torch.Tensor,
+) -> MetricEvent | None:
     denominator = int(logits.numel())
     if denominator <= 0:
         return None
@@ -263,11 +321,11 @@ def _coverage_accuracy_event(result: CoverageLedgerLossResult) -> MetricEvent | 
     expected = (targets >= 0.5).to(dtype=targets.dtype)
     correct = float((predictions == expected).to(dtype=torch.float64).sum().item())
     return ratio_event(
-        COVERAGE_ACCURACY_KEY,
+        key,
         correct,
         denominator,
         unit="object",
-        semantic_role="coverage_accuracy",
+        semantic_role=semantic_role,
         metric_surface=COVERAGE_LEDGER_SURFACE,
         stage=COVERAGE_LEDGER_STAGE,
         objective_id=COVERAGE_LEDGER_OBJECTIVE_ID,
@@ -288,6 +346,24 @@ def _coverage_logits_and_targets(
     )
     if int(logits.numel()) != int(targets.numel()):
         raise ValueError("coverage ledger logits and targets must have matching shape")
+    return logits, targets
+
+
+def _row_object_binding_logits_and_targets(
+    result: CoverageLedgerLossResult,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    logits = result.debug_rows.region_anchor_logits.detach().reshape(-1).to(
+        dtype=torch.float64,
+        device="cpu",
+    )
+    targets = result.debug_rows.region_anchor_targets.detach().reshape(-1).to(
+        dtype=torch.float64,
+        device="cpu",
+    )
+    if int(logits.numel()) != int(targets.numel()):
+        raise ValueError(
+            "coverage ledger row-object binding logits and targets must have matching shape"
+        )
     return logits, targets
 
 
@@ -339,8 +415,10 @@ __all__ = [
     "COVERAGE_PAIR_COUNT_KEY",
     "COVERAGE_STATE_COUNT_KEY",
     "OBJECT_COUNT_KEY",
-    "REGION_ANCHOR_KEY",
-    "REGION_ANCHOR_PAIR_COUNT_KEY",
+    "ROW_OBJECT_BINDING_ACCURACY_KEY",
+    "ROW_OBJECT_BINDING_AUC_KEY",
+    "ROW_OBJECT_BINDING_BCE_KEY",
+    "ROW_OBJECT_BINDING_PAIR_COUNT_KEY",
     "WEIGHTED_LOSS_KEY",
     "coverage_ledger_metric_events",
 ]

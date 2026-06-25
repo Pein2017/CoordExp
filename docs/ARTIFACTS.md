@@ -58,10 +58,10 @@ preflight output root before any training starts:
   - Index of the 16 overlay files, including their source sample IDs, source
     object indices, emitted object indices, and template ID.
 
-Smoke launch status: launch-prep / not-yet-run. These artifacts describe the
-required preflight and later approved smoke packet; they do not imply a
-successful local preflight or training run. Tiny smoke training still requires
-runtime-cost confirmation and complete local dataset/model assets.
+Smoke launch status: a prior adapter-save smoke pair completed under the older
+positive-only anchor semantics. After the row-object binding change, rerun the
+approved smoke before interpreting ledger effects. Production training remains
+out of scope until the user explicitly approves it.
 
 The preflight writer is strict about stale output: `ledger/` and
 `ledger/overlays/` must not already contain files. Remove or choose a fresh
@@ -77,7 +77,9 @@ When the smoke run is later approved and executed, required post-run checks are:
 - the ledger run contains `ledger/selected_samples.json`
 - the ledger run contains all-128 `ledger/alignment_debug.jsonl`
 - the ledger run contains 16 overlays under `ledger/overlays/`
-- ledger metrics appear in train logs
+- ledger metrics appear in train logs under canonical `teacher_forcing/ledger/*`
+  and `teacher_forcing/loss/*` keys, with no new
+  `training/objectives/coverage_ledger/*` writer surface
 - baseline and ledger config diff remains allowlisted
 
 ## Non-Code Asset Ownership
@@ -302,8 +304,9 @@ artifacts into `training.output_dir` before training starts:
     - `effective_batch_size` and `effective_batch_size_source`, because
       `gradient_accumulation_steps` is derived when effective batch is authored.
     - `actual_global_effective_batch_size`, `world_size`, and
-      `effective_batch_rounding`, because non-divisible launch shapes can require
-      ceil-derived accumulation; the actual global value is the run-time truth.
+      `effective_batch_rounding`; authored effective batches must resolve
+      exactly, and non-divisible launch shapes fail fast before training claims a
+      misleading batch size.
     - `model_source`: best-effort path identity for the base model/cache path.
     - `token_rows.expected_trainable_row_count`; compact token-row runs should
       report the template-derived row count: `1002` for `compact`, `1003` for
