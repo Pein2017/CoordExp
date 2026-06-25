@@ -46,6 +46,11 @@ class _FakeDataset:
         return {"thread_safe": True}
 
 
+class _NonThreadSafeDataset(_FakeDataset):
+    def _static_packing_precompute_info(self) -> dict[str, object]:
+        return {"thread_safe": False, "reason": "unit-test"}
+
+
 class _OrderSensitiveDataset:
     def __init__(self, size: int = 8):
         self.size = int(size)
@@ -935,6 +940,59 @@ def test_static_length_cache_parallel_uses_thread_pool_when_cuda_initialized(
 
     assert result == lengths
     assert thread_workers == [4]
+
+
+def test_static_length_cache_rejects_serial_fallback_when_cuda_initialized(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        packed_caption_module.torch.distributed,
+        "is_available",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        packed_caption_module.torch.distributed,
+        "is_initialized",
+        lambda: False,
+    )
+    monkeypatch.setattr(packed_caption_module.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(
+        packed_caption_module.torch.cuda,
+        "is_initialized",
+        lambda: True,
+    )
+
+    with pytest.raises(RuntimeError, match="refuses serial fallback"):
+        _compute_missing_lengths(
+            dataset=_NonThreadSafeDataset([13, 14, 15, 16]),
+            lengths=[None] * 4,
+            cache_path=tmp_path / "cuda_serial_fallback.json",
+            fingerprint={"test": "cuda_serial_fallback"},
+            persist_every=64,
+            precompute_workers=4,
+        )
+
+
+def test_static_length_cache_rejects_serial_fallback_when_fork_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        packed_caption_module.multiprocessing,
+        "get_all_start_methods",
+        lambda: ["spawn"],
+    )
+
+    with pytest.raises(RuntimeError, match="fork.*unavailable"):
+        _compute_missing_lengths(
+            dataset=_FakeDataset([13, 14, 15, 16]),
+            lengths=[None] * 4,
+            cache_path=tmp_path / "missing_fork.json",
+            fingerprint={"test": "missing_fork"},
+            persist_every=64,
+            precompute_workers=4,
+        )
 
 
 def test_static_packing_rejects_nonpositive_length_precompute_workers(

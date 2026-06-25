@@ -120,6 +120,7 @@ Current implementation:
 - Static packing artifacts are stored under a fingerprinted subdirectory beneath that base root. Legacy direct-root caches are not reused; the runner treats stale or incompatible packing artifacts as disposable and regenerates the current fingerprinted cache on launch.
 - Each length bucket also writes an `INDEX.json` marker at the base root. When prompt/order/template or other packing-relevant fingerprint fields change, the runner warns and rewrites that marker to the latest setup before rebuilding any affected cache artifacts.
 - `training.static_packing_cache.root_dir` is optional and only needed when you want to override the default dataset-local base root.
+- Static-packing length precompute must parallelize when `training.packing_length_precompute_workers > 1`. In CUDA/DDP-initialized runs, eligible datasets use a thread pool because forked multiprocessing is unsafe after CUDA initialization; in CPU-only precompute, the runner uses forked multiprocessing when available. The runner now fails fast instead of silently falling back to serial precompute when a dataset is not marked thread-safe or `fork` is unavailable. Set `training.packing_length_precompute_workers: 1` only for intentional serial debug/preflight runs.
 - Stage-1 static packing uses one hard length cap: `global_max_length` / `template.max_length`.
 - Standard Stage-1 SFT may use `custom.detection_template_id` to select a
   semantic compact assistant template such as `compact_object_box_closed`.

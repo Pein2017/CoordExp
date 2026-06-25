@@ -447,20 +447,24 @@ def _compute_missing_lengths(
                     worker_count,
                 )
             else:
-                logger.info(
-                    "Static packing length precompute: falling back to serial mode in distributed/CUDA-initialized runtime because the dataset length helper is not thread-safe. info=%s",
-                    precompute_info,
+                raise RuntimeError(
+                    "Static packing length precompute refuses serial fallback in "
+                    "distributed/CUDA-initialized runtime. The dataset length helper "
+                    "must expose `_static_packing_precompute_info()` with "
+                    "`thread_safe=True`, or pre-materialize the static packing cache "
+                    "before CUDA/DDP initialization. "
+                    f"requested_workers={worker_count} info={precompute_info}"
                 )
-                worker_count = 1
 
     if worker_count > 1 and (not use_thread_pool):
         start_methods = set(multiprocessing.get_all_start_methods())
         if "fork" not in start_methods:
-            logger.warning(
-                "Static packing length precompute: multiprocessing requested (workers=%s) but 'fork' start method is unavailable; falling back to serial.",
-                worker_count,
+            raise RuntimeError(
+                "Static packing length precompute multiprocessing requested "
+                f"(workers={worker_count}) but fork start method is unavailable; "
+                "refusing serial fallback. Set training.packing_length_precompute_workers=1 "
+                "only for intentionally serial debug/preflight runs."
             )
-            worker_count = 1
 
     if worker_count > 1 and use_thread_pool:
 

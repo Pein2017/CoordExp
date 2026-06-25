@@ -1483,7 +1483,7 @@ def test_stage1_leaves_pin_ordering_cache_seed_and_paths(
     assert "rescale_32_1024_bbox_max60/train.coord.jsonl" in str(custom.train_jsonl)
 
 
-def test_static_packing_avoids_thread_pool_for_unsafe_length_helper_in_distributed_runtime(
+def test_static_packing_rejects_unsafe_length_helper_in_distributed_runtime(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1502,15 +1502,14 @@ def test_static_packing_avoids_thread_pool_for_unsafe_length_helper_in_distribut
 
     monkeypatch.setattr(packed_mod.concurrent.futures, "ThreadPoolExecutor", _BoomPool)
 
-    packed = packed_mod.build_static_packed_dataset(
-        dataset,
-        template=_Template(max_length=16),
-        packing_length=8,
-        cache_dir=tmp_path / "static-packing",
-        fingerprint={"dataset": "unsafe"},
-        world_size=1,
-        train_dataloader_shuffle=False,
-        length_precompute_workers=4,
-    )
-
-    assert len(packed) > 0
+    with pytest.raises(RuntimeError, match="refuses serial fallback"):
+        packed_mod.build_static_packed_dataset(
+            dataset,
+            template=_Template(max_length=16),
+            packing_length=8,
+            cache_dir=tmp_path / "static-packing",
+            fingerprint={"dataset": "unsafe"},
+            world_size=1,
+            train_dataloader_shuffle=False,
+            length_precompute_workers=4,
+        )

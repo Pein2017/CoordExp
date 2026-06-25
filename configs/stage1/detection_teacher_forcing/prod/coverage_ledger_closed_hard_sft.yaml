@@ -84,3 +84,4 @@ training:
   per_device_eval_batch_size: 1
   packing: true
   eval_packing: true
+  packing_length_precompute_workers: 16

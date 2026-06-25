@@ -419,6 +419,39 @@ def test_coverage_ledger_smoke_training_selection_matches_preflight_manifest_ind
     assert dataset.source_row_indices == selected_row_indices
 
 
+def test_coverage_ledger_detection_dataset_static_packing_length_is_thread_safe(
+    tmp_path: Path,
+) -> None:
+    jsonl_path = tmp_path / "train.coord.jsonl"
+    _write_jsonl(jsonl_path, [_raw_row()])
+    _ensure_image(tmp_path)
+
+    dataset = DetectionTrainingDataset.from_jsonl(
+        jsonl_path,
+        swift_template=FakeSwiftTemplate(),
+        image_root=tmp_path / "image-root",
+        detection_template_id="compact_object_box_closed",
+        mode="random_order_sft",
+        object_ordering="sorted",
+        user_prompt="Detect every object.",
+        system_prompt="You are a detector.",
+        seed=20260623,
+        state_weighting="uniform_permutation",
+        normalization="semantic_image_bucket_balanced",
+        object_field_order="desc_first",
+        teacher_forcing_profile="hard_sft",
+        teacher_forcing_rollin_base_seed=17,
+        coverage_ledger_enabled=True,
+        dataset_name="detection_train",
+    )
+
+    info = dataset._static_packing_precompute_info()
+
+    assert info["thread_safe"] is True
+    assert info["length_source"] == "DetectionTrainingDataset.encoded_length_for_row"
+    assert dataset._static_packing_length(0) == dataset.encoded_length_for_row(0)
+
+
 def test_coverage_ledger_preflight_dataset_matches_smoke_training_samples(
     tmp_path: Path,
 ) -> None:

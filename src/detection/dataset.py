@@ -473,6 +473,26 @@ class DetectionTrainingDataset(Dataset):
             return int(length)
         return len(_as_int_tuple(encoded.get("input_ids"), path="encoded.input_ids"))
 
+    def _static_packing_length(self, index: int) -> int:
+        """Exact encoded length used by static-packing cache precompute."""
+
+        return int(self.encoded_length_for_row(index))
+
+    def _static_packing_precompute_info(self) -> dict[str, Any]:
+        thread_safe = self.config.object_ordering == "sorted"
+        return {
+            "thread_safe": bool(thread_safe),
+            "length_source": "DetectionTrainingDataset.encoded_length_for_row",
+            "object_ordering": self.config.object_ordering,
+            "teacher_forcing_profile": self.config.teacher_forcing_profile,
+            "coverage_ledger_enabled": bool(self.config.coverage_ledger_enabled),
+            "reason": (
+                "sorted row-local exact length path"
+                if thread_safe
+                else "random object ordering is not declared thread-safe"
+            ),
+        }
+
     def __getitem__(self, index: int) -> dict[str, Any]:
         base_idx = self._base_index(index)
         source_row_index = self._source_row_indices[base_idx]
