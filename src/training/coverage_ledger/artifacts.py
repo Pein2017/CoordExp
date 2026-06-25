@@ -62,6 +62,7 @@ class CoverageLedgerPreflightArtifactResult:
     alignment_debug_path: Path
     overlay_index_path: Path
     overlay_paths: tuple[Path, ...]
+    packed_materialization_path: Path | None = None
 
 
 def write_coverage_ledger_preflight_artifacts(

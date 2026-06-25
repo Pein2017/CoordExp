@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from typing import Any, Mapping
 
 import pytest
+import torch
 from PIL import Image
 
 import src.training.coverage_ledger.preflight as preflight_module
@@ -25,13 +26,17 @@ from src.training.coverage_ledger.preflight import (
     _require_existing_path,
     _resolve_local_model_path,
     resolve_overlay_render_image_path,
+    write_static_packed_materialization_preflight,
 )
 from src.training.coverage_ledger.sidecars import (
     CoverageLedgerObjectEntry,
     CoverageLedgerSidecar,
 )
-from src.training.sidecars import TrainingSidecars
+from src.training.sidecars import SupervisionSidecars, TrainingSidecars
 from src.training.coverage_ledger.visual_regions import VisualTokenRegion
+from src.training.teacher_forcing.constants import TEACHER_FORCING_TARGET_IR_KEY
+from src.training.teacher_forcing.ir import SupervisionAtom, TeacherForcingTargetIR
+from src.training.teacher_forcing.roles import TokenRole
 from test_detection_training_dataset import FakeSwiftTemplate, _raw_row, _write_jsonl
 
 
@@ -93,6 +98,100 @@ def _make_sidecar(index: int, image_path: Path) -> CoverageLedgerSidecar:
         processed_height=80,
         image_identity=str(image_path),
     )
+
+
+def _make_target_ir(index: int) -> TeacherForcingTargetIR:
+    return TeacherForcingTargetIR(
+        schema_version=1,
+        atoms=(
+            SupervisionAtom(
+                batch_index=0,
+                logit_position=1,
+                target_position=2,
+                allowed_token_roles=frozenset({TokenRole.COORD}),
+                selected_token_role=TokenRole.COORD,
+                valid_token_ids=frozenset({100 + index}),
+                selected_token_id=100 + index,
+                latent_valid_token_ids=frozenset(),
+                coverage_target_weights=None,
+                loss_tags=frozenset({"coord"}),
+                loss_weight=1.0,
+                coord_role="x1",
+                provenance={"coord_label_positions": (2, 3)},
+            ),
+        ),
+        metadata={},
+    )
+
+
+class _TinyPackedPreflightDataset:
+    object_ordering = "sorted"
+    source_row_indices = (17, 23)
+
+    def __len__(self) -> int:
+        return 2
+
+    def __getitem__(self, index: int) -> dict[str, Any]:
+        index_i = int(index)
+        image_path = Path(f"/tmp/unit-image-{index_i}.png")
+        sidecar = _make_sidecar(index_i, image_path)
+        token_base = 10 + index_i * 10
+        return {
+            "dataset": "unit",
+            "base_idx": index_i,
+            "sample_id": sidecar.sample_id,
+            "input_ids": [token_base + offset for offset in range(5)],
+            "labels": [token_base + offset for offset in range(5)],
+            "attention_mask": [1, 1, 1, 1, 1],
+            "length": 5,
+            TEACHER_FORCING_TARGET_IR_KEY: _make_target_ir(index_i),
+            "training_sidecars": TrainingSidecars(
+                supervision=SupervisionSidecars(payloads=(sidecar,))
+            ),
+        }
+
+    def _static_packing_precompute_info(self) -> dict[str, object]:
+        return {"thread_safe": True}
+
+
+class _TinyPackedPreflightTemplate:
+    max_length = 10
+
+    def __init__(self) -> None:
+        self.packing = False
+        self.padding_free = False
+
+    def data_collator(self, batch: list[Any]) -> dict[str, Any]:
+        assert self.packing is True
+        assert self.padding_free is True
+        assert len(batch) == 1
+        pack = batch[0]
+        input_ids: list[int] = []
+        labels: list[int] = []
+        attention_mask: list[int] = []
+        offsets = [0]
+        image_grid_rows: list[list[int]] = []
+        for sample in pack:
+            input_ids.extend(int(value) for value in sample["input_ids"])
+            labels.extend(int(value) for value in sample["labels"])
+            attention_mask.extend(int(value) for value in sample["attention_mask"])
+            offsets.append(len(input_ids))
+            image_grid_rows.append([1, 8, 8])
+        text_position_ids = torch.empty((1, len(input_ids)), dtype=torch.long)
+        for start, end in zip(offsets, offsets[1:]):
+            text_position_ids[0, start:end] = torch.arange(end - start)
+        return {
+            "input_ids": torch.tensor([input_ids], dtype=torch.long),
+            "labels": torch.tensor([labels], dtype=torch.long),
+            "attention_mask": torch.tensor([attention_mask], dtype=torch.long),
+            "position_ids": text_position_ids.unsqueeze(0).repeat(3, 1, 1),
+            "text_position_ids": text_position_ids,
+            "cu_seq_lens_q": torch.tensor(offsets, dtype=torch.int32),
+            "cu_seq_lens_k": torch.tensor(offsets, dtype=torch.int32),
+            "max_length_q": max(end - start for start, end in zip(offsets, offsets[1:])),
+            "max_length_k": max(end - start for start, end in zip(offsets, offsets[1:])),
+            "image_grid_thw": torch.tensor(image_grid_rows, dtype=torch.long),
+        }
 
 
 def _make_artifact_inputs(tmp_path: Path) -> CoverageLedgerPreflightArtifactInputs:
@@ -217,6 +316,55 @@ def test_artifact_writer_materializes_manifest_alignment_jsonl_and_overlay_index
     assert overlay_index["overlays"][0]["source_object_index"] == 0
     assert overlay_index["overlays"][0]["emitted_order_index"] == 0
     assert overlay_index["overlays"][0]["template_id"] == "compact_object_box_closed"
+
+
+def test_static_packed_materialization_preflight_writes_packed_gate_json(
+    tmp_path: Path,
+) -> None:
+    cfg = ConfigLoader.load_materialized_training_config(str(LEDGER_CONFIG))
+    out_path = write_static_packed_materialization_preflight(
+        cfg,
+        dataset=_TinyPackedPreflightDataset(),
+        swift_template=_TinyPackedPreflightTemplate(),
+        output_root=tmp_path / "coverage_ledger_preflight_smoke",
+    )
+
+    payload = json.loads(out_path.read_text())
+    assert out_path.name == "packed_materialization.json"
+    assert payload["schema_version"] == "coverage_ledger_static_packed_materialization_v0"
+    assert payload["packing_length"] == 10
+    assert payload["segment_count"] == 2
+    assert payload["pack_source_row_indices"] == [17, 23]
+    assert payload["sample_ids"] == ["sample-000", "sample-001"]
+    assert payload["segment_offsets"] == [
+        {
+            "sample_id": "sample-000",
+            "packed_row_index": 0,
+            "segment_index": 0,
+            "token_start": 0,
+            "token_end": 5,
+        },
+        {
+            "sample_id": "sample-001",
+            "packed_row_index": 0,
+            "segment_index": 1,
+            "token_start": 5,
+            "token_end": 10,
+        },
+    ]
+    assert payload["raw_position_ids_shape"] == [3, 1, 10]
+    assert payload["forward_position_ids_shape"] == [4, 1, 10]
+    assert payload["image_grid_row_count"] == 2
+    assert payload["image_grid_thw"] == [[1, 8, 8], [1, 8, 8]]
+    assert payload["teacher_forcing_target_ir_count"] == 2
+    assert payload["coverage_ledger_sidecar_count"] == 2
+    assert payload["shifted_sidecars"][1]["prompt_end_position"] == 25
+    assert payload["shifted_sidecars"][1]["first_object_coord_label_positions"] == [
+        28,
+        29,
+        30,
+        31,
+    ]
 
 
 def test_artifact_writer_rejects_stale_overlay_files(tmp_path: Path) -> None:

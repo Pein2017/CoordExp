@@ -79,7 +79,7 @@ def build_packed_segment_offsets(
     if not all(packed_flags):
         raise ValueError("packed raw_batch rows must all be list/tuple pack rows")
 
-    attention_counts = _attention_non_padding_counts(
+    row_token_counts, row_count_source = _collated_row_token_counts(
         collated,
         expected_rows=len(raw_rows),
     )
@@ -113,12 +113,11 @@ def build_packed_segment_offsets(
             )
             token_start = token_end
 
-        if token_start != attention_counts[packed_row_index]:
+        if token_start != row_token_counts[packed_row_index]:
             raise ValueError(
-                "packed raw_batch segment lengths must match attention_mask "
-                "non-padding length; "
+                "packed raw_batch segment lengths must match collated row token count; "
                 f"row={packed_row_index} segment_total={token_start} "
-                f"attention_mask_length={attention_counts[packed_row_index]}"
+                f"{row_count_source}_length={row_token_counts[packed_row_index]}"
             )
 
     return tuple(offsets)
@@ -234,23 +233,33 @@ def _shift_position_scalar(
     return int(value) + token_start
 
 
-def _attention_non_padding_counts(
+def _collated_row_token_counts(
     collated: Mapping[str, Any],
     *,
     expected_rows: int,
-) -> tuple[int, ...]:
+) -> tuple[tuple[int, ...], str]:
     if not isinstance(collated, Mapping):
         raise TypeError("collated must be a mapping")
-    if "attention_mask" not in collated:
-        raise ValueError("packed offset construction requires collated attention_mask")
-    rows = _to_nested_rows(collated["attention_mask"], field_name="attention_mask")
+    if "attention_mask" in collated:
+        rows = _to_nested_rows(collated["attention_mask"], field_name="attention_mask")
+        source_field = "attention_mask"
+    elif "input_ids" in collated:
+        rows = _to_nested_rows(collated["input_ids"], field_name="input_ids")
+        source_field = "input_ids"
+    else:
+        raise ValueError(
+            "packed offset construction requires collated attention_mask or input_ids"
+        )
     if len(rows) != expected_rows:
         raise ValueError(
-            "collated attention_mask row count must match packed raw_batch row count; "
-            f"attention_mask={len(rows)} raw_batch={expected_rows}"
+            f"collated {source_field} row count must match packed raw_batch row count; "
+            f"{source_field}={len(rows)} raw_batch={expected_rows}"
         )
     counts: list[int] = []
     for row_index, row in enumerate(rows):
+        if source_field == "input_ids":
+            counts.append(len(row))
+            continue
         count = 0
         for col_index, value in enumerate(row):
             if not _is_plain_int(value):
@@ -261,7 +270,7 @@ def _attention_non_padding_counts(
             if int(value) != 0:
                 count += 1
         counts.append(count)
-    return tuple(counts)
+    return tuple(counts), source_field
 
 
 def _to_nested_rows(value: Any, *, field_name: str) -> tuple[tuple[Any, ...], ...]:

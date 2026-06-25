@@ -114,6 +114,35 @@ def test_build_packed_segment_offsets_uses_row_local_lengths_and_attention_count
     )
 
 
+def test_build_packed_segment_offsets_accepts_packed_input_ids_without_attention_mask() -> None:
+    raw_batch = [
+        [
+            _sample("sample-a", length=2),
+            _sample("sample-b", input_ids=(11, 12, 13)),
+        ],
+    ]
+    collated = {
+        "input_ids": torch.tensor([[101, 102, 103, 104, 105]], dtype=torch.long)
+    }
+
+    assert build_packed_segment_offsets(raw_batch, collated) == (
+        PackedSegmentOffset(
+            sample_id="sample-a",
+            packed_row_index=0,
+            segment_index=0,
+            token_start=0,
+            token_end=2,
+        ),
+        PackedSegmentOffset(
+            sample_id="sample-b",
+            packed_row_index=0,
+            segment_index=1,
+            token_start=2,
+            token_end=5,
+        ),
+    )
+
+
 def test_build_packed_segment_offsets_rejects_duplicate_sample_ids() -> None:
     raw_batch = [
         [_sample("duplicate", length=2)],

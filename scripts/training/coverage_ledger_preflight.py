@@ -45,6 +45,11 @@ def main() -> int:
     print(f"alignment_debug={result.artifact_result.alignment_debug_path}")
     print(f"overlay_index={result.artifact_result.overlay_index_path}")
     print(f"overlay_count={len(result.artifact_result.overlay_paths)}")
+    if result.artifact_result.packed_materialization_path is not None:
+        print(
+            "packed_materialization="
+            f"{result.artifact_result.packed_materialization_path}"
+        )
     return 0
 
 

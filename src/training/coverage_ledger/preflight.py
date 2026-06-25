@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from src.config.loader import ConfigLoader
@@ -12,6 +14,7 @@ from src.config.schema import CoordTokensConfig, DetectionTrainingConfig
 from src.config.strict_dataclass import dataclass_asdict_no_none
 from src.common.model_paths import canonical_coordexp_repo_root
 from src.coord_tokens.template_adapter import apply_coord_template_adapter
+from src.data_collators import build_dataset_metrics_collator
 from src.detection.dataset_selection import (
     DatasetRowSelectionConfig,
     SEEDED_RANDOM_WITHOUT_REPLACEMENT,
@@ -35,6 +38,10 @@ from src.training.coverage_ledger.visual_regions import (
     VisualTokenRegion,
     map_norm1000_bbox_to_visual_token_region,
 )
+from src.datasets.wrappers.packed_caption import build_static_packed_dataset
+from src.trainers.batch_extras import BATCH_EXTRAS_KEYS
+from src.trainers.teacher_forcing.forwards import prepare_forward_inputs
+from src.training.teacher_forcing.constants import TEACHER_FORCING_TARGET_IR_KEY
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -206,11 +213,197 @@ def run_coverage_ledger_preflight(
             expected_overlay_count=expected_overlay_count,
         )
     )
+    packed_materialization_path = write_static_packed_materialization_preflight(
+        ledger_config,
+        dataset=dataset,
+        swift_template=template,
+        output_root=Path(output_root),
+    )
+    artifact_result = replace(
+        artifact_result,
+        packed_materialization_path=packed_materialization_path,
+    )
     return CoverageLedgerPreflightResult(
         artifact_result=artifact_result,
         selected_row_indices=selected_row_indices,
         selected_sample_ids=tuple(sidecar.sample_id for sidecar in sidecars),
     )
+
+
+def write_static_packed_materialization_preflight(
+    training_config: DetectionTrainingConfig,
+    *,
+    dataset: DetectionTrainingDataset,
+    swift_template: Any,
+    output_root: Path,
+) -> Path:
+    """Materialize and validate one real static-packed coverage-ledger batch."""
+
+    if not bool(training_config.training.get("packing", False)):
+        raise ValueError("coverage ledger packed preflight requires training.packing=true")
+    if not bool(training_config.training.get("eval_packing", False)):
+        raise ValueError("coverage ledger packed preflight requires training.eval_packing=true")
+    if not training_config.packing.static_packing:
+        raise ValueError(
+            "coverage ledger packed preflight requires packing.static_packing=true"
+        )
+    if training_config.packing.padding_free_packed:
+        raise ValueError(
+            "coverage ledger packed preflight does not support padding_free_packed=true"
+        )
+
+    packing_length = _resolve_preflight_packing_length(training_config, swift_template)
+    min_fill_ratio = float(training_config.training.get("packing_min_fill_ratio", 0.65))
+    packing_drop_last = bool(training_config.training.get("packing_drop_last", True))
+    allow_single_long = bool(training_config.training.get("packing_allow_single_long", True))
+    wait_timeout_s = float(training_config.training.get("packing_wait_timeout_s", 7200.0))
+    # Preflight runs after the real Qwen3-VL processor/template is constructed.
+    # Forked length workers can park inside processor state on some nodes; the
+    # no-training gate values determinism over parallel cache build speed.
+    length_precompute_workers = 1
+
+    packed_dataset = build_static_packed_dataset(
+        dataset,
+        template=swift_template,
+        packing_length=packing_length,
+        min_fill_ratio=min_fill_ratio,
+        packing_drop_last=packing_drop_last,
+        dataloader_drop_last=False,
+        allow_single_long=allow_single_long,
+        cache_dir=Path(output_root) / "static_packing_preflight_cache",
+        fingerprint={
+            "schema_version": "coverage_ledger_static_packed_preflight_v0",
+            "template_id": training_config.detection_template.id,
+            "objective_id": training_config.objective.id,
+            "rollin_policy": str(
+                training_config.objective.target_ir.rollin_policy.name
+            ),
+            "packing_length": packing_length,
+        },
+        world_size=1,
+        train_dataloader_shuffle=False,
+        wait_timeout_s=wait_timeout_s,
+        length_precompute_workers=length_precompute_workers,
+    )
+
+    pack_index, pack = _select_two_segment_pack(packed_dataset)
+    collator = build_dataset_metrics_collator(
+        swift_template,
+        swift_template.data_collator,
+        coverage_ledger_cfg=training_config.objective.terms.coverage_ledger,
+    )
+    _ensure_preflight_packing_dummy_model(training_config, swift_template)
+    batch = collator([pack])
+    ignored_keys = (
+        "labels",
+        "attention_mask",
+        "sample_id",
+        "training_sidecars",
+        TEACHER_FORCING_TARGET_IR_KEY,
+        *BATCH_EXTRAS_KEYS,
+    )
+    dummy_model = SimpleNamespace(config=SimpleNamespace(model_type="qwen3_vl"))
+    _core_model, inputs_for_model, _model_type = prepare_forward_inputs(
+        model=dummy_model,
+        inputs=batch,
+        ignored_keys=ignored_keys,
+        packing_enabled=True,
+        where="coverage ledger static packed preflight",
+    )
+
+    offsets = _packed_segment_offsets_payload(batch.get("packed_segment_offsets"))
+    segment_count = len(offsets)
+    if segment_count < 2:
+        raise ValueError("packed preflight expected at least two packed segments")
+    shifted_sidecars = _coverage_ledger_sidecars_from_batch(batch)
+    if len(shifted_sidecars) != segment_count:
+        raise ValueError(
+            "packed preflight coverage-ledger sidecar count must match segment count; "
+            f"sidecars={len(shifted_sidecars)} segments={segment_count}"
+        )
+    teacher_forcing_irs = batch.get(TEACHER_FORCING_TARGET_IR_KEY)
+    if not isinstance(teacher_forcing_irs, tuple) or len(teacher_forcing_irs) != segment_count:
+        raise ValueError(
+            "packed preflight teacher_forcing_target_ir count must match segment count"
+        )
+
+    image_grid = _nested_list(batch.get("image_grid_thw"), field_name="image_grid_thw")
+    if len(image_grid) != segment_count:
+        raise ValueError(
+            "packed preflight image_grid_thw row count must match segment count; "
+            f"image_grid_rows={len(image_grid)} segments={segment_count}"
+        )
+    for row_index, row in enumerate(image_grid):
+        if len(row) != 3 or int(row[0]) != 1:
+            raise ValueError(
+                "packed preflight supports one image frame per segment; "
+                f"row={row_index} image_grid_thw={row}"
+            )
+    if batch.get("pixel_values_videos") is not None or batch.get("video_grid_thw") is not None:
+        raise ValueError("packed preflight does not support video tensors")
+
+    position_ids_shape = _shape_list(inputs_for_model.get("position_ids"))
+    if len(position_ids_shape) != 3 or int(position_ids_shape[0]) != 4:
+        raise ValueError(
+            "packed preflight expected Qwen3-VL 4-row position_ids after forward prep; "
+            f"shape={position_ids_shape}"
+        )
+
+    sample_ids = [str(sidecar.sample_id) for sidecar in shifted_sidecars]
+    if sample_ids != [str(record["sample_id"]) for record in offsets]:
+        raise ValueError(
+            "packed preflight shifted sidecar sample order must match segment offsets"
+        )
+
+    source_row_indices = tuple(int(index) for index in getattr(dataset, "source_row_indices"))
+    pack_local_indices = [int(index) for index in packed_dataset.pack_plan[int(pack_index)]]
+    payload = {
+        "schema_version": "coverage_ledger_static_packed_materialization_v0",
+        "packing_length": int(packing_length),
+        "packing_min_fill_ratio": float(min_fill_ratio),
+        "pack_index": int(pack_index),
+        "pack_local_indices": pack_local_indices,
+        "pack_source_row_indices": [source_row_indices[index] for index in pack_local_indices],
+        "segment_count": int(segment_count),
+        "segment_offsets": offsets,
+        "sample_ids": sample_ids,
+        "input_ids_shape": _shape_list(batch.get("input_ids")),
+        "labels_shape": _shape_list(batch.get("labels")),
+        "attention_mask_shape": _shape_list(batch.get("attention_mask")),
+        "raw_position_ids_shape": _shape_list(batch.get("position_ids")),
+        "forward_position_ids_shape": position_ids_shape,
+        "text_position_ids_shape": _shape_list(batch.get("text_position_ids")),
+        "cu_seq_lens_q": _flat_int_list(batch.get("cu_seq_lens_q")),
+        "cu_seq_lens_k": _flat_int_list(batch.get("cu_seq_lens_k")),
+        "max_length_q": _maybe_int(batch.get("max_length_q")),
+        "max_length_k": _maybe_int(batch.get("max_length_k")),
+        "image_grid_thw": image_grid,
+        "image_grid_row_count": len(image_grid),
+        "teacher_forcing_target_ir_count": len(teacher_forcing_irs),
+        "coverage_ledger_sidecar_count": len(shifted_sidecars),
+        "shifted_sidecars": [
+            {
+                "sample_id": sidecar.sample_id,
+                "prompt_end_position": int(sidecar.prompt_end_position),
+                "image_grid_thw": list(sidecar.image_grid_thw),
+                "object_count": len(sidecar.object_entries),
+                "first_object_coord_label_positions": (
+                    list(sidecar.object_entries[0].coord_label_positions)
+                    if sidecar.object_entries
+                    else []
+                ),
+            }
+            for sidecar in shifted_sidecars
+        ],
+    }
+
+    out_path = Path(output_root) / "ledger" / "packed_materialization.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return out_path
 
 
 def assert_smoke_config_diff_allowed(
@@ -390,6 +583,175 @@ def resolve_visual_grid_geometry(swift_template: Any) -> tuple[int, int]:
             "spatial_merge_size/merge_size for visual-region overlays"
         )
     return int(patch_size), int(spatial_merge_size)
+
+
+def _resolve_preflight_packing_length(
+    training_config: DetectionTrainingConfig,
+    swift_template: Any,
+) -> int:
+    raw = (
+        getattr(swift_template, "max_length", None)
+        or training_config.template.get("max_length")
+        or training_config.training.get("global_max_length")
+    )
+    try:
+        value = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("coverage ledger packed preflight could not resolve max length") from exc
+    if value <= 0:
+        raise ValueError("coverage ledger packed preflight requires positive max length")
+    return value
+
+
+def _ensure_preflight_packing_dummy_model(
+    training_config: DetectionTrainingConfig,
+    swift_template: Any,
+) -> None:
+    if getattr(swift_template, "model", None) is not None:
+        return
+    if getattr(swift_template, "dummy_model", None) is not None:
+        return
+    if getattr(swift_template, "model_info", None) is None:
+        return
+    model_type = training_config.model.get("model_type")
+    if model_type is None:
+        model_type = getattr(swift_template.model_info, "model_type", None)
+    if model_type is None:
+        return
+
+    import torch
+
+    local_model_path = _resolve_local_model_path(training_config.model["model"])
+    model_path = (
+        str(local_model_path)
+        if local_model_path is not None
+        else str(training_config.model["model"])
+    )
+    with torch.device("meta"):
+        dummy_model, _processor = get_model_processor(
+            model_path,
+            return_dummy_model=True,
+            model_type=str(model_type),
+            torch_dtype=_torch_dtype(training_config.model.get("torch_dtype")),
+            download_model=False,
+        )
+    swift_template.dummy_model = dummy_model
+
+
+def _select_two_segment_pack(packed_dataset: Any) -> tuple[int, Sequence[Mapping[str, Any]]]:
+    for pack_index in range(len(packed_dataset)):
+        pack = packed_dataset[int(pack_index)]
+        if isinstance(pack, Sequence) and not isinstance(pack, (str, bytes)):
+            if len(pack) >= 2:
+                return int(pack_index), pack
+    raise ValueError(
+        "coverage ledger packed preflight could not find a two-segment static pack"
+    )
+
+
+def _packed_segment_offsets_payload(value: Any) -> list[dict[str, Any]]:
+    if value is None:
+        raise ValueError("packed preflight batch missing packed_segment_offsets")
+    if isinstance(value, tuple) and all(
+        hasattr(offset, "token_start") and hasattr(offset, "token_end")
+        for offset in value
+    ):
+        return [
+            {
+                "sample_id": str(offset.sample_id),
+                "packed_row_index": int(offset.packed_row_index),
+                "segment_index": int(offset.segment_index),
+                "token_start": int(offset.token_start),
+                "token_end": int(offset.token_end),
+            }
+            for offset in value
+        ]
+
+    boundaries = _flat_int_list(value)
+    if len(boundaries) < 2:
+        raise ValueError("packed_segment_offsets boundaries must contain at least two values")
+    return [
+        {
+            "sample_id": "",
+            "packed_row_index": 0,
+            "segment_index": index,
+            "token_start": int(start),
+            "token_end": int(end),
+        }
+        for index, (start, end) in enumerate(zip(boundaries, boundaries[1:]))
+    ]
+
+
+def _coverage_ledger_sidecars_from_batch(batch: Mapping[str, Any]) -> tuple[CoverageLedgerSidecar, ...]:
+    training_sidecars = batch.get("training_sidecars")
+    supervision = getattr(training_sidecars, "supervision", None)
+    payloads = tuple(getattr(supervision, "payloads", ()))
+    sidecars = tuple(
+        payload for payload in payloads if isinstance(payload, CoverageLedgerSidecar)
+    )
+    if not sidecars:
+        raise ValueError("packed preflight batch missing coverage-ledger sidecars")
+    return sidecars
+
+
+def _nested_list(value: Any, *, field_name: str) -> list[list[int]]:
+    raw = _to_python(value)
+    if not isinstance(raw, list):
+        raise TypeError(f"{field_name} must be a tensor/list with rows")
+    if raw and all(isinstance(item, int) for item in raw):
+        return [[int(item) for item in raw]]
+    rows: list[list[int]] = []
+    for row_index, row in enumerate(raw):
+        if not isinstance(row, list):
+            raise TypeError(f"{field_name}[{row_index}] must be a list")
+        rows.append([int(item) for item in row])
+    return rows
+
+
+def _flat_int_list(value: Any) -> list[int]:
+    raw = _to_python(value)
+    if isinstance(raw, list):
+        if raw and isinstance(raw[0], list):
+            if len(raw) != 1:
+                raise ValueError("expected a flat vector or a single-row vector")
+            raw = raw[0]
+        return [int(item) for item in raw]
+    if isinstance(raw, tuple):
+        return [int(item) for item in raw]
+    raise TypeError(f"expected vector-like value, got {type(value).__name__}")
+
+
+def _shape_list(value: Any) -> list[int]:
+    shape = getattr(value, "shape", None)
+    if shape is None:
+        return []
+    return [int(item) for item in shape]
+
+
+def _maybe_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    item = getattr(value, "item", None)
+    if callable(item):
+        value = item()
+    return int(value)
+
+
+def _to_python(value: Any) -> Any:
+    if value is None:
+        raise ValueError("expected value, got None")
+    detach = getattr(value, "detach", None)
+    if callable(detach):
+        value = detach()
+    cpu = getattr(value, "cpu", None)
+    if callable(cpu):
+        value = cpu()
+    tolist = getattr(value, "tolist", None)
+    if callable(tolist):
+        return tolist()
+    if isinstance(value, tuple):
+        return list(value)
+    return value
 
 
 def resolve_overlay_render_image_path(sample: Mapping[str, Any]) -> Path:
