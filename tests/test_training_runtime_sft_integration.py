@@ -50,6 +50,7 @@ from src.training_runtime.stage2_projection import (
 )
 from src.trainers.metrics.mixins import TeacherForcingObjectiveMixin
 from src.training.teacher_forcing.ir import SupervisionAtom, TeacherForcingTargetIR
+from src.training.teacher_forcing.packing_offsets import PackedSegmentOffset
 from src.training.teacher_forcing.roles import TokenRole
 from src.training.teacher_forcing.vocab import RoleVocab
 from src.metrics.events import weighted_mean_event
@@ -934,6 +935,117 @@ def test_teacher_forcing_objective_mixin_passes_mapping_coverage_ledger_to_bridg
     assert metrics[
         "teacher_forcing/loss/coverage_ledger_auxiliary/contribution"
     ].values == [pytest.approx(0.5)]
+
+
+def test_teacher_forcing_objective_mixin_passes_packing_enabled_for_static_packed_ir(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _BaseTrainer:
+        def compute_loss(self, *args, **kwargs):  # pragma: no cover - must not run
+            raise AssertionError("base trainer CE path should not own teacher_forcing")
+
+    class _Trainer(TeacherForcingObjectiveMixin, _BaseTrainer):
+        pass
+
+    class _FakeBridge:
+        settings_seen: Any = None
+        raw_batch_seen: Any = None
+        sample_id_to_batch_index_seen: Any = None
+
+        def __init__(self, *, settings=None, **_kwargs: Any) -> None:
+            self.__class__.settings_seen = settings
+
+        def compute_loss(self, **kwargs: Any):
+            self.__class__.raw_batch_seen = dict(kwargs["raw_batch"])
+            self.__class__.sample_id_to_batch_index_seen = kwargs.get(
+                "sample_id_to_batch_index"
+            )
+            return SimpleNamespace(
+                loss=torch.tensor(0.75, dtype=torch.float32),
+                outputs=SimpleNamespace(marker="packed-bridge-outputs"),
+                metric_events=(),
+            )
+
+    monkeypatch.setattr(teacher_forcing_metrics, "TrainerLossBridge", _FakeBridge)
+
+    def atom(logit_position: int, target_position: int) -> SupervisionAtom:
+        return SupervisionAtom(
+            batch_index=0,
+            logit_position=logit_position,
+            target_position=target_position,
+            allowed_token_roles=frozenset({TokenRole.TEXT}),
+            selected_token_role=TokenRole.TEXT,
+            valid_token_ids=frozenset({1, 2}),
+            selected_token_id=1,
+            latent_valid_token_ids=frozenset({1, 2}),
+            coverage_target_weights=None,
+            loss_tags=frozenset({"pure_valid_set_marginal"}),
+            loss_weight=1.0,
+            coord_role=None,
+            provenance={},
+        )
+
+    first_ir = TeacherForcingTargetIR(
+        schema_version=1,
+        atoms=(atom(0, 1),),
+        metadata={},
+    )
+    second_ir = TeacherForcingTargetIR(
+        schema_version=1,
+        atoms=(atom(4, 5),),
+        metadata={},
+    )
+    offsets = (
+        PackedSegmentOffset(
+            sample_id="sample-a",
+            packed_row_index=0,
+            segment_index=0,
+            token_start=0,
+            token_end=4,
+        ),
+        PackedSegmentOffset(
+            sample_id="sample-b",
+            packed_row_index=0,
+            segment_index=1,
+            token_start=4,
+            token_end=8,
+        ),
+    )
+    inputs = {
+        "input_ids": torch.tensor([[0, 1, 2, 3, 4, 5, 6, 7]], dtype=torch.long),
+        "attention_mask": torch.ones((1, 8), dtype=torch.long),
+        "labels": torch.tensor([[-100, 1, -100, -100, -100, 1, -100, -100]]),
+        "teacher_forcing_target_ir": (first_ir, second_ir),
+        "sample_id": ("sample-a", "sample-b"),
+        "packed_segment_offsets": offsets,
+    }
+    trainer = _Trainer()
+    trainer.teacher_forcing_objective_cfg = {
+        "profile": "pure_valid_set_marginal",
+        "terms": {},
+    }
+    trainer.teacher_forcing_role_vocab = RoleVocab(
+        text_token_ids=frozenset({1, 2}),
+        schema_token_ids=frozenset(),
+        coord_token_ids=frozenset(),
+        stop_token_id=9,
+    )
+
+    loss, outputs = trainer.compute_loss(
+        SimpleNamespace(),
+        inputs,
+        return_outputs=True,
+    )
+
+    assert loss.item() == pytest.approx(0.75)
+    assert outputs.marker == "packed-bridge-outputs"
+    assert _FakeBridge.settings_seen.packing_enabled is True
+    assert _FakeBridge.sample_id_to_batch_index_seen == {
+        "sample-a": 0,
+        "sample-b": 0,
+    }
+    assert "packed_segment_offsets" not in _FakeBridge.raw_batch_seen
+    assert "teacher_forcing_target_ir" not in _FakeBridge.raw_batch_seen
 
 
 def test_static_packing_accumulation_warning_is_skipped_for_trainer_owned_packing(

@@ -27,6 +27,9 @@ from src.training.sidecars import (
 )
 from src.training.supervision.batch import SupervisionBatch
 from src.training.teacher_forcing.constants import TEACHER_FORCING_TARGET_IR_KEY
+from src.training.teacher_forcing.ir import SupervisionAtom, TeacherForcingTargetIR
+from src.training.teacher_forcing.packing_offsets import PackedSegmentOffset
+from src.training.teacher_forcing.roles import TokenRole
 from test_detection_training_dataset import (
     ImageExpandingSwiftTemplate,
     _ensure_image,
@@ -221,6 +224,61 @@ def _base_collator(batch: list[dict[str, Any]]) -> dict[str, Any]:
         "labels": labels,
         "attention_mask": torch.ones_like(labels),
     }
+
+
+def _packed_base_collator(batch: list[Any]) -> dict[str, Any]:
+    input_rows: list[list[int]] = []
+    for pack in batch:
+        pack_seq = pack if isinstance(pack, (list, tuple)) else [pack]
+        row: list[int] = []
+        for sample in pack_seq:
+            row.extend(int(token_id) for token_id in sample["input_ids"])
+        input_rows.append(row)
+    max_len = max(len(row) for row in input_rows)
+    input_ids = torch.zeros((len(input_rows), max_len), dtype=torch.long)
+    attention_mask = torch.zeros_like(input_ids)
+    labels = torch.full_like(input_ids, -100)
+    for row_index, row in enumerate(input_rows):
+        row_tensor = torch.tensor(row, dtype=torch.long)
+        input_ids[row_index, : len(row)] = row_tensor
+        attention_mask[row_index, : len(row)] = 1
+        labels[row_index, : len(row)] = row_tensor
+    return {
+        "input_ids": input_ids,
+        "labels": labels,
+        "attention_mask": attention_mask,
+    }
+
+
+def _target_ir_with_atom(
+    *,
+    logit_position: int,
+    target_position: int,
+) -> TeacherForcingTargetIR:
+    return TeacherForcingTargetIR(
+        schema_version=1,
+        atoms=(
+            SupervisionAtom(
+                batch_index=0,
+                logit_position=logit_position,
+                target_position=target_position,
+                allowed_token_roles=frozenset({TokenRole.COORD}),
+                selected_token_role=TokenRole.COORD,
+                valid_token_ids=frozenset({101}),
+                selected_token_id=101,
+                latent_valid_token_ids=frozenset(),
+                coverage_target_weights=None,
+                loss_tags=frozenset({"coord"}),
+                loss_weight=1.0,
+                coord_role="x1",
+                provenance={
+                    "coord_label_positions": (target_position, target_position + 1),
+                    "bbox_positive_area_valid_token_ids": (11, 12),
+                },
+            ),
+        ),
+        metadata={},
+    )
 
 
 def _coverage_ledger_sidecar(sample_id: str = "coco:0") -> CoverageLedgerSidecar:
@@ -570,6 +628,64 @@ def test_teacher_forcing_target_ir_survives_collator_to_batch_extras() -> None:
     assert TEACHER_FORCING_TARGET_IR_KEY not in collated
 
 
+def test_teacher_forcing_target_ir_is_shifted_for_static_packed_batch() -> None:
+    collator = build_dataset_metrics_collator(
+        _DummyTemplate(),
+        _packed_base_collator,
+    )
+    first = _target_ir_with_atom(logit_position=0, target_position=1)
+    second = _target_ir_with_atom(logit_position=1, target_position=2)
+
+    collated = collator(
+        [
+            [
+                {
+                    "dataset": "coco",
+                    "sample_id": "sample-a",
+                    "input_ids": [1, 2, 3],
+                    TEACHER_FORCING_TARGET_IR_KEY: first,
+                },
+                {
+                    "dataset": "coco",
+                    "sample_id": "sample-b",
+                    "input_ids": [4, 5, 6, 7],
+                    TEACHER_FORCING_TARGET_IR_KEY: second,
+                },
+            ]
+        ]
+    )
+    extras = pop_batch_extras(collated)
+
+    assert extras.packed_segment_offsets == (
+        PackedSegmentOffset(
+            sample_id="sample-a",
+            packed_row_index=0,
+            segment_index=0,
+            token_start=0,
+            token_end=3,
+        ),
+        PackedSegmentOffset(
+            sample_id="sample-b",
+            packed_row_index=0,
+            segment_index=1,
+            token_start=3,
+            token_end=7,
+        ),
+    )
+    shifted_first, shifted_second = extras.teacher_forcing_target_ir
+    assert shifted_first.atoms[0].batch_index == 0
+    assert shifted_first.atoms[0].logit_position == 0
+    assert shifted_first.atoms[0].target_position == 1
+    assert shifted_second.atoms[0].batch_index == 0
+    assert shifted_second.atoms[0].logit_position == 4
+    assert shifted_second.atoms[0].target_position == 5
+    assert shifted_second.atoms[0].provenance["coord_label_positions"] == (5, 6)
+    assert shifted_second.atoms[0].provenance[
+        "bbox_positive_area_valid_token_ids"
+    ] == (11, 12)
+    assert collated["sample_id"] == ("sample-a", "sample-b")
+
+
 def test_coverage_ledger_sidecar_survives_collator_to_training_sidecars() -> None:
     collator = build_dataset_metrics_collator(
         _DummyTemplate(),
@@ -761,27 +877,75 @@ def test_coverage_ledger_rejects_duplicate_payloads_per_sample() -> None:
         )
 
 
-def test_coverage_ledger_rejects_packed_sidecar_offset_rewriting() -> None:
+def test_coverage_ledger_sidecars_are_shifted_for_static_packed_batch() -> None:
     collator = build_dataset_metrics_collator(
         _DummyTemplate(),
-        lambda batch: _base_collator([{"dataset": "pack"} for _pack in batch]),
+        _packed_base_collator,
         coverage_ledger_cfg={"enabled": True},
     )
-    ledger_sidecar = _coverage_ledger_sidecar()
+    first = _coverage_ledger_sidecar(sample_id="sample-a")
+    second = _coverage_ledger_sidecar(sample_id="sample-b")
 
-    with pytest.raises(ValueError, match="CoverageLedgerSidecar.*packing"):
-        collator(
+    collated = collator(
+        [
             [
-                [
-                    {
-                        "dataset": "coco",
-                        "training_sidecars": TrainingSidecars(
-                            supervision=SupervisionSidecars(payloads=(ledger_sidecar,))
-                        ),
-                    }
-                ]
+                {
+                    "dataset": "coco",
+                    "sample_id": "sample-a",
+                    "input_ids": list(range(20)),
+                    "training_sidecars": TrainingSidecars(
+                        supervision=SupervisionSidecars(payloads=(first,))
+                    ),
+                },
+                {
+                    "dataset": "coco",
+                    "sample_id": "sample-b",
+                    "input_ids": list(range(20, 45)),
+                    "training_sidecars": TrainingSidecars(
+                        supervision=SupervisionSidecars(payloads=(second,))
+                    ),
+                },
             ]
-        )
+        ]
+    )
+    extras = pop_batch_extras(collated)
+    shifted_first, shifted_second = collated["training_sidecars"].supervision.payloads
+
+    assert extras.packed_segment_offsets == (
+        PackedSegmentOffset(
+            sample_id="sample-a",
+            packed_row_index=0,
+            segment_index=0,
+            token_start=0,
+            token_end=20,
+        ),
+        PackedSegmentOffset(
+            sample_id="sample-b",
+            packed_row_index=0,
+            segment_index=1,
+            token_start=20,
+            token_end=45,
+        ),
+    )
+    assert shifted_first.prompt_end_position == first.prompt_end_position
+    assert shifted_first.object_entries[0].box_start_position == (
+        first.object_entries[0].box_start_position
+    )
+    assert shifted_first.packed_segment_index == 0
+    assert shifted_first.object_entries[0].image_index == 0
+    assert shifted_second.prompt_end_position == second.prompt_end_position + 20
+    assert shifted_second.object_entries[0].box_start_position == (
+        second.object_entries[0].box_start_position + 20
+    )
+    assert shifted_second.object_entries[0].coord_label_positions == tuple(
+        position + 20 for position in second.object_entries[0].coord_label_positions
+    )
+    assert shifted_second.packed_source_sample_id == "sample-b"
+    assert shifted_second.packed_row_index == 0
+    assert shifted_second.packed_segment_index == 1
+    assert shifted_second.packed_token_start == 20
+    assert shifted_second.packed_token_end == 45
+    assert shifted_second.object_entries[0].image_index == 0
 
 
 def test_coverage_ledger_full_training_runtime_uses_bridge_consumer_guards() -> None:

@@ -11,6 +11,7 @@ from src.training.supervision.batch import SupervisionBatch
 from src.training.supervision.distributions import TeacherForcingTargetDistribution
 from src.training.supervision.spans import SupervisionSpan
 from src.training.teacher_forcing.ir import TeacherForcingTargetIR
+from src.training.teacher_forcing.packing_offsets import PackedSegmentOffset
 from src.training.teacher_forcing.vocab import RoleVocab
 
 
@@ -36,13 +37,16 @@ class TeacherForcingObjectiveMixin:
         strip_non_model_detection_sidecars(inputs)
         input_ids = inputs.get("input_ids")
         role_vocab = _resolve_role_vocab(self)
+        packed_segment_offsets = extras.packed_segment_offsets
         supervision, sample_id_to_batch_index = _build_teacher_forcing_supervision(
             target_irs=target_irs,
             sample_ids=sample_ids,
+            packed_segment_offsets=packed_segment_offsets,
         )
         objective_cfg = getattr(self, "teacher_forcing_objective_cfg", None)
         bridge = TrainerLossBridge(
             settings=TrainerLossBridgeSettings(
+                packing_enabled=packed_segment_offsets is not None,
                 coverage_ledger=_coverage_ledger_config(objective_cfg),
             )
         )
@@ -118,12 +122,45 @@ def _build_teacher_forcing_supervision(
     *,
     target_irs: tuple[TeacherForcingTargetIR, ...],
     sample_ids: tuple[str, ...],
+    packed_segment_offsets: Any = None,
 ) -> tuple[SupervisionBatch, dict[str, int]]:
     spans: list[SupervisionSpan] = []
     sample_id_to_batch_index: dict[str, int] = {}
-    for batch_index, (sample_id, target_ir) in enumerate(zip(sample_ids, target_irs, strict=True)):
-        sample_id_to_batch_index[sample_id] = batch_index
-        shifted_ir = _with_batch_index(target_ir, batch_index=batch_index)
+    packed_offsets = _normalize_packed_segment_offsets(
+        packed_segment_offsets,
+        expected_count=len(target_irs),
+    )
+    for batch_index, (sample_id, target_ir) in enumerate(
+        zip(sample_ids, target_irs, strict=True)
+    ):
+        if sample_id in sample_id_to_batch_index:
+            raise ValueError(
+                f"duplicate teacher_forcing sample_id in batch: {sample_id!r}"
+            )
+        if packed_offsets is None:
+            physical_batch_index = int(batch_index)
+            shifted_ir = _with_batch_index(
+                target_ir,
+                batch_index=physical_batch_index,
+            )
+        else:
+            offset = packed_offsets[batch_index]
+            if str(sample_id) != offset.sample_id:
+                raise ValueError(
+                    "packed teacher_forcing sample_id order must match "
+                    "packed_segment_offsets: "
+                    f"sample_id={sample_id!r} offset={offset.sample_id!r}"
+                )
+            atom_batch_indices = {int(atom.batch_index) for atom in target_ir.atoms}
+            if atom_batch_indices != {int(offset.packed_row_index)}:
+                raise ValueError(
+                    "packed teacher_forcing_target_ir atoms for one sample must "
+                    "reference the packed physical batch row"
+                )
+            physical_batch_index = int(offset.packed_row_index)
+            shifted_ir = target_ir
+
+        sample_id_to_batch_index[sample_id] = physical_batch_index
         spans.append(
             SupervisionSpan(
                 sample_id=sample_id,
@@ -137,6 +174,30 @@ def _build_teacher_forcing_supervision(
         SupervisionBatch(spans=tuple(spans), batch_id="teacher_forcing"),
         sample_id_to_batch_index,
     )
+
+
+def _normalize_packed_segment_offsets(
+    payload: Any,
+    *,
+    expected_count: int,
+) -> tuple[PackedSegmentOffset, ...] | None:
+    if payload is None:
+        return None
+    if isinstance(payload, PackedSegmentOffset):
+        offsets = (payload,)
+    elif isinstance(payload, Sequence) and not isinstance(payload, (str, bytes)):
+        offsets = tuple(payload)
+    else:
+        raise TypeError("packed_segment_offsets must be a PackedSegmentOffset sequence")
+    if len(offsets) != expected_count:
+        raise ValueError(
+            "packed_segment_offsets length must match teacher_forcing_target_ir "
+            f"length; got offsets={len(offsets)} target_ir={expected_count}"
+        )
+    for offset in offsets:
+        if type(offset) is not PackedSegmentOffset:
+            raise TypeError("packed_segment_offsets entries must be PackedSegmentOffset")
+    return offsets
 
 
 def _with_batch_index(

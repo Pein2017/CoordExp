@@ -114,6 +114,7 @@ TRAINER_BATCH_EXTRA_KEYS: frozenset[str] = frozenset(
         "dataset_labels",
         "dataset_segments",
         "pack_num_samples",
+        "packed_segment_offsets",
         "token_types",
         "instability_meta_json",
         "proxy_desc_token_weights",

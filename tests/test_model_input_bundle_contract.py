@@ -34,6 +34,7 @@ def test_model_input_bundle_forwards_only_registered_backend_inputs() -> None:
         "logits_to_keep": 4,
         "labels": [1, 2, 3],
         "pack_num_samples": [1],
+        "packed_segment_offsets": ("offset-a",),
         "compute_loss_func": object(),
         "loss_scale": [1.0],
     }
@@ -45,6 +46,10 @@ def test_model_input_bundle_forwards_only_registered_backend_inputs() -> None:
     assert bundle.classification_for("logits_to_keep") == "bridge_consumed"
     assert bundle.classification_for("labels") == "runner_owned_loss_stripped"
     assert bundle.classification_for("pack_num_samples") == "runner_owned_loss_stripped"
+    assert (
+        bundle.classification_for("packed_segment_offsets")
+        == "runner_owned_loss_stripped"
+    )
     assert bundle.classification_for("compute_loss_func") == "runner_owned_loss_stripped"
     assert bundle.classification_for("loss_scale") == "runner_owned_loss_stripped"
 
@@ -60,6 +65,7 @@ def test_model_input_bundle_forwards_only_registered_backend_inputs() -> None:
     assert set(bundle.runner_loss_inputs()) == {
         "labels",
         "pack_num_samples",
+        "packed_segment_offsets",
         "compute_loss_func",
         "loss_scale",
     }

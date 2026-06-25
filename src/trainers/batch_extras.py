@@ -12,6 +12,7 @@ from src.training.teacher_forcing.constants import TEACHER_FORCING_TARGET_IR_KEY
 DATASET_LABELS_KEY = "dataset_labels"
 DATASET_SEGMENTS_KEY = "dataset_segments"
 PACK_NUM_SAMPLES_KEY = "pack_num_samples"
+PACKED_SEGMENT_OFFSETS_KEY = "packed_segment_offsets"
 TOKEN_TYPES_KEY = "token_types"
 INSTABILITY_META_JSON_KEY = "instability_meta_json"
 PROXY_DESC_TOKEN_WEIGHTS_KEY = "proxy_desc_token_weights"
@@ -23,6 +24,7 @@ BATCH_EXTRAS_KEYS: tuple[str, ...] = (
     DATASET_LABELS_KEY,
     DATASET_SEGMENTS_KEY,
     PACK_NUM_SAMPLES_KEY,
+    PACKED_SEGMENT_OFFSETS_KEY,
     TOKEN_TYPES_KEY,
     INSTABILITY_META_JSON_KEY,
     PROXY_DESC_TOKEN_WEIGHTS_KEY,
@@ -45,6 +47,7 @@ class BatchExtras:
     dataset_labels: Any = None
     dataset_segments: Any = None
     pack_num_samples: Any = None
+    packed_segment_offsets: Any = None
     token_types: Any = None
     instability_meta_json: Any = None
     proxy_desc_token_weights: Any = None
@@ -64,6 +67,7 @@ def pop_batch_extras(inputs: MutableMapping[str, Any]) -> BatchExtras:
         dataset_labels=inputs.pop(DATASET_LABELS_KEY, None),
         dataset_segments=inputs.pop(DATASET_SEGMENTS_KEY, None),
         pack_num_samples=inputs.pop(PACK_NUM_SAMPLES_KEY, None),
+        packed_segment_offsets=inputs.pop(PACKED_SEGMENT_OFFSETS_KEY, None),
         token_types=inputs.pop(TOKEN_TYPES_KEY, None),
         instability_meta_json=inputs.pop(INSTABILITY_META_JSON_KEY, None),
         proxy_desc_token_weights=inputs.pop(PROXY_DESC_TOKEN_WEIGHTS_KEY, None),

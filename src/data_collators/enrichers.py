@@ -12,12 +12,19 @@ from src.coord_tokens.codec import get_coord_token_ids
 from src.data_collators.token_types import TokenType, compute_token_types
 from src.trainers.rollout_matching.parsing import find_desc_value_token_positions_by_span
 from src.trainers.batch_extras import (
+    PACKED_SEGMENT_OFFSETS_KEY,
     RECURSIVE_DETECTION_TARGETS_KEY,
     SFT_STRUCTURAL_CLOSE_TOKEN_WEIGHTS_KEY,
     TEACHER_FORCING_TARGET_IR_KEY,
 )
 from src.training.coverage_ledger import CoverageLedgerSidecar
+from src.training.coverage_ledger.sidecars import shift_coverage_ledger_sidecar
 from src.training.sidecars import SupervisionSidecars, TrainingSidecars
+from src.training.teacher_forcing.packing_offsets import (
+    PackedSegmentOffset,
+    build_packed_segment_offsets,
+    shift_teacher_forcing_target_ir,
+)
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -233,16 +240,33 @@ class TeacherForcingTargetIREnricher:
         packed: bool,
     ) -> None:
         if packed:
-            has_packed_sidecar = any(
+            offsets = build_packed_segment_offsets(raw_batch, collated)
+            if not offsets:
+                return
+            samples = _flatten_packed_samples(raw_batch)
+            present = [
                 isinstance(sample, Mapping) and self.out_field in sample
-                for pack in raw_batch
-                for sample in (pack if isinstance(pack, (list, tuple)) else [pack])
-            )
-            if has_packed_sidecar:
+                for sample in samples
+            ]
+            if not any(present):
+                return
+            if not all(present):
                 raise ValueError(
-                    "teacher_forcing_target_ir sidecars are incompatible with "
-                    "packing until target-position offsets are preserved"
+                    "teacher_forcing_target_ir sidecar must be present for every "
+                    "packed segment when any segment provides it"
                 )
+            if len(samples) != len(offsets):
+                raise ValueError(
+                    "packed teacher_forcing_target_ir segment count must match "
+                    "packed_segment_offsets"
+                )
+            collated[self.out_field] = tuple(
+                shift_teacher_forcing_target_ir(sample[self.out_field], offset)
+                for sample, offset in zip(samples, offsets, strict=True)
+                if isinstance(sample, Mapping)
+            )
+            collated["sample_id"] = tuple(offset.sample_id for offset in offsets)
+            _set_packed_segment_offsets(collated, offsets)
             return
 
         present = [
@@ -295,20 +319,46 @@ class CoverageLedgerSidecarEnricher:
             return
 
         if packed:
-            has_packed_sidecar = any(
-                self._coverage_payload_count(sample) > 0
-                for pack in raw_batch
-                for sample in (pack if isinstance(pack, (list, tuple)) else [pack])
-            )
-            if has_packed_sidecar:
+            offsets = build_packed_segment_offsets(raw_batch, collated)
+            if not offsets:
                 raise ValueError(
-                    "CoverageLedgerSidecar sidecars are incompatible with packing "
-                    "until sidecar position offsets are preserved"
+                    "coverage ledger requires packed_segment_offsets for packed batches"
                 )
-            raise ValueError(
-                "coverage ledger requires unpacked batches with one "
-                "CoverageLedgerSidecar per sample"
+            samples = _flatten_packed_samples(raw_batch)
+            if len(samples) != len(offsets):
+                raise ValueError(
+                    "packed coverage ledger segment count must match "
+                    "packed_segment_offsets"
+                )
+            batch_payloads = []
+            for segment_index, (sample, offset) in enumerate(
+                zip(samples, offsets, strict=True)
+            ):
+                sidecars = self._training_sidecars(sample)
+                payloads = self._coverage_payloads_from_sidecars(sidecars)
+                if len(payloads) > 1:
+                    raise ValueError(
+                        "duplicate CoverageLedgerSidecar payloads are not allowed "
+                        f"for packed segment index {segment_index}"
+                    )
+                if len(payloads) != 1:
+                    raise ValueError(
+                        "CoverageLedgerSidecar payload must be present for every "
+                        "packed segment when coverage ledger is enabled"
+                    )
+                self._validate_aggregatable_row_sidecars(
+                    sidecars,
+                    sample_index=segment_index,
+                )
+                batch_payloads.append(
+                    shift_coverage_ledger_sidecar(payloads[0], offset)
+                )
+
+            _set_packed_segment_offsets(collated, offsets)
+            collated["training_sidecars"] = TrainingSidecars(
+                supervision=SupervisionSidecars(payloads=tuple(batch_payloads))
             )
+            return
 
         batch_payloads: list[Any] = []
         for sample_index, row in enumerate(raw_batch):
@@ -419,6 +469,25 @@ class CoverageLedgerSidecarEnricher:
                 "fields beyond supervision.payloads yet; "
                 f"sample index {sample_index} has {unsupported}"
             )
+
+
+def _flatten_packed_samples(raw_batch: Sequence[Any]) -> tuple[Any, ...]:
+    samples: list[Any] = []
+    for pack in raw_batch:
+        if not isinstance(pack, (list, tuple)):
+            raise TypeError("packed raw batch rows must be list/tuple pack rows")
+        samples.extend(pack)
+    return tuple(samples)
+
+
+def _set_packed_segment_offsets(
+    collated: dict[str, Any],
+    offsets: tuple[PackedSegmentOffset, ...],
+) -> None:
+    existing = collated.get(PACKED_SEGMENT_OFFSETS_KEY)
+    if existing is not None and tuple(existing) != offsets:
+        raise ValueError("conflicting packed_segment_offsets from collator enrichers")
+    collated[PACKED_SEGMENT_OFFSETS_KEY] = offsets
 
 
 class TokenTypesEnricher:

@@ -55,6 +55,7 @@ RUNNER_OWNED_LOSS_STRIPPED_KEYS: frozenset[str] = frozenset(
         "instability_meta_json",
         "loss_scale",
         "pack_num_samples",
+        "packed_segment_offsets",
         "proxy_coord_token_weights",
         "proxy_desc_token_weights",
         "recursive_detection_targets",
