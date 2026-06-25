@@ -183,7 +183,7 @@ def test_coverage_ledger_launch_prep_docs_freeze_smoke_artifacts_and_metrics() -
     assert "coverage_ledger_closed_hard_sft.yaml" in stage1
 
     for metric_key in (
-        "teacher_forcing/loss/coverage_ledger_auxiliary_weighted",
+        "teacher_forcing/loss/coverage_ledger_auxiliary/contribution",
         "teacher_forcing/ledger/coverage_ledger_auxiliary_pair_normalized",
         "teacher_forcing/ledger/coverage_bce",
         "teacher_forcing/ledger/row_object_binding_bce",

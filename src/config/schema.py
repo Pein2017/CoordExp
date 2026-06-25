@@ -3996,6 +3996,57 @@ class TeacherForcingEnabledModuleConfig:
 
 
 @dataclass(frozen=True)
+class TeacherForcingWeightedTermConfig:
+    enabled: bool = False
+    weight: float = 1.0
+
+    def __post_init__(self) -> None:
+        _detection_validate_bool(
+            self.enabled,
+            path="objective.terms.*.enabled",
+        )
+        object.__setattr__(
+            self,
+            "weight",
+            _teacher_forcing_finite_float(
+                self.weight,
+                path="objective.terms.*.weight",
+                minimum=0.0,
+                minimum_label="0",
+            ),
+        )
+
+
+def _teacher_forcing_weighted_term_from_mapping(
+    payload: Any,
+    *,
+    path: str,
+) -> TeacherForcingWeightedTermConfig:
+    if payload is None:
+        payload = {}
+    if isinstance(payload, TeacherForcingWeightedTermConfig):
+        return payload
+    if not isinstance(payload, Mapping):
+        raise TypeError(f"{path} must be a mapping")
+    data: MutableMapping[str, Any] = dict(payload)
+    unknown = [
+        f"{path}.{str(k)}"
+        for k in sorted(data.keys() - {"enabled", "weight"}, key=lambda x: str(x))
+    ]
+    if unknown:
+        raise ValueError(f"Unknown keys: {unknown}")
+    enabled = data.pop("enabled", False)
+    _detection_validate_bool(enabled, path=f"{path}.enabled")
+    weight = _teacher_forcing_finite_float(
+        data.pop("weight", 1.0),
+        path=f"{path}.weight",
+        minimum=0.0,
+        minimum_label="0",
+    )
+    return TeacherForcingWeightedTermConfig(enabled=enabled, weight=weight)
+
+
+@dataclass(frozen=True)
 class TeacherForcingWithinValidCoverageConfig:
     enabled: bool = False
     coverage_strength: float = 0.0
@@ -4142,8 +4193,8 @@ class TeacherForcingCoverageLedgerConfig:
 
 @dataclass(frozen=True)
 class TeacherForcingModulesConfig:
-    token_type_mass: TeacherForcingEnabledModuleConfig = field(
-        default_factory=TeacherForcingEnabledModuleConfig
+    token_type_mass: TeacherForcingWeightedTermConfig = field(
+        default_factory=TeacherForcingWeightedTermConfig
     )
     conditional_valid_set_likelihood: TeacherForcingEnabledModuleConfig = field(
         default_factory=TeacherForcingEnabledModuleConfig
@@ -4151,8 +4202,11 @@ class TeacherForcingModulesConfig:
     within_valid_coverage: TeacherForcingWithinValidCoverageConfig = field(
         default_factory=TeacherForcingWithinValidCoverageConfig
     )
-    continuation_margin: TeacherForcingEnabledModuleConfig = field(
-        default_factory=TeacherForcingEnabledModuleConfig
+    continuation_margin: TeacherForcingWeightedTermConfig = field(
+        default_factory=TeacherForcingWeightedTermConfig
+    )
+    bbox_positive_area: TeacherForcingWeightedTermConfig = field(
+        default_factory=TeacherForcingWeightedTermConfig
     )
     coverage_ledger: TeacherForcingCoverageLedgerConfig = field(
         default_factory=TeacherForcingCoverageLedgerConfig
@@ -4165,8 +4219,7 @@ class TeacherForcingModulesConfig:
         if not isinstance(payload, Mapping):
             raise TypeError("objective.terms must be a mapping")
         data: MutableMapping[str, Any] = dict(payload)
-        token_type_mass = parse_dataclass_strict(
-            TeacherForcingEnabledModuleConfig,
+        token_type_mass = _teacher_forcing_weighted_term_from_mapping(
             data.pop("token_type_mass", {}),
             path="objective.terms.token_type_mass",
         )
@@ -4180,10 +4233,13 @@ class TeacherForcingModulesConfig:
             data.pop("within_valid_coverage", {}),
             path="objective.terms.within_valid_coverage",
         )
-        continuation_margin = parse_dataclass_strict(
-            TeacherForcingEnabledModuleConfig,
+        continuation_margin = _teacher_forcing_weighted_term_from_mapping(
             data.pop("continuation_margin", {}),
             path="objective.terms.continuation_margin",
+        )
+        bbox_positive_area = _teacher_forcing_weighted_term_from_mapping(
+            data.pop("bbox_positive_area", {}),
+            path="objective.terms.bbox_positive_area",
         )
         coverage_ledger = parse_dataclass_strict(
             TeacherForcingCoverageLedgerConfig,
@@ -4201,6 +4257,7 @@ class TeacherForcingModulesConfig:
             conditional_valid_set_likelihood=conditional_valid_set_likelihood,
             within_valid_coverage=within_valid_coverage,
             continuation_margin=continuation_margin,
+            bbox_positive_area=bbox_positive_area,
             coverage_ledger=coverage_ledger,
         )
 
@@ -4249,10 +4306,6 @@ class TeacherForcingObjectiveConfig:
         if self.profile == "hard_sft":
             hard_sft_module_checks = (
                 (
-                    "objective.terms.token_type_mass.enabled",
-                    bool(self.terms.token_type_mass.enabled),
-                ),
-                (
                     "objective.terms.conditional_valid_set_likelihood.enabled",
                     bool(self.terms.conditional_valid_set_likelihood.enabled),
                 ),
@@ -4263,10 +4316,6 @@ class TeacherForcingObjectiveConfig:
                 (
                     "objective.terms.within_valid_coverage.coverage_strength",
                     coverage_strength > 0.0,
-                ),
-                (
-                    "objective.terms.continuation_margin.enabled",
-                    bool(self.terms.continuation_margin.enabled),
                 ),
             )
             for module_key, is_enabled in hard_sft_module_checks:

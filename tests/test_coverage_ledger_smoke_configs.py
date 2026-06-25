@@ -56,6 +56,12 @@ EXPECTED_STRUCTURAL_IDS = {
 }
 
 ALLOWED_BASELINE_LEDGER_DIFFS = {
+    "/objective/terms/token_type_mass/enabled",
+    "/objective/terms/token_type_mass/weight",
+    "/objective/terms/continuation_margin/enabled",
+    "/objective/terms/continuation_margin/weight",
+    "/objective/terms/bbox_positive_area/enabled",
+    "/objective/terms/bbox_positive_area/weight",
     "/objective/terms/coverage_ledger/enabled",
     "/objective/terms/coverage_ledger/coverage_weight",
     "/objective/terms/coverage_ledger/region_anchor_weight",
@@ -221,7 +227,16 @@ def test_coverage_ledger_smoke_config_pair_loads_closed_hard_sft_contract(
     _assert_shared_closed_hard_sft_smoke_config(baseline)
     _assert_shared_closed_hard_sft_smoke_config(ledger)
 
+    baseline_terms = baseline["objective"]["terms"]
+    assert baseline_terms["token_type_mass"]["enabled"] is False
+    assert baseline_terms["continuation_margin"]["enabled"] is False
+    assert baseline_terms["bbox_positive_area"]["enabled"] is False
     assert baseline["objective"]["terms"]["coverage_ledger"]["enabled"] is False
+
+    ledger_terms = ledger["objective"]["terms"]
+    assert ledger_terms["token_type_mass"] == {"enabled": True, "weight": 1.0}
+    assert ledger_terms["continuation_margin"] == {"enabled": True, "weight": 0.2}
+    assert ledger_terms["bbox_positive_area"] == {"enabled": True, "weight": 0.1}
     assert ledger["objective"]["terms"]["coverage_ledger"] == {
         "enabled": True,
         "coverage_weight": 0.1,
@@ -277,6 +292,17 @@ def test_coverage_ledger_prod_config_resolves_batch32_on_eight_ranks(
     assert cfg.training["effective_batch_size"] == 32
     assert args.per_device_train_batch_size == 1
     assert args.gradient_accumulation_steps == 4
+    assert cfg.training["num_train_epochs"] == 2
+    assert cfg.training["learning_rate"] == pytest.approx(2.0e-5)
+    assert cfg.token_embeddings_adapter.embed_lr == pytest.approx(2.0e-5)
+    assert "2epoch" in str(cfg.training["run_name"])
+    assert "2epoch" in str(cfg.training["artifact_subdir"])
+    assert cfg.objective.terms.token_type_mass.enabled is True
+    assert cfg.objective.terms.token_type_mass.weight == pytest.approx(1.0)
+    assert cfg.objective.terms.continuation_margin.enabled is True
+    assert cfg.objective.terms.continuation_margin.weight == pytest.approx(0.2)
+    assert cfg.objective.terms.bbox_positive_area.enabled is True
+    assert cfg.objective.terms.bbox_positive_area.weight == pytest.approx(0.1)
     assert cfg.objective.terms.coverage_ledger.enabled is True
 
 

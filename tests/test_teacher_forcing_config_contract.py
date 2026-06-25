@@ -214,15 +214,40 @@ def test_teacher_forcing_accepts_sorted_rollin_policy() -> None:
 def test_sft_runtime_payload_preserves_public_teacher_forcing_sidecars() -> None:
     from src.sft import _detection_objective_runtime_payload
 
-    cfg = DetectionTrainingConfig.from_mapping(_latest_teacher_payload())
+    payload = _latest_teacher_payload()
+    objective = payload["objective"]
+    assert isinstance(objective, dict)
+    objective["terms"] = {
+        **objective["terms"],
+        "token_type_mass": {"enabled": True, "weight": 0.5},
+        "continuation_margin": {"enabled": True, "weight": 0.25},
+        "bbox_positive_area": {"enabled": True, "weight": 0.125},
+    }
+    cfg = DetectionTrainingConfig.from_mapping(payload)
 
-    payload = _detection_objective_runtime_payload(cfg)
+    runtime_payload = _detection_objective_runtime_payload(cfg)
 
-    assert payload is not None
-    assert payload["id"] == "research_teacher_forcing"
-    assert payload["target_ir"]["rollin_policy"]["name"] == "random_permutation"
-    assert payload["target_ir"]["rollin_policy"]["base_seed"] == 17
-    assert payload["terms"]["conditional_valid_set_likelihood"]["enabled"] is True
+    assert runtime_payload is not None
+    assert runtime_payload["id"] == "research_teacher_forcing"
+    assert runtime_payload["target_ir"]["rollin_policy"]["name"] == "random_permutation"
+    assert runtime_payload["target_ir"]["rollin_policy"]["base_seed"] == 17
+    assert runtime_payload["terms"]["token_type_mass"] == {
+        "enabled": True,
+        "weight": 0.5,
+    }
+    assert runtime_payload["terms"]["conditional_valid_set_likelihood"]["enabled"] is True
+    assert runtime_payload["terms"]["within_valid_coverage"] == {
+        "enabled": False,
+        "coverage_strength": 0.0,
+    }
+    assert runtime_payload["terms"]["continuation_margin"] == {
+        "enabled": True,
+        "weight": 0.25,
+    }
+    assert runtime_payload["terms"]["bbox_positive_area"] == {
+        "enabled": True,
+        "weight": 0.125,
+    }
 
 
 def test_research_teacher_forcing_rejects_retired_modules_authoring() -> None:
@@ -244,11 +269,6 @@ def test_detection_objective_config_direct_construction_rejects_sft_id() -> None
     ("term_key", "term_payload", "expected_path"),
     [
         (
-            "token_type_mass",
-            {"enabled": True},
-            r"objective\.terms\.token_type_mass\.enabled",
-        ),
-        (
             "conditional_valid_set_likelihood",
             {"enabled": True},
             r"objective\.terms\.conditional_valid_set_likelihood\.enabled",
@@ -262,11 +282,6 @@ def test_detection_objective_config_direct_construction_rejects_sft_id() -> None
             "within_valid_coverage",
             {"enabled": False, "coverage_strength": 0.1},
             r"objective\.terms\.within_valid_coverage\.coverage_strength",
-        ),
-        (
-            "continuation_margin",
-            {"enabled": True},
-            r"objective\.terms\.continuation_margin\.enabled",
         ),
     ],
 )
@@ -289,6 +304,129 @@ def test_hard_sft_rejects_target_ir_only_terms(
         ValueError,
         match=rf"objective\.profile=hard_sft.*{expected_path}",
     ):
+        DetectionTrainingConfig.from_mapping(payload)
+
+
+def test_hard_sft_accepts_weighted_simple_auxiliary_terms() -> None:
+    objective = _hard_sft_objective()
+    objective["terms"] = {
+        **objective["terms"],
+        "token_type_mass": {"enabled": True, "weight": 1.0},
+        "continuation_margin": {"enabled": True, "weight": 0.2},
+        "bbox_positive_area": {"enabled": True, "weight": 0.1},
+    }
+    payload = _latest_teacher_payload(
+        profile="hard_sft",
+        terms=objective["terms"],
+    )
+
+    cfg = DetectionTrainingConfig.from_mapping(payload)
+
+    assert cfg.objective.profile == "hard_sft"
+    assert cfg.objective.terms.token_type_mass.enabled is True
+    assert cfg.objective.terms.token_type_mass.weight == 1.0
+    assert cfg.objective.terms.continuation_margin.enabled is True
+    assert cfg.objective.terms.continuation_margin.weight == 0.2
+    assert cfg.objective.terms.bbox_positive_area.enabled is True
+    assert cfg.objective.terms.bbox_positive_area.weight == 0.1
+
+
+@pytest.mark.parametrize(
+    ("term_key", "weight", "match"),
+    [
+        (
+            "token_type_mass",
+            -0.1,
+            r"objective\.terms\.token_type_mass\.weight.*>= 0",
+        ),
+        (
+            "token_type_mass",
+            float("inf"),
+            r"objective\.terms\.token_type_mass\.weight.*finite",
+        ),
+        (
+            "token_type_mass",
+            float("nan"),
+            r"objective\.terms\.token_type_mass\.weight.*finite",
+        ),
+        (
+            "token_type_mass",
+            "1.0",
+            r"objective\.terms\.token_type_mass\.weight.*numeric",
+        ),
+        (
+            "token_type_mass",
+            True,
+            r"objective\.terms\.token_type_mass\.weight.*numeric",
+        ),
+        (
+            "continuation_margin",
+            -0.1,
+            r"objective\.terms\.continuation_margin\.weight.*>= 0",
+        ),
+        (
+            "continuation_margin",
+            float("inf"),
+            r"objective\.terms\.continuation_margin\.weight.*finite",
+        ),
+        (
+            "continuation_margin",
+            float("nan"),
+            r"objective\.terms\.continuation_margin\.weight.*finite",
+        ),
+        (
+            "continuation_margin",
+            "1.0",
+            r"objective\.terms\.continuation_margin\.weight.*numeric",
+        ),
+        (
+            "continuation_margin",
+            True,
+            r"objective\.terms\.continuation_margin\.weight.*numeric",
+        ),
+        (
+            "bbox_positive_area",
+            -0.1,
+            r"objective\.terms\.bbox_positive_area\.weight.*>= 0",
+        ),
+        (
+            "bbox_positive_area",
+            float("inf"),
+            r"objective\.terms\.bbox_positive_area\.weight.*finite",
+        ),
+        (
+            "bbox_positive_area",
+            float("nan"),
+            r"objective\.terms\.bbox_positive_area\.weight.*finite",
+        ),
+        (
+            "bbox_positive_area",
+            "1.0",
+            r"objective\.terms\.bbox_positive_area\.weight.*numeric",
+        ),
+        (
+            "bbox_positive_area",
+            True,
+            r"objective\.terms\.bbox_positive_area\.weight.*numeric",
+        ),
+    ],
+)
+def test_weighted_simple_teacher_forcing_terms_reject_invalid_weights(
+    term_key: str,
+    weight: object,
+    match: str,
+) -> None:
+    objective = _hard_sft_objective()
+    objective["terms"] = {
+        **objective["terms"],
+        term_key: {"enabled": True, "weight": weight},
+    }
+    payload = _latest_teacher_payload(
+        profile="hard_sft",
+        terms=objective["terms"],
+    )
+
+    with pytest.raises((TypeError, ValueError), match=match):
         DetectionTrainingConfig.from_mapping(payload)
 
 

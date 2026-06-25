@@ -630,7 +630,7 @@ codex/ledger-auxiliary-loss
   Required flat keys:
 
   ```text
-	  teacher_forcing/loss/coverage_ledger_auxiliary_weighted
+	  teacher_forcing/loss/coverage_ledger_auxiliary/contribution
 	  teacher_forcing/ledger/coverage_ledger_auxiliary_pair_normalized
 	  teacher_forcing/ledger/coverage_bce
 	  teacher_forcing/ledger/row_object_binding_bce
@@ -667,7 +667,7 @@ codex/ledger-auxiliary-loss
 
 - [ ] Mark diagnostic versus objective metrics correctly.
 
-  Only `teacher_forcing/loss/coverage_ledger_auxiliary_weighted` is objective-relevant and it reports the exact scalar added to training loss. Coverage BCE, row-object binding BCE, pair-normalized auxiliary loss, AUC, accuracy, counts, and debug gauges are diagnostic metrics.
+  Only `teacher_forcing/loss/coverage_ledger_auxiliary/contribution` is objective-relevant and it reports the exact scalar added to training loss. Coverage BCE, row-object binding BCE, pair-normalized auxiliary loss, AUC, accuracy, counts, and debug gauges are diagnostic metrics.
 
 ## Task 9: Bridge And Trainer Integration
 

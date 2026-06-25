@@ -59,6 +59,18 @@ class TeacherForcingObjectiveMixin:
                         "input_ids": input_ids,
                         "role_vocab": role_vocab,
                         "coverage_strength": _coverage_strength(objective_cfg),
+                        "token_type_mass_weight": _term_weight(
+                            objective_cfg,
+                            "token_type_mass",
+                        ),
+                        "continuation_margin_weight": _term_weight(
+                            objective_cfg,
+                            "continuation_margin",
+                        ),
+                        "bbox_positive_area_weight": _term_weight(
+                            objective_cfg,
+                            "bbox_positive_area",
+                        ),
                     },
                 ),
             ),
@@ -180,25 +192,38 @@ def _coverage_strength(objective_cfg: Any) -> float:
     return float(value or 0.0)
 
 
+def _term_weight(objective_cfg: Any, term_name: str) -> float:
+    terms = _objective_terms(objective_cfg)
+    if terms is None:
+        return 0.0
+    term = _get_section_value(terms, term_name)
+    if term is None:
+        return 0.0
+    if _get_section_value(term, "enabled", False) is not True:
+        return 0.0
+    return float(_get_section_value(term, "weight", 1.0))
+
+
 def _coverage_ledger_config(objective_cfg: Any) -> Any:
+    terms = _objective_terms(objective_cfg)
+    if terms is None:
+        return None
+    return _get_section_value(terms, "coverage_ledger")
+
+
+def _objective_terms(objective_cfg: Any) -> Any:
     if objective_cfg is None:
         return None
-    terms = (
-        objective_cfg.get("terms")
-        if isinstance(objective_cfg, Mapping)
-        else getattr(objective_cfg, "terms", None)
-    )
+    terms = _get_section_value(objective_cfg, "terms")
     if terms is None:
-        terms = (
-            objective_cfg.get("modules")
-            if isinstance(objective_cfg, Mapping)
-            else getattr(objective_cfg, "modules", None)
-        )
-    if terms is None:
-        return None
-    if isinstance(terms, Mapping):
-        return terms.get("coverage_ledger")
-    return getattr(terms, "coverage_ledger", None)
+        terms = _get_section_value(objective_cfg, "modules")
+    return terms
+
+
+def _get_section_value(section: Any, key: str, default: Any = None) -> Any:
+    if isinstance(section, Mapping):
+        return section.get(key, default)
+    return getattr(section, key, default)
 
 
 def _log_metric_events(trainer: Any, metric_events: Any) -> None:
@@ -218,4 +243,4 @@ def _log_metric_events(trainer: Any, metric_events: Any) -> None:
     )
 
 
-__all__ = ["TeacherForcingObjectiveMixin"]
+__all__ = ["TeacherForcingObjectiveMixin", "_term_weight"]

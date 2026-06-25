@@ -71,6 +71,50 @@ class _FakeTrainArguments:
             setattr(self, key, value)
 
 
+def test_teacher_forcing_term_weight_reads_mapping_and_dataclass_terms() -> None:
+    @dataclass(frozen=True)
+    class _WeightedTerm:
+        enabled: bool
+        weight: float
+
+    @dataclass(frozen=True)
+    class _EnabledTerm:
+        enabled: bool
+
+    @dataclass(frozen=True)
+    class _Terms:
+        token_type_mass: _WeightedTerm
+        continuation_margin: _EnabledTerm
+        bbox_positive_area: _WeightedTerm
+
+    @dataclass(frozen=True)
+    class _ObjectiveConfig:
+        terms: _Terms
+
+    mapping_cfg = {
+        "terms": {
+            "token_type_mass": {"enabled": True, "weight": 0.5},
+            "continuation_margin": {"enabled": True},
+            "bbox_positive_area": {"enabled": False, "weight": 0.25},
+        }
+    }
+    dataclass_cfg = _ObjectiveConfig(
+        terms=_Terms(
+            token_type_mass=_WeightedTerm(enabled=True, weight=0.75),
+            continuation_margin=_EnabledTerm(enabled=True),
+            bbox_positive_area=_WeightedTerm(enabled=False, weight=0.125),
+        )
+    )
+
+    assert teacher_forcing_metrics._term_weight(mapping_cfg, "token_type_mass") == pytest.approx(0.5)
+    assert teacher_forcing_metrics._term_weight(mapping_cfg, "continuation_margin") == pytest.approx(1.0)
+    assert teacher_forcing_metrics._term_weight(mapping_cfg, "bbox_positive_area") == pytest.approx(0.0)
+    assert teacher_forcing_metrics._term_weight(mapping_cfg, "missing_term") == pytest.approx(0.0)
+    assert teacher_forcing_metrics._term_weight(dataclass_cfg, "token_type_mass") == pytest.approx(0.75)
+    assert teacher_forcing_metrics._term_weight(dataclass_cfg, "continuation_margin") == pytest.approx(1.0)
+    assert teacher_forcing_metrics._term_weight(dataclass_cfg, "bbox_positive_area") == pytest.approx(0.0)
+
+
 @pytest.mark.parametrize(
     ("variant", "replacement"),
     [
@@ -790,6 +834,7 @@ def test_teacher_forcing_objective_mixin_passes_mapping_coverage_ledger_to_bridg
         settings_seen: Any = None
         training_sidecars_seen: Any = None
         raw_batch_seen: Any = None
+        objectives_seen: Any = None
 
         def __init__(self, *, settings=None, **_kwargs: Any) -> None:
             self.__class__.settings_seen = settings
@@ -797,12 +842,13 @@ def test_teacher_forcing_objective_mixin_passes_mapping_coverage_ledger_to_bridg
         def compute_loss(self, **kwargs: Any):
             self.__class__.training_sidecars_seen = kwargs.get("training_sidecars")
             self.__class__.raw_batch_seen = dict(kwargs["raw_batch"])
+            self.__class__.objectives_seen = kwargs["objectives"]
             return SimpleNamespace(
                 loss=torch.tensor(1.25, dtype=torch.float32),
                 outputs=SimpleNamespace(marker="bridge-outputs"),
                 metric_events=(
                     weighted_mean_event(
-                        "teacher_forcing/loss/coverage_ledger_auxiliary_weighted",
+                        "teacher_forcing/loss/coverage_ledger_auxiliary/contribution",
                         0.5,
                         2.0,
                         unit="object",
@@ -853,7 +899,10 @@ def test_teacher_forcing_objective_mixin_passes_mapping_coverage_ledger_to_bridg
     trainer.teacher_forcing_objective_cfg = {
         "profile": "pure_valid_set_marginal",
         "terms": {
+            "token_type_mass": {"enabled": True, "weight": 0.5},
             "within_valid_coverage": {"coverage_strength": 0.0},
+            "continuation_margin": {"enabled": True, "weight": 0.25},
+            "bbox_positive_area": {"enabled": True, "weight": 0.125},
             "coverage_ledger": coverage_ledger_cfg,
         },
     }
@@ -877,8 +926,13 @@ def test_teacher_forcing_objective_mixin_passes_mapping_coverage_ledger_to_bridg
     assert _FakeBridge.settings_seen.coverage_ledger is coverage_ledger_cfg
     assert _FakeBridge.training_sidecars_seen is sidecars
     assert "training_sidecars" not in _FakeBridge.raw_batch_seen
+    assert len(_FakeBridge.objectives_seen) == 1
+    objective_spec = _FakeBridge.objectives_seen[0]
+    assert objective_spec.config["token_type_mass_weight"] == pytest.approx(0.5)
+    assert objective_spec.config["continuation_margin_weight"] == pytest.approx(0.25)
+    assert objective_spec.config["bbox_positive_area_weight"] == pytest.approx(0.125)
     assert metrics[
-        "teacher_forcing/loss/coverage_ledger_auxiliary_weighted"
+        "teacher_forcing/loss/coverage_ledger_auxiliary/contribution"
     ].values == [pytest.approx(0.5)]
 
 

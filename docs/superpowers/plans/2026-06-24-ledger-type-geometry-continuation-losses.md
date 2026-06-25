@@ -1191,6 +1191,8 @@ git commit -m "feat: add teacher forcing type continuation geometry losses"
 In `tests/test_teacher_forcing_metric_contract.py`, add expected keys:
 
 ```python
+assert "teacher_forcing/loss/token_type_mass" in required
+assert "teacher_forcing/loss/token_type_mass/contribution" in required
 assert "teacher_forcing/loss/bbox_positive_area" in required
 assert "teacher_forcing/loss/bbox_positive_area/contribution" in required
 assert "teacher_forcing/type/schema_mass_at_schema" in required
@@ -1201,6 +1203,8 @@ assert "teacher_forcing/continuation/stop_mass" in required
 assert "teacher_forcing/continuation/boundary_count" in required
 assert "teacher_forcing/geometry/bbox_positive_area_invalid_mass" in required
 assert "teacher_forcing/geometry/bbox_positive_area_eligible_count" in required
+assert "teacher_forcing/loss/token_type_mass_contribution" not in required
+assert "teacher_forcing/loss/token_type_mass_weighted" not in required
 assert not any(key.endswith("_weighted") for key in required)
 ```
 
@@ -1209,7 +1213,7 @@ Add flattening assertions for diagnostic events:
 ```python
 events = teacher_forcing_diagnostic_events(
     token_type_mass=0.75,
-    token_type_mass_contribution=0.75,
+    token_type_mass_weight=1.0,
     continuation_margin=0.25,
     continuation_margin_contribution=0.05,
     continue_minus_stop_margin=0.22,
@@ -1223,6 +1227,10 @@ events = teacher_forcing_diagnostic_events(
     eligible_tail_count=8,
 )
 flat = flatten_metric_events(events)
+assert flat["teacher_forcing/loss/token_type_mass"] == pytest.approx(0.75)
+assert flat["teacher_forcing/loss/token_type_mass/contribution"] == pytest.approx(0.75)
+assert "teacher_forcing/loss/token_type_mass_contribution" not in flat
+assert "teacher_forcing/loss/token_type_mass_weighted" not in flat
 assert flat["teacher_forcing/loss/continuation_margin"] == pytest.approx(0.25)
 assert flat["teacher_forcing/loss/continuation_margin/contribution"] == pytest.approx(0.05)
 assert flat["teacher_forcing/loss/bbox_positive_area"] == pytest.approx(0.1)
@@ -1271,24 +1279,24 @@ Add to the `ObjectiveSpec.config`:
 In `src/training/objectives/teacher_forcing.py`, after computing raw component totals and per-term denominators, create diagnostic events using the term-specific denominators:
 
 ```python
-metric_events = (
-    *teacher_forcing_loss_events(total_loss=loss, atom_count=valid_denominator),
-    *teacher_forcing_component_loss_events(
-        token_type_mass=token_type_mass_mean,
-        token_type_mass_contribution=token_type_mass_weight * token_type_mass_mean,
-        continuation_margin=continuation_margin_mean,
-        continuation_margin_contribution=continuation_margin_weight * continuation_margin_mean,
-        bbox_positive_area=bbox_positive_area_mean,
-        bbox_positive_area_contribution=bbox_positive_area_weight * bbox_positive_area_mean,
-        continue_minus_stop_margin=continue_minus_stop_margin_mean,
-        continue_accuracy=continue_accuracy_mean,
-        continue_mass=continue_mass_mean,
-        stop_mass=stop_mass_mean,
-        continuation_boundary_count=continuation_denominator,
-        invalid_area_mass=invalid_area_mass_mean,
-        eligible_tail_count=geometry_denominator,
-    ),
-)
+    metric_events = (
+        *teacher_forcing_loss_events(total_loss=loss, atom_count=valid_denominator),
+        *teacher_forcing_component_loss_events(
+            token_type_mass=token_type_mass_mean,
+            token_type_mass_weight=token_type_mass_weight,
+            continuation_margin=continuation_margin_mean,
+            continuation_margin_contribution=continuation_margin_weight * continuation_margin_mean,
+            bbox_positive_area=bbox_positive_area_mean,
+            bbox_positive_area_contribution=bbox_positive_area_weight * bbox_positive_area_mean,
+            continue_minus_stop_margin=continue_minus_stop_margin_mean,
+            continue_accuracy=continue_accuracy_mean,
+            continue_mass=continue_mass_mean,
+            stop_mass=stop_mass_mean,
+            continuation_boundary_count=continuation_denominator,
+            invalid_area_mass=invalid_area_mass_mean,
+            eligible_tail_count=geometry_denominator,
+        ),
+    )
 ```
 
 Implement `teacher_forcing_component_loss_events` in `src/training/teacher_forcing/metrics.py`. Use unsuffixed metric names only:
@@ -2105,7 +2113,7 @@ continuation metrics: continue_minus_stop_margin and continue_accuracy
 ledger metrics: auc_batch and accuracy if logged
 paired train128 deltas: ledger minus baseline for raw f1ish and diagnostic salvage f1ish when available
 interpretation: train128 overfit smoke only, not full validation
-production implication: lower LR than 5.0e-5 and 2 epochs, exact production LR chosen after smoke comparison
+production implication: prepared prod YAML uses candidate LR 2.0e-5 and 2 epochs; launch still requires smoke comparison evidence and an explicit sorted pure-CE adapter checkpoint handle if warm-starting
 ```
 
 - [ ] **Step 13: Final commit**

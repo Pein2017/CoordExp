@@ -11,7 +11,7 @@ from src.training.coverage_ledger.loss import (
 from src.training.coverage_ledger.metrics import coverage_ledger_metric_events
 
 
-WEIGHTED_LOSS_KEY = "teacher_forcing/loss/coverage_ledger_auxiliary_weighted"
+WEIGHTED_LOSS_KEY = "teacher_forcing/loss/coverage_ledger_auxiliary/contribution"
 COVERAGE_BCE_KEY = "teacher_forcing/ledger/coverage_bce"
 ROW_OBJECT_BINDING_BCE_KEY = "teacher_forcing/ledger/row_object_binding_bce"
 AUXILIARY_PAIR_NORMALIZED_KEY = (
@@ -115,6 +115,10 @@ def test_coverage_ledger_metric_events_publish_canonical_keys_and_metadata() -> 
     )
     assert by_key[WEIGHTED_LOSS_KEY].diagnostic_only is False
     assert by_key[WEIGHTED_LOSS_KEY].objective_id == "coverage_ledger"
+    assert not any(
+        key.startswith("teacher_forcing/loss/") and key.endswith("_weighted")
+        for key in by_key
+    )
     for key, event in by_key.items():
         assert event.objective_id == "coverage_ledger"
         assert event.stage == "teacher_forcing"

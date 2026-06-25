@@ -208,7 +208,7 @@ not rollout, parse, duplicate-control, or mAP metrics.
 
 Canonical coverage-ledger auxiliary keys:
 
-- `teacher_forcing/loss/coverage_ledger_auxiliary_weighted`
+- `teacher_forcing/loss/coverage_ledger_auxiliary/contribution`
 - `teacher_forcing/ledger/coverage_ledger_auxiliary_pair_normalized`
 - `teacher_forcing/ledger/coverage_bce`
 - `teacher_forcing/ledger/row_object_binding_bce`
@@ -225,7 +225,7 @@ Reducer summary for coverage-ledger keys:
 
 | Key | Reducer | Diagnostic flag | Denominator / aggregation |
 | --- | --- | --- | --- |
-| `teacher_forcing/loss/coverage_ledger_auxiliary_weighted` | `last` | `diagnostic_only=false` | Exact `CoverageLedgerLossResult.weighted_loss` scalar added to the runner CE/objective loss for the forward. |
+| `teacher_forcing/loss/coverage_ledger_auxiliary/contribution` | `last` | `diagnostic_only=false` | Exact `CoverageLedgerLossResult.weighted_loss` scalar added to the runner CE/objective loss for the forward. |
 | `teacher_forcing/ledger/coverage_ledger_auxiliary_pair_normalized` | `weighted_mean` | `diagnostic_only=true` | `coverage_pair_count + row_object_binding_pair_count`; cross-batch aggregation is count-weighted. |
 | `teacher_forcing/ledger/coverage_bce` | `weighted_mean` | `diagnostic_only=true` | Valid coverage pairs; cross-batch aggregation is count-weighted. |
 | `teacher_forcing/ledger/row_object_binding_bce` | `weighted_mean` | `diagnostic_only=true` | Current-row object positive and all other objects negative; cross-batch aggregation is count-weighted. |
@@ -238,7 +238,7 @@ Reducer summary for coverage-ledger keys:
 | `teacher_forcing/ledger/object_count` | `sum` | `diagnostic_only=true` | Sums observed objects. |
 | `teacher_forcing/ledger/row_object_binding_pair_count` | `sum` | `diagnostic_only=true` | Sums observed row-object binding pairs. |
 
-`teacher_forcing/loss/coverage_ledger_auxiliary_weighted` is the only
+`teacher_forcing/loss/coverage_ledger_auxiliary/contribution` is the only
 objective-relevant coverage-ledger metric (`diagnostic_only=false`). It reports
 the exact weighted auxiliary scalar added to the runner CE/objective loss in
 that forward. The pair-normalized reconstruction is diagnostic-only under

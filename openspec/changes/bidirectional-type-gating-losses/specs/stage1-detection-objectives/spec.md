@@ -14,6 +14,10 @@ Normative behavior:
 - `objective.terms.token_type_mass.enabled: true` MUST select the stable
   bidirectional exclusive type-family objective over `schema`, `coord`, `desc`,
   and `stop`;
+- these contract family labels MUST map to the live teacher-forcing target IR
+  roles as `schema -> TokenRole.SCHEMA`, `desc -> TokenRole.TEXT`,
+  `coord -> TokenRole.COORD`, and `stop -> TokenRole.STOP`;
+- this mapping MUST NOT require renaming the live target IR roles;
 - `objective.terms.token_type_mass.weight` MUST scale only this additive
   type-family objective contribution;
 - `objective.terms.token_type_mass` MUST NOT require or accept a stable `mode`

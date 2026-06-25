@@ -24,11 +24,23 @@ COMPACT_FULL_PARSE_ERROR_PREFIX = "infer/parse/compact_full/error"
 REQUIRED_TEACHER_FORCING_METRIC_KEYS: tuple[str, ...] = (
     "teacher_forcing/loss/total",
     "teacher_forcing/loss/token_type_mass",
+    "teacher_forcing/loss/token_type_mass/contribution",
     "teacher_forcing/loss/conditional_valid_set_likelihood",
     "teacher_forcing/loss/within_valid_coverage",
+    "teacher_forcing/loss/continuation_margin",
+    "teacher_forcing/loss/continuation_margin/contribution",
+    "teacher_forcing/loss/bbox_positive_area",
+    "teacher_forcing/loss/bbox_positive_area/contribution",
     "teacher_forcing/valid_set/mass",
     "teacher_forcing/coverage/kl",
     "teacher_forcing/continuation/eos_margin",
+    "teacher_forcing/continuation/continue_minus_stop_margin",
+    "teacher_forcing/continuation/continue_accuracy",
+    "teacher_forcing/continuation/continue_mass",
+    "teacher_forcing/continuation/stop_mass",
+    "teacher_forcing/continuation/boundary_count",
+    "teacher_forcing/geometry/bbox_positive_area_invalid_mass",
+    "teacher_forcing/geometry/bbox_positive_area_eligible_count",
     "teacher_forcing/ambiguity/coordinate_onset_count",
     "teacher_forcing/ambiguity/mixed_role_count",
     "teacher_forcing/builder/rejected_samples",
@@ -147,6 +159,100 @@ def teacher_forcing_diagnostic_events(
         "teacher_forcing/permutation_probe/nll_std",
         permutation_nll_std,
         metric_surface="permutation_probe",
+    )
+    return tuple(events)
+
+
+def teacher_forcing_component_loss_events(
+    *,
+    token_type_mass: float | None = None,
+    token_type_mass_contribution: float | None = None,
+    continuation_margin: float | None = None,
+    continuation_margin_contribution: float | None = None,
+    bbox_positive_area: float | None = None,
+    bbox_positive_area_contribution: float | None = None,
+    continue_minus_stop_margin: float | None = None,
+    continue_correct: int | None = None,
+    continuation_boundary_count: int | None = None,
+    continue_mass: float | None = None,
+    stop_mass: float | None = None,
+    bbox_positive_area_invalid_mass: float | None = None,
+    bbox_positive_area_eligible_count: int | None = None,
+) -> tuple[MetricEvent, ...]:
+    """Return canonical v0 auxiliary-component loss and diagnostic events."""
+
+    events: list[MetricEvent] = []
+    _append_weighted(events, "teacher_forcing/loss/token_type_mass", token_type_mass)
+    _append_weighted(
+        events,
+        "teacher_forcing/loss/token_type_mass/contribution",
+        token_type_mass_contribution,
+    )
+    _append_weighted(
+        events,
+        "teacher_forcing/loss/continuation_margin",
+        continuation_margin,
+    )
+    _append_weighted(
+        events,
+        "teacher_forcing/loss/continuation_margin/contribution",
+        continuation_margin_contribution,
+    )
+    _append_weighted(
+        events,
+        "teacher_forcing/loss/bbox_positive_area",
+        bbox_positive_area,
+    )
+    _append_weighted(
+        events,
+        "teacher_forcing/loss/bbox_positive_area/contribution",
+        bbox_positive_area_contribution,
+    )
+    _append_weighted(
+        events,
+        "teacher_forcing/continuation/continue_minus_stop_margin",
+        continue_minus_stop_margin,
+    )
+    if (continue_correct is None) != (continuation_boundary_count is None):
+        raise ValueError(
+            "continue_correct and continuation_boundary_count must be provided together"
+        )
+    if continue_correct is not None and continuation_boundary_count is not None:
+        events.append(
+            _ratio(
+                "teacher_forcing/continuation/continue_accuracy",
+                continue_correct,
+                continuation_boundary_count,
+                unit="boundary",
+                metric_surface="objective_component",
+            )
+        )
+        _append_sum(
+            events,
+            "teacher_forcing/continuation/boundary_count",
+            continuation_boundary_count,
+            unit="boundary",
+        )
+    _append_weighted(
+        events,
+        "teacher_forcing/continuation/continue_mass",
+        continue_mass,
+    )
+    _append_weighted(
+        events,
+        "teacher_forcing/continuation/stop_mass",
+        stop_mass,
+    )
+    _append_weighted(
+        events,
+        "teacher_forcing/geometry/bbox_positive_area_invalid_mass",
+        bbox_positive_area_invalid_mass,
+    )
+    _append_sum(
+        events,
+        "teacher_forcing/geometry/bbox_positive_area_eligible_count",
+        bbox_positive_area_eligible_count,
+        unit="token",
     )
     return tuple(events)
 
@@ -291,7 +397,7 @@ def _append_weighted(
     events.append(
         _weighted_mean(
             key,
-            value,
+            _numeric_scalar(value, field_name=key),
             1.0,
             unit="token",
             metric_surface=metric_surface,
@@ -429,6 +535,7 @@ __all__ = [
     "compact_full_parse_error_events",
     "decode_quality_events",
     "summarize_metric_events",
+    "teacher_forcing_component_loss_events",
     "teacher_forcing_diagnostic_events",
     "teacher_forcing_loss_events",
 ]

@@ -12,11 +12,15 @@ continuation, geometry, smoke, and salvage behavior remain experiment-only.
 - Specify that `enabled: true` on the promoted hard-SFT stack means an additive,
   bidirectional, exclusive four-family objective over `schema`, `coord`,
   `desc`, and `stop`.
+- Map those contract family labels to the live target IR without renaming it:
+  `schema` maps to `TokenRole.SCHEMA`, `desc` maps to `TokenRole.TEXT`,
+  `coord` maps to `TokenRole.COORD`, and `stop` maps to `TokenRole.STOP`.
 - Forbid a stable `mode` key on `objective.terms.token_type_mass`; the
   four-family exclusive behavior is the contract.
-- Specify hard-SFT targeting through the one-hot `selected_token_role` family.
+- Specify hard-SFT targeting through the one-hot selected token role carried by
+  the target IR.
 - Define metric semantics for `teacher_forcing/loss/token_type_mass` and any
-  emitted contribution accounting.
+  emitted `teacher_forcing/loss/token_type_mass/contribution` accounting.
 - Leave valid-set likelihood, within-valid coverage, coverage ledger,
   continuation, `bbox_positive_area`, train/smoke gates, and diagnostic salvage
   outside this stable change.
@@ -43,6 +47,6 @@ continuation, geometry, smoke, and salvage behavior remain experiment-only.
 - Affected objective semantics: hard-SFT teacher-forcing loss aggregation gains
   an additive family-partition term when the promoted stack enables it.
 - Affected metrics: `teacher_forcing/loss/token_type_mass` and optional
-  contribution accounting for that term.
+  `teacher_forcing/loss/token_type_mass/contribution` accounting for that term.
 - No new CLI flags, dependencies, services, production training launch, or
   stable contract for ledger/continuation/geometry/salvage behavior.

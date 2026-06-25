@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Sequence
 
 from src.training.teacher_forcing.roles import TokenRole
 
@@ -14,6 +15,8 @@ class TokenBranch:
     token_ids: tuple[int, ...]
     token_roles: tuple[TokenRole, ...]
     coord_roles: tuple[str | None, ...]
+    bbox_xyxy: tuple[int, int, int, int]
+    coord_token_id_by_bin: Sequence[int]
 
     def __post_init__(self) -> None:
         if not (
@@ -22,6 +25,21 @@ class TokenBranch:
             == len(self.coord_roles)
         ):
             raise ValueError("TokenBranch token metadata lengths must match")
+        if len(self.bbox_xyxy) != 4 or any(
+            isinstance(value, bool) or not isinstance(value, int)
+            for value in self.bbox_xyxy
+        ):
+            raise ValueError("TokenBranch bbox_xyxy must contain exactly four ints")
+        coord_token_ids = tuple(self.coord_token_id_by_bin)
+        if len(coord_token_ids) != 1000 or any(
+            isinstance(token_id, bool) or not isinstance(token_id, int)
+            for token_id in coord_token_ids
+        ):
+            raise ValueError(
+                "TokenBranch coord_token_id_by_bin must contain exactly 1000 ints"
+            )
+        object.__setattr__(self, "bbox_xyxy", tuple(self.bbox_xyxy))
+        object.__setattr__(self, "coord_token_id_by_bin", coord_token_ids)
 
     def token_id_at(self, position: int) -> int:
         return self.token_ids[position]

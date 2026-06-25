@@ -1269,6 +1269,9 @@ def _detection_objective_runtime_payload(training_config: Any) -> dict[str, Any]
         continuation_margin_cfg = _get_section_value(
             terms_cfg, "continuation_margin"
         )
+        bbox_positive_area_cfg = _get_section_value(
+            terms_cfg, "bbox_positive_area"
+        )
         payload.update(
             {
                 "target_ir": {
@@ -1285,11 +1288,9 @@ def _detection_objective_runtime_payload(training_config: Any) -> dict[str, Any]
                     },
                 },
                 "terms": {
-                    "token_type_mass": {
-                        "enabled": _get_section_value(
-                            token_type_mass_cfg, "enabled"
-                        )
-                    },
+                    "token_type_mass": _teacher_forcing_weighted_term_payload(
+                        token_type_mass_cfg
+                    ),
                     "conditional_valid_set_likelihood": {
                         "enabled": _get_section_value(
                             conditional_valid_set_cfg, "enabled"
@@ -1303,15 +1304,23 @@ def _detection_objective_runtime_payload(training_config: Any) -> dict[str, Any]
                             within_valid_coverage_cfg, "coverage_strength"
                         ),
                     },
-                    "continuation_margin": {
-                        "enabled": _get_section_value(
-                            continuation_margin_cfg, "enabled"
-                        )
-                    },
+                    "continuation_margin": _teacher_forcing_weighted_term_payload(
+                        continuation_margin_cfg
+                    ),
+                    "bbox_positive_area": _teacher_forcing_weighted_term_payload(
+                        bbox_positive_area_cfg
+                    ),
                 },
             }
         )
     return payload
+
+
+def _teacher_forcing_weighted_term_payload(term_cfg: Any) -> dict[str, Any]:
+    return {
+        "enabled": _get_section_value(term_cfg, "enabled"),
+        "weight": _get_section_value(term_cfg, "weight"),
+    }
 
 
 def _detection_token_embeddings_adapter_runtime_payload(

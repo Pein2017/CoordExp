@@ -29,6 +29,11 @@ from src.detection.teacher_forcing.target_builder import (
 )
 from src.detection.template import get_detection_template
 from src.detection.template_contracts import COMPACT_TEMPLATE_IDS
+from src.training.objectives.runner import ObjectiveRunner
+from src.training.objectives.types import ObjectiveSpec
+from src.training.supervision.batch import SupervisionBatch
+from src.training.supervision.distributions import TeacherForcingTargetDistribution
+from src.training.supervision.spans import SupervisionSpan
 from src.training.teacher_forcing.roles import TokenRole
 from src.training.teacher_forcing.validation import validate_target_ir
 from src.training.teacher_forcing.vocab import RoleVocab
@@ -159,6 +164,27 @@ class TinyContextTokenizer:
         return parts
 
 
+class NonmonotonicCoordTokenizer(TinyContextTokenizer):
+    def _id_for(self, token: str) -> int:
+        coord = re.fullmatch(r"<\|coord_(\d{1,3})\|>", token)
+        if coord is not None:
+            if token not in self._ids:
+                self._ids[token] = 50000 - int(coord.group(1))
+            return self._ids[token]
+        return super()._id_for(token)
+
+
+class CountingCoordTokenizer(TinyContextTokenizer):
+    def __init__(self) -> None:
+        super().__init__()
+        self.coord_single_token_encode_calls = 0
+
+    def encode(self, text: str, *, add_special_tokens: bool = False) -> list[int]:
+        if re.fullmatch(r"<\|coord_\d{1,3}\|>", text):
+            self.coord_single_token_encode_calls += 1
+        return super().encode(text, add_special_tokens=add_special_tokens)
+
+
 class SplitMarkerTokenizer(TinyContextTokenizer):
     def _scan(self, text: str) -> list[tuple[str, tuple[int, int]]]:
         if text.startswith(OBJECT_REF_START_TOKEN):
@@ -285,6 +311,24 @@ def _validate(result, tokenizer: TinyContextTokenizer) -> None:
     )
 
 
+def _supervision_batch_for_result(result, *, sample_id: str) -> SupervisionBatch:
+    return SupervisionBatch(
+        spans=(
+            SupervisionSpan(
+                sample_id=sample_id,
+                role="schema",
+                label_positions=tuple(
+                    atom.target_position for atom in result.target_ir.atoms
+                ),
+                distribution=TeacherForcingTargetDistribution(
+                    target_ir=result.target_ir
+                ),
+            ),
+        ),
+        batch_id="target-builder-integration",
+    )
+
+
 @pytest.mark.parametrize("template_id", COMPACT_TEMPLATE_IDS)
 def test_teacher_forcing_target_builder_uses_detection_template_contract(
     template_id: str,
@@ -362,6 +406,161 @@ def test_hard_sft_profile_emits_singleton_valid_token_ids() -> None:
     assert result.target_ir.metadata["marginal_scope"] == "sampled_path_next_token"
     assert all(atom.valid_token_ids == frozenset({atom.selected_token_id}) for atom in result.target_ir.atoms)
     _validate(result, tokenizer)
+
+
+def test_hard_sft_marks_continue_and_stop_boundaries() -> None:
+    result, tokenizer = _build(
+        _sample(
+            (
+                _object("cat", (1, 2, 10, 20), index=0),
+                _object("dog", (3, 4, 30, 40), index=1),
+            )
+        ),
+        profile="hard_sft",
+        policy_name="sorted",
+    )
+
+    assert result.ok
+    boundary_atoms = [
+        atom
+        for atom in result.target_ir.atoms
+        if atom.provenance.get("continuation_boundary") is True
+    ]
+    continue_atoms = [
+        atom
+        for atom in boundary_atoms
+        if atom.provenance["continuation_target"] == "continue"
+    ]
+    stop_atom = next(
+        atom
+        for atom in boundary_atoms
+        if atom.provenance["continuation_target"] == "stop"
+    )
+
+    assert len(boundary_atoms) == 3
+    assert [atom.provenance["remaining_object_count"] for atom in continue_atoms] == [2, 1]
+    assert all(
+        atom.provenance["continuation_token_ids"]
+        == (tokenizer.token_id(OBJECT_REF_START_TOKEN),)
+        for atom in continue_atoms
+    )
+    assert all(
+        atom.provenance["stop_token_id"] == tokenizer.token_id(IM_END_TOKEN)
+        for atom in boundary_atoms
+    )
+    assert stop_atom.selected_token_role is TokenRole.STOP
+    assert stop_atom.selected_token_id == tokenizer.token_id(IM_END_TOKEN)
+    assert stop_atom.provenance["terminal"] == IM_END_TOKEN
+    assert stop_atom.provenance["remaining_object_count"] == 0
+    assert stop_atom.provenance["continuation_token_ids"] == (
+        tokenizer.token_id(OBJECT_REF_START_TOKEN),
+    )
+    _validate(result, tokenizer)
+
+
+def test_coord_tail_atoms_carry_selected_bbox_for_geometry() -> None:
+    result, tokenizer = _build(_sample((_object("cat", (1, 2, 10, 20)),)))
+
+    assert result.ok
+    x2_atom = next(atom for atom in result.target_ir.atoms if atom.coord_role == "x2")
+    y2_atom = next(atom for atom in result.target_ir.atoms if atom.coord_role == "y2")
+
+    assert x2_atom.provenance["selected_bbox_xyxy"] == (1, 2, 10, 20)
+    assert x2_atom.provenance["bbox_positive_area"] is True
+    assert x2_atom.provenance["geometry_axis"] == "x"
+    assert x2_atom.provenance["geometry_threshold_bin"] == 1
+    assert y2_atom.provenance["selected_bbox_xyxy"] == (1, 2, 10, 20)
+    assert y2_atom.provenance["bbox_positive_area"] is True
+    assert y2_atom.provenance["geometry_axis"] == "y"
+    assert y2_atom.provenance["geometry_threshold_bin"] == 2
+    assert x2_atom.provenance["bbox_positive_area_valid_token_ids"]
+    assert x2_atom.provenance["bbox_positive_area_invalid_token_ids"]
+    assert y2_atom.provenance["bbox_positive_area_valid_token_ids"]
+    assert y2_atom.provenance["bbox_positive_area_invalid_token_ids"]
+    assert tokenizer.token_id("<|coord_2|>") in x2_atom.provenance[
+        "bbox_positive_area_valid_token_ids"
+    ]
+    assert tokenizer.token_id("<|coord_1|>") in x2_atom.provenance[
+        "bbox_positive_area_invalid_token_ids"
+    ]
+    assert tokenizer.token_id("<|coord_3|>") in y2_atom.provenance[
+        "bbox_positive_area_valid_token_ids"
+    ]
+    assert tokenizer.token_id("<|coord_2|>") in y2_atom.provenance[
+        "bbox_positive_area_invalid_token_ids"
+    ]
+    _validate(result, tokenizer)
+
+
+def test_geometry_valid_invalid_coord_ids_use_coord_bin_sequence_not_token_id_order() -> None:
+    tokenizer = NonmonotonicCoordTokenizer()
+    result, _tokenizer = _build(
+        _sample((_object("cat", (1, 2, 10, 20)),)),
+        tokenizer=tokenizer,
+    )
+
+    assert result.ok
+    x2_atom = next(atom for atom in result.target_ir.atoms if atom.coord_role == "x2")
+    valid_ids = x2_atom.provenance["bbox_positive_area_valid_token_ids"]
+    invalid_ids = x2_atom.provenance["bbox_positive_area_invalid_token_ids"]
+
+    assert tokenizer.token_id("<|coord_999|>") < tokenizer.token_id("<|coord_0|>")
+    assert tokenizer.token_id("<|coord_999|>") in valid_ids
+    assert tokenizer.token_id("<|coord_2|>") in valid_ids
+    assert tokenizer.token_id("<|coord_1|>") in invalid_ids
+    assert tokenizer.token_id("<|coord_0|>") in invalid_ids
+    _validate(result, tokenizer)
+
+
+def test_real_builder_ir_runs_objective_with_bbox_positive_area_enabled() -> None:
+    result, tokenizer = _build(_sample((_object("cat", (1, 2, 10, 20)),)))
+
+    assert result.ok
+    input_ids = torch.tensor([result.input_ids], dtype=torch.long)
+    logits = torch.zeros(
+        (1, len(result.input_ids), max(result.input_ids) + 1),
+        dtype=torch.float32,
+    )
+    objective_result = ObjectiveRunner().run(
+        logits=logits,
+        supervision=_supervision_batch_for_result(
+            result,
+            sample_id="real-builder-positive-area",
+        ),
+        objectives=(
+            ObjectiveSpec(
+                "teacher_forcing",
+                config={
+                    "input_ids": input_ids,
+                    "role_vocab": tokenizer.role_vocab(),
+                    "bbox_positive_area_weight": 0.25,
+                },
+            ),
+        ),
+        sample_id_to_batch_index={"real-builder-positive-area": 0},
+    )
+
+    loss = objective_result.objectives["teacher_forcing"].loss
+    assert torch.isfinite(loss)
+
+
+def test_prepare_object_reuses_build_level_coord_bin_token_ids() -> None:
+    tokenizer = CountingCoordTokenizer()
+    sample = _sample(
+        (
+            _object("cat", (1, 2, 10, 20), index=0),
+            _object("dog", (3, 4, 30, 40), index=1),
+        )
+    )
+
+    result, _tokenizer = _build(
+        sample,
+        tokenizer=tokenizer,
+        policy_name="sorted",
+    )
+
+    assert result.ok
+    assert tokenizer.coord_single_token_encode_calls == 1008
 
 
 def test_valid_set_profile_emits_all_legal_next_tokens_at_ambiguous_prefixes() -> None:

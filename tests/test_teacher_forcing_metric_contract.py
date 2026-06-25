@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import pytest
+import torch
 
 from src.metrics.events import flatten_metric_events
+import src.training.teacher_forcing.metrics as teacher_forcing_metrics_module
 from src.training.teacher_forcing.metrics import (
     REQUIRED_TEACHER_FORCING_METRIC_KEYS,
     builder_rejection_events,
@@ -20,11 +22,23 @@ def test_required_teacher_forcing_metric_keys_are_canonical() -> None:
     assert {
         "teacher_forcing/loss/total",
         "teacher_forcing/loss/token_type_mass",
+        "teacher_forcing/loss/token_type_mass/contribution",
         "teacher_forcing/loss/conditional_valid_set_likelihood",
         "teacher_forcing/loss/within_valid_coverage",
+        "teacher_forcing/loss/continuation_margin",
+        "teacher_forcing/loss/continuation_margin/contribution",
+        "teacher_forcing/loss/bbox_positive_area",
+        "teacher_forcing/loss/bbox_positive_area/contribution",
         "teacher_forcing/valid_set/mass",
         "teacher_forcing/coverage/kl",
         "teacher_forcing/continuation/eos_margin",
+        "teacher_forcing/continuation/continue_minus_stop_margin",
+        "teacher_forcing/continuation/continue_accuracy",
+        "teacher_forcing/continuation/continue_mass",
+        "teacher_forcing/continuation/stop_mass",
+        "teacher_forcing/continuation/boundary_count",
+        "teacher_forcing/geometry/bbox_positive_area_invalid_mass",
+        "teacher_forcing/geometry/bbox_positive_area_eligible_count",
         "teacher_forcing/ambiguity/coordinate_onset_count",
         "teacher_forcing/ambiguity/mixed_role_count",
         "teacher_forcing/builder/rejected_samples",
@@ -63,6 +77,21 @@ def test_teacher_forcing_events_flatten_to_required_metric_names() -> None:
             residual_remaining_count=4,
             permutation_nll_std=0.09,
         ),
+        *teacher_forcing_metrics_module.teacher_forcing_component_loss_events(
+            token_type_mass=0.75,
+            token_type_mass_contribution=0.375,
+            continuation_margin=0.4,
+            continuation_margin_contribution=0.1,
+            bbox_positive_area=0.2,
+            bbox_positive_area_contribution=0.03,
+            continue_minus_stop_margin=0.6,
+            continue_correct=3,
+            continuation_boundary_count=4,
+            continue_mass=0.7,
+            stop_mass=0.1,
+            bbox_positive_area_invalid_mass=0.15,
+            bbox_positive_area_eligible_count=2,
+        ),
         *builder_rejection_events(
             {
                 "missing_detection_list": 1,
@@ -86,11 +115,23 @@ def test_teacher_forcing_events_flatten_to_required_metric_names() -> None:
 
     assert flat["teacher_forcing/loss/total"] == pytest.approx(2.5)
     assert flat["teacher_forcing/loss/token_type_mass"] == pytest.approx(0.75)
+    assert flat["teacher_forcing/loss/token_type_mass/contribution"] == pytest.approx(0.375)
     assert flat["teacher_forcing/loss/conditional_valid_set_likelihood"] == pytest.approx(0.6)
     assert flat["teacher_forcing/loss/within_valid_coverage"] == pytest.approx(0.8)
+    assert flat["teacher_forcing/loss/continuation_margin"] == pytest.approx(0.4)
+    assert flat["teacher_forcing/loss/continuation_margin/contribution"] == pytest.approx(0.1)
+    assert flat["teacher_forcing/loss/bbox_positive_area"] == pytest.approx(0.2)
+    assert flat["teacher_forcing/loss/bbox_positive_area/contribution"] == pytest.approx(0.03)
     assert flat["teacher_forcing/valid_set/mass"] == pytest.approx(0.7)
     assert flat["teacher_forcing/coverage/kl"] == pytest.approx(0.12)
     assert flat["teacher_forcing/continuation/eos_margin"] == pytest.approx(-0.3)
+    assert flat["teacher_forcing/continuation/continue_minus_stop_margin"] == pytest.approx(0.6)
+    assert flat["teacher_forcing/continuation/continue_accuracy"] == pytest.approx(0.75)
+    assert flat["teacher_forcing/continuation/continue_mass"] == pytest.approx(0.7)
+    assert flat["teacher_forcing/continuation/stop_mass"] == pytest.approx(0.1)
+    assert flat["teacher_forcing/continuation/boundary_count"] == pytest.approx(4)
+    assert flat["teacher_forcing/geometry/bbox_positive_area_invalid_mass"] == pytest.approx(0.15)
+    assert flat["teacher_forcing/geometry/bbox_positive_area_eligible_count"] == pytest.approx(2)
     assert flat["teacher_forcing/ambiguity/coordinate_onset_count"] == pytest.approx(3)
     assert flat["teacher_forcing/ambiguity/mixed_role_count"] == pytest.approx(2)
     assert flat["teacher_forcing/builder/rejected_samples"] == pytest.approx(10)
@@ -108,8 +149,121 @@ def test_teacher_forcing_events_flatten_to_required_metric_names() -> None:
     assert flat["teacher_forcing/decode/missed_object_rate"] == pytest.approx(0.1)
     assert flat["teacher_forcing/decode/malformed_sequence_rate"] == pytest.approx(0.3)
     assert flat["infer/parse/compact_full/error/bad_marker"] == pytest.approx(2)
+    assert "teacher_forcing/loss/token_type_mass_contribution" not in flat
+    assert "teacher_forcing/loss/token_type_mass_weighted" not in flat
     assert not any(key.startswith("training/objectives/teacher_forcing") for key in flat)
     assert not any(key.startswith("recursive_detection/") for key in flat)
+
+
+def test_teacher_forcing_objective_runner_emits_component_metric_events() -> None:
+    from src.training.objectives.runner import ObjectiveRunner
+    from src.training.objectives.types import ObjectiveSpec
+    from src.training.supervision.batch import SupervisionBatch
+    from src.training.supervision.distributions import TeacherForcingTargetDistribution
+    from src.training.supervision.spans import SupervisionSpan
+    from src.training.teacher_forcing.ir import SupervisionAtom, TeacherForcingTargetIR
+    from src.training.teacher_forcing.roles import TokenRole
+    from src.training.teacher_forcing.vocab import RoleVocab
+
+    role_vocab = RoleVocab(
+        text_token_ids=frozenset({1, 2}),
+        schema_token_ids=frozenset({4}),
+        coord_token_ids=frozenset({6, 7, 8}),
+        stop_token_id=9,
+    )
+    boundary_atom = SupervisionAtom(
+        batch_index=0,
+        logit_position=0,
+        target_position=1,
+        allowed_token_roles=frozenset({TokenRole.TEXT}),
+        selected_token_role=TokenRole.TEXT,
+        valid_token_ids=frozenset({1}),
+        selected_token_id=1,
+        latent_valid_token_ids=frozenset({1}),
+        coverage_target_weights=None,
+        loss_tags=frozenset({"test"}),
+        loss_weight=1.0,
+        coord_role=None,
+        provenance={
+            "continuation_boundary": True,
+            "continuation_target": "continue",
+            "continuation_token_ids": frozenset({1, 2}),
+            "stop_token_id": 9,
+        },
+    )
+    bbox_atom = SupervisionAtom(
+        batch_index=0,
+        logit_position=1,
+        target_position=2,
+        allowed_token_roles=frozenset({TokenRole.COORD}),
+        selected_token_role=TokenRole.COORD,
+        valid_token_ids=frozenset({6}),
+        selected_token_id=6,
+        latent_valid_token_ids=frozenset({6}),
+        coverage_target_weights=None,
+        loss_tags=frozenset({"test"}),
+        loss_weight=1.0,
+        coord_role="x2",
+        provenance={
+            "bbox_positive_area": True,
+            "bbox_positive_area_valid_token_ids": frozenset({6, 8}),
+            "bbox_positive_area_invalid_token_ids": frozenset({7}),
+        },
+    )
+    target_ir = TeacherForcingTargetIR(
+        schema_version=1,
+        atoms=(boundary_atom, bbox_atom),
+        metadata={},
+    )
+    logits = torch.full((1, 3, 12), -4.0, dtype=torch.float32)
+    logits[0, 0, 1] = 3.0
+    logits[0, 0, 2] = 2.0
+    logits[0, 0, 9] = 0.5
+    logits[0, 1, 6] = 2.0
+    logits[0, 1, 7] = 1.0
+    input_ids = torch.tensor([[0, 1, 6]], dtype=torch.long)
+
+    result = ObjectiveRunner().run(
+        logits=logits,
+        supervision=SupervisionBatch(
+            spans=(
+                SupervisionSpan(
+                    sample_id="sample-1",
+                    role="schema",
+                    label_positions=(1, 2),
+                    distribution=TeacherForcingTargetDistribution(target_ir=target_ir),
+                ),
+            ),
+            batch_id="batch-1",
+        ),
+        objectives=(
+            ObjectiveSpec(
+                "teacher_forcing",
+                config={
+                    "input_ids": input_ids,
+                    "role_vocab": role_vocab,
+                    "token_type_mass_weight": 0.5,
+                    "continuation_margin_weight": 0.75,
+                    "bbox_positive_area_weight": 0.25,
+                },
+            ),
+        ),
+        sample_id_to_batch_index={"sample-1": 0},
+    )
+
+    flat = flatten_metric_events(result.metric_events)
+
+    assert flat["teacher_forcing/loss/token_type_mass"] > 0.0
+    assert flat["teacher_forcing/loss/token_type_mass/contribution"] > 0.0
+    assert flat["teacher_forcing/loss/continuation_margin"] > 0.0
+    assert flat["teacher_forcing/loss/continuation_margin/contribution"] > 0.0
+    assert flat["teacher_forcing/loss/bbox_positive_area"] > 0.0
+    assert flat["teacher_forcing/loss/bbox_positive_area/contribution"] > 0.0
+    assert flat["teacher_forcing/continuation/continue_accuracy"] == pytest.approx(1.0)
+    assert flat["teacher_forcing/continuation/boundary_count"] == pytest.approx(1.0)
+    assert flat["teacher_forcing/geometry/bbox_positive_area_eligible_count"] == pytest.approx(1.0)
+    assert "teacher_forcing/loss/token_type_mass_contribution" not in flat
+    assert "teacher_forcing/loss/token_type_mass_weighted" not in flat
 
 
 def test_decode_quality_events_record_absent_artifact_without_zero_rates() -> None:

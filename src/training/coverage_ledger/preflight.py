@@ -43,6 +43,12 @@ IMAGE_GRID_METADATA_VERSION = "qwen3_vl_image_grid_thw_v0"
 DATASET_ID = "coverage_ledger_preflight"
 
 ALLOWED_BASELINE_LEDGER_DIFFS = {
+    "/objective/terms/token_type_mass/enabled",
+    "/objective/terms/token_type_mass/weight",
+    "/objective/terms/continuation_margin/enabled",
+    "/objective/terms/continuation_margin/weight",
+    "/objective/terms/bbox_positive_area/enabled",
+    "/objective/terms/bbox_positive_area/weight",
     "/objective/terms/coverage_ledger/enabled",
     "/objective/terms/coverage_ledger/coverage_weight",
     "/objective/terms/coverage_ledger/region_anchor_weight",

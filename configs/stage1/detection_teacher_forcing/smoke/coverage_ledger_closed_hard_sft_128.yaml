@@ -31,14 +31,19 @@ objective:
       name: sorted
   terms:
     token_type_mass:
-      enabled: false
+      enabled: true
+      weight: 1.0
     conditional_valid_set_likelihood:
       enabled: false
     within_valid_coverage:
       enabled: false
       coverage_strength: 0.0
     continuation_margin:
-      enabled: false
+      enabled: true
+      weight: 0.2
+    bbox_positive_area:
+      enabled: true
+      weight: 0.1
     coverage_ledger:
       enabled: true
       coverage_weight: 0.1

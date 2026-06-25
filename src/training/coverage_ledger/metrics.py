@@ -19,7 +19,7 @@ COVERAGE_LEDGER_OBJECTIVE_ID = "coverage_ledger"
 COVERAGE_LEDGER_STAGE = "teacher_forcing"
 COVERAGE_LEDGER_SURFACE = "coverage_ledger_auxiliary"
 
-WEIGHTED_LOSS_KEY = "teacher_forcing/loss/coverage_ledger_auxiliary_weighted"
+WEIGHTED_LOSS_KEY = "teacher_forcing/loss/coverage_ledger_auxiliary/contribution"
 AUXILIARY_PAIR_NORMALIZED_KEY = (
     "teacher_forcing/ledger/coverage_ledger_auxiliary_pair_normalized"
 )

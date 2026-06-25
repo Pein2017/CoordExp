@@ -18,10 +18,15 @@ Normative behavior:
   `teacher_forcing/loss/token_type_mass *
   objective.terms.token_type_mass.weight`;
 - if a separate standalone contribution metric is emitted, it MUST be named
-  `teacher_forcing/loss/token_type_mass_contribution` or represented through
-  equivalent metric payload/reduction metadata;
+  `teacher_forcing/loss/token_type_mass/contribution`;
+- metric payload or reduction metadata MAY record the contributing weight,
+  eligible count, or aggregation denominator, but it MUST NOT replace, alias, or
+  rename the canonical standalone contribution metric when that metric is
+  emitted;
 - metric producers MUST NOT introduce a parallel `_weighted` metric family for
   token-type mass;
+- metric producers MUST NOT emit underscore-style standalone aliases for this
+  contribution metric;
 - valid-set likelihood, within-valid coverage, coverage ledger, continuation,
   geometry, smoke, or salvage metrics MUST NOT be added by this token-type mass
   contract.
@@ -40,7 +45,8 @@ Normative behavior:
 - **WHEN** the objective total is assembled
 - **THEN** the token-type mass contribution to
   `teacher_forcing/loss/total` is `m * w`
-- **AND** any explicit contribution metric or metadata reports the same value.
+- **AND** any explicit standalone contribution metric reports the same value at
+  `teacher_forcing/loss/token_type_mass/contribution`.
 
 #### Scenario: Token-type mass does not create weighted-suffix aliases
 

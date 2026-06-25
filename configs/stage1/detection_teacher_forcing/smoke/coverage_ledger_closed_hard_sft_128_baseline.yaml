@@ -39,6 +39,8 @@ objective:
       coverage_strength: 0.0
     continuation_margin:
       enabled: false
+    bbox_positive_area:
+      enabled: false
     coverage_ledger:
       enabled: false
 

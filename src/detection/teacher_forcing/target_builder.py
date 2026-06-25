@@ -130,12 +130,14 @@ class TeacherForcingTargetBuilder:
 
         try:
             detection_template = get_detection_template(self.detection_template_id)
+            coord_token_id_by_bin = _coord_token_id_by_bin(self.tokenizer)
             prepared_by_index = {
                 index: _prepare_object(
                     obj,
                     self.tokenizer,
                     detection_template=detection_template,
                     object_field_order=self.object_field_order,
+                    coord_token_id_by_bin=coord_token_id_by_bin,
                 )
                 for index, obj in enumerate(parsed.objects)
             }
@@ -261,6 +263,9 @@ def _build_atoms(
     atoms: list[SupervisionAtom] = []
     remaining = tuple(rollin_indices)
     rendered_token_position = 0
+    terminal_continuation_token_ids = _continuation_token_ids_for_branches(
+        tuple(branches_by_index[index] for index in rollin_indices)
+    )
 
     for selected_index in rollin_indices:
         selected_branch = branches_by_index[selected_index]
@@ -274,6 +279,36 @@ def _build_atoms(
                 allowed_roles = frozenset({selected_role})
 
             target_position = rendered_token_position + 1
+            coord_role = selected_branch.coord_role_at(branch_position)
+            provenance: dict[str, Any] = {
+                "object_index": selected_index,
+                "object_instance_id": selected_branch.object_instance_id,
+                "branch_position": branch_position,
+                "candidate_object_indices": tuple(
+                    branch.object_index for branch in compatible
+                ),
+            }
+            if coord_role is not None:
+                provenance["coord_role"] = coord_role
+            if coord_role in {"x2", "y2"}:
+                provenance.update(
+                    _positive_area_provenance(
+                        selected_branch,
+                        coord_role=coord_role,
+                    )
+                )
+            if branch_position == 0:
+                provenance.update(
+                    {
+                        "continuation_boundary": True,
+                        "continuation_target": "continue",
+                        "remaining_object_count": len(remaining),
+                        "continuation_token_ids": _continuation_token_ids_for_branches(
+                            compatible
+                        ),
+                        "stop_token_id": int(stop_token_id),
+                    }
+                )
             atoms.append(
                 SupervisionAtom(
                     batch_index=0,
@@ -287,15 +322,8 @@ def _build_atoms(
                     coverage_target_weights=None,
                     loss_tags=frozenset({profile}),
                     loss_weight=1.0,
-                    coord_role=selected_branch.coord_role_at(branch_position),
-                    provenance={
-                        "object_index": selected_index,
-                        "object_instance_id": selected_branch.object_instance_id,
-                        "branch_position": branch_position,
-                        "candidate_object_indices": tuple(
-                            branch.object_index for branch in compatible
-                        ),
-                    },
+                    coord_role=coord_role,
+                    provenance=provenance,
                 )
             )
             compatible = filter_branches_by_selected_token(
@@ -321,10 +349,55 @@ def _build_atoms(
             loss_tags=frozenset({profile}),
             loss_weight=1.0,
             coord_role=None,
-            provenance={"terminal": IM_END_TOKEN},
+            provenance={
+                "terminal": IM_END_TOKEN,
+                "continuation_boundary": True,
+                "continuation_target": "stop",
+                "remaining_object_count": 0,
+                "continuation_token_ids": terminal_continuation_token_ids,
+                "stop_token_id": int(stop_token_id),
+            },
         )
     )
     return tuple(atoms)
+
+
+def _continuation_token_ids_for_branches(
+    branches: tuple[TokenBranch, ...],
+) -> tuple[int, ...]:
+    return tuple(sorted(next_token_ids_for_prefix(branches, position=0)))
+
+
+def _positive_area_provenance(
+    branch: TokenBranch,
+    *,
+    coord_role: str,
+) -> dict[str, Any]:
+    if coord_role == "x2":
+        axis = "x"
+        threshold = branch.bbox_xyxy[0]
+    elif coord_role == "y2":
+        axis = "y"
+        threshold = branch.bbox_xyxy[1]
+    else:
+        raise ValueError(f"unsupported positive-area coord_role={coord_role!r}")
+
+    coord_token_ids = tuple(branch.coord_token_id_by_bin)
+    invalid_token_ids = coord_token_ids[: threshold + 1]
+    valid_token_ids = coord_token_ids[threshold + 1 :]
+    if not valid_token_ids or not invalid_token_ids:
+        raise ValueError(
+            "bbox positive-area provenance requires nonempty valid and invalid "
+            f"coord id sets for coord_role={coord_role!r}"
+        )
+    return {
+        "selected_bbox_xyxy": branch.bbox_xyxy,
+        "bbox_positive_area": True,
+        "geometry_axis": axis,
+        "geometry_threshold_bin": threshold,
+        "bbox_positive_area_valid_token_ids": valid_token_ids,
+        "bbox_positive_area_invalid_token_ids": invalid_token_ids,
+    }
 
 
 def _prepare_object(
@@ -333,6 +406,7 @@ def _prepare_object(
     *,
     detection_template: DetectionSequenceTemplate,
     object_field_order: ObjectFieldOrder,
+    coord_token_id_by_bin: Sequence[int],
 ) -> _PreparedObject:
     contract = resolve_detection_template_contract(detection_template.template_id)
     token_path = tokenize_description_context(
@@ -340,6 +414,7 @@ def _prepare_object(
         tokenizer,
         detection_template_id=detection_template.template_id,
     )
+    bbox_xyxy = obj.bbox_2d.values
     coord_tokens = obj.bbox_2d.tokens
     coord_token_ids = tuple(_single_token_id(tokenizer, token) for token in coord_tokens)
     token_ids: list[int] = []
@@ -400,8 +475,17 @@ def _prepare_object(
             token_ids=tuple(token_ids),
             token_roles=tuple(token_roles),
             coord_roles=tuple(coord_roles),
+            bbox_xyxy=bbox_xyxy,
+            coord_token_id_by_bin=coord_token_id_by_bin,
         ),
         rendered_text=rendered_text,
+    )
+
+
+def _coord_token_id_by_bin(tokenizer: Any) -> tuple[int, ...]:
+    return tuple(
+        _single_token_id(tokenizer, f"<|coord_{index}|>")
+        for index in range(1000)
     )
 
 

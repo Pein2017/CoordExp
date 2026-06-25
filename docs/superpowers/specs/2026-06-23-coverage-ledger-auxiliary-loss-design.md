@@ -626,7 +626,7 @@ Required metric contract:
 
 | key | reducer | unit | numerator / denominator | notes |
 | --- | --- | --- | --- | --- |
-| `teacher_forcing/loss/coverage_ledger_auxiliary_weighted` | `last` | `batch` | value only | exact scalar added to runner CE/objective loss |
+| `teacher_forcing/loss/coverage_ledger_auxiliary/contribution` | `last` | `batch` | value only | exact scalar added to runner CE/objective loss |
 | `teacher_forcing/ledger/coverage_ledger_auxiliary_pair_normalized` | `weighted_mean` | `object` | component weighted pair sum / valid ledger pair count | diagnostic-only count-weighted view |
 | `teacher_forcing/ledger/coverage_bce` | `weighted_mean` | `object` | coverage BCE mean with valid coverage-pair count weight | diagnostic-only |
 | `teacher_forcing/ledger/row_object_binding_bce` | `weighted_mean` | `object` | one-vs-all row-object BCE mean with valid binding-pair count weight | diagnostic-only |
@@ -642,7 +642,7 @@ Required metric contract:
 Every event must set `objective_id="coverage_ledger"`,
 `metric_surface="coverage_ledger_auxiliary"`, `stage="teacher_forcing"`, and
 `diagnostic_only=true`, except
-`teacher_forcing/loss/coverage_ledger_auxiliary_weighted`, which is the exact
+`teacher_forcing/loss/coverage_ledger_auxiliary/contribution`, which is the exact
 scalar the bridge adds to the runner-owned loss and must use
 `diagnostic_only=false`. Raw and weighted subterm metrics remain diagnostic
 observability, even when their weighted values are components of the auxiliary
@@ -936,7 +936,7 @@ Metric tests:
   `0.0`;
 - accuracy uses threshold `0.0`;
 - metric events set `diagnostic_only=false` only for
-  `teacher_forcing/loss/coverage_ledger_auxiliary_weighted`;
+  `teacher_forcing/loss/coverage_ledger_auxiliary/contribution`;
 - row-object binding metrics emit diagnostic-only AUC and accuracy when both
   classes are present.
 
