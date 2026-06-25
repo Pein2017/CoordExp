@@ -1,7 +1,7 @@
 # Production Stage-1 coverage-ledger teacher-forcing config.
 #
-# This keeps the physical-forward contract strict: one long, unpadded sample per
-# rank, no packing, and an exact global effective batch through accumulation.
+# This uses Stage-1 static packing: per-rank physical batch size stays 1, while
+# each packed row contains multiple one-image samples with isolated attention.
 extends:
   - ./compact_support2.yaml
 
@@ -46,8 +46,7 @@ objective:
       enabled: true
       weight: 0.2
     bbox_positive_area:
-      enabled: true
-      weight: 0.1
+      enabled: false
     coverage_ledger:
       enabled: true
       coverage_weight: 0.1
@@ -63,7 +62,7 @@ objective:
       smoke_sample_seed: 20260623
 
 packing:
-  static_packing: false
+  static_packing: true
   padding_free_packed: false
 
 evaluation:
@@ -78,5 +77,5 @@ training:
   per_device_train_batch_size: 1
   effective_batch_size: 32
   per_device_eval_batch_size: 1
-  packing: false
-  eval_packing: false
+  packing: true
+  eval_packing: true

@@ -35,6 +35,7 @@ Note:
 |---|---:|---:|---|---|
 | Stage-1 baseline `configs/stage1/sft_base.yaml` | `12000` | `32` | static dataset packing | Uses `training.packing: true` and `training.eval_packing: true` where supported. |
 | Stage-1 shared 4B coord recipes | `12000` | `128` | static dataset packing | Match comparisons by samples/epochs and record exact config. |
+| Stage-1 compact teacher forcing | `12000` | `32` | static dataset packing with exact sidecar remap | Applies to `research_teacher_forcing` configs, including coverage-ledger, when `training.packing: true`, `training.eval_packing: true`, and `packing.static_packing: true`. |
 | Stage-1 compact recursive detection latest | `12000` | `128` | disabled | Packing remains disabled until sidecar target-position offset rewriting is implemented and validated. |
 | Stage-2 rollout-correction base | `12000` | `64` | post-rollout trainer packing | Rollout generation remains padded/unpacked; correction segments are atomic. |
 | Historical 12k packing probe | `12000` | `12` | historical probe | Useful as prior efficiency evidence, not the global default. |
@@ -74,9 +75,11 @@ Two execution regimes use the same source-of-truth rule:
   `effective_batch_size`, with gradient accumulation derived from
   `effective_batch_size / (per_device_train_batch_size * world_size)`.
 
-Latest compact recursive detection currently uses the non-packed padded regime.
-Packing and padding-free packed runtime remain disabled until recursive sidecar
-target-position rewriting is implemented and validated.
+Latest compact teacher-forcing detection may use static dataset packing after
+collator-side exact atom-position and coverage-ledger sidecar remapping.
+Latest compact recursive detection still uses the non-packed padded regime.
+Padding-free packed runtime remains disabled for both surfaces until separately
+validated.
 
 ## Latest Compact Recursive Detection Packing Owner
 
@@ -93,10 +96,11 @@ packing:
   padding_free_packed: false
 ```
 
-Until recursive sidecar target-position offset rewriting is implemented and
-validated, canonical Stage-1 detection teacher-forcing configs under
-`configs/stage1/detection_teacher_forcing/` must not enable dataset/static
-packing or padding-free packed runtime. The retired recursive-detection config
+Canonical Stage-1 detection teacher-forcing configs under
+`configs/stage1/detection_teacher_forcing/` may enable static dataset packing
+only when the objective is `research_teacher_forcing` and sidecars are remapped
+through `packed_segment_offsets`. They must keep
+`packing.padding_free_packed: false`. The retired recursive-detection config
 root is archived under
 `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/`
 for historical evidence only. Expected-failure packing examples belong under an
@@ -124,7 +128,11 @@ Current implementation:
   tokenizer/model identity, and the hard length cap, so bbox-first/desc-first
   ablations and closed-marker runs do not reuse incompatible compact caches.
 - Static packing probes each atomic sample at full length before building the pack plan. If any sample exceeds that hard cap, packing now fails fast instead of silently truncating or skipping it.
-- Latest compact recursive detection surfaces keep packing and encoded-sample cache fail-fast until sidecar target-position rewriting is explicitly implemented and validated.
+- Latest compact teacher-forcing surfaces preserve target IR and coverage-ledger
+  sidecars by shifting segment-local positions into packed-row positions.
+  Latest compact recursive detection surfaces keep packing and encoded-sample
+  cache fail-fast until recursive sidecar target-position rewriting is
+  explicitly implemented and validated.
 - Compact-full token-row runs train 1002 rows through the persisted
   `token_embeddings_adapter` module name: 1000 coord rows plus the two compact
   structural rows `<|object_ref_start|>` and `<|box_start|>`. The module name is

@@ -42,8 +42,7 @@ objective:
       enabled: true
       weight: 0.2
     bbox_positive_area:
-      enabled: true
-      weight: 0.1
+      enabled: false
     coverage_ledger:
       enabled: true
       coverage_weight: 0.1
@@ -59,7 +58,7 @@ objective:
       smoke_sample_seed: 20260623
 
 packing:
-  static_packing: false
+  static_packing: true
   padding_free_packed: false
 
 evaluation:
@@ -71,7 +70,7 @@ training:
   run_name: smoke-coverage-ledger-closed-hard-sft-128-ledger-adapter-save
   max_steps: 256
   per_device_train_batch_size: 1
-  effective_batch_size: 1
+  effective_batch_size: 32
   per_device_eval_batch_size: 1
   seed: 20260623
   save_strategy: steps
@@ -82,8 +81,8 @@ training:
   save_delay_steps: 0
   save_last_epoch: true
   save_model_only: false
-  packing: false
-  eval_packing: false
+  packing: true
+  eval_packing: true
 
 debug:
   enabled: true
