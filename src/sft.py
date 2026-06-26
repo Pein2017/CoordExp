@@ -2841,6 +2841,102 @@ def _remove_missing_peft_module_to_save(model: Any, module_name: str) -> bool:
     return removed
 
 
+def _coverage_ledger_cfg_enabled(coverage_ledger_cfg: Any) -> bool:
+    if coverage_ledger_cfg is None:
+        return False
+    if isinstance(coverage_ledger_cfg, Mapping):
+        return bool(coverage_ledger_cfg.get("enabled", False))
+    return bool(getattr(coverage_ledger_cfg, "enabled", False))
+
+
+def _active_peft_adapter_name(model: Any, peft_config: Mapping[Any, Any]) -> str | None:
+    for attr_name in ("active_adapters", "active_adapter"):
+        active_raw = getattr(model, attr_name, None)
+        if callable(active_raw):
+            try:
+                active_raw = active_raw()
+            except Exception:
+                continue
+        if isinstance(active_raw, str):
+            active_names = (active_raw,)
+        elif isinstance(active_raw, Sequence) and not isinstance(
+            active_raw, (bytes, bytearray)
+        ):
+            active_names = tuple(str(item) for item in active_raw)
+        else:
+            active_names = ()
+        for adapter_name in active_names:
+            if adapter_name in peft_config:
+                return adapter_name
+    for adapter_name in peft_config:
+        return str(adapter_name)
+    return None
+
+
+def _ensure_coverage_ledger_head_trainable_after_prepare_model(
+    model: torch.nn.Module,
+    coverage_ledger_cfg: Any,
+) -> bool:
+    """Promote coverage_ledger_head into the active PEFT adapter after warm-start.
+
+    Swift freezes the full model before loading args.adapters. If the warm-start
+    adapter was saved before coverage_ledger_head existed, PEFT loads it without
+    coverage_ledger_head in modules_to_save. The head still exists, but remains
+    frozen until we explicitly add it to the active adapter's auxiliary modules.
+    """
+
+    if not _coverage_ledger_cfg_enabled(coverage_ledger_cfg):
+        return False
+    module_name = "coverage_ledger_head"
+    if not _model_has_named_module(model, module_name):
+        return False
+
+    peft_config = getattr(model, "peft_config", None)
+    if isinstance(peft_config, Mapping) and peft_config:
+        adapter_name = _active_peft_adapter_name(model, peft_config)
+        if adapter_name is not None:
+            adapter_cfg = peft_config[adapter_name]
+            modules_to_save = [
+                str(item) for item in (getattr(adapter_cfg, "modules_to_save", None) or [])
+            ]
+            if module_name not in modules_to_save:
+                modules_to_save.append(module_name)
+                setattr(adapter_cfg, "modules_to_save", modules_to_save)
+            try:
+                from peft.utils.other import _set_trainable
+            except Exception:
+                logger.warning(
+                    "Could not import PEFT _set_trainable; falling back to direct "
+                    "coverage_ledger_head requires_grad activation."
+                )
+            else:
+                _set_trainable(model, adapter_name, [module_name])
+                set_adapter_fn = getattr(model, "set_adapter", None)
+                if callable(set_adapter_fn):
+                    set_adapter_fn(adapter_name)
+                logger.info(
+                    "Promoted coverage_ledger_head into active PEFT modules_to_save "
+                    "after prepare_model: adapter=%s modules_to_save=%s",
+                    adapter_name,
+                    modules_to_save,
+                )
+                return True
+
+    activated = False
+    for name, module in model.named_modules():
+        name_s = str(name)
+        if name_s != module_name and not name_s.endswith(f".{module_name}"):
+            continue
+        for parameter in module.parameters(recurse=True):
+            parameter.requires_grad_(True)
+            activated = True
+    if activated:
+        logger.info(
+            "Activated coverage_ledger_head parameters directly after prepare_model."
+        )
+    return activated
+
+
 def _install_coverage_ledger_head_for_training(
     model: torch.nn.Module,
     training_config: Any,
@@ -2853,13 +2949,7 @@ def _require_wrapped_coverage_ledger_head_for_training(
     model: torch.nn.Module,
     coverage_ledger_cfg: Any,
 ) -> None:
-    if coverage_ledger_cfg is None:
-        return
-    if isinstance(coverage_ledger_cfg, Mapping):
-        enabled = bool(coverage_ledger_cfg.get("enabled", False))
-    else:
-        enabled = bool(getattr(coverage_ledger_cfg, "enabled", False))
-    if not enabled:
+    if not _coverage_ledger_cfg_enabled(coverage_ledger_cfg):
         return
 
     required_suffixes = {
@@ -4147,6 +4237,10 @@ def main():
         logger.info(
             "Removed stale coverage_ledger_head from PEFT modules_to_save because the wrapped model has no coverage_ledger_head module."
         )
+    _ensure_coverage_ledger_head_trainable_after_prepare_model(
+        sft.model,
+        _coverage_ledger_cfg_from_training_config(training_config),
+    )
     _require_wrapped_coverage_ledger_head_for_training(
         sft.model,
         _coverage_ledger_cfg_from_training_config(training_config),

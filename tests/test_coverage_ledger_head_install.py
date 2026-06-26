@@ -12,6 +12,7 @@ from peft.utils.save_and_load import get_peft_model_state_dict
 
 from src.sft import (
     _append_train_arg_module_to_save,
+    _ensure_coverage_ledger_head_trainable_after_prepare_model,
     _install_coverage_ledger_head_for_training,
     _require_wrapped_coverage_ledger_head_for_training,
     _remove_missing_peft_module_to_save,
@@ -296,6 +297,46 @@ def test_peft_adapter_state_dict_includes_coverage_ledger_head_modules_to_save()
     _require_wrapped_coverage_ledger_head_for_training(peft_model, _ledger_cfg())
     adapter_state = get_peft_model_state_dict(peft_model)
 
+    assert {
+        "base_model.model.coverage_ledger_head.state_projection.weight",
+        "base_model.model.coverage_ledger_head.region_anchor_state_projection.weight",
+        "base_model.model.coverage_ledger_head.object_projection.weight",
+    }.issubset(adapter_state)
+
+
+def test_warm_start_peft_promotes_ledger_head_into_active_modules_to_save() -> None:
+    model = _PreparedToyModel(hidden_size=4, visual_dim=None)
+    install_coverage_ledger_head(model, _ledger_cfg(), visual_dim=3)
+    model.config = {"tie_word_embeddings": False, "model_type": "toy"}
+
+    # Swift freezes the whole model before loading a warm-start adapter from
+    # args.adapters. A pure-CE warm-start checkpoint only declares
+    # token_embeddings_adapter, so coverage_ledger_head remains present but frozen.
+    model.requires_grad_(False)
+    peft_model = get_peft_model(
+        model,
+        LoraConfig(
+            target_modules=["backbone"],
+            r=2,
+            lora_alpha=2,
+            modules_to_save=["token_embeddings_adapter"],
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="coverage_ledger_head was not active"):
+        _require_wrapped_coverage_ledger_head_for_training(peft_model, _ledger_cfg())
+
+    _ensure_coverage_ledger_head_trainable_after_prepare_model(
+        peft_model,
+        _ledger_cfg(),
+    )
+
+    _require_wrapped_coverage_ledger_head_for_training(peft_model, _ledger_cfg())
+    assert peft_model.peft_config["default"].modules_to_save == [
+        "token_embeddings_adapter",
+        "coverage_ledger_head",
+    ]
+    adapter_state = get_peft_model_state_dict(peft_model)
     assert {
         "base_model.model.coverage_ledger_head.state_projection.weight",
         "base_model.model.coverage_ledger_head.region_anchor_state_projection.weight",

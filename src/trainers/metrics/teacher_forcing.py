@@ -5,6 +5,7 @@ from typing import Any, Mapping, MutableMapping, Sequence
 
 from src.detection.token_types import build_compact_token_type_groups
 from src.training.bridge import TrainerLossBridge, TrainerLossBridgeSettings
+from src.training.coverage_ledger.qwen_capture import CoverageLedgerForwardCaptureResult
 from src.training.objectives.types import ObjectiveSpec
 from src.training.sidecars import TrainingSidecars
 from src.training.supervision.batch import SupervisionBatch
@@ -81,7 +82,19 @@ class TeacherForcingObjectiveMixin:
             sample_id_to_batch_index=sample_id_to_batch_index,
         )
         _log_metric_events(self, result.metric_events)
-        return (result.loss, result.outputs) if return_outputs else result.loss
+        return (
+            (result.loss, _trainer_return_outputs(result.outputs, result.loss))
+            if return_outputs
+            else result.loss
+        )
+
+
+def _trainer_return_outputs(outputs: Any, loss: Any) -> Any:
+    """Return a HF Trainer-compatible output object for prediction/eval steps."""
+
+    if isinstance(outputs, CoverageLedgerForwardCaptureResult):
+        return (loss, outputs.logits)
+    return outputs
 
 
 def _require_teacher_forcing_irs(payload: Any) -> tuple[TeacherForcingTargetIR, ...]:

@@ -10,7 +10,9 @@ import torch
 import src.training.bridge.loss_bridge as loss_bridge_module
 from src.metrics.events import flatten_metric_events
 from src.trainers.batch_extras import BatchExtras
+from src.trainers.metrics.teacher_forcing import _trainer_return_outputs
 from src.training.bridge import TrainerLossBridge, TrainerLossBridgeSettings
+from src.training.coverage_ledger.qwen_capture import CoverageLedgerForwardCaptureResult
 from src.training.coverage_ledger.head import CoverageLedgerHead
 from src.training.coverage_ledger.loss import (
     CoverageLedgerDebugRows,
@@ -360,6 +362,22 @@ def test_enabled_coverage_ledger_uses_capture_sums_loss_and_combines_events(
     assert "teacher_forcing/ledger/coverage_pair_count" in metric_keys
     assert "teacher_forcing/ledger/row_object_binding_pair_count" in metric_keys
     assert WEIGHTED_LOSS_KEY in metric_keys
+
+
+def test_teacher_forcing_return_outputs_adapts_coverage_capture_for_hf_eval() -> None:
+    loss = torch.tensor(1.25)
+    logits = torch.zeros((1, 2, 3), dtype=torch.float32)
+    capture = CoverageLedgerForwardCaptureResult(
+        logits=logits,
+        final_hidden_states=torch.zeros((1, 2, 4), dtype=torch.float32),
+        image_embeds=torch.zeros((4, 4), dtype=torch.float32),
+        outputs=SimpleNamespace(marker="raw-lower-output"),
+    )
+
+    adapted = _trainer_return_outputs(capture, loss)
+
+    assert adapted == (loss, logits)
+    assert adapted[1:] == (logits,)
 
 
 def _fake_coverage_ledger_result(*, weighted_loss: float) -> CoverageLedgerLossResult:
