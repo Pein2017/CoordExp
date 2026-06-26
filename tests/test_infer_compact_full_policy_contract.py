@@ -247,8 +247,10 @@ def test_semantic_compact_parse_artifact_uses_configured_field_order() -> None:
         }
     ]
     assert artifact["parse_error_code"] is None
-    assert default_artifact["raw_output_json"] is None
-    assert default_artifact["parse_error_code"] == "strict_template_mismatch"
+    assert default_artifact["raw_output_json"] == {"objects": []}
+    assert default_artifact["parse_status"] == "all_prediction_spans_dropped"
+    assert default_artifact["parse_error_code"] == "no_valid_prediction_objects"
+    assert default_artifact["dropped_pred_objects"][0]["reason"] == "missing_box_start"
 
 
 def test_base_compact_parse_artifact_uses_configured_field_order() -> None:
@@ -281,8 +283,50 @@ def test_base_compact_parse_artifact_uses_configured_field_order() -> None:
         }
     ]
     assert artifact["parse_error_code"] is None
-    assert default_artifact["raw_output_json"] is None
-    assert default_artifact["parse_error_code"] == "strict_template_mismatch"
+    assert default_artifact["raw_output_json"] == {"objects": []}
+    assert default_artifact["parse_status"] == "all_prediction_spans_dropped"
+    assert default_artifact["parse_error_code"] == "no_valid_prediction_objects"
+    assert default_artifact["dropped_pred_objects"][0]["reason"] == "missing_box_start"
+
+
+def test_compact_parse_artifact_reports_all_invalid_spans_without_emptying_rollout() -> None:
+    bad_box_output = (
+        f"{OBJECT_REF_START_TOKEN}person{OBJECT_REF_END_TOKEN}{BOX_START_TOKEN}"
+        "<|coord_447|><|coord_574|><|coord_444|><|coord_630|>"
+        f"{BOX_END_TOKEN}<|im_end|>"
+    )
+
+    artifact = parse_detection_template_output_artifact(
+        bad_box_output,
+        detection_template_id="compact_object_box_closed",
+    )
+
+    assert artifact["raw_output_json"] == {"objects": []}
+    assert artifact["parse_mode"] == "object_span_salvage"
+    assert artifact["parse_status"] == "all_prediction_spans_dropped"
+    assert artifact["parse_error_code"] == "no_valid_prediction_objects"
+    assert artifact["raw_object_spans_total"] == 1
+    assert artifact["valid_pred_object_count"] == 0
+    assert artifact["dropped_pred_object_count"] == 1
+    assert artifact["dropped_pred_objects"] == [
+        {
+            "span_index": 0,
+            "desc": "person",
+            "bbox_2d": [
+                "<|coord_447|>",
+                "<|coord_574|>",
+                "<|coord_444|>",
+                "<|coord_630|>",
+            ],
+            "reason": "invalid_box_geometry",
+            "detail": "x2 <= x1",
+            "raw_text": (
+                f"{OBJECT_REF_START_TOKEN}person{OBJECT_REF_END_TOKEN}{BOX_START_TOKEN}"
+                "<|coord_447|><|coord_574|><|coord_444|><|coord_630|>"
+                f"{BOX_END_TOKEN}"
+            ),
+        }
+    ]
 
 
 def test_runtime_detection_template_fallback_canonicalizes_sequence_format() -> None:
@@ -397,7 +441,8 @@ def test_infer_artifact_writer_records_detection_template_parse_policy(
     engine.infer()
 
     row = json.loads(out_path.read_text(encoding="utf-8").splitlines()[0])
-    assert row["parse_mode"] == "strict_expected"
+    assert row["parse_mode"] == "object_span_salvage"
+    assert row["parse_status"] == "accepted"
     assert row["serialization_policy"] == "compact"
     assert row["object_separator"] == "<|object_ref_start|>"
     assert row["terminal_token"] == "<|im_end|>"
@@ -471,7 +516,8 @@ def test_infer_artifact_writer_records_geometry_first_base_compact_policy(
     engine.infer()
 
     row = json.loads(out_path.read_text(encoding="utf-8").splitlines()[0])
-    assert row["parse_mode"] == "strict_expected"
+    assert row["parse_mode"] == "object_span_salvage"
+    assert row["parse_status"] == "accepted"
     assert row["serialization_policy"] == "compact"
     assert row["object_separator"] == BOX_START_TOKEN
     assert row["terminal_token"] == "<|im_end|>"

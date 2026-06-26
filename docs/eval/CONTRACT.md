@@ -6,7 +6,7 @@ status: canonical
 domain: eval
 summary: Contract for CoordExp inference and detection-evaluation artifacts.
 tags: [eval, contract, jsonl]
-updated: 2026-03-22
+updated: 2026-06-26
 ---
 
 # Evaluation Contract
@@ -44,6 +44,15 @@ This page defines the current infer/eval artifact contract.
   aliases are not canonical.
 - `raw_output_json` is the parsed best-effort raw payload from the shared
   salvage/parser path, not a verbatim raw-text mirror.
+- Compact detection inference parses model rollouts at object-span granularity.
+  Valid object spans are salvaged into `raw_output_json.objects` and `pred`;
+  invalid spans are dropped into `dropped_pred_objects` with a concrete
+  `reason`, optional `detail`, and the offending `raw_text`. Compact rows also
+  expose `parse_status`, `raw_object_spans_total`,
+  `valid_pred_object_count`, and `dropped_pred_object_count`.
+- `empty_pred` is reserved for outputs with no valid prediction objects. A
+  compact rollout with some valid objects and some invalid spans should report
+  `dropped_invalid_object` rather than erasing the whole prediction row.
 
 ## Coordinate Handling
 
