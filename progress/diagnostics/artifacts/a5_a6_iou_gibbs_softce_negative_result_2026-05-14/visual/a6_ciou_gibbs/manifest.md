@@ -1,8 +1,8 @@
 # Poor Raw IoU@0.50 Visualizations: A6 ciou-gibbs
 
-- run_dir: `/data/home/xiaoyan/AIteam/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu`
-- source: `/data/home/xiaoyan/AIteam/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_resources/gt_vs_pred.jsonl`
-- selected_resource: `/data/home/xiaoyan/AIteam/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_resources/poor_raw_iou50_top12/gt_vs_pred.jsonl`
+- run_dir: `/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu`
+- source: `/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_resources/gt_vs_pred.jsonl`
+- selected_resource: `/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/vis_resources/poor_raw_iou50_top12/gt_vs_pred.jsonl`
 - ranking: lowest per-image F1@0.50 using `tp_full`, `fp_full`, `fn_full`; ties by larger FP+FN.
 
 | rank | record_idx | image | gt | pred | TP | FP | FN | F1@0.50 | png |

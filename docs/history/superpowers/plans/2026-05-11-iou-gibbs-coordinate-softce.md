@@ -1769,9 +1769,9 @@ worktree.
 Run from the worktree root:
 
 ```bash
-test -e model_cache || ln -s /data/home/xiaoyan/AIteam/data/CoordExp/model_cache model_cache
+test -e model_cache || ln -s /data/CoordExp/model_cache model_cache
 mkdir -p public_data/coco
-test -e public_data/coco/rescale_32_1024_bbox_max60 || ln -s /data/home/xiaoyan/AIteam/data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60 public_data/coco/rescale_32_1024_bbox_max60
+test -e public_data/coco/rescale_32_1024_bbox_max60 || ln -s /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60 public_data/coco/rescale_32_1024_bbox_max60
 test -f public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
 test -f model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp/config.json
 ```
@@ -1868,10 +1868,10 @@ In the final implementation report, include:
 Smoke/model-diagnosis evidence recorded on 2026-05-11:
 
 - symlinks:
-  - `model_cache -> /data/home/xiaoyan/AIteam/data/CoordExp/model_cache`
-  - `public_data/coco/rescale_32_1024_bbox_max60 -> /data/home/xiaoyan/AIteam/data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60`
-  - `public_data/coco/rescale_32_1024_bbox -> /data/home/xiaoyan/AIteam/data/CoordExp/public_data/coco/rescale_32_1024_bbox`
-  - `public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy -> /data/home/xiaoyan/AIteam/data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy`
+  - `model_cache -> /data/CoordExp/model_cache`
+  - `public_data/coco/rescale_32_1024_bbox_max60 -> /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60`
+  - `public_data/coco/rescale_32_1024_bbox -> /data/CoordExp/public_data/coco/rescale_32_1024_bbox`
+  - `public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy -> /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60_lvis_proxy`
 - A5 tiny:
   `temp/recursive_detection_ce_latest/output/compact_full_iou_gibbs_softce_a5_tiny/smoke-compact-full-iou-gibbs-softce-a5-tiny/v0-20260511-171218`
   - `loss/recursive_detection_ce=19.93226814`
@@ -1938,7 +1938,7 @@ PYTHONPATH=. OMP_NUM_THREADS=8 TORCH_NCCL_ASYNC_ERROR_HANDLING=1 PYTORCH_CUDA_AL
 Production launch state on 2026-05-11:
 
 - Created launch-node mapping:
-  `/data/CoordExp -> /data/home/xiaoyan/AIteam/data/CoordExp`.
+  `/data/CoordExp -> /data/CoordExp`.
 - Started tmux sessions:
   - `coordexp_a5_iou_gibbs_prod`, GPUs `0,1,2,3`, port `29605`,
     log `temp/prod_launch/a5_iou_gibbs_prod_20260511_173916.log`.

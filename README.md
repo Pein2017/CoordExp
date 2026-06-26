@@ -40,8 +40,8 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
    ```bash
    cd .
    python scripts/tools/expand_coord_vocab.py \
-     --src /data/home/xiaoyan/AIteam/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-4B-Instruct \
-     --dst /data/home/xiaoyan/AIteam/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-4B-Instruct-coordexp
+     --src /data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-4B-Instruct \
+     --dst /data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-4B-Instruct-coordexp
    ```
 3) **Train (examples)**:
    ```bash

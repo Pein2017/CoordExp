@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import replace
 from typing import Any, Mapping, MutableMapping, Sequence
 
@@ -47,6 +48,12 @@ class TeacherForcingObjectiveMixin:
                         "input_ids": input_ids,
                         "role_vocab": role_vocab,
                         "coverage_strength": _coverage_strength(objective_cfg),
+                        "token_type_mass_enabled": _token_type_mass_enabled(
+                            objective_cfg
+                        ),
+                        "token_type_mass_weight": _token_type_mass_weight(
+                            objective_cfg
+                        ),
                     },
                 ),
             ),
@@ -97,6 +104,8 @@ def _build_teacher_forcing_supervision(
     spans: list[SupervisionSpan] = []
     sample_id_to_batch_index: dict[str, int] = {}
     for batch_index, (sample_id, target_ir) in enumerate(zip(sample_ids, target_irs, strict=True)):
+        if sample_id in sample_id_to_batch_index:
+            raise ValueError(f"teacher_forcing duplicate sample ID: {sample_id!r}")
         sample_id_to_batch_index[sample_id] = batch_index
         shifted_ir = _with_batch_index(target_ir, batch_index=batch_index)
         spans.append(
@@ -165,6 +174,44 @@ def _coverage_strength(objective_cfg: Any) -> float:
     coverage = getattr(modules, "within_valid_coverage", None)
     value = getattr(coverage, "coverage_strength", 0.0)
     return float(value or 0.0)
+
+
+def _token_type_mass_enabled(objective_cfg: Any) -> bool:
+    token_type_mass = _token_type_mass_cfg(objective_cfg)
+    if token_type_mass is None:
+        return False
+    value = _cfg_get(token_type_mass, "enabled", False)
+    if type(value) is not bool:
+        raise TypeError("token_type_mass.enabled must be a bool")
+    return value
+
+
+def _token_type_mass_weight(objective_cfg: Any) -> float:
+    token_type_mass = _token_type_mass_cfg(objective_cfg)
+    if token_type_mass is None:
+        return 1.0
+    value = _cfg_get(token_type_mass, "weight", 1.0)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError("token_type_mass.weight must be a finite numeric scalar")
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise ValueError("token_type_mass.weight must be finite")
+    if parsed < 0.0:
+        raise ValueError("token_type_mass.weight must be >= 0")
+    return parsed
+
+
+def _token_type_mass_cfg(objective_cfg: Any) -> Any:
+    terms = _cfg_get(objective_cfg, "terms", None)
+    return _cfg_get(terms, "token_type_mass", None)
+
+
+def _cfg_get(value: Any, name: str, default: Any) -> Any:
+    if value is None:
+        return default
+    if isinstance(value, Mapping):
+        return value.get(name, default)
+    return getattr(value, name, default)
 
 
 __all__ = ["TeacherForcingObjectiveMixin"]

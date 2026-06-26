@@ -69,9 +69,9 @@ Training checkpoint:
 Eval artifacts:
 
 - `rp=1.05`:
-  [coord_components_2b_coord_token_hard_ce_val200_adapter](/data/home/xiaoyan/AIteam/data/CoordExp/output/infer/coord_components_2b/coord_components_2b_coord_token_hard_ce_val200_adapter)
+  [coord_components_2b_coord_token_hard_ce_val200_adapter](/data/CoordExp/output/infer/coord_components_2b/coord_components_2b_coord_token_hard_ce_val200_adapter)
 - `rp=1.10`:
-  [coord_components_2b_coord_token_hard_ce_val200_adapter_rp110](/data/home/xiaoyan/AIteam/data/CoordExp/output/infer/coord_components_2b/coord_components_2b_coord_token_hard_ce_val200_adapter_rp110)
+  [coord_components_2b_coord_token_hard_ce_val200_adapter_rp110](/data/CoordExp/output/infer/coord_components_2b/coord_components_2b_coord_token_hard_ce_val200_adapter_rp110)
 
 The `rp=1.10` hard-CE run was launched as four manual contiguous shards and
 merged back into the standard run directory:
@@ -89,7 +89,7 @@ Training checkpoint:
 
 Eval artifact:
 
-- [coord_components_2b_soft_ce_only_val200_adapter_rp110](/data/home/xiaoyan/AIteam/data/CoordExp/output/infer/coord_components_2b/coord_components_2b_soft_ce_only_val200_adapter_rp110)
+- [coord_components_2b_soft_ce_only_val200_adapter_rp110](/data/CoordExp/output/infer/coord_components_2b/coord_components_2b_soft_ce_only_val200_adapter_rp110)
 
 ### soft_ce_hard_ce
 
@@ -99,7 +99,7 @@ Training checkpoint:
 
 Eval artifact:
 
-- [coord_components_2b_soft_ce_hard_ce_val200_adapter_rp110](/data/home/xiaoyan/AIteam/data/CoordExp/output/infer/coord_components_2b/coord_components_2b_soft_ce_hard_ce_val200_adapter_rp110)
+- [coord_components_2b_soft_ce_hard_ce_val200_adapter_rp110](/data/CoordExp/output/infer/coord_components_2b/coord_components_2b_soft_ce_hard_ce_val200_adapter_rp110)
 
 ### smooth_l1_hard_ce
 
@@ -109,7 +109,7 @@ Training checkpoint:
 
 Eval artifact:
 
-- [coord_components_2b_smooth_l1_hard_ce_val200_adapter_rp110](/data/home/xiaoyan/AIteam/data/CoordExp/output/infer/coord_components_2b/coord_components_2b_smooth_l1_hard_ce_val200_adapter_rp110)
+- [coord_components_2b_smooth_l1_hard_ce_val200_adapter_rp110](/data/CoordExp/output/infer/coord_components_2b/coord_components_2b_smooth_l1_hard_ce_val200_adapter_rp110)
 
 ## Main COCO Real Scoreboard
 
@@ -250,9 +250,9 @@ Recommended interpretation:
 These configs define the canonical post-merge hard-CE `rp=1.10` evaluation
 surface:
 
-- [configs/infer/coco_1024/coord_components_2b/coord_token_hard_ce_val200_adapter_rp110.yaml](/data/home/xiaoyan/AIteam/data/CoordExp/configs/infer/coco_1024/coord_components_2b/coord_token_hard_ce_val200_adapter_rp110.yaml)
-- [configs/postop/coco_1024/coord_components_2b/coord_token_hard_ce_val200_adapter_rp110.yaml](/data/home/xiaoyan/AIteam/data/CoordExp/configs/postop/coco_1024/coord_components_2b/coord_token_hard_ce_val200_adapter_rp110.yaml)
-- [configs/eval/coco_1024/coord_components_2b/coord_token_hard_ce_val200_adapter_rp110_bundle.yaml](/data/home/xiaoyan/AIteam/data/CoordExp/configs/eval/coco_1024/coord_components_2b/coord_token_hard_ce_val200_adapter_rp110_bundle.yaml)
+- [configs/infer/coco_1024/coord_components_2b/coord_token_hard_ce_val200_adapter_rp110.yaml](/data/CoordExp/configs/infer/coco_1024/coord_components_2b/coord_token_hard_ce_val200_adapter_rp110.yaml)
+- [configs/postop/coco_1024/coord_components_2b/coord_token_hard_ce_val200_adapter_rp110.yaml](/data/CoordExp/configs/postop/coco_1024/coord_components_2b/coord_token_hard_ce_val200_adapter_rp110.yaml)
+- [configs/eval/coco_1024/coord_components_2b/coord_token_hard_ce_val200_adapter_rp110_bundle.yaml](/data/CoordExp/configs/eval/coco_1024/coord_components_2b/coord_token_hard_ce_val200_adapter_rp110_bundle.yaml)
 
 ## Verification Commands
 

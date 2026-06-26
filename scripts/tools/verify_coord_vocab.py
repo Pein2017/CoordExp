@@ -22,7 +22,7 @@ def parse_args() -> argparse.Namespace:
         "--checkpoint",
         type=Path,
         default=Path(
-            "/data/home/xiaoyan/AIteam/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-8B-Instruct-coordexp"
+            "/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-8B-Instruct-coordexp"
         ),
         help="Path to the expanded checkpoint directory.",
     )

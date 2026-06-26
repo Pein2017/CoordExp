@@ -1272,7 +1272,10 @@ def _detection_objective_runtime_payload(training_config: Any) -> dict[str, Any]
                     "token_type_mass": {
                         "enabled": _get_section_value(
                             token_type_mass_cfg, "enabled"
-                        )
+                        ),
+                        "weight": _get_section_value(
+                            token_type_mass_cfg, "weight"
+                        ),
                     },
                     "conditional_valid_set_likelihood": {
                         "enabled": _get_section_value(

@@ -20,6 +20,11 @@ def test_required_teacher_forcing_metric_keys_are_canonical() -> None:
     assert {
         "teacher_forcing/loss/total",
         "teacher_forcing/loss/token_type_mass",
+        "teacher_forcing/loss/token_type_mass/contribution",
+        "teacher_forcing/type/schema_mass_at_schema",
+        "teacher_forcing/type/coord_mass_at_coord",
+        "teacher_forcing/type/desc_mass_at_desc",
+        "teacher_forcing/type/stop_mass_at_stop",
         "teacher_forcing/loss/conditional_valid_set_likelihood",
         "teacher_forcing/loss/within_valid_coverage",
         "teacher_forcing/valid_set/mass",
@@ -48,9 +53,23 @@ def test_teacher_forcing_events_flatten_to_required_metric_names() -> None:
             denominator=5,
             span_count=2,
             atom_count=8,
+            token_type_mass=0.75,
+            token_type_mass_contribution=0.15,
+            token_type_mass_denominator=8,
+            family_mass_by_target={
+                "schema": 0.91,
+                "coord": 0.82,
+                "desc": 0.73,
+                "stop": 0.64,
+            },
+            family_mass_denominators={
+                "schema": 1,
+                "coord": 2,
+                "desc": 3,
+                "stop": 4,
+            },
         ),
         *teacher_forcing_diagnostic_events(
-            token_type_mass=0.75,
             conditional_valid_set_likelihood=0.6,
             within_valid_coverage=0.8,
             valid_set_mass=0.7,
@@ -86,6 +105,11 @@ def test_teacher_forcing_events_flatten_to_required_metric_names() -> None:
 
     assert flat["teacher_forcing/loss/total"] == pytest.approx(2.5)
     assert flat["teacher_forcing/loss/token_type_mass"] == pytest.approx(0.75)
+    assert flat["teacher_forcing/loss/token_type_mass/contribution"] == pytest.approx(0.15)
+    assert flat["teacher_forcing/type/schema_mass_at_schema"] == pytest.approx(0.91)
+    assert flat["teacher_forcing/type/coord_mass_at_coord"] == pytest.approx(0.82)
+    assert flat["teacher_forcing/type/desc_mass_at_desc"] == pytest.approx(0.73)
+    assert flat["teacher_forcing/type/stop_mass_at_stop"] == pytest.approx(0.64)
     assert flat["teacher_forcing/loss/conditional_valid_set_likelihood"] == pytest.approx(0.6)
     assert flat["teacher_forcing/loss/within_valid_coverage"] == pytest.approx(0.8)
     assert flat["teacher_forcing/valid_set/mass"] == pytest.approx(0.7)
@@ -110,6 +134,74 @@ def test_teacher_forcing_events_flatten_to_required_metric_names() -> None:
     assert flat["infer/parse/compact_full/error/bad_marker"] == pytest.approx(2)
     assert not any(key.startswith("training/objectives/teacher_forcing") for key in flat)
     assert not any(key.startswith("recursive_detection/") for key in flat)
+
+
+def test_token_type_mass_events_reduce_by_active_atom_denominators() -> None:
+    events = [
+        *teacher_forcing_loss_events(
+            loss=2.0,
+            denominator=1,
+            span_count=1,
+            atom_count=1,
+            token_type_mass=2.0,
+            token_type_mass_contribution=0.4,
+            token_type_mass_denominator=1,
+            family_mass_by_target={"desc": 0.2},
+            family_mass_denominators={"desc": 1},
+        ),
+        *teacher_forcing_loss_events(
+            loss=10.0,
+            denominator=3,
+            span_count=1,
+            atom_count=3,
+            token_type_mass=10.0,
+            token_type_mass_contribution=2.0,
+            token_type_mass_denominator=3,
+            family_mass_by_target={"desc": 0.8},
+            family_mass_denominators={"desc": 3},
+        ),
+    ]
+
+    flat = flatten_metric_events(events)
+
+    assert flat["teacher_forcing/loss/token_type_mass"] == pytest.approx(32.0 / 4.0)
+    assert flat["teacher_forcing/loss/token_type_mass/contribution"] == pytest.approx(
+        6.4 / 4.0
+    )
+    assert flat["teacher_forcing/type/desc_mass_at_desc"] == pytest.approx(2.6 / 4.0)
+
+
+def test_token_type_mass_promoted_metric_does_not_share_diagnostic_identity() -> None:
+    events = [
+        *teacher_forcing_loss_events(
+            loss=1.0,
+            denominator=2,
+            span_count=1,
+            atom_count=2,
+            token_type_mass=0.75,
+            token_type_mass_contribution=0.15,
+            token_type_mass_denominator=2,
+            family_mass_by_target={"desc": 0.8},
+            family_mass_denominators={"desc": 2},
+        ),
+        *teacher_forcing_diagnostic_events(
+            conditional_valid_set_likelihood=0.6,
+            within_valid_coverage=0.8,
+        ),
+    ]
+
+    token_type_events = [
+        event
+        for event in events
+        if event.key == "teacher_forcing/loss/token_type_mass"
+    ]
+
+    assert len(token_type_events) == 1
+    assert token_type_events[0].metric_surface == "objective_loss"
+    assert token_type_events[0].diagnostic_only is False
+    assert flatten_metric_events(events)["teacher_forcing/loss/token_type_mass"] == pytest.approx(
+        0.75
+    )
 
 
 def test_decode_quality_events_record_absent_artifact_without_zero_rates() -> None:

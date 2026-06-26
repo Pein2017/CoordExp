@@ -2,7 +2,7 @@
 
 The current 2B comparison between the Stage-1 `original` checkpoint and the Stage-2 `a_only` checkpoint suggests that both models already have strong semantic objectness, while the remaining gap is concentrated in missed rollout objects, crowded-scene separability, and prefix-dependent continuation behavior. We need a reproducible offline study that isolates why FN persists under fixed checkpoints, without conflating those questions with ongoing training changes.
 
-This study should be treated as a direct extension of the authority-first experiment style established in [2026-03-16-unmatched-proposal-verifier-ablation](/data/home/xiaoyan/AIteam/data/CoordExp/openspec/changes/archive/2026-03-16-unmatched-proposal-verifier-ablation/proposal.md): staged evidence, explicit validity gates, and a small manually auditable benchmark before drawing a strong conclusion.
+This study should be treated as a direct extension of the authority-first experiment style established in [2026-03-16-unmatched-proposal-verifier-ablation](/data/CoordExp/openspec/changes/archive/2026-03-16-unmatched-proposal-verifier-ablation/proposal.md): staged evidence, explicit validity gates, and a small manually auditable benchmark before drawing a strong conclusion.
 
 ## What Changes
 

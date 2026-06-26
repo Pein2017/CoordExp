@@ -15,13 +15,13 @@ other objects.
 
 The trigger for this change is strong empirical evidence from the full-val
 LVIS-proxy run in
-[output/infer/coco1024_val200_lvis_proxy_merged_2b](/data/home/xiaoyan/AIteam/data/CoordExp/output/infer/coco1024_val200_lvis_proxy_merged_2b).
+[output/infer/coco1024_val200_lvis_proxy_merged_2b](/data/CoordExp/output/infer/coco1024_val200_lvis_proxy_merged_2b).
 The temporary duplicate-strip experiment at
-[dup_postop_eval.py](/data/home/xiaoyan/AIteam/data/CoordExp/temp/dup_postop_eval.py)
+[dup_postop_eval.py](/data/CoordExp/temp/dup_postop_eval.py)
 removed tight same-description local duplicate clusters from
-[gt_vs_pred_scored.jsonl](/data/home/xiaoyan/AIteam/data/CoordExp/output/infer/coco1024_val200_lvis_proxy_merged_2b/gt_vs_pred_scored.jsonl)
+[gt_vs_pred_scored.jsonl](/data/CoordExp/output/infer/coco1024_val200_lvis_proxy_merged_2b/gt_vs_pred_scored.jsonl)
 and improved full-val `coco_real bbox_AP` from `0.389928` to `0.397880` in
-[comparison.json](/data/home/xiaoyan/AIteam/data/CoordExp/temp/dup_postop_eval/comparison.json),
+[comparison.json](/data/CoordExp/temp/dup_postop_eval/comparison.json),
 while `bbox_AR100` fell slightly. That trade-off matches the chosen objective
 for this change: reduce catastrophic duplicate-collapse even if recall drops a
 bit.
@@ -32,7 +32,7 @@ Additional historical evidence matters here:
 - the strongest current read is a local duplicate-collapse attractor rather than
   a generic global preference for duplicate objects,
 - the repo already has an evidence-backed duplicate-like relation in
-  [small_object_duplication_study.py](/data/home/xiaoyan/AIteam/data/CoordExp/src/analysis/small_object_duplication_study.py)
+  [small_object_duplication_study.py](/data/CoordExp/src/analysis/small_object_duplication_study.py)
   that is stronger than the current sequential high-IoU heuristic.
 
 This change therefore proposes one canonical duplicate-control policy shared
@@ -44,7 +44,7 @@ training suppression and offline post-op guarding as unrelated mechanisms.
 - Replace the legacy sequential duplicate-burst path in
   `stage2_two_channel` with a canonical duplicate-control policy that operates
   on rollout objects using the duplicate-like relation proven out in
-  [small_object_duplication_study.py](/data/home/xiaoyan/AIteam/data/CoordExp/src/analysis/small_object_duplication_study.py).
+  [small_object_duplication_study.py](/data/CoordExp/src/analysis/small_object_duplication_study.py).
 - Apply duplicate-control after anchor and explorer views are available but
   before GT matching, so duplicate collapse is suppressed as the core symptom
   rather than as a late clean-up step.
@@ -91,24 +91,24 @@ training suppression and offline post-op guarding as unrelated mechanisms.
 ## Impact
 
 - Affected training/runtime code is expected in:
-  - [rollout_views.py](/data/home/xiaoyan/AIteam/data/CoordExp/src/trainers/stage2_two_channel/rollout_views.py)
-  - [target_builder.py](/data/home/xiaoyan/AIteam/data/CoordExp/src/trainers/stage2_two_channel/target_builder.py)
-  - [stage2_two_channel.py](/data/home/xiaoyan/AIteam/data/CoordExp/src/trainers/stage2_two_channel.py)
-  - [stage2_coordination.py](/data/home/xiaoyan/AIteam/data/CoordExp/src/trainers/stage2_coordination.py)
+  - [rollout_views.py](/data/CoordExp/src/trainers/stage2_two_channel/rollout_views.py)
+  - [target_builder.py](/data/CoordExp/src/trainers/stage2_two_channel/target_builder.py)
+  - [stage2_two_channel.py](/data/CoordExp/src/trainers/stage2_two_channel.py)
+  - [stage2_coordination.py](/data/CoordExp/src/trainers/stage2_coordination.py)
   - a new shared duplicate-control core under
-    [src/common/](/data/home/xiaoyan/AIteam/data/CoordExp/src/common)
+    [src/common/](/data/CoordExp/src/common)
 - Affected config/schema/docs are expected in:
-  - [schema.py](/data/home/xiaoyan/AIteam/data/CoordExp/src/config/schema.py)
-  - [loader.py](/data/home/xiaoyan/AIteam/data/CoordExp/src/config/loader.py)
-  - [METRICS.md](/data/home/xiaoyan/AIteam/data/CoordExp/docs/training/METRICS.md)
-  - [STAGE2_RUNBOOK.md](/data/home/xiaoyan/AIteam/data/CoordExp/docs/training/STAGE2_RUNBOOK.md)
-  - [WORKFLOW.md](/data/home/xiaoyan/AIteam/data/CoordExp/docs/eval/WORKFLOW.md)
+  - [schema.py](/data/CoordExp/src/config/schema.py)
+  - [loader.py](/data/CoordExp/src/config/loader.py)
+  - [METRICS.md](/data/CoordExp/docs/training/METRICS.md)
+  - [STAGE2_RUNBOOK.md](/data/CoordExp/docs/training/STAGE2_RUNBOOK.md)
+  - [WORKFLOW.md](/data/CoordExp/docs/eval/WORKFLOW.md)
 - Affected offline evaluation/inference code is expected in:
-  - [pipeline.py](/data/home/xiaoyan/AIteam/data/CoordExp/src/infer/pipeline.py)
-  - [artifacts.py](/data/home/xiaoyan/AIteam/data/CoordExp/src/infer/artifacts.py)
-  - [detection.py](/data/home/xiaoyan/AIteam/data/CoordExp/src/eval/detection.py)
-  - [orchestration.py](/data/home/xiaoyan/AIteam/data/CoordExp/src/eval/orchestration.py)
-  - [artifacts.py](/data/home/xiaoyan/AIteam/data/CoordExp/src/eval/artifacts.py)
+  - [pipeline.py](/data/CoordExp/src/infer/pipeline.py)
+  - [artifacts.py](/data/CoordExp/src/infer/artifacts.py)
+  - [detection.py](/data/CoordExp/src/eval/detection.py)
+  - [orchestration.py](/data/CoordExp/src/eval/orchestration.py)
+  - [artifacts.py](/data/CoordExp/src/eval/artifacts.py)
 - No new CLI flags are introduced.
 - `stage2_rollout_runtime` is explicitly out of scope for the first landing.
 - Backward compatibility is not a goal for this refactor. Legacy sequential
@@ -121,10 +121,10 @@ training suppression and offline post-op guarding as unrelated mechanisms.
   - always report both raw and guarded offline metrics.
 - Background evidence to preserve for handoff:
   - offline study script:
-    [dup_postop_eval.py](/data/home/xiaoyan/AIteam/data/CoordExp/temp/dup_postop_eval.py)
+    [dup_postop_eval.py](/data/CoordExp/temp/dup_postop_eval.py)
   - filtered scored predictions:
-    [gt_vs_pred_scored.dedup.jsonl](/data/home/xiaoyan/AIteam/data/CoordExp/temp/dup_postop_eval/gt_vs_pred_scored.dedup.jsonl)
+    [gt_vs_pred_scored.dedup.jsonl](/data/CoordExp/temp/dup_postop_eval/gt_vs_pred_scored.dedup.jsonl)
   - strip summary:
-    [dedup_summary.json](/data/home/xiaoyan/AIteam/data/CoordExp/temp/dup_postop_eval/dedup_summary.json)
+    [dedup_summary.json](/data/CoordExp/temp/dup_postop_eval/dedup_summary.json)
   - metric deltas:
-    [comparison.json](/data/home/xiaoyan/AIteam/data/CoordExp/temp/dup_postop_eval/comparison.json)
+    [comparison.json](/data/CoordExp/temp/dup_postop_eval/comparison.json)

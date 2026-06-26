@@ -31,11 +31,11 @@ A6 CIoU-Gibbs:
 
 A5 IoU-Gibbs:
 
-`/data/home/xiaoyan/AIteam/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a5_iou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu`
+`/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a5_iou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu`
 
 A6 CIoU-Gibbs:
 
-`/data/home/xiaoyan/AIteam/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu`
+`/data/CoordExp/outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu`
 
 ## Archived Evidence
 

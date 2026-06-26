@@ -149,15 +149,23 @@ def test_latest_teacher_forcing_accepts_supported_profiles(profile: str) -> None
 def test_sft_runtime_payload_preserves_public_teacher_forcing_sidecars() -> None:
     from src.sft import _detection_objective_runtime_payload
 
-    cfg = DetectionTrainingConfig.from_mapping(_latest_teacher_payload())
+    payload = _latest_teacher_payload()
+    objective = payload["objective"]
+    assert isinstance(objective, dict)
+    terms = objective["terms"]
+    assert isinstance(terms, dict)
+    terms["token_type_mass"] = {"enabled": True, "weight": 0.2}
+    cfg = DetectionTrainingConfig.from_mapping(payload)
 
-    payload = _detection_objective_runtime_payload(cfg)
+    runtime_payload = _detection_objective_runtime_payload(cfg)
 
-    assert payload is not None
-    assert payload["id"] == "research_teacher_forcing"
-    assert payload["target_ir"]["rollin_policy"]["name"] == "random_permutation"
-    assert payload["target_ir"]["rollin_policy"]["base_seed"] == 17
-    assert payload["terms"]["conditional_valid_set_likelihood"]["enabled"] is True
+    assert runtime_payload is not None
+    assert runtime_payload["id"] == "research_teacher_forcing"
+    assert runtime_payload["target_ir"]["rollin_policy"]["name"] == "random_permutation"
+    assert runtime_payload["target_ir"]["rollin_policy"]["base_seed"] == 17
+    assert runtime_payload["terms"]["token_type_mass"]["enabled"] is True
+    assert runtime_payload["terms"]["token_type_mass"]["weight"] == 0.2
+    assert runtime_payload["terms"]["conditional_valid_set_likelihood"]["enabled"] is True
 
 
 def test_research_teacher_forcing_rejects_retired_modules_authoring() -> None:
@@ -178,11 +186,6 @@ def test_detection_objective_config_direct_construction_rejects_sft_id() -> None
 @pytest.mark.parametrize(
     ("term_key", "term_payload", "expected_path"),
     [
-        (
-            "token_type_mass",
-            {"enabled": True},
-            r"objective\.terms\.token_type_mass\.enabled",
-        ),
         (
             "conditional_valid_set_likelihood",
             {"enabled": True},
@@ -224,6 +227,70 @@ def test_hard_sft_rejects_target_ir_only_terms(
         ValueError,
         match=rf"objective\.profile=hard_sft.*{expected_path}",
     ):
+        DetectionTrainingConfig.from_mapping(payload)
+
+
+def test_hard_sft_accepts_token_type_mass_with_weight() -> None:
+    payload = _latest_teacher_payload(
+        profile="hard_sft",
+        terms={
+            "token_type_mass": {"enabled": True, "weight": 2},
+            "conditional_valid_set_likelihood": {"enabled": False},
+            "within_valid_coverage": {"enabled": False, "coverage_strength": 0.0},
+            "continuation_margin": {"enabled": False},
+        },
+    )
+
+    cfg = DetectionTrainingConfig.from_mapping(payload)
+
+    assert cfg.objective.profile == "hard_sft"
+    assert cfg.objective.terms.token_type_mass.enabled is True
+    assert cfg.objective.terms.token_type_mass.weight == 2.0
+    assert isinstance(cfg.objective.terms.token_type_mass.weight, float)
+
+
+@pytest.mark.parametrize(
+    "token_type_mass",
+    [
+        {"mode": "allowed_type_mass"},
+        {"extra": True},
+    ],
+)
+def test_teacher_forcing_token_type_mass_rejects_unknown_keys(
+    token_type_mass: dict[str, object],
+) -> None:
+    payload = _latest_teacher_payload(
+        terms={
+            **_teacher_forcing_objective()["terms"],
+            "token_type_mass": token_type_mass,
+        },
+    )
+
+    with pytest.raises(ValueError, match=r"objective\.terms\.token_type_mass"):
+        DetectionTrainingConfig.from_mapping(payload)
+
+
+@pytest.mark.parametrize(
+    "weight",
+    [
+        True,
+        "1.0",
+        float("nan"),
+        float("inf"),
+        -0.1,
+    ],
+)
+def test_teacher_forcing_token_type_mass_rejects_invalid_weight(
+    weight: object,
+) -> None:
+    payload = _latest_teacher_payload(
+        terms={
+            **_teacher_forcing_objective()["terms"],
+            "token_type_mass": {"enabled": True, "weight": weight},
+        },
+    )
+
+    with pytest.raises(Exception, match=r"objective\.terms\.token_type_mass\.weight"):
         DetectionTrainingConfig.from_mapping(payload)
 
 

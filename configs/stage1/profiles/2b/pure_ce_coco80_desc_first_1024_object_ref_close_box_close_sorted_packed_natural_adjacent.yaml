@@ -88,15 +88,15 @@ validation:
   fail_fast: true
 
 data:
-  train_jsonl: public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl
-  val_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+  train_jsonl: public_data/coco/rescale_32_1024_bbox_len12000/train.coord.jsonl
+  val_jsonl: public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl
   image_root: public_data/coco
 
 training:
   output_root: ./output
   logging_root: ./tb
-  artifact_subdir: stage1_2b/coco_bbox_max60_1024-coco80-desc_first-compact_object_box_closed-sorted-packed12k-natural_adjacent-pure_ce
-  run_name: epoch_4-pure_ce-coco80-desc_first-1024-compact_object_box_closed-sorted-packed12k-natural_adjacent-llm_only
+  artifact_subdir: stage1_2b/coco_bbox_len12000_1024-coco80-desc_first-compact_object_box_closed-sorted-packed12k-natural_adjacent-pure_ce
+  run_name: epoch_4-pure_ce-coco80-desc_first-1024-coco_bbox_len12000-compact_object_box_closed-sorted-packed12k-natural_adjacent-llm_only
   num_train_epochs: 4
   per_device_train_batch_size: 1
   per_device_eval_batch_size: 1
@@ -119,9 +119,9 @@ training:
   add_version: true
   save_safetensors: true
   eval_strategy: steps
-  eval_steps: 40
-  save_strategy: best
-  save_steps: 200
+  eval_steps: 200
+  save_strategy: steps
+  save_steps: 400
   save_total_limit: 2
   save_last_epoch: true
   save_model_only: false

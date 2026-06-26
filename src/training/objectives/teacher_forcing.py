@@ -56,10 +56,25 @@ class TeacherForcingObjective:
             default=0.0,
             minimum=0.0,
         )
+        token_type_mass_enabled = _config_bool(
+            spec.config,
+            "token_type_mass_enabled",
+            default=False,
+        )
+        token_type_mass_weight = config_float(
+            spec.config,
+            "token_type_mass_weight",
+            default=1.0,
+            minimum=0.0,
+        )
 
         numerators: list[torch.Tensor] = []
         denominators: list[torch.Tensor] = []
         component_totals: dict[str, torch.Tensor] = {}
+        token_type_mass_total: torch.Tensor | None = None
+        token_type_mass_contribution_total: torch.Tensor | None = None
+        family_mass_totals: dict[str, torch.Tensor] = {}
+        family_mass_counts: dict[str, int] = {}
         atom_count = 0
         for resolved in spans:
             distribution = resolved.span.distribution
@@ -87,6 +102,8 @@ class TeacherForcingObjective:
                     atom=atom,
                     role_vocab=role_vocab,
                     coverage_strength=coverage_strength,
+                    token_type_mass_enabled=token_type_mass_enabled,
+                    token_type_mass_weight=token_type_mass_weight,
                 )
                 weighted = atom_loss.total * float(atom.loss_weight)
                 losses.append(weighted)
@@ -94,6 +111,24 @@ class TeacherForcingObjective:
                 _add_component(component_totals, "type", atom_loss.type)
                 _add_component(component_totals, "valid", atom_loss.valid)
                 _add_component(component_totals, "coverage", atom_loss.coverage)
+                if token_type_mass_enabled:
+                    token_type_mass_total = _add_optional_total(
+                        token_type_mass_total,
+                        atom_loss.token_type_mass,
+                    )
+                    token_type_mass_contribution_total = _add_optional_total(
+                        token_type_mass_contribution_total,
+                        atom_loss.token_type_mass_contribution,
+                    )
+                    if atom_loss.target_family is not None:
+                        _add_component(
+                            family_mass_totals,
+                            atom_loss.target_family,
+                            atom_loss.target_family_mass,
+                        )
+                        family_mass_counts[atom_loss.target_family] = (
+                            family_mass_counts.get(atom_loss.target_family, 0) + 1
+                        )
 
             span_losses = torch.stack(losses).to(dtype=torch.float32)
             numerator = span_losses.sum()
@@ -113,6 +148,14 @@ class TeacherForcingObjective:
             denominator=denominator,
             span_count=len(spans),
             atom_count=atom_count,
+            **_token_type_mass_event_kwargs(
+                enabled=token_type_mass_enabled,
+                token_type_mass_total=token_type_mass_total,
+                token_type_mass_contribution_total=token_type_mass_contribution_total,
+                family_mass_totals=family_mass_totals,
+                family_mass_counts=family_mass_counts,
+                denominator=denominator,
+            ),
         )
         state = {
             "atom_count": atom_count,
@@ -153,6 +196,18 @@ def _require_role_vocab(config: Mapping[str, object]) -> RoleVocab:
     if type(role_vocab) is not RoleVocab:
         raise TypeError("teacher_forcing config['role_vocab'] must be a RoleVocab")
     return role_vocab
+
+
+def _config_bool(
+    config: Mapping[str, object],
+    key: str,
+    *,
+    default: bool,
+) -> bool:
+    value = config.get(key, default)
+    if type(value) is not bool:
+        raise TypeError(f"{key} must be a bool")
+    return value
 
 
 def _validate_ir_rows(
@@ -264,6 +319,53 @@ def _add_component(
     value: torch.Tensor,
 ) -> None:
     component_totals[key] = component_totals.get(key, value.new_tensor(0.0)) + value
+
+
+def _add_optional_total(
+    total: torch.Tensor | None,
+    value: torch.Tensor,
+) -> torch.Tensor:
+    if total is None:
+        return value
+    return total + value
+
+
+def _token_type_mass_event_kwargs(
+    *,
+    enabled: bool,
+    token_type_mass_total: torch.Tensor | None,
+    token_type_mass_contribution_total: torch.Tensor | None,
+    family_mass_totals: dict[str, torch.Tensor],
+    family_mass_counts: dict[str, int],
+    denominator: torch.Tensor,
+) -> dict[str, object]:
+    if not enabled:
+        return {}
+    if token_type_mass_total is None or token_type_mass_contribution_total is None:
+        return {}
+
+    family_mass_by_target: dict[str, torch.Tensor] = {}
+    family_mass_denominators: dict[str, torch.Tensor] = {}
+    for family, family_total in family_mass_totals.items():
+        family_denominator = family_total.new_tensor(
+            float(family_mass_counts[family])
+        )
+        family_mass_by_target[family] = _safe_normalize(
+            family_total,
+            family_denominator,
+        )
+        family_mass_denominators[family] = family_denominator
+
+    return {
+        "token_type_mass": _safe_normalize(token_type_mass_total, denominator),
+        "token_type_mass_contribution": _safe_normalize(
+            token_type_mass_contribution_total,
+            denominator,
+        ),
+        "token_type_mass_denominator": denominator,
+        "family_mass_by_target": family_mass_by_target,
+        "family_mass_denominators": family_mass_denominators,
+    }
 
 
 def _safe_normalize(numerator: torch.Tensor, denominator: torch.Tensor) -> torch.Tensor:

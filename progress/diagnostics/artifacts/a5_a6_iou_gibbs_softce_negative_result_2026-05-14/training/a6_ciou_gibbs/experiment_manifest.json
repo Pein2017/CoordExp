@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "identity": {
-    "config_path": "/data/home/xiaoyan/AIteam/data/CoordExp/.worktrees/a5-iou-gibbs-softce/configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml",
+    "config_path": "/data/CoordExp/.worktrees/a5-iou-gibbs-softce/configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2_ciou_gibbs_softce_a6.yaml",
     "base_config_path": "",
     "run_name": "compact-full-et-rmp-ciou-gibbs-softce-a6-support2-bsz16-4gpu-4epoch-tokenrows-v2",
     "output_dir": "/data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_et_rmp_ciou_gibbs_softce_a6_support2_bsz16_4gpu_4epoch_tokenrows_v2/compact-full-et-rmp-ciou-gibbs-softce-a6-support2-bsz16-4gpu-4epoch-tokenrows-v2/v0-20260512-163531",
@@ -77,7 +77,7 @@
     },
     "model_source": {
       "raw_path": "model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp",
-      "resolved_path": "/data/home/xiaoyan/AIteam/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp",
+      "resolved_path": "/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp",
       "exists": true,
       "size_bytes": 4096,
       "mtime_ns": 1772168371620929300
@@ -108,7 +108,7 @@
     },
     "dataset_source_train_jsonl": {
       "raw_path": "public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl",
-      "resolved_path": "/data/home/xiaoyan/AIteam/data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl",
+      "resolved_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl",
       "exists": true,
       "size_bytes": 169492296,
       "mtime_ns": 1778321096983215107,
@@ -116,7 +116,7 @@
     },
     "dataset_source_val_jsonl": {
       "raw_path": "public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl",
-      "resolved_path": "/data/home/xiaoyan/AIteam/data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl",
+      "resolved_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl",
       "exists": true,
       "size_bytes": 7201583,
       "mtime_ns": 1778321097163214555,
@@ -167,10 +167,10 @@
       },
       "swift": {
         "version": "3.10.0.dev0",
-        "file": "/data/home/xiaoyan/AIteam/data/ms-swift/swift/__init__.py"
+        "file": "/data/ms-swift/swift/__init__.py"
       },
       "ms_swift": {
-        "repo_root": "/data/home/xiaoyan/AIteam/data/ms-swift",
+        "repo_root": "/data/ms-swift",
         "sha": "7ac629a7678b59dfa6ae2de04da90bd80fa1a7b4",
         "branch": "main",
         "dirty": false,

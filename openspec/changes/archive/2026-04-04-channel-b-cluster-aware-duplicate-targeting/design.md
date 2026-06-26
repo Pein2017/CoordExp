@@ -18,7 +18,7 @@ The empirical case for a redesign is already strong:
 - the failure looks more like a narrow local attractor than a universal global
   preference for duplicates,
 - and the offline duplicate-like relation in
-  [small_object_duplication_study.py](/data/home/xiaoyan/AIteam/data/CoordExp/src/analysis/small_object_duplication_study.py)
+  [small_object_duplication_study.py](/data/CoordExp/src/analysis/small_object_duplication_study.py)
   is materially stronger than the current sequential heuristic.
 
 The chosen outcome for this change is explicit:
@@ -80,7 +80,7 @@ This matches the empirical evidence better than a loss-first redesign:
 
 This change will promote the duplicate-like relation from analysis code into a
 repo-owned runtime helper, expected to live under
-[src/common/](/data/home/xiaoyan/AIteam/data/CoordExp/src/common).
+[src/common/](/data/CoordExp/src/common).
 
 The shared core owns:
 
@@ -132,7 +132,7 @@ They are used only to support conservative exemptions.
 ### 4. The canonical duplicate-like relation follows the proven analysis policy
 
 The default relation is taken from
-[small_object_duplication_study.py](/data/home/xiaoyan/AIteam/data/CoordExp/src/analysis/small_object_duplication_study.py):
+[small_object_duplication_study.py](/data/CoordExp/src/analysis/small_object_duplication_study.py):
 
 - same normalized description, and
 - either IoU above threshold, or center-distance within a radius scaled by
@@ -246,7 +246,7 @@ metrics explicit.
 
 Expected new core module:
 
-- [src/common/duplicate_control.py](/data/home/xiaoyan/AIteam/data/CoordExp/src/common/duplicate_control.py)
+- [src/common/duplicate_control.py](/data/CoordExp/src/common/duplicate_control.py)
 
 Expected responsibilities:
 
@@ -260,9 +260,9 @@ Expected responsibilities:
 Expected upstream helpers reused:
 
 - normalized description helpers from
-  [semantic_desc.py](/data/home/xiaoyan/AIteam/data/CoordExp/src/common/semantic_desc.py)
+  [semantic_desc.py](/data/CoordExp/src/common/semantic_desc.py)
 - canonical object schema helpers from
-  [schemas.py](/data/home/xiaoyan/AIteam/data/CoordExp/src/common/schemas.py)
+  [schemas.py](/data/CoordExp/src/common/schemas.py)
 
 ### Training Flow
 
@@ -280,12 +280,12 @@ The new Stage-2 flow becomes:
 
 Key ownership changes:
 
-- [rollout_views.py](/data/home/xiaoyan/AIteam/data/CoordExp/src/trainers/stage2_two_channel/rollout_views.py)
+- [rollout_views.py](/data/CoordExp/src/trainers/stage2_two_channel/rollout_views.py)
   stops making final sequential dedup decisions.
-- [target_builder.py](/data/home/xiaoyan/AIteam/data/CoordExp/src/trainers/stage2_two_channel/target_builder.py)
+- [target_builder.py](/data/CoordExp/src/trainers/stage2_two_channel/target_builder.py)
   consumes explicit duplicate-control decisions instead of
   `duplicate_bursts_by_boundary` from a sequential heuristic.
-- [stage2_two_channel.py](/data/home/xiaoyan/AIteam/data/CoordExp/src/trainers/stage2_two_channel.py)
+- [stage2_two_channel.py](/data/CoordExp/src/trainers/stage2_two_channel.py)
   logs normalized duplicate-control counters and gauges instead of legacy
   sequential-burst accounting.
 
@@ -397,12 +397,12 @@ Required runtime checks:
 Important evidence and context to preserve:
 
 - offline duplicate-strip experiment:
-  - [dup_postop_eval.py](/data/home/xiaoyan/AIteam/data/CoordExp/temp/dup_postop_eval.py)
-  - [comparison.json](/data/home/xiaoyan/AIteam/data/CoordExp/temp/dup_postop_eval/comparison.json)
-  - [dedup_summary.json](/data/home/xiaoyan/AIteam/data/CoordExp/temp/dup_postop_eval/dedup_summary.json)
+  - [dup_postop_eval.py](/data/CoordExp/temp/dup_postop_eval.py)
+  - [comparison.json](/data/CoordExp/temp/dup_postop_eval/comparison.json)
+  - [dedup_summary.json](/data/CoordExp/temp/dup_postop_eval/dedup_summary.json)
 - duplication diagnostics:
-  - [stage2_near_duplication_2026-03-05.md](/data/home/xiaoyan/AIteam/data/CoordExp/progress/diagnostics/stage2_near_duplication_2026-03-05.md)
-  - [small_object_duplication_offline_findings_2026-03-26.md](/data/home/xiaoyan/AIteam/data/CoordExp/progress/diagnostics/small_object_duplication_offline_findings_2026-03-26.md)
+  - [stage2_near_duplication_2026-03-05.md](/data/CoordExp/progress/diagnostics/stage2_near_duplication_2026-03-05.md)
+  - [small_object_duplication_offline_findings_2026-03-26.md](/data/CoordExp/progress/diagnostics/small_object_duplication_offline_findings_2026-03-26.md)
 
 Assumption carried into this design:
 

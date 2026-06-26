@@ -10,7 +10,7 @@ updated: 2026-05-14
 
 # Instance-Trie Gaussian SoftCE Post-Implementation Audit (2026-05-14)
 
-Scope: `/data/home/xiaoyan/AIteam/data/CoordExp/.worktrees/instance-trie-gaussian-softce` on branch `codex/instance-trie-gaussian-softce`.
+Scope: `/data/CoordExp/.worktrees/instance-trie-gaussian-softce` on branch `codex/instance-trie-gaussian-softce`.
 
 Status: implementation-contract audit completed before target-shape audit, tiny smoke, DDP8 preflight, or production launch. Follow-up target-shape and smoke/preflight behavior evidence is recorded in `progress/audits/2026-05-14-instance-trie-gaussian-smoke-behavior-audit.md`.
 

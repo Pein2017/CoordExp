@@ -3906,6 +3906,26 @@ class TeacherForcingEnabledModuleConfig:
 
 
 @dataclass(frozen=True)
+class TeacherForcingTokenTypeMassConfig:
+    enabled: bool = False
+    weight: float = 1.0
+
+    def __post_init__(self) -> None:
+        _detection_validate_bool(
+            self.enabled,
+            path="objective.terms.token_type_mass.enabled",
+        )
+        if not isinstance(self.weight, (int, float)) or isinstance(self.weight, bool):
+            raise TypeError("objective.terms.token_type_mass.weight must be numeric")
+        value = float(self.weight)
+        if not math.isfinite(value):
+            raise ValueError("objective.terms.token_type_mass.weight must be finite")
+        if value < 0.0:
+            raise ValueError("objective.terms.token_type_mass.weight must be >= 0")
+        object.__setattr__(self, "weight", value)
+
+
+@dataclass(frozen=True)
 class TeacherForcingWithinValidCoverageConfig:
     enabled: bool = False
     coverage_strength: float = 0.0
@@ -3935,8 +3955,8 @@ class TeacherForcingWithinValidCoverageConfig:
 
 @dataclass(frozen=True)
 class TeacherForcingModulesConfig:
-    token_type_mass: TeacherForcingEnabledModuleConfig = field(
-        default_factory=TeacherForcingEnabledModuleConfig
+    token_type_mass: TeacherForcingTokenTypeMassConfig = field(
+        default_factory=TeacherForcingTokenTypeMassConfig
     )
     conditional_valid_set_likelihood: TeacherForcingEnabledModuleConfig = field(
         default_factory=TeacherForcingEnabledModuleConfig
@@ -3956,7 +3976,7 @@ class TeacherForcingModulesConfig:
             raise TypeError("objective.terms must be a mapping")
         data: MutableMapping[str, Any] = dict(payload)
         token_type_mass = parse_dataclass_strict(
-            TeacherForcingEnabledModuleConfig,
+            TeacherForcingTokenTypeMassConfig,
             data.pop("token_type_mass", {}),
             path="objective.terms.token_type_mass",
         )
@@ -4032,10 +4052,6 @@ class TeacherForcingObjectiveConfig:
             )
         if self.profile == "hard_sft":
             hard_sft_module_checks = (
-                (
-                    "objective.terms.token_type_mass.enabled",
-                    bool(self.terms.token_type_mass.enabled),
-                ),
                 (
                     "objective.terms.conditional_valid_set_likelihood.enabled",
                     bool(self.terms.conditional_valid_set_likelihood.enabled),

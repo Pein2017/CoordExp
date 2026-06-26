@@ -8,8 +8,8 @@ Calibration and no-training target-shape audit for geometry-aware coordinate Sof
   "coordinate_surface": "coord_token_xyxy",
   "count": 6638586,
   "included_perturbations": 6638586,
-  "input_path": "/data/home/xiaoyan/AIteam/data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl",
-  "input_path_resolved": "/data/home/xiaoyan/AIteam/data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl",
+  "input_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl",
+  "input_path_resolved": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl",
   "input_sha256": "649fb8c1bf28da65762700ec9b29b9d3419da04d4c2aa330c4ee5085d2b90a6b",
   "mean": 0.01664139232290442,
   "median": 0.009090909090909038,
@@ -20,15 +20,15 @@ Calibration and no-training target-shape audit for geometry-aware coordinate Sof
   "p99": 0.11111111111111116,
   "provenance": {
     "bbox_format": "xyxy",
-    "command": "scripts/analysis/compute_iou_gibbs_coord_stats.py --jsonl /data/home/xiaoyan/AIteam/data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl --output progress/diagnostics/coord_softce_ciou_gibbs_tau_v0.md --target-audit-sample 30000 --tau 0.0090909091 --rng-seed 0 --bbox-format xyxy --coordinate-surface coord_token_xyxy --target-distribution ciou_gibbs_v0",
+    "command": "scripts/analysis/compute_iou_gibbs_coord_stats.py --jsonl /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl --output progress/diagnostics/coord_softce_ciou_gibbs_tau_v0.md --target-audit-sample 30000 --tau 0.0090909091 --rng-seed 0 --bbox-format xyxy --coordinate-surface coord_token_xyxy --target-distribution ciou_gibbs_v0",
     "coordinate_surface": "coord_token_xyxy",
-    "cwd": "/data/home/xiaoyan/AIteam/data/CoordExp/.worktrees/a5-iou-gibbs-softce",
-    "input_path": "/data/home/xiaoyan/AIteam/data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl",
-    "input_path_resolved": "/data/home/xiaoyan/AIteam/data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl",
+    "cwd": "/data/CoordExp/.worktrees/a5-iou-gibbs-softce",
+    "input_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl",
+    "input_path_resolved": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl",
     "input_sha256": "649fb8c1bf28da65762700ec9b29b9d3419da04d4c2aa330c4ee5085d2b90a6b",
     "python": "/root/miniconda3/envs/ms/bin/python",
     "rng_seed": 0,
-    "script_path": "/data/home/xiaoyan/AIteam/data/CoordExp/.worktrees/a5-iou-gibbs-softce/scripts/analysis/compute_iou_gibbs_coord_stats.py",
+    "script_path": "/data/CoordExp/.worktrees/a5-iou-gibbs-softce/scripts/analysis/compute_iou_gibbs_coord_stats.py",
     "script_sha256": "8176af35157ed027239d15499820a89c44d659d4193c54a9d93c22ffec32feef",
     "target_audit_sample_requested": 30000,
     "target_distribution": "ciou_gibbs_v0",
@@ -1793,6 +1793,6 @@ Calibration and no-training target-shape audit for geometry-aware coordinate Sof
     }
   },
   "tau_data": 0.009090909090909038,
-  "train_jsonl": "/data/home/xiaoyan/AIteam/data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl"
+  "train_jsonl": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/train.coord.jsonl"
 }
 ```

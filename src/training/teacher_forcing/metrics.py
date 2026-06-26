@@ -24,6 +24,11 @@ COMPACT_FULL_PARSE_ERROR_PREFIX = "infer/parse/compact_full/error"
 REQUIRED_TEACHER_FORCING_METRIC_KEYS: tuple[str, ...] = (
     "teacher_forcing/loss/total",
     "teacher_forcing/loss/token_type_mass",
+    "teacher_forcing/loss/token_type_mass/contribution",
+    "teacher_forcing/type/schema_mass_at_schema",
+    "teacher_forcing/type/coord_mass_at_coord",
+    "teacher_forcing/type/desc_mass_at_desc",
+    "teacher_forcing/type/stop_mass_at_stop",
     "teacher_forcing/loss/conditional_valid_set_likelihood",
     "teacher_forcing/loss/within_valid_coverage",
     "teacher_forcing/valid_set/mass",
@@ -50,10 +55,15 @@ def teacher_forcing_loss_events(
     denominator: float,
     span_count: int,
     atom_count: int,
+    token_type_mass: float | None = None,
+    token_type_mass_contribution: float | None = None,
+    token_type_mass_denominator: float | None = None,
+    family_mass_by_target: Mapping[str, float] | None = None,
+    family_mass_denominators: Mapping[str, float] | None = None,
 ) -> tuple[MetricEvent, ...]:
     """Return canonical metric events for the teacher-forcing objective loss."""
 
-    return (
+    events: list[MetricEvent] = [
         _weighted_mean(
             "teacher_forcing/loss/total",
             _numeric_scalar(loss, field_name="loss"),
@@ -75,12 +85,76 @@ def teacher_forcing_loss_events(
             metric_surface="objective_loss",
             diagnostic_only=True,
         ),
-    )
+    ]
+    if token_type_mass is not None or token_type_mass_contribution is not None:
+        if (
+            token_type_mass is None
+            or token_type_mass_contribution is None
+            or token_type_mass_denominator is None
+        ):
+            raise ValueError(
+                "token_type_mass, token_type_mass_contribution, and "
+                "token_type_mass_denominator must be provided together"
+            )
+        mass_denominator = _numeric_scalar(
+            token_type_mass_denominator,
+            field_name="token_type_mass_denominator",
+        )
+        events.append(
+            _weighted_mean(
+                "teacher_forcing/loss/token_type_mass",
+                _numeric_scalar(token_type_mass, field_name="token_type_mass"),
+                mass_denominator,
+                unit="token",
+                metric_surface="objective_loss",
+            )
+        )
+        events.append(
+            _weighted_mean(
+                "teacher_forcing/loss/token_type_mass/contribution",
+                _numeric_scalar(
+                    token_type_mass_contribution,
+                    field_name="token_type_mass_contribution",
+                ),
+                mass_denominator,
+                unit="token",
+                metric_surface="objective_loss",
+            )
+        )
+    if family_mass_by_target is not None or family_mass_denominators is not None:
+        if family_mass_by_target is None or family_mass_denominators is None:
+            raise ValueError(
+                "family_mass_by_target and family_mass_denominators must be "
+                "provided together"
+            )
+        for family in ("schema", "coord", "desc", "stop"):
+            denominator_value = family_mass_denominators.get(family)
+            if denominator_value is None:
+                continue
+            family_denominator = _numeric_scalar(
+                denominator_value,
+                field_name=f"{family}_mass_denominator",
+            )
+            if family_denominator <= 0.0:
+                continue
+            try:
+                family_mass = family_mass_by_target[family]
+            except KeyError as exc:
+                raise ValueError(f"missing family mass for {family!r}") from exc
+            events.append(
+                _weighted_mean(
+                    f"teacher_forcing/type/{family}_mass_at_{family}",
+                    _numeric_scalar(family_mass, field_name=f"{family}_mass"),
+                    family_denominator,
+                    unit="token",
+                    metric_surface="type_family_mass",
+                )
+            )
+    return tuple(events)
 
 
 def teacher_forcing_diagnostic_events(
     *,
-    token_type_mass: float | None = None,
     conditional_valid_set_likelihood: float | None = None,
     within_valid_coverage: float | None = None,
     valid_set_mass: float | None = None,
@@ -96,7 +170,6 @@ def teacher_forcing_diagnostic_events(
     """Return optional teacher-forcing diagnostic metric events."""
 
     events: list[MetricEvent] = []
-    _append_weighted(events, "teacher_forcing/loss/token_type_mass", token_type_mass)
     _append_weighted(
         events,
         "teacher_forcing/loss/conditional_valid_set_likelihood",
