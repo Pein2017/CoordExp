@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Literal, Mapping, Optional, Sequence, Tuple, cast
@@ -96,6 +97,10 @@ ERROR_CANONICAL = {
     "generation_failed": "generation_failed",
     "image_load_failed": "image_load_failed",
     "multi_image_not_supported": "multi_image_not_supported",
+    "dropped_invalid_object": "dropped_invalid_object",
+    "malformed_rollout": "malformed_rollout",
+    "no_valid_prediction_objects": "no_valid_prediction_objects",
+    "raw_empty_generation": "raw_empty_generation",
 }
 
 
@@ -407,6 +412,196 @@ def _strip_generation_terminal_preserving_template_text(
     return effective, terminal_token
 
 
+def _compact_drop(
+    *,
+    span_index: int,
+    reason: str,
+    raw_text: str,
+    desc: str | None = None,
+    bbox_tokens: Sequence[str] | None = None,
+    detail: str | None = None,
+) -> Dict[str, Any]:
+    drop: Dict[str, Any] = {
+        "span_index": int(span_index),
+        "reason": str(reason),
+        "raw_text": str(raw_text),
+    }
+    if desc is not None:
+        drop["desc"] = str(desc)
+    if bbox_tokens is not None:
+        drop["bbox_2d"] = [str(token) for token in bbox_tokens]
+    if detail:
+        drop["detail"] = str(detail)
+    return drop
+
+
+_COMPACT_COORD_RE = re.compile(r"<\|coord_(0|[1-9]\d{0,2})\|>")
+
+
+def _compact_coord_tokens(text: str) -> tuple[str, ...]:
+    return tuple(match.group(0) for match in _COMPACT_COORD_RE.finditer(text))
+
+
+def _compact_drop_reason(exc: ValueError) -> tuple[str, str | None]:
+    message = str(exc)
+    if "invalid bbox geometry" in message:
+        return "invalid_box_geometry", None
+    for reason, needle in (
+        ("missing_object_ref_start", "missing object ref start"),
+        ("missing_object_ref_end", "missing object ref end"),
+        ("unexpected_object_ref_end", "unexpected object ref end"),
+        ("missing_box_start", "missing box start"),
+        ("missing_box_end", "missing box end"),
+        ("unexpected_box_end", "unexpected box end"),
+        ("expected_four_coords", "expected four coords"),
+        ("malformed_coord_tail", "malformed coord tail"),
+        ("invalid_desc", "invalid desc"),
+    ):
+        if needle in message:
+            return reason, None
+    return "malformed_object_span", message
+
+
+def _compact_geometry_detail(bbox_tokens: Sequence[str]) -> str | None:
+    if len(bbox_tokens) != 4:
+        return None
+    values = [int(str(token).removeprefix("<|coord_").removesuffix("|>")) for token in bbox_tokens]
+    if values[2] <= values[0]:
+        return "x2 <= x1"
+    if values[3] <= values[1]:
+        return "y2 <= y1"
+    return None
+
+
+def _compact_drop_context(
+    row: str,
+    *,
+    object_field_order: str,
+) -> tuple[str | None, tuple[str, ...]]:
+    from src.common.detection_sequence import (
+        BOX_END_TOKEN,
+        BOX_START_TOKEN,
+        OBJECT_REF_END_TOKEN,
+        OBJECT_REF_START_TOKEN,
+    )
+
+    desc: str | None = None
+    if object_field_order == "geometry_first":
+        if OBJECT_REF_START_TOKEN in row:
+            desc_tail = row.split(OBJECT_REF_START_TOKEN, maxsplit=1)[1]
+            desc = desc_tail.split(OBJECT_REF_END_TOKEN, maxsplit=1)[0]
+    elif row.startswith(OBJECT_REF_START_TOKEN):
+        desc_tail = row[len(OBJECT_REF_START_TOKEN) :]
+        if OBJECT_REF_END_TOKEN in desc_tail:
+            desc = desc_tail.split(OBJECT_REF_END_TOKEN, maxsplit=1)[0]
+        elif BOX_START_TOKEN in desc_tail:
+            desc = desc_tail.split(BOX_START_TOKEN, maxsplit=1)[0]
+
+    coord_region = row
+    if BOX_START_TOKEN in coord_region:
+        coord_region = coord_region.split(BOX_START_TOKEN, maxsplit=1)[1]
+    if BOX_END_TOKEN in coord_region:
+        coord_region = coord_region.split(BOX_END_TOKEN, maxsplit=1)[0]
+    return desc, _compact_coord_tokens(coord_region)
+
+
+def _compact_row_bodies(
+    text: str,
+    *,
+    contract: Any,
+    object_field_order: str,
+) -> tuple[list[str], str]:
+    from src.common.detection_sequence import BOX_START_TOKEN, OBJECT_REF_START_TOKEN
+
+    if not text:
+        return [], ""
+    if contract.canonical_final_separator == "\n":
+        raw_rows = text.splitlines(keepends=True)
+        return [row[:-1] if row.endswith("\n") else row for row in raw_rows], ""
+
+    row_start_marker = (
+        BOX_START_TOKEN if str(object_field_order) == "geometry_first" else OBJECT_REF_START_TOKEN
+    )
+    if row_start_marker not in text:
+        return [], text
+    prefix, *parts = text.split(row_start_marker)
+    return [f"{row_start_marker}{part}" for part in parts if part], prefix
+
+
+def _parse_compact_object_spans(
+    text: str,
+    *,
+    contract: Any,
+    object_field_order: str,
+) -> Dict[str, Any]:
+    effective_text = str(text)
+    from src.detection.template import _parse_compact_contract_row
+
+    rows, ignored_prefix = _compact_row_bodies(
+        effective_text,
+        contract=contract,
+        object_field_order=object_field_order,
+    )
+    objects: list[Dict[str, Any]] = []
+    dropped: list[Dict[str, Any]] = []
+
+    for span_index, row in enumerate(rows):
+        try:
+            obj = _parse_compact_contract_row(
+                row,
+                contract,
+                object_field_order=cast(ObjectFieldOrder, object_field_order),
+            )
+            objects.append(obj)
+            continue
+        except ValueError as exc:
+            reason, detail = _compact_drop_reason(exc)
+        desc, bbox_tokens = _compact_drop_context(
+            row,
+            object_field_order=object_field_order,
+        )
+        if reason == "invalid_box_geometry":
+            detail = _compact_geometry_detail(bbox_tokens)
+        dropped.append(
+            _compact_drop(
+                span_index=span_index,
+                reason=reason,
+                detail=detail,
+                raw_text=row,
+                desc=desc,
+                bbox_tokens=bbox_tokens or None,
+            )
+        )
+
+    if not effective_text:
+        status = "raw_empty_generation"
+        parse_error_code = "raw_empty_generation"
+    elif objects and dropped:
+        status = "accepted_with_drops"
+        parse_error_code = None
+    elif objects:
+        status = "accepted"
+        parse_error_code = None
+    elif dropped:
+        status = "all_prediction_spans_dropped"
+        parse_error_code = "no_valid_prediction_objects"
+    else:
+        status = "malformed_rollout"
+        parse_error_code = "malformed_rollout"
+
+    return {
+        "raw_output_json": {"objects": objects},
+        "parse_mode": "object_span_salvage",
+        "parse_status": status,
+        "parse_error_code": parse_error_code,
+        "dropped_pred_objects": dropped,
+        "raw_object_spans_total": len(rows),
+        "valid_pred_object_count": len(objects),
+        "dropped_pred_object_count": len(dropped),
+        "ignored_prefix": ignored_prefix or None,
+    }
+
+
 def parse_detection_template_output_artifact(
     text: str,
     *,
@@ -420,25 +615,19 @@ def parse_detection_template_output_artifact(
         )
 
     from src.common.detection_sequence import BOX_START_TOKEN, OBJECT_REF_START_TOKEN
-    from src.detection.evaluation import parse_detection_output_strict_expected
 
     effective_text, terminal_token = _strip_generation_terminal_preserving_template_text(
         str(text)
     )
-    try:
-        raw_output_json = parse_detection_output_strict_expected(
-            effective_text,
-            expected_template=contract.template_id,
-            parser_mode="strict_expected",
-            object_field_order=object_field_order,
-        )
-        parse_error_code = None
-    except ValueError:
-        raw_output_json = None
-        parse_error_code = "strict_template_mismatch"
+    parsed = _parse_compact_object_spans(
+        effective_text,
+        contract=contract,
+        object_field_order=object_field_order,
+    )
     return {
-        "raw_output_json": raw_output_json,
-        "parse_mode": "strict_expected",
+        "raw_output_json": parsed["raw_output_json"],
+        "parse_mode": parsed["parse_mode"],
+        "parse_status": parsed["parse_status"],
         "serialization_policy": contract.template_id,
         "object_field_order": object_field_order,
         "object_separator": (
@@ -451,9 +640,14 @@ def parse_detection_template_output_artifact(
             )
         ),
         "terminal_token": terminal_token,
-        "parse_error_code": parse_error_code,
+        "parse_error_code": parsed["parse_error_code"],
         "parse_error_offset": None,
         "detection_template_id": contract.template_id,
+        "dropped_pred_objects": parsed["dropped_pred_objects"],
+        "raw_object_spans_total": parsed["raw_object_spans_total"],
+        "valid_pred_object_count": parsed["valid_pred_object_count"],
+        "dropped_pred_object_count": parsed["dropped_pred_object_count"],
+        "ignored_prefix": parsed["ignored_prefix"],
     }
 
 
@@ -485,9 +679,22 @@ def process_offline_pred(
             errors.append("empty_pred")
             return []
         objects = payload.get("objects")
-        if not isinstance(objects, list) or not objects:
-            errors.append("empty_pred")
+        if not isinstance(objects, list):
+            errors.append("malformed_rollout")
             return []
+        if not objects:
+            parse_status = str(artifact.get("parse_status") or "")
+            if parse_status == "all_prediction_spans_dropped":
+                errors.append("no_valid_prediction_objects")
+            elif parse_status == "raw_empty_generation":
+                errors.append("raw_empty_generation")
+            elif parse_status == "malformed_rollout":
+                errors.append("malformed_rollout")
+            else:
+                errors.append("empty_pred")
+            return []
+        if int(artifact.get("dropped_pred_object_count", 0) or 0) > 0:
+            errors.append("dropped_invalid_object")
         preds = owner.coord.process_objects(
             objects,
             width=width,
@@ -528,14 +735,41 @@ def decode_offline_detection_result(
         "invalid_count": len(pred_errors),
         "dropped_invalid": len(pred_errors),
     }
+    compact_metric_bearing_with_drops = False
     if compact_parse_artifact is not None:
         parse_error_code = compact_parse_artifact.get("parse_error_code")
         diagnostics["parse_error_code"] = parse_error_code
         diagnostics["parse_mode"] = compact_parse_artifact.get("parse_mode")
-        if parse_error_code:
+        diagnostics["parse_status"] = compact_parse_artifact.get("parse_status")
+        diagnostics["raw_object_spans_total"] = compact_parse_artifact.get(
+            "raw_object_spans_total", 0
+        )
+        diagnostics["valid_pred_object_count"] = compact_parse_artifact.get(
+            "valid_pred_object_count", 0
+        )
+        diagnostics["dropped_pred_object_count"] = compact_parse_artifact.get(
+            "dropped_pred_object_count", 0
+        )
+        diagnostics["dropped_pred_objects"] = list(
+            compact_parse_artifact.get("dropped_pred_objects") or []
+        )
+        compact_metric_bearing_with_drops = (
+            bool(predictions)
+            and str(compact_parse_artifact.get("parse_status") or "")
+            in {"accepted", "accepted_with_drops"}
+            and all(str(error) == "dropped_invalid_object" for error in pred_errors)
+        )
+        if parse_error_code and str(parse_error_code) not in pred_errors:
             pred_errors.append(str(parse_error_code))
 
     if pred_errors:
+        if compact_metric_bearing_with_drops:
+            return strict_parser_result(
+                predictions=predictions,
+                parser_id=parser_id,
+                errors=tuple(pred_errors),
+                diagnostics=diagnostics,
+            )
         return diagnostic_parser_result(
             predictions=predictions,
             parser_id=parser_id,
@@ -1451,9 +1685,7 @@ def run_offline_artifact_inference(owner: Any) -> Tuple[Path, Path]:
 
     from src.common.prediction_parsing import extract_special_tokens, load_prediction_dict
     from src.infer.artifacts import (
-        build_infer_resolved_meta,
         build_infer_resolved_meta_from_facts,
-        build_infer_summary_payload,
         build_infer_summary_payload_from_facts,
         ensure_infer_artifact_dirs,
         resolve_infer_artifact_facts_from_owner,
@@ -1523,11 +1755,19 @@ def run_offline_artifact_inference(owner: Any) -> Tuple[Path, Path]:
         "empty_pred": "infer.parse_pred",
         "invalid_coord": "infer.validate_pred",
         "invalid_geometry": "infer.validate_pred",
+        "dropped_invalid_object": "infer.parse_pred.object_span",
+        "malformed_rollout": "infer.parse_pred",
+        "no_valid_prediction_objects": "infer.parse_pred",
+        "raw_empty_generation": "infer.generate",
     }
     message_by_code: Dict[str, str] = {
         "empty_pred": "Prediction parsing produced no valid objects.",
         "invalid_coord": "Prediction contains invalid coordinate values.",
         "invalid_geometry": "Prediction contains invalid geometry.",
+        "dropped_invalid_object": "One or more prediction object spans were dropped.",
+        "malformed_rollout": "Prediction text did not contain recognizable object spans.",
+        "no_valid_prediction_objects": "All recognized prediction object spans were invalid.",
+        "raw_empty_generation": "Model generation produced no prediction text.",
     }
 
     def _canonical(code: str) -> str:
@@ -1635,6 +1875,19 @@ def run_offline_artifact_inference(owner: Any) -> Tuple[Path, Path]:
                         "object_field_order": compact_parse_artifact[
                             "object_field_order"
                         ],
+                        "parse_status": compact_parse_artifact["parse_status"],
+                        "raw_object_spans_total": compact_parse_artifact[
+                            "raw_object_spans_total"
+                        ],
+                        "valid_pred_object_count": compact_parse_artifact[
+                            "valid_pred_object_count"
+                        ],
+                        "dropped_pred_object_count": compact_parse_artifact[
+                            "dropped_pred_object_count"
+                        ],
+                        "dropped_pred_objects": list(
+                            compact_parse_artifact.get("dropped_pred_objects") or []
+                        ),
                     }
                 )
             output["detection_template_id"] = self.detection_template_id

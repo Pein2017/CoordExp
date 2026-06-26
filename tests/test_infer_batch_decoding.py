@@ -6,7 +6,6 @@ from pathlib import Path
 
 from PIL import Image
 import pytest
-import torch
 
 from src.infer.runtime import (
     OfflineInferenceEngine,
@@ -16,7 +15,7 @@ from src.infer.runtime import (
     make_offline_run_counters,
 )
 import src.infer.runtime as infer_runtime
-from src.infer.backend import generate_hf_batch, generate_vllm_batch, generate_vllm_server_result
+from src.infer.backend import generate_vllm_batch, generate_vllm_server_result
 from src.infer.prompt import build_offline_detection_chat_messages
 
 GenerationConfig = make_offline_generation_config
@@ -704,6 +703,112 @@ def test_infer_emits_sample_scoped_errors_and_summary_counters(tmp_path, monkeyp
 
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     assert summary["errors_by_code"]["empty_pred"] == 1
+    assert summary["errors_total"] == 1
+
+
+def test_compact_infer_salvages_valid_object_spans_and_reports_dropped_invalid(
+    tmp_path, monkeypatch
+):
+    monkeypatch.delenv("ROOT_IMAGE_DIR", raising=False)
+
+    _write_img(tmp_path / "img_0.png", size=100)
+    gt_path = tmp_path / "gt.jsonl"
+    gt_path.write_text(
+        json.dumps(
+            {
+                "images": ["img_0.png"],
+                "width": 100,
+                "height": 100,
+                "objects": [{"bbox_2d": [1, 2, 10, 20], "desc": "cat"}],
+            },
+            ensure_ascii=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    out_path = tmp_path / "gt_vs_pred.jsonl"
+    summary_path = tmp_path / "summary.json"
+
+    inf_cfg = InferenceConfig(
+        gt_jsonl=str(gt_path),
+        model_checkpoint="dummy",
+        mode="coord",
+        pred_coord_mode="auto",
+        out_path=str(out_path),
+        summary_path=str(summary_path),
+        device="cpu",
+        limit=0,
+        backend_type="hf",
+        backend={},
+        detect_samples=1,
+        detection_template_id="compact_object_box_closed",
+        object_field_order="desc_first",
+        allow_diagnostic_gt_vs_pred=True,
+    )
+    gen_cfg = GenerationConfig(
+        temperature=0.0,
+        top_p=1.0,
+        max_new_tokens=64,
+        repetition_penalty=1.0,
+        batch_size=1,
+        seed=123,
+    )
+
+    engine = InferenceEngine(inf_cfg, gen_cfg)
+    monkeypatch.setattr(engine, "load_model", lambda: None)
+
+    raw_text = (
+        "<|object_ref_start|>cat<|object_ref_end|><|box_start|>"
+        "<|coord_10|><|coord_20|><|coord_100|><|coord_200|><|box_end|>"
+        "<|object_ref_start|>person<|object_ref_end|><|box_start|>"
+        "<|coord_447|><|coord_574|><|coord_444|><|coord_630|><|box_end|>"
+        "<|object_ref_start|>kite<|object_ref_end|><|box_start|>"
+        "<|coord_300|><|coord_100|><|coord_400|><|coord_250|><|box_end|>"
+        "<|im_end|>"
+    )
+    monkeypatch.setattr(
+        engine,
+        "_generate_batch",
+        lambda images: [GenerationResult(text=raw_text, error=None) for _ in images],
+    )
+
+    engine.infer()
+
+    row = json.loads(out_path.read_text(encoding="utf-8"))
+    assert row["parse_mode"] == "object_span_salvage"
+    assert row["parse_error_code"] is None
+    assert row["parse_status"] == "accepted_with_drops"
+    assert row["raw_object_spans_total"] == 3
+    assert row["valid_pred_object_count"] == 2
+    assert row["dropped_pred_object_count"] == 1
+    assert [obj["desc"] for obj in row["raw_output_json"]["objects"]] == ["cat", "kite"]
+    assert [obj["desc"] for obj in row["pred"]] == ["cat", "kite"]
+    assert row["errors"] == ["dropped_invalid_object"]
+    assert row["metric_bearing"] is True
+    assert row["parser_policy"] == "strict"
+    assert "strict_template_mismatch" not in row["errors"]
+    assert row["dropped_pred_objects"] == [
+        {
+            "span_index": 1,
+            "desc": "person",
+            "bbox_2d": [
+                "<|coord_447|>",
+                "<|coord_574|>",
+                "<|coord_444|>",
+                "<|coord_630|>",
+            ],
+            "reason": "invalid_box_geometry",
+            "detail": "x2 <= x1",
+            "raw_text": (
+                "<|object_ref_start|>person<|object_ref_end|><|box_start|>"
+                "<|coord_447|><|coord_574|><|coord_444|><|coord_630|><|box_end|>"
+            ),
+        }
+    ]
+
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert summary["errors_by_code"] == {"dropped_invalid_object": 1}
     assert summary["errors_total"] == 1
 
 
