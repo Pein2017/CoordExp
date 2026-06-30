@@ -1,0 +1,182 @@
+## ADDED Requirements
+
+### Requirement: Fresh OpenSpec Authority
+
+CoordExp-swift SHALL treat this change's specs as the new active OpenSpec
+baseline for the rebuilt training infrastructure. Archived legacy OpenSpec
+files under `reference/legacy_openspec_2026-06-29/` MUST remain reference-only
+and MUST NOT be synced, modified in place, or treated as current contract
+authority for the new `src/` architecture.
+
+#### Scenario: Legacy spec referenced during implementation
+
+- **WHEN** an implementation task needs historical context from the archived
+  OpenSpec tree
+- **THEN** the implementation MAY read the archived file as reference
+- **AND** the active requirement MUST be taken from this fresh OpenSpec change
+  or a later approved change.
+
+### Requirement: Strict Resolved Config
+
+Training configuration SHALL be loaded through a strict schema that rejects
+unknown authored fields. Config inheritance MAY be used for normal training
+configs, but every run MUST save the final resolved config as self-contained
+YAML and JSON under the run artifact directory. The resolved config artifacts
+MUST include compact resolution provenance: entry config path, inherited parent
+paths, source content fingerprints, and path-origin metadata for path fields.
+
+#### Scenario: Unknown authored field
+
+- **WHEN** a training config contains a field that is not in the strict schema
+- **THEN** config loading MUST fail before model, adapter, optimizer, or
+  dataset mutation begins.
+
+#### Scenario: Inherited production config
+
+- **WHEN** a production training config extends one or more base configs
+- **THEN** the run artifacts MUST include the final resolved YAML and JSON
+- **AND** the resolved artifacts MUST be sufficient to understand the run
+  without reopening the inherited files.
+- **AND** the resolved artifacts MUST include source fingerprints and path
+  origins for inherited config files and path-valued fields.
+
+### Requirement: Run Identity And Artifact Root
+
+Each training run SHALL resolve a run identity and artifact root before model
+or optimizer mutation. The artifact root MUST be the parent storage location
+for run outputs, while the output directory MUST be the concrete run directory
+created under that root.
+
+#### Scenario: Run directory collision
+
+- **WHEN** the resolved output directory already exists
+- **THEN** runtime MUST follow the configured collision policy
+- **AND** the chosen output directory MUST be recorded in the run manifest
+  before training-side mutation begins.
+
+### Requirement: Planned Step Schedule
+
+The resolved planned-step schedule SHALL be computed before training begins
+from the dataloader, world size, `training.effective_batch_size`, `epochs`, and
+optional debug `max_steps`. If `max_steps` is set, it MUST take priority over
+epoch-derived length. Eval, checkpoint, logging, and final events MUST use the
+planned-step clock, not a successful-update counter.
+
+#### Scenario: Debug max steps configured
+
+- **WHEN** a config sets `max_steps: 5`
+- **THEN** the resolved maximum planned steps MUST be 5 regardless of the
+  epoch-derived value
+- **AND** final checkpoint and final metrics MUST be scheduled at planned step
+  5.
+
+#### Scenario: Unsafe optimizer update skipped
+
+- **WHEN** a planned step is marked unsafe before optimizer update
+- **THEN** schedule events for that planned step MUST still use the original
+  planned-step id
+- **AND** artifacts MUST record that the optimizer update was not applied.
+
+### Requirement: Cadence Config And Resolved Step Schedule
+
+Cadence config SHALL use the canonical authored fields
+`checkpoint.every_fraction`, `checkpoint.steps`, `checkpoint.save_final`,
+`eval.forward.every_fraction`, `eval.forward.steps`,
+`training.logging.every_fraction`, and `training.logging.steps`. V1 MUST reject
+parallel aliases such as `save_steps`, `eval_steps`, `logging_steps`, and a
+separate `global_step` concept. Every run MUST materialize
+`resolved_step_schedule.json` before training starts.
+
+#### Scenario: Fractional cadence resolved
+
+- **WHEN** a cadence uses `every_fraction`
+- **THEN** fractional milestones MUST use
+  `ceil(fraction * resolved_max_steps)` style planned-step materialization,
+  repeated and clamped to `[1, resolved_max_steps]`
+- **AND** collisions with explicit steps or final events MUST be de-duplicated.
+
+#### Scenario: Resolved schedule artifact written
+
+- **WHEN** `resolved_step_schedule.json` is written
+- **THEN** it MUST contain separate event lists for `eval.forward`,
+  `checkpoint`, `training.logging`, and `final`
+- **AND** every event MUST record `planned_step_id`, `event`,
+  `trigger_reasons`, `source_config_path`, `deduped_from`, and `required`.
+
+#### Scenario: Legacy cadence alias authored
+
+- **WHEN** a config authors `save_steps`, `eval_steps`, `logging_steps`, or
+  `global_step`
+- **THEN** strict config validation MUST fail before schedule resolution.
+
+### Requirement: Effective Batch Runtime Derivation
+
+Public training configs SHALL expose global packed-sequence
+`training.effective_batch_size`. Runtime MUST derive the per-rank accumulation
+count from effective batch size and world size. The derived value MUST be
+recorded in runtime receipts and MUST NOT be authored as a public config knob.
+Runtime MUST fail rather than round, pad ranks, drop ranks, or mutate the
+effective batch when the division is not exact.
+
+#### Scenario: Two ranks with effective batch size four
+
+- **WHEN** world size is 2 and `training.effective_batch_size` is 4
+- **THEN** runtime MUST derive two rank-local micro-steps per planned optimizer
+  step
+- **AND** the derived count MUST be present in runtime receipts.
+
+#### Scenario: Effective batch not divisible by world size
+
+- **WHEN** world size is 2 and `training.effective_batch_size` is 3
+- **THEN** runtime setup MUST fail before training begins
+- **AND** it MUST NOT silently round or change the effective batch.
+
+#### Scenario: Effective batch smaller than world size
+
+- **WHEN** world size is 2 and `training.effective_batch_size` is 1
+- **THEN** runtime setup MUST fail before training begins
+- **AND** it MUST NOT drop a rank or create uneven rank ownership.
+
+#### Scenario: Backend accumulation conflict
+
+- **WHEN** an Accelerate or DeepSpeed backend config independently specifies an
+  accumulation value that conflicts with the runtime-derived value
+- **THEN** runtime setup MUST fail before model training begins.
+
+#### Scenario: Incomplete final window
+
+- **WHEN** the packed stream tail cannot form a complete planned optimizer-step
+  window
+- **THEN** run-length resolution MUST exclude that tail from
+  `resolved_max_steps`
+- **AND** training MUST NOT create a partial final optimizer update.
+
+### Requirement: Backend Status Labels
+
+Runtime backend support SHALL use explicit status labels for DeepSpeed:
+`schema_accepted`, `conflict_validation_implemented`,
+`systems_smoke_verified`, and `production_supported`. V1 MUST NOT claim
+DeepSpeed production support until the separate systems smoke verifies
+prepare, backward, clipping, optimizer stepping, checkpoint save/load, and
+rank-safe artifacts through `TrainRuntime`.
+
+#### Scenario: V1 vertical smoke with DeepSpeed config
+
+- **WHEN** the V1 vertical smoke validates DeepSpeed setup conflicts without
+  running DeepSpeed execution
+- **THEN** the artifact status MAY report `schema_accepted` and
+  `conflict_validation_implemented`
+- **AND** it MUST NOT report `production_supported`.
+
+### Requirement: Config-First Entry Surface
+
+The V1 training entry SHALL be role-named and config-first. `python -m
+src.train --config <path>` MUST be the primary training invocation shape.
+Stable training behavior MUST be expressed in config/schema rather than broad
+CLI flags.
+
+#### Scenario: Dry config trace requested
+
+- **WHEN** a user asks to inspect resolved config behavior without training
+- **THEN** the trace path MUST stop before model mutation, optimizer
+  construction, checkpoint writing, or training metric emission.

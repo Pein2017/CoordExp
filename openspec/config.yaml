@@ -1,25 +1,48 @@
 schema: spec-driven
 
 context: |
-  CoordExp is a grounding/detection research stack using Qwen3-VL + CoordExp (norm1000 coordinates) with reproducible, paper-ready runs.
-  Stable active Stage-2 context lives in docs/training/STAGE2_RUNBOOK.md and openspec/specs/stage2-rollout-correction/spec.md; docs/training/STAGE2_DESIGN.md is historical AB/two-channel design history only.
-  Prefer YAML-first experiments in configs/ over ad-hoc scripts; avoid adding new CLI flags.
-  Defaults: single-dataset training; packing is the primary efficiency lever; fusion-config training is legacy/experimental.
-  Preserve geometry invariants via src/datasets/geometry.py (never drop/reorder coords); training uses do_resize=false.
-  Keep Qwen3-VL chat-template compatibility and do not edit upstream HF model internals (e.g., modeling_qwen3_vl.py).
-  Follow docs/standards/CODE_STYLE.md for architecture/style decisions.
+  CoordExp-swift is a clean rebuild of the CoordExp training infrastructure in
+  this worktree. The active design baseline is proposal-scoped and lives in:
+  - docs/architecture/proposals/2026-06-27-coordexp-swift/DECISIONS.md
+  - docs/architecture/proposals/2026-06-27-coordexp-swift/BLUEPRINT.md
+
+  The previous OpenSpec tree was archived to:
+  - reference/legacy_openspec_2026-06-29/
+
+  Do not treat archived OpenSpec specs or archived changes as current behavior
+  authority for CoordExp-swift. They are reference/reminder material only.
+
+  The V1 target is Qwen3-VL single-image supervised training with
+  Transformers/PyTorch as the substrate. CoordExp-swift owns data loading,
+  rendering, Qwen encoding boundaries, packing, token-wise supervision, loss
+  computation, optimizer grouping, training/runtime orchestration, artifacts,
+  metrics, checkpointing, and forward eval contracts.
+
+  User priority order:
+  1. accuracy and precision;
+  2. training and overall system efficiency;
+  3. simplicity to avoid over-design and redundancy;
+  4. scalability and extension capability.
 
 rules:
   proposal:
-    - State correctness, reproducibility, and eval-validity impact for any behavior change.
-    - Keep changes config-first (YAML/schema updates first) and avoid new CLI flags unless explicitly approved.
-    - For architecture/contract changes, include required OpenSpec spec updates.
+    - State how the change protects accuracy/precision, efficiency, simplicity, and future extension, in that order.
+    - Anchor stable contracts to DECISIONS.md and BLUEPRINT.md; do not invent competing architecture terms.
+    - Preserve the sequence Raw Dataset -> Dataset Processing -> Chat Template -> Packing -> Tokenization -> Visual Processing -> Model Construction -> Forward Pass -> Loss Computation -> Backward Pass -> Distributed Training -> Checkpoint Management -> Inference/Eval.
+    - Treat implementation as blocked until module/card approval gates are explicit.
+    - Keep MS-Swift and the archived OpenSpec tree as references, not runtime dependencies or current contract authority.
   specs:
-    - Encode coordinate and geometry invariants explicitly (no coord drop/reorder/semantic drift).
-    - Keep active Stage-2 contract semantics aligned with docs/training/STAGE2_RUNBOOK.md and openspec/specs/stage2-rollout-correction/spec.md.
+    - "Encode only stable compatibility-sensitive contracts: config schema, data/template/packing semantics, Qwen forward boundaries, loss semantics, metric names, artifact/checkpoint names, and normative eval behavior."
+    - Preserve image/geometry/token alignment end to end; never drop or reorder coordinates silently.
+    - Training uses explicit no-resize Qwen image processing; any resize/pad policy requires a separate approved contract.
+    - Do not add stable CLI flags when a strict config/schema surface is sufficient.
   design:
-    - Describe data flow as data -> transforms/packing -> training/inference -> artifacts.
-    - Document compatibility constraints (Qwen3 template, do_resize=false, upstream HF internals off-limits).
+    - "Describe ownership by module: src/data, src/templates, src/qwen, src/packing, src/supervision, src/losses, src/optim, src/training, src/runtime, src/artifacts, src/metrics, src/eval."
+    - Name source-study gates before implementation for dLoRA and special-token embedding mechanisms.
+    - Keep Transformers/PEFT/Accelerate/DeepSpeed interactions explicit and evidence-scoped.
+    - Avoid placeholder frameworks, broad registries, empty future modules, and compatibility shims unless a concrete V1 contract requires them.
   tasks:
-    - Break work into small verifiable steps with concrete validation commands.
-    - Include reproducibility checkpoints (config path, run name, seed, and output artifacts).
+    - Start from source-study and smoke-fixture tasks before broad implementation.
+    - Include the dLoRA definition/source-study gate before any adapter-enabled dLoRA smoke validates.
+    - Include verification for real global_max_length, sample-limited data, five planned train steps, two eval.forward steps, metrics, checkpoint metadata, and checkpoint-final.
+    - Include residue checks for stale old-OpenSpec and old-src assumptions after each milestone.

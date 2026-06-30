@@ -1,0 +1,116 @@
+## ADDED Requirements
+
+### Requirement: Permanent Smoke Fixture
+
+The first vertical smoke SHALL use a permanent self-contained fixture under
+`tests/fixtures/smoke/qwen3_vl_single_image_pack/`. The fixture MUST contain a
+fixture-local `config.yaml`, canonical `examples.jsonl`, one copied real local
+CoordExp-style image, `checksums.json`, `expected_rendered.json`, and a
+contract-oriented README before it becomes the implementation baseline.
+
+#### Scenario: Fixture depends on external image path
+
+- **WHEN** `examples.jsonl` points to an absolute image path outside the
+  fixture
+- **THEN** the smoke fixture MUST fail validation.
+
+#### Scenario: Render snapshot mismatch
+
+- **WHEN** the renderer output differs from `expected_rendered.json`
+- **THEN** the smoke check MUST fail and write any diff artifact under an
+  ignored smoke/debug output root, not beside the fixture source files.
+
+### Requirement: Smoke Fixture Source Pinning
+
+The smoke fixture SHALL be selected from current CoordExp-style training data
+where possible, preferably a short, valid, single-image, exactly two-object
+row from a current `len12000` source. If a larger valid row is reduced
+to two objects, the reduction rule MUST be recorded in `checksums.json`.
+
+#### Scenario: Exactly two-object source row selected
+
+- **WHEN** an exactly two-object source row is selected for the fixture
+- **THEN** `checksums.json` or equivalent fixture metadata MUST record source
+  path, source row id or row number when available, image id/path, copied
+  fixture image path, image checksum, original object ids, and selection
+  rationale.
+
+#### Scenario: Larger source row reduced
+
+- **WHEN** no exactly two-object source row is selected and a larger row is
+  reduced
+- **THEN** the first two valid source-order objects MUST be used unless another
+  approved deterministic rule is recorded
+- **AND** source path, row id, original object ids, reduction rule, and image
+  checksum MUST be recorded.
+
+### Requirement: DLoRA Gate Before Adapter Smoke
+
+The first adapter-enabled smoke SHALL use dLoRA only after the dLoRA
+definition/source-study gate and minimal round-trip probe pass. A base-only or
+standard-LoRA pre-smoke MUST NOT be inserted into this OpenSpec plan unless the
+user makes a new decision.
+
+#### Scenario: Adapter smoke launched early
+
+- **WHEN** a dLoRA smoke config is launched before the dLoRA gate is passed
+- **THEN** validation MUST stop before model mutation and report the missing
+  gate.
+
+### Requirement: Five-Step Vertical Smoke
+
+The acceptance smoke SHALL execute a real Qwen3-VL training path with
+`packing.global_max_length`, fixture data with sample limiting, resolved
+maximum planned steps of 5, protected default losses, backward, optimizer
+boundary, and static planned-step schedule. It MUST include two scheduled
+`eval.forward` runs, normally from explicit smoke `eval.forward.steps: [2, 4]`.
+
+#### Scenario: Smoke completes training
+
+- **WHEN** the vertical smoke completes
+- **THEN** artifacts MUST show five planned steps
+- **AND** two scheduled `eval.forward` summaries
+- **AND** metric events for train and eval-forward splits
+- **AND** checkpoint metadata plus `checkpoints/checkpoint-final.json`.
+
+### Requirement: Smoke Artifact Acceptance
+
+The vertical smoke SHALL be accepted only when artifacts include resolved
+config, run manifest, Qwen setup receipt, pack plan, loss plan, trainable
+surface receipt, optimizer group receipt, `resolved_step_schedule.json`, metric
+events, eval.forward summaries, checkpoint metadata, and final checkpoint
+alias. Unit tests alone MUST NOT be sufficient acceptance for the vertical
+slice.
+
+#### Scenario: Smoke lacks pack plan
+
+- **WHEN** the five-step smoke finishes but does not emit a pack plan receipt
+- **THEN** the vertical smoke MUST be considered incomplete.
+
+### Requirement: DeepSpeed Smoke Boundary
+
+The first vertical smoke SHALL NOT run a DeepSpeed training job. It MUST verify
+DeepSpeed config-conflict handling at setup level if DeepSpeed fields are
+present, and MUST record that real DeepSpeed execution remains gated by a later
+systems smoke using the canonical DeepSpeed status labels.
+
+#### Scenario: DeepSpeed status in first smoke
+
+- **WHEN** first-smoke artifacts report backend status
+- **THEN** DeepSpeed MAY be marked `schema_accepted` and, when actually proven,
+  `conflict_validation_implemented`
+- **AND** MUST NOT be marked `systems_smoke_verified` or
+  `production_supported`.
+
+### Requirement: First-Smoke Non-Goals
+
+The first vertical smoke SHALL NOT claim support for rollout training,
+hidden-state losses, persistent training caches, video, multi-image, vLLM,
+offline inference loops, exact optimizer/RNG resume, or old production
+coordinate-soft-CE parity.
+
+#### Scenario: Hidden-state loss enabled in smoke
+
+- **WHEN** the first smoke config enables a hidden-state loss
+- **THEN** validation MUST fail because hidden-state losses are outside the V1
+  smoke acceptance scope.
