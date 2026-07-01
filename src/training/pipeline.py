@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 import os
 from pathlib import Path
 from typing import Any
 
 import torch
+
+try:
+    from accelerate import Accelerator
+except ImportError:  # pragma: no cover - exercised only in stripped environments.
+    Accelerator = None  # type: ignore[assignment]
 
 from src.adapters import (
     build_adapter_setup_plan,
@@ -150,7 +155,7 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
     repo_root = Path.cwd().resolve()
     resolved_config = load_train_config(config_path)
     config = resolved_config.config
-    run_directory = resolve_run_directory(config, cwd=repo_root)
+    run_directory = _resolve_rank_local_run_directory(config, cwd=repo_root)
     created_at = datetime.now(UTC).isoformat()
     manager = RunArtifactManager.initialize(
         run_directory=run_directory,
@@ -277,6 +282,7 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
     )
 
     device = _runtime_device(_rank())
+    accelerator = _build_accelerator(config.runtime, schedule.runtime_batch)
     runtime = TrainRuntime(
         runtime_config=config.runtime,
         runtime_batch=schedule.runtime_batch,
@@ -287,6 +293,8 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
         rank=_rank(),
         world_size=_world_size(),
         max_grad_norm=config.training.max_grad_norm,
+        accelerator=accelerator,
+        rank_report_gatherer=_build_rank_report_gatherer(_world_size()),
     )
     manager.write_receipt(
         "runtime_setup",
@@ -322,6 +330,7 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
             "checkpoint": _checkpoint_handler(
                 checkpoint_writer,
                 model=runtime.model,
+                runtime=runtime,
                 adapter_receipt=adapter_result.receipt,
                 special_token_result=special_token_result,
                 trainable_surface=trainable_surface,
@@ -477,6 +486,7 @@ def _checkpoint_handler(
     checkpoint_writer: CheckpointWriter,
     *,
     model: Any,
+    runtime: Any | None = None,
     adapter_receipt: Any,
     special_token_result: Any,
     trainable_surface: Any,
@@ -487,10 +497,12 @@ def _checkpoint_handler(
     best_eval_metrics: BestEvalMetricStore | None = None,
 ) -> Any:
     def handle(event: ScheduledTrainerEvent) -> None:
+        if runtime is not None and not bool(getattr(runtime, "is_main_process", True)):
+            return
         step_artifact = event.step_result.to_artifact_dict()
         checkpoint_writer.write_checkpoint(
             planned_step_id=event.scheduled_event.planned_step_id,
-            model=model,
+            model=_unwrap_checkpoint_model(model, runtime=runtime),
             adapter_receipt=adapter_receipt,
             special_token_result=special_token_result,
             trainable_surface=trainable_surface,
@@ -526,6 +538,16 @@ def _checkpoint_handler(
         )
 
     return handle
+
+
+def _unwrap_checkpoint_model(model: Any, *, runtime: Any | None) -> Any:
+    if runtime is None:
+        return model
+    accelerator = getattr(runtime, "accelerator", None)
+    unwrap_model = getattr(accelerator, "unwrap_model", None)
+    if callable(unwrap_model):
+        return unwrap_model(model)
+    return model
 
 
 def _eval_forward_handler(
@@ -586,6 +608,39 @@ def _pack_plan_artifact(
             for micro_step in micro_steps
         ],
     }
+
+
+def _resolve_rank_local_run_directory(config: Any, *, cwd: Path) -> Any:
+    rank = _rank()
+    world_size = _world_size()
+    timestamp = None
+    if world_size > 1 and rank > 0:
+        timestamp = f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-rank{rank}"
+    run_directory = resolve_run_directory(config, cwd=cwd, timestamp=timestamp)
+    if world_size <= 1 or rank == 0:
+        return run_directory
+    rank_suffix = f"rank{rank}"
+    if run_directory.run_dir.name.endswith(f"-{rank_suffix}"):
+        return run_directory
+    rank_run_dir = run_directory.run_dir.with_name(
+        f"{run_directory.run_dir.name}-{rank_suffix}"
+    )
+    if rank_run_dir.exists():
+        if config.run.collision_policy == "fail":
+            raise RuntimeContractError(
+                "rank-local run output directory already exists",
+                code="runtime.rank_run_dir_exists",
+                context={
+                    "rank": rank,
+                    "world_size": world_size,
+                    "run_dir": str(rank_run_dir),
+                },
+            )
+        rank_run_dir = run_directory.run_dir.with_name(
+            f"{run_directory.run_dir.name}-"
+            f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{rank_suffix}"
+        )
+    return replace(run_directory, run_dir=rank_run_dir.resolve())
 
 
 def _loss_plan_artifact(config: Any, vocab_groups_artifact: dict[str, Any]) -> dict[str, Any]:
@@ -664,6 +719,50 @@ def _disable_use_cache(model: Any) -> list[str]:
                 setattr(config, "use_cache", False)
             disabled.append(f"{owner_name}.{config_path}")
     return disabled
+
+
+def _build_accelerator(
+    runtime_config: Any,
+    runtime_batch: Any,
+) -> Any | None:
+    if runtime_config.backend != "accelerate":
+        return None
+    if Accelerator is None:
+        raise RuntimeContractError(
+            "accelerate backend requires the accelerate package",
+            code="runtime.accelerate_unavailable",
+        )
+    accelerate_config = runtime_config.accelerate
+    kwargs: dict[str, Any] = {
+        "gradient_accumulation_steps": runtime_batch.resolved_grad_accum_steps,
+    }
+    mixed_precision = (
+        None
+        if accelerate_config is None
+        else accelerate_config.mixed_precision
+    )
+    if mixed_precision is not None:
+        kwargs["mixed_precision"] = mixed_precision
+    return Accelerator(**kwargs)
+
+
+def _build_rank_report_gatherer(world_size: int) -> Any | None:
+    if world_size <= 1:
+        return None
+
+    def gather(local_report: Any) -> tuple[Any, ...]:
+        distributed = torch.distributed
+        if not distributed.is_available() or not distributed.is_initialized():
+            raise RuntimeContractError(
+                "multi-rank finite gates require initialized torch.distributed",
+                code="runtime.distributed_gather_uninitialized",
+                context={"world_size": world_size},
+            )
+        gathered: list[Any | None] = [None for _ in range(distributed.get_world_size())]
+        distributed.all_gather_object(gathered, local_report)
+        return tuple(item for item in gathered if item is not None)
+
+    return gather
 
 
 def _config_owners(owner: Any) -> tuple[tuple[str, Any], ...]:

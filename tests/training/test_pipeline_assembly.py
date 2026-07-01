@@ -45,76 +45,7 @@ def test_run_training_pipeline_writes_core_artifacts_with_fake_boundaries(
     config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
     log: list[str] = []
 
-    monkeypatch.setattr(
-        "src.training.pipeline.load_qwen_components",
-        lambda config, load_model: FakeComponents(),
-        raising=False,
-    )
-    monkeypatch.setattr(
-        "src.training.pipeline.load_default_adapter_source_gate_evidence",
-        lambda repo_root: object(),
-        raising=False,
-    )
-    monkeypatch.setattr(
-        "src.training.pipeline.build_adapter_setup_plan",
-        lambda adapter_config, evidence, base_model_path: FakePlan(),
-        raising=False,
-    )
-    monkeypatch.setattr(
-        "src.training.pipeline.setup_dora_adapter",
-        lambda model, plan: FakeAdapterResult(model=model),
-        raising=False,
-    )
-    monkeypatch.setattr(
-        "src.training.pipeline.build_default_special_token_selection",
-        lambda config, token_identity: object(),
-        raising=False,
-    )
-    monkeypatch.setattr(
-        "src.training.pipeline.load_default_special_token_embedding_source_gate_evidence",
-        lambda repo_root: object(),
-        raising=False,
-    )
-    monkeypatch.setattr(
-        "src.training.pipeline.install_special_token_embedding_deltas",
-        lambda model, selection, source_gate: FakeSpecialTokenResult(model=model),
-        raising=False,
-    )
-    monkeypatch.setattr(
-        "src.training.pipeline.build_base_micro_steps",
-        lambda config, components, vocab_groups: (_micro_step(0),),
-        raising=False,
-    )
-    monkeypatch.setattr(
-        "src.training.pipeline.build_token_vocabulary_groups",
-        lambda token_identity, tokenizer: FakeVocabGroups(),
-        raising=False,
-    )
-    monkeypatch.setattr(
-        "src.training.pipeline.build_optimizer_group_plan",
-        lambda model, optimizer_config, adapter_receipt, special_token_receipt: FakeOptimizerPlan(),
-        raising=False,
-    )
-    monkeypatch.setattr(
-        "src.training.pipeline.build_optimizer_and_scheduler",
-        lambda optimizer_config, group_plan, total_training_steps: (FakeOptimizer(), FakeScheduler()),
-        raising=False,
-    )
-    monkeypatch.setattr(
-        "src.training.pipeline.build_trainable_surface_receipt",
-        lambda model, adapter_receipt, special_token_receipt, optimizer_group_plan: FakeTrainableSurface(),
-        raising=False,
-    )
-    monkeypatch.setattr(
-        "src.training.pipeline.TrainRuntime",
-        lambda **kwargs: FakePipelineRuntime(**kwargs),
-        raising=False,
-    )
-    monkeypatch.setattr(
-        "src.training.pipeline.SupervisedTrainer",
-        lambda **kwargs: FakePipelineTrainer(log=log, **kwargs),
-        raising=False,
-    )
+    _install_fake_training_pipeline_boundaries(monkeypatch, log)
 
     summary = run_training_pipeline(config_path)
 
@@ -145,6 +76,87 @@ def test_run_training_pipeline_writes_core_artifacts_with_fake_boundaries(
     assert loss_plan["metric_definitions"]["top_level"] == ["acc_top1", "acc_top5"]
     assert loss_plan["vocabulary_groups"]["coordinate_count"] == 1000
     assert log == ["trainer.run"]
+
+
+def test_run_training_pipeline_wires_accelerate_runtime_for_multirank(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    payload = yaml.safe_load(FIXTURE_CONFIG.read_text())
+    payload["run"]["artifact_root"] = str(tmp_path / "artifacts")
+    payload["run"]["name"] = "fake-accelerate-smoke"
+    payload["runtime"] = {
+        "backend": "accelerate",
+        "seed": 17,
+        "accelerate": {
+            "mixed_precision": "bf16",
+            "gradient_accumulation_steps": None,
+        },
+    }
+    config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+    log: list[str] = []
+    FakePipelineRuntime.last_kwargs = None
+
+    monkeypatch.setenv("RANK", "0")
+    monkeypatch.setenv("LOCAL_RANK", "0")
+    monkeypatch.setenv("WORLD_SIZE", "2")
+    monkeypatch.setattr(
+        "src.training.pipeline.Accelerator",
+        FakePipelineAccelerator,
+        raising=False,
+    )
+    _install_fake_training_pipeline_boundaries(monkeypatch, log)
+
+    summary = run_training_pipeline(config_path)
+
+    assert summary["completed_steps"] == 5
+    assert FakePipelineRuntime.last_kwargs is not None
+    assert isinstance(
+        FakePipelineRuntime.last_kwargs["accelerator"],
+        FakePipelineAccelerator,
+    )
+    assert callable(FakePipelineRuntime.last_kwargs["rank_report_gatherer"])
+    accelerator = FakePipelineRuntime.last_kwargs["accelerator"]
+    assert accelerator.mixed_precision == "bf16"
+    assert accelerator.gradient_accumulation_steps == 1
+    assert FakePipelineRuntime.last_kwargs["world_size"] == 2
+    assert FakePipelineRuntime.last_kwargs["runtime_batch"].world_size == 2
+
+
+def test_run_training_pipeline_uses_rank_local_artifacts_for_nonzero_rank(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    payload = yaml.safe_load(FIXTURE_CONFIG.read_text())
+    payload["run"]["artifact_root"] = str(tmp_path / "artifacts")
+    payload["run"]["name"] = "fake-rank-local-smoke"
+    payload["runtime"] = {
+        "backend": "accelerate",
+        "seed": 17,
+        "accelerate": {
+            "mixed_precision": "bf16",
+            "gradient_accumulation_steps": None,
+        },
+    }
+    config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+    log: list[str] = []
+
+    monkeypatch.setenv("RANK", "1")
+    monkeypatch.setenv("LOCAL_RANK", "1")
+    monkeypatch.setenv("WORLD_SIZE", "2")
+    monkeypatch.setattr(
+        "src.training.pipeline.Accelerator",
+        FakePipelineAccelerator,
+        raising=False,
+    )
+    _install_fake_training_pipeline_boundaries(monkeypatch, log)
+
+    summary = run_training_pipeline(config_path)
+
+    assert Path(summary["run_dir"]).name.endswith("-rank1")
+    assert Path(summary["run_dir"]).exists()
 
 
 def test_repeating_micro_step_stream_fills_planned_rank_local_window() -> None:
@@ -296,6 +308,106 @@ def test_checkpoint_handler_uses_same_step_eval_acc_top1_for_best_selection(
     )
     assert best_alias["checkpoint_id"] == "step-2"
     assert best_alias["metric"]["value"] == 0.42
+
+
+def test_checkpoint_handler_unwraps_accelerate_model_and_saves_adapter_only(
+    tmp_path: Path,
+) -> None:
+    manager = _manager(tmp_path)
+    writer = __import__("src.artifacts", fromlist=["CheckpointWriter"]).CheckpointWriter(manager)
+    unwrapped = FakeAdapterOnlyModel()
+    wrapped = FakeWrappedModel(unwrapped)
+    runtime = FakeCheckpointRuntime(
+        is_main_process=True,
+        accelerator=FakeUnwrapAccelerator(),
+    )
+    handler = _checkpoint_handler(
+        writer,
+        model=wrapped,
+        runtime=runtime,
+        adapter_receipt=FakeReceipt({"adapter_type": "dora"}),
+        special_token_result=None,
+        trainable_surface={"trainable_towers": ["adapter.language"]},
+        processor_identity={"processor": "fake"},
+        resolved_config_fingerprint="fingerprint",
+        schedule=_schedule(resolved_max_steps=1),
+        base_model_path=Path("/tmp/fake-qwen"),
+    )
+
+    handler(
+        ScheduledTrainerEvent(
+            scheduled_event=StepScheduleEvent(
+                planned_step_id=1,
+                event="checkpoint",
+                trigger_reasons=("checkpoint.final",),
+                source_config_path=None,
+                deduped_from=(),
+                required=False,
+            ),
+            step_result=PlannedStepResult(
+                planned_step_id=1,
+                micro_step_count=1,
+                loss_bundle_artifact={"metrics": {"loss/total": 1.0}},
+                pre_backward_decision=_gate(1),
+                post_backward_decision=_gate(1),
+                qwen_forward_receipts=(),
+                optimizer_update_status="applied",
+                finite_status="finite",
+            ),
+        )
+    )
+
+    adapter_dir = manager.run_dir / "checkpoints" / "step-1" / "adapter"
+    assert (adapter_dir / "adapter_config.json").exists()
+    assert (adapter_dir / "adapter_model.safetensors").exists()
+    assert not (adapter_dir / "config.json").exists()
+    assert not (adapter_dir / "model.safetensors").exists()
+    assert unwrapped.save_pretrained_calls == 1
+
+
+def test_checkpoint_handler_skips_non_main_process_checkpoint_side_effects(
+    tmp_path: Path,
+) -> None:
+    manager = _manager(tmp_path)
+    writer = __import__("src.artifacts", fromlist=["CheckpointWriter"]).CheckpointWriter(manager)
+    runtime = FakeCheckpointRuntime(is_main_process=False)
+    handler = _checkpoint_handler(
+        writer,
+        model=FakeAdapterOnlyModel(),
+        runtime=runtime,
+        adapter_receipt=FakeReceipt({"adapter_type": "dora"}),
+        special_token_result=None,
+        trainable_surface={"trainable_towers": ["adapter.language"]},
+        processor_identity={"processor": "fake"},
+        resolved_config_fingerprint="fingerprint",
+        schedule=_schedule(resolved_max_steps=1),
+        base_model_path=Path("/tmp/fake-qwen"),
+    )
+
+    handler(
+        ScheduledTrainerEvent(
+            scheduled_event=StepScheduleEvent(
+                planned_step_id=1,
+                event="checkpoint",
+                trigger_reasons=("checkpoint.final",),
+                source_config_path=None,
+                deduped_from=(),
+                required=False,
+            ),
+            step_result=PlannedStepResult(
+                planned_step_id=1,
+                micro_step_count=1,
+                loss_bundle_artifact={"metrics": {"loss/total": 1.0}},
+                pre_backward_decision=_gate(1),
+                post_backward_decision=_gate(1),
+                qwen_forward_receipts=(),
+                optimizer_update_status="applied",
+                finite_status="finite",
+            ),
+        )
+    )
+
+    assert not (manager.run_dir / "checkpoints").exists()
 
 
 def test_best_eval_metric_store_only_returns_same_step_acc_top1() -> None:
@@ -514,8 +626,134 @@ class FakeNestedQwenMemorySaverModel(FakeMemorySaverModel):
         self.config = FakeNestedQwenConfig()
 
 
+def _install_fake_training_pipeline_boundaries(
+    monkeypatch: pytest.MonkeyPatch,
+    log: list[str],
+) -> None:
+    monkeypatch.setattr(
+        "src.training.pipeline.load_qwen_components",
+        lambda config, load_model: FakeComponents(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "src.training.pipeline.load_default_adapter_source_gate_evidence",
+        lambda repo_root: object(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "src.training.pipeline.build_adapter_setup_plan",
+        lambda adapter_config, evidence, base_model_path: FakePlan(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "src.training.pipeline.setup_dora_adapter",
+        lambda model, plan: FakeAdapterResult(model=model),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "src.training.pipeline.build_default_special_token_selection",
+        lambda config, token_identity: object(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "src.training.pipeline.load_default_special_token_embedding_source_gate_evidence",
+        lambda repo_root: object(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "src.training.pipeline.install_special_token_embedding_deltas",
+        lambda model, selection, source_gate: FakeSpecialTokenResult(model=model),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "src.training.pipeline.build_base_micro_steps",
+        lambda config, components, vocab_groups: (_micro_step(0),),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "src.training.pipeline.build_token_vocabulary_groups",
+        lambda token_identity, tokenizer: FakeVocabGroups(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "src.training.pipeline.build_optimizer_group_plan",
+        lambda model, optimizer_config, adapter_receipt, special_token_receipt: FakeOptimizerPlan(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "src.training.pipeline.build_optimizer_and_scheduler",
+        lambda optimizer_config, group_plan, total_training_steps: (FakeOptimizer(), FakeScheduler()),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "src.training.pipeline.build_trainable_surface_receipt",
+        lambda model, adapter_receipt, special_token_receipt, optimizer_group_plan: FakeTrainableSurface(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "src.training.pipeline.TrainRuntime",
+        lambda **kwargs: FakePipelineRuntime(**kwargs),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "src.training.pipeline.SupervisedTrainer",
+        lambda **kwargs: FakePipelineTrainer(log=log, **kwargs),
+        raising=False,
+    )
+
+
+class FakePipelineAccelerator:
+    def __init__(
+        self,
+        *,
+        mixed_precision: str | None = None,
+        gradient_accumulation_steps: int | None = None,
+    ) -> None:
+        self.mixed_precision = mixed_precision
+        self.gradient_accumulation_steps = gradient_accumulation_steps
+
+
+class FakeAdapterOnlyModel:
+    def __init__(self) -> None:
+        self.save_pretrained_calls = 0
+
+    def save_pretrained(self, output_dir: str | Path) -> None:
+        self.save_pretrained_calls += 1
+        path = Path(output_dir)
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "adapter_config.json").write_text(
+            '{"peft_type": "LORA", "use_dora": true}\n',
+            encoding="utf-8",
+        )
+        (path / "adapter_model.safetensors").write_bytes(b"adapter")
+
+
+class FakeWrappedModel:
+    def __init__(self, unwrapped: FakeAdapterOnlyModel) -> None:
+        self.unwrapped = unwrapped
+
+
+class FakeUnwrapAccelerator:
+    def unwrap_model(self, model: Any) -> Any:
+        return model.unwrapped
+
+
+class FakeCheckpointRuntime:
+    def __init__(
+        self,
+        *,
+        is_main_process: bool,
+        accelerator: Any | None = None,
+    ) -> None:
+        self.is_main_process = is_main_process
+        self.accelerator = accelerator
+
+
 class FakePipelineRuntime:
+    last_kwargs: dict[str, Any] | None = None
+
     def __init__(self, **kwargs: Any) -> None:
+        FakePipelineRuntime.last_kwargs = dict(kwargs)
         self.model = kwargs["model"]
         self.rank = kwargs["rank"]
         self.world_size = kwargs["world_size"]
