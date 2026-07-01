@@ -314,6 +314,75 @@ def test_detection_config_standard_ce_coord_soft_auxiliary_reaches_runtime_shim(
     assert shim.coord_soft_ce_w1.target_truncate == 8
 
 
+def test_detection_config_standard_ce_coord_gaussian_rps_reaches_runtime_shim() -> None:
+    payload = _detection_payload()
+    payload["objective"] = {
+        "id": "standard_ce",
+        "auxiliaries": {
+            "coord_gaussian_rps": {
+                "enabled": True,
+                "ce_weight": 1.0,
+                "gaussian_weight": 1.0,
+                "rps_weight": 1.0,
+                "temperature": 1.0,
+                "gaussian_r95_axis_fraction": 0.04,
+                "gaussian_r95_cap_bins": 8,
+                "gaussian_r95_min_bins": 1,
+                "gaussian_r95_fallback_bins": 8,
+                "type_gate": {
+                    "enabled": True,
+                    "mode": "allowed_type_mass",
+                    "weights": {
+                        "struct": 1.0,
+                        "coord": 1.0,
+                        "desc": 1.0,
+                        "eos": 0.5,
+                    },
+                },
+            },
+            "geometry": {"enabled": False},
+        },
+    }
+
+    cfg = DetectionTrainingConfig.from_mapping(payload)
+    serialized = cfg.to_mapping()
+    shim = build_detection_runtime_custom_shim(cfg)
+
+    aux = cfg.objective.auxiliaries.coord_gaussian_rps
+    assert aux.enabled is True
+    assert aux.gaussian_weight == pytest.approx(1.0)
+    assert aux.rps_weight == pytest.approx(1.0)
+    assert aux.gaussian_r95_axis_fraction == pytest.approx(0.04)
+    assert aux.type_gate.enabled is True
+    assert aux.type_gate.weights.struct == pytest.approx(1.0)
+    assert aux.type_gate.weights.coord == pytest.approx(1.0)
+    assert aux.type_gate.weights.desc == pytest.approx(1.0)
+    assert aux.type_gate.weights.eos == pytest.approx(0.5)
+    assert serialized["objective"]["auxiliaries"]["coord_gaussian_rps"][
+        "enabled"
+    ] is True
+    assert shim.coord_gaussian_rps is aux
+
+
+def test_detection_config_standard_ce_coord_gaussian_rps_rejects_unknown_keys() -> None:
+    payload = _detection_payload()
+    payload["objective"] = {
+        "id": "standard_ce",
+        "auxiliaries": {
+            "coord_gaussian_rps": {
+                "enabled": True,
+                "w1_weight": 1.0,
+            },
+        },
+    }
+
+    with pytest.raises(
+        ValueError,
+        match="objective\\.auxiliaries\\.coord_gaussian_rps\\.w1_weight",
+    ):
+        DetectionTrainingConfig.from_mapping(payload)
+
+
 def test_detection_config_rejects_internal_token_ce_public_objective_id() -> None:
     payload = _detection_payload()
     payload["objective"] = {"id": "token_ce"}

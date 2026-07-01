@@ -12,6 +12,7 @@ from src.trainers.metrics.batch_contract import (
     _validate_batch_contract,
 )
 from src.trainers.metrics.coord_losses import CoordSoftCEW1LossMixin
+from src.trainers.metrics.coord_gaussian_rps import CoordGaussianRPSLossMixin
 from src.trainers.metrics.recursive_detection import RecursiveDetectionCEMixin
 from src.trainers.metrics.structural_close import SFTStructuralCloseLossMixin
 from src.trainers.metrics.teacher_forcing import TeacherForcingObjectiveMixin
@@ -26,6 +27,7 @@ __all__ = [
     "RecursiveDetectionCEMixin",
     "TeacherForcingObjectiveMixin",
     "AggregateTokenTypeMetricsMixin",
+    "CoordGaussianRPSLossMixin",
     "CoordSoftCEW1LossMixin",
     "InstabilityMonitorMixin",
 ]

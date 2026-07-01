@@ -6,6 +6,7 @@ from src.config import SaveDelayConfig
 from src.training_runtime import resolve_training_runtime_profile
 from src.trainers.metrics.mixins import (
     AggregateTokenTypeMetricsMixin,
+    CoordGaussianRPSLossMixin,
     CoordSoftCEW1LossMixin,
     GradAccumLossScaleMixin,
     InstabilityMonitorMixin,
@@ -68,6 +69,7 @@ def compose_trainer_class(
     bbox_geo_cfg: Any,
     bbox_size_aux_cfg: Any,
     coord_soft_ce_w1_cfg: Any,
+    coord_gaussian_rps_cfg: Any = None,
     sft_structural_close_cfg: Any = None,
     recursive_detection_ce_cfg: Any = None,
     teacher_forcing_objective_cfg: Any = None,
@@ -90,6 +92,7 @@ def compose_trainer_class(
                 ("bbox_size_aux", bbox_size_aux_cfg),
                 ("bbox_geo", bbox_geo_cfg),
                 ("coord_soft_ce_w1", coord_soft_ce_w1_cfg),
+                ("coord_gaussian_rps", coord_gaussian_rps_cfg),
                 ("sft_structural_close", sft_structural_close_cfg),
             ):
                 if cfg and getattr(cfg, "enabled", False):
@@ -111,6 +114,23 @@ def compose_trainer_class(
             mixins.append(RecursiveDetectionCEMixin)
         elif teacher_forcing_enabled:
             mixins.append(TeacherForcingObjectiveMixin)
+        if (
+            not recursive_ce_enabled
+            and coord_soft_ce_w1_cfg
+            and getattr(coord_soft_ce_w1_cfg, "enabled", False)
+            and coord_gaussian_rps_cfg
+            and getattr(coord_gaussian_rps_cfg, "enabled", False)
+        ):
+            raise ValueError(
+                "coord_soft_ce_w1 and coord_gaussian_rps cannot both be enabled "
+                "in the same ordinary Stage-1 trainer"
+            )
+        if (
+            not recursive_ce_enabled
+            and coord_gaussian_rps_cfg
+            and getattr(coord_gaussian_rps_cfg, "enabled", False)
+        ):
+            mixins.append(CoordGaussianRPSLossMixin)
         if (
             not recursive_ce_enabled
             and coord_soft_ce_w1_cfg

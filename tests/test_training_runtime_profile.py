@@ -13,6 +13,7 @@ import pytest
 from src.bootstrap.trainer_setup import compose_trainer_class, instantiate_trainer
 from src.trainers.metrics.mixins import (
     AggregateTokenTypeMetricsMixin,
+    CoordGaussianRPSLossMixin,
     CoordSoftCEW1LossMixin,
     GradAccumLossScaleMixin,
     InstabilityMonitorMixin,
@@ -298,6 +299,25 @@ def test_compose_trainer_class_keeps_ordinary_stage1_mixins_for_default_variant(
     assert issubclass(trainer_cls, _BaseTrainer)
 
 
+def test_compose_trainer_class_adds_coord_gaussian_rps_mixin_when_enabled() -> None:
+    trainer_cls = compose_trainer_class(
+        trainer_cls=_BaseTrainer,
+        trainer_variant="",
+        instability_monitor_cfg=None,
+        token_type_cfg=None,
+        bbox_geo_cfg=None,
+        bbox_size_aux_cfg=None,
+        coord_soft_ce_w1_cfg=None,
+        coord_gaussian_rps_cfg=SimpleNamespace(enabled=True),
+        sft_structural_close_cfg=None,
+        recursive_detection_ce_cfg=None,
+    )
+
+    assert issubclass(trainer_cls, CoordGaussianRPSLossMixin)
+    assert issubclass(trainer_cls, GradAccumLossScaleMixin)
+    assert issubclass(trainer_cls, _BaseTrainer)
+
+
 def test_compose_trainer_class_adds_recursive_detection_ce_mixin_when_enabled() -> None:
     trainer_cls = compose_trainer_class(
         trainer_cls=_BaseTrainer,
@@ -320,6 +340,10 @@ def test_compose_trainer_class_adds_recursive_detection_ce_mixin_when_enabled() 
     ("field_name", "cfg_kwargs"),
     [
         ("coord_soft_ce_w1", {"coord_soft_ce_w1_cfg": SimpleNamespace(enabled=True)}),
+        (
+            "coord_gaussian_rps",
+            {"coord_gaussian_rps_cfg": SimpleNamespace(enabled=True)},
+        ),
         (
             "sft_structural_close",
             {"sft_structural_close_cfg": SimpleNamespace(enabled=True)},

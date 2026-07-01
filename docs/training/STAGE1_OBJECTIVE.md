@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: training
 summary: Stage-1 objective surfaces and coord-token training behavior.
-updated: 2026-05-25
+updated: 2026-06-30
 ---
 
 # Coord Objective & Adapter
@@ -24,8 +24,10 @@ Scope note:
   - `docs/training/STAGE2_RUNBOOK.md`
   - `docs/training/METRICS.md`
 - Legacy `custom.coord_soft_ce_w1.*` authoring should not be used for pipeline-declared Stage-2 configs.
-- For standard Stage-1 SFT, the active non-pipeline teacher-forcing surface is:
-  - `custom.coord_soft_ce_w1.*`
+- For standard Stage-1 SFT, the active non-pipeline teacher-forcing surfaces are:
+  - `objective.auxiliaries.coord_gaussian_rps.*` for ordinary full-wrapper
+    Gaussian + RPS coordinate smoothing
+  - `custom.coord_soft_ce_w1.*` for legacy Stage-1 W1 configs
 - Raw-text norm1000 ablations remain legacy Stage-1 SFT surfaces, not latest
   compact detection overlays. They are expressed through ordinary Stage-1 SFT
   configs plus `custom.coord_tokens.enabled: false`; no checked-in canonical
@@ -133,7 +135,64 @@ problem. Treat the older CE-side references as diagnostic evidence, not current
 architecture guidance, unless a token-compatible pure-CE checkpoint is
 evaluated under the same onset-local protocol.
 
-## Coord distribution loss (coord tokens)
+## Ordinary Stage-1 Gaussian/RPS Coord Auxiliary
+
+The current ordinary Stage-1 coordinate-smoothing experiment is
+`objective.auxiliaries.coord_gaussian_rps` under
+`pipeline.id: stage1_standard_sft`.
+
+This path is intentionally a standard teacher-forced SFT forward:
+
+- full-vocab CE remains the base loss for non-coordinate tokens
+- coordinate labels are masked out of base CE and handled by the auxiliary
+- coordinate-token logits are sliced to the ordered 1000-bin coord vocabulary
+- the Gaussian target is centered at the teacher-forced GT coordinate value
+- the Gaussian R95 radius is recovered from adjacent compact-full `xyxy` quads:
+  x slots use bbox width and y slots use bbox height
+- CPRS is implemented as the discrete ranked probability score over ordered
+  coordinate-bin CDFs
+- compact type-gate pressure is applied over four allowed-mass groups:
+  wrapper/schema (`struct`), coordinate (`coord`), description (`desc`), and
+  EOS (`eos`)
+
+Initial full-wrapper profile:
+
+```yaml
+objective:
+  id: standard_ce
+  variant: sorted_sft
+  auxiliaries:
+    coord_gaussian_rps:
+      enabled: true
+      ce_weight: 1.0
+      gaussian_weight: 0.5
+      rps_weight: 0.2
+      temperature: 1.0
+      gaussian_r95_axis_fraction: 0.04
+      gaussian_r95_cap_bins: 8
+      gaussian_r95_min_bins: 1
+      gaussian_r95_fallback_bins: 8
+      type_gate:
+        enabled: true
+        mode: allowed_type_mass
+        weights:
+          struct: 1.0
+          coord: 1.0
+          desc: 1.0
+          eos: 1.0
+```
+
+Reference configs:
+
+- `configs/stage1/profiles/2b/coord_gaussian_rps_coco80_desc_first_1024_object_ref_close_box_close_sorted_packed_natural_adjacent.yaml`
+- `configs/stage1/smoke/coord_gaussian_rps_coco80_desc_first_1024_object_ref_close_box_close_sorted_packed_natural_adjacent_tiny.yaml`
+
+This is not the legacy W1 path and does not route through
+`coord_soft_ce_w1` loss names. The stable metrics for this auxiliary use
+`coord_gaussian_rps/*`; shared coordinate diagnostics continue under
+`coord_diag/*` with an `rps` key rather than `w1`.
+
+## Legacy Coord Distribution Loss (coord tokens)
 
 CoordExp can supervise coordinate tokens with **distribution-based losses** on
 the legacy `xyxy` Stage-1 JSON baseline:

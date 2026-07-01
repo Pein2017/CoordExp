@@ -870,6 +870,9 @@ def _stage1_aux_settings_payload(custom_config: Any) -> dict[str, Any]:
         "coord_soft_ce_w1": _config_to_mapping(
             getattr(custom_config, "coord_soft_ce_w1", None)
         ),
+        "coord_gaussian_rps": _config_to_mapping(
+            getattr(custom_config, "coord_gaussian_rps", None)
+        ),
     }
 
 
@@ -4025,6 +4028,7 @@ def main():
         base_collator = _pipeline_data_collator(sft, train_args)
     token_type_cfg = getattr(custom_config, "token_type_metrics", None)
     coord_soft_ce_w1_cfg = getattr(custom_config, "coord_soft_ce_w1", None)
+    coord_gaussian_rps_cfg = getattr(custom_config, "coord_gaussian_rps", None)
     sft_structural_close_cfg = getattr(custom_config, "sft_structural_close", None)
     instability_monitor_cfg = None
     loss_gradient_monitor_cfg = None
@@ -4175,6 +4179,7 @@ def main():
         bbox_geo_cfg=None,
         bbox_size_aux_cfg=None,
         coord_soft_ce_w1_cfg=coord_soft_ce_w1_cfg,
+        coord_gaussian_rps_cfg=coord_gaussian_rps_cfg,
         sft_structural_close_cfg=sft_structural_close_cfg,
         recursive_detection_ce_cfg=recursive_detection_ce_cfg,
         teacher_forcing_objective_cfg=teacher_forcing_objective_cfg,
@@ -4340,6 +4345,8 @@ def main():
 
     if coord_soft_ce_w1_cfg is not None:
         setattr(trainer, "coord_soft_ce_w1_cfg", coord_soft_ce_w1_cfg)
+    if coord_gaussian_rps_cfg is not None:
+        setattr(trainer, "coord_gaussian_rps_cfg", coord_gaussian_rps_cfg)
     if sft_structural_close_cfg is not None:
         setattr(trainer, "sft_structural_close_cfg", sft_structural_close_cfg)
     if recursive_detection_ce_cfg is not None:

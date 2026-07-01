@@ -34,6 +34,8 @@ class TypeGateTokenizer:
             "<|end_of_text|>": 4,
             OBJECT_REF_START_TOKEN: 5,
             BOX_START_TOKEN: 6,
+            OBJECT_REF_END_TOKEN: 8,
+            BOX_END_TOKEN: 9,
             "<|vision_start|>": 7,
             OBJECT_REF_END_TOKEN: 8,
             BOX_END_TOKEN: 9,
