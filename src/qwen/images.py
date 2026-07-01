@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import torch
 from PIL import Image
 
 from src.common.errors import EncodingContractError
@@ -298,6 +300,82 @@ def materialize_qwen_image_encoding(
     )
 
 
+def materialize_qwen_image_encoding_batch(
+    encodings: Sequence[QwenImageEncoding],
+) -> tuple[torch.Tensor, torch.Tensor]:
+    checked = tuple(encodings)
+    if not checked:
+        raise EncodingContractError(
+            "Qwen image batch materialization requires at least one image",
+            code="qwen.image_batch_empty",
+        )
+    for encoding in checked:
+        if not isinstance(encoding, QwenImageEncoding):
+            raise EncodingContractError(
+                "Qwen image batch materialization requires QwenImageEncoding items",
+                code="qwen.image_batch_encoding_type",
+                context={"value_type": type(encoding).__name__},
+            )
+    if all(
+        encoding.pixel_values is not None
+        and encoding.image_grid_thw_tensor is not None
+        for encoding in checked
+    ):
+        return _cat_materialized_image_encodings(checked)
+    if not all(
+        encoding.pixel_values is None
+        and encoding.image_grid_thw_tensor is None
+        for encoding in checked
+    ):
+        materialized = tuple(materialize_qwen_image_encoding(encoding) for encoding in checked)
+        return _cat_materialized_image_encodings(materialized)
+
+    image_processor = checked[0].image_processor
+    if image_processor is None:
+        raise EncodingContractError(
+            "lazy Qwen image batch materialization requires an image_processor",
+            code="qwen.image_lazy_processor_missing",
+            context={
+                "example_id": checked[0].example_id,
+                "image_path": str(checked[0].image_path),
+            },
+        )
+    for encoding in checked:
+        if encoding.image_processor is None:
+            raise EncodingContractError(
+                "lazy Qwen image batch materialization requires an image_processor",
+                code="qwen.image_lazy_processor_missing",
+                context={
+                    "example_id": encoding.example_id,
+                    "image_path": str(encoding.image_path),
+                },
+            )
+        if encoding.image_processor is not image_processor:
+            materialized = tuple(
+                materialize_qwen_image_encoding(encoding) for encoding in checked
+            )
+            return _cat_materialized_image_encodings(materialized)
+
+    images = [_load_rgb_image_from_plan(encoding.plan) for encoding in checked]
+    try:
+        encoded = image_processor(
+            images=images,
+            return_tensors="pt",
+            do_resize=False,
+        )
+    finally:
+        for image in images:
+            image.close()
+    pixel_values = encoded.get("pixel_values")
+    image_grid_thw_tensor = encoded.get("image_grid_thw")
+    _validate_batch_processor_output(
+        checked,
+        pixel_values=pixel_values,
+        image_grid_thw_tensor=image_grid_thw_tensor,
+    )
+    return pixel_values, image_grid_thw_tensor
+
+
 def attach_qwen_image_processor(
     encoding: QwenImageEncoding,
     image_processor: Any,
@@ -308,6 +386,82 @@ def attach_qwen_image_processor(
         image_grid_thw_tensor=encoding.image_grid_thw_tensor,
         image_processor=image_processor,
     )
+
+
+def _cat_materialized_image_encodings(
+    encodings: Sequence[QwenImageEncoding],
+) -> tuple[torch.Tensor, torch.Tensor]:
+    pixel_values_parts: list[torch.Tensor] = []
+    image_grid_parts: list[torch.Tensor] = []
+    for encoding in encodings:
+        _validate_processor_output(
+            encoding.plan,
+            pixel_values=encoding.pixel_values,
+            image_grid_thw_tensor=encoding.image_grid_thw_tensor,
+        )
+        pixel_values_parts.append(encoding.pixel_values)
+        image_grid_parts.append(encoding.image_grid_thw_tensor)
+    return (
+        torch.cat(pixel_values_parts, dim=0),
+        torch.cat(image_grid_parts, dim=0),
+    )
+
+
+def _validate_batch_processor_output(
+    encodings: Sequence[QwenImageEncoding],
+    *,
+    pixel_values: Any,
+    image_grid_thw_tensor: Any,
+) -> None:
+    first = encodings[0]
+    if pixel_values is None:
+        _validate_processor_output(
+            first.plan,
+            pixel_values=None,
+            image_grid_thw_tensor=image_grid_thw_tensor,
+        )
+    if image_grid_thw_tensor is None:
+        _validate_processor_output(
+            first.plan,
+            pixel_values=pixel_values,
+            image_grid_thw_tensor=None,
+        )
+    expected_rows = sum(encoding.raw_patch_rows for encoding in encodings)
+    expected_width = first.plan.expected_pixel_values_width
+    pixel_shape = _shape_tuple(pixel_values)
+    expected_pixel_shape = (expected_rows, expected_width)
+    if pixel_shape != expected_pixel_shape:
+        raise EncodingContractError(
+            "Qwen batched pixel_values shape does not match no-resize plans",
+            code="qwen.image_pixel_values_shape",
+            context={
+                "example_ids": [encoding.example_id for encoding in encodings],
+                "observed_shape": list(pixel_shape),
+                "expected_shape": list(expected_pixel_shape),
+            },
+        )
+    grid_shape = _shape_tuple(image_grid_thw_tensor)
+    expected_grid_shape = (len(encodings), 3)
+    if grid_shape != expected_grid_shape:
+        raise EncodingContractError(
+            "Qwen batched image_grid_thw must have shape [num_images, 3]",
+            code="qwen.image_grid_shape",
+            context={
+                "example_ids": [encoding.example_id for encoding in encodings],
+                "observed_shape": list(grid_shape),
+                "expected_shape": list(expected_grid_shape),
+            },
+        )
+
+    offset = 0
+    for index, encoding in enumerate(encodings):
+        rows = encoding.raw_patch_rows
+        _validate_processor_output(
+            encoding.plan,
+            pixel_values=pixel_values[offset : offset + rows],
+            image_grid_thw_tensor=image_grid_thw_tensor[index : index + 1],
+        )
+        offset += rows
 
 
 def _load_rgb_image(raw_example: RawExample) -> Image.Image:
@@ -426,5 +580,6 @@ __all__ = [
     "encode_qwen_image",
     "attach_qwen_image_processor",
     "materialize_qwen_image_encoding",
+    "materialize_qwen_image_encoding_batch",
     "plan_qwen_image",
 ]

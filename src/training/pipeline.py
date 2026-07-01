@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import re
+import time
 from typing import Any
 
 import torch
@@ -81,6 +82,18 @@ from src.training.supervised_trainer import (
 TRAIN_SPLIT = "train"
 BEST_EVAL_SELECTOR_SPLIT = "eval.forward"
 BEST_EVAL_SELECTOR_NAME = "acc_top1"
+PROGRESS_EVENT_TYPES = frozenset(
+    {
+        "planned_step.started",
+        "micro_step.forward",
+        "micro_step.loss",
+        "micro_step.pre_backward_gate",
+        "planned_step.loss",
+        "planned_step.pre_backward_gate",
+        "planned_step.post_backward_gate",
+        "planned_step.completed",
+    }
+)
 
 
 def build_repeating_micro_step_stream(
@@ -128,6 +141,8 @@ class TrainingArtifactBridge:
     world_size: int
 
     def __call__(self, event: SupervisedTrainerEvent) -> None:
+        if event.event_type in PROGRESS_EVENT_TYPES:
+            self._append_progress_event(event)
         if event.event_type != "planned_step.completed":
             return
         payload = dict(event.payload)
@@ -172,6 +187,51 @@ class TrainingArtifactBridge:
                     rank=self.rank,
                     world_size=self.world_size,
                 )
+            )
+
+    def _append_progress_event(self, event: SupervisedTrainerEvent) -> None:
+        payload = dict(event.payload)
+        record: dict[str, Any] = {
+            "event_type": event.event_type,
+            "planned_step_id": event.planned_step_id,
+            "rank": self.rank,
+            "world_size": self.world_size,
+            "monotonic_ns": time.monotonic_ns(),
+        }
+        if "local_micro_step_index" in payload:
+            record["local_micro_step_index"] = int(payload["local_micro_step_index"])
+        sync_gradients = payload.get("sync_gradients")
+        if sync_gradients is not None:
+            record["sync_gradients"] = bool(sync_gradients)
+        optimizer_update_status = payload.get("optimizer_update_status")
+        if optimizer_update_status is not None:
+            record["optimizer_update_status"] = str(optimizer_update_status)
+        finite_status = payload.get("finite_status")
+        if finite_status is not None:
+            record["finite_status"] = str(finite_status)
+        stage = payload.get("stage")
+        if stage is not None:
+            record["stage"] = str(stage)
+        receipt = payload.get("receipt")
+        if isinstance(receipt, Mapping):
+            for key in ("pack_index", "pack_length", "segment_count"):
+                if key in receipt:
+                    record[key] = receipt[key]
+        output_path = (
+            self.manager.run_dir
+            / "diagnostics"
+            / f"progress.rank-{self.rank}.jsonl"
+        )
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with output_path.open("a", encoding="utf-8") as handle:
+            handle.write(
+                json.dumps(
+                    record,
+                    allow_nan=False,
+                    ensure_ascii=True,
+                    sort_keys=True,
+                )
+                + "\n"
             )
 
 
@@ -1070,7 +1130,11 @@ def _build_accelerator(
         )
     accelerate_config = runtime_config.accelerate
     kwargs: dict[str, Any] = {
-        "gradient_accumulation_steps": runtime_batch.resolved_grad_accum_steps,
+        # CoordExp-Swift owns planned-step loss normalization and optimizer
+        # cadence. Accelerate's accumulation counter would additionally divide
+        # loss inside accelerator.backward(), so keep it neutral and use
+        # TrainRuntime.no_sync for intermediate microsteps.
+        "gradient_accumulation_steps": 1,
     }
     mixed_precision = (
         None

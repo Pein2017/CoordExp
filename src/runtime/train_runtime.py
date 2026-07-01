@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence
@@ -135,10 +136,38 @@ class TrainRuntime:
         )
         return reduce_scalar_finite_reports(self._gather_rank_reports(report))
 
-    def backward(self, loss: torch.Tensor, *, planned_step_id: int) -> None:
+    def accumulation_context(self, *, sync_gradients: bool) -> Any:
+        self._ensure_training_backend_can_execute()
+        if sync_gradients or self.accelerator is None:
+            return nullcontext()
+        if self.runtime_config.backend == "deepspeed":
+            return nullcontext()
+        no_sync = getattr(self.accelerator, "no_sync", None)
+        if callable(no_sync):
+            return no_sync(self.model)
+        return nullcontext()
+
+    def backward(
+        self,
+        loss: torch.Tensor,
+        *,
+        planned_step_id: int,
+        sync_gradients: bool = True,
+    ) -> None:
         del planned_step_id
         self._ensure_training_backend_can_execute()
         if self.accelerator is not None and hasattr(self.accelerator, "backward"):
+            if self.runtime_config.backend == "deepspeed":
+                old_sync = getattr(self.accelerator, "sync_gradients", None)
+                has_sync_state = hasattr(self.accelerator, "sync_gradients")
+                if has_sync_state:
+                    setattr(self.accelerator, "sync_gradients", bool(sync_gradients))
+                try:
+                    self.accelerator.backward(loss, scale_wrt_gas=False)
+                finally:
+                    if has_sync_state:
+                        setattr(self.accelerator, "sync_gradients", old_sync)
+                return
             self.accelerator.backward(loss)
         else:
             loss.backward()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import replace
 from dataclasses import dataclass
 from typing import Any
@@ -66,7 +67,7 @@ def test_supervised_trainer_orchestrates_accumulation_and_runtime_boundaries() -
         "event:planned_step.loss:1",
         "runtime.pre:1",
         "event:planned_step.pre_backward_gate:1",
-        "runtime.backward:1.0",
+        "runtime.backward:1.0:sync=True",
         "runtime.post:1",
         "event:planned_step.post_backward_gate:1",
         "runtime.clip:1",
@@ -89,7 +90,7 @@ def test_supervised_trainer_orchestrates_accumulation_and_runtime_boundaries() -
         "event:planned_step.loss:2",
         "runtime.pre:2",
         "event:planned_step.pre_backward_gate:2",
-        "runtime.backward:1.0",
+        "runtime.backward:1.0:sync=True",
         "runtime.post:2",
         "event:planned_step.post_backward_gate:2",
         "runtime.clip:2",
@@ -272,7 +273,7 @@ def test_supervised_trainer_skips_backward_and_update_when_scalar_gate_is_unsafe
     result = trainer.run()
 
     assert result.step_results[0].optimizer_update_status == "skipped_non_finite_scalar"
-    assert "runtime.backward:1.0" not in log
+    assert not any(item.startswith("runtime.backward:1.0") for item in log)
     assert "runtime.post:1" not in log
     assert "runtime.optimizer:1" not in log
     assert "runtime.scheduler:1" in log
@@ -294,7 +295,7 @@ def test_supervised_trainer_advances_scheduler_when_post_backward_gate_skips_upd
     result = trainer.run()
 
     assert result.step_results[0].optimizer_update_status == "skipped_gradient_or_overflow"
-    assert "runtime.backward:1.0" in log
+    assert "runtime.backward:1.0:sync=True" in log
     assert "runtime.optimizer:1" not in log
     assert log[-3:] == ["runtime.post:1", "runtime.scheduler:1", "runtime.zero:1"]
 
@@ -489,29 +490,72 @@ def test_supervised_trainer_streams_backward_before_next_forward_when_supported(
     assert result.consumed_micro_steps == 2
     assert result.step_results[0].loss_bundle_artifact["total_loss"] == 1.0
     assert result.step_results[0].loss_bundle_artifact.get("partial") is None
-    assert log.index("runtime.backward:0.5") < log.index("forward:1")
+    assert (
+        log.index("runtime.accumulation:False:enter")
+        < log.index("forward:0")
+        < log.index("runtime.accumulation:False:exit")
+    )
+    assert log.index("runtime.backward:0.5:sync=False") < log.index("forward:1")
     assert log == [
         "stream:0",
         "runtime.move:1:0",
         "stream:1",
         "runtime.move:1:1",
         "streaming.prepare:2",
+        "runtime.accumulation:False:enter",
         "forward:0",
         "context:0",
         "streaming.loss:0",
         "runtime.pre:1",
-        "runtime.backward:0.5",
+        "runtime.backward:0.5:sync=False",
+        "runtime.accumulation:False:exit",
+        "runtime.accumulation:True:enter",
         "forward:1",
         "context:1",
         "streaming.loss:1",
         "runtime.pre:1",
-        "runtime.backward:0.5",
+        "runtime.backward:0.5:sync=True",
+        "runtime.accumulation:True:exit",
         "runtime.post:1",
         "runtime.clip:1",
         "runtime.optimizer:1",
         "runtime.scheduler:1",
         "runtime.zero:1",
     ]
+
+
+def test_streaming_micro_step_events_expose_sync_gradients_boundary() -> None:
+    events: list[SupervisedTrainerEvent] = []
+    trainer = SupervisedTrainer(
+        model=object(),
+        schedule=_schedule(resolved_max_steps=1, grad_accum_steps=2),
+        pack_stream=_micro_steps(2),
+        qwen_forward=_forward([]),
+        loss_context_factory=_loss_context([]),
+        loss_runner=StreamingFakeLossRunner([]),
+        runtime=FakeRuntime([]),
+        event_sink=events.append,
+    )
+
+    trainer.run()
+
+    by_type = {
+        event_type: [
+            event.payload["sync_gradients"]
+            for event in events
+            if event.event_type == event_type
+        ]
+        for event_type in (
+            "micro_step.forward",
+            "micro_step.loss",
+            "micro_step.pre_backward_gate",
+        )
+    }
+    assert by_type == {
+        "micro_step.forward": [False, True],
+        "micro_step.loss": [False, True],
+        "micro_step.pre_backward_gate": [False, True],
+    }
 
 
 def test_streaming_scalar_gate_partial_window_marks_metrics_unavailable() -> None:
@@ -536,7 +580,9 @@ def test_streaming_scalar_gate_partial_window_marks_metrics_unavailable() -> Non
     assert artifact["diagnostics"]["planned_micro_step_count"] == 2
     assert result.step_results[0].micro_step_count == 1
     assert result.step_results[0].optimizer_update_status == "skipped_non_finite_scalar"
-    assert "runtime.backward:0.5" not in log
+    assert not any(item.startswith("runtime.backward:0.5") for item in log)
+    assert "runtime.accumulation:False:enter" in log
+    assert "runtime.accumulation:False:exit" in log
     assert "forward:1" not in log
     assert log[-2:] == ["runtime.scheduler:1", "runtime.zero:1"]
 
@@ -655,8 +701,24 @@ class FakeRuntime:
             clear=False,
         )
 
-    def backward(self, loss: torch.Tensor, *, planned_step_id: int) -> None:
-        self.log.append(f"runtime.backward:{float(loss.detach().cpu())}")
+    def backward(
+        self,
+        loss: torch.Tensor,
+        *,
+        planned_step_id: int,
+        sync_gradients: bool = True,
+    ) -> None:
+        self.log.append(
+            f"runtime.backward:{float(loss.detach().cpu())}:sync={sync_gradients}"
+        )
+
+    @contextmanager
+    def accumulation_context(self, *, sync_gradients: bool):
+        self.log.append(f"runtime.accumulation:{sync_gradients}:enter")
+        try:
+            yield
+        finally:
+            self.log.append(f"runtime.accumulation:{sync_gradients}:exit")
 
     def post_backward(self, *, planned_step_id: int) -> GateDecision:
         self.log.append(f"runtime.post:{planned_step_id}")

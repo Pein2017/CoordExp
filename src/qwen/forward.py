@@ -18,7 +18,11 @@ from src.qwen.fa2 import (
     validate_fa2_varlen_branch_evidence,
     validate_fa2_varlen_plan_matches_pack,
 )
-from src.qwen.images import QwenImageEncoding, materialize_qwen_image_encoding
+from src.qwen.images import (
+    QwenImageEncoding,
+    materialize_qwen_image_encoding,
+    materialize_qwen_image_encoding_batch,
+)
 from src.qwen.positions import QwenPositionInputs
 
 
@@ -189,7 +193,7 @@ def build_qwen_forward_inputs(
     input_ids = torch.tensor([list(pack.input_ids)], dtype=torch.long, device=torch_device)
     position_ids = position_inputs.position_ids.to(device=torch_device, dtype=torch.long)
 
-    pixel_values_parts: list[torch.Tensor] = []
+    image_encodings: list[Any] = []
     image_grids: list[tuple[int, int, int]] = []
     placeholder_token_count = 0
     expected_visual_token_count = 0
@@ -217,8 +221,7 @@ def build_qwen_forward_inputs(
                     "encoded_grid": list(image_grid),
                 },
             )
-        pixel_values = _pixel_values(image_encoding, example_id=segment_summary.example_id)
-        pixel_values_parts.append(pixel_values.to(device=torch_device))
+        image_encodings.append(image_encoding)
         image_grids.append(image_grid)
         placeholder_count = _count_token_id(
             pack.input_ids[segment_summary.start:segment_summary.end],
@@ -244,7 +247,21 @@ def build_qwen_forward_inputs(
         placeholder_token_count += placeholder_count
         expected_visual_token_count += expected_visual_tokens
 
-    pixel_values = torch.cat(pixel_values_parts, dim=0)
+    if all(isinstance(encoding, QwenImageEncoding) for encoding in image_encodings):
+        pixel_values, _ = materialize_qwen_image_encoding_batch(image_encodings)
+        pixel_values = pixel_values.to(device=torch_device)
+    else:
+        pixel_values_parts = [
+            _pixel_values(encoding, example_id=segment_summary.example_id).to(
+                device=torch_device
+            )
+            for encoding, segment_summary in zip(
+                image_encodings,
+                position_inputs.segments,
+                strict=True,
+            )
+        ]
+        pixel_values = torch.cat(pixel_values_parts, dim=0)
     image_grid_thw = torch.tensor(image_grids, dtype=torch.long, device=torch_device)
     logits_to_keep, logits_position_ids = _resolve_logits_to_keep(
         logits_to_keep_positions,

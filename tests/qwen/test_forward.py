@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 import torch
+from PIL import Image
 
 from src.common.errors import QwenForwardContractError
 from src.config.loader import load_train_config
@@ -14,6 +15,7 @@ from src.data import load_raw_examples
 from src.packing.planner import plan_packed_sequences
 from src.qwen.encoding import encode_rendered_example
 from src.qwen.forward import build_qwen_forward_inputs, run_qwen_forward
+from src.qwen.images import QwenImageEncoding, QwenNoResizeImagePlan
 from src.qwen.loading import load_qwen_components
 from src.qwen.positions import build_qwen_position_inputs
 from src.templates import render_example
@@ -194,6 +196,50 @@ def test_forward_inputs_reject_placeholder_grid_mismatch_before_model_call() -> 
     assert exc_info.value.code == "qwen.forward_grid_mismatch"
 
 
+def test_forward_inputs_batch_materializes_lazy_qwen_images(tmp_path: Path) -> None:
+    processor = FakeBatchImageProcessor()
+    examples = (
+        FakeEncodedExample(
+            example_id="ex-0",
+            input_ids=(10, 11, 12, *([IMAGE_TOKEN_ID] * 6), 13, 14),
+            image_pad_physical_start=3,
+            image_pad_physical_end=9,
+            image_encoding=_lazy_qwen_image_encoding(
+                tmp_path,
+                example_id="ex-0",
+                image_processor=processor,
+            ),
+        ),
+        FakeEncodedExample(
+            example_id="ex-1",
+            input_ids=(20, 21, *([IMAGE_TOKEN_ID] * 6), 22),
+            image_pad_physical_start=2,
+            image_pad_physical_end=8,
+            image_encoding=_lazy_qwen_image_encoding(
+                tmp_path,
+                example_id="ex-1",
+                image_processor=processor,
+            ),
+        ),
+    )
+    pack = plan_packed_sequences(examples, global_max_length=32)[0]
+    positions = build_qwen_position_inputs(pack, examples)
+
+    forward_inputs = build_qwen_forward_inputs(pack, examples, positions)
+
+    assert processor.batch_sizes == [2]
+    assert tuple(forward_inputs.pixel_values.shape) == (48, 1536)
+    assert forward_inputs.image_grid_thw.tolist() == [[1, 4, 6], [1, 4, 6]]
+    assert torch.equal(
+        forward_inputs.pixel_values[:24].cpu(),
+        torch.full((24, 1536), 1.0),
+    )
+    assert torch.equal(
+        forward_inputs.pixel_values[24:].cpu(),
+        torch.full((24, 1536), 2.0),
+    )
+
+
 def test_real_smoke_forward_inputs_use_encoded_visual_payloads_without_model_load() -> None:
     resolved = load_train_config(FIXTURE_CONFIG)
     components = load_qwen_components(resolved.config, load_model=False)
@@ -313,3 +359,57 @@ class FakeQwenModel:
             past_key_values=None,
             rope_deltas=None,
         )
+
+
+class FakeBatchImageProcessor:
+    def __init__(self) -> None:
+        self.batch_sizes: list[int] = []
+
+    def __call__(self, *, images: list[Any], **_: Any) -> dict[str, torch.Tensor]:
+        self.batch_sizes.append(len(images))
+        pixel_values = torch.cat(
+            [
+                torch.full((24, 1536), float(index + 1), dtype=torch.float32)
+                for index, _image in enumerate(images)
+            ],
+            dim=0,
+        )
+        return {
+            "pixel_values": pixel_values,
+            "image_grid_thw": torch.tensor(
+                [[1, 4, 6] for _image in images],
+                dtype=torch.long,
+            ),
+        }
+
+
+def _lazy_qwen_image_encoding(
+    tmp_path: Path,
+    *,
+    example_id: str,
+    image_processor: Any,
+) -> QwenImageEncoding:
+    image_path = tmp_path / f"{example_id}.jpg"
+    Image.new("RGB", (96, 64), color=(12, 34, 56)).save(image_path)
+    return QwenImageEncoding(
+        plan=QwenNoResizeImagePlan(
+            example_id=example_id,
+            image_path=image_path,
+            width=96,
+            height=64,
+            patch_size=16,
+            merge_size=2,
+            temporal_patch_size=2,
+            required_spatial_factor=32,
+            raw_pixels=96 * 64,
+            raw_patch_rows=24,
+            expected_pixel_values_width=1536,
+            image_grid_thw=(1, 4, 6),
+            merged_visual_tokens=6,
+            max_raw_pixels=1_000_000,
+            max_merged_visual_tokens=4_096,
+        ),
+        pixel_values=None,
+        image_grid_thw_tensor=None,
+        image_processor=image_processor,
+    )

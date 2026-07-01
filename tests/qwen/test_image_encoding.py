@@ -18,6 +18,7 @@ from src.qwen.images import (
     build_no_resize_image_plan,
     encode_qwen_image,
     materialize_qwen_image_encoding,
+    materialize_qwen_image_encoding_batch,
     plan_qwen_image,
 )
 from src.qwen.loading import QwenProcessorIdentity, load_qwen_components
@@ -73,6 +74,76 @@ def test_lazy_smoke_image_plan_defers_pixels_until_materialized() -> None:
     assert tuple(materialized.pixel_values.shape) == (4056, 1536)
     assert tuple(materialized.image_grid_thw_tensor.shape) == (1, 3)
     assert materialized.to_artifact_dict()["pixel_values_materialized"] is True
+
+
+def test_real_smoke_image_batch_matches_single_image_materialization() -> None:
+    resolved = load_train_config(FIXTURE_CONFIG)
+    raw_examples = load_raw_examples(resolved.config.data.train)
+    components = load_qwen_components(resolved.config, load_model=False)
+    planned = tuple(
+        plan_qwen_image(
+            raw,
+            components=components,
+            processor_config=resolved.config.model.processor,
+        )
+        for raw in raw_examples
+    )
+
+    single_pixels = torch.cat(
+        [
+            materialize_qwen_image_encoding(encoding).pixel_values
+            for encoding in planned
+        ],
+        dim=0,
+    )
+    single_grids = torch.cat(
+        [
+            materialize_qwen_image_encoding(encoding).image_grid_thw_tensor
+            for encoding in planned
+        ],
+        dim=0,
+    )
+    batch_pixels, batch_grids = materialize_qwen_image_encoding_batch(planned)
+
+    assert torch.equal(batch_pixels, single_pixels)
+    assert torch.equal(batch_grids, single_grids)
+
+
+def test_lazy_image_batch_materializes_once_and_preserves_order(tmp_path: Path) -> None:
+    examples = (
+        _raw_example(tmp_path / "a", width=96, height=64),
+        _raw_example(tmp_path / "b", width=96, height=64),
+    )
+    processor = FakeProcessor(
+        image_grid_thw=torch.tensor([[1, 4, 6], [1, 4, 6]], dtype=torch.long),
+        pixel_values=torch.cat(
+            [
+                torch.full((24, 1536), 1.0, dtype=torch.float32),
+                torch.full((24, 1536), 2.0, dtype=torch.float32),
+            ],
+            dim=0,
+        ),
+    )
+    components = FakeComponents(
+        processor_identity=_processor_identity(),
+        processor=processor,
+    )
+    planned = tuple(
+        plan_qwen_image(
+            example,
+            components=components,
+            processor_config=_processor_config(),
+        )
+        for example in examples
+    )
+
+    pixel_values, image_grid_thw = materialize_qwen_image_encoding_batch(planned)
+
+    assert processor.image_processor.batch_sizes == [2]
+    assert tuple(pixel_values.shape) == (48, 1536)
+    assert image_grid_thw.tolist() == [[1, 4, 6], [1, 4, 6]]
+    assert torch.equal(pixel_values[:24], torch.full((24, 1536), 1.0))
+    assert torch.equal(pixel_values[24:], torch.full((24, 1536), 2.0))
 
 
 def test_lazy_image_plan_pickle_drops_and_reattaches_processor(tmp_path: Path) -> None:
@@ -300,8 +371,12 @@ class FakeImageProcessor:
         self.pixel_values = pixel_values
         self.include_image_grid_thw = include_image_grid_thw
         self.include_pixel_values = include_pixel_values
+        self.batch_sizes: list[int] = []
 
-    def __call__(self, **_: Any) -> dict[str, torch.Tensor]:
+    def __call__(self, **kwargs: Any) -> dict[str, torch.Tensor]:
+        images = kwargs.get("images")
+        if images is not None:
+            self.batch_sizes.append(len(images))
         payload: dict[str, torch.Tensor] = {}
         if self.include_image_grid_thw:
             payload["image_grid_thw"] = self.image_grid_thw
@@ -341,6 +416,7 @@ def _raw_example(
     actual_width: int | None = None,
     actual_height: int | None = None,
 ) -> RawExample:
+    tmp_path.mkdir(parents=True, exist_ok=True)
     path = tmp_path / "image.jpg"
     Image.new(
         "RGB",

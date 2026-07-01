@@ -433,6 +433,77 @@ def test_training_artifact_bridge_writes_train_metrics_and_forward_receipt(tmp_p
     assert qwen_receipt["qwen_forward_receipts"][0]["segment_count"] == 2
 
 
+def test_training_artifact_bridge_progress_stays_outside_metric_stream(
+    tmp_path: Path,
+) -> None:
+    manager = _manager(tmp_path)
+    bridge = TrainingArtifactBridge(manager, rank=1, world_size=2)
+
+    bridge(
+        SupervisedTrainerEvent(
+            event_type="micro_step.forward",
+            planned_step_id=3,
+            payload={
+                "local_micro_step_index": 4,
+                "sync_gradients": False,
+                "receipt": {
+                    "pack_index": 9,
+                    "pack_length": 12000,
+                    "segment_count": 11,
+                },
+            },
+        )
+    )
+    bridge(
+        SupervisedTrainerEvent(
+            event_type="micro_step.pre_backward_gate",
+            planned_step_id=3,
+            payload={
+                "local_micro_step_index": 4,
+                "sync_gradients": False,
+                "stage": "pre_backward_scalar",
+                "optimizer_update_status": "pending_backward",
+                "finite_status": "finite",
+            },
+        )
+    )
+
+    progress_path = manager.run_dir / "diagnostics" / "progress.rank-1.jsonl"
+    records = [
+        __import__("json").loads(line)
+        for line in progress_path.read_text().splitlines()
+    ]
+    assert records == [
+        {
+            "event_type": "micro_step.forward",
+            "local_micro_step_index": 4,
+            "monotonic_ns": records[0]["monotonic_ns"],
+            "pack_index": 9,
+            "pack_length": 12000,
+            "planned_step_id": 3,
+            "rank": 1,
+            "segment_count": 11,
+            "sync_gradients": False,
+            "world_size": 2,
+        },
+        {
+            "event_type": "micro_step.pre_backward_gate",
+            "finite_status": "finite",
+            "local_micro_step_index": 4,
+            "monotonic_ns": records[1]["monotonic_ns"],
+            "optimizer_update_status": "pending_backward",
+            "planned_step_id": 3,
+            "rank": 1,
+            "stage": "pre_backward_scalar",
+            "sync_gradients": False,
+            "world_size": 2,
+        },
+    ]
+    assert not (manager.run_dir / "metrics" / "train.jsonl").exists()
+    manifest = __import__("json").loads((manager.run_dir / "run_manifest.json").read_text())
+    assert manifest["metrics"]["streams"] == {}
+
+
 def test_enable_training_memory_savers_records_gradient_checkpointing_and_cache_disable() -> None:
     model = FakeMemorySaverModel()
 

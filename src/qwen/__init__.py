@@ -13,6 +13,7 @@ from src.qwen.images import (
     build_no_resize_image_plan,
     encode_qwen_image,
     materialize_qwen_image_encoding,
+    materialize_qwen_image_encoding_batch,
     plan_qwen_image,
 )
 from src.qwen.encoding import (
@@ -115,6 +116,7 @@ __all__ = [
     "encode_rendered_example",
     "encode_qwen_image",
     "materialize_qwen_image_encoding",
+    "materialize_qwen_image_encoding_batch",
     "plan_qwen_image",
     "load_qwen_components",
     "install_special_token_embedding_deltas",

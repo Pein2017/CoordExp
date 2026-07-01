@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 import json
 from pathlib import Path
 from typing import Any
@@ -398,6 +399,42 @@ def test_train_runtime_accelerate_backend_prepares_owned_objects() -> None:
     )
 
 
+def test_train_runtime_accelerate_backward_uses_no_sync_when_requested() -> None:
+    model = torch.nn.Linear(1, 1)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    accelerator = FakeAccelerator()
+
+    runtime = TrainRuntime(
+        runtime_config=RuntimeConfig(
+            backend="accelerate",
+            seed=17,
+            accelerate=AccelerateConfig(gradient_accumulation_steps=None),
+        ),
+        runtime_batch=RuntimeBatchResolution(
+            world_size=1,
+            effective_batch_size=3,
+            resolved_grad_accum_steps=3,
+        ),
+        model=model,
+        optimizer=optimizer,
+        scheduler=None,
+        device="cpu",
+        rank=0,
+        world_size=1,
+        accelerator=accelerator,
+    )
+
+    with runtime.accumulation_context(sync_gradients=False):
+        first_loss = runtime.model(torch.tensor([[1.0]])).sum()
+        runtime.backward(first_loss, planned_step_id=1, sync_gradients=False)
+    with runtime.accumulation_context(sync_gradients=True):
+        second_loss = runtime.model(torch.tensor([[2.0]])).sum()
+        runtime.backward(second_loss, planned_step_id=1, sync_gradients=True)
+
+    assert accelerator.no_sync_models == [runtime.model]
+    assert accelerator.backward_sync_states == [False, True]
+
+
 def test_train_runtime_deepspeed_backend_prepares_owned_objects() -> None:
     model = torch.nn.Linear(1, 1)
     optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
@@ -471,6 +508,54 @@ def test_train_runtime_deepspeed_uses_accelerator_backward() -> None:
     runtime.backward(runtime.model(torch.tensor([[1.0]])).sum(), planned_step_id=1)
 
     assert next(runtime.model.parameters()).grad is not None
+    assert accelerator.backward_kwargs == [{"scale_wrt_gas": False}]
+
+
+def test_train_runtime_deepspeed_backward_sets_sync_boundary() -> None:
+    model = torch.nn.Linear(1, 1)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    accelerator = FakeDeepSpeedAccelerator(global_grad_norm=2.5)
+    runtime = TrainRuntime(
+        runtime_config=RuntimeConfig(
+            backend="deepspeed",
+            seed=17,
+            deepspeed=DeepSpeedConfig(
+                config_path="ds.json",
+                gradient_accumulation_steps=2,
+                train_batch_size=2,
+            ),
+        ),
+        runtime_batch=RuntimeBatchResolution(
+            world_size=1,
+            effective_batch_size=2,
+            resolved_grad_accum_steps=2,
+        ),
+        model=model,
+        optimizer=optimizer,
+        scheduler=None,
+        device="cpu",
+        rank=0,
+        world_size=1,
+        accelerator=accelerator,
+    )
+
+    runtime.backward(
+        runtime.model(torch.tensor([[1.0]])).sum(),
+        planned_step_id=1,
+        sync_gradients=False,
+    )
+    runtime.backward(
+        runtime.model(torch.tensor([[2.0]])).sum(),
+        planned_step_id=1,
+        sync_gradients=True,
+    )
+
+    assert accelerator.backward_sync_states == [False, True]
+    assert accelerator.backward_kwargs == [
+        {"scale_wrt_gas": False},
+        {"scale_wrt_gas": False},
+    ]
+    assert accelerator.sync_gradients is True
 
 
 def test_train_runtime_deepspeed_post_backward_uses_engine_global_grad_norm() -> None:
@@ -576,13 +661,29 @@ class FakeAccelerator:
     def __init__(self) -> None:
         self.prepare_calls = 0
         self.prepared_objects: tuple[Any, ...] = ()
+        self.no_sync_models: list[Any] = []
+        self.no_sync_depth = 0
+        self.backward_sync_states: list[bool] = []
+        self.backward_kwargs: list[dict[str, Any]] = []
+        self.sync_gradients = True
 
     def prepare(self, *objects: Any) -> tuple[Any, ...]:
         self.prepare_calls += 1
         self.prepared_objects = tuple(objects)
         return self.prepared_objects
 
-    def backward(self, loss: torch.Tensor) -> None:
+    @contextmanager
+    def no_sync(self, model: Any) -> Any:
+        self.no_sync_models.append(model)
+        self.no_sync_depth += 1
+        try:
+            yield
+        finally:
+            self.no_sync_depth -= 1
+
+    def backward(self, loss: torch.Tensor, **kwargs: Any) -> None:
+        self.backward_sync_states.append(self.no_sync_depth == 0)
+        self.backward_kwargs.append(dict(kwargs))
         loss.backward()
 
     def clip_grad_norm_(self, parameters: Any, max_norm: float) -> None:
@@ -604,7 +705,9 @@ class FakeDeepSpeedAccelerator(FakeAccelerator):
             global_grad_norm=global_grad_norm,
         )
 
-    def backward(self, loss: torch.Tensor) -> None:
+    def backward(self, loss: torch.Tensor, **kwargs: Any) -> None:
+        self.backward_sync_states.append(bool(self.sync_gradients))
+        self.backward_kwargs.append(dict(kwargs))
         loss.backward()
         for parameter in self.prepared_objects[0].parameters():
             parameter.grad = None

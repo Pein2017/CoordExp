@@ -103,7 +103,15 @@ class RuntimeBoundary(Protocol):
 
     def pre_backward(self, bundle: Any, *, planned_step_id: int) -> GateDecision: ...
 
-    def backward(self, loss: torch.Tensor, *, planned_step_id: int) -> None: ...
+    def accumulation_context(self, *, sync_gradients: bool) -> Any: ...
+
+    def backward(
+        self,
+        loss: torch.Tensor,
+        *,
+        planned_step_id: int,
+        sync_gradients: bool = True,
+    ) -> None: ...
 
     def post_backward(self, *, planned_step_id: int) -> GateDecision: ...
 
@@ -238,6 +246,7 @@ class SupervisedTrainer:
                 self.runtime.backward(
                     _total_loss(loss_bundle),
                     planned_step_id=planned_step_id,
+                    sync_gradients=True,
                 )
                 post_decision = self.runtime.post_backward(
                     planned_step_id=planned_step_id,
@@ -315,55 +324,61 @@ class SupervisedTrainer:
         finite_status = "unavailable"
 
         for local_micro_step_index, micro_step in enumerate(moved_micro_steps):
-            forward_result = self.qwen_forward(
-                _runtime_model(self.runtime, self.model),
-                micro_step,
-            )
-            context = self.loss_context_factory(micro_step, forward_result)
-            loss_bundle = self.loss_runner.compute_micro_step(
-                context,
-                plan,
-                local_micro_step_index=local_micro_step_index,
-            )
-            qwen_receipts.append(_receipt_artifact(forward_result))
-            micro_loss_artifact = _artifact(loss_bundle)
-            micro_loss_artifacts.append(micro_loss_artifact)
-            self._emit(
-                "micro_step.forward",
-                planned_step_id,
-                {
-                    "local_micro_step_index": local_micro_step_index,
-                    "receipt": qwen_receipts[-1],
-                },
-            )
-            self._emit(
-                "micro_step.loss",
-                planned_step_id,
-                {
-                    "local_micro_step_index": local_micro_step_index,
-                    "loss_bundle": micro_loss_artifact,
-                },
-            )
-            pre_decision = self.runtime.pre_backward(
-                loss_bundle,
-                planned_step_id=planned_step_id,
-            )
-            self._emit(
-                "micro_step.pre_backward_gate",
-                planned_step_id,
-                {
-                    "local_micro_step_index": local_micro_step_index,
-                    **pre_decision.to_artifact_dict(),
-                },
-            )
-            optimizer_update_status = pre_decision.optimizer_update_status
-            finite_status = pre_decision.finite_status
-            if not pre_decision.should_call_backward:
-                break
-            self.runtime.backward(
-                _total_loss(loss_bundle),
-                planned_step_id=planned_step_id,
-            )
+            sync_gradients = local_micro_step_index == len(moved_micro_steps) - 1
+            with self.runtime.accumulation_context(sync_gradients=sync_gradients):
+                forward_result = self.qwen_forward(
+                    _runtime_model(self.runtime, self.model),
+                    micro_step,
+                )
+                context = self.loss_context_factory(micro_step, forward_result)
+                loss_bundle = self.loss_runner.compute_micro_step(
+                    context,
+                    plan,
+                    local_micro_step_index=local_micro_step_index,
+                )
+                qwen_receipts.append(_receipt_artifact(forward_result))
+                micro_loss_artifact = _artifact(loss_bundle)
+                micro_loss_artifacts.append(micro_loss_artifact)
+                self._emit(
+                    "micro_step.forward",
+                    planned_step_id,
+                    {
+                        "local_micro_step_index": local_micro_step_index,
+                        "sync_gradients": sync_gradients,
+                        "receipt": qwen_receipts[-1],
+                    },
+                )
+                self._emit(
+                    "micro_step.loss",
+                    planned_step_id,
+                    {
+                        "local_micro_step_index": local_micro_step_index,
+                        "sync_gradients": sync_gradients,
+                        "loss_bundle": micro_loss_artifact,
+                    },
+                )
+                pre_decision = self.runtime.pre_backward(
+                    loss_bundle,
+                    planned_step_id=planned_step_id,
+                )
+                self._emit(
+                    "micro_step.pre_backward_gate",
+                    planned_step_id,
+                    {
+                        "local_micro_step_index": local_micro_step_index,
+                        "sync_gradients": sync_gradients,
+                        **pre_decision.to_artifact_dict(),
+                    },
+                )
+                optimizer_update_status = pre_decision.optimizer_update_status
+                finite_status = pre_decision.finite_status
+                if not pre_decision.should_call_backward:
+                    break
+                self.runtime.backward(
+                    _total_loss(loss_bundle),
+                    planned_step_id=planned_step_id,
+                    sync_gradients=sync_gradients,
+                )
             del loss_bundle, context, forward_result
 
         if pre_decision is None:
