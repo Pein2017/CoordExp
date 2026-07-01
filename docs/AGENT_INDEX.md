@@ -119,6 +119,9 @@ mechanism pilot.
 During the pilot, `progress/` remains the historical/evidence source of truth
 and `research/` is the synthesized reading path.
 
+- Current synthesized investigations:
+  - [`autoregressive-binding-template-study`](../research/investigations/autoregressive-binding-template-study/) absorbs the June 10-12 deleted diagnostics bundle and the June 20-27 branch-local Codex experiment records into a compact OKF research path.
+
 Do not answer current coding, architecture, infrastructure, operator, schema,
 artifact, metric, or training/eval behavior from `research/` when `docs/` or
 `openspec/specs/` cover it.

@@ -3,4 +3,8 @@
 Bounded analysis, ablation, diagnosis, checkpoint surgery, trained-model
 behavior study, and post-analysis work.
 
-Investigation pilots will be added after the first idea pilot converges.
+## Current Investigations
+
+- [Autoregressive Binding Template Study](autoregressive-binding-template-study/) -
+  synthesized Codex diagnostic records for coordinate-basin, route/value,
+  false-negative guidance, prefix-history, and x1/y1 binding behavior.

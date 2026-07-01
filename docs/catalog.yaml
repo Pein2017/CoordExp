@@ -11,6 +11,7 @@ entrypoints:
     catalog: docs/catalog.yaml
     progress: progress/index.yaml
     research: research/index.md
+    research_investigations: research/investigations/index.md
 
 authority:
   current_truth: docs/
@@ -20,6 +21,7 @@ authority:
   historical_evidence: progress/
   research_knowledge_pilot: research/
   research_knowledge_pilot_status: pilot_synthesized_reading_path_not_current_behavior_authority
+  research_raw_intake: docs/history/research-intake/
 
 config_surfaces:
   training:
