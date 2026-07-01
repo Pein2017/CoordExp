@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -17,6 +18,7 @@ from src.runtime import GateDecision
 from src.training.pipeline import (
     BestEvalMetricStore,
     TrainingArtifactBridge,
+    _apply_fa2_branch_proof_policy,
     _attach_image_processors_to_micro_steps,
     build_repeating_micro_step_stream,
     enable_training_memory_savers,
@@ -352,6 +354,69 @@ def test_cached_micro_steps_reattach_qwen_image_processor() -> None:
     attached_example = attached_step.encoded_examples[0]
     assert attached_example.image_encoding.image_processor is image_processor
     assert cached_step.encoded_examples[0].image_encoding.image_processor is None
+
+
+def test_fa2_branch_proof_policy_overrides_stale_cached_micro_steps() -> None:
+    cached_steps = tuple(
+        SupervisedMicroStep(
+            pack=f"pack-{index}",
+            encoded_examples=(f"example-{index}",),
+            position_inputs=f"positions-{index}",
+            token_sequence=f"tokens-{index}",
+            vocab_groups=f"vocab-{index}",
+            metadata={"pack_id": index},
+            fa2_branch_evidence={"observed_branch": "stale"},
+            capture_fa2_branch=True,
+            require_fa2_branch_proof=True,
+        )
+        for index in range(3)
+    )
+
+    disabled_steps = _apply_fa2_branch_proof_policy(
+        cached_steps,
+        SimpleNamespace(model=SimpleNamespace(fa2_branch_proof="disabled")),
+    )
+    first_only_steps = _apply_fa2_branch_proof_policy(
+        cached_steps,
+        SimpleNamespace(model=SimpleNamespace(fa2_branch_proof="first_micro_step")),
+    )
+
+    assert [step.capture_fa2_branch for step in disabled_steps] == [False, False, False]
+    assert [step.require_fa2_branch_proof for step in disabled_steps] == [
+        False,
+        False,
+        False,
+    ]
+    assert [step.fa2_branch_evidence for step in disabled_steps] == [
+        None,
+        None,
+        None,
+    ]
+    assert [step.fa2_branch_proof_policy for step in disabled_steps] == [
+        "disabled",
+        "disabled",
+        "disabled",
+    ]
+    assert [step.capture_fa2_branch for step in first_only_steps] == [
+        True,
+        False,
+        False,
+    ]
+    assert [step.require_fa2_branch_proof for step in first_only_steps] == [
+        True,
+        False,
+        False,
+    ]
+    assert [step.fa2_branch_evidence for step in first_only_steps] == [
+        None,
+        None,
+        None,
+    ]
+    assert [step.fa2_branch_proof_policy for step in first_only_steps] == [
+        "first_micro_step",
+        "first_micro_step",
+        "first_micro_step",
+    ]
 
 
 def test_pack_plan_artifact_separates_global_cache_and_rank_local_counts() -> None:

@@ -311,9 +311,11 @@ def test_default_qwen_forward_uses_runtime_selected_forward_device(monkeypatch) 
         *,
         logits_to_keep_positions: tuple[int, ...] | None = None,
         device: str | None = None,
+        fa2_branch_proof_policy: str | None = None,
     ) -> str:
         observed_devices.append(device)
         assert logits_to_keep_positions is None
+        assert fa2_branch_proof_policy is None
         assert pack == "pack-0"
         assert encoded_examples == ("example-0",)
         assert position_inputs == "positions-0"

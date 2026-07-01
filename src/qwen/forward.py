@@ -60,6 +60,7 @@ class QwenForwardReceipt:
     logits_to_keep: int | tuple[int, ...]
     inputs_embeds_used: bool
     fa2_varlen_plan: Fa2VarlenPlan
+    fa2_branch_proof_policy: str | None = None
     fa2_branch_proof: Fa2VarlenBranchProof | None = None
     output_logits_shape: tuple[int, ...] | None = None
     model_loss_present: bool = False
@@ -85,6 +86,7 @@ class QwenForwardReceipt:
             "inputs_embeds_used": self.inputs_embeds_used,
             "fa2_varlen": {
                 **self.fa2_varlen_plan.to_artifact_dict(),
+                "branch_proof_policy": self.fa2_branch_proof_policy,
                 "proof": (
                     None
                     if self.fa2_branch_proof is None
@@ -155,6 +157,7 @@ def build_qwen_forward_inputs(
     fa2_varlen_plan: Fa2VarlenPlan | None = None,
     logits_to_keep_positions: Sequence[int] | None = None,
     device: torch.device | str | None = None,
+    fa2_branch_proof_policy: str | None = None,
 ) -> QwenForwardInputs:
     if not isinstance(pack, PackedSequence):
         raise QwenForwardContractError(
@@ -284,6 +287,7 @@ def build_qwen_forward_inputs(
         logits_to_keep=0 if logits_position_ids is None else logits_position_ids,
         inputs_embeds_used=False,
         fa2_varlen_plan=fa2_varlen_plan,
+        fa2_branch_proof_policy=fa2_branch_proof_policy,
     )
     return QwenForwardInputs(
         pack_index=pack.pack_index,
@@ -621,6 +625,7 @@ def _receipt_with_output(
         logits_to_keep=receipt.logits_to_keep,
         inputs_embeds_used=receipt.inputs_embeds_used,
         fa2_varlen_plan=receipt.fa2_varlen_plan,
+        fa2_branch_proof_policy=receipt.fa2_branch_proof_policy,
         fa2_branch_proof=fa2_branch_proof,
         output_logits_shape=tuple(int(item) for item in logits.shape),
         model_loss_present=model_loss_present,

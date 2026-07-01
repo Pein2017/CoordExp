@@ -123,15 +123,18 @@ MUST be accompanied by a physical-pack-position map consumed by `LossContext`.
 - **THEN** Qwen forward validation MUST fail because the shortcut can bypass
   Qwen3-VL visual replacement behavior.
 
-### Requirement: FlashAttention Varlen Proof
+### Requirement: FlashAttention Varlen Inputs And Proof
 
-Packed forward with FlashAttention SHALL prove explicit varlen segment
-isolation using cumulative sequence lengths and maximum sequence lengths or an
-equivalent upstream-backed mechanism. A 2D zero mask over a packed row MUST NOT
-be accepted as the proof of isolated packed attention. "Equivalent" proof MUST
-name the installed upstream branch and record evidence that Qwen forward reached
+Packed forward with FlashAttention SHALL always derive explicit varlen segment
+inputs from `PackedSegment` boundaries, including cumulative sequence lengths
+and maximum sequence lengths, and SHALL pass those inputs to Qwen forward. A 2D
+zero mask over a packed row MUST NOT be accepted as the mechanism for isolated
+packed attention. Branch-level proof capture is policy-gated: smoke/debug gates
+MUST record representative upstream-backed evidence that Qwen forward reached
 the varlen path with cumulative sequence lengths and max lengths derived from
-`PackedSegment` boundaries.
+`PackedSegment` boundaries, while production profiles MAY disable hot-path proof
+capture after that evidence exists. When emitted, "equivalent" proof MUST name
+the installed upstream branch and record the observed varlen evidence.
 
 #### Scenario: FA2 enabled with ordinary 2D mask
 
@@ -146,6 +149,17 @@ the varlen path with cumulative sequence lengths and max lengths derived from
 - **THEN** it MUST include cumulative sequence lengths, max sequence lengths,
   segment count, resolved attention implementation, and evidence of the
   upstream varlen branch used for the call.
+
+#### Scenario: FA2 branch proof disabled for production throughput
+
+- **WHEN** a packed supervised training config sets the FA2 branch-proof policy
+  to a production-disabled mode after representative FA2 evidence has already
+  been recorded by smoke/probe artifacts
+- **THEN** the runtime MUST still pass explicit FA2 varlen inputs to Qwen
+  forward
+- **AND** forward receipts MUST record the resolved branch-proof policy
+- **AND** forward receipts MUST NOT claim branch-proof evidence for calls where
+  hot-path proof capture was disabled.
 
 ### Requirement: Visual Replacement Remains In Transformers
 

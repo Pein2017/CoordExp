@@ -184,6 +184,10 @@ MUST request `attn_implementation: flash_attention_2` and a compute dtype
 accepted by FlashAttention, such as bf16 or fp16. Runtime setup MUST fail if a
 packed training config resolves to sdpa/eager attention, fp32 FlashAttention,
 or a worst-case full-sequence logits memory estimate above the resolved budget.
+Configs MAY expose an explicit FA2 branch-proof policy so smoke/debug profiles
+can capture branch-level evidence while production profiles can disable
+hot-path proof instrumentation after prior representative proof. The resolved
+policy MUST be preserved in the resolved config artifact.
 The worst-case estimate MUST use the resolved `packing.global_max_length`,
 tokenizer vocab size, and model logits dtype, and the estimate MUST be recorded
 in a setup or forward receipt. Implementations MAY materialize only selected

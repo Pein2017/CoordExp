@@ -170,6 +170,35 @@ def test_qwen_forward_inputs_include_fa2_varlen_kwargs_and_receipt() -> None:
     assert artifact["fa2_varlen"]["branch_evidence_required"] is True
 
 
+def test_qwen_forward_receipt_marks_disabled_fa2_proof_policy_without_proof() -> None:
+    examples = _fake_examples()
+    pack = plan_packed_sequences(examples, global_max_length=32)[0]
+    positions = build_qwen_position_inputs(pack, examples)
+    forward_inputs = build_qwen_forward_inputs(
+        pack,
+        examples,
+        positions,
+        fa2_branch_proof_policy="disabled",
+    )
+
+    kwargs = forward_inputs.to_model_kwargs()
+    assert kwargs["attention_mask"] is None
+    assert kwargs["cu_seq_lens_q"].tolist() == [0, 11, 20]
+    assert kwargs["cu_seq_lens_k"].tolist() == [0, 11, 20]
+    result = run_qwen_forward(
+        FakeQwenModel(vocab_size=17),
+        forward_inputs,
+        expected_vocab_size=17,
+        capture_fa2_branch=False,
+        require_fa2_branch_proof=False,
+    )
+
+    artifact = result.receipt.to_artifact_dict()
+    assert artifact["fa2_varlen"]["branch_proof_policy"] == "disabled"
+    assert artifact["fa2_varlen"]["proof"] is None
+    assert artifact["fa2_varlen"]["segment_boundaries"] == [0, 11, 20]
+
+
 def test_qwen_forward_inputs_reject_supplied_fa2_plan_that_collapses_segments() -> None:
     examples = _fake_examples()
     pack = plan_packed_sequences(examples, global_max_length=32)[0]

@@ -59,6 +59,9 @@ class SpecialTokenEmbeddingsConfig(StrictConfigModel):
 class ModelConfig(StrictConfigModel):
     base_model: str
     attn_implementation: Literal["flash_attention_2", "sdpa", "eager"]
+    fa2_branch_proof: Literal["every_forward", "first_micro_step", "disabled"] = (
+        "every_forward"
+    )
     logits_memory_budget_bytes: int = Field(gt=0)
     processor: ProcessorConfig
     special_token_embeddings: SpecialTokenEmbeddingsConfig

@@ -353,6 +353,7 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
         train_micro_steps,
         image_processor=_qwen_image_processor(components),
     )
+    train_micro_steps = _apply_fa2_branch_proof_policy(train_micro_steps, config)
     manager.write_receipt(
         "pack_plan",
         _pack_plan_artifact(
@@ -433,6 +434,7 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
             split="eval.forward",
         )
     )
+    eval_micro_steps = _apply_fa2_branch_proof_policy(eval_micro_steps, config)
     checkpoint_writer = CheckpointWriter(manager)
     best_eval_metrics = BestEvalMetricStore()
     trainer = SupervisedTrainer(
@@ -605,6 +607,28 @@ def _attach_image_processor_to_encoded_example(
     )
 
 
+def _apply_fa2_branch_proof_policy(
+    micro_steps: Sequence[SupervisedMicroStep],
+    config: Any,
+) -> tuple[SupervisedMicroStep, ...]:
+    policy = getattr(config.model, "fa2_branch_proof", "every_forward")
+    configured: list[SupervisedMicroStep] = []
+    for local_index, micro_step in enumerate(micro_steps):
+        capture = policy == "every_forward" or (
+            policy == "first_micro_step" and local_index == 0
+        )
+        configured.append(
+            replace(
+                micro_step,
+                fa2_branch_evidence=None,
+                capture_fa2_branch=capture,
+                require_fa2_branch_proof=capture,
+                fa2_branch_proof_policy=policy,
+            )
+        )
+    return tuple(configured)
+
+
 def _qwen_image_processor(components: Any) -> Any:
     processor = getattr(components, "processor", None)
     image_processor = getattr(processor, "image_processor", None)
@@ -710,8 +734,9 @@ def _build_micro_steps_for_dataset(
                 },
                 expected_vocab_size=components.token_identity.tokenizer_vocab_size,
                 fa2_model_dtype=config.training.precision,
-                capture_fa2_branch=True,
-                require_fa2_branch_proof=True,
+                capture_fa2_branch=config.model.fa2_branch_proof == "every_forward",
+                require_fa2_branch_proof=config.model.fa2_branch_proof
+                == "every_forward",
             )
         )
     if not micro_steps:

@@ -33,6 +33,7 @@ class SupervisedMicroStep:
     fa2_model_dtype: str | None = None
     capture_fa2_branch: bool = False
     require_fa2_branch_proof: bool = False
+    fa2_branch_proof_policy: str | None = None
 
 
 @dataclass(frozen=True)
@@ -522,6 +523,7 @@ def _default_qwen_forward(model: Any, micro_step: SupervisedMicroStep) -> Any:
         micro_step.position_inputs,
         logits_to_keep_positions=_logits_positions_to_keep(micro_step),
         device=micro_step.forward_device,
+        fa2_branch_proof_policy=micro_step.fa2_branch_proof_policy,
     )
     return run_qwen_forward(
         model,
