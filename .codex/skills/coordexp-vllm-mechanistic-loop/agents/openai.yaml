@@ -1,0 +1,4 @@
+interface:
+  display_name: "CoordExp V-LLM Mechanistic Loop"
+  short_description: "Self-driven V-LLM mechanism research"
+  default_prompt: "Use $coordexp-vllm-mechanistic-loop to continue a CoordExp V-LLM mechanistic investigation from artifacts and checkpoints."
