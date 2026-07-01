@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -11,13 +12,17 @@ from src.artifacts.manager import RunArtifactManager
 from src.artifacts.metric_stream import MetricStreamEvent
 from src.config.models import RuntimeBatchResolution
 from src.config.paths import RunDirectory
+from src.qwen.images import QwenImageEncoding, QwenNoResizeImagePlan
 from src.runtime import GateDecision
 from src.training.pipeline import (
     BestEvalMetricStore,
     TrainingArtifactBridge,
+    _attach_image_processors_to_micro_steps,
     build_repeating_micro_step_stream,
     enable_training_memory_savers,
     _checkpoint_handler,
+    _pack_plan_artifact,
+    _resolve_rank_local_run_directory,
     run_training_pipeline,
 )
 from src.training.schedule import ResolvedStepSchedule
@@ -40,10 +45,12 @@ def test_run_training_pipeline_writes_core_artifacts_with_fake_boundaries(
 ) -> None:
     config_path = tmp_path / "config.yaml"
     payload = yaml.safe_load(FIXTURE_CONFIG.read_text())
+    _point_dataset_paths_at_fixture(payload)
     payload["run"]["artifact_root"] = str(tmp_path / "artifacts")
     payload["run"]["name"] = "fake-smoke"
     config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
     log: list[str] = []
+    monkeypatch.setenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", str(tmp_path / "pack-cache"))
 
     _install_fake_training_pipeline_boundaries(monkeypatch, log)
 
@@ -84,6 +91,7 @@ def test_run_training_pipeline_wires_accelerate_runtime_for_multirank(
 ) -> None:
     config_path = tmp_path / "config.yaml"
     payload = yaml.safe_load(FIXTURE_CONFIG.read_text())
+    _point_dataset_paths_at_fixture(payload)
     payload["run"]["artifact_root"] = str(tmp_path / "artifacts")
     payload["run"]["name"] = "fake-accelerate-smoke"
     payload["runtime"] = {
@@ -98,6 +106,7 @@ def test_run_training_pipeline_wires_accelerate_runtime_for_multirank(
     log: list[str] = []
     FakePipelineRuntime.last_kwargs = None
 
+    monkeypatch.setenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", str(tmp_path / "pack-cache"))
     monkeypatch.setenv("RANK", "0")
     monkeypatch.setenv("LOCAL_RANK", "0")
     monkeypatch.setenv("WORLD_SIZE", "2")
@@ -107,6 +116,16 @@ def test_run_training_pipeline_wires_accelerate_runtime_for_multirank(
         raising=False,
     )
     _install_fake_training_pipeline_boundaries(monkeypatch, log)
+    monkeypatch.setattr(
+        "src.training.pipeline._resolve_or_build_train_pack_cache",
+        lambda config, components, vocab_groups, repo_root: _fake_train_cache(tmp_path),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "src.training.pipeline.load_rank_micro_steps_from_cache",
+        lambda cache_dir, schedule, rank, world_size: (_micro_step(0),),
+        raising=False,
+    )
 
     summary = run_training_pipeline(config_path)
 
@@ -135,6 +154,7 @@ def test_run_training_pipeline_wires_deepspeed_runtime_with_plugin(
         encoding="utf-8",
     )
     payload = yaml.safe_load(FIXTURE_CONFIG.read_text())
+    _point_dataset_paths_at_fixture(payload)
     payload["run"]["artifact_root"] = str(tmp_path / "artifacts")
     payload["run"]["name"] = "fake-deepspeed-smoke"
     payload["training"]["effective_batch_size"] = 2
@@ -152,6 +172,7 @@ def test_run_training_pipeline_wires_deepspeed_runtime_with_plugin(
     FakePipelineRuntime.last_kwargs = None
     FakePipelineDeepSpeedPlugin.last_kwargs = None
 
+    monkeypatch.setenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", str(tmp_path / "pack-cache"))
     monkeypatch.setenv("RANK", "0")
     monkeypatch.setenv("LOCAL_RANK", "0")
     monkeypatch.setenv("WORLD_SIZE", "2")
@@ -166,6 +187,16 @@ def test_run_training_pipeline_wires_deepspeed_runtime_with_plugin(
         raising=False,
     )
     _install_fake_training_pipeline_boundaries(monkeypatch, log)
+    monkeypatch.setattr(
+        "src.training.pipeline._resolve_or_build_train_pack_cache",
+        lambda config, components, vocab_groups, repo_root: _fake_train_cache(tmp_path),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "src.training.pipeline.load_rank_micro_steps_from_cache",
+        lambda cache_dir, schedule, rank, world_size: (_micro_step(0),),
+        raising=False,
+    )
 
     summary = run_training_pipeline(config_path)
 
@@ -191,6 +222,7 @@ def test_run_training_pipeline_uses_rank_local_artifacts_for_nonzero_rank(
 ) -> None:
     config_path = tmp_path / "config.yaml"
     payload = yaml.safe_load(FIXTURE_CONFIG.read_text())
+    _point_dataset_paths_at_fixture(payload)
     payload["run"]["artifact_root"] = str(tmp_path / "artifacts")
     payload["run"]["name"] = "fake-rank-local-smoke"
     payload["runtime"] = {
@@ -204,6 +236,7 @@ def test_run_training_pipeline_uses_rank_local_artifacts_for_nonzero_rank(
     config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
     log: list[str] = []
 
+    monkeypatch.setenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", str(tmp_path / "pack-cache"))
     monkeypatch.setenv("RANK", "1")
     monkeypatch.setenv("LOCAL_RANK", "1")
     monkeypatch.setenv("WORLD_SIZE", "2")
@@ -213,11 +246,48 @@ def test_run_training_pipeline_uses_rank_local_artifacts_for_nonzero_rank(
         raising=False,
     )
     _install_fake_training_pipeline_boundaries(monkeypatch, log)
+    monkeypatch.setattr(
+        "src.training.pipeline._resolve_or_build_train_pack_cache",
+        lambda config, components, vocab_groups, repo_root: _fake_train_cache(tmp_path),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "src.training.pipeline.load_rank_micro_steps_from_cache",
+        lambda cache_dir, schedule, rank, world_size: (_micro_step(0),),
+        raising=False,
+    )
 
     summary = run_training_pipeline(config_path)
 
     assert Path(summary["run_dir"]).name.endswith("-rank1")
     assert Path(summary["run_dir"]).exists()
+
+
+def test_multi_rank_run_suffix_keeps_rank_dirs_under_one_launch_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = yaml.safe_load(FIXTURE_CONFIG.read_text())
+    _point_dataset_paths_at_fixture(payload)
+    payload["run"]["artifact_root"] = str(tmp_path / "artifacts")
+    payload["run"]["name"] = "fake-prod"
+    payload["run"]["collision_policy"] = "timestamp"
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+    config = __import__(
+        "src.config.loader",
+        fromlist=["load_train_config"],
+    ).load_train_config(config_path).config
+    (tmp_path / "artifacts" / "fake-prod").mkdir(parents=True)
+
+    monkeypatch.setenv("COORDEXP_SWIFT_RUN_SUFFIX", "launch-123")
+    monkeypatch.setenv("RANK", "1")
+    monkeypatch.setenv("LOCAL_RANK", "1")
+    monkeypatch.setenv("WORLD_SIZE", "8")
+
+    run_directory = _resolve_rank_local_run_directory(config, cwd=tmp_path)
+
+    assert run_directory.run_dir.name == "fake-prod-launch-123-rank1"
 
 
 def test_repeating_micro_step_stream_fills_planned_rank_local_window() -> None:
@@ -229,9 +299,87 @@ def test_repeating_micro_step_stream_fills_planned_rank_local_window() -> None:
     assert [next(stream).metadata["pack_id"] for _ in range(6)] == [0, 1, 0, 1, 0, 1]
 
 
+def test_repeating_micro_step_stream_shards_effective_batch_across_ranks() -> None:
+    schedule = _schedule(resolved_max_steps=2, grad_accum_steps=2, world_size=2)
+    base_steps = tuple(_micro_step(index) for index in range(8))
+
+    rank0 = build_repeating_micro_step_stream(
+        base_steps,
+        schedule,
+        rank=0,
+        world_size=2,
+    )
+    rank1 = build_repeating_micro_step_stream(
+        base_steps,
+        schedule,
+        rank=1,
+        world_size=2,
+    )
+
+    assert [next(rank0).metadata["pack_id"] for _ in range(4)] == [0, 2, 4, 6]
+    assert [next(rank1).metadata["pack_id"] for _ in range(4)] == [1, 3, 5, 7]
+
+
 def test_repeating_micro_step_stream_rejects_empty_base_stream() -> None:
     with pytest.raises(ValueError, match="at least one"):
         build_repeating_micro_step_stream((), _schedule(resolved_max_steps=1))
+
+
+def test_cached_micro_steps_reattach_qwen_image_processor() -> None:
+    image_processor = object()
+    cached_encoding = QwenImageEncoding(
+        plan=_image_plan(),
+        pixel_values=None,
+        image_grid_thw_tensor=None,
+        image_processor=None,
+    )
+    cached_step = SupervisedMicroStep(
+        pack="pack-0",
+        encoded_examples=(FakeCachedEncodedExample("ex-0", cached_encoding),),
+        position_inputs="positions",
+        token_sequence="tokens",
+        vocab_groups="vocab",
+        metadata={"pack_id": 0},
+    )
+
+    (attached_step,) = _attach_image_processors_to_micro_steps(
+        (cached_step,),
+        image_processor=image_processor,
+    )
+
+    assert attached_step is not cached_step
+    attached_example = attached_step.encoded_examples[0]
+    assert attached_example.image_encoding.image_processor is image_processor
+    assert cached_step.encoded_examples[0].image_encoding.image_processor is None
+
+
+def test_pack_plan_artifact_separates_global_cache_and_rank_local_counts() -> None:
+    schedule = _schedule(resolved_max_steps=2, grad_accum_steps=2, world_size=2)
+    rank_local_steps = (_micro_step(0), _micro_step(2), _micro_step(4), _micro_step(6))
+
+    artifact = _pack_plan_artifact(
+        rank_local_steps,
+        schedule=schedule,
+        cache={
+            "cache_dir": Path("/tmp/coordexp-pack-cache/fingerprint"),
+            "fingerprint": "fingerprint",
+            "micro_step_count": 10,
+            "chunk_count": 2,
+            "chunk_size": 8,
+            "status": "complete",
+            "build_status": "hit",
+            "manifest_path": Path("/tmp/coordexp-pack-cache/fingerprint/manifest.json"),
+            "manifest_sha256": "a" * 64,
+            "determinants_sha256": "b" * 64,
+            "chunk_sha256s": ["c" * 64, "d" * 64],
+        },
+    )
+
+    assert artifact["packs_per_epoch"] == 10
+    assert artifact["rank_local_micro_step_count"] == 4
+    assert artifact["cache"]["global_micro_step_count"] == 10
+    assert artifact["cache"]["manifest_sha256"] == "a" * 64
+    assert artifact["cache"]["chunk_sha256s"] == ["c" * 64, "d" * 64]
 
 
 def test_training_artifact_bridge_writes_train_metrics_and_forward_receipt(tmp_path: Path) -> None:
@@ -517,16 +665,41 @@ def _micro_step(index: int) -> SupervisedMicroStep:
     )
 
 
-def _schedule(resolved_max_steps: int, grad_accum_steps: int = 1) -> ResolvedStepSchedule:
+def _image_plan() -> QwenNoResizeImagePlan:
+    return QwenNoResizeImagePlan(
+        example_id="ex-0",
+        image_path=Path("/tmp/image.jpg"),
+        width=64,
+        height=64,
+        patch_size=16,
+        merge_size=2,
+        temporal_patch_size=2,
+        required_spatial_factor=32,
+        raw_pixels=4096,
+        raw_patch_rows=16,
+        expected_pixel_values_width=1536,
+        image_grid_thw=(1, 4, 4),
+        merged_visual_tokens=4,
+        max_raw_pixels=1_000_000,
+        max_merged_visual_tokens=4096,
+    )
+
+
+def _schedule(
+    resolved_max_steps: int,
+    grad_accum_steps: int = 1,
+    *,
+    world_size: int = 1,
+) -> ResolvedStepSchedule:
     return ResolvedStepSchedule(
         resolved_max_steps=resolved_max_steps,
         packs_per_epoch=1,
-        requested_pack_presentations=resolved_max_steps * grad_accum_steps,
-        actual_pack_presentations=resolved_max_steps * grad_accum_steps,
+        requested_pack_presentations=resolved_max_steps * grad_accum_steps * world_size,
+        actual_pack_presentations=resolved_max_steps * grad_accum_steps * world_size,
         tail_fill_pack_count=0,
         runtime_batch=RuntimeBatchResolution(
-            world_size=1,
-            effective_batch_size=grad_accum_steps,
+            world_size=world_size,
+            effective_batch_size=grad_accum_steps * world_size,
             resolved_grad_accum_steps=grad_accum_steps,
         ),
         events={"checkpoint": (), "eval.forward": (), "training.logging": (), "final": ()},
@@ -546,6 +719,30 @@ def _manager(tmp_path: Path) -> RunArtifactManager:
         runtime_identity={"backend": "single"},
         backend_status={"deepspeed": ["schema_accepted", "conflict_validation_implemented"]},
     )
+
+
+def _point_dataset_paths_at_fixture(payload: dict[str, Any]) -> None:
+    dataset_path = str((FIXTURE_CONFIG.parent / "examples.jsonl").resolve())
+    payload["data"]["train"]["path"] = dataset_path
+    if payload["data"].get("eval") is not None:
+        payload["data"]["eval"]["path"] = dataset_path
+
+
+def _fake_train_cache(tmp_path: Path) -> dict[str, Any]:
+    return {
+        "cache_dir": tmp_path / "pack-cache" / "fake",
+        "fingerprint": "fake",
+        "micro_step_count": 1,
+        "chunk_count": 1,
+        "chunk_size": 1,
+        "status": "complete",
+        "build_status": "hit",
+        "manifest_path": tmp_path / "pack-cache" / "fake" / "manifest.json",
+        "manifest_sha256": "a" * 64,
+        "determinants_sha256": "b" * 64,
+        "chunk_sha256s": ["c" * 64],
+        "determinants": {"purpose": "unit-test"},
+    }
 
 
 def _gate(planned_step_id: int) -> GateDecision:
@@ -579,21 +776,40 @@ class FakeTokenIdentity:
         return {"tokenizer_vocab_size": self.tokenizer_vocab_size}
 
 
+@dataclass(frozen=True)
+class FakeIdentity:
+    payload: dict[str, Any]
+
+    def to_artifact_dict(self) -> dict[str, Any]:
+        return dict(self.payload)
+
+
+@dataclass(frozen=True)
+class FakeCachedEncodedExample:
+    example_id: str
+    image_encoding: Any
+
+
 class FakeComponents:
     def __init__(self) -> None:
         self.model = FakeModel()
         self.base_model_path = Path("/tmp/fake-qwen")
         self.token_identity = FakeTokenIdentity()
         self.tokenizer = object()
-        self.processor_identity = {"processor": "fake"}
+        self.processor_identity = FakeIdentity({"processor": "fake"})
+        self.processor = FakePipelineProcessor()
 
     def to_artifact_dict(self) -> dict[str, Any]:
         return {
             "base_model_path": str(self.base_model_path),
-            "processor": self.processor_identity,
+            "processor": self.processor_identity.to_artifact_dict(),
             "tokens": self.token_identity.to_artifact_dict(),
             "load_model": True,
         }
+
+
+class FakePipelineProcessor:
+    image_processor = object()
 
 
 class FakePlan:
@@ -846,9 +1062,14 @@ class FakePipelineRuntime:
 
 
 class FakePipelineTrainer:
+    last_pack_ids: list[int] | None = None
+
     def __init__(self, *, log: list[str], event_sink: Any, **kwargs: Any) -> None:
-        del event_sink, kwargs
+        del event_sink
         self.log = log
+        FakePipelineTrainer.last_pack_ids = [
+            step.metadata["pack_id"] for step in kwargs["pack_stream"]
+        ]
 
     def run(self) -> SupervisedTrainingResult:
         self.log.append("trainer.run")

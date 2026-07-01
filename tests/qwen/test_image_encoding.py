@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import pickle
 from typing import Any
 
 import pytest
@@ -12,7 +13,13 @@ from src.common.errors import EncodingContractError
 from src.config.loader import load_train_config
 from src.config.models import ProcessorConfig
 from src.data import ImageRef, RawExample, RawObject, SourceProvenance, load_raw_examples
-from src.qwen.images import build_no_resize_image_plan, encode_qwen_image
+from src.qwen.images import (
+    attach_qwen_image_processor,
+    build_no_resize_image_plan,
+    encode_qwen_image,
+    materialize_qwen_image_encoding,
+    plan_qwen_image,
+)
 from src.qwen.loading import QwenProcessorIdentity, load_qwen_components
 
 
@@ -41,6 +48,62 @@ def test_real_smoke_image_encodes_with_processor_derived_no_resize_grid() -> Non
     assert tuple(encoding.pixel_values.shape) == (4056, 1536)
     assert tuple(encoding.image_grid_thw_tensor.shape) == (1, 3)
     assert encoding.to_artifact_dict()["image_grid_thw"] == [1, 52, 78]
+
+
+def test_lazy_smoke_image_plan_defers_pixels_until_materialized() -> None:
+    resolved = load_train_config(FIXTURE_CONFIG)
+    example = load_raw_examples(resolved.config.data.train)[0]
+    components = load_qwen_components(resolved.config, load_model=False)
+
+    planned = plan_qwen_image(
+        example,
+        components=components,
+        processor_config=resolved.config.model.processor,
+    )
+
+    assert planned.image_grid_thw == (1, 52, 78)
+    assert planned.pixel_values is None
+    assert planned.image_grid_thw_tensor is None
+    assert planned.to_artifact_dict()["pixel_values_materialized"] is False
+    assert planned.to_artifact_dict()["pixel_values_shape"] is None
+
+    materialized = materialize_qwen_image_encoding(planned)
+
+    assert materialized.image_grid_thw == planned.image_grid_thw
+    assert tuple(materialized.pixel_values.shape) == (4056, 1536)
+    assert tuple(materialized.image_grid_thw_tensor.shape) == (1, 3)
+    assert materialized.to_artifact_dict()["pixel_values_materialized"] is True
+
+
+def test_lazy_image_plan_pickle_drops_and_reattaches_processor(tmp_path: Path) -> None:
+    example = _raw_example(tmp_path, width=96, height=64)
+    components = FakeComponents(
+        processor_identity=_processor_identity(),
+        processor=FakeProcessor(),
+    )
+    planned = plan_qwen_image(
+        example,
+        components=components,
+        processor_config=_processor_config(),
+    )
+
+    cached = pickle.loads(pickle.dumps(planned))
+
+    assert cached.pixel_values is None
+    assert cached.image_grid_thw_tensor is None
+    assert cached.image_processor is None
+    with pytest.raises(EncodingContractError) as exc_info:
+        materialize_qwen_image_encoding(cached)
+    assert exc_info.value.code == "qwen.image_lazy_processor_missing"
+
+    reattached = attach_qwen_image_processor(
+        cached,
+        components.processor.image_processor,
+    )
+    materialized = materialize_qwen_image_encoding(reattached)
+
+    assert tuple(materialized.pixel_values.shape) == (24, 1536)
+    assert tuple(materialized.image_grid_thw_tensor.shape) == (1, 3)
 
 
 def test_invalid_no_resize_dimensions_fail_before_processor_call(tmp_path: Path) -> None:

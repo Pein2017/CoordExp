@@ -9,8 +9,11 @@ from src.qwen.loading import (
 from src.qwen.images import (
     QwenImageEncoding,
     QwenNoResizeImagePlan,
+    attach_qwen_image_processor,
     build_no_resize_image_plan,
     encode_qwen_image,
+    materialize_qwen_image_encoding,
+    plan_qwen_image,
 )
 from src.qwen.encoding import (
     EncodedExample,
@@ -108,8 +111,11 @@ __all__ = [
     "build_qwen_forward_inputs",
     "build_no_resize_image_plan",
     "build_qwen_position_inputs",
+    "attach_qwen_image_processor",
     "encode_rendered_example",
     "encode_qwen_image",
+    "materialize_qwen_image_encoding",
+    "plan_qwen_image",
     "load_qwen_components",
     "install_special_token_embedding_deltas",
     "load_special_token_embedding_deltas",

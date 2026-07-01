@@ -11,7 +11,7 @@ from typing import Any, Literal
 from src.common.errors import EncodingContractError
 from src.config.models import ProcessorConfig
 from src.data import RawExample
-from src.qwen.images import QwenImageEncoding, encode_qwen_image
+from src.qwen.images import QwenImageEncoding, encode_qwen_image, plan_qwen_image
 from src.qwen.tokens import IM_END_SUFFIX
 from src.templates import RenderedExample, RenderedSpan, validate_rendered_spans
 
@@ -126,6 +126,7 @@ def encode_rendered_example(
     components: Any,
     processor_config: ProcessorConfig,
     global_max_length: int,
+    materialize_image_pixels: bool = True,
 ) -> EncodedExample:
     if raw_example.example_id != rendered.example_id:
         raise EncodingContractError(
@@ -144,10 +145,18 @@ def encode_rendered_example(
         )
     validate_rendered_spans(rendered.supervised_response_text, rendered.spans)
 
-    image_encoding = encode_qwen_image(
-        raw_example,
-        components=components,
-        processor_config=processor_config,
+    image_encoding = (
+        encode_qwen_image(
+            raw_example,
+            components=components,
+            processor_config=processor_config,
+        )
+        if materialize_image_pixels
+        else plan_qwen_image(
+            raw_example,
+            components=components,
+            processor_config=processor_config,
+        )
     )
     chat_text = _apply_chat_template(components.processor, rendered)
     assistant_start = _assistant_content_start(chat_text, rendered)

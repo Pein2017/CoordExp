@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+import hashlib
+import json
 import os
 from pathlib import Path
+import re
 from typing import Any
 
 import torch
@@ -38,6 +41,8 @@ from src.optim import (
 )
 from src.packing import PackedSequence, build_packed_supervision, plan_packed_sequences
 from src.qwen import (
+    QwenImageEncoding,
+    attach_qwen_image_processor,
     build_default_special_token_selection,
     build_qwen_position_inputs,
     encode_rendered_example,
@@ -48,9 +53,22 @@ from src.qwen.special_token_embeddings import (
     install_special_token_embedding_deltas,
 )
 from src.runtime import TrainRuntime
-from src.supervision import build_token_sequence_from_packed_supervision
+from src.supervision import (
+    build_token_sequence_from_packed_supervision,
+    index_token_atoms_by_pack,
+)
 from src.templates import render_example
 from src.training.schedule import ResolvedStepSchedule, resolve_planned_step_schedule
+from src.training.pack_cache import (
+    build_packing_cache_determinants,
+    build_packing_cache_fingerprint,
+    cache_dir_for_fingerprint,
+    cache_is_complete,
+    load_cache_manifest,
+    load_rank_micro_steps_from_cache,
+    manifest_path,
+    write_micro_step_cache,
+)
 from src.training.supervised_trainer import (
     ScheduledTrainerEvent,
     SupervisedMicroStep,
@@ -67,9 +85,18 @@ BEST_EVAL_SELECTOR_NAME = "acc_top1"
 def build_repeating_micro_step_stream(
     base_micro_steps: Sequence[SupervisedMicroStep],
     schedule: ResolvedStepSchedule,
+    *,
+    rank: int = 0,
+    world_size: int = 1,
 ) -> Iterator[SupervisedMicroStep]:
     if not base_micro_steps:
         raise ValueError("base_micro_steps must contain at least one micro-step")
+    if world_size <= 0:
+        raise ValueError("world_size must be positive")
+    if rank < 0 or rank >= world_size:
+        raise ValueError("rank must be inside world_size")
+    if schedule.runtime_batch.world_size != world_size:
+        raise ValueError("stream world_size must match schedule runtime_batch")
     total_rank_local_micro_steps = (
         schedule.resolved_max_steps
         * schedule.runtime_batch.resolved_grad_accum_steps
@@ -77,7 +104,18 @@ def build_repeating_micro_step_stream(
 
     def iter_repeated() -> Iterator[SupervisedMicroStep]:
         for index in range(total_rank_local_micro_steps):
-            yield base_micro_steps[index % len(base_micro_steps)]
+            planned_step_index = (
+                index // schedule.runtime_batch.resolved_grad_accum_steps
+            )
+            local_accum_index = (
+                index % schedule.runtime_batch.resolved_grad_accum_steps
+            )
+            global_micro_step_index = (
+                planned_step_index * schedule.runtime_batch.effective_batch_size
+                + local_accum_index * world_size
+                + rank
+            )
+            yield base_micro_steps[global_micro_step_index % len(base_micro_steps)]
 
     return iter_repeated()
 
@@ -231,19 +269,35 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
     )
     vocab_groups_artifact = _artifact_dict(vocab_groups)
     manager.write_report("token_type_vocab", vocab_groups_artifact)
-    train_micro_steps = build_base_micro_steps(config, components, vocab_groups)
+    train_cache = _resolve_or_build_train_pack_cache(
+        config,
+        components,
+        vocab_groups,
+        repo_root=repo_root,
+    )
     schedule = resolve_planned_step_schedule(
         config,
-        packs_per_epoch=len(train_micro_steps),
+        packs_per_epoch=train_cache["micro_step_count"],
         world_size=_world_size(),
         source_config_path=str(resolved_config.entry_config_path),
     )
     manager.write_schedule(schedule)
+    train_micro_steps = load_rank_micro_steps_from_cache(
+        train_cache["cache_dir"],
+        schedule=schedule,
+        rank=_rank(),
+        world_size=_world_size(),
+    )
+    train_micro_steps = _attach_image_processors_to_micro_steps(
+        train_micro_steps,
+        image_processor=_qwen_image_processor(components),
+    )
     manager.write_receipt(
         "pack_plan",
         _pack_plan_artifact(
             train_micro_steps,
             schedule=schedule,
+            cache=train_cache,
         ),
         category="packing",
     )
@@ -323,7 +377,7 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
     trainer = SupervisedTrainer(
         model=model,
         schedule=schedule,
-        pack_stream=build_repeating_micro_step_stream(train_micro_steps, schedule),
+        pack_stream=iter(train_micro_steps),
         loss_runner=loss_runner,
         runtime=runtime,
         event_sink=TrainingArtifactBridge(
@@ -390,6 +444,145 @@ def build_base_micro_steps(
     )
 
 
+def _resolve_or_build_train_pack_cache(
+    config: Any,
+    components: Any,
+    vocab_groups: Any,
+    *,
+    repo_root: Path,
+) -> dict[str, Any]:
+    fingerprint = build_packing_cache_fingerprint(
+        config,
+        components,
+        dataset=config.data.train,
+        split=TRAIN_SPLIT,
+    )
+    determinants = build_packing_cache_determinants(
+        config,
+        components,
+        dataset=config.data.train,
+        split=TRAIN_SPLIT,
+    )
+    cache_root = Path(
+        os.environ.get(
+            "COORDEXP_SWIFT_PACK_CACHE_ROOT",
+            str(repo_root / ".cache" / "coordexp_swift" / "packing"),
+        )
+    )
+    cache_dir = cache_dir_for_fingerprint(cache_root, fingerprint)
+    cache_complete_before = cache_is_complete(cache_dir, fingerprint=fingerprint)
+    if _rank() == 0 and not cache_complete_before:
+        micro_steps = build_base_micro_steps(config, components, vocab_groups)
+        write_micro_step_cache(
+            cache_dir,
+            micro_steps,
+            fingerprint=fingerprint,
+            determinants=determinants,
+        )
+    _wait_for_pack_cache(cache_dir, fingerprint=fingerprint)
+    manifest = load_cache_manifest(cache_dir)
+    cache_manifest_path = manifest_path(cache_dir)
+    return {
+        "cache_dir": cache_dir,
+        "fingerprint": fingerprint,
+        "micro_step_count": int(manifest["micro_step_count"]),
+        "chunk_count": len(manifest["chunks"]),
+        "chunk_size": int(manifest["chunk_size"]),
+        "status": manifest["status"],
+        "build_status": (
+            "hit"
+            if cache_complete_before
+            else "built"
+            if _rank() == 0
+            else "waited"
+        ),
+        "manifest_path": cache_manifest_path,
+        "manifest_sha256": _file_sha256(cache_manifest_path),
+        "determinants_sha256": _sha256_json(manifest["determinants"]),
+        "chunk_sha256s": [str(chunk["sha256"]) for chunk in manifest["chunks"]],
+        "determinants": determinants,
+    }
+
+
+def _attach_image_processors_to_micro_steps(
+    micro_steps: Sequence[SupervisedMicroStep],
+    *,
+    image_processor: Any,
+) -> tuple[SupervisedMicroStep, ...]:
+    if image_processor is None:
+        raise RuntimeContractError(
+            "cached Qwen image encodings require a runtime image_processor",
+            code="training.qwen_image_processor_missing",
+            context={},
+        )
+    return tuple(
+        replace(
+            micro_step,
+            encoded_examples=tuple(
+                _attach_image_processor_to_encoded_example(
+                    encoded_example,
+                    image_processor=image_processor,
+                )
+                for encoded_example in micro_step.encoded_examples
+            ),
+        )
+        for micro_step in micro_steps
+    )
+
+
+def _attach_image_processor_to_encoded_example(
+    encoded_example: Any,
+    *,
+    image_processor: Any,
+) -> Any:
+    image_encoding = getattr(encoded_example, "image_encoding", None)
+    if not isinstance(image_encoding, QwenImageEncoding):
+        return encoded_example
+    return replace(
+        encoded_example,
+        image_encoding=attach_qwen_image_processor(image_encoding, image_processor),
+    )
+
+
+def _qwen_image_processor(components: Any) -> Any:
+    processor = getattr(components, "processor", None)
+    image_processor = getattr(processor, "image_processor", None)
+    if image_processor is None:
+        raise RuntimeContractError(
+            "Qwen components must expose processor.image_processor for lazy image packing",
+            code="training.qwen_image_processor_missing",
+            context={"processor_type": type(processor).__name__},
+        )
+    return image_processor
+
+
+def _wait_for_pack_cache(
+    cache_dir: Path,
+    *,
+    fingerprint: str,
+    timeout_seconds: float = 7200.0,
+    poll_seconds: float = 5.0,
+) -> None:
+    import time
+
+    deadline = time.monotonic() + timeout_seconds
+    path = manifest_path(cache_dir)
+    while time.monotonic() < deadline:
+        if cache_is_complete(cache_dir, fingerprint=fingerprint):
+            return
+        time.sleep(poll_seconds)
+    raise RuntimeContractError(
+        "timed out waiting for train packing cache",
+        code="training.pack_cache_timeout",
+        context={
+            "cache_dir": str(cache_dir),
+            "manifest_path": str(path),
+            "fingerprint": fingerprint,
+            "timeout_seconds": timeout_seconds,
+        },
+    )
+
+
 def _build_micro_steps_for_dataset(
     config: Any,
     components: Any,
@@ -420,6 +613,7 @@ def _build_micro_steps_for_dataset(
             components=components,
             processor_config=config.model.processor,
             global_max_length=config.packing.global_max_length,
+            materialize_image_pixels=False,
         )
         for raw_example, rendered in zip(raw_examples, rendered_examples, strict=True)
     )
@@ -428,6 +622,7 @@ def _build_micro_steps_for_dataset(
         global_max_length=config.packing.global_max_length,
     )
     supervision = build_packed_supervision(packs, encoded_examples)
+    token_atoms_by_pack = index_token_atoms_by_pack(supervision)
     micro_steps: list[SupervisedMicroStep] = []
     for pack in packs:
         pack_examples = _encoded_examples_for_pack(pack, encoded_examples)
@@ -438,7 +633,7 @@ def _build_micro_steps_for_dataset(
         )
         token_sequence = build_token_sequence_from_packed_supervision(
             pack,
-            supervision,
+            token_atoms_by_pack.get(pack.pack_index, ()),
         )
         micro_steps.append(
             SupervisedMicroStep(
@@ -600,32 +795,81 @@ def _pack_plan_artifact(
     micro_steps: Sequence[SupervisedMicroStep],
     *,
     schedule: ResolvedStepSchedule,
+    cache: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    packs_per_epoch = (
+        len(micro_steps)
+        if cache is None
+        else int(cache["micro_step_count"])
+    )
     return {
-        "packs_per_epoch": len(micro_steps),
+        "packs_per_epoch": packs_per_epoch,
+        "cache": None
+        if cache is None
+        else {
+            "cache_dir": str(cache["cache_dir"]),
+            "fingerprint": cache["fingerprint"],
+            "global_micro_step_count": cache["micro_step_count"],
+            "chunk_count": cache["chunk_count"],
+            "chunk_size": cache["chunk_size"],
+            "status": cache["status"],
+            "build_status": cache.get("build_status"),
+            "manifest_path": str(cache["manifest_path"]),
+            "manifest_sha256": cache["manifest_sha256"],
+            "determinants_sha256": cache["determinants_sha256"],
+            "chunk_sha256s": list(cache["chunk_sha256s"]),
+        },
         "actual_pack_presentations": schedule.actual_pack_presentations,
         "tail_fill_pack_count": schedule.tail_fill_pack_count,
-        "micro_steps": [
+        "rank_local_micro_step_count": len(micro_steps),
+        "rank_local_micro_step_preview": [
             {
                 "metadata": dict(micro_step.metadata or {}),
                 "pack": _artifact_dict(micro_step.pack),
-                "position_inputs": _artifact_dict(micro_step.position_inputs),
-                "token_sequence": _artifact_dict(micro_step.token_sequence),
             }
-            for micro_step in micro_steps
+            for micro_step in micro_steps[:8]
         ],
     }
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _sha256_json(payload: Mapping[str, Any]) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            payload,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def _resolve_rank_local_run_directory(config: Any, *, cwd: Path) -> Any:
     rank = _rank()
     world_size = _world_size()
-    timestamp = None
-    if world_size > 1 and rank > 0:
-        timestamp = f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-rank{rank}"
-    run_directory = resolve_run_directory(config, cwd=cwd, timestamp=timestamp)
     if world_size <= 1 or rank == 0:
+        run_directory = resolve_run_directory(
+            config,
+            cwd=cwd,
+            timestamp=_multi_rank_launch_suffix() if world_size > 1 else None,
+        )
+        if world_size > 1:
+            run_directory = _apply_explicit_multi_rank_launch_suffix(run_directory)
         return run_directory
+    run_directory = resolve_run_directory(
+        config,
+        cwd=cwd,
+        timestamp=_multi_rank_launch_suffix(),
+    )
+    run_directory = _apply_explicit_multi_rank_launch_suffix(run_directory)
     rank_suffix = f"rank{rank}"
     if run_directory.run_dir.name.endswith(f"-{rank_suffix}"):
         return run_directory
@@ -648,6 +892,34 @@ def _resolve_rank_local_run_directory(config: Any, *, cwd: Path) -> Any:
             f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{rank_suffix}"
         )
     return replace(run_directory, run_dir=rank_run_dir.resolve())
+
+
+def _apply_explicit_multi_rank_launch_suffix(run_directory: Any) -> Any:
+    suffix = _multi_rank_launch_suffix()
+    if suffix is None:
+        return run_directory
+    run_dir = run_directory.run_dir
+    if run_dir.name.endswith(f"-{suffix}"):
+        return run_directory
+    suffixed_run_dir = run_dir.with_name(f"{run_dir.name}-{suffix}")
+    if suffixed_run_dir.exists():
+        raise RuntimeContractError(
+            "explicit multi-rank run output directory already exists",
+            code="runtime.multirank_run_dir_exists",
+            context={
+                "run_dir": str(suffixed_run_dir),
+                "suffix": suffix,
+            },
+        )
+    return replace(run_directory, run_dir=suffixed_run_dir.resolve())
+
+
+def _multi_rank_launch_suffix() -> str | None:
+    value = os.environ.get("COORDEXP_SWIFT_RUN_SUFFIX")
+    if value is None or not value.strip():
+        return None
+    suffix = re.sub(r"[^A-Za-z0-9_.-]+", "-", value.strip()).strip(".-")
+    return suffix or None
 
 
 def _loss_plan_artifact(config: Any, vocab_groups_artifact: dict[str, Any]) -> dict[str, Any]:

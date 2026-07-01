@@ -18,6 +18,7 @@ from src.qwen.fa2 import (
     validate_fa2_varlen_branch_evidence,
     validate_fa2_varlen_plan_matches_pack,
 )
+from src.qwen.images import QwenImageEncoding, materialize_qwen_image_encoding
 from src.qwen.positions import QwenPositionInputs
 
 
@@ -488,6 +489,11 @@ def _image_grid_thw(image_encoding: Any, *, example_id: str) -> tuple[int, int, 
 
 def _pixel_values(image_encoding: Any, *, example_id: str) -> torch.Tensor:
     pixel_values = getattr(image_encoding, "pixel_values", None)
+    if not isinstance(pixel_values, torch.Tensor) and isinstance(
+        image_encoding, QwenImageEncoding
+    ):
+        image_encoding = materialize_qwen_image_encoding(image_encoding)
+        pixel_values = image_encoding.pixel_values
     if not isinstance(pixel_values, torch.Tensor):
         raise QwenForwardContractError(
             "encoded image payload must expose tensor pixel_values",

@@ -12,6 +12,7 @@ from src.supervision import (
     TokenSpan,
     build_token_sequence_from_packed_supervision,
     dense_labels_from_token_sequence,
+    index_token_atoms_by_pack,
     validate_dense_labels_match_token_sequence,
 )
 
@@ -65,6 +66,38 @@ def test_token_sequence_builds_canonical_atoms_spans_and_dense_labels() -> None:
         sequence,
         (-100, 11, 12, 13, -100, 21, -100),
     ) is None
+
+
+def test_token_atom_index_builds_equivalent_pack_sequences_without_full_scan() -> None:
+    examples = (
+        FakeEncodedExample(
+            "ex-0",
+            (10, 11, 12),
+            (FakeTokenSpan("schema", physical=1, token_ids=(11,), text="<box>"),),
+        ),
+        FakeEncodedExample(
+            "ex-1",
+            (20, 21, 22),
+            (FakeTokenSpan("coordinate", physical=1, token_ids=(21,), text="<|coord_10|>"),),
+        ),
+    )
+    packs = plan_packed_sequences(examples, global_max_length=3)
+    packed_supervision = build_packed_supervision(packs, examples)
+    atoms_by_pack = index_token_atoms_by_pack(packed_supervision)
+
+    full_scan_sequence = build_token_sequence_from_packed_supervision(
+        packs[1],
+        packed_supervision,
+    )
+    indexed_sequence = build_token_sequence_from_packed_supervision(
+        packs[1],
+        atoms_by_pack[packs[1].pack_index],
+    )
+
+    assert tuple(atom.to_artifact_dict() for atom in indexed_sequence.atoms) == tuple(
+        atom.to_artifact_dict() for atom in full_scan_sequence.atoms
+    )
+    assert indexed_sequence.to_dense_labels() == full_scan_sequence.to_dense_labels()
 
 
 def test_token_sequence_rejects_target_position_zero_for_causal_loss() -> None:

@@ -55,8 +55,17 @@ class QwenNoResizeImagePlan:
 @dataclass(frozen=True)
 class QwenImageEncoding:
     plan: QwenNoResizeImagePlan
-    pixel_values: Any
-    image_grid_thw_tensor: Any
+    pixel_values: Any | None
+    image_grid_thw_tensor: Any | None
+    image_processor: Any | None = None
+
+    def __getstate__(self) -> dict[str, Any]:
+        return {
+            "plan": self.plan,
+            "pixel_values": self.pixel_values,
+            "image_grid_thw_tensor": self.image_grid_thw_tensor,
+            "image_processor": None,
+        }
 
     @property
     def example_id(self) -> str:
@@ -98,8 +107,15 @@ class QwenImageEncoding:
         return {
             **self.plan.to_artifact_dict(),
             "do_resize": False,
-            "pixel_values_shape": list(_shape_tuple(self.pixel_values)),
-            "image_grid_thw_tensor_shape": list(_shape_tuple(self.image_grid_thw_tensor)),
+            "pixel_values_shape": (
+                None if self.pixel_values is None else list(_shape_tuple(self.pixel_values))
+            ),
+            "image_grid_thw_tensor_shape": (
+                None
+                if self.image_grid_thw_tensor is None
+                else list(_shape_tuple(self.image_grid_thw_tensor))
+            ),
+            "pixel_values_materialized": self.pixel_values is not None,
         }
 
 
@@ -210,12 +226,25 @@ def encode_qwen_image(
     components: Any,
     processor_config: ProcessorConfig,
 ) -> QwenImageEncoding:
+    encoding = plan_qwen_image(
+        raw_example,
+        components=components,
+        processor_config=processor_config,
+    )
+    return materialize_qwen_image_encoding(encoding)
+
+
+def plan_qwen_image(
+    raw_example: RawExample,
+    *,
+    components: Any,
+    processor_config: ProcessorConfig,
+) -> QwenImageEncoding:
     plan = build_no_resize_image_plan(
         raw_example,
         processor_identity=components.processor_identity,
         processor_config=processor_config,
     )
-    image = _load_rgb_image(raw_example)
     image_processor = getattr(components.processor, "image_processor", None)
     if image_processor is None:
         raise EncodingContractError(
@@ -223,7 +252,33 @@ def encode_qwen_image(
             code="qwen.image_processor_missing",
             context={"example_id": raw_example.example_id},
         )
-    encoded = image_processor(
+    return QwenImageEncoding(
+        plan=plan,
+        pixel_values=None,
+        image_grid_thw_tensor=None,
+        image_processor=image_processor,
+    )
+
+
+def materialize_qwen_image_encoding(
+    encoding: QwenImageEncoding,
+) -> QwenImageEncoding:
+    if (
+        encoding.pixel_values is not None
+        and encoding.image_grid_thw_tensor is not None
+    ):
+        return encoding
+    if encoding.image_processor is None:
+        raise EncodingContractError(
+            "lazy Qwen image encoding requires an image_processor",
+            code="qwen.image_lazy_processor_missing",
+            context={
+                "example_id": encoding.example_id,
+                "image_path": str(encoding.image_path),
+            },
+        )
+    image = _load_rgb_image_from_plan(encoding.plan)
+    encoded = encoding.image_processor(
         images=[image],
         return_tensors="pt",
         do_resize=False,
@@ -231,14 +286,27 @@ def encode_qwen_image(
     pixel_values = encoded.get("pixel_values")
     image_grid_thw_tensor = encoded.get("image_grid_thw")
     _validate_processor_output(
-        plan,
+        encoding.plan,
         pixel_values=pixel_values,
         image_grid_thw_tensor=image_grid_thw_tensor,
     )
     return QwenImageEncoding(
-        plan=plan,
+        plan=encoding.plan,
         pixel_values=pixel_values,
         image_grid_thw_tensor=image_grid_thw_tensor,
+        image_processor=encoding.image_processor,
+    )
+
+
+def attach_qwen_image_processor(
+    encoding: QwenImageEncoding,
+    image_processor: Any,
+) -> QwenImageEncoding:
+    return QwenImageEncoding(
+        plan=encoding.plan,
+        pixel_values=encoding.pixel_values,
+        image_grid_thw_tensor=encoding.image_grid_thw_tensor,
+        image_processor=image_processor,
     )
 
 
@@ -257,6 +325,25 @@ def _load_rgb_image(raw_example: RawExample) -> Image.Image:
                     "image_path": str(raw_example.image.path),
                     "declared_width": raw_example.image.width,
                     "declared_height": raw_example.image.height,
+                    "decoded_width": decoded_width,
+                    "decoded_height": decoded_height,
+                },
+            )
+        return image.convert("RGB")
+
+
+def _load_rgb_image_from_plan(plan: QwenNoResizeImagePlan) -> Image.Image:
+    with Image.open(plan.image_path) as image:
+        decoded_width, decoded_height = image.size
+        if (decoded_width, decoded_height) != (plan.width, plan.height):
+            raise EncodingContractError(
+                "decoded image dimensions must match Qwen image plan metadata",
+                code="qwen.image_dimension_mismatch",
+                context={
+                    "example_id": plan.example_id,
+                    "image_path": str(plan.image_path),
+                    "declared_width": plan.width,
+                    "declared_height": plan.height,
                     "decoded_width": decoded_width,
                     "decoded_height": decoded_height,
                 },
@@ -337,4 +424,7 @@ __all__ = [
     "QwenNoResizeImagePlan",
     "build_no_resize_image_plan",
     "encode_qwen_image",
+    "attach_qwen_image_processor",
+    "materialize_qwen_image_encoding",
+    "plan_qwen_image",
 ]

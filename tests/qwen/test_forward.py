@@ -207,9 +207,11 @@ def test_real_smoke_forward_inputs_use_encoded_visual_payloads_without_model_loa
                 components=components,
                 processor_config=resolved.config.model.processor,
                 global_max_length=resolved.config.packing.global_max_length,
+                materialize_image_pixels=False,
             )
         )
     examples = tuple(examples)
+    assert all(example.image_encoding.pixel_values is None for example in examples)
     pack = plan_packed_sequences(examples, global_max_length=12_000)[0]
     positions = build_qwen_position_inputs(pack, examples)
 

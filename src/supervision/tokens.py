@@ -228,6 +228,18 @@ def build_token_sequence_from_packed_supervision(
     )
 
 
+def index_token_atoms_by_pack(
+    supervision: PackedSupervision | Sequence[TokenAtom] | Sequence[PackedTokenAtom],
+) -> dict[int, tuple[TokenAtom, ...]]:
+    atoms_by_pack: dict[int, list[TokenAtom]] = {}
+    for atom in _iter_token_atoms(supervision):
+        atoms_by_pack.setdefault(atom.pack_index, []).append(atom)
+    return {
+        pack_index: tuple(sorted(atoms, key=lambda item: item.target_position))
+        for pack_index, atoms in atoms_by_pack.items()
+    }
+
+
 def dense_labels_from_token_sequence(
     sequence: TokenSequence,
     *,
@@ -318,6 +330,28 @@ def _coerce_atoms(
                 },
             )
     return tuple(sorted(atoms, key=lambda item: item.target_position))
+
+
+def _iter_token_atoms(
+    supervision: PackedSupervision | Sequence[TokenAtom] | Sequence[PackedTokenAtom],
+) -> Iterable[TokenAtom]:
+    raw_atoms: Iterable[Any]
+    if isinstance(supervision, PackedSupervision):
+        raw_atoms = supervision.atoms
+    else:
+        raw_atoms = supervision
+
+    for atom in raw_atoms:
+        if isinstance(atom, PackedTokenAtom):
+            yield TokenAtom.from_packed(atom)
+        elif isinstance(atom, TokenAtom):
+            yield atom
+        else:
+            raise LossContractError(
+                "TokenSequence atoms must be TokenAtom or PackedTokenAtom records",
+                code="supervision.atom_type",
+                context={"value_type": type(atom).__name__},
+            )
 
 
 def _build_spans(atoms: tuple[TokenAtom, ...]) -> tuple[TokenSpan, ...]:
@@ -520,5 +554,6 @@ __all__ = [
     "TokenSpan",
     "build_token_sequence_from_packed_supervision",
     "dense_labels_from_token_sequence",
+    "index_token_atoms_by_pack",
     "validate_dense_labels_match_token_sequence",
 ]
