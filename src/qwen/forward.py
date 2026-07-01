@@ -14,6 +14,7 @@ from src.qwen.fa2 import (
     Fa2VarlenBranchProof,
     Fa2VarlenPlan,
     build_fa2_varlen_plan,
+    capture_fa2_varlen_branch,
     validate_fa2_varlen_branch_evidence,
     validate_fa2_varlen_plan_matches_pack,
 )
@@ -287,6 +288,8 @@ def run_qwen_forward(
     extra_model_kwargs: Mapping[str, Any] | None = None,
     fa2_branch_evidence: Mapping[str, Any] | None = None,
     fa2_model_dtype: str | None = None,
+    capture_fa2_branch: bool = False,
+    require_fa2_branch_proof: bool = False,
 ) -> QwenForwardResult:
     if not isinstance(forward_inputs, QwenForwardInputs):
         raise QwenForwardContractError(
@@ -298,7 +301,14 @@ def run_qwen_forward(
     _reject_unsafe_overrides(overrides)
     model_kwargs = forward_inputs.to_model_kwargs()
     model_kwargs.update(overrides)
-    output = model(**model_kwargs)
+    if capture_fa2_branch and fa2_branch_evidence is None:
+        with capture_fa2_varlen_branch() as fa2_capture:
+            output = model(**model_kwargs)
+        fa2_branch_evidence = fa2_capture.evidence_for_plan(
+            forward_inputs.fa2_varlen_plan
+        )
+    else:
+        output = model(**model_kwargs)
     logits = getattr(output, "logits", None)
     if not isinstance(logits, torch.Tensor):
         raise QwenForwardContractError(
@@ -319,6 +329,18 @@ def run_qwen_forward(
             fa2_branch_evidence,
             resolved_attention_implementation="flash_attention_2",
             model_dtype=fa2_model_dtype or _model_dtype(model),
+        )
+    elif require_fa2_branch_proof and forward_inputs.fa2_varlen_plan.branch_evidence_required:
+        raise QwenForwardContractError(
+            "required FA2 branch proof was not observed during Qwen forward",
+            code="qwen.fa2_branch_evidence_missing",
+            context={
+                "pack_index": forward_inputs.pack_index,
+                "segment_boundaries": list(
+                    forward_inputs.fa2_varlen_plan.segment_boundaries
+                ),
+                "capture_fa2_branch": capture_fa2_branch,
+            },
         )
     receipt = _receipt_with_output(
         forward_inputs.receipt,

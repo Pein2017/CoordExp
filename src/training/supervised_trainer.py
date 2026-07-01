@@ -31,6 +31,8 @@ class SupervisedMicroStep:
     extra_model_kwargs: Mapping[str, Any] | None = None
     fa2_branch_evidence: Mapping[str, Any] | None = None
     fa2_model_dtype: str | None = None
+    capture_fa2_branch: bool = False
+    require_fa2_branch_proof: bool = False
 
 
 @dataclass(frozen=True)
@@ -358,6 +360,8 @@ def _default_qwen_forward(model: Any, micro_step: SupervisedMicroStep) -> Any:
         extra_model_kwargs=micro_step.extra_model_kwargs,
         fa2_branch_evidence=micro_step.fa2_branch_evidence,
         fa2_model_dtype=micro_step.fa2_model_dtype,
+        capture_fa2_branch=micro_step.capture_fa2_branch,
+        require_fa2_branch_proof=micro_step.require_fa2_branch_proof,
     )
 
 

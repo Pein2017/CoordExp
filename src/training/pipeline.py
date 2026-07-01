@@ -440,6 +440,8 @@ def _build_micro_steps_for_dataset(
                 },
                 expected_vocab_size=components.token_identity.tokenizer_vocab_size,
                 fa2_model_dtype=config.training.precision,
+                capture_fa2_branch=True,
+                require_fa2_branch_proof=True,
             )
         )
     if not micro_steps:

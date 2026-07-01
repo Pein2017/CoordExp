@@ -9,6 +9,10 @@ from torch import nn
 
 from src.adapters.dora import DoraAdapterSetupReceipt, DoraTargetDiscoveryReceipt
 from src.artifacts import CheckpointWriter, MetricStreamEvent, RunArtifactManager
+from src.artifacts.checkpoint_reload import (
+    build_checkpoint_reload_plan,
+    verify_checkpoint_reload_payloads,
+)
 from src.common.errors import ArtifactContractError
 from src.config.models import RunDirectory
 from src.optim.trainable_surface import FrozenReasonSummary, TrainableSurfaceReceipt
@@ -104,6 +108,44 @@ def test_checkpoint_writer_saves_payloads_metadata_and_final_alias(
     assert manifest["checkpoints"]["aliases"]["final"] == (
         "checkpoints/checkpoint-final.json"
     )
+
+
+def test_checkpoint_reload_plan_verifies_adapter_and_special_token_payloads(
+    tmp_path: Path,
+) -> None:
+    manager = _manager(tmp_path)
+    writer = CheckpointWriter(manager)
+    result = writer.write_checkpoint(
+        planned_step_id=5,
+        model=FakePeftModel(),
+        adapter_receipt=_adapter_receipt(),
+        special_token_result=_special_token_result(),
+        trainable_surface=_trainable_surface(),
+        processor_identity={"name": "qwen3-vl-test-processor"},
+        resolved_config_fingerprint="config-fingerprint",
+        schedule_identity={"resolved_max_steps": 5, "fingerprint": "schedule"},
+        metric_status={"finite_status": "finite", "warning_status": "none"},
+        optimizer_update_status="applied",
+        trigger_reasons=("checkpoint.final",),
+        is_final=True,
+        base_model_path=Path("model_cache/qwen-base"),
+    )
+
+    plan = build_checkpoint_reload_plan(result.final_alias_path)
+    receipt = verify_checkpoint_reload_payloads(plan)
+
+    assert plan.checkpoint_id == "step-5"
+    assert plan.base_model_path == Path("model_cache/qwen-base")
+    assert plan.adapter_dir == manager.run_dir / "checkpoints" / "step-5" / "adapter"
+    assert receipt["adapter"]["enabled"] is True
+    assert receipt["adapter"]["config"]["use_dora"] is True
+    assert receipt["adapter"]["weight_files"] == [
+        "checkpoints/step-5/adapter/adapter_model.safetensors"
+    ]
+    assert receipt["special_token_embeddings"]["enabled"] is True
+    assert receipt["special_token_embeddings"]["tensor_key"] == DEFAULT_EMBED_DELTA_TENSOR_KEY
+    assert receipt["special_token_embeddings"]["tensor_shape"] == [2, 4]
+    assert receipt["reload_contract"] == "base_model_plus_dora_adapter_plus_token_embed_delta"
 
 
 def test_checkpoint_writer_best_acc_top1_ignores_unsafe_candidate(

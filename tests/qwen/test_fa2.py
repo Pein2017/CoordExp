@@ -83,6 +83,20 @@ def test_fa2_branch_evidence_accepts_padding_free_varlen() -> None:
     assert proof.to_artifact_dict()["status"] == "pass"
 
 
+def test_fa2_branch_evidence_accepts_config_precision_spellings() -> None:
+    pack = plan_packed_sequences(_fake_examples(), global_max_length=32)[0]
+    plan = build_fa2_varlen_plan(pack)
+
+    proof = validate_fa2_varlen_branch_evidence(
+        plan,
+        _branch_evidence(plan),
+        resolved_attention_implementation="flash_attention_2",
+        model_dtype="bf16",
+    )
+
+    assert proof.model_dtype == "bf16"
+
+
 @pytest.mark.parametrize(
     ("mutator", "code"),
     [
@@ -219,6 +233,58 @@ def test_qwen_forward_runner_attaches_validated_fa2_branch_evidence() -> None:
     assert artifact["fa2_varlen"]["proof"]["status"] == "pass"
 
 
+def test_qwen_forward_runner_captures_real_lazy_imported_fa2_branch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import transformers.modeling_flash_attention_utils as flash_utils
+
+    examples = _fake_examples()
+    pack = plan_packed_sequences(examples, global_max_length=32)[0]
+    positions = build_qwen_position_inputs(pack, examples)
+    forward_inputs = build_qwen_forward_inputs(pack, examples, positions)
+
+    monkeypatch.setattr(
+        flash_utils,
+        "lazy_import_flash_attention",
+        fake_lazy_import_flash_attention,
+    )
+    result = run_qwen_forward(
+        FakeQwenModelWithFa2Call(vocab_size=17),
+        forward_inputs,
+        expected_vocab_size=17,
+        capture_fa2_branch=True,
+        require_fa2_branch_proof=True,
+    )
+
+    artifact = result.receipt.to_artifact_dict()
+    proof = artifact["fa2_varlen"]["proof"]
+    assert proof["status"] == "pass"
+    assert proof["observed_branch"] == "padding_free_varlen"
+    assert proof["cu_seq_lens_q"] == [0, 11, 20]
+    assert proof["max_length_q"] == 11
+    assert proof["flash_varlen_fn_called"] is True
+    assert proof["flash_fn_called"] is False
+    assert proof["observed_call"]["cu_seqlens_q"] == [0, 11, 20]
+
+
+def test_qwen_forward_runner_can_require_captured_fa2_branch_proof() -> None:
+    examples = _fake_examples()
+    pack = plan_packed_sequences(examples, global_max_length=32)[0]
+    positions = build_qwen_position_inputs(pack, examples)
+    forward_inputs = build_qwen_forward_inputs(pack, examples, positions)
+
+    with pytest.raises(QwenForwardContractError) as exc_info:
+        run_qwen_forward(
+            FakeQwenModel(vocab_size=17),
+            forward_inputs,
+            expected_vocab_size=17,
+            capture_fa2_branch=True,
+            require_fa2_branch_proof=True,
+        )
+
+    assert exc_info.value.code == "qwen.fa2_branch_evidence_missing"
+
+
 def _fake_examples() -> tuple["FakeEncodedExample", ...]:
     return (
         FakeEncodedExample(
@@ -316,3 +382,55 @@ class FakeQwenModel:
                 "rope_deltas": None,
             },
         )()
+
+
+class FakeQwenModelWithFa2Call(FakeQwenModel):
+    def __call__(self, **kwargs: Any) -> Any:
+        import transformers.modeling_flash_attention_utils as flash_utils
+
+        (flash_fn, flash_varlen_fn, _pad_fn, _unpad_fn), _process = (
+            flash_utils.lazy_import_flash_attention("flash_attention_2")
+        )
+        del flash_fn
+        seq_length = int(kwargs["input_ids"].shape[1])
+        q = torch.zeros((seq_length, 1, 4), dtype=torch.bfloat16)
+        flash_varlen_fn(
+            q,
+            q,
+            q,
+            cu_seqlens_q=kwargs["cu_seq_lens_q"],
+            cu_seqlens_k=kwargs["cu_seq_lens_k"],
+            max_seqlen_q=kwargs["max_length_q"],
+            max_seqlen_k=kwargs["max_length_k"],
+        )
+        return super().__call__(**kwargs)
+
+
+def fake_lazy_import_flash_attention(implementation: str | None = None) -> tuple[Any, Any]:
+    del implementation
+
+    def fake_flash_fn(q: torch.Tensor, *_args: Any, **_kwargs: Any) -> torch.Tensor:
+        return q
+
+    def fake_flash_varlen_fn(
+        q: torch.Tensor,
+        _k: torch.Tensor,
+        _v: torch.Tensor,
+        *_args: Any,
+        **_kwargs: Any,
+    ) -> torch.Tensor:
+        return q
+
+    def fake_pad_fn(q: torch.Tensor, *_args: Any, **_kwargs: Any) -> torch.Tensor:
+        return q
+
+    def fake_unpad_fn(q: torch.Tensor, *_args: Any, **_kwargs: Any) -> torch.Tensor:
+        return q
+
+    def fake_process_flash_kwargs_fn(**_kwargs: Any) -> dict[str, Any]:
+        return {}
+
+    return (
+        (fake_flash_fn, fake_flash_varlen_fn, fake_pad_fn, fake_unpad_fn),
+        fake_process_flash_kwargs_fn,
+    )

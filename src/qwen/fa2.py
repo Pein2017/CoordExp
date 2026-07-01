@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 
@@ -91,6 +92,115 @@ class Fa2VarlenBranchProof:
             "unpad_fn_called": self.unpad_fn_called,
             "observed_call": _artifact_value(self.observed_call),
         }
+
+
+@dataclass
+class Fa2VarlenBranchCapture:
+    observed: dict[str, Any]
+
+    def evidence_for_plan(self, plan: Fa2VarlenPlan) -> dict[str, Any] | None:
+        matching_calls = [
+            call
+            for call in self.observed.get("varlen_calls", ())
+            if tuple(call.get("cu_seqlens_q") or ()) == plan.segment_boundaries
+            and tuple(call.get("cu_seqlens_k") or ()) == plan.segment_boundaries
+            and call.get("max_seqlen_q") == plan.max_length_q
+            and call.get("max_seqlen_k") == plan.max_length_k
+        ]
+        if not matching_calls:
+            return None
+        return {
+            "observed_branch": PADDING_FREE_VARLEN_BRANCH,
+            "attention_mask": None,
+            "cu_seq_lens_q": plan.segment_boundaries,
+            "cu_seq_lens_k": plan.segment_boundaries,
+            "max_length_q": plan.max_length_q,
+            "max_length_k": plan.max_length_k,
+            "branch_evidence_from_explicit_varlen_kwargs": True,
+            "flash_fn_called": bool(self.observed.get("flash_fn_called", False)),
+            "flash_varlen_fn_called": bool(
+                self.observed.get("flash_varlen_fn_called", False)
+            ),
+            "pad_fn_called": bool(self.observed.get("pad_fn_called", False)),
+            "unpad_fn_called": bool(self.observed.get("unpad_fn_called", False)),
+            "observed_call": matching_calls[0],
+            "matching_text_varlen_call_count": len(matching_calls),
+            "total_varlen_call_count": len(self.observed.get("varlen_calls", ())),
+            "lazy_import_implementations": list(
+                self.observed.get("lazy_import_implementations", ())
+            ),
+        }
+
+
+@contextmanager
+def capture_fa2_varlen_branch() -> Any:
+    try:
+        import transformers.modeling_flash_attention_utils as flash_utils
+    except ImportError as exc:
+        raise QwenForwardContractError(
+            "FA2 branch capture requires transformers flash-attention utilities",
+            code="qwen.fa2_capture_unavailable",
+            cause=exc,
+        ) from exc
+
+    observed: dict[str, Any] = {
+        "flash_fn_called": False,
+        "flash_varlen_fn_called": False,
+        "pad_fn_called": False,
+        "unpad_fn_called": False,
+        "lazy_import_implementations": [],
+        "varlen_calls": [],
+        "ordinary_flash_calls": [],
+    }
+    original_lazy_import = flash_utils.lazy_import_flash_attention
+
+    def capturing_lazy_import_flash_attention(
+        implementation: str | None = None,
+        *args: Any,
+        **kwargs: Any,
+    ) -> tuple[Any, Any]:
+        observed["lazy_import_implementations"].append(implementation)
+        (flash_fn, flash_varlen_fn, pad_fn, unpad_fn), process_flash_kwargs_fn = (
+            original_lazy_import(implementation, *args, **kwargs)
+        )
+
+        def wrapped_flash_fn(*flash_args: Any, **flash_kwargs: Any) -> Any:
+            observed["flash_fn_called"] = True
+            observed["ordinary_flash_calls"].append(
+                _ordinary_flash_call_artifact(flash_args, flash_kwargs)
+            )
+            return flash_fn(*flash_args, **flash_kwargs)
+
+        def wrapped_flash_varlen_fn(*flash_args: Any, **flash_kwargs: Any) -> Any:
+            observed["flash_varlen_fn_called"] = True
+            observed["varlen_calls"].append(
+                _varlen_flash_call_artifact(flash_args, flash_kwargs)
+            )
+            return flash_varlen_fn(*flash_args, **flash_kwargs)
+
+        def wrapped_pad_fn(*pad_args: Any, **pad_kwargs: Any) -> Any:
+            observed["pad_fn_called"] = True
+            return pad_fn(*pad_args, **pad_kwargs)
+
+        def wrapped_unpad_fn(*unpad_args: Any, **unpad_kwargs: Any) -> Any:
+            observed["unpad_fn_called"] = True
+            return unpad_fn(*unpad_args, **unpad_kwargs)
+
+        return (
+            (
+                wrapped_flash_fn,
+                wrapped_flash_varlen_fn,
+                wrapped_pad_fn,
+                wrapped_unpad_fn,
+            ),
+            process_flash_kwargs_fn,
+        )
+
+    flash_utils.lazy_import_flash_attention = capturing_lazy_import_flash_attention
+    try:
+        yield Fa2VarlenBranchCapture(observed)
+    finally:
+        flash_utils.lazy_import_flash_attention = original_lazy_import
 
 
 def build_fa2_varlen_plan(
@@ -228,7 +338,14 @@ def validate_fa2_varlen_branch_evidence(
             code="qwen.fa2_attention_implementation",
             context={"resolved_attention_implementation": resolved_attention_implementation},
         )
-    if model_dtype not in {"torch.bfloat16", "torch.float16", "bfloat16", "float16"}:
+    if model_dtype not in {
+        "torch.bfloat16",
+        "torch.float16",
+        "bfloat16",
+        "float16",
+        "bf16",
+        "fp16",
+    }:
         raise QwenForwardContractError(
             "FA2 branch proof requires bf16 or fp16 model dtype",
             code="qwen.fa2_dtype",
@@ -409,6 +526,75 @@ def _tensor_int_list(value: torch.Tensor) -> list[int]:
     return [int(item) for item in value.detach().cpu().tolist()]
 
 
+def _tensor_int_list_or_none(value: Any) -> list[int] | None:
+    if value is None:
+        return None
+    if isinstance(value, torch.Tensor):
+        return _tensor_int_list(value)
+    try:
+        return [int(item) for item in value]
+    except (TypeError, ValueError):
+        return None
+
+
+def _shape_dtype_device(value: Any) -> dict[str, Any]:
+    if not isinstance(value, torch.Tensor):
+        return {"type": type(value).__name__}
+    return {
+        "shape": [int(item) for item in value.shape],
+        "dtype": str(value.dtype),
+        "device": str(value.device),
+    }
+
+
+def _varlen_flash_call_artifact(
+    args: tuple[Any, ...],
+    kwargs: Mapping[str, Any],
+) -> dict[str, Any]:
+    cu_seqlens_q = kwargs.get("cu_seqlens_q")
+    cu_seqlens_k = kwargs.get("cu_seqlens_k")
+    max_seqlen_q = kwargs.get("max_seqlen_q")
+    max_seqlen_k = kwargs.get("max_seqlen_k")
+    if cu_seqlens_q is None and len(args) > 3:
+        cu_seqlens_q = args[3]
+    if cu_seqlens_k is None and len(args) > 4:
+        cu_seqlens_k = args[4]
+    if max_seqlen_q is None and len(args) > 5:
+        max_seqlen_q = args[5]
+    if max_seqlen_k is None and len(args) > 6:
+        max_seqlen_k = args[6]
+    return {
+        "q": _shape_dtype_device(args[0] if len(args) > 0 else None),
+        "k": _shape_dtype_device(args[1] if len(args) > 1 else None),
+        "v": _shape_dtype_device(args[2] if len(args) > 2 else None),
+        "cu_seqlens_q": _tensor_int_list_or_none(cu_seqlens_q),
+        "cu_seqlens_k": _tensor_int_list_or_none(cu_seqlens_k),
+        "max_seqlen_q": None if max_seqlen_q is None else int(max_seqlen_q),
+        "max_seqlen_k": None if max_seqlen_k is None else int(max_seqlen_k),
+        "flash_kwargs": {
+            str(key): _artifact_value(value)
+            for key, value in kwargs.items()
+            if key
+            not in {
+                "cu_seqlens_q",
+                "cu_seqlens_k",
+                "max_seqlen_q",
+                "max_seqlen_k",
+            }
+        },
+    }
+
+
+def _ordinary_flash_call_artifact(
+    args: tuple[Any, ...],
+    kwargs: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "q": _shape_dtype_device(args[0] if args else None),
+        "flash_kwargs": {str(key): _artifact_value(value) for key, value in kwargs.items()},
+    }
+
+
 def _int_tuple(value: Any, *, code: str) -> tuple[int, ...]:
     try:
         return tuple(int(item) for item in value)
@@ -445,9 +631,11 @@ def _artifact_value(value: Any) -> Any:
 
 __all__ = [
     "PADDING_FREE_VARLEN_BRANCH",
+    "Fa2VarlenBranchCapture",
     "Fa2VarlenBranchProof",
     "Fa2VarlenPlan",
     "build_fa2_varlen_plan",
+    "capture_fa2_varlen_branch",
     "validate_fa2_varlen_branch_evidence",
     "validate_fa2_varlen_plan_matches_pack",
 ]
