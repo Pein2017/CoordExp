@@ -284,6 +284,7 @@ def test_multi_rank_run_suffix_keeps_rank_dirs_under_one_launch_identity(
     monkeypatch.setenv("RANK", "1")
     monkeypatch.setenv("LOCAL_RANK", "1")
     monkeypatch.setenv("WORLD_SIZE", "8")
+    (tmp_path / "artifacts" / "fake-prod-launch-123").mkdir()
 
     run_directory = _resolve_rank_local_run_directory(config, cwd=tmp_path)
 

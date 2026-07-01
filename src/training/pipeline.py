@@ -29,6 +29,7 @@ from src.artifacts import MetricStreamEvent, RunArtifactManager
 from src.artifacts.checkpoints import CheckpointWriter
 from src.common.errors import RuntimeContractError
 from src.config.loader import load_train_config
+from src.config.models import RunDirectory
 from src.config.paths import resolve_run_directory
 from src.config.resolve import resolve_qwen_runtime_controls
 from src.data import load_raw_examples
@@ -862,14 +863,17 @@ def _resolve_rank_local_run_directory(config: Any, *, cwd: Path) -> Any:
             timestamp=_multi_rank_launch_suffix() if world_size > 1 else None,
         )
         if world_size > 1:
-            run_directory = _apply_explicit_multi_rank_launch_suffix(run_directory)
+            run_directory = _apply_explicit_multi_rank_launch_suffix(
+                run_directory,
+                allow_existing=False,
+        )
         return run_directory
-    run_directory = resolve_run_directory(
-        config,
-        cwd=cwd,
-        timestamp=_multi_rank_launch_suffix(),
+    suffix = _multi_rank_launch_suffix()
+    run_directory = (
+        _explicit_multi_rank_base_run_directory(config, cwd=cwd, suffix=suffix)
+        if suffix is not None
+        else resolve_run_directory(config, cwd=cwd, timestamp=None)
     )
-    run_directory = _apply_explicit_multi_rank_launch_suffix(run_directory)
     rank_suffix = f"rank{rank}"
     if run_directory.run_dir.name.endswith(f"-{rank_suffix}"):
         return run_directory
@@ -894,7 +898,47 @@ def _resolve_rank_local_run_directory(config: Any, *, cwd: Path) -> Any:
     return replace(run_directory, run_dir=rank_run_dir.resolve())
 
 
-def _apply_explicit_multi_rank_launch_suffix(run_directory: Any) -> Any:
+def _explicit_multi_rank_base_run_directory(
+    config: Any,
+    *,
+    cwd: Path,
+    suffix: str,
+) -> RunDirectory:
+    root_base = Path(config.run.artifact_root)
+    root = root_base if root_base.is_absolute() else cwd / root_base
+    root = root.resolve()
+    run_dir_name = config.run.output_dir or config.run.name
+    run_dir_path = Path(run_dir_name)
+    if run_dir_path.is_absolute() or ".." in run_dir_path.parts:
+        raise RuntimeContractError(
+            "run.output_dir must stay under run.artifact_root",
+            code="runtime.run_output_dir_escape",
+            context={"output_dir": run_dir_name},
+        )
+    base_run_dir = (root / run_dir_path).resolve()
+    try:
+        base_run_dir.relative_to(root)
+    except ValueError as exc:
+        raise RuntimeContractError(
+            "run output directory escaped artifact root",
+            code="runtime.run_output_dir_escape",
+            context={"artifact_root": str(root), "run_dir": str(base_run_dir)},
+            cause=exc,
+        ) from exc
+    launch_run_dir = base_run_dir.with_name(f"{base_run_dir.name}-{suffix}")
+    return RunDirectory(
+        run_name=config.run.name,
+        artifact_root=root,
+        run_dir=launch_run_dir.resolve(),
+        collision_policy=config.run.collision_policy,
+    )
+
+
+def _apply_explicit_multi_rank_launch_suffix(
+    run_directory: Any,
+    *,
+    allow_existing: bool,
+) -> Any:
     suffix = _multi_rank_launch_suffix()
     if suffix is None:
         return run_directory
@@ -903,6 +947,8 @@ def _apply_explicit_multi_rank_launch_suffix(run_directory: Any) -> Any:
         return run_directory
     suffixed_run_dir = run_dir.with_name(f"{run_dir.name}-{suffix}")
     if suffixed_run_dir.exists():
+        if allow_existing:
+            return replace(run_directory, run_dir=suffixed_run_dir.resolve())
         raise RuntimeContractError(
             "explicit multi-rank run output directory already exists",
             code="runtime.multirank_run_dir_exists",
