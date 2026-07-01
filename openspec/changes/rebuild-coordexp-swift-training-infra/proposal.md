@@ -28,8 +28,8 @@ before adding convenience abstractions or future rollout surfaces.
   Tokenization -> Visual Processing -> Model Construction -> Forward Pass ->
   Loss Computation -> Backward Pass -> Distributed Training -> Checkpoint
   Management -> Inference/Eval.
-- Require dLoRA setup definition/source study before any `adapter.type: dlora`
-  config validates, then use dLoRA as the first adapter-enabled smoke path.
+- Require DoRA setup definition/source study before any `adapter.type: dora`
+  config validates, then use DoRA as the first adapter-enabled smoke path.
 - Require a special-token embedding mechanism study before implementation,
   comparing custom Qwen wrappers against PEFT `TrainableTokens` and LoRA
   `trainable_token_indices`, while preserving compact checkpoint payloads and
@@ -38,6 +38,12 @@ before adding convenience abstractions or future rollout surfaces.
   with real `packing.global_max_length`, sample-limited data, scheduled
   `eval.forward`, metrics, checkpoint metadata, and
   `checkpoints/checkpoint-final.json`.
+- Require packed Qwen correctness gates for no-resize processor behavior,
+  per-segment 4-row MRoPE position ids, FlashAttention 2 varlen branch evidence,
+  and same-segment causal loss mapping.
+- Define the protected V1 objective as full-vocabulary `BaseTokenCE` plus
+  group-mass `TokenTypeGateLoss`, both normalized with planned-step
+  `segment_balanced` semantics.
 - Keep rollout, hidden-state losses, persistent caches, richer inference/eval,
   DeepSpeed production support, and old production coordinate-soft-CE objective
   parity as future capabilities unless explicitly promoted by later changes.
@@ -59,7 +65,7 @@ before adding convenience abstractions or future rollout surfaces.
   `TokenSequence`, `LossContext`, protected `BaseTokenCE`,
   `TokenTypeGateLoss`, planned-step `LossNormalizers`, finite gates, metrics,
   and future auxiliary-loss seams.
-- `coordexp-swift-adapters-embeddings-optim`: dLoRA/LoRA source-study gates,
+- `coordexp-swift-adapters-embeddings-optim`: DoRA/LoRA source-study gates,
   adapter target discovery, special-token embedding deltas, explicit LR/WD
   groups, optimizer construction, and trainable-parameter receipts.
 - `coordexp-swift-training-artifacts`: `SupervisedTrainer`, `TrainRuntime`,

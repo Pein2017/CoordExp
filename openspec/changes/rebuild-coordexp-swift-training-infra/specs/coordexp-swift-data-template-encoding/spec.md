@@ -53,6 +53,8 @@ Future geometric sorting MUST use a deliberately approved name such as
 
 - **WHEN** `object_ordering: random` is configured
 - **THEN** the renderer MUST use a run-controlled deterministic seed
+- **AND** the seed source MUST be present in the resolved config or run
+  manifest
 - **AND** the realized order MUST be reproducible from run artifacts.
 
 ### Requirement: Assistant Supervision Boundary
@@ -114,15 +116,26 @@ as `<|object_start|>` and `<|object_end|>` MUST fail.
 - **WHEN** a template or config references `<|object_start|>`
 - **THEN** validation MUST reject it as a non-canonical alias.
 
+#### Scenario: Assistant terminal suffix preflight
+
+- **WHEN** Qwen setup validates tokenizer identity
+- **THEN** it MUST assert that tokenizing `<|im_end|>\n` without extra special
+  tokens yields `<|im_end|>` followed by a separate newline token
+- **AND** setup MUST fail if the tokenizer merges or rewrites that boundary.
+
 ### Requirement: No-Resize Image Encoding
 
 Qwen encoding SHALL use explicit no-resize image processing. The processor call
 path MUST use `do_resize=False`, and any local image-grid computation MUST be
-proven equivalent to the actual no-resize processor output before it can be
-used for pack-cost planning. V1 no-resize validation MUST derive admissible
+proven equivalent to the actual no-resize processor output on the smoke fixture
+before it can be used for pack-cost planning. Equivalence MUST mean exact
+agreement with processor-produced `image_grid_thw` and merged visual-token
+count for the fixture image. V1 no-resize validation MUST derive admissible
 spatial dimensions from the loaded processor's `patch_size` and `merge_size`,
-or from a source-study-proven equivalent upstream rule. For the common Qwen
-processor path, height and width MUST be divisible by
+or from a source-study-proven equivalent upstream rule. The implementation MUST
+NOT hardcode Qwen2.5/Qwen3 patch folklore such as factor 14 or 28 when the
+loaded processor reports different values. For the common Qwen processor path,
+height and width MUST be divisible by
 `patch_size * merge_size` before the image is accepted. The resolved config
 MUST also provide explicit no-resize limits for maximum raw pixels and maximum
 merged visual tokens, and the Qwen setup or encoding receipt MUST record the

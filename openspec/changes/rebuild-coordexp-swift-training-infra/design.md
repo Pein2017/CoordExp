@@ -30,11 +30,11 @@ Goals:
   training runtime, artifacts, metrics, checkpoints, and forward eval;
 - keep the entire teacher-forced training flow readable inside this repository;
 - require source-study gates where upstream behavior is delicate, especially
-  dLoRA, special-token embeddings, Qwen3-VL processor behavior, MRoPE, and
+  DoRA, special-token embeddings, Qwen3-VL processor behavior, MRoPE, and
   FlashAttention varlen boundaries;
 - preserve a strict packed single-sequence training path with no padding;
 - make the first vertical smoke a real five-planned-step Qwen3-VL train/eval
-  acceptance path using the intended dLoRA adapter surface after its source
+  acceptance path using the intended DoRA adapter surface after its source
   study passes.
 
 Non-goals:
@@ -66,14 +66,28 @@ package layer. Module ownership follows the proposal docs: `src/data`,
 
 Training is config-first. The strict resolved config is the public contract.
 Config inheritance is allowed, but the run artifact preserves the final
-resolved YAML and JSON as self-contained evidence. Public configs specify
-`training.effective_batch_size` and either production `epochs` or debug
-`max_steps`; runtime derives the accumulation count from world size and writes
-that value only into runtime receipts.
+resolved YAML and JSON as self-contained evidence. Inheritance is intentionally
+simple: one top-level parent per file, parent-first dictionary merge, list
+replacement, no null deletion, file-local path origins, and cycle failures with
+the full chain. Public configs specify `training.effective_batch_size` and
+either production `epochs` or debug `max_steps`; runtime derives the
+accumulation count from world size and writes that value only into runtime
+receipts.
 
 Planned steps are the schedule source of truth. Eval, checkpoint, logging, and
 final events are resolved before training and are not retimed by recoverable
 warnings or skipped unsafe optimizer updates.
+Epoch-led runs use deterministic tail-fill for incomplete final
+effective-batch windows. V1 never silently drops final packs and never performs
+a smaller partial final optimizer update.
+
+Packed training pins Qwen runtime controls up front: FlashAttention 2 is the
+normal attention implementation, bf16/fp16 is required for that path, and setup
+estimates worst-case full-sequence logits memory from
+`packing.global_max_length`, vocab size, and dtype before model mutation. The
+default forward may materialize only selected supervised rows when it records
+the physical position map consumed by `LossContext`; this does not relax the
+preflight budget guard.
 
 `TrainRuntime` is Accelerate-first and owns backend mechanics. DeepSpeed
 configuration may be schema-accepted and conflict-validated in V1, but
@@ -97,7 +111,9 @@ The assistant target supervises answer content plus `<|im_end|>`. The following
 newline in the Qwen `<|im_end|>\n` convention is ignored text. The first
 supervised token is exactly the first assistant-answer token after the assistant
 start boundary. Prompt, user, system, role/header, image placeholder, and other
-control tokens are not supervised.
+control tokens are not supervised. Qwen setup must preflight that
+`<|im_end|>\n` tokenizes as the `<|im_end|>` transition token followed by a
+separate newline token.
 
 Training uses no-resize image processing. The actual call path must use
 `do_resize=False`, and packed cost uses actual no-resize `image_grid_thw` or a
@@ -121,6 +137,13 @@ and uses Transformers for model internals, visual tower, visual replacement, and
 LLM tower execution. CoordExp does not pass `inputs_embeds` in V1 and does not
 use the model-side CE path.
 
+Packed Qwen position inputs are deliberately segment-local. For packed
+training, CoordExp builds the 4-row HF Qwen boundary shape `[text,t,h,w]` from
+per-segment MRoPE computation, then concatenates the rows. Text-position reset
+points must match the `PackedSegment` table and FlashAttention cumulative
+sequence lengths; running an upstream helper once over the whole packed row is
+not sufficient because it can produce continuous positions across segments.
+
 FlashAttention varlen behavior must be proven with explicit varlen inputs such
 as cumulative sequence lengths and max lengths. A 2D zero mask over a packed row
 is not sufficient evidence of segment isolation.
@@ -134,13 +157,19 @@ context owns causal shifting from `target_position` to `logits_position`.
 The protected default losses are `BaseTokenCE` and `TokenTypeGateLoss`.
 Both use selected logits upcast to fp32 for objective math. Base CE remains
 full-vocabulary CE. Gate loss uses resolved vocabulary groups to penalize
-token-type illegality for `desc_text`, `schema`, `coordinate`, and `eos`. These
-V1 protected losses are the new baseline objective, not a parity claim for
-archived coordinate soft-CE or object/role-balanced objective semantics.
+token-type illegality for `desc_text`, `schema`, `coordinate`, and `eos`. The
+gate formula is group-mass CE:
+`logsumexp(all_logits) - logsumexp(allowed_group_logits)`. Every V1
+`TokenAtom` must resolve to exactly one token type before protected losses run.
+These V1 protected losses are the new baseline objective, not a parity claim
+for archived coordinate soft-CE or object/role-balanced objective semantics.
 
-Loss normalization is planned-step-window based and length invariant. The loss
-runner must avoid backend double scaling and must emit weighted per-term loss
-metrics plus top-level `acc_top1` and `acc_top5`.
+Loss normalization is planned-step-window based and length invariant. The
+protected V1 token-wise reducer is `segment_balanced`: mean over eligible atoms
+within each segment, then mean over eligible segments across the complete
+planned optimizer-step window. The loss runner must avoid backend double
+scaling and must emit weighted per-term loss metrics plus top-level `acc_top1`
+and `acc_top5`.
 
 Finite handling is split into a pre-backward scalar finite gate and a
 post-backward gradient/overflow gate. Recoverable bad examples or warnings may
@@ -149,9 +178,10 @@ corrupted optimizer update.
 
 ### Adapters, Embeddings, And Optimizer
 
-The first adapter-enabled smoke uses dLoRA, but `adapter.type: dlora` must not
-validate until dLoRA has been defined against DoRA/`use_dora` or a
-CoordExp-owned mechanism and a minimal round-trip probe passes.
+The first adapter-enabled smoke uses DoRA, but `adapter.type: dora` must not
+validate until the PEFT DoRA/`use_dora` source study and a minimal round-trip
+probe pass. The source study selected `dora` as the public name; `dlora` is not
+a V1 schema value.
 
 Special-token embeddings are fully trainable selected-token deltas, not LoRA on
 the embedding/head. The trainable group includes the four schema wrappers and
@@ -162,6 +192,8 @@ before coding.
 Optimizer groups are explicit. Every trainable parameter must match exactly one
 approved LR/WD group or fail fast. Qwen tower groups include vision, aligner,
 language, adapter parameters, and selected special-token embedding deltas.
+In V1, vision/aligner/language are semantic adapter-target namespaces, not
+permission to fine-tune full base-model parameters.
 
 ### Trainer, Artifacts, And Smoke
 
@@ -177,11 +209,17 @@ aliases, and eval.forward summaries. The first implementation must preserve
 minimum key sets for the run manifest, metric events, eval.forward summaries,
 and checkpoint metadata. Checkpoint names use unpadded planned-step ids and
 `checkpoints/checkpoint-final.json` must always exist after a completed run.
+`eval.forward` requires an explicit eval data source or explicit smoke-fixture
+eval binding; train JSONL is not reused implicitly.
 
 The first vertical smoke is the acceptance target: real
 `packing.global_max_length`, sample-limited permanent fixture, five planned
 steps, two forward-eval steps, protected losses, optimizer boundary, metrics,
 checkpoint metadata, `resolved_step_schedule.json`, and final checkpoint alias.
+The fixture contains at least two single-image examples and the single-rank
+smoke uses `training.effective_batch_size: 2` by default so accumulation,
+multi-segment packing, MRoPE resets, FA2 splits, and `segment_balanced`
+denominators are exercised.
 
 ## Risks / Trade-offs
 
@@ -190,7 +228,7 @@ checkpoint metadata, `resolved_step_schedule.json`, and final checkpoint alias.
 - Depending on Transformers internals for Qwen3-VL preserves model correctness,
   but requires careful source-study gates around processor, MRoPE, visual
   replacement, and FlashAttention behavior.
-- dLoRA-first smoke protects the intended production path, but it delays the
+- DoRA-first smoke protects the intended production path, but it delays the
   first adapter-enabled smoke until the source study and probe pass.
 - Strict no-padding packing is efficient and aligned with the user's training
   style, but it makes attention isolation and position-id contracts more
@@ -198,6 +236,9 @@ checkpoint metadata, `resolved_step_schedule.json`, and final checkpoint alias.
 - Compact special-token embedding deltas are simpler to load with base-plus-
   adapter composition than full embedding exports, but the tied-head behavior
   must be proven for Qwen3-VL.
+- The rebuild archives old `src/` as reference-only, but implementation must
+  inventory legacy correctness invariants before discarding its tests as an
+  active safety net.
 
 ## Migration Plan
 
@@ -219,7 +260,7 @@ There are no user-blocking architecture questions for this drafting pass.
 Implementation remains blocked on explicit approval and the following
 source-study gates:
 
-- dLoRA definition/source study and round-trip probe;
+- DoRA definition/source study and round-trip probe;
 - special-token embedding mechanism study;
 - Qwen3-VL no-resize, MRoPE, and FlashAttention varlen source verification;
 - DeepSpeed systems smoke before production support is claimed.

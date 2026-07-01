@@ -81,9 +81,11 @@ supervision ownership -> CoordExp sidecars / loss metadata
 
 - Prefer `attn_implementation: flash_attention_2` through Transformers/ms-swift
   configuration instead of monkeypatching attention modules.
-- Keep full logits for CoordExp token/loss diagnostics unless a separate
-  projection-map contract is implemented. `logits_to_keep` slices hidden states
-  before `lm_head` in Qwen3-VL and changes downstream coordinate systems.
+- Keep full-vocabulary logits for CoordExp token/loss diagnostics. Compact
+  logits over selected physical rows are allowed only when a CoordExp-owned
+  physical-position map is recorded and validated by `LossContext`;
+  `logits_to_keep` slices hidden states before `lm_head` in Qwen3-VL and changes
+  downstream coordinate systems.
 - For LoRA/DoRA targeting, inspect real loaded module names and prefer ms-swift
   knobs such as `target_regex`, `target_parameters`, `modules_to_save`,
   `freeze_llm`, `freeze_vit`, `freeze_aligner`, and `use_dora`.

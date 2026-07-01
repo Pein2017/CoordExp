@@ -249,11 +249,14 @@ artifacts into `training.output_dir` before training starts:
     - `detection_objective`: objective id/variant, template id,
       coordinate surface, bbox format, state weighting, normalization,
       support/balance weights, roll-in source, type-gate mode, and EOS token.
-    - `effective_batch_size` and `effective_batch_size_source`, because
-      `gradient_accumulation_steps` is derived when effective batch is authored.
-    - `actual_global_effective_batch_size`, `world_size`, and
-      `effective_batch_rounding`, because non-divisible launch shapes can require
-      ceil-derived accumulation; the actual global value is the run-time truth.
+    - Legacy compact-detection runs may record `effective_batch_size`,
+      `effective_batch_size_source`, `actual_global_effective_batch_size`,
+      `world_size`, and `effective_batch_rounding`.
+      These fields describe historical launch behavior only.
+      The CoordExp-Swift rebuild uses `training.effective_batch_size` as the
+      public config surface, derives accumulation only into runtime receipts,
+      and fails fast when `effective_batch_size` is not divisible by world size;
+      it must not silently ceil-round or mutate the authored effective batch.
     - `model_source`: best-effort path identity for the base model/cache path.
     - `token_rows.expected_trainable_row_count`; compact token-row runs should
       report the template-derived row count: `1002` for `compact`, `1003` for

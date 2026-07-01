@@ -46,31 +46,37 @@ git status --short --branch
 ```
 
 Expected current OpenSpec apply state before implementation:
-- total tasks: 55
-- completed tasks: 10
-- remaining tasks: 45
+- OpenSpec section 1 planning/review tasks are complete.
+- Source-study, implementation, and smoke tasks remain pending.
+- Treat any unexpected completed source-study or implementation task as a
+  finding rather than adjusting counts by hand.
 
 Audit questions:
 1. Does the roadmap faithfully cover every remaining OpenSpec task from 2.1
    through 10.5?
-2. Does it preserve source-study gates for dLoRA, selected special-token
+2. Does it preserve source-study gates for DoRA, selected special-token
    embeddings, Qwen no-resize/MRoPE behavior, and FlashAttention varlen
    isolation?
-3. Does it prevent accidental implementation of V1 non-goals: rollout training,
+3. Does it encode the accepted correctness invariants: deterministic tail-fill,
+   per-segment 4-row MRoPE reset, FA2 cumulative-sequence split evidence,
+   same-segment causal loss mapping, exact group-mass `TokenTypeGateLoss`, and
+   `segment_balanced` planned-step normalization?
+4. Does it prevent accidental implementation of V1 non-goals: rollout training,
    hidden-state losses, persistent caches, video, multi-image, vLLM, exact
    optimizer/RNG resume, DeepSpeed production support, and old production
    coordinate-soft-CE parity?
-4. Does it avoid over-design while still protecting accuracy and precision?
-5. Are wave boundaries and dependencies correct enough for agentic execution?
-6. Are approval gates clear, especially old `src/` archival and public module
+5. Does it avoid over-design while still protecting accuracy and precision?
+6. Are wave boundaries and dependencies correct enough for agentic execution?
+7. Are approval gates clear, especially old `src` archival and public module
    creation?
-7. Are test/smoke/artifact gates strong enough to prevent subtle integration
+8. Are test/smoke/artifact gates strong enough to prevent subtle integration
    bugs?
-8. Are there missing source files, test files, config files, probe files, or
+9. Are there missing source files, test files, config files, probe files, or
    receipt artifacts that a future implementation agent would need?
-9. Are there contradictions between the roadmap, OpenSpec specs, DECISIONS.md,
+10. Are there contradictions between the roadmap, OpenSpec specs, DECISIONS.md,
    and BLUEPRINT.md?
-10. Is Wave 1 safe to kick off now, or should the roadmap be patched first?
+11. Is Wave 1A read-only source-study work safe to kick off now, or should the
+    roadmap be patched first?
 
 Severity calibration:
 - P0: unsafe to kick off; implementation would likely corrupt the worktree,
@@ -117,7 +123,7 @@ Give the minimal patch set needed before kickoff. If no patch is needed, say
 ## Residual Risk
 
 Use this exact sentence if it remains true:
-Residual risk is now the intended kind: dLoRA definition/probe, special-token embedding mechanism study, smoke fixture materialization, implementation, and the five-step vertical smoke are still pending tasks.
+Residual risk is now the intended kind: DoRA probe, special-token embedding mechanism study, smoke fixture materialization, implementation, and the five-step vertical smoke are still pending tasks.
 
 Rules:
 - Be critical and evidence-backed.

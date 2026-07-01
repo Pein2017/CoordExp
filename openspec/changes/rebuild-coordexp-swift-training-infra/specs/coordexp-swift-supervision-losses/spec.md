@@ -19,23 +19,39 @@ Each `TokenAtom` SHALL represent a supervised target token position, not a
 logit row directly. `LossContext` MUST derive the causal
 `logits_position = target_position - 1` for standard language-model losses and
 MUST reject `target_position == 0` unless a future non-causal objective
-explicitly defines that behavior.
+explicitly defines that behavior. In packed training, `LossContext` MUST also
+validate that `target_position` and its derived `logits_position` are inside
+the same packed segment.
 
 #### Scenario: First physical token selected as target
 
 - **WHEN** a token atom has `target_position == 0`
 - **THEN** standard causal loss-context construction MUST fail.
 
+#### Scenario: First token of later segment selected as target
+
+- **WHEN** a token atom targets the first physical token of a later packed
+  segment
+- **THEN** standard causal loss-context construction MUST fail or the approved
+  supervision builder MUST omit that atom before loss construction
+- **AND** the loss MUST NOT use logits from the previous packed segment.
+
 ### Requirement: Protected Default Losses
 
 V1 training SHALL include both `BaseTokenCE` and `TokenTypeGateLoss` as
 protected default losses. Base CE MUST compute full-vocabulary CE over all
 supervised atoms. Gate loss MUST enforce token-type legality over the same
-supervision surface when a token type is resolved. These protected V1 losses
-MUST be treated as the new baseline training objective, not as parity with
-archived production coordinate soft-CE, object-balanced, or role-balanced
-reduction semantics. Any claim or implementation of those older objective
-semantics MUST be introduced by a later explicit auxiliary-loss contract.
+supervision surface. Every V1 `TokenAtom` MUST resolve to exactly one closed
+token type before protected losses run. `TokenTypeGateLoss` MUST compute
+group-mass CE from fp32 selected logits as
+`logsumexp(all_logits) - logsumexp(allowed_group_logits)`. The first smoke
+resolved config MUST show explicit weights for both protected losses, with
+`base_ce.weight: 1.0` and `token_type_gate.weight: 0.1` unless a later approved
+config profile changes them. These protected V1 losses MUST be treated as the
+new baseline training objective, not as parity with archived production
+coordinate soft-CE, object-balanced, or role-balanced reduction semantics. Any
+claim or implementation of those older objective semantics MUST be introduced
+by a later explicit auxiliary-loss contract.
 
 #### Scenario: Auxiliary-only loss config attempted
 
@@ -50,6 +66,15 @@ semantics MUST be introduced by a later explicit auxiliary-loss contract.
   soft-CE or object/role-balanced objective semantics
 - **THEN** validation or review MUST reject the claim unless a later approved
   auxiliary-loss contract implements and verifies those semantics.
+
+#### Scenario: Gate loss computed for coordinate target
+
+- **WHEN** a coordinate-token atom is selected for `TokenTypeGateLoss`
+- **THEN** the loss MUST compute
+  `logsumexp(all selected logits) - logsumexp(<|coord_0|>..<|coord_999|> logits)`
+  in fp32
+- **AND** the weighted metric value MUST reflect the resolved
+  `token_type_gate.weight`.
 
 ### Requirement: FP32 Objective Logits
 
@@ -86,20 +111,40 @@ and other non-target special tokens from free-text allowance.
 - **THEN** encoding or supervision validation MUST fail before loss
   computation.
 
+#### Scenario: Atom without resolved token type
+
+- **WHEN** a V1 supervised atom lacks a resolved token type
+- **THEN** protected loss setup MUST fail before objective math
+- **AND** the diagnostic MUST include the atom position and span provenance.
+
 ### Requirement: Planned-Step Loss Normalizers
 
 Loss normalizers SHALL be length-invariant over the planned optimizer-step
-window. Per-term denominators MUST be computed from the complete planned-step
-window across accumulation and ranks, not from pack-local means averaged
-afterward. Runtime and loss code MUST avoid backend double scaling.
+window. The V1 protected token-wise reducer MUST be `segment_balanced`: compute
+the mean loss over eligible atoms within each eligible segment, then the mean
+over eligible segments in the complete planned optimizer-step window across
+accumulation and ranks. Per-term denominators MUST be computed from the
+complete planned-step window, not from pack-local means averaged afterward.
+Segments with zero eligible atoms MUST be excluded from that term's denominator.
+Protected losses MUST fail if the complete planned-step window has zero
+eligible segments for the term. Runtime and loss code MUST avoid backend double
+scaling.
 
 #### Scenario: Different token counts across micro-steps
 
 - **WHEN** two micro-steps in one planned optimizer step contain different
   numbers of supervised tokens
 - **THEN** protected loss normalization MUST divide by the planned-step
-  denominator for the selected term
+  `segment_balanced` denominator for the selected term
 - **AND** MUST NOT average two already-normalized micro-step losses equally.
+
+#### Scenario: Segment-balanced differs from token-balanced
+
+- **WHEN** two segments in one planned step have unequal eligible atom counts
+- **THEN** protected token-wise losses MUST weight the two segment means
+  equally under `segment_balanced`
+- **AND** a single global mean over all eligible atoms MAY be emitted only as a
+  diagnostic metric, not as the protected objective.
 
 ### Requirement: Loss Bundle Metrics
 
@@ -140,6 +185,14 @@ rank calls backward.
 - **WHEN** any rank reports unsafe gradient or overflow status
 - **THEN** all ranks MUST use the same global skip/update decision for that
   planned step.
+
+#### Scenario: Zero eligible protected atoms on one rank
+
+- **WHEN** a protected loss has zero eligible atoms on one rank
+- **THEN** runtime MUST include the rank-local eligible count in the same
+  planned-step all-rank denominator/finite decision before any rank raises or
+  calls backward
+- **AND** the global decision MUST avoid distributed deadlock.
 
 ### Requirement: Future Auxiliary Loss Seam
 

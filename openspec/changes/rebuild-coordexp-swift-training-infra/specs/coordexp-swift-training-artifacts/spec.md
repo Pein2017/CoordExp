@@ -53,11 +53,13 @@ config, data, model, adapter, embedding, optimizer, schedule, metric, and
 checkpoint identities. `run_manifest.json` MUST record the absolute `run_dir`,
 run-dir-relative internal artifact links, resolved config paths, resolution
 provenance, `resolved_step_schedule.json`, optimizer group receipts,
-checkpoints, eval outputs, metric files, backend status, and compact subsystem
-receipt links. The minimum manifest top-level keys SHALL include `run_id`,
-`artifact_root`, `run_dir`, `resolved_config`, `resolved_step_schedule`,
-`artifacts`, `receipts`, `metrics`, `checkpoints`, `eval`, and
-`backend_status`.
+checkpoints, eval outputs, metric files, backend status, warnings, and compact
+subsystem receipt links. The minimum manifest top-level sections SHALL include
+`run_id`, `run_name`, `run_dir`, `status`, `created_at`, `updated_at`,
+`configs`, `resolution`, `runtime_identity`, `schedule`, `receipts`,
+`metrics`, `checkpoints`, `eval`, `runtime`, `backend_status`, and `warnings`.
+Random ordering seed sources and dataset identities used by train or
+`eval.forward` MUST be linked from the manifest or resolved config.
 
 #### Scenario: Run starts successfully
 
@@ -65,7 +67,8 @@ receipt links. The minimum manifest top-level keys SHALL include `run_id`,
   directory
 - **THEN** `run_manifest.json` MUST be written with run id, absolute run
   directory, artifact paths, resolved config fingerprint, resolution
-  provenance, and backend status before the first optimizer update.
+  provenance, dataset identities, ordering seed source when applicable, and
+  backend status before the first optimizer update.
 
 ### Requirement: Metric Event Shape
 
@@ -103,7 +106,9 @@ forward-eval run MUST write a compact summary at
 `eval/forward/step-<planned_step_id>.json` with unpadded step ids. Each
 summary SHALL include at least `planned_step_id`, `split`, `trigger_reasons`,
 `example_count`, `pack_count`, `loss_summary`, `metric_summary`, and
-`artifact_links`.
+`artifact_links`. `eval.forward` MUST use an explicit eval data source or an
+explicit smoke-fixture eval binding. Train JSONL MUST NOT be implicitly reused,
+randomly split, or silently sampled for eval.
 
 #### Scenario: Eval at scheduled smoke step
 
@@ -111,6 +116,14 @@ summary SHALL include at least `planned_step_id`, `split`, `trigger_reasons`,
 - **THEN** the summary path MUST be `eval/forward/step-4.json`
 - **AND** the summary MUST record the triggering planned step and trigger
   reason.
+
+#### Scenario: Eval data path omitted
+
+- **WHEN** scheduled `eval.forward` is configured without `data.eval_path` and
+  without an explicit smoke-fixture eval binding
+- **THEN** config or schedule validation MUST fail or disable the scheduled eval
+  before training starts
+- **AND** it MUST NOT fall back to the training JSONL implicitly.
 
 ### Requirement: Checkpoint Writer
 

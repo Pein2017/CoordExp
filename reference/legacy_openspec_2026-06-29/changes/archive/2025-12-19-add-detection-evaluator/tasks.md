@@ -1,0 +1,8 @@
+# Tasks (ordered)
+- [x] Factor shared parsing/coord utilities from `vis_tools/vis_coordexp.py` into `src/eval/` (no behavior change); enforce single-image records, one geometry, coord tokens or ints, warn+drop malformed/degenerate objects; add flag to indicate pixel-space vs normalized coords.
+- [x] Implement GT/pred ingestion, exact-label categories with `unknown` bucket, coord denorm (or clamp-only when pixel-space flag is set) to COCO artifacts (bbox + segm for polygons; lines converted to bbox); scores default to constant 1.0 but pass through an existing `score` field when present; deterministic ordering; add TODO placeholder for polygon GIoU computation.
+- [x] Add offline CLI `scripts/evaluate_detection.py` (and module alias) plus YAML config template under `configs/eval/detection.yaml`; overwrite output dir silently; expose IoU thresholds, segm toggle, output dir, overlay toggle/count (default off), temperature, repetition_penalty, pixel-space flag, unknown policy, and strict-parse.
+- [x] Emit outputs/diagnostics: `metrics.json`, `per_class.csv`, `per_image.json` including raw errors and drop reasons, and optional overlay samples (reuse vis_tools drawing) for top FP/FN.
+- [x] Provide training-time eval hook (usable from `evaluation_step`) that logs metrics to TensorBoard under `eval/*`, plus a standalone checkpoint+JSONL evaluation path; ensure inference/eval requires GPU (reject CPU runs).
+- [x] Create tiny fixture (bbox + polygon) and CI smoke test asserting AP50 > 0, zero invalid/empty counters on fixture, and artifact creation.
+- [x] Document usage in `docs/` (inputs, constant-score assumption, unknown bucketing, GPU requirement, CLI/hook usage, overlays, pixel-space flag) and run `openspec validate add-detection-evaluator --strict`.

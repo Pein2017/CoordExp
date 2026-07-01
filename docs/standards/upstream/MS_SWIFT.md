@@ -80,8 +80,9 @@ Important files:
 - `use_logits_to_keep` is an optimization with semantics. It may be disabled
   for multimodal models depending on Transformers/model support and is not
   implemented under sequence parallel in `Seq2SeqTrainer.prepare_logits_to_keep`.
-- CoordExp should pin `use_logits_to_keep: false` for token/loss debugging and
-  any sidecar remap that expects full logits.
+- CoordExp should not use ms-swift-owned `use_logits_to_keep` for token/loss
+  debugging. CoordExp-swift may use Qwen `logits_to_keep` only through its own
+  explicit physical-position map and `LossContext` coverage validation.
 
 ## Sequence Parallel
 

@@ -38,11 +38,11 @@ rules:
     - Do not add stable CLI flags when a strict config/schema surface is sufficient.
   design:
     - "Describe ownership by module: src/data, src/templates, src/qwen, src/packing, src/supervision, src/losses, src/optim, src/training, src/runtime, src/artifacts, src/metrics, src/eval."
-    - Name source-study gates before implementation for dLoRA and special-token embedding mechanisms.
+    - Name source-study gates before implementation for DoRA and special-token embedding mechanisms.
     - Keep Transformers/PEFT/Accelerate/DeepSpeed interactions explicit and evidence-scoped.
     - Avoid placeholder frameworks, broad registries, empty future modules, and compatibility shims unless a concrete V1 contract requires them.
   tasks:
     - Start from source-study and smoke-fixture tasks before broad implementation.
-    - Include the dLoRA definition/source-study gate before any adapter-enabled dLoRA smoke validates.
+    - Include the DoRA definition/source-study gate before any adapter-enabled DoRA smoke validates.
     - Include verification for real global_max_length, sample-limited data, five planned train steps, two eval.forward steps, metrics, checkpoint metadata, and checkpoint-final.
     - Include residue checks for stale old-OpenSpec and old-src assumptions after each milestone.

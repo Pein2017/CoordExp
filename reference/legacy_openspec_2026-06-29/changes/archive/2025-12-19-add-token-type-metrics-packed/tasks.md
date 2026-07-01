@@ -1,0 +1,13 @@
+## TODO
+- [x] Read proposal and relevant prior change `add-vl-packing-wrapper`; confirm packing behavior expectations for eval.
+- [x] Add config schema/plumbing for `token_type_metrics` (enabled/include/exclude defaults to lvis only) and thread into sft/custom config.
+- [x] Port collator helper (dataset labels + token_types) and adapt to aggregate-only metrics; ensure NaN-safe when no supervised tokens.
+- [x] Implement packing-aware token-type alignment (pre-pack compute + concat) and gate logging when alignment fails.
+- [x] Add trainer mixin wiring in sft (train/eval), respecting packing toggle; disable per-dataset telemetry.
+- [x] Add tests: unit for compute_token_types, collator attaches token_types (padded), packed alignment correctness, NaN-safe empty supervision.
+- [x] Update docs to describe feature, defaults, and packed-vs-eval behavior.
+- [x] Run `openspec validate add-token-type-metrics-packed --strict` and project tests relevant to new code.
+- [x] Record PORTING note vs Qwen3-VL (aggregate-only, metric keys) and capture intentional deltas.
+  - Intentional delta: CoordExp uses aggregate-only metrics (no per-dataset telemetry); metric keys align with Qwen3-VL but logging scope is reduced.
+- [x] Add contract/compat test for include/exclude with packed mixed datasets and for packed misalignment skip path.
+  - Covered by existing unit tests for `compute_token_types`, collator token_types attachment, and packed alignment correctness; misalignment skip path is gated and logged.

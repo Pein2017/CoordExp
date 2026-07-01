@@ -1,0 +1,158 @@
+{
+  "algorithm": "sha256",
+  "fixture": "qwen3_vl_single_image_pack",
+  "images": [
+    {
+      "fixture_path": "images/train2017/000000000030.jpg",
+      "fixture_sha256_expected": "b5888357f78716bb99985638fe0788160c538612d7e67654ee44ceb2ab66de6d",
+      "height": 832,
+      "source_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000000030.jpg",
+      "source_sha256": "b5888357f78716bb99985638fe0788160c538612d7e67654ee44ceb2ab66de6d",
+      "source_stat": {
+        "mode_octal": "0o644",
+        "mtime_ns": 1772980440994111554,
+        "size_bytes": 83558
+      },
+      "width": 1248
+    },
+    {
+      "fixture_path": "images/train2017/000000000036.jpg",
+      "fixture_sha256_expected": "b39e4b3daefd9c7fc9a05e7e24327f27a945db4b2c5a18991aafef98e60fe799",
+      "height": 1152,
+      "source_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000000036.jpg",
+      "source_sha256": "b39e4b3daefd9c7fc9a05e7e24327f27a945db4b2c5a18991aafef98e60fe799",
+      "source_stat": {
+        "mode_octal": "0o644",
+        "mtime_ns": 1772980441046117692,
+        "size_bytes": 173646
+      },
+      "width": 864
+    }
+  ],
+  "selection_rationale": "First two source-order rows in the current train.coord.jsonl scan that are single-image, exactly two-object, distinct-description, description-safe, existing-image, and no-resize-compatible with 32-aligned dimensions.",
+  "source_examples": [
+    {
+      "example_id": "coco2017_train_000000000030__smoke2obj",
+      "fixture_image_path": "images/train2017/000000000030.jpg",
+      "height": 832,
+      "objects": [
+        {
+          "bbox_2d": [
+            "<|coord_319|>",
+            "<|coord_72|>",
+            "<|coord_718|>",
+            "<|coord_830|>"
+          ],
+          "canonical_bbox": [
+            319,
+            72,
+            718,
+            830
+          ],
+          "category_id": 64,
+          "category_name": "potted plant",
+          "coco_ann_id": 291613,
+          "description": "potted plant",
+          "object_id": "291613"
+        },
+        {
+          "bbox_2d": [
+            "<|coord_370|>",
+            "<|coord_364|>",
+            "<|coord_632|>",
+            "<|coord_820|>"
+          ],
+          "canonical_bbox": [
+            370,
+            364,
+            632,
+            820
+          ],
+          "category_id": 86,
+          "category_name": "vase",
+          "coco_ann_id": 1155486,
+          "description": "vase",
+          "object_id": "1155486"
+        }
+      ],
+      "reduction_rule": null,
+      "selected_object_ids": [
+        "291613",
+        "1155486"
+      ],
+      "selection_rationale": "Selected as an exactly two-object row with distinct descriptions; no object reduction was applied.",
+      "source_file_name": "images/train2017/000000000030.jpg",
+      "source_image_id": 30,
+      "source_image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000000030.jpg",
+      "source_row_number": 3,
+      "source_row_sha256": "99055bf8081a1d9fe5b8affeb596e3fecb792652a24ac1154436738c5d212f0b",
+      "width": 1248
+    },
+    {
+      "example_id": "coco2017_train_000000000036__smoke2obj",
+      "fixture_image_path": "images/train2017/000000000036.jpg",
+      "height": 1152,
+      "objects": [
+        {
+          "bbox_2d": [
+            "<|coord_0|>",
+            "<|coord_78|>",
+            "<|coord_952|>",
+            "<|coord_751|>"
+          ],
+          "canonical_bbox": [
+            0,
+            78,
+            952,
+            751
+          ],
+          "category_id": 28,
+          "category_name": "umbrella",
+          "coco_ann_id": 284996,
+          "description": "umbrella",
+          "object_id": "284996"
+        },
+        {
+          "bbox_2d": [
+            "<|coord_348|>",
+            "<|coord_254|>",
+            "<|coord_995|>",
+            "<|coord_982|>"
+          ],
+          "canonical_bbox": [
+            348,
+            254,
+            995,
+            982
+          ],
+          "category_id": 1,
+          "category_name": "person",
+          "coco_ann_id": 453991,
+          "description": "person",
+          "object_id": "453991"
+        }
+      ],
+      "reduction_rule": null,
+      "selected_object_ids": [
+        "284996",
+        "453991"
+      ],
+      "selection_rationale": "Selected as an exactly two-object row with distinct descriptions; no object reduction was applied.",
+      "source_file_name": "images/train2017/000000000036.jpg",
+      "source_image_id": 36,
+      "source_image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000000036.jpg",
+      "source_row_number": 5,
+      "source_row_sha256": "9ef30057ea46f0e341c8d0849460f0cefc03c7a18e2daceac297de82779f9a29",
+      "width": 864
+    }
+  ],
+  "source_format": "coord_jsonl_len12000",
+  "source_jsonl": {
+    "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/train.coord.jsonl",
+    "stat": {
+      "mode_octal": "0o600",
+      "mtime_ns": 1779003457104147766,
+      "size_bytes": 172531224
+    }
+  }
+}

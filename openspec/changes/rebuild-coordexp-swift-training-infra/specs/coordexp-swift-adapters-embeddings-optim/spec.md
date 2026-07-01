@@ -20,20 +20,30 @@ type automatically after source-study gates are satisfied.
 - **THEN** runtime MUST initialize a new adapter from config
 - **AND** MUST record the initialized adapter type and target policy.
 
-### Requirement: DLoRA Source Gate
+### Requirement: DoRA Source Gate
 
-`adapter.type: dlora` SHALL NOT validate until dLoRA has been defined against
-DoRA/`use_dora` or an explicit CoordExp-owned mechanism, and a minimal
+`adapter.type: dora` SHALL NOT validate until DoRA has been defined against
+PEFT `use_dora` and a minimal
 round-trip probe has verified initialization, save, load, and forward
-compatibility. The first adapter-enabled vertical smoke MUST use dLoRA only
-after this gate passes.
+compatibility. The first adapter-enabled vertical smoke MUST use DoRA only
+after this gate passes. The source study selected `dora` as the public config
+name; `adapter.type: dlora` MUST be rejected as an unsupported V1 spelling
+rather than silently mapped to DoRA. The round-trip probe MUST verify
+persistence and reload of DoRA magnitude-vector parameters in addition to LoRA
+A/B weights.
 
-#### Scenario: DLoRA requested before source study
+#### Scenario: DoRA requested before source study
 
-- **WHEN** a config sets `adapter.type: dlora` before the dLoRA source gate is
+- **WHEN** a config sets `adapter.type: dora` before the DoRA source gate is
   marked passed
 - **THEN** config or setup validation MUST fail
-- **AND** the diagnostic MUST name the missing dLoRA source-study/probe gate.
+- **AND** the diagnostic MUST name the missing DoRA source-study/probe gate.
+
+#### Scenario: Legacy dlora spelling requested
+
+- **WHEN** a config sets `adapter.type: dlora`
+- **THEN** config validation MUST fail
+- **AND** the diagnostic MUST explain that V1 uses `adapter.type: dora`.
 
 ### Requirement: Adapter Target Discovery
 
@@ -42,7 +52,7 @@ all_linear` MUST discover supported linear modules in the configured Qwen
 towers while excluding `lm_head` unless a later approved contract changes that
 rule.
 
-#### Scenario: Language-only dLoRA configured
+#### Scenario: Language-only DoRA configured
 
 - **WHEN** adapter tuning targets the language tower with `all_linear`
 - **THEN** setup MUST enumerate matched modules in a receipt
@@ -61,7 +71,11 @@ source study compares custom Qwen wrappers, PEFT `TrainableTokens`, and LoRA
 `trainable_token_indices`. The chosen mechanism MUST support fully trainable
 selected embedding deltas, tied input/output behavior for Qwen3-VL when
 applicable, compact checkpoint payloads, and base-plus-adapter-plus-delta
-composition.
+composition. The source study MUST record whether the chosen checkpoint payload
+stores additive deltas relative to validated base rows or absolute selected row
+values. Loading code MUST assert that recorded semantics and MUST include a
+perturbation round-trip proving selected rows/logit columns reload exactly and
+non-selected rows remain frozen.
 
 #### Scenario: Source study not complete
 
@@ -88,7 +102,9 @@ frozen unless a later approved config explicitly changes the selected group.
 Checkpoints SHALL save selected special-token embedding deltas as compact
 payloads, not as full embedding or full head exports. Inference and later
 training MUST load the base model plus optional adapter plus optional selected
-embedding delta explicitly.
+embedding delta explicitly. "Approved equivalents" MUST be named by the source
+study and MUST still provide compact selected-token payloads, explicit
+additive-or-absolute semantics, tied/untied metadata, and round-trip evidence.
 
 #### Scenario: Checkpoint with embedding deltas
 
@@ -103,7 +119,13 @@ embedding delta explicitly.
 Every trainable parameter SHALL match exactly one explicit optimizer group with
 approved learning rate and weight decay. Supported initial groups MUST include
 vision, aligner, language, adapter parameters, and selected special-token
-embedding deltas. Missing or duplicate group matches MUST fail fast.
+embedding deltas. In V1 these tower names are semantic namespaces for adapter
+targets and receipts; full base-model parameter fine-tuning is unsupported.
+Any trainable base weight outside approved adapter modules and selected
+special-token embedding deltas MUST fail unless a later approved contract adds
+that mode. Optimizer matching MUST be validated against post-adapter parameter
+names, including PEFT wrapper prefixes and DoRA magnitude-vector parameters
+when present. Missing or duplicate group matches MUST fail fast.
 
 #### Scenario: Trainable parameter not matched
 

@@ -1,46 +1,4 @@
-"""Configuration management for YAML-based training setup"""
+"""Configuration package."""
 
-from .loader import ConfigLoader
-from .schema import (
-    TrainingConfig,
-    CustomConfig,
-    DebugConfig,
-    PromptOverrides,
-    VisualKDTargetConfig,
-    VisualKDConfig,
-    DeepSpeedConfig,
-    SaveDelayConfig,
-    TokenEmbeddingsAdapterConfig,
-    DetectionTrainingConfig,
-    DetectionDataConfig,
-    DetectionPromptConfig,
-    DetectionTemplateConfig,
-    DetectionObjectiveConfig,
-    DetectionPackingConfig,
-    DetectionEvaluationConfig,
-    DetectionValidationConfig,
-)
-from .prompts import SYSTEM_PROMPT, USER_PROMPT
-
-__all__ = [
-    "ConfigLoader",
-    "TrainingConfig",
-    "CustomConfig",
-    "DebugConfig",
-    "PromptOverrides",
-    "VisualKDTargetConfig",
-    "VisualKDConfig",
-    "DeepSpeedConfig",
-    "SaveDelayConfig",
-    "TokenEmbeddingsAdapterConfig",
-    "DetectionTrainingConfig",
-    "DetectionDataConfig",
-    "DetectionPromptConfig",
-    "DetectionTemplateConfig",
-    "DetectionObjectiveConfig",
-    "DetectionPackingConfig",
-    "DetectionEvaluationConfig",
-    "DetectionValidationConfig",
-    "SYSTEM_PROMPT",
-    "USER_PROMPT",
-]
+from src.config.loader import load_train_config
+from src.config.writer import write_resolved_config_artifacts

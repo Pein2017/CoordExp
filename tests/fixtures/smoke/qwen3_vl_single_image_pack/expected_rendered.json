@@ -1,0 +1,515 @@
+{
+  "examples": [
+    {
+      "assistant_content_text": "<|object_ref_start|>potted plant<|object_ref_end|><|box_start|><|coord_319|><|coord_72|><|coord_718|><|coord_830|><|box_end|><|object_ref_start|>vase<|object_ref_end|><|box_start|><|coord_370|><|coord_364|><|coord_632|><|coord_820|><|box_end|>",
+      "example_id": "coco2017_train_000000000030__smoke2obj",
+      "messages": [
+        {
+          "content": [
+            {
+              "image": "images/train2017/000000000030.jpg",
+              "type": "image"
+            },
+            {
+              "text": "Describe each requested object with its bounding box.",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "content": [
+            {
+              "text": "<|object_ref_start|>potted plant<|object_ref_end|><|box_start|><|coord_319|><|coord_72|><|coord_718|><|coord_830|><|box_end|><|object_ref_start|>vase<|object_ref_end|><|box_start|><|coord_370|><|coord_364|><|coord_632|><|coord_820|><|box_end|>",
+              "type": "text"
+            }
+          ],
+          "role": "assistant"
+        }
+      ],
+      "object_order_seed": null,
+      "object_order_seed_source": null,
+      "object_ordering": "source_order",
+      "prompt_text": "Describe each requested object with its bounding box.",
+      "realized_object_order": [
+        {
+          "object_id": "291613",
+          "rendered_index": 0,
+          "source_index": 0
+        },
+        {
+          "object_id": "1155486",
+          "rendered_index": 1,
+          "source_index": 1
+        }
+      ],
+      "spans": [
+        {
+          "char_end": 20,
+          "char_start": 0,
+          "field": "object_ref_start",
+          "kind": "schema_token",
+          "object_id": "291613",
+          "source": "object_id:291613",
+          "text": "<|object_ref_start|>"
+        },
+        {
+          "char_end": 32,
+          "char_start": 20,
+          "field": "description",
+          "kind": "description",
+          "object_id": "291613",
+          "source": "object_id:291613",
+          "text": "potted plant"
+        },
+        {
+          "char_end": 50,
+          "char_start": 32,
+          "field": "object_ref_end",
+          "kind": "schema_token",
+          "object_id": "291613",
+          "source": "object_id:291613",
+          "text": "<|object_ref_end|>"
+        },
+        {
+          "char_end": 63,
+          "char_start": 50,
+          "field": "box_start",
+          "kind": "schema_token",
+          "object_id": "291613",
+          "source": "object_id:291613",
+          "text": "<|box_start|>"
+        },
+        {
+          "char_end": 76,
+          "char_start": 63,
+          "field": "bbox[0]",
+          "kind": "coordinate_token",
+          "object_id": "291613",
+          "source": "object_id:291613",
+          "text": "<|coord_319|>"
+        },
+        {
+          "char_end": 88,
+          "char_start": 76,
+          "field": "bbox[1]",
+          "kind": "coordinate_token",
+          "object_id": "291613",
+          "source": "object_id:291613",
+          "text": "<|coord_72|>"
+        },
+        {
+          "char_end": 101,
+          "char_start": 88,
+          "field": "bbox[2]",
+          "kind": "coordinate_token",
+          "object_id": "291613",
+          "source": "object_id:291613",
+          "text": "<|coord_718|>"
+        },
+        {
+          "char_end": 114,
+          "char_start": 101,
+          "field": "bbox[3]",
+          "kind": "coordinate_token",
+          "object_id": "291613",
+          "source": "object_id:291613",
+          "text": "<|coord_830|>"
+        },
+        {
+          "char_end": 125,
+          "char_start": 114,
+          "field": "box_end",
+          "kind": "schema_token",
+          "object_id": "291613",
+          "source": "object_id:291613",
+          "text": "<|box_end|>"
+        },
+        {
+          "char_end": 125,
+          "char_start": 0,
+          "field": null,
+          "kind": "object",
+          "object_id": "291613",
+          "source": "objects[0]",
+          "text": "<|object_ref_start|>potted plant<|object_ref_end|><|box_start|><|coord_319|><|coord_72|><|coord_718|><|coord_830|><|box_end|>"
+        },
+        {
+          "char_end": 145,
+          "char_start": 125,
+          "field": "object_ref_start",
+          "kind": "schema_token",
+          "object_id": "1155486",
+          "source": "object_id:1155486",
+          "text": "<|object_ref_start|>"
+        },
+        {
+          "char_end": 149,
+          "char_start": 145,
+          "field": "description",
+          "kind": "description",
+          "object_id": "1155486",
+          "source": "object_id:1155486",
+          "text": "vase"
+        },
+        {
+          "char_end": 167,
+          "char_start": 149,
+          "field": "object_ref_end",
+          "kind": "schema_token",
+          "object_id": "1155486",
+          "source": "object_id:1155486",
+          "text": "<|object_ref_end|>"
+        },
+        {
+          "char_end": 180,
+          "char_start": 167,
+          "field": "box_start",
+          "kind": "schema_token",
+          "object_id": "1155486",
+          "source": "object_id:1155486",
+          "text": "<|box_start|>"
+        },
+        {
+          "char_end": 193,
+          "char_start": 180,
+          "field": "bbox[0]",
+          "kind": "coordinate_token",
+          "object_id": "1155486",
+          "source": "object_id:1155486",
+          "text": "<|coord_370|>"
+        },
+        {
+          "char_end": 206,
+          "char_start": 193,
+          "field": "bbox[1]",
+          "kind": "coordinate_token",
+          "object_id": "1155486",
+          "source": "object_id:1155486",
+          "text": "<|coord_364|>"
+        },
+        {
+          "char_end": 219,
+          "char_start": 206,
+          "field": "bbox[2]",
+          "kind": "coordinate_token",
+          "object_id": "1155486",
+          "source": "object_id:1155486",
+          "text": "<|coord_632|>"
+        },
+        {
+          "char_end": 232,
+          "char_start": 219,
+          "field": "bbox[3]",
+          "kind": "coordinate_token",
+          "object_id": "1155486",
+          "source": "object_id:1155486",
+          "text": "<|coord_820|>"
+        },
+        {
+          "char_end": 243,
+          "char_start": 232,
+          "field": "box_end",
+          "kind": "schema_token",
+          "object_id": "1155486",
+          "source": "object_id:1155486",
+          "text": "<|box_end|>"
+        },
+        {
+          "char_end": 243,
+          "char_start": 125,
+          "field": null,
+          "kind": "object",
+          "object_id": "1155486",
+          "source": "objects[1]",
+          "text": "<|object_ref_start|>vase<|object_ref_end|><|box_start|><|coord_370|><|coord_364|><|coord_632|><|coord_820|><|box_end|>"
+        },
+        {
+          "char_end": 243,
+          "char_start": 0,
+          "field": null,
+          "kind": "assistant_content",
+          "object_id": null,
+          "source": null,
+          "text": "<|object_ref_start|>potted plant<|object_ref_end|><|box_start|><|coord_319|><|coord_72|><|coord_718|><|coord_830|><|box_end|><|object_ref_start|>vase<|object_ref_end|><|box_start|><|coord_370|><|coord_364|><|coord_632|><|coord_820|><|box_end|>"
+        },
+        {
+          "char_end": 253,
+          "char_start": 243,
+          "field": "assistant_terminal",
+          "kind": "eos_transition",
+          "object_id": null,
+          "source": null,
+          "text": "<|im_end|>"
+        },
+        {
+          "char_end": 254,
+          "char_start": 253,
+          "field": "assistant_terminal_newline",
+          "kind": "ignored_text",
+          "object_id": null,
+          "source": null,
+          "text": "\n"
+        }
+      ],
+      "supervised_response_text": "<|object_ref_start|>potted plant<|object_ref_end|><|box_start|><|coord_319|><|coord_72|><|coord_718|><|coord_830|><|box_end|><|object_ref_start|>vase<|object_ref_end|><|box_start|><|coord_370|><|coord_364|><|coord_632|><|coord_820|><|box_end|><|im_end|>\n",
+      "template_fingerprint": "8feee87f23928d7d934ff9a76f7f464bddc15266a1d6b80f8e4b17e87799c104"
+    },
+    {
+      "assistant_content_text": "<|object_ref_start|>umbrella<|object_ref_end|><|box_start|><|coord_0|><|coord_78|><|coord_952|><|coord_751|><|box_end|><|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_348|><|coord_254|><|coord_995|><|coord_982|><|box_end|>",
+      "example_id": "coco2017_train_000000000036__smoke2obj",
+      "messages": [
+        {
+          "content": [
+            {
+              "image": "images/train2017/000000000036.jpg",
+              "type": "image"
+            },
+            {
+              "text": "Describe each requested object with its bounding box.",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "content": [
+            {
+              "text": "<|object_ref_start|>umbrella<|object_ref_end|><|box_start|><|coord_0|><|coord_78|><|coord_952|><|coord_751|><|box_end|><|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_348|><|coord_254|><|coord_995|><|coord_982|><|box_end|>",
+              "type": "text"
+            }
+          ],
+          "role": "assistant"
+        }
+      ],
+      "object_order_seed": null,
+      "object_order_seed_source": null,
+      "object_ordering": "source_order",
+      "prompt_text": "Describe each requested object with its bounding box.",
+      "realized_object_order": [
+        {
+          "object_id": "284996",
+          "rendered_index": 0,
+          "source_index": 0
+        },
+        {
+          "object_id": "453991",
+          "rendered_index": 1,
+          "source_index": 1
+        }
+      ],
+      "spans": [
+        {
+          "char_end": 20,
+          "char_start": 0,
+          "field": "object_ref_start",
+          "kind": "schema_token",
+          "object_id": "284996",
+          "source": "object_id:284996",
+          "text": "<|object_ref_start|>"
+        },
+        {
+          "char_end": 28,
+          "char_start": 20,
+          "field": "description",
+          "kind": "description",
+          "object_id": "284996",
+          "source": "object_id:284996",
+          "text": "umbrella"
+        },
+        {
+          "char_end": 46,
+          "char_start": 28,
+          "field": "object_ref_end",
+          "kind": "schema_token",
+          "object_id": "284996",
+          "source": "object_id:284996",
+          "text": "<|object_ref_end|>"
+        },
+        {
+          "char_end": 59,
+          "char_start": 46,
+          "field": "box_start",
+          "kind": "schema_token",
+          "object_id": "284996",
+          "source": "object_id:284996",
+          "text": "<|box_start|>"
+        },
+        {
+          "char_end": 70,
+          "char_start": 59,
+          "field": "bbox[0]",
+          "kind": "coordinate_token",
+          "object_id": "284996",
+          "source": "object_id:284996",
+          "text": "<|coord_0|>"
+        },
+        {
+          "char_end": 82,
+          "char_start": 70,
+          "field": "bbox[1]",
+          "kind": "coordinate_token",
+          "object_id": "284996",
+          "source": "object_id:284996",
+          "text": "<|coord_78|>"
+        },
+        {
+          "char_end": 95,
+          "char_start": 82,
+          "field": "bbox[2]",
+          "kind": "coordinate_token",
+          "object_id": "284996",
+          "source": "object_id:284996",
+          "text": "<|coord_952|>"
+        },
+        {
+          "char_end": 108,
+          "char_start": 95,
+          "field": "bbox[3]",
+          "kind": "coordinate_token",
+          "object_id": "284996",
+          "source": "object_id:284996",
+          "text": "<|coord_751|>"
+        },
+        {
+          "char_end": 119,
+          "char_start": 108,
+          "field": "box_end",
+          "kind": "schema_token",
+          "object_id": "284996",
+          "source": "object_id:284996",
+          "text": "<|box_end|>"
+        },
+        {
+          "char_end": 119,
+          "char_start": 0,
+          "field": null,
+          "kind": "object",
+          "object_id": "284996",
+          "source": "objects[0]",
+          "text": "<|object_ref_start|>umbrella<|object_ref_end|><|box_start|><|coord_0|><|coord_78|><|coord_952|><|coord_751|><|box_end|>"
+        },
+        {
+          "char_end": 139,
+          "char_start": 119,
+          "field": "object_ref_start",
+          "kind": "schema_token",
+          "object_id": "453991",
+          "source": "object_id:453991",
+          "text": "<|object_ref_start|>"
+        },
+        {
+          "char_end": 145,
+          "char_start": 139,
+          "field": "description",
+          "kind": "description",
+          "object_id": "453991",
+          "source": "object_id:453991",
+          "text": "person"
+        },
+        {
+          "char_end": 163,
+          "char_start": 145,
+          "field": "object_ref_end",
+          "kind": "schema_token",
+          "object_id": "453991",
+          "source": "object_id:453991",
+          "text": "<|object_ref_end|>"
+        },
+        {
+          "char_end": 176,
+          "char_start": 163,
+          "field": "box_start",
+          "kind": "schema_token",
+          "object_id": "453991",
+          "source": "object_id:453991",
+          "text": "<|box_start|>"
+        },
+        {
+          "char_end": 189,
+          "char_start": 176,
+          "field": "bbox[0]",
+          "kind": "coordinate_token",
+          "object_id": "453991",
+          "source": "object_id:453991",
+          "text": "<|coord_348|>"
+        },
+        {
+          "char_end": 202,
+          "char_start": 189,
+          "field": "bbox[1]",
+          "kind": "coordinate_token",
+          "object_id": "453991",
+          "source": "object_id:453991",
+          "text": "<|coord_254|>"
+        },
+        {
+          "char_end": 215,
+          "char_start": 202,
+          "field": "bbox[2]",
+          "kind": "coordinate_token",
+          "object_id": "453991",
+          "source": "object_id:453991",
+          "text": "<|coord_995|>"
+        },
+        {
+          "char_end": 228,
+          "char_start": 215,
+          "field": "bbox[3]",
+          "kind": "coordinate_token",
+          "object_id": "453991",
+          "source": "object_id:453991",
+          "text": "<|coord_982|>"
+        },
+        {
+          "char_end": 239,
+          "char_start": 228,
+          "field": "box_end",
+          "kind": "schema_token",
+          "object_id": "453991",
+          "source": "object_id:453991",
+          "text": "<|box_end|>"
+        },
+        {
+          "char_end": 239,
+          "char_start": 119,
+          "field": null,
+          "kind": "object",
+          "object_id": "453991",
+          "source": "objects[1]",
+          "text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_348|><|coord_254|><|coord_995|><|coord_982|><|box_end|>"
+        },
+        {
+          "char_end": 239,
+          "char_start": 0,
+          "field": null,
+          "kind": "assistant_content",
+          "object_id": null,
+          "source": null,
+          "text": "<|object_ref_start|>umbrella<|object_ref_end|><|box_start|><|coord_0|><|coord_78|><|coord_952|><|coord_751|><|box_end|><|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_348|><|coord_254|><|coord_995|><|coord_982|><|box_end|>"
+        },
+        {
+          "char_end": 249,
+          "char_start": 239,
+          "field": "assistant_terminal",
+          "kind": "eos_transition",
+          "object_id": null,
+          "source": null,
+          "text": "<|im_end|>"
+        },
+        {
+          "char_end": 250,
+          "char_start": 249,
+          "field": "assistant_terminal_newline",
+          "kind": "ignored_text",
+          "object_id": null,
+          "source": null,
+          "text": "\n"
+        }
+      ],
+      "supervised_response_text": "<|object_ref_start|>umbrella<|object_ref_end|><|box_start|><|coord_0|><|coord_78|><|coord_952|><|coord_751|><|box_end|><|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_348|><|coord_254|><|coord_995|><|coord_982|><|box_end|><|im_end|>\n",
+      "template_fingerprint": "8feee87f23928d7d934ff9a76f7f464bddc15266a1d6b80f8e4b17e87799c104"
+    }
+  ],
+  "schema_version": 1
+}

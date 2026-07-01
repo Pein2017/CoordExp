@@ -4,7 +4,7 @@
 
 **Goal:** Rebuild the CoordExp-swift `src/` training infrastructure from the approved OpenSpec baseline into a professional, inspectable, five-step-smoke-verified Qwen3-VL supervised training stack.
 
-**Architecture:** Keep OpenSpec requirements as the contract authority, keep `BLUEPRINT.md` cards as the manual approval surface, and execute implementation in waves that each produce a working, testable slice. Source studies and probes run before fragile Qwen/dLoRA/embedding code; the new `src/` tree is rebuilt around strict config, validated examples, Qwen-owned encoding/forward boundaries, no-padding packing, token-wise supervision, protected losses, explicit optimizer groups, and artifact-backed training.
+**Architecture:** Keep OpenSpec requirements as the contract authority, keep `BLUEPRINT.md` cards as the manual approval surface, and execute implementation in waves that each produce a working, testable slice. Source studies and probes run before fragile Qwen/DoRA/embedding code; the new `src/` tree is rebuilt around strict config, validated examples, Qwen-owned encoding/forward boundaries, no-padding packing, token-wise supervision, protected losses, explicit optimizer groups, and artifact-backed training.
 
 **Tech Stack:** Python 3.12, PyTorch, Transformers Qwen3-VL/Qwen2-VL processor paths, PEFT, Accelerate, DeepSpeed schema handling, flash-attn branch checks, PyYAML or Pydantic/dataclasses for config, safetensors, pytest, OpenSpec.
 
@@ -54,8 +54,9 @@ with exact files, exact test names, red/green order, and review checkpoints.
 Allowed direct execution from this roadmap:
 
 - Wave 0 state checks.
-- Wave 1 read-only source studies and isolated probes after explicit user
-  approval.
+- Wave 1A read-only source studies after explicit user approval.
+- Wave 1B isolated probes under `scripts/probes/coordexp_swift/` only after
+  the Wave 1A study plan and output paths are approved.
 
 Not allowed direct execution from this roadmap:
 
@@ -87,7 +88,20 @@ Critical or Important findings must be fixed before proceeding.
 - Do not create a padded training batch for the standard supervised forward path.
 - Do not pass `inputs_embeds` in V1 Qwen forward.
 - Do not use model-side CE; repo-owned losses consume logits and `TokenSequence`.
-- Do not claim dLoRA support before the dLoRA source-study gate and round-trip probe pass.
+- Do not let a causal loss shift cross packed-segment boundaries; each
+  `logits_position` must stay in the same `PackedSegment` as `target_position`.
+- Do not implement protected token-wise losses with token-balanced or pack-local
+  averaging; V1 protected losses use `segment_balanced` planned-step
+  normalization.
+- Do not implement `TokenTypeGateLoss` as a vague penalty; V1 uses
+  `logsumexp(all_logits) - logsumexp(allowed_group_logits)` with explicit
+  resolved weights.
+- Do not run packed training without the approved FlashAttention 2/dtype path
+  or an explicit debug/parity profile.
+- Do not materialize fp32 full-vocabulary logits; objective math upcasts only
+  selected logits, and the worst-case full-sequence logits estimate must pass
+  the resolved budget check.
+- Do not claim DoRA support before the DoRA source-study gate and round-trip probe pass.
 - Do not claim selected special-token embedding support before the embedding source-study gate passes.
 - Do not claim DeepSpeed production support until a later systems smoke proves it.
 - Do not expand V1 into rollout training, hidden-state losses, persistent caches, video, multi-image, vLLM, exact resume, or old production coordinate-soft-CE parity.
@@ -97,6 +111,9 @@ Critical or Important findings must be fixed before proceeding.
 - Do not let the roadmap override OpenSpec. If implementation evidence
   contradicts OpenSpec, stop and patch/review OpenSpec before coding through the
   contradiction.
+- If OpenSpec is silent or weaker than `DECISIONS.md` or `BLUEPRINT.md` on an
+  approved accuracy-critical invariant, stop and patch OpenSpec before coding a
+  permissive interpretation.
 
 ## Intended Final Source Topology
 
@@ -183,10 +200,12 @@ src/
 Supporting files:
 
 ```text
-configs/coordexp_swift/
+configs/
   base.yaml
-  research_base.yaml
-  smoke_qwen3_vl_single_image_pack.yaml
+  directions/
+    <direction>/
+      base.yaml
+      <run>.yaml
 
 tests/coordexp_swift/
   test_config_runtime.py
@@ -203,16 +222,17 @@ tests/fixtures/smoke/qwen3_vl_single_image_pack/
   examples.jsonl
   expected_rendered.json
   checksums.json
-  image.<ext>
+  images/
+    <copied-image>.<ext>
 
 docs/architecture/proposals/2026-06-27-coordexp-swift/source-studies/
-  dlora.md
+  dora.md
   special-token-embeddings.md
   qwen-noresize-mrope-fa2.md
 
 scripts/probes/coordexp_swift/
-  dlora_roundtrip.py
-  special_token_embedding_roundtrip.py
+  dora_roundtrip.py
+  special_token_embeddings_roundtrip.py
   qwen_processor_forward_probe.py
   fa2_varlen_probe.py
 ```
@@ -234,7 +254,9 @@ scripts/probes/coordexp_swift/
 
 - [ ] Run `git status --short --branch` from `/data/CoordExp/.worktrees/CoordExp-swift`.
 - [ ] Run `openspec instructions apply --change rebuild-coordexp-swift-training-infra --json`.
-- [ ] Confirm OpenSpec apply progress is `total=55`, `complete=10`, `remaining=45` before implementation begins.
+- [ ] Confirm OpenSpec section 1 planning/review tasks are complete and
+  source-study/implementation/smoke tasks remain pending before implementation
+  begins; treat unexpected completed implementation tasks as a stop condition.
 - [ ] Record in the implementation chat that unrelated dirty files must be ignored and only touched files should be staged if a commit is requested.
 
 ### Slice 0.2: User Authorization Gate
@@ -254,18 +276,18 @@ state inspection only.
 
 **Goal:** Resolve the delicate external behavior before implementing production code.
 
-**OpenSpec tasks covered:** 2.1, 2.2, 2.3, 2.4, 2.5.
+**OpenSpec tasks covered:** 2.1 through 2.10.
 
 **Files:**
-- Create: `/data/CoordExp/.worktrees/CoordExp-swift/docs/architecture/proposals/2026-06-27-coordexp-swift/source-studies/dlora.md`
+- Create: `/data/CoordExp/.worktrees/CoordExp-swift/docs/architecture/proposals/2026-06-27-coordexp-swift/source-studies/dora.md`
 - Create: `/data/CoordExp/.worktrees/CoordExp-swift/docs/architecture/proposals/2026-06-27-coordexp-swift/source-studies/special-token-embeddings.md`
 - Create: `/data/CoordExp/.worktrees/CoordExp-swift/docs/architecture/proposals/2026-06-27-coordexp-swift/source-studies/qwen-noresize-mrope-fa2.md`
-- Create: `/data/CoordExp/.worktrees/CoordExp-swift/scripts/probes/coordexp_swift/dlora_roundtrip.py`
-- Create: `/data/CoordExp/.worktrees/CoordExp-swift/scripts/probes/coordexp_swift/special_token_embedding_roundtrip.py`
+- Create: `/data/CoordExp/.worktrees/CoordExp-swift/scripts/probes/coordexp_swift/dora_roundtrip.py`
+- Create: `/data/CoordExp/.worktrees/CoordExp-swift/scripts/probes/coordexp_swift/special_token_embeddings_roundtrip.py`
 - Create: `/data/CoordExp/.worktrees/CoordExp-swift/scripts/probes/coordexp_swift/qwen_processor_forward_probe.py`
 - Create: `/data/CoordExp/.worktrees/CoordExp-swift/scripts/probes/coordexp_swift/fa2_varlen_probe.py`
 
-### Slice 1.1: dLoRA Source Study
+### Slice 1A.1: DoRA Source Study
 
 - [ ] Discover installed package paths with:
 
@@ -285,67 +307,102 @@ PY
 ```
 
 - [ ] Search PEFT for `use_dora`, `LoraConfig`, `trainable_token_indices`, and `TrainableTokens`.
-- [ ] Search MS-Swift for DoRA/dLoRA naming and target-module discovery behavior.
-- [ ] Search local legacy source for prior LoRA/dLoRA-like config surfaces.
-- [ ] Document the exact chosen definition of `adapter.type: dlora` in `source-studies/dlora.md`.
-- [ ] State whether dLoRA is PEFT DoRA-backed, a CoordExp-owned mechanism, or rejected until a later design.
+- [ ] Search MS-Swift for DoRA naming and target-module discovery behavior.
+- [ ] Search local legacy source for prior LoRA/DoRA-like config surfaces and any stale `dlora` naming.
+- [ ] Document the exact chosen definition of `adapter.type: dora` in `source-studies/dora.md`.
+- [ ] Record that `adapter.type: dlora` is rejected as a V1 schema value.
+- [ ] State that DoRA is PEFT DoRA-backed via `LoraConfig(use_dora=True)`.
 
-**Acceptance gate:** `dlora.md` names the exact implementation mechanism and why it satisfies or does not satisfy the OpenSpec dLoRA gate.
+**Acceptance gate:** `dora.md` names the exact implementation mechanism and why it satisfies the OpenSpec DoRA gate.
 
-**Stop condition:** if dLoRA cannot be defined without inventing semantics, stop and ask the user whether to use standard LoRA for a pre-smoke or keep dLoRA-first blocked.
+**Stop condition:** if DoRA cannot be implemented as PEFT `use_dora=True` without inventing semantics, stop and ask the user whether to use standard LoRA for a pre-smoke or keep DoRA-first blocked.
 
-### Slice 1.2: dLoRA Round-Trip Probe
-
-- [ ] Implement `scripts/probes/coordexp_swift/dlora_roundtrip.py` to load the local base model with `local_files_only=True`, initialize the selected dLoRA mechanism on a minimal target set, run one tiny forward pass, save adapter payloads to `outputs/probes/coordexp_swift/dlora_roundtrip/`, reload base-plus-adapter, and compare output shape plus finite logits.
-- [ ] Keep probe outputs under ignored `outputs/probes/`.
-- [ ] Run:
-
-```bash
-python scripts/probes/coordexp_swift/dlora_roundtrip.py
-```
-
-- [ ] Record command, environment, model path, PEFT version, target modules, output artifact path, and result in `source-studies/dlora.md`.
-
-**Acceptance gate:** probe exits 0 and produces a compact JSON receipt with adapter init/save/load/forward success.
-
-**Stop condition:** if the probe requires more than one GPU or a long run, reduce the target set and sequence length before asking for heavier resources.
-
-### Slice 1.3: Special-Token Embedding Mechanism Study
+### Slice 1A.2: Special-Token Embedding Mechanism Study
 
 - [ ] Compare custom Qwen wrapper, PEFT `TrainableTokens`, and LoRA `trainable_token_indices`.
 - [ ] Verify how the local Qwen3-VL model ties or does not tie input embeddings and `lm_head`.
 - [ ] Verify the selected token ids for `<|object_ref_start|>`, `<|object_ref_end|>`, `<|box_start|>`, `<|box_end|>`, and `<|coord_0|>` through `<|coord_999|>`.
 - [ ] Document the exact selected mechanism in `source-studies/special-token-embeddings.md`.
-- [ ] Include checkpoint payload shape, metadata fields, load order, and base-plus-adapter-plus-embedding-delta composition.
+- [ ] Include checkpoint payload shape, metadata fields, load order,
+  additive-versus-absolute semantics, and base-plus-adapter-plus-embedding-delta
+  composition.
 
 **Acceptance gate:** the study proves how selected embedding deltas affect input lookup and selected output-logit columns without training all embedding/head rows.
 
 **Stop condition:** if tied/untied behavior is ambiguous for Qwen3-VL, stop and ask whether to prefer a custom wrapper or a full selected-row state-dict delta.
 
-### Slice 1.4: Special-Token Embedding Round-Trip Probe
+### Slice 1A.3: Qwen No-Resize, MRoPE, And FA2 Source Study
 
-- [ ] Implement `scripts/probes/coordexp_swift/special_token_embedding_roundtrip.py` to select a small subset of the final token group, apply deterministic nonzero deltas, save compact delta metadata and tensor payload, reload into a fresh base model, and verify that only selected ids changed.
+- [ ] Verify loaded `patch_size`, `merge_size`, `temporal_patch_size`, and processor class.
+- [ ] Verify valid no-resize dimensions pass and invalid dimensions fail before or at processor reshape.
+- [ ] Verify `image_grid_thw`, placeholder expansion, and Qwen forward output shape.
+- [ ] Verify MRoPE position id row count and meaning in the installed Transformers version.
+- [ ] Establish that packed training computes MRoPE per segment, emits the
+  4-row `[text,t,h,w]` Qwen boundary shape when required, and does not infer
+  positions by running an upstream helper once over the whole pack.
+- [ ] Establish the FA2 attention implementation and dtype constraints needed
+  for the smoke to exercise the packed varlen path.
+- [ ] Record findings in `source-studies/qwen-noresize-mrope-fa2.md`.
+
+**Acceptance gate:** source study explains the exact no-resize admissibility rule, the MRoPE row-shape contract, placeholder count formula, and FA2 varlen evidence.
+
+**Stop condition:** if installed Qwen behavior differs from the current OpenSpec wording, patch OpenSpec before implementation.
+
+### Slice 1A.4: Legacy Correctness Invariant Inventory
+
+- [ ] Inspect legacy `src/` tests and training/packing/loss modules before moving
+  old `src/` to `reference/legacy_src/`.
+- [ ] Inventory invariants worth porting as new tests rather than preserving the
+  old code path: geometry round-trip, no-resize divisibility, coord-token span
+  alignment, packing segment isolation, MRoPE reset points, loss denominators,
+  and artifact naming.
+- [ ] Record the inventory beside the source studies or in the Wave 2 plan.
+
+**Acceptance gate:** Wave 2 can point to the invariant inventory before old
+`src/` is archived.
+
+### Slice 1B.1: DoRA Round-Trip Probe
+
+- [ ] Implement `scripts/probes/coordexp_swift/dora_roundtrip.py` to load the local base model with `local_files_only=True`, initialize the selected DoRA mechanism on a minimal target set, run one tiny forward pass, save adapter payloads to `outputs/probes/coordexp_swift/dora_roundtrip/`, reload base-plus-adapter, and compare output shape plus finite logits.
+- [ ] If the mechanism uses DoRA, verify magnitude-vector parameters are saved,
+  loaded, and included in the forward-equivalence receipt.
+- [ ] Keep probe outputs under ignored `outputs/probes/`.
 - [ ] Run:
 
 ```bash
-python scripts/probes/coordexp_swift/special_token_embedding_roundtrip.py
+python scripts/probes/coordexp_swift/dora_roundtrip.py
+```
+
+- [ ] Record command, environment, model path, PEFT version, target modules, output artifact path, and result in `source-studies/dora.md`.
+
+**Acceptance gate:** probe exits 0 and produces a compact JSON receipt with adapter init/save/load/forward success.
+
+**Stop condition:** if the probe requires more than one GPU or a long run, reduce the target set and sequence length before asking for heavier resources.
+
+### Slice 1B.2: Special-Token Embedding Round-Trip Probe
+
+- [ ] Implement `scripts/probes/coordexp_swift/special_token_embeddings_roundtrip.py` to select a small subset of the final token group, apply deterministic nonzero deltas, save compact delta metadata and tensor payload, reload into a fresh base model, and verify that only selected ids changed.
+- [ ] Assert that loaded selected rows/logit columns equal the trained values
+  under the recorded additive-or-absolute semantics.
+- [ ] Run:
+
+```bash
+python scripts/probes/coordexp_swift/special_token_embeddings_roundtrip.py
 ```
 
 - [ ] Record result in `source-studies/special-token-embeddings.md`.
 
 **Acceptance gate:** probe proves selected-token deltas can save/load without full embedding/head export.
 
-### Slice 1.5: Qwen No-Resize, MRoPE, And FA2 Source Study
+### Slice 1B.3: Qwen No-Resize, MRoPE, And FA2 Probes
 
 - [ ] Implement `scripts/probes/coordexp_swift/qwen_processor_forward_probe.py` to load `AutoProcessor` and model from `/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent`.
-- [ ] Verify loaded `patch_size`, `merge_size`, `temporal_patch_size`, and processor class.
-- [ ] Verify valid no-resize dimensions pass and invalid dimensions fail before or at processor reshape.
-- [ ] Verify `image_grid_thw`, placeholder expansion, and Qwen forward output shape.
-- [ ] Verify MRoPE position id row count and meaning in the installed Transformers version.
 - [ ] Implement `scripts/probes/coordexp_swift/fa2_varlen_probe.py` to capture the branch-level evidence required by the packing-forward spec.
 - [ ] Record findings in `source-studies/qwen-noresize-mrope-fa2.md`.
 
-**Acceptance gate:** source study explains the exact no-resize admissibility rule, the MRoPE row-shape contract, placeholder count formula, and FA2 varlen evidence.
+**Acceptance gate:** probes produce receipts for processor/no-resize behavior,
+MRoPE row shape/reset requirements, attention implementation, dtype, and FA2
+varlen branch evidence.
 
 **Stop condition:** if installed Qwen behavior differs from the current OpenSpec wording, patch OpenSpec before implementation.
 
@@ -353,12 +410,12 @@ python scripts/probes/coordexp_swift/special_token_embedding_roundtrip.py
 
 - [ ] Request an independent review of `source-studies/*.md` and
   `scripts/probes/coordexp_swift/*.py`.
-- [ ] Confirm whether dLoRA is approved for Wave 6 implementation.
+- [ ] Confirm whether DoRA is approved for Wave 6 implementation.
 - [ ] Confirm whether selected special-token embedding deltas are approved for
   Wave 6 implementation.
 - [ ] Patch OpenSpec or `BLUEPRINT.md` if the studies invalidate any current
   contract.
-- [ ] Mark OpenSpec tasks 2.1 through 2.5 complete only after the studies and
+- [ ] Mark OpenSpec tasks 2.1 through 2.10 complete only after the studies and
   probes have passing evidence.
 
 **Acceptance gate:** reviewer reports no unresolved P0/P1 findings and the user
@@ -373,9 +430,9 @@ explicitly approves moving to Wave 2.
 **Files:**
 - Move: `/data/CoordExp/.worktrees/CoordExp-swift/src/` to `/data/CoordExp/.worktrees/CoordExp-swift/reference/legacy_src/`
 - Create: all package markers in the final topology.
-- Create: `/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/base.yaml`
-- Create: `/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/research_base.yaml`
-- Create: `/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/smoke_qwen3_vl_single_image_pack.yaml`
+- Create: `/data/CoordExp/.worktrees/CoordExp-swift/configs/base.yaml`
+- Create as needed later: `/data/CoordExp/.worktrees/CoordExp-swift/configs/directions/<direction>/base.yaml`
+- Keep smoke config at: `/data/CoordExp/.worktrees/CoordExp-swift/tests/fixtures/smoke/qwen3_vl_single_image_pack/config.yaml`
 - Create: `/data/CoordExp/.worktrees/CoordExp-swift/src/common/errors.py`
 - Create: `/data/CoordExp/.worktrees/CoordExp-swift/src/config/schema.py`
 - Create: `/data/CoordExp/.worktrees/CoordExp-swift/src/config/loader.py`
@@ -419,6 +476,9 @@ find src -type d -exec touch {}/__init__.py \;
 ### Slice 2.3: Config Loader And Resolved Schedule
 
 - [ ] Implement strict YAML loading with inheritance, unknown-field rejection, path-origin metadata, source fingerprints, `training.effective_batch_size`, `epochs`, debug `max_steps`, cadence fields, and derived accumulation.
+- [ ] Implement deterministic tail-fill run-length resolution for epoch-led runs.
+- [ ] Implement packed-Qwen attention/dtype validation and worst-case
+  full-sequence logits memory budget checks.
 - [ ] Implement `resolved_step_schedule.json` materialization from planned steps.
 - [ ] Implement `src.train --dry-run` through config resolution and artifact initialization only.
 - [ ] Add tests for unknown field failure, inherited config preservation, `max_steps` priority, fractional cadence, forbidden aliases, and effective-batch/world-size divisibility.
@@ -428,12 +488,16 @@ find src -type d -exec touch {}/__init__.py \;
 ### Slice 2.4: Smoke Fixture Pinning
 
 - [ ] Locate current `len12000` JSONL sources and candidate single-image rows.
-- [ ] Select exactly one short valid two-object row or a deterministic first-two-valid-objects reduction.
-- [ ] Copy one real image into `tests/fixtures/smoke/qwen3_vl_single_image_pack/`.
-- [ ] Create `examples.jsonl`, `checksums.json`, `expected_rendered.json`, `config.yaml`, and `README.md`.
+- [ ] Select at least two short valid examples, including an exactly two-object
+  row when practical, or deterministic first-two-valid-objects reductions when
+  necessary.
+- [ ] Copy real image file(s) into
+  `tests/fixtures/smoke/qwen3_vl_single_image_pack/images/`.
+- [ ] Create `examples.jsonl`, `checksums.json`, `config.yaml`, and `README.md`.
+- [ ] Do not create `expected_rendered.json` until the real renderer path exists.
 - [ ] Ensure fixture config writes outputs under an ignored artifact root such as `outputs/smoke/qwen3_vl_single_image_pack/`.
 
-**Acceptance gate:** fixture metadata records source path, row id or row number, image checksum, selected object ids, reduction rule when used, no-resize dimensions, and expected rendered text.
+**Acceptance gate:** fixture metadata records source path, row id or row number, image checksum, selected object ids, reduction rule when used, and no-resize dimensions.
 
 **Stop condition:** if no no-resize-compatible source image is available, stop and ask whether to use a copied/resized fixture image as a controlled exception for smoke only.
 
@@ -473,6 +537,8 @@ find src -type d -exec touch {}/__init__.py \;
 - [ ] Render `supervised_response_text`, typed character spans, and expected object order.
 - [ ] Enforce half-open spans, no crossing spans, whole special-token literal spans, and leaf-span coverage for all loss-bearing characters.
 - [ ] Supervise answer content plus `<|im_end|>`; ignore the trailing newline in `<|im_end|>\n`.
+- [ ] Generate `expected_rendered.json` through the real renderer path, review it,
+  and freeze it as the committed render snapshot.
 
 **Acceptance gate:** fixture rendered output equals `expected_rendered.json`; boundary tests prove first assistant answer token and `<|im_end|>` handling.
 
@@ -480,6 +546,8 @@ find src -type d -exec touch {}/__init__.py \;
 
 - [ ] Load processor/tokenizer/model identity from the local base model path.
 - [ ] Verify all required wrapper and coordinate tokens exist.
+- [ ] Verify `<|im_end|>\n` tokenizes as `<|im_end|>` followed by a separate
+  newline token.
 - [ ] Reject invalid aliases such as `<|object_start|>`.
 - [ ] Emit a Qwen setup receipt with tokenizer vocab size, special token ids, processor class, `patch_size`, `merge_size`, and `temporal_patch_size`.
 
@@ -524,14 +592,16 @@ encoding.
 - [ ] Implement overflow-commit packing with one physical packed row per rank/step.
 - [ ] Preserve segment ids and example ids.
 - [ ] Emit `reports/pack_plan.json` for smoke/debug.
-- [ ] Exclude incomplete final optimizer-step windows during run-length resolution.
+- [ ] Coordinate with config/runtime so incomplete final optimizer-step windows
+  use deterministic tail-fill rather than silent drop or partial update.
 
 **Acceptance gate:** tests prove fit/overflow behavior, no padding, and deterministic pack plan receipt.
 
 ### Slice 4.2: Supervision Remapping
 
 - [ ] Map logical target positions to physical target positions.
-- [ ] Derive `logits_position = target_position - 1`.
+- [ ] Derive `logits_position = target_position - 1` and reject any causal
+  shift that crosses a packed-segment boundary.
 - [ ] Preserve example id, segment id, token type, and span provenance.
 - [ ] Provide invertible debug traces.
 
@@ -539,15 +609,20 @@ encoding.
 
 ### Slice 4.3: Qwen MRoPE Inputs
 
-- [ ] Implement or call installed Qwen helper behavior for MRoPE position ids.
-- [ ] Validate row count and row meaning against the source-study result.
-- [ ] Reset per packed segment where required.
+- [ ] Implement MRoPE position ids from per-segment computation, then
+  concatenate.
+- [ ] Validate the 4-row `[text,t,h,w]` Qwen boundary shape and row meaning
+  against the source-study result.
+- [ ] Reset text positions per packed segment and assert reset points match
+  `PackedSegment` boundaries and FA2 cumulative sequence lengths.
 
 **Acceptance gate:** source-study fixture and tests prove row-shape parity against installed Transformers behavior.
 
 ### Slice 4.4: Qwen Forward Wrapper
 
-- [ ] Implement forward wrapper with `labels=None`, `use_cache=False`, no `inputs_embeds`, full logits, output-shape validation, and model-side loss ignored.
+- [ ] Implement forward wrapper with `labels=None`, `use_cache=False`, no `inputs_embeds`, full-vocabulary logits over either the full sequence or explicitly selected supervised rows, output-shape validation, and model-side loss ignored.
+- [ ] Validate resolved attention implementation, dtype, and worst-case
+  full-sequence logits memory estimate before packed training forward.
 - [ ] Validate placeholder/grid agreement before model forward.
 - [ ] Emit `debug/qwen_forward_contract.json`.
 
@@ -592,7 +667,8 @@ encoding.
 ### Slice 5.1: TokenSequence Core
 
 - [ ] Implement `TokenAtom`, `TokenSpan`, and `TokenSequence`.
-- [ ] Reject `target_position == 0` for causal losses.
+- [ ] Reject `target_position == 0` and same-segment causal-shift violations
+  for causal losses.
 - [ ] Derive dense label parity artifacts only from `TokenSequence`.
 
 **Acceptance gate:** tests prove dense labels are reproducible from token atoms and cannot carry independent semantics.
@@ -608,6 +684,8 @@ encoding.
 ### Slice 5.3: BaseTokenCE And TokenTypeGateLoss
 
 - [ ] Implement full-vocabulary `BaseTokenCE`.
+- [ ] Implement `TokenTypeGateLoss` as
+  `logsumexp(all_logits) - logsumexp(allowed_group_logits)`.
 - [ ] Implement closed V1 token-type vocabulary groups: `desc_text`, `schema`, `coordinate`, and `eos`.
 - [ ] Exclude Qwen chat/control, image/video/pad, tool/FIM/repo, think, reserved CoordExp, and other non-target special tokens from free-text allowance.
 - [ ] Reject claims of old coordinate soft-CE/object-balanced parity.
@@ -616,11 +694,14 @@ encoding.
 
 ### Slice 5.4: Planned-Step Normalizers
 
-- [ ] Compute denominators over the complete planned optimizer-step window across accumulation and ranks.
+- [ ] Compute `segment_balanced` denominators over the complete planned
+  optimizer-step window across accumulation and ranks.
 - [ ] Avoid equally averaging already-normalized micro-step losses.
 - [ ] Avoid backend double scaling.
 
-**Acceptance gate:** tests with unequal supervised-token counts prove length-invariant loss behavior.
+**Acceptance gate:** tests with unequal segment/atom counts prove
+`segment_balanced` length-invariant loss behavior and distinguish it from
+token-balanced averaging.
 
 ### Slice 5.5: LossBundle, Accuracy, And Finite Gates
 
@@ -654,20 +735,21 @@ encoding.
 
 ### Slice 6.1: Adapter Gate And Loading
 
-- [ ] Reject `adapter.type: dlora` until Wave 1 dLoRA gate has passed.
+- [ ] Reject `adapter.type: dora` until Wave 1 DoRA gate has passed.
+- [ ] Reject `adapter.type: dlora` as an unsupported V1 spelling.
 - [ ] Support base-only, base plus existing adapter, and base plus initialized adapter.
 - [ ] Enumerate `all_linear` target modules for vision, aligner, and language towers.
 - [ ] Exclude `lm_head` from adapter targets.
 
-**Acceptance gate:** tests prove dLoRA fails before the gate and succeeds after a recorded gate receipt.
+**Acceptance gate:** tests prove DoRA fails before the gate and succeeds after a recorded gate receipt, while `dlora` always fails as a legacy spelling.
 
-### Slice 6.2: dLoRA Setup
+### Slice 6.2: DoRA Setup
 
-- [ ] Implement the mechanism selected in `source-studies/dlora.md`.
+- [ ] Implement the mechanism selected in `source-studies/dora.md`.
 - [ ] Emit adapter target and initialized adapter receipts.
 - [ ] Verify save/load compatibility with the probe and smoke setup.
 
-**Acceptance gate:** dLoRA adapter-enabled setup reaches trainable-surface receipt generation.
+**Acceptance gate:** DoRA adapter-enabled setup reaches trainable-surface receipt generation.
 
 ### Slice 6.3: Selected Special-Token Embedding Deltas
 
@@ -689,7 +771,7 @@ encoding.
 
 ### Slice 6.5: Wave 6 Review
 
-- [ ] Request focused review of dLoRA gate usage, adapter target discovery,
+- [ ] Request focused review of DoRA gate usage, adapter target discovery,
   selected-token embedding deltas, compact checkpoint payloads, and optimizer
   group matching.
 - [ ] Patch any P0/P1 findings before trainer/runtime integration begins.
@@ -728,7 +810,12 @@ optimizer setup.
 
 - [ ] Implement run directory creation and collision policy.
 - [ ] Write `run_manifest.json` before training mutation.
-- [ ] Preserve minimum manifest top-level keys: `run_id`, `artifact_root`, `run_dir`, `resolved_config`, `resolved_step_schedule`, `artifacts`, `receipts`, `metrics`, `checkpoints`, `eval`, and `backend_status`.
+- [ ] Preserve minimum manifest top-level sections: `run_id`, `run_name`,
+  `run_dir`, `status`, `created_at`, `updated_at`, `configs`, `resolution`,
+  `runtime_identity`, `schedule`, `receipts`, `metrics`, `checkpoints`, `eval`,
+  `runtime`, `backend_status`, and `warnings`.
+- [ ] Record train/eval dataset identities and ordering seed source when
+  applicable.
 - [ ] Emit metric events with required fields: `event_type`, `planned_step_id`, `split`, `name`, `value`, `trigger_reasons`, `optimizer_update_status`, `finite_status`, and `warning_status`.
 
 **Acceptance gate:** dry-run writes a valid manifest and resolved config without checkpoints, train metrics, or model mutation.
@@ -747,6 +834,8 @@ optimizer setup.
 
 - [ ] Implement packed forward-only eval using the same render, encode, pack, Qwen forward, loss, and metric stack as training.
 - [ ] Do not perform backward or optimizer update.
+- [ ] Require explicit `data.eval_path` or explicit smoke-fixture eval binding;
+  do not implicitly reuse train JSONL.
 - [ ] Write `eval/forward/step-<planned_step_id>.json` with `planned_step_id`, `split`, `trigger_reasons`, `example_count`, `pack_count`, `loss_summary`, `metric_summary`, and `artifact_links`.
 
 **Acceptance gate:** scheduled step 4 writes `eval/forward/step-4.json` and records the trigger reason.
@@ -792,7 +881,7 @@ python -m src.train --config tests/fixtures/smoke/qwen3_vl_single_image_pack/con
 
 **Acceptance gate:** dry-run exits 0 and artifact contract is correct.
 
-### Slice 8.2: Five-Planned-Step dLoRA Smoke
+### Slice 8.2: Five-Planned-Step DoRA Smoke
 
 - [ ] Run:
 
@@ -800,8 +889,12 @@ python -m src.train --config tests/fixtures/smoke/qwen3_vl_single_image_pack/con
 python -m src.train --config tests/fixtures/smoke/qwen3_vl_single_image_pack/config.yaml
 ```
 
-- [ ] Use real `packing.global_max_length`, fixture-local sample limit, `training.effective_batch_size: 1`, `max_steps: 5`, and explicit `eval.forward.steps: [2, 4]`.
-- [ ] Verify five planned steps, two eval.forward summaries, train/eval metric events, final checkpoint, no old production parity claims, and no DeepSpeed production-support claim.
+- [ ] Use real `packing.global_max_length`, fixture-local sample limit,
+  `training.effective_batch_size: 2`, `max_steps: 5`, and explicit
+  `eval.forward.steps: [2, 4]`.
+- [ ] Verify five planned steps, two eval.forward summaries, train/eval metric
+  events, at least one multi-segment packed forward receipt, final checkpoint,
+  no old production parity claims, and no DeepSpeed production-support claim.
 
 **Acceptance gate:** `checkpoints/checkpoint-final.json` exists and links to final run state.
 
@@ -810,6 +903,9 @@ python -m src.train --config tests/fixtures/smoke/qwen3_vl_single_image_pack/con
 - [ ] Verify resolved config, manifest, Qwen setup receipt, pack plan, loss plan, trainable-surface receipt, optimizer receipt, metrics, eval-forward summaries, checkpoint metadata, and final alias.
 - [ ] Verify metric events include top-level `acc_top1` and `acc_top5`.
 - [ ] Verify protected weighted losses are stored.
+- [ ] Verify smoke or smoke-adjacent contract checks cover per-segment MRoPE
+  reset points, FA2 cumulative-sequence splits, same-segment causal loss
+  mapping, and `segment_balanced` behavior on unequal eligible-atom counts.
 - [ ] Verify non-finite and warning fields exist even when values are safe/empty.
 
 **Acceptance gate:** audit produces no P0/P1 findings and no untriaged P2 that affects accuracy, efficiency, or simplicity.
@@ -818,7 +914,7 @@ python -m src.train --config tests/fixtures/smoke/qwen3_vl_single_image_pack/con
 
 - [ ] Request focused review of the complete smoke artifact tree.
 - [ ] Confirm no hidden base-only or standard-LoRA pre-smoke replaced the
-  intended dLoRA adapter-enabled smoke unless the user approved that change.
+  intended DoRA adapter-enabled smoke unless the user approved that change.
 - [ ] Confirm no V1 non-goals leaked into implementation.
 
 **Acceptance gate:** user accepts the five-step smoke evidence as the first V1
@@ -845,7 +941,7 @@ implementation milestone.
 - [ ] Include the residual risk text:
 
 ```text
-Residual risk is now the intended kind: dLoRA definition/probe, special-token embedding mechanism study, smoke fixture materialization, implementation, and the five-step vertical smoke are still pending tasks.
+Residual risk is now the intended kind: DoRA probe, special-token embedding mechanism study, smoke fixture materialization, implementation, and the five-step vertical smoke are still pending tasks.
 ```
 
 **Acceptance gate:** a fresh Codex worker can read the handoff, run the stated commands, and know whether to continue source studies, implementation, or verification.
@@ -871,7 +967,7 @@ Residual risk is now the intended kind: dLoRA definition/probe, special-token em
 
 Safe parallel lanes:
 
-- Wave 1 source-study lanes can run in parallel: dLoRA, special-token
+- Wave 1 source-study lanes can run in parallel: DoRA, special-token
   embeddings, and Qwen no-resize/MRoPE/FA2.
 - Wave 3 raw data validation and template rendering can be developed in
   parallel after the fixture contract is pinned.
@@ -883,7 +979,7 @@ Safe parallel lanes:
 Unsafe parallel lanes:
 
 - Do not move old `src/` while another agent is editing files under `src/`.
-- Do not implement dLoRA and selected embedding deltas before their Wave 1
+- Do not implement DoRA and selected embedding deltas before their Wave 1
   studies converge.
 - Do not implement trainer integration before packing/Qwen forward and losses
   have passed review.
@@ -894,19 +990,22 @@ Unsafe parallel lanes:
 
 | Risk | Wave | Guard |
 | --- | --- | --- |
-| dLoRA name has no precise upstream meaning | 1, 6 | Source-study gate and round-trip probe before config validation |
+| `dlora` name has no precise upstream meaning | 1, 6 | Reject `dlora`; use `dora` only after source-study gate and round-trip probe before config validation |
 | Selected-token embedding deltas break tied input/output behavior | 1, 6 | Mechanism study plus save/load probe before optimizer work |
 | No-resize images fail late in Qwen reshape | 1, 3 | Processor-derived dimension validation before processor/model forward |
 | FA2 packed isolation is assumed from a 2D mask | 1, 4 | Branch-level varlen evidence required |
+| Packed MRoPE accidentally follows whole-row upstream inference | 1, 4 | Per-segment 4-row position ids and reset/cuseq assertions |
 | Old `src/` move loses useful reference context | 2 | Separate user approval, move intact to `reference/legacy_src/`, no import shims |
+| Legacy correctness lessons are discarded with old `src` | 1, 2 | Invariant inventory before archive and test porting through waves |
+| Epoch tail packs are silently dropped or partially updated | 2, 4, 7 | Deterministic tail-fill schedule and tail-fill receipt |
 | Roadmap becomes over-broad implementation permission | all | Wave-specific plans and user approval gates |
-| Loss normalization regresses to pack-local averaging | 5, 8 | Planned-step denominator tests with unequal token counts |
+| Loss normalization regresses to token-balanced or pack-local averaging | 5, 8 | Segment-balanced planned-step tests with unequal atom/segment counts |
 | Artifact files exist but schemas drift | 7, 8 | Minimum key tests and smoke artifact audit |
 | DeepSpeed is accidentally advertised as production-supported | 7, 8 | Status-label tests and smoke artifact review |
 
 ## Review And Audit Cadence
 
-- Use a narrow review after Wave 1 because dLoRA and special-token embeddings determine whether Wave 6 can proceed.
+- Use a narrow review after Wave 1 because DoRA and special-token embeddings determine whether Wave 6 can proceed.
 - Use a module-card review before Wave 2 archive/skeleton work because moving `src/` is high impact.
 - Use focused reviews after Waves 4, 5, 6, and 8.
 - Review severity policy:
@@ -953,7 +1052,7 @@ The current implementation priorities are accuracy/precision first, efficiency s
 ## Self-Audit
 
 - Spec coverage: every remaining OpenSpec task from 2.1 through 10.5 maps to at least one wave and slice.
-- Source-study gates: dLoRA, special-token embeddings, Qwen no-resize/MRoPE/FA2 are before production code.
+- Source-study gates: DoRA, special-token embeddings, Qwen no-resize/MRoPE/FA2 are before production code.
 - Approval discipline: old `src/` move and public modules are gated.
 - Simplicity guard: no rollout, hidden-state, persistent cache, video, multi-image, vLLM, exact resume, or old objective parity enters V1.
 - Artifact guard: smoke acceptance requires resolved config, manifest, receipts, metrics, eval summaries, checkpoint metadata, and final checkpoint alias.

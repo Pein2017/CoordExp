@@ -1,0 +1,47 @@
+## Purpose
+Define trainer metric component naming, aggregation, and duplicate-collapse
+diagnostic contracts.
+
+## Requirements
+
+### Requirement: rollout-correction duplicate-collapse metrics are explicit and aggregation-safe
+The trainer metrics contract SHALL expose duplicate-collapse diagnostics with
+explicit gauge-vs-counter naming and one canonical duplicate-control family.
+
+Normative gauges:
+- `dup/raw/max_desc_count`
+- `dup/raw/saturation_rate`
+- `dup/raw/duplicate_like_max_cluster_size`
+- `dup/raw/desc_entropy`
+
+Normative raw pathology counters:
+- `dup/raw/near_iou90_pairs_same_desc_count`
+- `dup/raw/near_iou90_pairs_any_desc_count`
+
+Normative policy-action counters:
+- `stage2_rollout_correction/correction/dup/N_clusters_total`
+- `stage2_rollout_correction/correction/dup/N_clusters_exempt`
+- `stage2_rollout_correction/correction/dup/N_clusters_suppressed`
+- `stage2_rollout_correction/correction/dup/N_objects_suppressed`
+- `stage2_rollout_correction/correction/dup/N_duplicate_control_first_divergence_boundaries`
+- `stage2_rollout_correction/correction/dup/N_duplicate_control_first_divergence_skipped_no_divergence`
+
+Normative behavior:
+- Count-like metrics MUST use `/N_`, `_count`, `_total`, `_sum`, `_num`, or
+  `_den` naming so optimizer-step aggregation treats them as additive totals.
+- Gauge-like metrics MUST remain mean-like and MUST NOT masquerade as counters.
+- `dup/raw/*` gauges MUST finalize as weighted means across micro-steps.
+- `dup/raw/*_count` metrics and
+  `stage2_rollout_correction/correction/dup/N_*` metrics MUST remain additive
+  totals across micro-steps.
+- raw pathology metrics and policy-action counters MUST stay distinct:
+  `dup/raw/*` describes the pre-policy rollout state, while
+  `stage2_rollout_correction/correction/dup/N_*` describes duplicate-control
+  diagnostic decisions and metadata.
+- duplicate-control counters MUST remain diagnostic metadata only.
+
+#### Scenario: Duplicate counters aggregate additively across micro-steps
+- **WHEN** duplicate count-like metrics are emitted from multiple micro-steps in
+  one optimizer step
+- **THEN** the finalized step metric is the additive total
+- **AND** the result is not diluted by mean-style aggregation.

@@ -67,7 +67,8 @@ python -c "import pathlib, transformers; print(pathlib.Path(transformers.__file_
 - Qwen3-VL forward accepts `logits_to_keep`.
 - It slices hidden states before `lm_head`; `0` keeps all logits.
 - CoordExp token diagnostics, coordinate scoring, and segment-aware sidecar
-  remapping require full logits unless a separate logit-projection map exists.
+  remapping require full-vocabulary logits and either a full sequence time axis
+  or an explicit physical-row map for compact selected-row logits.
 
 ## CoordExp Rules
 

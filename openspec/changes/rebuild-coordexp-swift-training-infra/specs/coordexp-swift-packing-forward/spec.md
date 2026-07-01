@@ -40,6 +40,10 @@ Packing SHALL convert logical target positions into physical packed positions
 with an invertible mapping. The conversion MUST preserve
 `target_position`, derived `logits_position = target_position - 1`,
 `example_id`, segment id, token type, and span provenance.
+For standard causal losses, the derived `logits_position` MUST belong to the
+same `PackedSegment` as `target_position`. A supervised atom targeting the
+first physical token of any packed segment MUST be rejected or dropped by the
+approved supervision builder; it MUST NOT shift to the previous segment.
 
 #### Scenario: Packed atom debug trace
 
@@ -48,22 +52,39 @@ with an invertible mapping. The conversion MUST preserve
 - **AND** MUST allow reconstruction of the original encoded example id and
   logical target position.
 
+#### Scenario: Causal shift would cross segment boundary
+
+- **WHEN** a supervised target is the first physical token of a non-first
+  packed segment
+- **THEN** loss-context construction MUST reject or omit that atom according to
+  the approved supervision policy
+- **AND** it MUST NOT use the previous segment's final token as the logit row.
+
 ### Requirement: Qwen MRoPE Position Inputs
 
 Packed Qwen forward inputs SHALL use Qwen3-VL-compatible position ids and MRoPE
 metadata. CoordExp code MAY call or mimic Transformers helpers, but MUST prove
 that the packed inputs match Qwen3-VL expectations for text tokens, image
-tokens, and segment isolation. The active upstream row-shape contract MUST be
-verified: either 3-row `[t,h,w]` MRoPE ids or 4-row `[text,t,h,w]` ids when the
-installed Qwen3-VL forward expects a separate text row.
+tokens, and segment isolation. V1 packed training MUST use the installed
+Qwen3-VL 4-row HF boundary shape `[text,t,h,w]` when the installed forward
+expects a separate text row. Row 0 MUST contain text-position ids whose reset
+points match the packed segment table and FA2 cumulative sequence lengths.
+Rows 1-3 MUST contain temporal, height, and width MRoPE ids computed per
+segment from that segment's expanded `input_ids` and visual grids before
+concatenation. CoordExp MUST NOT infer positions by running the upstream helper
+once over the whole packed row if that produces continuous positions across
+segments.
 
 #### Scenario: Two packed segments require MRoPE ids
 
 - **WHEN** two encoded examples are concatenated into one packed row
-- **THEN** Qwen position ids MUST be constructed with per-segment reset/concat
-  parity against the upstream Qwen3-VL helper behavior
-- **AND** validation MUST fail if installed Qwen changes the expected row
-  count or row meaning.
+- **THEN** Qwen position ids MUST be computed per segment and concatenated only
+  after per-segment MRoPE construction
+- **AND** text-position ids MUST reset at each packed segment start
+- **AND** validation MUST assert that position-id reset points match the
+  `PackedSegment` boundaries and FA2 cumulative-sequence split
+- **AND** validation MUST fail if installed Qwen changes the expected row count
+  or row meaning.
 
 #### Scenario: MRoPE helper behavior changes upstream
 
@@ -76,15 +97,25 @@ installed Qwen3-VL forward expects a separate text row.
 
 CoordExp-swift SHALL call the Qwen3-VL model for logits and declared model
 outputs while computing all training losses in repo-owned code. V1 Qwen forward
-MUST pass `labels=None`, `use_cache=False`, request full logits, avoid
-`inputs_embeds`, and validate the returned output object shape instead of
-depending on model-side CE.
+MUST pass `labels=None`, `use_cache=False`, avoid `inputs_embeds`, and validate
+the returned output object shape instead of depending on model-side CE. The
+forward MAY request a compact logits time axis for explicitly selected
+supervised causal rows, but every returned row MUST keep the full vocabulary and
+MUST be accompanied by a physical-pack-position map consumed by `LossContext`.
 
 #### Scenario: Model returns built-in loss
 
 - **WHEN** the Qwen forward result includes a model-side loss
 - **THEN** the training loss runner MUST ignore it
 - **AND** compute CoordExp losses from logits and `TokenSequence`.
+
+#### Scenario: Compact supervised-row logits are requested
+
+- **WHEN** Qwen forward uses `logits_to_keep` for supervised rows
+- **THEN** the returned logits MUST have full vocabulary width
+- **AND** receipts MUST record the exact physical positions kept
+- **AND** `LossContext` MUST fail if any supervised atom lacks a matching kept
+  physical position.
 
 #### Scenario: Inputs embeds shortcut requested
 
@@ -97,13 +128,24 @@ depending on model-side CE.
 Packed forward with FlashAttention SHALL prove explicit varlen segment
 isolation using cumulative sequence lengths and maximum sequence lengths or an
 equivalent upstream-backed mechanism. A 2D zero mask over a packed row MUST NOT
-be accepted as the proof of isolated packed attention.
+be accepted as the proof of isolated packed attention. "Equivalent" proof MUST
+name the installed upstream branch and record evidence that Qwen forward reached
+the varlen path with cumulative sequence lengths and max lengths derived from
+`PackedSegment` boundaries.
 
 #### Scenario: FA2 enabled with ordinary 2D mask
 
 - **WHEN** FlashAttention is enabled and the forward inputs rely only on a 2D
   padding-style mask for packed isolation
 - **THEN** Qwen forward validation MUST fail before training.
+
+#### Scenario: FA2 branch proof emitted
+
+- **WHEN** a packed forward debug receipt claims FlashAttention segment
+  isolation
+- **THEN** it MUST include cumulative sequence lengths, max sequence lengths,
+  segment count, resolved attention implementation, and evidence of the
+  upstream varlen branch used for the call.
 
 ### Requirement: Visual Replacement Remains In Transformers
 

@@ -24,6 +24,14 @@ configs, but every run MUST save the final resolved config as self-contained
 YAML and JSON under the run artifact directory. The resolved config artifacts
 MUST include compact resolution provenance: entry config path, inherited parent
 paths, source content fingerprints, and path-origin metadata for path fields.
+Inheritance MUST use a single top-level `extends` parent per YAML file, with
+parent files resolved first and child dictionaries deep-merged over parents.
+Lists MUST replace parent lists rather than append. Explicit YAML `null` MUST
+only be accepted for optional fields and MUST NOT delete inherited keys.
+Paths for data, fixtures, cache, and references MUST resolve relative to the
+YAML file that declares them, while `run.artifact_root` MAY remain literal or
+cwd-relative by operator choice. Cycles MUST fail with the full inheritance
+chain.
 
 #### Scenario: Unknown authored field
 
@@ -39,6 +47,19 @@ paths, source content fingerprints, and path-origin metadata for path fields.
   without reopening the inherited files.
 - **AND** the resolved artifacts MUST include source fingerprints and path
   origins for inherited config files and path-valued fields.
+
+#### Scenario: Child config overrides inherited values
+
+- **WHEN** a child config extends a parent config
+- **THEN** parent dictionaries MUST resolve before child dictionaries
+- **AND** child scalar or dictionary values MUST override parent values by key
+- **AND** child list values MUST replace the parent list exactly.
+
+#### Scenario: Inheritance cycle authored
+
+- **WHEN** two or more config files form an `extends` cycle
+- **THEN** config loading MUST fail before schema construction
+- **AND** the diagnostic MUST include the full cycle of config paths.
 
 ### Requirement: Run Identity And Artifact Root
 
@@ -147,9 +168,43 @@ effective batch when the division is not exact.
 
 - **WHEN** the packed stream tail cannot form a complete planned optimizer-step
   window
-- **THEN** run-length resolution MUST exclude that tail from
-  `resolved_max_steps`
-- **AND** training MUST NOT create a partial final optimizer update.
+- **THEN** epoch-led run-length resolution MUST deterministically continue into
+  the next epoch/order stream just enough to complete the final effective-batch
+  window
+- **AND** training MUST NOT silently discard final packs
+- **AND** training MUST NOT create a smaller partial final optimizer update
+- **AND** runtime receipts MUST record the bounded tail-fill pack count.
+
+### Requirement: Packed Qwen Runtime Controls
+
+Packed Qwen3-VL supervised training SHALL make attention backend, compute
+dtype, sequence-length budget, and logits-memory budget explicit before model
+mutation. Unless an explicit debug/parity profile disables it, packed training
+MUST request `attn_implementation: flash_attention_2` and a compute dtype
+accepted by FlashAttention, such as bf16 or fp16. Runtime setup MUST fail if a
+packed training config resolves to sdpa/eager attention, fp32 FlashAttention,
+or a worst-case full-sequence logits memory estimate above the resolved budget.
+The worst-case estimate MUST use the resolved `packing.global_max_length`,
+tokenizer vocab size, and model logits dtype, and the estimate MUST be recorded
+in a setup or forward receipt. Implementations MAY materialize only selected
+supervised rows, but MUST NOT use selected-row materialization to bypass the
+preflight budget guard without an approved debug/parity profile.
+
+#### Scenario: Packed training resolves to sdpa
+
+- **WHEN** a packed supervised training config resolves to sdpa or eager
+  attention without an approved debug/parity profile
+- **THEN** runtime setup MUST fail before model mutation
+- **AND** the diagnostic MUST name the resolved attention implementation.
+
+#### Scenario: Worst-case logits estimate exceeds budget
+
+- **WHEN** `packing.global_max_length`, vocab size, and logits dtype imply a
+  worst-case full-sequence logits tensor larger than the resolved logits-memory
+  budget
+- **THEN** runtime setup MUST fail before training begins
+- **AND** the diagnostic MUST report the estimated bytes, configured budget,
+  sequence length, vocab size, and dtype.
 
 ### Requirement: Backend Status Labels
 

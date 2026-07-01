@@ -631,9 +631,12 @@ must compare more than token/input/label triples. For each sentinel supervised
 site, it should assert the dense `input_ids[target_position]`, dense
 `labels[target_position]`, `TokenAtom.target_position`,
 `LossContext.logits_position`, `primary_token_id`, `segment_id`, and the exact
-BaseTokenCE logits row consumed by the loss. It should also assert that full
-logits are requested for the packed row, with `outputs.logits.shape[:2] ==
-input_ids.shape` and `logits_to_keep` absent or `0`. The fixture exists to
+BaseTokenCE logits row consumed by the loss. It should also assert that
+full-vocabulary logits are consumed for each supervised row. When compact
+supervised rows are requested, the fixture should assert the returned time axis
+matches the explicit `logits_to_keep` physical-position map; when compacting is
+absent, `outputs.logits.shape[:2] == input_ids.shape` and `logits_to_keep` is
+absent or `0`. The fixture exists to
 catch template/masking/off-by-one mistakes; it is not a routine training metric
 and should not introduce an MS-Swift-style token-loss monitor.
 
@@ -1989,7 +1992,7 @@ acceptable and should not be hidden behind over-designed path indirection.
 
 `adapter.path`, when present, means "load an existing adapter
 checkpoint." Adapter initialization is driven by the adapter-tuning config: if
-LoRA or dLoRA tuning is enabled and no adapter path is provided, initialize a
+LoRA or DoRA tuning is enabled and no adapter path is provided, initialize a
 fresh adapter automatically. Do not require a separate explicit `init` flag in
 V1. Path presence means load; path absence plus enabled tuning means initialize.
 
@@ -2007,7 +2010,7 @@ type, adapter target policy, and, when present, the resolved adapter checkpoint
 identity.
 
 V1 adapter support should include PEFT-style LoRA adapter directories and the
-project's dLoRA path. The adapter schema should be explicit and object-shaped,
+project's DoRA path. The adapter schema should be explicit and object-shaped,
 with fields such as `type`, optional `path`, `target_towers`, and
 `target_modules`. Standard LoRA must support targeting all linear modules
 across the Qwen3-VL vision, aligner, and language towers. Target selection must
@@ -2023,7 +2026,7 @@ recording for that tower. If a tower is not verified, reject it in schema rather
 than accepting it silently.
 
 The intended V1 adapter support matrix is full support for both `lora` and
-`dlora` over `target_towers: [language]`, `[aligner]`, `[vision]`, and explicit
+`dora` over `target_towers: [language]`, `[aligner]`, `[vision]`, and explicit
 combinations of those towers. A tower is considered supported only after
 verification for each adapter type covers:
 
@@ -2037,7 +2040,7 @@ Combination support should be verified through each single tower independently,
 plus one combined smoke for `[vision, aligner, language]`. Single-tower checks
 localize target-matching failures; the all-tower smoke proves composition.
 
-Adapter target discovery writes `adapter_targets.json` when LoRA or dLoRA is
+Adapter target discovery writes `adapter_targets.json` when LoRA or DoRA is
 enabled. Keep this separate from `optimizer_groups.json`, because target discovery is a
 model-surgery trust gate before optimizer grouping.
 The receipt should prove adapter type, base model identity, target towers,
@@ -2058,34 +2061,34 @@ structure. `optim/` consumes the resulting trainable parameters and LR group
 metadata; it does not perform adapter injection. `training/` decides when to
 train, but it does not own model surgery.
 
-dLoRA is the intended first-class adapter type behind explicit `type: dlora`,
-but the name is provisional until the source study defines its exact mechanism.
-The source study must decide whether this repository's `dlora` means upstream
-DoRA/weight-decomposed LoRA via PEFT `use_dora`, a CoordExp-owned decomposed or
-dynamic LoRA mechanism, or another explicitly described variant. Do not treat
-`dlora` as an unnamed LoRA variant, do not conflate it with similarly named
-upstream mechanisms without recording the mapping, and do not silently fall
-back from dLoRA to standard LoRA. The repo's default tuning recipe should use
-dLoRA after this definition gate passes, not standard LoRA, but this should be
-explicit in runnable configs rather than hidden as a code default.
+DoRA is the intended first-class adapter type behind explicit `type: dora`.
+The source study found no separate local, MS-Swift, or PEFT mechanism named
+`dlora`; V1 therefore maps the approved `dora` adapter to upstream
+DoRA/weight-decomposed LoRA via PEFT `use_dora`. Do not accept `dlora` as an
+alias, do not treat it as an unnamed LoRA variant, do not invent a new
+CoordExp-owned decomposed or dynamic LoRA mechanism during implementation, and
+do not silently fall back from DoRA to standard LoRA. The repo's default tuning
+recipe should use DoRA after this definition gate passes, not standard LoRA,
+but this should be explicit in runnable configs rather than hidden as a code
+default.
 
-Before implementing dLoRA, inspect MS-Swift, Transformers, and PEFT as initial
+Before implementing DoRA, inspect MS-Swift, Transformers, and PEFT as initial
 guidance. Local source roots observed during design:
 
 - MS-Swift: `/data/ms-swift/swift`
 - Transformers: `/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers`
 - PEFT: `/root/miniconda3/envs/ms/lib/python3.12/site-packages/peft`
 
-The final dLoRA implementation should still be repo-owned and approval-card
+The final DoRA implementation should still be repo-owned and approval-card
 driven. The inspection step is for behavioral guidance, module targeting,
 checkpoint format, and avoiding avoidable incompatibilities, not for inheriting
 MS-Swift's broader framework shape.
 
-This inspection should produce a dedicated durable note before the dLoRA
+This inspection should produce a dedicated durable note before the DoRA
 approval card, for example:
 
 ```text
-docs/architecture/proposals/2026-06-27-coordexp-swift/v1-DLORA_SOURCE_STUDY.md
+docs/architecture/proposals/2026-06-27-coordexp-swift/source-studies/dora.md
 ```
 
 Parallel inspection lanes should cover MS-Swift adapter/tuner behavior,
@@ -2093,45 +2096,47 @@ Transformers/PEFT adapter mechanics, and Qwen3-VL module naming plus target
 matching. Do not create a placeholder study file; create it when the inspection
 has real findings.
 
-`adapter.type: dlora` is not implementation-ready until that source study is
+`adapter.type: dora` is not implementation-ready until that source study is
 accepted and the adapter card records the definition, exact target discovery,
 parameter names, optimizer grouping, checkpoint payload layout, metadata, and
-load validation. Before that gate, runnable configs that request `dlora` should
-fail validation rather than silently becoming standard LoRA, DoRA, or a partial
-placeholder. The first adapter-enabled smoke may still be specified as a dLoRA
-smoke, but then the dLoRA definition/source study and minimal dLoRA round-trip
-probe are prerequisites for running it. A pre-dLoRA base-only or standard-LoRA
-smoke is a separate user decision, not the default implied by this proposal.
+load validation. Before that gate, runnable configs that request `dora` should
+fail validation rather than silently becoming standard LoRA or a partial
+placeholder. Runnable configs that request `dlora` should fail validation as an
+unsupported V1 spelling and point to `adapter.type: dora`. The first
+adapter-enabled smoke is a DoRA smoke, so the DoRA definition/source study and
+minimal DoRA round-trip probe are prerequisites for running it. A pre-DoRA
+base-only or standard-LoRA smoke is a separate user decision, not the default
+implied by this proposal.
 
-The first dLoRA smoke trains only dLoRA adapter parameters. It does not train
+The first DoRA smoke trains only DoRA adapter parameters. It does not train
 full base-model parameters from the vision, aligner, or language towers.
 
 Full base-model parameter training is not implemented in this repo's V1 scope.
 It is intentionally marked not implemented because it is not affordable for the
-intended use. The trainable model surface is LoRA/dLoRA adapter parameters plus
+intended use. The trainable model surface is LoRA/DoRA adapter parameters plus
 explicit special-token embedding parameters. Any future repo-added trainable
 modules would need separate approval and explicit LR groups.
 
 The normal recipe freezes the vision tower, may freeze the aligner explicitly,
-and mainly injects dLoRA over `all_linear` modules in the language tower. The
+and mainly injects DoRA over `all_linear` modules in the language tower. The
 first smoke should use `target_towers: [language]` and
 `target_modules: all_linear`. This exercises adapter injection, optimizer
 grouping, backward, metrics, and checkpoint metadata without full base-model
 memory pressure.
 
-Production training is expected to use language-tower dLoRA first, but this is
+Production training is expected to use language-tower DoRA first, but this is
 only the default recipe. The implementation must still make the full supported
 adapter-target matrix reliable. Vision and MLP aligner targets should not be
 treated as secondary or speculative if they are exposed in config.
 
 Adapter support may land incrementally by adapter type and tower, but the config
 schema must expose only verified combinations. A pair such as
-`adapter.type: dlora` plus `target_towers: [vision]` is accepted only after its
+`adapter.type: dora` plus `target_towers: [vision]` is accepted only after its
 target discovery, forward/backward, optimizer grouping, receipt, and load
 round-trip checks pass. Unverified combinations fail fast as unsupported rather
 than running a best-effort match.
 
-If `adapter.type` is `lora` or `dlora`, `path` is absent, and the run is
+If `adapter.type` is `lora` or `dora`, `path` is absent, and the run is
 in inference/eval-only mode, fail fast. Path absence plus adapter type means
 fresh adapter initialization for tuning, not evaluation of a random adapter.
 
@@ -2149,7 +2154,7 @@ training is not a supported path, so the schema should reject base-trainability
 fields rather than accepting a field that can only be empty.
 
 Special-token embedding tuning is a first-class trainable surface, separate
-from LoRA/dLoRA. Use "embedding" in public names rather than "row" when naming
+from LoRA/DoRA. Use "embedding" in public names rather than "row" when naming
 this surface. The config surface is `model.special_token_embeddings`. The
 public optimizer group remains `token_embeddings`. The config surface must be
 explicitly present in every training config; standard profile YAMLs should
@@ -2163,28 +2168,30 @@ Read-only non-training utilities, such as tokenizer setup inspection or a
 base-only forward-contract probe, may omit `model.special_token_embeddings`
 because they are not constructing a trainable surface.
 
-The special-token embedding mechanism trains compact selected-token embedding
-parameters initialized from the loaded base model's corresponding embedding/head
-rows during Qwen setup. This setup-time initialization is preprocessing/model
-surgery, not a `TrainRuntime` responsibility. After setup, these trainables are
-ordinary model-side parameters assigned to the `token_embeddings` optimizer
-group. This is selected-token full embedding tuning, not LoRA over the
-embedding/head. Do not directly unfreeze full embedding/head matrices in V1 and
-do not rely on masked gradients over full matrices as the default training
-mechanism. Trainable selected-token tensors default to the base embedding dtype;
-do not add a dtype knob unless later evidence requires it. Checkpoints should
-save a compact special-token embedding delta relative to the validated base
-rows, so runtime loading remains base model plus compact trainable state rather
-than a full merged embedding/head export.
+The special-token embedding mechanism trains compact selected-token additive
+deltas over the loaded base model's corresponding embedding/head rows. The base
+model/tokenizer preprocessing already provides the coordinate and wrapper token
+rows; runtime Qwen setup installs zero-initialized trainable deltas over those
+frozen rows. This setup-time model surgery is not a `TrainRuntime`
+responsibility. After setup, these deltas are ordinary model-side parameters
+assigned to the `token_embeddings` optimizer group. This is selected-token full
+embedding tuning, not LoRA over the embedding/head. Do not directly unfreeze
+full embedding/head matrices in V1 and do not rely on masked gradients over full
+matrices as the default training mechanism. Trainable selected-token tensors
+default to the base embedding dtype; do not add a dtype knob unless later
+evidence requires it. Checkpoints should save compact additive deltas relative
+to the validated base rows, so runtime loading remains base model plus compact
+trainable state rather than a full merged embedding/head export.
 
 Before implementing the special-token embedding surface, perform a short source
 study and record the decision in the module card. The study must compare a
 custom input/output wrapper pair owned under `src/qwen/`, PEFT
 `TrainableTokensConfig` / `TrainableTokensModel`, and LoRA
 `trainable_token_indices` when LoRA is already present. The chosen mechanism
-must pass the same contract either way: selected tokens initialize from base
-rows, base embedding/head matrices remain frozen, tied-head models update both
-input lookup and selected output-logit columns, untied models save separate
+must pass the same contract either way: selected token rows in the base model
+are validated, trainable deltas are zero-initialized over those frozen rows,
+base embedding/head matrices remain frozen, tied-head models update both input
+lookup and selected output-logit columns, untied models save separate
 input/output deltas, checkpoint payloads remain compact, and loading validates
 token strings and ids. If PEFT trainable tokens are used, the implementation
 must explicitly avoid PEFT's automatic full embedding save behavior when
@@ -2242,8 +2249,8 @@ All listed special tokens must already exist in the tokenizer before training
 starts. Missing tokens are fail-fast errors; do not mutate the tokenizer or
 resize embeddings automatically in V1.
 
-After the dLoRA source-study gate is satisfied, the first dLoRA smoke should
-train dLoRA plus special-token embeddings, with separate explicit optimizer
+After the DoRA source-study gate is satisfied, the first DoRA smoke should
+train DoRA plus special-token embeddings, with separate explicit optimizer
 groups. `optimizer.groups.token_embeddings` must provide one LR and weight
 decay for the whole special-token embedding surface. Do not reuse the adapter
 LR. Do not split coordinate-token and wrapper-token LRs in V1.
@@ -2377,8 +2384,8 @@ Default training forward kwargs are fixed and conservative:
 
 - `labels=None`;
 - `use_cache=False`;
-- full logits requested, using the installed Qwen3-VL mechanism such as
-  `logits_to_keep=0`;
+- full-vocabulary logits requested for either the full sequence or explicitly
+  selected supervised causal rows;
 - output object/dataclass shape is asserted by the wrapper; do not require a
   rote `return_dict=True` kwarg when the installed forward signature does not
   declare it;
@@ -2504,10 +2511,11 @@ Wrapper invariants:
 - never pass `labels` in production training; HF loss is a vanilla CE fallback,
   while CoordExp-swift consumes logits and explicitly approved optional outputs
   through `LossRunner`;
-- request full logits for V1 supervised training. Do not use
-  `logits_to_keep=1`, because supervised atoms may appear across the whole
-  packed sequence; selected-logit/chunked-logit optimization can be revisited
-  only after the transparent path is correct;
+- request full-vocabulary logits for V1 supervised training. Do not use
+  suffix-style `logits_to_keep=1`, because supervised atoms may appear across
+  the whole packed sequence. A compact selected-row path is allowed only when
+  it passes explicit physical positions and `LossContext` validates that every
+  supervised atom is covered;
 - treat hidden-state capture as deferred in V1 unless a wrapper-owned hook is
   explicitly approved and shape-tested. The installed public Qwen3-VL forward
   path should not be assumed to return usable `hidden_states` merely because
@@ -2545,9 +2553,9 @@ diagnostic hooks, but it should not reimplement the replacement path.
 The first Qwen forward smoke should assert the real wrapper contract on a
 single-image example: image placeholder count matches grid-derived visual rows,
 `labels=None` at the model boundary, non-`None` labels are rejected, model-side
-`loss is None`, full logits exist with `outputs.logits.shape[:2] ==
-input_ids.shape`, `use_cache=False`, `outputs.past_key_values is None`,
-`logits_to_keep` is absent or `0`, and no model-side CE path is used. The smoke
+`loss is None`, full-vocabulary logits exist for either the full input sequence
+or explicit supervised physical positions, `use_cache=False`,
+`outputs.past_key_values is None`, and no model-side CE path is used. The smoke
 must not require `rope_deltas` for explicit-position training, and must treat
 hidden-state capture as unsupported/deferred unless an approved wrapper hook is
 present. For packed FA2, the smoke should also assert that explicit
@@ -2560,14 +2568,15 @@ smoke that merely checks "forward does not crash" is insufficient.
 The first implementation wave should build the shifted-loss-consumption parity
 fixture before building the full `SupervisedTrainer`. Trainer work may proceed
 only after the fixture proves the Qwen template, dense labels, `TokenAtom`
-positions, `LossContext.logits_position`, full-logit selection, and image
+positions, `LossContext.logits_position`, full-vocabulary logit-row selection, and image
 placeholder masking agree at the model/loss boundary.
 
 Qwen smoke, failure, and explicit debug runs should write
 `run_dir/debug/qwen_forward_contract.json`. The receipt should include
-input shape, full-logit shape, `labels` status, `use_cache` status,
-`past_key_values` status, `logits_to_keep`, image placeholder counts and
-ranges, `image_grid_thw`, expected visual token count, visual payload shapes,
+input shape, logits shape, `labels` status, `use_cache` status,
+`past_key_values` status, `logits_to_keep`/physical-position map, image
+placeholder counts and ranges, `image_grid_thw`, expected visual token count,
+visual payload shapes,
 HF-boundary `position_ids` shape, segment boundaries, `text_position_ids` reset
 points, `cu_seq_lens_q/k`, `max_length_q/k`, attention-mask handling, and any
 disabled or deferred features such as hidden-state capture.
@@ -2825,7 +2834,7 @@ Inherited base files may use the string sentinel `REQUIRED` as an explicit
 reminder for non-trivial hyperparameters that must be decided by a
 direction-level or run-level config. This is especially important for learning
 rates, effective batch choices, packing/global-length
-choices, dLoRA shape/config choices, run-length policy such as `training.epochs`,
+choices, DoRA shape/config choices, run-length policy such as `training.epochs`,
 optional debug `training.max_steps`, and other research-defining knobs. If any
 `REQUIRED` value survives into the final merged runnable config, loading fails
 with a `ConfigContractError` before training begins. `REQUIRED` is not a
@@ -2948,7 +2957,7 @@ debug:
 
 `model` is the user-facing model/loading/processor section, even though Qwen
 implementation code lives under `src/qwen/`. `adapter` is separate so LoRA,
-dLoRA, and adapter loading/initialization are not hidden inside `model`.
+DoRA, and adapter loading/initialization are not hidden inside `model`.
 Selected special-token embedding tuning remains under
 `model.special_token_embeddings`, because it is Qwen embedding/head model
 surgery rather than an adapter family. Scheduler settings, when present, belong
@@ -3282,7 +3291,7 @@ The semantic `language` map still records `lm_head` for identity, checkpoint,
 and selected-token output-column handling, but adapter injection targets decoder
 and language-model internal linear modules. Training selected output columns is
 owned by `src/qwen/special_token_embeddings.py`; adapting `lm_head` with LoRA or
-dLoRA would require a separate approval card.
+DoRA would require a separate approval card.
 
 The public semantic trainable-surface vocabulary is stable:
 
@@ -3302,7 +3311,7 @@ weights outside approved adapter modules and approved special-token embedding
 deltas are configuration errors unless a future design card explicitly adds
 that training mode.
 
-Optimizer grouping must support explicit groups for LoRA/dLoRA adapter
+Optimizer grouping must support explicit groups for LoRA/DoRA adapter
 parameters and special-token embedding parameters. Adapter LR groups are
 tower-scoped under `optimizer.groups.adapters`: `language`, `aligner`, and
 `vision`. Only groups for trainable configured adapter towers are required;
@@ -3323,7 +3332,7 @@ identity or pointer equality, not by config assumption. The result is recorded
 in the model/setup receipt and determines whether special-token embedding
 deltas are saved as `shared_embed_delta` or separate input/output deltas.
 Special-token embedding trainables cover coordinate tokens plus the four schema
-wrapper tokens, are fully trainable selected embeddings, and are saved as
+wrapper tokens, are fully trainable selected additive deltas, and are saved as
 embedding-delta safetensors. Do not save full embedding/head matrices as the V1
 checkpoint payload for this surface.
 
@@ -3352,7 +3361,7 @@ Every run writes `optimizer_groups.json`. The name is intentionally
 specific: it records parameter grouping, not every optimizer runtime detail. It
 must prove every trainable parameter name, shape, dtype, semantic group, LR,
 weight decay, decay/no-decay bucket, match rule, parameter count, trainable
-status, trainable source, and whether the parameter came from LoRA, dLoRA,
+status, trainable source, and whether the parameter came from LoRA, DoRA,
 special-token embeddings, or another approved trainable module. It also records
 frozen summaries and the validation result for unmatched, duplicate-matched,
 and no-parameter groups.
@@ -3362,9 +3371,9 @@ modules and trainable parameters, while `optimizer_groups.json` assigns those
 trainable parameters to LR groups. Keep the receipts separate but easy to
 compare.
 
-The default adapter training profile is language-tower dLoRA, but this is only
+The default adapter training profile is language-tower DoRA, but this is only
 the default profile. If the config schema exposes `vision`, `aligner`, or
-`language` adapter targets for LoRA or dLoRA, optimizer construction must cover
+`language` adapter targets for LoRA or DoRA, optimizer construction must cover
 those choices with explicit trainable-surface recording and group validation.
 Do not accept a trainable adapter tower whose parameters cannot be discovered,
 validated, assigned to an optimizer group, stepped, and reported.
@@ -3706,7 +3715,7 @@ to carry a single packed row plus sidecars through `compute_loss`, and it
 already implements useful scheduling and checkpoint machinery. However, the
 core CoordExp-swift contracts are deliberately non-standard: one packed
 sequence per rank/step, segment-isolated attention and position behavior,
-canonical `TokenSequence` supervision, full-logit `LossContext`, flexible
+canonical `TokenSequence` supervision, physical-position `LossContext`, flexible
 token-wise auxiliary losses, segment-balanced reduction, and explicit Qwen
 FlashAttention varlen inputs. Making those contracts first-class is more
 important than inheriting a conventional batch/labels/collator trainer surface.
@@ -3998,9 +4007,11 @@ the first proof point focused on semantic pipeline correctness rather than
 cluster/runtime availability.
 
 For smoke, `sample_limit` limits loaded examples. The fixture and
-`training.effective_batch_size: 1` plus `training.max_steps: 5` should make the
-smoke resolve to `resolved_grad_accum_steps=1` and `resolved_max_steps=5`. This
-is the intended use of the max-step override: bounded debugging and smoke
+`training.effective_batch_size: 2` plus `training.max_steps: 5` should make the
+single-rank smoke resolve to `resolved_grad_accum_steps=2` and
+`resolved_max_steps=5`. This deliberately exercises accumulation and
+planned-step denominator behavior in the smallest vertical proof. This is the
+intended use of the max-step override: bounded debugging and smoke
 verification. Production configs should keep `max_steps: null` and let epochs
 plus the packed dataloader determine the run length.
 
@@ -4023,11 +4034,11 @@ metadata. Those files are outputs of the real path, not a separate
 Smoke fixtures and smoke configs should be permanent repo artifacts because
 they are regression anchors and agent-readable examples. The first smoke
 fixture should be self-contained and real enough to exercise the Qwen
-image/template path: use one tiny existing CoordExp-style local image/example,
-copy the needed image into the fixture, and store stable metadata and expected
-rendered-text snapshots beside the fixture JSONL. Do not depend on an external
-dataset path at smoke time, and do not use a synthetic-only fixture as the
-defining vertical smoke.
+image/template path: use two short existing CoordExp-style local examples and
+their copied images, then store stable metadata beside the fixture JSONL.
+Renderer-produced expected rendered-text snapshots are added later after the
+real renderer exists. Do not depend on an external dataset path at smoke time,
+and do not use a synthetic-only fixture as the defining vertical smoke.
 
 The selected source image must be copied into
 `tests/fixtures/smoke/qwen3_vl_single_image_pack/images/`. The fixture should
@@ -4037,9 +4048,9 @@ or point to that provenance, but `checksums.json` is the structured source of
 truth. Use checksum for this permanent fixture even though production image
 identity defaults to path plus file stat.
 Keep `checksums.json` fixture-specific rather than turning it into a generic
-provenance manifest. It should be small and explicit: checksum algorithm, one
-`source_example` object, one `images` list, original source paths, copied
-fixture paths, source file stats, checksums, and selection rationale.
+provenance manifest. It should be small and explicit: checksum algorithm,
+`source_examples`, an `images` list, original source paths, copied fixture
+paths, source file stats, checksums, and selection rationale.
 Use SHA-256 for the copied fixture image checksum and record
 `"algorithm": "sha256"` once in `checksums.json`. V1 does not need configurable
 checksum algorithms for the smoke fixture.
@@ -4242,7 +4253,7 @@ matching checkpoint directory names. The summary contains planned step id,
 split, eval dataset identity, sample count, pack count, aggregate metrics,
 metric event references, linked checkpoint pointer or directory when present,
 warning/update status context, and bounded timing. It does not include
-per-pack, per-example, full-logit, or per-token prediction dumps by default;
+per-pack, per-example, full-vocabulary logit, or per-token prediction dumps by default;
 debug mode may add bounded example ids or failed-pack diagnostics.
 
 `run_manifest.json` links eval summary paths and may store a tiny latest/best
@@ -4326,7 +4337,7 @@ checkpoints/checkpoint-5/
 
 Do not copy or export the base model into each checkpoint. Adapter payloads live
 under `adapter/`; standard PEFT-compatible adapter layouts should be preserved
-when the adapter type supports them, while dLoRA may use its own explicit
+when the adapter type supports them, while DoRA may use its own explicit
 metadata in that folder. Special-token embedding tensors are saved in
 `special_token_embeddings.safetensors`; `special_token_embeddings.json` records
 token ids, token strings, tied/untied mode, tensor keys, checkpoint tensor

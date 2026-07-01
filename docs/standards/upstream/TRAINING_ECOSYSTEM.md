@@ -119,8 +119,9 @@ lorap_lr_ratio
   silently change the denominator merely because more logical segments fit into
   one physical row.
 - `logits_to_keep` changes the logits time axis. CoordExp token diagnostics and
-  segment-aware sidecar losses should require full logits until there is an
-  explicit projection map from physical causal rows to sliced logits rows.
+  segment-aware sidecar losses require full-vocabulary logits plus either the
+  full sequence time axis or an explicit projection map from physical causal
+  rows to compact logits rows.
 
 ## Packing Interface
 
