@@ -486,6 +486,76 @@ def test_supervised_trainer_fails_if_pack_stream_cannot_fill_planned_window() ->
     assert exc_info.value.context["local_micro_step_index"] == 1
 
 
+def test_supervised_trainer_streams_backward_before_next_forward_when_supported() -> None:
+    log: list[str] = []
+    trainer = SupervisedTrainer(
+        model=object(),
+        schedule=_schedule(resolved_max_steps=1, grad_accum_steps=2),
+        pack_stream=_micro_steps(2, log),
+        qwen_forward=_forward(log),
+        loss_context_factory=_loss_context(log),
+        loss_runner=StreamingFakeLossRunner(log),
+        runtime=FakeRuntime(log),
+    )
+
+    result = trainer.run()
+
+    assert result.completed_steps == 1
+    assert result.consumed_micro_steps == 2
+    assert result.step_results[0].loss_bundle_artifact["total_loss"] == 1.0
+    assert result.step_results[0].loss_bundle_artifact.get("partial") is None
+    assert log.index("runtime.backward:0.5") < log.index("forward:1")
+    assert log == [
+        "stream:0",
+        "runtime.move:1:0",
+        "stream:1",
+        "runtime.move:1:1",
+        "streaming.prepare:2",
+        "forward:0",
+        "context:0",
+        "streaming.loss:0",
+        "runtime.pre:1",
+        "runtime.backward:0.5",
+        "forward:1",
+        "context:1",
+        "streaming.loss:1",
+        "runtime.pre:1",
+        "runtime.backward:0.5",
+        "runtime.post:1",
+        "runtime.clip:1",
+        "runtime.optimizer:1",
+        "runtime.scheduler:1",
+        "runtime.zero:1",
+    ]
+
+
+def test_streaming_scalar_gate_partial_window_marks_metrics_unavailable() -> None:
+    log: list[str] = []
+    trainer = SupervisedTrainer(
+        model=object(),
+        schedule=_schedule(resolved_max_steps=1, grad_accum_steps=2),
+        pack_stream=_micro_steps(2, log),
+        qwen_forward=_forward(log),
+        loss_context_factory=_loss_context(log),
+        loss_runner=StreamingFakeLossRunner(log),
+        runtime=FakeRuntime(log, unsafe_pre_call_indices={0}),
+    )
+
+    result = trainer.run()
+
+    artifact = result.step_results[0].loss_bundle_artifact
+    assert artifact["partial"] is True
+    assert artifact["metrics"] == {}
+    assert artifact["diagnostics"]["normalizer_scope"] == "partial_planned_step"
+    assert artifact["diagnostics"]["processed_micro_step_count"] == 1
+    assert artifact["diagnostics"]["planned_micro_step_count"] == 2
+    assert result.step_results[0].micro_step_count == 1
+    assert result.step_results[0].optimizer_update_status == "skipped_non_finite_scalar"
+    assert "runtime.backward:0.5" not in log
+    assert "forward:1" not in log
+    assert log[-2:] == ["runtime.scheduler:1", "runtime.zero:1"]
+
+
 @dataclass(frozen=True)
 class FakeForwardResult:
     pack_index: int
@@ -510,19 +580,54 @@ class FakeLossRunner:
         return FakeLossBundle(total_loss=torch.tensor(1.0, requires_grad=True))
 
 
+class StreamingFakeLossRunner(FakeLossRunner):
+    def compute(self, contexts: tuple[Any, ...]) -> FakeLossBundle:
+        raise AssertionError("streaming trainer path must not retain all contexts")
+
+    def prepare_planned_step(self, micro_steps: tuple[SupervisedMicroStep, ...]) -> dict[str, int]:
+        self.log.append(f"streaming.prepare:{len(micro_steps)}")
+        return {"micro_step_count": len(micro_steps)}
+
+    def compute_micro_step(
+        self,
+        context: Any,
+        plan: dict[str, int],
+        *,
+        local_micro_step_index: int,
+    ) -> FakeLossBundle:
+        del context
+        self.log.append(f"streaming.loss:{local_micro_step_index}")
+        loss = 1.0 / float(plan["micro_step_count"])
+        return FakeLossBundle(total_loss=torch.tensor(loss, requires_grad=True))
+
+    def finalize_planned_step(
+        self,
+        micro_loss_artifacts: tuple[dict[str, Any], ...],
+        plan: dict[str, int],
+    ) -> dict[str, float]:
+        return {
+            "total_loss": sum(float(item["total_loss"]) for item in micro_loss_artifacts),
+            "metrics": {"loss/total": sum(float(item["total_loss"]) for item in micro_loss_artifacts)},
+            "diagnostics": {"normalizer_scope": "planned_step_streaming"},
+        }
+
+
 class FakeRuntime:
     def __init__(
         self,
         log: list[str],
         *,
         unsafe_pre_steps: set[int] | None = None,
+        unsafe_pre_call_indices: set[int] | None = None,
         unsafe_post_steps: set[int] | None = None,
         forward_device: str | None = None,
     ) -> None:
         self.log = log
         self.unsafe_pre_steps = unsafe_pre_steps or set()
+        self.unsafe_pre_call_indices = unsafe_pre_call_indices or set()
         self.unsafe_post_steps = unsafe_post_steps or set()
         self.forward_device = forward_device
+        self.pre_call_count = 0
 
     def move_micro_step(
         self,
@@ -543,7 +648,9 @@ class FakeRuntime:
         planned_step_id: int,
     ) -> GateDecision:
         self.log.append(f"runtime.pre:{planned_step_id}")
-        if planned_step_id in self.unsafe_pre_steps:
+        call_index = self.pre_call_count
+        self.pre_call_count += 1
+        if planned_step_id in self.unsafe_pre_steps or call_index in self.unsafe_pre_call_indices:
             return _gate(
                 planned_step_id,
                 stage="pre_backward_scalar",

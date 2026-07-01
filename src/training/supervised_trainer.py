@@ -166,6 +166,25 @@ class SupervisedTrainer:
                 planned_step_id,
                 {"micro_steps_per_planned_step": micro_steps_per_planned_step},
             )
+            if _supports_streaming_loss(self.loss_runner):
+                step_result, consumed_count = self._run_streaming_planned_step(
+                    planned_step_id=planned_step_id,
+                    micro_steps_per_planned_step=micro_steps_per_planned_step,
+                )
+                consumed_micro_steps += consumed_count
+                step_results.append(step_result)
+                self._emit(
+                    "planned_step.completed",
+                    planned_step_id,
+                    step_result.to_artifact_dict(),
+                )
+                self._trigger_scheduled_events(
+                    planned_step_id=planned_step_id,
+                    step_result=step_result,
+                    scheduled_event_counts=scheduled_event_counts,
+                )
+                continue
+
             contexts: list[Any] = []
             qwen_receipts: list[Mapping[str, Any]] = []
             for local_micro_step_index in range(micro_steps_per_planned_step):
@@ -265,6 +284,142 @@ class SupervisedTrainer:
             consumed_micro_steps=consumed_micro_steps,
             step_results=tuple(step_results),
             scheduled_event_counts=scheduled_event_counts,
+        )
+
+    def _run_streaming_planned_step(
+        self,
+        *,
+        planned_step_id: int,
+        micro_steps_per_planned_step: int,
+    ) -> tuple[PlannedStepResult, int]:
+        moved_micro_steps: list[SupervisedMicroStep] = []
+        for local_micro_step_index in range(micro_steps_per_planned_step):
+            micro_step = self._next_micro_step(
+                planned_step_id=planned_step_id,
+                local_micro_step_index=local_micro_step_index,
+            )
+            moved_micro_steps.append(
+                self.runtime.move_micro_step(
+                    micro_step,
+                    planned_step_id=planned_step_id,
+                    local_micro_step_index=local_micro_step_index,
+                )
+            )
+
+        plan = self.loss_runner.prepare_planned_step(tuple(moved_micro_steps))
+        qwen_receipts: list[Mapping[str, Any]] = []
+        micro_loss_artifacts: list[Mapping[str, Any]] = []
+        pre_decision: GateDecision | None = None
+        post_decision: GateDecision | None = None
+        optimizer_update_status = "not_started"
+        finite_status = "unavailable"
+
+        for local_micro_step_index, micro_step in enumerate(moved_micro_steps):
+            forward_result = self.qwen_forward(
+                _runtime_model(self.runtime, self.model),
+                micro_step,
+            )
+            context = self.loss_context_factory(micro_step, forward_result)
+            loss_bundle = self.loss_runner.compute_micro_step(
+                context,
+                plan,
+                local_micro_step_index=local_micro_step_index,
+            )
+            qwen_receipts.append(_receipt_artifact(forward_result))
+            micro_loss_artifact = _artifact(loss_bundle)
+            micro_loss_artifacts.append(micro_loss_artifact)
+            self._emit(
+                "micro_step.forward",
+                planned_step_id,
+                {
+                    "local_micro_step_index": local_micro_step_index,
+                    "receipt": qwen_receipts[-1],
+                },
+            )
+            self._emit(
+                "micro_step.loss",
+                planned_step_id,
+                {
+                    "local_micro_step_index": local_micro_step_index,
+                    "loss_bundle": micro_loss_artifact,
+                },
+            )
+            pre_decision = self.runtime.pre_backward(
+                loss_bundle,
+                planned_step_id=planned_step_id,
+            )
+            self._emit(
+                "micro_step.pre_backward_gate",
+                planned_step_id,
+                {
+                    "local_micro_step_index": local_micro_step_index,
+                    **pre_decision.to_artifact_dict(),
+                },
+            )
+            optimizer_update_status = pre_decision.optimizer_update_status
+            finite_status = pre_decision.finite_status
+            if not pre_decision.should_call_backward:
+                break
+            self.runtime.backward(
+                _total_loss(loss_bundle),
+                planned_step_id=planned_step_id,
+            )
+            del loss_bundle, context, forward_result
+
+        if pre_decision is None:
+            raise RuntimeContractError(
+                "streaming planned step did not produce any micro-step decisions",
+                code="trainer.streaming_empty_step",
+                context={"planned_step_id": planned_step_id},
+            )
+
+        loss_bundle_artifact = self.loss_runner.finalize_planned_step(
+            tuple(micro_loss_artifacts),
+            plan,
+        )
+        if len(micro_loss_artifacts) != len(moved_micro_steps):
+            loss_bundle_artifact = _partial_loss_artifact(
+                loss_bundle_artifact,
+                processed_micro_step_count=len(micro_loss_artifacts),
+                planned_micro_step_count=len(moved_micro_steps),
+            )
+        self._emit(
+            "planned_step.loss",
+            planned_step_id,
+            {"loss_bundle": loss_bundle_artifact},
+        )
+
+        if pre_decision.should_call_backward:
+            post_decision = self.runtime.post_backward(
+                planned_step_id=planned_step_id,
+            )
+            self._emit(
+                "planned_step.post_backward_gate",
+                planned_step_id,
+                post_decision.to_artifact_dict(),
+            )
+            optimizer_update_status = post_decision.optimizer_update_status
+            finite_status = post_decision.finite_status
+            if post_decision.should_call_optimizer_step:
+                self.runtime.clip_gradients(planned_step_id=planned_step_id)
+                self.runtime.optimizer_step(planned_step_id=planned_step_id)
+                optimizer_update_status = "applied"
+
+        self.runtime.scheduler_step(planned_step_id=planned_step_id)
+        self.runtime.zero_gradients(planned_step_id=planned_step_id)
+
+        return (
+            PlannedStepResult(
+                planned_step_id=planned_step_id,
+                micro_step_count=len(micro_loss_artifacts),
+                loss_bundle_artifact=dict(loss_bundle_artifact),
+                pre_backward_decision=pre_decision,
+                post_backward_decision=post_decision,
+                qwen_forward_receipts=tuple(qwen_receipts),
+                optimizer_update_status=optimizer_update_status,
+                finite_status=finite_status,
+            ),
+            len(moved_micro_steps),
         )
 
     def _next_micro_step(
@@ -369,6 +524,17 @@ def _runtime_model(runtime: RuntimeBoundary, fallback_model: Any) -> Any:
     return getattr(runtime, "model", fallback_model)
 
 
+def _supports_streaming_loss(loss_runner: Any) -> bool:
+    return all(
+        callable(getattr(loss_runner, name, None))
+        for name in (
+            "prepare_planned_step",
+            "compute_micro_step",
+            "finalize_planned_step",
+        )
+    )
+
+
 def _default_loss_context(
     micro_step: SupervisedMicroStep,
     forward_result: Any,
@@ -418,6 +584,33 @@ def _artifact(value: Any) -> Mapping[str, Any]:
     if isinstance(value, Mapping):
         return value
     return {"repr": repr(value)}
+
+
+def _partial_loss_artifact(
+    artifact: Mapping[str, Any],
+    *,
+    processed_micro_step_count: int,
+    planned_micro_step_count: int,
+) -> dict[str, Any]:
+    result = dict(artifact)
+    diagnostics_value = result.get("diagnostics")
+    diagnostics = (
+        dict(diagnostics_value)
+        if isinstance(diagnostics_value, Mapping)
+        else {}
+    )
+    diagnostics.update(
+        {
+            "normalizer_scope": "partial_planned_step",
+            "processed_micro_step_count": int(processed_micro_step_count),
+            "planned_micro_step_count": int(planned_micro_step_count),
+            "metrics_status": "unavailable_partial_planned_step",
+        }
+    )
+    result["partial"] = True
+    result["metrics"] = {}
+    result["diagnostics"] = diagnostics
+    return result
 
 
 def _scheduled_event_order(

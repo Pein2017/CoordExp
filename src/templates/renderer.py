@@ -165,6 +165,22 @@ def _ordered_objects(
     indexed = tuple(enumerate(raw_example.objects))
     if object_ordering == "source_order":
         return indexed, None
+    if object_ordering == "geo_sorted":
+        unsorted = _first_unsorted_top_left_pair(indexed)
+        if unsorted is not None:
+            prev_index, curr_index, prev_anchor, curr_anchor = unsorted
+            raise TemplateContractError(
+                "geo_sorted object ordering requires top-to-bottom then left-to-right rows",
+                code="template.geo_sorted_order",
+                context={
+                    "example_id": raw_example.example_id,
+                    "previous_index": prev_index,
+                    "current_index": curr_index,
+                    "previous_anchor": list(prev_anchor),
+                    "current_anchor": list(curr_anchor),
+                },
+            )
+        return indexed, None
     if object_ordering == "random":
         if object_order_seed is None:
             raise TemplateContractError(
@@ -183,6 +199,27 @@ def _ordered_objects(
         code="template.object_ordering",
         context={"object_ordering": object_ordering},
     )
+
+
+def _first_unsorted_top_left_pair(
+    indexed_objects: Sequence[tuple[int, RawObject]],
+) -> tuple[int, int, tuple[int, int], tuple[int, int]] | None:
+    if len(indexed_objects) < 2:
+        return None
+    previous_index, previous_object = indexed_objects[0]
+    previous_anchor = _top_left_anchor(previous_object)
+    for current_index, current_object in indexed_objects[1:]:
+        current_anchor = _top_left_anchor(current_object)
+        if current_anchor < previous_anchor:
+            return previous_index, current_index, previous_anchor, current_anchor
+        previous_index = current_index
+        previous_anchor = current_anchor
+    return None
+
+
+def _top_left_anchor(obj: RawObject) -> tuple[int, int]:
+    x1, y1, _x2, _y2 = obj.bbox
+    return y1, x1
 
 
 def _render_objects(

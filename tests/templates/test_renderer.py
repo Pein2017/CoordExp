@@ -51,6 +51,46 @@ def test_render_source_order_object_box_closed_smoke_fixture() -> None:
     assert rendered.messages[-2]["content"][1]["text"] == resolved.config.template.prompt.user
 
 
+def test_render_geo_sorted_object_ordering_preserves_top_left_sorted_rows() -> None:
+    resolved = load_train_config(FIXTURE / "config.yaml")
+    config = resolved.config.template.model_copy(update={"object_ordering": "geo_sorted"})
+    first = load_raw_examples(resolved.config.data.train)[0]
+
+    rendered = render_example(first, config)
+
+    assert [item.object_id for item in rendered.realized_object_order] == [
+        "291613",
+        "1155486",
+    ]
+    assert rendered.object_ordering == "geo_sorted"
+    assert rendered.object_order_seed is None
+
+
+def test_geo_sorted_object_ordering_rejects_unsorted_rows(tmp_path: Path) -> None:
+    image = tmp_path / "image.jpg"
+    image.write_bytes(b"bytes")
+    example = RawExample(
+        "example-1",
+        ImageRef("image.jpg", image, 64, 64, {}),
+        (
+            RawObject("lower", "lower object", [10, 40, 20, 60], {}),
+            RawObject("upper", "upper object", [10, 20, 20, 30], {}),
+        ),
+        {},
+        SourceProvenance(tmp_path / "examples.jsonl", 1, "abc", "manual"),
+    )
+    config = load_train_config(FIXTURE / "config.yaml").config.template.model_copy(
+        update={"object_ordering": "geo_sorted"}
+    )
+
+    with pytest.raises(TemplateContractError) as exc_info:
+        render_example(example, config)
+
+    assert exc_info.value.code == "template.geo_sorted_order"
+    assert exc_info.value.context["previous_anchor"] == [40, 10]
+    assert exc_info.value.context["current_anchor"] == [20, 10]
+
+
 def test_geometry_first_renders_box_before_description() -> None:
     resolved = load_train_config(FIXTURE / "config.yaml")
     config = resolved.config.template.model_copy(update={"object_field_order": "geometry_first"})
@@ -271,6 +311,17 @@ def test_expected_rendered_snapshot_matches_real_renderer() -> None:
     expected_path = FIXTURE / "expected_rendered.json"
     assert expected_path.exists()
     assert actual == json.loads(expected_path.read_text(encoding="utf-8"))
+
+
+def test_geo_sorted_object_ordering_is_supported_by_config(tmp_path: Path) -> None:
+    payload = _load_fixture_config_payload()
+    payload["template"]["object_ordering"] = "geo_sorted"
+    path = tmp_path / "config.yaml"
+    path.write_text(_to_yamlish_json(payload), encoding="utf-8")
+
+    resolved = load_train_config(path)
+
+    assert resolved.config.template.object_ordering == "geo_sorted"
 
 
 def test_legacy_sorted_object_ordering_rejected_by_config(tmp_path: Path) -> None:

@@ -116,6 +116,76 @@ def test_loss_runner_returns_weighted_metrics_and_top_level_accuracy() -> None:
     assert bundle.finite_status["terms"]["base_ce"] == "finite"
 
 
+def test_loss_runner_streaming_micro_contributions_match_planned_step_compute() -> None:
+    contexts = (
+        _context(
+            _logits(
+                (
+                    (0.0, 8.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0),
+                    (0.0, 0.0, 0.0, 6.0, 0.0, 0.0, 0.0, 1.0),
+                    (0.0, 0.0, 0.0, 1.0, 5.0, 7.0, 0.0, 2.0),
+                    (0.0, 0.0, 0.0, 0.0, 0.0, 7.0, 0.0, 1.0),
+                ),
+                requires_grad=True,
+            ),
+            (
+                _segment(0, 0, 2),
+                _segment(1, 2, 4),
+            ),
+            (
+                _atom(segment_index=0, target_position=1, token_id=7),
+                _atom(segment_index=1, target_position=3, token_id=5, token_type="eos"),
+            ),
+        ),
+        _context(
+            _logits(
+                (
+                    (0.0, 0.0, 0.0, 7.0, 0.0, 0.0, 0.0, 1.0),
+                    (0.0, 0.0, 0.0, 1.0, 6.0, 0.0, 0.0, 2.0),
+                ),
+                requires_grad=True,
+            ),
+            (_segment(0, 0, 2),),
+            (_atom(segment_index=0, target_position=1, token_id=3, token_type="coordinate"),),
+            pack_index=1,
+        ),
+    )
+    runner = _runner(base_ce_weight=2.0, token_type_gate_weight=0.5)
+    full = runner.compute(contexts)
+
+    plan = runner.prepare_planned_step(
+        tuple(context.token_sequence for context in contexts)
+    )
+    micro_bundles = tuple(
+        runner.compute_micro_step(
+            context,
+            plan,
+            local_micro_step_index=local_index,
+        )
+        for local_index, context in enumerate(contexts)
+    )
+    streaming_total = sum(
+        (bundle.total_loss for bundle in micro_bundles),
+        full.total_loss.new_zeros(()),
+    )
+    artifact = runner.finalize_planned_step(
+        tuple(bundle.to_artifact_dict() for bundle in micro_bundles),
+        plan,
+    )
+
+    assert torch.allclose(streaming_total, full.total_loss)
+    assert artifact["total_loss"] == pytest.approx(full.metrics["loss/total"])
+    assert artifact["metrics"]["loss/base_ce"] == pytest.approx(
+        full.metrics["loss/base_ce"]
+    )
+    assert artifact["metrics"]["loss/token_type_gate"] == pytest.approx(
+        full.metrics["loss/token_type_gate"]
+    )
+    assert artifact["metrics"]["acc_top1"] == pytest.approx(full.metrics["acc_top1"])
+    assert artifact["metrics"]["acc_top5"] == pytest.approx(full.metrics["acc_top5"])
+    assert artifact["counts"] == full.counts
+
+
 def test_loss_runner_requires_explicit_configured_weights() -> None:
     config = LossesConfig(
         normalizer="segment_balanced",

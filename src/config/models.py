@@ -111,7 +111,7 @@ class TemplatePromptConfig(StrictConfigModel):
 
 class TemplateConfig(StrictConfigModel):
     object_field_order: Literal["desc_first", "geometry_first"]
-    object_ordering: Literal["source_order", "random"]
+    object_ordering: Literal["source_order", "geo_sorted", "random"]
     assistant_format: Literal["object_box_closed"]
     prompt: TemplatePromptConfig
 

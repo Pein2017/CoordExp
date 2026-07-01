@@ -1,0 +1,116 @@
+schema_version: 1
+
+run:
+  name: qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_ebs16_streamprobe_1step
+  artifact_root: outputs/smoke/production_mimic
+  collision_policy: timestamp
+
+model:
+  base_model: /data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent
+  attn_implementation: flash_attention_2
+  logits_memory_budget_bytes: 4000000000
+  processor:
+    do_resize: false
+    max_raw_pixels: 2000000
+    max_merged_visual_tokens: 4096
+  special_token_embeddings:
+    groups:
+      coordinate_tokens: default_coord_0_999
+      wrapper_tokens: default_object_box_wrappers
+
+adapter:
+  type: dora
+  target_towers:
+    - language
+  target_modules: all_linear
+  rank: 8
+  alpha: 16
+  dropout: 0.0
+  bias: none
+
+data:
+  train:
+    path: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/train.coord.jsonl
+    sample_limit: 128
+  eval:
+    path: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl
+    sample_limit: 4
+  train_order: source_order
+
+template:
+  object_field_order: desc_first
+  object_ordering: geo_sorted
+  assistant_format: object_box_closed
+  prompt:
+    system: null
+    user: Describe each requested object with its bounding box.
+
+packing:
+  global_max_length: 12000
+
+losses:
+  normalizer: segment_balanced
+  protected:
+    base_ce:
+      weight: 1.0
+    token_type_gate:
+      weight: 0.0
+      groups:
+        - desc_text
+        - schema
+        - coordinate
+        - eos
+
+optimizer:
+  name: adamw_torch
+  betas:
+    - 0.9
+    - 0.999
+  epsilon: 1.0e-8
+  kwargs: {}
+  groups:
+    adapters:
+      language:
+        lr: 2.0e-4
+        weight_decay: 0.0
+    token_embeddings:
+      lr: 1.0e-4
+      weight_decay: 0.0
+  scheduler:
+    name: cosine_with_warmup
+    warmup_ratio: 0.0
+    warmup_steps: null
+    kwargs: {}
+
+training:
+  mode: supervised
+  epochs: 4
+  max_steps: 1
+  effective_batch_size: 16
+  precision: bf16
+  max_grad_norm: 1.0
+  logging:
+    every_fraction: null
+    steps:
+      - 1
+
+runtime:
+  backend: single
+  seed: 17
+
+eval:
+  forward:
+    every_fraction: null
+    steps:
+      - 1
+  inference:
+    enabled: false
+
+checkpoint:
+  every_fraction: null
+  steps:
+    - 1
+  save_final: true
+
+debug:
+  dry_run_writes_artifacts: true

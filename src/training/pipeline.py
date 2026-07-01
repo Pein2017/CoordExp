@@ -454,6 +454,7 @@ def _build_micro_steps_for_dataset(
 
 
 def enable_training_memory_savers(model: Any) -> dict[str, Any]:
+    train_mode_enabled = _enable_train_mode(model)
     use_cache_disabled = _disable_use_cache(model)
     gradient_checkpointing_enabled = _call_first_available(
         model,
@@ -464,6 +465,8 @@ def enable_training_memory_savers(model: Any) -> dict[str, Any]:
         "enable_input_require_grads",
     )
     return {
+        "train_mode_enabled": train_mode_enabled,
+        "model_training": _model_training_state(model),
         "gradient_checkpointing_enabled": gradient_checkpointing_enabled,
         "input_require_grads_enabled": input_require_grads_enabled,
         "use_cache_disabled": use_cache_disabled,
@@ -648,14 +651,46 @@ def _image_token_id(components: Any) -> int | None:
 
 def _disable_use_cache(model: Any) -> list[str]:
     disabled: list[str] = []
+    seen_config_ids: set[int] = set()
     for owner_name, owner in _model_and_base_model_owners(model):
-        config = getattr(owner, "config", None)
-        if config is None or not hasattr(config, "use_cache"):
-            continue
-        if getattr(config, "use_cache") is not False:
-            setattr(config, "use_cache", False)
-        disabled.append(f"{owner_name}.config")
+        for config_path, config in _config_owners(owner):
+            config_id = id(config)
+            if config_id in seen_config_ids:
+                continue
+            seen_config_ids.add(config_id)
+            if not hasattr(config, "use_cache"):
+                continue
+            if getattr(config, "use_cache") is not False:
+                setattr(config, "use_cache", False)
+            disabled.append(f"{owner_name}.{config_path}")
     return disabled
+
+
+def _config_owners(owner: Any) -> tuple[tuple[str, Any], ...]:
+    config = getattr(owner, "config", None)
+    if config is None:
+        return ()
+    owners: list[tuple[str, Any]] = [("config", config)]
+    for nested_name in ("text_config", "language_config"):
+        nested = getattr(config, nested_name, None)
+        if nested is not None:
+            owners.append((f"config.{nested_name}", nested))
+    return tuple(owners)
+
+
+def _enable_train_mode(model: Any) -> bool:
+    train = getattr(model, "train", None)
+    if not callable(train):
+        return False
+    train()
+    return True
+
+
+def _model_training_state(model: Any) -> bool | None:
+    training = getattr(model, "training", None)
+    if training is None:
+        return None
+    return bool(training)
 
 
 def _call_first_available(model: Any, method_name: str) -> bool:

@@ -216,12 +216,24 @@ def test_enable_training_memory_savers_records_gradient_checkpointing_and_cache_
 
     receipt = enable_training_memory_savers(model)
 
+    assert model.training is True
     assert model.gradient_checkpointing_enabled is True
     assert model.input_require_grads_enabled is True
     assert model.config.use_cache is False
+    assert receipt["train_mode_enabled"] is True
+    assert receipt["model_training"] is True
     assert receipt["gradient_checkpointing_enabled"] is True
     assert receipt["input_require_grads_enabled"] is True
     assert receipt["use_cache_disabled"] == ["model.config"]
+
+
+def test_enable_training_memory_savers_disables_nested_qwen_text_cache() -> None:
+    model = FakeNestedQwenMemorySaverModel()
+
+    receipt = enable_training_memory_savers(model)
+
+    assert model.config.text_config.use_cache is False
+    assert receipt["use_cache_disabled"] == ["model.config.text_config"]
 
 
 def test_checkpoint_handler_uses_same_step_eval_acc_top1_for_best_selection(
@@ -473,14 +485,33 @@ class FakeMemorySaverConfig:
 class FakeMemorySaverModel:
     def __init__(self) -> None:
         self.config = FakeMemorySaverConfig()
+        self.training = False
         self.gradient_checkpointing_enabled = False
         self.input_require_grads_enabled = False
+
+    def train(self) -> None:
+        self.training = True
 
     def gradient_checkpointing_enable(self) -> None:
         self.gradient_checkpointing_enabled = True
 
     def enable_input_require_grads(self) -> None:
         self.input_require_grads_enabled = True
+
+
+class FakeNestedQwenTextConfig:
+    use_cache = True
+
+
+class FakeNestedQwenConfig:
+    def __init__(self) -> None:
+        self.text_config = FakeNestedQwenTextConfig()
+
+
+class FakeNestedQwenMemorySaverModel(FakeMemorySaverModel):
+    def __init__(self) -> None:
+        super().__init__()
+        self.config = FakeNestedQwenConfig()
 
 
 class FakePipelineRuntime:
