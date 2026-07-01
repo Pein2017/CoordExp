@@ -140,7 +140,11 @@ def test_real_local_qwen_components_load_without_model_and_preflight_tokens() ->
     assert components.token_identity.coordinate_token_ids[0] == 151670
     assert components.token_identity.coordinate_token_ids[-1] == 152669
     assert components.token_identity.im_end_newline_token_ids == (151645, 198)
-    assert components.to_artifact_dict()["load_model"] is False
+    artifact = components.to_artifact_dict()
+    assert artifact["load_model"] is False
+    patch_receipt = artifact["runtime_patches"]["qwen3_vl_patch_embed_linearization"]
+    assert patch_receipt["applied"] is False
+    assert patch_receipt["reason"] == "model_not_loaded"
 
 
 def _fake_tokenizer(

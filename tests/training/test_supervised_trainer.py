@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 import torch
 
+import src.training.supervised_trainer as trainer_module
 from src.common.errors import RuntimeContractError
 from src.config.models import DeepSpeedConfig, RuntimeBatchResolution, RuntimeConfig
 from src.runtime import GateDecision
@@ -558,6 +559,25 @@ def test_streaming_micro_step_events_expose_sync_gradients_boundary() -> None:
         "micro_step.loss": [False, True],
         "micro_step.pre_backward_gate": [False, True],
     }
+
+
+def test_trainer_profile_sync_helper_is_exact_env_gated(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(trainer_module.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(
+        trainer_module.torch.cuda,
+        "synchronize",
+        lambda device: calls.append(str(device)),
+    )
+
+    monkeypatch.delenv("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS", raising=False)
+    trainer_module._sync_device_if_requested(torch.device("cuda:3"))
+    monkeypatch.setenv("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS", "true")
+    trainer_module._sync_device_if_requested(torch.device("cuda:3"))
+    monkeypatch.setenv("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS", "1")
+    trainer_module._sync_device_if_requested(torch.device("cuda:3"))
+
+    assert calls == ["cuda:3"]
 
 
 def test_streaming_scalar_gate_partial_window_marks_metrics_unavailable() -> None:

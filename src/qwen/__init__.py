@@ -6,6 +6,11 @@ from src.qwen.loading import (
     QwenProcessorIdentity,
     load_qwen_components,
 )
+from src.qwen.patches import (
+    LinearizedQwen3VLPatchEmbed,
+    QwenRuntimePatchReceipt,
+    apply_qwen3_vl_patch_embed_linearization,
+)
 from src.qwen.images import (
     QwenImageEncoding,
     QwenNoResizeImagePlan,
@@ -96,6 +101,7 @@ __all__ = [
     "QwenPositionInputs",
     "QwenPositionSegmentSummary",
     "QwenProcessorIdentity",
+    "QwenRuntimePatchReceipt",
     "QwenTokenIdentity",
     "SPECIAL_TOKEN_EMBEDDINGS_JSON",
     "SPECIAL_TOKEN_EMBEDDINGS_SAFE_TENSORS",
@@ -107,6 +113,8 @@ __all__ = [
     "SpecialTokenEmbeddingPayloadReceipt",
     "SpecialTokenEmbeddingSourceGateEvidence",
     "SpecialTokenSelection",
+    "LinearizedQwen3VLPatchEmbed",
+    "apply_qwen3_vl_patch_embed_linearization",
     "build_fa2_varlen_plan",
     "build_default_special_token_selection",
     "build_qwen_forward_inputs",

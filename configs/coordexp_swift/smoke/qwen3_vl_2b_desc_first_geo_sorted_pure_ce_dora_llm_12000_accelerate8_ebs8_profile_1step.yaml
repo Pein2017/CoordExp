@@ -1,14 +1,14 @@
 schema_version: 1
 
 run:
-  name: qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate8_ebs128_4epoch
-  artifact_root: outputs/prod/coordexp_swift
+  name: qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate8_ebs8_profile_1step
+  artifact_root: outputs/smoke/production_mimic
   collision_policy: timestamp
 
 model:
   base_model: /data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent
   attn_implementation: flash_attention_2
-  fa2_branch_proof: first_micro_step
+  fa2_branch_proof: disabled
   logits_memory_budget_bytes: 4000000000
   processor:
     do_resize: false
@@ -35,7 +35,7 @@ data:
     sample_limit: null
   eval:
     path: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl
-    sample_limit: null
+    sample_limit: 2
   train_order: source_order
 
 template:
@@ -86,16 +86,14 @@ optimizer:
 training:
   mode: supervised
   epochs: 4
-  max_steps: null
-  effective_batch_size: 128
+  max_steps: 1
+  effective_batch_size: 8
   precision: bf16
   max_grad_norm: 1.0
   logging:
-    every_fraction: 0.05
+    every_fraction: null
     steps:
       - 1
-      - 2
-      - 3
 
 runtime:
   backend: accelerate
@@ -106,12 +104,16 @@ runtime:
 
 eval:
   forward:
-    every_fraction: 0.4
+    every_fraction: null
     steps: []
   inference:
     enabled: false
 
 checkpoint:
-  every_fraction: 0.4
-  steps: []
+  every_fraction: null
+  steps:
+    - 1
   save_final: true
+
+debug:
+  dry_run_writes_artifacts: true

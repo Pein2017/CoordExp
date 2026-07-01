@@ -85,9 +85,11 @@ BEST_EVAL_SELECTOR_NAME = "acc_top1"
 PROGRESS_EVENT_TYPES = frozenset(
     {
         "planned_step.started",
+        "planned_step.prepared",
         "micro_step.forward",
         "micro_step.loss",
         "micro_step.pre_backward_gate",
+        "micro_step.backward",
         "planned_step.loss",
         "planned_step.pre_backward_gate",
         "planned_step.post_backward_gate",
@@ -212,11 +214,30 @@ class TrainingArtifactBridge:
         stage = payload.get("stage")
         if stage is not None:
             record["stage"] = str(stage)
+        timings = _timings_artifact(payload.get("timings_ns"))
         receipt = payload.get("receipt")
         if isinstance(receipt, Mapping):
             for key in ("pack_index", "pack_length", "segment_count"):
                 if key in receipt:
                     record[key] = receipt[key]
+            for key in (
+                "pixel_values_shape",
+                "output_logits_shape",
+                "placeholder_token_count",
+                "expected_visual_token_count",
+            ):
+                if key in receipt:
+                    record[key] = receipt[key]
+            receipt_timings = _timings_artifact(receipt.get("timings_ns"))
+            if receipt_timings:
+                timings.update(receipt_timings)
+            fa2_varlen = receipt.get("fa2_varlen")
+            if isinstance(fa2_varlen, Mapping):
+                for key in ("max_length_q", "max_length_k", "segment_boundaries"):
+                    if key in fa2_varlen:
+                        record[f"fa2_{key}"] = fa2_varlen[key]
+        if timings:
+            record["timings_ns"] = timings
         output_path = (
             self.manager.run_dir
             / "diagnostics"
@@ -233,6 +254,22 @@ class TrainingArtifactBridge:
                 )
                 + "\n"
             )
+
+
+def _timings_artifact(value: Any) -> dict[str, int]:
+    if not isinstance(value, Mapping):
+        return {}
+    timings: dict[str, int] = {}
+    for key, raw in value.items():
+        if isinstance(raw, bool):
+            timings[str(key)] = int(raw)
+            continue
+        if isinstance(raw, int):
+            timings[str(key)] = raw
+            continue
+        if isinstance(raw, float) and raw.is_integer():
+            timings[str(key)] = int(raw)
+    return timings
 
 
 @dataclass

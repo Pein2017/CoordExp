@@ -56,6 +56,10 @@ class SpecialTokenEmbeddingsConfig(StrictConfigModel):
     groups: SpecialTokenEmbeddingGroupsConfig
 
 
+class QwenRuntimePatchesConfig(StrictConfigModel):
+    patch_embed_linearization: Literal["enabled", "disabled"] = "enabled"
+
+
 class ModelConfig(StrictConfigModel):
     base_model: str
     attn_implementation: Literal["flash_attention_2", "sdpa", "eager"]
@@ -65,6 +69,9 @@ class ModelConfig(StrictConfigModel):
     logits_memory_budget_bytes: int = Field(gt=0)
     processor: ProcessorConfig
     special_token_embeddings: SpecialTokenEmbeddingsConfig
+    runtime_patches: QwenRuntimePatchesConfig = Field(
+        default_factory=QwenRuntimePatchesConfig
+    )
 
 
 class AdapterConfig(StrictConfigModel):

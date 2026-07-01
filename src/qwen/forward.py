@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+import os
+import time
 from typing import Any
 
 import torch
@@ -67,9 +69,10 @@ class QwenForwardReceipt:
     model_loss_ignored: bool = False
     past_key_values_present: bool = False
     rope_deltas_present: bool = False
+    timings_ns: Mapping[str, int] | None = None
 
     def to_artifact_dict(self) -> dict[str, Any]:
-        return {
+        artifact = {
             "pack_index": self.pack_index,
             "pack_length": self.pack_length,
             "segment_count": self.segment_count,
@@ -101,6 +104,11 @@ class QwenForwardReceipt:
             "past_key_values_present": self.past_key_values_present,
             "rope_deltas_present": self.rope_deltas_present,
         }
+        if self.timings_ns is not None:
+            artifact["timings_ns"] = {
+                str(key): int(value) for key, value in self.timings_ns.items()
+            }
+        return artifact
 
 
 @dataclass(frozen=True)
@@ -159,6 +167,10 @@ def build_qwen_forward_inputs(
     device: torch.device | str | None = None,
     fa2_branch_proof_policy: str | None = None,
 ) -> QwenForwardInputs:
+    total_start_ns = time.perf_counter_ns()
+    timings_ns: dict[str, int] = {
+        "profile_sync_enabled": int(_profile_sync_enabled()),
+    }
     if not isinstance(pack, PackedSequence):
         raise QwenForwardContractError(
             "Qwen forward input construction requires a PackedSequence",
@@ -189,17 +201,23 @@ def build_qwen_forward_inputs(
         )
 
     torch_device = torch.device("cpu") if device is None else torch.device(device)
+    fa2_start_ns = time.perf_counter_ns()
     if fa2_varlen_plan is None:
         fa2_varlen_plan = build_fa2_varlen_plan(pack, device=torch_device)
     else:
         validate_fa2_varlen_plan_matches_pack(fa2_varlen_plan, pack)
+    timings_ns["fa2_plan_ns"] = _elapsed_ns(fa2_start_ns)
+    tensor_start_ns = time.perf_counter_ns()
     input_ids = torch.tensor([list(pack.input_ids)], dtype=torch.long, device=torch_device)
     position_ids = position_inputs.position_ids.to(device=torch_device, dtype=torch.long)
+    _sync_device_if_requested(torch_device)
+    timings_ns["text_tensorize_ns"] = _elapsed_ns(tensor_start_ns)
 
     image_encodings: list[Any] = []
     image_grids: list[tuple[int, int, int]] = []
     placeholder_token_count = 0
     expected_visual_token_count = 0
+    segment_start_ns = time.perf_counter_ns()
     for segment_summary in position_inputs.segments:
         example = examples_by_id.get(segment_summary.example_id)
         if example is None:
@@ -249,11 +267,19 @@ def build_qwen_forward_inputs(
             )
         placeholder_token_count += placeholder_count
         expected_visual_token_count += expected_visual_tokens
+    timings_ns["segment_validation_ns"] = _elapsed_ns(segment_start_ns)
 
+    image_start_ns = time.perf_counter_ns()
     if all(isinstance(encoding, QwenImageEncoding) for encoding in image_encodings):
+        materialize_start_ns = time.perf_counter_ns()
         pixel_values, _ = materialize_qwen_image_encoding_batch(image_encodings)
+        timings_ns["image_materialize_cpu_ns"] = _elapsed_ns(materialize_start_ns)
+        image_to_device_start_ns = time.perf_counter_ns()
         pixel_values = pixel_values.to(device=torch_device)
+        _sync_device_if_requested(torch_device)
+        timings_ns["image_to_device_ns"] = _elapsed_ns(image_to_device_start_ns)
     else:
+        image_to_device_start_ns = time.perf_counter_ns()
         pixel_values_parts = [
             _pixel_values(encoding, example_id=segment_summary.example_id).to(
                 device=torch_device
@@ -265,12 +291,19 @@ def build_qwen_forward_inputs(
             )
         ]
         pixel_values = torch.cat(pixel_values_parts, dim=0)
+        _sync_device_if_requested(torch_device)
+        timings_ns["image_to_device_ns"] = _elapsed_ns(image_to_device_start_ns)
+    timings_ns["image_total_ns"] = _elapsed_ns(image_start_ns)
+    final_tensor_start_ns = time.perf_counter_ns()
     image_grid_thw = torch.tensor(image_grids, dtype=torch.long, device=torch_device)
     logits_to_keep, logits_position_ids = _resolve_logits_to_keep(
         logits_to_keep_positions,
         pack_length=pack.length,
         device=torch_device,
     )
+    _sync_device_if_requested(torch_device)
+    timings_ns["final_tensorize_ns"] = _elapsed_ns(final_tensor_start_ns)
+    timings_ns["total_build_inputs_ns"] = _elapsed_ns(total_start_ns)
     receipt = QwenForwardReceipt(
         pack_index=pack.pack_index,
         pack_length=pack.length,
@@ -288,6 +321,7 @@ def build_qwen_forward_inputs(
         inputs_embeds_used=False,
         fa2_varlen_plan=fa2_varlen_plan,
         fa2_branch_proof_policy=fa2_branch_proof_policy,
+        timings_ns=timings_ns,
     )
     return QwenForwardInputs(
         pack_index=pack.pack_index,
@@ -321,8 +355,11 @@ def run_qwen_forward(
         )
     overrides = dict(extra_model_kwargs or {})
     _reject_unsafe_overrides(overrides)
+    total_start_ns = time.perf_counter_ns()
     model_kwargs = forward_inputs.to_model_kwargs()
     model_kwargs.update(overrides)
+    _sync_model_inputs_if_requested(model_kwargs)
+    model_start_ns = time.perf_counter_ns()
     if capture_fa2_branch and fa2_branch_evidence is None:
         with capture_fa2_varlen_branch() as fa2_capture:
             output = model(**model_kwargs)
@@ -332,6 +369,11 @@ def run_qwen_forward(
     else:
         output = model(**model_kwargs)
     logits = getattr(output, "logits", None)
+    if isinstance(logits, torch.Tensor):
+        _sync_device_if_requested(logits.device)
+    timings_ns = dict(forward_inputs.receipt.timings_ns or {})
+    timings_ns["model_forward_ns"] = _elapsed_ns(model_start_ns)
+    validate_start_ns = time.perf_counter_ns()
     if not isinstance(logits, torch.Tensor):
         raise QwenForwardContractError(
             "Qwen model output must expose tensor logits",
@@ -344,6 +386,7 @@ def run_qwen_forward(
         expected_logits_length=forward_inputs.expected_logits_length,
         expected_vocab_size=vocab_size,
     )
+    timings_ns["logits_validation_ns"] = _elapsed_ns(validate_start_ns)
     fa2_branch_proof = None
     if fa2_branch_evidence is not None:
         fa2_branch_proof = validate_fa2_varlen_branch_evidence(
@@ -364,11 +407,13 @@ def run_qwen_forward(
                 "capture_fa2_branch": capture_fa2_branch,
             },
         )
+    timings_ns["total_run_qwen_forward_ns"] = _elapsed_ns(total_start_ns)
     receipt = _receipt_with_output(
         forward_inputs.receipt,
         output,
         logits,
         fa2_branch_proof=fa2_branch_proof,
+        timings_ns=timings_ns,
     )
     return QwenForwardResult(
         logits=logits,
@@ -607,6 +652,7 @@ def _receipt_with_output(
     logits: torch.Tensor,
     *,
     fa2_branch_proof: Fa2VarlenBranchProof | None,
+    timings_ns: Mapping[str, int] | None,
 ) -> QwenForwardReceipt:
     model_loss_present = getattr(output, "loss", None) is not None
     return QwenForwardReceipt(
@@ -632,7 +678,33 @@ def _receipt_with_output(
         model_loss_ignored=model_loss_present,
         past_key_values_present=getattr(output, "past_key_values", None) is not None,
         rope_deltas_present=getattr(output, "rope_deltas", None) is not None,
+        timings_ns=timings_ns,
     )
+
+
+def _elapsed_ns(start_ns: int) -> int:
+    return max(0, time.perf_counter_ns() - int(start_ns))
+
+
+def _profile_sync_enabled() -> bool:
+    return os.environ.get("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS") == "1"
+
+
+def _sync_model_inputs_if_requested(model_kwargs: Mapping[str, Any]) -> None:
+    if not _profile_sync_enabled():
+        return
+    for value in model_kwargs.values():
+        if isinstance(value, torch.Tensor):
+            _sync_device_if_requested(value.device)
+            return
+
+
+def _sync_device_if_requested(device: torch.device | str) -> None:
+    if not _profile_sync_enabled():
+        return
+    torch_device = torch.device(device)
+    if torch_device.type == "cuda" and torch.cuda.is_available():
+        torch.cuda.synchronize(torch_device)
 
 
 __all__ = [

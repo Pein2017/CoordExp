@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
+import os
+import time
 from typing import Any, Protocol
 
 import torch
@@ -302,6 +304,7 @@ class SupervisedTrainer:
         planned_step_id: int,
         micro_steps_per_planned_step: int,
     ) -> tuple[PlannedStepResult, int]:
+        move_start_ns = time.perf_counter_ns()
         moved_micro_steps: list[SupervisedMicroStep] = []
         for local_micro_step_index in range(micro_steps_per_planned_step):
             micro_step = self._next_micro_step(
@@ -316,7 +319,19 @@ class SupervisedTrainer:
                 )
             )
 
+        prepare_start_ns = time.perf_counter_ns()
         plan = self.loss_runner.prepare_planned_step(tuple(moved_micro_steps))
+        self._emit(
+            "planned_step.prepared",
+            planned_step_id,
+            {
+                "micro_steps_per_planned_step": micro_steps_per_planned_step,
+                "timings_ns": {
+                    "move_micro_steps_ns": _elapsed_ns(move_start_ns),
+                    "prepare_planned_step_ns": _elapsed_ns(prepare_start_ns),
+                },
+            },
+        )
         qwen_receipts: list[Mapping[str, Any]] = []
         micro_loss_artifacts: list[Mapping[str, Any]] = []
         pre_decision: GateDecision | None = None
@@ -327,16 +342,28 @@ class SupervisedTrainer:
         for local_micro_step_index, micro_step in enumerate(moved_micro_steps):
             sync_gradients = local_micro_step_index == len(moved_micro_steps) - 1
             with self.runtime.accumulation_context(sync_gradients=sync_gradients):
+                _sync_device_if_requested(micro_step.forward_device)
+                forward_start_ns = time.perf_counter_ns()
                 forward_result = self.qwen_forward(
                     _runtime_model(self.runtime, self.model),
                     micro_step,
                 )
+                _sync_forward_result_if_requested(forward_result)
+                forward_total_ns = _elapsed_ns(forward_start_ns)
+                _sync_forward_result_if_requested(forward_result)
+                context_start_ns = time.perf_counter_ns()
                 context = self.loss_context_factory(micro_step, forward_result)
+                _sync_forward_result_if_requested(forward_result)
+                loss_context_ns = _elapsed_ns(context_start_ns)
+                _sync_forward_result_if_requested(forward_result)
+                loss_start_ns = time.perf_counter_ns()
                 loss_bundle = self.loss_runner.compute_micro_step(
                     context,
                     plan,
                     local_micro_step_index=local_micro_step_index,
                 )
+                _sync_loss_bundle_if_requested(loss_bundle)
+                loss_compute_ns = _elapsed_ns(loss_start_ns)
                 qwen_receipts.append(_receipt_artifact(forward_result))
                 micro_loss_artifact = _artifact(loss_bundle)
                 micro_loss_artifacts.append(micro_loss_artifact)
@@ -347,6 +374,9 @@ class SupervisedTrainer:
                         "local_micro_step_index": local_micro_step_index,
                         "sync_gradients": sync_gradients,
                         "receipt": qwen_receipts[-1],
+                        "timings_ns": {
+                            "qwen_forward_total_ns": forward_total_ns,
+                        },
                     },
                 )
                 self._emit(
@@ -356,18 +386,27 @@ class SupervisedTrainer:
                         "local_micro_step_index": local_micro_step_index,
                         "sync_gradients": sync_gradients,
                         "loss_bundle": micro_loss_artifact,
+                        "timings_ns": {
+                            "loss_context_ns": loss_context_ns,
+                            "loss_compute_ns": loss_compute_ns,
+                        },
                     },
                 )
+                pre_backward_start_ns = time.perf_counter_ns()
                 pre_decision = self.runtime.pre_backward(
                     loss_bundle,
                     planned_step_id=planned_step_id,
                 )
+                pre_backward_gate_ns = _elapsed_ns(pre_backward_start_ns)
                 self._emit(
                     "micro_step.pre_backward_gate",
                     planned_step_id,
                     {
                         "local_micro_step_index": local_micro_step_index,
                         "sync_gradients": sync_gradients,
+                        "timings_ns": {
+                            "pre_backward_gate_ns": pre_backward_gate_ns,
+                        },
                         **pre_decision.to_artifact_dict(),
                     },
                 )
@@ -375,10 +414,25 @@ class SupervisedTrainer:
                 finite_status = pre_decision.finite_status
                 if not pre_decision.should_call_backward:
                     break
+                _sync_loss_bundle_if_requested(loss_bundle)
+                backward_start_ns = time.perf_counter_ns()
                 self.runtime.backward(
                     _total_loss(loss_bundle),
                     planned_step_id=planned_step_id,
                     sync_gradients=sync_gradients,
+                )
+                _sync_loss_bundle_if_requested(loss_bundle)
+                backward_ns = _elapsed_ns(backward_start_ns)
+                self._emit(
+                    "micro_step.backward",
+                    planned_step_id,
+                    {
+                        "local_micro_step_index": local_micro_step_index,
+                        "sync_gradients": sync_gradients,
+                        "timings_ns": {
+                            "backward_ns": backward_ns,
+                        },
+                    },
                 )
             del loss_bundle, context, forward_result
 
@@ -583,6 +637,34 @@ def _total_loss(loss_bundle: LossBundle | Any) -> torch.Tensor:
             context={"bundle_type": type(loss_bundle).__name__},
         )
     return total_loss
+
+
+def _elapsed_ns(start_ns: int) -> int:
+    return max(0, time.perf_counter_ns() - int(start_ns))
+
+
+def _profile_sync_enabled() -> bool:
+    return os.environ.get("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS") == "1"
+
+
+def _sync_forward_result_if_requested(forward_result: Any) -> None:
+    logits = getattr(forward_result, "logits", None)
+    if isinstance(logits, torch.Tensor):
+        _sync_device_if_requested(logits.device)
+
+
+def _sync_loss_bundle_if_requested(loss_bundle: Any) -> None:
+    total_loss = getattr(loss_bundle, "total_loss", None)
+    if isinstance(total_loss, torch.Tensor):
+        _sync_device_if_requested(total_loss.device)
+
+
+def _sync_device_if_requested(device: torch.device | str | None) -> None:
+    if device is None or not _profile_sync_enabled():
+        return
+    torch_device = torch.device(device)
+    if torch_device.type == "cuda" and torch.cuda.is_available():
+        torch.cuda.synchronize(torch_device)
 
 
 def _receipt_artifact(forward_result: Any) -> Mapping[str, Any]:

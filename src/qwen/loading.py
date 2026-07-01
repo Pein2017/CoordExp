@@ -11,6 +11,10 @@ from transformers import AutoConfig, AutoProcessor
 
 from src.common.errors import QwenForwardContractError
 from src.config.models import TrainConfig
+from src.qwen.patches import (
+    apply_qwen3_vl_patch_embed_linearization,
+    model_not_loaded_patch_receipts,
+)
 from src.qwen.tokens import QwenTokenIdentity, validate_qwen_token_identity
 
 
@@ -69,6 +73,7 @@ class QwenComponents:
     attn_implementation: str
     load_model: bool
     package_versions: dict[str, str]
+    runtime_patches: dict[str, dict[str, Any]]
 
     def to_artifact_dict(self) -> dict[str, Any]:
         return {
@@ -79,6 +84,7 @@ class QwenComponents:
             "model": self.model_identity.to_artifact_dict(),
             "tokens": self.token_identity.to_artifact_dict(),
             "package_versions": dict(self.package_versions),
+            "runtime_patches": dict(self.runtime_patches),
         }
 
 
@@ -116,6 +122,12 @@ def load_qwen_components(
     processor_identity = _processor_identity(processor, tokenizer)
     model_identity = _model_identity(hf_config)
     model = _load_model(config, base_model_path) if load_model else None
+    patch_policy = config.model.runtime_patches.patch_embed_linearization
+    runtime_patches = (
+        _apply_runtime_patches(model, patch_policy=patch_policy)
+        if model is not None
+        else model_not_loaded_patch_receipts(patch_policy=patch_policy)
+    )
 
     return QwenComponents(
         base_model_path=base_model_path,
@@ -129,6 +141,7 @@ def load_qwen_components(
         attn_implementation=config.model.attn_implementation,
         load_model=load_model,
         package_versions=_package_versions(("transformers", "tokenizers", "torch")),
+        runtime_patches=runtime_patches,
     )
 
 
@@ -186,6 +199,18 @@ def _load_model(config: TrainConfig, base_model_path: Path) -> Any:
         device_map=None,
         local_files_only=True,
     )
+
+
+def _apply_runtime_patches(
+    model: Any,
+    *,
+    patch_policy: str,
+) -> dict[str, dict[str, Any]]:
+    patch_embed_receipt = apply_qwen3_vl_patch_embed_linearization(
+        model,
+        policy=patch_policy,
+    )
+    return {patch_embed_receipt.name: patch_embed_receipt.to_artifact_dict()}
 
 
 def _torch_dtype(precision: str) -> Any:

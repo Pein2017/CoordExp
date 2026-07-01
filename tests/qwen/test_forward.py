@@ -9,6 +9,7 @@ import pytest
 import torch
 from PIL import Image
 
+import src.qwen.forward as qwen_forward_module
 from src.common.errors import QwenForwardContractError
 from src.config.loader import load_train_config
 from src.data import load_raw_examples
@@ -66,6 +67,49 @@ def test_forward_runner_disables_model_loss_cache_and_partial_logits() -> None:
     assert result.receipt.model_loss_present is True
     assert result.receipt.output_logits_shape == (1, pack.length, 17)
     assert result.receipt.to_artifact_dict()["model_loss_ignored"] is True
+
+
+def test_forward_receipt_records_json_safe_timing_schema() -> None:
+    examples = _fake_examples()
+    pack = plan_packed_sequences(examples, global_max_length=32)[0]
+    positions = build_qwen_position_inputs(pack, examples)
+    forward_inputs = build_qwen_forward_inputs(pack, examples, positions)
+    result = run_qwen_forward(
+        FakeQwenModel(vocab_size=17),
+        forward_inputs,
+        expected_vocab_size=17,
+    )
+
+    timings = result.receipt.to_artifact_dict()["timings_ns"]
+    assert timings["profile_sync_enabled"] == 0
+    for key, value in timings.items():
+        assert isinstance(key, str)
+        assert isinstance(value, int)
+        assert value >= 0
+    assert {
+        "total_build_inputs_ns",
+        "model_forward_ns",
+        "total_run_qwen_forward_ns",
+    } <= set(timings)
+
+
+def test_forward_profile_sync_helper_is_exact_env_gated(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(qwen_forward_module.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(
+        qwen_forward_module.torch.cuda,
+        "synchronize",
+        lambda device: calls.append(str(device)),
+    )
+
+    monkeypatch.delenv("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS", raising=False)
+    qwen_forward_module._sync_device_if_requested(torch.device("cuda:0"))
+    monkeypatch.setenv("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS", "true")
+    qwen_forward_module._sync_device_if_requested(torch.device("cuda:0"))
+    monkeypatch.setenv("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS", "1")
+    qwen_forward_module._sync_device_if_requested(torch.device("cuda:0"))
+
+    assert calls == ["cuda:0"]
 
 
 def test_forward_inputs_accept_explicit_logits_to_keep_positions() -> None:

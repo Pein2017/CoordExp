@@ -78,6 +78,15 @@ def test_run_training_pipeline_writes_core_artifacts_with_fake_boundaries(
     assert manifest["status"] == "completed"
     assert manifest["reports"]["token_type_vocab"] == "reports/token_type_vocab.json"
     assert (run_dir / "reports" / "token_type_vocab.json").exists()
+    qwen_setup = __import__("json").loads(
+        (run_dir / "receipts" / "qwen" / "setup.json").read_text()
+    )
+    patch_receipt = qwen_setup["components"]["runtime_patches"][
+        "qwen3_vl_patch_embed_linearization"
+    ]
+    assert patch_receipt["policy"] == "enabled"
+    assert patch_receipt["applied"] is True
+    assert patch_receipt["owner_path"] == "model.visual.patch_embed"
     loss_plan = __import__("json").loads(
         (run_dir / "receipts" / "losses" / "loss_plan.json").read_text()
     )
@@ -511,10 +520,24 @@ def test_training_artifact_bridge_progress_stays_outside_metric_stream(
             payload={
                 "local_micro_step_index": 4,
                 "sync_gradients": False,
+                "timings_ns": {"qwen_forward_total_ns": 333},
                 "receipt": {
                     "pack_index": 9,
                     "pack_length": 12000,
                     "segment_count": 11,
+                    "pixel_values_shape": [4096, 1536],
+                    "output_logits_shape": [1, 256, 151936],
+                    "placeholder_token_count": 4096,
+                    "expected_visual_token_count": 4096,
+                    "timings_ns": {
+                        "model_forward_ns": 111,
+                        "total_build_inputs_ns": 222,
+                    },
+                    "fa2_varlen": {
+                        "max_length_q": 1100,
+                        "max_length_k": 1100,
+                        "segment_boundaries": [0, 100, 12000],
+                    },
                 },
             },
         )
@@ -542,13 +565,25 @@ def test_training_artifact_bridge_progress_stays_outside_metric_stream(
         {
             "event_type": "micro_step.forward",
             "local_micro_step_index": 4,
+            "expected_visual_token_count": 4096,
+            "fa2_max_length_k": 1100,
+            "fa2_max_length_q": 1100,
+            "fa2_segment_boundaries": [0, 100, 12000],
             "monotonic_ns": records[0]["monotonic_ns"],
+            "output_logits_shape": [1, 256, 151936],
             "pack_index": 9,
             "pack_length": 12000,
+            "pixel_values_shape": [4096, 1536],
+            "placeholder_token_count": 4096,
             "planned_step_id": 3,
             "rank": 1,
             "segment_count": 11,
             "sync_gradients": False,
+            "timings_ns": {
+                "model_forward_ns": 111,
+                "qwen_forward_total_ns": 333,
+                "total_build_inputs_ns": 222,
+            },
             "world_size": 2,
         },
         {
@@ -942,6 +977,13 @@ class FakeComponents:
             "processor": self.processor_identity.to_artifact_dict(),
             "tokens": self.token_identity.to_artifact_dict(),
             "load_model": True,
+            "runtime_patches": {
+                "qwen3_vl_patch_embed_linearization": {
+                    "policy": "enabled",
+                    "applied": True,
+                    "owner_path": "model.visual.patch_embed",
+                }
+            },
         }
 
 

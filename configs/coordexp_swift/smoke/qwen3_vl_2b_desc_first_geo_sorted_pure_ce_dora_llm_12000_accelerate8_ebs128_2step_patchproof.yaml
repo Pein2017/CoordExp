@@ -1,8 +1,8 @@
 schema_version: 1
 
 run:
-  name: qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate8_ebs128_4epoch
-  artifact_root: outputs/prod/coordexp_swift
+  name: qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate8_ebs128_2step_patchproof
+  artifact_root: outputs/smoke/production_mimic
   collision_policy: timestamp
 
 model:
@@ -86,16 +86,15 @@ optimizer:
 training:
   mode: supervised
   epochs: 4
-  max_steps: null
+  max_steps: 2
   effective_batch_size: 128
   precision: bf16
   max_grad_norm: 1.0
   logging:
-    every_fraction: 0.05
+    every_fraction: null
     steps:
       - 1
       - 2
-      - 3
 
 runtime:
   backend: accelerate
@@ -106,12 +105,12 @@ runtime:
 
 eval:
   forward:
-    every_fraction: 0.4
+    every_fraction: null
     steps: []
   inference:
     enabled: false
 
 checkpoint:
-  every_fraction: 0.4
+  every_fraction: null
   steps: []
   save_final: true
