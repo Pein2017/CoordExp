@@ -333,6 +333,34 @@ def test_train_runtime_accelerate_backend_requires_accelerator() -> None:
     assert exc_info.value.code == "runtime.accelerator_required"
 
 
+def test_train_runtime_deepspeed_backend_requires_accelerator() -> None:
+    with pytest.raises(RuntimeContractError) as exc_info:
+        TrainRuntime(
+            runtime_config=RuntimeConfig(
+                backend="deepspeed",
+                seed=17,
+                deepspeed=DeepSpeedConfig(
+                    config_path="ds.json",
+                    gradient_accumulation_steps=1,
+                    train_batch_size=1,
+                ),
+            ),
+            runtime_batch=RuntimeBatchResolution(
+                world_size=1,
+                effective_batch_size=1,
+                resolved_grad_accum_steps=1,
+            ),
+            model=torch.nn.Linear(1, 1),
+            optimizer=None,
+            scheduler=None,
+            device="cpu",
+            rank=0,
+            world_size=1,
+        )
+
+    assert exc_info.value.code == "runtime.deepspeed_accelerator_required"
+
+
 def test_train_runtime_accelerate_backend_prepares_owned_objects() -> None:
     model = torch.nn.Linear(1, 1)
     optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
@@ -370,39 +398,12 @@ def test_train_runtime_accelerate_backend_prepares_owned_objects() -> None:
     )
 
 
-def test_train_runtime_deepspeed_status_labels_are_schema_only() -> None:
-    runtime = TrainRuntime(
-        runtime_config=RuntimeConfig(
-            backend="deepspeed",
-            seed=17,
-            deepspeed=DeepSpeedConfig(
-                config_path="ds.json",
-                gradient_accumulation_steps=1,
-                train_batch_size=1,
-            ),
-        ),
-        runtime_batch=RuntimeBatchResolution(
-            world_size=1,
-            effective_batch_size=1,
-            resolved_grad_accum_steps=1,
-        ),
-        model=torch.nn.Linear(1, 1),
-        optimizer=None,
-        scheduler=None,
-        device="cpu",
-        rank=0,
-        world_size=1,
-    )
-
-    assert runtime.setup_receipt.backend_status["deepspeed"] == (
-        "schema_accepted",
-        "conflict_validation_implemented",
-    )
-    assert "production_supported" not in runtime.setup_receipt.backend_status["deepspeed"]
-
-
-def test_train_runtime_deepspeed_execution_is_rejected_until_systems_smoke() -> None:
+def test_train_runtime_deepspeed_backend_prepares_owned_objects() -> None:
     model = torch.nn.Linear(1, 1)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
+    accelerator = FakeAccelerator()
+
     runtime = TrainRuntime(
         runtime_config=RuntimeConfig(
             backend="deepspeed",
@@ -419,17 +420,95 @@ def test_train_runtime_deepspeed_execution_is_rejected_until_systems_smoke() -> 
             resolved_grad_accum_steps=1,
         ),
         model=model,
-        optimizer=torch.optim.SGD(model.parameters(), lr=0.1),
+        optimizer=optimizer,
+        scheduler=scheduler,
+        device="cpu",
+        rank=0,
+        world_size=1,
+        accelerator=accelerator,
+    )
+
+    assert accelerator.prepare_calls == 1
+    assert runtime.model is accelerator.prepared_objects[0]
+    assert runtime.optimizer is accelerator.prepared_objects[1]
+    assert runtime.scheduler is accelerator.prepared_objects[2]
+    assert runtime.setup_receipt.backend_status["deepspeed"] == (
+        "schema_accepted",
+        "conflict_validation_implemented",
+        "prepared",
+        "active",
+    )
+
+
+def test_train_runtime_deepspeed_uses_accelerator_backward() -> None:
+    model = torch.nn.Linear(1, 1)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    accelerator = FakeAccelerator()
+    runtime = TrainRuntime(
+        runtime_config=RuntimeConfig(
+            backend="deepspeed",
+            seed=17,
+            deepspeed=DeepSpeedConfig(
+                config_path="ds.json",
+                gradient_accumulation_steps=1,
+                train_batch_size=1,
+            ),
+        ),
+        runtime_batch=RuntimeBatchResolution(
+            world_size=1,
+            effective_batch_size=1,
+            resolved_grad_accum_steps=1,
+        ),
+        model=model,
+        optimizer=optimizer,
         scheduler=None,
         device="cpu",
         rank=0,
         world_size=1,
+        accelerator=accelerator,
     )
 
-    with pytest.raises(RuntimeContractError) as exc_info:
-        runtime.backward(model(torch.tensor([[1.0]])).sum(), planned_step_id=1)
+    runtime.backward(runtime.model(torch.tensor([[1.0]])).sum(), planned_step_id=1)
 
-    assert exc_info.value.code == "runtime.deepspeed_execution_unverified"
+    assert next(runtime.model.parameters()).grad is not None
+
+
+def test_train_runtime_deepspeed_post_backward_uses_engine_global_grad_norm() -> None:
+    model = torch.nn.Linear(1, 1)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    accelerator = FakeDeepSpeedAccelerator(global_grad_norm=2.5)
+    runtime = TrainRuntime(
+        runtime_config=RuntimeConfig(
+            backend="deepspeed",
+            seed=17,
+            deepspeed=DeepSpeedConfig(
+                config_path="ds.json",
+                gradient_accumulation_steps=1,
+                train_batch_size=1,
+            ),
+        ),
+        runtime_batch=RuntimeBatchResolution(
+            world_size=1,
+            effective_batch_size=1,
+            resolved_grad_accum_steps=1,
+        ),
+        model=model,
+        optimizer=optimizer,
+        scheduler=None,
+        device="cpu",
+        rank=0,
+        world_size=1,
+        accelerator=accelerator,
+    )
+
+    loss = runtime.model(torch.tensor([[1.0]])).sum()
+    runtime.backward(loss, planned_step_id=1)
+    decision = runtime.post_backward(planned_step_id=1)
+
+    assert next(runtime.model.parameters()).grad is None
+    assert decision.should_call_optimizer_step is True
+    assert decision.finite_status == "finite"
+    assert decision.rank_diagnostics[0]["grad_norm"] == 2.5
 
 
 def test_train_runtime_rejects_backend_batch_conflict() -> None:
@@ -508,3 +587,24 @@ class FakeAccelerator:
 
     def clip_grad_norm_(self, parameters: Any, max_norm: float) -> None:
         torch.nn.utils.clip_grad_norm_(parameters, max_norm)
+
+
+class FakeDeepSpeedEngineWrapper:
+    def __init__(self, *, global_grad_norm: float) -> None:
+        self.global_grad_norm = global_grad_norm
+
+    def get_global_grad_norm(self) -> float:
+        return self.global_grad_norm
+
+
+class FakeDeepSpeedAccelerator(FakeAccelerator):
+    def __init__(self, *, global_grad_norm: float) -> None:
+        super().__init__()
+        self.deepspeed_engine_wrapped = FakeDeepSpeedEngineWrapper(
+            global_grad_norm=global_grad_norm,
+        )
+
+    def backward(self, loss: torch.Tensor) -> None:
+        loss.backward()
+        for parameter in self.prepared_objects[0].parameters():
+            parameter.grad = None

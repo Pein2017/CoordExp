@@ -124,6 +124,67 @@ def test_run_training_pipeline_wires_accelerate_runtime_for_multirank(
     assert FakePipelineRuntime.last_kwargs["runtime_batch"].world_size == 2
 
 
+def test_run_training_pipeline_wires_deepspeed_runtime_with_plugin(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    deepspeed_config_path = tmp_path / "ds_config.json"
+    deepspeed_config_path.write_text(
+        '{"zero_optimization": {"stage": 2}}\n',
+        encoding="utf-8",
+    )
+    payload = yaml.safe_load(FIXTURE_CONFIG.read_text())
+    payload["run"]["artifact_root"] = str(tmp_path / "artifacts")
+    payload["run"]["name"] = "fake-deepspeed-smoke"
+    payload["training"]["effective_batch_size"] = 2
+    payload["runtime"] = {
+        "backend": "deepspeed",
+        "seed": 17,
+        "deepspeed": {
+            "config_path": str(deepspeed_config_path),
+            "gradient_accumulation_steps": None,
+            "train_batch_size": None,
+        },
+    }
+    config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+    log: list[str] = []
+    FakePipelineRuntime.last_kwargs = None
+    FakePipelineDeepSpeedPlugin.last_kwargs = None
+
+    monkeypatch.setenv("RANK", "0")
+    monkeypatch.setenv("LOCAL_RANK", "0")
+    monkeypatch.setenv("WORLD_SIZE", "2")
+    monkeypatch.setattr(
+        "src.training.pipeline.Accelerator",
+        FakePipelineAccelerator,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "src.training.pipeline.DeepSpeedPlugin",
+        FakePipelineDeepSpeedPlugin,
+        raising=False,
+    )
+    _install_fake_training_pipeline_boundaries(monkeypatch, log)
+
+    summary = run_training_pipeline(config_path)
+
+    assert summary["completed_steps"] == 5
+    assert FakePipelineRuntime.last_kwargs is not None
+    accelerator = FakePipelineRuntime.last_kwargs["accelerator"]
+    assert isinstance(accelerator, FakePipelineAccelerator)
+    assert FakePipelineRuntime.last_kwargs["runtime_config"].backend == "deepspeed"
+    assert FakePipelineRuntime.last_kwargs["runtime_batch"].resolved_grad_accum_steps == 1
+    assert FakePipelineRuntime.last_kwargs["runtime_batch"].world_size == 2
+    assert FakePipelineDeepSpeedPlugin.last_kwargs == {
+        "hf_ds_config": str(deepspeed_config_path),
+        "gradient_accumulation_steps": 1,
+        "gradient_clipping": 1.0,
+        "zero_stage": None,
+    }
+    assert accelerator.deepspeed_plugin is not None
+
+
 def test_run_training_pipeline_uses_rank_local_artifacts_for_nonzero_rank(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -230,11 +291,13 @@ def test_enable_training_memory_savers_records_gradient_checkpointing_and_cache_
 
     assert model.training is True
     assert model.gradient_checkpointing_enabled is True
+    assert model.gradient_checkpointing_kwargs == {"use_reentrant": False}
     assert model.input_require_grads_enabled is True
     assert model.config.use_cache is False
     assert receipt["train_mode_enabled"] is True
     assert receipt["model_training"] is True
     assert receipt["gradient_checkpointing_enabled"] is True
+    assert receipt["gradient_checkpointing_kwargs"] == {"use_reentrant": False}
     assert receipt["input_require_grads_enabled"] is True
     assert receipt["use_cache_disabled"] == ["model.config"]
 
@@ -599,13 +662,15 @@ class FakeMemorySaverModel:
         self.config = FakeMemorySaverConfig()
         self.training = False
         self.gradient_checkpointing_enabled = False
+        self.gradient_checkpointing_kwargs = None
         self.input_require_grads_enabled = False
 
     def train(self) -> None:
         self.training = True
 
-    def gradient_checkpointing_enable(self) -> None:
+    def gradient_checkpointing_enable(self, *, gradient_checkpointing_kwargs: dict[str, Any]) -> None:
         self.gradient_checkpointing_enabled = True
+        self.gradient_checkpointing_kwargs = dict(gradient_checkpointing_kwargs)
 
     def enable_input_require_grads(self) -> None:
         self.input_require_grads_enabled = True
@@ -708,9 +773,18 @@ class FakePipelineAccelerator:
         *,
         mixed_precision: str | None = None,
         gradient_accumulation_steps: int | None = None,
+        deepspeed_plugin: Any | None = None,
     ) -> None:
         self.mixed_precision = mixed_precision
         self.gradient_accumulation_steps = gradient_accumulation_steps
+        self.deepspeed_plugin = deepspeed_plugin
+
+
+class FakePipelineDeepSpeedPlugin:
+    last_kwargs: dict[str, Any] | None = None
+
+    def __init__(self, **kwargs: Any) -> None:
+        FakePipelineDeepSpeedPlugin.last_kwargs = dict(kwargs)
 
 
 class FakeAdapterOnlyModel:

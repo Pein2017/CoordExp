@@ -315,7 +315,7 @@ def build_gradient_finite_report(
         else:
             squared_norm = float("inf")
     if not saw_grad:
-        grad_norm = 0.0
+        grad_norm = None
     elif math.isfinite(squared_norm):
         grad_norm = math.sqrt(squared_norm)
     else:

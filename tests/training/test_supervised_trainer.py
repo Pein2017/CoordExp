@@ -384,39 +384,22 @@ def test_supervised_trainer_forwards_with_runtime_owned_model() -> None:
     assert result.step_results[0].qwen_forward_receipts == ({"prepared": True},)
 
 
-def test_supervised_trainer_rejects_deepspeed_before_forward_execution() -> None:
-    model = torch.nn.Linear(1, 1)
-    runtime = TrainRuntime(
-        runtime_config=RuntimeConfig(
-            backend="deepspeed",
-            seed=17,
-            deepspeed=DeepSpeedConfig(
-                config_path="ds.json",
-                gradient_accumulation_steps=1,
-                train_batch_size=1,
-            ),
-        ),
-        runtime_batch=RuntimeBatchResolution(
-            world_size=1,
-            effective_batch_size=1,
-            resolved_grad_accum_steps=1,
-        ),
-        model=model,
-        optimizer=None,
-        scheduler=None,
-        device="cpu",
-        rank=0,
-        world_size=1,
-    )
-    forward_calls = 0
+def test_supervised_trainer_runs_deepspeed_with_runtime_owned_model() -> None:
+    original_model = object()
+    prepared_deepspeed_model = object()
+    runtime = RuntimeWithPreparedModel([], prepared_deepspeed_model)
+    observed_models: list[object] = []
 
-    def qwen_forward(_model: object, _micro_step: SupervisedMicroStep) -> FakeForwardResult:
-        nonlocal forward_calls
-        forward_calls += 1
-        raise AssertionError("DeepSpeed schema-only runtime must fail before forward")
+    def qwen_forward(observed_model: object, _micro_step: SupervisedMicroStep) -> FakeForwardResult:
+        observed_models.append(observed_model)
+        return FakeForwardResult(
+            pack_index=0,
+            logits=torch.zeros(1, 2, 3),
+            receipt={"runtime_owned_model": observed_model is runtime.model},
+        )
 
     trainer = SupervisedTrainer(
-        model=model,
+        model=original_model,
         schedule=_schedule(resolved_max_steps=1, grad_accum_steps=1),
         pack_stream=_micro_steps(1),
         qwen_forward=qwen_forward,
@@ -425,11 +408,13 @@ def test_supervised_trainer_rejects_deepspeed_before_forward_execution() -> None
         runtime=runtime,
     )
 
-    with pytest.raises(RuntimeContractError) as exc_info:
-        trainer.run()
+    result = trainer.run()
 
-    assert exc_info.value.code == "runtime.deepspeed_execution_unverified"
-    assert forward_calls == 0
+    assert result.completed_steps == 1
+    assert observed_models == [runtime.model]
+    assert result.step_results[0].qwen_forward_receipts == (
+        {"runtime_owned_model": True},
+    )
 
 
 def test_supervised_training_result_contains_no_live_tensors() -> None:

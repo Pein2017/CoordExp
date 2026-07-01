@@ -145,13 +145,23 @@ class TrainRuntime:
 
     def post_backward(self, *, planned_step_id: int) -> GateDecision:
         self._ensure_training_backend_can_execute()
-        report = build_gradient_finite_report(
-            self.model.parameters(),
-            planned_step_id=planned_step_id,
-            rank=self.rank,
-            world_size=self.world_size,
-            backend_overflow=_backend_overflow(self.accelerator),
-        )
+        if self.runtime_config.backend == "deepspeed":
+            report = RankGradientFiniteReport(
+                planned_step_id=planned_step_id,
+                rank=self.rank,
+                world_size=self.world_size,
+                gradients_finite=True,
+                backend_overflow=_backend_overflow(self.accelerator),
+                grad_norm=_deepspeed_global_grad_norm(self.accelerator),
+            )
+        else:
+            report = build_gradient_finite_report(
+                self.model.parameters(),
+                planned_step_id=planned_step_id,
+                rank=self.rank,
+                world_size=self.world_size,
+                backend_overflow=_backend_overflow(self.accelerator),
+            )
         return reduce_gradient_overflow_reports(self._gather_rank_reports(report))
 
     def clip_gradients(self, *, planned_step_id: int) -> None:
@@ -272,6 +282,11 @@ class TrainRuntime:
                 "accelerate backend requires an accelerator instance",
                 code="runtime.accelerator_required",
             )
+        if self.runtime_config.backend == "deepspeed" and self.accelerator is None:
+            raise RuntimeContractError(
+                "deepspeed backend requires an accelerator instance",
+                code="runtime.deepspeed_accelerator_required",
+            )
         deepspeed = self.runtime_config.deepspeed
         if (
             self.runtime_config.backend == "deepspeed"
@@ -308,12 +323,12 @@ class TrainRuntime:
             )
 
     def _prepare_backend(self) -> None:
-        if self.runtime_config.backend != "accelerate":
+        if self.runtime_config.backend not in ("accelerate", "deepspeed"):
             return
         prepare = getattr(self.accelerator, "prepare", None)
         if not callable(prepare):
             raise RuntimeContractError(
-                "accelerate backend requires accelerator.prepare",
+                f"{self.runtime_config.backend} backend requires accelerator.prepare",
                 code="runtime.accelerator_prepare_missing",
             )
         names: list[str] = ["model"]
@@ -368,14 +383,9 @@ class TrainRuntime:
         return reports
 
     def _ensure_training_backend_can_execute(self) -> None:
-        if self.runtime_config.backend == "deepspeed":
+        if self.runtime_config.backend in ("accelerate", "deepspeed") and not self._accelerate_prepared:
             raise RuntimeContractError(
-                "deepspeed execution is schema-only until a systems smoke verifies it",
-                code="runtime.deepspeed_execution_unverified",
-            )
-        if self.runtime_config.backend == "accelerate" and not self._accelerate_prepared:
-            raise RuntimeContractError(
-                "accelerate execution requires prepared runtime objects",
+                f"{self.runtime_config.backend} execution requires prepared runtime objects",
                 code="runtime.accelerator_unprepared",
             )
 
@@ -410,6 +420,13 @@ def _backend_status(
             "deepspeed": (
                 "schema_accepted",
                 "conflict_validation_implemented",
+                "prepared",
+                "active",
+            )
+            if accelerate_prepared
+            else (
+                "schema_accepted",
+                "conflict_validation_implemented",
             ),
         }
     raise RuntimeContractError(
@@ -434,6 +451,22 @@ def _backend_overflow(accelerator: Any | None) -> bool:
         if isinstance(values, Mapping):
             return any(bool(torch.as_tensor(value).item()) for value in values.values())
     return False
+
+
+def _deepspeed_global_grad_norm(accelerator: Any | None) -> float | None:
+    if accelerator is None:
+        return None
+    engine_wrapper = getattr(accelerator, "deepspeed_engine_wrapped", None)
+    get_global_grad_norm = getattr(engine_wrapper, "get_global_grad_norm", None)
+    if not callable(get_global_grad_norm):
+        return None
+    grad_norm = get_global_grad_norm()
+    if grad_norm is None:
+        return None
+    try:
+        return float(torch.as_tensor(grad_norm).detach().cpu().item())
+    except (TypeError, ValueError, RuntimeError):
+        return None
 
 
 __all__ = ["TrainRuntime", "TrainRuntimeSetupReceipt"]

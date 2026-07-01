@@ -12,9 +12,10 @@ from typing import Any
 import torch
 
 try:
-    from accelerate import Accelerator
+    from accelerate import Accelerator, DeepSpeedPlugin
 except ImportError:  # pragma: no cover - exercised only in stripped environments.
     Accelerator = None  # type: ignore[assignment]
+    DeepSpeedPlugin = None  # type: ignore[assignment]
 
 from src.adapters import (
     build_adapter_setup_plan,
@@ -282,7 +283,11 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
     )
 
     device = _runtime_device(_rank())
-    accelerator = _build_accelerator(config.runtime, schedule.runtime_batch)
+    accelerator = _build_accelerator(
+        config.runtime,
+        schedule.runtime_batch,
+        max_grad_norm=config.training.max_grad_norm,
+    )
     runtime = TrainRuntime(
         runtime_config=config.runtime,
         runtime_batch=schedule.runtime_batch,
@@ -465,9 +470,10 @@ def _build_micro_steps_for_dataset(
 def enable_training_memory_savers(model: Any) -> dict[str, Any]:
     train_mode_enabled = _enable_train_mode(model)
     use_cache_disabled = _disable_use_cache(model)
-    gradient_checkpointing_enabled = _call_first_available(
+    gradient_checkpointing_kwargs = {"use_reentrant": False}
+    gradient_checkpointing_enabled, applied_gradient_checkpointing_kwargs = _enable_gradient_checkpointing(
         model,
-        "gradient_checkpointing_enable",
+        gradient_checkpointing_kwargs=gradient_checkpointing_kwargs,
     )
     input_require_grads_enabled = _call_first_available(
         model,
@@ -477,6 +483,7 @@ def enable_training_memory_savers(model: Any) -> dict[str, Any]:
         "train_mode_enabled": train_mode_enabled,
         "model_training": _model_training_state(model),
         "gradient_checkpointing_enabled": gradient_checkpointing_enabled,
+        "gradient_checkpointing_kwargs": applied_gradient_checkpointing_kwargs,
         "input_require_grads_enabled": input_require_grads_enabled,
         "use_cache_disabled": use_cache_disabled,
     }
@@ -724,13 +731,24 @@ def _disable_use_cache(model: Any) -> list[str]:
 def _build_accelerator(
     runtime_config: Any,
     runtime_batch: Any,
+    *,
+    max_grad_norm: float | None = None,
 ) -> Any | None:
-    if runtime_config.backend != "accelerate":
+    if runtime_config.backend not in ("accelerate", "deepspeed"):
         return None
     if Accelerator is None:
         raise RuntimeContractError(
             "accelerate backend requires the accelerate package",
             code="runtime.accelerate_unavailable",
+        )
+    if runtime_config.backend == "deepspeed":
+        return Accelerator(
+            gradient_accumulation_steps=runtime_batch.resolved_grad_accum_steps,
+            deepspeed_plugin=_build_deepspeed_plugin(
+                runtime_config,
+                runtime_batch,
+                max_grad_norm=max_grad_norm,
+            ),
         )
     accelerate_config = runtime_config.accelerate
     kwargs: dict[str, Any] = {
@@ -744,6 +762,27 @@ def _build_accelerator(
     if mixed_precision is not None:
         kwargs["mixed_precision"] = mixed_precision
     return Accelerator(**kwargs)
+
+
+def _build_deepspeed_plugin(
+    runtime_config: Any,
+    runtime_batch: Any,
+    *,
+    max_grad_norm: float | None = None,
+) -> Any:
+    if DeepSpeedPlugin is None:
+        raise RuntimeContractError(
+            "deepspeed backend requires accelerate DeepSpeedPlugin",
+            code="runtime.deepspeed_plugin_unavailable",
+        )
+    deepspeed_config = runtime_config.deepspeed
+    hf_ds_config = None if deepspeed_config is None else deepspeed_config.config_path
+    return DeepSpeedPlugin(
+        hf_ds_config=hf_ds_config,
+        gradient_accumulation_steps=runtime_batch.resolved_grad_accum_steps,
+        gradient_clipping=max_grad_norm,
+        zero_stage=None,
+    )
 
 
 def _build_rank_report_gatherer(world_size: int) -> Any | None:
@@ -790,6 +829,24 @@ def _model_training_state(model: Any) -> bool | None:
     if training is None:
         return None
     return bool(training)
+
+
+def _enable_gradient_checkpointing(
+    model: Any,
+    *,
+    gradient_checkpointing_kwargs: dict[str, Any],
+) -> tuple[bool, dict[str, Any] | None]:
+    for _owner_name, owner in _model_and_base_model_owners(model):
+        method = getattr(owner, "gradient_checkpointing_enable", None)
+        if not callable(method):
+            continue
+        try:
+            method(gradient_checkpointing_kwargs=gradient_checkpointing_kwargs)
+            return True, dict(gradient_checkpointing_kwargs)
+        except TypeError:
+            method()
+            return True, None
+    return False, None
 
 
 def _call_first_available(model: Any, method_name: str) -> bool:

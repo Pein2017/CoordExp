@@ -276,6 +276,24 @@ def test_build_gradient_finite_report_scans_parameter_grads() -> None:
     assert report.grad_norm == pytest.approx(float("inf"))
 
 
+def test_build_gradient_finite_report_marks_absent_gradients_as_missing_norm() -> None:
+    parameter = torch.nn.Parameter(torch.tensor([1.0, 2.0]))
+
+    report = build_gradient_finite_report(
+        (parameter,),
+        planned_step_id=13,
+        rank=0,
+        world_size=1,
+        backend_overflow=False,
+    )
+    decision = reduce_gradient_overflow_reports((report,))
+
+    assert report.gradients_finite
+    assert report.grad_norm is None
+    assert not decision.should_call_optimizer_step
+    assert decision.reason_codes == ("rank0:missing_grad_norm",)
+
+
 def test_build_gradient_report_non_finite_norm_triggers_global_skip() -> None:
     parameter = torch.nn.Parameter(torch.tensor([1.0, 2.0]))
     parameter.grad = torch.tensor([1e38, 1e38])
