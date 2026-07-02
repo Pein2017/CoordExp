@@ -142,7 +142,7 @@ def validate_inference_adapter_status(
             "available_adapters": available_adapters,
             "num_adapter_layers": num_adapter_layers,
         }.items()
-        if value == "irregular"
+        if _status_value_irregular(value)
     ]
     if irregular_fields:
         raise RuntimeContractError(
@@ -186,7 +186,7 @@ def validate_inference_adapter_status(
             code="adapter.inference_status_no_layers",
             context={"num_adapter_layers": num_adapter_layers},
         )
-    if requires_grad is True:
+    if _requires_grad_truthy(requires_grad):
         raise RuntimeContractError(
             "inference adapter status must be frozen for inference",
             code="adapter.inference_requires_grad",
@@ -204,6 +204,35 @@ def validate_inference_adapter_status(
         available_adapters=available_adapters,
         num_adapter_layers=None if num_adapter_layers is None else int(num_adapter_layers),
     )
+
+
+def _requires_grad_truthy(value: Any) -> bool:
+    if isinstance(value, Mapping):
+        return any(_requires_grad_truthy(item) for item in value.values())
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return any(_requires_grad_truthy(item) for item in value)
+    return bool(value)
+
+
+def _status_value_irregular(value: Any) -> bool:
+    if value == "irregular":
+        return True
+    if isinstance(value, Mapping):
+        return any(_status_value_irregular(item) for item in value.values())
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return any(_status_value_irregular(item) for item in value)
+    return False
+
+
+def _freeze_model_for_inference(model: Any) -> None:
+    requires_grad = getattr(model, "requires_grad_", None)
+    if callable(requires_grad):
+        requires_grad(False)
+        return
+    named_parameters = getattr(model, "named_parameters", None)
+    if callable(named_parameters):
+        for _, parameter in named_parameters():
+            parameter.requires_grad_(False)
 
 
 def load_inference_dora_adapter(
@@ -236,6 +265,7 @@ def load_inference_dora_adapter(
         is_trainable=False,
     )
     model.set_adapter(adapter.name)
+    _freeze_model_for_inference(model)
     status = _get_inference_adapter_status(model)
     adapter_path = Path(adapter.path)
     load_result_available = load_result is not None

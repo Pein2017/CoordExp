@@ -2,16 +2,17 @@
 
 STATUS: BLOCKED_PENDING_FULL_BENCHMARK_APPROVAL
 
-This packet is a blocked launch gate only. Adapter smoke readiness is complete for Wave 7, but full benchmark launch is still blocked pending explicit user approval. Tiny and sample-limited smokes are smoke/partial evidence only, not benchmark evidence.
+This packet is a blocked launch gate only. Wave 7 real-smoke readiness is complete, but full benchmark launch is still blocked pending explicit user approval. Tiny and sample-limited smokes are smoke evidence only, not benchmark evidence.
 
 ## Production Handles
 
 - Production config: `configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_benchmark.yaml`
 - Dataset: `/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl`
 - Base model: `/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent`
-- Adapter checkpoint: `outputs/smoke/production_mimic/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_accelerate8_ebs64_2step_warmup0p1_eval_patchproof-smoke-a8-r16a32-ebs64-receipt-20260702T164342Z/checkpoints/step-2/adapter`
-- Embedding delta for smoke: `outputs/coordexp_swift/infer/wave7_real_smokes/repaired_special_token_embeddings_step2`
-- Original checkpoint delta source: `outputs/smoke/production_mimic/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_accelerate8_ebs64_2step_warmup0p1_eval_patchproof-smoke-a8-r16a32-ebs64-receipt-20260702T164342Z/checkpoints/step-2/special_token_embeddings`
+- Adapter checkpoint: `outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate8_ebs128_4epoch-prod8-ebs128-4epoch-cocoprompt-20260702T052657Z/checkpoints/step-459/adapter`
+- Embedding delta for benchmark launch: `outputs/coordexp_swift/infer/wave7_real_smokes/repaired_special_token_embeddings_step459`
+- Original checkpoint delta source: `outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate8_ebs128_4epoch-prod8-ebs128-4epoch-cocoprompt-20260702T052657Z/checkpoints/step-459/special_token_embeddings`
+- Repaired-delta caveat: the benchmark launch currently depends on this local metadata-repair artifact because the legacy `step-459` checkpoint delta was written before SHA propagation was fixed. Its tensor is copied byte-for-byte from the checkpoint delta, its identity metadata was repaired from the verified runtime base/tokenizer identity, and it was validated by the production-adapter smoke. It is a benchmark input handle, not a benchmark-result artifact.
 - Artifact root: `outputs/coordexp_swift/infer/benchmark`
 - Evaluator command:
 
@@ -34,20 +35,29 @@ PY
 
 ## Current Blockers
 
-- Base smokes did not produce non-empty selected-token scoring evidence.
-- Base smokes did not naturally observe `<|im_end|>` stop or post-stop padding.
-- These gaps are covered by targeted tests only; they are not real-smoke evidence and do not justify final inference-correctness claims.
 - Full benchmark launch still requires explicit user approval.
+- Tiny real-smoke success does not justify final inference-correctness or benchmark-mAP claims.
 
 ## Adapter Smoke Evidence
 
 - Adapter smoke command: `CUDA_VISIBLE_DEVICES=4 python -m src.infer --config configs/coordexp_swift/infer/wave7_real_adapter_smoke.yaml`
-- Latest adapter smoke root: `outputs/coordexp_swift/infer/wave7_real_smokes/wave7-real-adapter-smoke-20260702T190957Z`
+- Latest adapter smoke root: `outputs/coordexp_swift/infer/wave7_real_smokes/wave7-real-adapter-smoke-20260702T192643Z`
 - Smoke-only repaired delta payload: `outputs/coordexp_swift/infer/wave7_real_smokes/repaired_special_token_embeddings_step2`
 - Repair receipt: `outputs/coordexp_swift/infer/wave7_real_smokes/repaired_special_token_embeddings_step2/repair_receipt.json`
 - `summary.json`: `terminal_status=completed`, `scored_artifact_materialized=true`, `benchmark_eligible=false`, `scoreable_prediction_count=0`.
-- `run_manifest.json`: `model_identity.family=base-plus-adapter-plus-delta`, `adapter_identity.status=validated`, `model_identity.embedding_delta.status=loaded`, `model_identity.embedding_delta.load.loaded=true`, `model_identity.embedding_delta.load.tensor_shape=[1004, 2048]`.
+- `run_manifest.json`: `model_identity.family=base-plus-adapter-plus-delta`, `adapter_identity.status=validated`, `adapter_identity.requires_grad={"default": false}`, `model_identity.embedding_delta.status=loaded`, `model_identity.embedding_delta.load.loaded=true`, `model_identity.embedding_delta.load.tensor_shape=[1004, 2048]`.
 - Repair caveat: the original checkpoint delta had null SHA metadata; the smoke payload repaired only `base_config_sha256` and `tokenizer_sha256` after verifying resolved base path, token strings/ids, tensor shape, and byte-for-byte tensor copy.
+
+## Production-Adapter Smoke Evidence
+
+- Production-adapter smoke command: `CUDA_VISIBLE_DEVICES=4 python -m src.infer --config configs/coordexp_swift/infer/wave7_real_production_adapter_smoke.yaml`
+- Smoke root: `outputs/coordexp_swift/infer/wave7_real_smokes/wave7-real-production-adapter-smoke`
+- Production adapter: `outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate8_ebs128_4epoch-prod8-ebs128-4epoch-cocoprompt-20260702T052657Z/checkpoints/step-459/adapter`
+- Locally repaired production delta payload: `outputs/coordexp_swift/infer/wave7_real_smokes/repaired_special_token_embeddings_step459`
+- Repair receipt: `outputs/coordexp_swift/infer/wave7_real_smokes/repaired_special_token_embeddings_step459/repair_receipt.json`
+- `summary.json`: `terminal_status=completed`, `row_count=2`, `decode_success_count=2`, `parser_failure_count=0`, `scoreable_prediction_count=4`, `scored_artifact_materialized=true`, `benchmark_eligible=false`.
+- `pred_token_trace.jsonl`: 48 trace rows with `is_stop=2` and `is_pad=2`.
+- Detection consumer wrote `eval/metrics.json` with `benchmark_metric=false`, `gt_object_count=4`, `pred_object_count=4`, and `scored_pred_count=4`.
 
 ## Wave 7 Smoke Commands
 
@@ -67,6 +77,12 @@ Adapter-enabled smoke:
 
 ```bash
 CUDA_VISIBLE_DEVICES=1 python -m src.infer --config configs/coordexp_swift/infer/wave7_real_adapter_smoke.yaml
+```
+
+Production-adapter two-row smoke:
+
+```bash
+CUDA_VISIBLE_DEVICES=4 python -m src.infer --config configs/coordexp_swift/infer/wave7_real_production_adapter_smoke.yaml
 ```
 
 ## Approval Stop

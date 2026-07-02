@@ -68,7 +68,16 @@ def test_wave7_benchmark_leaf_is_not_a_smoke_config() -> None:
     assert config.generation.batch_size > 1
     assert config.generation.max_new_tokens >= 256
     assert config.data.input_jsonl == "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl"
-    assert config.run.artifact_root.endswith("outputs/coordexp_swift/infer/benchmark")
+    assert Path(config.run.artifact_root) == Path(
+        "outputs/coordexp_swift/infer/benchmark"
+    ).resolve()
+    assert config.adapter is not None
+    assert "outputs/prod/coordexp_swift" in str(config.adapter.path)
+    assert "checkpoints/step-459/adapter" in str(config.adapter.path)
+    assert config.embedding_delta is not None
+    embedding_delta_path = Path(config.embedding_delta.path)
+    assert embedding_delta_path.is_dir()
+    assert (embedding_delta_path / "repair_receipt.json").is_file()
 
 
 def test_benchmark_packet_contains_required_handles_and_approval_stop() -> None:
@@ -84,9 +93,10 @@ def test_benchmark_packet_contains_required_handles_and_approval_stop() -> None:
         "Artifact root: `outputs/coordexp_swift/infer/benchmark`",
         "Evaluator command:",
         "full benchmark launch is still blocked pending explicit user approval.",
-        "Tiny and sample-limited smokes are smoke/partial evidence only, not benchmark evidence.",
-        "Base smokes did not produce non-empty selected-token scoring evidence.",
-        "Base smokes did not naturally observe `<|im_end|>` stop or post-stop padding.",
+        "Tiny and sample-limited smokes are smoke evidence only, not benchmark evidence.",
+        "Production-Adapter Smoke Evidence",
+        "scoreable_prediction_count=4",
+        "`pred_token_trace.jsonl`: 48 trace rows with `is_stop=2` and `is_pad=2`.",
         "Rollback path:",
     }
 

@@ -11,7 +11,8 @@
 - [x] 1.9 Write a source-study note under this change or proposal directory summarizing exact handles, accepted lessons, rejected legacy behavior, implementation constraints, adapter ownership, legacy test triage, and any OpenSpec contradictions.
 - [x] 1.10 Patch OpenSpec and the superpower roadmap if source studies contradict current contract wording.
   - Source-study result: no immediate OpenSpec rewrite was required; stale legacy docs are recorded as reference-only implementation risk in `source-studies/2026-07-02-wave1-gate-resolution.md`.
-- [ ] 1.11 Obtain explicit user approval for source implementation after source-study review, covering config/runtime, backend trace, prompt/image parity, parser/geometry, scoring/artifacts, eval-consumer, and benchmark acceptance contract surfaces.
+- [x] 1.11 Obtain explicit user approval for source implementation after source-study review, covering config/runtime, backend trace, prompt/image parity, parser/geometry, scoring/artifacts, eval-consumer, and benchmark acceptance contract surfaces.
+  - 2026-07-02 completed: user approved implementation kickoff in this worktree after OpenSpec and review-convergence planning; final production benchmark launch remains separately approval-gated by 8.6.
 
 ## 2. Smoke Fixtures And Production Handles
 
@@ -38,9 +39,10 @@
 - [x] 4.2 Add failing tests for HF scored generation arguments, missing score failure, missing required trace field failure, and special-token-preserving raw trace decode.
 - [x] 4.3 Add failing tests for batched prompt-width alignment with variable prompt lengths and post-stop padding exclusion.
 - [x] 4.4 Implement HF `generate_batch` with `return_dict_in_generate=True`, `output_scores=True`, deterministic greedy defaults, Qwen `<|im_end|>` stop policy, and normalized transition logprob gathering.
-- [ ] 4.5 Run a real tiny HF/Qwen trace probe that verifies generated ids, token text, logprobs, stop token, and parser-facing stripped view.
+- [x] 4.5 Run a real tiny HF/Qwen trace probe that verifies generated ids, token text, logprobs, stop token, and parser-facing stripped view.
   - 2026-07-02 Wave 3 implementation note: targeted fake-HF tests now cover one-row scored trace extraction, special-token preservation, post-stop pad exclusion, and two-row variable prompt-width alignment. The real Qwen3-VL image probe remains deferred to Wave 7 smoke because loading the full local 2B VL model is too expensive for this small backend-only wave; this does not weaken the backend-trace spec.
   - 2026-07-02 Wave 7 partial evidence: `outputs/coordexp_swift/infer/wave7_real_smokes/wave7-real-base-single-smoke-20260702T182753Z/pred_token_trace.jsonl` records generated ids, token text, and finite logprobs over a real Qwen run. The tiny run reached length stop rather than `<|im_end|>`, so real stop-token evidence remains open.
+  - 2026-07-02 Wave 7 completion evidence: `outputs/coordexp_swift/infer/wave7_real_smokes/wave7-real-production-adapter-smoke/pred_token_trace.jsonl` records generated ids, token text, selected logprob replay, `is_stop=2`, and `is_pad=2`; `gt_vs_pred.jsonl` and `parse_diagnostics.jsonl` prove parser-facing stripped compact rows were accepted.
 
 ## 5. Prompt Image And Parsing
 
@@ -70,12 +72,14 @@
 
 ## 8. Real Smokes And Benchmark Readiness
 
-- [ ] 8.1 Run the tiny real HF/Qwen inference smoke and verify prompt parity, image plan, trace, parser, scoring, and artifacts.
+- [x] 8.1 Run the tiny real HF/Qwen inference smoke and verify prompt parity, image plan, trace, parser, scoring, and artifacts.
   - 2026-07-02 partial: base single-row smoke completed and wrote required artifacts, but generated output produced `scoreable_prediction_count=0`, so non-empty selected-token scoring remains uncovered by real model output.
-- [ ] 8.2 Run the two-row batched trace smoke and verify prompt-width alignment and stop/pad handling.
+  - 2026-07-02 completion evidence: production-adapter smoke `outputs/coordexp_swift/infer/wave7_real_smokes/wave7-real-production-adapter-smoke` completed over the two-row real fixture with `scoreable_prediction_count=4`, `parser_failure_count=0`, required artifacts present, and evaluator consumer metrics at `eval/metrics.json` reporting `pred_object_count=4` and `scored_pred_count=4`.
+- [x] 8.2 Run the two-row batched trace smoke and verify prompt-width alignment and stop/pad handling.
   - 2026-07-02 partial: two-row batch completed and wrote required artifacts, but no real `is_stop=true` or `is_pad=true` trace rows were observed; stop/pad remains targeted-test evidence only.
+  - 2026-07-02 completion evidence: production-adapter smoke `pred_token_trace.jsonl` contains 48 trace rows with `is_stop=2` and `is_pad=2` under `generation.batch_size=2`.
 - [x] 8.3 Run the adapter-enabled real smoke and verify checkpoint-final or explicit checkpoint resolution, PEFT identity/status checks, embedding-delta metadata checks, and scored artifact output.
-  - 2026-07-02 completed: adapter smoke passed at `outputs/coordexp_swift/infer/wave7_real_smokes/wave7-real-adapter-smoke-20260702T190957Z` using explicit adapter path and smoke-only repaired delta payload `outputs/coordexp_swift/infer/wave7_real_smokes/repaired_special_token_embeddings_step2`; `run_manifest.json` records `adapter_identity.status=validated`, `model_identity.embedding_delta.status=loaded`, and `model_identity.embedding_delta.load.loaded=true`; `summary.json` records `scored_artifact_materialized=true` and `benchmark_eligible=false`.
+  - 2026-07-02 completed: adapter smoke passed at `outputs/coordexp_swift/infer/wave7_real_smokes/wave7-real-adapter-smoke-20260702T192643Z` using explicit adapter path and smoke-only repaired delta payload `outputs/coordexp_swift/infer/wave7_real_smokes/repaired_special_token_embeddings_step2`; `run_manifest.json` records `adapter_identity.status=validated`, `adapter_identity.requires_grad={"default": false}`, `model_identity.embedding_delta.status=loaded`, and `model_identity.embedding_delta.load.loaded=true`; `summary.json` records `scored_artifact_materialized=true` and `benchmark_eligible=false`.
 - [x] 8.4 Run OpenSpec validation, targeted pytest suites, markdown/config hygiene checks, residue checks for `src/infer/` package collision, unapproved `src.infer` legacy test imports, stale `resolved_config.json`, legacy `configs/infer/` authority, constant-score fallback, and old `object_ordering: sorted` assumptions.
 - [x] 8.5 Prepare a benchmark launch packet naming production config, dataset, model, adapter, artifact root, evaluator command, expected evidence scope, and rollback path.
 - [ ] 8.6 Stop for explicit user approval before launching implementation-derived production benchmark or claiming final inference correctness.

@@ -32,6 +32,44 @@ def test_inference_adapter_status_accepts_valid_peft_receipt() -> None:
     assert receipt.to_artifact_dict()["active_adapters"] == ["default"]
 
 
+def test_inference_adapter_status_rejects_mapping_requires_grad() -> None:
+    from src.adapters.dora import validate_inference_adapter_status
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        validate_inference_adapter_status(
+            load_result=SimpleNamespace(missing_keys=[], unexpected_keys=[]),
+            status=SimpleNamespace(
+                enabled=True,
+                active_adapters=["default"],
+                merged_adapters=[],
+                requires_grad={"default": True},
+            ),
+            expected_adapter_name="default",
+        )
+
+    assert exc_info.value.code == "adapter.inference_requires_grad"
+    assert exc_info.value.context["requires_grad"] == {"default": True}
+
+
+def test_inference_adapter_status_rejects_nested_irregular_requires_grad() -> None:
+    from src.adapters.dora import validate_inference_adapter_status
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        validate_inference_adapter_status(
+            load_result=SimpleNamespace(missing_keys=[], unexpected_keys=[]),
+            status=SimpleNamespace(
+                enabled=True,
+                active_adapters=["default"],
+                merged_adapters=[],
+                requires_grad={"default": "irregular"},
+            ),
+            expected_adapter_name="default",
+        )
+
+    assert exc_info.value.code == "adapter.inference_status_irregular"
+    assert exc_info.value.context["irregular_fields"] == ["requires_grad"]
+
+
 def test_inference_dora_adapter_loader_captures_load_result_and_status() -> None:
     from src.adapters.dora import load_inference_dora_adapter
 
@@ -84,6 +122,26 @@ def test_inference_dora_adapter_loader_accepts_transformers_mixin_with_equivalen
     assert result["adapter_state_evidence"]["normalized_saved_key_count"] == 3
     assert result["adapter_status_evidence"]["available_adapters"] == ["default"]
     assert result["adapter_status_evidence"]["num_adapter_layers"] == 1
+
+
+def test_inference_dora_adapter_loader_freezes_trainable_adapter_status(
+    tmp_path: Path,
+) -> None:
+    from src.adapters.dora import load_inference_dora_adapter
+
+    adapter_dir = _write_adapter_payload(tmp_path / "adapter", base_model="/tmp/base")
+    model = FakeTrainableTransformersMixinModel(_saved_adapter_state())
+
+    result = load_inference_dora_adapter(
+        config=SimpleNamespace(
+            adapter=SimpleNamespace(type="dora", path=str(adapter_dir), name="default")
+        ),
+        qwen=SimpleNamespace(model=model, base_model_path="/tmp/base"),
+    )
+
+    assert model.freeze_called is True
+    assert result["status"] == "validated"
+    assert result["adapter_status_evidence"]["requires_grad"] == {"default": False}
 
 
 def test_inference_dora_adapter_state_allows_transformers_materialized_prefix(
@@ -351,6 +409,23 @@ class FakeTransformersMixinModel:
         }
         payload.update(self.status_overrides)
         return SimpleNamespace(**payload)
+
+
+class FakeTrainableTransformersMixinModel(FakeTransformersMixinModel):
+    def __init__(self, adapter_state: dict[str, torch.Tensor]) -> None:
+        super().__init__(adapter_state)
+        self.freeze_called = False
+        self._requires_grad = True
+
+    def requires_grad_(self, requires_grad: bool) -> "FakeTrainableTransformersMixinModel":
+        self.freeze_called = True
+        self._requires_grad = requires_grad
+        return self
+
+    def get_model_status(self) -> SimpleNamespace:
+        payload = super().get_model_status()
+        payload.requires_grad = {"default": self._requires_grad}
+        return payload
 
 
 def _write_adapter_payload(
