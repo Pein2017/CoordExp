@@ -43,13 +43,13 @@
 
 ## 5. Prompt Image And Parsing
 
-- [ ] 5.1 Add failing tests for prompt-token parity between local rendered prompts and backend prompt token ids.
-- [ ] 5.2 Add failing tests for mandatory no-resize `image_plan.jsonl` fields, processor-model vision parity, invalid-dimension terminal failure before processor reshape, and no benchmark-eligible row artifacts on invalid required input.
-- [ ] 5.3 Implement inference prompt helpers that reuse training template semantics and record prompt/template fingerprints.
-- [ ] 5.4 Implement image-plan materialization for inference batches through existing Qwen no-resize helpers.
-- [ ] 5.5 Add failing parser tests for valid compact object, unsupported JSON assistant response, accepted-with-drops, all-spans-dropped, generated prediction order preservation, degenerate bbox, and out-of-range coordinates.
-- [ ] 5.6 Implement compact object-box-closed parser, salvage diagnostics, inline parser status, sidecar diagnostics, and shared geometry conversion.
-- [ ] 5.7 Run prompt/image/parser tests and a tiny real no-resize image smoke.
+- [x] 5.1 Add failing tests for prompt-token parity between local rendered prompts and backend prompt token ids.
+- [x] 5.2 Add failing tests for mandatory no-resize `image_plan.jsonl` fields, processor-model vision parity, invalid-dimension terminal failure before processor reshape, and no benchmark-eligible row artifacts on invalid required input.
+- [x] 5.3 Implement inference prompt helpers that reuse training template semantics and record prompt/template fingerprints.
+- [x] 5.4 Implement image-plan materialization for inference batches through existing Qwen no-resize helpers.
+- [x] 5.5 Add failing parser tests for valid compact object, unsupported JSON assistant response, accepted-with-drops, all-spans-dropped, generated prediction order preservation, degenerate bbox, and out-of-range coordinates.
+- [x] 5.6 Implement compact object-box-closed parser, salvage diagnostics, inline parser status, sidecar diagnostics, and shared geometry conversion.
+- [x] 5.7 Run prompt/image/parser tests and a tiny real no-resize image smoke.
 
 ## 6. Scoring And Artifact Contracts
 

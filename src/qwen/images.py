@@ -13,7 +13,7 @@ from PIL import Image
 from src.common.errors import EncodingContractError
 from src.config.models import ProcessorConfig
 from src.data import RawExample
-from src.qwen.loading import QwenProcessorIdentity
+from src.qwen.runtime_loading import QwenProcessorIdentity
 
 
 @dataclass(frozen=True)
