@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 import hashlib
 import json
+import multiprocessing
 import os
 from pathlib import Path
 import re
@@ -62,6 +64,9 @@ from src.supervision import (
 from src.templates import render_example
 from src.training.schedule import ResolvedStepSchedule, resolve_planned_step_schedule
 from src.training.pack_cache import (
+    DEFAULT_PACK_CACHE_MATERIALIZATION_WORKERS,
+    PACKING_CACHE_MATERIALIZATION_STRATEGY,
+    build_packing_cache_materialization,
     build_packing_cache_determinants,
     build_packing_cache_fingerprint,
     cache_dir_for_fingerprint,
@@ -81,6 +86,7 @@ from src.training.supervised_trainer import (
 
 
 TRAIN_SPLIT = "train"
+_PACK_CACHE_WORKER_CONTEXT: dict[str, Any] | None = None
 BEST_EVAL_SELECTOR_SPLIT = "eval.forward"
 BEST_EVAL_SELECTOR_NAME = "acc_top1"
 PROGRESS_EVENT_TYPES = frozenset(
@@ -547,6 +553,8 @@ def build_base_micro_steps(
     config: Any,
     components: Any,
     vocab_groups: Any,
+    *,
+    materialization_workers: int | None = None,
 ) -> tuple[SupervisedMicroStep, ...]:
     return _build_micro_steps_for_dataset(
         config,
@@ -554,6 +562,7 @@ def build_base_micro_steps(
         vocab_groups,
         dataset=config.data.train,
         split=TRAIN_SPLIT,
+        materialization_workers=materialization_workers,
     )
 
 
@@ -571,10 +580,11 @@ def _resolve_or_build_train_pack_cache(
         repo_root=repo_root,
         dataset=config.data.train,
         split=TRAIN_SPLIT,
-        build_micro_steps=lambda: build_base_micro_steps(
+        build_micro_steps=lambda workers: build_base_micro_steps(
             config,
             components,
             vocab_groups,
+            materialization_workers=workers,
         ),
     )
 
@@ -597,12 +607,13 @@ def _resolve_eval_pack_cache(
         repo_root=repo_root,
         dataset=config.data.eval,
         split="eval.forward",
-        build_micro_steps=lambda: _build_micro_steps_for_dataset(
+        build_micro_steps=lambda workers: _build_micro_steps_for_dataset(
             config,
             components,
             vocab_groups,
             dataset=config.data.eval,
             split="eval.forward",
+            materialization_workers=workers,
         ),
     )
 
@@ -615,7 +626,8 @@ def _resolve_or_build_pack_cache(
     repo_root: Path,
     dataset: Any,
     split: str,
-    build_micro_steps: Callable[[], Sequence[SupervisedMicroStep]],
+    build_micro_steps: Callable[[int], Sequence[SupervisedMicroStep]],
+    materialization_workers: int | None = None,
 ) -> dict[str, Any]:
     fingerprint = build_packing_cache_fingerprint(
         config,
@@ -635,15 +647,23 @@ def _resolve_or_build_pack_cache(
             str(repo_root / ".cache" / "coordexp_swift" / "packing"),
         )
     )
+    resolved_materialization_workers = _resolve_pack_cache_materialization_workers(
+        materialization_workers
+    )
+    materialization = build_packing_cache_materialization(
+        workers=resolved_materialization_workers,
+        strategy=PACKING_CACHE_MATERIALIZATION_STRATEGY,
+    )
     cache_dir = cache_dir_for_fingerprint(cache_root, fingerprint)
     cache_complete_before = cache_is_complete(cache_dir, fingerprint=fingerprint)
     if _rank() == 0 and not cache_complete_before:
-        micro_steps = tuple(build_micro_steps())
+        micro_steps = tuple(build_micro_steps(resolved_materialization_workers))
         write_micro_step_cache(
             cache_dir,
             micro_steps,
             fingerprint=fingerprint,
             determinants=determinants,
+            materialization=materialization,
         )
     _wait_for_pack_cache(cache_dir, fingerprint=fingerprint)
     manifest = load_cache_manifest(cache_dir)
@@ -667,6 +687,7 @@ def _resolve_or_build_pack_cache(
         "determinants_sha256": _sha256_json(manifest["determinants"]),
         "chunk_sha256s": [str(chunk["sha256"]) for chunk in manifest["chunks"]],
         "determinants": determinants,
+        "materialization": manifest.get("materialization"),
     }
 
 
@@ -771,6 +792,183 @@ def _wait_for_pack_cache(
     )
 
 
+def _build_encoded_examples_for_dataset(
+    config: Any,
+    components: Any,
+    raw_examples: Sequence[Any],
+    *,
+    materialization_workers: int | None = None,
+) -> tuple[Any, ...]:
+    workers = _resolve_pack_cache_materialization_workers(materialization_workers)
+    if workers == 1:
+        return tuple(
+            _render_and_encode_example(
+                raw_example,
+                config=config,
+                components=components,
+            )
+            for raw_example in raw_examples
+        )
+    return _encode_examples_with_fork_process_pool(
+        config,
+        components,
+        raw_examples,
+        workers=workers,
+    )
+
+
+def _encode_examples_with_fork_process_pool(
+    config: Any,
+    components: Any,
+    raw_examples: Sequence[Any],
+    *,
+    workers: int,
+) -> tuple[Any, ...]:
+    mp_context = _fork_multiprocessing_context(workers)
+    global _PACK_CACHE_WORKER_CONTEXT
+    _PACK_CACHE_WORKER_CONTEXT = {
+        "config": config,
+        "components": components,
+        "raw_examples": tuple(raw_examples),
+    }
+    try:
+        with concurrent.futures.ProcessPoolExecutor(
+            max_workers=workers,
+            mp_context=mp_context,
+        ) as executor:
+            futures = [
+                executor.submit(_encode_example_worker, index)
+                for index in range(len(raw_examples))
+            ]
+            indexed_results = [
+                future.result()
+                for future in concurrent.futures.as_completed(futures)
+            ]
+    finally:
+        _PACK_CACHE_WORKER_CONTEXT = None
+    return _restore_encoded_example_order(
+        indexed_results,
+        expected_count=len(raw_examples),
+    )
+
+
+def _encode_example_worker(index: int) -> tuple[int, Any]:
+    context = _PACK_CACHE_WORKER_CONTEXT
+    if context is None:
+        raise RuntimeContractError(
+            "packing cache worker context was not initialized",
+            code="training.pack_cache_worker_context_missing",
+            context={"index": index},
+        )
+    raw_examples = context["raw_examples"]
+    raw_example = raw_examples[index]
+    encoded = _render_and_encode_example(
+        raw_example,
+        config=context["config"],
+        components=context["components"],
+    )
+    return index, encoded
+
+
+def _render_and_encode_example(
+    raw_example: Any,
+    *,
+    config: Any,
+    components: Any,
+) -> Any:
+    rendered = render_example(
+        raw_example,
+        config.template,
+        object_order_seed=_object_order_seed(config, raw_example.example_id),
+    )
+    return encode_rendered_example(
+        raw_example,
+        rendered,
+        components=components,
+        processor_config=config.model.processor,
+        global_max_length=config.packing.global_max_length,
+        materialize_image_pixels=False,
+    )
+
+
+def _restore_encoded_example_order(
+    indexed_results: Sequence[tuple[int, Any]],
+    *,
+    expected_count: int,
+) -> tuple[Any, ...]:
+    ordered: list[Any | None] = [None for _ in range(expected_count)]
+    seen: set[int] = set()
+    for index, encoded_example in indexed_results:
+        if index < 0 or index >= expected_count:
+            raise RuntimeContractError(
+                "packing cache worker returned an out-of-range example index",
+                code="training.pack_cache_worker_index",
+                context={"index": index, "expected_count": expected_count},
+            )
+        if index in seen:
+            raise RuntimeContractError(
+                "packing cache worker returned a duplicate example index",
+                code="training.pack_cache_worker_index_duplicate",
+                context={"index": index},
+            )
+        seen.add(index)
+        ordered[index] = encoded_example
+    if len(seen) != expected_count:
+        missing = sorted(set(range(expected_count)) - seen)
+        raise RuntimeContractError(
+            "packing cache workers did not return every encoded example",
+            code="training.pack_cache_worker_index_missing",
+            context={"missing_indices": missing[:16], "missing_count": len(missing)},
+        )
+    return tuple(encoded_example for encoded_example in ordered)
+
+
+def _resolve_pack_cache_materialization_workers(workers: int | None) -> int:
+    resolved_workers = (
+        DEFAULT_PACK_CACHE_MATERIALIZATION_WORKERS
+        if workers is None
+        else workers
+    )
+    if isinstance(resolved_workers, bool) or not isinstance(resolved_workers, int):
+        raise RuntimeContractError(
+            "packing cache materialization workers must be an integer",
+            code="training.pack_cache_workers_invalid",
+            context={"workers": resolved_workers},
+        )
+    if resolved_workers <= 0:
+        raise RuntimeContractError(
+            "packing cache materialization workers must be positive",
+            code="training.pack_cache_workers_invalid",
+            context={"workers": resolved_workers},
+        )
+    return resolved_workers
+
+
+def _fork_multiprocessing_context(workers: int) -> Any:
+    available_start_methods = tuple(multiprocessing.get_all_start_methods())
+    if "fork" not in available_start_methods:
+        raise RuntimeContractError(
+            "parallel packing-cache materialization requires multiprocessing fork",
+            code="training.pack_cache_workers_unavailable",
+            context={
+                "workers": workers,
+                "available_start_methods": available_start_methods,
+            },
+        )
+    try:
+        return multiprocessing.get_context("fork")
+    except ValueError as exc:
+        raise RuntimeContractError(
+            "parallel packing-cache materialization could not acquire fork context",
+            code="training.pack_cache_workers_unavailable",
+            context={
+                "workers": workers,
+                "available_start_methods": available_start_methods,
+            },
+            cause=exc,
+        ) from exc
+
+
 def _build_micro_steps_for_dataset(
     config: Any,
     components: Any,
@@ -778,6 +976,7 @@ def _build_micro_steps_for_dataset(
     *,
     dataset: Any,
     split: str,
+    materialization_workers: int | None = None,
 ) -> tuple[SupervisedMicroStep, ...]:
     if dataset is None:
         raise RuntimeContractError(
@@ -786,24 +985,11 @@ def _build_micro_steps_for_dataset(
             context={"split": split},
         )
     raw_examples = load_raw_examples(dataset)
-    rendered_examples = tuple(
-        render_example(
-            raw_example,
-            config.template,
-            object_order_seed=_object_order_seed(config, raw_example.example_id),
-        )
-        for raw_example in raw_examples
-    )
-    encoded_examples = tuple(
-        encode_rendered_example(
-            raw_example,
-            rendered,
-            components=components,
-            processor_config=config.model.processor,
-            global_max_length=config.packing.global_max_length,
-            materialize_image_pixels=False,
-        )
-        for raw_example, rendered in zip(raw_examples, rendered_examples, strict=True)
+    encoded_examples = _build_encoded_examples_for_dataset(
+        config,
+        components,
+        raw_examples,
+        materialization_workers=materialization_workers,
     )
     packs = plan_packed_sequences(
         encoded_examples,
@@ -1007,6 +1193,7 @@ def _pack_plan_artifact(
             "manifest_sha256": cache["manifest_sha256"],
             "determinants_sha256": cache["determinants_sha256"],
             "chunk_sha256s": list(cache["chunk_sha256s"]),
+            "materialization": cache.get("materialization"),
         },
         "actual_pack_presentations": schedule.actual_pack_presentations,
         "tail_fill_pack_count": schedule.tail_fill_pack_count,

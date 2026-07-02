@@ -43,9 +43,9 @@ Non-goals:
 - no attempt to preserve the archived OpenSpec tree as active authority;
 - no old `src/` compatibility shims;
 - no runtime dependence on MS-Swift;
-- no rollout training, hidden-state losses, persistent caches, video,
-  multi-image, vLLM, exact optimizer/RNG resume, or DeepSpeed production claim
-  in the first vertical smoke;
+- no rollout training, hidden-state losses, hidden-state/KV/runtime feature
+  caches, video, multi-image, vLLM, exact optimizer/RNG resume, or DeepSpeed
+  production claim in the first vertical smoke;
 - no base-only or standard-LoRA pre-smoke unless the user makes a new decision.
 
 ## Decisions
@@ -130,6 +130,15 @@ is no padded conceptual batch in V1 supervised training. Multiple encoded
 examples may be concatenated under `packing.global_max_length`, but each
 segment remains isolated for attention, position ids, supervision, metrics, and
 loss accounting.
+
+Packing cache reuse is first-class infrastructure, not an experimental future
+cache. For a fixed dataset, template, Qwen encoding identity, processor
+identity, object-ordering policy, and `packing.global_max_length`, the
+implementation should pack once and then reuse the cache on later runs. Cache
+miss materialization must use a forced default of 16 CPU workers so full
+production JSONL packing is not serialized through one Python process. The
+worker count is operational metadata: it must be recorded in cache receipts or
+manifests, but it must not change the semantic cache fingerprint.
 
 Packing owns physical placement and invertible mapping from logical token spans
 to packed token positions. Qwen forward receives repo-built Qwen forward inputs

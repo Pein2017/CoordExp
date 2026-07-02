@@ -122,9 +122,11 @@ systems smoke using the canonical DeepSpeed status labels.
 ### Requirement: First-Smoke Non-Goals
 
 The first vertical smoke SHALL NOT claim support for rollout training,
-hidden-state losses, persistent training caches, video, multi-image, vLLM,
-offline inference loops, exact optimizer/RNG resume, or old production
-coordinate-soft-CE parity.
+hidden-state losses, hidden-state/KV/runtime feature caches, video,
+multi-image, vLLM, offline inference loops, exact optimizer/RNG resume, or old
+production coordinate-soft-CE parity. Deterministic packing-cache reuse is
+permitted in V1 because it is part of supervised training materialization, not a
+model-state or rollout cache.
 
 #### Scenario: Hidden-state loss enabled in smoke
 

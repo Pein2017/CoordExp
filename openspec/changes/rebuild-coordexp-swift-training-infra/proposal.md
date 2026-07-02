@@ -41,12 +41,17 @@ before adding convenience abstractions or future rollout surfaces.
 - Require packed Qwen correctness gates for no-resize processor behavior,
   per-segment 4-row MRoPE position ids, FlashAttention 2 varlen branch evidence,
   and same-segment causal loss mapping.
+- Treat deterministic packing-cache reuse as V1 training infrastructure:
+  cache identity follows dataset/template/Qwen encoding/processor/global-length
+  semantics, cache hits must avoid repacking, and cache misses must materialize
+  with a forced default of 16 CPU workers while recording the worker count.
 - Define the protected V1 objective as full-vocabulary `BaseTokenCE` plus
   group-mass `TokenTypeGateLoss`, both normalized with planned-step
   `segment_balanced` semantics.
-- Keep rollout, hidden-state losses, persistent caches, richer inference/eval,
-  DeepSpeed production support, and old production coordinate-soft-CE objective
-  parity as future capabilities unless explicitly promoted by later changes.
+- Keep rollout, hidden-state losses, hidden-state/KV/runtime feature caches,
+  richer inference/eval, DeepSpeed production support, and old production
+  coordinate-soft-CE objective parity as future capabilities unless explicitly
+  promoted by later changes.
 
 ## Capabilities
 

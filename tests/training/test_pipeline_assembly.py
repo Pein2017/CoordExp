@@ -9,8 +9,11 @@ import pytest
 import torch
 import yaml
 
+import src.training.pipeline as pipeline_mod
 from src.artifacts.manager import RunArtifactManager
 from src.artifacts.metric_stream import MetricStreamEvent
+from src.common.errors import RuntimeContractError
+from src.config.loader import load_train_config
 from src.config.models import RuntimeBatchResolution
 from src.config.paths import RunDirectory
 from src.qwen.images import QwenImageEncoding, QwenNoResizeImagePlan
@@ -26,6 +29,14 @@ from src.training.pipeline import (
     _pack_plan_artifact,
     _resolve_rank_local_run_directory,
     run_training_pipeline,
+)
+from src.training.pack_cache import (
+    PACKING_CACHE_MATERIALIZATION_STRATEGY,
+    build_packing_cache_determinants,
+    build_packing_cache_fingerprint,
+    cache_dir_for_fingerprint,
+    load_cache_manifest,
+    write_micro_step_cache,
 )
 from src.training.schedule import ResolvedStepSchedule
 from src.training.supervised_trainer import (
@@ -455,6 +466,271 @@ def test_pack_plan_artifact_separates_global_cache_and_rank_local_counts() -> No
     assert artifact["cache"]["global_micro_step_count"] == 10
     assert artifact["cache"]["manifest_sha256"] == "a" * 64
     assert artifact["cache"]["chunk_sha256s"] == ["c" * 64, "d" * 64]
+
+
+def test_pack_plan_artifact_records_cache_materialization() -> None:
+    schedule = _schedule(resolved_max_steps=1)
+
+    artifact = _pack_plan_artifact(
+        (_micro_step(0),),
+        schedule=schedule,
+        cache={
+            "cache_dir": Path("/tmp/coordexp-pack-cache/fingerprint"),
+            "fingerprint": "fingerprint",
+            "micro_step_count": 1,
+            "chunk_count": 1,
+            "chunk_size": 8,
+            "status": "complete",
+            "build_status": "built",
+            "manifest_path": Path("/tmp/coordexp-pack-cache/fingerprint/manifest.json"),
+            "manifest_sha256": "a" * 64,
+            "determinants_sha256": "b" * 64,
+            "chunk_sha256s": ["c" * 64],
+            "materialization": {
+                "strategy": PACKING_CACHE_MATERIALIZATION_STRATEGY,
+                "workers": 16,
+            },
+        },
+    )
+
+    assert artifact["cache"]["materialization"] == {
+        "strategy": PACKING_CACHE_MATERIALIZATION_STRATEGY,
+        "workers": 16,
+    }
+
+
+def test_pack_cache_miss_receipt_records_materialization_override(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _config_with_temp_dataset(tmp_path)
+    components = FakeComponents()
+    monkeypatch.setenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", str(tmp_path / "pack-cache"))
+
+    receipt = pipeline_mod._resolve_or_build_pack_cache(
+        config,
+        components,
+        FakeVocabGroups(),
+        repo_root=tmp_path,
+        dataset=config.data.train,
+        split="train",
+        build_micro_steps=lambda materialization_workers: (_micro_step(materialization_workers),),
+        materialization_workers=4,
+    )
+    manifest = load_cache_manifest(receipt["cache_dir"])
+
+    assert receipt["build_status"] == "built"
+    assert receipt["materialization"] == {
+        "strategy": PACKING_CACHE_MATERIALIZATION_STRATEGY,
+        "workers": 4,
+    }
+    assert manifest["materialization"] == receipt["materialization"]
+
+
+def test_pack_cache_hit_does_not_rebuild_or_construct_process_pool(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _config_with_temp_dataset(tmp_path)
+    components = FakeComponents()
+    cache_root = tmp_path / "pack-cache"
+    fingerprint = build_packing_cache_fingerprint(
+        config,
+        components,
+        dataset=config.data.train,
+        split="train",
+    )
+    determinants = build_packing_cache_determinants(
+        config,
+        components,
+        dataset=config.data.train,
+        split="train",
+    )
+    write_micro_step_cache(
+        cache_dir_for_fingerprint(cache_root, fingerprint),
+        (_micro_step(0),),
+        fingerprint=fingerprint,
+        determinants=determinants,
+    )
+    monkeypatch.setenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", str(cache_root))
+
+    def _unexpected_pool(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("cache hit must not construct a process pool")
+
+    monkeypatch.setattr(
+        pipeline_mod.concurrent.futures,
+        "ProcessPoolExecutor",
+        _unexpected_pool,
+        raising=False,
+    )
+
+    receipt = pipeline_mod._resolve_or_build_pack_cache(
+        config,
+        components,
+        FakeVocabGroups(),
+        repo_root=tmp_path,
+        dataset=config.data.train,
+        split="train",
+        build_micro_steps=lambda materialization_workers: (_raise_rebuild(),),
+    )
+
+    assert receipt["build_status"] == "hit"
+    assert receipt["micro_step_count"] == 1
+
+
+def test_pack_cache_materialization_uses_default_pool_and_restores_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_examples = tuple(
+        SimpleNamespace(example_id=f"ex-{index}")
+        for index in range(4)
+    )
+    config = _minimal_pack_materialization_config()
+    fake_context = object()
+    _FakeProcessPoolExecutor.instances.clear()
+    monkeypatch.setattr(
+        pipeline_mod.multiprocessing,
+        "get_all_start_methods",
+        lambda: ["fork"],
+    )
+    monkeypatch.setattr(
+        pipeline_mod.multiprocessing,
+        "get_context",
+        lambda method: fake_context,
+    )
+    monkeypatch.setattr(
+        pipeline_mod.concurrent.futures,
+        "ProcessPoolExecutor",
+        _FakeProcessPoolExecutor,
+    )
+    monkeypatch.setattr(
+        pipeline_mod.concurrent.futures,
+        "as_completed",
+        lambda futures: tuple(reversed(tuple(futures))),
+    )
+    monkeypatch.setattr(
+        pipeline_mod,
+        "render_example",
+        lambda raw_example, template, object_order_seed: f"rendered-{raw_example.example_id}",
+    )
+    monkeypatch.setattr(
+        pipeline_mod,
+        "encode_rendered_example",
+        lambda raw_example, rendered, **kwargs: SimpleNamespace(
+            example_id=raw_example.example_id,
+            input_ids=(int(raw_example.example_id.removeprefix("ex-")),),
+            rendered=rendered,
+            supervised_token_spans=(),
+        ),
+    )
+
+    encoded = pipeline_mod._build_encoded_examples_for_dataset(
+        config,
+        object(),
+        raw_examples,
+    )
+
+    assert [example.example_id for example in encoded] == ["ex-0", "ex-1", "ex-2", "ex-3"]
+    assert [example.rendered for example in encoded] == [
+        "rendered-ex-0",
+        "rendered-ex-1",
+        "rendered-ex-2",
+        "rendered-ex-3",
+    ]
+    assert len(_FakeProcessPoolExecutor.instances) == 1
+    executor = _FakeProcessPoolExecutor.instances[0]
+    assert executor.max_workers == 16
+    assert executor.mp_context is fake_context
+    assert executor.submitted_indices == [0, 1, 2, 3]
+    assert pipeline_mod._PACK_CACHE_WORKER_CONTEXT is None
+
+
+def test_pack_cache_worker_override_preserves_encoded_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_examples = tuple(
+        SimpleNamespace(example_id=f"ex-{index}")
+        for index in range(4)
+    )
+    config = _minimal_pack_materialization_config()
+    monkeypatch.setattr(
+        pipeline_mod,
+        "render_example",
+        lambda raw_example, template, object_order_seed: f"rendered-{raw_example.example_id}",
+    )
+    monkeypatch.setattr(
+        pipeline_mod,
+        "encode_rendered_example",
+        lambda raw_example, rendered, **kwargs: SimpleNamespace(
+            example_id=raw_example.example_id,
+            input_ids=(int(raw_example.example_id.removeprefix("ex-")),),
+            rendered=rendered,
+            supervised_token_spans=(),
+        ),
+    )
+    serial = pipeline_mod._build_encoded_examples_for_dataset(
+        config,
+        object(),
+        raw_examples,
+        materialization_workers=1,
+    )
+    _FakeProcessPoolExecutor.instances.clear()
+    monkeypatch.setattr(
+        pipeline_mod.multiprocessing,
+        "get_all_start_methods",
+        lambda: ["fork"],
+    )
+    monkeypatch.setattr(
+        pipeline_mod.concurrent.futures,
+        "ProcessPoolExecutor",
+        _FakeProcessPoolExecutor,
+    )
+    monkeypatch.setattr(
+        pipeline_mod.concurrent.futures,
+        "as_completed",
+        lambda futures: tuple(reversed(tuple(futures))),
+    )
+
+    parallel = pipeline_mod._build_encoded_examples_for_dataset(
+        config,
+        object(),
+        raw_examples,
+        materialization_workers=3,
+    )
+
+    assert [example.example_id for example in parallel] == [
+        example.example_id for example in serial
+    ]
+    assert [example.rendered for example in parallel] == [
+        example.rendered for example in serial
+    ]
+    serial_packs = pipeline_mod.plan_packed_sequences(serial, global_max_length=2)
+    parallel_packs = pipeline_mod.plan_packed_sequences(parallel, global_max_length=2)
+    assert [
+        (pack.pack_index, tuple(segment.example_id for segment in pack.segments))
+        for pack in parallel_packs
+    ] == [
+        (pack.pack_index, tuple(segment.example_id for segment in pack.segments))
+        for pack in serial_packs
+    ]
+
+
+def test_pack_cache_workers_require_fork_when_parallel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        pipeline_mod.multiprocessing,
+        "get_all_start_methods",
+        lambda: ["spawn"],
+    )
+
+    with pytest.raises(RuntimeContractError, match="training.pack_cache_workers_unavailable"):
+        pipeline_mod._build_encoded_examples_for_dataset(
+            _minimal_pack_materialization_config(),
+            object(),
+            (SimpleNamespace(example_id="ex-0"),),
+            materialization_workers=2,
+        )
 
 
 def test_training_artifact_bridge_writes_train_metrics_and_forward_receipt(tmp_path: Path) -> None:
@@ -900,6 +1176,36 @@ def _point_dataset_paths_at_fixture(payload: dict[str, Any]) -> None:
         payload["data"]["eval"]["path"] = dataset_path
 
 
+def _config_with_temp_dataset(tmp_path: Path) -> Any:
+    dataset = tmp_path / "train.coord.jsonl"
+    dataset.write_text('{"example_id":"ex-0"}\n', encoding="utf-8")
+    config = load_train_config(FIXTURE_CONFIG).config
+    return config.model_copy(
+        update={
+            "data": config.data.model_copy(
+                update={
+                    "train": config.data.train.model_copy(
+                        update={"path": str(dataset)}
+                    )
+                }
+            )
+        }
+    )
+
+
+def _minimal_pack_materialization_config() -> Any:
+    return SimpleNamespace(
+        template=SimpleNamespace(object_ordering="geo_sorted"),
+        model=SimpleNamespace(processor=SimpleNamespace()),
+        packing=SimpleNamespace(global_max_length=128),
+        runtime=SimpleNamespace(seed=17),
+    )
+
+
+def _raise_rebuild() -> Any:
+    raise AssertionError("cache hit must not rebuild micro-steps")
+
+
 def _fake_train_cache(tmp_path: Path) -> dict[str, Any]:
     return {
         "cache_dir": tmp_path / "pack-cache" / "fake",
@@ -914,6 +1220,10 @@ def _fake_train_cache(tmp_path: Path) -> dict[str, Any]:
         "determinants_sha256": "b" * 64,
         "chunk_sha256s": ["c" * 64],
         "determinants": {"purpose": "unit-test"},
+        "materialization": {
+            "strategy": PACKING_CACHE_MATERIALIZATION_STRATEGY,
+            "workers": 16,
+        },
     }
 
 
@@ -1127,7 +1437,7 @@ def _install_fake_training_pipeline_boundaries(
     )
     monkeypatch.setattr(
         "src.training.pipeline.build_base_micro_steps",
-        lambda config, components, vocab_groups: (_micro_step(0),),
+        lambda config, components, vocab_groups, materialization_workers=None: (_micro_step(0),),
         raising=False,
     )
     monkeypatch.setattr(
@@ -1180,6 +1490,34 @@ class FakePipelineDeepSpeedPlugin:
 
     def __init__(self, **kwargs: Any) -> None:
         FakePipelineDeepSpeedPlugin.last_kwargs = dict(kwargs)
+
+
+class _FakeFuture:
+    def __init__(self, result: Any) -> None:
+        self._result = result
+
+    def result(self) -> Any:
+        return self._result
+
+
+class _FakeProcessPoolExecutor:
+    instances: list["_FakeProcessPoolExecutor"] = []
+
+    def __init__(self, *, max_workers: int, mp_context: Any) -> None:
+        self.max_workers = max_workers
+        self.mp_context = mp_context
+        self.submitted_indices: list[int] = []
+        _FakeProcessPoolExecutor.instances.append(self)
+
+    def __enter__(self) -> "_FakeProcessPoolExecutor":
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        return None
+
+    def submit(self, fn: Any, index: int) -> _FakeFuture:
+        self.submitted_indices.append(index)
+        return _FakeFuture(fn(index))
 
 
 class FakeAdapterOnlyModel:

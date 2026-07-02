@@ -104,7 +104,11 @@ Critical or Important findings must be fixed before proceeding.
 - Do not claim DoRA support before the DoRA source-study gate and round-trip probe pass.
 - Do not claim selected special-token embedding support before the embedding source-study gate passes.
 - Do not claim DeepSpeed production support until a later systems smoke proves it.
-- Do not expand V1 into rollout training, hidden-state losses, persistent caches, video, multi-image, vLLM, exact resume, or old production coordinate-soft-CE parity.
+- Do not expand V1 into rollout training, hidden-state losses,
+  hidden-state/KV/runtime feature caches, video, multi-image, vLLM, exact
+  resume, or old production coordinate-soft-CE parity. Deterministic
+  packing-cache reuse is allowed in V1 and should be treated as part of
+  supervised training materialization.
 - Do not mark OpenSpec tasks complete until their implementation evidence exists.
 - Do not let exploratory probes become production modules by accident; probes
   live under `scripts/probes/coordexp_swift/` and must be promoted deliberately.
@@ -585,6 +589,8 @@ encoding.
 - Create: `/data/CoordExp/.worktrees/CoordExp-swift/src/packing/mapping.py`
 - Create: `/data/CoordExp/.worktrees/CoordExp-swift/src/qwen/mrope.py`
 - Create: `/data/CoordExp/.worktrees/CoordExp-swift/src/qwen/forward.py`
+- Modify after the basic trainer exists: `/data/CoordExp/.worktrees/CoordExp-swift/src/training/pack_cache.py`
+- Modify after the basic trainer exists: `/data/CoordExp/.worktrees/CoordExp-swift/src/training/pipeline.py`
 - Create: `/data/CoordExp/.worktrees/CoordExp-swift/tests/coordexp_swift/test_packing_forward.py`
 
 ### Slice 4.1: Pack Planning
@@ -637,10 +643,28 @@ encoding.
 
 **Stop condition:** if installed Qwen/FA2 does not expose enough branch evidence, stop and patch the spec with a proven equivalent mechanism.
 
-### Slice 4.6: Wave 4 Review
+### Slice 4.6: Deterministic Packing Cache Materialization
+
+- [x] Add a failing test proving cache fingerprints do not include the worker
+  count.
+- [x] Add a failing test proving cache-miss receipts/manifests record the
+  resolved worker count.
+- [x] Implement forced default `16` workers for cache-miss materialization
+  without adding a public CLI flag.
+- [x] Ensure worker-count changes cannot reorder examples, segments, packs, or
+  supervision atoms.
+- [x] Keep cache hits read-only and avoid re-rendering, re-encoding, or
+  repacking JSONL once the cache is complete.
+
+**Acceptance gate:** tests prove default worker count `16`, worker-count
+provenance in receipts/manifests, stable semantic fingerprint, deterministic
+packed micro-step order, and cache-hit reuse without rebuilding.
+
+### Slice 4.7: Wave 4 Review
 
 - [ ] Request focused review of pack isolation, position mapping, MRoPE parity,
-  placeholder/grid validation, and FA2 branch evidence.
+  placeholder/grid validation, FA2 branch evidence, and packing-cache
+  determinism.
 - [ ] Patch any P0/P1 findings before loss/backward work begins.
 
 **Acceptance gate:** no unresolved P0/P1 findings in packing/Qwen forward.
@@ -932,7 +956,9 @@ implementation milestone.
 ### Slice 9.1: Task Completion Evidence
 
 - [ ] Mark OpenSpec tasks complete only for implemented, verified work.
-- [ ] Keep future rollout, hidden-state, cache, video, multi-image, vLLM, and exact-resume items out of V1.
+- [ ] Keep future rollout, hidden-state, hidden-state/KV/runtime feature
+  caches, video, multi-image, vLLM, and exact-resume items out of V1 while
+  preserving deterministic packing-cache reuse.
 - [ ] Update `BLUEPRINT.md` card statuses from `approved` to `implemented` or `verified` only when evidence exists.
 
 ### Slice 9.2: Handoff Packet
@@ -1054,7 +1080,10 @@ The current implementation priorities are accuracy/precision first, efficiency s
 - Spec coverage: every remaining OpenSpec task from 2.1 through 10.5 maps to at least one wave and slice.
 - Source-study gates: DoRA, special-token embeddings, Qwen no-resize/MRoPE/FA2 are before production code.
 - Approval discipline: old `src/` move and public modules are gated.
-- Simplicity guard: no rollout, hidden-state, persistent cache, video, multi-image, vLLM, exact resume, or old objective parity enters V1.
+- Simplicity guard: no rollout, hidden-state, hidden-state/KV/runtime feature
+  cache, video, multi-image, vLLM, exact resume, or old objective parity enters
+  V1; deterministic packing-cache reuse is the explicit exception because it
+  removes repeated JSONL/template/packing work without changing model behavior.
 - Artifact guard: smoke acceptance requires resolved config, manifest, receipts, metrics, eval summaries, checkpoint metadata, and final checkpoint alias.
 - Handoff guard: a fresh Codex worker has exact paths, commands, stop conditions, and priority order.
 - Execution guard: every source-code wave now requires a wave-specific

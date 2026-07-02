@@ -13,8 +13,11 @@ from src.config.loader import load_train_config
 from src.config.models import RuntimeBatchResolution
 from src.training.pipeline import build_repeating_micro_step_stream
 from src.training.pack_cache import (
+    DEFAULT_PACK_CACHE_MATERIALIZATION_WORKERS,
+    PACKING_CACHE_MATERIALIZATION_STRATEGY,
     build_packing_cache_fingerprint,
     load_all_micro_steps_from_cache,
+    load_cache_manifest,
     load_rank_micro_steps_from_cache,
     write_micro_step_cache,
 )
@@ -150,6 +153,120 @@ def test_packing_cache_fingerprint_tracks_image_pad_token_id(tmp_path: Path) -> 
     )
 
     assert changed_image_pad != baseline
+
+
+def test_packing_cache_fingerprint_ignores_materialization_worker_count(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "train.coord.jsonl"
+    dataset.write_text('{"example_id":"ex-0"}\n', encoding="utf-8")
+    config = load_train_config(FIXTURE_CONFIG).config
+    config = config.model_copy(
+        update={
+            "data": config.data.model_copy(
+                update={
+                    "train": config.data.train.model_copy(
+                        update={"path": str(dataset)}
+                    )
+                }
+            )
+        }
+    )
+    components = FakeComponents()
+    fingerprint = build_packing_cache_fingerprint(
+        config,
+        components,
+        dataset=config.data.train,
+        split="train",
+    )
+
+    default_cache = tmp_path / "default-cache"
+    override_cache = tmp_path / "override-cache"
+    default_manifest = write_micro_step_cache(
+        default_cache,
+        (_micro_step(0),),
+        fingerprint=fingerprint,
+        determinants={"purpose": "unit-test"},
+    )
+    override_manifest = write_micro_step_cache(
+        override_cache,
+        (_micro_step(0),),
+        fingerprint=fingerprint,
+        determinants={"purpose": "unit-test"},
+        materialization={
+            "strategy": PACKING_CACHE_MATERIALIZATION_STRATEGY,
+            "workers": 3,
+        },
+    )
+
+    assert default_manifest["fingerprint"] == fingerprint
+    assert override_manifest["fingerprint"] == fingerprint
+    assert default_manifest["materialization"]["workers"] != (
+        override_manifest["materialization"]["workers"]
+    )
+
+
+def test_micro_step_cache_manifest_records_default_materialization_workers(
+    tmp_path: Path,
+) -> None:
+    cache_dir = tmp_path / "cache"
+
+    manifest = write_micro_step_cache(
+        cache_dir,
+        (_micro_step(0),),
+        fingerprint="abc123",
+        determinants={"purpose": "unit-test"},
+    )
+
+    assert manifest["materialization"] == {
+        "strategy": PACKING_CACHE_MATERIALIZATION_STRATEGY,
+        "workers": DEFAULT_PACK_CACHE_MATERIALIZATION_WORKERS,
+    }
+    assert load_cache_manifest(cache_dir)["materialization"] == manifest["materialization"]
+
+
+def test_micro_step_cache_manifest_records_explicit_materialization_override(
+    tmp_path: Path,
+) -> None:
+    cache_dir = tmp_path / "cache"
+
+    manifest = write_micro_step_cache(
+        cache_dir,
+        (_micro_step(0),),
+        fingerprint="abc123",
+        determinants={"purpose": "unit-test"},
+        materialization={
+            "strategy": PACKING_CACHE_MATERIALIZATION_STRATEGY,
+            "workers": 4,
+        },
+    )
+
+    assert manifest["materialization"] == {
+        "strategy": PACKING_CACHE_MATERIALIZATION_STRATEGY,
+        "workers": 4,
+    }
+
+
+def test_legacy_micro_step_cache_manifest_without_materialization_still_loads(
+    tmp_path: Path,
+) -> None:
+    cache_dir = tmp_path / "cache"
+    write_micro_step_cache(
+        cache_dir,
+        (_micro_step(0),),
+        fingerprint="abc123",
+        determinants={"purpose": "unit-test"},
+    )
+    manifest_path = cache_dir / "manifest.json"
+    legacy_manifest = json.loads(manifest_path.read_text())
+    legacy_manifest.pop("materialization")
+    manifest_path.write_text(json.dumps(legacy_manifest), encoding="utf-8")
+
+    loaded_manifest = load_cache_manifest(cache_dir)
+    loaded_steps = load_all_micro_steps_from_cache(cache_dir)
+
+    assert "materialization" not in loaded_manifest
+    assert [step.metadata["pack_id"] for step in loaded_steps] == [0]
 
 
 def test_micro_step_cache_loads_exact_rank_local_training_order(tmp_path: Path) -> None:

@@ -34,6 +34,42 @@ examples unless a future continuous-stream recipe is explicitly approved.
 - **THEN** the forward inputs MUST include enough boundary information for Qwen
   forward and loss accounting to isolate the two segments.
 
+### Requirement: Deterministic Packing Cache Reuse
+
+Packing materialization SHALL support a deterministic reusable cache for packed
+micro-step plans. For the same dataset content, template, object-ordering
+policy, Qwen token/processor identity, no-resize processor controls, and
+`packing.global_max_length`, a cache hit MUST avoid rendering, encoding, and
+packing the dataset again. A cache miss MUST materialize the cache through a
+forced default of 16 CPU workers. The worker count MUST be recorded in the cache
+manifest or packing receipt as operational provenance, but it MUST NOT
+participate in the semantic cache fingerprint because changing worker count
+must not create a different training example order or supervision contract.
+
+#### Scenario: Same template and data are relaunched
+
+- **GIVEN** a complete packing cache exists for the dataset/template/Qwen
+  encoding/processor/global-length identity
+- **WHEN** a later run uses the same semantic inputs
+- **THEN** the training pipeline MUST load the cached micro-step plan
+- **AND** MUST NOT repack the JSONL again.
+
+#### Scenario: Cache miss on production JSONL
+
+- **GIVEN** no complete cache exists for the resolved packing fingerprint
+- **WHEN** the training pipeline materializes the packing cache
+- **THEN** it MUST use 16 CPU workers by default
+- **AND** the manifest or packing receipt MUST record the resolved worker
+  count.
+
+#### Scenario: Worker count changes
+
+- **WHEN** a debug or implementation test changes the worker count without
+  changing dataset, template, ordering, Qwen identity, processor controls, or
+  `packing.global_max_length`
+- **THEN** the cache fingerprint MUST remain unchanged
+- **AND** the produced packed micro-step sequence MUST remain deterministic.
+
 ### Requirement: Supervision Position Mapping
 
 Packing SHALL convert logical target positions into physical packed positions

@@ -110,6 +110,10 @@ roadmap and acceptance gates.
   placeholder/grid validation, and Qwen forward receipt.
 - [x] 6.5 Prove FlashAttention varlen segment isolation through branch-level
   evidence, not only shape checks.
+- [x] 6.6 Implement deterministic packing-cache reuse with 16 CPU workers as
+  the default cache-miss materialization policy, record the resolved worker
+  count in packing/cache receipts, and verify that worker count does not affect
+  semantic cache identity or packed micro-step order.
 
 ## 7. Losses, Normalizers, And Finite Gates
 
@@ -169,5 +173,7 @@ roadmap and acceptance gates.
   `systems_smoke_verified` or `production_supported` until a later systems
   smoke passes.
 - [x] 10.5 Stop at smoke acceptance; do not expand V1 with rollout training,
-  hidden-state losses, persistent caches, video, multi-image, vLLM, or exact
-  resume unless a later approved change promotes them.
+  hidden-state losses, hidden-state/KV/runtime feature caches, video,
+  multi-image, vLLM, or exact resume unless a later approved change promotes
+  them. Deterministic packing-cache reuse is an approved V1 infrastructure
+  exception.

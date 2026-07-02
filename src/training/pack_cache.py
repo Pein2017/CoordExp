@@ -18,6 +18,27 @@ from src.training.supervised_trainer import SupervisedMicroStep
 PACKING_CACHE_VERSION = "coordexp-swift-pack-cache-v1"
 PACKING_CACHE_MANIFEST = "manifest.json"
 PACKING_CACHE_CHUNK_DIR = "chunks"
+DEFAULT_PACK_CACHE_MATERIALIZATION_WORKERS = 16
+PACKING_CACHE_MATERIALIZATION_STRATEGY = "fork_process_pool"
+
+
+def build_packing_cache_materialization(
+    *,
+    workers: int | None = None,
+    strategy: str = PACKING_CACHE_MATERIALIZATION_STRATEGY,
+) -> dict[str, Any]:
+    resolved_workers = (
+        DEFAULT_PACK_CACHE_MATERIALIZATION_WORKERS
+        if workers is None
+        else workers
+    )
+    if isinstance(resolved_workers, bool) or not isinstance(resolved_workers, int):
+        raise ValueError("packing cache materialization workers must be an integer")
+    if resolved_workers <= 0:
+        raise ValueError("packing cache materialization workers must be positive")
+    if not isinstance(strategy, str) or not strategy:
+        raise ValueError("packing cache materialization strategy must be non-empty")
+    return {"strategy": strategy, "workers": resolved_workers}
 
 
 def build_packing_cache_fingerprint(
@@ -114,9 +135,11 @@ def write_micro_step_cache(
     fingerprint: str,
     determinants: Mapping[str, Any],
     chunk_size: int = 512,
+    materialization: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     if chunk_size <= 0:
         raise ValueError("chunk_size must be positive")
+    materialization_payload = _coerce_materialization(materialization)
     root = Path(cache_dir)
     chunks_dir = root / PACKING_CACHE_CHUNK_DIR
     chunks_dir.mkdir(parents=True, exist_ok=True)
@@ -144,6 +167,7 @@ def write_micro_step_cache(
         "micro_step_count": len(micro_steps),
         "chunk_size": chunk_size,
         "chunks": chunks,
+        "materialization": materialization_payload,
     }
     _atomic_write_json(manifest_path(root), manifest)
     return manifest
@@ -245,6 +269,9 @@ def _validate_manifest(manifest: dict[str, Any], *, cache_dir: Path) -> None:
     chunks = manifest.get("chunks")
     if not isinstance(chunks, list) or not chunks:
         raise ValueError("packing cache manifest must contain chunks")
+    materialization = manifest.get("materialization")
+    if materialization is not None:
+        _coerce_materialization(materialization)
     expected_start = 0
     for chunk in chunks:
         start = int(chunk["start"])
@@ -263,6 +290,23 @@ def _validate_manifest(manifest: dict[str, Any], *, cache_dir: Path) -> None:
             raise ValueError("packing cache chunk must record sha256")
     if expected_start != count:
         raise ValueError("packing cache chunks must cover every micro-step")
+
+
+def _coerce_materialization(
+    materialization: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if materialization is None:
+        return build_packing_cache_materialization()
+    if not isinstance(materialization, Mapping):
+        raise ValueError("packing cache materialization must be a mapping")
+    strategy = materialization.get("strategy", PACKING_CACHE_MATERIALIZATION_STRATEGY)
+    workers = materialization.get("workers")
+    if workers is None:
+        raise ValueError("packing cache materialization must record workers")
+    return build_packing_cache_materialization(
+        workers=workers,
+        strategy=strategy,
+    )
 
 
 def _validate_chunk_sha256(path: Path, *, expected_sha256: str) -> None:
@@ -332,8 +376,11 @@ def _file_sha256(path: Path) -> str:
 
 
 __all__ = [
+    "DEFAULT_PACK_CACHE_MATERIALIZATION_WORKERS",
     "PACKING_CACHE_MANIFEST",
+    "PACKING_CACHE_MATERIALIZATION_STRATEGY",
     "PACKING_CACHE_VERSION",
+    "build_packing_cache_materialization",
     "build_packing_cache_determinants",
     "build_packing_cache_fingerprint",
     "cache_dir_for_fingerprint",
