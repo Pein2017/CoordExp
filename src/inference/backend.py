@@ -132,9 +132,14 @@ class HFGenerateBackend:
     ) -> list[DecodeResult]:
         if not requests:
             return []
+        max_new_tokens = self._batch_max_new_tokens(requests)
         prompt_width = max(len(request.prompt_token_ids) for request in requests)
-        max_new_tokens = max(request.max_new_tokens for request in requests)
-        input_ids, attention_mask = self._padded_prompt_tensors(requests, prompt_width)
+        target_device = self._target_device(requests)
+        input_ids, attention_mask = self._padded_prompt_tensors(
+            requests,
+            prompt_width,
+            device=target_device,
+        )
         generate_inputs = self._collate_generate_inputs(requests)
         generate_inputs["input_ids"] = input_ids
         generate_inputs["attention_mask"] = attention_mask
@@ -161,6 +166,7 @@ class HFGenerateBackend:
                 code="backend_trace.missing_scores",
                 context={"backend": self.backend},
             )
+        score_tensors = self._validate_score_tensors(scores, batch_size=len(requests))
         sequences = getattr(outputs, "sequences", None)
         if sequences is None:
             raise RuntimeContractError(
@@ -193,7 +199,7 @@ class HFGenerateBackend:
         transition_scores = self._transition_scores(
             sequences,
             generated_suffix=generated_suffix,
-            scores=scores,
+            scores=score_tensors,
         )
         if transition_scores.shape != (len(requests), len(scores)):
             raise RuntimeContractError(
@@ -219,10 +225,46 @@ class HFGenerateBackend:
             for row, request in enumerate(requests)
         ]
 
+    def _batch_max_new_tokens(self, requests: Sequence[DecodeRequest]) -> int:
+        values = {request.max_new_tokens for request in requests}
+        if len(values) != 1:
+            raise RuntimeContractError(
+                "all decode requests in a V1 HF batch must use the same max_new_tokens",
+                code="backend_trace.max_new_tokens_mismatch",
+                context={"max_new_tokens": sorted(values)},
+            )
+        return values.pop()
+
+    def _target_device(self, requests: Sequence[DecodeRequest]) -> torch.device:
+        devices = {
+            value.device
+            for request in requests
+            for value in request.model_inputs.values()
+            if isinstance(value, torch.Tensor)
+        }
+        if len(devices) > 1:
+            raise RuntimeContractError(
+                "decode request tensors must be on one device before HF generation",
+                code="backend_trace.device_mismatch",
+                context={"devices": sorted(str(device) for device in devices)},
+            )
+        if devices:
+            return next(iter(devices))
+        if hasattr(self.model, "parameters"):
+            try:
+                first_param = next(iter(self.model.parameters()))
+            except StopIteration:
+                first_param = None
+            if first_param is not None:
+                return first_param.device
+        return torch.device("cpu")
+
     def _padded_prompt_tensors(
         self,
         requests: Sequence[DecodeRequest],
         prompt_width: int,
+        *,
+        device: torch.device,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         pad_id = self._pad_token_id()
         rows = []
@@ -240,9 +282,12 @@ class HFGenerateBackend:
                     },
                 )
             padding = [pad_id] * (prompt_width - len(row))
-            rows.append(row + padding)
-            masks.append([1] * len(row) + [0] * len(padding))
-        return torch.tensor(rows, dtype=torch.long), torch.tensor(masks, dtype=torch.long)
+            rows.append(padding + row)
+            masks.append([0] * len(padding) + [1] * len(row))
+        return (
+            torch.tensor(rows, dtype=torch.long, device=device),
+            torch.tensor(masks, dtype=torch.long, device=device),
+        )
 
     def _collate_generate_inputs(
         self,
@@ -267,8 +312,30 @@ class HFGenerateBackend:
                     code="backend_trace.model_input_mismatch",
                     context={"field": key},
                 )
-            collated[key] = _collate_model_input_values(present)
+            collated[key] = _collate_model_input_values(present, key=key)
         return collated
+
+    def _validate_score_tensors(
+        self,
+        scores: tuple[Any, ...],
+        *,
+        batch_size: int,
+    ) -> tuple[torch.Tensor, ...]:
+        validated = []
+        for step_index, score in enumerate(scores):
+            score_tensor = _as_tensor(score)
+            if score_tensor.ndim != 2 or score_tensor.shape[0] != batch_size:
+                raise RuntimeContractError(
+                    "HF generation score tensor shape does not match decode batch",
+                    code="backend_trace.score_shape_mismatch",
+                    context={
+                        "step_index": step_index,
+                        "score_shape": tuple(score_tensor.shape),
+                        "batch_size": batch_size,
+                    },
+                )
+            validated.append(score_tensor)
+        return tuple(validated)
 
     def _transition_scores(
         self,
@@ -279,13 +346,24 @@ class HFGenerateBackend:
     ) -> torch.Tensor:
         compute_transition_scores = getattr(self.model, "compute_transition_scores", None)
         if callable(compute_transition_scores):
-            return _as_tensor(
-                compute_transition_scores(
-                    sequences,
-                    scores,
-                    normalize_logits=True,
+            try:
+                return _as_tensor(
+                    compute_transition_scores(
+                        sequences,
+                        scores,
+                        normalize_logits=True,
+                    )
                 )
-            )
+            except Exception as exc:
+                raise RuntimeContractError(
+                    "HF transition score extraction failed",
+                    code="backend_trace.transition_scores_failed",
+                    context={
+                        "sequence_shape": tuple(sequences.shape),
+                        "score_shapes": [tuple(score.shape) for score in scores],
+                    },
+                    cause=exc,
+                ) from exc
         rows = []
         for step_index, step_scores in enumerate(scores):
             logprobs = F.log_softmax(_as_tensor(step_scores), dim=-1)
@@ -414,13 +492,60 @@ def _as_tensor(value: Any) -> torch.Tensor:
     return value if isinstance(value, torch.Tensor) else torch.as_tensor(value)
 
 
-def _collate_model_input_values(values: list[Any]) -> Any:
+def _collate_model_input_values(values: list[Any], key: str) -> Any:
+    if key in {"pixel_values", "pixel_values_videos"}:
+        return _cat_patch_values(values, field=key)
+    if key in {"image_grid_thw", "video_grid_thw"}:
+        return _cat_grid_thw(values, field=key)
     if len(values) == 1:
         return values[0]
-    if all(isinstance(value, torch.Tensor) for value in values):
-        shapes = {tuple(value.shape) for value in values}
-        if len(shapes) == 1:
-            return torch.stack(values)
+    return values
+
+
+def _cat_patch_values(values: list[Any], *, field: str) -> torch.Tensor:
+    tensors = _require_tensor_values(values, field=field)
+    first = tensors[0]
+    if first.ndim < 2:
+        raise RuntimeContractError(
+            "Qwen patch values must be at least rank 2",
+            code="backend_trace.model_input_shape",
+            context={"field": field, "shape": tuple(first.shape)},
+        )
+    trailing_shape = tuple(first.shape[1:])
+    for index, tensor in enumerate(tensors):
+        if tensor.ndim < 2 or tuple(tensor.shape[1:]) != trailing_shape:
+            raise RuntimeContractError(
+                "Qwen patch values must share trailing dimensions",
+                code="backend_trace.model_input_shape",
+                context={
+                    "field": field,
+                    "index": index,
+                    "shape": tuple(tensor.shape),
+                    "expected_trailing_shape": trailing_shape,
+                },
+            )
+    return torch.cat(tensors, dim=0)
+
+
+def _cat_grid_thw(values: list[Any], *, field: str) -> torch.Tensor:
+    tensors = _require_tensor_values(values, field=field)
+    for index, tensor in enumerate(tensors):
+        if tensor.ndim != 2 or tensor.shape[1] != 3:
+            raise RuntimeContractError(
+                "Qwen grid THW inputs must be rank 2 with width 3",
+                code="backend_trace.model_input_shape",
+                context={"field": field, "index": index, "shape": tuple(tensor.shape)},
+            )
+    return torch.cat(tensors, dim=0)
+
+
+def _require_tensor_values(values: list[Any], *, field: str) -> list[torch.Tensor]:
+    if not all(isinstance(value, torch.Tensor) for value in values):
+        raise RuntimeContractError(
+            "Qwen model input collation requires tensor values",
+            code="backend_trace.model_input_type",
+            context={"field": field},
+        )
     return values
 
 

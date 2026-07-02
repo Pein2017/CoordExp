@@ -80,6 +80,17 @@ class FakeHFModelWithoutTransitionScores(FakeHFModel):
     compute_transition_scores = None
 
 
+class FakeHFModelTransitionRaises(FakeHFModel):
+    def compute_transition_scores(
+        self,
+        sequences: torch.Tensor,
+        scores: tuple[torch.Tensor, ...],
+        *,
+        normalize_logits: bool,
+    ) -> torch.Tensor:
+        raise ValueError("transition boom")
+
+
 def _logits_for_tokens(batch_tokens: list[int], *, vocab_size: int = 151646) -> torch.Tensor:
     logits = torch.full((len(batch_tokens), vocab_size), -20.0, dtype=torch.float32)
     for row_index, token_id in enumerate(batch_tokens):
@@ -334,7 +345,7 @@ def test_batched_variable_prompt_width_alignment_and_post_stop_padding() -> None
     prompt_width = 3
     model = FakeHFModel(
         sequences=[
-            [11, 12, tokenizer.pad_token_id, 21, tokenizer.eos_token_id, tokenizer.pad_token_id],
+            [tokenizer.pad_token_id, 11, 12, 21, tokenizer.eos_token_id, tokenizer.pad_token_id],
             [11, 12, 13, 22, 23, 24],
         ],
         score_steps=[
@@ -367,6 +378,14 @@ def test_batched_variable_prompt_width_alignment_and_post_stop_padding() -> None
     short, long = results
     assert model.generate_kwargs is not None
     assert model.generate_kwargs["input_ids"].shape == (2, prompt_width)
+    assert model.generate_kwargs["input_ids"].tolist() == [
+        [tokenizer.pad_token_id, 11, 12],
+        [11, 12, 13],
+    ]
+    assert model.generate_kwargs["attention_mask"].tolist() == [
+        [0, 1, 1],
+        [1, 1, 1],
+    ]
     assert short.prompt_token_ids == [11, 12]
     assert short.generated_token_ids == [21, tokenizer.eos_token_id]
     assert [trace.token_id for trace in short.token_trace] == [21, tokenizer.eos_token_id, tokenizer.pad_token_id]
@@ -382,6 +401,105 @@ def test_batched_variable_prompt_width_alignment_and_post_stop_padding() -> None
     assert [trace.token_id for trace in long.token_trace] == [22, 23, 24]
     assert all(trace.logprob is not None for trace in long.token_trace)
     assert long.stop_reason == "length"
+
+
+def test_hf_generate_places_padded_text_inputs_on_request_tensor_device() -> None:
+    from src.inference.backend import DecodeRequest, HFGenerateBackend
+
+    tokenizer = FakeTokenizer()
+    input_ids = torch.tensor([11, 12], device=torch.device("cpu"))
+    model = FakeHFModel(
+        sequences=[[11, 12, 21, tokenizer.eos_token_id]],
+        score_steps=[
+            _logits_for_tokens([21]),
+            _logits_for_tokens([tokenizer.eos_token_id]),
+        ],
+    )
+
+    HFGenerateBackend(model=model, tokenizer=tokenizer).generate_batch(
+        [
+            DecodeRequest(
+                request_id="row-1",
+                prompt_token_ids=[11, 12],
+                model_inputs={"input_ids": input_ids},
+                max_new_tokens=2,
+            )
+        ],
+        model_identity={"family": "base-only"},
+        tokenizer_identity={"sha256": "tok-sha"},
+        generation_config_fingerprint="gen-fp",
+    )
+
+    assert model.generate_kwargs is not None
+    assert model.generate_kwargs["input_ids"].device == input_ids.device
+    assert model.generate_kwargs["attention_mask"].device == input_ids.device
+
+
+def test_hf_generate_rejects_mixed_request_tensor_devices() -> None:
+    from src.inference.backend import DecodeRequest, HFGenerateBackend
+
+    tokenizer = FakeTokenizer()
+    meta_tensor = torch.empty((1,), device="meta")
+    model = FakeHFModel(
+        sequences=[[0, 11, 12, 21], [11, 12, 13, 22]],
+        score_steps=[_logits_for_tokens([21, 22])],
+    )
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        HFGenerateBackend(model=model, tokenizer=tokenizer).generate_batch(
+            [
+                DecodeRequest(
+                    request_id="cpu",
+                    prompt_token_ids=[11, 12],
+                    model_inputs={"input_ids": torch.tensor([11, 12])},
+                    max_new_tokens=1,
+                ),
+                DecodeRequest(
+                    request_id="meta",
+                    prompt_token_ids=[11, 12, 13],
+                    model_inputs={"input_ids": torch.tensor([11, 12, 13]), "pixel_values": meta_tensor},
+                    max_new_tokens=1,
+                ),
+            ],
+            model_identity={"family": "base-only"},
+            tokenizer_identity={"sha256": "tok-sha"},
+            generation_config_fingerprint="gen-fp",
+        )
+
+    assert exc_info.value.code == "backend_trace.device_mismatch"
+
+
+def test_hf_generate_rejects_mixed_max_new_tokens_in_batch() -> None:
+    from src.inference.backend import DecodeRequest, HFGenerateBackend
+
+    tokenizer = FakeTokenizer()
+    model = FakeHFModel(
+        sequences=[[0, 11, 12, 21], [11, 12, 13, 22]],
+        score_steps=[_logits_for_tokens([21, 22])],
+    )
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        HFGenerateBackend(model=model, tokenizer=tokenizer).generate_batch(
+            [
+                DecodeRequest(
+                    request_id="short",
+                    prompt_token_ids=[11, 12],
+                    model_inputs={"input_ids": torch.tensor([11, 12])},
+                    max_new_tokens=1,
+                ),
+                DecodeRequest(
+                    request_id="long",
+                    prompt_token_ids=[11, 12, 13],
+                    model_inputs={"input_ids": torch.tensor([11, 12, 13])},
+                    max_new_tokens=2,
+                ),
+            ],
+            model_identity={"family": "base-only"},
+            tokenizer_identity={"sha256": "tok-sha"},
+            generation_config_fingerprint="gen-fp",
+        )
+
+    assert exc_info.value.code == "backend_trace.max_new_tokens_mismatch"
 
 
 def test_overlong_sequence_score_mismatch_fails_before_trace_alignment() -> None:
@@ -449,8 +567,8 @@ def test_hf_generate_forwards_non_text_model_inputs() -> None:
     from src.inference.backend import DecodeRequest, HFGenerateBackend
 
     tokenizer = FakeTokenizer()
-    pixel_values = object()
-    image_grid_thw = object()
+    pixel_values = torch.ones((2, 4))
+    image_grid_thw = torch.tensor([[1, 1, 2]])
     model = FakeHFModel(
         sequences=[[11, 12, 21, tokenizer.eos_token_id]],
         score_steps=[
@@ -478,8 +596,179 @@ def test_hf_generate_forwards_non_text_model_inputs() -> None:
     )
 
     assert model.generate_kwargs is not None
-    assert model.generate_kwargs["pixel_values"] is pixel_values
-    assert model.generate_kwargs["image_grid_thw"] is image_grid_thw
+    assert torch.equal(model.generate_kwargs["pixel_values"], pixel_values)
+    assert torch.equal(model.generate_kwargs["image_grid_thw"], image_grid_thw)
+
+
+def test_hf_generate_collates_qwen_image_inputs_by_key() -> None:
+    from src.inference.backend import DecodeRequest, HFGenerateBackend
+
+    tokenizer = FakeTokenizer()
+    first_pixels = torch.ones((2, 4))
+    second_pixels = torch.ones((3, 4))
+    first_grid = torch.tensor([[1, 1, 2]])
+    second_grid = torch.tensor([[1, 1, 3]])
+    model = FakeHFModel(
+        sequences=[
+            [11, 12, 21, tokenizer.eos_token_id],
+            [11, 12, 22, tokenizer.eos_token_id],
+        ],
+        score_steps=[
+            _logits_for_tokens([21, 22]),
+            _logits_for_tokens([tokenizer.eos_token_id, tokenizer.eos_token_id]),
+        ],
+    )
+
+    HFGenerateBackend(model=model, tokenizer=tokenizer).generate_batch(
+        [
+            DecodeRequest(
+                request_id="row-1",
+                prompt_token_ids=[11, 12],
+                model_inputs={
+                    "input_ids": torch.tensor([11, 12]),
+                    "pixel_values": first_pixels,
+                    "image_grid_thw": first_grid,
+                },
+                max_new_tokens=2,
+            ),
+            DecodeRequest(
+                request_id="row-2",
+                prompt_token_ids=[11, 12],
+                model_inputs={
+                    "input_ids": torch.tensor([11, 12]),
+                    "pixel_values": second_pixels,
+                    "image_grid_thw": second_grid,
+                },
+                max_new_tokens=2,
+            ),
+        ],
+        model_identity={"family": "base-only"},
+        tokenizer_identity={"sha256": "tok-sha"},
+        generation_config_fingerprint="gen-fp",
+    )
+
+    assert model.generate_kwargs is not None
+    assert model.generate_kwargs["pixel_values"].shape == (5, 4)
+    assert model.generate_kwargs["image_grid_thw"].shape == (2, 3)
+    assert model.generate_kwargs["image_grid_thw"].tolist() == [[1, 1, 2], [1, 1, 3]]
+
+
+def test_hf_generate_rejects_bad_qwen_image_grid_shape() -> None:
+    from src.inference.backend import DecodeRequest, HFGenerateBackend
+
+    tokenizer = FakeTokenizer()
+    model = FakeHFModel(
+        sequences=[[11, 12, 21, tokenizer.eos_token_id]],
+        score_steps=[
+            _logits_for_tokens([21]),
+            _logits_for_tokens([tokenizer.eos_token_id]),
+        ],
+    )
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        HFGenerateBackend(model=model, tokenizer=tokenizer).generate_batch(
+            [
+                DecodeRequest(
+                    request_id="row-1",
+                    prompt_token_ids=[11, 12],
+                    model_inputs={
+                        "input_ids": torch.tensor([11, 12]),
+                        "image_grid_thw": torch.tensor([1, 2]),
+                    },
+                    max_new_tokens=2,
+                )
+            ],
+            model_identity={"family": "base-only"},
+            tokenizer_identity={"sha256": "tok-sha"},
+            generation_config_fingerprint="gen-fp",
+        )
+
+    assert exc_info.value.code == "backend_trace.model_input_shape"
+    assert exc_info.value.context["field"] == "image_grid_thw"
+
+
+def test_hf_generate_rejects_wrong_score_batch_dimension() -> None:
+    from src.inference.backend import DecodeRequest, HFGenerateBackend
+
+    tokenizer = FakeTokenizer()
+    model = FakeHFModel(
+        sequences=[[11, 12, 21]],
+        score_steps=[_logits_for_tokens([21, 22])],
+    )
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        HFGenerateBackend(model=model, tokenizer=tokenizer).generate_batch(
+            [
+                DecodeRequest(
+                    request_id="row-1",
+                    prompt_token_ids=[11, 12],
+                    model_inputs={"input_ids": torch.tensor([11, 12])},
+                    max_new_tokens=1,
+                )
+            ],
+            model_identity={"family": "base-only"},
+            tokenizer_identity={"sha256": "tok-sha"},
+            generation_config_fingerprint="gen-fp",
+        )
+
+    assert exc_info.value.code == "backend_trace.score_shape_mismatch"
+    assert exc_info.value.context["step_index"] == 0
+
+
+def test_hf_generate_rejects_rank_one_score_tensor() -> None:
+    from src.inference.backend import DecodeRequest, HFGenerateBackend
+
+    tokenizer = FakeTokenizer()
+    model = FakeHFModel(
+        sequences=[[11, 12, 21]],
+        score_steps=[torch.zeros((151646,), dtype=torch.float32)],
+    )
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        HFGenerateBackend(model=model, tokenizer=tokenizer).generate_batch(
+            [
+                DecodeRequest(
+                    request_id="row-1",
+                    prompt_token_ids=[11, 12],
+                    model_inputs={"input_ids": torch.tensor([11, 12])},
+                    max_new_tokens=1,
+                )
+            ],
+            model_identity={"family": "base-only"},
+            tokenizer_identity={"sha256": "tok-sha"},
+            generation_config_fingerprint="gen-fp",
+        )
+
+    assert exc_info.value.code == "backend_trace.score_shape_mismatch"
+    assert exc_info.value.context["score_shape"] == (151646,)
+
+
+def test_hf_transition_score_exception_is_wrapped_as_contract_error() -> None:
+    from src.inference.backend import DecodeRequest, HFGenerateBackend
+
+    tokenizer = FakeTokenizer()
+    model = FakeHFModelTransitionRaises(
+        sequences=[[11, 12, 21]],
+        score_steps=[_logits_for_tokens([21])],
+    )
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        HFGenerateBackend(model=model, tokenizer=tokenizer).generate_batch(
+            [
+                DecodeRequest(
+                    request_id="row-1",
+                    prompt_token_ids=[11, 12],
+                    model_inputs={"input_ids": torch.tensor([11, 12])},
+                    max_new_tokens=1,
+                )
+            ],
+            model_identity={"family": "base-only"},
+            tokenizer_identity={"sha256": "tok-sha"},
+            generation_config_fingerprint="gen-fp",
+        )
+
+    assert exc_info.value.code == "backend_trace.transition_scores_failed"
+    assert isinstance(exc_info.value.cause, ValueError)
 
 
 def test_create_backend_rejects_vllm_execution_clearly() -> None:
