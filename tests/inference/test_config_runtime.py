@@ -112,6 +112,7 @@ def test_vllm_backend_is_reserved_but_not_implemented(tmp_path: Path) -> None:
 
     assert exc_info.value.code == "config.backend_not_implemented"
     assert exc_info.value.context["backend"] == "vllm"
+    assert "Wave 2" not in exc_info.value.message
 
 
 def test_debug_batch_size_one_requires_explicit_smoke(tmp_path: Path) -> None:

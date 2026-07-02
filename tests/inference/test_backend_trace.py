@@ -76,6 +76,10 @@ class FakeHFModel:
         return torch.cat(rows, dim=1)
 
 
+class FakeHFModelWithoutTransitionScores(FakeHFModel):
+    compute_transition_scores = None
+
+
 def _logits_for_tokens(batch_tokens: list[int], *, vocab_size: int = 151646) -> torch.Tensor:
     logits = torch.full((len(batch_tokens), vocab_size), -20.0, dtype=torch.float32)
     for row_index, token_id in enumerate(batch_tokens):
@@ -199,6 +203,9 @@ def test_missing_hf_scores_fail_with_contract_error() -> None:
         ("token_trace", []),
         ("stop_reason", ""),
         ("backend", ""),
+        ("backend_mode", ""),
+        ("response_family", ""),
+        ("strip_policy", ""),
         ("model_identity", {}),
         ("tokenizer_identity", {}),
         ("generation_config_fingerprint", ""),
@@ -246,6 +253,45 @@ def test_missing_required_trace_fields_fail_before_scored_artifacts(
 
     assert exc_info.value.code == "backend_trace.missing_field"
     assert exc_info.value.context["field"] == field_name
+
+
+def test_invalid_strip_policy_fails_before_scored_artifacts() -> None:
+    from src.inference.backend import DecodeResult, TokenTrace
+
+    result = DecodeResult(
+        request_id="row-1",
+        backend="hf",
+        backend_mode="generate",
+        response_family="hf",
+        prompt_token_ids=[11, 12],
+        generated_token_ids=[21],
+        raw_generated_text="A",
+        parser_text="A",
+        strip_policy="skip_special_tokens",
+        stop_reason="length",
+        model_identity={"family": "base-only"},
+        tokenizer_identity={"sha256": "tok-sha"},
+        generation_config_fingerprint="gen-fp",
+        token_trace=[
+            TokenTrace(
+                step_index=0,
+                token_id=21,
+                token_text="A",
+                logprob=-0.1,
+                is_stop=False,
+                is_pad=False,
+                backend="hf",
+                backend_mode="generate",
+                response_family="hf",
+            )
+        ],
+    )
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        result.validate_for_scored()
+
+    assert exc_info.value.code == "backend_trace.invalid_strip_policy"
+    assert exc_info.value.context["strip_policy"] == "skip_special_tokens"
 
 
 def test_special_token_raw_trace_preserves_im_end_without_skip_special_tokens() -> None:
@@ -336,6 +382,104 @@ def test_batched_variable_prompt_width_alignment_and_post_stop_padding() -> None
     assert [trace.token_id for trace in long.token_trace] == [22, 23, 24]
     assert all(trace.logprob is not None for trace in long.token_trace)
     assert long.stop_reason == "length"
+
+
+def test_overlong_sequence_score_mismatch_fails_before_trace_alignment() -> None:
+    from src.inference.backend import DecodeRequest, HFGenerateBackend
+
+    tokenizer = FakeTokenizer()
+    model = FakeHFModel(
+        sequences=[[11, 12, 21, 22, 99]],
+        score_steps=[
+            _logits_for_tokens([21]),
+            _logits_for_tokens([22]),
+        ],
+    )
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        HFGenerateBackend(model=model, tokenizer=tokenizer).generate_batch(
+            [
+                DecodeRequest(
+                    request_id="row-1",
+                    prompt_token_ids=[11, 12],
+                    model_inputs={"input_ids": torch.tensor([11, 12])},
+                    max_new_tokens=2,
+                )
+            ],
+            model_identity={"family": "base-only"},
+            tokenizer_identity={"sha256": "tok-sha"},
+            generation_config_fingerprint="gen-fp",
+        )
+
+    assert exc_info.value.code == "backend_trace.shape_mismatch"
+
+
+def test_fallback_logprob_gather_uses_prompt_width_generated_suffix() -> None:
+    from src.inference.backend import DecodeRequest, HFGenerateBackend
+
+    tokenizer = FakeTokenizer()
+    model = FakeHFModelWithoutTransitionScores(
+        sequences=[[11, 12, 21, 22]],
+        score_steps=[
+            _logits_for_tokens([21]),
+            _logits_for_tokens([22]),
+        ],
+    )
+
+    result = HFGenerateBackend(model=model, tokenizer=tokenizer).generate_batch(
+        [
+            DecodeRequest(
+                request_id="row-1",
+                prompt_token_ids=[11, 12],
+                model_inputs={"input_ids": torch.tensor([11, 12])},
+                max_new_tokens=2,
+            )
+        ],
+        model_identity={"family": "base-only"},
+        tokenizer_identity={"sha256": "tok-sha"},
+        generation_config_fingerprint="gen-fp",
+    )[0]
+
+    assert result.generated_token_ids == [21, 22]
+    assert [trace.token_id for trace in result.token_trace] == [21, 22]
+    assert all(trace.logprob is not None and trace.logprob > -0.001 for trace in result.token_trace)
+
+
+def test_hf_generate_forwards_non_text_model_inputs() -> None:
+    from src.inference.backend import DecodeRequest, HFGenerateBackend
+
+    tokenizer = FakeTokenizer()
+    pixel_values = object()
+    image_grid_thw = object()
+    model = FakeHFModel(
+        sequences=[[11, 12, 21, tokenizer.eos_token_id]],
+        score_steps=[
+            _logits_for_tokens([21]),
+            _logits_for_tokens([tokenizer.eos_token_id]),
+        ],
+    )
+
+    HFGenerateBackend(model=model, tokenizer=tokenizer).generate_batch(
+        [
+            DecodeRequest(
+                request_id="row-1",
+                prompt_token_ids=[11, 12],
+                model_inputs={
+                    "input_ids": torch.tensor([11, 12]),
+                    "pixel_values": pixel_values,
+                    "image_grid_thw": image_grid_thw,
+                },
+                max_new_tokens=2,
+            )
+        ],
+        model_identity={"family": "base-only"},
+        tokenizer_identity={"sha256": "tok-sha"},
+        generation_config_fingerprint="gen-fp",
+    )
+
+    assert model.generate_kwargs is not None
+    assert model.generate_kwargs["pixel_values"] is pixel_values
+    assert model.generate_kwargs["image_grid_thw"] is image_grid_thw
 
 
 def test_create_backend_rejects_vllm_execution_clearly() -> None:

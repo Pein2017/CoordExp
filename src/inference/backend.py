@@ -13,6 +13,7 @@ from src.common.errors import RuntimeContractError
 
 
 BackendName = Literal["hf", "vllm"]
+ALLOWED_STRIP_POLICIES = {"none", "terminal_im_end"}
 
 
 @dataclass(frozen=True)
@@ -60,6 +61,9 @@ class DecodeResult:
             "token_trace": self.token_trace,
             "stop_reason": self.stop_reason,
             "backend": self.backend,
+            "backend_mode": self.backend_mode,
+            "response_family": self.response_family,
+            "strip_policy": self.strip_policy,
             "model_identity": self.model_identity,
             "tokenizer_identity": self.tokenizer_identity,
             "generation_config_fingerprint": self.generation_config_fingerprint,
@@ -71,6 +75,16 @@ class DecodeResult:
                     code="backend_trace.missing_field",
                     context={"field": field, "request_id": self.request_id},
                 )
+        if self.strip_policy not in ALLOWED_STRIP_POLICIES:
+            raise RuntimeContractError(
+                "scored decode result has an invalid strip policy",
+                code="backend_trace.invalid_strip_policy",
+                context={
+                    "strip_policy": self.strip_policy,
+                    "allowed": sorted(ALLOWED_STRIP_POLICIES),
+                    "request_id": self.request_id,
+                },
+            )
         for index, trace in enumerate(self.token_trace):
             trace_required = {
                 "token_text": trace.token_text,
@@ -121,9 +135,11 @@ class HFGenerateBackend:
         prompt_width = max(len(request.prompt_token_ids) for request in requests)
         max_new_tokens = max(request.max_new_tokens for request in requests)
         input_ids, attention_mask = self._padded_prompt_tensors(requests, prompt_width)
+        generate_inputs = self._collate_generate_inputs(requests)
+        generate_inputs["input_ids"] = input_ids
+        generate_inputs["attention_mask"] = attention_mask
         outputs = self.model.generate(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
+            **generate_inputs,
             max_new_tokens=max_new_tokens,
             do_sample=False,
             eos_token_id=self._im_end_token_id(),
@@ -162,17 +178,23 @@ class HFGenerateBackend:
                     "batch_size": len(requests),
                 },
             )
-        if sequences.shape[1] < prompt_width + len(scores):
+        if sequences.shape[1] != prompt_width + len(scores):
             raise RuntimeContractError(
-                "HF generation sequence length is shorter than prompt plus scores",
+                "HF generation sequence length must equal prompt width plus score steps",
                 code="backend_trace.shape_mismatch",
                 context={
                     "sequence_length": int(sequences.shape[1]),
+                    "expected_sequence_length": prompt_width + len(scores),
                     "prompt_width": prompt_width,
                     "score_steps": len(scores),
                 },
             )
-        transition_scores = self._transition_scores(sequences, scores)
+        generated_suffix = sequences[:, prompt_width : prompt_width + len(scores)]
+        transition_scores = self._transition_scores(
+            sequences,
+            generated_suffix=generated_suffix,
+            scores=scores,
+        )
         if transition_scores.shape != (len(requests), len(scores)):
             raise RuntimeContractError(
                 "HF transition score shape does not match generated score steps",
@@ -183,7 +205,6 @@ class HFGenerateBackend:
                     "score_steps": len(scores),
                 },
             )
-        generated_suffix = sequences[:, prompt_width : prompt_width + len(scores)]
         return [
             self._materialize_result(
                 request=request,
@@ -223,24 +244,54 @@ class HFGenerateBackend:
             masks.append([1] * len(row) + [0] * len(padding))
         return torch.tensor(rows, dtype=torch.long), torch.tensor(masks, dtype=torch.long)
 
+    def _collate_generate_inputs(
+        self,
+        requests: Sequence[DecodeRequest],
+    ) -> dict[str, Any]:
+        collated: dict[str, Any] = {}
+        reserved = {"input_ids", "attention_mask"}
+        keys = {
+            key
+            for request in requests
+            for key in request.model_inputs
+            if key not in reserved
+        }
+        for key in sorted(keys):
+            values = [request.model_inputs.get(key) for request in requests]
+            present = [value for value in values if value is not None]
+            if not present:
+                continue
+            if len(present) != len(requests):
+                raise RuntimeContractError(
+                    "all decode requests in a batch must provide the same model input keys",
+                    code="backend_trace.model_input_mismatch",
+                    context={"field": key},
+                )
+            collated[key] = _collate_model_input_values(present)
+        return collated
+
     def _transition_scores(
         self,
         sequences: torch.Tensor,
+        *,
+        generated_suffix: torch.Tensor,
         scores: tuple[Any, ...],
     ) -> torch.Tensor:
-        if hasattr(self.model, "compute_transition_scores"):
+        compute_transition_scores = getattr(self.model, "compute_transition_scores", None)
+        if callable(compute_transition_scores):
             return _as_tensor(
-                self.model.compute_transition_scores(
+                compute_transition_scores(
                     sequences,
                     scores,
                     normalize_logits=True,
                 )
             )
-        generated = sequences[:, -len(scores) :]
         rows = []
         for step_index, step_scores in enumerate(scores):
             logprobs = F.log_softmax(_as_tensor(step_scores), dim=-1)
-            rows.append(logprobs.gather(1, generated[:, step_index : step_index + 1]))
+            rows.append(
+                logprobs.gather(1, generated_suffix[:, step_index : step_index + 1])
+            )
         return torch.cat(rows, dim=1)
 
     def _materialize_result(
@@ -361,6 +412,16 @@ def create_backend(backend: BackendName | str, *, model: Any, tokenizer: Any) ->
 
 def _as_tensor(value: Any) -> torch.Tensor:
     return value if isinstance(value, torch.Tensor) else torch.as_tensor(value)
+
+
+def _collate_model_input_values(values: list[Any]) -> Any:
+    if len(values) == 1:
+        return values[0]
+    if all(isinstance(value, torch.Tensor) for value in values):
+        shapes = {tuple(value.shape) for value in values}
+        if len(shapes) == 1:
+            return torch.stack(values)
+    return values
 
 
 def _strip_terminal_im_end(

@@ -85,7 +85,7 @@ class InferBackendConfig(StrictConfigModel):
     def _vllm_is_reserved_not_implemented(cls, value: str) -> str:
         if value == "vllm":
             raise ConfigContractError(
-                "vLLM backend is schema-reserved but not implemented for Wave 2",
+                "vLLM backend is schema-reserved but not implemented for CoordExp-swift V1",
                 code="config.backend_not_implemented",
                 context={"backend": value},
             )
