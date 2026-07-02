@@ -173,6 +173,59 @@ def validate_inference_adapter_status(
     )
 
 
+def load_inference_dora_adapter(
+    *,
+    config: Any,
+    qwen: Any,
+) -> dict[str, Any]:
+    adapter = getattr(config, "adapter", None)
+    if adapter is None:
+        raise RuntimeContractError(
+            "inference DoRA adapter load requires adapter config",
+            code="adapter.inference_config_missing",
+        )
+    model = _qwen_model(qwen)
+    if model is None:
+        raise RuntimeContractError(
+            "inference DoRA adapter load requires a loaded model",
+            code="adapter.inference_model_required",
+            context={"adapter_path": str(adapter.path)},
+        )
+    if not hasattr(model, "load_adapter"):
+        raise RuntimeContractError(
+            "inference DoRA adapter owner requires captured PEFT load_adapter result",
+            code="adapter.inference_load_adapter_unavailable",
+            context={"model_class": type(model).__name__, "adapter_path": str(adapter.path)},
+        )
+    load_result = model.load_adapter(
+        adapter.path,
+        adapter_name=adapter.name,
+        is_trainable=False,
+    )
+    if load_result is None:
+        raise RuntimeContractError(
+            "inference DoRA adapter load did not return load_result evidence",
+            code="adapter.inference_load_result_missing",
+            context={"adapter_path": str(adapter.path), "adapter_name": adapter.name},
+        )
+    model.set_adapter(adapter.name)
+    status = model.get_model_status()
+    status_receipt = validate_inference_adapter_status(
+        load_result=load_result,
+        status=status,
+        expected_adapter_name=adapter.name,
+    )
+    artifact = status_receipt.to_artifact_dict()
+    artifact.update(
+        {
+            "adapter_type": adapter.type,
+            "adapter_path": str(adapter.path),
+            "base_model_path": _qwen_base_model_path(qwen),
+        }
+    )
+    return artifact
+
+
 def discover_dora_targets(
     model: nn.Module,
     plan: AdapterSetupPlan,
@@ -432,6 +485,20 @@ def _normalize_base_model_identity(value: Any) -> str | None:
     if path.is_absolute() or raw.startswith("~"):
         return str(path.resolve(strict=False))
     return raw
+
+
+def _qwen_model(qwen: Any) -> Any | None:
+    if isinstance(qwen, Mapping):
+        return qwen.get("model")
+    return getattr(qwen, "model", None)
+
+
+def _qwen_base_model_path(qwen: Any) -> str | None:
+    if isinstance(qwen, Mapping):
+        value = qwen.get("base_model_path")
+    else:
+        value = getattr(qwen, "base_model_path", None)
+    return None if value is None else str(value)
 
 
 def _loaded_base_model_class(config: Any) -> str | None:

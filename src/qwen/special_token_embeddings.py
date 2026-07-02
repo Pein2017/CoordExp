@@ -232,6 +232,49 @@ class SpecialTokenEmbeddingLoadReceipt:
         }
 
 
+@dataclass(frozen=True)
+class InferenceEmbeddingDeltaIdentityReceipt:
+    status: str
+    delta_path: Path
+    metadata_path: Path
+    metadata: Mapping[str, Any]
+    base_model_path: str | None
+
+    def to_artifact_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "delta_path": str(self.delta_path),
+            "metadata_path": str(self.metadata_path),
+            "metadata": dict(self.metadata),
+            "base_model_path": self.base_model_path,
+        }
+
+
+def validate_inference_embedding_delta_identity(
+    *,
+    config: Any,
+    qwen: Any,
+) -> dict[str, Any]:
+    embedding_delta = getattr(config, "embedding_delta", None)
+    if embedding_delta is None:
+        raise RuntimeContractError(
+            "inference embedding-delta identity validation requires delta config",
+            code="special_token_embeddings.inference_config_missing",
+        )
+    delta_path = Path(embedding_delta.path)
+    metadata_path = _inference_delta_metadata_path(delta_path)
+    metadata = _load_metadata(metadata_path)
+    _validate_inference_delta_metadata(metadata, qwen=qwen)
+    receipt = InferenceEmbeddingDeltaIdentityReceipt(
+        status="validated",
+        delta_path=delta_path,
+        metadata_path=metadata_path,
+        metadata=metadata,
+        base_model_path=_qwen_base_model_path(qwen),
+    )
+    return receipt.to_artifact_dict()
+
+
 class SelectedDeltaInputEmbedding(nn.Module):
     def __init__(
         self,
@@ -667,6 +710,86 @@ def _load_metadata(path: Path) -> dict[str, Any]:
             context={"metadata_path": str(path)},
         )
     return payload
+
+
+def _inference_delta_metadata_path(delta_path: Path) -> Path:
+    if delta_path.is_dir():
+        return delta_path / SPECIAL_TOKEN_EMBEDDINGS_JSON
+    if delta_path.name == SPECIAL_TOKEN_EMBEDDINGS_SAFE_TENSORS:
+        return delta_path.with_name(SPECIAL_TOKEN_EMBEDDINGS_JSON)
+    return delta_path / SPECIAL_TOKEN_EMBEDDINGS_JSON
+
+
+def _validate_inference_delta_metadata(metadata: Mapping[str, Any], *, qwen: Any) -> None:
+    required = (
+        "semantics",
+        "tensor_key",
+        "tensor_shape",
+        "tensor_dtype",
+        "token_strings",
+        "token_ids",
+        "base_model_path",
+        "base_config_sha256",
+        "tokenizer_sha256",
+    )
+    missing = [field for field in required if field not in metadata]
+    if missing:
+        raise RuntimeContractError(
+            "special-token embedding metadata is missing required inference identity fields",
+            code="special_token_embeddings.inference_identity_missing",
+            context={"missing_fields": missing},
+        )
+    if metadata.get("semantics") != SPECIAL_TOKEN_EMBEDDING_SEMANTICS:
+        raise RuntimeContractError(
+            "special-token embedding metadata records unsupported semantics",
+            code="special_token_embeddings.inference_semantics_mismatch",
+            context={
+                "expected": SPECIAL_TOKEN_EMBEDDING_SEMANTICS,
+                "actual": metadata.get("semantics"),
+            },
+        )
+    base_model_path = _qwen_base_model_path(qwen)
+    if base_model_path is not None and metadata.get("base_model_path") != base_model_path:
+        raise RuntimeContractError(
+            "special-token embedding metadata base model does not match runtime base",
+            code="special_token_embeddings.identity_mismatch",
+            context={
+                "field": "base_model_path",
+                "expected": base_model_path,
+                "actual": metadata.get("base_model_path"),
+            },
+        )
+    token_identity = _qwen_token_identity(qwen)
+    if token_identity is not None:
+        expected_selection = build_default_special_token_selection(token_identity)
+        if metadata.get("token_strings") != list(expected_selection.token_strings):
+            raise RuntimeContractError(
+                "special-token embedding metadata token strings do not match runtime tokenizer",
+                code="special_token_embeddings.identity_mismatch",
+                context={"field": "token_strings"},
+            )
+        if metadata.get("token_ids") != list(expected_selection.token_ids):
+            raise RuntimeContractError(
+                "special-token embedding metadata token ids do not match runtime tokenizer",
+                code="special_token_embeddings.identity_mismatch",
+                context={"field": "token_ids"},
+            )
+
+
+def _qwen_base_model_path(qwen: Any) -> str | None:
+    if isinstance(qwen, Mapping):
+        value = qwen.get("base_model_path")
+    else:
+        value = getattr(qwen, "base_model_path", None)
+    return None if value is None else str(value)
+
+
+def _qwen_token_identity(qwen: Any) -> QwenTokenIdentity | None:
+    if isinstance(qwen, Mapping):
+        value = qwen.get("token_identity")
+    else:
+        value = getattr(qwen, "token_identity", None)
+    return value if isinstance(value, QwenTokenIdentity) else None
 
 
 def _validate_metadata(

@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from src.common.errors import RuntimeContractError
 from src.config.inference import InferConfig
-from src.qwen.loading import QwenLoadOptions, load_qwen_components_from_options
+from src.adapters.dora import load_inference_dora_adapter
+from src.qwen.runtime_loading import QwenLoadOptions, load_qwen_components_from_options
+from src.qwen.special_token_embeddings import (
+    validate_inference_embedding_delta_identity,
+)
 
 
 @dataclass(frozen=True)
@@ -21,28 +24,17 @@ class InferenceRuntime:
 
 def assemble_runtime(
     config: InferConfig,
-    *,
-    load_qwen: Callable[[InferConfig], Any] | None = None,
-    adapter_loader: Callable[[InferConfig, Any], Mapping[str, Any]] | None = None,
-    delta_validator: Callable[[InferConfig, Any], Mapping[str, Any]] | None = None,
 ) -> InferenceRuntime:
-    qwen = load_qwen(config) if load_qwen is not None else _load_qwen(config)
+    qwen = _load_qwen(config)
     adapter_receipt = None
     if config.adapter is not None:
-        if adapter_loader is None:
-            raise RuntimeContractError(
-                "adapter inference runtime requires an adapter-owner loader",
-                code="runtime.adapter_loader_required",
-            )
-        adapter_receipt = adapter_loader(config, qwen)
+        adapter_receipt = load_inference_dora_adapter(config=config, qwen=qwen)
     embedding_delta_receipt = None
     if config.embedding_delta is not None:
-        if delta_validator is None:
-            raise RuntimeContractError(
-                "embedding-delta inference runtime requires an owner validator",
-                code="runtime.embedding_delta_validator_required",
-            )
-        embedding_delta_receipt = delta_validator(config, qwen)
+        embedding_delta_receipt = validate_inference_embedding_delta_identity(
+            config=config,
+            qwen=qwen,
+        )
 
     return InferenceRuntime(
         qwen=qwen,

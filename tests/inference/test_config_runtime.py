@@ -105,12 +105,38 @@ def test_debug_batch_size_one_requires_explicit_smoke(tmp_path: Path) -> None:
     assert resolved.config.generation.batch_size == 1
     assert resolved.config.debug.smoke is True
 
+    dry_run_path = _write_config(
+        tmp_path / "dry_run",
+        generation={"batch_size": 1, "max_new_tokens": 64, "temperature": 0.0, "top_p": 1.0},
+        debug={"smoke": False, "dry_run": True},
+    )
+    dry_run = load_infer_config(dry_run_path)
+    assert dry_run.config.generation.batch_size == 1
+    assert dry_run.config.debug.dry_run is True
+
+
+def test_noncanonical_production_config_path_is_rejected_but_debug_is_allowed(
+    tmp_path: Path,
+) -> None:
+    from src.config.inference import load_infer_config
+
+    production_path = _write_config(tmp_path / "outside" / "infer.yaml")
+    with pytest.raises(ConfigContractError) as exc_info:
+        load_infer_config(production_path)
+    assert exc_info.value.code == "config.noncanonical_infer_path"
+
+    debug_path = _write_config(
+        tmp_path / "outside-debug" / "infer.yaml",
+        debug={"smoke": False, "dry_run": True},
+    )
+    assert load_infer_config(debug_path).config.debug.dry_run is True
+
 
 def test_resolved_config_artifacts_are_written_under_configs(tmp_path: Path) -> None:
     from src.config.inference import load_infer_config
     from src.config.writer import write_resolved_config_artifacts
 
-    resolved = load_infer_config(_write_config(tmp_path))
+    resolved = load_infer_config(_write_config(tmp_path, debug={"smoke": False, "dry_run": True}))
     artifacts = write_resolved_config_artifacts(resolved, tmp_path / "run")
 
     assert artifacts.json_path == tmp_path / "run" / "configs" / "resolved.json"
@@ -124,9 +150,12 @@ def test_resolved_config_artifacts_are_written_under_configs(tmp_path: Path) -> 
     ] == resolved.fingerprint
 
 
-def test_runtime_assembly_records_base_adapter_and_delta_identity(tmp_path: Path) -> None:
+def test_runtime_assembly_uses_default_owner_wired_adapter_and_delta_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from src.config.inference import load_infer_config
-    from src.inference.runtime import assemble_runtime
+    from src.inference import runtime as runtime_module
 
     config_path = _write_config(
         tmp_path,
@@ -136,23 +165,34 @@ def test_runtime_assembly_records_base_adapter_and_delta_identity(tmp_path: Path
     )
     resolved = load_infer_config(config_path)
 
-    runtime = assemble_runtime(
-        resolved.config,
-        load_qwen=lambda config: {
-            "base_model_path": config.model.base_model,
-            "load_model": False,
+    monkeypatch.setattr(
+        runtime_module,
+        "load_qwen_components_from_options",
+        lambda options: {
+            "base_model_path": options.base_model,
+            "load_model": options.load_model,
         },
-        adapter_loader=lambda config, qwen: {
+    )
+    monkeypatch.setattr(
+        runtime_module,
+        "load_inference_dora_adapter",
+        lambda *, config, qwen: {
             "status": "validated",
             "adapter_path": config.adapter.path,
             "base_model_path": qwen["base_model_path"],
         },
-        delta_validator=lambda config, qwen: {
+    )
+    monkeypatch.setattr(
+        runtime_module,
+        "validate_inference_embedding_delta_identity",
+        lambda *, config, qwen: {
             "status": "validated",
             "delta_path": config.embedding_delta.path,
             "base_model_path": qwen["base_model_path"],
         },
     )
+
+    runtime = runtime_module.assemble_runtime(resolved.config)
 
     assert runtime.model_identity["family"] == "base-plus-adapter-plus-delta"
     assert runtime.model_identity["base"]["path"] == resolved.config.model.base_model
@@ -192,6 +232,10 @@ def test_inference_facing_modules_have_no_training_config_or_pipeline_residue() 
     paths = [
         Path("src/infer.py"),
         Path("src/config/inference.py"),
+        Path("src/config/writer.py"),
+        Path("src/qwen/runtime_loading.py"),
+        Path("src/qwen/special_token_embeddings.py"),
+        Path("src/adapters/dora.py"),
         *Path("src/inference").glob("*.py"),
     ]
 

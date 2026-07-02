@@ -28,6 +28,29 @@ def test_inference_adapter_status_accepts_valid_peft_receipt() -> None:
     assert receipt.to_artifact_dict()["active_adapters"] == ["default"]
 
 
+def test_inference_dora_adapter_loader_captures_load_result_and_status() -> None:
+    from src.adapters.dora import load_inference_dora_adapter
+
+    model = FakePeftModel()
+    result = load_inference_dora_adapter(
+        config=SimpleNamespace(
+            adapter=SimpleNamespace(
+                type="dora",
+                path="/tmp/adapter",
+                name="default",
+            )
+        ),
+        qwen=SimpleNamespace(model=model, base_model_path="/tmp/base"),
+    )
+
+    assert model.loaded_path == "/tmp/adapter"
+    assert model.loaded_adapter_name == "default"
+    assert model.active_adapter == "default"
+    assert result["status"] == "validated"
+    assert result["adapter_path"] == "/tmp/adapter"
+    assert result["base_model_path"] == "/tmp/base"
+
+
 @pytest.mark.parametrize(
     ("load_result", "status", "expected_code"),
     [
@@ -108,3 +131,33 @@ def test_inference_adapter_status_rejects_irregular_peft_receipts(
         )
 
     assert exc_info.value.code == expected_code
+
+
+class FakePeftModel:
+    def __init__(self) -> None:
+        self.loaded_path: str | None = None
+        self.loaded_adapter_name: str | None = None
+        self.active_adapter: str | None = None
+
+    def load_adapter(
+        self,
+        path: str,
+        *,
+        adapter_name: str,
+        is_trainable: bool,
+    ) -> SimpleNamespace:
+        assert is_trainable is False
+        self.loaded_path = path
+        self.loaded_adapter_name = adapter_name
+        return SimpleNamespace(missing_keys=[], unexpected_keys=[])
+
+    def set_adapter(self, adapter_name: str) -> None:
+        self.active_adapter = adapter_name
+
+    def get_model_status(self) -> SimpleNamespace:
+        return SimpleNamespace(
+            enabled=True,
+            active_adapters=[self.active_adapter],
+            merged_adapters=[],
+            requires_grad=False,
+        )
