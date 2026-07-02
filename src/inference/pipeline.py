@@ -9,14 +9,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.common.errors import ArtifactContractError, EncodingContractError
+from src.common.errors import ArtifactContractError, CoordExpError, EncodingContractError
 from src.config.inference import InferConfig, ResolvedInferConfig, load_infer_config, resolve_infer_run_directory
 from src.config.models import ProcessorConfig, TemplateConfig, TemplatePromptConfig
 from src.config.writer import write_resolved_config_artifacts
 from src.data import RawExample, load_raw_examples
 from src.inference.artifacts import write_inference_artifacts, write_terminal_status_artifacts
 from src.inference.backend import DecodeRequest, HFGenerateBackend
-from src.inference.image_plan import materialize_image_plan_rows, verify_processor_model_vision_parity
+from src.inference.image_plan import materialize_image_plan_batch, verify_processor_model_vision_parity
 from src.inference.parsing import PARSER_POLICY, parse_compact_object_box_closed
 from src.inference.prompt import TEMPLATE_ID, build_prompt_record, verify_prompt_token_parity
 from src.inference.runtime import InferenceRuntime, assemble_runtime
@@ -54,7 +54,7 @@ def run(
             model_config=_model_config(qwen),
         )
         raw_examples = list(load_raw_examples(resolved.config.data.input_jsonl))
-        image_plan_rows = materialize_image_plan_rows(
+        image_plan_batch = materialize_image_plan_batch(
             raw_examples,
             components=qwen,
             processor_config=_processor_config(resolved.config),
@@ -72,57 +72,64 @@ def run(
             },
         )
         raise
+    try:
+        backend = (backend_factory or _default_backend_factory)(runtime, resolved.config)
+        prompt_records = [
+            build_prompt_record(
+                raw_example,
+                _template_config(resolved.config),
+                processor=qwen.processor,
+                row_index=index,
+            )
+            for index, raw_example in enumerate(raw_examples)
+        ]
+        requests = [
+            DecodeRequest(
+                request_id=record.row_id,
+                prompt_token_ids=list(record.prompt_token_ids),
+                model_inputs=image_plan_batch.model_inputs_by_row_id[record.row_id],
+                max_new_tokens=resolved.config.generation.max_new_tokens,
+            )
+            for record in prompt_records
+        ]
 
-    backend = (backend_factory or _default_backend_factory)(runtime, resolved.config)
-    prompt_records = [
-        build_prompt_record(
-            raw_example,
-            _template_config(resolved.config),
-            processor=qwen.processor,
-            row_index=index,
-        )
-        for index, raw_example in enumerate(raw_examples)
-    ]
-    requests = [
-        DecodeRequest(
-            request_id=record.row_id,
-            prompt_token_ids=list(record.prompt_token_ids),
-            model_inputs={},
-            max_new_tokens=resolved.config.generation.max_new_tokens,
-        )
-        for record in prompt_records
-    ]
+        decode_results = {}
+        for batch in _batches(requests, size=resolved.config.generation.batch_size):
+            batch_results = backend.generate_batch(
+                list(batch),
+                model_identity=metadata["model_identity"],
+                tokenizer_identity=metadata["tokenizer_identity"],
+                generation_config_fingerprint=metadata["generation_config_fingerprint"],
+            )
+            for result in batch_results:
+                record = _prompt_record_by_id(prompt_records, result.request_id)
+                verify_prompt_token_parity(record, backend_prompt_token_ids=list(result.prompt_token_ids))
+                decode_results[result.request_id] = result
 
-    decode_results = {}
-    for batch in _batches(requests, size=resolved.config.generation.batch_size):
-        batch_results = backend.generate_batch(
-            list(batch),
-            model_identity=metadata["model_identity"],
-            tokenizer_identity=metadata["tokenizer_identity"],
-            generation_config_fingerprint=metadata["generation_config_fingerprint"],
+        rows = [
+            _artifact_input_row(
+                raw_example=raw_example,
+                row_index=index,
+                decode_result=decode_results[raw_example.example_id],
+            )
+            for index, raw_example in enumerate(raw_examples)
+        ]
+        counters = _pipeline_counters(rows=rows, decode_success_count=len(decode_results))
+        metadata["pipeline_counters"] = counters
+        write_inference_artifacts(
+            output_dir=run_dir,
+            rows=rows,
+            decode_results=decode_results,
+            image_plan_rows=[row.to_artifact_dict() for row in image_plan_batch.rows],
+            metadata=metadata,
         )
-        for result in batch_results:
-            record = _prompt_record_by_id(prompt_records, result.request_id)
-            verify_prompt_token_parity(record, backend_prompt_token_ids=list(result.prompt_token_ids))
-            decode_results[result.request_id] = result
-
-    rows = [
-        _artifact_input_row(
-            raw_example=raw_example,
-            row_index=index,
-            decode_result=decode_results[raw_example.example_id],
+    except CoordExpError as exc:
+        _write_terminal_contract_failure(
+            output_dir=run_dir,
+            metadata=metadata,
+            error=exc,
         )
-        for index, raw_example in enumerate(raw_examples)
-    ]
-    counters = _pipeline_counters(rows=rows, decode_success_count=len(decode_results))
-    metadata["pipeline_counters"] = counters
-    write_inference_artifacts(
-        output_dir=run_dir,
-        rows=rows,
-        decode_results=decode_results,
-        image_plan_rows=[row.to_artifact_dict() for row in image_plan_rows],
-        metadata=metadata,
-    )
+        raise
     return 0
 
 
@@ -177,6 +184,31 @@ def _pipeline_counters(*, rows: list[dict[str, Any]], decode_success_count: int)
         "image_validation_failure_count": 0,
         "score_failure_count": 0,
     }
+
+
+def _write_terminal_contract_failure(
+    *,
+    output_dir: Path,
+    metadata: dict[str, Any],
+    error: CoordExpError,
+) -> None:
+    failure_class = _failure_class(error)
+    write_terminal_status_artifacts(
+        output_dir=output_dir,
+        metadata=metadata,
+        summary={
+            "terminal_status": "failed",
+            "failure_class": failure_class,
+            f"{failure_class}_count": 1,
+            "error": {"code": error.code, "message": error.message, "context": error.context},
+        },
+    )
+
+
+def _failure_class(error: CoordExpError) -> str:
+    if isinstance(error, ArtifactContractError):
+        return "artifact_contract_failure"
+    return "contract_failure"
 
 
 def _base_metadata(*, resolved: ResolvedInferConfig) -> dict[str, Any]:

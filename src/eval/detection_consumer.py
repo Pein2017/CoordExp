@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from src.common.errors import ArtifactContractError
-from src.inference.artifacts import PROVENANCE_NAME, SCORED_NAME, sha256_file
+from src.inference.artifacts import PROVENANCE_NAME, RAW_NAME, SCORED_NAME, sha256_file
 
 
 METRICS_NAME = "metrics.json"
@@ -36,7 +36,12 @@ def evaluate_scored_detection_artifacts(
     _require_file(provenance_path, code="eval_detection.missing_provenance")
     rows = _read_jsonl(scored_path)
     provenance = _read_json(provenance_path)
-    _validate_provenance(scored_path=scored_path, rows=rows, provenance=provenance)
+    _validate_provenance(
+        artifact_root=artifact_root,
+        scored_path=scored_path,
+        rows=rows,
+        provenance=provenance,
+    )
     metrics = _count_metrics(rows, metric_artifact_name=metrics_name)
     output_root = Path(output_dir)
     output_root.mkdir(parents=True, exist_ok=True)
@@ -47,10 +52,26 @@ def evaluate_scored_detection_artifacts(
 
 def _validate_provenance(
     *,
+    artifact_root: Path,
     scored_path: Path,
     rows: list[dict[str, Any]],
     provenance: dict[str, Any],
 ) -> None:
+    raw_artifact = provenance.get("raw_artifact")
+    if not isinstance(raw_artifact, dict) or raw_artifact.get("path") != RAW_NAME:
+        raise ArtifactContractError(
+            "scored artifact provenance does not name gt_vs_pred.jsonl",
+            code="eval_detection.raw_artifact_binding_missing",
+            context={"expected": RAW_NAME},
+        )
+    raw_path = artifact_root / RAW_NAME
+    _require_file(raw_path, code="eval_detection.missing_raw_artifact")
+    if raw_artifact.get("sha256") != sha256_file(raw_path):
+        raise ArtifactContractError(
+            "raw artifact sha does not match provenance",
+            code="eval_detection.raw_sha_mismatch",
+            context={"path": str(raw_path)},
+        )
     scored_artifact = provenance.get("scored_artifact")
     if not isinstance(scored_artifact, dict) or scored_artifact.get("path") != SCORED_NAME:
         raise ArtifactContractError(
@@ -86,7 +107,6 @@ def _validate_provenance(
             code="eval_detection.provenance_row_ids_mismatch",
         )
     for field in (
-        "raw_artifact",
         "detection_template_id",
         "prompt_policy_fingerprint",
         "decode_policy_fingerprint",

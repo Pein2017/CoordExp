@@ -461,7 +461,9 @@ def _manifest(*, metadata: dict[str, Any], summary: dict[str, Any]) -> dict[str,
         "prompt_policy_fingerprint": metadata["prompt_policy_fingerprint"],
         "template_identity": metadata["template_identity"],
         "processor_identity_fingerprint": metadata["processor_identity_fingerprint"],
-        "evaluator_consumer_status": "not_implemented_wave_5",
+        "evaluator_consumer_status": str(
+            metadata.get("evaluator_consumer_status", "available_not_run")
+        ),
         "scored_artifact_materialized": bool(summary["scored_artifact_materialized"]),
         "benchmark_eligible": bool(summary["benchmark_eligible"]),
     }

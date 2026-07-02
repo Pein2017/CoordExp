@@ -75,6 +75,25 @@ def test_detection_consumer_refuses_provenance_binding_mismatch_before_metrics(t
     assert not (tmp_path / "eval" / "metrics.json").exists()
 
 
+def test_detection_consumer_refuses_raw_artifact_sha_mismatch_before_metrics(tmp_path: Path) -> None:
+    from src.eval.detection_consumer import evaluate_scored_detection_artifacts
+
+    artifact_dir = _write_scored_fixture(tmp_path / "artifacts")
+    provenance_path = artifact_dir / "gt_vs_pred_scored.jsonl.provenance.json"
+    provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+    provenance["raw_artifact"]["sha256"] = "definitely-not-the-raw-sha"
+    provenance_path.write_text(json.dumps(provenance, sort_keys=True), encoding="utf-8")
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        evaluate_scored_detection_artifacts(
+            artifact_dir=artifact_dir,
+            output_dir=tmp_path / "eval",
+        )
+
+    assert exc_info.value.code == "eval_detection.raw_sha_mismatch"
+    assert not (tmp_path / "eval" / "metrics.json").exists()
+
+
 def test_detection_consumer_refuses_invalid_row_local_score_provenance(tmp_path: Path) -> None:
     from src.eval.detection_consumer import evaluate_scored_detection_artifacts
     from src.inference.artifacts import sha256_file

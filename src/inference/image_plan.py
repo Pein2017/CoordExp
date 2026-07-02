@@ -62,6 +62,12 @@ class ImagePlanRow:
         }
 
 
+@dataclass(frozen=True)
+class ImagePlanBatch:
+    rows: list[ImagePlanRow]
+    model_inputs_by_row_id: dict[str, dict[str, Any]]
+
+
 def verify_processor_model_vision_parity(
     *,
     processor_identity: QwenProcessorIdentity,
@@ -115,6 +121,21 @@ def materialize_image_plan_rows(
     processor_config: ProcessorConfig,
     materialize: bool,
 ) -> list[ImagePlanRow]:
+    return materialize_image_plan_batch(
+        raw_examples,
+        components=components,
+        processor_config=processor_config,
+        materialize=materialize,
+    ).rows
+
+
+def materialize_image_plan_batch(
+    raw_examples: list[RawExample],
+    *,
+    components: Any,
+    processor_config: ProcessorConfig,
+    materialize: bool,
+) -> ImagePlanBatch:
     encodings = [
         plan_qwen_image(
             raw_example,
@@ -142,10 +163,14 @@ def materialize_image_plan_rows(
                 )
                 pixel_offset = next_offset
             encodings = materialized
-    return [
+    rows = [
         _row_from_encoding(index, encoding, materialized=materialize)
         for index, encoding in enumerate(encodings)
     ]
+    return ImagePlanBatch(
+        rows=rows,
+        model_inputs_by_row_id=_model_inputs_by_row_id(encodings),
+    )
 
 
 def write_image_plan_jsonl(
@@ -198,3 +223,19 @@ def _row_from_encoding(index: int, encoding: Any, *, materialized: bool) -> Imag
         status="ok",
         error=None,
     )
+
+
+def _model_inputs_by_row_id(encodings: list[Any]) -> dict[str, dict[str, Any]]:
+    model_inputs: dict[str, dict[str, Any]] = {}
+    for encoding in encodings:
+        if encoding.pixel_values is None or encoding.image_grid_thw_tensor is None:
+            raise EncodingContractError(
+                "V1 decode requests require materialized Qwen image tensors",
+                code="inference.image_model_inputs_missing",
+                context={"row_id": encoding.example_id},
+            )
+        model_inputs[str(encoding.example_id)] = {
+            "pixel_values": encoding.pixel_values,
+            "image_grid_thw": encoding.image_grid_thw_tensor,
+        }
+    return model_inputs

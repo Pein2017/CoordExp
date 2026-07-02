@@ -12,7 +12,7 @@ import torch
 import yaml
 from PIL import Image
 
-from src.common.errors import EncodingContractError
+from src.common.errors import ArtifactContractError, EncodingContractError
 from src.inference.backend import DecodeResult, TokenTrace
 from src.qwen.loading import QwenProcessorIdentity
 
@@ -81,6 +81,10 @@ class FakeBackend:
         generation_config_fingerprint: str,
     ) -> list[DecodeResult]:
         self.calls.append([request.request_id for request in requests])
+        for request in requests:
+            assert set(request.model_inputs) == {"pixel_values", "image_grid_thw"}
+            assert tuple(request.model_inputs["pixel_values"].shape) == (24, 1536)
+            assert tuple(request.model_inputs["image_grid_thw"].shape) == (1, 3)
         return [
             _decode_result(
                 request.request_id,
@@ -121,7 +125,46 @@ def test_pipeline_orchestrates_batched_decode_and_artifact_writing(tmp_path: Pat
     assert summary["terminal_status"] == "completed"
     assert manifest["trace_scoring_status"] == "scored"
     assert manifest["backend"] == "hf"
+    assert manifest["evaluator_consumer_status"] == "available_not_run"
     assert (run_dir / "configs" / "resolved.json").is_file()
+
+
+def test_pipeline_terminal_artifact_failure_writes_status_without_row_artifacts(tmp_path: Path) -> None:
+    from src.inference import pipeline
+
+    config_path = _write_config(tmp_path, batch_size=1, row_count=1)
+
+    class BadTraceBackend(FakeBackend):
+        def generate_batch(self, requests: list[Any], **kwargs: Any) -> list[DecodeResult]:
+            self.calls.append([request.request_id for request in requests])
+            bad = _decode_result(
+                requests[0].request_id,
+                prompt_token_ids=list(requests[0].prompt_token_ids),
+            )
+            bad_trace = list(bad.token_trace)
+            bad_trace[4] = TokenTrace(**{**bad_trace[4].__dict__, "logprob": float("nan")})
+            return [DecodeResult(**{**bad.__dict__, "token_trace": bad_trace})]
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        pipeline.run(
+            config_path=config_path,
+            runtime_factory=lambda config: _runtime(),
+            backend_factory=lambda runtime, config: BadTraceBackend([]),
+        )
+
+    run_dir = tmp_path / "outputs" / "wave6-pipeline"
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+
+    assert exc_info.value.code == "artifacts.non_finite_trace_logprob"
+    assert summary["terminal_status"] == "failed"
+    assert summary["failure_class"] == "artifact_contract_failure"
+    assert summary["artifact_contract_failure_count"] == 1
+    assert summary["benchmark_eligible"] is False
+    assert manifest["terminal_status"] == "failed"
+    assert manifest["benchmark_eligible"] is False
+    assert not (run_dir / "gt_vs_pred.jsonl").exists()
+    assert not (run_dir / "gt_vs_pred_scored.jsonl").exists()
 
 
 def test_pipeline_records_parser_and_score_counters_without_metric_reduction(tmp_path: Path) -> None:

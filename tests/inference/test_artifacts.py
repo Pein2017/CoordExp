@@ -269,7 +269,7 @@ def test_manifest_records_artifact_paths_without_claiming_wave5_benchmark_eligib
     assert manifest["trace_scoring_status"] == "scored"
     assert manifest["scored_artifact_materialized"] is True
     assert manifest["benchmark_eligible"] is False
-    assert manifest["evaluator_consumer_status"] == "not_implemented_wave_5"
+    assert manifest["evaluator_consumer_status"] == "available_not_run"
     assert manifest["score_policy_fingerprint"] == SCORE_POLICY_FINGERPRINT
     assert manifest["artifacts"]["gt_vs_pred_scored"] == "gt_vs_pred_scored.jsonl"
     assert summary["scored_artifact_materialized"] is True
