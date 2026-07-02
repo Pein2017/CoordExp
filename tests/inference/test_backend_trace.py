@@ -403,6 +403,39 @@ def test_batched_variable_prompt_width_alignment_and_post_stop_padding() -> None
     assert long.stop_reason == "length"
 
 
+def test_prestop_generated_pad_token_fails_fast() -> None:
+    from src.inference.backend import DecodeRequest, HFGenerateBackend
+
+    tokenizer = FakeTokenizer()
+    model = FakeHFModel(
+        sequences=[[11, 12, tokenizer.pad_token_id, 21]],
+        score_steps=[
+            _logits_for_tokens([tokenizer.pad_token_id]),
+            _logits_for_tokens([21]),
+        ],
+    )
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        HFGenerateBackend(model=model, tokenizer=tokenizer).generate_batch(
+            [
+                DecodeRequest(
+                    request_id="row-1",
+                    prompt_token_ids=[11, 12],
+                    model_inputs={"input_ids": torch.tensor([11, 12])},
+                    max_new_tokens=2,
+                )
+            ],
+            model_identity={"family": "base-only"},
+            tokenizer_identity={"sha256": "tok-sha"},
+            generation_config_fingerprint="gen-fp",
+        )
+
+    assert exc_info.value.code == "backend_trace.unexpected_pad_token"
+    assert exc_info.value.context["row_index"] == 0
+    assert exc_info.value.context["step_index"] == 0
+    assert exc_info.value.context["token_id"] == tokenizer.pad_token_id
+
+
 def test_hf_generate_places_padded_text_inputs_on_request_tensor_device() -> None:
     from src.inference.backend import DecodeRequest, HFGenerateBackend
 

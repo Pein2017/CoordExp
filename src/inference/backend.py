@@ -214,6 +214,7 @@ class HFGenerateBackend:
         return [
             self._materialize_result(
                 request=request,
+                row_index=row,
                 generated_ids=[int(token_id) for token_id in generated_suffix[row].tolist()],
                 transition_logprobs=[
                     float(value) for value in transition_scores[row].tolist()
@@ -376,6 +377,7 @@ class HFGenerateBackend:
         self,
         *,
         request: DecodeRequest,
+        row_index: int,
         generated_ids: list[int],
         transition_logprobs: list[float],
         model_identity: Mapping[str, Any],
@@ -392,7 +394,18 @@ class HFGenerateBackend:
             zip(generated_ids, transition_logprobs, strict=True)
         ):
             is_post_stop_pad = seen_stop and token_id == pad_id
-            is_pad = token_id == pad_id and (seen_stop or token_id != stop_id)
+            if token_id == pad_id and not seen_stop:
+                raise RuntimeContractError(
+                    "HF generation emitted a pad token before any stop token",
+                    code="backend_trace.unexpected_pad_token",
+                    context={
+                        "row_index": row_index,
+                        "request_id": request.request_id,
+                        "step_index": step_index,
+                        "token_id": token_id,
+                    },
+                )
+            is_pad = is_post_stop_pad
             is_stop = token_id == stop_id and not seen_stop
             token_text = self._decode_token(token_id)
             token_logprob = None if is_pad else logprob
