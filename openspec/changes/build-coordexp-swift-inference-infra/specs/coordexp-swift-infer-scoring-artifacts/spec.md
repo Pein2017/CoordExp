@@ -94,19 +94,21 @@ comparable scores. Rows with no scoreable predictions SHALL remain present with
 
 ### Requirement: Scored artifact provenance
 Score-bearing artifacts SHALL use evaluator-readable provenance.
-Each scored row MUST include a non-empty `pred_score_source`, integer
-`pred_score_version`, and finite prediction scores in `[0.0, 1.0]`. The run
-MUST write `gt_vs_pred_scored.jsonl.provenance.json` with artifact schema
-version, source raw artifact SHA256 identity, scored artifact SHA256 identity
-when available, detection template id, prompt policy fingerprint, decode policy
-or generation config fingerprint, model identity fingerprint, processor
-identity fingerprint, template identity, parser policy, score policy
-fingerprint, and row-count or row-identity binding evidence.
+Each scored prediction MUST include a non-empty `pred_score_source`, integer
+`pred_score_version`, and finite prediction score in `[0.0, 1.0]`. Rows with no
+scoreable predictions MUST remain present as `pred: []` and MUST NOT invent
+row-level score provenance. The run MUST write
+`gt_vs_pred_scored.jsonl.provenance.json` with artifact schema version, source
+raw artifact SHA256 identity, scored artifact SHA256 identity when available,
+detection template id, prompt policy fingerprint, decode policy or generation
+config fingerprint, model identity fingerprint, processor identity fingerprint,
+template identity, parser policy, score policy fingerprint, and row-count or
+row-identity binding evidence.
 
 #### Scenario: Complete provenance
 - **WHEN** scored output is written
-- **THEN** row-local score source/version and scored sidecar provenance are
-  present
+- **THEN** every score-bearing prediction has score source/version metadata and
+  scored sidecar provenance is present
 
 #### Scenario: Invalid score value
 - **WHEN** a scored prediction has a non-finite score or a score outside
