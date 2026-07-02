@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import Counter
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -101,6 +102,7 @@ def run(
                 tokenizer_identity=metadata["tokenizer_identity"],
                 generation_config_fingerprint=metadata["generation_config_fingerprint"],
             )
+            _validate_backend_result_set(requests=list(batch), results=list(batch_results))
             for result in batch_results:
                 record = _prompt_record_by_id(prompt_records, result.request_id)
                 verify_prompt_token_parity(record, backend_prompt_token_ids=list(result.prompt_token_ids))
@@ -141,6 +143,63 @@ def _default_backend_factory(runtime: InferenceRuntime, config: InferConfig) -> 
             context={"backend": config.backend.type},
         )
     return HFGenerateBackend(model=runtime.qwen.model, tokenizer=runtime.qwen.tokenizer)
+
+
+def _validate_backend_result_set(
+    *,
+    requests: list[DecodeRequest],
+    results: list[Any],
+) -> None:
+    requested_ids = [request.request_id for request in requests]
+    observed_ids = [str(getattr(result, "request_id", "")) for result in results]
+    requested_counts = Counter(requested_ids)
+    observed_counts = Counter(observed_ids)
+    missing_ids = _counter_delta(requested_counts, observed_counts, requested_ids)
+    extra_ids = _counter_delta(observed_counts, requested_counts, observed_ids)
+    duplicate_ids = _duplicates_in_order(observed_ids)
+    unknown_ids = [row_id for row_id in observed_ids if row_id not in requested_counts]
+    if missing_ids or extra_ids or duplicate_ids or unknown_ids:
+        raise ArtifactContractError(
+            "backend decode result set must match requested batch request ids exactly",
+            code="pipeline.backend_result_set_mismatch",
+            context={
+                "requested_request_ids": requested_ids,
+                "observed_request_ids": observed_ids,
+                "missing_request_ids": missing_ids,
+                "extra_result_ids": extra_ids,
+                "duplicate_result_ids": duplicate_ids,
+                "unknown_result_ids": unknown_ids,
+            },
+        )
+
+
+def _counter_delta(
+    left: Counter[str],
+    right: Counter[str],
+    order: list[str],
+) -> list[str]:
+    remaining = left.copy()
+    for row_id, count in right.items():
+        remaining[row_id] -= count
+    values: list[str] = []
+    emitted: Counter[str] = Counter()
+    for row_id in order:
+        allowed = max(remaining[row_id], 0)
+        if emitted[row_id] < allowed:
+            values.append(row_id)
+            emitted[row_id] += 1
+    return values
+
+
+def _duplicates_in_order(values: list[str]) -> list[str]:
+    counts = Counter(values)
+    seen: set[str] = set()
+    duplicates = []
+    for value in values:
+        if counts[value] > 1 and value not in seen:
+            duplicates.append(value)
+            seen.add(value)
+    return duplicates
 
 
 def _artifact_input_row(

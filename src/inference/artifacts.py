@@ -186,8 +186,27 @@ def write_terminal_status_artifacts(
         "benchmark_eligible": False,
         **dict(summary),
     }
-    _write_json(paths.summary_json, terminal_summary)
-    _write_json(paths.run_manifest_json, _terminal_manifest(metadata=metadata, summary=terminal_summary))
+    staging_dir = Path(tempfile.mkdtemp(prefix=".terminal-status-", dir=output_dir))
+    staged_paths = InferenceArtifactPaths(
+        output_dir=staging_dir,
+        raw_jsonl=staging_dir / RAW_NAME,
+        scored_jsonl=staging_dir / SCORED_NAME,
+        provenance_json=staging_dir / PROVENANCE_NAME,
+        token_trace_jsonl=staging_dir / TOKEN_TRACE_NAME,
+        parse_diagnostics_jsonl=staging_dir / PARSE_DIAGNOSTICS_NAME,
+        image_plan_jsonl=staging_dir / IMAGE_PLAN_NAME,
+        summary_json=staging_dir / SUMMARY_NAME,
+        run_manifest_json=staging_dir / MANIFEST_NAME,
+    )
+    try:
+        _write_json(staged_paths.summary_json, terminal_summary)
+        _write_json(
+            staged_paths.run_manifest_json,
+            _terminal_manifest(metadata=metadata, summary=terminal_summary),
+        )
+        _replace_terminal_status_artifacts(staged_paths, paths)
+    finally:
+        shutil.rmtree(staging_dir, ignore_errors=True)
     return paths
 
 
@@ -642,6 +661,52 @@ def _replace_final_artifacts(staged: InferenceArtifactPaths, final: InferenceArt
         raise ArtifactContractError(
             "failed to publish complete inference artifact set",
             code="artifacts.publish_failed",
+            context={"failed_after": [path.name for path in replaced]},
+            cause=exc,
+        ) from exc
+    finally:
+        shutil.rmtree(backup_dir, ignore_errors=True)
+
+
+def _replace_terminal_status_artifacts(
+    staged: InferenceArtifactPaths,
+    final: InferenceArtifactPaths,
+) -> None:
+    pairs = [
+        (staged.summary_json, final.summary_json),
+        (staged.run_manifest_json, final.run_manifest_json),
+    ]
+    backup_dir = Path(tempfile.mkdtemp(prefix=".terminal-status-backup-", dir=final.output_dir))
+    backups: dict[Path, Path | None] = {}
+    replaced: list[Path] = []
+    try:
+        for _, final_path in pairs:
+            if final_path.exists():
+                backup_path = backup_dir / final_path.name
+                os.replace(final_path, backup_path)
+                backups[final_path] = backup_path
+            else:
+                backups[final_path] = None
+        for staged_path, final_path in pairs:
+            os.replace(staged_path, final_path)
+            replaced.append(final_path)
+    except OSError as exc:
+        for final_path in replaced:
+            try:
+                if final_path.exists():
+                    final_path.unlink()
+            except OSError:
+                pass
+        for final_path, backup_path in backups.items():
+            if backup_path is None:
+                continue
+            try:
+                shutil.move(str(backup_path), str(final_path))
+            except OSError:
+                pass
+        raise ArtifactContractError(
+            "failed to publish complete terminal status artifact pair",
+            code="artifacts.terminal_publish_failed",
             context={"failed_after": [path.name for path in replaced]},
             cause=exc,
         ) from exc

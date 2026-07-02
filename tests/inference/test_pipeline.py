@@ -167,6 +167,91 @@ def test_pipeline_terminal_artifact_failure_writes_status_without_row_artifacts(
     assert not (run_dir / "gt_vs_pred_scored.jsonl").exists()
 
 
+def test_pipeline_rejects_backend_batch_with_too_few_results(tmp_path: Path) -> None:
+    from src.inference import pipeline
+
+    config_path = _write_config(tmp_path, batch_size=2, row_count=2)
+
+    class TooFewBackend(FakeBackend):
+        def generate_batch(self, requests: list[Any], **kwargs: Any) -> list[DecodeResult]:
+            self.calls.append([request.request_id for request in requests])
+            return [
+                _decode_result(
+                    requests[0].request_id,
+                    prompt_token_ids=list(requests[0].prompt_token_ids),
+                )
+            ]
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        pipeline.run(
+            config_path=config_path,
+            runtime_factory=lambda config: _runtime(),
+            backend_factory=lambda runtime, config: TooFewBackend([]),
+        )
+
+    run_dir = tmp_path / "outputs" / "wave6-pipeline"
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+
+    assert exc_info.value.code == "pipeline.backend_result_set_mismatch"
+    assert exc_info.value.context["requested_request_ids"] == ["row-0", "row-1"]
+    assert exc_info.value.context["observed_request_ids"] == ["row-0"]
+    assert exc_info.value.context["missing_request_ids"] == ["row-1"]
+    assert summary["terminal_status"] == "failed"
+    assert summary["failure_class"] == "artifact_contract_failure"
+    assert manifest["terminal_status"] == "failed"
+    assert manifest["benchmark_eligible"] is False
+    assert not (run_dir / "gt_vs_pred.jsonl").exists()
+    assert not (run_dir / "gt_vs_pred_scored.jsonl").exists()
+
+
+def test_pipeline_rejects_backend_batch_with_extra_duplicate_result(tmp_path: Path) -> None:
+    from src.inference import pipeline
+
+    config_path = _write_config(tmp_path, batch_size=2, row_count=2)
+
+    class DuplicateBackend(FakeBackend):
+        def generate_batch(self, requests: list[Any], **kwargs: Any) -> list[DecodeResult]:
+            self.calls.append([request.request_id for request in requests])
+            return [
+                _decode_result(
+                    requests[0].request_id,
+                    prompt_token_ids=list(requests[0].prompt_token_ids),
+                ),
+                _decode_result(
+                    requests[1].request_id,
+                    prompt_token_ids=list(requests[1].prompt_token_ids),
+                ),
+                _decode_result(
+                    requests[0].request_id,
+                    prompt_token_ids=list(requests[0].prompt_token_ids),
+                ),
+            ]
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        pipeline.run(
+            config_path=config_path,
+            runtime_factory=lambda config: _runtime(),
+            backend_factory=lambda runtime, config: DuplicateBackend([]),
+        )
+
+    run_dir = tmp_path / "outputs" / "wave6-pipeline"
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+
+    assert exc_info.value.code == "pipeline.backend_result_set_mismatch"
+    assert exc_info.value.context["requested_request_ids"] == ["row-0", "row-1"]
+    assert exc_info.value.context["observed_request_ids"] == ["row-0", "row-1", "row-0"]
+    assert exc_info.value.context["duplicate_result_ids"] == ["row-0"]
+    assert exc_info.value.context["extra_result_ids"] == ["row-0"]
+    assert summary["terminal_status"] == "failed"
+    assert summary["failure_class"] == "artifact_contract_failure"
+    assert manifest["terminal_status"] == "failed"
+    assert manifest["benchmark_eligible"] is False
+    assert not (run_dir / "gt_vs_pred.jsonl").exists()
+    assert not (run_dir / "gt_vs_pred_scored.jsonl").exists()
+
+
 def test_pipeline_records_parser_and_score_counters_without_metric_reduction(tmp_path: Path) -> None:
     from src.inference import pipeline
 

@@ -278,6 +278,41 @@ def test_manifest_records_artifact_paths_without_claiming_wave5_benchmark_eligib
     assert summary["scoreable_prediction_count"] == 1
 
 
+def test_terminal_status_artifacts_do_not_publish_partial_summary_without_manifest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import src.inference.artifacts as artifacts
+    from src.inference.artifacts import write_terminal_status_artifacts
+
+    real_replace = artifacts.os.replace
+    replaced_final_names: list[str] = []
+
+    def fail_before_manifest_replace(src: Path, dst: Path) -> None:
+        dst_path = Path(dst)
+        if dst_path.parent == tmp_path and dst_path.name == "summary.json":
+            real_replace(src, dst)
+            replaced_final_names.append(dst_path.name)
+            return
+        if replaced_final_names:
+            raise OSError("forced terminal manifest publish failure")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(artifacts.os, "replace", fail_before_manifest_replace)
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        write_terminal_status_artifacts(
+            output_dir=tmp_path,
+            metadata=_metadata(),
+            summary={"terminal_status": "failed", "failure_class": "unit_failure"},
+        )
+
+    assert exc_info.value.code == "artifacts.terminal_publish_failed"
+    assert replaced_final_names == ["summary.json"]
+    assert not (tmp_path / "summary.json").exists()
+    assert not (tmp_path / "run_manifest.json").exists()
+
+
 def test_artifact_writer_refuses_empty_image_plan_rows_before_status_claims(tmp_path: Path) -> None:
     from src.inference.artifacts import write_inference_artifacts
 

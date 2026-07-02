@@ -190,7 +190,15 @@ def _require_file(path: Path, *, code: str) -> None:
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     rows = []
     for row_index, line in enumerate(path.read_text(encoding="utf-8").splitlines()):
-        payload = json.loads(line)
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ArtifactContractError(
+                "scored artifact row is not valid JSON",
+                code="eval_detection.json_decode",
+                context={"path": str(path), "row_index": row_index},
+                cause=exc,
+            ) from exc
         if not isinstance(payload, dict):
             raise ArtifactContractError(
                 "scored artifact row must be a JSON object",
@@ -202,7 +210,15 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 
 def _read_json(path: Path) -> dict[str, Any]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ArtifactContractError(
+            "provenance artifact is not valid JSON",
+            code="eval_detection.json_decode",
+            context={"path": str(path)},
+            cause=exc,
+        ) from exc
     if not isinstance(payload, dict):
         raise ArtifactContractError(
             "provenance artifact must be a JSON object",
