@@ -10,6 +10,7 @@ from typing import Any, Literal
 from transformers import AutoConfig, AutoProcessor
 
 from src.common.errors import QwenForwardContractError
+from src.config.fingerprint import sha256_file
 from src.qwen.patches import (
     apply_qwen3_vl_patch_embed_linearization,
     model_not_loaded_patch_receipts,
@@ -71,12 +72,16 @@ class QwenComponents:
     token_identity: QwenTokenIdentity
     attn_implementation: str
     load_model: bool
+    base_config_sha256: str
+    tokenizer_sha256: str
     package_versions: dict[str, str]
     runtime_patches: dict[str, dict[str, Any]]
 
     def to_artifact_dict(self) -> dict[str, Any]:
         return {
             "base_model_path": str(self.base_model_path),
+            "base_config_sha256": self.base_config_sha256,
+            "tokenizer_sha256": self.tokenizer_sha256,
             "load_model": self.load_model,
             "attn_implementation": self.attn_implementation,
             "processor": self.processor_identity.to_artifact_dict(),
@@ -142,6 +147,14 @@ def load_qwen_components_from_options(options: QwenLoadOptions) -> QwenComponent
         token_identity=token_identity,
         attn_implementation=options.attn_implementation,
         load_model=options.load_model,
+        base_config_sha256=_required_file_sha256(
+            base_model_path / "config.json",
+            identity_name="base_config_sha256",
+        ),
+        tokenizer_sha256=_required_file_sha256(
+            base_model_path / "tokenizer.json",
+            identity_name="tokenizer_sha256",
+        ),
         package_versions=_package_versions(("transformers", "tokenizers", "torch")),
         runtime_patches=runtime_patches,
     )
@@ -247,6 +260,18 @@ def _required_positive_int(owner: Any, name: str) -> int:
             context={"field": name, "value": int_value},
         )
     return int_value
+
+
+def _required_file_sha256(path: Path, *, identity_name: str) -> str:
+    try:
+        return sha256_file(path)
+    except FileNotFoundError as exc:
+        raise QwenForwardContractError(
+            "Qwen runtime identity file is missing",
+            code="qwen.runtime_identity_file_missing",
+            context={"identity_name": identity_name, "path": str(path)},
+            cause=exc,
+        ) from exc
 
 
 def _package_versions(names: tuple[str, ...]) -> dict[str, str]:

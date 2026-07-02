@@ -12,6 +12,11 @@ import pytest
 import yaml
 
 from src.common.errors import ConfigContractError, RuntimeContractError
+from src.qwen.tokens import (
+    DEFAULT_COORDINATE_TOKENS,
+    DEFAULT_WRAPPER_TOKENS,
+    QwenTokenIdentity,
+)
 
 
 def test_valid_production_infer_config_loads() -> None:
@@ -249,6 +254,55 @@ def test_adapter_runtime_loads_qwen_model_and_uses_adapter_owner(
     assert runtime.model_identity["family"] == "base-plus-adapter"
 
 
+def test_embedding_delta_runtime_uses_real_validator_with_qwen_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.config.inference import load_infer_config
+    from src.inference import runtime as runtime_module
+
+    delta_dir = tmp_path / "delta"
+    _write_delta_metadata(delta_dir)
+    config_path = _write_config(
+        tmp_path,
+        embedding_delta={"path": str(delta_dir)},
+        debug={"smoke": True, "dry_run": True},
+    )
+    resolved = load_infer_config(config_path)
+
+    monkeypatch.setattr(
+        runtime_module,
+        "load_qwen_components_from_options",
+        lambda options: SimpleNamespace(
+            base_model_path=resolved.config.model.base_model,
+            model=None,
+            token_identity=_token_identity(),
+            base_config_sha256="base-config-sha",
+            tokenizer_sha256="tokenizer-sha",
+        ),
+    )
+
+    runtime = runtime_module.assemble_runtime(resolved.config)
+
+    assert runtime.embedding_delta_receipt is not None
+    assert runtime.embedding_delta_receipt["status"] == "validated"
+    assert runtime.embedding_delta_receipt["metadata"]["base_config_sha256"] == "base-config-sha"
+    assert runtime.model_identity["family"] == "base-only"
+    assert runtime.model_identity["embedding_delta"]["metadata_path"].endswith(
+        "special_token_embeddings.json"
+    )
+
+
+def test_qwen_components_shape_exposes_delta_identity_sha_fields() -> None:
+    import dataclasses
+
+    from src.qwen.runtime_loading import QwenComponents
+
+    field_names = {field.name for field in dataclasses.fields(QwenComponents)}
+    assert "base_config_sha256" in field_names
+    assert "tokenizer_sha256" in field_names
+
+
 def test_infer_entry_help_resolves_without_src_infer_package() -> None:
     assert Path("src/infer.py").is_file()
     assert not Path("src/infer").exists()
@@ -381,3 +435,39 @@ class FakePeftModel:
             merged_adapters=[],
             requires_grad=False,
         )
+
+
+def _token_identity() -> QwenTokenIdentity:
+    return QwenTokenIdentity(
+        required_tokens=(*DEFAULT_WRAPPER_TOKENS, *DEFAULT_COORDINATE_TOKENS),
+        wrapper_token_ids={
+            token: 151646 + index
+            for index, token in enumerate(DEFAULT_WRAPPER_TOKENS)
+        },
+        coordinate_token_ids=tuple(range(151670, 152670)),
+        im_end_newline_text="<|im_end|>\n",
+        im_end_token_ids=(151645,),
+        newline_token_ids=(198,),
+        im_end_newline_token_ids=(151645, 198),
+        tokenizer_vocab_size=152670,
+    )
+
+
+def _write_delta_metadata(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    metadata = {
+        "semantics": "additive_delta",
+        "tensor_key": "shared_embed_delta",
+        "tensor_shape": [1004, 4],
+        "tensor_dtype": "torch.float32",
+        "token_strings": [*DEFAULT_WRAPPER_TOKENS, *DEFAULT_COORDINATE_TOKENS],
+        "token_ids": [151646, 151647, 151648, 151649, *range(151670, 152670)],
+        "base_model_path": str(path.parent / "model_cache" / "qwen"),
+        "base_config_sha256": "base-config-sha",
+        "tokenizer_sha256": "tokenizer-sha",
+        "tie_word_embeddings": True,
+    }
+    (path / "special_token_embeddings.json").write_text(
+        json.dumps(metadata, sort_keys=True),
+        encoding="utf-8",
+    )
