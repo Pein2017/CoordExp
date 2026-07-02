@@ -101,7 +101,10 @@ def parse_compact_object_box_closed(
     dropped: list[dict[str, Any]] = []
     for candidate in _object_candidates(text):
         if candidate["kind"] == "unmatched":
-            if not _is_ignored_unmatched_text(candidate["text"]):
+            if not _is_ignored_unmatched_text(
+                candidate["text"],
+                allow_terminal_stop=False,
+            ):
                 dropped.append(
                     _drop(
                         row_id=row_id,
@@ -112,6 +115,7 @@ def parse_compact_object_box_closed(
                         raw_text=candidate["text"],
                         char_start=candidate["char_start"],
                         char_end=candidate["char_end"],
+                        evidence=_empty_span_evidence(),
                     )
                 )
             continue
@@ -130,6 +134,10 @@ def parse_compact_object_box_closed(
                     raw_text=candidate["text"],
                     char_start=candidate["char_start"],
                     char_end=candidate["char_end"],
+                    evidence=_span_evidence(
+                        candidate["text"],
+                        absolute_start=candidate["char_start"],
+                    ),
                 )
             )
             continue
@@ -283,7 +291,7 @@ def _append_unmatched_drop(
     raw_text: str,
     char_start: int,
 ) -> None:
-    if _is_ignored_unmatched_text(raw_text):
+    if _is_ignored_unmatched_text(raw_text, allow_terminal_stop=True):
         return
     dropped.append(
         _drop(
@@ -295,13 +303,14 @@ def _append_unmatched_drop(
             raw_text=raw_text,
             char_start=char_start,
             char_end=char_start + len(raw_text),
+            evidence=_empty_span_evidence(),
         )
     )
 
 
-def _is_ignored_unmatched_text(text: str) -> bool:
+def _is_ignored_unmatched_text(text: str, *, allow_terminal_stop: bool) -> bool:
     stripped = text.strip()
-    return not stripped or stripped == IM_END_TOKEN
+    return not stripped or (allow_terminal_stop and stripped == IM_END_TOKEN)
 
 
 def _span_evidence(raw_span_text: str, *, absolute_start: int) -> dict[str, Any]:
@@ -333,6 +342,10 @@ def _span_evidence(raw_span_text: str, *, absolute_start: int) -> dict[str, Any]
         "schema_spans": schema_spans,
         "coord_token_spans": coord_token_spans,
     }
+
+
+def _empty_span_evidence() -> dict[str, list[dict[str, Any]]]:
+    return {"schema_spans": [], "coord_token_spans": []}
 
 
 def _range_record(
@@ -410,6 +423,8 @@ def _drop(
     }
     if evidence is not None:
         payload.update(evidence)
+    else:
+        payload.update(_empty_span_evidence())
     if code is not None:
         payload["code"] = code
     if context is not None:

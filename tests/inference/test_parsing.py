@@ -87,6 +87,40 @@ def test_accepted_with_drops_preserves_valid_objects_and_diagnostics() -> None:
     assert row.diagnostics[0]["row_id"] == "row-1"
 
 
+def test_malformed_object_drop_records_span_evidence_for_scoring_replay() -> None:
+    from src.inference.parsing import parse_compact_object_box_closed
+
+    text = (
+        "<|object_ref_start|>bad<|object_ref_end|>"
+        "<|box_start|><|coord_1|><|coord_2|><|coord_3|><|box_end|>"
+    )
+    row = parse_compact_object_box_closed(
+        text,
+        row_id="row-1",
+        row_index=0,
+        image_width=1000,
+        image_height=1000,
+    )
+
+    drop = row.dropped_predictions[0]
+    assert drop["object_span_id"] == "row-1:span-0"
+    assert drop["char_start"] == 0
+    assert drop["char_end"] == len(text)
+    assert drop["raw_span_text"] == text
+    assert len(drop["raw_span_sha256"]) == 64
+    assert [item["text"] for item in drop["schema_spans"]] == [
+        "<|object_ref_start|>",
+        "<|object_ref_end|>",
+        "<|box_start|>",
+        "<|box_end|>",
+    ]
+    assert [item["text"] for item in drop["coord_token_spans"]] == [
+        "<|coord_1|>",
+        "<|coord_2|>",
+        "<|coord_3|>",
+    ]
+
+
 def test_malformed_span_before_valid_object_does_not_fuse_across_boundary() -> None:
     from src.inference.parsing import parse_compact_object_box_closed
 
@@ -124,6 +158,8 @@ def test_leading_prose_is_preserved_as_drop_with_salvaged_valid_object() -> None
     assert [prediction["description"] for prediction in row.predictions] == ["cat"]
     assert row.dropped_predictions[0]["reason"] == "unmatched_text"
     assert row.dropped_predictions[0]["raw_text"] == "Here are the detections: "
+    assert row.dropped_predictions[0]["schema_spans"] == []
+    assert row.dropped_predictions[0]["coord_token_spans"] == []
 
 
 def test_trailing_prose_is_preserved_as_drop_with_salvaged_valid_object() -> None:
@@ -177,6 +213,44 @@ def test_terminal_stop_suffix_is_ignored_after_valid_object() -> None:
 
     assert row.parse_status == "accepted"
     assert row.dropped_predictions == []
+
+
+def test_leading_stop_token_before_object_is_not_ignored() -> None:
+    from src.inference.parsing import parse_compact_object_box_closed
+
+    row = parse_compact_object_box_closed(
+        "<|im_end|>"
+        "<|object_ref_start|>cat<|object_ref_end|>"
+        "<|box_start|><|coord_100|><|coord_200|><|coord_300|><|coord_400|><|box_end|>",
+        row_id="row-1",
+        row_index=0,
+        image_width=1000,
+        image_height=1000,
+    )
+
+    assert row.parse_status == "accepted_with_drops"
+    assert [prediction["description"] for prediction in row.predictions] == ["cat"]
+    assert row.dropped_predictions[0]["reason"] == "unmatched_text"
+    assert row.dropped_predictions[0]["raw_text"] == "<|im_end|>"
+
+
+def test_repeated_terminal_stop_token_is_not_silently_accepted() -> None:
+    from src.inference.parsing import parse_compact_object_box_closed
+
+    row = parse_compact_object_box_closed(
+        "<|object_ref_start|>cat<|object_ref_end|>"
+        "<|box_start|><|coord_100|><|coord_200|><|coord_300|><|coord_400|><|box_end|>"
+        "<|im_end|><|im_end|>\n",
+        row_id="row-1",
+        row_index=0,
+        image_width=1000,
+        image_height=1000,
+    )
+
+    assert row.parse_status == "accepted_with_drops"
+    assert [prediction["description"] for prediction in row.predictions] == ["cat"]
+    assert row.dropped_predictions[0]["reason"] == "unmatched_text"
+    assert row.dropped_predictions[0]["raw_text"] == "<|im_end|><|im_end|>\n"
 
 
 def test_empty_description_span_is_dropped_with_typed_reason() -> None:
