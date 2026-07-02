@@ -34,11 +34,12 @@
 
 ## 4. Backend Trace
 
-- [ ] 4.1 Add failing tests for backend-neutral `DecodeRequest`, `DecodeResult`, and `TokenTrace` consumption without HF object leakage.
-- [ ] 4.2 Add failing tests for HF scored generation arguments, missing score failure, missing required trace field failure, and special-token-preserving raw trace decode.
-- [ ] 4.3 Add failing tests for batched prompt-width alignment with variable prompt lengths and post-stop padding exclusion.
-- [ ] 4.4 Implement HF `generate_batch` with `return_dict_in_generate=True`, `output_scores=True`, deterministic greedy defaults, Qwen `<|im_end|>` stop policy, and normalized transition logprob gathering.
+- [x] 4.1 Add failing tests for backend-neutral `DecodeRequest`, `DecodeResult`, and `TokenTrace` consumption without HF object leakage.
+- [x] 4.2 Add failing tests for HF scored generation arguments, missing score failure, missing required trace field failure, and special-token-preserving raw trace decode.
+- [x] 4.3 Add failing tests for batched prompt-width alignment with variable prompt lengths and post-stop padding exclusion.
+- [x] 4.4 Implement HF `generate_batch` with `return_dict_in_generate=True`, `output_scores=True`, deterministic greedy defaults, Qwen `<|im_end|>` stop policy, and normalized transition logprob gathering.
 - [ ] 4.5 Run a real tiny HF/Qwen trace probe that verifies generated ids, token text, logprobs, stop token, and parser-facing stripped view.
+  - 2026-07-02 Wave 3 implementation note: targeted fake-HF tests now cover one-row scored trace extraction, special-token preservation, post-stop pad exclusion, and two-row variable prompt-width alignment. The real Qwen3-VL image probe remains deferred to Wave 7 smoke because loading the full local 2B VL model is too expensive for this small backend-only wave; this does not weaken the backend-trace spec.
 
 ## 5. Prompt Image And Parsing
 
