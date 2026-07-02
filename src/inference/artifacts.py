@@ -69,6 +69,7 @@ def write_inference_artifacts(
     diagnostic_rows: list[dict[str, Any]] = []
     token_trace_rows: list[dict[str, Any]] = []
     scoreable_prediction_count = 0
+    score_failure_count = 0
 
     for row in rows:
         parse_row = row["parse"]
@@ -89,6 +90,7 @@ def write_inference_artifacts(
                         token_trace=list(decode_result.token_trace),
                     )
                 except ArtifactContractError as exc:
+                    score_failure_count += 1
                     diagnostic_rows.append(
                         {
                             "row_id": row["row_id"],
@@ -142,6 +144,8 @@ def write_inference_artifacts(
             "trace_row_count": len(token_trace_rows),
             "scored_artifact_materialized": True,
             "benchmark_eligible": False,
+            **dict(metadata.get("pipeline_counters") or {}),
+            "score_failure_count": score_failure_count,
         }
         _write_json(staged_paths.summary_json, summary)
         _write_json(staged_paths.run_manifest_json, _manifest(metadata=metadata, summary=summary))
@@ -150,6 +154,40 @@ def write_inference_artifacts(
     finally:
         shutil.rmtree(staging_dir, ignore_errors=True)
     validate_scored_artifact_set(output_dir)
+    return paths
+
+
+def write_terminal_status_artifacts(
+    *,
+    output_dir: Path,
+    metadata: dict[str, Any],
+    summary: dict[str, Any],
+) -> InferenceArtifactPaths:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    paths = InferenceArtifactPaths(
+        output_dir=output_dir,
+        raw_jsonl=output_dir / RAW_NAME,
+        scored_jsonl=output_dir / SCORED_NAME,
+        provenance_json=output_dir / PROVENANCE_NAME,
+        token_trace_jsonl=output_dir / TOKEN_TRACE_NAME,
+        parse_diagnostics_jsonl=output_dir / PARSE_DIAGNOSTICS_NAME,
+        image_plan_jsonl=output_dir / IMAGE_PLAN_NAME,
+        summary_json=output_dir / SUMMARY_NAME,
+        run_manifest_json=output_dir / MANIFEST_NAME,
+    )
+    terminal_summary = {
+        "row_count": 0,
+        "raw_row_count": 0,
+        "scored_row_count": 0,
+        "scoreable_prediction_count": 0,
+        "diagnostic_row_count": 0,
+        "trace_row_count": 0,
+        "scored_artifact_materialized": False,
+        "benchmark_eligible": False,
+        **dict(summary),
+    }
+    _write_json(paths.summary_json, terminal_summary)
+    _write_json(paths.run_manifest_json, _terminal_manifest(metadata=metadata, summary=terminal_summary))
     return paths
 
 
@@ -426,6 +464,33 @@ def _manifest(*, metadata: dict[str, Any], summary: dict[str, Any]) -> dict[str,
         "evaluator_consumer_status": "not_implemented_wave_5",
         "scored_artifact_materialized": bool(summary["scored_artifact_materialized"]),
         "benchmark_eligible": bool(summary["benchmark_eligible"]),
+    }
+
+
+def _terminal_manifest(*, metadata: dict[str, Any], summary: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "artifact_schema_version": int(metadata.get("artifact_schema_version", 1)),
+        "artifacts": {
+            "summary": SUMMARY_NAME,
+        },
+        "resolved_config_fingerprints": metadata.get("resolved_config_fingerprints", {}),
+        "model_identity_fingerprint": metadata.get("model_identity_fingerprint"),
+        "adapter_identity": metadata.get("adapter_identity"),
+        "backend": metadata.get("backend"),
+        "backend_mode": metadata.get("backend_mode"),
+        "response_family": metadata.get("response_family"),
+        "dataset_identity": metadata.get("dataset_identity", {}),
+        "generation_config_fingerprint": metadata.get("generation_config_fingerprint"),
+        "score_policy_fingerprint": SCORE_POLICY_FINGERPRINT,
+        "trace_scoring_status": "not_materialized",
+        "prompt_policy_fingerprint": metadata.get("prompt_policy_fingerprint"),
+        "template_identity": metadata.get("template_identity", {}),
+        "processor_identity_fingerprint": metadata.get("processor_identity_fingerprint"),
+        "evaluator_consumer_status": "not_run",
+        "scored_artifact_materialized": False,
+        "benchmark_eligible": False,
+        "terminal_status": summary.get("terminal_status", "failed"),
+        "failure_class": summary.get("failure_class"),
     }
 
 

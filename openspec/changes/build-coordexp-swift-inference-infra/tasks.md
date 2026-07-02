@@ -61,11 +61,11 @@
 
 ## 7. Pipeline And Eval Consumer
 
-- [ ] 7.1 Add failing tests for end-to-end pipeline orchestration over a tiny real or fixture-backed input, including batching, counters, terminal failure status, and no metric reduction inside `src.infer`.
-- [ ] 7.2 Implement inference pipeline orchestration across runtime, prompt, backend, parsing, scoring, and artifact modules.
-- [ ] 7.3 Add failing tests for the minimal rebuilt `src.eval` detection consumer that consumes `gt_vs_pred_scored.jsonl` with provenance and writes `metrics.json` or an explicitly named metric artifact.
-- [ ] 7.4 Implement the minimal rebuilt evaluator consumer and verify it refuses missing or mismatched score provenance before metric computation; do not implement a legacy bridge unless the user explicitly changes the V1 default.
-- [ ] 7.5 Run pipeline/evaluator tests and a tiny scored fixture through the named evaluator consumer.
+- [x] 7.1 Add failing tests for end-to-end pipeline orchestration over a tiny real or fixture-backed input, including batching, counters, terminal failure status, and no metric reduction inside `src.infer`.
+- [x] 7.2 Implement inference pipeline orchestration across runtime, prompt, backend, parsing, scoring, and artifact modules.
+- [x] 7.3 Add failing tests for the minimal rebuilt `src.eval` detection consumer that consumes `gt_vs_pred_scored.jsonl` with provenance and writes `metrics.json` or an explicitly named metric artifact.
+- [x] 7.4 Implement the minimal rebuilt evaluator consumer and verify it refuses missing or mismatched score provenance before metric computation; do not implement a legacy bridge unless the user explicitly changes the V1 default.
+- [x] 7.5 Run pipeline/evaluator tests and a tiny scored fixture through the named evaluator consumer.
 
 ## 8. Real Smokes And Benchmark Readiness
 
