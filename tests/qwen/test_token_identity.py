@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 from typing import Any
 
 import pytest
@@ -18,6 +19,10 @@ from src.qwen.tokens import (
 
 
 FIXTURE_CONFIG = Path("tests/fixtures/smoke/qwen3_vl_single_image_pack/config.yaml")
+PROD_CONFIG = Path(
+    "configs/coordexp_swift/prod/"
+    "qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate8_ebs128_4epoch.yaml"
+)
 
 
 class FakeTokenizer:
@@ -145,6 +150,33 @@ def test_real_local_qwen_components_load_without_model_and_preflight_tokens() ->
     patch_receipt = artifact["runtime_patches"]["qwen3_vl_patch_embed_linearization"]
     assert patch_receipt["applied"] is False
     assert patch_receipt["reason"] == "model_not_loaded"
+
+
+def test_production_prompt_examples_use_real_single_token_wrappers() -> None:
+    resolved = load_train_config(PROD_CONFIG)
+    components = load_qwen_components(resolved.config, load_model=False)
+    prompt_text = "\n".join(
+        item
+        for item in (
+            resolved.config.template.prompt.system,
+            resolved.config.template.prompt.user,
+        )
+        if item
+    )
+
+    assert "coord_x1" not in prompt_text
+    assert "coord_y1" not in prompt_text
+    assert "coord_x2" not in prompt_text
+    assert "coord_y2" not in prompt_text
+    assert "<|coord_100|><|coord_200|><|coord_300|><|coord_400|>" in prompt_text
+
+    tokenizer = components.tokenizer
+    special_token_texts = sorted(set(re.findall(r"<\|[^>\s]+\|>", prompt_text)))
+    assert special_token_texts
+    for token_text in special_token_texts:
+        token_ids = tokenizer.encode(token_text, add_special_tokens=False)
+        token_id = tokenizer.convert_tokens_to_ids(token_text)
+        assert token_ids == [token_id], token_text
 
 
 def _fake_tokenizer(
