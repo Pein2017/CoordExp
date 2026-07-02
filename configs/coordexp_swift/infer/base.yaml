@@ -1,0 +1,36 @@
+schema_version: 1
+run:
+  name: coordexp-swift-infer-base
+  artifact_root: outputs/coordexp_swift/infer
+  collision_policy: fail
+model:
+  base_model: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent
+  dtype: bf16
+  attn_implementation: flash_attention_2
+  processor:
+    do_resize: false
+  runtime_patches:
+    patch_embed_linearization: enabled
+data:
+  input_jsonl: tests/fixtures/smoke/qwen3_vl_single_image_pack/examples.jsonl
+template:
+  object_field_order: desc_first
+  object_ordering: source_order
+  assistant_format: object_box_closed
+  prompt:
+    user: Describe objects.
+backend:
+  type: hf
+generation:
+  batch_size: 2
+  max_new_tokens: 512
+  temperature: 0.0
+  top_p: 1.0
+scoring:
+  enabled: true
+artifacts:
+  write_token_trace: true
+  write_parse_diagnostics: true
+debug:
+  smoke: false
+  dry_run: false

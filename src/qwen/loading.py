@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from importlib import metadata
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from transformers import AutoConfig, AutoProcessor
 
@@ -88,6 +88,15 @@ class QwenComponents:
         }
 
 
+@dataclass(frozen=True)
+class QwenLoadOptions:
+    base_model: str
+    dtype: Literal["bf16", "fp16", "fp32"]
+    attn_implementation: Literal["flash_attention_2", "sdpa", "eager"]
+    patch_embed_linearization: Literal["enabled", "disabled"] = "enabled"
+    load_model: bool = False
+
+
 def load_qwen_components(
     config: TrainConfig,
     *,
@@ -100,7 +109,21 @@ def load_qwen_components(
     `load_model=True` once adapter and runtime setup are ready.
     """
 
-    base_model_path = Path(config.model.base_model).expanduser().resolve()
+    return load_qwen_components_from_options(
+        QwenLoadOptions(
+            base_model=config.model.base_model,
+            dtype=config.training.precision,
+            attn_implementation=config.model.attn_implementation,
+            patch_embed_linearization=config.model.runtime_patches.patch_embed_linearization,
+            load_model=load_model,
+        )
+    )
+
+
+def load_qwen_components_from_options(options: QwenLoadOptions) -> QwenComponents:
+    """Load Qwen components from owner-neutral runtime options."""
+
+    base_model_path = Path(options.base_model).expanduser().resolve()
     processor = AutoProcessor.from_pretrained(
         str(base_model_path),
         local_files_only=True,
@@ -121,8 +144,8 @@ def load_qwen_components(
     token_identity = validate_qwen_token_identity(tokenizer)
     processor_identity = _processor_identity(processor, tokenizer)
     model_identity = _model_identity(hf_config)
-    model = _load_model(config, base_model_path) if load_model else None
-    patch_policy = config.model.runtime_patches.patch_embed_linearization
+    model = _load_model_from_options(options, base_model_path) if options.load_model else None
+    patch_policy = options.patch_embed_linearization
     runtime_patches = (
         _apply_runtime_patches(model, patch_policy=patch_policy)
         if model is not None
@@ -138,8 +161,8 @@ def load_qwen_components(
         processor_identity=processor_identity,
         model_identity=model_identity,
         token_identity=token_identity,
-        attn_implementation=config.model.attn_implementation,
-        load_model=load_model,
+        attn_implementation=options.attn_implementation,
+        load_model=options.load_model,
         package_versions=_package_versions(("transformers", "tokenizers", "torch")),
         runtime_patches=runtime_patches,
     )
@@ -190,12 +213,25 @@ def _model_identity(hf_config: Any) -> QwenModelIdentity:
 
 
 def _load_model(config: TrainConfig, base_model_path: Path) -> Any:
+    return _load_model_from_options(
+        QwenLoadOptions(
+            base_model=str(base_model_path),
+            dtype=config.training.precision,
+            attn_implementation=config.model.attn_implementation,
+            patch_embed_linearization=config.model.runtime_patches.patch_embed_linearization,
+            load_model=True,
+        ),
+        base_model_path,
+    )
+
+
+def _load_model_from_options(options: QwenLoadOptions, base_model_path: Path) -> Any:
     from transformers import Qwen3VLForConditionalGeneration
 
     return Qwen3VLForConditionalGeneration.from_pretrained(
         str(base_model_path),
-        dtype=_torch_dtype(config.training.precision),
-        attn_implementation=config.model.attn_implementation,
+        dtype=_torch_dtype(options.dtype),
+        attn_implementation=options.attn_implementation,
         device_map=None,
         local_files_only=True,
     )

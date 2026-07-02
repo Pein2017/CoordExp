@@ -23,14 +23,14 @@
 
 ## 3. Config Runtime And Entry Surface
 
-- [ ] 3.1 Add failing tests for strict `InferConfig`: valid production leaf, rejected training-only keys, rejected unknown keys, rejected legacy `configs/infer/*`, reserved but not implemented vLLM backend, and debug-only `batch_size: 1`.
-- [ ] 3.2 Implement `InferConfig` models and loader behavior without importing `TrainConfig`.
-- [ ] 3.3 Add `src/infer.py` as the thin public entrypoint and `src/inference/` package skeleton; verify no `src/infer/` sibling package exists.
-- [ ] 3.4 Implement resolved config writing for inference using `configs/resolved.json` and `configs/resolved.yaml`.
-- [ ] 3.5 Implement runtime assembly for base model, optional adapter, optional embedding delta, and resolved identity recording through existing Qwen/adapter/artifact owners; inference runtime coordinates adapter-owner results rather than inlining PEFT status policy.
-- [ ] 3.6 Add owner-boundary AST residue tests preventing inference-facing imports or calls involving `TrainConfig`, `ResolvedTrainConfig`, `ResolvedStepSchedule`, `load_train_config()`, and any unallowlisted `src.training.*` module across `src/infer.py`, `src/inference/**`, and inference-facing owner APIs.
-- [ ] 3.7 Add or extend adapter-owner tests for inference reload/status checks under `tests/adapters/`, then connect them to inference config/runtime tests.
-- [ ] 3.8 Run config/runtime tests, adapter-owner tests, and a dry path that writes resolved configs before model generation.
+- [x] 3.1 Add failing tests for strict `InferConfig`: valid production leaf, rejected training-only keys, rejected unknown keys, rejected legacy `configs/infer/*`, reserved but not implemented vLLM backend, and debug-only `batch_size: 1`.
+- [x] 3.2 Implement `InferConfig` models and loader behavior without importing `TrainConfig`.
+- [x] 3.3 Add `src/infer.py` as the thin public entrypoint and `src/inference/` package skeleton; verify no `src/infer/` sibling package exists.
+- [x] 3.4 Implement resolved config writing for inference using `configs/resolved.json` and `configs/resolved.yaml`.
+- [x] 3.5 Implement runtime assembly for base model, optional adapter, optional embedding delta, and resolved identity recording through existing Qwen/adapter/artifact owners; inference runtime coordinates adapter-owner results rather than inlining PEFT status policy.
+- [x] 3.6 Add owner-boundary AST residue tests preventing inference-facing imports or calls involving `TrainConfig`, `ResolvedTrainConfig`, `ResolvedStepSchedule`, `load_train_config()`, and any unallowlisted `src.training.*` module across `src/infer.py`, `src/inference/**`, and inference-facing owner APIs.
+- [x] 3.7 Add or extend adapter-owner tests for inference reload/status checks under `tests/adapters/`, then connect them to inference config/runtime tests.
+- [x] 3.8 Run config/runtime tests, adapter-owner tests, and a dry path that writes resolved configs before model generation.
 
 ## 4. Backend Trace
 

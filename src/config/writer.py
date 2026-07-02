@@ -4,15 +4,23 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Protocol
 
 import yaml
 
 from src.common.errors import ConfigContractError
-from src.config.models import ResolvedConfigArtifacts, ResolvedTrainConfig
+from src.config.models import ResolvedConfigArtifacts
+
+
+class ResolvedConfigForArtifact(Protocol):
+    fingerprint: str
+
+    def to_artifact_dict(self) -> dict[str, object]:
+        ...
 
 
 def write_resolved_config_artifacts(
-    resolved_config: ResolvedTrainConfig,
+    resolved_config: ResolvedConfigForArtifact,
     run_dir: str | Path,
     *,
     overwrite: bool = False,

@@ -76,6 +76,103 @@ class DoraAdapterSetupResult:
     receipt: DoraAdapterSetupReceipt
 
 
+@dataclass(frozen=True)
+class InferenceAdapterStatusReceipt:
+    status: str
+    adapter_name: str
+    missing_keys: tuple[str, ...]
+    unexpected_keys: tuple[str, ...]
+    enabled: bool
+    active_adapters: tuple[str, ...]
+    merged_adapters: tuple[str, ...]
+    requires_grad: Any
+
+    def to_artifact_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "adapter_name": self.adapter_name,
+            "missing_keys": list(self.missing_keys),
+            "unexpected_keys": list(self.unexpected_keys),
+            "enabled": self.enabled,
+            "active_adapters": list(self.active_adapters),
+            "merged_adapters": list(self.merged_adapters),
+            "requires_grad": self.requires_grad,
+        }
+
+
+def validate_inference_adapter_status(
+    *,
+    load_result: Any,
+    status: Any,
+    expected_adapter_name: str = DEFAULT_ADAPTER_NAME,
+) -> InferenceAdapterStatusReceipt:
+    missing_keys = tuple(str(item) for item in getattr(load_result, "missing_keys", ()))
+    unexpected_keys = tuple(
+        str(item) for item in getattr(load_result, "unexpected_keys", ())
+    )
+    if missing_keys or unexpected_keys:
+        raise RuntimeContractError(
+            "inference adapter load_result contains missing or unexpected keys",
+            code="adapter.inference_load_result_irregular",
+            context={
+                "missing_keys": list(missing_keys),
+                "unexpected_keys": list(unexpected_keys),
+            },
+        )
+
+    enabled = getattr(status, "enabled", None)
+    active_adapters = tuple(str(item) for item in getattr(status, "active_adapters", ()))
+    merged_adapters = tuple(str(item) for item in getattr(status, "merged_adapters", ()))
+    requires_grad = getattr(status, "requires_grad", None)
+    irregular_fields = [
+        field
+        for field, value in {
+            "enabled": enabled,
+            "active_adapters": active_adapters,
+            "merged_adapters": merged_adapters,
+            "requires_grad": requires_grad,
+        }.items()
+        if value == "irregular"
+    ]
+    if irregular_fields:
+        raise RuntimeContractError(
+            "inference adapter status contains irregular fields",
+            code="adapter.inference_status_irregular",
+            context={"irregular_fields": irregular_fields},
+        )
+    if enabled is not True:
+        raise RuntimeContractError(
+            "inference adapter is not enabled after load",
+            code="adapter.inference_status_disabled",
+            context={"enabled": enabled},
+        )
+    if active_adapters != (expected_adapter_name,):
+        raise RuntimeContractError(
+            "inference adapter active adapter list does not match expectation",
+            code="adapter.inference_active_adapter_mismatch",
+            context={
+                "expected_active_adapters": [expected_adapter_name],
+                "active_adapters": list(active_adapters),
+            },
+        )
+    if merged_adapters:
+        raise RuntimeContractError(
+            "inference adapter must not be merged before generation",
+            code="adapter.inference_merged_state",
+            context={"merged_adapters": list(merged_adapters)},
+        )
+    return InferenceAdapterStatusReceipt(
+        status="validated",
+        adapter_name=expected_adapter_name,
+        missing_keys=missing_keys,
+        unexpected_keys=unexpected_keys,
+        enabled=True,
+        active_adapters=active_adapters,
+        merged_adapters=merged_adapters,
+        requires_grad=requires_grad,
+    )
+
+
 def discover_dora_targets(
     model: nn.Module,
     plan: AdapterSetupPlan,
