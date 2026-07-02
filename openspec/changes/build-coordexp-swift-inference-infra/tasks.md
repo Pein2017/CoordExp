@@ -53,11 +53,11 @@
 
 ## 6. Scoring And Artifact Contracts
 
-- [ ] 6.1 Add failing tests for `exp(sum(selected_token_logprobs) / n_selected)`, exact `n_selected == 8` compact-object policy, empty selected-token set, non-finite logprob, duplicate-span ambiguity, object-span contiguity, and description/category token exclusion.
-- [ ] 6.2 Implement selected-token alignment and scoring with persisted replay evidence: row id, object span id, generated-step indices, token ids, token text, selected logprobs, selected count, and score-policy fingerprinting.
-- [ ] 6.3 Add failing tests for raw/scored row-count parity, no extra diagnostic rows in raw/scored JSONL, scored rows with `pred: []`, inline GT preservation, row-local non-empty score source, integer score version, finite score range `[0.0, 1.0]`, scored provenance sidecar, portable raw/scored SHA binding, and trace-based score recomputation.
-- [ ] 6.4 Implement `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, `gt_vs_pred_scored.jsonl.provenance.json`, `pred_token_trace.jsonl`, `parse_diagnostics.jsonl`, `image_plan.jsonl`, `summary.json`, and inference manifest writing.
-- [ ] 6.5 Run artifact/scoring tests and inspect a tiny scored artifact set for benchmark eligibility fields.
+- [x] 6.1 Add failing tests for `exp(sum(selected_token_logprobs) / n_selected)`, exact `n_selected == 8` compact-object policy, empty selected-token set, non-finite logprob, duplicate-span ambiguity, object-span contiguity, and description/category token exclusion.
+- [x] 6.2 Implement selected-token alignment and scoring with persisted replay evidence: row id, object span id, generated-step indices, token ids, token text, selected logprobs, selected count, and score-policy fingerprinting.
+- [x] 6.3 Add failing tests for raw/scored row-count parity, no extra diagnostic rows in raw/scored JSONL, scored rows with `pred: []`, inline GT preservation, row-local non-empty score source, integer score version, finite score range `[0.0, 1.0]`, scored provenance sidecar, portable raw/scored SHA binding, and trace-based score recomputation.
+- [x] 6.4 Implement `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, `gt_vs_pred_scored.jsonl.provenance.json`, `pred_token_trace.jsonl`, `parse_diagnostics.jsonl`, `image_plan.jsonl`, `summary.json`, and inference manifest writing.
+- [x] 6.5 Run artifact/scoring tests and inspect a tiny scored artifact set for benchmark eligibility fields.
 
 ## 7. Pipeline And Eval Consumer
 

@@ -1,0 +1,274 @@
+from __future__ import annotations
+
+import json
+import math
+from pathlib import Path
+
+import pytest
+
+from src.common.errors import ArtifactContractError
+from src.inference.backend import DecodeResult, TokenTrace
+from src.inference.parsing import parse_compact_object_box_closed
+
+
+OBJECT_TEXT = (
+    "<|object_ref_start|>cat<|object_ref_end|>"
+    "<|box_start|><|coord_100|><|coord_200|><|coord_300|><|coord_400|><|box_end|>"
+)
+
+
+def _trace(*, logprob: float = math.log(0.25)) -> list[TokenTrace]:
+    pieces = [
+        "<|object_ref_start|>",
+        "cat",
+        "<|object_ref_end|>",
+        "<|box_start|>",
+        "<|coord_100|>",
+        "<|coord_200|>",
+        "<|coord_300|>",
+        "<|coord_400|>",
+        "<|box_end|>",
+    ]
+    return [
+        TokenTrace(
+            step_index=index,
+            token_id=151646 + index,
+            token_text=piece,
+            logprob=logprob,
+            is_stop=False,
+            is_pad=False,
+            backend="hf",
+            backend_mode="generate",
+            response_family="hf",
+        )
+        for index, piece in enumerate(pieces)
+    ]
+
+
+def _decode_result(row_id: str, *, token_trace: list[TokenTrace] | None = None) -> DecodeResult:
+    trace = _trace() if token_trace is None else token_trace
+    return DecodeResult(
+        request_id=row_id,
+        backend="hf",
+        backend_mode="generate",
+        response_family="hf",
+        prompt_token_ids=[11, 12],
+        generated_token_ids=[item.token_id for item in trace],
+        raw_generated_text="".join(item.token_text for item in trace),
+        parser_text="".join(item.token_text for item in trace),
+        strip_policy="none",
+        stop_reason="length",
+        model_identity={"family": "unit"},
+        tokenizer_identity={"sha256": "tok"},
+        generation_config_fingerprint="gen-fp",
+        token_trace=trace,
+    )
+
+
+def _raw_row(row_id: str, row_index: int, *, text: str = OBJECT_TEXT) -> dict:
+    parse_row = parse_compact_object_box_closed(
+        text,
+        row_id=row_id,
+        row_index=row_index,
+        image_width=1000,
+        image_height=1000,
+    )
+    return {
+        "row_id": row_id,
+        "row_index": row_index,
+        "example_id": row_id,
+        "image_path": f"{row_id}.jpg",
+        "image_width": 1000,
+        "image_height": 1000,
+        "gt": [{"description": "gt-cat", "bbox": [100, 100, 300, 300]}],
+        "raw_decode_text": text,
+        "parse": parse_row,
+    }
+
+
+def _metadata() -> dict:
+    return {
+        "artifact_schema_version": 1,
+        "detection_template_id": "compact-object-box-closed",
+        "prompt_policy_fingerprint": "prompt-fp",
+        "generation_config_fingerprint": "gen-fp",
+        "model_identity_fingerprint": "model-fp",
+        "processor_identity_fingerprint": "processor-fp",
+        "template_identity": {"id": "template-v1"},
+        "parser_policy": "compact_object_box_closed_only",
+        "dataset_identity": {"name": "unit"},
+        "backend": "hf",
+        "backend_mode": "generate",
+        "response_family": "hf",
+    }
+
+
+def _read_jsonl(path: Path) -> list[dict]:
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+
+def test_artifact_writer_preserves_raw_and_scored_row_parity_without_diagnostic_rows(tmp_path: Path) -> None:
+    from src.inference.artifacts import write_inference_artifacts
+
+    paths = write_inference_artifacts(
+        output_dir=tmp_path,
+        rows=[
+            _raw_row("row-1", 0),
+            _raw_row("row-2", 1, text="malformed"),
+        ],
+        decode_results={"row-1": _decode_result("row-1"), "row-2": _decode_result("row-2", token_trace=[])},
+        image_plan_rows=[{"row_id": "row-1"}, {"row_id": "row-2"}],
+        metadata=_metadata(),
+    )
+
+    raw_rows = _read_jsonl(paths.raw_jsonl)
+    scored_rows = _read_jsonl(paths.scored_jsonl)
+    diagnostics_rows = _read_jsonl(paths.parse_diagnostics_jsonl)
+
+    assert [row["row_id"] for row in raw_rows] == ["row-1", "row-2"]
+    assert [row["row_id"] for row in scored_rows] == ["row-1", "row-2"]
+    assert len(diagnostics_rows) == 2
+    assert all(row["row_id"] in {"row-1", "row-2"} for row in diagnostics_rows)
+
+
+def test_scored_rows_keep_empty_pred_list_and_preserve_gt_and_image_identity(tmp_path: Path) -> None:
+    from src.inference.artifacts import write_inference_artifacts
+
+    paths = write_inference_artifacts(
+        output_dir=tmp_path,
+        rows=[
+            _raw_row("row-1", 0),
+            _raw_row("row-2", 1, text="malformed"),
+        ],
+        decode_results={"row-1": _decode_result("row-1"), "row-2": _decode_result("row-2", token_trace=[])},
+        image_plan_rows=[{"row_id": "row-1"}, {"row_id": "row-2"}],
+        metadata=_metadata(),
+    )
+
+    scored_rows = _read_jsonl(paths.scored_jsonl)
+
+    assert scored_rows[1]["pred"] == []
+    for row in scored_rows:
+        assert row["gt"] == [{"bbox": [100, 100, 300, 300], "description": "gt-cat"}]
+        assert row["image_path"] == f"{row['row_id']}.jpg"
+        assert row["image_width"] == 1000
+        assert row["image_height"] == 1000
+
+
+def test_every_scored_prediction_has_row_local_source_version_and_finite_score(tmp_path: Path) -> None:
+    from src.inference.artifacts import write_inference_artifacts
+
+    paths = write_inference_artifacts(
+        output_dir=tmp_path,
+        rows=[_raw_row("row-1", 0)],
+        decode_results={"row-1": _decode_result("row-1")},
+        image_plan_rows=[{"row_id": "row-1"}],
+        metadata=_metadata(),
+    )
+
+    scored = _read_jsonl(paths.scored_jsonl)[0]["pred"][0]
+
+    assert 0.0 <= scored["score"] <= 1.0
+    assert math.isfinite(scored["score"])
+    assert scored["pred_score_source"]["row_id"] == "row-1"
+    assert scored["pred_score_source"]["selected_count"] == 8
+    assert isinstance(scored["pred_score_version"], int)
+
+
+def test_provenance_sidecar_binds_raw_and_scored_sha_and_score_policy(tmp_path: Path) -> None:
+    from src.inference.artifacts import sha256_file, write_inference_artifacts
+    from src.inference.scoring import SCORE_POLICY_FINGERPRINT
+
+    paths = write_inference_artifacts(
+        output_dir=tmp_path,
+        rows=[_raw_row("row-1", 0)],
+        decode_results={"row-1": _decode_result("row-1")},
+        image_plan_rows=[{"row_id": "row-1"}],
+        metadata=_metadata(),
+    )
+
+    provenance = json.loads(paths.provenance_json.read_text(encoding="utf-8"))
+
+    assert provenance["raw_artifact"]["sha256"] == sha256_file(paths.raw_jsonl)
+    assert provenance["scored_artifact"]["sha256"] == sha256_file(paths.scored_jsonl)
+    assert provenance["score_policy_fingerprint"] == SCORE_POLICY_FINGERPRINT
+    assert provenance["raw_artifact"]["path"] == "gt_vs_pred.jsonl"
+    assert provenance["scored_artifact"]["path"] == "gt_vs_pred_scored.jsonl"
+    assert provenance["row_binding"]["row_count"] == 1
+
+
+def test_trace_artifact_recomputes_stored_scores(tmp_path: Path) -> None:
+    from src.inference.artifacts import recompute_scores_from_artifacts, write_inference_artifacts
+
+    paths = write_inference_artifacts(
+        output_dir=tmp_path,
+        rows=[_raw_row("row-1", 0)],
+        decode_results={"row-1": _decode_result("row-1")},
+        image_plan_rows=[{"row_id": "row-1"}],
+        metadata=_metadata(),
+    )
+
+    recomputed = recompute_scores_from_artifacts(
+        scored_jsonl=paths.scored_jsonl,
+        token_trace_jsonl=paths.token_trace_jsonl,
+    )
+    scored = _read_jsonl(paths.scored_jsonl)[0]["pred"][0]
+
+    assert recomputed[("row-1", "row-1:span-0")] == pytest.approx(scored["score"])
+
+
+def test_manifest_records_artifact_paths_and_benchmark_status(tmp_path: Path) -> None:
+    from src.inference.artifacts import write_inference_artifacts
+    from src.inference.scoring import SCORE_POLICY_FINGERPRINT
+
+    paths = write_inference_artifacts(
+        output_dir=tmp_path,
+        rows=[_raw_row("row-1", 0)],
+        decode_results={"row-1": _decode_result("row-1")},
+        image_plan_rows=[{"row_id": "row-1"}],
+        metadata=_metadata(),
+    )
+
+    manifest = json.loads(paths.run_manifest_json.read_text(encoding="utf-8"))
+    summary = json.loads(paths.summary_json.read_text(encoding="utf-8"))
+
+    assert manifest["trace_scoring_status"] == "scored"
+    assert manifest["benchmark_eligible"] is True
+    assert manifest["evaluator_consumer_status"] == "not_implemented_wave_5"
+    assert manifest["score_policy_fingerprint"] == SCORE_POLICY_FINGERPRINT
+    assert manifest["artifacts"]["gt_vs_pred_scored"] == "gt_vs_pred_scored.jsonl"
+    assert summary["row_count"] == 1
+    assert summary["scoreable_prediction_count"] == 1
+
+
+def test_scored_artifact_production_refuses_missing_trace(tmp_path: Path) -> None:
+    from src.inference.artifacts import write_inference_artifacts
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        write_inference_artifacts(
+            output_dir=tmp_path,
+            rows=[_raw_row("row-1", 0)],
+            decode_results={},
+            image_plan_rows=[{"row_id": "row-1"}],
+            metadata=_metadata(),
+        )
+
+    assert exc_info.value.code == "artifacts.missing_trace"
+
+
+def test_scored_artifact_validation_refuses_missing_provenance(tmp_path: Path) -> None:
+    from src.inference.artifacts import validate_scored_artifact_set, write_inference_artifacts
+
+    paths = write_inference_artifacts(
+        output_dir=tmp_path,
+        rows=[_raw_row("row-1", 0)],
+        decode_results={"row-1": _decode_result("row-1")},
+        image_plan_rows=[{"row_id": "row-1"}],
+        metadata=_metadata(),
+    )
+    paths.provenance_json.unlink()
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        validate_scored_artifact_set(tmp_path)
+
+    assert exc_info.value.code == "artifacts.missing_provenance"
