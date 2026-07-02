@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import torch
@@ -25,6 +26,7 @@ from src.qwen.special_token_embeddings import (
     load_default_special_token_embedding_source_gate_evidence,
     load_special_token_embedding_deltas,
     save_special_token_embedding_deltas,
+    validate_inference_embedding_delta_identity,
 )
 from src.qwen.tokens import (
     DEFAULT_COORDINATE_TOKENS,
@@ -401,6 +403,103 @@ def test_special_token_embedding_load_rejects_full_embedding_payload(
     assert exc_info.value.code == "special_token_embeddings.unexpected_tensor_keys"
 
 
+def test_inference_embedding_delta_identity_accepts_matching_metadata(
+    tmp_path: Path,
+) -> None:
+    metadata_path = _write_inference_delta_metadata(tmp_path)
+
+    receipt = validate_inference_embedding_delta_identity(
+        config=_delta_config(tmp_path),
+        qwen=_qwen_identity_context(),
+    )
+
+    assert receipt["status"] == "validated"
+    assert receipt["metadata_path"] == str(metadata_path)
+    assert receipt["base_model_path"] == "/models/qwen-base"
+    assert receipt["metadata"]["base_config_sha256"] == "base-config-sha"
+    assert receipt["metadata"]["tokenizer_sha256"] == "tokenizer-sha"
+
+
+def test_inference_embedding_delta_identity_rejects_token_id_mismatch(
+    tmp_path: Path,
+) -> None:
+    metadata = _inference_delta_metadata()
+    metadata["token_ids"] = [*metadata["token_ids"]]
+    metadata["token_ids"][-1] += 1
+    _write_inference_delta_metadata(tmp_path, metadata=metadata)
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        validate_inference_embedding_delta_identity(
+            config=_delta_config(tmp_path),
+            qwen=_qwen_identity_context(),
+        )
+
+    assert exc_info.value.code == "special_token_embeddings.identity_mismatch"
+    assert exc_info.value.context["field"] == "token_ids"
+
+
+@pytest.mark.parametrize("field", ["base_config_sha256", "tokenizer_sha256"])
+def test_inference_embedding_delta_identity_requires_sha_metadata(
+    tmp_path: Path,
+    field: str,
+) -> None:
+    metadata = _inference_delta_metadata()
+    del metadata[field]
+    _write_inference_delta_metadata(tmp_path, metadata=metadata)
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        validate_inference_embedding_delta_identity(
+            config=_delta_config(tmp_path),
+            qwen=_qwen_identity_context(),
+        )
+
+    assert exc_info.value.code == "special_token_embeddings.inference_identity_missing"
+    assert field in exc_info.value.context["missing_fields"]
+
+
+@pytest.mark.parametrize(
+    ("runtime_patch", "field"),
+    [
+        ({"base_config_sha256": "other-base-config-sha"}, "base_config_sha256"),
+        ({"tokenizer_sha256": "other-tokenizer-sha"}, "tokenizer_sha256"),
+    ],
+)
+def test_inference_embedding_delta_identity_rejects_wrong_runtime_sha(
+    tmp_path: Path,
+    runtime_patch: dict[str, str],
+    field: str,
+) -> None:
+    _write_inference_delta_metadata(tmp_path)
+    runtime = _qwen_identity_context(**runtime_patch)
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        validate_inference_embedding_delta_identity(
+            config=_delta_config(tmp_path),
+            qwen=runtime,
+        )
+
+    assert exc_info.value.code == "special_token_embeddings.identity_mismatch"
+    assert exc_info.value.context["field"] == field
+
+
+@pytest.mark.parametrize("field", ["base_config_sha256", "tokenizer_sha256"])
+def test_inference_embedding_delta_identity_requires_runtime_sha(
+    tmp_path: Path,
+    field: str,
+) -> None:
+    _write_inference_delta_metadata(tmp_path)
+    runtime = _qwen_identity_context(**{field: None})
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        validate_inference_embedding_delta_identity(
+            config=_delta_config(tmp_path),
+            qwen=runtime,
+        )
+
+    assert exc_info.value.code == "special_token_embeddings.runtime_identity_missing"
+    assert exc_info.value.context["field"] == field
+
+
 class TinyTiedQwenModel(nn.Module):
     def __init__(self, *, vocab_size: int = 8, hidden_size: int = 4) -> None:
         super().__init__()
@@ -458,3 +557,57 @@ def _token_identity() -> QwenTokenIdentity:
         im_end_newline_token_ids=(151645, 198),
         tokenizer_vocab_size=152670,
     )
+
+
+def _inference_delta_metadata() -> dict[str, object]:
+    identity = _token_identity()
+    selection = build_default_special_token_selection(
+        SpecialTokenEmbeddingsConfig(
+            groups=SpecialTokenEmbeddingGroupsConfig(
+                coordinate_tokens="default_coord_0_999",
+                wrapper_tokens="default_object_box_wrappers",
+            )
+        ),
+        identity,
+    )
+    return {
+        "semantics": "additive_delta",
+        "tensor_key": DEFAULT_EMBED_DELTA_TENSOR_KEY,
+        "tensor_shape": [len(selection), 4],
+        "tensor_dtype": "torch.float32",
+        "token_strings": list(selection.token_strings),
+        "token_ids": list(selection.token_ids),
+        "base_model_path": "/models/qwen-base",
+        "base_config_sha256": "base-config-sha",
+        "tokenizer_sha256": "tokenizer-sha",
+        "tie_word_embeddings": True,
+    }
+
+
+def _write_inference_delta_metadata(
+    path: Path,
+    *,
+    metadata: dict[str, object] | None = None,
+) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    metadata_path = path / SPECIAL_TOKEN_EMBEDDINGS_JSON
+    metadata_path.write_text(
+        json.dumps(metadata or _inference_delta_metadata(), sort_keys=True),
+        encoding="utf-8",
+    )
+    return metadata_path
+
+
+def _delta_config(path: Path) -> SimpleNamespace:
+    return SimpleNamespace(embedding_delta=SimpleNamespace(path=str(path)))
+
+
+def _qwen_identity_context(**overrides: object) -> SimpleNamespace:
+    payload = {
+        "base_model_path": "/models/qwen-base",
+        "base_config_sha256": "base-config-sha",
+        "tokenizer_sha256": "tokenizer-sha",
+        "token_identity": _token_identity(),
+    }
+    payload.update(overrides)
+    return SimpleNamespace(**payload)

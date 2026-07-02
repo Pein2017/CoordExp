@@ -15,6 +15,7 @@ from torch import nn
 
 from src.common.errors import RuntimeContractError
 from src.config.models import SpecialTokenEmbeddingsConfig
+from src.config.models import SpecialTokenEmbeddingGroupsConfig
 from src.qwen.tokens import (
     DEFAULT_COORDINATE_TOKENS,
     DEFAULT_WRAPPER_TOKENS,
@@ -759,9 +760,27 @@ def _validate_inference_delta_metadata(metadata: Mapping[str, Any], *, qwen: Any
                 "actual": metadata.get("base_model_path"),
             },
         )
+    _validate_runtime_sha_field(
+        metadata,
+        qwen=qwen,
+        field="base_config_sha256",
+    )
+    _validate_runtime_sha_field(
+        metadata,
+        qwen=qwen,
+        field="tokenizer_sha256",
+    )
     token_identity = _qwen_token_identity(qwen)
     if token_identity is not None:
-        expected_selection = build_default_special_token_selection(token_identity)
+        expected_selection = build_default_special_token_selection(
+            SpecialTokenEmbeddingsConfig(
+                groups=SpecialTokenEmbeddingGroupsConfig(
+                    coordinate_tokens="default_coord_0_999",
+                    wrapper_tokens="default_object_box_wrappers",
+                )
+            ),
+            token_identity,
+        )
         if metadata.get("token_strings") != list(expected_selection.token_strings):
             raise RuntimeContractError(
                 "special-token embedding metadata token strings do not match runtime tokenizer",
@@ -774,6 +793,40 @@ def _validate_inference_delta_metadata(metadata: Mapping[str, Any], *, qwen: Any
                 code="special_token_embeddings.identity_mismatch",
                 context={"field": "token_ids"},
             )
+
+
+def _validate_runtime_sha_field(
+    metadata: Mapping[str, Any],
+    *,
+    qwen: Any,
+    field: str,
+) -> None:
+    expected = _qwen_identity_field(qwen, field)
+    if expected is None:
+        raise RuntimeContractError(
+            "runtime Qwen identity is missing required SHA evidence for embedding delta",
+            code="special_token_embeddings.runtime_identity_missing",
+            context={"field": field},
+        )
+    actual = metadata.get(field)
+    if actual != expected:
+        raise RuntimeContractError(
+            "special-token embedding metadata SHA identity does not match runtime Qwen identity",
+            code="special_token_embeddings.identity_mismatch",
+            context={
+                "field": field,
+                "expected": expected,
+                "actual": actual,
+            },
+        )
+
+
+def _qwen_identity_field(qwen: Any, field: str) -> str | None:
+    if isinstance(qwen, Mapping):
+        value = qwen.get(field)
+    else:
+        value = getattr(qwen, field, None)
+    return None if value is None else str(value)
 
 
 def _qwen_base_model_path(qwen: Any) -> str | None:
