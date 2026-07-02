@@ -82,11 +82,15 @@
   - 2026-07-02 completed: adapter smoke passed at `outputs/coordexp_swift/infer/wave7_real_smokes/wave7-real-adapter-smoke-20260702T192643Z` using explicit adapter path and smoke-only repaired delta payload `outputs/coordexp_swift/infer/wave7_real_smokes/repaired_special_token_embeddings_step2`; `run_manifest.json` records `adapter_identity.status=validated`, `adapter_identity.requires_grad={"default": false}`, `model_identity.embedding_delta.status=loaded`, and `model_identity.embedding_delta.load.loaded=true`; `summary.json` records `scored_artifact_materialized=true` and `benchmark_eligible=false`.
 - [x] 8.4 Run OpenSpec validation, targeted pytest suites, markdown/config hygiene checks, residue checks for `src/infer/` package collision, unapproved `src.infer` legacy test imports, stale `resolved_config.json`, legacy `configs/infer/` authority, constant-score fallback, and old `object_ordering: sorted` assumptions.
 - [x] 8.5 Prepare a benchmark launch packet naming production config, dataset, model, adapter, artifact root, evaluator command, expected evidence scope, and rollback path.
-- [ ] 8.6 Stop for explicit user approval before launching implementation-derived production benchmark or claiming final inference correctness.
+- [x] 8.6 Stop for explicit user approval before launching implementation-derived production benchmark or claiming final inference correctness.
+  - 2026-07-02 completed as an approval stop: no full benchmark was launched and no final inference-correctness claim is made. Full benchmark launch remains blocked until the user explicitly approves it after reviewing the benchmark readiness packet.
 
 ## 9. Review Convergence
 
-- [ ] 9.1 Dispatch isolated review lanes after implementation-plan drafting: contract/spec auditor, upstream HF/Qwen/PEFT tracer, eval/artifact auditor, architecture/module-boundary auditor, and smoke/benchmark auditor.
-- [ ] 9.2 Triage findings as P0, P1, P2, wrong, duplicate, or non-blocking.
-- [ ] 9.3 Patch all accepted P0/P1 findings in OpenSpec and superpower docs before requesting user approval.
-- [ ] 9.4 Leave implementation unchecked and blocked until the user explicitly approves kickoff.
+- [x] 9.1 Dispatch isolated review lanes after implementation-plan drafting and during implementation waves: contract/spec auditors, upstream HF/Qwen/PEFT checks, eval/artifact checks, architecture/module-boundary checks, smoke/benchmark checks, and final Wave 7 contract/quality re-reviews.
+- [x] 9.2 Triage findings as P0, P1, P2, wrong, duplicate, or non-blocking.
+  - Accepted P1 examples included Transformers `PeftAdapterMixin.load_adapter -> None` handling, strict special-token embedding SHA identity, inference adapter `requires_grad` validation/freezing, and benchmark artifact-root path resolution.
+- [x] 9.3 Patch all accepted P0/P1 findings in OpenSpec, superpower docs, configs, tests, and code before requesting benchmark approval.
+  - 2026-07-02 final Wave 7 re-review approved amended commit `8aaebb02`; no unresolved P0/P1 findings remain for the implementation/smoke gate.
+- [x] 9.4 Record implementation kickoff approval and preserve the production-benchmark approval boundary.
+  - User approved implementation kickoff before source work began. The implementation/smoke gate is now complete, but production benchmark launch remains separately blocked by the approval stop in 8.6.
