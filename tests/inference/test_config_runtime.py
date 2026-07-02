@@ -290,11 +290,15 @@ def test_runtime_assembly_uses_default_owner_wired_adapter_and_delta_paths(
     )
     monkeypatch.setattr(
         runtime_module,
-        "validate_inference_embedding_delta_identity",
+        "load_inference_embedding_delta",
         lambda *, config, qwen: {
-            "status": "validated",
-            "delta_path": config.embedding_delta.path,
-            "base_model_path": qwen["base_model_path"],
+            "status": "loaded",
+            "identity": {
+                "status": "validated",
+                "delta_path": config.embedding_delta.path,
+                "base_model_path": qwen["base_model_path"],
+            },
+            "load": {"loaded": True},
         },
     )
 
@@ -305,7 +309,7 @@ def test_runtime_assembly_uses_default_owner_wired_adapter_and_delta_paths(
     assert runtime.model_identity["adapter"]["adapter_path"].endswith(
         "adapter/checkpoint-final"
     )
-    assert runtime.model_identity["embedding_delta"]["delta_path"].endswith(
+    assert runtime.model_identity["embedding_delta"]["identity"]["delta_path"].endswith(
         "delta/special-token-delta.safetensors"
     )
 
@@ -393,7 +397,7 @@ def test_base_only_runtime_loads_qwen_model_for_hf_generation(
     assert runtime.model_identity["family"] == "base-only"
 
 
-def test_embedding_delta_runtime_uses_real_validator_with_qwen_identity(
+def test_embedding_delta_runtime_loads_and_installs_delta_with_qwen_identity(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -401,33 +405,51 @@ def test_embedding_delta_runtime_uses_real_validator_with_qwen_identity(
     from src.inference import runtime as runtime_module
 
     delta_dir = tmp_path / "delta"
-    _write_delta_metadata(delta_dir)
     config_path = _write_config(
         tmp_path,
         embedding_delta={"path": str(delta_dir)},
         debug={"smoke": True, "dry_run": True},
     )
     resolved = load_infer_config(config_path)
+    calls: list[tuple[str, str]] = []
 
     monkeypatch.setattr(
         runtime_module,
         "load_qwen_components_from_options",
         lambda options: SimpleNamespace(
             base_model_path=resolved.config.model.base_model,
-            model=None,
+            model=object(),
             token_identity=_token_identity(),
             base_config_sha256="base-config-sha",
             tokenizer_sha256="tokenizer-sha",
         ),
     )
+    monkeypatch.setattr(
+        runtime_module,
+        "load_inference_embedding_delta",
+        lambda *, config, qwen: calls.append((config.embedding_delta.path, str(qwen.model)))
+        or {
+            "status": "loaded",
+            "identity": {
+                "status": "validated",
+                "metadata": {
+                    "base_config_sha256": qwen.base_config_sha256,
+                    "tokenizer_sha256": qwen.tokenizer_sha256,
+                },
+                "metadata_path": str(delta_dir / "special_token_embeddings.json"),
+            },
+            "load": {"loaded": True},
+        },
+    )
 
     runtime = runtime_module.assemble_runtime(resolved.config)
 
+    assert calls == [(str(delta_dir), str(runtime.qwen.model))]
     assert runtime.embedding_delta_receipt is not None
-    assert runtime.embedding_delta_receipt["status"] == "validated"
-    assert runtime.embedding_delta_receipt["metadata"]["base_config_sha256"] == "base-config-sha"
+    assert runtime.embedding_delta_receipt["status"] == "loaded"
+    assert runtime.embedding_delta_receipt["identity"]["metadata"]["base_config_sha256"] == "base-config-sha"
     assert runtime.model_identity["family"] == "base-plus-delta"
-    assert runtime.model_identity["embedding_delta"]["metadata_path"].endswith(
+    assert runtime.model_identity["embedding_delta"]["identity"]["metadata_path"].endswith(
         "special_token_embeddings.json"
     )
 

@@ -129,6 +129,32 @@ def test_pipeline_orchestrates_batched_decode_and_artifact_writing(tmp_path: Pat
     assert (run_dir / "configs" / "resolved.json").is_file()
 
 
+def test_pipeline_manifest_records_embedding_delta_load_receipt(tmp_path: Path) -> None:
+    from src.inference import pipeline
+
+    config_path = _write_config(tmp_path, batch_size=1, row_count=1)
+    runtime = _runtime()
+    runtime.model_identity["embedding_delta"] = {
+        "status": "loaded",
+        "identity": {"status": "validated", "metadata_path": "delta/special_token_embeddings.json"},
+        "load": {"loaded": True, "tensor_shape": [1004, 2048]},
+    }
+
+    pipeline.run(
+        config_path=config_path,
+        runtime_factory=lambda config: runtime,
+        backend_factory=lambda runtime, config: FakeBackend([]),
+    )
+
+    manifest = json.loads(
+        (tmp_path / "outputs" / "wave6-pipeline" / "run_manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert manifest["model_identity"]["embedding_delta"]["status"] == "loaded"
+    assert manifest["model_identity"]["embedding_delta"]["load"]["loaded"] is True
+
+
 def test_pipeline_terminal_artifact_failure_writes_status_without_row_artifacts(tmp_path: Path) -> None:
     from src.inference import pipeline
 

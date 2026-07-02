@@ -23,6 +23,7 @@ from src.qwen.special_token_embeddings import (
     SpecialTokenSelection,
     build_default_special_token_selection,
     install_special_token_embedding_deltas,
+    load_inference_embedding_delta,
     load_default_special_token_embedding_source_gate_evidence,
     load_special_token_embedding_deltas,
     save_special_token_embedding_deltas,
@@ -418,6 +419,59 @@ def test_inference_embedding_delta_identity_accepts_matching_metadata(
     assert receipt["base_model_path"] == "/models/qwen-base"
     assert receipt["metadata"]["base_config_sha256"] == "base-config-sha"
     assert receipt["metadata"]["tokenizer_sha256"] == "tokenizer-sha"
+
+
+def test_inference_embedding_delta_load_installs_wrappers_and_payload(
+    tmp_path: Path,
+) -> None:
+    qwen = _qwen_identity_context(model=TinyTiedQwenModel(vocab_size=152670, hidden_size=4))
+    selection = build_default_special_token_selection(
+        SpecialTokenEmbeddingsConfig(
+            groups=SpecialTokenEmbeddingGroupsConfig(
+                coordinate_tokens="default_coord_0_999",
+                wrapper_tokens="default_object_box_wrappers",
+            )
+        ),
+        qwen.token_identity,
+    )
+    payload_result = install_special_token_embedding_deltas(
+        TinyTiedQwenModel(vocab_size=152670, hidden_size=4),
+        selection,
+        source_gate=_source_gate(selected_count=len(selection)),
+    )
+    with torch.no_grad():
+        payload_result.shared_embed_delta.fill_(0.125)
+    save_special_token_embedding_deltas(
+        payload_result,
+        tmp_path,
+        base_model_path=Path("/models/qwen-base"),
+        base_config_sha256="base-config-sha",
+        tokenizer_sha256="tokenizer-sha",
+    )
+
+    receipt = load_inference_embedding_delta(config=_delta_config(tmp_path), qwen=qwen)
+
+    assert receipt["status"] == "loaded"
+    assert receipt["identity"]["status"] == "validated"
+    assert receipt["load"]["loaded"] is True
+    assert qwen.model.get_input_embeddings().selection.token_ids == selection.token_ids
+    assert qwen.model.get_output_embeddings().selection.token_strings == selection.token_strings
+    assert torch.allclose(
+        qwen.model.get_input_embeddings().shared_embed_delta,
+        torch.full((len(selection), 4), 0.125),
+    )
+
+
+def test_inference_embedding_delta_load_requires_loaded_model(tmp_path: Path) -> None:
+    _write_inference_delta_metadata(tmp_path)
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        load_inference_embedding_delta(
+            config=_delta_config(tmp_path),
+            qwen=_qwen_identity_context(model=None),
+        )
+
+    assert exc_info.value.code == "special_token_embeddings.model_not_loaded"
 
 
 def test_inference_embedding_delta_identity_rejects_token_id_mismatch(

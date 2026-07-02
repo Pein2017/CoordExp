@@ -260,6 +260,16 @@ class CheckpointWriter:
     ) -> dict[str, Any]:
         if special_token_result is None:
             return {"enabled": False}
+        _require_special_token_identity_sha(
+            base_config_sha256,
+            field="base_config_sha256",
+            checkpoint_dir=checkpoint_dir,
+        )
+        _require_special_token_identity_sha(
+            tokenizer_sha256,
+            field="tokenizer_sha256",
+            checkpoint_dir=checkpoint_dir,
+        )
         output_dir = checkpoint_dir / "special_token_embeddings"
         if reuse_existing:
             return _special_token_payload_from_existing(
@@ -280,6 +290,23 @@ class CheckpointWriter:
         artifact["enabled"] = True
         artifact["install_receipt"] = special_token_result.receipt.to_artifact_dict()
         return artifact
+
+
+def _require_special_token_identity_sha(
+    value: str | None,
+    *,
+    field: str,
+    checkpoint_dir: Path,
+) -> None:
+    if value is None or not str(value).strip():
+        raise ArtifactContractError(
+            "checkpoint special-token embedding payload requires runtime identity SHA evidence",
+            code="checkpoint.special_token_identity_missing",
+            context={
+                "missing_field": field,
+                "checkpoint_dir": str(checkpoint_dir),
+            },
+        )
 
 
 def _artifact_dict(value: Any) -> dict[str, Any]:

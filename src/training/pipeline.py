@@ -516,6 +516,8 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
                 resolved_config_fingerprint=resolved_config.fingerprint,
                 schedule=schedule,
                 base_model_path=components.base_model_path,
+                base_config_sha256=components.base_config_sha256,
+                tokenizer_sha256=components.tokenizer_sha256,
                 best_eval_metrics=best_eval_metrics,
             ),
             "eval.forward": _eval_forward_handler(
@@ -1071,6 +1073,8 @@ def _checkpoint_handler(
     resolved_config_fingerprint: str,
     schedule: ResolvedStepSchedule,
     base_model_path: Path,
+    base_config_sha256: str,
+    tokenizer_sha256: str,
     best_eval_metrics: BestEvalMetricStore | None = None,
 ) -> Any:
     def handle(event: ScheduledTrainerEvent) -> None:
@@ -1112,6 +1116,8 @@ def _checkpoint_handler(
                 else best_eval_metrics.best_for_step(event.scheduled_event.planned_step_id)
             ),
             base_model_path=base_model_path,
+            base_config_sha256=base_config_sha256,
+            tokenizer_sha256=tokenizer_sha256,
         )
 
     return handle

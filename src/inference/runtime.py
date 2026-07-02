@@ -10,7 +10,7 @@ from src.config.inference import InferConfig
 from src.adapters.dora import load_inference_dora_adapter
 from src.qwen.runtime_loading import QwenLoadOptions, load_qwen_components_from_options
 from src.qwen.special_token_embeddings import (
-    validate_inference_embedding_delta_identity,
+    load_inference_embedding_delta,
 )
 
 
@@ -31,7 +31,7 @@ def assemble_runtime(
         adapter_receipt = load_inference_dora_adapter(config=config, qwen=qwen)
     embedding_delta_receipt = None
     if config.embedding_delta is not None:
-        embedding_delta_receipt = validate_inference_embedding_delta_identity(
+        embedding_delta_receipt = load_inference_embedding_delta(
             config=config,
             qwen=qwen,
         )

@@ -51,6 +51,9 @@ def test_checkpoint_writer_saves_payloads_metadata_and_final_alias(
         optimizer_update_status="skipped_non_finite",
         trigger_reasons=("checkpoint.final",),
         is_final=True,
+        base_model_path=Path("/models/qwen-base"),
+        base_config_sha256="base-config-sha",
+        tokenizer_sha256="tokenizer-sha",
     )
 
     checkpoint_dir = tmp_path / "run-a" / "checkpoints" / "step-5"
@@ -89,6 +92,23 @@ def test_checkpoint_writer_saves_payloads_metadata_and_final_alias(
     assert metadata["special_token_embeddings"]["metadata"]["semantics"] == (
         SPECIAL_TOKEN_EMBEDDING_SEMANTICS
     )
+    assert (
+        metadata["special_token_embeddings"]["metadata"]["base_config_sha256"]
+        == "base-config-sha"
+    )
+    assert (
+        metadata["special_token_embeddings"]["metadata"]["tokenizer_sha256"]
+        == "tokenizer-sha"
+    )
+    payload_metadata = json.loads(
+        (
+            checkpoint_dir
+            / "special_token_embeddings"
+            / SPECIAL_TOKEN_EMBEDDINGS_JSON
+        ).read_text(encoding="utf-8")
+    )
+    assert payload_metadata["base_config_sha256"] == "base-config-sha"
+    assert payload_metadata["tokenizer_sha256"] == "tokenizer-sha"
     assert metadata["trainable_surface"]["trainable_towers"] == [
         "adapter.language",
         "token_embeddings",
@@ -110,6 +130,46 @@ def test_checkpoint_writer_saves_payloads_metadata_and_final_alias(
     )
 
 
+@pytest.mark.parametrize(
+    ("base_config_sha256", "tokenizer_sha256", "missing_field"),
+    [
+        (None, "tokenizer-sha", "base_config_sha256"),
+        ("", "tokenizer-sha", "base_config_sha256"),
+        ("base-config-sha", None, "tokenizer_sha256"),
+        ("base-config-sha", "", "tokenizer_sha256"),
+    ],
+)
+def test_checkpoint_writer_requires_special_token_sha_evidence(
+    tmp_path: Path,
+    base_config_sha256: str | None,
+    tokenizer_sha256: str | None,
+    missing_field: str,
+) -> None:
+    writer = CheckpointWriter(_manager(tmp_path))
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        writer.write_checkpoint(
+            planned_step_id=5,
+            model=FakePeftModel(),
+            adapter_receipt=_adapter_receipt(),
+            special_token_result=_special_token_result(),
+            trainable_surface=_trainable_surface(),
+            processor_identity={"name": "qwen3-vl-test-processor"},
+            resolved_config_fingerprint="config-fingerprint",
+            schedule_identity={"resolved_max_steps": 5, "fingerprint": "schedule"},
+            metric_status={"finite_status": "finite", "warning_status": "none"},
+            optimizer_update_status="applied",
+            trigger_reasons=("checkpoint.final",),
+            is_final=True,
+            base_model_path=Path("/models/qwen-base"),
+            base_config_sha256=base_config_sha256,
+            tokenizer_sha256=tokenizer_sha256,
+        )
+
+    assert exc_info.value.code == "checkpoint.special_token_identity_missing"
+    assert exc_info.value.context["missing_field"] == missing_field
+
+
 def test_checkpoint_reload_plan_verifies_adapter_and_special_token_payloads(
     tmp_path: Path,
 ) -> None:
@@ -129,6 +189,8 @@ def test_checkpoint_reload_plan_verifies_adapter_and_special_token_payloads(
         trigger_reasons=("checkpoint.final",),
         is_final=True,
         base_model_path=Path("model_cache/qwen-base"),
+        base_config_sha256="base-config-sha",
+        tokenizer_sha256="tokenizer-sha",
     )
 
     plan = build_checkpoint_reload_plan(result.final_alias_path)

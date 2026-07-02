@@ -276,6 +276,59 @@ def validate_inference_embedding_delta_identity(
     return receipt.to_artifact_dict()
 
 
+def load_inference_embedding_delta(
+    *,
+    config: Any,
+    qwen: Any,
+) -> dict[str, Any]:
+    identity_receipt = validate_inference_embedding_delta_identity(
+        config=config,
+        qwen=qwen,
+    )
+    model = _qwen_model(qwen)
+    if model is None:
+        raise RuntimeContractError(
+            "inference embedding-delta loading requires a loaded Qwen model",
+            code="special_token_embeddings.model_not_loaded",
+        )
+    token_identity = _qwen_token_identity(qwen)
+    if token_identity is None:
+        raise RuntimeContractError(
+            "inference embedding-delta loading requires Qwen token identity",
+            code="special_token_embeddings.runtime_token_identity_missing",
+        )
+    selection = build_default_special_token_selection(
+        SpecialTokenEmbeddingsConfig(
+            groups=SpecialTokenEmbeddingGroupsConfig(
+                coordinate_tokens="default_coord_0_999",
+                wrapper_tokens="default_object_box_wrappers",
+            )
+        ),
+        token_identity,
+    )
+    install_result = install_special_token_embedding_deltas(
+        model,
+        selection,
+        source_gate=load_default_special_token_embedding_source_gate_evidence(
+            Path.cwd()
+        ),
+    )
+    payload_dir = _inference_delta_payload_dir(Path(config.embedding_delta.path))
+    load_receipt = load_special_token_embedding_deltas(
+        install_result,
+        payload_dir,
+        expected_base_model_path=_qwen_base_model_path(qwen),
+        expected_base_config_sha256=_qwen_identity_field(qwen, "base_config_sha256"),
+        expected_tokenizer_sha256=_qwen_identity_field(qwen, "tokenizer_sha256"),
+    )
+    return {
+        "status": "loaded",
+        "identity": identity_receipt,
+        "install": install_result.receipt.to_artifact_dict(),
+        "load": load_receipt.to_artifact_dict(),
+    }
+
+
 class SelectedDeltaInputEmbedding(nn.Module):
     def __init__(
         self,
@@ -721,6 +774,14 @@ def _inference_delta_metadata_path(delta_path: Path) -> Path:
     return delta_path / SPECIAL_TOKEN_EMBEDDINGS_JSON
 
 
+def _inference_delta_payload_dir(delta_path: Path) -> Path:
+    if delta_path.is_dir():
+        return delta_path
+    if delta_path.name == SPECIAL_TOKEN_EMBEDDINGS_SAFE_TENSORS:
+        return delta_path.parent
+    return delta_path
+
+
 def _validate_inference_delta_metadata(metadata: Mapping[str, Any], *, qwen: Any) -> None:
     required = (
         "semantics",
@@ -843,6 +904,14 @@ def _qwen_token_identity(qwen: Any) -> QwenTokenIdentity | None:
     else:
         value = getattr(qwen, "token_identity", None)
     return value if isinstance(value, QwenTokenIdentity) else None
+
+
+def _qwen_model(qwen: Any) -> nn.Module | None:
+    if isinstance(qwen, Mapping):
+        value = qwen.get("model")
+    else:
+        value = getattr(qwen, "model", None)
+    return value if isinstance(value, nn.Module) else None
 
 
 def _validate_metadata(

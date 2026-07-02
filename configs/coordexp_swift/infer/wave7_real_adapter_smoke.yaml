@@ -6,4 +6,4 @@ adapter:
   path: ../../../outputs/smoke/production_mimic/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_accelerate8_ebs64_2step_warmup0p1_eval_patchproof-smoke-a8-r16a32-ebs64-receipt-20260702T164342Z/checkpoints/step-2/adapter
   name: default
 embedding_delta:
-  path: ../../../outputs/smoke/production_mimic/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_accelerate8_ebs64_2step_warmup0p1_eval_patchproof-smoke-a8-r16a32-ebs64-receipt-20260702T164342Z/checkpoints/step-2/special_token_embeddings
+  path: ../../../outputs/coordexp_swift/infer/wave7_real_smokes/repaired_special_token_embeddings_step2

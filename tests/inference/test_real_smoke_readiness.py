@@ -74,14 +74,16 @@ def test_wave7_benchmark_leaf_is_not_a_smoke_config() -> None:
 def test_benchmark_packet_contains_required_handles_and_approval_stop() -> None:
     text = BENCHMARK_PACKET.read_text(encoding="utf-8")
     required = {
-        "STATUS: BLOCKED_ON_ADAPTER_SMOKE",
+        "STATUS: BLOCKED_PENDING_FULL_BENCHMARK_APPROVAL",
         f"Production config: `{BENCHMARK_CONFIG}`",
         "Dataset: `/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl`",
         "Base model: `/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent`",
         "Adapter checkpoint:",
+        "Latest adapter smoke root:",
+        "model_identity.embedding_delta.status=loaded",
         "Artifact root: `outputs/coordexp_swift/infer/benchmark`",
         "Evaluator command:",
-        "Launch is blocked on adapter smoke completion and then explicit user approval.",
+        "full benchmark launch is still blocked pending explicit user approval.",
         "Tiny and sample-limited smokes are smoke/partial evidence only, not benchmark evidence.",
         "Base smokes did not produce non-empty selected-token scoring evidence.",
         "Base smokes did not naturally observe `<|im_end|>` stop or post-stop padding.",
