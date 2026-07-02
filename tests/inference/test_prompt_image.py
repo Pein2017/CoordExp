@@ -117,6 +117,40 @@ def test_inference_prompt_token_ids_match_backend_prompt_ids(tmp_path: Path) -> 
     assert parity["prompt_token_count"] == len(record.prompt_token_ids)
 
 
+def test_prompt_token_ids_accept_real_qwen_single_batch_shape(tmp_path: Path) -> None:
+    from src.inference.prompt import build_prompt_record
+
+    class NestedTokenProcessor(FakeProcessor):
+        def apply_chat_template(
+            self,
+            messages: list[dict[str, Any]],
+            *,
+            tokenize: bool,
+            add_generation_prompt: bool,
+            **kwargs: Any,
+        ) -> str | list[list[int]]:
+            rendered = super().apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=add_generation_prompt,
+                **kwargs,
+            )
+            assert isinstance(rendered, str)
+            if tokenize:
+                return [[ord(char) for char in rendered]]
+            return rendered
+
+    record = build_prompt_record(
+        _raw_example(tmp_path, width=96, height=64),
+        _template_config(),
+        processor=NestedTokenProcessor(),
+        row_index=0,
+    )
+
+    assert record.prompt_token_ids
+    assert all(isinstance(token_id, int) for token_id in record.prompt_token_ids)
+
+
 def test_prompt_record_preserves_template_identity_and_training_fingerprint(
     tmp_path: Path,
 ) -> None:

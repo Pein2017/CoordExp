@@ -1,0 +1,32 @@
+extends: base.yaml
+run:
+  name: qwen3-vl-2b-desc-first-geo-sorted-pure-ce-dora-r16a32-benchmark
+  artifact_root: outputs/coordexp_swift/infer/benchmark
+  collision_policy: timestamp
+model:
+  base_model: /data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent
+  attn_implementation: sdpa
+data:
+  input_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl
+template:
+  object_field_order: desc_first
+  object_ordering: geo_sorted
+  assistant_format: object_box_closed
+  prompt:
+    user: Describe objects.
+generation:
+  batch_size: 2
+  max_new_tokens: 512
+  temperature: 0.0
+  top_p: 1.0
+scoring:
+  enabled: true
+debug:
+  smoke: false
+  dry_run: false
+adapter:
+  type: dora
+  path: ../../../outputs/smoke/production_mimic/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_accelerate8_ebs64_2step_warmup0p1_eval_patchproof-smoke-a8-r16a32-ebs64-receipt-20260702T164342Z/checkpoints/step-2/adapter
+  name: default
+embedding_delta:
+  path: ../../../outputs/smoke/production_mimic/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_accelerate8_ebs64_2step_warmup0p1_eval_patchproof-smoke-a8-r16a32-ebs64-receipt-20260702T164342Z/checkpoints/step-2/special_token_embeddings

@@ -354,6 +354,45 @@ def test_adapter_runtime_loads_qwen_model_and_uses_adapter_owner(
     assert runtime.model_identity["family"] == "base-plus-adapter"
 
 
+def test_base_only_runtime_loads_qwen_model_for_hf_generation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.config.inference import load_infer_config
+    from src.inference import runtime as runtime_module
+
+    config_path = _write_config(
+        tmp_path,
+        adapter=None,
+        embedding_delta=None,
+        debug={"smoke": True, "dry_run": False},
+    )
+    resolved = load_infer_config(config_path)
+    observed_load_model: list[bool] = []
+
+    def fake_load_qwen(options: Any) -> SimpleNamespace:
+        observed_load_model.append(options.load_model)
+        return SimpleNamespace(
+            base_model_path=options.base_model,
+            model=object() if options.load_model else None,
+            token_identity=None,
+            base_config_sha256="base-config-sha",
+            tokenizer_sha256="tokenizer-sha",
+        )
+
+    monkeypatch.setattr(
+        runtime_module,
+        "load_qwen_components_from_options",
+        fake_load_qwen,
+    )
+
+    runtime = runtime_module.assemble_runtime(resolved.config)
+
+    assert observed_load_model == [True]
+    assert runtime.qwen.model is not None
+    assert runtime.model_identity["family"] == "base-only"
+
+
 def test_embedding_delta_runtime_uses_real_validator_with_qwen_identity(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -15,11 +15,11 @@
 
 ## 2. Smoke Fixtures And Production Handles
 
-- [ ] 2.1 Pin a tiny real single-image inference fixture that uses the same offline JSONL example family as training and preserves image path, dimensions, GT objects, and prompt-relevant fields.
-- [ ] 2.2 Pin a two-row batched trace fixture with different prompt lengths for HF score-alignment testing.
-- [ ] 2.3 Pin or create an adapter-enabled smoke fixture using a `checkpoint-final` alias or explicit concrete checkpoint path plus any special-token embedding delta expected by the target checkpoint.
-- [ ] 2.4 Name the production benchmark config leaf, dataset path, base model path, adapter checkpoint path when used, artifact root, and mAP evaluator command before launching final benchmark inference.
-- [ ] 2.5 Record that sample-limited and tiny runs are smoke evidence only and not final benchmark evidence.
+- [x] 2.1 Pin a tiny real single-image inference fixture that uses the same offline JSONL example family as training and preserves image path, dimensions, GT objects, and prompt-relevant fields.
+- [x] 2.2 Pin a two-row batched trace fixture with different prompt lengths for HF score-alignment testing.
+- [x] 2.3 Pin or create an adapter-enabled smoke fixture using a `checkpoint-final` alias or explicit concrete checkpoint path plus any special-token embedding delta expected by the target checkpoint.
+- [x] 2.4 Name the production benchmark config leaf, dataset path, base model path, adapter checkpoint path when used, artifact root, and mAP evaluator command before launching final benchmark inference.
+- [x] 2.5 Record that sample-limited and tiny runs are smoke evidence only and not final benchmark evidence.
 
 ## 3. Config Runtime And Entry Surface
 
@@ -38,8 +38,9 @@
 - [x] 4.2 Add failing tests for HF scored generation arguments, missing score failure, missing required trace field failure, and special-token-preserving raw trace decode.
 - [x] 4.3 Add failing tests for batched prompt-width alignment with variable prompt lengths and post-stop padding exclusion.
 - [x] 4.4 Implement HF `generate_batch` with `return_dict_in_generate=True`, `output_scores=True`, deterministic greedy defaults, Qwen `<|im_end|>` stop policy, and normalized transition logprob gathering.
-- [ ] 4.5 Run a real tiny HF/Qwen trace probe that verifies generated ids, token text, logprobs, stop token, and parser-facing stripped view.
+- [x] 4.5 Run a real tiny HF/Qwen trace probe that verifies generated ids, token text, logprobs, stop token, and parser-facing stripped view.
   - 2026-07-02 Wave 3 implementation note: targeted fake-HF tests now cover one-row scored trace extraction, special-token preservation, post-stop pad exclusion, and two-row variable prompt-width alignment. The real Qwen3-VL image probe remains deferred to Wave 7 smoke because loading the full local 2B VL model is too expensive for this small backend-only wave; this does not weaken the backend-trace spec.
+  - 2026-07-02 Wave 7 evidence: `outputs/coordexp_swift/infer/wave7_real_smokes/wave7-real-base-single-smoke-20260702T182753Z/pred_token_trace.jsonl` records generated ids, token text, and finite logprobs over a real Qwen run. The tiny run reached length stop rather than `<|im_end|>`, so terminal stop stripping remains covered by targeted backend tests rather than this real output.
 
 ## 5. Prompt Image And Parsing
 
@@ -69,11 +70,11 @@
 
 ## 8. Real Smokes And Benchmark Readiness
 
-- [ ] 8.1 Run the tiny real HF/Qwen inference smoke and verify prompt parity, image plan, trace, parser, scoring, and artifacts.
-- [ ] 8.2 Run the two-row batched trace smoke and verify prompt-width alignment and stop/pad handling.
+- [x] 8.1 Run the tiny real HF/Qwen inference smoke and verify prompt parity, image plan, trace, parser, scoring, and artifacts.
+- [x] 8.2 Run the two-row batched trace smoke and verify prompt-width alignment and stop/pad handling.
 - [ ] 8.3 Run the adapter-enabled real smoke and verify checkpoint-final or explicit checkpoint resolution, PEFT identity/status checks, embedding-delta metadata checks, and scored artifact output.
-- [ ] 8.4 Run OpenSpec validation, targeted pytest suites, markdown/config hygiene checks, residue checks for `src/infer/` package collision, unapproved `src.infer` legacy test imports, stale `resolved_config.json`, legacy `configs/infer/` authority, constant-score fallback, and old `object_ordering: sorted` assumptions.
-- [ ] 8.5 Prepare a benchmark launch packet naming production config, dataset, model, adapter, artifact root, evaluator command, expected evidence scope, and rollback path.
+- [x] 8.4 Run OpenSpec validation, targeted pytest suites, markdown/config hygiene checks, residue checks for `src/infer/` package collision, unapproved `src.infer` legacy test imports, stale `resolved_config.json`, legacy `configs/infer/` authority, constant-score fallback, and old `object_ordering: sorted` assumptions.
+- [x] 8.5 Prepare a benchmark launch packet naming production config, dataset, model, adapter, artifact root, evaluator command, expected evidence scope, and rollback path.
 - [ ] 8.6 Stop for explicit user approval before launching implementation-derived production benchmark or claiming final inference correctness.
 
 ## 9. Review Convergence

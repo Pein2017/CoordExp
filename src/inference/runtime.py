@@ -56,7 +56,7 @@ def _load_qwen(config: InferConfig) -> Any:
             dtype=config.model.dtype,
             attn_implementation=config.model.attn_implementation,
             patch_embed_linearization=config.model.runtime_patches.patch_embed_linearization,
-            load_model=config.adapter is not None,
+            load_model=True,
         )
     )
 

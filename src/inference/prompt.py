@@ -167,6 +167,12 @@ def _tokenize_prompt(
 
 
 def _int_ids(value: Any, *, example_id: str) -> list[int]:
+    if (
+        isinstance(value, list)
+        and len(value) == 1
+        and isinstance(value[0], list)
+    ):
+        value = value[0]
     try:
         ids = [int(item) for item in value]
     except TypeError as exc:

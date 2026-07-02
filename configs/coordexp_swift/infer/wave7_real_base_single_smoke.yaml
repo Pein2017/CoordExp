@@ -1,0 +1,18 @@
+extends: base.yaml
+run:
+  name: wave7-real-base-single-smoke
+  artifact_root: ../../../outputs/coordexp_swift/infer/wave7_real_smokes
+  collision_policy: timestamp
+model:
+  base_model: /data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent
+  attn_implementation: sdpa
+data:
+  input_jsonl: ../../../tests/fixtures/smoke/qwen3_vl_single_image_pack/examples.single.jsonl
+generation:
+  batch_size: 1
+  max_new_tokens: 32
+  temperature: 0.0
+  top_p: 1.0
+debug:
+  smoke: true
+  dry_run: false
