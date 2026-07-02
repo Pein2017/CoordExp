@@ -14,6 +14,7 @@ from src.config.models import RuntimeBatchResolution
 from src.training.pipeline import build_repeating_micro_step_stream
 from src.training.pack_cache import (
     build_packing_cache_fingerprint,
+    load_all_micro_steps_from_cache,
     load_rank_micro_steps_from_cache,
     write_micro_step_cache,
 )
@@ -211,6 +212,22 @@ def test_micro_step_cache_wraps_tail_presentations_by_pack_count(tmp_path: Path)
     )
 
     assert [step.metadata["pack_id"] for step in rank1] == [1, 0, 2]
+
+
+def test_micro_step_cache_loads_complete_sequence_for_eval(tmp_path: Path) -> None:
+    micro_steps = tuple(_micro_step(index) for index in range(7))
+    cache_dir = tmp_path / "cache"
+    write_micro_step_cache(
+        cache_dir,
+        micro_steps,
+        fingerprint="abc123",
+        determinants={"purpose": "unit-test", "split": "eval.forward"},
+        chunk_size=3,
+    )
+
+    loaded = load_all_micro_steps_from_cache(cache_dir)
+
+    assert [step.metadata["pack_id"] for step in loaded] == list(range(7))
 
 
 def test_cached_rank_local_steps_must_not_be_sharded_again(tmp_path: Path) -> None:

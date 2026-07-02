@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 import hashlib
@@ -66,6 +66,7 @@ from src.training.pack_cache import (
     build_packing_cache_fingerprint,
     cache_dir_for_fingerprint,
     cache_is_complete,
+    load_all_micro_steps_from_cache,
     load_cache_manifest,
     load_rank_micro_steps_from_cache,
     manifest_path,
@@ -460,17 +461,29 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
         category="runtime",
     )
 
-    eval_micro_steps = (
-        train_micro_steps
-        if _explicit_eval_reuses_train_dataset(config)
-        else _build_micro_steps_for_dataset(
-            config,
-            components,
-            vocab_groups,
-            dataset=config.data.eval,
-            split="eval.forward",
-        )
+    eval_cache = _resolve_eval_pack_cache(
+        config,
+        components,
+        vocab_groups,
+        repo_root=repo_root,
     )
+    if eval_cache is None:
+        eval_micro_steps = train_micro_steps
+    else:
+        eval_micro_steps = load_all_micro_steps_from_cache(eval_cache["cache_dir"])
+        eval_micro_steps = _attach_image_processors_to_micro_steps(
+            eval_micro_steps,
+            image_processor=_qwen_image_processor(components),
+        )
+        manager.write_receipt(
+            "eval_pack_plan",
+            _pack_plan_artifact(
+                eval_micro_steps,
+                schedule=schedule,
+                cache=eval_cache,
+            ),
+            category="packing",
+        )
     eval_micro_steps = _apply_fa2_branch_proof_policy(eval_micro_steps, config)
     checkpoint_writer = CheckpointWriter(manager)
     best_eval_metrics = BestEvalMetricStore()
@@ -551,17 +564,70 @@ def _resolve_or_build_train_pack_cache(
     *,
     repo_root: Path,
 ) -> dict[str, Any]:
+    return _resolve_or_build_pack_cache(
+        config,
+        components,
+        vocab_groups,
+        repo_root=repo_root,
+        dataset=config.data.train,
+        split=TRAIN_SPLIT,
+        build_micro_steps=lambda: build_base_micro_steps(
+            config,
+            components,
+            vocab_groups,
+        ),
+    )
+
+
+def _resolve_eval_pack_cache(
+    config: Any,
+    components: Any,
+    vocab_groups: Any,
+    *,
+    repo_root: Path,
+) -> dict[str, Any] | None:
+    if config.data.eval is None:
+        return None
+    if _explicit_eval_reuses_train_dataset(config):
+        return None
+    return _resolve_or_build_pack_cache(
+        config,
+        components,
+        vocab_groups,
+        repo_root=repo_root,
+        dataset=config.data.eval,
+        split="eval.forward",
+        build_micro_steps=lambda: _build_micro_steps_for_dataset(
+            config,
+            components,
+            vocab_groups,
+            dataset=config.data.eval,
+            split="eval.forward",
+        ),
+    )
+
+
+def _resolve_or_build_pack_cache(
+    config: Any,
+    components: Any,
+    vocab_groups: Any,
+    *,
+    repo_root: Path,
+    dataset: Any,
+    split: str,
+    build_micro_steps: Callable[[], Sequence[SupervisedMicroStep]],
+) -> dict[str, Any]:
     fingerprint = build_packing_cache_fingerprint(
         config,
         components,
-        dataset=config.data.train,
-        split=TRAIN_SPLIT,
+        dataset=dataset,
+        split=split,
     )
     determinants = build_packing_cache_determinants(
         config,
         components,
-        dataset=config.data.train,
-        split=TRAIN_SPLIT,
+        dataset=dataset,
+        split=split,
     )
     cache_root = Path(
         os.environ.get(
@@ -572,7 +638,7 @@ def _resolve_or_build_train_pack_cache(
     cache_dir = cache_dir_for_fingerprint(cache_root, fingerprint)
     cache_complete_before = cache_is_complete(cache_dir, fingerprint=fingerprint)
     if _rank() == 0 and not cache_complete_before:
-        micro_steps = build_base_micro_steps(config, components, vocab_groups)
+        micro_steps = tuple(build_micro_steps())
         write_micro_step_cache(
             cache_dir,
             micro_steps,

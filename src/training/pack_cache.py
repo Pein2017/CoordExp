@@ -189,6 +189,21 @@ def load_rank_micro_steps_from_cache(
     return tuple(loaded[index] for index in indices)
 
 
+def load_all_micro_steps_from_cache(cache_dir: str | Path) -> tuple[SupervisedMicroStep, ...]:
+    manifest = load_cache_manifest(cache_dir)
+    loaded: list[SupervisedMicroStep] = []
+    root = Path(cache_dir)
+    for chunk in manifest["chunks"]:
+        chunk_path = root / str(chunk["path"])
+        _validate_chunk_sha256(chunk_path, expected_sha256=str(chunk["sha256"]))
+        with chunk_path.open("rb") as handle:
+            chunk_steps = pickle.load(handle)
+        loaded.extend(chunk_steps)
+    if len(loaded) != int(manifest["micro_step_count"]):
+        raise ValueError("packing cache load did not cover every micro-step")
+    return tuple(loaded)
+
+
 def _rank_local_pack_indices(
     schedule: ResolvedStepSchedule,
     *,
@@ -323,6 +338,7 @@ __all__ = [
     "build_packing_cache_fingerprint",
     "cache_dir_for_fingerprint",
     "cache_is_complete",
+    "load_all_micro_steps_from_cache",
     "load_cache_manifest",
     "load_rank_micro_steps_from_cache",
     "manifest_path",
