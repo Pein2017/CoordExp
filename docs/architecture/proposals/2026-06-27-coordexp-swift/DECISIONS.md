@@ -4693,3 +4693,339 @@ Evidence scope so far is discussion plus read-only subagent synthesis over the
 current repo, linked worktrees, selected research/progress notes, and current
 MS-Swift/packing behavior. No training or parity tests have been run for this
 worktree yet.
+
+## Inference V1 Scope
+
+Resolved on 2026-07-02 during CoordExp-swift inference/decode planning. Patched
+after five-agent review convergence on 2026-07-02.
+
+V1 inference is an offline benchmark and evaluation path, not an interactive
+demo and not the Stage-2 rollout backend. The primary flow is JSONL input plus
+base model and optional adapter input, producing evaluator-facing artifacts.
+The first backend is Hugging Face Transformers `model.generate`, wired through
+the same Qwen loading, adapter, special-token embedding, no-resize processor,
+and template semantics established for supervised training. vLLM is a required
+future backend, but it is not part of the first implementation slice unless a
+later OpenSpec change explicitly promotes it.
+
+The public entrypoint should be the thin file `src/infer.py`, invoked as
+`python -m src.infer --config ...`, to match `python -m src.train`. The
+implementation package should use the non-colliding namespace `src/inference/`;
+do not attempt to create both `src/infer.py` and `src/infer/` as siblings.
+Inference should define its own strict `InferConfig` surface while reusing
+shared model/template/data pieces when that keeps contracts aligned without
+importing the full training schema.
+
+The first `InferConfig` contract should be minimal and explicit:
+`schema_version`, `run`/`artifact_root`, shared `model`, optional explicit
+`adapter`, optional explicit special-token embedding delta, inference/eval
+`data`, `template`, `backend`, `generation`, `scoring`, `artifacts`, and
+`debug`. It should reject training-only keys such as `optimizer`, `training`,
+and `checkpoint` unless a later approved schema intentionally shares them.
+`backend.type: hf` is the only active V1 backend. vLLM values may be reserved in
+the schema but must validate as not implemented.
+
+V1 consumes the same offline JSONL example family used by training and
+forward-eval, including image path, dimensions, GT objects, and prompt-relevant
+fields. V1 parses generated text immediately into canonical prediction objects
+while always preserving raw decode text and parse diagnostics. Parse failures
+or invalid object spans should be recorded and counted rather than silently
+erasing useful partial predictions or aborting the entire run on the first bad
+row.
+
+Inference configs live under `configs/coordexp_swift/infer/`. Legacy
+`configs/infer/*` and old `/data/CoordExp/src/infer/*` are reference-only
+materials, not authoritative schema or implementation surfaces. The first config
+family should include a shallow `base.yaml` plus production leaves matching the
+benchmark setup. Inheritance should remain shallow: shared model, runtime, and
+template defaults may be inherited, while dataset, checkpoint/adapter,
+generation, and artifact fields are explicit in leaf configs.
+
+Unlike supervised training, inference should use batched generation for
+throughput. V1 should expose an explicit required decode batch size in
+`InferConfig`, default production configs should set it above one, and
+`batch_size: 1` should be treated as an intentional debug or smoke override
+rather than the normal path. Production configs with `batch_size: 1` should
+fail validation before runtime setup.
+
+The V1 decoding default is deterministic greedy generation with the Qwen chat
+stop transition `<|im_end|>`. Do not add `<|endoftext|>` as a default stop
+token. `max_new_tokens` is a public, explicit inference config value because it
+directly changes invalid-output and under-generation rates. Raw trace decoding
+must preserve special tokens with `skip_special_tokens=False` or equivalent
+tokenizer-piece logic; parser-facing text may strip terminal `<|im_end|>` only
+under a recorded policy.
+
+Inference prompt construction must stay highly aligned with training behavior.
+The inference module may expose inference-specific prompt helpers under
+`src/inference/prompt.py`, but those helpers should delegate to or share the
+same template semantics used by supervised training rather than copying a
+divergent prompt implementation. Tiny and smoke paths must check local rendered
+prompt token ids against backend prompt token ids and record template id/order,
+processor identity, image metadata, and `do_resize=False` evidence.
+
+Inference model loading follows the same base-model plus optional adapter
+contract as training. The base model is resolved from `model_cache/...`.
+Adapter checkpoints and special-token embedding deltas are optional but must be
+explicit when used. Inference should support adapter paths that point at
+training `checkpoint-final` metadata or explicit concrete checkpoint paths,
+resolving them to the actual adapter and embedding-delta payloads while
+preserving the resolved identity in artifacts. `best_acc_top1` style aliases are
+deferred unless a later decision promotes them.
+
+Adapter loading must do more than prove that a path exists. The V1 source study
+and OpenSpec must require PEFT/base identity checks, fatal handling for missing
+or unexpected adapter keys from captured PEFT `load_result` or equivalent
+evidence, `set_adapter`, `get_model_status()` enabled/active adapter checks,
+non-irregular active adapter status, no unexpected merged state, and expected
+base/tokenizer/token-string/token-id identity checks for special-token
+embedding deltas. Warning-only PEFT load paths are not sufficient. Inference
+must not require a fully merged model directory and must not silently infer
+arbitrary checkpoint behavior from a loose HF path.
+
+Evidence scope: none-yet. This is a proposal-scoped planning decision. It must
+be promoted into a new OpenSpec change before implementation begins.
+
+## Inference Trace, Scoring, And Eval Contract
+
+Resolved on 2026-07-02 during CoordExp-swift inference/decode planning. Patched
+after five-agent review convergence on 2026-07-02.
+
+V1 inference must define a backend-neutral decode result and token-trace
+contract even though the first implemented backend is Hugging Face Transformers.
+This prepares for required future vLLM support without implementing vLLM in the
+first slice.
+
+When score-bearing output is requested, the HF backend must request generation
+scores with `return_dict_in_generate=True` and `output_scores=True`. Missing
+token ids, token text, logprobs, prompt token ids, stop reason, backend name,
+generation config fingerprint, tokenizer identity, or model identity is a
+contract failure for scored inference. The system should fail fast rather than
+falling back to constant scores when mAP-style evaluation is requested.
+
+The OpenSpec must pin the HF score-alignment algorithm. It should define prompt
+padded width, generated token indexing, whether `<|im_end|>` is retained in the
+trace, whether padding after stop is trace-excluded, and whether scores are
+obtained through `compute_transition_scores(..., normalize_logits=True)` or an
+equivalent `log_softmax(scores[t])` gather. Every generated trace item should
+record `step_index`, `token_id`, `token_text`, `logprob`, `is_stop`, `is_pad`,
+and backend source. Structural trace shape mismatch is a contract failure.
+
+`pred[*].score` is fixed for V1 as
+`exp(sum(selected_token_logprobs) / n_selected)`, yielding a length-invariant
+probability-like confidence value. The score-policy fingerprint must include
+the selected token families, scalar transform, logprob normalization rule,
+stop-token policy, and invalid-alignment policy.
+
+The default selected token set is exactly four schema wrapper tokens plus four
+coordinate tokens for the parsed object span:
+`<|object_ref_start|>`, `<|object_ref_end|>`, `<|box_start|>`,
+`<|box_end|>`, and the four coordinate tokens. A valid V1 compact object has
+`n_selected == 8`; free-text description/category text is excluded from object
+scoring. The OpenSpec must define object boundary source, contiguity/gap
+policy, duplicate/ambiguity policy, selected-token count expectations, and
+persisted replay evidence: row id, object span id, generated-step indices,
+token ids/text, selected logprobs, selected count, and score-policy
+fingerprint. Missing or ambiguous required trace alignment makes the affected
+object invalid for scored output and must be recorded diagnostically rather
+than assigned a fallback score.
+
+The first parser target is the compact object-box-closed format aligned with
+training. Do not broaden V1 to parse both compact and JSON assistant responses
+unless a later change promotes that compatibility. Inference uses the same
+template controls as training, preserves model prediction order, and does not
+geo-sort predictions after decoding.
+
+The raw artifact and scored artifact serve different roles. `gt_vs_pred.jsonl`
+may preserve partially valid predictions for debugging and salvage analysis,
+but it must still preserve exactly one row per input row; extra diagnostics
+belong in sidecars. `gt_vs_pred_scored.jsonl` is stricter: it must preserve
+exactly one row per raw row with identical image identity, image dimensions, GT
+payload, row order, and record index, but its `pred` list must contain only
+predictions with finite valid comparable scores. Rows with no scoreable
+predictions remain present with `pred: []` and diagnostics.
+
+Every parsed row should carry inline parser and metric-eligibility fields such
+as `parser_id`, `parser_policy`, `metric_bearing`, `parse_status`,
+`valid_pred_object_count`, `dropped_pred_object_count`, and
+`dropped_pred_objects`. `parse_diagnostics.jsonl` is an additive detailed
+sidecar keyed by stable row id or line index; it is not a replacement for
+inline row diagnostics needed by standalone evaluator/debug artifacts.
+
+Score-bearing rows must use evaluator-readable provenance, not only a broad
+`run_manifest.json`. The scored artifact contract should include row-local
+non-empty `pred_score_source`, integer `pred_score_version`, and finite scores
+in `[0.0, 1.0]`, plus a portable scored provenance carrier such as
+`gt_vs_pred_scored.jsonl.provenance.json` that records artifact schema version,
+source raw artifact SHA256, scored artifact identity when available,
+detection-template id, `prompt_policy_fingerprint`,
+`decode_policy_fingerprint` or exact generation config fingerprint,
+`model_identity_fingerprint`, processor/template identity, `parser_policy`,
+`score_policy_fingerprint`, and row-count or row-identity binding evidence.
+Paths may be recorded for convenience but must not be the portable identity.
+
+Inference must use no-resize image processing like training. The call path must
+set `do_resize=False` and record processor identity plus per-row image-plan
+evidence so eval does not accidentally measure image-processing drift. Runtime
+must also verify processor/model vision parity for patch size, merge size, and
+temporal patch size before benchmark-eligible inference.
+`image_plan.jsonl` is mandatory for V1, not optional. It should record declared
+dimensions, decoded dimensions, processor patch/merge sizes, expected and
+observed `image_grid_thw`, raw patch rows, merged visual-token count, and
+batch-order index.
+
+The minimum final production acceptance target is full val or benchmark
+inference with batched decoding, scored artifacts, and mAP evaluation. Smaller
+tiny/smoke runs are implementation gates only; they are not the final evidence
+for inference correctness. The first inference OpenSpec must name the evaluator
+owner for this acceptance path. Given the self-contained CoordExp-swift goal,
+the default should be a minimal rebuilt `src.eval` detection consumer for
+`gt_vs_pred_scored.jsonl`; if a legacy/current evaluator bridge is used instead,
+the user must explicitly approve that deviation and the OpenSpec must name the
+command, row schema, score fields, metric outputs, and compatibility boundary.
+
+`src.infer` produces inference artifacts. It should not directly own metric
+reduction in V1. The named `src.eval` consumer or explicit bridge consumes the
+scored artifact. This keeps decode and metric reduction separately testable
+while keeping the production benchmark acceptance concrete.
+
+Evidence scope: none-yet. This is a proposal-scoped planning decision. It must
+be promoted into a new OpenSpec change before implementation begins.
+
+## Inference Source Topology And Review Gates
+
+Resolved on 2026-07-02 during CoordExp-swift inference/decode planning. Patched
+after five-agent review convergence on 2026-07-02.
+
+The inference OpenSpec change should be named
+`build-coordexp-swift-inference-infra`. The name is intentionally broader than
+just decoding because the first useful surface includes config, checkpoint
+resolution, backend generation, token traces, parsing, scoring, artifact
+contracts, evaluator-consumer compatibility, and production benchmark
+acceptance.
+
+The first inference source topology is:
+
+```text
+src/inference/
+  __init__.py
+  runtime.py
+  backend.py
+  prompt.py
+  parsing.py
+  scoring.py
+  artifacts.py
+  pipeline.py
+src/infer.py
+```
+
+`src/inference/backend.py` owns backend-neutral decode contracts
+(`DecodeRequest`, `DecodeResult`, and `TokenTrace`) plus the first HF
+`generate_batch` implementation. Keep backend-neutral names independent from
+HF-only mechanics. Future vLLM support should reserve `backend`, `backend_mode`,
+and `response_family` fields because OpenAI-compatible and ms-swift response
+families expose trace fields differently; vLLM implementation remains out of
+scope for V1.
+
+`src/inference/runtime.py` is an inference assembler, not the owner of every
+lower-level mechanic. Qwen loading and processor identity should stay under
+`src/qwen`, adapter setup/reload/status policy under `src/adapters`,
+checkpoint alias and delta reload identity under `src/artifacts` and Qwen
+helpers, strict config loading under `src/config`, and role-specific inference
+setup under `src/inference/runtime.py`.
+Inference-facing modules must not import `TrainConfig`, `ResolvedTrainConfig`,
+`ResolvedStepSchedule`, `load_train_config()`, or unallowlisted
+`src.training.*`; the V1 training-import allowlist is empty unless a source
+study and OpenSpec patch name a concrete exception. Shared owner APIs must be
+config-neutral enough for inference to call without training-owned wrapper
+types.
+
+`src/inference/pipeline.py` owns inference orchestration: dataset iteration,
+batched prompt construction, backend calls, parsing, scoring, artifact writing,
+and summary counters. It does not run the evaluator in V1.
+
+`src/inference/parsing.py` owns generated-text parsing, object-span salvage, and
+invalid-span diagnostics. Coordinate-token recognition, bbox validation, and
+norm1000-to-pixel conversion should reuse or deepen shared `src/templates`,
+`src/qwen`, and `src/data/geometry` semantics rather than becoming private
+inference knowledge. V1 does not add a generic JSON assistant parser.
+
+`src/inference/scoring.py` owns token-trace alignment to parsed object spans,
+selected-token score extraction, scored prediction construction, and
+score-policy fingerprinting. Its selected-token policy should be tested against
+the same compact object schema used by training render/encode code.
+
+`src/inference/artifacts.py` owns inference artifact names and row writers, but
+write-once path safety, resolved-config writing, and manifest core behavior
+should reuse or deepen `src/artifacts` rather than copying a training-shaped
+manager. Inference should follow the training resolved-config convention:
+`configs/resolved.json` and `configs/resolved.yaml` under the run directory,
+with manifest links, rather than introducing top-level `resolved_config.json`.
+
+The first artifact set is:
+
+- `configs/resolved.json`
+- `configs/resolved.yaml`
+- `run_manifest.json`
+- `summary.json`
+- `gt_vs_pred.jsonl`
+- `gt_vs_pred_scored.jsonl`
+- `gt_vs_pred_scored.jsonl.provenance.json`
+- `pred_token_trace.jsonl`
+- `parse_diagnostics.jsonl`
+- `image_plan.jsonl`
+
+`run_manifest.json` should record artifact paths, config fingerprint,
+model/adapter identity, backend, backend mode, response family, dataset
+identity, generation config, score policy fingerprint, trace/scoring status,
+prompt/template identity, processor identity, and evaluator-consumer status.
+
+The inference OpenSpec should use these delta specs:
+
+- `coordexp-swift-infer-config-runtime`
+- `coordexp-swift-infer-backend-trace`
+- `coordexp-swift-infer-prompt-parsing`
+- `coordexp-swift-infer-scoring-artifacts`
+- `coordexp-swift-infer-pipeline`
+- `coordexp-swift-infer-benchmark-smoke`
+
+Required source studies before coding are: old `/data/CoordExp/src/infer/*` as
+reference-only material, current CoordExp-swift Qwen training
+template/processor code, the Transformers `generate` score contract, PEFT
+adapter loading/status behavior, special-token embedding delta validation, and
+the current eval mAP input contract.
+
+Verification should not rely on mocked backend tests as meaningful evidence.
+Mocks may still be used narrowly for pure unit tests when unavoidable, but they
+do not count as acceptance gates in this repo. The first useful smoke should be
+a real tiny single-image or sample-limited HF/Qwen path, followed by a small
+real Qwen sample-limit smoke with adapter loading, then a full benchmark. The
+accepted production staging is therefore tiny real smoke -> full benchmark,
+with optional intermediate sample-limited real runs only when they reduce debug
+cost.
+
+Test-first implementation slices should cover strict infer config validation,
+`checkpoint-final` and explicit checkpoint resolution, adapter/delta identity
+checks, HF score trace shape and prompt-width alignment, no-resize image-plan
+parity, compact parser salvage, selected-token alignment, score formula and
+fingerprint, artifact/provenance writing, scored-row cardinality, batched
+pipeline behavior, evaluator-consumer compatibility, and production benchmark
+acceptance.
+
+OpenSpec must forbid untraced scored outputs. If
+`gt_vs_pred_scored.jsonl` is written, trace provenance and a score-policy
+fingerprint are required. The OpenSpec should reserve a backend enum value and
+backend-neutral decode result contract for future vLLM support, while marking
+vLLM implementation out of scope for V1. It should also require a
+production-like inference config leaf matching the benchmark setup: base model,
+adapter checkpoint, batched decode, full trace, scored output, and named mAP
+consumer.
+
+The OpenSpec tasks should use approval gates by contract surface: config/runtime,
+backend trace, prompt/image parity, parser/geometry, scoring/artifacts,
+eval-consumer compatibility, and production benchmark acceptance. Implementation
+should not start from one broad approval that hides changes to public schemas or
+artifact semantics.
+
+Evidence scope: none-yet. This is a proposal-scoped planning decision. It must
+be promoted into a new OpenSpec change before implementation begins.
