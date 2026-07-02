@@ -58,6 +58,7 @@ def write_inference_artifacts(
         run_manifest_json=output_dir / MANIFEST_NAME,
     )
     _require_traces_for_predicted_rows(rows, decode_results)
+    _validate_image_plan_rows(rows, image_plan_rows)
 
     raw_rows: list[dict[str, Any]] = []
     scored_rows: list[dict[str, Any]] = []
@@ -122,7 +123,8 @@ def write_inference_artifacts(
         "scoreable_prediction_count": scoreable_prediction_count,
         "diagnostic_row_count": len(diagnostic_rows),
         "trace_row_count": len(token_trace_rows),
-        "benchmark_eligible": True,
+        "scored_artifact_materialized": True,
+        "benchmark_eligible": False,
     }
     _write_json(paths.summary_json, summary)
     _write_json(paths.run_manifest_json, _manifest(metadata=metadata, summary=summary))
@@ -165,15 +167,29 @@ def recompute_scores_from_artifacts(
     token_trace_jsonl: Path,
 ) -> dict[tuple[str, str], float]:
     replay_rows: dict[tuple[str, str], dict[str, Any]] = {}
+    generated_rows: dict[tuple[str, int], dict[str, Any]] = {}
     for row in _read_jsonl(token_trace_jsonl):
         if row.get("trace_type") == "selected_token_replay":
             replay_rows[(row["row_id"], row["object_span_id"])] = row
+        elif row.get("trace_type") == "generated_token":
+            generated_rows[(row["row_id"], int(row["generated_step_index"]))] = row
     recomputed: dict[tuple[str, str], float] = {}
     for row in _read_jsonl(scored_jsonl):
         for pred in row.get("pred", []):
             key = (row["row_id"], pred["object_span_id"])
+            if key not in replay_rows:
+                raise ArtifactContractError(
+                    "selected-token replay row is missing",
+                    code="artifacts.selected_replay_missing",
+                    context={"row_id": key[0], "object_span_id": key[1]},
+                )
             replay = replay_rows[key]
-            logprobs = replay["selected_logprobs"]
+            logprobs = _verified_selected_logprobs_from_generated_trace(
+                row_id=key[0],
+                object_span_id=key[1],
+                replay=replay,
+                generated_rows=generated_rows,
+            )
             recomputed[key] = math.exp(sum(logprobs) / len(logprobs))
     return recomputed
 
@@ -198,6 +214,20 @@ def _require_traces_for_predicted_rows(
                 code="artifacts.missing_trace",
                 context={"row_id": row["row_id"]},
             )
+
+
+def _validate_image_plan_rows(
+    rows: list[dict[str, Any]],
+    image_plan_rows: list[dict[str, Any]],
+) -> None:
+    expected = [str(row["row_id"]) for row in rows]
+    observed = [str(row.get("row_id")) for row in image_plan_rows]
+    if observed != expected:
+        raise ArtifactContractError(
+            "image_plan.jsonl rows must preserve raw row identity and order",
+            code="artifacts.image_plan_row_mismatch",
+            context={"expected_row_ids": expected, "observed_row_ids": observed},
+        )
 
 
 def _raw_artifact_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -330,8 +360,72 @@ def _manifest(*, metadata: dict[str, Any], summary: dict[str, Any]) -> dict[str,
         "template_identity": metadata["template_identity"],
         "processor_identity_fingerprint": metadata["processor_identity_fingerprint"],
         "evaluator_consumer_status": "not_implemented_wave_5",
+        "scored_artifact_materialized": bool(summary["scored_artifact_materialized"]),
         "benchmark_eligible": bool(summary["benchmark_eligible"]),
     }
+
+
+def _verified_selected_logprobs_from_generated_trace(
+    *,
+    row_id: str,
+    object_span_id: str,
+    replay: dict[str, Any],
+    generated_rows: dict[tuple[str, int], dict[str, Any]],
+) -> list[float]:
+    steps = replay["generated_step_indices"]
+    token_ids = replay["token_ids"]
+    token_text = replay["token_text"]
+    logprobs = replay["selected_logprobs"]
+    selected_count = int(replay["selected_count"])
+    if not (
+        len(steps)
+        == len(token_ids)
+        == len(token_text)
+        == len(logprobs)
+        == selected_count
+    ):
+        raise ArtifactContractError(
+            "selected-token replay fields disagree on selected count",
+            code="artifacts.selected_replay_shape_mismatch",
+            context={"row_id": row_id, "object_span_id": object_span_id},
+        )
+    verified: list[float] = []
+    for index, step in enumerate(steps):
+        generated = generated_rows.get((row_id, int(step)))
+        if generated is None:
+            raise ArtifactContractError(
+                "selected generated-token trace row is missing",
+                code="artifacts.generated_trace_missing",
+                context={
+                    "row_id": row_id,
+                    "object_span_id": object_span_id,
+                    "generated_step_index": step,
+                },
+            )
+        expected = {
+            "token_id": token_ids[index],
+            "token_text": token_text[index],
+            "logprob": logprobs[index],
+        }
+        observed = {
+            "token_id": generated.get("token_id"),
+            "token_text": generated.get("token_text"),
+            "logprob": generated.get("logprob"),
+        }
+        if observed != expected:
+            raise ArtifactContractError(
+                "selected generated-token trace row disagrees with replay evidence",
+                code="artifacts.generated_trace_mismatch",
+                context={
+                    "row_id": row_id,
+                    "object_span_id": object_span_id,
+                    "generated_step_index": step,
+                    "expected": expected,
+                    "observed": observed,
+                },
+            )
+        verified.append(float(generated["logprob"]))
+    return verified
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:

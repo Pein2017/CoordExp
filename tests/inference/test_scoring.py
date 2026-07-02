@@ -169,6 +169,22 @@ def test_non_finite_selected_logprob_invalidates_prediction() -> None:
     assert exc_info.value.code == "scoring.non_finite_logprob"
 
 
+def test_positive_selected_logprob_invalidates_prediction_even_when_mean_score_is_in_range() -> None:
+    from src.inference.scoring import score_prediction
+
+    text = (
+        "<|object_ref_start|>cat<|object_ref_end|>"
+        "<|box_start|><|coord_100|><|coord_200|><|coord_300|><|coord_400|><|box_end|>"
+    )
+    trace = _trace_for_text(text, logprob=math.log(0.01))
+    trace[4] = TokenTrace(**{**trace[4].__dict__, "logprob": 0.1})
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        score_prediction(row_id="row-1", prediction=_prediction(text), token_trace=trace)
+
+    assert exc_info.value.code == "scoring.positive_logprob"
+
+
 def test_duplicate_span_alignment_is_ambiguous_without_unique_trace_interval() -> None:
     from src.inference.scoring import score_prediction
 

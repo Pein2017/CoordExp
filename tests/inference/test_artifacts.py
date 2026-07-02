@@ -107,6 +107,13 @@ def _read_jsonl(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
 
 
+def _write_jsonl(path: Path, rows: list[dict]) -> None:
+    path.write_text(
+        "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+
+
 def test_artifact_writer_preserves_raw_and_scored_row_parity_without_diagnostic_rows(tmp_path: Path) -> None:
     from src.inference.artifacts import write_inference_artifacts
 
@@ -217,7 +224,7 @@ def test_trace_artifact_recomputes_stored_scores(tmp_path: Path) -> None:
     assert recomputed[("row-1", "row-1:span-0")] == pytest.approx(scored["score"])
 
 
-def test_manifest_records_artifact_paths_and_benchmark_status(tmp_path: Path) -> None:
+def test_manifest_records_artifact_paths_without_claiming_wave5_benchmark_eligibility(tmp_path: Path) -> None:
     from src.inference.artifacts import write_inference_artifacts
     from src.inference.scoring import SCORE_POLICY_FINGERPRINT
 
@@ -233,12 +240,30 @@ def test_manifest_records_artifact_paths_and_benchmark_status(tmp_path: Path) ->
     summary = json.loads(paths.summary_json.read_text(encoding="utf-8"))
 
     assert manifest["trace_scoring_status"] == "scored"
-    assert manifest["benchmark_eligible"] is True
+    assert manifest["scored_artifact_materialized"] is True
+    assert manifest["benchmark_eligible"] is False
     assert manifest["evaluator_consumer_status"] == "not_implemented_wave_5"
     assert manifest["score_policy_fingerprint"] == SCORE_POLICY_FINGERPRINT
     assert manifest["artifacts"]["gt_vs_pred_scored"] == "gt_vs_pred_scored.jsonl"
+    assert summary["scored_artifact_materialized"] is True
+    assert summary["benchmark_eligible"] is False
     assert summary["row_count"] == 1
     assert summary["scoreable_prediction_count"] == 1
+
+
+def test_artifact_writer_refuses_empty_image_plan_rows_before_status_claims(tmp_path: Path) -> None:
+    from src.inference.artifacts import write_inference_artifacts
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        write_inference_artifacts(
+            output_dir=tmp_path,
+            rows=[_raw_row("row-1", 0)],
+            decode_results={"row-1": _decode_result("row-1")},
+            image_plan_rows=[],
+            metadata=_metadata(),
+        )
+
+    assert exc_info.value.code == "artifacts.image_plan_row_mismatch"
 
 
 def test_scored_artifact_production_refuses_missing_trace(tmp_path: Path) -> None:
@@ -272,3 +297,64 @@ def test_scored_artifact_validation_refuses_missing_provenance(tmp_path: Path) -
         validate_scored_artifact_set(tmp_path)
 
     assert exc_info.value.code == "artifacts.missing_provenance"
+
+
+def test_trace_recomputation_fails_when_selected_generated_token_row_is_missing(tmp_path: Path) -> None:
+    from src.inference.artifacts import recompute_scores_from_artifacts, write_inference_artifacts
+
+    paths = write_inference_artifacts(
+        output_dir=tmp_path,
+        rows=[_raw_row("row-1", 0)],
+        decode_results={"row-1": _decode_result("row-1")},
+        image_plan_rows=[{"row_id": "row-1"}],
+        metadata=_metadata(),
+    )
+    rows = _read_jsonl(paths.token_trace_jsonl)
+    rows = [
+        row
+        for row in rows
+        if not (
+            row.get("trace_type") == "generated_token"
+            and row["row_id"] == "row-1"
+            and row["generated_step_index"] == 4
+        )
+    ]
+    _write_jsonl(paths.token_trace_jsonl, rows)
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        recompute_scores_from_artifacts(
+            scored_jsonl=paths.scored_jsonl,
+            token_trace_jsonl=paths.token_trace_jsonl,
+        )
+
+    assert exc_info.value.code == "artifacts.generated_trace_missing"
+
+
+def test_trace_recomputation_fails_when_selected_generated_token_row_mismatches(tmp_path: Path) -> None:
+    from src.inference.artifacts import recompute_scores_from_artifacts, write_inference_artifacts
+
+    paths = write_inference_artifacts(
+        output_dir=tmp_path,
+        rows=[_raw_row("row-1", 0)],
+        decode_results={"row-1": _decode_result("row-1")},
+        image_plan_rows=[{"row_id": "row-1"}],
+        metadata=_metadata(),
+    )
+    rows = _read_jsonl(paths.token_trace_jsonl)
+    for row in rows:
+        if (
+            row.get("trace_type") == "generated_token"
+            and row["row_id"] == "row-1"
+            and row["generated_step_index"] == 4
+        ):
+            row["token_text"] = "<|coord_999|>"
+            break
+    _write_jsonl(paths.token_trace_jsonl, rows)
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        recompute_scores_from_artifacts(
+            scored_jsonl=paths.scored_jsonl,
+            token_trace_jsonl=paths.token_trace_jsonl,
+        )
+
+    assert exc_info.value.code == "artifacts.generated_trace_mismatch"

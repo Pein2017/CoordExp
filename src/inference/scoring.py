@@ -94,6 +94,17 @@ def score_prediction(
                     "logprob": logprob,
                 },
             )
+        if logprob > 0.0:
+            raise ArtifactContractError(
+                "selected-token logprob must be a natural-log probability",
+                code="scoring.positive_logprob",
+                context={
+                    "row_id": row_id,
+                    "object_span_id": prediction.get("object_span_id"),
+                    "selected_index": index,
+                    "logprob": logprob,
+                },
+            )
     score = math.exp(sum(selected_logprobs) / len(selected_logprobs))
     if not math.isfinite(score) or score < 0.0 or score > 1.0:
         raise ArtifactContractError(
