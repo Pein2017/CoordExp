@@ -32,20 +32,21 @@ PY
 
 ## Current Outcome
 
-- PASS, base single-row smoke: `outputs/coordexp_swift/infer/wave7_real_smokes/wave7-real-base-single-smoke-20260702T182753Z`
+- PARTIAL, base single-row smoke: `outputs/coordexp_swift/infer/wave7_real_smokes/wave7-real-base-single-smoke-20260702T182753Z`
   - Required artifacts present: `configs/resolved.json`, `configs/resolved.yaml`, `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, `gt_vs_pred_scored.jsonl.provenance.json`, `pred_token_trace.jsonl`, `parse_diagnostics.jsonl`, `image_plan.jsonl`, `summary.json`, `run_manifest.json`.
   - `summary.json`: `terminal_status=completed`, `row_count=1`, `decode_success_count=1`, `trace_row_count=32`, `scored_artifact_materialized=true`, `benchmark_eligible=false`.
-  - The base output did not parse into valid compact predictions: `parser_failure_count=1`, `scoreable_prediction_count=0`.
-- PASS, base two-row batched smoke: `outputs/coordexp_swift/infer/wave7_real_smokes/wave7-real-base-batched-smoke`
+  - Gap: the base output did not parse into valid compact predictions: `parser_failure_count=1`, `scoreable_prediction_count=0`; therefore it did not produce non-empty selected-token scoring evidence.
+- PARTIAL, base two-row batched smoke: `outputs/coordexp_swift/infer/wave7_real_smokes/wave7-real-base-batched-smoke`
   - Required artifacts present: `configs/resolved.json`, `configs/resolved.yaml`, `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, `gt_vs_pred_scored.jsonl.provenance.json`, `pred_token_trace.jsonl`, `parse_diagnostics.jsonl`, `image_plan.jsonl`, `summary.json`, `run_manifest.json`.
   - `summary.json`: `terminal_status=completed`, `row_count=2`, `decode_success_count=2`, `trace_row_count=64`, `scored_artifact_materialized=true`, `benchmark_eligible=false`.
-  - Trace flags: no observed `is_stop=true` and no observed `is_pad=true`; this real run covered length-stop handling, while targeted backend tests retain terminal stop and post-stop pad coverage.
+  - Gap: no observed `is_stop=true` and no observed `is_pad=true`; this real run covered length-stop handling, while targeted backend tests retain terminal stop and post-stop pad coverage. This is not real-smoke evidence for natural stop/pad handling.
   - Detection consumer wrote `outputs/coordexp_swift/infer/wave7_real_smokes/wave7-real-base-batched-smoke/eval/metrics.json` with `benchmark_metric=false`, `row_count=2`, `gt_object_count=4`, `pred_object_count=0`.
-- BLOCKED, adapter-enabled smoke: `outputs/coordexp_swift/infer/wave7_real_smokes/wave7-real-adapter-smoke`
-  - The run wrote only `configs/resolved.json` and `configs/resolved.yaml` before runtime setup failed.
-  - Exact blocker: `RuntimeContractError[adapter.inference_load_result_missing]`, message `inference DoRA adapter load did not return load_result evidence`, context `adapter_name=default`, adapter path `outputs/smoke/production_mimic/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_accelerate8_ebs64_2step_warmup0p1_eval_patchproof-smoke-a8-r16a32-ebs64-receipt-20260702T164342Z/checkpoints/step-2/adapter`.
-  - The embedding-delta identity check was not reached. Preflight risk remains: candidate metadata records `base_config_sha256: null` and a base-model path under `/data/Qwen3-VL/...`, while the assigned handle is `/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent`.
+- BLOCKED, adapter-enabled smoke: `outputs/coordexp_swift/infer/wave7_real_smokes/wave7-real-adapter-smoke-20260702T184656Z`
+  - The previous `adapter.inference_load_result_missing` blocker was fixed by accepting Transformers `PeftAdapterMixin.load_adapter -> None` only with equivalent config, safetensors payload, status, and state evidence.
+  - The run wrote only `configs/resolved.json` and `configs/resolved.yaml` before embedding-delta identity failed.
+  - Exact blocker: `RuntimeContractError[special_token_embeddings.identity_mismatch]`, field `base_config_sha256`, actual `null`, expected `c7d172360d0ff881db59a6f34865c379bbef40d976ad79cfe5fbbf50483655de`.
+  - The candidate metadata also records a base-model path under `/data/Qwen3-VL/...`; path resolution may be compatible through the `/data/CoordExp/model_cache` symlink, but null SHA identity is not compatible.
 
 ## Launch Boundary
 
-Full benchmark launch is blocked pending explicit user approval. Wave 7 smoke success, if achieved, only proves implementation readiness for the benchmark gate.
+Full benchmark launch is blocked on adapter smoke completion and then explicit user approval. Wave 7 smoke success, if achieved, only proves implementation readiness for the benchmark gate.

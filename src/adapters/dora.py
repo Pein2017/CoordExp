@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from importlib import metadata
 from pathlib import Path
 from typing import Any, Mapping
 
 import torch
+from safetensors.torch import safe_open
 from torch import nn
 
 from src.adapters.source_gates import AdapterSetupPlan
@@ -86,6 +88,8 @@ class InferenceAdapterStatusReceipt:
     active_adapters: tuple[str, ...]
     merged_adapters: tuple[str, ...]
     requires_grad: Any
+    available_adapters: tuple[str, ...] = ()
+    num_adapter_layers: int | None = None
 
     def to_artifact_dict(self) -> dict[str, Any]:
         return {
@@ -97,6 +101,8 @@ class InferenceAdapterStatusReceipt:
             "active_adapters": list(self.active_adapters),
             "merged_adapters": list(self.merged_adapters),
             "requires_grad": self.requires_grad,
+            "available_adapters": list(self.available_adapters),
+            "num_adapter_layers": self.num_adapter_layers,
         }
 
 
@@ -124,6 +130,8 @@ def validate_inference_adapter_status(
     active_adapters = tuple(str(item) for item in getattr(status, "active_adapters", ()))
     merged_adapters = tuple(str(item) for item in getattr(status, "merged_adapters", ()))
     requires_grad = getattr(status, "requires_grad", None)
+    available_adapters = tuple(str(item) for item in getattr(status, "available_adapters", ()))
+    num_adapter_layers = getattr(status, "num_adapter_layers", None)
     irregular_fields = [
         field
         for field, value in {
@@ -131,6 +139,8 @@ def validate_inference_adapter_status(
             "active_adapters": active_adapters,
             "merged_adapters": merged_adapters,
             "requires_grad": requires_grad,
+            "available_adapters": available_adapters,
+            "num_adapter_layers": num_adapter_layers,
         }.items()
         if value == "irregular"
     ]
@@ -161,6 +171,27 @@ def validate_inference_adapter_status(
             code="adapter.inference_merged_state",
             context={"merged_adapters": list(merged_adapters)},
         )
+    if available_adapters and expected_adapter_name not in available_adapters:
+        raise RuntimeContractError(
+            "inference adapter is not listed as available after load",
+            code="adapter.inference_available_adapter_mismatch",
+            context={
+                "expected_adapter": expected_adapter_name,
+                "available_adapters": list(available_adapters),
+            },
+        )
+    if num_adapter_layers is not None and int(num_adapter_layers) <= 0:
+        raise RuntimeContractError(
+            "inference adapter status reports no materialized adapter layers",
+            code="adapter.inference_status_no_layers",
+            context={"num_adapter_layers": num_adapter_layers},
+        )
+    if requires_grad is True:
+        raise RuntimeContractError(
+            "inference adapter status must be frozen for inference",
+            code="adapter.inference_requires_grad",
+            context={"requires_grad": requires_grad},
+        )
     return InferenceAdapterStatusReceipt(
         status="validated",
         adapter_name=expected_adapter_name,
@@ -170,6 +201,8 @@ def validate_inference_adapter_status(
         active_adapters=active_adapters,
         merged_adapters=merged_adapters,
         requires_grad=requires_grad,
+        available_adapters=available_adapters,
+        num_adapter_layers=None if num_adapter_layers is None else int(num_adapter_layers),
     )
 
 
@@ -202,16 +235,29 @@ def load_inference_dora_adapter(
         adapter_name=adapter.name,
         is_trainable=False,
     )
-    if load_result is None:
-        raise RuntimeContractError(
-            "inference DoRA adapter load did not return load_result evidence",
-            code="adapter.inference_load_result_missing",
-            context={"adapter_path": str(adapter.path), "adapter_name": adapter.name},
-        )
     model.set_adapter(adapter.name)
-    status = model.get_model_status()
+    status = _get_inference_adapter_status(model)
+    adapter_path = Path(adapter.path)
+    load_result_available = load_result is not None
+    payload_evidence = (
+        {"payload_checked": False, "reason": "load_result_available"}
+        if load_result_available
+        else _validate_inference_adapter_payload(
+            adapter_path,
+            expected_base_model_path=_qwen_base_model_path(qwen),
+        )
+    )
+    state_evidence = (
+        {"state_checked": False, "reason": "load_result_available"}
+        if load_result_available
+        else _validate_transformers_mixin_adapter_state(
+            model,
+            adapter_path=adapter_path,
+            adapter_name=adapter.name,
+        )
+    )
     status_receipt = validate_inference_adapter_status(
-        load_result=load_result,
+        load_result=load_result or SimpleLoadResult(),
         status=status,
         expected_adapter_name=adapter.name,
     )
@@ -219,11 +265,191 @@ def load_inference_dora_adapter(
     artifact.update(
         {
             "adapter_type": adapter.type,
-            "adapter_path": str(adapter.path),
+            "adapter_path": str(adapter_path),
             "base_model_path": _qwen_base_model_path(qwen),
+            "load_result_available": load_result_available,
+            "load_result_api": "peft.PeftModel.load_adapter"
+            if load_result_available
+            else "transformers.PeftAdapterMixin.load_adapter",
+            "adapter_payload_evidence": payload_evidence,
+            "adapter_state_evidence": state_evidence,
+            "adapter_status_evidence": {
+                "available_adapters": artifact["available_adapters"],
+                "num_adapter_layers": artifact["num_adapter_layers"],
+                "requires_grad": artifact["requires_grad"],
+            },
         }
     )
     return artifact
+
+
+@dataclass(frozen=True)
+class SimpleLoadResult:
+    missing_keys: tuple[str, ...] = ()
+    unexpected_keys: tuple[str, ...] = ()
+
+
+def _get_inference_adapter_status(model: Any) -> Any:
+    try:
+        from peft import get_model_status
+
+        return get_model_status(model)
+    except Exception:
+        get_status = getattr(model, "get_model_status", None)
+        if callable(get_status):
+            return get_status()
+    raise RuntimeContractError(
+        "inference adapter status evidence is unavailable after load",
+        code="adapter.inference_status_unavailable",
+        context={"model_class": type(model).__name__},
+    )
+
+
+def _validate_inference_adapter_payload(
+    adapter_path: Path,
+    *,
+    expected_base_model_path: str | None,
+) -> dict[str, Any]:
+    config_path = adapter_path / "adapter_config.json"
+    tensor_path = adapter_path / "adapter_model.safetensors"
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise RuntimeContractError(
+            "inference adapter payload is missing adapter_config.json",
+            code="adapter.inference_config_missing",
+            context={"adapter_path": str(adapter_path)},
+            cause=exc,
+        ) from exc
+    if config.get("use_dora") is not True or str(config.get("peft_type")) != "LORA":
+        raise RuntimeContractError(
+            "inference adapter config is not a DoRA LoRA payload",
+            code="adapter.inference_config_incompatible",
+            context={
+                "use_dora": config.get("use_dora"),
+                "peft_type": config.get("peft_type"),
+            },
+        )
+    if expected_base_model_path is not None:
+        declared_base = config.get("base_model_name_or_path")
+        if declared_base is not None and Path(str(declared_base)).resolve() != Path(
+            expected_base_model_path
+        ).resolve():
+            raise RuntimeContractError(
+                "inference adapter base identity does not match runtime base",
+                code="adapter.inference_base_mismatch",
+                context={
+                    "expected_base_model_path": expected_base_model_path,
+                    "adapter_base_model_path": declared_base,
+                },
+            )
+    target_modules = config.get("target_modules")
+    if not isinstance(target_modules, list) or not target_modules:
+        raise RuntimeContractError(
+            "inference adapter config must record non-empty target modules",
+            code="adapter.inference_config_incompatible",
+            context={"target_modules": target_modules},
+        )
+    rank = int(config.get("r") or 0)
+    alpha = int(config.get("lora_alpha") or 0)
+    if rank <= 0 or alpha <= 0:
+        raise RuntimeContractError(
+            "inference adapter config must record positive rank and alpha",
+            code="adapter.inference_config_incompatible",
+            context={"r": config.get("r"), "lora_alpha": config.get("lora_alpha")},
+        )
+    if not tensor_path.is_file():
+        raise RuntimeContractError(
+            "inference adapter payload is missing adapter_model.safetensors",
+            code="adapter.inference_payload_missing",
+            context={"tensor_path": str(tensor_path)},
+        )
+    with safe_open(str(tensor_path), framework="pt", device="cpu") as handle:
+        keys = list(handle.keys())
+    evidence = _adapter_tensor_evidence(keys)
+    if (
+        evidence["key_count"] <= 0
+        or evidence["lora_A_count"] <= 0
+        or evidence["lora_B_count"] <= 0
+        or evidence["lora_magnitude_vector_count"] <= 0
+    ):
+        raise RuntimeContractError(
+            "inference adapter tensor payload is missing expected DoRA/LoRA tensors",
+            code="adapter.inference_payload_shape",
+            context=evidence,
+        )
+    evidence.update(
+        {
+            "config_path": str(config_path),
+            "tensor_path": str(tensor_path),
+            "target_module_count": len(target_modules),
+            "rank": rank,
+            "alpha": alpha,
+        }
+    )
+    return evidence
+
+
+def _adapter_tensor_evidence(keys: list[str]) -> dict[str, Any]:
+    return {
+        "key_count": len(keys),
+        "lora_A_count": sum(".lora_A." in key for key in keys),
+        "lora_B_count": sum(".lora_B." in key for key in keys),
+        "lora_magnitude_vector_count": sum("lora_magnitude_vector" in key for key in keys),
+    }
+
+
+def _validate_transformers_mixin_adapter_state(
+    model: Any,
+    *,
+    adapter_path: Path,
+    adapter_name: str,
+) -> dict[str, Any]:
+    get_state = getattr(model, "get_adapter_state_dict", None)
+    if not callable(get_state):
+        return {"state_checked": False, "reason": "get_adapter_state_dict_unavailable"}
+    state = get_state(adapter_name)
+    if not isinstance(state, Mapping) or not state:
+        raise RuntimeContractError(
+            "inference adapter materialized state is empty",
+            code="adapter.inference_state_empty",
+            context={"adapter_name": adapter_name},
+        )
+    tensor_path = adapter_path / "adapter_model.safetensors"
+    with safe_open(str(tensor_path), framework="pt", device="cpu") as handle:
+        saved_keys = list(handle.keys())
+    normalized_saved = {_normalize_adapter_state_key(key, adapter_name=adapter_name) for key in saved_keys}
+    normalized_state = {
+        _normalize_adapter_state_key(str(key), adapter_name=adapter_name)
+        for key in state
+    }
+    missing = sorted(normalized_saved - normalized_state)
+    extra = sorted(normalized_state - normalized_saved)
+    if missing or extra:
+        raise RuntimeContractError(
+            "inference adapter materialized state does not match saved payload",
+            code="adapter.inference_state_mismatch",
+            context={
+                "adapter_name": adapter_name,
+                "missing_materialized_keys": missing[:20],
+                "extra_materialized_keys": extra[:20],
+                "missing_count": len(missing),
+                "extra_count": len(extra),
+            },
+        )
+    return {
+        "state_checked": True,
+        "normalized_saved_key_count": len(normalized_saved),
+        "normalized_materialized_key_count": len(normalized_state),
+    }
+
+
+def _normalize_adapter_state_key(key: str, *, adapter_name: str) -> str:
+    parts = [part for part in key.split(".") if part != adapter_name]
+    normalized = ".".join(parts)
+    while normalized.startswith("base_model.model."):
+        normalized = normalized.removeprefix("base_model.model.")
+    return normalized
 
 
 def discover_dora_targets(

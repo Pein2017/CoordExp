@@ -7,8 +7,11 @@ trace extraction, parsing, scoring, and artifact writing on a tiny input.
 
 #### Scenario: Tiny real smoke passes
 - **WHEN** the tiny smoke runs on a valid single-image fixture
-- **THEN** required inference artifacts are written and trace-derived scoring
-  can be verified from artifacts
+- **THEN** required inference artifacts are written
+- **AND** if the real model output contains valid compact predictions,
+  trace-derived scoring is verified from artifacts
+- **AND** if no valid compact predictions are produced, the run is partial
+  smoke evidence only and non-empty selected-token scoring remains open
 
 #### Scenario: Mock-only evidence
 - **WHEN** only mocked backend tests pass
@@ -26,6 +29,8 @@ stop-token handling, and parser spans align.
 #### Scenario: Stop-token trace
 - **WHEN** one row reaches `<|im_end|>` before the other row
 - **THEN** post-stop handling is verified and no pad token is used for scoring
+- **AND** when no row naturally reaches `<|im_end|>` in the tiny real smoke,
+  the run is partial smoke evidence only and real stop/pad evidence remains open
 
 ### Requirement: Adapter-enabled smoke
 After tiny base-path trace validation passes, the system SHALL run a real adapter-enabled smoke.

@@ -482,6 +482,24 @@ def test_inference_embedding_delta_identity_rejects_wrong_runtime_sha(
     assert exc_info.value.context["field"] == field
 
 
+def test_inference_embedding_delta_identity_rejects_null_sha_metadata_with_runtime_sha(
+    tmp_path: Path,
+) -> None:
+    metadata = _inference_delta_metadata()
+    metadata["base_config_sha256"] = None
+    metadata["tokenizer_sha256"] = None
+    _write_inference_delta_metadata(tmp_path, metadata=metadata)
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        validate_inference_embedding_delta_identity(
+            config=_delta_config(tmp_path),
+            qwen=_qwen_identity_context(),
+        )
+
+    assert exc_info.value.code == "special_token_embeddings.identity_mismatch"
+    assert exc_info.value.context["field"] == "base_config_sha256"
+
+
 @pytest.mark.parametrize("field", ["base_config_sha256", "tokenizer_sha256"])
 def test_inference_embedding_delta_identity_requires_runtime_sha(
     tmp_path: Path,

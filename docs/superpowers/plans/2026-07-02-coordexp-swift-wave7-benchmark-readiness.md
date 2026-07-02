@@ -1,8 +1,8 @@
 # CoordExp-Swift Wave 7 Benchmark Readiness Packet
 
-STATUS: READY_FOR_APPROVAL
+STATUS: BLOCKED_ON_ADAPTER_SMOKE
 
-This packet is a launch gate only. Launch is blocked pending explicit user approval. Tiny and sample-limited smokes are smoke/partial evidence only, not benchmark evidence.
+This packet is a blocked launch gate only. Launch is blocked on adapter smoke completion and then explicit user approval. Tiny and sample-limited smokes are smoke/partial evidence only, not benchmark evidence.
 
 ## Production Handles
 
@@ -31,6 +31,13 @@ PY
 - Expected evidence scope: full validation inference only after approval; Wave 7 smokes remain tiny smoke gates.
 - Rollback path: do not delete smoke or benchmark artifacts; stop the run, preserve the run directory, and revert only Wave 7 config/runtime/doc changes if the launch gate is rejected.
 
+## Current Blockers
+
+- Adapter smoke is blocked before generation by strict embedding-delta identity: the candidate delta metadata records `base_config_sha256: null`, while runtime Qwen identity records `c7d172360d0ff881db59a6f34865c379bbef40d976ad79cfe5fbbf50483655de`.
+- Base smokes did not produce non-empty selected-token scoring evidence.
+- Base smokes did not naturally observe `<|im_end|>` stop or post-stop padding.
+- These gaps are covered by targeted tests only; they are not real-smoke evidence and do not justify benchmark approval.
+
 ## Wave 7 Smoke Commands
 
 Base single-row smoke:
@@ -53,4 +60,4 @@ CUDA_VISIBLE_DEVICES=1 python -m src.infer --config configs/coordexp_swift/infer
 
 ## Approval Stop
 
-Do not launch the production benchmark from this packet until the user explicitly approves the benchmark launch. Do not claim final inference correctness from Wave 7 smoke artifacts.
+Do not launch the production benchmark from this packet until the adapter smoke completes and the user explicitly approves the benchmark launch. Do not claim final inference correctness from Wave 7 smoke artifacts.

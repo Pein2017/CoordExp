@@ -38,9 +38,9 @@
 - [x] 4.2 Add failing tests for HF scored generation arguments, missing score failure, missing required trace field failure, and special-token-preserving raw trace decode.
 - [x] 4.3 Add failing tests for batched prompt-width alignment with variable prompt lengths and post-stop padding exclusion.
 - [x] 4.4 Implement HF `generate_batch` with `return_dict_in_generate=True`, `output_scores=True`, deterministic greedy defaults, Qwen `<|im_end|>` stop policy, and normalized transition logprob gathering.
-- [x] 4.5 Run a real tiny HF/Qwen trace probe that verifies generated ids, token text, logprobs, stop token, and parser-facing stripped view.
+- [ ] 4.5 Run a real tiny HF/Qwen trace probe that verifies generated ids, token text, logprobs, stop token, and parser-facing stripped view.
   - 2026-07-02 Wave 3 implementation note: targeted fake-HF tests now cover one-row scored trace extraction, special-token preservation, post-stop pad exclusion, and two-row variable prompt-width alignment. The real Qwen3-VL image probe remains deferred to Wave 7 smoke because loading the full local 2B VL model is too expensive for this small backend-only wave; this does not weaken the backend-trace spec.
-  - 2026-07-02 Wave 7 evidence: `outputs/coordexp_swift/infer/wave7_real_smokes/wave7-real-base-single-smoke-20260702T182753Z/pred_token_trace.jsonl` records generated ids, token text, and finite logprobs over a real Qwen run. The tiny run reached length stop rather than `<|im_end|>`, so terminal stop stripping remains covered by targeted backend tests rather than this real output.
+  - 2026-07-02 Wave 7 partial evidence: `outputs/coordexp_swift/infer/wave7_real_smokes/wave7-real-base-single-smoke-20260702T182753Z/pred_token_trace.jsonl` records generated ids, token text, and finite logprobs over a real Qwen run. The tiny run reached length stop rather than `<|im_end|>`, so real stop-token evidence remains open.
 
 ## 5. Prompt Image And Parsing
 
@@ -70,8 +70,10 @@
 
 ## 8. Real Smokes And Benchmark Readiness
 
-- [x] 8.1 Run the tiny real HF/Qwen inference smoke and verify prompt parity, image plan, trace, parser, scoring, and artifacts.
-- [x] 8.2 Run the two-row batched trace smoke and verify prompt-width alignment and stop/pad handling.
+- [ ] 8.1 Run the tiny real HF/Qwen inference smoke and verify prompt parity, image plan, trace, parser, scoring, and artifacts.
+  - 2026-07-02 partial: base single-row smoke completed and wrote required artifacts, but generated output produced `scoreable_prediction_count=0`, so non-empty selected-token scoring remains uncovered by real model output.
+- [ ] 8.2 Run the two-row batched trace smoke and verify prompt-width alignment and stop/pad handling.
+  - 2026-07-02 partial: two-row batch completed and wrote required artifacts, but no real `is_stop=true` or `is_pad=true` trace rows were observed; stop/pad remains targeted-test evidence only.
 - [ ] 8.3 Run the adapter-enabled real smoke and verify checkpoint-final or explicit checkpoint resolution, PEFT identity/status checks, embedding-delta metadata checks, and scored artifact output.
 - [x] 8.4 Run OpenSpec validation, targeted pytest suites, markdown/config hygiene checks, residue checks for `src/infer/` package collision, unapproved `src.infer` legacy test imports, stale `resolved_config.json`, legacy `configs/infer/` authority, constant-score fallback, and old `object_ordering: sorted` assumptions.
 - [x] 8.5 Prepare a benchmark launch packet naming production config, dataset, model, adapter, artifact root, evaluator command, expected evidence scope, and rollback path.
