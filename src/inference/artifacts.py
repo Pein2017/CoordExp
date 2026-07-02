@@ -5,6 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
+import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -59,6 +62,7 @@ def write_inference_artifacts(
     )
     _require_traces_for_predicted_rows(rows, decode_results)
     _validate_image_plan_rows(rows, image_plan_rows)
+    _validate_decode_results(rows, decode_results)
 
     raw_rows: list[dict[str, Any]] = []
     scored_rows: list[dict[str, Any]] = []
@@ -101,33 +105,50 @@ def write_inference_artifacts(
         scoreable_prediction_count += len(scored_pred)
         scored_rows.append(_scored_artifact_row(row, pred=scored_pred))
 
-    _write_jsonl(paths.raw_jsonl, raw_rows)
-    _write_jsonl(paths.scored_jsonl, scored_rows)
-    _write_jsonl(paths.token_trace_jsonl, token_trace_rows)
-    _write_jsonl(paths.parse_diagnostics_jsonl, diagnostic_rows)
-    _write_jsonl(paths.image_plan_jsonl, image_plan_rows)
-
-    raw_sha = sha256_file(paths.raw_jsonl)
-    scored_sha = sha256_file(paths.scored_jsonl)
-    provenance = _provenance(
-        metadata=metadata,
-        raw_sha=raw_sha,
-        scored_sha=scored_sha,
-        row_ids=[str(row["row_id"]) for row in rows],
+    staging_dir = Path(tempfile.mkdtemp(prefix=".wave5-artifacts-", dir=output_dir))
+    staged_paths = InferenceArtifactPaths(
+        output_dir=staging_dir,
+        raw_jsonl=staging_dir / RAW_NAME,
+        scored_jsonl=staging_dir / SCORED_NAME,
+        provenance_json=staging_dir / PROVENANCE_NAME,
+        token_trace_jsonl=staging_dir / TOKEN_TRACE_NAME,
+        parse_diagnostics_jsonl=staging_dir / PARSE_DIAGNOSTICS_NAME,
+        image_plan_jsonl=staging_dir / IMAGE_PLAN_NAME,
+        summary_json=staging_dir / SUMMARY_NAME,
+        run_manifest_json=staging_dir / MANIFEST_NAME,
     )
-    _write_json(paths.provenance_json, provenance)
-    summary = {
-        "row_count": len(rows),
-        "raw_row_count": len(raw_rows),
-        "scored_row_count": len(scored_rows),
-        "scoreable_prediction_count": scoreable_prediction_count,
-        "diagnostic_row_count": len(diagnostic_rows),
-        "trace_row_count": len(token_trace_rows),
-        "scored_artifact_materialized": True,
-        "benchmark_eligible": False,
-    }
-    _write_json(paths.summary_json, summary)
-    _write_json(paths.run_manifest_json, _manifest(metadata=metadata, summary=summary))
+    try:
+        _write_jsonl(staged_paths.raw_jsonl, raw_rows)
+        _write_jsonl(staged_paths.scored_jsonl, scored_rows)
+        _write_jsonl(staged_paths.token_trace_jsonl, token_trace_rows)
+        _write_jsonl(staged_paths.parse_diagnostics_jsonl, diagnostic_rows)
+        _write_jsonl(staged_paths.image_plan_jsonl, image_plan_rows)
+
+        raw_sha = sha256_file(staged_paths.raw_jsonl)
+        scored_sha = sha256_file(staged_paths.scored_jsonl)
+        provenance = _provenance(
+            metadata=metadata,
+            raw_sha=raw_sha,
+            scored_sha=scored_sha,
+            row_ids=[str(row["row_id"]) for row in rows],
+        )
+        _write_json(staged_paths.provenance_json, provenance)
+        summary = {
+            "row_count": len(rows),
+            "raw_row_count": len(raw_rows),
+            "scored_row_count": len(scored_rows),
+            "scoreable_prediction_count": scoreable_prediction_count,
+            "diagnostic_row_count": len(diagnostic_rows),
+            "trace_row_count": len(token_trace_rows),
+            "scored_artifact_materialized": True,
+            "benchmark_eligible": False,
+        }
+        _write_json(staged_paths.summary_json, summary)
+        _write_json(staged_paths.run_manifest_json, _manifest(metadata=metadata, summary=summary))
+        validate_scored_artifact_set(staging_dir)
+        _replace_final_artifacts(staged_paths, paths)
+    finally:
+        shutil.rmtree(staging_dir, ignore_errors=True)
     validate_scored_artifact_set(output_dir)
     return paths
 
@@ -138,6 +159,10 @@ def validate_scored_artifact_set(output_dir: Path) -> None:
         SCORED_NAME,
         TOKEN_TRACE_NAME,
         PROVENANCE_NAME,
+        PARSE_DIAGNOSTICS_NAME,
+        IMAGE_PLAN_NAME,
+        SUMMARY_NAME,
+        MANIFEST_NAME,
     ]
     for name in required:
         path = output_dir / name
@@ -228,6 +253,45 @@ def _validate_image_plan_rows(
             code="artifacts.image_plan_row_mismatch",
             context={"expected_row_ids": expected, "observed_row_ids": observed},
         )
+
+
+def _validate_decode_results(
+    rows: list[dict[str, Any]],
+    decode_results: dict[str, DecodeResult],
+) -> None:
+    for row in rows:
+        row_id = str(row["row_id"])
+        result = decode_results.get(row_id)
+        if result is None:
+            continue
+        if result.request_id != row_id:
+            raise ArtifactContractError(
+                "decode result request_id must match artifact row_id",
+                code="artifacts.decode_result_row_mismatch",
+                context={"row_id": row_id, "request_id": result.request_id},
+            )
+        try:
+            result.validate_for_scored()
+        except ArtifactContractError:
+            raise
+        except Exception as exc:
+            raise ArtifactContractError(
+                "decode result failed scored trace validation",
+                code="artifacts.decode_result_invalid",
+                context={"row_id": row_id},
+                cause=exc,
+            ) from exc
+        for trace in result.token_trace:
+            if trace.logprob is not None and not math.isfinite(float(trace.logprob)):
+                raise ArtifactContractError(
+                    "generated-token logprob must be finite before artifact writing",
+                    code="artifacts.non_finite_trace_logprob",
+                    context={
+                        "row_id": row_id,
+                        "generated_step_index": trace.step_index,
+                        "token_id": trace.token_id,
+                    },
+                )
 
 
 def _raw_artifact_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -430,15 +494,35 @@ def _verified_selected_logprobs_from_generated_trace(
 
 def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
     with path.open("w", encoding="utf-8") as handle:
-        for row in rows:
-            handle.write(json.dumps(_json_safe(row), sort_keys=True, separators=(",", ":")) + "\n")
+        for row_index, row in enumerate(rows):
+            try:
+                line = json.dumps(
+                    _json_safe(row),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    allow_nan=False,
+                )
+            except (TypeError, ValueError) as exc:
+                raise ArtifactContractError(
+                    "artifact JSONL row is not strict JSON serializable",
+                    code="artifacts.strict_json_failed",
+                    context={"path": str(path), "row_index": row_index},
+                    cause=exc,
+                ) from exc
+            handle.write(line + "\n")
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.write_text(
-        json.dumps(_json_safe(payload), sort_keys=True, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    try:
+        text = json.dumps(_json_safe(payload), sort_keys=True, indent=2, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise ArtifactContractError(
+            "artifact JSON is not strict JSON serializable",
+            code="artifacts.strict_json_failed",
+            context={"path": str(path)},
+            cause=exc,
+        ) from exc
+    path.write_text(text + "\n", encoding="utf-8")
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -446,4 +530,18 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 
 def _json_safe(value: Any) -> Any:
-    return json.loads(json.dumps(value, default=str))
+    return json.loads(json.dumps(value, default=str, allow_nan=False))
+
+
+def _replace_final_artifacts(staged: InferenceArtifactPaths, final: InferenceArtifactPaths) -> None:
+    for staged_path, final_path in [
+        (staged.raw_jsonl, final.raw_jsonl),
+        (staged.scored_jsonl, final.scored_jsonl),
+        (staged.provenance_json, final.provenance_json),
+        (staged.token_trace_jsonl, final.token_trace_jsonl),
+        (staged.parse_diagnostics_jsonl, final.parse_diagnostics_jsonl),
+        (staged.image_plan_jsonl, final.image_plan_jsonl),
+        (staged.summary_json, final.summary_json),
+        (staged.run_manifest_json, final.run_manifest_json),
+    ]:
+        os.replace(staged_path, final_path)

@@ -45,6 +45,15 @@ def _trace(*, logprob: float = math.log(0.25)) -> list[TokenTrace]:
     ]
 
 
+def _repeated_trace() -> list[TokenTrace]:
+    first = _trace(logprob=math.log(0.5))
+    second = [
+        TokenTrace(**{**item.__dict__, "step_index": item.step_index + len(first), "logprob": math.log(0.25)})
+        for item in _trace()
+    ]
+    return first + second
+
+
 def _decode_result(row_id: str, *, token_trace: list[TokenTrace] | None = None) -> DecodeResult:
     trace = _trace() if token_trace is None else token_trace
     return DecodeResult(
@@ -123,7 +132,7 @@ def test_artifact_writer_preserves_raw_and_scored_row_parity_without_diagnostic_
             _raw_row("row-1", 0),
             _raw_row("row-2", 1, text="malformed"),
         ],
-        decode_results={"row-1": _decode_result("row-1"), "row-2": _decode_result("row-2", token_trace=[])},
+        decode_results={"row-1": _decode_result("row-1")},
         image_plan_rows=[{"row_id": "row-1"}, {"row_id": "row-2"}],
         metadata=_metadata(),
     )
@@ -147,7 +156,7 @@ def test_scored_rows_keep_empty_pred_list_and_preserve_gt_and_image_identity(tmp
             _raw_row("row-1", 0),
             _raw_row("row-2", 1, text="malformed"),
         ],
-        decode_results={"row-1": _decode_result("row-1"), "row-2": _decode_result("row-2", token_trace=[])},
+        decode_results={"row-1": _decode_result("row-1")},
         image_plan_rows=[{"row_id": "row-1"}, {"row_id": "row-2"}],
         metadata=_metadata(),
     )
@@ -160,6 +169,24 @@ def test_scored_rows_keep_empty_pred_list_and_preserve_gt_and_image_identity(tmp
         assert row["image_path"] == f"{row['row_id']}.jpg"
         assert row["image_width"] == 1000
         assert row["image_height"] == 1000
+
+
+def test_artifact_writer_scores_two_identical_objects_using_absolute_span_offsets(tmp_path: Path) -> None:
+    from src.inference.artifacts import write_inference_artifacts
+
+    text = OBJECT_TEXT + OBJECT_TEXT
+    paths = write_inference_artifacts(
+        output_dir=tmp_path,
+        rows=[_raw_row("row-1", 0, text=text)],
+        decode_results={"row-1": _decode_result("row-1", token_trace=_repeated_trace())},
+        image_plan_rows=[{"row_id": "row-1"}],
+        metadata=_metadata(),
+    )
+
+    pred = _read_jsonl(paths.scored_jsonl)[0]["pred"]
+
+    assert len(pred) == 2
+    assert [item["score"] for item in pred] == [pytest.approx(0.5), pytest.approx(0.25)]
 
 
 def test_every_scored_prediction_has_row_local_source_version_and_finite_score(tmp_path: Path) -> None:
@@ -264,6 +291,69 @@ def test_artifact_writer_refuses_empty_image_plan_rows_before_status_claims(tmp_
         )
 
     assert exc_info.value.code == "artifacts.image_plan_row_mismatch"
+
+
+def test_artifact_writer_rejects_non_finite_generated_token_logprob_without_jsonl_output(tmp_path: Path) -> None:
+    from src.inference.artifacts import write_inference_artifacts
+
+    bad_trace = _trace()
+    bad_trace[4] = TokenTrace(**{**bad_trace[4].__dict__, "logprob": float("nan")})
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        write_inference_artifacts(
+            output_dir=tmp_path,
+            rows=[_raw_row("row-1", 0)],
+            decode_results={"row-1": _decode_result("row-1", token_trace=bad_trace)},
+            image_plan_rows=[{"row_id": "row-1"}],
+            metadata=_metadata(),
+        )
+
+    assert exc_info.value.code == "artifacts.non_finite_trace_logprob"
+    assert not (tmp_path / "pred_token_trace.jsonl").exists()
+    assert not (tmp_path / "gt_vs_pred_scored.jsonl").exists()
+
+
+def test_artifact_writer_preserves_prior_final_artifacts_when_rerun_fails(tmp_path: Path) -> None:
+    from src.inference.artifacts import write_inference_artifacts
+
+    valid_paths = write_inference_artifacts(
+        output_dir=tmp_path,
+        rows=[_raw_row("row-1", 0)],
+        decode_results={"row-1": _decode_result("row-1")},
+        image_plan_rows=[{"row_id": "row-1"}],
+        metadata=_metadata(),
+    )
+    prior_scored = valid_paths.scored_jsonl.read_text(encoding="utf-8")
+    prior_manifest = valid_paths.run_manifest_json.read_text(encoding="utf-8")
+    bad_trace = _trace()
+    bad_trace[4] = TokenTrace(**{**bad_trace[4].__dict__, "logprob": float("nan")})
+
+    with pytest.raises(ArtifactContractError):
+        write_inference_artifacts(
+            output_dir=tmp_path,
+            rows=[_raw_row("row-1", 0)],
+            decode_results={"row-1": _decode_result("row-1", token_trace=bad_trace)},
+            image_plan_rows=[{"row_id": "row-1"}],
+            metadata=_metadata(),
+        )
+
+    assert valid_paths.scored_jsonl.read_text(encoding="utf-8") == prior_scored
+    assert valid_paths.run_manifest_json.read_text(encoding="utf-8") == prior_manifest
+
+
+def test_artifact_writer_rejects_decode_result_request_id_mismatch(tmp_path: Path) -> None:
+    from src.inference.artifacts import write_inference_artifacts
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        write_inference_artifacts(
+            output_dir=tmp_path,
+            rows=[_raw_row("row-1", 0)],
+            decode_results={"row-1": _decode_result("other-row")},
+            image_plan_rows=[{"row_id": "row-1"}],
+            metadata=_metadata(),
+        )
+
+    assert exc_info.value.code == "artifacts.decode_result_row_mismatch"
 
 
 def test_scored_artifact_production_refuses_missing_trace(tmp_path: Path) -> None:

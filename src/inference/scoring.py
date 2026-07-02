@@ -62,7 +62,7 @@ def score_prediction(
             code="scoring.trace_alignment_missing",
             context={"row_id": row_id, "object_span_id": prediction.get("object_span_id")},
         )
-    interval = _locate_object_interval(prediction, token_trace)
+    interval = _locate_object_interval(row_id=row_id, prediction=prediction, token_trace=token_trace)
     selected = _select_tokens(prediction, token_trace, interval=interval)
     if len(selected) != SCORE_POLICY["selected_token_count"]:
         raise ArtifactContractError(
@@ -151,6 +151,8 @@ def score_prediction(
 
 
 def _locate_object_interval(
+    *,
+    row_id: str,
     prediction: dict[str, Any],
     token_trace: list[TokenTrace],
 ) -> tuple[int, int, int]:
@@ -159,7 +161,14 @@ def _locate_object_interval(
         raise ArtifactContractError(
             "parser prediction lacks raw span evidence for scoring",
             code="scoring.missing_span_evidence",
-            context={"object_span_id": prediction.get("object_span_id")},
+            context={"row_id": row_id, "object_span_id": prediction.get("object_span_id")},
+        )
+    expected_sha = prediction.get("raw_span_sha256")
+    if expected_sha is not None and expected_sha != _sha256_text(raw_span_text):
+        raise ArtifactContractError(
+            "parser raw span sha does not match raw span text",
+            code="scoring.raw_span_sha_mismatch",
+            context={"row_id": row_id, "object_span_id": prediction.get("object_span_id")},
         )
     matches: list[tuple[int, int, int]] = []
     token_count = len(token_trace)
@@ -173,6 +182,7 @@ def _locate_object_interval(
                 break
             if not raw_span_text.startswith(joined):
                 break
+    matches = _filter_matches_by_absolute_span(prediction, matches, raw_span_text=raw_span_text)
     if not matches:
         generated_text = "".join(item.token_text for item in token_trace)
         if raw_span_text in generated_text or _span_tokens_present_in_order(
@@ -187,7 +197,7 @@ def _locate_object_interval(
             code=code,
             context={
                 "object_span_id": prediction.get("object_span_id"),
-                "row_id": prediction.get("row_id"),
+                "row_id": row_id,
             },
         )
     if len(matches) != 1:
@@ -195,11 +205,31 @@ def _locate_object_interval(
             "parser object span maps to multiple generated-token intervals",
             code="scoring.trace_alignment_ambiguous",
             context={
+                "row_id": row_id,
                 "object_span_id": prediction.get("object_span_id"),
                 "match_count": len(matches),
             },
         )
     return matches[0]
+
+
+def _filter_matches_by_absolute_span(
+    prediction: dict[str, Any],
+    matches: list[tuple[int, int, int]],
+    *,
+    raw_span_text: str,
+) -> list[tuple[int, int, int]]:
+    if "char_start" not in prediction or "char_end" not in prediction:
+        return matches
+    expected_start = int(prediction["char_start"])
+    expected_end = int(prediction["char_end"])
+    if expected_end - expected_start != len(raw_span_text):
+        return []
+    return [
+        match
+        for match in matches
+        if match[2] == expected_start and match[2] + len(raw_span_text) == expected_end
+    ]
 
 
 def _span_tokens_present_in_order(
@@ -336,3 +366,7 @@ def _artifact_prediction(prediction: dict[str, Any]) -> dict[str, Any]:
         "generated_order",
     }
     return {key: prediction[key] for key in sorted(keep) if key in prediction}
+
+
+def _sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()

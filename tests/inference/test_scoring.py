@@ -194,6 +194,9 @@ def test_duplicate_span_alignment_is_ambiguous_without_unique_trace_interval() -
     )
     full_text = object_text + object_text
     prediction = _prediction(object_text)
+    prediction.pop("char_start")
+    prediction.pop("char_end")
+    prediction.pop("raw_span_sha256")
     trace = _trace_for_text(object_text) + [
         TokenTrace(**{**item.__dict__, "step_index": item.step_index + 9})
         for item in _trace_for_text(object_text)
@@ -204,6 +207,41 @@ def test_duplicate_span_alignment_is_ambiguous_without_unique_trace_interval() -
         score_prediction(row_id="row-1", prediction=prediction, token_trace=trace)
 
     assert exc_info.value.code == "scoring.trace_alignment_ambiguous"
+
+
+def test_identical_repeated_object_spans_use_parser_absolute_offsets_for_scoring() -> None:
+    from src.inference.parsing import parse_compact_object_box_closed
+    from src.inference.scoring import score_prediction
+
+    object_text = (
+        "<|object_ref_start|>cat<|object_ref_end|>"
+        "<|box_start|><|coord_100|><|coord_200|><|coord_300|><|coord_400|><|box_end|>"
+    )
+    full_text = object_text + object_text
+    row = parse_compact_object_box_closed(
+        full_text,
+        row_id="row-1",
+        row_index=0,
+        image_width=1000,
+        image_height=1000,
+    )
+    first_trace = _trace_for_text(object_text, logprob=math.log(0.5))
+    second_trace = [
+        TokenTrace(**{**item.__dict__, "step_index": item.step_index + len(first_trace)})
+        for item in _trace_for_text(object_text, logprob=math.log(0.25))
+    ]
+
+    scored = [
+        score_prediction(
+            row_id="row-1",
+            prediction=prediction,
+            token_trace=first_trace + second_trace,
+        )
+        for prediction in row.predictions
+    ]
+
+    assert [item.score for item in scored] == [pytest.approx(0.5), pytest.approx(0.25)]
+    assert [item.replay["generated_step_indices"][0] for item in scored] == [0, 9]
 
 
 def test_object_span_must_map_to_contiguous_generated_token_interval() -> None:
@@ -232,6 +270,26 @@ def test_object_span_must_map_to_contiguous_generated_token_interval() -> None:
         score_prediction(row_id="row-1", prediction=_prediction(text), token_trace=trace)
 
     assert exc_info.value.code == "scoring.object_span_not_contiguous"
+
+
+def test_direct_score_alignment_errors_preserve_caller_row_id_context() -> None:
+    from src.inference.scoring import score_prediction
+
+    text = (
+        "<|object_ref_start|>cat<|object_ref_end|>"
+        "<|box_start|><|coord_100|><|coord_200|><|coord_300|><|coord_400|><|box_end|>"
+    )
+    mismatched_trace = _trace_for_text(text)
+    mismatched_trace[1] = TokenTrace(**{**mismatched_trace[1].__dict__, "token_text": "dog"})
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        score_prediction(
+            row_id="row-direct",
+            prediction=_prediction(text),
+            token_trace=mismatched_trace,
+        )
+
+    assert exc_info.value.context["row_id"] == "row-direct"
 
 
 def test_score_policy_fingerprint_is_stable_and_content_addressed() -> None:
