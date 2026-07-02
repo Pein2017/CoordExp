@@ -156,6 +156,12 @@ def write_image_plan_jsonl(
     output_path: Path,
     materialize: bool,
 ) -> list[ImagePlanRow]:
+    if not materialize:
+        raise EncodingContractError(
+            "V1 image_plan.jsonl writing requires materialized no-resize processor evidence",
+            code="inference.image_plan_materialize_required",
+            context={"output_path": str(output_path)},
+        )
     rows = materialize_image_plan_rows(
         raw_examples,
         components=components,

@@ -187,6 +187,22 @@ def test_image_plan_jsonl_records_mandatory_no_resize_fields(tmp_path: Path) -> 
     assert row["error"] is None
 
 
+def test_image_plan_jsonl_refuses_non_materialized_public_write(tmp_path: Path) -> None:
+    from src.inference.image_plan import write_image_plan_jsonl
+
+    with pytest.raises(EncodingContractError) as exc_info:
+        write_image_plan_jsonl(
+            [_raw_example(tmp_path / "data", width=96, height=64)],
+            components=FakeComponents(_processor_identity(), FakeProcessor()),
+            processor_config=_processor_config(),
+            output_path=tmp_path / "image_plan.jsonl",
+            materialize=False,
+        )
+
+    assert exc_info.value.code == "inference.image_plan_materialize_required"
+    assert not (tmp_path / "image_plan.jsonl").exists()
+
+
 def test_image_plan_records_processor_model_vision_parity(tmp_path: Path) -> None:
     from src.inference.image_plan import verify_processor_model_vision_parity
 
