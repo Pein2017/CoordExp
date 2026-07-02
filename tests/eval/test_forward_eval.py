@@ -100,6 +100,80 @@ def test_forward_eval_writes_summary_metric_stream_and_restores_model_mode(
     assert manifest["eval"]["forward"]["step-4"] == "eval/forward/step-4.json"
 
 
+def test_forward_eval_streams_loss_without_retaining_all_contexts(
+    tmp_path: Path,
+) -> None:
+    log: list[str] = []
+    manager = _manager(tmp_path)
+    model = FakeModel(log)
+    runner = ForwardEvalRunner(
+        model=model,
+        micro_step_stream=(
+            _micro_step(0, encoded_examples=("example-a", "example-b")),
+            _micro_step(1, encoded_examples=("example-c",)),
+            _micro_step(2, encoded_examples=("example-d",)),
+        ),
+        loss_runner=StreamingFakeLossRunner(log),
+        artifact_manager=manager,
+        eval_source={"path": "tests/fixtures/eval.jsonl", "sample_limit": None},
+        qwen_forward=_qwen_forward(log),
+        loss_context_factory=_loss_context(log),
+        runtime=FakeEvalRuntime(log),
+    )
+
+    result = runner.run(
+        planned_step_id=136,
+        trigger_reasons=("every_fraction:0.4",),
+        optimizer_update_status="applied",
+        finite_status="finite",
+        warning_status="none",
+    )
+
+    assert model.training is True
+    assert log == [
+        "model.eval",
+        "streaming.prepare:3",
+        "runtime.move:136:0",
+        "forward:0:grad=False:training=False",
+        "context:0",
+        "streaming.loss:0",
+        "runtime.move:136:1",
+        "forward:1:grad=False:training=False",
+        "context:1",
+        "streaming.loss:1",
+        "runtime.move:136:2",
+        "forward:2:grad=False:training=False",
+        "context:2",
+        "streaming.loss:2",
+        "streaming.finalize:3",
+        "model.train:True",
+    ]
+
+    assert result.summary["example_count"] == 4
+    assert result.summary["pack_count"] == 3
+    assert result.summary["metric_summary"]["loss/total"] == pytest.approx(1.25)
+    assert result.summary["loss_summary"]["diagnostics"] == {
+        "normalizer_scope": "planned_step_streaming"
+    }
+    assert [receipt["pack"] for receipt in result.summary["qwen_forward_receipts"]] == [
+        0,
+        1,
+        2,
+    ]
+
+    metric_records = [
+        json.loads(line)
+        for line in (tmp_path / "run-a" / "metrics" / "eval.forward.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert [record["name"] for record in metric_records] == [
+        "acc_top1",
+        "acc_top5",
+        "loss/total",
+    ]
+
+
 def test_forward_eval_requires_explicit_eval_source_before_consuming_stream(
     tmp_path: Path,
 ) -> None:
@@ -377,6 +451,44 @@ class FakeLossBundle:
             "total_loss": 1.25,
             "metrics": dict(self.metrics),
             "counts": {"eligible_tokens": 8},
+        }
+
+
+class StreamingFakeLossRunner(FakeLossRunner):
+    def compute(self, contexts: tuple[Any, ...]) -> "FakeLossBundle":
+        del contexts
+        raise AssertionError("streaming eval path must not retain all contexts")
+
+    def prepare_planned_step(
+        self,
+        micro_steps: tuple[SupervisedMicroStep, ...],
+    ) -> dict[str, int]:
+        self.log.append(f"streaming.prepare:{len(micro_steps)}")
+        return {"micro_step_count": len(micro_steps)}
+
+    def compute_micro_step(
+        self,
+        context: Any,
+        plan: dict[str, int],
+        *,
+        local_micro_step_index: int,
+    ) -> "FakeLossBundle":
+        del context, plan
+        self.log.append(f"streaming.loss:{local_micro_step_index}")
+        return FakeLossBundle()
+
+    def finalize_planned_step(
+        self,
+        micro_loss_artifacts: tuple[dict[str, Any], ...],
+        plan: dict[str, int],
+    ) -> dict[str, Any]:
+        del plan
+        self.log.append(f"streaming.finalize:{len(micro_loss_artifacts)}")
+        return {
+            "total_loss": 1.25,
+            "metrics": {"acc_top1": 0.5, "acc_top5": 0.75, "loss/total": 1.25},
+            "counts": {"eligible_tokens": 8},
+            "diagnostics": {"normalizer_scope": "planned_step_streaming"},
         }
 
 
