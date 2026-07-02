@@ -534,7 +534,7 @@ def _json_safe(value: Any) -> Any:
 
 
 def _replace_final_artifacts(staged: InferenceArtifactPaths, final: InferenceArtifactPaths) -> None:
-    for staged_path, final_path in [
+    pairs = [
         (staged.raw_jsonl, final.raw_jsonl),
         (staged.scored_jsonl, final.scored_jsonl),
         (staged.provenance_json, final.provenance_json),
@@ -543,5 +543,40 @@ def _replace_final_artifacts(staged: InferenceArtifactPaths, final: InferenceArt
         (staged.image_plan_jsonl, final.image_plan_jsonl),
         (staged.summary_json, final.summary_json),
         (staged.run_manifest_json, final.run_manifest_json),
-    ]:
-        os.replace(staged_path, final_path)
+    ]
+    backup_dir = Path(tempfile.mkdtemp(prefix=".wave5-artifact-backup-", dir=final.output_dir))
+    backups: dict[Path, Path | None] = {}
+    replaced: list[Path] = []
+    try:
+        for _, final_path in pairs:
+            if final_path.exists():
+                backup_path = backup_dir / final_path.name
+                os.replace(final_path, backup_path)
+                backups[final_path] = backup_path
+            else:
+                backups[final_path] = None
+        for staged_path, final_path in pairs:
+            os.replace(staged_path, final_path)
+            replaced.append(final_path)
+    except OSError as exc:
+        for final_path in replaced:
+            try:
+                if final_path.exists():
+                    final_path.unlink()
+            except OSError:
+                pass
+        for final_path, backup_path in backups.items():
+            if backup_path is None:
+                continue
+            try:
+                shutil.move(str(backup_path), str(final_path))
+            except OSError:
+                pass
+        raise ArtifactContractError(
+            "failed to publish complete inference artifact set",
+            code="artifacts.publish_failed",
+            context={"failed_after": [path.name for path in replaced]},
+            cause=exc,
+        ) from exc
+    finally:
+        shutil.rmtree(backup_dir, ignore_errors=True)

@@ -341,6 +341,60 @@ def test_artifact_writer_preserves_prior_final_artifacts_when_rerun_fails(tmp_pa
     assert valid_paths.run_manifest_json.read_text(encoding="utf-8") == prior_manifest
 
 
+def test_artifact_writer_rolls_back_all_final_artifacts_when_publish_replace_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import src.inference.artifacts as artifacts
+    from src.inference.artifacts import write_inference_artifacts
+
+    valid_paths = write_inference_artifacts(
+        output_dir=tmp_path,
+        rows=[_raw_row("row-1", 0)],
+        decode_results={"row-1": _decode_result("row-1")},
+        image_plan_rows=[{"row_id": "row-1"}],
+        metadata=_metadata(),
+    )
+    final_paths = [
+        valid_paths.raw_jsonl,
+        valid_paths.scored_jsonl,
+        valid_paths.provenance_json,
+        valid_paths.token_trace_jsonl,
+        valid_paths.parse_diagnostics_jsonl,
+        valid_paths.image_plan_jsonl,
+        valid_paths.summary_json,
+        valid_paths.run_manifest_json,
+    ]
+    prior = {path: path.read_bytes() for path in final_paths}
+    real_replace = artifacts.os.replace
+    replaced_final_names: list[str] = []
+
+    def fail_after_scored_replace(src: Path, dst: Path) -> None:
+        dst_path = Path(dst)
+        if dst_path.parent == tmp_path and dst_path.name == "gt_vs_pred_scored.jsonl":
+            real_replace(src, dst)
+            replaced_final_names.append(dst_path.name)
+            return
+        if replaced_final_names:
+            raise OSError("forced replace failure after scored artifact")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(artifacts.os, "replace", fail_after_scored_replace)
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        write_inference_artifacts(
+            output_dir=tmp_path,
+            rows=[_raw_row("row-1", 0)],
+            decode_results={"row-1": _decode_result("row-1")},
+            image_plan_rows=[{"row_id": "row-1"}],
+            metadata=_metadata(),
+        )
+
+    assert exc_info.value.code == "artifacts.publish_failed"
+    assert replaced_final_names == ["gt_vs_pred_scored.jsonl"]
+    assert {path: path.read_bytes() for path in final_paths} == prior
+
+
 def test_artifact_writer_rejects_decode_result_request_id_mismatch(tmp_path: Path) -> None:
     from src.inference.artifacts import write_inference_artifacts
 

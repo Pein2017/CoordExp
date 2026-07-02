@@ -292,6 +292,64 @@ def test_direct_score_alignment_errors_preserve_caller_row_id_context() -> None:
     assert exc_info.value.context["row_id"] == "row-direct"
 
 
+def test_missing_logprob_error_preserves_caller_row_id_context() -> None:
+    from src.inference.scoring import score_prediction
+
+    text = (
+        "<|object_ref_start|>cat<|object_ref_end|>"
+        "<|box_start|><|coord_100|><|coord_200|><|coord_300|><|coord_400|><|box_end|>"
+    )
+    trace = _trace_for_text(text)
+    trace[4] = TokenTrace(**{**trace[4].__dict__, "logprob": None})
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        score_prediction(row_id="row-missing-logprob", prediction=_prediction(text), token_trace=trace)
+
+    assert exc_info.value.code == "scoring.missing_logprob"
+    assert exc_info.value.context["row_id"] == "row-missing-logprob"
+
+
+def test_selected_span_alignment_failure_preserves_caller_row_id_context() -> None:
+    from src.inference.scoring import score_prediction
+
+    text = (
+        "<|object_ref_start|>cat<|object_ref_end|>"
+        "<|box_start|><|coord_100|><|coord_200|><|coord_300|><|coord_400|><|box_end|>"
+    )
+    prediction = _prediction(text)
+    prediction["coord_token_spans"][0] = {
+        **prediction["coord_token_spans"][0],
+        "char_start": prediction["coord_token_spans"][0]["char_start"] + 1,
+    }
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        score_prediction(
+            row_id="row-span-align",
+            prediction=prediction,
+            token_trace=_trace_for_text(text),
+        )
+
+    assert exc_info.value.code == "scoring.selected_span_alignment_failed"
+    assert exc_info.value.context["row_id"] == "row-span-align"
+
+
+def test_raw_span_sha_mismatch_preserves_caller_row_id_context() -> None:
+    from src.inference.scoring import score_prediction
+
+    text = (
+        "<|object_ref_start|>cat<|object_ref_end|>"
+        "<|box_start|><|coord_100|><|coord_200|><|coord_300|><|coord_400|><|box_end|>"
+    )
+    prediction = _prediction(text)
+    prediction["raw_span_sha256"] = "0" * 64
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        score_prediction(row_id="row-sha", prediction=prediction, token_trace=_trace_for_text(text))
+
+    assert exc_info.value.code == "scoring.raw_span_sha_mismatch"
+    assert exc_info.value.context["row_id"] == "row-sha"
+
+
 def test_score_policy_fingerprint_is_stable_and_content_addressed() -> None:
     from src.inference.scoring import SCORE_POLICY, SCORE_POLICY_FINGERPRINT, fingerprint_score_policy
 

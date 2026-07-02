@@ -63,7 +63,7 @@ def score_prediction(
             context={"row_id": row_id, "object_span_id": prediction.get("object_span_id")},
         )
     interval = _locate_object_interval(row_id=row_id, prediction=prediction, token_trace=token_trace)
-    selected = _select_tokens(prediction, token_trace, interval=interval)
+    selected = _select_tokens(row_id=row_id, prediction=prediction, token_trace=token_trace, interval=interval)
     if len(selected) != SCORE_POLICY["selected_token_count"]:
         raise ArtifactContractError(
             "compact object selected-token count does not match V1 score policy",
@@ -255,9 +255,10 @@ def _span_tokens_present_in_order(
 
 
 def _select_tokens(
+    *,
+    row_id: str,
     prediction: dict[str, Any],
     token_trace: list[TokenTrace],
-    *,
     interval: tuple[int, int, int],
 ) -> list[dict[str, Any]]:
     start_token, end_token, span_char_start = interval
@@ -271,6 +272,7 @@ def _select_tokens(
     for span in selected_spans:
         trace = _trace_for_span(
             span,
+            row_id=row_id,
             token_trace=token_trace,
             token_ranges=token_ranges,
             span_char_start=span_char_start,
@@ -281,6 +283,7 @@ def _select_tokens(
                 "selected generated token lacks logprob evidence",
                 code="scoring.missing_logprob",
                 context={
+                    "row_id": row_id,
                     "object_span_id": prediction.get("object_span_id"),
                     "token_text": trace.token_text,
                 },
@@ -317,6 +320,7 @@ def _token_char_ranges(
 def _trace_for_span(
     span: dict[str, Any],
     *,
+    row_id: str,
     token_trace: list[TokenTrace],
     token_ranges: list[tuple[int, int, int]],
     span_char_start: int,
@@ -334,6 +338,7 @@ def _trace_for_span(
             "selected parser span does not align to exactly one generated token",
             code="scoring.selected_span_alignment_failed",
             context={
+                "row_id": row_id,
                 "object_span_id": object_span_id,
                 "span_text": span.get("text"),
                 "span_char_start": char_start,
@@ -348,6 +353,7 @@ def _trace_for_span(
             "selected parser span text disagrees with token trace text",
             code="scoring.selected_span_text_mismatch",
             context={
+                "row_id": row_id,
                 "object_span_id": object_span_id,
                 "span_text": span.get("text"),
                 "token_text": trace.token_text,
