@@ -23,12 +23,35 @@ def test_valid_production_infer_config_loads() -> None:
     from src.config.inference import InferConfig, load_infer_config
 
     resolved = load_infer_config("configs/coordexp_swift/infer/base.yaml")
+    repo_root = Path.cwd().resolve()
+    config_dir = (repo_root / "configs" / "coordexp_swift" / "infer").resolve()
+    expected_base_model = (
+        repo_root
+        / "model_cache"
+        / "models"
+        / "Qwen"
+        / "Qwen3-VL-2B-Instruct-coordexp-natural-adjacent"
+    ).resolve()
+    expected_input = (
+        repo_root / "tests" / "fixtures" / "smoke" / "qwen3_vl_single_image_pack" / "examples.jsonl"
+    ).resolve()
+    expected_artifact_root = (repo_root / "outputs" / "coordexp_swift" / "infer").resolve()
 
     assert isinstance(resolved.config, InferConfig)
     assert resolved.config.backend.type == "hf"
     assert resolved.config.generation.batch_size > 1
     assert resolved.config.debug.smoke is False
     assert resolved.config_dict["generation"]["batch_size"] == 2
+    assert Path(resolved.config.model.base_model) == expected_base_model
+    assert Path(resolved.config.data.input_jsonl) == expected_input
+    assert Path(resolved.config.run.artifact_root) == expected_artifact_root
+    for resolved_path in (
+        Path(resolved.config.model.base_model),
+        Path(resolved.config.data.input_jsonl),
+        Path(resolved.config.run.artifact_root),
+    ):
+        with pytest.raises(ValueError):
+            resolved_path.relative_to(config_dir)
     assert resolved.fingerprint
 
 
@@ -154,6 +177,82 @@ def test_resolved_config_artifacts_are_written_under_configs(tmp_path: Path) -> 
     assert yaml.safe_load(artifacts.yaml_path.read_text(encoding="utf-8"))["resolution"][
         "fingerprint"
     ] == resolved.fingerprint
+
+
+def test_pipeline_dry_run_respects_fail_collision_policy(tmp_path: Path) -> None:
+    from src.inference.pipeline import run
+
+    config_path = _write_config(
+        tmp_path,
+        debug={"smoke": False, "dry_run": True},
+    )
+
+    assert run(config_path=config_path) == 0
+    with pytest.raises(ConfigContractError) as exc_info:
+        run(config_path=config_path)
+
+    assert exc_info.value.code == "config.run_dir_exists"
+
+
+def test_pipeline_dry_run_timestamp_collision_policy_chooses_timestamped_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.inference import pipeline as pipeline_module
+
+    config_path = _write_config(
+        tmp_path,
+        run={
+            "name": "wave2-test",
+            "artifact_root": str(tmp_path / "outputs"),
+            "collision_policy": "timestamp",
+        },
+        debug={"smoke": False, "dry_run": True},
+    )
+    (tmp_path / "outputs" / "wave2-test").mkdir(parents=True)
+    monkeypatch.setattr(
+        pipeline_module,
+        "_timestamp_suffix",
+        lambda: "20260702T000000Z",
+    )
+
+    assert pipeline_module.run(config_path=config_path) == 0
+    assert (
+        tmp_path
+        / "outputs"
+        / "wave2-test-20260702T000000Z"
+        / "configs"
+        / "resolved.json"
+    ).is_file()
+
+
+def test_pipeline_dry_run_does_not_overwrite_existing_resolved_config(
+    tmp_path: Path,
+) -> None:
+    from src.inference.pipeline import run
+
+    config_path = _write_config(
+        tmp_path,
+        generation={"batch_size": 2, "max_new_tokens": 64, "temperature": 0.0, "top_p": 1.0},
+        debug={"smoke": False, "dry_run": True},
+    )
+
+    assert run(config_path=config_path) == 0
+    resolved_path = tmp_path / "outputs" / "wave2-test" / "configs" / "resolved.json"
+    first_payload = json.loads(resolved_path.read_text(encoding="utf-8"))
+    assert first_payload["config"]["generation"]["max_new_tokens"] == 64
+
+    config_path = _write_config(
+        tmp_path,
+        generation={"batch_size": 2, "max_new_tokens": 128, "temperature": 0.0, "top_p": 1.0},
+        debug={"smoke": False, "dry_run": True},
+    )
+    with pytest.raises(ConfigContractError) as exc_info:
+        run(config_path=config_path)
+
+    assert exc_info.value.code == "config.run_dir_exists"
+    second_payload = json.loads(resolved_path.read_text(encoding="utf-8"))
+    assert second_payload["config"]["generation"]["max_new_tokens"] == 64
 
 
 def test_runtime_assembly_uses_default_owner_wired_adapter_and_delta_paths(
@@ -287,7 +386,7 @@ def test_embedding_delta_runtime_uses_real_validator_with_qwen_identity(
     assert runtime.embedding_delta_receipt is not None
     assert runtime.embedding_delta_receipt["status"] == "validated"
     assert runtime.embedding_delta_receipt["metadata"]["base_config_sha256"] == "base-config-sha"
-    assert runtime.model_identity["family"] == "base-only"
+    assert runtime.model_identity["family"] == "base-plus-delta"
     assert runtime.model_identity["embedding_delta"]["metadata_path"].endswith(
         "special_token_embeddings.json"
     )
@@ -301,6 +400,37 @@ def test_qwen_components_shape_exposes_delta_identity_sha_fields() -> None:
     field_names = {field.name for field in dataclasses.fields(QwenComponents)}
     assert "base_config_sha256" in field_names
     assert "tokenizer_sha256" in field_names
+
+
+def test_qwen_loading_train_wrapper_uses_single_neutral_loader() -> None:
+    loading_tree = ast.parse(Path("src/qwen/loading.py").read_text(encoding="utf-8"))
+    runtime_tree = ast.parse(Path("src/qwen/runtime_loading.py").read_text(encoding="utf-8"))
+
+    loading_defs = {
+        node.name
+        for node in ast.walk(loading_tree)
+        if isinstance(node, (ast.FunctionDef, ast.ClassDef))
+    }
+    runtime_defs = {
+        node.name
+        for node in ast.walk(runtime_tree)
+        if isinstance(node, (ast.FunctionDef, ast.ClassDef))
+    }
+    assert "load_qwen_components_from_options" not in loading_defs
+    assert "QwenLoadOptions" not in loading_defs
+    assert "load_qwen_components_from_options" in runtime_defs
+    assert "QwenLoadOptions" in runtime_defs
+
+    imports_runtime_loader = any(
+        isinstance(node, ast.ImportFrom)
+        and node.module == "src.qwen.runtime_loading"
+        and {
+            "QwenLoadOptions",
+            "load_qwen_components_from_options",
+        }.issubset({alias.name for alias in node.names})
+        for node in ast.walk(loading_tree)
+    )
+    assert imports_runtime_loader
 
 
 def test_infer_entry_help_resolves_without_src_infer_package() -> None:

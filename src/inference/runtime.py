@@ -68,12 +68,14 @@ def _model_identity(
     adapter_receipt: Mapping[str, Any] | None,
     embedding_delta_receipt: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
-    if config.adapter is None:
-        family = "base-only"
-    elif config.embedding_delta is None:
-        family = "base-plus-adapter"
-    else:
+    if config.adapter is not None and config.embedding_delta is not None:
         family = "base-plus-adapter-plus-delta"
+    elif config.adapter is not None:
+        family = "base-plus-adapter"
+    elif config.embedding_delta is not None:
+        family = "base-plus-delta"
+    else:
+        family = "base-only"
     return {
         "family": family,
         "base": {"path": _base_model_path(config, qwen)},

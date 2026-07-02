@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -11,7 +12,7 @@ from pydantic import Field, ValidationError, field_validator, model_validator
 
 from src.common.errors import ConfigContractError
 from src.config.fingerprint import sha256_file, sha256_json
-from src.config.models import ConfigSource, PathOrigin, StrictConfigModel
+from src.config.models import ConfigSource, PathOrigin, RunDirectory, StrictConfigModel
 from src.config.paths import get_nested, set_nested
 
 
@@ -202,6 +203,59 @@ def load_infer_config(path: str | Path) -> ResolvedInferConfig:
         entry_config_path=entry_path,
         sources=sources,
         path_origins=path_origins,
+    )
+
+
+def resolve_infer_run_directory(
+    config: InferConfig,
+    *,
+    cwd: Path | None = None,
+    timestamp: str | None = None,
+) -> RunDirectory:
+    root_base = Path(config.run.artifact_root)
+    root = root_base if root_base.is_absolute() else (cwd or Path.cwd()) / root_base
+    root = root.resolve()
+
+    run_dir_name = config.run.output_dir or config.run.name
+    run_dir_path = Path(run_dir_name)
+    if run_dir_path.is_absolute() or ".." in run_dir_path.parts:
+        raise ConfigContractError(
+            "run.output_dir must stay under run.artifact_root",
+            code="config.run_output_dir_escape",
+            context={"output_dir": run_dir_name},
+        )
+    run_dir = (root / run_dir_path).resolve()
+    try:
+        run_dir.relative_to(root)
+    except ValueError as exc:
+        raise ConfigContractError(
+            "run output directory escaped artifact root",
+            code="config.run_output_dir_escape",
+            context={"artifact_root": str(root), "run_dir": str(run_dir)},
+            cause=exc,
+        ) from exc
+
+    if run_dir.exists():
+        if config.run.collision_policy == "fail":
+            raise ConfigContractError(
+                "run output directory already exists",
+                code="config.run_dir_exists",
+                context={"run_dir": str(run_dir), "collision_policy": "fail"},
+            )
+        suffix = timestamp or datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        run_dir = run_dir.with_name(f"{run_dir.name}-{suffix}")
+        if run_dir.exists():
+            raise ConfigContractError(
+                "timestamped run output directory already exists",
+                code="config.timestamped_run_dir_exists",
+                context={"run_dir": str(run_dir), "collision_policy": "timestamp"},
+            )
+
+    return RunDirectory(
+        run_name=config.run.name,
+        artifact_root=root,
+        run_dir=run_dir.resolve(),
+        collision_policy=config.run.collision_policy,
     )
 
 
