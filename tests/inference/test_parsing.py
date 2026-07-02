@@ -90,6 +90,26 @@ def test_accepted_with_drops_preserves_valid_objects_and_diagnostics() -> None:
     assert row.diagnostics[0]["row_id"] == "row-1"
 
 
+def test_malformed_span_before_valid_object_does_not_fuse_across_boundary() -> None:
+    from src.inference.parsing import parse_compact_object_box_closed
+
+    row = parse_compact_object_box_closed(
+        "<|object_ref_start|>bad"
+        "<|object_ref_start|>cat<|object_ref_end|>"
+        "<|box_start|><|coord_100|><|coord_200|><|coord_300|><|coord_400|><|box_end|>",
+        row_id="row-1",
+        row_index=0,
+        image_width=1000,
+        image_height=1000,
+    )
+
+    assert row.parse_status == "accepted_with_drops"
+    assert [prediction["description"] for prediction in row.predictions] == ["cat"]
+    assert row.dropped_predictions[0]["reason"] == "malformed_object_span"
+    assert row.dropped_predictions[0]["generated_order"] == 0
+    assert row.predictions[0]["generated_order"] == 1
+
+
 def test_all_spans_dropped_keeps_empty_row_and_non_metric_status() -> None:
     from src.inference.parsing import parse_compact_object_box_closed
 

@@ -20,19 +20,13 @@ from src.templates.renderer import (
 PARSER_ID = "compact-object-box-closed-v1"
 PARSER_POLICY = "compact_object_box_closed_only"
 _OBJECT_RE = re.compile(
-    re.escape(OBJECT_REF_START_TOKEN)
+    r"^" + re.escape(OBJECT_REF_START_TOKEN)
     + r"(?P<description>.*?)"
     + re.escape(OBJECT_REF_END_TOKEN)
     + re.escape(BOX_START_TOKEN)
     + r"(?P<coords>(?:<\|coord_[^>]+\|>){4})"
-    + re.escape(BOX_END_TOKEN),
-    re.DOTALL,
-)
-_CANDIDATE_RE = re.compile(
-    re.escape(OBJECT_REF_START_TOKEN)
-    + r"(?P<raw>.*?)(?="
-    + re.escape(OBJECT_REF_START_TOKEN)
-    + r"|$)",
+    + re.escape(BOX_END_TOKEN)
+    + r"$",
     re.DOTALL,
 )
 _COORD_RE = re.compile(r"<\|coord_[^>]+\|>")
@@ -101,10 +95,19 @@ def parse_compact_object_box_closed(
 
     predictions: list[dict[str, Any]] = []
     dropped: list[dict[str, Any]] = []
-    consumed: list[tuple[int, int]] = []
-    for match in _OBJECT_RE.finditer(text):
-        order = len(predictions) + len(dropped)
-        consumed.append(match.span())
+    for order, candidate in enumerate(_object_candidates(text)):
+        match = _OBJECT_RE.fullmatch(candidate)
+        if match is None:
+            dropped.append(
+                _drop(
+                    row_id=row_id,
+                    row_index=row_index,
+                    generated_order=order,
+                    reason="malformed_object_span",
+                    raw_text=candidate,
+                )
+            )
+            continue
         description = match.group("description").strip()
         try:
             coord_tokens = _COORD_RE.findall(match.group("coords"))
@@ -141,17 +144,6 @@ def parse_compact_object_box_closed(
             }
         )
 
-    for candidate in _malformed_candidates(text, consumed):
-        dropped.append(
-            _drop(
-                row_id=row_id,
-                row_index=row_index,
-                generated_order=len(predictions) + len(dropped),
-                reason="malformed_object_span",
-                raw_text=candidate,
-            )
-        )
-
     if predictions and dropped:
         status = "accepted_with_drops"
     elif predictions:
@@ -169,16 +161,14 @@ def parse_compact_object_box_closed(
     )
 
 
-def _malformed_candidates(text: str, consumed: list[tuple[int, int]]) -> list[str]:
-    malformed: list[str] = []
-    for match in _CANDIDATE_RE.finditer(text):
-        span = match.span()
-        if any(span[0] >= left and span[0] < right for left, right in consumed):
-            continue
-        raw = match.group(0).strip()
-        if raw:
-            malformed.append(raw)
-    return malformed
+def _object_candidates(text: str) -> list[str]:
+    candidates: list[str] = []
+    parts = text.split(OBJECT_REF_START_TOKEN)
+    for part in parts[1:]:
+        candidate = f"{OBJECT_REF_START_TOKEN}{part}".strip()
+        if candidate:
+            candidates.append(candidate)
+    return candidates
 
 
 def _row(
