@@ -5,7 +5,7 @@ doc_type: overview
 status: canonical
 domain: repo
 summary: End-to-end flow from data intake to training, inference, evaluation, and artifacts.
-updated: 2026-05-16
+updated: 2026-07-03
 ---
 
 # System Overview
@@ -14,10 +14,41 @@ Purpose: map the end-to-end CoordExp flow from data intake to training, inferenc
 Authority: explanatory system guide for the current codebase; if this page conflicts with a spec or runbook, defer to `docs/PROJECT_CONTEXT.md` and `openspec/specs/`.
 Read this after: `docs/PROJECT_CONTEXT.md`
 Read this before: domain runbooks under `docs/data/`, `docs/training/`, and `docs/eval/`
-Primary code handles: `src/config/loader.py`, `src/datasets/`, `src/sft.py`, `src/detection/runtime.py`, `src/detection/template.py`, `src/common/detection_sequence.py`, `src/common/detection_compact_rows.py`, `src/bootstrap/`, `src/trainers/metrics/`, `src/metrics/events.py`, `src/training/`, `src/training/pipeline_registry.py::TrainingPipelineRegistry`, `src/trainers/stage2_rollout_correction.py`, `src/trainers/rollout_aligned_targets.py`, `src/trainers/rollout_aligned_evaluator.py`, `src/launchers/stage2_vllm_server.py`, `src/infer/pipeline.py`, `src/infer/runtime.py`, `src/infer/backend.py`, `src/infer/backend_sync.py`, `src/infer/backend_vllm_server.py`, `src/infer/artifacts.py`, `src/eval/detection.py`, `src/eval/detection_records.py`, `src/eval/detection_geometry.py`, `src/eval/detection_coco.py`, `src/eval/detection_lvis.py`, `src/eval/detection_duplicate_guard.py`, `src/eval/detection_f1ish.py`, `src/eval/detection_orchestrator.py`, `src/eval/orchestration.py`, `src/eval/artifacts.py`
+Primary code handles for this worktree: `src/train.py`, `src/training/pipeline.py`, `src/training/supervised_trainer.py`, `src/data/`, `src/templates/`, `src/qwen/`, `src/packing/`, `src/losses/`, `src/adapters/`, `src/optim/`, `src/artifacts/`, `src/infer.py`, `src/inference/`, `src/eval/detection_consumer.py`, `src/eval/forward.py`
 Verification search: `rg -n "detection/runtime|detection_sequence|detection_compact_rows|MetricEvent|flatten_metric_events|TrainingPipelineRegistry|stage1_research_teacher_forcing|stage2_rollout_correction|stage2_rollout_runtime|pipeline_manifest|run_metadata|backends|artifacts|orchestration" src scripts configs docs`
 
 ## Flow At A Glance
+
+CoordExp-Swift worktree note:
+
+- Read [`docs/COORDEXP_SWIFT.md`](COORDEXP_SWIFT.md) first for the current
+  rebuilt route and evidence handles.
+- The active entrypoints are `src/train.py`, `src/infer.py`, and
+  `scripts/evaluate_detection.py --artifact-dir ... --out-dir ...`.
+- Active configs live under `configs/coordexp_swift/`.
+- The accepted V1 validation gate is the fixed val200 inference/eval run. A full
+  validation-dataset run is optional and is not required for readiness.
+- Legacy/mainline path references in older sections are retained only as
+  reference context for work outside the Swift rebuild.
+
+## CoordExp-Swift Flow
+
+```text
+raw coord JSONL
+  -> src/data/
+  -> src/templates/
+  -> src/qwen/
+  -> src/packing/
+  -> src/losses/
+  -> src/training/supervised_trainer.py
+  -> src/artifacts/
+  -> src/infer.py + src/inference/
+  -> src/eval/detection_consumer.py
+```
+
+For current Swift work, route through the code handles in
+[`docs/COORDEXP_SWIFT.md`](COORDEXP_SWIFT.md). The rest of this page preserves
+mainline context and should not override the Swift route.
 
 ```text
 raw annotations / public datasets
@@ -32,6 +63,10 @@ raw annotations / public datasets
 ```
 
 ## 1. Data Intake And Offline Preparation
+
+Mainline reference note: this and later sections preserve older/mainline routing
+context. For CoordExp-Swift source ownership, use
+[`docs/COORDEXP_SWIFT.md`](COORDEXP_SWIFT.md).
 
 CoordExp expects offline-prepared JSONL rather than ad-hoc runtime transforms.
 
@@ -92,9 +127,10 @@ Compact detection sequence ownership:
 
 ### Shared Entry Point
 
-- Entry point: `src/sft.py`
-- Latest compact detection runtime policy: `src/detection/runtime.py`
-- Shared lower-level config base: `configs/base.yaml`
+- CoordExp-Swift entry point: `src/train.py`
+- CoordExp-Swift runtime assembler: `src/training/pipeline.py`
+- CoordExp-Swift trainer core: `src/training/supervised_trainer.py`
+- Shared lower-level config base: `configs/coordexp_swift/`
 - Typed config loading and validation:
   - `src/config/loader.py`
   - `src/config/schema.py`
@@ -191,15 +227,14 @@ Compatibility note:
 ### Inference
 
 - CLI / pipeline entry point:
-  - `scripts/run_infer.py`
+  - `src/infer.py`
 - Main runtime code:
-  - `src/infer/pipeline.py`
-  - `src/infer/runtime.py`
-  - `src/infer/backend.py`
-  - `src/infer/artifacts.py`
+  - `src/inference/pipeline.py`
+  - `src/inference/runtime.py`
+  - `src/inference/backend.py`
+  - `src/inference/artifacts.py`
 - Config surfaces:
-  - `configs/infer/`
-  - `configs/bench/`
+  - `configs/coordexp_swift/infer/`
 
 Primary artifact:
 - `gt_vs_pred.jsonl`
@@ -219,16 +254,9 @@ Primary scored artifact:
 - Offline evaluator entry point:
   - `scripts/evaluate_detection.py`
 - Main runtime code:
-  - `src/eval/detection.py`
-  - `src/eval/detection_records.py`
-  - `src/eval/detection_geometry.py`
-  - `src/eval/detection_coco.py`
-  - `src/eval/detection_lvis.py`
-  - `src/eval/detection_duplicate_guard.py`
-  - `src/eval/detection_f1ish.py`
-  - `src/eval/detection_orchestrator.py`
-  - `src/eval/orchestration.py`
-  - `src/eval/artifacts.py`
+  - `src/eval/detection_consumer.py`
+  - `src/eval/detection_categories.py`
+  - `src/data/geometry.py`
 - Callback path for training-time offline eval:
   - `src/callbacks/detection_eval.py`
 

@@ -332,11 +332,21 @@ Example run:
 PYTHONPATH=. conda run -n ms python scripts/run_infer.py --config configs/bench/lvis_bbox_max60_val_infer_eval_base.yaml
 ```
 
-Offline evaluator example:
+Offline evaluator note:
+
+- `scripts/evaluate_detection.py` in the CoordExp-Swift worktree is the direct
+  selected-token COCO bbox reducer for Swift artifacts:
 
 ```bash
-PYTHONPATH=. conda run -n ms python scripts/evaluate_detection.py --config configs/eval/detection.yaml --pred_jsonl output/bench/your_run/eval/gt_vs_pred_scored.jsonl --metrics lvis --lvis-max-dets 300
+python scripts/evaluate_detection.py \
+  --artifact-dir output/bench/your_run/eval \
+  --out-dir output/bench/your_run/eval/coco_bbox
 ```
+
+- LVIS `--config ... --metrics lvis --lvis-max-dets ...` examples belong to
+  the legacy/mainline evaluator family and are not supported by the direct
+  Swift reducer until the LVIS contract is rebuilt for the Swift artifact
+  shape.
 
 ## Optional Improvements Later
 

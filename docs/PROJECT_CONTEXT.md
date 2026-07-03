@@ -6,7 +6,7 @@ status: canonical
 domain: repo
 summary: Defines documentation ownership, contract authority, and the universal read order for CoordExp.
 tags: [precedence, docs, agents]
-updated: 2026-05-03
+updated: 2026-07-03
 ---
 
 # Project Context & Documentation Authority
@@ -17,6 +17,22 @@ This page defines how to interpret every Markdown file in the repository.
 
 Use `docs/` as the current operator-facing truth for architecture, workflows,
 routing, artifact names, and recommended development practice.
+
+CoordExp-Swift worktree authority:
+
+- In `/data/CoordExp/.worktrees/CoordExp-swift`, start with
+  [`docs/COORDEXP_SWIFT.md`](COORDEXP_SWIFT.md) before following older
+  mainline routing pages.
+- The rebuilt Swift source route is `src/train.py`, `src/infer.py`,
+  `src/inference/`, `src/training/`, `src/qwen/`, `src/packing/`,
+  `src/losses/`, and `src/eval/detection_consumer.py`.
+- Legacy/mainline handles such as `src/sft.py`, `src/infer/*`,
+  `src/trainers/*`, `configs/stage1/*`, and `configs/stage2/*` are reference
+  material in this worktree unless an active Swift doc or OpenSpec change
+  explicitly points to them.
+- The accepted Swift V1 validation gate is the fixed val200 inference/eval run.
+  Full validation-dataset evaluation is optional and not required for the V1
+  backbone readiness claim.
 
 Use `openspec/specs/` only when a question needs a stable compatibility contract:
 training/eval behavior, config schemas, loss semantics, artifact names, or
@@ -54,12 +70,13 @@ For most work:
 
 1. [docs/README.md](README.md)
 2. [docs/AGENT_INDEX.md](AGENT_INDEX.md) if the consumer is an AI agent
-3. [docs/SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md)
-4. [docs/IMPLEMENTATION_MAP.md](IMPLEMENTATION_MAP.md)
-5. the relevant domain router under `docs/`
-6. relevant `openspec/specs/` only for stable contract semantics
-7. `openspec/changes/<active-change>/` only when explicitly in scope
-8. `progress/` only for design history, empirical evidence, diagnostics, or benchmarks
+3. [docs/COORDEXP_SWIFT.md](COORDEXP_SWIFT.md) in this worktree
+4. [docs/SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md)
+5. [docs/IMPLEMENTATION_MAP.md](IMPLEMENTATION_MAP.md)
+6. the relevant domain router under `docs/`
+7. relevant `openspec/specs/` only for stable contract semantics
+8. `openspec/changes/<active-change>/` only when explicitly in scope
+9. `progress/` only for design history, empirical evidence, diagnostics, or benchmarks
 
 ## Authoring Rules
 

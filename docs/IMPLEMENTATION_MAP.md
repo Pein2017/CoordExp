@@ -5,7 +5,7 @@ doc_type: implementation-map
 status: canonical
 domain: repo
 summary: Task-to-file routing guide for common CoordExp changes.
-updated: 2026-05-16
+updated: 2026-07-03
 ---
 
 # Implementation Map
@@ -14,8 +14,62 @@ Purpose: route common research and engineering changes to the smallest useful se
 Authority: code-navigation guide for the current repo; for current defaults, defer to `docs/PROJECT_CONTEXT.md` and runbooks; for stable contract semantics, defer to `openspec/specs/`.
 Read this after: `docs/SYSTEM_OVERVIEW.md`
 Read this before: opening many source files blindly or doing broad repo-wide searches
-Primary code handles: `src/sft.py`, `src/training/`, `src/detection/runtime.py`, `src/detection/template.py`, `src/common/detection_sequence.py`, `src/common/detection_compact_rows.py`, `src/bootstrap/`, `src/config/schema.py`, `src/datasets/`, `src/trainers/metrics/`, `src/metrics/events.py`, `src/trainers/stage2_rollout_correction.py`, `src/trainers/rollout_aligned_targets.py`, `src/trainers/rollout_aligned_evaluator.py`, `src/launchers/stage2_vllm_server.py`, `src/infer/pipeline.py`, `src/infer/runtime.py`, `src/infer/backend.py`, `src/infer/backend_sync.py`, `src/infer/backend_vllm_server.py`, `src/infer/artifacts.py`, `src/eval/detection.py`, `src/eval/detection_orchestrator.py`, `src/eval/detection_records.py`, `src/eval/detection_geometry.py`, `src/eval/detection_coco.py`, `src/eval/detection_lvis.py`, `src/eval/detection_duplicate_guard.py`, `src/eval/detection_f1ish.py`, `src/eval/orchestration.py`, `src/eval/artifacts.py`
+Primary code handles for this worktree: `src/train.py`, `src/training/pipeline.py`, `src/training/supervised_trainer.py`, `src/data/`, `src/templates/`, `src/qwen/`, `src/packing/`, `src/losses/`, `src/adapters/`, `src/optim/`, `src/artifacts/`, `src/infer.py`, `src/inference/`, `src/eval/detection_consumer.py`, `src/eval/forward.py`
 Verification: use the targeted test files listed below before running broader suites
+
+## CoordExp-Swift Current Route
+
+Open these docs first for the rebuilt worktree:
+
+- [`docs/COORDEXP_SWIFT.md`](COORDEXP_SWIFT.md)
+- [`openspec/changes/rebuild-coordexp-swift-training-infra/`](../openspec/changes/rebuild-coordexp-swift-training-infra/)
+- [`openspec/changes/build-coordexp-swift-inference-infra/`](../openspec/changes/build-coordexp-swift-inference-infra/)
+- [`openspec/changes/standardize-coordexp-swift-detection-evaluator/`](../openspec/changes/standardize-coordexp-swift-detection-evaluator/)
+
+Open these configs first:
+
+- `configs/coordexp_swift/prod/`
+- `configs/coordexp_swift/smoke/`
+- `configs/coordexp_swift/infer/`
+- `configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_step917_val200.yaml`
+
+Open these code files first:
+
+- `src/train.py`
+- `src/training/pipeline.py`
+- `src/training/supervised_trainer.py`
+- `src/data/`
+- `src/templates/`
+- `src/qwen/`
+- `src/packing/`
+- `src/losses/`
+- `src/adapters/`
+- `src/optim/`
+- `src/artifacts/`
+- `src/infer.py`
+- `src/inference/`
+- `src/eval/detection_consumer.py`
+
+Run these tests first:
+
+- `tests/training/test_pipeline_assembly.py`
+- `tests/training/test_supervised_trainer.py`
+- `tests/training/test_pack_cache.py`
+- `tests/inference/test_config_runtime.py`
+- `tests/inference/test_pipeline.py`
+- `tests/inference/test_scoring.py`
+- `tests/eval/test_detection_consumer.py`
+- `tests/eval/test_forward_eval.py`
+
+Current validation policy:
+
+- fixed val200 inference/eval is sufficient for V1 local validation;
+- full validation-dataset eval is optional and should not be treated as a
+  required readiness gate;
+- tiny and two-row smokes are implementation gates only.
+
+The sections below preserve older/mainline routing context. For current
+CoordExp-Swift implementation work, the route above takes precedence.
 
 ## 1. Data Contract, JSONL Rendering, Or Geometry
 
@@ -206,6 +260,7 @@ Run these tests first:
 ## 4. Inference, Confidence, And Offline Evaluation
 
 Open these docs first:
+- [`docs/COORDEXP_SWIFT.md`](COORDEXP_SWIFT.md) for the rebuilt Swift path
 - [`docs/eval/README.md`](eval/README.md)
 - [`docs/eval/CONTRACT.md`](eval/CONTRACT.md)
 - [`docs/eval/WORKFLOW.md`](eval/WORKFLOW.md)
@@ -216,12 +271,16 @@ Open these docs first:
 - [`openspec/specs/runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md)
 
 Open these configs first:
+- `configs/coordexp_swift/infer/`
 - `configs/infer/pipeline.yaml`
 - `configs/eval/detection.yaml`
 - `configs/postop/confidence.yaml`
 - `configs/bench/`
 
 Open these code files first:
+- `src/infer.py`
+- `src/inference/`
+- `src/eval/detection_consumer.py`
 - `scripts/run_infer.py`
 - `src/infer/pipeline.py`
 - `src/infer/runtime.py`

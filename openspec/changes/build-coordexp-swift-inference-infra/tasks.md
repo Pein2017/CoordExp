@@ -1,6 +1,6 @@
 ## 1. Source Studies And Approval Gates
 
-- [x] 1.1 Obtain user approval for source studies and probes only; source implementation remains blocked until the study note is written and reviewed.
+- [x] 1.1 At planning time, obtain user approval for source studies and probes only; source implementation was blocked until the study note was written and reviewed.
 - [x] 1.2 Study owner-boundary paths in current CoordExp-swift Qwen/template/config/artifact/adapter code for prompt rendering, tokenizer ids, no-resize image planning, image batch materialization, resolved config writing, manifest writing, adapter reload, and special-token embedding delta validation.
 - [x] 1.3 Define owner-neutral runtime seams for Qwen loading, resolved config writing, artifact manifests, adapter identity, and embedding-delta identity so inference-facing modules do not depend on `TrainConfig`, `ResolvedTrainConfig`, `ResolvedStepSchedule`, `load_train_config()`, or unallowlisted `src.training.*`; the V1 training-import allowlist is empty unless explicitly patched into OpenSpec.
 - [x] 1.4 Study installed Transformers Qwen3-VL `generate` output, `scores`, `compute_transition_scores`, prompt-padding behavior, stop-token handling, tokenizer special-token decoding, processor vision fields, and model vision config fields.
@@ -19,8 +19,8 @@
 - [x] 2.1 Pin a tiny real single-image inference fixture that uses the same offline JSONL example family as training and preserves image path, dimensions, GT objects, and prompt-relevant fields.
 - [x] 2.2 Pin a two-row batched trace fixture with different prompt lengths for HF score-alignment testing.
 - [x] 2.3 Pin or create an adapter-enabled smoke fixture using a `checkpoint-final` alias or explicit concrete checkpoint path plus any special-token embedding delta expected by the target checkpoint.
-- [x] 2.4 Name the production benchmark config leaf, dataset path, base model path, adapter checkpoint path when used, artifact root, and mAP evaluator command before launching final benchmark inference.
-- [x] 2.5 Record that sample-limited and tiny runs are smoke evidence only and not final benchmark evidence.
+- [x] 2.4 Name the validation config leaf, dataset path, base model path, adapter checkpoint path when used, artifact root, and mAP evaluator command before launching the accepted val200 evaluation gate.
+- [x] 2.5 Record that tiny runs are smoke evidence only and that the fixed val200 run is sufficient V1 validation evidence when scored artifacts and mAP/mRecall metrics are present.
 
 ## 3. Config Runtime And Entry Surface
 
@@ -81,9 +81,9 @@
 - [x] 8.3 Run the adapter-enabled real smoke and verify checkpoint-final or explicit checkpoint resolution, PEFT identity/status checks, embedding-delta metadata checks, and scored artifact output.
   - 2026-07-02 completed: adapter smoke passed at `outputs/coordexp_swift/infer/wave7_real_smokes/wave7-real-adapter-smoke-20260702T192643Z` using explicit adapter path and smoke-only repaired delta payload `outputs/coordexp_swift/infer/wave7_real_smokes/repaired_special_token_embeddings_step2`; `run_manifest.json` records `adapter_identity.status=validated`, `adapter_identity.requires_grad={"default": false}`, `model_identity.embedding_delta.status=loaded`, and `model_identity.embedding_delta.load.loaded=true`; `summary.json` records `scored_artifact_materialized=true` and `benchmark_eligible=false`.
 - [x] 8.4 Run OpenSpec validation, targeted pytest suites, markdown/config hygiene checks, residue checks for `src/infer/` package collision, unapproved `src.infer` legacy test imports, stale `resolved_config.json`, legacy `configs/infer/` authority, constant-score fallback, and old `object_ordering: sorted` assumptions.
-- [x] 8.5 Prepare a benchmark launch packet naming production config, dataset, model, adapter, artifact root, evaluator command, expected evidence scope, and rollback path.
-- [x] 8.6 Stop for explicit user approval before launching implementation-derived production benchmark or claiming final inference correctness.
-  - 2026-07-02 completed as an approval stop: no full benchmark was launched and no final inference-correctness claim is made. Full benchmark launch remains blocked until the user explicitly approves it after reviewing the benchmark readiness packet.
+- [x] 8.5 Prepare validation handles naming config, dataset, model, adapter, artifact root, evaluator command, expected evidence scope, and rollback path.
+- [x] 8.6 Accept the fixed val200 run as the V1 inference/eval validation gate; do not require full validation-dataset evaluation.
+  - 2026-07-03 completed: user decided full validation-dataset eval is unnecessary and val200 is sufficient. Accepted artifact root: `outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-pure-ce-dora-r16a32-step917-val200-20260703T035007Z`; accepted metrics: `eval_coco_fixed_gt_scale/metrics.json` with `mAP=0.4111788135144427`, `mAP_50=0.5616311086141887`, and `mRecall=0.4790356074108587`.
 
 ## 9. Review Convergence
 
@@ -92,5 +92,5 @@
   - Accepted P1 examples included Transformers `PeftAdapterMixin.load_adapter -> None` handling, strict special-token embedding SHA identity, inference adapter `requires_grad` validation/freezing, and benchmark artifact-root path resolution.
 - [x] 9.3 Patch all accepted P0/P1 findings in OpenSpec, superpower docs, configs, tests, and code before requesting benchmark approval.
   - 2026-07-02 final Wave 7 re-review approved amended commit `8aaebb02`; no unresolved P0/P1 findings remain for the implementation/smoke gate.
-- [x] 9.4 Record implementation kickoff approval and preserve the production-benchmark approval boundary.
-  - User approved implementation kickoff before source work began. The implementation/smoke gate is now complete, but production benchmark launch remains separately blocked by the approval stop in 8.6.
+- [x] 9.4 Record implementation kickoff approval and preserve the optional full-benchmark boundary.
+  - User approved implementation kickoff before source work began. The implementation/smoke gate is complete, and the fixed val200 run is accepted as sufficient V1 validation. Full validation-dataset or full benchmark launch is optional and requires a new explicit request.

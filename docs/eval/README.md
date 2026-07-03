@@ -6,13 +6,22 @@ status: canonical
 domain: eval
 summary: Router for inference and evaluation contracts, workflows, and artifacts.
 tags: [eval, infer, workflow]
-updated: 2026-06-15
+updated: 2026-07-03
 ---
 
 # Evaluation & Inference
 
 Use this folder for the current infer -> score -> evaluate workflow, official
 COCO export, and additive analysis studies.
+
+CoordExp-Swift note:
+
+- Start with [`../COORDEXP_SWIFT.md`](../COORDEXP_SWIFT.md) for the rebuilt
+  worktree route.
+- The accepted Swift V1 validation gate is the fixed val200 inference/eval run,
+  not a full validation-dataset run.
+- Full validation-dataset or official test-dev evaluation remains optional and
+  should be launched only when explicitly requested.
 
 ## Read Order
 
@@ -49,5 +58,6 @@ Use these only when exact stable contract semantics matter:
 - "What is the current production workflow?"
 - "How do I run a real COCO test-dev benchmark and upload it?"
 - "Which artifacts should exist after a valid infer/eval run?"
+- "Is val200 enough for the CoordExp-Swift V1 readiness gate?"
 - "How do I compare one baseline decode against repeated stochastic rollouts?"
 - "How do I run the unmatched-proposal verifier ablation on a small COCO subset?"

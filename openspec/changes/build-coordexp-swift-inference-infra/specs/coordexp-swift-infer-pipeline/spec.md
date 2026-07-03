@@ -84,12 +84,19 @@ construction, `parsing.py` for parsing, `scoring.py` for scoring, and
 - **THEN** it delegates Qwen/adapter/artifact identity mechanics to their owner
   modules rather than reimplementing them inline
 
-### Requirement: No implementation without approval
-The inference pipeline SHALL remain unimplemented until explicit user approval.
+### Requirement: Implementation approval gate
+The inference pipeline SHALL require explicit user approval before first source
+implementation.
 Required preconditions are this OpenSpec change, the superpower implementation
-plan, and review-convergence triage.
+plan, and review-convergence triage. After approval is granted, source
+implementation may proceed under the approved task ledger.
 
 #### Scenario: Pre-approval state
 - **WHEN** this OpenSpec is drafted and validated
 - **THEN** implementation tasks remain unchecked and no source implementation
   claim is made
+
+#### Scenario: Post-approval state
+- **WHEN** the user grants implementation approval after source-study review
+- **THEN** implementation tasks may be completed and verified without treating
+  this approval gate as a remaining blocker

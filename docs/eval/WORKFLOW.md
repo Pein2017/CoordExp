@@ -6,17 +6,33 @@ status: canonical
 domain: eval
 summary: YAML-first runbook for inference, confidence post-processing, evaluation, and visualization.
 tags: [eval, infer, runbook]
-updated: 2026-05-05
+updated: 2026-07-03
 ---
 
 # Evaluation Workflow
 
 This page describes the current production path from inference to scored evaluation artifacts, plus the additive Oracle-K repeated-sampling analysis workflow.
 
+CoordExp-Swift rebuild note:
+
+- the rebuilt `src/inference/*` artifact family uses the direct detection
+  reducer `scripts/evaluate_detection.py --artifact-dir ... --out-dir ...`
+  for official local bbox mAP/mRecall;
+- this Swift evaluator consumes only `gt_vs_pred.jsonl`,
+  `gt_vs_pred_scored.jsonl`, and
+  `gt_vs_pred_scored.jsonl.provenance.json` produced by the Swift artifact
+  writer;
+- `scripts/evaluate_detection.py --config ...` is a legacy/mainline eval
+  surface and is not the standardized Swift evaluator in this worktree.
+- The accepted CoordExp-Swift V1 validation gate is the fixed val200 run. A full
+  validation-dataset run is optional and is not required for the readiness claim.
+
 Implementation ownership note:
-- pipeline orchestration lives in `src/infer/pipeline.py`
-- shared decode requests and backend selection live in `src/infer/runtime.py` and `src/infer/backend.py`
-- infer/eval artifact writing lives in `src/infer/artifacts.py`, `src/eval/orchestration.py`, and `src/eval/artifacts.py`
+- thin inference entry lives in `src/infer.py`
+- pipeline orchestration lives in `src/inference/pipeline.py`
+- shared decode requests and backend selection live in `src/inference/runtime.py` and `src/inference/backend.py`
+- infer artifact writing lives in `src/inference/artifacts.py`
+- standardized Swift mAP/mRecall reduction lives in `src/eval/detection_consumer.py`
 
 ## Default Flow
 
@@ -24,25 +40,35 @@ Implementation ownership note:
 input JSONL + checkpoint
   -> inference
   -> gt_vs_pred.jsonl
-  -> confidence post-op (xyxy coord-token or xyxy raw-text norm1000) OR constant-score compatibility scoring
-     (cxcy_logw_logh / cxcywh, when official metrics are needed)
+  -> selected-token scoring for compact CoordExp-Swift outputs
   -> gt_vs_pred_scored.jsonl
-  -> evaluation
-  -> raw metrics/artifacts
-  -> optional duplicate-control guard
-  -> guarded metrics/artifacts
-  -> metrics.json / metrics_guarded.json / per_image.json / per_image_guarded.json / optional overlays
+  -> direct Swift COCO bbox evaluation
+  -> metrics.json / coco_gt.json / coco_predictions.json
 ```
 
 Official metric guardrail:
 
 - COCO/LVIS/both metric claims must consume `gt_vs_pred_scored.jsonl`.
-- The scored artifact must come from confidence post-op for compatible `xyxy`
-  coord-token or raw-text norm1000 surfaces, or from deterministic
-  constant-score compatibility scoring for explicitly supported non-canonical
-  bbox surfaces.
+- The direct CoordExp-Swift evaluator accepts selected-token scored compact
+  artifacts from the rebuilt `src/inference/*` writer.
+- Confidence post-op, constant-score compatibility scoring, LVIS reducers,
+  duplicate-control guarded outputs, and F1-ish diagnostics are legacy/mainline
+  evaluator families until their contracts are rebuilt for the Swift artifact
+  shape.
 - Raw `gt_vs_pred.jsonl` evaluation is a debug/F1-ish surface only. Do not
   label raw-artifact metrics as COCO/LVIS benchmark results.
+- CoordExp-Swift direct COCO evaluation converts inline GT norm1000 coord-bin
+  boxes to pixel boxes, while scored predictions are already parser-normalized
+  pixel boxes. Mixed-unit COCO sidecars are invalid.
+
+Validation-scope rule:
+
+- tiny single-row and two-row runs are implementation smokes only;
+- the fixed 200-row validation subset is sufficient for V1 local
+  benchmark-style regression evidence when it writes scored artifacts and the
+  Swift evaluator writes bbox mAP/mRecall;
+- a full validation-dataset run is optional and should not be treated as a
+  required gate unless a future task explicitly asks for full-dataset evidence.
 
 ## YAML-First Commands
 
@@ -64,9 +90,10 @@ Non-canonical bbox note:
 
 - do not run confidence post-op for `infer.bbox_format: cxcy_logw_logh` or
   `infer.bbox_format: cxcywh`
-- the unified pipeline instead materializes `gt_vs_pred_scored.jsonl` directly
+- legacy/mainline pipelines may materialize `gt_vs_pred_scored.jsonl` directly
   from canonical standardized predictions with deterministic constant-score
-  provenance when COCO/LVIS metrics are requested
+  provenance when COCO/LVIS metrics are requested; the direct CoordExp-Swift
+  evaluator in this worktree does not consume that constant-score family in V1
 - only use this infer path with checkpoints that were actually trained against
   the matching non-canonical serialization contract
 - forcing a legacy `xyxy`-trained checkpoint through
@@ -90,8 +117,25 @@ Raw-text xyxy norm1000 benchmark note:
 Run evaluation:
 
 ```bash
-PYTHONPATH=. python scripts/evaluate_detection.py \
-  --config configs/eval/detection.yaml
+python scripts/evaluate_detection.py \
+  --artifact-dir outputs/coordexp-swift/<run>/inference \
+  --out-dir outputs/coordexp-swift/<run>/inference/eval
+```
+
+Accepted CoordExp-Swift val200 evaluator handle:
+
+```bash
+python scripts/evaluate_detection.py \
+  --artifact-dir outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-pure-ce-dora-r16a32-step917-val200-20260703T035007Z \
+  --out-dir outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-pure-ce-dora-r16a32-step917-val200-20260703T035007Z/eval_coco_fixed_gt_scale
+```
+
+If you already have the scored artifact path in hand, the equivalent alias is:
+
+```bash
+python scripts/evaluate_detection.py \
+  --pred-jsonl outputs/coordexp-swift/<run>/inference/gt_vs_pred_scored.jsonl \
+  --out-dir outputs/coordexp-swift/<run>/inference/eval
 ```
 
 ## Wrapper Classification
@@ -100,7 +144,7 @@ Stable / reportable:
 
 - `scripts/run_infer.py --config ...`
 - `scripts/postop_confidence.py --config ...`
-- `scripts/evaluate_detection.py --config ...`
+- `scripts/evaluate_detection.py --artifact-dir ... --out-dir ...`
 - `scripts/evaluate_proxy_detection_bundle.py --config ...`
 
 Compatibility / debug:
@@ -122,11 +166,11 @@ Historical diagnostics:
 
 Duplicate-control guard note:
 
-- `scripts/evaluate_detection.py` accepts the YAML-only toggle
-  `duplicate_control.enabled: true`
-- when enabled, the evaluator keeps the raw input artifact authoritative and
-  additionally emits guarded companions plus a duplicate-control report
-- prefer reporting both raw and guarded metrics together when comparing runs
+- the direct Swift evaluator is aggregate-only in V1 and does not expose a
+  duplicate-control guard, F1-ish matcher, LVIS reducer, overlays, or YAML
+  override surface;
+- keep those as separate evaluator families until their contracts are rebuilt
+  for the Swift artifact shape.
 
 Run Oracle-K analysis:
 
@@ -166,7 +210,7 @@ After confidence post-op:
 - `gt_vs_pred_scored.jsonl.provenance.json`
 - `confidence_postop_summary.json`
 
-After non-canonical official-eval compatibility scoring:
+After legacy/mainline non-canonical official-eval compatibility scoring:
 
 - `gt_vs_pred_scored.jsonl`
 - `gt_vs_pred_scored.jsonl.provenance.json`
@@ -178,6 +222,17 @@ Plain `xyxy` infer-only/debug runs do not materialize scored artifacts unless
 This keeps raw inference artifacts unscored by default.
 
 After evaluation:
+
+For the rebuilt Swift evaluator:
+
+- `metrics.json`
+- `coco_gt.json`
+- `coco_predictions.json`
+
+These COCO sidecars use evaluator-local category ids paired with the emitted
+`coco_gt.json`; they are not official COCO test-server submission files.
+
+Legacy/mainline evaluator families may additionally emit:
 
 - `metrics.json`
 - `metrics_guarded.json` when `duplicate_control.enabled: true`

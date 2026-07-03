@@ -70,32 +70,41 @@ and MUST NOT be treated as the default V1 path.
   template identity, parser policy, or score policy disagrees with provenance
 - **THEN** evaluator consumption fails before metric computation
 
-### Requirement: Full benchmark acceptance
-Final inference correctness SHALL require full val or benchmark inference with batched decoding, scored artifacts, and mAP evaluation.
-Tiny and sample-limited smokes are implementation gates only and MUST NOT be
-presented as final benchmark evidence.
+### Requirement: Val200 validation acceptance
+Final CoordExp-Swift V1 inference/eval readiness SHALL be accepted from the fixed val200 inference/eval run when it uses real HF/Qwen decoding, scored artifacts, valid score provenance, and mAP/mRecall evaluation from the named Swift evaluator consumer.
+Tiny debug smokes are implementation gates only and MUST NOT be presented as
+val200 validation evidence.
+Full validation-dataset or full benchmark inference is optional and MUST NOT be
+required for the V1 readiness claim unless a future user request explicitly asks
+for that broader scope.
 
-#### Scenario: Full benchmark run
-- **WHEN** the approved production inference config is run over the full target
-  validation or benchmark set
-- **THEN** batched decode, scored artifacts, and mAP output artifacts are
+#### Scenario: Accepted val200 run
+- **WHEN** the approved val200 inference config is run over the fixed 200-row
+  validation subset
+- **THEN** batched decode, scored artifacts, and mAP/mRecall output artifacts are
   produced and linked in the manifest or acceptance report
+- **AND** the result MAY be used as the V1 local validation gate
 
-#### Scenario: Sample-limited run
-- **WHEN** a sample-limited inference run succeeds
-- **THEN** it is labeled as smoke or partial evidence and not final benchmark
-  evidence
+#### Scenario: Tiny smoke run
+- **WHEN** a tiny one-row or two-row inference run succeeds
+- **THEN** it is labeled as smoke or implementation evidence and not val200
+  validation evidence
+
+#### Scenario: Optional full-dataset run
+- **WHEN** a full validation-dataset or benchmark run is requested
+- **THEN** it is labeled with its broader evidence scope
+- **AND** it is not a prerequisite for accepting the V1 val200 gate
 
 ### Requirement: Production benchmark leaf
-The OpenSpec or implementation approval packet SHALL name the exact production benchmark handles before launching the final benchmark.
+The OpenSpec or implementation approval packet SHALL name the exact validation or production benchmark handles before launching a non-smoke evaluation run.
 The required handles are config leaf, dataset path, model path, adapter
 checkpoint path when used, artifact root, and mAP command.
 
-#### Scenario: Production launch gate complete
-- **WHEN** the final benchmark is ready to launch
+#### Scenario: Validation launch gate complete
+- **WHEN** the fixed val200 validation run is ready to launch
 - **THEN** the approval packet contains exact config, dataset, model, adapter,
   artifact root, and evaluator command handles
 
 #### Scenario: Missing launch handle
-- **WHEN** any required production benchmark handle is missing
-- **THEN** final benchmark launch is blocked pending user approval or correction
+- **WHEN** any required validation or production benchmark handle is missing
+- **THEN** the launch is blocked pending user approval or correction

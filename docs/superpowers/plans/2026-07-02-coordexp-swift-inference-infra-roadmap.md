@@ -2,7 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the CoordExp-swift offline inference and benchmark-evaluation infrastructure from the approved OpenSpec baseline, ending in real HF/Qwen smokes and a full scored mAP benchmark gate.
+**Goal:** Build the CoordExp-swift offline inference and benchmark-evaluation infrastructure from the approved OpenSpec baseline, ending in real HF/Qwen smokes and an accepted fixed-val200 scored mAP/mRecall validation gate.
+
+**Status update, 2026-07-03:** This roadmap is now historical execution
+provenance. The implementation waves landed, the active OpenSpec task ledger is
+the current checklist, and the user decided that full validation-dataset eval is
+not required. Fixed val200 inference/eval is sufficient for V1 readiness when it
+writes scored artifacts and Swift evaluator mAP/mRecall metrics.
 
 **Architecture:** Keep `openspec/changes/build-coordexp-swift-inference-infra/` as the contract authority and use the patched inference decisions as the design rationale. The public entry is thin `src/infer.py`; implementation lives under `src/inference/` and reuses existing `src/qwen`, `src/templates`, `src/artifacts`, `src/config`, and `src/eval` ownership rather than copying training internals or legacy inference code.
 
@@ -46,7 +52,7 @@
   study names a concrete type-free exception and OpenSpec is patched to approve
   it.
 - Do not use mocked backend tests as acceptance evidence; mocks are allowed only for narrow unit tests.
-- Do not claim benchmark correctness until full val or benchmark inference writes scored artifacts and the named evaluator consumer writes mAP metrics.
+- Do not claim V1 inference/eval readiness until the fixed val200 run writes scored artifacts and the named evaluator consumer writes mAP/mRecall metrics. A full validation-dataset or full benchmark run is optional and requires a new explicit request.
 - After each wave, run isolated review before continuing.
 
 ## Intended Source And Test Files
@@ -172,14 +178,14 @@ Create or modify:
 - [ ] Run `git diff --check`.
 - [ ] Request isolated smoke/benchmark-readiness review.
 
-## Wave 8: Production Benchmark Gate
+## Wave 8: Val200 Validation Gate
 
-- [ ] Prepare a benchmark launch packet naming production config path, dataset path, base model path, adapter checkpoint path, artifact root, evaluator command, expected runtime scope, and rollback path.
-- [ ] Ask the user for explicit benchmark-launch approval.
-- [ ] Launch full val or benchmark inference only after approval.
-- [ ] Verify batched decode, scored artifacts, and mAP artifact output.
-- [ ] Label metrics with evidence scope and exact artifact root.
-- [ ] Do not claim final inference correctness if the run is sample-limited, debug-only, or missing scored provenance.
+- [x] Prepare validation handles naming config path, dataset path, base model path, adapter checkpoint path, artifact root, evaluator command, expected runtime scope, and rollback path.
+- [x] Run fixed val200 inference/eval after user direction.
+- [x] Verify batched decode, scored artifacts, and mAP/mRecall artifact output.
+- [x] Label metrics with evidence scope and exact artifact root.
+- [x] Do not treat tiny debug smokes as validation evidence.
+- [x] Record that full validation-dataset eval is optional and not a required V1 gate.
 
 ## Review Requirements
 
@@ -220,8 +226,8 @@ git diff --check
 
 ## Stop Conditions
 
-- User has not approved implementation kickoff.
-- User approval only covers source studies/probes, not source implementation.
+- User has not approved implementation kickoff. Historical: approval was later granted.
+- User approval only covers source studies/probes, not source implementation. Historical: source implementation approval was later granted.
 - OpenSpec validation fails.
 - Source study contradicts the current score, trace, no-resize, adapter, or eval contract.
 - HF/Qwen real trace alignment cannot be proven on a tiny batch.
@@ -231,14 +237,15 @@ git diff --check
 - Legacy `src.infer` tests remain untriaged and pressure the implementation
   toward recreating the forbidden `src/infer/` package.
 - Scored artifacts cannot be consumed by a named evaluator without weakening provenance.
-- Any production benchmark handle is missing.
+- The fixed val200 validation handles are missing.
 
 ## Execution Handoff
 
 Plan complete and saved to
 `docs/superpowers/plans/2026-07-02-coordexp-swift-inference-infra-roadmap.md`.
 
-Source implementation is blocked until explicit user approval after Wave 1
-source-study review. Recommended execution mode after approval:
-subagent-driven development, one wave at a time, with isolated review after
-each wave.
+Historical handoff note: source implementation was blocked until explicit user
+approval after Wave 1 source-study review. That approval was later granted and
+the implementation waves landed. Future extension work should still use
+subagent-driven development, one wave at a time, with isolated review after each
+wave.

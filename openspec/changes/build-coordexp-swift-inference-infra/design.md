@@ -253,7 +253,7 @@ roadmap must require approval gates for:
 - parser/geometry;
 - scoring/artifacts;
 - eval-consumer compatibility;
-- production benchmark acceptance.
+- val200 validation acceptance.
 
 ## Risks / Trade-offs
 
@@ -285,7 +285,9 @@ roadmap must require approval gates for:
    explicit user approval before source implementation.
 5. Implement contract slices test-first in the order listed in `tasks.md`.
 6. Run tiny real HF/Qwen smoke, adapter-enabled real smoke, evaluator fixture,
-   and final full benchmark acceptance before claiming inference correctness.
+   and the accepted fixed val200 inference/eval gate before claiming V1
+   inference/eval readiness. A full validation-dataset run is optional and not
+   required for this V1 claim.
 
 Rollback is straightforward before implementation: archive or remove this
 change and continue using existing legacy inference workflows outside
@@ -295,7 +297,10 @@ reference workflows unchanged.
 
 ## Open Questions
 
-- The first production benchmark leaf still needs the exact dataset path,
+- Full validation-dataset evaluation is no longer a required V1 gate. The fixed
+  val200 run is sufficient when scored artifacts and mAP/mRecall metrics are
+  present.
+- Any future full-dataset benchmark launch still needs the exact dataset path,
   adapter checkpoint path, artifact root, and mAP command named before launch.
 - Any request to use a legacy evaluator bridge instead of the rebuilt `src.eval`
   consumer needs an explicit user decision because it changes V1 ownership.

@@ -6,7 +6,7 @@ status: canonical
 domain: eval
 summary: Contract for CoordExp inference and detection-evaluation artifacts.
 tags: [eval, contract, jsonl]
-updated: 2026-06-26
+updated: 2026-07-03
 ---
 
 # Evaluation Contract
@@ -19,8 +19,34 @@ This page defines the current infer/eval artifact contract.
   - `gt_vs_pred.jsonl`
 - score-aware COCO artifact:
   - `gt_vs_pred_scored.jsonl`
+- CoordExp-Swift score-aware provenance:
+  - `gt_vs_pred_scored.jsonl.provenance.json`
 - canonical visualization sidecar:
   - `vis_resources/gt_vs_pred.jsonl`
+
+CoordExp-Swift standardized detection evaluator:
+
+- consumes `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, and
+  `gt_vs_pred_scored.jsonl.provenance.json` from the same artifact directory;
+- requires raw/scored rows to preserve row order, `row_id`, `row_index`,
+  `example_id` when present, `image_path`, `image_width`, `image_height`, and
+  `gt` exactly;
+- uses scored `pred` only for already-scored prediction objects and does not
+  reparse raw decode text;
+- converts inline GT `bbox` values from norm1000 coord-bin `xyxy` to pixel
+  `xyxy` with the row image dimensions;
+- treats scored prediction `bbox` values as already parser-normalized pixel
+  `xyxy`;
+- writes aggregate bbox COCO metrics only in V1.
+
+CoordExp-Swift validation scope:
+
+- the fixed val200 inference/eval run is sufficient V1 validation evidence when
+  it has scored artifacts, valid score provenance, and mAP/mRecall output from
+  `src/eval/detection_consumer.py`;
+- tiny debug/smoke runs are implementation gates only;
+- full validation-dataset evaluation is optional and not required for the V1
+  readiness claim.
 
 ## Pipeline Record Shape
 
@@ -54,6 +80,12 @@ This page defines the current infer/eval artifact contract.
   compact rollout with some valid objects and some invalid spans should report
   `dropped_invalid_object` rather than erasing the whole prediction row.
 
+CoordExp-Swift rebuilt inference rows use the narrower fields `row_id`,
+`row_index`, `example_id`, `image_path`, `image_width`, `image_height`, `gt`,
+`pred`, `raw_decode_text`, `parser_id`, `parser_policy`, `metric_bearing`,
+`parse_status`, `valid_prediction_count`, `dropped_prediction_count`, and
+`dropped_predictions`. The standardized Swift evaluator consumes this shape.
+
 ## Coordinate Handling
 
 - `coord_mode: "pixel"` means evaluator consumers use `gt` and `pred` points as
@@ -72,13 +104,19 @@ This page defines the current infer/eval artifact contract.
   unless the consumed artifact has comparable score-bearing provenance. The
   artifact family must be score-bearing, not the raw `gt_vs_pred.jsonl` family,
   and the carrier must include `score_policy_fingerprint`.
-- when `infer.bbox_format` is `cxcy_logw_logh` or `cxcywh`, official
-  score-aware evaluation may still consume `gt_vs_pred_scored.jsonl`, but that
-  scored artifact is materialized from the canonical raw artifact with
-  deterministic constant-score provenance rather than confidence reconstruction
+- legacy/mainline evaluators may consume non-canonical `cxcy_logw_logh` or
+  `cxcywh` scored artifacts materialized with deterministic constant-score
+  provenance. The direct CoordExp-Swift V1 evaluator does not consume that
+  constant-score family; it requires selected-token score provenance from the
+  rebuilt inference artifact writer.
 - Scored COCO inputs must also include:
   - `pred_score_source`
   - `pred_score_version`
+- For CoordExp-Swift V1, each scored prediction carries `pred_score_source`
+  inside the prediction object. That source must be a selected-token provenance
+  mapping whose `row_id`, `object_span_id`, and `score_policy_fingerprint`
+  match the evaluated row, prediction object, and scored-artifact provenance
+  sidecar.
 - Missing or invalid scores are contract violations for COCO evaluation.
 - Unscored legacy artifacts are not supported for COCO metrics.
 - confidence post-op remains `xyxy`-only; `cxcy_logw_logh` and `cxcywh` do not
@@ -102,6 +140,11 @@ This page defines the current infer/eval artifact contract.
   - `per_class.csv`
   - `coco_gt.json`
   - `coco_preds.json`
+- CoordExp-Swift direct evaluator V1:
+  - `metrics.json`
+  - `coco_gt.json`
+  - `coco_predictions.json`
+  - no `per_class.csv` or `per_image.json` in V1
 - when shared-review overlays are materialized:
   - `vis_resources/gt_vs_pred.jsonl`
 

@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-06-20
+updated: 2026-07-03
 
 entrypoints:
   human:
@@ -22,6 +22,24 @@ authority:
   research_knowledge_pilot_status: pilot_synthesized_reading_path_not_current_behavior_authority
 
 config_surfaces:
+  coordexp_swift:
+    - id: coordexp_swift_rebuilt_training
+      status: active
+      config_roots:
+        - configs/coordexp_swift/prod/
+        - configs/coordexp_swift/smoke/
+      entrypoint: src/train.py
+      runtime: src/training/pipeline.py
+      trainer: src/training/supervised_trainer.py
+      notes: "Current rebuilt supervised-training route in the CoordExp-Swift worktree."
+    - id: coordexp_swift_rebuilt_inference_eval
+      status: active
+      config_root: configs/coordexp_swift/infer/
+      entrypoint: src/infer.py
+      implementation: src/inference/
+      evaluator: src/eval/detection_consumer.py
+      accepted_validation_config: configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_step917_val200.yaml
+      notes: "Fixed val200 inference/eval is the accepted V1 validation gate; full validation-dataset evaluation is optional."
   training:
     - id: unified_training_pipeline_stage2_rollout_correction
       status: active
@@ -72,6 +90,10 @@ docs:
     - path: docs/PROJECT_CONTEXT.md
       title: Project Context & Precedence
       type: root-context
+      status: canonical
+    - path: docs/COORDEXP_SWIFT.md
+      title: CoordExp-Swift Worktree
+      type: worktree-authority
       status: canonical
     - path: docs/SYSTEM_OVERVIEW.md
       title: System Overview

@@ -1,6 +1,6 @@
 # Wave 7 Real-Smoke Evidence
 
-This note records Wave 7 smoke handles and outcomes. Tiny runs are smoke/partial evidence only and are not final benchmark evidence.
+This note records Wave 7 smoke handles and outcomes. Tiny runs are smoke/partial evidence only. The later fixed val200 run is the accepted V1 validation gate.
 
 ## Pinned Fixtures And Configs
 
@@ -67,4 +67,6 @@ PY
 
 ## Launch Boundary
 
-Full benchmark launch remains blocked on explicit user approval. Wave 7 smoke success proves implementation readiness for the benchmark gate, but it is still tiny smoke evidence and not final benchmark evidence.
+Wave 7 smoke success proves implementation readiness. A full validation-dataset
+run is not required for V1 readiness; the fixed val200 inference/eval run is the
+accepted validation gate after the user's 2026-07-03 decision.

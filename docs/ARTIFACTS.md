@@ -5,7 +5,7 @@ doc_type: artifacts-reference
 status: canonical
 domain: repo
 summary: Runtime artifacts, logging controls, and provenance surfaces.
-updated: 2026-05-16
+updated: 2026-07-03
 ---
 
 # Artifacts & Provenance
@@ -14,8 +14,9 @@ This page documents the observable runtime artifacts CoordExp writes during
 training, inference, post-processing, and evaluation.
 
 Artifact names remain stable even though ownership moved into narrower helper
-modules such as `src/bootstrap/`, `src/infer/artifacts.py`, and
-`src/eval/artifacts.py`.
+modules. In this CoordExp-Swift worktree, the rebuilt inference artifact owner is
+`src/inference/artifacts.py` and the direct evaluator owner is
+`src/eval/detection_consumer.py`.
 
 If you are looking for metric-key meaning, start here:
 - `docs/training/METRICS.md`
@@ -54,6 +55,9 @@ analysis artifacts into the resolved run directory and its eval subdirectory.
 
 - `gt_vs_pred.jsonl`
   - Base inference artifact with inline GT and parsed predictions per sample.
+  - CoordExp-Swift rebuilt rows carry `row_id`, `row_index`, `example_id`,
+    `image_path`, `image_width`, `image_height`, parser status/counters, raw
+    decode text, inline GT, and parser-owned prediction/drop diagnostics.
 - `pred_token_trace.jsonl`
   - Optional per-sample generation trace artifact for later rollout inspection.
 - `pred_confidence.jsonl`
@@ -61,6 +65,9 @@ analysis artifacts into the resolved run directory and its eval subdirectory.
 - `gt_vs_pred_scored.jsonl`
   - Score-provenanced artifact consumed by COCO evaluation and official
     submission export.
+  - CoordExp-Swift V1 stores score provenance inside each prediction object as
+    selected-token evidence, with `pred_score_source`,
+    `pred_score_version`, and finite `score`.
   - Official metric/export entrypoints require comparable provenance, either
     from `gt_vs_pred_scored.jsonl.provenance.json` or a run-level carrier bound
     to this exact artifact. The score carrier must include first-class
@@ -97,12 +104,20 @@ analysis artifacts into the resolved run directory and its eval subdirectory.
 - `gt_vs_pred_scored.jsonl.provenance.json`
   - Score-bearing sidecars include a parser policy fingerprint over both
     `detection_template_id` and `object_field_order`.
+  - CoordExp-Swift sidecars bind raw and scored artifact SHAs, row identities,
+    prompt/decode/model/processor/template/parser identity, and
+    `score_policy_fingerprint`.
 - `resolved_config.path`
   - Pointer sidecar written next to `gt_vs_pred.jsonl` so downstream eval or
     visualization jobs can recover the authoritative `resolved_config.json`
     even when they start from an artifact path outside the original `run_dir`.
 - `metrics.json`
   - Offline evaluator metrics and diagnostic counters.
+  - For the accepted CoordExp-Swift val200 gate, the standardized evaluator
+    writes bbox mAP/mRecall to
+    `outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-pure-ce-dora-r16a32-step917-val200-20260703T035007Z/eval_coco_fixed_gt_scale/metrics.json`.
+    This fixed val200 scope is sufficient V1 validation evidence; full
+    validation-dataset evaluation is optional.
 - `metrics_guarded.json`
   - Guarded companion metrics emitted when offline duplicate control is
     enabled.
@@ -119,6 +134,11 @@ analysis artifacts into the resolved run directory and its eval subdirectory.
 - `coco_preds.json`
   - Deterministic COCO-format prediction export, including score-aware ranking
     when the scored artifact is used.
+- `coco_predictions.json`
+  - CoordExp-Swift direct evaluator V1 prediction sidecar paired with its
+    emitted `coco_gt.json`.
+  - Uses evaluator-local COCO-80 ids and is not an official COCO test-server
+    submission artifact by itself.
 - `matches.jsonl`
   - F1-ish primary-threshold match diagnostics.
 - `matches@<thr>.jsonl`
@@ -147,16 +167,18 @@ evaluator.
 Current helper ownership for these artifacts:
 
 - infer summary / resolved metadata:
-  - `src/infer/artifacts.py`
+  - `src/inference/artifacts.py` in CoordExp-Swift
+  - `src/infer/artifacts.py` only for legacy/mainline reference paths
 - backend generation:
-  - `src/infer/backend.py`
-  - `src/infer/runtime.py`
+  - `src/inference/backend.py` in CoordExp-Swift
+  - `src/inference/runtime.py` in CoordExp-Swift
+  - `src/infer/backend.py` and `src/infer/runtime.py` only for legacy/mainline reference paths
 - confidence post-op scoring:
   - `src/eval/confidence_postop.py`
   - `src/eval/bbox_confidence.py`
 - evaluation save/report materialization:
-  - `src/eval/orchestration.py`
-  - `src/eval/artifacts.py`
+  - `src/eval/detection_consumer.py` in CoordExp-Swift
+  - `src/eval/orchestration.py` and `src/eval/artifacts.py` only for legacy/mainline reference paths
 
 ---
 
@@ -357,8 +379,9 @@ artifacts into `training.output_dir` before training starts:
     - `metrics.json`
     - `per_image.json`
     - standard evaluator sidecars such as `coco_gt.json`, `coco_preds.json`,
-      `per_class.csv`, `vis_resources/gt_vs_pred.jsonl`, and `matches*.jsonl`
-      when requested by the evaluator mode
+      `coco_predictions.json`, `per_class.csv`,
+      `vis_resources/gt_vs_pred.jsonl`, and `matches*.jsonl` when requested by
+      the evaluator mode
     - `raw_rollouts.jsonl` with per-sample rollout text, token IDs, scoring
       metadata, parsing diagnostics, and match details
     - `pred_token_trace.jsonl` when traced rollout outputs are available for the

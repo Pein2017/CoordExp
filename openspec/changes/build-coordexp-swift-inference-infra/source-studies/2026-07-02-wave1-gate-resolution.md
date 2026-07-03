@@ -18,11 +18,11 @@ implementation kickoff after reviewing this note and the active OpenSpec change.
   alignment, no-resize Qwen image processing, and minimal V1 mAP consumer
   ownership.
 - OpenSpec contradiction requiring immediate contract rewrite: none found.
-- Docs contradiction to carry as implementation risk: current `docs/eval` and
-  `docs/ARTIFACTS.md` still describe legacy inference routes and artifact
-  names. They are reference-only for this V1 change unless explicitly patched
-  after implementation.
-- Implementation approval: still pending.
+- Docs contradiction carried as implementation risk: at source-study time,
+  current `docs/eval` and `docs/ARTIFACTS.md` still described legacy inference
+  routes and artifact names. These docs were later patched after implementation
+  to route through CoordExp-Swift first.
+- Implementation approval: later granted.
 
 ## Local Environment Evidence
 
@@ -340,5 +340,5 @@ implementation lands.
   adapter owner.
 - V1 legacy-test allowlist or porting residue check during implementation.
 - Real smoke fixture pinning and adapter-enabled smoke fixture pinning.
-- Benchmark launch packet and explicit benchmark approval after implementation
-  smokes pass.
+- Fixed val200 validation handles after implementation smokes pass. Full
+  validation-dataset evaluation is optional and not required for V1 readiness.

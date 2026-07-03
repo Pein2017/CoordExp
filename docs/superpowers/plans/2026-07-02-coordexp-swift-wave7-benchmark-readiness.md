@@ -1,19 +1,21 @@
-# CoordExp-Swift Wave 7 Benchmark Readiness Packet
+# CoordExp-Swift Wave 7 / Val200 Validation Packet
 
-STATUS: BLOCKED_PENDING_FULL_BENCHMARK_APPROVAL
+STATUS: VAL200_ACCEPTED_NO_FULL_DATASET_REQUIRED
 
-This packet is a blocked launch gate only. Wave 7 real-smoke readiness is complete, but full benchmark launch is still blocked pending explicit user approval. Tiny and sample-limited smokes are smoke evidence only, not benchmark evidence.
+This packet originally blocked on a full-dataset benchmark launch. The current
+2026-07-03 decision supersedes that gate: full validation-dataset eval is not
+required for CoordExp-Swift V1 readiness. The fixed val200 inference/eval run is
+sufficient when scored artifacts and Swift evaluator mAP/mRecall metrics are
+present. Tiny Wave 7 smokes remain implementation evidence only.
 
 ## Production Handles
 
-- Production config: `configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_benchmark.yaml`
-- Dataset: `/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl`
+- Accepted val200 config: `configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_step917_val200.yaml`
+- Accepted val200 dataset: `outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl`
 - Base model: `/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent`
-- Adapter checkpoint: `outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate8_ebs128_4epoch-prod8-ebs128-4epoch-cocoprompt-20260702T052657Z/checkpoints/step-459/adapter`
-- Embedding delta for benchmark launch: `outputs/coordexp_swift/infer/wave7_real_smokes/repaired_special_token_embeddings_step459`
-- Original checkpoint delta source: `outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate8_ebs128_4epoch-prod8-ebs128-4epoch-cocoprompt-20260702T052657Z/checkpoints/step-459/special_token_embeddings`
-- Repaired-delta caveat: the benchmark launch currently depends on this local metadata-repair artifact because the legacy `step-459` checkpoint delta was written before SHA propagation was fixed. Its tensor is copied byte-for-byte from the checkpoint delta, its identity metadata was repaired from the verified runtime base/tokenizer identity, and it was validated by the production-adapter smoke. It is a benchmark input handle, not a benchmark-result artifact.
-- Artifact root: `outputs/coordexp_swift/infer/benchmark`
+- Adapter checkpoint: `outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_accelerate8_ebs64_4epoch_warmup0p1-prod8-r16a32-ebs64-warmup0p1-20260702T170007Z/checkpoints/step-917/adapter`
+- Embedding delta for accepted val200 launch: `outputs/coordexp_swift/infer/val200_support/repaired_special_token_embeddings_step917`
+- Artifact root: `outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-pure-ce-dora-r16a32-step917-val200-20260703T035007Z`
 - Evaluator command:
 
 ```bash
@@ -21,7 +23,7 @@ python - <<'PY'
 from pathlib import Path
 from src.eval.detection_consumer import evaluate_scored_detection_artifacts
 
-benchmark_run_dir = Path("<benchmark-run-dir>")
+	benchmark_run_dir = Path("outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-pure-ce-dora-r16a32-step917-val200-20260703T035007Z")
 result = evaluate_scored_detection_artifacts(
     artifact_dir=benchmark_run_dir,
     output_dir=benchmark_run_dir / "eval",
@@ -30,13 +32,19 @@ print(result.metrics_path)
 print(result.metrics)
 PY
 ```
-- Expected evidence scope: full validation inference only after approval; Wave 7 smokes remain tiny smoke gates.
-- Rollback path: do not delete smoke or benchmark artifacts; stop the run, preserve the run directory, and revert only Wave 7 config/runtime/doc changes if the launch gate is rejected.
+- Accepted evidence scope: fixed val200 local validation.
+- Accepted metrics path: `outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-pure-ce-dora-r16a32-step917-val200-20260703T035007Z/eval_coco_fixed_gt_scale/metrics.json`.
+- Accepted metrics: `mAP=0.4111788135144427`, `mAP_50=0.5616311086141887`, `mAP_75=0.43402742703563857`, `mRecall=0.4790356074108587`.
+- Optional full-dataset benchmark config remains available at `configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_benchmark.yaml`, but it is not a required V1 gate.
+- Rollback path: do not delete smoke, val200, or benchmark artifacts; preserve the run directory and revert only the relevant config/runtime/doc changes if a future broader launch is rejected.
 
 ## Current Blockers
 
-- Full benchmark launch still requires explicit user approval.
-- Tiny real-smoke success does not justify final inference-correctness or benchmark-mAP claims.
+- No blocker remains for the V1 val200 validation claim.
+- Tiny real-smoke success alone still does not justify mAP claims; use the fixed
+  val200 metrics above.
+- Full validation-dataset evaluation remains optional and requires a new explicit
+  user request.
 
 ## Adapter Smoke Evidence
 
@@ -87,4 +95,7 @@ CUDA_VISIBLE_DEVICES=4 python -m src.infer --config configs/coordexp_swift/infer
 
 ## Approval Stop
 
-Do not launch the production benchmark from this packet until the user explicitly approves the benchmark launch. Do not claim final inference correctness from Wave 7 smoke artifacts.
+Do not launch the optional full validation-dataset benchmark from this packet
+unless the user explicitly asks for it. Do not claim final inference/eval
+readiness from Wave 7 smoke artifacts alone; use the accepted fixed val200
+artifact and metrics paths above.

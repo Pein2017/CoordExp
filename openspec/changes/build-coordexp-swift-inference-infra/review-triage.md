@@ -4,10 +4,12 @@
 
 Change: `build-coordexp-swift-inference-infra`
 
-Mode: docs/spec/plan only. Source implementation remains blocked. The first
-allowed execution step after user approval is source-study/probe work; source
-implementation requires a second explicit approval after the study note is
-reviewed.
+Mode at review time: docs/spec/plan only. Source implementation was blocked
+until the user approved source-study review and implementation kickoff.
+
+Current status update, 2026-07-03: implementation and real-smoke work have since
+landed in this worktree. This triage remains review provenance, not a live
+source-implementation blocker.
 
 ## Review Round 1
 
@@ -184,11 +186,10 @@ None in round 2.
 
 ## Residual Gates
 
-- Source studies and any required probes must be completed first.
-- OpenSpec must be patched if upstream evidence contradicts current contracts.
-- Source implementation requires explicit user approval after source-study
-  review.
-- Production benchmark handles remain intentionally unresolved until the
-  benchmark-launch gate.
-- Full benchmark correctness requires real full val or benchmark inference,
-  scored artifacts, and mAP output from the named evaluator consumer.
+- Source studies and required probes were completed before implementation.
+- OpenSpec must still be patched if future upstream evidence contradicts current
+  contracts.
+- Source implementation approval was granted after source-study review.
+- Full validation-dataset benchmark handles are optional, not a live V1 gate.
+- V1 inference/eval readiness is accepted from the fixed val200 run with scored
+  artifacts and mAP/mRecall output from the named Swift evaluator consumer.
