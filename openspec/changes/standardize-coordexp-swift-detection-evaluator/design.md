@@ -78,7 +78,11 @@ non-idempotent.
 `src/inference/scoring.py` and `src/inference/artifacts.py` own whether a parsed
 prediction enters `gt_vs_pred_scored.jsonl`. A prediction enters scored `pred`
 only when selected-token score evidence is valid, finite, row-local, and
-provenance-bearing. Rows remain present even when no prediction is scoreable.
+provenance-bearing. The evaluator validates that the row-local score source
+matches the scored row id, prediction `object_span_id`, supported score version,
+selected-token evidence shape, and sidecar `score_policy_fingerprint` before it
+uses the prediction in official metrics. Rows remain present even when no
+prediction is scoreable.
 
 Rationale: official AP depends on prediction ranking. Scores must be produced
 from generation trace evidence, not inferred by the evaluator.
@@ -96,9 +100,13 @@ normalization, not text salvage; it must be counted in `metrics.json`.
 
 Evaluator responsibilities:
 
-- validate raw/scored row parity and provenance binding;
+- validate raw/scored row parity and provenance binding, including immutable
+  image identity, dimensions, row index/example id, and GT payload;
 - validate row-local score provenance and score range;
 - read raw rows only for parser/drop normalization counters;
+- convert GT norm1000 coord-bin `xyxy` boxes into per-image pixel `xyxy`;
+- consume scored prediction `bbox` values as already parser-normalized pixel
+  `xyxy`;
 - map GT and prediction descriptions to canonical COCO-80 class ids;
 - fail fast on unknown GT categories;
 - count and exclude unknown prediction categories;
@@ -127,14 +135,17 @@ can be added later as diagnostics if the official metric needs explanation.
 
 ### COCO-80 Category Registry
 
-V1 uses a canonical COCO-80 registry aligned with the prompt vocabulary.
-Normalization is limited to lowercasing and whitespace collapse. Unknown GT
-categories are artifact contract failures. Unknown prediction categories are
-excluded from COCO predictions and counted.
+V1 uses a canonical COCO-80 registry as the rebuilt Swift prompt/eval source of
+truth. Normalization is limited to lowercasing and whitespace collapse. Unknown
+GT categories are artifact contract failures. Unknown prediction categories are
+excluded from COCO predictions and counted. There is no semantic remapping,
+alias expansion, or description embedding fallback in V1.
 
 Rationale: the training/inference prompt is closed-class COCO-80. Dynamic
 category creation or semantic remapping would make metrics sensitive to model
-wording instead of the agreed benchmark class set.
+wording instead of the agreed benchmark class set. Future prompt renderers
+should import or derive from the same registry rather than duplicate a second
+class list.
 
 Alternative considered: build categories dynamically from GT and predictions.
 Rejected because it can hide category drift and make runs incomparable.
@@ -146,6 +157,11 @@ Evaluator outputs:
 - `metrics.json`;
 - `coco_gt.json`;
 - `coco_predictions.json`.
+
+V1 intentionally does not emit `per_class.csv`, `per_image.json`, F1-ish
+matches, LVIS reports, guarded companions, or official COCO submission files.
+Those are separate evaluator families and should be added only when their
+contracts are reintroduced for the Swift artifact shape.
 
 The operator path is:
 
@@ -177,8 +193,9 @@ artifact directories.
 - Unknown prediction categories are counted but excluded, which can make AP
   look like both category failure and missing detection -> metrics must include
   `unknown_category_pred_count`.
-- `pycocotools` can print noisy summaries -> acceptable for V1 CLI; tests
-  should assert JSON outputs, not stdout formatting.
+- `pycocotools` mutates input dictionaries and can print noisy summaries ->
+  evaluate on deep copies and suppress stdout during reduction so saved sidecars
+  stay canonical and CLI logs stay compact.
 - Minimal V1 lacks per-image/category diagnostics -> accepted trade-off for
   simplicity; add later only if model-diagnosis needs it.
 

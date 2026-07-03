@@ -1,356 +1,121 @@
 #!/usr/bin/env python
-"""Offline detection evaluator entrypoint (YAML-first).
-
-YAML usage:
-  python scripts/evaluate_detection.py --config configs/eval/detection.yaml
-
-Legacy usage (still supported during transition):
-  python scripts/evaluate_detection.py --pred_jsonl <path> --out_dir <dir>
-
-In the unified pipeline workflow, the evaluator consumes a single artifact
-JSONL that embeds both GT and predictions per sample (e.g., gt_vs_pred.jsonl).
-"""
+"""Evaluate CoordExp-Swift scored detection artifacts with COCO bbox metrics."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
-from typing import Any, Dict, Mapping
 
-from src.eval.artifacts import (
-    resolve_duplicate_guard_report_path,
-    resolve_guarded_prediction_artifact_path,
-)
-from src.eval.detection import EvalOptions, _wants_official_metrics, evaluate_and_save
-from src.infer.artifacts import load_comparable_artifact
-from src.utils import get_logger
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
-logger = get_logger(__name__)
-
-
-def _reject_deprecated_option(key: str, source: str, value: Any) -> None:
-    if value is None:
-        return
-    raise ValueError(
-        f"{key} is deprecated and unsupported in {source}. "
-        "Description matching requires a semantic encoder "
-        "(default: sentence-transformers/all-MiniLM-L6-v2); "
-        "remove deprecated keys/flags to continue."
-    )
-
-
-def _load_yaml(path: Path) -> Dict[str, Any]:
-    try:
-        import yaml
-    except Exception as exc:  # noqa: BLE001
-        raise RuntimeError(
-            "YAML config requires PyYAML (import yaml). Install it in the ms env."
-        ) from exc
-
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    if not isinstance(data, dict):
-        raise ValueError("eval config must be a YAML mapping")
-    return data
-
-
-def _get(cfg: Mapping[str, Any], key: str, default: Any) -> Any:
-    return cfg[key] if key in cfg else default
-
-
-def _resolve_duplicate_control_enabled(cfg: Mapping[str, Any]) -> bool:
-    raw = cfg.get("duplicate_control", {})
-    if raw is None:
-        return False
-    if not isinstance(raw, Mapping):
-        raise ValueError("duplicate_control must be a mapping")
-    unknown_keys = sorted(str(key) for key in raw.keys() if str(key) != "enabled")
-    if unknown_keys:
-        rendered = ", ".join(f"duplicate_control.{key}" for key in unknown_keys)
-        raise ValueError(
-            f"Unknown duplicate-control keys are unsupported: {rendered}. "
-            "Only duplicate_control.enabled is allowed."
-        )
-    enabled = raw.get("enabled", False)
-    if isinstance(enabled, bool):
-        return enabled
-    raise ValueError("duplicate_control.enabled must be a bool")
+from src.common.errors import CoordExpError
+from src.eval.detection_consumer import SCORED_NAME, evaluate_scored_detection_artifacts
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="CoordExp detection evaluator (COCO/LVIS + F1-ish set matching)."
+        description=(
+            "Evaluate a CoordExp-Swift inference artifact directory containing "
+            "gt_vs_pred.jsonl, gt_vs_pred_scored.jsonl, and the scored provenance sidecar."
+        )
     )
-    parser.add_argument("--config", type=Path, default=None, help="YAML config")
-
-    # Legacy flags / overrides (CLI wins over YAML when provided)
-    parser.add_argument("--pred_jsonl", type=Path, default=None, help="Artifact JSONL")
     parser.add_argument(
-        "--out_dir",
-        default=None,
+        "--artifact-dir",
         type=Path,
-        help="Output directory (overwrites).",
-    )
-    parser.add_argument(
-        "--metrics",
-        choices=["coco", "lvis", "f1ish", "both"],
         default=None,
-        help="Which metric suite to run.",
+        help="Inference artifact directory to evaluate.",
     )
     parser.add_argument(
-        "--lvis-max-dets",
-        type=int,
+        "--pred-jsonl",
+        "--pred_jsonl",
+        dest="pred_jsonl",
+        type=Path,
         default=None,
-        help="Per-image detection cap for LVIS-style evaluation (default: 300).",
+        help=(
+            "Compatibility alias for a path ending in gt_vs_pred_scored.jsonl; "
+            "the parent directory is evaluated."
+        ),
     )
     parser.add_argument(
-        "--unknown-policy",
-        choices=["bucket", "drop", "semantic"],
-        default=None,
-        help="How to handle unknown desc.",
-    )
-
-    parser.add_argument(
-        "--semantic-model",
-        default=None,
-        help="HF model id used for semantic desc matching.",
+        "--out-dir",
+        "--out_dir",
+        dest="out_dir",
+        type=Path,
+        required=True,
+        help="Output directory for metrics.json and COCO conversion artifacts.",
     )
     parser.add_argument(
-        "--semantic-threshold",
-        type=float,
-        default=None,
-        help="Cosine similarity threshold for semantic matching.",
-    )
-    parser.add_argument(
-        "--semantic-fallback",
-        choices=["bucket", "drop"],
-        default=None,
-        help="Fallback for semantic mapping misses (only for unknown-policy=semantic).",
-    )
-    parser.add_argument(
-        "--semantic-device",
-        default=None,
-        help="Device for semantic matcher: auto|cpu|cuda[:N].",
-    )
-    parser.add_argument(
-        "--semantic-batch-size",
-        type=int,
-        default=None,
-        help="Batch size for semantic embedding encoding.",
-    )
-
-    parser.add_argument(
-        "--f1ish-iou-thrs",
-        type=float,
-        nargs="+",
-        default=None,
-        help="IoU thresholds for F1-ish greedy matching.",
-    )
-    parser.add_argument(
-        "--f1ish-pred-scope",
-        choices=["annotated", "all"],
-        default=None,
-        help="Which predictions count for F1-ish FP.",
-    )
-
-    parser.add_argument(
-        "--strict-parse",
-        action="store_true",
-        help="Abort on first parse/validation error.",
-    )
-    parser.add_argument(
-        "--no-segm",
-        action="store_false",
-        dest="use_segm",
-        default=None,
-        help="Disable segmentation metrics/export.",
-    )
-    parser.add_argument(
-        "--iou-thrs",
-        type=float,
-        nargs="+",
-        default=None,
-        help="IoU thresholds override (defaults to COCO if unset).",
-    )
-    parser.add_argument(
-        "--overlay", action="store_true", help="Render overlay samples (top FP/FN)."
-    )
-    parser.add_argument(
-        "--overlay-k",
-        type=int,
-        default=None,
-        help="Number of overlay samples when enabled.",
-    )
-    parser.add_argument(
-        "--num-workers",
-        type=int,
-        default=None,
-        help="CPU workers for parsing/denorm (0=single).",
+        "--metrics-name",
+        default="metrics.json",
+        help="Metric artifact filename to write inside --out-dir.",
     )
     return parser.parse_args()
 
 
-def _resolve_from_yaml(
-    ycfg: Mapping[str, Any], args: argparse.Namespace
-) -> tuple[Path, EvalOptions]:
-    if "use_pred_score" in ycfg:
-        raise ValueError(
-            "use_pred_score is unsupported. Fixed-score evaluation has been removed; "
-            "remove use_pred_score and provide scored artifacts for COCO evaluation."
-        )
-
-    pred_jsonl = args.pred_jsonl or Path(str(_get(ycfg, "pred_jsonl", "")))
-    out_dir = args.out_dir or Path(str(_get(ycfg, "out_dir", "eval_out")))
-
-    if not str(pred_jsonl):
-        raise ValueError("pred_jsonl must be set (either in YAML or via --pred_jsonl)")
-
-    metrics = str(args.metrics or _get(ycfg, "metrics", "both"))
-    duplicate_control_enabled = _resolve_duplicate_control_enabled(ycfg)
-    wants_scored_family = metrics.strip().lower() in {"coco", "lvis", "both"}
-
-    strict_parse = (
-        bool(args.strict_parse)
-        if args.strict_parse
-        else bool(_get(ycfg, "strict_parse", False))
-    )
-
-    use_segm = (
-        bool(args.use_segm)
-        if args.use_segm is not None
-        else bool(_get(ycfg, "use_segm", True))
-    )
-
-    _reject_deprecated_option("--unknown-policy", "CLI flag", args.unknown_policy)
-    _reject_deprecated_option("--semantic-fallback", "CLI flag", args.semantic_fallback)
-    config_src = f"YAML config '{args.config}'"
-    if "unknown_policy" in ycfg:
-        _reject_deprecated_option(
-            "unknown_policy", config_src, ycfg.get("unknown_policy", "<present>")
-        )
-    if "semantic_fallback" in ycfg:
-        _reject_deprecated_option(
-            "semantic_fallback", config_src, ycfg.get("semantic_fallback", "<present>")
-        )
-
-    options = EvalOptions(
-        metrics=metrics,
-        strict_parse=strict_parse,
-        use_segm=use_segm,
-        iou_thrs=args.iou_thrs or _get(ycfg, "iou_thrs", None),
-        f1ish_iou_thrs=[
-            float(x)
-            for x in (
-                (args.f1ish_iou_thrs if args.f1ish_iou_thrs is not None else _get(ycfg, "f1ish_iou_thrs", [0.3, 0.5]))
-                or []
+def _resolve_artifact_dir(args: argparse.Namespace) -> Path:
+    if args.artifact_dir is not None and args.pred_jsonl is not None:
+        raise ValueError("provide only one of --artifact-dir or --pred-jsonl")
+    if args.artifact_dir is not None:
+        return args.artifact_dir
+    if args.pred_jsonl is not None:
+        if args.pred_jsonl.name != SCORED_NAME:
+            raise ValueError(
+                f"--pred-jsonl must point to {SCORED_NAME}, got {args.pred_jsonl.name!r}"
             )
-        ],
-        f1ish_pred_scope=str(args.f1ish_pred_scope or _get(ycfg, "f1ish_pred_scope", "annotated")),
-        output_dir=out_dir,
-        overlay=bool(args.overlay) if args.overlay else bool(_get(ycfg, "overlay", False)),
-        overlay_k=int(args.overlay_k or _get(ycfg, "overlay_k", 12)),
-        num_workers=int(args.num_workers or _get(ycfg, "num_workers", 0)),
-        semantic_model=str(args.semantic_model or _get(ycfg, "semantic_model", "sentence-transformers/all-MiniLM-L6-v2")),
-        semantic_threshold=float(args.semantic_threshold or _get(ycfg, "semantic_threshold", 0.6)),
-        semantic_device=str(args.semantic_device or _get(ycfg, "semantic_device", "auto")),
-        semantic_batch_size=int(args.semantic_batch_size or _get(ycfg, "semantic_batch_size", 64)),
-        lvis_max_dets=int(args.lvis_max_dets or _get(ycfg, "lvis_max_dets", 300)),
-        duplicate_control_enabled=duplicate_control_enabled,
-        guarded_pred_path=resolve_guarded_prediction_artifact_path(
-            out_dir=out_dir,
-            scored_input=wants_scored_family,
-        ),
-        duplicate_guard_report_path=resolve_duplicate_guard_report_path(out_dir=out_dir),
-    )
-
-    return pred_jsonl, options
-
-
-def _resolve_legacy(args: argparse.Namespace) -> tuple[Path, EvalOptions]:
-    if args.pred_jsonl is None:
-        raise ValueError("--pred_jsonl is required when --config is not provided")
-
-    out_dir = args.out_dir or Path("eval_out")
-
-    _reject_deprecated_option("--unknown-policy", "CLI flag", args.unknown_policy)
-    _reject_deprecated_option("--semantic-fallback", "CLI flag", args.semantic_fallback)
-
-    options = EvalOptions(
-        metrics=str(args.metrics or "f1ish"),
-        strict_parse=bool(args.strict_parse),
-        use_segm=bool(args.use_segm) if args.use_segm is not None else True,
-        iou_thrs=args.iou_thrs,
-        f1ish_iou_thrs=[float(x) for x in (args.f1ish_iou_thrs or [0.3, 0.5])],
-        f1ish_pred_scope=str(args.f1ish_pred_scope or "annotated"),
-        output_dir=out_dir,
-        overlay=bool(args.overlay),
-        overlay_k=int(args.overlay_k or 12),
-        num_workers=int(args.num_workers or 0),
-        semantic_model=str(args.semantic_model or "sentence-transformers/all-MiniLM-L6-v2"),
-        semantic_threshold=float(args.semantic_threshold or 0.6),
-        semantic_device=str(args.semantic_device or "auto"),
-        semantic_batch_size=int(args.semantic_batch_size or 64),
-        lvis_max_dets=int(args.lvis_max_dets or 300),
-        duplicate_control_enabled=False,
-    )
-
-    return args.pred_jsonl, options
+        return args.pred_jsonl.parent
+    raise ValueError("one of --artifact-dir or --pred-jsonl is required")
 
 
 def main() -> None:
-    args = parse_args()
-
-    if args.config is not None:
-        ycfg = _load_yaml(args.config)
-        pred_jsonl, options = _resolve_from_yaml(ycfg, args)
-        print("Resolved eval config:")
+    try:
+        args = parse_args()
+        result = evaluate_scored_detection_artifacts(
+            artifact_dir=_resolve_artifact_dir(args),
+            output_dir=args.out_dir,
+            metrics_name=str(args.metrics_name),
+        )
+    except CoordExpError as exc:
         print(
             json.dumps(
                 {
-                    "pred_jsonl": str(pred_jsonl),
-                    "out_dir": str(options.output_dir),
-                    "metrics": options.metrics,
-                    "duplicate_control_enabled": options.duplicate_control_enabled,
-                    "guarded_pred_jsonl": (
-                        str(options.guarded_pred_path)
-                        if options.guarded_pred_path is not None
-                        else None
-                    ),
-                    "duplicate_guard_report_json": (
-                        str(options.duplicate_guard_report_path)
-                        if options.duplicate_guard_report_path is not None
-                        else None
-                    ),
-                    "use_segm": options.use_segm,
-                    "overlay": options.overlay,
-                    "overlay_k": options.overlay_k,
+                    "code": exc.code,
+                    "message": exc.message,
+                    "context": exc.context,
                 },
-                indent=2,
-            )
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            file=sys.stderr,
         )
-    else:
-        pred_jsonl, options = _resolve_legacy(args)
+        raise SystemExit(1) from None
+    except ValueError as exc:
+        print(
+            json.dumps(
+                {
+                    "code": "eval_detection.cli_error",
+                    "message": str(exc),
+                    "context": {},
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            file=sys.stderr,
+        )
+        raise SystemExit(2) from None
 
-    if _wants_official_metrics(options.metrics):
-        load_comparable_artifact(pred_jsonl, require_score=True)
-    summary = evaluate_and_save(pred_jsonl, options=options)
-    if str(options.metrics) == "f1ish":
-        summary.setdefault("evaluation_status", "inspection")
-        summary.setdefault("comparability", "non_comparable")
-        summary.setdefault("comparison_scope", "raw_f1ish")
-    metrics_payload: dict[str, Any] = {"metrics": summary.get("metrics", {})}
-    for key in (
-        "evaluation_status",
-        "comparability",
-        "comparison_scope",
-        "f1ish_evaluation_status",
-        "f1ish_comparability",
-        "f1ish_comparison_scope",
-    ):
-        if key in summary:
-            metrics_payload[key] = summary[key]
-    print(json.dumps(metrics_payload, indent=2))
-    print("Counters:", json.dumps(summary.get("counters", {}), indent=2))
+    print(f"metrics: {result.metrics_path}")
+    print(
+        json.dumps(
+            result.metrics,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+    )
 
 
 if __name__ == "__main__":

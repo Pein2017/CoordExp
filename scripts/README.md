@@ -2,8 +2,8 @@
 
 This directory contains stable, user-facing entrypoints plus compatibility
 wrappers and historical diagnostics. Treat YAML-first entrypoints as the
-reportable path; shell wrappers that take only environment variables are
-manual/debug.
+reportable path except for the rebuilt CoordExp-Swift direct artifact reducers;
+shell wrappers that take only environment variables are manual/debug.
 
 ## Stable entrypoints
 
@@ -11,17 +11,16 @@ manual/debug.
 - Stage-2 rollout-correction server-mode launcher (vLLM server + multi-GPU learner): `scripts/train_stage2.sh`.
 - Unified inference pipeline (YAML-first): `scripts/run_infer.py`.
 - Confidence scoring / score materialization (YAML-first): `scripts/postop_confidence.py`.
-- Offline detection evaluation (YAML-first): `scripts/evaluate_detection.py`.
+- Offline CoordExp-Swift detection evaluation (direct artifact reducer):
+  `scripts/evaluate_detection.py --artifact-dir ... --out-dir ...`.
 - One-run proxy bundle evaluation (YAML-first): `scripts/evaluate_proxy_detection_bundle.py`.
 - Export helper (merge LoRA + token-embeddings adapter offsets): `scripts/merge_coord.sh`.
 
 ## Compatibility / debug wrappers
 
-- `scripts/run_infer_eval.sh`: legacy environment-variable convenience wrapper
-  for quick inference plus debug evaluation. It defaults to raw/F1-ish debug
-  scope and must not be used for official-looking COCO/LVIS/both claims from
-  raw `gt_vs_pred.jsonl`. It refuses COCO/LVIS/both metrics entirely; for those
-  metrics, use the YAML-first infer -> score -> eval flow.
+- `scripts/run_infer_eval.sh`: legacy/mainline environment-variable
+  convenience wrapper. It is not the standardized CoordExp-Swift evaluator
+  path in this worktree.
 - `scripts/run_vis.sh`: manual/debug visualization wrapper for an explicitly
   supplied prediction artifact and image root. Prefer evaluator overlays or
   `vis_resources/` artifacts tied to resolved pipeline provenance for
