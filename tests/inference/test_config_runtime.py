@@ -55,6 +55,54 @@ def test_valid_production_infer_config_loads() -> None:
     assert resolved.fingerprint
 
 
+@pytest.mark.parametrize(
+    "config_path",
+    [
+        "configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_step917_val200.yaml",
+        "configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_benchmark.yaml",
+        "configs/coordexp_swift/infer/wave7_real_production_adapter_smoke.yaml",
+    ],
+)
+def test_production_aligned_infer_configs_keep_training_system_prompt(
+    config_path: str,
+) -> None:
+    from src.config.inference import load_infer_config
+
+    training_config = yaml.safe_load(
+        Path(
+            "configs/coordexp_swift/prod/"
+            "qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_"
+            "accelerate8_ebs64_4epoch_warmup0p1.yaml"
+        ).read_text(encoding="utf-8")
+    )
+    expected_system = training_config["template"]["prompt"]["system"]
+
+    resolved = load_infer_config(config_path)
+
+    assert resolved.config.template.prompt.system == expected_system
+
+
+def test_step917_val200_and_benchmark_configs_use_same_checkpoint_payloads() -> None:
+    from src.config.inference import load_infer_config
+
+    val200 = load_infer_config(
+        "configs/coordexp_swift/infer/"
+        "qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_step917_val200.yaml"
+    )
+    benchmark = load_infer_config(
+        "configs/coordexp_swift/infer/"
+        "qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_benchmark.yaml"
+    )
+
+    assert val200.config.adapter is not None
+    assert benchmark.config.adapter is not None
+    assert val200.config.embedding_delta is not None
+    assert benchmark.config.embedding_delta is not None
+    assert val200.config.adapter.path == benchmark.config.adapter.path
+    assert val200.config.embedding_delta.path == benchmark.config.embedding_delta.path
+    assert "/step-917/" in val200.config.adapter.path
+
+
 @pytest.mark.parametrize("key", ["optimizer", "training", "checkpoint"])
 def test_infer_config_rejects_training_only_top_level_keys(
     tmp_path: Path,
