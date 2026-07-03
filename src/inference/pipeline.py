@@ -90,6 +90,7 @@ def run(
                 prompt_token_ids=list(record.prompt_token_ids),
                 model_inputs=image_plan_batch.model_inputs_by_row_id[record.row_id],
                 max_new_tokens=resolved.config.generation.max_new_tokens,
+                repetition_penalty=resolved.config.generation.repetition_penalty,
             )
             for record in prompt_records
         ]

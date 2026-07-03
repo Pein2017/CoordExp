@@ -1,5 +1,10 @@
 # CoordExp-Swift Src Rebuild Roadmap And Implementation Plan
 
+> Status update, 2026-07-02: this roadmap is now historical/completed for the
+> V1 training-infra rebuild. Follow-on production relaunch readiness is tracked
+> in `docs/superpowers/plans/2026-07-02-coordexp-swift-production-relaunch-roadmap.md`
+> and the OpenSpec change `prepare-coordexp-swift-production-relaunch`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Rebuild the CoordExp-swift `src/` training infrastructure from the approved OpenSpec baseline into a professional, inspectable, five-step-smoke-verified Qwen3-VL supervised training stack.
@@ -211,14 +216,17 @@ configs/
       base.yaml
       <run>.yaml
 
-tests/coordexp_swift/
-  test_config_runtime.py
-  test_data_template_encoding.py
-  test_packing_forward.py
-  test_supervision_losses.py
-  test_adapters_embeddings_optim.py
-  test_training_artifacts.py
-  test_vertical_smoke_contract.py
+tests/
+  adapters/
+  config/
+  data/
+  losses/
+  packing/
+  qwen/
+  runtime/
+  supervision/
+  tokens/
+  training/
 
 tests/fixtures/smoke/qwen3_vl_single_image_pack/
   README.md
@@ -258,9 +266,9 @@ scripts/probes/coordexp_swift/
 
 - [ ] Run `git status --short --branch` from `/data/CoordExp/.worktrees/CoordExp-swift`.
 - [ ] Run `openspec instructions apply --change rebuild-coordexp-swift-training-infra --json`.
-- [ ] Confirm OpenSpec section 1 planning/review tasks are complete and
-  source-study/implementation/smoke tasks remain pending before implementation
-  begins; treat unexpected completed implementation tasks as a stop condition.
+- [ ] Confirm OpenSpec section 1 planning/review tasks are complete and that
+  later implementation state matches the current task ledger; treat unexpected
+  mismatches as a stop condition.
 - [ ] Record in the implementation chat that unrelated dirty files must be ignored and only touched files should be staged if a commit is requested.
 
 ### Slice 0.2: User Authorization Gate
@@ -446,8 +454,11 @@ explicitly approves moving to Wave 2.
 - Create: `/data/CoordExp/.worktrees/CoordExp-swift/src/artifacts/manifest.py`
 - Create: `/data/CoordExp/.worktrees/CoordExp-swift/src/train.py`
 - Create: `/data/CoordExp/.worktrees/CoordExp-swift/tests/fixtures/smoke/qwen3_vl_single_image_pack/`
-- Create: `/data/CoordExp/.worktrees/CoordExp-swift/tests/coordexp_swift/test_config_runtime.py`
-- Create: `/data/CoordExp/.worktrees/CoordExp-swift/tests/coordexp_swift/test_vertical_smoke_contract.py`
+- Create or update current config/runtime tests under
+  `/data/CoordExp/.worktrees/CoordExp-swift/tests/config/` and
+  `/data/CoordExp/.worktrees/CoordExp-swift/tests/runtime/`.
+- Create or update current smoke/pipeline tests under
+  `/data/CoordExp/.worktrees/CoordExp-swift/tests/training/`.
 
 ### Slice 2.1: Archive Old Source And Create Empty New Package
 
@@ -473,9 +484,9 @@ find src -type d -exec touch {}/__init__.py \;
 ### Slice 2.2: Contract Errors
 
 - [ ] Implement `src/common/errors.py` with small domain-specific exception classes: `CoordExpError`, `ConfigError`, `DataValidationError`, `TemplateError`, `QwenContractError`, `PackingError`, `LossError`, `OptimizerConfigError`, `RuntimeContractError`, and `ArtifactError`.
-- [ ] Add `tests/coordexp_swift/test_config_runtime.py` coverage that errors carry stable class names and concise messages.
+- [ ] Add `tests/config/test_train_config.py` coverage that errors carry stable class names and concise messages.
 
-**Acceptance gate:** `pytest tests/coordexp_swift/test_config_runtime.py -q` passes.
+**Acceptance gate:** `pytest tests/config/test_train_config.py -q` passes.
 
 ### Slice 2.3: Config Loader And Resolved Schedule
 
@@ -487,7 +498,7 @@ find src -type d -exec touch {}/__init__.py \;
 - [ ] Implement `src.train --dry-run` through config resolution and artifact initialization only.
 - [ ] Add tests for unknown field failure, inherited config preservation, `max_steps` priority, fractional cadence, forbidden aliases, and effective-batch/world-size divisibility.
 
-**Acceptance gate:** `pytest tests/coordexp_swift/test_config_runtime.py -q` passes and `python -m src.train --config tests/fixtures/smoke/qwen3_vl_single_image_pack/config.yaml --dry-run` writes resolved config and manifest without model mutation once the fixture exists.
+**Acceptance gate:** `pytest tests/config/test_train_config.py tests/training/test_schedule.py -q` passes and the current dry-run or trace-config entrypoint writes resolved config artifacts without model mutation.
 
 ### Slice 2.4: Smoke Fixture Pinning
 
@@ -524,7 +535,10 @@ find src -type d -exec touch {}/__init__.py \;
 - Create: `/data/CoordExp/.worktrees/CoordExp-swift/src/qwen/loading.py`
 - Create: `/data/CoordExp/.worktrees/CoordExp-swift/src/qwen/tokenizer.py`
 - Create: `/data/CoordExp/.worktrees/CoordExp-swift/src/qwen/encoding.py`
-- Create: `/data/CoordExp/.worktrees/CoordExp-swift/tests/coordexp_swift/test_data_template_encoding.py`
+- Create or update current data/template/Qwen tests under
+  `/data/CoordExp/.worktrees/CoordExp-swift/tests/data/`,
+  `/data/CoordExp/.worktrees/CoordExp-swift/tests/templates/`, and
+  `/data/CoordExp/.worktrees/CoordExp-swift/tests/qwen/`.
 
 ### Slice 3.1: RawExample And JSONL Loader
 
@@ -555,7 +569,7 @@ find src -type d -exec touch {}/__init__.py \;
 - [ ] Reject invalid aliases such as `<|object_start|>`.
 - [ ] Emit a Qwen setup receipt with tokenizer vocab size, special token ids, processor class, `patch_size`, `merge_size`, and `temporal_patch_size`.
 
-**Acceptance gate:** `pytest tests/coordexp_swift/test_data_template_encoding.py -q` proves token preflight and receipt fields.
+**Acceptance gate:** `pytest tests/qwen/test_token_identity.py tests/qwen/test_encoding.py -q` proves token preflight and receipt fields.
 
 ### Slice 3.4: No-Resize Encoding And EncodedExample
 
@@ -591,7 +605,9 @@ encoding.
 - Create: `/data/CoordExp/.worktrees/CoordExp-swift/src/qwen/forward.py`
 - Modify after the basic trainer exists: `/data/CoordExp/.worktrees/CoordExp-swift/src/training/pack_cache.py`
 - Modify after the basic trainer exists: `/data/CoordExp/.worktrees/CoordExp-swift/src/training/pipeline.py`
-- Create: `/data/CoordExp/.worktrees/CoordExp-swift/tests/coordexp_swift/test_packing_forward.py`
+- Create or update current packing/forward tests under
+  `/data/CoordExp/.worktrees/CoordExp-swift/tests/packing/` and
+  `/data/CoordExp/.worktrees/CoordExp-swift/tests/qwen/`.
 
 ### Slice 4.1: Pack Planning
 
@@ -686,7 +702,9 @@ packed micro-step order, and cache-hit reuse without rebuilding.
 - Create: `/data/CoordExp/.worktrees/CoordExp-swift/src/losses/finite.py`
 - Create: `/data/CoordExp/.worktrees/CoordExp-swift/src/metrics/accuracy.py`
 - Create: `/data/CoordExp/.worktrees/CoordExp-swift/src/metrics/events.py`
-- Create: `/data/CoordExp/.worktrees/CoordExp-swift/tests/coordexp_swift/test_supervision_losses.py`
+- Create or update current supervision/loss tests under
+  `/data/CoordExp/.worktrees/CoordExp-swift/tests/supervision/` and
+  `/data/CoordExp/.worktrees/CoordExp-swift/tests/losses/`.
 
 ### Slice 5.1: TokenSequence Core
 
@@ -755,7 +773,10 @@ token-balanced averaging.
 - Create: `/data/CoordExp/.worktrees/CoordExp-swift/src/qwen/special_token_embeddings.py`
 - Create: `/data/CoordExp/.worktrees/CoordExp-swift/src/optim/groups.py`
 - Create: `/data/CoordExp/.worktrees/CoordExp-swift/src/optim/builder.py`
-- Create: `/data/CoordExp/.worktrees/CoordExp-swift/tests/coordexp_swift/test_adapters_embeddings_optim.py`
+- Create or update current adapter/token/optimizer tests under
+  `/data/CoordExp/.worktrees/CoordExp-swift/tests/adapters/`,
+  `/data/CoordExp/.worktrees/CoordExp-swift/tests/tokens/`, and
+  `/data/CoordExp/.worktrees/CoordExp-swift/tests/optim/`.
 
 ### Slice 6.1: Adapter Gate And Loading
 
@@ -819,7 +840,8 @@ optimizer setup.
 - Create: `/data/CoordExp/.worktrees/CoordExp-swift/src/artifacts/checkpoints.py`
 - Create: `/data/CoordExp/.worktrees/CoordExp-swift/src/artifacts/receipts.py`
 - Create: `/data/CoordExp/.worktrees/CoordExp-swift/src/eval/forward.py`
-- Create: `/data/CoordExp/.worktrees/CoordExp-swift/tests/coordexp_swift/test_training_artifacts.py`
+- Create or update current training/artifact tests under
+  `/data/CoordExp/.worktrees/CoordExp-swift/tests/training/`.
 
 ### Slice 7.1: TrainRuntime
 
@@ -967,7 +989,7 @@ implementation milestone.
 - [ ] Include the residual risk text:
 
 ```text
-Residual risk is now the intended kind: DoRA probe, special-token embedding mechanism study, smoke fixture materialization, implementation, and the five-step vertical smoke are still pending tasks.
+Residual risk in the original roadmap was the intended kind: DoRA probe, special-token embedding mechanism study, smoke fixture materialization, implementation, and the five-step vertical smoke were unresolved at that point.
 ```
 
 **Acceptance gate:** a fresh Codex worker can read the handoff, run the stated commands, and know whether to continue source studies, implementation, or verification.
@@ -978,13 +1000,13 @@ Residual risk is now the intended kind: DoRA probe, special-token embedding mech
 | --- | --- | --- |
 | OpenSpec validity | Wave 0 | `openspec validate rebuild-coordexp-swift-training-infra --strict` |
 | Apply progress | Wave 0 and after each wave | `openspec instructions apply --change rebuild-coordexp-swift-training-infra --json` |
-| Config runtime | Wave 2 | `pytest tests/coordexp_swift/test_config_runtime.py -q` |
-| Fixture/rendering | Wave 2 and Wave 3 | `pytest tests/coordexp_swift/test_data_template_encoding.py -q` |
-| Qwen encode/forward | Wave 3 and Wave 4 | `pytest tests/coordexp_swift/test_packing_forward.py -q` |
-| Loss math | Wave 5 | `pytest tests/coordexp_swift/test_supervision_losses.py -q` |
-| Adapter/embedding/optimizer | Wave 6 | `pytest tests/coordexp_swift/test_adapters_embeddings_optim.py -q` |
-| Trainer/artifacts/eval | Wave 7 | `pytest tests/coordexp_swift/test_training_artifacts.py -q` |
-| Full smoke contract | Wave 8 | `pytest tests/coordexp_swift/test_vertical_smoke_contract.py -q` |
+| Config runtime | Wave 2 | `pytest tests/config/test_train_config.py tests/training/test_schedule.py -q` |
+| Fixture/rendering | Wave 2 and Wave 3 | `pytest tests/data tests/templates -q` |
+| Qwen encode/forward | Wave 3 and Wave 4 | `pytest tests/qwen tests/packing -q` |
+| Loss math | Wave 5 | `pytest tests/supervision tests/losses -q` |
+| Adapter/embedding/optimizer | Wave 6 | `pytest tests/adapters tests/tokens tests/optim -q` |
+| Trainer/artifacts/eval | Wave 7 | `pytest tests/training tests/eval -q` |
+| Full smoke contract | Wave 8 | `pytest tests/training/test_pipeline_assembly.py -q` |
 | Dry run | Wave 8 | `python -m src.train --config tests/fixtures/smoke/qwen3_vl_single_image_pack/config.yaml --dry-run` |
 | Real smoke | Wave 8 | `python -m src.train --config tests/fixtures/smoke/qwen3_vl_single_image_pack/config.yaml` |
 | Diff hygiene | Every edited wave | `git diff --check -- <touched paths>` |
@@ -1069,7 +1091,7 @@ Read these first:
 - docs/architecture/proposals/2026-06-27-coordexp-swift/BLUEPRINT.md
 
 Use superpowers:subagent-driven-development or superpowers:executing-plans.
-Start at Wave 0. Do not rewrite src before explicit user approval for the archive/skeleton move.
+For historical rebuild context, start at Wave 0. Do not rewrite src before explicit user approval for the archive/skeleton move.
 Do not mark OpenSpec tasks complete without evidence.
 Preserve unrelated dirty work.
 The current implementation priorities are accuracy/precision first, efficiency second, simplicity third, extensibility fourth.

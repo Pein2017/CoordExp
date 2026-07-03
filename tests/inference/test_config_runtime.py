@@ -397,6 +397,42 @@ def test_base_only_runtime_loads_qwen_model_for_hf_generation(
     assert runtime.model_identity["family"] == "base-only"
 
 
+def test_inference_runtime_moves_loaded_model_to_cuda_for_generation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.config.inference import load_infer_config
+    from src.inference import runtime as runtime_module
+
+    config_path = _write_config(
+        tmp_path,
+        adapter=None,
+        embedding_delta=None,
+        debug={"smoke": True, "dry_run": False},
+    )
+    resolved = load_infer_config(config_path)
+    fake_model = FakeGenerationModel()
+
+    monkeypatch.setattr(runtime_module.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(
+        runtime_module,
+        "load_qwen_components_from_options",
+        lambda options: SimpleNamespace(
+            base_model_path=options.base_model,
+            model=fake_model if options.load_model else None,
+            token_identity=None,
+            base_config_sha256="base-config-sha",
+            tokenizer_sha256="tokenizer-sha",
+        ),
+    )
+
+    runtime = runtime_module.assemble_runtime(resolved.config)
+
+    assert runtime.qwen.model is fake_model
+    assert fake_model.to_calls == ["cuda"]
+    assert fake_model.eval_calls == 1
+
+
 def test_embedding_delta_runtime_loads_and_installs_delta_with_qwen_identity(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -584,6 +620,7 @@ def _base_config(directory: Path) -> dict[str, Any]:
             "max_new_tokens": 64,
             "temperature": 0.0,
             "top_p": 1.0,
+            "repetition_penalty": 1.10,
         },
         "scoring": {"enabled": True},
         "artifacts": {"write_token_trace": True, "write_parse_diagnostics": True},
@@ -627,6 +664,20 @@ class FakePeftModel:
             merged_adapters=[],
             requires_grad=False,
         )
+
+
+class FakeGenerationModel:
+    def __init__(self) -> None:
+        self.to_calls: list[str] = []
+        self.eval_calls = 0
+
+    def to(self, device: object) -> "FakeGenerationModel":
+        self.to_calls.append(str(device))
+        return self
+
+    def eval(self) -> "FakeGenerationModel":
+        self.eval_calls += 1
+        return self
 
 
 def _token_identity() -> QwenTokenIdentity:

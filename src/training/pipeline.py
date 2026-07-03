@@ -41,6 +41,7 @@ from src.losses import LossRunner, build_token_vocabulary_groups
 from src.optim import (
     build_optimizer_and_scheduler,
     build_optimizer_group_plan,
+    build_scheduler_plan,
     build_trainable_surface_receipt,
 )
 from src.packing import PackedSequence, build_packed_supervision, plan_packed_sequences
@@ -56,7 +57,7 @@ from src.qwen.special_token_embeddings import (
     load_default_special_token_embedding_source_gate_evidence,
     install_special_token_embedding_deltas,
 )
-from src.runtime import TrainRuntime
+from src.runtime import TrainRuntime, seed_training_runtime
 from src.supervision import (
     build_token_sequence_from_packed_supervision,
     index_token_atoms_by_pack,
@@ -313,6 +314,16 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
         backend_status=_first_smoke_backend_status(config.runtime.backend),
     )
     manager.write_resolved_config(resolved_config)
+    seed_receipt = seed_training_runtime(
+        config.runtime.seed,
+        deterministic=False,
+        phase="pipeline_assembly",
+    )
+    manager.write_receipt(
+        "seed_control",
+        _artifact_dict(seed_receipt),
+        category="runtime",
+    )
 
     components = load_qwen_components(config, load_model=True)
     if components.model is None:
@@ -423,6 +434,15 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
     manager.write_receipt(
         "optimizer_groups",
         optimizer_group_plan.to_artifact_dict(),
+        category="optimizer",
+    )
+    scheduler_plan = build_scheduler_plan(
+        config.optimizer,
+        total_training_steps=schedule.resolved_max_steps,
+    )
+    manager.write_receipt(
+        "scheduler_plan",
+        scheduler_plan.to_artifact_dict(),
         category="optimizer",
     )
     optimizer, scheduler = build_optimizer_and_scheduler(

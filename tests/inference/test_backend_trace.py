@@ -174,9 +174,77 @@ def test_hf_generate_requests_scored_deterministic_qwen_stop() -> None:
     assert model.generate_kwargs["eos_token_id"] == tokenizer.eos_token_id
     assert model.generate_kwargs["pad_token_id"] == tokenizer.pad_token_id
     assert model.generate_kwargs["max_new_tokens"] == 2
+    assert model.generate_kwargs["repetition_penalty"] == pytest.approx(1.10)
     assert "temperature" not in model.generate_kwargs
     assert "top_p" not in model.generate_kwargs
     assert model.transition_scores_seen_normalized is True
+
+
+def test_hf_backend_prefers_model_device_over_cpu_request_tensors() -> None:
+    from src.inference.backend import DecodeRequest, HFGenerateBackend
+
+    class FakeCudaModel(FakeHFModel):
+        def parameters(self) -> Any:
+            return iter([SimpleNamespace(device=torch.device("cuda:0"))])
+
+    backend = HFGenerateBackend(
+        model=FakeCudaModel(sequences=[[11, 12]], score_steps=[]),
+        tokenizer=FakeTokenizer(),
+    )
+    device = backend._target_device(
+        [
+            DecodeRequest(
+                request_id="row-1",
+                prompt_token_ids=[11, 12],
+                model_inputs={"pixel_values": torch.ones(1, 2)},
+                max_new_tokens=2,
+            )
+        ]
+    )
+
+    assert str(device) == "cuda:0"
+
+
+def test_hf_generate_rejects_mixed_repetition_penalty_in_batch() -> None:
+    from src.common.errors import RuntimeContractError
+    from src.inference.backend import DecodeRequest, HFGenerateBackend
+
+    tokenizer = FakeTokenizer()
+    model = FakeHFModel(
+        sequences=[
+            [11, 12, 21, tokenizer.eos_token_id],
+            [11, 12, 22, tokenizer.eos_token_id],
+        ],
+        score_steps=[
+            _logits_for_tokens([21, 22]),
+            _logits_for_tokens([tokenizer.eos_token_id, tokenizer.eos_token_id]),
+        ],
+    )
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        HFGenerateBackend(model=model, tokenizer=tokenizer).generate_batch(
+            [
+                DecodeRequest(
+                    request_id="row-1",
+                    prompt_token_ids=[11, 12],
+                    model_inputs={"input_ids": torch.tensor([11, 12])},
+                    max_new_tokens=2,
+                    repetition_penalty=1.10,
+                ),
+                DecodeRequest(
+                    request_id="row-2",
+                    prompt_token_ids=[11, 12],
+                    model_inputs={"input_ids": torch.tensor([11, 12])},
+                    max_new_tokens=2,
+                    repetition_penalty=1.0,
+                ),
+            ],
+            model_identity={"family": "base-only"},
+            tokenizer_identity={"sha256": "tok-sha"},
+            generation_config_fingerprint="gen-fp",
+        )
+
+    assert exc_info.value.code == "backend_trace.repetition_penalty_mismatch"
 
 
 def test_missing_hf_scores_fail_with_contract_error() -> None:

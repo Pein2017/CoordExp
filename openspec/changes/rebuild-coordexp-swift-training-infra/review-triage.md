@@ -47,10 +47,10 @@ patched in the active OpenSpec specs and roadmap.
   scheduled `eval.forward` runs, normally explicit `eval.forward.steps: [2, 4]`,
   plus the required final checkpoint at planned step 5. The canonical
   `resolved_step_schedule.json` artifact and event fields are now specified.
-- Follow-up audit found `tasks.md` still reported completed planning/review
-  work as pending. The completed OpenSpec draft, validation, and read-only
-  review tasks are now marked complete while source-study, implementation, and
-  smoke tasks remain pending.
+- Follow-up audit found `tasks.md` had reported completed planning/review work
+  as incomplete. The completed OpenSpec draft, validation, and read-only review
+  tasks were then marked complete while later source-study, implementation, and
+  smoke tasks were still in flight.
 - Follow-up audit found no-resize image compatibility under-specified. The
   data/template/encoding spec now requires processor-derived admissible
   dimensions, explicit raw-pixel and merged-visual-token caps, and typed

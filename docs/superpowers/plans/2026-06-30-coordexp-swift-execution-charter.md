@@ -11,6 +11,10 @@ The implementation roadmap remains
 `docs/superpowers/plans/2026-06-30-coordexp-swift-src-rebuild-roadmap.md`.
 The normative implementation contracts remain the OpenSpec change
 `rebuild-coordexp-swift-training-infra`, `DECISIONS.md`, and `BLUEPRINT.md`.
+As of 2026-07-02, the active phase is production relaunch readiness for the
+completed training rebuild. The current follow-on roadmap is
+`docs/superpowers/plans/2026-07-02-coordexp-swift-production-relaunch-roadmap.md`,
+and the follow-on OpenSpec change is `prepare-coordexp-swift-production-relaunch`.
 
 ## Goal
 
@@ -59,10 +63,15 @@ Codex must stop and ask the user before:
 - introducing a new production runtime dependency;
 - running a long expensive multi-GPU job beyond probe or smoke scope;
 - claiming DeepSpeed production support;
-- expanding V1 into rollout training, hidden-state losses, persistent cache,
-  video, multi-image, vLLM, exact resume, or old coordinate-soft-CE parity;
+- expanding V1 into rollout training, hidden-state losses,
+  hidden-state/KV/runtime feature caches, video, multi-image, vLLM, exact
+  resume, or old coordinate-soft-CE parity;
 - making any change that achieves local functionality by drifting from the
   approved research intent.
+
+Deterministic supervised packing-cache reuse and runtime fixes to that cache
+are approved training infrastructure when governed by OpenSpec receipts.
+Hidden-state, KV, and runtime feature caches remain gated.
 
 ## Drift Policy
 

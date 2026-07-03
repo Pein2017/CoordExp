@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -81,6 +82,17 @@ def test_run_training_pipeline_writes_core_artifacts_with_fake_boundaries(
     assert manifest["receipts"]["optimizer"]["optimizer_groups"] == (
         "receipts/optimizer/optimizer_groups.json"
     )
+    assert manifest["receipts"]["optimizer"]["scheduler_plan"] == (
+        "receipts/optimizer/scheduler_plan.json"
+    )
+    scheduler_plan = __import__("json").loads(
+        (run_dir / "receipts" / "optimizer" / "scheduler_plan.json").read_text()
+    )
+    assert scheduler_plan["name"] == "cosine_with_warmup"
+    assert scheduler_plan["warmup_ratio"] == 0.0
+    assert scheduler_plan["warmup_steps"] is None
+    assert scheduler_plan["resolved_warmup_steps"] == 0
+    assert scheduler_plan["total_training_steps"] == 5
     assert manifest["backend_status"]["deepspeed"] == [
         "schema_accepted",
         "conflict_validation_implemented",
@@ -105,6 +117,144 @@ def test_run_training_pipeline_writes_core_artifacts_with_fake_boundaries(
     assert loss_plan["metric_definitions"]["top_level"] == ["acc_top1", "acc_top5"]
     assert loss_plan["vocabulary_groups"]["coordinate_count"] == 1000
     assert log == ["trainer.run"]
+
+
+def test_run_training_pipeline_seeds_before_stochastic_setup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    payload = yaml.safe_load(FIXTURE_CONFIG.read_text())
+    _point_dataset_paths_at_fixture(payload)
+    payload["run"]["artifact_root"] = str(tmp_path / "artifacts")
+    payload["run"]["name"] = "fake-seed-order-smoke"
+    config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+    log: list[str] = []
+    monkeypatch.setenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", str(tmp_path / "pack-cache"))
+
+    _install_fake_training_pipeline_boundaries(monkeypatch, log)
+
+    def fake_seed_training_runtime(
+        seed: int,
+        *,
+        deterministic: bool = False,
+        phase: str = "pipeline_assembly",
+    ) -> FakeReceipt:
+        log.append(f"seed:{phase}:{seed}:{deterministic}")
+        return FakeReceipt(
+            {
+                "seed": seed,
+                "phase": phase,
+                "deterministic_algorithms": deterministic,
+                "applied_before": [
+                    "qwen_model_load",
+                    "adapter_setup",
+                    "special_token_embedding_setup",
+                    "optimizer_setup",
+                    "runtime_setup",
+                ],
+            }
+        )
+
+    def fake_load_qwen_components(config: Any, load_model: bool) -> FakeComponents:
+        del config, load_model
+        log.append("load_qwen_components")
+        return FakeComponents()
+
+    def fake_setup_dora_adapter(model: torch.nn.Module, plan: Any) -> FakeAdapterResult:
+        del plan
+        log.append("setup_dora_adapter")
+        return FakeAdapterResult(model=model)
+
+    def fake_install_special_token_embedding_deltas(
+        model: torch.nn.Module,
+        selection: Any,
+        source_gate: Any,
+    ) -> FakeSpecialTokenResult:
+        del selection, source_gate
+        log.append("install_special_token_embedding_deltas")
+        return FakeSpecialTokenResult(model=model)
+
+    def fake_build_optimizer_and_scheduler(
+        optimizer_config: Any,
+        group_plan: Any,
+        total_training_steps: int,
+    ) -> tuple[FakeOptimizer, FakeScheduler]:
+        del optimizer_config, group_plan, total_training_steps
+        log.append("build_optimizer_and_scheduler")
+        return FakeOptimizer(), FakeScheduler()
+
+    def fake_train_runtime(**kwargs: Any) -> FakePipelineRuntime:
+        log.append("TrainRuntime")
+        return FakePipelineRuntime(**kwargs)
+
+    monkeypatch.setattr(
+        pipeline_mod,
+        "seed_training_runtime",
+        fake_seed_training_runtime,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        pipeline_mod,
+        "load_qwen_components",
+        fake_load_qwen_components,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        pipeline_mod,
+        "setup_dora_adapter",
+        fake_setup_dora_adapter,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        pipeline_mod,
+        "install_special_token_embedding_deltas",
+        fake_install_special_token_embedding_deltas,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        pipeline_mod,
+        "build_optimizer_and_scheduler",
+        fake_build_optimizer_and_scheduler,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        pipeline_mod,
+        "TrainRuntime",
+        fake_train_runtime,
+        raising=False,
+    )
+
+    summary = run_training_pipeline(config_path)
+
+    run_dir = Path(summary["run_dir"])
+    phase_log = [entry for entry in log if entry != "trainer.run"]
+    assert phase_log[:6] == [
+        "seed:pipeline_assembly:17:False",
+        "load_qwen_components",
+        "setup_dora_adapter",
+        "install_special_token_embedding_deltas",
+        "build_optimizer_and_scheduler",
+        "TrainRuntime",
+    ]
+    manifest = json.loads((run_dir / "run_manifest.json").read_text())
+    assert manifest["receipts"]["runtime"]["seed_control"] == (
+        "receipts/runtime/seed_control.json"
+    )
+    assert manifest["receipts"]["optimizer"]["scheduler_plan"] == (
+        "receipts/optimizer/scheduler_plan.json"
+    )
+    scheduler_plan = json.loads(
+        (run_dir / "receipts" / "optimizer" / "scheduler_plan.json").read_text()
+    )
+    assert scheduler_plan["resolved_warmup_steps"] == 0
+    seed_receipt = json.loads(
+        (run_dir / "receipts" / "runtime" / "seed_control.json").read_text()
+    )
+    assert seed_receipt["seed"] == 17
+    assert seed_receipt["phase"] == "pipeline_assembly"
+    assert seed_receipt["deterministic_algorithms"] is False
+    assert seed_receipt["applied_before"][0] == "qwen_model_load"
 
 
 def test_run_training_pipeline_wires_accelerate_runtime_for_multirank(
@@ -936,6 +1086,8 @@ def test_checkpoint_handler_uses_same_step_eval_acc_top1_for_best_selection(
         resolved_config_fingerprint="fingerprint",
         schedule=_schedule(resolved_max_steps=2),
         base_model_path=Path("/tmp/fake-qwen"),
+        base_config_sha256="fake-base-config-sha",
+        tokenizer_sha256="fake-tokenizer-sha",
         best_eval_metrics=best_metrics,
     )
 
@@ -991,6 +1143,8 @@ def test_checkpoint_handler_unwraps_accelerate_model_and_saves_adapter_only(
         resolved_config_fingerprint="fingerprint",
         schedule=_schedule(resolved_max_steps=1),
         base_model_path=Path("/tmp/fake-qwen"),
+        base_config_sha256="fake-base-config-sha",
+        tokenizer_sha256="fake-tokenizer-sha",
     )
 
     handler(
@@ -1041,6 +1195,8 @@ def test_checkpoint_handler_skips_non_main_process_checkpoint_side_effects(
         resolved_config_fingerprint="fingerprint",
         schedule=_schedule(resolved_max_steps=1),
         base_model_path=Path("/tmp/fake-qwen"),
+        base_config_sha256="fake-base-config-sha",
+        tokenizer_sha256="fake-tokenizer-sha",
     )
 
     handler(
@@ -1276,6 +1432,8 @@ class FakeComponents:
     def __init__(self) -> None:
         self.model = FakeModel()
         self.base_model_path = Path("/tmp/fake-qwen")
+        self.base_config_sha256 = "fake-base-config-sha"
+        self.tokenizer_sha256 = "fake-tokenizer-sha"
         self.token_identity = FakeTokenIdentity()
         self.tokenizer = object()
         self.processor_identity = FakeIdentity({"processor": "fake"})

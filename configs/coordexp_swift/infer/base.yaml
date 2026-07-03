@@ -26,6 +26,7 @@ generation:
   max_new_tokens: 512
   temperature: 0.0
   top_p: 1.0
+  repetition_penalty: 1.10
 scoring:
   enabled: true
 artifacts:

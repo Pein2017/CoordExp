@@ -4,7 +4,7 @@ import pytest
 import torch
 
 from src.config.models import OptimizerConfig, OptimizerGroupConfig, SchedulerConfig
-from src.optim.factory import build_optimizer_and_scheduler
+from src.optim.factory import build_optimizer_and_scheduler, build_scheduler_plan
 from src.optim.parameter_groups import OptimizerGroupAssignment, OptimizerGroupPlan
 
 
@@ -38,6 +38,29 @@ def test_optimizer_factory_builds_adamw_groups_and_cosine_scheduler() -> None:
     optimizer.step()
     scheduler.step()
     assert optimizer.param_groups[0]["lr"] > 0.0
+
+
+def test_scheduler_plan_records_resolved_warmup_steps() -> None:
+    ratio_plan = build_scheduler_plan(
+        _optimizer_config(warmup_ratio=0.1),
+        total_training_steps=2,
+    )
+
+    assert ratio_plan.to_artifact_dict() == {
+        "name": "cosine_with_warmup",
+        "total_training_steps": 2,
+        "warmup_ratio": 0.1,
+        "warmup_steps": None,
+        "resolved_warmup_steps": 1,
+        "kwargs": {},
+    }
+
+    explicit_plan = build_scheduler_plan(
+        _optimizer_config(warmup_steps=3),
+        total_training_steps=10,
+    )
+
+    assert explicit_plan.resolved_warmup_steps == 3
 
 
 def test_optimizer_factory_rejects_empty_group_plan() -> None:

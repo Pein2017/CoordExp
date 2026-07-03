@@ -6,6 +6,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+import torch
+
 from src.config.inference import InferConfig
 from src.adapters.dora import load_inference_dora_adapter
 from src.qwen.runtime_loading import QwenLoadOptions, load_qwen_components_from_options
@@ -35,6 +37,7 @@ def assemble_runtime(
             config=config,
             qwen=qwen,
         )
+    _prepare_model_for_generation(qwen)
 
     return InferenceRuntime(
         qwen=qwen,
@@ -59,6 +62,19 @@ def _load_qwen(config: InferConfig) -> Any:
             load_model=True,
         )
     )
+
+
+def _prepare_model_for_generation(qwen: Any) -> None:
+    model = _qwen_model(qwen)
+    if model is None:
+        return
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    move = getattr(model, "to", None)
+    if callable(move):
+        move(device)
+    eval_model = getattr(model, "eval", None)
+    if callable(eval_model):
+        eval_model()
 
 
 def _model_identity(
@@ -90,3 +106,9 @@ def _base_model_path(config: InferConfig, qwen: Any) -> str:
     if isinstance(qwen, Mapping):
         return str(qwen.get("base_model_path", config.model.base_model))
     return str(getattr(qwen, "base_model_path", config.model.base_model))
+
+
+def _qwen_model(qwen: Any) -> Any | None:
+    if isinstance(qwen, Mapping):
+        return qwen.get("model")
+    return getattr(qwen, "model", None)

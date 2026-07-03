@@ -20,6 +20,7 @@ from src.runtime.finite_gates import (
     reduce_gradient_overflow_reports,
     reduce_scalar_finite_reports,
 )
+from src.runtime.seeding import seed_training_runtime
 
 if TYPE_CHECKING:
     from src.training.supervised_trainer import SupervisedMicroStep
@@ -88,7 +89,11 @@ class TrainRuntime:
         self.scheduler_step_count = 0
         self.zero_grad_count = 0
         self._validate_runtime_contract()
-        torch.manual_seed(runtime_config.seed)
+        seed_training_runtime(
+            runtime_config.seed,
+            deterministic=False,
+            phase="runtime_setup_reapplied",
+        )
         self.model.to(self.device)
         self._prepare_backend()
         self.setup_receipt = TrainRuntimeSetupReceipt(

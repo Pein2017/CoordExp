@@ -1,0 +1,119 @@
+schema_version: 1
+
+run:
+  name: qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_accelerate8_ebs64_4epoch_warmup0p1
+  artifact_root: outputs/prod/coordexp_swift
+  collision_policy: timestamp
+
+model:
+  base_model: /data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent
+  attn_implementation: flash_attention_2
+  fa2_branch_proof: first_micro_step
+  logits_memory_budget_bytes: 4000000000
+  processor:
+    do_resize: false
+    max_raw_pixels: 1048576
+    max_merged_visual_tokens: 4096
+  special_token_embeddings:
+    groups:
+      coordinate_tokens: default_coord_0_999
+      wrapper_tokens: default_object_box_wrappers
+
+adapter:
+  type: dora
+  target_towers:
+    - language
+  target_modules: all_linear
+  rank: 16
+  alpha: 32
+  dropout: 0.0
+  bias: none
+
+data:
+  train:
+    path: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/train.coord.jsonl
+    sample_limit: null
+  eval:
+    path: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl
+    sample_limit: null
+  train_order: source_order
+
+template:
+  object_field_order: desc_first
+  object_ordering: geo_sorted
+  assistant_format: object_box_closed
+  prompt:
+    system: >-
+      You are a general-purpose object detection and grounding assistant. Output one compact detection row per object by concatenating rows directly with no separator, no newline, and no extra text. Use this row pattern exactly: <|object_ref_start|>{desc}<|object_ref_end|><|box_start|><|coord_100|><|coord_200|><|coord_300|><|coord_400|><|box_end|>. Descriptions are raw class text; bbox coords are four coord tokens in x1 y1 x2 y2 order.
+    user: >-
+      Locate each clearly visible object instance in the image. Return compact rows using this exact pattern: <|object_ref_start|>{desc}<|object_ref_end|><|box_start|><|coord_100|><|coord_200|><|coord_300|><|coord_400|><|box_end|>. Use one row per object; concatenate rows directly with no separator and do not insert newline characters. Restrict `desc` to this COCO-80 class list: person, bicycle, car, motorcycle, airplane, bus, train, truck, boat, traffic light, fire hydrant, stop sign, parking meter, bench, bird, cat, dog, horse, sheep, cow, elephant, bear, zebra, giraffe, backpack, umbrella, handbag, tie, suitcase, frisbee, skis, snowboard, sports ball, kite, baseball bat, baseball glove, skateboard, surfboard, tennis racket, bottle, wine glass, cup, fork, knife, spoon, bowl, banana, apple, sandwich, orange, broccoli, carrot, hot dog, pizza, donut, cake, chair, couch, potted plant, bed, dining table, toilet, tv, laptop, mouse, remote, keyboard, cell phone, microwave, oven, toaster, sink, refrigerator, book, clock, vase, scissors, teddy bear, hair drier, toothbrush.
+
+packing:
+  global_max_length: 12000
+
+losses:
+  normalizer: segment_balanced
+  protected:
+    base_ce:
+      weight: 1.0
+    token_type_gate:
+      weight: 0.0
+      groups:
+        - desc_text
+        - schema
+        - coordinate
+        - eos
+
+optimizer:
+  name: adamw_torch
+  betas:
+    - 0.9
+    - 0.999
+  epsilon: 1.0e-8
+  kwargs: {}
+  groups:
+    adapters:
+      language:
+        lr: 2.0e-4
+        weight_decay: 0.0
+    token_embeddings:
+      lr: 1.0e-4
+      weight_decay: 0.0
+  scheduler:
+    name: cosine_with_warmup
+    warmup_ratio: 0.1
+    warmup_steps: null
+    kwargs: {}
+
+training:
+  mode: supervised
+  epochs: 4
+  max_steps: null
+  effective_batch_size: 64
+  precision: bf16
+  max_grad_norm: 1.0
+  logging:
+    every_fraction: 0.05
+    steps:
+      - 1
+      - 2
+      - 3
+
+runtime:
+  backend: accelerate
+  seed: 17
+  accelerate:
+    mixed_precision: bf16
+    gradient_accumulation_steps: null
+
+eval:
+  forward:
+    every_fraction: 0.4
+    steps: []
+  inference:
+    enabled: false
+
+checkpoint:
+  every_fraction: 0.4
+  steps: []
+  save_final: true

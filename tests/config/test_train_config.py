@@ -400,6 +400,58 @@ def test_trace_config_writes_resolved_artifacts(tmp_path: Path) -> None:
     assert sentinel.read_text() == before
 
 
+def test_production_relaunch_configs_load_strictly() -> None:
+    prod_path = Path(
+        "configs/coordexp_swift/prod/"
+        "qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_"
+        "accelerate8_ebs64_4epoch_warmup0p1.yaml"
+    )
+    smoke_path = Path(
+        "configs/coordexp_swift/smoke/"
+        "qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_"
+        "accelerate8_ebs64_2step_warmup0p1_eval_patchproof.yaml"
+    )
+
+    prod = load_train_config(prod_path).config
+    smoke = load_train_config(smoke_path).config
+
+    assert prod.run.name == (
+        "qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_"
+        "accelerate8_ebs64_4epoch_warmup0p1"
+    )
+    assert prod.adapter.rank == 16
+    assert prod.adapter.alpha == 32
+    assert prod.optimizer.scheduler.warmup_ratio == 0.1
+    assert prod.optimizer.scheduler.warmup_steps is None
+    assert prod.training.effective_batch_size == 64
+    assert prod.training.max_steps is None
+    assert prod.training.epochs == 4
+    assert prod.training.max_grad_norm == 1.0
+    assert prod.runtime.seed == 17
+    assert prod.runtime.backend == "accelerate"
+    assert prod.runtime.accelerate is not None
+    assert prod.runtime.accelerate.gradient_accumulation_steps is None
+    assert prod.adapter.target_towers == ("language",)
+    assert prod.adapter.target_modules == "all_linear"
+    assert prod.template.object_field_order == "desc_first"
+    assert prod.template.object_ordering == "geo_sorted"
+    assert prod.packing.global_max_length == 12_000
+
+    assert smoke.run.name == (
+        "qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_"
+        "accelerate8_ebs64_2step_warmup0p1_eval_patchproof"
+    )
+    assert smoke.adapter.rank == 16
+    assert smoke.adapter.alpha == 32
+    assert smoke.optimizer.scheduler.warmup_ratio == 0.1
+    assert smoke.training.effective_batch_size == 64
+    assert smoke.training.max_steps == 2
+    assert smoke.eval.forward.steps == (1,)
+    assert smoke.checkpoint.steps == (2,)
+    assert smoke.runtime.accelerate is not None
+    assert smoke.runtime.accelerate.gradient_accumulation_steps is None
+
+
 def _minimal_config() -> dict[str, Any]:
     return {
         "schema_version": 1,

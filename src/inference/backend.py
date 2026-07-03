@@ -22,6 +22,7 @@ class DecodeRequest:
     prompt_token_ids: list[int]
     model_inputs: Mapping[str, Any]
     max_new_tokens: int
+    repetition_penalty: float = 1.10
 
 
 @dataclass(frozen=True)
@@ -140,13 +141,14 @@ class HFGenerateBackend:
             prompt_width,
             device=target_device,
         )
-        generate_inputs = self._collate_generate_inputs(requests)
+        generate_inputs = self._collate_generate_inputs(requests, device=target_device)
         generate_inputs["input_ids"] = input_ids
         generate_inputs["attention_mask"] = attention_mask
         outputs = self.model.generate(
             **generate_inputs,
             max_new_tokens=max_new_tokens,
             do_sample=False,
+            repetition_penalty=self._batch_repetition_penalty(requests),
             eos_token_id=self._im_end_token_id(),
             pad_token_id=self._pad_token_id(),
             return_dict_in_generate=True,
@@ -236,6 +238,16 @@ class HFGenerateBackend:
             )
         return values.pop()
 
+    def _batch_repetition_penalty(self, requests: Sequence[DecodeRequest]) -> float:
+        values = {float(request.repetition_penalty) for request in requests}
+        if len(values) != 1:
+            raise RuntimeContractError(
+                "all decode requests in a V1 HF batch must use the same repetition_penalty",
+                code="backend_trace.repetition_penalty_mismatch",
+                context={"repetition_penalty": sorted(values)},
+            )
+        return values.pop()
+
     def _target_device(self, requests: Sequence[DecodeRequest]) -> torch.device:
         devices = {
             value.device
@@ -243,6 +255,19 @@ class HFGenerateBackend:
             for value in request.model_inputs.values()
             if isinstance(value, torch.Tensor)
         }
+        model_device = self._model_device()
+        non_cpu_devices = {device for device in devices if device.type != "cpu"}
+        if model_device is not None:
+            if non_cpu_devices and non_cpu_devices != {model_device}:
+                raise RuntimeContractError(
+                    "decode request tensors must match the HF model device before generation",
+                    code="backend_trace.device_mismatch",
+                    context={
+                        "model_device": str(model_device),
+                        "devices": sorted(str(device) for device in devices),
+                    },
+                )
+            return model_device
         if len(devices) > 1:
             raise RuntimeContractError(
                 "decode request tensors must be on one device before HF generation",
@@ -251,6 +276,9 @@ class HFGenerateBackend:
             )
         if devices:
             return next(iter(devices))
+        return torch.device("cpu")
+
+    def _model_device(self) -> torch.device | None:
         if hasattr(self.model, "parameters"):
             try:
                 first_param = next(iter(self.model.parameters()))
@@ -258,7 +286,7 @@ class HFGenerateBackend:
                 first_param = None
             if first_param is not None:
                 return first_param.device
-        return torch.device("cpu")
+        return None
 
     def _padded_prompt_tensors(
         self,
@@ -293,6 +321,8 @@ class HFGenerateBackend:
     def _collate_generate_inputs(
         self,
         requests: Sequence[DecodeRequest],
+        *,
+        device: torch.device,
     ) -> dict[str, Any]:
         collated: dict[str, Any] = {}
         reserved = {"input_ids", "attention_mask"}
@@ -313,7 +343,10 @@ class HFGenerateBackend:
                     code="backend_trace.model_input_mismatch",
                     context={"field": key},
                 )
-            collated[key] = _collate_model_input_values(present, key=key)
+            collated[key] = _move_to_device(
+                _collate_model_input_values(present, key=key),
+                device=device,
+            )
         return collated
 
     def _validate_score_tensors(
@@ -513,6 +546,18 @@ def _collate_model_input_values(values: list[Any], key: str) -> Any:
     if len(values) == 1:
         return values[0]
     return values
+
+
+def _move_to_device(value: Any, *, device: torch.device) -> Any:
+    if isinstance(value, torch.Tensor):
+        return value.to(device)
+    if isinstance(value, Mapping):
+        return {key: _move_to_device(item, device=device) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return tuple(_move_to_device(item, device=device) for item in value)
+    if isinstance(value, list):
+        return [_move_to_device(item, device=device) for item in value]
+    return value
 
 
 def _cat_patch_values(values: list[Any], *, field: str) -> torch.Tensor:

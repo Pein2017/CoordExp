@@ -16,7 +16,66 @@ from src.config.models import (
     RuntimeConfig,
 )
 from src.runtime.train_runtime import TrainRuntime
+from src.runtime.seeding import seed_training_runtime
 from src.training import SupervisedMicroStep
+
+
+def test_seed_training_runtime_delegates_to_transformers_set_seed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[int, bool]] = []
+    monkeypatch.setattr(
+        "src.runtime.seeding.set_seed",
+        lambda seed, deterministic=False: calls.append((seed, deterministic)),
+    )
+
+    receipt = seed_training_runtime(
+        17,
+        deterministic=False,
+        phase="pipeline_assembly",
+    ).to_artifact_dict()
+
+    assert calls == [(17, False)]
+    assert receipt["seed"] == 17
+    assert receipt["phase"] == "pipeline_assembly"
+    assert receipt["helper"] == "transformers.trainer_utils.set_seed"
+    assert receipt["deterministic_algorithms"] is False
+    assert receipt["applied_before"] == [
+        "qwen_model_load",
+        "adapter_setup",
+        "special_token_embedding_setup",
+        "optimizer_setup",
+        "runtime_setup",
+    ]
+
+
+def test_train_runtime_reapplies_configured_seed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[int, bool, str]] = []
+    monkeypatch.setattr(
+        "src.runtime.train_runtime.seed_training_runtime",
+        lambda seed, deterministic=False, phase="pipeline_assembly": calls.append(
+            (seed, deterministic, phase)
+        ),
+    )
+
+    TrainRuntime(
+        runtime_config=RuntimeConfig(backend="single", seed=23),
+        runtime_batch=RuntimeBatchResolution(
+            world_size=1,
+            effective_batch_size=1,
+            resolved_grad_accum_steps=1,
+        ),
+        model=torch.nn.Linear(2, 1),
+        optimizer=None,
+        scheduler=None,
+        device="cpu",
+        rank=0,
+        world_size=1,
+    )
+
+    assert calls == [(23, False, "runtime_setup_reapplied")]
 
 
 def test_train_runtime_single_backend_receipt_and_device_movement() -> None:

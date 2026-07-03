@@ -45,9 +45,9 @@ openspec instructions apply --change rebuild-coordexp-swift-training-infra --jso
 git status --short --branch
 ```
 
-Expected current OpenSpec apply state before implementation:
+Historical OpenSpec apply state before implementation:
 - OpenSpec section 1 planning/review tasks are complete.
-- Source-study, implementation, and smoke tasks remain pending.
+- Source-study, implementation, and smoke tasks were pending at that time.
 - Treat any unexpected completed source-study or implementation task as a
   finding rather than adjusting counts by hand.
 
@@ -62,7 +62,7 @@ Audit questions:
    same-segment causal loss mapping, exact group-mass `TokenTypeGateLoss`, and
    `segment_balanced` planned-step normalization?
 4. Does it prevent accidental implementation of V1 non-goals: rollout training,
-   hidden-state losses, persistent caches, video, multi-image, vLLM, exact
+   hidden-state losses, runtime feature caches, video, multi-image, vLLM, exact
    optimizer/RNG resume, DeepSpeed production support, and old production
    coordinate-soft-CE parity?
 5. Does it avoid over-design while still protecting accuracy and precision?
@@ -122,8 +122,8 @@ Give the minimal patch set needed before kickoff. If no patch is needed, say
 
 ## Residual Risk
 
-Use this exact sentence if it remains true:
-Residual risk is now the intended kind: DoRA probe, special-token embedding mechanism study, smoke fixture materialization, implementation, and the five-step vertical smoke are still pending tasks.
+Use this sentence only if it remains true:
+Residual risk is now the intended kind: DoRA probe, special-token embedding mechanism study, smoke fixture materialization, implementation, and the five-step vertical smoke were unresolved in the original roadmap context.
 
 Rules:
 - Be critical and evidence-backed.
