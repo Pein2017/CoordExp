@@ -46,27 +46,51 @@ Branch prefix defaults to `codex/`.
 
 1. Decide execution mode.
 2. If worktree, invoke `using-git-worktrees` with root, branch, and base branch.
-3. After creating or entering a worktree, initialize local navigation state:
+3. After creating or entering a worktree, restore runtime path parity with the
+   main checkout by manually adding local symlinks for ignored heavy roots:
+   ```bash
+   main_root=/data/CoordExp
+   for name in model_cache outputs; do
+     target="$main_root/$name"
+     link="$PWD/$name"
+     if [ -e "$link" ] || [ -L "$link" ]; then
+       if [ "$(readlink "$link" 2>/dev/null || true)" = "$target" ]; then
+         continue
+       fi
+       echo "Refusing to replace existing $link; inspect manually." >&2
+       exit 1
+     fi
+     test -e "$target" || { echo "Missing shared root: $target" >&2; exit 1; }
+     ln -s "$target" "$link"
+   done
+   ```
+   These links make worktree-relative paths such as `model_cache/...` and
+   `outputs/...` behave like the main checkout. Do not stage these runtime
+   symlinks unless the user explicitly requests tracking them.
+4. Initialize local navigation state:
    - run `codegraph init -i` in the exact worktree when CodeGraph will be used;
    - confirm with `codegraph status`;
    - activate the exact worktree path with Serena MCP before narrowed Python symbol inspection, reference checks, diagnostics, or symbolic edits;
    - for CodeGraph MCP calls in linked worktrees, pass `projectPath=/absolute/worktree/path`.
-4. Choose planning surface:
+5. Choose planning surface:
    - `existing`: continue existing `openspec-lifecycle` or super-power artifacts;
    - `new`: create only the appropriate repo-local plan/spec artifacts;
    - `none`: implement directly and record acceptance checks in final/PR text.
-5. Implement only in the approved tree.
-6. Use absolute or shared-root paths for heavy data, checkpoints, caches, and outputs.
-7. Put one-off debug artifacts under `temp/` and clean them after durable evidence is extracted.
-8. Validate the smallest realistic surface.
-9. For commits or sync, invoke `git-hygiene` before staging anything and delegate detailed staging, PAT, fetch/pull/push, and conflict handling there; keep this skill focused on lifecycle state.
-10. For OpenSpec contract artifacts, delegate mode-specific workflow to `openspec-lifecycle`.
-11. Finish with `finishing-a-development-branch` or the user's requested commit/push/merge flow.
-12. Remove worktree only after merge/discard, from the main root, with provenance check and no uncommitted work.
+6. Implement only in the approved tree.
+7. Use absolute or shared-root paths for heavy data, checkpoints, caches, and outputs.
+8. Put one-off debug artifacts under `temp/` and clean them after durable evidence is extracted.
+9. Validate the smallest realistic surface.
+10. For commits or sync, invoke `git-hygiene` before staging anything and delegate detailed staging, PAT, fetch/pull/push, and conflict handling there; keep this skill focused on lifecycle state.
+11. For OpenSpec contract artifacts, delegate mode-specific workflow to `openspec-lifecycle`.
+12. Finish with `finishing-a-development-branch` or the user's requested commit/push/merge flow.
+13. Remove worktree only after merge/discard, from the main root, with provenance check and no uncommitted work.
 
 ## CoordExp Gotchas
 
-- In worktrees, ignored data/model roots may be missing; prefer local symlinks over config path rewrites.
+- In worktrees, ignored data/model/output roots may be missing. Prefer local
+  symlinks over config path rewrites; by default, link `model_cache` and
+  `outputs` back to `/data/CoordExp/model_cache` and `/data/CoordExp/outputs`
+  immediately after worktree creation.
 - CodeGraph indexes are worktree-local. A parent/root `.codegraph/` is not enough for implementation in a linked worktree.
 - Serena project activation by name can point to another checkout. Prefer activation by absolute worktree path for side branches and parallel implementation lanes.
 - Use CodeGraph for first-pass "where is this?" maps, then Serena for exact Python symbol semantics once files/classes/functions are known; do not let CodeGraph replace Serena for reference-sensitive edits.

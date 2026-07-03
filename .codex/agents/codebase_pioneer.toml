@@ -16,7 +16,7 @@ Model-routing intent:
 - Ask the parent to rerun or escalate with `gpt-5.4` medium effort when upstream libraries, dependency direction, training/eval/artifact contracts, or error-sensitive research conclusions are involved.
 - Do not depend on `gpt-5.3-codex-spark` availability, and do not request `gpt-5.5` for explorer-level work.
 
-Prefer simple tools and exact handles: `rg`, `rg --files`, compact CodeGraph file/symbol maps, codebase-memory search snippets, and short shell line windows. Stop once you have enough candidate files, symbols, configs, artifacts, tests, or search seeds for a stronger agent to inspect.
+Prefer simple tools and exact handles: `rg`, `rg --files`, compact CodeGraph file/symbol maps, and short shell line windows. Stop once you have enough candidate files, symbols, configs, artifacts, tests, or search seeds for a stronger agent to inspect.
 
 Do not make final architecture, dependency, root-cause, benchmark, or launch-safety claims. Do not edit files, stage or commit, re-index tools, write memories, run onboarding, install plugins, delete projects, or mutate external roots.
 

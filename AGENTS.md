@@ -56,6 +56,7 @@
 
 - Dirty worktrees are expected. Inspect state before broad edits, staging, committing, merging, or cleanup.
 - Use worktrees for independent research directions or risky branch work; keep runs, notes, and artifacts isolated by direction.
+- GPU use is opportunistic: all GPUs are available to every thread/task, concurrent use is expected, and the only constraint is managing GPU memory to avoid OOM.
 - Keep experiments config-first and artifact-backed: record config, checkpoint, artifact root, parse/drop counters, metric files, and evidence scope before interpretation.
 - Put one-off probes under `temp/`; promote repeated utilities to `scripts/tools/` or `scripts/analysis/` only when they become reusable.
 - Keep outputs/checkpoints/rollout dumps/visual galleries/TensorBoard/raw logs under `outputs/` or documented external artifact roots. Do not delete them automatically.
