@@ -1,0 +1,25 @@
+extends:
+  - ./instance_enum_v1a_loss_only_sorted_sft_ce_cont_random_pure_sft_freeze_vitblocks_1epoch_eval512_8gpu.yaml
+  - ../smoke/common_prodlike.yaml
+
+training:
+  artifact_subdir: loss_only_instance_enumeration_sorted_sft_ce_cont_random_pure_sft_freeze_vitblocks_8gpu_smoke
+  run_name: smoke-loss-only-instance-enumeration-sorted-sft-ce-cont-random-pure-sft-freeze-vitblocks-8gpu
+  max_steps: 4
+  save_strategy: steps
+  save_steps: 4
+  save_total_limit: 1
+  save_delay_steps: 0
+  save_model_only: true
+  eval_strategy: "no"
+  logging_steps: 1
+  logging_first_step: true
+  packing: false
+  eval_packing: false
+  group_by_length: false
+  weight_decay: 0.0
+
+debug:
+  enabled: true
+  train_sample_limit: 512
+  val_sample_limit: 8

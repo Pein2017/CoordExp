@@ -1,0 +1,28 @@
+paths:
+  checkpoint: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_fullobj_random_sft_bsz16_4epoch_tokenrows_v2/compact-full-fullobj-random-sft-bsz16-4epoch-tokenrows-v2/v1-20260601-062428/checkpoint-3668
+  resolved_config: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_fullobj_random_sft_bsz16_4epoch_tokenrows_v2/compact-full-fullobj-random-sft-bsz16-4epoch-tokenrows-v2/v1-20260601-062428/resolved_config.json
+  source_config: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_fullobj_random_sft_bsz16_4epoch_tokenrows_v2/compact-full-fullobj-random-sft-bsz16-4epoch-tokenrows-v2/v1-20260601-062428/config_source.yaml
+  dataset_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+  image_root: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60
+  artifact_root: /data/CoordExp/outputs/analysis/autoregressive_duplication_mechanism/self_driven_fn_attention_book17_y2_extent/no_aligner_parent_ckpt3668/lane_c
+  self_rollout_root: /data/CoordExp/outputs/infer/loss_only_instance_enumeration_ablation_active_vs_none/compact_full_prefix_rollin_balance2_no_aligner_parent_val128_freegreedy_ckpt3668_val128_bsz8_temp0_rp1p10_max3084_chatfix_8gpu
+  lane_a_rollout_root: /data/CoordExp/outputs/analysis/autoregressive_duplication_mechanism/self_driven_fn_attention_book17_y2_extent/no_aligner_parent_ckpt3668/lane_a_unused
+model:
+  prompt_variant: coco_80
+  object_field_order: desc_first
+  bbox_format: xyxy
+  detection_sequence_format: compact_full
+  object_ordering: random_permutation
+  seed: 42
+  teacher_target_kind_mode: recursive_detection
+  device: cuda:0
+  attn_implementation: eager
+  torch_dtype: bfloat16
+execution:
+  sample_limit: 1
+  batch_size: 1
+  top_k: 8
+  radii: [0, 1, 2, 4, 8, 16, 32, 64]
+  max_self_prefixes_per_image: 1
+  save_raw_arrays: false
+  run_infer_if_missing: false

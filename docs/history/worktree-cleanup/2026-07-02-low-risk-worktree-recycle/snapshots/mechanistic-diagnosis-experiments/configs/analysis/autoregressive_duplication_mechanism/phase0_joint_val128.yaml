@@ -1,0 +1,46 @@
+run:
+  phase: phase0_joint_onset_ledger
+  output_base: /data/CoordExp/outputs/analysis/autoregressive_duplication_mechanism
+  output_slug: phase0_joint_onset_ledger
+  decode_protocol_id: val128_freegreedy_temp0_rp1p10_max3084_no_separator
+analysis:
+  duplicate_iou_threshold: 0.7
+  size_ratio_min: 0.5
+  local_center_radius_scale: 0.5
+  match_iou_threshold: 0.5
+  selected_window_before: 3
+  selected_window_after: 8
+  required_record_indices: [54, 33, 47, 82, 96]
+checkpoints:
+  - checkpoint_label: no_aligner_parent_ckpt3668
+    checkpoint_path: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_fullobj_random_sft_bsz16_4epoch_tokenrows_v2/compact-full-fullobj-random-sft-bsz16-4epoch-tokenrows-v2/v1-20260601-062428/checkpoint-3668
+    rollout_root: /data/CoordExp/outputs/infer/loss_only_instance_enumeration_ablation_active_vs_none/compact_full_prefix_rollin_balance2_no_aligner_parent_val128_freegreedy_ckpt3668_val128_bsz8_temp0_rp1p10_max3084_chatfix_8gpu
+    aligner_tuned: false
+    aux_loss_kind: none
+    training_ordering: random
+    calibration_role: parent_anchor
+    decode_protocol_id: val128_freegreedy_temp0_rp1p10_max3084_no_separator
+  - checkpoint_label: aligner_parent_ckpt1824
+    checkpoint_path: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_fullobj_random_sft_llm_aligner_lora_packed_bsz16_4epoch_tokenrows_v2/compact-full-fullobj-random-sft-llm-aligner-lora-packed-bsz16-4epoch-tokenrows-v2/v5-20260608-081447/checkpoint-1824
+    rollout_root: /data/CoordExp/outputs/infer/loss_only_instance_enumeration_ablation_active_vs_none/compact_full_prefix_rollin_balance2_original_latest_aligner_parent_val128_freegreedy_ckpt1824_val128_bsz8_temp0_rp1p10_max3084_chatfix_8gpu
+    aligner_tuned: true
+    aux_loss_kind: none
+    training_ordering: random
+    calibration_role: parent_anchor
+    decode_protocol_id: val128_freegreedy_temp0_rp1p10_max3084_no_separator
+  - checkpoint_label: aux_latest_ckpt32
+    checkpoint_path: /data/CoordExp/outputs/stage1_2b/loss_only_instance_enumeration_ablation_active_vs_none/random_active_hp02_latest_aligner_dora_4096_128_no_newline_1epoch32_4gpu/loss-only-instance-enum-random-active-hp02-latest-aligner-dora-4096-128-no-newline-1epoch32-4gpu/v0-20260609-115128/checkpoint-32
+    rollout_root: /data/CoordExp/outputs/infer/loss_only_instance_enumeration_ablation_active_vs_none/compact_full_prefix_rollin_balance2_loss_only_aux_latest_aligner_dora_val128_freegreedy_checkpoint-32-inference-clean_val128_bsz8_temp0_rp1p10_max3084_chatfix_4gpu
+    aligner_tuned: true
+    aux_loss_kind: visual_region_aux
+    training_ordering: random
+    calibration_role: continuation_stress
+    decode_protocol_id: val128_freegreedy_temp0_rp1p10_max3084_no_separator
+  - checkpoint_label: none_latest_ckpt32
+    checkpoint_path: /data/CoordExp/outputs/stage1_2b/loss_only_instance_enumeration_ablation_active_vs_none/random_active_hp02_latest_aligner_dora_4096_128_no_newline_1epoch32_4gpu/loss-only-instance-enum-random-active-hp02-latest-aligner-dora-4096-128-no-newline-1epoch32-4gpu/v0-20260609-115128/checkpoint-32
+    rollout_root: /data/CoordExp/outputs/infer/loss_only_instance_enumeration_ablation_active_vs_none/compact_full_prefix_rollin_balance2_loss_only_none_latest_aligner_dora_val128_freegreedy_ckpt32_val128_bsz8_temp0_rp1p10_max3084_chatfix_4gpu
+    aligner_tuned: true
+    aux_loss_kind: none_continuation
+    training_ordering: random
+    calibration_role: continuation_comparator
+    decode_protocol_id: val128_freegreedy_temp0_rp1p10_max3084_no_separator

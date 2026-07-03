@@ -1,0 +1,18 @@
+# 4-GPU smoke for packed random SFT Gaussian coord soft CE.
+extends:
+  - ../prod/compact_full_random_sft_coord_gauss_softce_mix0p5_frac0p04_cap8_llm_lora_packed.yaml
+
+training:
+  artifact_subdir: smoke_compact_full_random_sft_coord_gauss_softce_llm_lora_packed_4gpu
+  run_name: smoke-compact-full-random-sft-coord-gauss-softce-llm-lora-packed-4gpu
+  num_train_epochs: 1
+  max_steps: 2
+  eval_steps: 1
+  save_steps: 1000
+  save_total_limit: 1
+  logging_steps: 1
+
+debug:
+  enabled: true
+  train_sample_limit: 32
+  val_sample_limit: 8

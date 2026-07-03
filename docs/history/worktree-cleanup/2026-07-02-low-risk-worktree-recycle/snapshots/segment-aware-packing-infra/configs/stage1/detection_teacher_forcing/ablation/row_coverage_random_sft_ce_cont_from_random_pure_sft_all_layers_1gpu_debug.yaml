@@ -1,0 +1,21 @@
+extends:
+  - ./row_coverage_random_sft_ce_cont_from_random_pure_sft_all_layers_8gpu_smoke.yaml
+
+training:
+  artifact_subdir: row_coverage_random_sft_ce_cont_random_pure_sft_all_layers_1gpu_debug
+  run_name: debug-row-coverage-random-sft-ce-cont-random-pure-sft-all-layers-1gpu
+  max_steps: 1
+  per_device_train_batch_size: 1
+  effective_batch_size: 1
+  save_strategy: steps
+  save_steps: 1
+  save_total_limit: 1
+  save_delay_steps: 0
+  eval_strategy: "no"
+  logging_steps: 1
+  logging_first_step: true
+
+debug:
+  enabled: true
+  train_sample_limit: 16
+  val_sample_limit: 4

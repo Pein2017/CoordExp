@@ -1,0 +1,16 @@
+extends:
+  - ./row_coverage_random_sft_ce_cont_from_random_pure_sft_freeze_vitblocks_1epoch_eval512_8gpu.yaml
+
+row_conditioned_visual_coverage:
+  # Keep the explicit row-state SFT data path aligned with visual-coverage runs,
+  # but make the visual feature residual exactly zero for a pure-CE baseline.
+  enabled: true
+  residual:
+    boundary_alpha_init: 0.0
+    interior_alpha_init: 0.0
+    boundary_alpha_max: 0.0
+    interior_alpha_max: 0.0
+
+training:
+  artifact_subdir: row_state_sft_zero_visual_residual_random_sft_ce_cont_random_pure_sft_freeze_vitblocks_1epoch_eval512_len12000_8gpu
+  run_name: row-state-sft-zero-visual-residual-random-sft-ce-cont-random-pure-sft-freeze-vitblocks-1epoch-eval512-len12000-8gpu

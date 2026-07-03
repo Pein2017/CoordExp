@@ -1,0 +1,14 @@
+extends:
+  - ./packed_len12000_2b_coordexp.yaml
+
+model:
+  model: /data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct
+  model_type: qwen3_vl
+  attn_impl: flash_attention_2
+  torch_dtype: bfloat16
+
+training:
+  output_root: /data/CoordExp/outputs/stage1_2b_base/detection_teacher_forcing_coord_repel
+  logging_root: /data/CoordExp/outputs/stage1_2b_base/detection_teacher_forcing_coord_repel/tb
+  artifact_subdir: packed_len12000_coord_repel_w0p05_2b_base_4epoch
+  run_name: packed-len12000-coord-repel-w0p05-2b-base-4epoch

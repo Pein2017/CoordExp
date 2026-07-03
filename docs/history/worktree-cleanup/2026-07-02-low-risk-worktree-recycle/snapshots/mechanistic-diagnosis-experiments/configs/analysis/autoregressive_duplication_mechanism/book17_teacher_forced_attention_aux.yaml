@@ -1,0 +1,24 @@
+paths:
+  artifact_root: /data/CoordExp/outputs/analysis/autoregressive_duplication_mechanism/self_driven_fn_attention_book17_y2_extent/aux_latest_ckpt32
+  checkpoint: /data/CoordExp/outputs/stage1_2b/loss_only_instance_enumeration_ablation_active_vs_none/random_active_hp02_latest_aligner_dora_4096_128_no_newline_1epoch32_4gpu/loss-only-instance-enum-random-active-hp02-latest-aligner-dora-4096-128-no-newline-1epoch32-4gpu/v0-20260609-115128/checkpoint-32-inference-clean
+  dataset_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+  lane_a_rollout_root: /data/CoordExp/outputs/analysis/autoregressive_duplication_mechanism/self_driven_fn_attention_book17_y2_extent/aux_latest_ckpt32/lane_a_unused
+  lane_c_per_case: /data/CoordExp/outputs/analysis/autoregressive_duplication_mechanism/self_driven_fn_attention_book17_y2_extent/aux_latest_ckpt32/lane_c_unused/per_case.jsonl
+  lane_c_study_config: /data/CoordExp/.worktrees/mechanistic-diagnosis-experiments/configs/analysis/autoregressive_duplication_mechanism/book17_teacher_forced_attention_aux_lane_c.yaml
+  lane_d_selected_cases: /data/CoordExp/outputs/analysis/autoregressive_duplication_mechanism/self_driven_fn_attention_book17_y2_extent/aux_latest_ckpt32/shards/shard_000-of-001/selected_cases.jsonl
+  self_rollout_root: /data/CoordExp/outputs/infer/loss_only_instance_enumeration_ablation_active_vs_none/compact_full_prefix_rollin_balance2_loss_only_aux_latest_aligner_dora_val128_freegreedy_checkpoint-32-inference-clean_val128_bsz8_temp0_rp1p10_max3084_chatfix_4gpu
+selection:
+  sample_limit: 1
+  max_cases: 1
+  prefer_prefix_mode: teacher_forced
+  min_remaining_gt: 0
+  case_source: teacher_forced_anchor
+  scope_label: val128_book17_y2_teacher_forced_extent
+regions:
+  context_expansion_norm1000: 64
+  duplicate_iou_threshold: 0.95
+execution:
+  batch_size: 1
+  attn_implementation: eager
+  torch_dtype: bfloat16
+  max_feasibility_cases: 1

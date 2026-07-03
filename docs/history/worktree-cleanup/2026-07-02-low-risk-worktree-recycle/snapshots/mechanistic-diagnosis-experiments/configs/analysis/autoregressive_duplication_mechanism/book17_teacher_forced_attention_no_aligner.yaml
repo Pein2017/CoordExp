@@ -1,0 +1,24 @@
+paths:
+  artifact_root: /data/CoordExp/outputs/analysis/autoregressive_duplication_mechanism/self_driven_fn_attention_book17_y2_extent/no_aligner_parent_ckpt3668
+  checkpoint: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_fullobj_random_sft_bsz16_4epoch_tokenrows_v2/compact-full-fullobj-random-sft-bsz16-4epoch-tokenrows-v2/v1-20260601-062428/checkpoint-3668
+  dataset_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+  lane_a_rollout_root: /data/CoordExp/outputs/analysis/autoregressive_duplication_mechanism/self_driven_fn_attention_book17_y2_extent/no_aligner_parent_ckpt3668/lane_a_unused
+  lane_c_per_case: /data/CoordExp/outputs/analysis/autoregressive_duplication_mechanism/self_driven_fn_attention_book17_y2_extent/no_aligner_parent_ckpt3668/lane_c_unused/per_case.jsonl
+  lane_c_study_config: /data/CoordExp/.worktrees/mechanistic-diagnosis-experiments/configs/analysis/autoregressive_duplication_mechanism/book17_teacher_forced_attention_no_aligner_lane_c.yaml
+  lane_d_selected_cases: /data/CoordExp/outputs/analysis/autoregressive_duplication_mechanism/self_driven_fn_attention_book17_y2_extent/no_aligner_parent_ckpt3668/shards/shard_000-of-001/selected_cases.jsonl
+  self_rollout_root: /data/CoordExp/outputs/infer/loss_only_instance_enumeration_ablation_active_vs_none/compact_full_prefix_rollin_balance2_no_aligner_parent_val128_freegreedy_ckpt3668_val128_bsz8_temp0_rp1p10_max3084_chatfix_8gpu
+selection:
+  sample_limit: 1
+  max_cases: 1
+  prefer_prefix_mode: teacher_forced
+  min_remaining_gt: 0
+  case_source: teacher_forced_anchor
+  scope_label: val128_book17_y2_teacher_forced_extent
+regions:
+  context_expansion_norm1000: 64
+  duplicate_iou_threshold: 0.95
+execution:
+  batch_size: 1
+  attn_implementation: eager
+  torch_dtype: bfloat16
+  max_feasibility_cases: 1

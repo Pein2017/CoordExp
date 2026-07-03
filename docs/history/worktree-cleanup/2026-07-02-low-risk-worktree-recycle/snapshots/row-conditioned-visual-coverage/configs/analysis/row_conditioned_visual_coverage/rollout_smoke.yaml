@@ -1,0 +1,54 @@
+name: row-conditioned-visual-coverage-rollout-smoke
+description: >
+  Research-only row-boundary re-prefill smoke matrix for the row-conditioned
+  visual coverage prototype. This is not a stable training or OpenSpec surface.
+evidence_scope: unit_smoke
+
+rollout:
+  strategy: row_boundary_reprefill
+  max_rows: 64
+  cache_reused_across_rows: false
+  artifact_names:
+    coverage_state_rows: coverage_state_rows.jsonl
+    coverage_descriptor_stats: coverage_descriptor_stats.json
+    rollout_rows: rollout_rows.jsonl
+    rollout_summary: rollout_summary.json
+
+primary:
+  name: coverage_precompute_once
+  coverage_enabled: true
+  expected_reencode_policy: precompute_once
+  claim_eligible_requires:
+    context_source:
+      - attached_model
+      - loaded_checkpoint
+    uses_precomputed_image_features: true
+    cache_reused_across_rows: false
+
+controls:
+  - name: no_coverage_reprefill
+    coverage_enabled: false
+    expected_descriptor: zero
+  - name: multi_encode_smoke_downgrade
+    coverage_enabled: true
+    expected_reencode_policy: reencode_per_row
+    claim_eligible: false
+    evidence_scope: smoke-only runtime limitation
+
+training_smoke_configs:
+  random_sft: configs/stage1/detection_teacher_forcing/ablation/row_coverage_random_sft_smoke.yaml
+  sorted_sft: configs/stage1/detection_teacher_forcing/ablation/row_coverage_sorted_sft_smoke.yaml
+
+checkpoint_smoke_targets:
+  fullobj_random_pure_ce_ckpt3668:
+    checkpoint_path: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_fullobj_random_sft_bsz16_4epoch_tokenrows_v2/compact-full-fullobj-random-sft-bsz16-4epoch-tokenrows-v2/v1-20260601-062428/checkpoint-3668
+    objective_policy: pure_ce
+    training_ordering: random_permutation
+    template_contract_id: compact_full_no_newline_native_v1
+    evidence_use: future_checkpoint_backed_smoke
+  fullobj_sorted_pure_ce_ckpt3668:
+    checkpoint_path: /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_fullobj_sorted_sft_bsz16_4epoch_tokenrows_v2/compact-full-fullobj-sorted-sft-bsz16-4epoch-tokenrows-v2/v1-20260601-062429/checkpoint-3668
+    objective_policy: pure_ce
+    training_ordering: sorted
+    template_contract_id: compact_full_no_newline_native_v1
+    evidence_use: future_checkpoint_backed_smoke

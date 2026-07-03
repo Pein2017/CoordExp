@@ -1,0 +1,16 @@
+# Fully-compact full-object random-order hard-CE SFT with LLM-only LoRA.
+extends:
+  - ./compact_full_llm_lora_packed_base.yaml
+
+training:
+  artifact_subdir: compact_full_fullobj_random_sft_llm_lora_packed_r16_a32_bsz16_4epoch_tokenrows_v2
+  run_name: compact-full-fullobj-random-sft-llm-lora-packed-r16-a32-bsz16-4epoch-tokenrows-v2
+
+data:
+  object_ordering: random_permutation
+
+objective:
+  id: sft
+  variant: random_order_sft
+  state_weighting: none
+  normalization: token_mean

@@ -1,0 +1,12 @@
+extends:
+  - ./row_coverage_random_sft_ce_cont_from_random_pure_sft_freeze_vitblocks_1epoch_eval512_8gpu.yaml
+
+row_conditioned_visual_coverage:
+  # Keep the teacher-forcing hard-SFT objective, checkpoint, data, optimizer,
+  # trainables, and freeze-ViT LoRA policy aligned with the visual-coverage run,
+  # but disable row-state wrapping and visual residual injection entirely.
+  enabled: false
+
+training:
+  artifact_subdir: no_visual_coverage_random_sft_ce_cont_random_pure_sft_freeze_vitblocks_1epoch_eval512_len12000_8gpu
+  run_name: no-visual-coverage-random-sft-ce-cont-random-pure-sft-freeze-vitblocks-1epoch-eval512-len12000-8gpu

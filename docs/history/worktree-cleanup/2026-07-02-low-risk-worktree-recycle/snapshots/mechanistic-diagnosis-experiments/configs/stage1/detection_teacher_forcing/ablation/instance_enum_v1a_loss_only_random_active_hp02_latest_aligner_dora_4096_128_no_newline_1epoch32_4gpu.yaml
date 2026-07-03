@@ -1,0 +1,38 @@
+extends:
+  - ./instance_enum_v1a_loss_only_random_active_hp02_1024_128_triage4g.yaml
+
+model:
+  adapters:
+    - /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_fullobj_random_sft_llm_aligner_lora_packed_bsz16_4epoch_tokenrows_v2/compact-full-fullobj-random-sft-llm-aligner-lora-packed-bsz16-4epoch-tokenrows-v2/v5-20260608-081447/checkpoint-1824
+
+tuner:
+  use_dora: true
+  lora_rank: 16
+  lora_alpha: 32
+  lora_dropout: 0.0
+  target_regex: '^(model\.language_model.*\.(q_proj|k_proj|v_proj|o_proj|up_proj|down_proj|gate_proj)|model\.visual\.(merger|deepstack_merger_list\.\d+).*\.(linear_fc1|linear_fc2))$'
+
+training:
+  output_root: /data/CoordExp/outputs/stage1_2b/loss_only_instance_enumeration_ablation_active_vs_none
+  logging_root: /data/CoordExp/outputs/stage1_2b/loss_only_instance_enumeration_ablation_active_vs_none/tb
+  artifact_subdir: random_active_hp02_latest_aligner_dora_4096_128_no_newline_1epoch32_4gpu
+  run_name: loss-only-instance-enum-random-active-hp02-latest-aligner-dora-4096-128-no-newline-1epoch32-4gpu
+  max_steps: 32
+  per_device_train_batch_size: 16
+  effective_batch_size: 128
+  save_strategy: steps
+  save_steps: 16
+  save_total_limit: 2
+  eval_strategy: steps
+  eval_steps: 8
+  logging_steps: 1
+  packing: false
+  eval_packing: false
+
+debug:
+  enabled: true
+  train_sample_limit: 4096
+  val_sample_limit: 128
+
+instance_enumeration_aux:
+  enabled: true

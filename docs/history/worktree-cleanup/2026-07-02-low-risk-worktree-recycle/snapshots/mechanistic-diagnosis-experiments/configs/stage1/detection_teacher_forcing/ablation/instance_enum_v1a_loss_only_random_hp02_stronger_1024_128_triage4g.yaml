@@ -1,0 +1,50 @@
+extends:
+  - ./instance_enum_v1a_loss_only_random_sft_ce_cont_random_pure_sft_freeze_vitblocks_1epoch_eval512_8gpu.yaml
+
+training:
+  output_root: /data/CoordExp/outputs/stage1_2b/loss_only_instance_enumeration_hparam_search
+  logging_root: /data/CoordExp/outputs/stage1_2b/loss_only_instance_enumeration_hparam_search/tb
+  artifact_subdir: random_hp02_stronger_1024_128_triage4g
+  run_name: loss-only-instance-enum-random-hp02-stronger-1024-128-triage4g
+  max_steps: 32
+  per_device_train_batch_size: 16
+  effective_batch_size: 128
+  per_device_eval_batch_size: 1
+  learning_rate: 1.5e-5
+  aligner_lr: 2.0e-5
+  warmup_ratio: 0.03
+  save_strategy: steps
+  save_steps: 16
+  save_total_limit: 2
+  save_delay_steps: 0
+  save_model_only: true
+  eval_strategy: steps
+  eval_steps: 8
+  logging_steps: 1
+  logging_first_step: true
+  packing: false
+  eval_packing: false
+  group_by_length: false
+  weight_decay: 0.0
+  dataloader_num_workers: 0
+  dataloader_pin_memory: false
+  dataloader_persistent_workers: false
+  dataloader_prefetch_factor: null
+
+debug:
+  enabled: true
+  train_sample_limit: 1024
+  val_sample_limit: 128
+
+token_rows:
+  embed_lr: 2.0e-5
+  weight_decay: 0.0
+
+instance_enumeration_aux:
+  enabled: true
+  version: v1
+  probe_lr: 2.0e-5
+  positive_weight: 1.0
+  negative_weight: 0.4
+  negative_margin: 0.5
+  support_floor: 0.10

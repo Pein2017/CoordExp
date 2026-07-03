@@ -1,0 +1,85 @@
+extends:
+  - ../prod/compact_full_support2.yaml
+
+model:
+  model: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+  adapters:
+    - /data/CoordExp/outputs/stage1_2b/recursive_detection_ce_latest/compact_full_fullobj_random_sft_bsz16_4epoch_tokenrows_v2/compact-full-fullobj-random-sft-bsz16-4epoch-tokenrows-v2/v1-20260601-062428/checkpoint-3668
+
+tuner:
+  # Freeze the ViT/vision-tower block adapters by excluding model.visual.blocks.*
+  # while keeping post-vision merger/deepstack merger and LLM LoRA trainable.
+  target_regex: '^(model\.visual\.merger\.(linear_fc1|linear_fc2)|model\.visual\.deepstack_merger_list\.(0|1|2)\.(linear_fc1|linear_fc2)|model\.language_model\.layers\.(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17|18|19|20|21|22|23|24|25|26|27)\.(self_attn\.(q_proj|k_proj|v_proj|o_proj)|mlp\.(gate_proj|up_proj|down_proj)))$'
+
+training:
+  output_root: /data/CoordExp/outputs/stage1_2b/loss_only_instance_enumeration
+  logging_root: /data/CoordExp/outputs/stage1_2b/loss_only_instance_enumeration/tb
+  artifact_subdir: loss_only_instance_enumeration_random_sft_ce_cont_random_pure_sft_freeze_vitblocks_1epoch_eval512_len12000_8gpu
+  run_name: loss-only-instance-enumeration-random-sft-ce-cont-random-pure-sft-freeze-vitblocks-1epoch-eval512-len12000-8gpu
+  num_train_epochs: 1
+  max_steps: -1
+  per_device_train_batch_size: 16
+  effective_batch_size: 128
+  per_device_eval_batch_size: 1
+  learning_rate: 1.0e-5
+  warmup_ratio: 0.03
+  save_model_only: true
+  save_strategy: steps
+  save_steps: 1000
+  save_total_limit: 2
+  save_delay_steps: 1000
+  eval_strategy: steps
+  eval_steps: 1000
+  logging_steps: 10
+  logging_first_step: true
+  metric_for_best_model: eval_loss
+  greater_is_better: false
+  freeze_vit: false
+  freeze_aligner: false
+  packing: false
+  eval_packing: false
+  group_by_length: false
+  weight_decay: 0.0
+
+data:
+  train_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/train.coord.jsonl
+  val_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl
+  image_root: /data/CoordExp/public_data/coco/rescale_32_1024_bbox
+  object_ordering: random_permutation
+
+debug:
+  enabled: true
+  val_sample_limit: 512
+
+token_type_metrics:
+  enabled: true
+  log_top5: true
+  coord_monitor_mass: true
+  coord_monitor_mass_max_tokens: 2048
+
+token_rows:
+  embed_lr: 1.0e-5
+  weight_decay: 0.0
+
+objective:
+  id: teacher_forcing
+  profile: hard_sft
+  target_ir:
+    rollin_policy:
+      name: random_permutation
+      base_seed: 17
+
+row_conditioned_visual_coverage:
+  enabled: false
+
+pixel_painted_row_coverage:
+  enabled: false
+
+instance_enumeration_aux:
+  enabled: true
+  version: v1
+  probe_lr: 1.0e-5
+  positive_weight: 0.5
+  negative_weight: 0.2
+  negative_margin: 0.5
+  support_floor: 0.10

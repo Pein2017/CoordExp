@@ -1,0 +1,16 @@
+extends:
+  - ./row_coverage_random_sft_ce_cont_from_random_pure_sft_all_layers_1gpu_debug.yaml
+
+training:
+  artifact_subdir: row_coverage_random_sft_ce_cont_random_pure_sft_all_layers_1gpu_loss_trend
+  run_name: smoke-row-coverage-random-sft-ce-cont-random-pure-sft-all-layers-1gpu-loss-trend
+  max_steps: 120
+  save_strategy: "no"
+  eval_strategy: "no"
+  logging_steps: 1
+  logging_first_step: true
+
+debug:
+  enabled: true
+  train_sample_limit: 8
+  val_sample_limit: 4
