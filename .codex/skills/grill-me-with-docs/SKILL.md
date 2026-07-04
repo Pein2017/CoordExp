@@ -21,6 +21,9 @@ use `grill-me`; for architecture-specific refactor discovery, use
 - Separate hypothesis, mechanism, implementation plan, experiment result, interpretation, and stable contract.
 - Stress-test the plan against concrete scenarios: data edge cases, geometry/order preservation, config inheritance, eval validity, artifact completeness, cost, and rollback.
 - Record resolved outcomes promptly using [RECORDING.md](RECORDING.md).
+- Do not stop after recording unless the user asked to pause, stop, or only
+  record. End by asking the next batch, asking one blocker, declaring
+  convergence with the next execution gate, or naming the next frontier.
 
 ## Domain Awareness
 
