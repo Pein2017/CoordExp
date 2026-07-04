@@ -19,6 +19,7 @@
 !tests/
 !public_data/
 !progress/
+!research/
 !.planning/
 !README.md
 
@@ -42,6 +43,7 @@
 !public_data/**/*.md
 !public_data/**/*.sh
 !progress/**
+!research/**
 !.planning/**
 
 # Hard local-only workspace roots. These patterns are intentionally explicit
@@ -53,7 +55,6 @@
 /tb/
 /vis_out/
 /result/
-/research/
 /monitor_dumps/
 /model_cache/
 /model_cache_remote/
