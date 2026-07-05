@@ -1,4 +1,4 @@
 interface:
   display_name: "Grill Me"
-  short_description: "Short pressure-test loop"
-  default_prompt: "Use $grill-me when the user explicitly asks for a short grill, stress test, pressure test, or decision-sharpening loop without durable repo recording. Ask one decision-relevant question at a time and inspect repo context before asking when local evidence can answer."
+  short_description: "Pressure-test decisions, optionally recording"
+  default_prompt: "Use $grill-me with record=chat or record=local when I ask for a grill, stress test, pressure test, or rigorous CoordExp decision discussion."

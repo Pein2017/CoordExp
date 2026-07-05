@@ -97,9 +97,9 @@ export HTTP_PROXY=http://127.0.0.1:9090
 export HTTPS_PROXY=http://127.0.0.1:9090
 ```
 
-Use the repo skill `.codex/skills/baidudisk-union-sync` for append-only
-cross-machine sync on `/CoordExp/outputs`, and `.codex/skills/baidupcsgo-upload`
-for one-off upload/download recovery.
+Use the repo skill `.codex/skills/baidu-netdisk-transfer` with
+`mode=union-sync` for append-only cross-machine sync on `/CoordExp/outputs`, and
+`mode=one-off` for one-off upload/download recovery.
 
 ## Duplicate Policy
 

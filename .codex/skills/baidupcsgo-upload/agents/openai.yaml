@@ -1,4 +1,0 @@
-interface:
-  display_name: "BaiduPCS-Go Upload"
-  short_description: "BaiduPCS-Go transfers with cookies and tmux"
-  default_prompt: "Use $baidupcsgo-upload for Baidu Netdisk uploads or downloads that need BaiduPCS-Go, cookie login, tmux survival, or bypy large-file failure recovery. Preserve the intended remote layout and verify high-risk shards/config files first."

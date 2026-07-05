@@ -14,7 +14,7 @@ Use this for processed `public_data/` reproducibility. The rule is: raw data is 
 - Schema: `manifests/public_data_provenance/schema.json`
 - Validation: `tests/test_public_data_provenance_manifests.py`
 
-Do not treat `public_data/raw`, image caches, or whole processed trees as normal Baidu sync targets. Use `baidudisk-union-sync` for `outputs/`, not routine `public_data` recovery.
+Do not treat `public_data/raw`, image caches, or whole processed trees as normal Baidu sync targets. Use `baidu-netdisk-transfer mode=union-sync` for `outputs/`, not routine `public_data` recovery.
 
 ## Workflow
 
