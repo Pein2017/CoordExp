@@ -35,7 +35,7 @@ Codex may autonomously:
 - use `superpowers:subagent-driven-development` for implementation slices,
   source studies, probes, spec reviews, code-quality reviews, and artifact
   audits;
-- use MCP tools, including CodeGraph, codebase-memory, and Serena, when they
+- use MCP tools, including CodeGraph and Serena, when they
   help inspect legacy code, upstream behavior, symbol relationships, or impact;
 - patch docs, OpenSpec specs, tasks, and roadmap files when implementation
   evidence reveals a local inconsistency, missing invariant, or too-weak
@@ -111,7 +111,7 @@ contention carefully.
 
 ## MCP And Subagent Policy
 
-- Use CodeGraph and codebase-memory for broad codebase exploration, legacy
+- Use CodeGraph for broad codebase exploration, legacy
   invariant inventory, symbol relationships, and impact analysis.
 - Use Serena for precise Python symbol reads, references, diagnostics, and
   surgical edits after narrowing.

@@ -1,20 +1,20 @@
 ---
 name: coordexp-router-context
-description: Use when CoordExp work needs current repo routing, docs/spec/code entrypoints, historical evidence boundaries, broad module maps, or phase-specific guidance for CodeGraph MCP, codebase-memory MCP/CLI, Serena MCP, RTK, raw shell, and navigation.
+description: Use when CoordExp work needs current repo routing, docs/spec/code entrypoints, historical evidence boundaries, broad module maps, or phase-specific guidance for CodeGraph MCP/CLI, Serena MCP, RTK, raw shell, and navigation.
 ---
 
 # CoordExp Router Context
 
 This skill owns CoordExp navigation and MCP/tool-routing policy.
 
-Other skills may keep one-line reminders, but CodeGraph/codebase-memory/Serena/RTK/raw-shell rules should be centralized here to avoid drift.
+Other skills may keep one-line reminders, but CodeGraph/Serena/RTK/raw-shell rules should be centralized here to avoid drift.
 
 ## Mode Selector
 
 - `current-route`: find current docs, configs, code entrypoints, tests, or artifact contracts.
 - `history-pack`: connect current behavior to progress notes, memories, rollout summaries, or benchmark provenance.
 - `map`: give a module/config/artifact map before returning to a narrow task.
-- `navigation-tools`: choose between CodeGraph MCP/CLI, codebase-memory MCP/CLI, Serena MCP, `rtk`, and raw shell by phase.
+- `navigation-tools`: choose between CodeGraph MCP/CLI, Serena MCP, `rtk`, and raw shell by phase.
 
 Exact leaf skills win over this router: use `coordexp-infer-eval-workflow` for launch/repair/eval artifacts, `coordexp-public-data-provenance` for `public_data`, `model-diagnosis` for abnormal behavior, `model-innovation-risk-audit` for pre-launch trust gates, `audit-review` for findings-first audits, and `worktree-feature-loop` for isolation.
 
@@ -30,7 +30,7 @@ Use project agents as role boundaries, not as tool identities:
 - `research_synthesizer`: research/progress note synthesis, supervisor packets, and OKF-style research hubs.
 - `implementation_worker`: bounded code/config/docs patch when the parent supplies owned files/modules and verification target.
 
-Do not create MCP-specific agents such as "Serena agent" or "CodeGraph agent"; choose the role first and let this router pick CodeGraph, codebase-memory, Serena, RTK, or shell by phase.
+Do not create MCP-specific agents such as "Serena agent" or "CodeGraph agent"; choose the role first and let this router pick CodeGraph, Serena, RTK, or shell by phase.
 
 ## Authority Spine
 
@@ -51,7 +51,7 @@ Start with `docs/AGENT_INDEX.md` and `docs/catalog.yaml` before broad source sea
 1. Name the exact surface: config, script, artifact root, metric, symbol, or doc claim.
 2. Open the relevant docs/catalog route before source search.
 3. Resolve config/schema ownership before code changes.
-4. For code-heavy local questions, use CodeGraph as the broad map when a correct local index exists, then switch to Serena once Python files or symbols are known. For cross-repo or upstream-library questions, use CodeGraph plus codebase-memory as independent retrieval views before making a dependency claim. Do not run a second broad mapper unless the task crosses roots, the first map was stale/empty/clearly wrong, or the answer is high-risk.
+4. For code-heavy local questions, use CodeGraph as the broad map when a correct local index exists, then switch to Serena once Python files or symbols are known. For cross-repo or upstream-library questions, use CodeGraph with explicit `projectPath` plus exact shell/source reads before making a dependency claim. Do not run a second broad mapper unless the task crosses roots, the first map was stale/empty/clearly wrong, or the answer is high-risk.
 5. Trace the smallest useful path: JSONL/image -> config -> loader -> dataset/collator -> trainer/infer/eval -> artifact/metric.
 6. Use `rg`, `rtk grep`, raw shell, or structured parsers for config keys, YAML inheritance, docs/spec clauses, JSONL/artifact fields, metric names, and exact stdout.
 7. Validate with the smallest check named by docs, specs, CodeGraph impact results, tests, or artifact manifests.
@@ -84,10 +84,10 @@ Search `.codex/memories/MEMORY.md` only when prior session context is relevant. 
 
 ## Tool Choice
 
-- Route by phase, not by habit: CodeGraph answers "where should I look?", codebase-memory answers "what related code/evidence did the indexed graph retrieve across roots?", Serena answers "what exactly is this live Python symbol and who depends on it?", and shell/tests answer "what is the exact current state?" Do not maximize MCP call count; maximize the value of the right tool at the right phase.
+- Route by phase, not by habit: CodeGraph answers "where should I look?", Serena answers "what exactly is this live Python symbol and who depends on it?", and shell/tests answer "what is the exact current state?" Do not maximize MCP call count; maximize the value of the right tool at the right phase.
 - Default handoff for local code: docs/catalog or `rg` for the named surface -> at most 1-2 capped CodeGraph map calls for unknown code areas -> Serena for exact Python symbols/references/diagnostics -> patch or symbolic edit -> raw shell/tests/artifact checks for exact state and narrow verification.
-- Default handoff for cross-library research: docs/catalog plus exact package roots -> CodeGraph with explicit `projectPath` for each indexed root -> codebase-memory `search_graph`/`get_code_snippet` as an independent broad retrieval pass -> Serena for exact Python symbols only after file/root is known -> shell line windows or structured parsers for final evidence.
-- Use all three MCPs for high-risk algorithmic dependencies, upstream-library entanglement, launch gates, or silent-mismatch risks: CodeGraph as structured map, codebase-memory as broad alternate retrieval, Serena as precision/reference/edit gate, and shell as final truth oracle.
+- Default handoff for cross-library research: docs/catalog plus exact package roots -> CodeGraph with explicit `projectPath` for each indexed root -> Serena for exact Python symbols only after file/root is known -> shell line windows or structured parsers for final evidence.
+- For high-risk algorithmic dependencies, upstream-library entanglement, launch gates, or silent-mismatch risks: use CodeGraph as the structured map and Serena as the precision/reference/edit gate; keep shell/RTK as final exact-state verification, not as another broad routing lane.
 - Once a CodeGraph call returns enough file/symbol candidates, freeze that shortlist. Do not issue adjacent broad `codegraph_explore` queries over the same subsystem just to get another angle; switch to Serena, `rg`, or exact reads.
 - Use CodeGraph for first-pass repository-scale orientation before token-heavy exploration: symbol search, file/package maps, call chains, grouped source context, and impact radius.
 - Use CodeGraph CLI for index lifecycle and reproducible setup checks:
@@ -101,38 +101,26 @@ Search `.codex/memories/MEMORY.md` only when prior session context is relevant. 
 - Use CodeGraph CLI as MCP fallback only for exploration commands. Prefer CLI `codegraph impact <symbol> --depth 2 --json` over `affected <files>` for CoordExp test selection.
 - Treat CodeGraph as a fast tree-sitter graph, not a semantic type checker: it is strong for deterministic structure, imports, name-based calls, and local graph traversal; it is weaker for ambiguous method names, dynamic dispatch, config semantics, and true LSP-level reference precision.
 - After edits that change indexed source/YAML, refresh the exact worktree index before relying on graph results. Use `codegraph sync <absolute-worktree-path>` when available, otherwise rerun `codegraph init -i` from that worktree.
-- Use codebase-memory for broad indexed retrieval, alternate evidence, architecture/search snippets, and upstream/library roots such as `/data/ms-swift` and installed `transformers`. It is especially useful when CodeGraph finds the map but a second retrieval view is needed to catch cross-root relations.
-- Use codebase-memory CLI when MCP tools are not exposed:
-  - `codebase-memory-mcp cli list_projects '{}'`
-  - `codebase-memory-mcp cli index_status '{"project":"<project-name>"}'`
-  - `codebase-memory-mcp cli search_graph '{"project":"<project-name>","query":"Qwen3VLTemplate do_resize","limit":10}'`
-  - `codebase-memory-mcp cli search_code '{"project":"<project-name>","pattern":"do_resize|mm_processor_kwargs","regex":true,"limit":10}'`
-  - `codebase-memory-mcp cli get_code_snippet '{"project":"<project-name>","qualified_name":"<fully-qualified-symbol>"}'`
-- Treat codebase-memory as a broad retriever, not a final authority. Prefer exact snippets and shell line windows before claims. If `search_code` returns high-centrality noise, narrow to exact class/function names and then call `get_code_snippet`.
-- Be schema-aware with codebase-memory: `search_code` needs `pattern`, not `query`; `get_code_snippet` needs `qualified_name`, not file/start/end; `query_graph` is for graph query strings, not natural-language asks; `trace_path` needs the required function/path fields. Do not repeatedly call tools with guessed schemas.
-- Use `detect_changes`/`index_status` before trusting codebase-memory on recently edited or external roots. Re-index only when the user asked for indexing or the task cannot be answered safely from the current index.
 - Use Serena MCP for precise Python/LSP work after narrowing with docs, CodeGraph, `rg`, or `rtk`: activate the exact project/worktree path, then use symbol overview, exact references, body reads, declarations/implementations, diagnostics, and precise symbolic edits.
 - Do not ask Serena to read guessed paths. Establish the file with docs/catalog, `rg --files`, CodeGraph, or `codegraph_files` before `get_symbols_overview`/`find_symbol`.
 - Expected handoff for nontrivial Python work: CodeGraph or `rg` to locate the area -> Serena `get_symbols_overview`/`find_symbol`/`find_referencing_symbols` for narrowed Python semantics -> patch or Serena symbolic edit -> narrow verification.
 - Prefer Serena over another broad CodeGraph body read when the next step is a Python edit, reference-sensitive claim, inheritance/override check, or diagnostic-risk check.
 - CodeGraph-heavy behavior is acceptable for read-only review when one or two capped `codegraph_explore` calls provide enough evidence and no Python edit or precise reference claim follows.
-- Prefer CodeGraph as the single-MCP default for broad read-only maps. Prefer Serena as the single-MCP fallback for exact Python edits or reference-sensitive changes. Prefer codebase-memory as the single-MCP fallback for broad cross-root retrieval when CodeGraph is unavailable or insufficient.
+- Prefer CodeGraph as the single-MCP default for broad read-only maps. Prefer Serena as the single-MCP fallback for exact Python edits or reference-sensitive changes. Use raw shell/source reads for exact cross-root or installed-package verification when CodeGraph is unavailable or insufficient.
 - Use `rtk` when output is noisy and a compact summary is enough: broad search, docs reads, git summaries, tests, logs, and file discovery.
 - Use raw shell for exact stdout, machine-readable JSON/YAML, narrow `sed` reads, delicate quoting, or tiny commands.
-- Use `rg`/raw parsers over CodeGraph/Serena/codebase-memory for exact literal search in configs, docs, OpenSpec, progress notes, JSONL, logs, metrics, and artifact manifests.
+- Use `rg`/raw parsers over CodeGraph/Serena for exact literal search in configs, docs, OpenSpec, progress notes, JSONL, logs, metrics, and artifact manifests.
 - Do not run Serena repo-wide pattern scans with `relative_path` unset or `"."`.
 
 ## MCP Anti-Patterns
 
 - Repeated setup churn: do not re-read Serena instructions or re-activate the same project unless the session compacted, the active project changed, or a tool error suggests stale state.
-- Broad-reader ping-pong: do not alternate CodeGraph, codebase-memory, and Serena for repository-scale discovery. Pick one mapper for the phase; use a second mapper only for cross-root/high-risk verification or when the first retrieval is suspect.
+- Broad-reader ping-pong: do not alternate CodeGraph and Serena for repository-scale discovery. Pick one mapper for the phase; use a second mapper only for cross-root/high-risk verification or when the first retrieval is suspect.
 - Stale graph trust: do not cite or edit from CodeGraph output that warns about another worktree; verify in the active worktree first.
-- Stale memory-graph trust: do not cite codebase-memory output after recent edits or external package changes until `index_status`/`detect_changes` or a fresh index confirms it is current.
 - Symbol-name ambiguity: do not rely on CodeGraph alone for overloaded/common names like `run`, `main`, `__getitem__`, or `from_mapping`; pin the file and inspect with Serena.
-- Codebase-memory broad-noise trap: do not stop after generic `search_code` hits for terms like `default`, `size`, `processor`, or `do_resize`. Query exact symbols such as `Qwen3VLProcessor.__call__`, `Qwen2VLImageProcessor.__init__`, or `Qwen3VLTemplate._encode`, then retrieve snippets.
 - Serena global-state trap: do not parallelize Serena project activations or issue reads against one root after activating another. Activate roots sequentially and re-activate `/data/CoordExp` before returning to normal CoordExp work.
 - Serena onboarding trap: do not run Serena onboarding or write Serena memories for upstream/package roots such as installed `transformers` unless the user explicitly asks for durable memories there. Symbol overview/probing is enough for indexing checks.
-- Unexpected function-call trap: do not call state-changing MCP/CLI tools just because they exist. Announce and get explicit user intent before `codegraph init/sync` on external roots, `codebase-memory index_repository`, `delete_project`, `manage_adr`, `ingest_traces`, Serena `write_memory`/`onboarding`, plugin install/uninstall, or broad cleanup. Read-only status/search/snippet calls are fine for investigation.
+- Unexpected function-call trap: do not call state-changing MCP/CLI tools just because they exist. Announce and get explicit user intent before `codegraph init/sync` on external roots, Serena `write_memory`/`onboarding`, plugin install/uninstall, or broad cleanup. Read-only status/search/snippet calls are fine for investigation.
 - Non-code exactness: do not use MCP symbol tools for YAML inheritance, JSONL counters, metric files, logs, or Markdown clauses; use raw shell/structured parsers.
 
 ## CodeGraph Patterns
@@ -143,21 +131,12 @@ Search `.codex/memories/MEMORY.md` only when prior session context is relevant. 
 - Package map: MCP `codegraph_files` with `projectPath`, or CLI `codegraph files --json --filter src/<area>` from the worktree before opening large files.
 - Config-driven change: start with docs/catalog and `rg` over `configs docs openspec src tests`; use CodeGraph only for the Python consumers of resolved config keys.
 
-## codebase-memory Patterns
-
-- Cross-root dependency exam: `list_projects` -> `index_status` for each root -> `search_graph` with exact domain symbols -> `get_code_snippet` for the retrieved qualified names -> shell line windows for final citations.
-- External library relation: query installed library symbols by precise class/function names, then connect back to CoordExp with CodeGraph or raw `rg` over import/config call sites.
-- Architecture skim: `get_architecture` is useful for orientation, but do not treat it as evidence for current behavior without exact code snippets.
-- Index hygiene: use project names from `list_projects`; do not guess. Current common roots may include `data-CoordExp`, `data-ms-swift`, and an installed-`transformers` project, but verify names each session.
-
-## Three-MCP Decision Policy
+## A+B Decision Policy
 
 - Use **CodeGraph only** for most local read-only code maps and impact/call-chain exploration.
 - Use **Serena only** for narrowed Python symbol/reference/edit tasks where broad mapping is already done.
-- Use **codebase-memory only** when the task is broad retrieval across indexed roots and exact snippets are enough.
-- Use **CodeGraph + codebase-memory** for upstream-library or multi-repo algorithmic research where missing a relation is costly.
 - Use **Serena + CodeGraph** for normal local implementation: map with CodeGraph, inspect/edit with Serena.
-- Use **all three** for high-stakes cross-module or upstream-library claims, launch gates, silent geometry/tokenization risks, or adjudicating benchmark/tooling conclusions.
+- Use **CodeGraph + Serena** for high-stakes cross-module or upstream-library claims, launch gates, silent geometry/tokenization risks, or adjudicating benchmark/tooling conclusions; verify exact state with shell/RTK only after the A+B route has narrowed the surface.
 
 ## References
 

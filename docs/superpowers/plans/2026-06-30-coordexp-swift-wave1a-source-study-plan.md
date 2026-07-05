@@ -23,7 +23,7 @@ Allowed in Wave 1A:
   references;
 - inspect installed package source for Transformers, PEFT, Accelerate,
   DeepSpeed, flash-attn, and MS-Swift if available;
-- use CodeGraph, codebase-memory, Serena, and raw shell for read-only
+- use CodeGraph, Serena, and raw shell for read-only
   exploration;
 - perform lightweight package/config/tokenizer/processor introspection that
   does not mutate repo files or launch training;
