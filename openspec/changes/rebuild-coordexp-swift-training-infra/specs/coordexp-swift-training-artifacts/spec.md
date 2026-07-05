@@ -20,15 +20,25 @@ taxonomy, or artifact schemas.
 
 `TrainRuntime` SHALL own device placement, distributed wrapping, rank guards,
 backend prepare, backward, gradient clipping, optimizer-step helpers,
-scheduler-step helpers, metric gathering, and safe save helpers. Data loading,
-template rendering, Qwen encoding, packing policy, and loss semantics MUST
-remain outside runtime ownership.
+scheduler-step helpers, metric gathering, denominator gathering, and safe save
+helpers. Data loading, template rendering, Qwen encoding, packing policy, and
+loss semantics MUST remain outside runtime ownership. The LR scheduler MUST be
+owned and stepped by CoordExp runtime, MUST NOT be wrapped in backend scheduler
+semantics through `accelerator.prepare(...)`, and MUST advance exactly once per
+completed planned-step boundary.
 
 #### Scenario: Distributed artifact write
 
 - **WHEN** a rank-safe artifact must be written
 - **THEN** `TrainRuntime` MUST provide the rank guard or save helper
 - **AND** the artifact manager MUST own the file schema and path.
+
+#### Scenario: Accelerate runtime setup
+
+- **WHEN** the Accelerate backend prepares runtime objects
+- **THEN** it MUST prepare the model and optimizer only
+- **AND** the scheduler setup receipt MUST record that scheduler ownership is
+  `coordexp_runtime` and backend scheduler wrapping is disabled.
 
 ### Requirement: Optimizer-Step Order
 
@@ -74,9 +84,10 @@ Random ordering seed sources and dataset identities used by train or
 
 Metric events SHALL store split and metric name separately. Train events MUST
 include protected weighted losses, top-level `acc_top1`, top-level `acc_top5`,
-learning-rate group values, optimizer-update status, and warning/non-finite
-status when present. `eval.forward` events MUST use split `eval.forward` and
-the same metric-name vocabulary where applicable. Each metric event record
+learning-rate group values from the actual scheduler/optimizer state,
+optimizer-update status, and warning/non-finite status when present.
+`eval.forward` events MUST use split `eval.forward` and the same metric-name
+vocabulary where applicable. Each metric event record
 SHALL include at least `event_type`, `planned_step_id`, `split`, `name`,
 `value`, `trigger_reasons`, `optimizer_update_status`, `finite_status`, and
 `warning_status`, with unavailable values represented explicitly rather than
@@ -136,7 +147,11 @@ scheduler, scaler, dataloader, iterator, or RNG resume. Checkpoint metadata
 SHALL include at least `checkpoint_id`, `planned_step_id`, `checkpoint_path`,
 `adapter`, `special_token_embeddings`, `processor_identity`,
 `resolved_config_fingerprint`, `schedule_identity`, `metric_status`,
-`trainable_surface`, and `optimizer_update_status`.
+`trainable_surface`, `optimizer_update_status`, and a link to
+`checkpoint_handoff.json`. The handoff manifest SHALL tie together base model
+path and identity hashes, adapter payload, selected special-token embedding
+delta payload, trainable token set, intended inference config family, and
+accepted eval artifact roots when available.
 
 #### Scenario: Final checkpoint written
 
@@ -144,6 +159,13 @@ SHALL include at least `checkpoint_id`, `planned_step_id`, `checkpoint_path`,
 - **THEN** `checkpoints/checkpoint-final.json` MUST exist
 - **AND** it MUST point to the final state of this run even if the final
   planned step had warnings or skipped optimizer update status.
+
+#### Scenario: Checkpoint used for inference handoff
+
+- **WHEN** a checkpoint is written
+- **THEN** `checkpoint_handoff.json` MUST be written beside `checkpoint.json`
+- **AND** it MUST reference adapter and selected embedding-delta payloads
+  without saving base-model weights.
 
 ### Requirement: Checkpoint Naming
 

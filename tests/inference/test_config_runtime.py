@@ -40,6 +40,7 @@ def test_valid_production_infer_config_loads() -> None:
     assert isinstance(resolved.config, InferConfig)
     assert resolved.config.backend.type == "hf"
     assert resolved.config.generation.batch_size > 1
+    assert resolved.config.generation.repetition_penalty == pytest.approx(1.0)
     assert resolved.config.debug.smoke is False
     assert resolved.config_dict["generation"]["batch_size"] == 2
     assert Path(resolved.config.model.base_model) == expected_base_model
@@ -101,6 +102,8 @@ def test_step917_val200_and_benchmark_configs_use_same_checkpoint_payloads() -> 
     assert val200.config.adapter.path == benchmark.config.adapter.path
     assert val200.config.embedding_delta.path == benchmark.config.embedding_delta.path
     assert "/step-917/" in val200.config.adapter.path
+    assert val200.config.generation.repetition_penalty == pytest.approx(1.10)
+    assert benchmark.config.generation.repetition_penalty == pytest.approx(1.10)
 
 
 @pytest.mark.parametrize("key", ["optimizer", "training", "checkpoint"])
@@ -668,7 +671,6 @@ def _base_config(directory: Path) -> dict[str, Any]:
             "max_new_tokens": 64,
             "temperature": 0.0,
             "top_p": 1.0,
-            "repetition_penalty": 1.10,
         },
         "scoring": {"enabled": True},
         "artifacts": {"write_token_trace": True, "write_parse_diagnostics": True},

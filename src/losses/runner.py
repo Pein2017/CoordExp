@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -91,6 +91,10 @@ class PlannedStepLossPlan:
     denominators: dict[str, SegmentBalancedDenominator]
     counts: dict[str, int]
     token_type_gate_groups: tuple[str, ...]
+    denominator_scope: str = "planned_step"
+    world_size: int = 1
+    rank: int = 0
+    backend_gradient_scale: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -169,6 +173,14 @@ class LossRunner:
     def prepare_planned_step(
         self,
         micro_steps_or_sequences: Sequence[Any],
+        *,
+        denominator_gatherer: Callable[
+            [Mapping[str, Mapping[str, Any]]],
+            Sequence[Mapping[str, Mapping[str, Any]]],
+        ]
+        | None = None,
+        world_size: int = 1,
+        rank: int = 0,
     ) -> PlannedStepLossPlan:
         token_sequences = tuple(
             _token_sequence_from_micro_step_or_sequence(item)
@@ -190,16 +202,28 @@ class LossRunner:
             token_sequences,
             token_types=self.token_type_gate_groups,
         )
+        denominators, denominator_scope, backend_gradient_scale = (
+            _resolve_streaming_denominators(
+                {
+                    "base_ce": base_denominator,
+                    "token_type_gate": gate_denominator,
+                },
+                denominator_gatherer=denominator_gatherer,
+                world_size=world_size,
+                rank=rank,
+            )
+        )
         return PlannedStepLossPlan(
-            denominators={
-                "base_ce": base_denominator,
-                "token_type_gate": gate_denominator,
-            },
+            denominators=denominators,
             counts=_build_counts_from_token_sequences(
                 token_sequences,
-                base_denominator,
+                denominators["base_ce"],
             ),
             token_type_gate_groups=self.token_type_gate_groups,
+            denominator_scope=denominator_scope,
+            world_size=int(world_size),
+            rank=int(rank),
+            backend_gradient_scale=backend_gradient_scale,
         )
 
     def compute_micro_step(
@@ -223,6 +247,7 @@ class LossRunner:
             token_types=None,
             denominator=plan.denominators["base_ce"],
             local_micro_step_index=local_micro_step_index,
+            backend_gradient_scale=plan.backend_gradient_scale,
         )
         gate_result = _compute_token_term_contribution(
             name="token_type_gate",
@@ -232,6 +257,7 @@ class LossRunner:
             token_types=plan.token_type_gate_groups,
             denominator=plan.denominators["token_type_gate"],
             local_micro_step_index=local_micro_step_index,
+            backend_gradient_scale=plan.backend_gradient_scale,
         )
         terms = (base_result, gate_result)
         total_loss = sum(
@@ -254,6 +280,10 @@ class LossRunner:
         diagnostics = {
             "normalizer": "segment_balanced",
             "normalizer_scope": "planned_step_streaming",
+            "denominator_scope": plan.denominator_scope,
+            "backend_gradient_scale": plan.backend_gradient_scale,
+            "world_size": plan.world_size,
+            "rank": plan.rank,
             "local_micro_step_index": int(local_micro_step_index),
             "term_order": [term.name for term in terms],
             "term_denominators": {
@@ -320,6 +350,10 @@ class LossRunner:
             "diagnostics": {
                 "normalizer": "segment_balanced",
                 "normalizer_scope": "planned_step_streaming",
+                "denominator_scope": plan.denominator_scope,
+                "backend_gradient_scale": plan.backend_gradient_scale,
+                "world_size": plan.world_size,
+                "rank": plan.rank,
                 "term_order": [str(term["name"]) for term in terms],
                 "term_denominators": {
                     str(term["name"]): term["denominator"] for term in terms
@@ -396,6 +430,7 @@ def _compute_token_term_contribution(
     token_types: tuple[str, ...] | None,
     denominator: SegmentBalancedDenominator,
     local_micro_step_index: int,
+    backend_gradient_scale: float = 1.0,
 ) -> LossTermResult:
     term_context = (
         context
@@ -413,6 +448,7 @@ def _compute_token_term_contribution(
         local_micro_step_index=local_micro_step_index,
     )
     raw = segment_balanced_contribution(loss_slice, denominator=denominator)
+    raw = raw * float(backend_gradient_scale)
     weighted = raw * float(weight)
     if len(term_context.atoms) > 0:
         token_weighted = per_atom_losses.detach().mean()
@@ -428,6 +464,7 @@ def _compute_token_term_contribution(
         "denominator_scope": denominator.denominator_scope,
         "context_count": denominator.context_count,
         "local_micro_step_index": int(local_micro_step_index),
+        "backend_gradient_scale": float(backend_gradient_scale),
     }
     if token_types is not None:
         diagnostics["configured_token_types"] = list(token_types)
@@ -548,6 +585,225 @@ def _build_denominator_from_token_sequences(
         skipped_segment_count=skipped_segment_count,
         context_count=len(token_sequences),
     )
+
+
+def _resolve_streaming_denominators(
+    local_denominators: Mapping[str, SegmentBalancedDenominator],
+    *,
+    denominator_gatherer: Callable[
+        [Mapping[str, Mapping[str, Any]]],
+        Sequence[Mapping[str, Mapping[str, Any]]],
+    ]
+    | None,
+    world_size: int,
+    rank: int,
+) -> tuple[dict[str, SegmentBalancedDenominator], str, float]:
+    checked_world_size = _checked_world_size(world_size)
+    checked_rank = _checked_rank(rank, world_size=checked_world_size)
+    local = {str(name): denominator for name, denominator in local_denominators.items()}
+    if checked_world_size == 1:
+        return local, "planned_step", 1.0
+    if denominator_gatherer is None:
+        raise LossContractError(
+            "multi-rank streaming segment-balanced losses require denominator gathering",
+            code="loss.global_denominator_gather_unavailable",
+            context={"world_size": checked_world_size, "rank": checked_rank},
+        )
+    local_payload = {
+        name: denominator.to_artifact_dict() for name, denominator in local.items()
+    }
+    gathered_payloads = tuple(denominator_gatherer(local_payload))
+    if len(gathered_payloads) != checked_world_size:
+        raise LossContractError(
+            "global denominator gather returned the wrong number of rank payloads",
+            code="loss.global_denominator_gather_count",
+            context={
+                "world_size": checked_world_size,
+                "rank": checked_rank,
+                "payload_count": len(gathered_payloads),
+            },
+        )
+    return (
+        _merge_global_denominators(local, gathered_payloads),
+        "planned_step_global",
+        float(checked_world_size),
+    )
+
+
+def _merge_global_denominators(
+    local_denominators: Mapping[str, SegmentBalancedDenominator],
+    gathered_payloads: tuple[Mapping[str, Mapping[str, Any]], ...],
+) -> dict[str, SegmentBalancedDenominator]:
+    merged: dict[str, SegmentBalancedDenominator] = {}
+    for term_name, local_denominator in local_denominators.items():
+        eligible_segment_count = 0
+        selected_atom_count = 0
+        skipped_segment_count = 0
+        context_count = 0
+        for rank_index, rank_payload in enumerate(gathered_payloads):
+            if not isinstance(rank_payload, Mapping):
+                raise LossContractError(
+                    "global denominator gather payload must be a mapping",
+                    code="loss.global_denominator_payload",
+                    context={
+                        "term": term_name,
+                        "rank_index": rank_index,
+                        "value_type": type(rank_payload).__name__,
+                    },
+                )
+            if term_name not in rank_payload:
+                raise LossContractError(
+                    "global denominator gather payload is missing a term",
+                    code="loss.global_denominator_payload",
+                    context={
+                        "term": term_name,
+                        "rank_index": rank_index,
+                        "available_terms": sorted(str(name) for name in rank_payload),
+                    },
+                )
+            term_payload = rank_payload[term_name]
+            if not isinstance(term_payload, Mapping):
+                raise LossContractError(
+                    "global denominator term payload must be a mapping",
+                    code="loss.global_denominator_payload",
+                    context={
+                        "term": term_name,
+                        "rank_index": rank_index,
+                        "value_type": type(term_payload).__name__,
+                    },
+                )
+            payload_term_name = str(term_payload.get("term_name", term_name))
+            if payload_term_name != term_name:
+                raise LossContractError(
+                    "global denominator term payload name must match the gather key",
+                    code="loss.global_denominator_payload",
+                    context={
+                        "expected_term": term_name,
+                        "observed_term": payload_term_name,
+                        "rank_index": rank_index,
+                    },
+                )
+            eligible_segment_count += _int_payload_field(
+                term_payload,
+                "eligible_segment_count",
+                term=term_name,
+                rank_index=rank_index,
+            )
+            selected_atom_count += _int_payload_field(
+                term_payload,
+                "selected_atom_count",
+                term=term_name,
+                rank_index=rank_index,
+            )
+            skipped_segment_count += _int_payload_field(
+                term_payload,
+                "skipped_segment_count",
+                term=term_name,
+                rank_index=rank_index,
+            )
+            context_count += _int_payload_field(
+                term_payload,
+                "context_count",
+                term=term_name,
+                rank_index=rank_index,
+            )
+        if eligible_segment_count <= 0:
+            raise LossContractError(
+                "segment_balanced reducer requires at least one globally eligible segment",
+                code="loss.segment_balanced_zero_eligible",
+                context={
+                    "term": term_name,
+                    "selected_atom_count": selected_atom_count,
+                    "skipped_segment_count": skipped_segment_count,
+                    "context_count": context_count,
+                },
+            )
+        merged[term_name] = SegmentBalancedDenominator(
+            term_name=term_name,
+            denominator_scope="planned_step_global",
+            eligible_segment_count=eligible_segment_count,
+            selected_atom_count=selected_atom_count,
+            skipped_segment_count=skipped_segment_count,
+            context_count=context_count,
+        )
+        if local_denominator.term_name != term_name:
+            raise LossContractError(
+                "local denominator term name must match its key",
+                code="loss.global_denominator_payload",
+                context={
+                    "expected_term": term_name,
+                    "observed_term": local_denominator.term_name,
+                },
+            )
+    return merged
+
+
+def _checked_world_size(world_size: int) -> int:
+    if isinstance(world_size, bool) or int(world_size) <= 0:
+        raise LossContractError(
+            "global denominator world_size must be a positive integer",
+            code="loss.global_denominator_world_size",
+            context={"world_size": world_size},
+        )
+    return int(world_size)
+
+
+def _checked_rank(rank: int, *, world_size: int) -> int:
+    checked_rank = int(rank)
+    if isinstance(rank, bool) or checked_rank < 0 or checked_rank >= world_size:
+        raise LossContractError(
+            "global denominator rank must be within world_size",
+            code="loss.global_denominator_rank",
+            context={"rank": rank, "world_size": world_size},
+        )
+    return checked_rank
+
+
+def _int_payload_field(
+    payload: Mapping[str, Any],
+    field: str,
+    *,
+    term: str,
+    rank_index: int,
+) -> int:
+    value = payload.get(field)
+    if isinstance(value, bool):
+        raise LossContractError(
+            "global denominator payload field must be an integer",
+            code="loss.global_denominator_payload",
+            context={
+                "term": term,
+                "rank_index": rank_index,
+                "field": field,
+                "value_type": type(value).__name__,
+            },
+        )
+    try:
+        coerced = int(value)
+    except (TypeError, ValueError) as exc:
+        raise LossContractError(
+            "global denominator payload field must be an integer",
+            code="loss.global_denominator_payload",
+            context={
+                "term": term,
+                "rank_index": rank_index,
+                "field": field,
+                "value_type": type(value).__name__,
+            },
+            cause=exc,
+        ) from exc
+    if coerced < 0:
+        raise LossContractError(
+            "global denominator payload field must be non-negative",
+            code="loss.global_denominator_payload",
+            context={
+                "term": term,
+                "rank_index": rank_index,
+                "field": field,
+                "value": coerced,
+            },
+        )
+    return coerced
 
 
 def _build_counts_from_token_sequences(

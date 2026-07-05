@@ -40,19 +40,30 @@ Packing materialization SHALL support a deterministic reusable cache for packed
 micro-step plans. For the same dataset content, template, object-ordering
 policy, Qwen token/processor identity, no-resize processor controls, and
 `packing.global_max_length`, a cache hit MUST avoid rendering, encoding, and
-packing the dataset again. A cache miss MUST materialize the cache through a
-forced default of 16 CPU workers. The worker count MUST be recorded in the cache
-manifest or packing receipt as operational provenance, but it MUST NOT
-participate in the semantic cache fingerprint because changing worker count
-must not create a different training example order or supervision contract.
+packing the dataset again. The semantic fingerprint MUST also include source
+identity for the renderer/template code, Qwen encoding code, packing planner,
+packed supervision builder, and supervision-token construction so code changes
+that alter examples cannot reuse stale caches. A cache miss MUST materialize
+the cache through a forced default of 16 CPU workers. The worker count MUST be
+recorded in the cache manifest or packing receipt as operational provenance,
+but it MUST NOT participate in the semantic cache fingerprint because changing
+worker count must not create a different training example order or supervision
+contract.
 
 #### Scenario: Same template and data are relaunched
 
 - **GIVEN** a complete packing cache exists for the dataset/template/Qwen
-  encoding/processor/global-length identity
+  encoding/processor/global-length/code identity
 - **WHEN** a later run uses the same semantic inputs
 - **THEN** the training pipeline MUST load the cached micro-step plan
 - **AND** MUST NOT repack the JSONL again.
+
+#### Scenario: Renderer code changes
+
+- **WHEN** renderer, Qwen encoding, packing planner, supervision builder, or
+  supervision-token construction source identity changes
+- **THEN** the packing-cache fingerprint MUST change
+- **AND** the run MUST rebuild rather than trusting an older semantic cache.
 
 #### Scenario: Cache miss on production JSONL
 

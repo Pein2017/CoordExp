@@ -37,17 +37,25 @@ Video and multi-image payloads MUST fail before template rendering.
 
 `src/templates` SHALL render validated examples into English Qwen chat
 messages, prompt text, `supervised_response_text`, typed character spans, and
-realized object order. V1 MUST support `source_order` and deterministic
-`random` object-ordering policies, and the defining smoke fixture MUST use
-`source_order`. Legacy `sorted` MUST be rejected by V1 config validation.
-Future geometric sorting MUST use a deliberately approved name such as
-`geometry_sorted` with an explicit key definition.
+realized object order. V1 MUST support `source_order`, `geo_sorted`, and
+deterministic `random` object-ordering policies, and the defining smoke fixture
+MUST use `source_order`. `geo_sorted` is a source-order geometry assertion: it
+MUST verify that authored objects are already top-to-bottom then left-to-right
+and MUST NOT reorder objects itself. Legacy `sorted` MUST be rejected by V1
+config validation.
 
 #### Scenario: Legacy sorted object ordering configured
 
 - **WHEN** `object_ordering: sorted` is configured
 - **THEN** config validation MUST reject the legacy value
 - **AND** MUST NOT reinterpret it as source order or a geometric sort.
+
+#### Scenario: Geo-sorted assertion configured
+
+- **WHEN** `object_ordering: geo_sorted` is configured
+- **THEN** the renderer MUST preserve source row order
+- **AND** MUST fail if the source rows are not already in the approved
+  top-to-bottom then left-to-right geometry order.
 
 #### Scenario: Random object ordering configured
 

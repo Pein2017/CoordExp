@@ -101,9 +101,9 @@ row-level score provenance. The run MUST write
 `gt_vs_pred_scored.jsonl.provenance.json` with artifact schema version, source
 raw artifact SHA256 identity, scored artifact SHA256 identity when available,
 detection template id, prompt policy fingerprint, decode policy or generation
-config fingerprint, model identity fingerprint, processor identity fingerprint,
-template identity, parser policy, score policy fingerprint, and row-count or
-row-identity binding evidence.
+config fingerprint, full resolved generation policy, model identity
+fingerprint, processor identity fingerprint, template identity, parser policy,
+score policy fingerprint, and row-count or row-identity binding evidence.
 
 #### Scenario: Complete provenance
 - **WHEN** scored output is written
@@ -143,13 +143,21 @@ an unrecorded in-memory calculation.
 `run_manifest.json` SHALL record inference artifact paths and identity fields.
 Required fields include resolved config fingerprints, model and adapter
 identity, backend, backend mode, response family, dataset identity, generation
-config, score policy fingerprint, trace/scoring status, prompt/template
-identity, processor identity, and evaluator-consumer status.
+config fingerprint, resolved generation policy, score policy fingerprint,
+trace/scoring status, prompt/template identity, processor identity, and
+evaluator-consumer status. `summary.json` SHALL record parse failure counts,
+dropped prediction counts, truncation/length-stop counts, and decode stop
+reason counts.
 
 #### Scenario: Manifest after successful run
 - **WHEN** inference completes successfully
 - **THEN** `run_manifest.json` links every required artifact and records
-  trace/scoring status
+  trace/scoring status and the resolved generation policy
+
+#### Scenario: Decode truncation occurs
+- **WHEN** any row stops because `max_new_tokens` was exhausted
+- **THEN** summary artifacts MUST count the length-stop/truncated rows
+- **AND** the scored artifact family MUST preserve parse-drop diagnostics.
 
 #### Scenario: Partial artifact materialization
 - **WHEN** required scored artifacts are missing after a scored run

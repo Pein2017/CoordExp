@@ -907,6 +907,11 @@ def test_training_artifact_bridge_writes_train_metrics_and_forward_receipt(tmp_p
         ),
         optimizer_update_status="applied",
         finite_status="finite",
+        scheduler_artifact={
+            "scheduler_step_count": 1,
+            "scheduler_last_epoch": 1,
+            "learning_rates": [{"group_index": 0, "lr": 0.0002}],
+        },
     )
 
     bridge(
@@ -925,7 +930,11 @@ def test_training_artifact_bridge_writes_train_metrics_and_forward_receipt(tmp_p
         ("train", "loss/total"),
         ("train", "acc_top1"),
         ("train", "acc_top5"),
+        ("train", "lr/group_0"),
     }
+    lr_records = [record for record in train_records if record["name"] == "lr/group_0"]
+    assert len(lr_records) == 1
+    assert lr_records[0]["value"] == 0.0002
     assert all(record["optimizer_update_status"] == "applied" for record in train_records)
     qwen_receipt = __import__("json").loads(
         (manager.run_dir / "receipts" / "qwen" / "forward_step_1.json").read_text()
@@ -1110,10 +1119,22 @@ def test_checkpoint_handler_uses_same_step_eval_acc_top1_for_best_selection(
                 qwen_forward_receipts=(),
                 optimizer_update_status="applied",
                 finite_status="finite",
+                scheduler_artifact={
+                    "scheduler_step_count": 2,
+                    "scheduler_last_epoch": 2,
+                    "learning_rates": [{"group_index": 0, "lr": 0.0001}],
+                },
             ),
         )
     )
 
+    checkpoint = __import__("json").loads(
+        (manager.run_dir / "checkpoints" / "step-2" / "checkpoint.json").read_text()
+    )
+    assert checkpoint["metric_status"]["scheduler"]["scheduler_step_count"] == 2
+    assert checkpoint["metric_status"]["scheduler"]["learning_rates"] == [
+        {"group_index": 0, "lr": 0.0001}
+    ]
     best_alias = __import__("json").loads(
         (manager.run_dir / "checkpoints" / "best_acc_top1.json").read_text()
     )

@@ -14,7 +14,8 @@ present. Tiny Wave 7 smokes remain implementation evidence only.
 - Accepted val200 dataset: `outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl`
 - Base model: `/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent`
 - Adapter checkpoint: `outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_accelerate8_ebs64_4epoch_warmup0p1-prod8-r16a32-ebs64-warmup0p1-20260702T170007Z/checkpoints/step-917/adapter`
-- Embedding delta for accepted val200 launch: `outputs/coordexp_swift/infer/val200_support/repaired_special_token_embeddings_step917`
+- Official repaired embedding delta support payload for accepted val200 launch: `outputs/coordexp_swift/infer/val200_support/repaired_special_token_embeddings_step917`
+- Repair receipt: `outputs/coordexp_swift/infer/val200_support/repaired_special_token_embeddings_step917/repair_receipt.json`
 - Artifact root: `outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-pure-ce-dora-r16a32-step917-val200-20260703T035007Z`
 - Evaluator command:
 
@@ -36,6 +37,9 @@ PY
 - Accepted metrics path: `outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-pure-ce-dora-r16a32-step917-val200-20260703T035007Z/eval_coco_fixed_gt_scale/metrics.json`.
 - Accepted metrics: `mAP=0.4111788135144427`, `mAP_50=0.5616311086141887`, `mAP_75=0.43402742703563857`, `mRecall=0.4790356074108587`.
 - Optional full-dataset benchmark config remains available at `configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_benchmark.yaml`, but it is not a required V1 gate.
+- Scheduler caveat: `step-917` remains valid model/eval evidence, but the
+  historical production run should not be cited as clean warmup/cosine schedule
+  evidence unless its actual LR trajectory is reconstructed.
 - Rollback path: do not delete smoke, val200, or benchmark artifacts; preserve the run directory and revert only the relevant config/runtime/doc changes if a future broader launch is rejected.
 
 ## Current Blockers

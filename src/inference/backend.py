@@ -22,7 +22,7 @@ class DecodeRequest:
     prompt_token_ids: list[int]
     model_inputs: Mapping[str, Any]
     max_new_tokens: int
-    repetition_penalty: float = 1.10
+    repetition_penalty: float = 1.0
 
 
 @dataclass(frozen=True)

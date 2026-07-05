@@ -187,6 +187,28 @@ def test_unknown_keys_and_legacy_aliases_fail(
         load_train_config(config_path)
 
 
+def test_train_order_defaults_to_source_order_and_rejects_shuffle(tmp_path: Path) -> None:
+    default_path = tmp_path / "default.yaml"
+    payload = _minimal_config()
+    payload["data"].pop("train_order", None)
+    _write_yaml(default_path, payload)
+
+    resolved = load_train_config(default_path)
+
+    assert resolved.config.data.train_order == "source_order"
+
+    shuffle_path = tmp_path / "shuffle.yaml"
+    payload = _minimal_config()
+    payload["data"]["train_order"] = "shuffle"
+    _write_yaml(shuffle_path, payload)
+
+    with pytest.raises(ConfigContractError) as exc_info:
+        load_train_config(shuffle_path)
+
+    assert "source_order" in str(exc_info.value)
+    assert "shuffle" in str(exc_info.value)
+
+
 def test_legacy_dlora_adapter_spelling_explains_v1_dora_name(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     payload = _minimal_config()

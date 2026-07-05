@@ -186,6 +186,55 @@ def test_loss_runner_streaming_micro_contributions_match_planned_step_compute() 
     assert artifact["counts"] == full.counts
 
 
+def test_loss_runner_global_streaming_denominator_scales_for_ddp_mean() -> None:
+    context = _context(
+        _logits(
+            (
+                (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 3.0),
+                (0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 1.0),
+            ),
+            requires_grad=True,
+        ),
+        (_segment(0, 0, 2),),
+        (_atom(segment_index=0, target_position=1, token_id=7),),
+    )
+    runner = LossRunner(
+        base_ce_weight=1.0,
+        token_type_gate_weight=0.0,
+        token_type_gate_groups=("desc_text",),
+    )
+    local_base_loss = BaseTokenCE().per_atom_loss(context).sum()
+
+    def gatherer(local_payload):
+        peer = {
+            name: {
+                **dict(payload),
+                "eligible_segment_count": 3,
+                "selected_atom_count": 3,
+                "skipped_segment_count": 0,
+                "context_count": 3,
+            }
+            for name, payload in local_payload.items()
+        }
+        return (local_payload, peer)
+
+    plan = runner.prepare_planned_step(
+        (context.token_sequence,),
+        denominator_gatherer=gatherer,
+        world_size=2,
+        rank=0,
+    )
+    bundle = runner.compute_micro_step(context, plan, local_micro_step_index=0)
+
+    term = bundle.term_by_name("base_ce")
+    assert plan.denominator_scope == "planned_step_global"
+    assert plan.backend_gradient_scale == 2.0
+    assert term.denominator.denominator_scope == "planned_step_global"
+    assert term.denominator.eligible_segment_count == 4
+    assert torch.allclose(term.raw_loss, local_base_loss / 4.0 * 2.0)
+    assert term.diagnostics["backend_gradient_scale"] == 2.0
+
+
 def test_loss_runner_requires_explicit_configured_weights() -> None:
     config = LossesConfig(
         normalizer="segment_balanced",

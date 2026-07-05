@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import inspect
 import os
 import time
 from typing import Any, Protocol
@@ -55,6 +56,7 @@ class PlannedStepResult:
     qwen_forward_receipts: tuple[Mapping[str, Any], ...]
     optimizer_update_status: str
     finite_status: str
+    scheduler_artifact: Mapping[str, Any] = field(default_factory=dict)
 
     def to_artifact_dict(self) -> dict[str, Any]:
         return {
@@ -70,6 +72,7 @@ class PlannedStepResult:
             "qwen_forward_receipts": [dict(item) for item in self.qwen_forward_receipts],
             "optimizer_update_status": self.optimizer_update_status,
             "finite_status": self.finite_status,
+            "scheduler": dict(self.scheduler_artifact),
         }
 
 
@@ -122,7 +125,7 @@ class RuntimeBoundary(Protocol):
 
     def optimizer_step(self, *, planned_step_id: int) -> None: ...
 
-    def scheduler_step(self, *, planned_step_id: int) -> None: ...
+    def scheduler_step(self, *, planned_step_id: int) -> Mapping[str, Any] | None: ...
 
     def zero_gradients(self, *, planned_step_id: int) -> None: ...
 
@@ -266,7 +269,9 @@ class SupervisedTrainer:
                     self.runtime.optimizer_step(planned_step_id=planned_step_id)
                     optimizer_update_status = "applied"
 
-            self.runtime.scheduler_step(planned_step_id=planned_step_id)
+            scheduler_artifact = _optional_artifact(
+                self.runtime.scheduler_step(planned_step_id=planned_step_id)
+            )
             self.runtime.zero_gradients(planned_step_id=planned_step_id)
 
             step_result = PlannedStepResult(
@@ -278,6 +283,7 @@ class SupervisedTrainer:
                 qwen_forward_receipts=tuple(qwen_receipts),
                 optimizer_update_status=optimizer_update_status,
                 finite_status=finite_status,
+                scheduler_artifact=scheduler_artifact,
             )
             step_results.append(step_result)
             self._emit(
@@ -320,7 +326,13 @@ class SupervisedTrainer:
             )
 
         prepare_start_ns = time.perf_counter_ns()
-        plan = self.loss_runner.prepare_planned_step(tuple(moved_micro_steps))
+        plan = _prepare_streaming_loss_plan(
+            self.loss_runner,
+            tuple(moved_micro_steps),
+            runtime=self.runtime,
+            schedule=self.schedule,
+            planned_step_id=planned_step_id,
+        )
         self._emit(
             "planned_step.prepared",
             planned_step_id,
@@ -475,7 +487,9 @@ class SupervisedTrainer:
                 self.runtime.optimizer_step(planned_step_id=planned_step_id)
                 optimizer_update_status = "applied"
 
-        self.runtime.scheduler_step(planned_step_id=planned_step_id)
+        scheduler_artifact = _optional_artifact(
+            self.runtime.scheduler_step(planned_step_id=planned_step_id)
+        )
         self.runtime.zero_gradients(planned_step_id=planned_step_id)
 
         return (
@@ -488,6 +502,7 @@ class SupervisedTrainer:
                 qwen_forward_receipts=tuple(qwen_receipts),
                 optimizer_update_status=optimizer_update_status,
                 finite_status=finite_status,
+                scheduler_artifact=scheduler_artifact,
             ),
             len(moved_micro_steps),
         )
@@ -606,6 +621,79 @@ def _supports_streaming_loss(loss_runner: Any) -> bool:
     )
 
 
+def _prepare_streaming_loss_plan(
+    loss_runner: Any,
+    moved_micro_steps: tuple[SupervisedMicroStep, ...],
+    *,
+    runtime: RuntimeBoundary,
+    schedule: ResolvedStepSchedule,
+    planned_step_id: int,
+) -> Any:
+    prepare_planned_step = loss_runner.prepare_planned_step
+    world_size = int(schedule.runtime_batch.world_size)
+    if not _call_accepts_keyword(prepare_planned_step, "denominator_gatherer"):
+        if world_size > 1:
+            raise RuntimeContractError(
+                "multi-rank streaming loss runner must support global denominator gathering",
+                code="trainer.loss_denominator_gather_unsupported",
+                context={
+                    "planned_step_id": planned_step_id,
+                    "world_size": world_size,
+                    "loss_runner": type(loss_runner).__name__,
+                },
+            )
+        return prepare_planned_step(moved_micro_steps)
+
+    denominator_gatherer = _runtime_loss_denominator_gatherer(
+        runtime,
+        planned_step_id=planned_step_id,
+        world_size=world_size,
+    )
+    return prepare_planned_step(
+        moved_micro_steps,
+        denominator_gatherer=denominator_gatherer,
+        world_size=world_size,
+        rank=int(getattr(runtime, "rank", 0)),
+    )
+
+
+def _runtime_loss_denominator_gatherer(
+    runtime: RuntimeBoundary,
+    *,
+    planned_step_id: int,
+    world_size: int,
+) -> Callable[[Mapping[str, Mapping[str, Any]]], Sequence[Mapping[str, Mapping[str, Any]]]] | None:
+    gather_loss_denominators = getattr(runtime, "gather_loss_denominators", None)
+    if callable(gather_loss_denominators):
+        return lambda payload: gather_loss_denominators(
+            payload,
+            planned_step_id=planned_step_id,
+        )
+    if world_size > 1:
+        raise RuntimeContractError(
+            "multi-rank streaming loss requires runtime denominator gathering",
+            code="trainer.loss_denominator_gather_unavailable",
+            context={"planned_step_id": planned_step_id, "world_size": world_size},
+        )
+    return None
+
+
+def _call_accepts_keyword(callable_obj: Any, keyword: str) -> bool:
+    try:
+        signature = inspect.signature(callable_obj)
+    except (TypeError, ValueError):
+        return False
+    for parameter in signature.parameters.values():
+        if parameter.kind == inspect.Parameter.VAR_KEYWORD:
+            return True
+        if parameter.name == keyword and parameter.kind in (
+            inspect.Parameter.KEYWORD_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        ):
+            return True
+    return False
+
+
 def _default_loss_context(
     micro_step: SupervisedMicroStep,
     forward_result: Any,
@@ -683,6 +771,12 @@ def _artifact(value: Any) -> Mapping[str, Any]:
     if isinstance(value, Mapping):
         return value
     return {"repr": repr(value)}
+
+
+def _optional_artifact(value: Any) -> Mapping[str, Any]:
+    if value is None:
+        return {}
+    return _artifact(value)
 
 
 def _partial_loss_artifact(

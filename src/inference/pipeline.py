@@ -225,6 +225,7 @@ def _artifact_input_row(
         "image_height": raw_example.image.height,
         "gt": [obj.to_artifact_dict() for obj in raw_example.objects],
         "raw_decode_text": decode_result.raw_generated_text,
+        "decode_stop_reason": str(getattr(decode_result, "stop_reason", "")),
         "parse": parse_row,
     }
 
@@ -236,11 +237,14 @@ def _pipeline_counters(*, rows: list[dict[str, Any]], decode_success_count: int)
         if row["parse"].parse_status not in {"accepted", "accepted_with_drops"}
     )
     dropped_prediction_count = sum(row["parse"].dropped_prediction_count for row in rows)
+    decode_stop_reasons = Counter(str(row.get("decode_stop_reason", "")) for row in rows)
     return {
         "terminal_status": "completed",
         "decode_success_count": decode_success_count,
         "parser_failure_count": parser_failure_count,
         "dropped_prediction_count": dropped_prediction_count,
+        "truncated_decode_count": int(decode_stop_reasons.get("length", 0)),
+        "decode_stop_reasons": dict(sorted(decode_stop_reasons.items())),
         "image_validation_failure_count": 0,
         "score_failure_count": 0,
     }
@@ -285,6 +289,7 @@ def _base_metadata(*, resolved: ResolvedInferConfig) -> dict[str, Any]:
         "generation_config_fingerprint": _fingerprint(
             resolved.config.generation.model_dump(mode="json")
         ),
+        "generation_policy": _generation_policy(resolved.config),
         "model_identity_fingerprint": "unknown-before-runtime",
         "processor_identity_fingerprint": "unknown-before-runtime",
         "template_identity": {
@@ -356,6 +361,20 @@ def _template_config(config: InferConfig) -> TemplateConfig:
             user=config.template.prompt.user,
         ),
     )
+
+
+def _generation_policy(config: InferConfig) -> dict[str, Any]:
+    return {
+        "batch_size": int(config.generation.batch_size),
+        "max_new_tokens": int(config.generation.max_new_tokens),
+        "temperature": float(config.generation.temperature),
+        "top_p": float(config.generation.top_p),
+        "repetition_penalty": float(config.generation.repetition_penalty),
+        "do_sample": False,
+        "return_dict_in_generate": True,
+        "output_scores": True,
+        "stop_policy": "qwen_im_end",
+    }
 
 
 def _prompt_record_by_id(records: Sequence[Any], row_id: str) -> Any:

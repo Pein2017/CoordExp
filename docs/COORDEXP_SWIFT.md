@@ -98,6 +98,22 @@ Do not treat the full-dataset benchmark config as a required readiness gate.
 Production training checkpoint:
 
 - `outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_accelerate8_ebs64_4epoch_warmup0p1-prod8-r16a32-ebs64-warmup0p1-20260702T170007Z/checkpoints/step-917`
+- This checkpoint is valid model/eval evidence for the accepted val200 result,
+  but do not cite that historical run as clean evidence for the declared
+  warmup/cosine LR trajectory unless the actual LR trajectory is reconstructed.
+  The stabilized runtime keeps scheduler ownership in CoordExp, does not pass
+  the scheduler through `accelerator.prepare(...)`, and records actual
+  `lr/group_*` values plus scheduler state on planned-step artifacts.
+
+Official repaired special-token embedding support payload for the accepted
+step-917 val200 launch:
+
+- `outputs/coordexp_swift/infer/val200_support/repaired_special_token_embeddings_step917`
+- `outputs/coordexp_swift/infer/val200_support/repaired_special_token_embeddings_step917/repair_receipt.json`
+- New checkpoints written after the stabilization pass also create
+  `checkpoint_handoff.json` beside `checkpoint.json` so inference can discover
+  base identity, adapter payload, selected embedding-delta payload, trainable
+  token set, and intended config family from one file.
 
 Accepted val200 inference/eval run:
 
@@ -120,6 +136,28 @@ Key values from that metrics file:
 The evaluator converts inline GT norm1000 coord-bin boxes to pixel `xyxy`.
 Scored predictions are already parser-normalized pixel `xyxy`. Mixed-unit
 COCO sidecars are invalid.
+
+## Stabilized Contracts
+
+- `data.train_order` is `source_order` only in V1. Unsupported values such as
+  `shuffle` are rejected rather than allowed to perturb cache fingerprints
+  without changing behavior.
+- `template.object_ordering: geo_sorted` is a source-order geometry assertion:
+  it preserves authored object order and fails if rows are not already
+  top-to-bottom then left-to-right. It is not a silent sort. Legacy `sorted` is
+  rejected.
+- Packing-cache identity includes dataset/template/Qwen/processor/global-length
+  inputs plus code identity for renderer, Qwen encoding, packing planner,
+  packed supervision, and supervision-token construction. Worker count is
+  provenance only.
+- Distributed `segment_balanced` protected losses use an all-rank planned-step
+  denominator, with backend gradient scaling recorded in diagnostics.
+- Selected special-token embedding deltas are owned and checkpointed as fp32
+  compact payloads even when the base Qwen model runs bf16.
+- Inference code defaults are neutral: deterministic greedy generation with
+  `repetition_penalty=1.0`. Non-neutral decode choices, including the current
+  step-917 val200 `repetition_penalty=1.10`, must come from explicit config and
+  are recorded in generation-policy artifacts.
 
 ## Evaluation Gate Policy
 

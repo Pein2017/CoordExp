@@ -122,11 +122,23 @@ def test_pipeline_orchestrates_batched_decode_and_artifact_writing(tmp_path: Pat
     assert summary["row_count"] == 3
     assert summary["decode_success_count"] == 3
     assert summary["parser_failure_count"] == 0
+    assert summary["truncated_decode_count"] == 3
+    assert summary["decode_stop_reasons"] == {"length": 3}
+    assert summary["generation_policy"]["repetition_penalty"] == pytest.approx(1.0)
+    assert summary["generation_policy"]["do_sample"] is False
     assert summary["terminal_status"] == "completed"
     assert manifest["trace_scoring_status"] == "scored"
     assert manifest["backend"] == "hf"
+    assert manifest["generation_policy"]["repetition_penalty"] == pytest.approx(1.0)
     assert manifest["evaluator_consumer_status"] == "available_not_run"
     assert (run_dir / "configs" / "resolved.json").is_file()
+    provenance = json.loads(
+        (run_dir / "gt_vs_pred_scored.jsonl.provenance.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert provenance["generation_policy"]["max_new_tokens"] == 64
+    assert raw_rows[0]["decode_stop_reason"] == "length"
 
 
 def test_pipeline_manifest_records_embedding_delta_load_receipt(tmp_path: Path) -> None:

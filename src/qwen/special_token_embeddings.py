@@ -450,7 +450,7 @@ def install_special_token_embedding_deltas(
             len(selection),
             int(base_embedding.embedding_dim),
             device=base_embedding.weight.device,
-            dtype=base_embedding.weight.dtype,
+            dtype=torch.float32,
         )
     )
     input_wrapper = SelectedDeltaInputEmbedding(base_embedding, selection, delta)

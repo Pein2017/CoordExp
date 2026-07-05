@@ -105,6 +105,9 @@ training MUST load the base model plus optional adapter plus optional selected
 embedding delta explicitly. "Approved equivalents" MUST be named by the source
 study and MUST still provide compact selected-token payloads, explicit
 additive-or-absolute semantics, tied/untied metadata, and round-trip evidence.
+The trainable selected-token delta owner parameter MUST be stored and optimized
+in fp32 even when the base Qwen model runs bf16/fp16; forward wrappers MAY cast
+the delta to the model/output dtype at application boundaries.
 
 #### Scenario: Checkpoint with embedding deltas
 
@@ -113,6 +116,13 @@ additive-or-absolute semantics, tied/untied metadata, and round-trip evidence.
   `special_token_embeddings.json` or approved equivalents
 - **AND** metadata MUST record token strings, token ids, dtype, shape, and
   tied/untied behavior.
+
+#### Scenario: bf16 base model with selected embedding delta
+
+- **WHEN** selected special-token embedding deltas are installed on a bf16 base
+  Qwen model
+- **THEN** the shared trainable delta parameter MUST have dtype fp32
+- **AND** checkpoint metadata MUST record the fp32 tensor dtype.
 
 ### Requirement: Explicit Optimizer Groups
 

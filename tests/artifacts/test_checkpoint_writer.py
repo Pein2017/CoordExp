@@ -58,10 +58,13 @@ def test_checkpoint_writer_saves_payloads_metadata_and_final_alias(
 
     checkpoint_dir = tmp_path / "run-a" / "checkpoints" / "step-5"
     metadata_path = checkpoint_dir / "checkpoint.json"
+    handoff_path = checkpoint_dir / "checkpoint_handoff.json"
     final_alias_path = tmp_path / "run-a" / "checkpoints" / "checkpoint-final.json"
 
     assert result.metadata_path == metadata_path
+    assert result.handoff_path == handoff_path
     assert metadata_path.exists()
+    assert handoff_path.exists()
     assert final_alias_path.exists()
     assert not (tmp_path / "run-a" / "checkpoints" / "step-000005").exists()
     assert (checkpoint_dir / "adapter" / "adapter_config.json").exists()
@@ -81,6 +84,7 @@ def test_checkpoint_writer_saves_payloads_metadata_and_final_alias(
     assert metadata["checkpoint_path"] == "checkpoints/step-5"
     assert metadata["optimizer_update_status"] == "skipped_non_finite"
     assert metadata["resolved_config_fingerprint"] == "config-fingerprint"
+    assert metadata["checkpoint_handoff"] == "checkpoints/step-5/checkpoint_handoff.json"
     assert metadata["processor_identity"] == {"name": "qwen3-vl-test-processor"}
     assert metadata["adapter"]["enabled"] is True
     assert metadata["adapter"]["payload_path"] == "checkpoints/step-5/adapter"
@@ -116,6 +120,29 @@ def test_checkpoint_writer_saves_payloads_metadata_and_final_alias(
     assert "optimizer_state" not in metadata
     assert "scheduler_state" not in metadata
     assert "rng_state" not in metadata
+    handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+    assert handoff["base_model"] == {
+        "path": "/models/qwen-base",
+        "base_config_sha256": "base-config-sha",
+        "tokenizer_sha256": "tokenizer-sha",
+    }
+    assert handoff["adapter"]["payload_path"] == "checkpoints/step-5/adapter"
+    assert handoff["adapter"]["files"] == [
+        "checkpoints/step-5/adapter/adapter_config.json",
+        "checkpoints/step-5/adapter/adapter_model.safetensors",
+    ]
+    assert handoff["special_token_embeddings"]["metadata_path"] == (
+        "checkpoints/step-5/special_token_embeddings/"
+        f"{SPECIAL_TOKEN_EMBEDDINGS_JSON}"
+    )
+    assert handoff["special_token_embeddings"]["tensor_dtype"] == "float32"
+    assert handoff["trainable_token_set"]["token_ids"] == [2, 3]
+    assert handoff["trainable_token_set"]["token_strings"] == [
+        "<|object_ref_start|>",
+        "<|coord_0|>",
+    ]
+    assert handoff["intended_inference_config_family"] == "configs/coordexp_swift/infer"
+    assert handoff["accepted_eval_artifact_roots"] == []
 
     alias = json.loads(final_alias_path.read_text(encoding="utf-8"))
     assert alias["checkpoint_id"] == "step-5"

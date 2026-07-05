@@ -153,13 +153,17 @@ def test_train_runtime_scalar_and_gradient_boundaries_drive_optimizer_step() -> 
     post = runtime.post_backward(planned_step_id=3)
     runtime.clip_gradients(planned_step_id=3)
     runtime.optimizer_step(planned_step_id=3)
-    runtime.scheduler_step(planned_step_id=3)
+    scheduler_artifact = runtime.scheduler_step(planned_step_id=3)
     runtime.zero_gradients(planned_step_id=3)
 
     assert pre.should_call_backward is True
     assert post.should_call_optimizer_step is True
     assert runtime.optimizer_step_count == 1
     assert runtime.scheduler_step_count == 1
+    assert scheduler_artifact["scheduler_step_count"] == 1
+    assert scheduler_artifact["scheduler_last_epoch"] == 1
+    assert scheduler_artifact["learning_rates"] == [{"group_index": 0, "lr": 0.1}]
+    assert scheduler_artifact["semantics"]["scheduler_owner"] == "coordexp_runtime"
     assert runtime.zero_grad_count == 1
     assert all(parameter.grad is None for parameter in model.parameters())
 
@@ -287,6 +291,60 @@ def test_train_runtime_multirank_post_backward_uses_report_gatherer() -> None:
     assert decision.optimizer_update_status == "skipped_gradient_or_overflow"
     assert decision.ranks == (0, 1)
     assert decision.reason_codes == ("rank1:backend_overflow",)
+
+
+def test_train_runtime_multirank_gathers_loss_denominators() -> None:
+    calls: list[dict[str, Any]] = []
+
+    def gatherer(local_payload: Any) -> tuple[Any, Any]:
+        calls.append(dict(local_payload))
+        peer_payload = {
+            **dict(local_payload),
+            "rank": 1,
+            "denominators": {
+                name: {
+                    **dict(payload),
+                    "eligible_segment_count": 3,
+                    "selected_atom_count": 3,
+                    "context_count": 3,
+                }
+                for name, payload in local_payload["denominators"].items()
+            },
+        }
+        return (local_payload, peer_payload)
+
+    runtime = TrainRuntime(
+        runtime_config=RuntimeConfig(backend="single", seed=17),
+        runtime_batch=RuntimeBatchResolution(
+            world_size=2,
+            effective_batch_size=2,
+            resolved_grad_accum_steps=1,
+        ),
+        model=torch.nn.Linear(1, 1),
+        optimizer=None,
+        scheduler=None,
+        device="cpu",
+        rank=0,
+        world_size=2,
+        rank_report_gatherer=gatherer,
+    )
+
+    gathered = runtime.gather_loss_denominators(
+        {
+            "base_ce": {
+                "term_name": "base_ce",
+                "eligible_segment_count": 1,
+                "selected_atom_count": 1,
+                "context_count": 1,
+            }
+        },
+        planned_step_id=9,
+    )
+
+    assert calls[0]["kind"] == "loss_denominators"
+    assert calls[0]["planned_step_id"] == 9
+    assert gathered[0]["base_ce"]["eligible_segment_count"] == 1
+    assert gathered[1]["base_ce"]["eligible_segment_count"] == 3
 
 
 def test_train_runtime_multirank_requires_report_gatherer() -> None:
@@ -421,7 +479,7 @@ def test_train_runtime_deepspeed_backend_requires_accelerator() -> None:
     assert exc_info.value.code == "runtime.deepspeed_accelerator_required"
 
 
-def test_train_runtime_accelerate_backend_prepares_owned_objects() -> None:
+def test_train_runtime_accelerate_backend_keeps_scheduler_runtime_owned() -> None:
     model = torch.nn.Linear(1, 1)
     optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda _: 1.0)
@@ -450,12 +508,19 @@ def test_train_runtime_accelerate_backend_prepares_owned_objects() -> None:
     assert accelerator.prepare_calls == 1
     assert runtime.model is accelerator.prepared_objects[0]
     assert runtime.optimizer is accelerator.prepared_objects[1]
-    assert runtime.scheduler is accelerator.prepared_objects[2]
+    assert len(accelerator.prepared_objects) == 2
+    assert runtime.scheduler is scheduler
     assert runtime.setup_receipt.backend_status["accelerate"] == (
         "schema_accepted",
         "prepared",
         "active",
     )
+    receipt = runtime.setup_receipt.to_artifact_dict()
+    assert receipt["scheduler_semantics"] == {
+        "scheduler_owner": "coordexp_runtime",
+        "scheduler_prepared_by_backend": False,
+        "step_policy": "once_per_planned_step",
+    }
 
 
 def test_train_runtime_accelerate_backward_uses_no_sync_when_requested() -> None:
@@ -527,7 +592,8 @@ def test_train_runtime_deepspeed_backend_prepares_owned_objects() -> None:
     assert accelerator.prepare_calls == 1
     assert runtime.model is accelerator.prepared_objects[0]
     assert runtime.optimizer is accelerator.prepared_objects[1]
-    assert runtime.scheduler is accelerator.prepared_objects[2]
+    assert len(accelerator.prepared_objects) == 2
+    assert runtime.scheduler is scheduler
     assert runtime.setup_receipt.backend_status["deepspeed"] == (
         "schema_accepted",
         "conflict_validation_implemented",

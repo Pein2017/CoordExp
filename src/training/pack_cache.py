@@ -20,6 +20,13 @@ PACKING_CACHE_MANIFEST = "manifest.json"
 PACKING_CACHE_CHUNK_DIR = "chunks"
 DEFAULT_PACK_CACHE_MATERIALIZATION_WORKERS = 16
 PACKING_CACHE_MATERIALIZATION_STRATEGY = "fork_process_pool"
+PACKING_CACHE_CODE_IDENTITY_FILES = {
+    "template_renderer": "src/templates/renderer.py",
+    "qwen_encoding": "src/qwen/encoding.py",
+    "packing_planner": "src/packing/planner.py",
+    "packing_supervision": "src/packing/supervision.py",
+    "supervision_tokens": "src/supervision/tokens.py",
+}
 
 
 def build_packing_cache_materialization(
@@ -95,6 +102,7 @@ def build_packing_cache_determinants(
             "token_identity": token_identity.to_artifact_dict(),
             "encoding_identity": _qwen_encoding_identity(components, tokenizer=tokenizer),
         },
+        "code_identity": _packing_cache_code_identity(),
     }
 
 
@@ -334,6 +342,18 @@ def _qwen_encoding_identity(components: Any, *, tokenizer: Any) -> dict[str, Any
         ),
         "package_versions": dict(getattr(components, "package_versions", {}) or {}),
     }
+
+
+def _packing_cache_code_identity() -> dict[str, dict[str, str]]:
+    repo_root = Path(__file__).resolve().parents[2]
+    identity: dict[str, dict[str, str]] = {}
+    for name, relative_path in sorted(PACKING_CACHE_CODE_IDENTITY_FILES.items()):
+        path = repo_root / relative_path
+        identity[name] = {
+            "path": relative_path,
+            "sha256": _file_sha256(path),
+        }
+    return identity
 
 
 def _stable_text_sha256(value: Any) -> str | None:

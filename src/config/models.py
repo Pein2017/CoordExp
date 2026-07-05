@@ -111,7 +111,7 @@ class DatasetSplitConfig(StrictConfigModel):
 class DataConfig(StrictConfigModel):
     train: DatasetSplitConfig
     eval: DatasetSplitConfig | None = None
-    train_order: Literal["shuffle", "source_order"] = "shuffle"
+    train_order: Literal["source_order"] = "source_order"
 
 
 class TemplatePromptConfig(StrictConfigModel):

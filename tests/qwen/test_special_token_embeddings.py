@@ -191,6 +191,30 @@ def test_tied_special_token_deltas_affect_only_selected_inputs_and_logits() -> N
     assert result.output_wrapper.base.weight.grad is None
 
 
+def test_special_token_embedding_delta_owner_dtype_is_fp32_for_bf16_base() -> None:
+    model = TinyTiedQwenModel(vocab_size=8, hidden_size=4).to(dtype=torch.bfloat16)
+    selection = SpecialTokenSelection(token_strings=("<a>", "<b>"), token_ids=(2, 5))
+
+    result = install_special_token_embedding_deltas(
+        model,
+        selection,
+        source_gate=_source_gate(selected_count=2),
+    )
+
+    assert result.input_wrapper.base.weight.dtype == torch.bfloat16
+    assert result.output_wrapper.base.weight.dtype == torch.bfloat16
+    assert result.shared_embed_delta.dtype == torch.float32
+    assert result.receipt.delta_dtype == "float32"
+    assert (
+        result.receipt.to_metadata_dict(
+            base_model_path=None,
+            base_config_sha256=None,
+            tokenizer_sha256=None,
+        )["tensor_dtype"]
+        == "float32"
+    )
+
+
 def test_selected_delta_output_head_avoids_full_logits_clone() -> None:
     torch.manual_seed(13)
     base = nn.Linear(4, 128, bias=False)

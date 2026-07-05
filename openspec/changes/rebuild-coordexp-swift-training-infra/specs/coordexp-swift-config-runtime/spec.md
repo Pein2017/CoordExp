@@ -48,6 +48,14 @@ chain.
 - **AND** the resolved artifacts MUST include source fingerprints and path
   origins for inherited config files and path-valued fields.
 
+#### Scenario: Unsupported train order configured
+
+- **WHEN** a V1 training config sets `data.train_order` to any value other
+  than `source_order`
+- **THEN** config validation MUST fail before cache fingerprinting or packing
+- **AND** the unsupported value MUST NOT change cache identity without changing
+  example order behavior.
+
 #### Scenario: Child config overrides inherited values
 
 - **WHEN** a child config extends a parent config

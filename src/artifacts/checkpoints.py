@@ -43,6 +43,7 @@ class CheckpointWriteResult:
     checkpoint_id: str
     checkpoint_dir: Path
     metadata_path: Path
+    handoff_path: Path
     final_alias_path: Path | None
     best_alias_path: Path | None
     metadata: Mapping[str, Any]
@@ -92,6 +93,7 @@ class CheckpointWriter:
         checkpoint_id = f"step-{planned_step_id}"
         checkpoint_dir = self.manager.run_dir / "checkpoints" / checkpoint_id
         metadata_path = checkpoint_dir / "checkpoint.json"
+        handoff_path = checkpoint_dir / "checkpoint_handoff.json"
         existing_metadata = _read_json_if_exists(metadata_path)
 
         adapter_payload = self._save_adapter_payload(
@@ -128,6 +130,7 @@ class CheckpointWriter:
             "optimizer_update_status": optimizer_update_status,
             "trigger_reasons": list(trigger_reasons),
             "best_selection": best_selection,
+            "checkpoint_handoff": self.manager.relative_artifact_path(handoff_path),
             "resume_state": {
                 "optimizer": "not_saved_v1",
                 "scheduler": "not_saved_v1",
@@ -138,6 +141,25 @@ class CheckpointWriter:
             },
         }
         _write_json_or_reuse(metadata_path, metadata, code="checkpoint.exists")
+        _write_json_or_reuse(
+            handoff_path,
+            _handoff_manifest(
+                checkpoint_id=checkpoint_id,
+                planned_step_id=planned_step_id,
+                metadata_path=metadata_path,
+                checkpoint_dir=checkpoint_dir,
+                manager=self.manager,
+                base_model_path=base_model_path,
+                base_config_sha256=base_config_sha256,
+                tokenizer_sha256=tokenizer_sha256,
+                adapter_payload=adapter_payload,
+                special_token_payload=special_token_payload,
+                trainable_surface=trainable_surface,
+                processor_identity=processor_identity,
+                resolved_config_fingerprint=resolved_config_fingerprint,
+            ),
+            code="checkpoint.handoff_exists",
+        )
 
         final_alias_path = None
         if is_final:
@@ -179,6 +201,7 @@ class CheckpointWriter:
             checkpoint_id=checkpoint_id,
             checkpoint_dir=checkpoint_dir,
             metadata_path=metadata_path,
+            handoff_path=handoff_path,
             final_alias_path=final_alias_path,
             best_alias_path=best_alias_path,
             metadata=metadata,
@@ -290,6 +313,66 @@ class CheckpointWriter:
         artifact["enabled"] = True
         artifact["install_receipt"] = special_token_result.receipt.to_artifact_dict()
         return artifact
+
+
+def _handoff_manifest(
+    *,
+    checkpoint_id: str,
+    planned_step_id: int,
+    metadata_path: Path,
+    checkpoint_dir: Path,
+    manager: RunArtifactManager,
+    base_model_path: Path | str | None,
+    base_config_sha256: str | None,
+    tokenizer_sha256: str | None,
+    adapter_payload: Mapping[str, Any],
+    special_token_payload: Mapping[str, Any],
+    trainable_surface: TrainableSurfaceReceipt | Mapping[str, Any],
+    processor_identity: Mapping[str, Any],
+    resolved_config_fingerprint: str,
+) -> dict[str, Any]:
+    special_metadata = special_token_payload.get("metadata")
+    if not isinstance(special_metadata, Mapping):
+        special_metadata = {}
+    token_strings = tuple(str(item) for item in special_metadata.get("token_strings", ()))
+    token_ids = tuple(int(item) for item in special_metadata.get("token_ids", ()))
+    return {
+        "schema_version": 1,
+        "checkpoint_id": checkpoint_id,
+        "planned_step_id": int(planned_step_id),
+        "checkpoint_path": manager.relative_artifact_path(checkpoint_dir),
+        "checkpoint_metadata_path": manager.relative_artifact_path(metadata_path),
+        "base_model": {
+            "path": None if base_model_path is None else str(base_model_path),
+            "base_config_sha256": base_config_sha256,
+            "tokenizer_sha256": tokenizer_sha256,
+        },
+        "adapter": {
+            "enabled": bool(adapter_payload.get("enabled", False)),
+            "payload_path": adapter_payload.get("payload_path"),
+            "files": list(adapter_payload.get("files", ())),
+            "receipt": dict(adapter_payload.get("receipt") or {}),
+        },
+        "special_token_embeddings": {
+            "enabled": bool(special_token_payload.get("enabled", False)),
+            "tensor_path": special_token_payload.get("tensor_path"),
+            "metadata_path": special_token_payload.get("metadata_path"),
+            "tensor_key": special_token_payload.get("tensor_key"),
+            "tensor_shape": list(special_token_payload.get("tensor_shape", ())),
+            "tensor_dtype": special_token_payload.get("tensor_dtype"),
+            "metadata": dict(special_metadata),
+        },
+        "trainable_token_set": {
+            "token_count": len(token_ids),
+            "token_ids": list(token_ids),
+            "token_strings": list(token_strings),
+        },
+        "trainable_surface": _artifact_dict(trainable_surface),
+        "processor_identity": dict(processor_identity),
+        "resolved_config_fingerprint": resolved_config_fingerprint,
+        "intended_inference_config_family": "configs/coordexp_swift/infer",
+        "accepted_eval_artifact_roots": [],
+    }
 
 
 def _require_special_token_identity_sha(

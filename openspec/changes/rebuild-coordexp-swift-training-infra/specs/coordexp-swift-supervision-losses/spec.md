@@ -124,7 +124,11 @@ window. The V1 protected token-wise reducer MUST be `segment_balanced`: compute
 the mean loss over eligible atoms within each eligible segment, then the mean
 over eligible segments in the complete planned optimizer-step window across
 accumulation and ranks. Per-term denominators MUST be computed from the
-complete planned-step window, not from pack-local means averaged afterward.
+complete planned-step window, not from rank-local windows or pack-local means
+averaged afterward. In distributed training, rank-local denominator receipts
+MUST be gathered before backward; local contributions MUST be scaled to
+compensate the backend's mean gradient reduction so the effective objective is
+globally planned-step balanced.
 Segments with zero eligible atoms MUST be excluded from that term's denominator.
 Protected losses MUST fail if the complete planned-step window has zero
 eligible segments for the term. Runtime and loss code MUST avoid backend double
@@ -137,6 +141,14 @@ scaling.
 - **THEN** protected loss normalization MUST divide by the planned-step
   `segment_balanced` denominator for the selected term
 - **AND** MUST NOT average two already-normalized micro-step losses equally.
+
+#### Scenario: Unequal rank-local segment counts
+
+- **WHEN** distributed ranks contribute unequal numbers of eligible segments
+  to one planned optimizer step
+- **THEN** all ranks MUST use the same all-rank `planned_step_global`
+  denominator for that term
+- **AND** the backend gradient scale MUST be recorded with the loss diagnostics.
 
 #### Scenario: Segment-balanced differs from token-balanced
 

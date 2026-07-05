@@ -36,6 +36,7 @@ class TrainRuntimeSetupReceipt:
     runtime_batch: RuntimeBatchResolution
     backend_status: dict[str, tuple[str, ...]]
     max_grad_norm: float | None
+    scheduler_semantics: Mapping[str, Any]
 
     def to_artifact_dict(self) -> dict[str, Any]:
         return {
@@ -50,6 +51,7 @@ class TrainRuntimeSetupReceipt:
                 for backend, labels in sorted(self.backend_status.items())
             },
             "max_grad_norm": self.max_grad_norm,
+            "scheduler_semantics": dict(self.scheduler_semantics),
         }
 
 
@@ -68,8 +70,8 @@ class TrainRuntime:
         max_grad_norm: float | None = None,
         accelerator: Any | None = None,
         rank_report_gatherer: Callable[
-            [RankScalarFiniteReport | RankGradientFiniteReport],
-            Sequence[RankScalarFiniteReport | RankGradientFiniteReport],
+            [Any],
+            Sequence[Any],
         ]
         | None = None,
     ) -> None:
@@ -108,6 +110,7 @@ class TrainRuntime:
                 accelerate_prepared=self._accelerate_prepared,
             ),
             max_grad_norm=max_grad_norm,
+            scheduler_semantics=_scheduler_semantics(),
         )
 
     @property
@@ -219,13 +222,30 @@ class TrainRuntime:
         self.optimizer.step()
         self.optimizer_step_count += 1
 
-    def scheduler_step(self, *, planned_step_id: int) -> None:
-        del planned_step_id
+    def scheduler_step(self, *, planned_step_id: int) -> dict[str, Any]:
         self._ensure_training_backend_can_execute()
         if self.scheduler is None:
-            return
+            return {
+                "planned_step_id": int(planned_step_id),
+                "scheduler_present": False,
+                "scheduler_step_count": self.scheduler_step_count,
+                "scheduler_last_epoch": None,
+                "learning_rates": [],
+                "semantics": _scheduler_semantics(),
+            }
         self.scheduler.step()
         self.scheduler_step_count += 1
+        return {
+            "planned_step_id": int(planned_step_id),
+            "scheduler_present": True,
+            "scheduler_step_count": self.scheduler_step_count,
+            "scheduler_last_epoch": _scheduler_last_epoch(self.scheduler),
+            "learning_rates": _scheduler_learning_rates(
+                self.scheduler,
+                optimizer=self.optimizer,
+            ),
+            "semantics": _scheduler_semantics(),
+        }
 
     def zero_gradients(self, *, planned_step_id: int) -> None:
         del planned_step_id
@@ -253,6 +273,58 @@ class TrainRuntime:
             "metrics": values,
             "reduction": "single_rank" if self.world_size == 1 else "rank_local",
         }
+
+    def gather_loss_denominators(
+        self,
+        denominators: Mapping[str, Mapping[str, Any]],
+        *,
+        planned_step_id: int,
+    ) -> tuple[Mapping[str, Mapping[str, Any]], ...]:
+        payload = {
+            "kind": "loss_denominators",
+            "planned_step_id": int(planned_step_id),
+            "rank": self.rank,
+            "world_size": self.world_size,
+            "denominators": {
+                str(name): dict(value) for name, value in denominators.items()
+            },
+        }
+        if self.world_size == 1:
+            return (payload["denominators"],)
+        reports = self._gather_rank_reports(payload)
+        gathered: list[Mapping[str, Mapping[str, Any]]] = []
+        for rank_index, report in enumerate(reports):
+            if not isinstance(report, Mapping):
+                raise RuntimeContractError(
+                    "loss denominator gatherer must return mapping payloads",
+                    code="runtime.loss_denominator_gather_invalid",
+                    context={
+                        "rank": self.rank,
+                        "world_size": self.world_size,
+                        "rank_index": rank_index,
+                        "value_type": type(report).__name__,
+                    },
+                )
+            denominators_payload = report.get("denominators", report)
+            if not isinstance(denominators_payload, Mapping):
+                raise RuntimeContractError(
+                    "loss denominator gatherer payload must include denominators",
+                    code="runtime.loss_denominator_gather_invalid",
+                    context={
+                        "rank": self.rank,
+                        "world_size": self.world_size,
+                        "rank_index": rank_index,
+                        "value_type": type(denominators_payload).__name__,
+                    },
+                )
+            gathered.append(
+                {
+                    str(name): dict(value)
+                    for name, value in denominators_payload.items()
+                    if isinstance(value, Mapping)
+                }
+            )
+        return tuple(gathered)
 
     def safe_save_json(self, payload: Mapping[str, Any], path: Path) -> Path | None:
         if not self.is_main_process:
@@ -370,9 +442,6 @@ class TrainRuntime:
         if self.optimizer is not None:
             names.append("optimizer")
             objects.append(self.optimizer)
-        if self.scheduler is not None:
-            names.append("scheduler")
-            objects.append(self.scheduler)
         prepared = prepare(*objects)
         if isinstance(prepared, tuple):
             prepared_objects = prepared
@@ -390,14 +459,12 @@ class TrainRuntime:
         self.model = prepared_by_name["model"]
         if "optimizer" in prepared_by_name:
             self.optimizer = prepared_by_name["optimizer"]
-        if "scheduler" in prepared_by_name:
-            self.scheduler = prepared_by_name["scheduler"]
         self._accelerate_prepared = True
 
     def _gather_rank_reports(
         self,
-        local_report: RankScalarFiniteReport | RankGradientFiniteReport,
-    ) -> tuple[RankScalarFiniteReport | RankGradientFiniteReport, ...]:
+        local_report: Any,
+    ) -> tuple[Any, ...]:
         if self.world_size == 1:
             return (local_report,)
         if self.rank_report_gatherer is None:
@@ -501,6 +568,52 @@ def _deepspeed_global_grad_norm(accelerator: Any | None) -> float | None:
         return float(torch.as_tensor(grad_norm).detach().cpu().item())
     except (TypeError, ValueError, RuntimeError):
         return None
+
+
+def _scheduler_semantics() -> dict[str, Any]:
+    return {
+        "scheduler_owner": "coordexp_runtime",
+        "scheduler_prepared_by_backend": False,
+        "step_policy": "once_per_planned_step",
+    }
+
+
+def _scheduler_last_epoch(scheduler: Any) -> int | None:
+    last_epoch = getattr(scheduler, "last_epoch", None)
+    if last_epoch is None:
+        return None
+    try:
+        return int(last_epoch)
+    except (TypeError, ValueError):
+        return None
+
+
+def _scheduler_learning_rates(
+    scheduler: Any,
+    *,
+    optimizer: torch.optim.Optimizer | None,
+) -> list[dict[str, float | int]]:
+    get_last_lr = getattr(scheduler, "get_last_lr", None)
+    if callable(get_last_lr):
+        values: Sequence[Any] = get_last_lr()
+    elif optimizer is not None:
+        values = [group.get("lr") for group in optimizer.param_groups]
+    else:
+        values = ()
+    return [
+        {
+            "group_index": index,
+            "lr": _float_scalar(value),
+        }
+        for index, value in enumerate(values)
+    ]
+
+
+def _float_scalar(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(torch.as_tensor(value).detach().cpu().item())
 
 
 __all__ = ["TrainRuntime", "TrainRuntimeSetupReceipt"]

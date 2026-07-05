@@ -181,6 +181,23 @@ class TrainingArtifactBridge:
             payload.get("optimizer_update_status", "unavailable")
         )
         finite_status = str(payload.get("finite_status", loss_artifact.get("finite_status", "unavailable")))
+        scheduler_artifact = payload.get("scheduler")
+        for name, value in _scheduler_lr_metrics(scheduler_artifact).items():
+            self.manager.append_metric_event(
+                MetricStreamEvent(
+                    event_type="metric",
+                    planned_step_id=event.planned_step_id,
+                    split=TRAIN_SPLIT,
+                    name=name,
+                    value=value,
+                    trigger_reasons=("planned_step.completed",),
+                    optimizer_update_status=optimizer_update_status,
+                    finite_status=finite_status,
+                    warning_status="none",
+                    rank=self.rank,
+                    world_size=self.world_size,
+                )
+            )
         for name in sorted(metrics):
             value = metrics[name]
             self.manager.append_metric_event(
@@ -262,6 +279,24 @@ class TrainingArtifactBridge:
                 )
                 + "\n"
             )
+
+
+def _scheduler_lr_metrics(scheduler_artifact: Any) -> dict[str, float]:
+    if not isinstance(scheduler_artifact, Mapping):
+        return {}
+    learning_rates = scheduler_artifact.get("learning_rates")
+    if not isinstance(learning_rates, Sequence):
+        return {}
+    metrics: dict[str, float] = {}
+    for item in learning_rates:
+        if not isinstance(item, Mapping):
+            continue
+        group_index = item.get("group_index")
+        lr = item.get("lr")
+        if group_index is None or lr is None:
+            continue
+        metrics[f"lr/group_{int(group_index)}"] = float(lr)
+    return metrics
 
 
 def _timings_artifact(value: Any) -> dict[str, int]:
@@ -1124,6 +1159,7 @@ def _checkpoint_handler(
                 "finite_status": event.step_result.finite_status,
                 "warning_status": "none",
                 "loss_bundle": step_artifact.get("loss_bundle", {}),
+                "scheduler": step_artifact.get("scheduler", {}),
             },
             optimizer_update_status=event.step_result.optimizer_update_status,
             trigger_reasons=event.scheduled_event.trigger_reasons,

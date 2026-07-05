@@ -15,6 +15,7 @@ from src.training.pipeline import build_repeating_micro_step_stream
 from src.training.pack_cache import (
     DEFAULT_PACK_CACHE_MATERIALIZATION_WORKERS,
     PACKING_CACHE_MATERIALIZATION_STRATEGY,
+    build_packing_cache_determinants,
     build_packing_cache_fingerprint,
     load_all_micro_steps_from_cache,
     load_cache_manifest,
@@ -153,6 +154,43 @@ def test_packing_cache_fingerprint_tracks_image_pad_token_id(tmp_path: Path) -> 
     )
 
     assert changed_image_pad != baseline
+
+
+def test_packing_cache_determinants_include_code_identity(tmp_path: Path) -> None:
+    dataset = tmp_path / "train.coord.jsonl"
+    dataset.write_text('{"example_id":"ex-0"}\n', encoding="utf-8")
+    config = load_train_config(FIXTURE_CONFIG).config
+    config = config.model_copy(
+        update={
+            "data": config.data.model_copy(
+                update={
+                    "train": config.data.train.model_copy(
+                        update={"path": str(dataset)}
+                    )
+                }
+            )
+        }
+    )
+
+    determinants = build_packing_cache_determinants(
+        config,
+        FakeComponents(),
+        dataset=config.data.train,
+        split="train",
+    )
+
+    code_identity = determinants["code_identity"]
+    assert set(code_identity) == {
+        "template_renderer",
+        "qwen_encoding",
+        "packing_planner",
+        "packing_supervision",
+        "supervision_tokens",
+    }
+    for payload in code_identity.values():
+        assert payload["sha256"]
+        assert len(payload["sha256"]) == 64
+        assert payload["path"].startswith("src/")
 
 
 def test_packing_cache_fingerprint_ignores_materialization_worker_count(

@@ -174,7 +174,7 @@ def test_hf_generate_requests_scored_deterministic_qwen_stop() -> None:
     assert model.generate_kwargs["eos_token_id"] == tokenizer.eos_token_id
     assert model.generate_kwargs["pad_token_id"] == tokenizer.pad_token_id
     assert model.generate_kwargs["max_new_tokens"] == 2
-    assert model.generate_kwargs["repetition_penalty"] == pytest.approx(1.10)
+    assert model.generate_kwargs["repetition_penalty"] == pytest.approx(1.0)
     assert "temperature" not in model.generate_kwargs
     assert "top_p" not in model.generate_kwargs
     assert model.transition_scores_seen_normalized is True

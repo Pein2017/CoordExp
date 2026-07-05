@@ -227,7 +227,7 @@ def segment_balanced_contribution(
                 "denominator_term": denominator.term_name,
             },
         )
-    if denominator.denominator_scope != "planned_step":
+    if denominator.denominator_scope not in ("planned_step", "planned_step_global"):
         raise LossContractError(
             "segment-balanced contribution requires a planned-step denominator",
             code="loss.segment_balanced_scope",

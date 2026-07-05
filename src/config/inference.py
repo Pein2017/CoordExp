@@ -97,7 +97,7 @@ class InferGenerationConfig(StrictConfigModel):
     max_new_tokens: int = Field(gt=0)
     temperature: float = Field(ge=0.0, allow_inf_nan=False)
     top_p: float = Field(gt=0.0, le=1.0, allow_inf_nan=False)
-    repetition_penalty: float = Field(default=1.10, gt=0.0, allow_inf_nan=False)
+    repetition_penalty: float = Field(default=1.0, gt=0.0, allow_inf_nan=False)
 
 
 class InferScoringConfig(StrictConfigModel):

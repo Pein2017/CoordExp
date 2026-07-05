@@ -54,13 +54,24 @@ retention, post-stop padding exclusion, and normalized logprob gathering via
   according to the recorded policy and are not score candidates
 
 ### Requirement: Qwen stop-token policy
-The default V1 decoding policy SHALL use deterministic greedy generation with the Qwen chat stop transition `<|im_end|>`.
-The system MUST NOT add `<|endoftext|>` as a default stop token.
+The default V1 decoding policy SHALL use deterministic greedy generation with
+neutral decode knobs and the Qwen chat stop transition `<|im_end|>`. Code
+defaults MUST keep `repetition_penalty=1.0`, `temperature=0.0`, `top_p=1.0`,
+and `do_sample=False`. Non-neutral choices such as
+`repetition_penalty=1.10` MUST come from explicit resolved config and MUST be
+recorded in generation policy artifacts. The system MUST NOT add
+`<|endoftext|>` as a default stop token.
 
 #### Scenario: Default generation policy
 - **WHEN** a production inference config omits sampling settings
 - **THEN** generation resolves to deterministic greedy decoding with
-  `<|im_end|>` stop handling
+  `<|im_end|>` stop handling and neutral repetition penalty
+
+#### Scenario: Non-neutral repetition penalty configured
+- **WHEN** a config explicitly sets `generation.repetition_penalty: 1.10`
+- **THEN** the backend MUST pass that value to generation
+- **AND** the summary, manifest, or provenance artifacts MUST record the
+  resolved generation policy.
 
 #### Scenario: End-of-text not default
 - **WHEN** the generation config is resolved

@@ -51,6 +51,14 @@ def test_supervised_trainer_orchestrates_accumulation_and_runtime_boundaries() -
     assert result.step_results[0].micro_step_count == 2
     assert result.step_results[0].optimizer_update_status == "applied"
     assert result.step_results[0].loss_bundle_artifact == {"total_loss": 1.0}
+    assert result.step_results[0].scheduler_artifact == {
+        "scheduler_step_count": 1,
+        "learning_rates": [{"group_index": 0, "lr": 0.01}],
+    }
+    assert result.step_results[0].to_artifact_dict()["scheduler"] == {
+        "scheduler_step_count": 1,
+        "learning_rates": [{"group_index": 0, "lr": 0.01}],
+    }
     assert not hasattr(result.step_results[0], "loss_bundle")
     assert log == [
         "event:planned_step.started:1",
@@ -527,6 +535,28 @@ def test_supervised_trainer_streams_backward_before_next_forward_when_supported(
     ]
 
 
+def test_streaming_multirank_loss_plan_uses_runtime_denominator_gatherer() -> None:
+    log: list[str] = []
+    trainer = SupervisedTrainer(
+        model=object(),
+        schedule=_schedule(resolved_max_steps=1, grad_accum_steps=1, world_size=2),
+        pack_stream=_micro_steps(1, log),
+        qwen_forward=_forward(log),
+        loss_context_factory=_loss_context(log),
+        loss_runner=StreamingGlobalDenominatorLossRunner(log),
+        runtime=FakeRuntime(log, rank=0, world_size=2),
+    )
+
+    result = trainer.run()
+
+    assert result.completed_steps == 1
+    assert result.step_results[0].loss_bundle_artifact["diagnostics"][
+        "denominator_scope"
+    ] == "planned_step_global"
+    assert "runtime.gather_denominators:1" in log
+    assert "streaming.prepare_global:1:2:0:3" in log
+
+
 def test_streaming_micro_step_events_expose_sync_gradients_boundary() -> None:
     events: list[SupervisedTrainerEvent] = []
     trainer = SupervisedTrainer(
@@ -665,6 +695,56 @@ class StreamingFakeLossRunner(FakeLossRunner):
         }
 
 
+class StreamingGlobalDenominatorLossRunner(StreamingFakeLossRunner):
+    def prepare_planned_step(
+        self,
+        micro_steps: tuple[SupervisedMicroStep, ...],
+        *,
+        denominator_gatherer,
+        world_size: int,
+        rank: int,
+    ) -> dict[str, Any]:
+        payload = {
+            "base_ce": {
+                "term_name": "base_ce",
+                "denominator_scope": "planned_step",
+                "eligible_segment_count": 1,
+                "selected_atom_count": 1,
+                "skipped_segment_count": 0,
+                "context_count": 1,
+            },
+            "token_type_gate": {
+                "term_name": "token_type_gate",
+                "denominator_scope": "planned_step",
+                "eligible_segment_count": 1,
+                "selected_atom_count": 1,
+                "skipped_segment_count": 0,
+                "context_count": 1,
+            },
+        }
+        gathered = tuple(denominator_gatherer(payload))
+        eligible = sum(
+            int(rank_payload["base_ce"]["eligible_segment_count"])
+            for rank_payload in gathered
+        )
+        self.log.append(
+            f"streaming.prepare_global:{len(micro_steps)}:{world_size}:{rank}:{eligible}"
+        )
+        return {
+            "micro_step_count": len(micro_steps),
+            "denominator_scope": "planned_step_global",
+        }
+
+    def finalize_planned_step(
+        self,
+        micro_loss_artifacts: tuple[dict[str, Any], ...],
+        plan: dict[str, Any],
+    ) -> dict[str, Any]:
+        artifact = super().finalize_planned_step(micro_loss_artifacts, plan)
+        artifact["diagnostics"]["denominator_scope"] = plan["denominator_scope"]
+        return artifact
+
+
 class FakeRuntime:
     def __init__(
         self,
@@ -674,6 +754,8 @@ class FakeRuntime:
         unsafe_pre_call_indices: set[int] | None = None,
         unsafe_post_steps: set[int] | None = None,
         forward_device: str | None = None,
+        rank: int = 0,
+        world_size: int = 1,
     ) -> None:
         self.log = log
         self.unsafe_pre_steps = unsafe_pre_steps or set()
@@ -681,6 +763,8 @@ class FakeRuntime:
         self.unsafe_post_steps = unsafe_post_steps or set()
         self.forward_device = forward_device
         self.pre_call_count = 0
+        self.rank = int(rank)
+        self.world_size = int(world_size)
 
     def move_micro_step(
         self,
@@ -772,9 +856,32 @@ class FakeRuntime:
 
     def scheduler_step(self, *, planned_step_id: int) -> None:
         self.log.append(f"runtime.scheduler:{planned_step_id}")
+        return {
+            "scheduler_step_count": planned_step_id,
+            "learning_rates": [{"group_index": 0, "lr": 0.01}],
+        }
 
     def zero_gradients(self, *, planned_step_id: int) -> None:
         self.log.append(f"runtime.zero:{planned_step_id}")
+
+    def gather_loss_denominators(
+        self,
+        denominators: dict[str, dict[str, Any]],
+        *,
+        planned_step_id: int,
+    ) -> tuple[dict[str, dict[str, Any]], ...]:
+        self.log.append(f"runtime.gather_denominators:{planned_step_id}")
+        peer = {
+            name: {
+                **dict(payload),
+                "eligible_segment_count": 2,
+                "selected_atom_count": 2,
+                "skipped_segment_count": 0,
+                "context_count": 2,
+            }
+            for name, payload in denominators.items()
+        }
+        return (denominators, peer)
 
 
 class RuntimeWithPreparedModel(FakeRuntime):
@@ -846,6 +953,7 @@ def _schedule(
     *,
     resolved_max_steps: int,
     grad_accum_steps: int,
+    world_size: int = 1,
     events: dict[str, tuple[StepScheduleEvent, ...]] | None = None,
 ) -> ResolvedStepSchedule:
     return ResolvedStepSchedule(
@@ -855,8 +963,8 @@ def _schedule(
         actual_pack_presentations=resolved_max_steps * grad_accum_steps,
         tail_fill_pack_count=0,
         runtime_batch=RuntimeBatchResolution(
-            world_size=1,
-            effective_batch_size=grad_accum_steps,
+            world_size=world_size,
+            effective_batch_size=grad_accum_steps * world_size,
             resolved_grad_accum_steps=grad_accum_steps,
         ),
         events=events
