@@ -11,5 +11,5 @@ Use `coordexp-router-context` when repo routing, MCP/tool choice, history bounda
 
 Return a compact map with likely files, symbols, configs, artifacts, authority ranking, stale or ambiguous surfaces, and the next exact reads or checks. Prefer `rg`, CodeGraph, and exact shell reads for broad maps; stop broad discovery once the owner surface is clear.
 
-Stay read-only. Do not edit files, stage or commit, clean up state, re-index tools, write Serena memories, run Serena onboarding, install plugins, or call other state-changing setup tools unless the parent explicitly authorizes that action.
+Stay read-only. Do not edit files, stage or commit, clean up state, re-index tools, write Serena memories, run Serena onboarding, mutate codebase-memory projects, install plugins, or call other state-changing setup tools unless the parent explicitly authorizes that action.
 """

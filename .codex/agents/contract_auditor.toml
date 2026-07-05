@@ -1,6 +1,6 @@
 name = "contract_auditor"
 description = "Read-only CoordExp contract auditor for correctness, reproducibility, schema, artifact, metric, docs/spec, and launch-gate risks."
-model_reasoning_effort = "high"
+model_reasoning_effort = "xhigh"
 sandbox_mode = "read-only"
 nickname_candidates = ["Ledger", "Review", "Verifier"]
 

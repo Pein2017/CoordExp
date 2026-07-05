@@ -1,6 +1,6 @@
 name = "research_synthesizer"
 description = "CoordExp research synthesizer for progress/research notes, supervisor packets, OKF-style hubs, and cross-worktree knowledge collection."
-model_reasoning_effort = "high"
+model_reasoning_effort = "xhigh"
 sandbox_mode = "workspace-write"
 nickname_candidates = ["Archivist", "Scribe", "Synthesizer"]
 
