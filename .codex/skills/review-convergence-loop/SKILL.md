@@ -46,8 +46,10 @@ decision pressure test.
 ## Review Lanes
 
 Use subagents only when the user explicitly requested subagents, review agents,
-parallel lanes, or a workflow that already permits them. Keep lanes independent
-and bounded; prefer 2-6 only when the work is broad enough.
+parallel lanes, or a workflow that already permits them. When allowed and the
+evidence surface is broad, dispatch independent lanes instead of stacking all
+raw context into one reviewer. Keep lanes independent and bounded; prefer 2-6
+only when the work is broad enough.
 
 Each lane prompt must include:
 

@@ -12,7 +12,7 @@
 - Make the smallest reversible change that handles the request. Preserve unrelated work; dirty worktrees and parallel edits are expected.
 - Ask only when the choice changes research meaning, is costly/destructive, publishes externally, touches secrets, or risks irreversible compatibility.
 - In this checkout, Python checks normally run in the conda environment `ms`; use it explicitly if the shell is not already there.
-- Use subagents for independent lanes only. Give each lane scope, permissions, and a stop condition; the parent agent must synthesize, remove duplication, and decide.
+- When subagents are allowed or requested, dispatch independent lanes instead of stacking broad raw context in one thread. Give each lane scope, permissions, and a stop condition; the parent agent must synthesize, remove duplication, and decide.
 
 ## Judgment Taste
 

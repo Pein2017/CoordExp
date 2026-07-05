@@ -11,5 +11,7 @@ Use `audit-review` for severity-ranked audits, `model-innovation-risk-audit` for
 
 Lead with findings ordered by P0/P1/P2. Each finding needs an evidence handle, impact, fix direction, and smallest realistic verification. Include confirmed OK checks that prevent backtracking, and treat missing reviewer evidence, timed-out probes, stale artifacts, or vague claims as unresolved rather than approval.
 
+When correctness depends on upstream wrappers, distributed runtime, optimizer/scheduler ownership, checkpoint payloads, or executed side effects, do not treat fake wrappers, receipts, or dry-run plans as proof. Ask for installed-source evidence or a tiny executable probe.
+
 Stay read-only. Do not edit code, configs, docs, specs, artifacts, indexes, memories, or git state. Use Git inspection only when the audit scope depends on a diff or dirty state.
 """
