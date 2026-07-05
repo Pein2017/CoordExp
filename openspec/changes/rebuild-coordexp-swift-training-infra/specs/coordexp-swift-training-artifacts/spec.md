@@ -153,6 +153,19 @@ path and identity hashes, adapter payload, selected special-token embedding
 delta payload, trainable token set, intended inference config family, and
 accepted eval artifact roots when available.
 
+Adapter setup receipts for expanded existing DoRA adapters SHALL record the
+source adapter tensor path, copied tensor keys, initialized target tensor keys,
+ignored source tensors outside the requested config, and the selected-token
+embedding seed payload path used for continuation.
+
+#### Scenario: Expanded adapter setup receipt written
+
+- **WHEN** `adapter.seed_mode: warm_start_expand_dora` is used
+- **THEN** adapter setup artifacts MUST distinguish copied targets from
+  initialized targets
+- **AND** MUST record ignored source tensors outside the requested config
+- **AND** MUST record the selected-token embedding seed payload path.
+
 #### Scenario: Final checkpoint written
 
 - **WHEN** a run completes its resolved planned steps

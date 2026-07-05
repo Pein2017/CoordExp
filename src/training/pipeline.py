@@ -56,6 +56,7 @@ from src.qwen import (
 from src.qwen.special_token_embeddings import (
     load_default_special_token_embedding_source_gate_evidence,
     install_special_token_embedding_deltas,
+    load_special_token_embedding_deltas,
 )
 from src.runtime import TrainRuntime, seed_training_runtime
 from src.supervision import (
@@ -392,6 +393,7 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
         adapter_plan.to_artifact_dict(),
         category="optimizer",
     )
+    adapter_plan_mode = getattr(adapter_plan, "mode", None)
     adapter_result = setup_dora_adapter(components.model, adapter_plan)
     model = adapter_result.model
 
@@ -408,6 +410,24 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
         source_gate=special_token_evidence,
     )
     model = special_token_result.model
+    if adapter_plan_mode == "warm_start_expand_dora":
+        if adapter_plan.repaired_embedding_payload_path is None:
+            raise RuntimeContractError(
+                "warm_start_expand_dora requires repaired embedding payload path",
+                code="adapter.warm_start_embedding_payload_required",
+            )
+        special_token_load_receipt = load_special_token_embedding_deltas(
+            special_token_result,
+            adapter_plan.repaired_embedding_payload_path,
+            expected_base_model_path=components.base_model_path,
+            expected_base_config_sha256=components.base_config_sha256,
+            expected_tokenizer_sha256=components.tokenizer_sha256,
+        )
+        manager.write_receipt(
+            "special_token_embedding_seed",
+            _artifact_dict(special_token_load_receipt),
+            category="qwen",
+        )
     manager.write_receipt(
         "memory_savers",
         enable_training_memory_savers(model),

@@ -192,6 +192,20 @@ validate until the PEFT DoRA/`use_dora` source study and a minimal round-trip
 probe pass. The source study selected `dora` as the public name; `dlora` is not
 a V1 schema value.
 
+Adapter setup has a three-level hierarchy. The first level is the mechanism:
+`adapter.type: dora`, backed by PEFT `LoraConfig(use_dora=True)`. The second
+level is the seed mode: `initialize_new` creates all configured targets from
+fresh DoRA initialization, `load_existing` loads an existing adapter whose
+targets must match the requested config, and `warm_start_expand_dora` creates
+all configured targets while reusing any complete target tensor set found in a
+source adapter. The third level is per-target behavior: a required target with
+complete source DoRA tensors is copied by exact key, a required target with no
+source tensors remains freshly initialized and trainable, and a required target
+with a partial source tensor set fails before optimizer construction. This
+keeps continuation training config-driven: the config states the required
+towers, and the source checkpoint only decides which of those targets can be
+reused.
+
 Special-token embeddings are fully trainable selected-token deltas, not LoRA on
 the embedding/head. The trainable group includes the four schema wrappers and
 `<|coord_0|>` through `<|coord_999|>`. The implementation must compare custom

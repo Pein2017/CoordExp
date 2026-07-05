@@ -23,7 +23,7 @@ DEFAULT_DORA_PROBE_RECEIPT_PATH = Path(
     "outputs/probes/coordexp_swift/dora_roundtrip/receipt.json"
 )
 
-AdapterSetupMode = Literal["initialize_new", "load_existing"]
+AdapterSetupMode = Literal["initialize_new", "load_existing", "warm_start_expand_dora"]
 
 
 @dataclass(frozen=True)
@@ -82,6 +82,8 @@ class AdapterSetupPlan:
     mode: AdapterSetupMode
     adapter_type: Literal["dora"]
     adapter_path: Path | None
+    source_adapter_path: Path | None
+    repaired_embedding_payload_path: Path | None
     base_model_path: Path | None
     target_towers: tuple[str, ...]
     target_policy: Literal["all_linear"]
@@ -98,6 +100,12 @@ class AdapterSetupPlan:
             "adapter_identity": None
             if self.adapter_path is None
             else {"path": str(self.adapter_path)},
+            "source_adapter_identity": None
+            if self.source_adapter_path is None
+            else {"path": str(self.source_adapter_path)},
+            "repaired_embedding_payload_identity": None
+            if self.repaired_embedding_payload_path is None
+            else {"path": str(self.repaired_embedding_payload_path)},
             "base_model_identity": None
             if self.base_model_path is None
             else {"path": str(self.base_model_path)},
@@ -168,18 +176,54 @@ def build_adapter_setup_plan(
     _ensure_supported_adapter_type(adapter_config)
     source_gate = _build_dora_source_gate_receipt(adapter_config, evidence)
     adapter_path = None if adapter_config.path is None else Path(adapter_config.path)
+    source_adapter_path = (
+        None
+        if adapter_config.source_adapter_path is None
+        else Path(adapter_config.source_adapter_path)
+    )
+    repaired_embedding_payload_path = (
+        None
+        if adapter_config.repaired_embedding_payload_path is None
+        else Path(adapter_config.repaired_embedding_payload_path)
+    )
     resolved_base_model_path = None if base_model_path is None else Path(base_model_path)
-    if adapter_path is not None and resolved_base_model_path is None:
+    seed_mode = adapter_config.seed_mode
+    if seed_mode is None:
+        mode: AdapterSetupMode = "initialize_new" if adapter_path is None else "load_existing"
+    else:
+        mode = seed_mode
+    if mode == "warm_start_expand_dora":
+        if source_adapter_path is None or repaired_embedding_payload_path is None:
+            raise RuntimeContractError(
+                "warm_start_expand_dora requires source adapter and repaired embedding payload paths",
+                code="adapter.warm_start_source_paths_required",
+                context={
+                    "source_adapter_path": None
+                    if source_adapter_path is None
+                    else str(source_adapter_path),
+                    "repaired_embedding_payload_path": None
+                    if repaired_embedding_payload_path is None
+                    else str(repaired_embedding_payload_path),
+                },
+            )
+    if mode in {"load_existing", "warm_start_expand_dora"} and resolved_base_model_path is None:
         raise RuntimeContractError(
-            "existing adapter setup must record base model identity",
+            "adapter setup must record base model identity",
             code="adapter.base_model_identity_required",
-            context={"adapter_path": str(adapter_path)},
+            context={
+                "mode": mode,
+                "adapter_path": None if adapter_path is None else str(adapter_path),
+                "source_adapter_path": None
+                if source_adapter_path is None
+                else str(source_adapter_path),
+            },
         )
-    mode: AdapterSetupMode = "initialize_new" if adapter_path is None else "load_existing"
     return AdapterSetupPlan(
         mode=mode,
         adapter_type="dora",
         adapter_path=adapter_path,
+        source_adapter_path=source_adapter_path,
+        repaired_embedding_payload_path=repaired_embedding_payload_path,
         base_model_path=resolved_base_model_path,
         target_towers=tuple(adapter_config.target_towers),
         target_policy=adapter_config.target_modules,
@@ -224,7 +268,11 @@ def _build_dora_source_gate_receipt(
 
     receipt = evidence.dora_probe_receipt
     assert receipt is not None
-    selected_targets = _validate_requested_target_gate(adapter_config, receipt)
+    selected_targets = (
+        _validate_receipt_self_target_gate(receipt)
+        if adapter_config.seed_mode == "warm_start_expand_dora"
+        else _validate_requested_target_gate(adapter_config, receipt)
+    )
     _validate_receipt_value(
         receipt.get("public_adapter_type") == "dora",
         "DoRA probe receipt must record public adapter type dora",
@@ -415,6 +463,40 @@ def _validate_requested_target_gate(
         )
     selected_targets = _string_list(receipt, "selected_target_modules")
     for tower in sorted(requested_towers):
+        if not _targets_have_tower_evidence(selected_targets, tower):
+            raise RuntimeContractError(
+                "DoRA probe receipt target tower lacks matching module evidence",
+                code="adapter.dora_target_gate_missing",
+                context={
+                    "target_tower": tower,
+                    "selected_target_modules": selected_targets,
+                },
+            )
+    return selected_targets
+
+
+def _validate_receipt_self_target_gate(receipt: Mapping[str, Any]) -> list[str]:
+    receipt_towers = receipt.get("target_towers")
+    if not isinstance(receipt_towers, list) or not all(
+        isinstance(item, str) for item in receipt_towers
+    ):
+        raise RuntimeContractError(
+            "DoRA probe receipt must list target towers",
+            code="adapter.dora_target_gate_missing",
+            context={
+                "field": "target_towers",
+                "value_type": type(receipt_towers).__name__,
+            },
+        )
+    receipt_policy = receipt.get("target_policy")
+    if receipt_policy != "all_linear":
+        raise RuntimeContractError(
+            "DoRA probe receipt target policy must be all_linear",
+            code="adapter.dora_target_gate_missing",
+            context={"receipt_target_policy": receipt_policy},
+        )
+    selected_targets = _string_list(receipt, "selected_target_modules")
+    for tower in sorted(set(receipt_towers)):
         if not _targets_have_tower_evidence(selected_targets, tower):
             raise RuntimeContractError(
                 "DoRA probe receipt target tower lacks matching module evidence",

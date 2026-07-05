@@ -64,6 +64,58 @@ rule.
 - **THEN** setup MUST verify that target discovery works for those supported
   choices even if production defaults target language only.
 
+### Requirement: Adapter Seed Mode Execution Hierarchy
+
+Adapter setup SHALL execute the config seed-mode hierarchy after the DoRA
+source gate passes. `initialize_new` MUST create every configured target from
+fresh DoRA initialization. `load_existing` MUST load the configured
+`adapter.path` and validate that loaded adapter targets match requested target
+discovery. `warm_start_expand_dora` MUST create every DoRA target required by
+the new config, then decide reuse versus initialization independently for each
+required target module. For each required target module, setup MUST reuse the
+source checkpoint tensors when the source adapter contains the complete DoRA
+tensor set for that target; setup MUST keep the new initialization when the
+source adapter contains no tensors for that target; and setup MUST fail when
+the source adapter contains only a partial tensor set for a required target.
+Selected special-token embedding deltas MUST be loaded from the configured
+compact embedding payload before optimizer construction.
+
+#### Scenario: Fresh adapter setup
+
+- **WHEN** `adapter.seed_mode: initialize_new` is configured
+- **THEN** setup MUST create all configured target modules from fresh DoRA
+  initialization
+- **AND** the setup receipt MUST record the configured target towers.
+
+#### Scenario: Existing adapter setup
+
+- **WHEN** `adapter.seed_mode: load_existing` is configured
+- **THEN** setup MUST load `adapter.path`
+- **AND** MUST fail if loaded targets do not match the configured target
+  discovery.
+
+#### Scenario: Source adapter lacks a newly requested tower
+
+- **WHEN** a config requests language, vision, and aligner DoRA targets while
+  the source adapter contains only language tensors
+- **THEN** setup MUST copy the complete language tensor set
+- **AND** MUST initialize the vision and aligner DoRA tensors as trainable
+  parameters.
+
+#### Scenario: Source adapter already contains a requested tower
+
+- **WHEN** a config requests a target module that already has a complete DoRA
+  tensor set in the source adapter
+- **THEN** setup MUST copy that tensor set by exact key into the new adapter
+- **AND** MUST record the copied target tensors in the adapter setup receipt.
+
+#### Scenario: Source adapter has a partial required target
+
+- **WHEN** the source adapter contains some but not all DoRA tensors for a
+  target required by the new config
+- **THEN** setup MUST fail before optimizer construction
+- **AND** the diagnostic MUST name the missing source tensor keys.
+
 ### Requirement: Special-Token Embedding Source Gate
 
 Selected special-token embedding training SHALL be implemented only after a

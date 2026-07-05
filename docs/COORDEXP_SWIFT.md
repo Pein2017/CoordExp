@@ -154,6 +154,11 @@ COCO sidecars are invalid.
   denominator, with backend gradient scaling recorded in diagnostics.
 - Selected special-token embedding deltas are owned and checkpointed as fp32
   compact payloads even when the base Qwen model runs bf16.
+- DoRA continuation can expand an existing adapter checkpoint to a broader
+  target set: every configured target is created, complete source target
+  tensors are reused by exact key, missing targets keep fresh initialization,
+  partial source targets fail, and the configured selected-token embedding
+  delta payload is loaded before optimizer setup.
 - Inference code defaults are neutral: deterministic greedy generation with
   `repetition_penalty=1.0`. Non-neutral decode choices, including the current
   step-917 val200 `repetition_penalty=1.10`, must come from explicit config and

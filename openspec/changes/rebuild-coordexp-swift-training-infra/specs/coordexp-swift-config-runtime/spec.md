@@ -69,6 +69,42 @@ chain.
 - **THEN** config loading MUST fail before schema construction
 - **AND** the diagnostic MUST include the full cycle of config paths.
 
+### Requirement: Adapter Seed Mode Config Hierarchy
+
+Adapter config SHALL expose a stable seed-mode hierarchy under
+`adapter.type: dora`. If `adapter.seed_mode` is omitted, V1 MAY infer
+`initialize_new` when `adapter.path` is absent and `load_existing` when
+`adapter.path` is present for backward compatibility with earlier Swift
+configs. If `adapter.seed_mode` is explicit, `initialize_new` MUST reject
+adapter paths and source paths, `load_existing` MUST require `adapter.path` and
+reject source paths, and `warm_start_expand_dora` MUST require
+`adapter.source_adapter_path` plus `adapter.repaired_embedding_payload_path`
+while rejecting `adapter.path`. The configured `adapter.target_towers` SHALL
+remain the authoritative set of required targets in all seed modes.
+
+#### Scenario: Fresh adapter seed mode configured
+
+- **WHEN** `adapter.seed_mode: initialize_new` is configured
+- **THEN** config validation MUST reject `adapter.path`,
+  `adapter.source_adapter_path`, and `adapter.repaired_embedding_payload_path`
+- **AND** adapter setup MUST create the configured targets from fresh DoRA
+  initialization.
+
+#### Scenario: Existing adapter seed mode configured
+
+- **WHEN** `adapter.seed_mode: load_existing` is configured
+- **THEN** config validation MUST require `adapter.path`
+- **AND** config validation MUST reject warm-start source paths.
+
+#### Scenario: Expand adapter seed mode configured
+
+- **WHEN** `adapter.seed_mode: warm_start_expand_dora` is configured
+- **THEN** config validation MUST require `adapter.source_adapter_path`
+- **AND** config validation MUST require
+  `adapter.repaired_embedding_payload_path`
+- **AND** config validation MUST reject `adapter.path`
+- **AND** `adapter.target_towers` MUST define the required target set.
+
 ### Requirement: Run Identity And Artifact Root
 
 Each training run SHALL resolve a run identity and artifact root before model

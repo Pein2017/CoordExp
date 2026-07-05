@@ -140,6 +140,14 @@ roadmap and acceptance gates.
   language, adapter parameters, and selected embedding deltas.
 - [x] 8.5 Emit trainable-surface and optimizer-group receipts before the first
   backward pass.
+- [x] 8.6 Implement the DoRA seed-mode hierarchy:
+  `initialize_new`, `load_existing`, and `warm_start_expand_dora`.
+- [x] 8.7 Implement config-driven target expansion where required targets are
+  always created, complete source target tensors are reused by exact key,
+  missing source targets remain freshly initialized, and partial source targets
+  fail before optimizer construction.
+- [x] 8.8 Load configured selected-token embedding delta payloads before
+  optimizer construction for `warm_start_expand_dora`.
 
 ## 9. Trainer, Runtime, Artifacts, Metrics, Checkpoints, And Eval
 

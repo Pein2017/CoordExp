@@ -76,7 +76,10 @@ class ModelConfig(StrictConfigModel):
 
 class AdapterConfig(StrictConfigModel):
     type: Literal["dora"]
+    seed_mode: Literal["initialize_new", "load_existing", "warm_start_expand_dora"] | None = None
     path: str | None = None
+    source_adapter_path: str | None = None
+    repaired_embedding_payload_path: str | None = None
     target_towers: tuple[Literal["language", "aligner", "vision"], ...]
     target_modules: Literal["all_linear"]
     rank: int = Field(gt=0)
@@ -101,6 +104,43 @@ class AdapterConfig(StrictConfigModel):
         if len(set(value)) != len(value):
             raise ValueError("adapter.target_towers must not contain duplicates")
         return value
+
+    @model_validator(mode="after")
+    def _seed_mode_contract(self) -> "AdapterConfig":
+        seed_mode = self.seed_mode
+        if seed_mode is None:
+            if self.source_adapter_path is not None or self.repaired_embedding_payload_path is not None:
+                raise ValueError(
+                    "adapter source/payload seed paths require adapter.seed_mode: warm_start_expand_dora"
+                )
+            return self
+        if seed_mode == "initialize_new":
+            if self.path is not None:
+                raise ValueError("adapter.seed_mode=initialize_new must not set adapter.path")
+            if self.source_adapter_path is not None or self.repaired_embedding_payload_path is not None:
+                raise ValueError(
+                    "adapter.seed_mode=initialize_new must not set warm-start source paths"
+                )
+            return self
+        if seed_mode == "load_existing":
+            if self.path is None:
+                raise ValueError("adapter.seed_mode=load_existing requires adapter.path")
+            if self.source_adapter_path is not None or self.repaired_embedding_payload_path is not None:
+                raise ValueError(
+                    "adapter.seed_mode=load_existing must not set warm-start source paths"
+                )
+            return self
+        if self.path is not None:
+            raise ValueError("adapter.seed_mode=warm_start_expand_dora must not set adapter.path")
+        if self.source_adapter_path is None:
+            raise ValueError(
+                "adapter.seed_mode=warm_start_expand_dora requires adapter.source_adapter_path"
+            )
+        if self.repaired_embedding_payload_path is None:
+            raise ValueError(
+                "adapter.seed_mode=warm_start_expand_dora requires adapter.repaired_embedding_payload_path"
+            )
+        return self
 
 
 class DatasetSplitConfig(StrictConfigModel):

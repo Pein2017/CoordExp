@@ -5,6 +5,9 @@ from pathlib import Path
 
 import pytest
 import torch
+from pydantic import ValidationError
+from safetensors import safe_open
+from safetensors.torch import save_file
 from torch import nn
 
 from src.adapters.dora import (
@@ -307,6 +310,173 @@ def test_existing_dora_adapter_load_rejects_lm_head_target(tmp_path: Path) -> No
     assert exc_info.value.context["loaded_target_modules"] == ["lm_head"]
 
 
+def test_warm_start_expand_dora_requires_source_adapter_and_embedding_payload() -> None:
+    with pytest.raises(ValidationError):
+        AdapterConfig(
+            type="dora",
+            seed_mode="warm_start_expand_dora",
+            source_adapter_path="/tmp/source-adapter",
+            target_towers=("language", "vision", "aligner"),
+            target_modules="all_linear",
+            rank=2,
+            alpha=4,
+            dropout=0.0,
+        )
+
+    adapter = AdapterConfig(
+        type="dora",
+        seed_mode="warm_start_expand_dora",
+        source_adapter_path="/tmp/source-adapter",
+        repaired_embedding_payload_path="/tmp/repaired-embedding-payload",
+        target_towers=("language", "vision", "aligner"),
+        target_modules="all_linear",
+        rank=2,
+        alpha=4,
+        dropout=0.0,
+    )
+
+    plan = build_adapter_setup_plan(
+        adapter,
+        AdapterSourceGateEvidence(
+            dora_source_study_passed=True,
+            dora_probe_passed=True,
+            dora_probe_receipt=_probe_receipt_for_towers(("language",)),
+        ),
+        base_model_path=Path("/models/qwen-base"),
+    )
+
+    assert plan.mode == "warm_start_expand_dora"
+    assert plan.source_adapter_path == Path("/tmp/source-adapter")
+    assert plan.repaired_embedding_payload_path == Path(
+        "/tmp/repaired-embedding-payload"
+    )
+    assert plan.target_towers == ("language", "vision", "aligner")
+
+
+def test_warm_start_expand_dora_uses_configured_target_subset() -> None:
+    adapter = AdapterConfig(
+        type="dora",
+        seed_mode="warm_start_expand_dora",
+        source_adapter_path="/tmp/source-adapter",
+        repaired_embedding_payload_path="/tmp/repaired-embedding-payload",
+        target_towers=("language", "vision"),
+        target_modules="all_linear",
+        rank=2,
+        alpha=4,
+        dropout=0.0,
+    )
+
+    plan = build_adapter_setup_plan(
+        adapter,
+        AdapterSourceGateEvidence(
+            dora_source_study_passed=True,
+            dora_probe_passed=True,
+            dora_probe_receipt=_probe_receipt_for_towers(("language",)),
+        ),
+        base_model_path=Path("/models/qwen-base"),
+    )
+
+    assert plan.mode == "warm_start_expand_dora"
+    assert plan.target_towers == ("language", "vision")
+
+
+def test_warm_start_expand_dora_copies_language_tensors_and_initializes_new_towers(
+    tmp_path: Path,
+) -> None:
+    source_dir = _write_source_adapter(tmp_path, target_towers=("language",))
+
+    result = setup_dora_adapter(
+        TinyQwenLikeModel(),
+        _warm_start_plan(source_adapter_path=source_dir),
+    )
+
+    params = dict(result.model.named_parameters())
+    assert torch.equal(
+        params["base_model.model.model.language_model.q_proj.lora_A.default.weight"],
+        torch.full((2, 4), 1.25),
+    )
+    assert torch.equal(
+        params["base_model.model.model.language_model.q_proj.lora_B.default.weight"],
+        torch.full((4, 2), 2.5),
+    )
+    assert torch.equal(
+        params[
+            "base_model.model.model.language_model.q_proj.lora_magnitude_vector.default.weight"
+        ],
+        torch.full((4,), 3.75),
+    )
+
+    warm_start = result.receipt.to_artifact_dict()["warm_start"]
+    assert warm_start["seed_mode"] == "warm_start_expand_dora"
+    assert warm_start["copied"] == {
+        "lora_A": 1,
+        "lora_B": 1,
+        "dora_magnitude": 1,
+    }
+    assert warm_start["initialized"] == {"language": 0, "vision": 3, "aligner": 3}
+    assert warm_start["repaired_embedding_payload_path"] == (
+        "/tmp/repaired-embedding-payload"
+    )
+    initialized_targets = warm_start["initialized_target_tensors"]
+    assert any("visual.block_proj.lora_A" in name for name in initialized_targets)
+    assert any(
+        "visual.merger.mlp.lora_magnitude_vector" in name
+        for name in initialized_targets
+    )
+    assert not any("language_model.q_proj" in name for name in initialized_targets)
+
+
+def test_warm_start_expand_dora_reuses_any_existing_target_and_initializes_missing(
+    tmp_path: Path,
+) -> None:
+    source_dir = _write_source_adapter(tmp_path, target_towers=("language", "vision"))
+
+    result = setup_dora_adapter(
+        TinyQwenLikeModel(),
+        _warm_start_plan(source_adapter_path=source_dir),
+    )
+
+    params = dict(result.model.named_parameters())
+    assert torch.equal(
+        params["base_model.model.model.language_model.q_proj.lora_A.default.weight"],
+        torch.full((2, 4), 1.25),
+    )
+    assert torch.equal(
+        params["base_model.model.model.visual.block_proj.lora_A.default.weight"],
+        torch.full((2, 4), 1.25),
+    )
+
+    warm_start = result.receipt.to_artifact_dict()["warm_start"]
+    assert warm_start["copied"] == {
+        "lora_A": 2,
+        "lora_B": 2,
+        "dora_magnitude": 2,
+    }
+    assert warm_start["initialized"] == {"language": 0, "vision": 0, "aligner": 3}
+    initialized_targets = warm_start["initialized_target_tensors"]
+    assert any("visual.merger.mlp.lora_A" in name for name in initialized_targets)
+    assert not any("visual.block_proj" in name for name in initialized_targets)
+
+
+def test_warm_start_expand_dora_requires_language_magnitude_tensor(
+    tmp_path: Path,
+) -> None:
+    source_dir = _write_source_adapter(tmp_path, target_towers=("language",))
+    _rewrite_source_tensors(
+        source_dir,
+        remove_key_fragments=("language_model.q_proj.lora_magnitude_vector",),
+    )
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        setup_dora_adapter(
+            TinyQwenLikeModel(),
+            _warm_start_plan(source_adapter_path=source_dir),
+        )
+
+    assert exc_info.value.code == "adapter.warm_start_partial_target_tensor"
+    assert "lora_magnitude_vector" in str(exc_info.value.context["missing_source_keys"])
+
+
 def test_dora_setup_fails_when_requested_tower_has_no_targets() -> None:
     plan = _setup_plan(target_towers=("vision",))
     model = TinyLanguageOnlyModel()
@@ -420,6 +590,65 @@ def _setup_plan(
             dora_probe_receipt=_probe_receipt_for_towers(target_towers),
         ),
         base_model_path=base_model_path,
+    )
+
+
+def _write_source_adapter(
+    tmp_path: Path,
+    *,
+    target_towers: tuple[str, ...],
+) -> Path:
+    source = setup_dora_adapter(
+        TinyQwenLikeModel(),
+        _setup_plan(target_towers=target_towers),
+    )
+    for name, parameter in source.model.named_parameters():
+        if "lora_A" in name:
+            parameter.data.fill_(1.25)
+        elif "lora_B" in name:
+            parameter.data.fill_(2.5)
+        elif "lora_magnitude_vector" in name:
+            parameter.data.fill_(3.75)
+    adapter_dir = tmp_path / f"{'_'.join(target_towers)}_adapter"
+    source.model.save_pretrained(adapter_dir)
+    return adapter_dir
+
+
+def _rewrite_source_tensors(
+    adapter_dir: Path,
+    *,
+    remove_key_fragments: tuple[str, ...] = (),
+) -> None:
+    tensor_path = adapter_dir / "adapter_model.safetensors"
+    tensors: dict[str, torch.Tensor] = {}
+    with safe_open(str(tensor_path), framework="pt", device="cpu") as handle:
+        for key in handle.keys():
+            if not any(fragment in key for fragment in remove_key_fragments):
+                tensors[key] = handle.get_tensor(key)
+    save_file(tensors, tensor_path)
+
+
+def _warm_start_plan(*, source_adapter_path: Path) -> AdapterSetupPlan:
+    adapter = AdapterConfig(
+        type="dora",
+        seed_mode="warm_start_expand_dora",
+        source_adapter_path=str(source_adapter_path),
+        repaired_embedding_payload_path="/tmp/repaired-embedding-payload",
+        target_towers=("language", "vision", "aligner"),
+        target_modules="all_linear",
+        rank=2,
+        alpha=4,
+        dropout=0.0,
+        bias="none",
+    )
+    return build_adapter_setup_plan(
+        adapter,
+        AdapterSourceGateEvidence(
+            dora_source_study_passed=True,
+            dora_probe_passed=True,
+            dora_probe_receipt=_probe_receipt_for_towers(("language",)),
+        ),
+        base_model_path=Path("/models/qwen-base"),
     )
 
 

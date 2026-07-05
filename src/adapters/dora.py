@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from dataclasses import dataclass
 from importlib import metadata
 from pathlib import Path
@@ -52,9 +53,10 @@ class DoraAdapterSetupReceipt:
     trainable_names: tuple[str, ...]
     trainable_counts: dict[str, int]
     package_versions: dict[str, str]
+    warm_start: Mapping[str, Any] | None = None
 
     def to_artifact_dict(self) -> dict[str, Any]:
-        return {
+        artifact = {
             "mode": self.mode,
             "adapter_type": self.adapter_type,
             "adapter_name": self.adapter_name,
@@ -70,6 +72,9 @@ class DoraAdapterSetupReceipt:
             "trainable_counts": dict(self.trainable_counts),
             "package_versions": dict(self.package_versions),
         }
+        if self.warm_start is not None:
+            artifact["warm_start"] = dict(self.warm_start)
+        return artifact
 
 
 @dataclass(frozen=True)
@@ -539,7 +544,8 @@ def setup_dora_adapter(
     from peft import LoraConfig, PeftModel, get_peft_model
 
     target_receipt = discover_dora_targets(model, plan)
-    if plan.mode == "initialize_new":
+    warm_start_receipt: dict[str, Any] | None = None
+    if plan.mode in {"initialize_new", "warm_start_expand_dora"}:
         peft_config = LoraConfig(
             r=plan.rank,
             lora_alpha=plan.alpha,
@@ -550,6 +556,13 @@ def setup_dora_adapter(
         )
         adapted_model = get_peft_model(model, peft_config, adapter_name=adapter_name)
         active_config = peft_config
+        if plan.mode == "warm_start_expand_dora":
+            warm_start_receipt = _warm_start_expand_dora_adapter(
+                adapted_model,
+                plan,
+                target_receipt=target_receipt,
+                adapter_name=adapter_name,
+            )
     elif plan.mode == "load_existing":
         if plan.adapter_path is None:
             raise RuntimeContractError(
@@ -600,8 +613,275 @@ def setup_dora_adapter(
             trainable_names=trainable_names,
             trainable_counts=trainable_counts,
             package_versions=_package_versions(("peft", "torch")),
+            warm_start=warm_start_receipt,
         ),
     )
+
+
+def _warm_start_expand_dora_adapter(
+    adapted_model: nn.Module,
+    plan: AdapterSetupPlan,
+    *,
+    target_receipt: DoraTargetDiscoveryReceipt,
+    adapter_name: str,
+) -> dict[str, Any]:
+    if plan.source_adapter_path is None:
+        raise RuntimeContractError(
+            "warm_start_expand_dora requires source adapter path",
+            code="adapter.warm_start_source_adapter_required",
+        )
+    source_adapter_path = plan.source_adapter_path
+    tensor_path = source_adapter_path / "adapter_model.safetensors"
+    if not tensor_path.is_file():
+        raise RuntimeContractError(
+            "warm_start_expand_dora source adapter is missing adapter_model.safetensors",
+            code="adapter.warm_start_source_tensor_missing",
+            context={"tensor_path": str(tensor_path)},
+        )
+
+    source_tensors = _load_source_adapter_tensors(tensor_path)
+    target_groups = _group_dora_target_parameters(
+        adapted_model,
+        adapter_name=adapter_name,
+    )
+    copied_counts = {"lora_A": 0, "lora_B": 0, "dora_magnitude": 0}
+    initialized_counts = {"language": 0, "vision": 0, "aligner": 0}
+    copied_records: list[dict[str, Any]] = []
+    initialized_target_tensors: list[str] = []
+    missing_source_keys: list[str] = []
+    shape_mismatches: list[dict[str, Any]] = []
+    equality_failures: list[dict[str, str]] = []
+    used_source_keys: set[str] = set()
+
+    for group in target_groups:
+        present_entries = [
+            entry for entry in group["entries"] if entry["source_key"] in source_tensors
+        ]
+        if not present_entries:
+            initialized_counts[str(group["tower"])] += len(group["entries"])
+            initialized_target_tensors.extend(
+                str(entry["target_key"]) for entry in group["entries"]
+            )
+            continue
+        if len(present_entries) != len(group["entries"]):
+            missing_source_keys.extend(
+                str(entry["source_key"])
+                for entry in group["entries"]
+                if entry["source_key"] not in source_tensors
+            )
+            continue
+        for entry in group["entries"]:
+            source_key = str(entry["source_key"])
+            target_key = str(entry["target_key"])
+            parameter = entry["parameter"]
+            source_tensor = source_tensors[source_key]
+            if tuple(source_tensor.shape) != tuple(parameter.shape):
+                shape_mismatches.append(
+                    {
+                        "source_key": source_key,
+                        "target_key": target_key,
+                        "source_shape": [int(item) for item in source_tensor.shape],
+                        "target_shape": [int(item) for item in parameter.shape],
+                    }
+                )
+                continue
+            with torch.no_grad():
+                parameter.copy_(
+                    source_tensor.to(device=parameter.device, dtype=parameter.dtype)
+                )
+            if not torch.equal(
+                parameter.detach().cpu(),
+                source_tensor.to(dtype=parameter.dtype).cpu(),
+            ):
+                equality_failures.append(
+                    {"source_key": source_key, "target_key": target_key}
+                )
+            used_source_keys.add(source_key)
+            kind = str(entry["kind"])
+            copied_counts[kind] += 1
+            copied_records.append(
+                {
+                    "source_key": source_key,
+                    "target_key": target_key,
+                    "shape": [int(item) for item in parameter.shape],
+                    "source_sha256": _tensor_sha256(source_tensor),
+                    "target_sha256": _tensor_sha256(parameter.detach()),
+                    "status": "copied",
+                    "post_copy_equality": "pass",
+                }
+            )
+
+    if missing_source_keys:
+        raise RuntimeContractError(
+            "warm_start_expand_dora source adapter has partial tensors for requested target modules",
+            code="adapter.warm_start_partial_target_tensor",
+            context={"missing_source_keys": sorted(missing_source_keys)},
+        )
+    if shape_mismatches:
+        raise RuntimeContractError(
+            "warm_start_expand_dora source tensor shapes do not match requested target modules",
+            code="adapter.warm_start_shape_mismatch",
+            context={"shape_mismatches": shape_mismatches},
+        )
+    if equality_failures:
+        raise RuntimeContractError(
+            "warm_start_expand_dora post-copy equality check failed",
+            code="adapter.warm_start_post_copy_equality",
+            context={"equality_failures": equality_failures},
+        )
+
+    ignored_source_keys = sorted(set(source_tensors) - used_source_keys)
+    return {
+        "seed_mode": "warm_start_expand_dora",
+        "source_adapter_path": str(source_adapter_path),
+        "source_adapter_tensor_path": str(tensor_path),
+        "source_adapter_tensor_sha256": _sha256_file(tensor_path),
+        "base_model_path": None if plan.base_model_path is None else str(plan.base_model_path),
+        "source_gate": plan.source_gate.to_artifact_dict(),
+        "target_towers": list(target_receipt.target_towers),
+        "target_policy": target_receipt.target_policy,
+        "target_discovery": target_receipt.to_artifact_dict(),
+        "copied": copied_counts,
+        "initialized": {
+            tower: int(initialized_counts.get(tower, 0))
+            for tower in target_receipt.target_towers
+        },
+        "copied_tensors": copied_records,
+        "source_to_target_key_map": copied_records,
+        "initialized_target_tensors": initialized_target_tensors,
+        "ignored_source_tensors": ignored_source_keys,
+        "post_copy_equality": "pass",
+        "repaired_embedding_payload_path": None
+        if plan.repaired_embedding_payload_path is None
+        else str(plan.repaired_embedding_payload_path),
+    }
+
+
+def _load_source_adapter_tensors(tensor_path: Path) -> dict[str, torch.Tensor]:
+    tensors: dict[str, torch.Tensor] = {}
+    with safe_open(str(tensor_path), framework="pt", device="cpu") as handle:
+        for key in handle.keys():
+            tensors[key] = handle.get_tensor(key).cpu()
+    if not tensors:
+        raise RuntimeContractError(
+            "warm_start_expand_dora source adapter tensor payload is empty",
+            code="adapter.warm_start_source_tensor_empty",
+            context={"tensor_path": str(tensor_path)},
+        )
+    return tensors
+
+
+def _group_dora_target_parameters(
+    adapted_model: nn.Module,
+    *,
+    adapter_name: str,
+) -> list[dict[str, Any]]:
+    by_prefix: dict[str, dict[str, Any]] = {}
+    for target_key, parameter in adapted_model.named_parameters():
+        if not parameter.requires_grad or not _is_dora_adapter_trainable_name(
+            target_key,
+            adapter_name=adapter_name,
+        ):
+            continue
+        source_key = _target_trainable_key_to_source_key(
+            target_key,
+            adapter_name=adapter_name,
+        )
+        prefix = _source_key_target_prefix(source_key)
+        tower = _tower_for_trainable_name(target_key)
+        if tower == "unknown":
+            raise RuntimeContractError(
+                "warm_start_expand_dora encountered unsupported trainable adapter tower",
+                code="adapter.warm_start_unsupported_tower",
+                context={"target_key": target_key, "tower": tower},
+            )
+        group = by_prefix.setdefault(prefix, {"tower": tower, "entries": []})
+        if group["tower"] != tower:
+            raise RuntimeContractError(
+                "warm_start_expand_dora target prefix maps to multiple towers",
+                code="adapter.warm_start_ambiguous_target",
+                context={"target_prefix": prefix, "towers": [group["tower"], tower]},
+            )
+        group["entries"].append(
+            {
+                "target_key": target_key,
+                "source_key": source_key,
+                "kind": _dora_tensor_kind(target_key),
+                "parameter": parameter,
+            }
+        )
+    groups = list(by_prefix.values())
+    for group in groups:
+        kinds = sorted(str(entry["kind"]) for entry in group["entries"])
+        if kinds != ["dora_magnitude", "lora_A", "lora_B"]:
+            raise RuntimeContractError(
+                "warm_start_expand_dora target module does not expose complete DoRA tensors",
+                code="adapter.warm_start_target_incomplete",
+                context={"tower": group["tower"], "kinds": kinds},
+            )
+    return groups
+
+
+def _target_trainable_key_to_source_key(target_key: str, *, adapter_name: str) -> str:
+    suffix_map = {
+        f".lora_A.{adapter_name}.weight": ".lora_A.weight",
+        f".lora_B.{adapter_name}.weight": ".lora_B.weight",
+        f".lora_magnitude_vector.{adapter_name}.weight": ".lora_magnitude_vector",
+    }
+    for target_suffix, source_suffix in suffix_map.items():
+        if target_key.endswith(target_suffix):
+            return f"{target_key.removesuffix(target_suffix)}{source_suffix}"
+    raise RuntimeContractError(
+        "warm_start_expand_dora target key is not a supported DoRA tensor",
+        code="adapter.warm_start_target_key_unsupported",
+        context={"target_key": target_key},
+    )
+
+
+def _source_key_target_prefix(source_key: str) -> str:
+    for suffix in (".lora_A.weight", ".lora_B.weight", ".lora_magnitude_vector"):
+        if source_key.endswith(suffix):
+            return source_key.removesuffix(suffix)
+    raise RuntimeContractError(
+        "warm_start_expand_dora source key is not a supported DoRA tensor",
+        code="adapter.warm_start_source_key_unsupported",
+        context={"source_key": source_key},
+    )
+
+
+def _dora_tensor_kind(target_key: str) -> str:
+    if ".lora_A." in target_key:
+        return "lora_A"
+    if ".lora_B." in target_key:
+        return "lora_B"
+    if ".lora_magnitude_vector." in target_key:
+        return "dora_magnitude"
+    raise RuntimeContractError(
+        "warm_start_expand_dora target key has unknown DoRA tensor kind",
+        code="adapter.warm_start_target_key_unsupported",
+        context={"target_key": target_key},
+    )
+
+
+def _tower_for_trainable_name(name: str) -> str:
+    for tower in ("language", "aligner", "vision"):
+        if _linear_belongs_to_tower(name, tower):
+            return tower
+    return "unknown"
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _tensor_sha256(tensor: torch.Tensor) -> str:
+    cpu_tensor = tensor.detach().cpu().contiguous()
+    byte_view = cpu_tensor.view(torch.uint8)
+    return hashlib.sha256(byte_view.numpy().tobytes()).hexdigest()
 
 
 def _validate_loaded_dora_config(active_config: Any, plan: AdapterSetupPlan) -> None:

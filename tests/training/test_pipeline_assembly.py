@@ -257,6 +257,104 @@ def test_run_training_pipeline_seeds_before_stochastic_setup(
     assert seed_receipt["applied_before"][0] == "qwen_model_load"
 
 
+def test_run_training_pipeline_loads_embedding_seed_for_warm_start_expand_dora(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    payload = yaml.safe_load(FIXTURE_CONFIG.read_text())
+    _point_dataset_paths_at_fixture(payload)
+    payload["run"]["artifact_root"] = str(tmp_path / "artifacts")
+    payload["run"]["name"] = "fake-warm-start"
+    payload["adapter"].update(
+        {
+            "seed_mode": "warm_start_expand_dora",
+            "source_adapter_path": str(tmp_path / "source_adapter"),
+            "repaired_embedding_payload_path": str(tmp_path / "embedding_payload"),
+            "target_towers": ["language", "vision", "aligner"],
+        }
+    )
+    config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+    log: list[str] = []
+    monkeypatch.setenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", str(tmp_path / "pack-cache"))
+
+    _install_fake_training_pipeline_boundaries(monkeypatch, log)
+
+    class WarmStartPlan(FakePlan):
+        mode = "warm_start_expand_dora"
+        repaired_embedding_payload_path = tmp_path / "embedding_payload"
+
+        def to_artifact_dict(self) -> dict[str, Any]:
+            return {
+                "adapter_type": "dora",
+                "mode": self.mode,
+                "repaired_embedding_payload_identity": {
+                    "path": str(self.repaired_embedding_payload_path)
+                },
+            }
+
+    def fake_build_adapter_setup_plan(
+        adapter_config: Any,
+        evidence: Any,
+        base_model_path: Path,
+    ) -> WarmStartPlan:
+        del adapter_config, evidence, base_model_path
+        return WarmStartPlan()
+
+    def fake_install_special_token_embedding_deltas(
+        model: torch.nn.Module,
+        selection: Any,
+        source_gate: Any,
+    ) -> FakeSpecialTokenResult:
+        del selection, source_gate
+        log.append("install_special_token_embedding_deltas")
+        return FakeSpecialTokenResult(model=model)
+
+    def fake_load_special_token_embedding_deltas(
+        result: FakeSpecialTokenResult,
+        payload_dir: Path,
+        **kwargs: Any,
+    ) -> FakeReceipt:
+        log.append(f"load_special_token_embedding_deltas:{payload_dir}")
+        assert kwargs["expected_base_model_path"] == Path("/tmp/fake-qwen")
+        assert kwargs["expected_base_config_sha256"] == "fake-base-config-sha"
+        assert kwargs["expected_tokenizer_sha256"] == "fake-tokenizer-sha"
+        return FakeReceipt(
+            {
+                "loaded": True,
+                "tensor_path": str(payload_dir / "special_token_embeddings.safetensors"),
+                "metadata_path": str(payload_dir / "special_token_embeddings.json"),
+            }
+        )
+
+    monkeypatch.setattr(
+        "src.training.pipeline.build_adapter_setup_plan",
+        fake_build_adapter_setup_plan,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "src.training.pipeline.install_special_token_embedding_deltas",
+        fake_install_special_token_embedding_deltas,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "src.training.pipeline.load_special_token_embedding_deltas",
+        fake_load_special_token_embedding_deltas,
+        raising=False,
+    )
+
+    summary = run_training_pipeline(config_path)
+
+    run_dir = Path(summary["run_dir"])
+    seed_log = f"load_special_token_embedding_deltas:{tmp_path / 'embedding_payload'}"
+    assert log.index("install_special_token_embedding_deltas") < log.index(seed_log)
+    assert log.index(seed_log) < log.index("trainer.run")
+    manifest = json.loads((run_dir / "run_manifest.json").read_text())
+    assert manifest["receipts"]["qwen"]["special_token_embedding_seed"] == (
+        "receipts/qwen/special_token_embedding_seed.json"
+    )
+
+
 def test_run_training_pipeline_wires_accelerate_runtime_for_multirank(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
