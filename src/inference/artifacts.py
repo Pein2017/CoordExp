@@ -303,13 +303,22 @@ def _validate_image_plan_rows(
     rows: list[dict[str, Any]],
     image_plan_rows: list[dict[str, Any]],
 ) -> None:
-    expected = [str(row["row_id"]) for row in rows]
-    observed = [str(row.get("row_id")) for row in image_plan_rows]
+    expected = [
+        {"row_id": str(row["row_id"]), "row_index": int(row["row_index"])}
+        for row in rows
+    ]
+    observed = [
+        {
+            "row_id": str(row.get("row_id")),
+            "row_index": int(row.get("row_index", -1)),
+        }
+        for row in image_plan_rows
+    ]
     if observed != expected:
         raise ArtifactContractError(
             "image_plan.jsonl rows must preserve raw row identity and order",
             code="artifacts.image_plan_row_mismatch",
-            context={"expected_row_ids": expected, "observed_row_ids": observed},
+            context={"expected_rows": expected, "observed_rows": observed},
         )
 
 
@@ -444,8 +453,14 @@ def _provenance(
         "decode_policy_fingerprint": metadata["generation_config_fingerprint"],
         "generation_config_fingerprint": metadata["generation_config_fingerprint"],
         "generation_policy": dict(metadata.get("generation_policy") or {}),
+        "parallelism": dict(metadata.get("parallelism") or {}),
+        "model_identity": dict(metadata.get("model_identity") or {}),
         "model_identity_fingerprint": metadata["model_identity_fingerprint"],
+        "processor_identity": dict(metadata.get("processor_identity") or {}),
         "processor_identity_fingerprint": metadata["processor_identity_fingerprint"],
+        "tokenizer_identity": dict(metadata.get("tokenizer_identity") or {}),
+        "adapter_identity": metadata.get("adapter_identity"),
+        "embedding_delta_identity": metadata.get("embedding_delta_identity"),
         "template_identity": metadata["template_identity"],
         "parser_policy": metadata["parser_policy"],
         "score_policy_fingerprint": SCORE_POLICY_FINGERPRINT,
@@ -473,13 +488,17 @@ def _manifest(*, metadata: dict[str, Any], summary: dict[str, Any]) -> dict[str,
         "resolved_config_fingerprints": metadata.get("resolved_config_fingerprints", {}),
         "model_identity": metadata.get("model_identity", {}),
         "model_identity_fingerprint": metadata["model_identity_fingerprint"],
+        "processor_identity": metadata.get("processor_identity", {}),
         "adapter_identity": metadata.get("adapter_identity"),
+        "embedding_delta_identity": metadata.get("embedding_delta_identity"),
+        "tokenizer_identity": metadata.get("tokenizer_identity", {}),
         "backend": metadata["backend"],
         "backend_mode": metadata["backend_mode"],
         "response_family": metadata["response_family"],
         "dataset_identity": metadata["dataset_identity"],
         "generation_config_fingerprint": metadata["generation_config_fingerprint"],
         "generation_policy": dict(metadata.get("generation_policy") or {}),
+        "parallelism": dict(metadata.get("parallelism") or {}),
         "score_policy_fingerprint": SCORE_POLICY_FINGERPRINT,
         "trace_scoring_status": "scored",
         "prompt_policy_fingerprint": metadata["prompt_policy_fingerprint"],
@@ -502,13 +521,17 @@ def _terminal_manifest(*, metadata: dict[str, Any], summary: dict[str, Any]) -> 
         "resolved_config_fingerprints": metadata.get("resolved_config_fingerprints", {}),
         "model_identity": metadata.get("model_identity", {}),
         "model_identity_fingerprint": metadata.get("model_identity_fingerprint"),
+        "processor_identity": metadata.get("processor_identity", {}),
         "adapter_identity": metadata.get("adapter_identity"),
+        "embedding_delta_identity": metadata.get("embedding_delta_identity"),
+        "tokenizer_identity": metadata.get("tokenizer_identity", {}),
         "backend": metadata.get("backend"),
         "backend_mode": metadata.get("backend_mode"),
         "response_family": metadata.get("response_family"),
         "dataset_identity": metadata.get("dataset_identity", {}),
         "generation_config_fingerprint": metadata.get("generation_config_fingerprint"),
         "generation_policy": dict(metadata.get("generation_policy") or {}),
+        "parallelism": dict(metadata.get("parallelism") or {}),
         "score_policy_fingerprint": SCORE_POLICY_FINGERPRINT,
         "trace_scoring_status": "not_materialized",
         "prompt_policy_fingerprint": metadata.get("prompt_policy_fingerprint"),

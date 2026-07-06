@@ -26,9 +26,12 @@ RAW_NAME = "gt_vs_pred.jsonl"
 SCORED_NAME = "gt_vs_pred_scored.jsonl"
 PROVENANCE_NAME = "gt_vs_pred_scored.jsonl.provenance.json"
 METRICS_NAME = "metrics.json"
+RECEIPT_NAME = "evaluation_receipt.json"
 METRIC_FAMILY = "coordexp_swift_detection_coco_bbox_v1"
 COCO_GT_NAME = "coco_gt.json"
 COCO_PREDICTIONS_NAME = "coco_predictions.json"
+RUN_MANIFEST_NAME = "run_manifest.json"
+SUMMARY_NAME = "summary.json"
 SUPPORTED_PRED_SCORE_VERSION = 1
 SUPPORTED_SCORE_SOURCE_KIND = "token_trace_selected_logprob_mean"
 
@@ -36,6 +39,7 @@ SUPPORTED_SCORE_SOURCE_KIND = "token_trace_selected_logprob_mean"
 @dataclass(frozen=True)
 class DetectionConsumerResult:
     metrics_path: Path
+    receipt_path: Path
     metrics: dict[str, Any]
 
 
@@ -62,20 +66,32 @@ def evaluate_scored_detection_artifacts(
     normalized_rows = _normalize_eval_rows(scored_rows=rows, raw_rows=raw_rows)
     coco_gt, coco_predictions, conversion_metrics = _to_coco_eval_artifacts(normalized_rows)
     official_metrics = _run_coco_bbox_eval(coco_gt, coco_predictions)
+    receipt = _evaluation_receipt(
+        artifact_root=artifact_root,
+        provenance=provenance,
+        rows=rows,
+    )
     metrics = _count_metrics(
         rows,
         normalized_rows=normalized_rows,
         conversion_metrics=conversion_metrics,
         official_metrics=official_metrics,
         metric_artifact_name=metrics_name,
+        receipt=receipt,
     )
     output_root = Path(output_dir)
     output_root.mkdir(parents=True, exist_ok=True)
     _write_json(output_root / COCO_GT_NAME, coco_gt)
     _write_json(output_root / COCO_PREDICTIONS_NAME, coco_predictions)
+    receipt_path = output_root / RECEIPT_NAME
+    _write_json(receipt_path, receipt)
     metrics_path = output_root / metrics_name
     _write_json(metrics_path, metrics)
-    return DetectionConsumerResult(metrics_path=metrics_path, metrics=metrics)
+    return DetectionConsumerResult(
+        metrics_path=metrics_path,
+        receipt_path=receipt_path,
+        metrics=metrics,
+    )
 
 
 def _validate_provenance(
@@ -611,6 +627,7 @@ def _count_metrics(
     conversion_metrics: dict[str, int],
     official_metrics: dict[str, float],
     metric_artifact_name: str,
+    receipt: dict[str, Any],
 ) -> dict[str, Any]:
     gt_object_count = sum(len(row.get("gt") or []) for row in rows)
     pred_object_count = sum(len(row.get("pred") or []) for row in rows)
@@ -618,8 +635,12 @@ def _count_metrics(
     return {
         "metric_artifact_name": metric_artifact_name,
         "metric_family": METRIC_FAMILY,
-        "benchmark_metric": True,
+        "benchmark_metric": bool(receipt["benchmark_metric"]),
+        "benchmark_eligible": bool(receipt["run_manifest"]["benchmark_eligible"]),
         "metric_scope": "coco_bbox",
+        "artifact_dir": receipt["artifact_dir"],
+        "evaluation_receipt_json": RECEIPT_NAME,
+        "evaluation_receipt": receipt,
         "row_count": len(rows),
         "gt_object_count": gt_object_count,
         "input_scored_pred_count": pred_object_count,
@@ -637,6 +658,91 @@ def _count_metrics(
         "coco_predictions_json": COCO_PREDICTIONS_NAME,
         **conversion_metrics,
         **official_metrics,
+    }
+
+
+def _evaluation_receipt(
+    *,
+    artifact_root: Path,
+    provenance: dict[str, Any],
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    artifacts = {
+        RAW_NAME: _artifact_receipt(artifact_root / RAW_NAME),
+        SCORED_NAME: _artifact_receipt(artifact_root / SCORED_NAME),
+        PROVENANCE_NAME: _artifact_receipt(artifact_root / PROVENANCE_NAME),
+    }
+    manifest = _optional_json_artifact_receipt(artifact_root / RUN_MANIFEST_NAME)
+    summary = _optional_json_artifact_receipt(artifact_root / SUMMARY_NAME)
+    row_ids = [str(row.get("row_id")) for row in rows]
+    row_ids_sha256 = hashlib.sha256(
+        json.dumps(row_ids, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+    run_manifest_payload = manifest.get("payload")
+    if isinstance(run_manifest_payload, dict):
+        terminal_status = str(run_manifest_payload.get("terminal_status", "completed"))
+        benchmark_eligible = bool(run_manifest_payload.get("benchmark_eligible", False))
+        evaluator_consumer_status = run_manifest_payload.get("evaluator_consumer_status")
+        artifacts[RUN_MANIFEST_NAME] = {
+            "path": RUN_MANIFEST_NAME,
+            "sha256": manifest["sha256"],
+        }
+    else:
+        terminal_status = "missing"
+        benchmark_eligible = False
+        evaluator_consumer_status = "manifest_missing"
+    if summary.get("payload") is not None:
+        artifacts[SUMMARY_NAME] = {
+            "path": SUMMARY_NAME,
+            "sha256": summary["sha256"],
+        }
+
+    return {
+        "artifact_dir": artifact_root.as_posix(),
+        "metric_family": METRIC_FAMILY,
+        "artifacts": artifacts,
+        "row_binding": {
+            "row_count": len(rows),
+            "row_ids_sha256": row_ids_sha256,
+            "provenance_row_ids_sha256": (provenance.get("row_binding") or {}).get(
+                "row_ids_sha256"
+            ),
+        },
+        "generation_config_fingerprint": provenance.get(
+            "generation_config_fingerprint"
+        )
+        or provenance.get("decode_policy_fingerprint"),
+        "generation_policy": dict(provenance.get("generation_policy") or {}),
+        "parallelism": dict(provenance.get("parallelism") or {}),
+        "model_identity_fingerprint": provenance.get("model_identity_fingerprint"),
+        "processor_identity_fingerprint": provenance.get("processor_identity_fingerprint"),
+        "score_policy_fingerprint": provenance.get("score_policy_fingerprint"),
+        "run_manifest": {
+            "path": RUN_MANIFEST_NAME,
+            "sha256": manifest.get("sha256"),
+            "terminal_status": terminal_status,
+            "benchmark_eligible": benchmark_eligible,
+            "evaluator_consumer_status": evaluator_consumer_status,
+        },
+        "benchmark_metric": bool(
+            terminal_status == "completed" and benchmark_eligible
+        ),
+    }
+
+
+def _artifact_receipt(path: Path) -> dict[str, Any]:
+    _require_file(path, code="eval_detection.missing_receipt_artifact")
+    return {"path": path.name, "sha256": sha256_file(path)}
+
+
+def _optional_json_artifact_receipt(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {"path": path.name, "sha256": None, "payload": None}
+    return {
+        "path": path.name,
+        "sha256": sha256_file(path),
+        "payload": _read_json(path),
     }
 
 

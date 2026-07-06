@@ -24,6 +24,7 @@ def test_detection_consumer_writes_official_coco_metrics_for_perfect_prediction(
     tmp_path: Path,
 ) -> None:
     from src.eval.detection_consumer import evaluate_scored_detection_artifacts
+    from src.eval.detection_consumer import sha256_file
 
     artifact_dir = _write_scored_fixture(
         tmp_path / "artifacts",
@@ -39,7 +40,7 @@ def test_detection_consumer_writes_official_coco_metrics_for_perfect_prediction(
     assert result.metrics_path == tmp_path / "eval" / "metrics.json"
     assert metrics["metric_artifact_name"] == "metrics.json"
     assert metrics["metric_family"] == "coordexp_swift_detection_coco_bbox_v1"
-    assert metrics["benchmark_metric"] is True
+    assert metrics["benchmark_metric"] is False
     assert metrics["metric_scope"] == "coco_bbox"
     assert metrics["row_count"] == 1
     assert metrics["gt_object_count"] == 1
@@ -60,6 +61,29 @@ def test_detection_consumer_writes_official_coco_metrics_for_perfect_prediction(
     assert "_ignore" not in coco_gt["annotations"][0]
     assert "ignore" not in coco_gt["annotations"][0]
     assert set(coco_predictions[0]) == {"image_id", "category_id", "bbox", "score"}
+    receipt_path = tmp_path / "eval" / "evaluation_receipt.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert result.receipt_path == receipt_path
+    assert metrics["evaluation_receipt_json"] == "evaluation_receipt.json"
+    assert metrics["evaluation_receipt"] == receipt
+    assert receipt["artifact_dir"] == artifact_dir.as_posix()
+    assert receipt["benchmark_metric"] is False
+    assert receipt["run_manifest"]["benchmark_eligible"] is False
+    assert receipt["run_manifest"]["terminal_status"] == "completed"
+    assert receipt["artifacts"]["gt_vs_pred.jsonl"]["sha256"] == sha256_file(
+        artifact_dir / "gt_vs_pred.jsonl"
+    )
+    assert receipt["artifacts"]["gt_vs_pred_scored.jsonl"]["sha256"] == sha256_file(
+        artifact_dir / "gt_vs_pred_scored.jsonl"
+    )
+    assert receipt["artifacts"]["gt_vs_pred_scored.jsonl.provenance.json"][
+        "sha256"
+    ] == sha256_file(artifact_dir / "gt_vs_pred_scored.jsonl.provenance.json")
+    assert receipt["artifacts"]["run_manifest.json"]["sha256"] == sha256_file(
+        artifact_dir / "run_manifest.json"
+    )
+    assert receipt["row_binding"]["row_count"] == 1
+    assert receipt["generation_config_fingerprint"] == "gen-fp"
 
 
 def test_detection_consumer_scales_gt_coord_bins_to_prediction_pixel_space(
@@ -577,7 +601,10 @@ def _write_scored_fixture(
         output_dir=output_dir,
         rows=rows,
         decode_results=decode_results,
-        image_plan_rows=[{"row_id": row["row_id"]} for row in rows],
+        image_plan_rows=[
+            {"row_id": row["row_id"], "row_index": row["row_index"]}
+            for row in rows
+        ],
         metadata={
             "artifact_schema_version": 1,
             "detection_template_id": "compact-object-box-closed",

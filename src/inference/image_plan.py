@@ -120,12 +120,14 @@ def materialize_image_plan_rows(
     components: Any,
     processor_config: ProcessorConfig,
     materialize: bool,
+    row_indices: list[int] | None = None,
 ) -> list[ImagePlanRow]:
     return materialize_image_plan_batch(
         raw_examples,
         components=components,
         processor_config=processor_config,
         materialize=materialize,
+        row_indices=row_indices,
     ).rows
 
 
@@ -135,6 +137,7 @@ def materialize_image_plan_batch(
     components: Any,
     processor_config: ProcessorConfig,
     materialize: bool,
+    row_indices: list[int] | None = None,
 ) -> ImagePlanBatch:
     encodings = [
         plan_qwen_image(
@@ -163,9 +166,13 @@ def materialize_image_plan_batch(
                 )
                 pixel_offset = next_offset
             encodings = materialized
+    row_index_values = _resolve_row_indices(
+        row_indices=row_indices,
+        row_count=len(encodings),
+    )
     rows = [
-        _row_from_encoding(index, encoding, materialized=materialize)
-        for index, encoding in enumerate(encodings)
+        _row_from_encoding(row_index, encoding, materialized=materialize)
+        for row_index, encoding in zip(row_index_values, encodings, strict=True)
     ]
     return ImagePlanBatch(
         rows=rows,
@@ -180,6 +187,7 @@ def write_image_plan_jsonl(
     processor_config: ProcessorConfig,
     output_path: Path,
     materialize: bool,
+    row_indices: list[int] | None = None,
 ) -> list[ImagePlanRow]:
     if not materialize:
         raise EncodingContractError(
@@ -192,6 +200,7 @@ def write_image_plan_jsonl(
         components=components,
         processor_config=processor_config,
         materialize=materialize,
+        row_indices=row_indices,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as handle:
@@ -223,6 +232,22 @@ def _row_from_encoding(index: int, encoding: Any, *, materialized: bool) -> Imag
         status="ok",
         error=None,
     )
+
+
+def _resolve_row_indices(
+    *,
+    row_indices: list[int] | None,
+    row_count: int,
+) -> list[int]:
+    if row_indices is None:
+        return list(range(row_count))
+    if len(row_indices) != row_count:
+        raise EncodingContractError(
+            "image plan row index count must match raw examples",
+            code="inference.image_plan_row_index_count_mismatch",
+            context={"row_index_count": len(row_indices), "row_count": row_count},
+        )
+    return [int(index) for index in row_indices]
 
 
 def _model_inputs_by_row_id(encodings: list[Any]) -> dict[str, dict[str, Any]]:

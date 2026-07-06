@@ -6,18 +6,38 @@ import hashlib
 import json
 from collections import Counter
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.common.errors import ArtifactContractError, CoordExpError, EncodingContractError
+import torch
+
+from src.common.errors import (
+    ArtifactContractError,
+    CoordExpError,
+    EncodingContractError,
+    RuntimeContractError,
+)
 from src.config.inference import InferConfig, ResolvedInferConfig, load_infer_config, resolve_infer_run_directory
 from src.config.models import ProcessorConfig, TemplateConfig, TemplatePromptConfig
 from src.config.writer import write_resolved_config_artifacts
 from src.data import RawExample, load_raw_examples
-from src.inference.artifacts import write_inference_artifacts, write_terminal_status_artifacts
+from src.inference.artifacts import (
+    RAW_NAME,
+    write_inference_artifacts,
+    write_terminal_status_artifacts,
+)
 from src.inference.backend import DecodeRequest, HFGenerateBackend
+from src.inference.data_parallel import (
+    DataParallelPlan,
+    RankShardPlan,
+    plan_data_parallel_shards,
+    require_visible_cuda_for_inference,
+    sort_rows_by_index,
+)
 from src.inference.image_plan import materialize_image_plan_batch, verify_processor_model_vision_parity
+from src.inference.merge import merge_shard_artifacts
 from src.inference.parsing import PARSER_POLICY, parse_compact_object_box_closed
 from src.inference.prompt import TEMPLATE_ID, build_prompt_record, verify_prompt_token_parity
 from src.inference.runtime import InferenceRuntime, assemble_runtime
@@ -26,6 +46,13 @@ from src.inference.scoring import SCORE_POLICY_FINGERPRINT
 
 RuntimeFactory = Callable[[InferConfig], Any]
 BackendFactory = Callable[[Any, InferConfig], Any]
+WorkerLauncher = Callable[..., Any]
+
+
+@dataclass(frozen=True)
+class DataParallelShardRunResult:
+    raw_rows: list[dict[str, Any]]
+    shard_dirs: list[Path]
 
 
 def run(
@@ -33,6 +60,7 @@ def run(
     config_path: str | Path,
     runtime_factory: RuntimeFactory | None = None,
     backend_factory: BackendFactory | None = None,
+    worker_launcher: WorkerLauncher | None = None,
 ) -> int:
     resolved = load_infer_config(config_path)
     run_dir = resolve_infer_run_directory(
@@ -46,24 +74,245 @@ def run(
     if resolved.config.debug.dry_run:
         return 0
 
+    try:
+        visible_cuda_tokens = require_visible_cuda_for_inference(
+            debug_dry_run=resolved.config.debug.dry_run,
+        )
+        raw_examples = list(load_raw_examples(resolved.config.data.input_jsonl))
+        data_parallel_plan = plan_data_parallel_shards(
+            row_ids=tuple(example.example_id for example in raw_examples),
+            per_device_batch_size=resolved.config.generation.batch_size,
+            visible_cuda_tokens=visible_cuda_tokens,
+        )
+        metadata["parallelism"] = {
+            "execution_mode": (
+                "direct_single_process"
+                if data_parallel_plan.active_ranks == 1
+                else "controller_worker"
+            ),
+            "plan": data_parallel_plan.to_artifact_dict(),
+        }
+    except CoordExpError as exc:
+        _write_terminal_contract_failure(
+            output_dir=run_dir,
+            metadata=metadata,
+            error=exc,
+        )
+        raise
+
+    if data_parallel_plan.active_ranks == 1:
+        _execute_indexed_rows_with_terminal_status(
+            resolved=resolved,
+            output_dir=run_dir,
+            indexed_raw_examples=tuple(enumerate(raw_examples)),
+            metadata=metadata,
+            runtime_factory=runtime_factory,
+            backend_factory=backend_factory,
+        )
+        return 0
+
+    _execute_controller_worker_path(
+        resolved=resolved,
+        run_dir=run_dir,
+        raw_examples=tuple(raw_examples),
+        metadata=metadata,
+        plan=data_parallel_plan,
+        worker_launcher=worker_launcher,
+    )
+    return 0
+
+
+def run_shard(
+    *,
+    resolved: ResolvedInferConfig,
+    output_dir: Path,
+    row_indices: Sequence[int],
+    worker_metadata: dict[str, Any] | None = None,
+    rank_plan: RankShardPlan | None = None,
+    runtime_factory: RuntimeFactory | None = None,
+    backend_factory: BackendFactory | None = None,
+) -> int:
+    raw_examples = list(load_raw_examples(resolved.config.data.input_jsonl))
+    indexed_raw_examples = _select_indexed_raw_examples(
+        raw_examples=raw_examples,
+        row_indices=row_indices,
+    )
+    if rank_plan is not None:
+        _validate_rank_plan_matches_assignment(
+            rank_plan=rank_plan,
+            row_indices=tuple(index for index, _ in indexed_raw_examples),
+        )
+    metadata = _base_metadata(resolved=resolved)
+    shard_worker_metadata = dict(worker_metadata or {})
+    metadata["parallelism"] = {
+        "execution_mode": "rank_local_shard",
+        "shard_plan_fingerprint": shard_worker_metadata.pop(
+            "shard_plan_fingerprint",
+            None,
+        ),
+        "worker": shard_worker_metadata,
+        "shard_assignment": {
+            "assigned_row_indices": [index for index, _ in indexed_raw_examples],
+            "assigned_row_ids": [
+                raw_example.example_id for _, raw_example in indexed_raw_examples
+            ],
+        },
+    }
+    _execute_indexed_rows_with_terminal_status(
+        resolved=resolved,
+        output_dir=output_dir,
+        indexed_raw_examples=indexed_raw_examples,
+        metadata=metadata,
+        runtime_factory=runtime_factory,
+        backend_factory=backend_factory,
+    )
+    return 0
+
+
+def run_data_parallel_shards(
+    *,
+    resolved: ResolvedInferConfig,
+    run_dir: Path,
+    plan: DataParallelPlan,
+    runtime_factory: RuntimeFactory | None = None,
+    backend_factory: BackendFactory | None = None,
+) -> DataParallelShardRunResult:
+    shard_dirs: list[Path] = []
+    raw_rows: list[dict[str, Any]] = []
+    for rank_plan in plan.ranks:
+        shard_dir = run_dir / "shards" / rank_plan.shard_dir_name
+        shard_dirs.append(shard_dir)
+        run_shard(
+            resolved=resolved,
+            output_dir=shard_dir,
+            row_indices=rank_plan.row_indices,
+            worker_metadata={
+                "shard_plan_fingerprint": plan.fingerprint,
+                "rank": rank_plan.rank,
+                "world_size": rank_plan.world_size,
+                "parent_visible_device_token": rank_plan.parent_visible_device_token,
+                "worker_cuda_visible_devices": rank_plan.parent_visible_device_token,
+                "worker_logical_device": "cuda:0",
+                "cuda_device_count": 1,
+                "cuda_current_device": 0,
+                "model_first_parameter_device": "cuda:0",
+                "per_device_batch_size": rank_plan.per_device_batch_size,
+                "batch_ids": list(rank_plan.batch_ids),
+            },
+            rank_plan=rank_plan,
+            runtime_factory=runtime_factory,
+            backend_factory=backend_factory,
+        )
+        raw_rows.extend(_read_jsonl(shard_dir / RAW_NAME))
+    return DataParallelShardRunResult(
+        raw_rows=sort_rows_by_index(raw_rows),
+        shard_dirs=shard_dirs,
+    )
+
+
+def _execute_controller_worker_path(
+    *,
+    resolved: ResolvedInferConfig,
+    run_dir: Path,
+    raw_examples: tuple[RawExample, ...],
+    metadata: dict[str, Any],
+    plan: DataParallelPlan,
+    worker_launcher: WorkerLauncher | None,
+) -> None:
+    from src.inference import worker as worker_module
+
+    plan_json = _write_data_parallel_plan_artifact(run_dir=run_dir, plan=plan)
+    resolved_config_json = run_dir / "configs" / "resolved.json"
+    launcher = worker_launcher or worker_module.launch_worker_subprocess
+    launched: list[tuple[RankShardPlan, Any]] = []
+    for rank_plan in plan.ranks:
+        shard_dir = run_dir / "shards" / rank_plan.shard_dir_name
+        process = launcher(
+            rank=rank_plan.rank,
+            world_size=rank_plan.world_size,
+            parent_visible_device_token=rank_plan.parent_visible_device_token,
+            resolved_config_json=resolved_config_json,
+            shard_plan_json=plan_json,
+            output_dir=shard_dir,
+        )
+        launched.append((rank_plan, process))
+
+    worker_statuses: dict[int, str] = {}
+    return_codes: dict[int, int | None] = {}
+    for rank_plan, process in launched:
+        wait = getattr(process, "wait", None)
+        if callable(wait):
+            code = wait()
+        else:
+            code = getattr(process, "returncode", None)
+        if code is None:
+            code = getattr(process, "returncode", None)
+        code_int = None if code is None else int(code)
+        return_codes[rank_plan.rank] = code_int
+        worker_statuses[rank_plan.rank] = "completed" if code_int == 0 else "failed"
+
+    failed = {
+        rank: code
+        for rank, code in sorted(return_codes.items())
+        if code != 0
+    }
+    if failed:
+        error = RuntimeContractError(
+            "one or more inference workers failed",
+            code="pipeline.worker_failed",
+            context={"worker_return_codes": failed},
+        )
+        _write_terminal_contract_failure(
+            output_dir=run_dir,
+            metadata=metadata,
+            error=error,
+        )
+        raise error
+
+    shard_dirs = [run_dir / "shards" / rank_plan.shard_dir_name for rank_plan in plan.ranks]
+    merge_shard_artifacts(
+        output_dir=run_dir,
+        shard_dirs=tuple(shard_dirs),
+        expected_row_ids=tuple(example.example_id for example in raw_examples),
+        metadata=metadata,
+        plan=plan,
+        worker_statuses=worker_statuses,
+    )
+
+
+def _write_data_parallel_plan_artifact(*, run_dir: Path, plan: DataParallelPlan) -> Path:
+    path = run_dir / "shards" / "data_parallel_plan.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _write_json(path, plan.to_artifact_dict())
+    return path
+
+
+def _execute_indexed_rows_with_terminal_status(
+    *,
+    resolved: ResolvedInferConfig,
+    output_dir: Path,
+    indexed_raw_examples: tuple[tuple[int, RawExample], ...],
+    metadata: dict[str, Any],
+    runtime_factory: RuntimeFactory | None,
+    backend_factory: BackendFactory | None,
+) -> None:
     runtime = (runtime_factory or assemble_runtime)(resolved.config)
     qwen = runtime.qwen
     metadata.update(_runtime_metadata(runtime=runtime, qwen=qwen))
+    _fill_worker_runtime_device_metadata(metadata=metadata, qwen=qwen)
     try:
-        verify_processor_model_vision_parity(
-            processor_identity=qwen.processor_identity,
-            model_config=_model_config(qwen),
-        )
-        raw_examples = list(load_raw_examples(resolved.config.data.input_jsonl))
-        image_plan_batch = materialize_image_plan_batch(
-            raw_examples,
-            components=qwen,
-            processor_config=_processor_config(resolved.config),
-            materialize=True,
+        _execute_indexed_rows(
+            resolved=resolved,
+            output_dir=output_dir,
+            indexed_raw_examples=indexed_raw_examples,
+            metadata=metadata,
+            runtime=runtime,
+            qwen=qwen,
+            backend_factory=backend_factory,
         )
     except EncodingContractError as exc:
         write_terminal_status_artifacts(
-            output_dir=run_dir,
+            output_dir=output_dir,
             metadata=metadata,
             summary={
                 "terminal_status": "failed",
@@ -73,67 +322,164 @@ def run(
             },
         )
         raise
-    try:
-        backend = (backend_factory or _default_backend_factory)(runtime, resolved.config)
-        prompt_records = [
-            build_prompt_record(
-                raw_example,
-                _template_config(resolved.config),
-                processor=qwen.processor,
-                row_index=index,
-            )
-            for index, raw_example in enumerate(raw_examples)
-        ]
-        requests = [
-            DecodeRequest(
-                request_id=record.row_id,
-                prompt_token_ids=list(record.prompt_token_ids),
-                model_inputs=image_plan_batch.model_inputs_by_row_id[record.row_id],
-                max_new_tokens=resolved.config.generation.max_new_tokens,
-                repetition_penalty=resolved.config.generation.repetition_penalty,
-            )
-            for record in prompt_records
-        ]
-
-        decode_results = {}
-        for batch in _batches(requests, size=resolved.config.generation.batch_size):
-            batch_results = backend.generate_batch(
-                list(batch),
-                model_identity=metadata["model_identity"],
-                tokenizer_identity=metadata["tokenizer_identity"],
-                generation_config_fingerprint=metadata["generation_config_fingerprint"],
-            )
-            _validate_backend_result_set(requests=list(batch), results=list(batch_results))
-            for result in batch_results:
-                record = _prompt_record_by_id(prompt_records, result.request_id)
-                verify_prompt_token_parity(record, backend_prompt_token_ids=list(result.prompt_token_ids))
-                decode_results[result.request_id] = result
-
-        rows = [
-            _artifact_input_row(
-                raw_example=raw_example,
-                row_index=index,
-                decode_result=decode_results[raw_example.example_id],
-            )
-            for index, raw_example in enumerate(raw_examples)
-        ]
-        counters = _pipeline_counters(rows=rows, decode_success_count=len(decode_results))
-        metadata["pipeline_counters"] = counters
-        write_inference_artifacts(
-            output_dir=run_dir,
-            rows=rows,
-            decode_results=decode_results,
-            image_plan_rows=[row.to_artifact_dict() for row in image_plan_batch.rows],
-            metadata=metadata,
-        )
     except CoordExpError as exc:
         _write_terminal_contract_failure(
-            output_dir=run_dir,
+            output_dir=output_dir,
             metadata=metadata,
             error=exc,
         )
         raise
-    return 0
+
+
+def _execute_indexed_rows(
+    *,
+    resolved: ResolvedInferConfig,
+    output_dir: Path,
+    indexed_raw_examples: tuple[tuple[int, RawExample], ...],
+    metadata: dict[str, Any],
+    runtime: Any,
+    qwen: Any,
+    backend_factory: BackendFactory | None,
+) -> None:
+    verify_processor_model_vision_parity(
+        processor_identity=qwen.processor_identity,
+        model_config=_model_config(qwen),
+    )
+    raw_examples = [raw_example for _, raw_example in indexed_raw_examples]
+    image_plan_batch = materialize_image_plan_batch(
+        raw_examples,
+        components=qwen,
+        processor_config=_processor_config(resolved.config),
+        materialize=True,
+        row_indices=[row_index for row_index, _ in indexed_raw_examples],
+    )
+    backend = (backend_factory or _default_backend_factory)(runtime, resolved.config)
+    prompt_records = [
+        build_prompt_record(
+            raw_example,
+            _template_config(resolved.config),
+            processor=qwen.processor,
+            row_index=row_index,
+        )
+        for row_index, raw_example in indexed_raw_examples
+    ]
+    requests = [
+        DecodeRequest(
+            request_id=record.row_id,
+            prompt_token_ids=list(record.prompt_token_ids),
+            model_inputs=image_plan_batch.model_inputs_by_row_id[record.row_id],
+            max_new_tokens=resolved.config.generation.max_new_tokens,
+            repetition_penalty=resolved.config.generation.repetition_penalty,
+        )
+        for record in prompt_records
+    ]
+
+    decode_results = {}
+    for batch in _batches(requests, size=resolved.config.generation.batch_size):
+        batch_results = backend.generate_batch(
+            list(batch),
+            model_identity=metadata["model_identity"],
+            tokenizer_identity=metadata["tokenizer_identity"],
+            generation_config_fingerprint=metadata["generation_config_fingerprint"],
+        )
+        _validate_backend_result_set(requests=list(batch), results=list(batch_results))
+        for result in batch_results:
+            record = _prompt_record_by_id(prompt_records, result.request_id)
+            verify_prompt_token_parity(
+                record,
+                backend_prompt_token_ids=list(result.prompt_token_ids),
+            )
+            decode_results[result.request_id] = result
+
+    rows = [
+        _artifact_input_row(
+            raw_example=raw_example,
+            row_index=row_index,
+            decode_result=decode_results[raw_example.example_id],
+        )
+        for row_index, raw_example in indexed_raw_examples
+    ]
+    counters = _pipeline_counters(rows=rows, decode_success_count=len(decode_results))
+    metadata["pipeline_counters"] = counters
+    write_inference_artifacts(
+        output_dir=output_dir,
+        rows=rows,
+        decode_results=decode_results,
+        image_plan_rows=[row.to_artifact_dict() for row in image_plan_batch.rows],
+        metadata=metadata,
+    )
+
+
+def _select_indexed_raw_examples(
+    *,
+    raw_examples: Sequence[RawExample],
+    row_indices: Sequence[int],
+) -> tuple[tuple[int, RawExample], ...]:
+    indices = tuple(_coerce_shard_row_index(index) for index in row_indices)
+    if not indices:
+        raise RuntimeContractError(
+            "shard execution requires at least one assigned row",
+            code="pipeline.empty_shard_assignment",
+        )
+    if len(set(indices)) != len(indices):
+        raise RuntimeContractError(
+            "shard row indices must be unique",
+            code="pipeline.duplicate_shard_row_index",
+            context={"row_indices": list(indices)},
+        )
+    max_index = len(raw_examples) - 1
+    out_of_range = [index for index in indices if index < 0 or index > max_index]
+    if out_of_range:
+        raise RuntimeContractError(
+            "shard row index is outside the input row range",
+            code="pipeline.shard_row_index_out_of_range",
+            context={"row_indices": list(indices), "row_count": len(raw_examples)},
+        )
+    return tuple((index, raw_examples[index]) for index in indices)
+
+
+def _coerce_shard_row_index(index: Any) -> int:
+    if isinstance(index, bool) or not isinstance(index, int):
+        raise RuntimeContractError(
+            "shard row indices must be integers",
+            code="pipeline.invalid_shard_row_index",
+            context={"row_index": index, "row_index_type": type(index).__name__},
+        )
+    return index
+
+
+def _validate_rank_plan_matches_assignment(
+    *,
+    rank_plan: RankShardPlan,
+    row_indices: tuple[int, ...],
+) -> None:
+    if tuple(rank_plan.row_indices) != row_indices:
+        raise RuntimeContractError(
+            "rank plan row indices must match shard assignment",
+            code="pipeline.rank_plan_row_mismatch",
+            context={
+                "rank": rank_plan.rank,
+                "rank_plan_row_indices": list(rank_plan.row_indices),
+                "row_indices": list(row_indices),
+            },
+        )
+
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    text = json.dumps(payload, sort_keys=True, indent=2, allow_nan=False)
+    path.write_text(text + "\n", encoding="utf-8")
 
 
 def _default_backend_factory(runtime: InferenceRuntime, config: InferConfig) -> HFGenerateBackend:
@@ -318,10 +664,57 @@ def _runtime_metadata(*, runtime: Any, qwen: Any) -> dict[str, Any]:
     return {
         "model_identity": model_identity,
         "tokenizer_identity": tokenizer_identity,
+        "processor_identity": processor_identity,
         "model_identity_fingerprint": _fingerprint(model_identity),
         "processor_identity_fingerprint": _fingerprint(processor_identity),
         "adapter_identity": getattr(runtime, "adapter_receipt", None),
+        "embedding_delta_identity": getattr(runtime, "embedding_delta_receipt", None),
     }
+
+
+def _fill_worker_runtime_device_metadata(*, metadata: dict[str, Any], qwen: Any) -> None:
+    parallelism = metadata.get("parallelism")
+    if not isinstance(parallelism, dict):
+        return
+    model = getattr(qwen, "model", None)
+    device = _model_first_parameter_device(model)
+    worker = parallelism.get("worker")
+    if isinstance(worker, dict):
+        if worker.get("model_first_parameter_device"):
+            return
+        if device is not None:
+            worker["model_first_parameter_device"] = device
+        return
+
+    direct_runtime = parallelism.setdefault("direct_runtime", {})
+    if not isinstance(direct_runtime, dict):
+        return
+    direct_runtime.setdefault("logical_device", "cuda:0")
+    plan = parallelism.get("plan")
+    if isinstance(plan, dict):
+        visible_tokens = plan.get("visible_cuda_tokens") or []
+        direct_runtime.setdefault("visible_cuda_token_count", len(visible_tokens))
+        direct_runtime.setdefault("active_ranks", plan.get("active_ranks"))
+    if device is not None:
+        direct_runtime.setdefault("model_first_parameter_device", device)
+    try:
+        direct_runtime.setdefault("cuda_available", bool(torch.cuda.is_available()))
+        direct_runtime.setdefault("cuda_device_count", int(torch.cuda.device_count()))
+        if torch.cuda.is_available() and torch.cuda.device_count() > 0:
+            direct_runtime.setdefault("cuda_current_device", int(torch.cuda.current_device()))
+    except Exception as exc:  # pragma: no cover - defensive CUDA probe evidence.
+        direct_runtime.setdefault("cuda_probe_error", type(exc).__name__)
+
+
+def _model_first_parameter_device(model: Any | None) -> str | None:
+    if model is None:
+        return None
+    parameters = getattr(model, "parameters", None)
+    if not callable(parameters):
+        return None
+    first_param = next(iter(parameters()), None)
+    device = getattr(first_param, "device", None)
+    return None if device is None else str(device)
 
 
 def _tokenizer_identity(qwen: Any) -> dict[str, Any]:

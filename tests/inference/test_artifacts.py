@@ -95,6 +95,10 @@ def _raw_row(row_id: str, row_index: int, *, text: str = OBJECT_TEXT) -> dict:
     }
 
 
+def _image_plan_row(row_id: str, row_index: int) -> dict:
+    return {"row_id": row_id, "row_index": row_index}
+
+
 def _metadata() -> dict:
     return {
         "artifact_schema_version": 1,
@@ -133,7 +137,7 @@ def test_artifact_writer_preserves_raw_and_scored_row_parity_without_diagnostic_
             _raw_row("row-2", 1, text="malformed"),
         ],
         decode_results={"row-1": _decode_result("row-1")},
-        image_plan_rows=[{"row_id": "row-1"}, {"row_id": "row-2"}],
+        image_plan_rows=[_image_plan_row("row-1", 0), _image_plan_row("row-2", 1)],
         metadata=_metadata(),
     )
 
@@ -157,7 +161,7 @@ def test_scored_rows_keep_empty_pred_list_and_preserve_gt_and_image_identity(tmp
             _raw_row("row-2", 1, text="malformed"),
         ],
         decode_results={"row-1": _decode_result("row-1")},
-        image_plan_rows=[{"row_id": "row-1"}, {"row_id": "row-2"}],
+        image_plan_rows=[_image_plan_row("row-1", 0), _image_plan_row("row-2", 1)],
         metadata=_metadata(),
     )
 
@@ -179,7 +183,7 @@ def test_artifact_writer_scores_two_identical_objects_using_absolute_span_offset
         output_dir=tmp_path,
         rows=[_raw_row("row-1", 0, text=text)],
         decode_results={"row-1": _decode_result("row-1", token_trace=_repeated_trace())},
-        image_plan_rows=[{"row_id": "row-1"}],
+        image_plan_rows=[_image_plan_row("row-1", 0)],
         metadata=_metadata(),
     )
 
@@ -196,7 +200,7 @@ def test_every_scored_prediction_has_row_local_source_version_and_finite_score(t
         output_dir=tmp_path,
         rows=[_raw_row("row-1", 0)],
         decode_results={"row-1": _decode_result("row-1")},
-        image_plan_rows=[{"row_id": "row-1"}],
+        image_plan_rows=[_image_plan_row("row-1", 0)],
         metadata=_metadata(),
     )
 
@@ -217,7 +221,7 @@ def test_provenance_sidecar_binds_raw_and_scored_sha_and_score_policy(tmp_path: 
         output_dir=tmp_path,
         rows=[_raw_row("row-1", 0)],
         decode_results={"row-1": _decode_result("row-1")},
-        image_plan_rows=[{"row_id": "row-1"}],
+        image_plan_rows=[_image_plan_row("row-1", 0)],
         metadata=_metadata(),
     )
 
@@ -231,6 +235,42 @@ def test_provenance_sidecar_binds_raw_and_scored_sha_and_score_policy(tmp_path: 
     assert provenance["row_binding"]["row_count"] == 1
 
 
+def test_provenance_and_manifest_record_tokenizer_and_embedding_delta_identity_when_available(
+    tmp_path: Path,
+) -> None:
+    from src.inference.artifacts import write_inference_artifacts
+
+    metadata = {
+        **_metadata(),
+        "tokenizer_identity": {"tokenizer_sha256": "tok-fp"},
+        "embedding_delta_identity": {
+            "status": "loaded",
+            "fingerprint": "embed-delta-fp",
+        },
+    }
+    paths = write_inference_artifacts(
+        output_dir=tmp_path,
+        rows=[_raw_row("row-1", 0)],
+        decode_results={"row-1": _decode_result("row-1")},
+        image_plan_rows=[_image_plan_row("row-1", 0)],
+        metadata=metadata,
+    )
+
+    provenance = json.loads(paths.provenance_json.read_text(encoding="utf-8"))
+    manifest = json.loads(paths.run_manifest_json.read_text(encoding="utf-8"))
+
+    assert provenance["tokenizer_identity"] == {"tokenizer_sha256": "tok-fp"}
+    assert provenance["embedding_delta_identity"] == {
+        "status": "loaded",
+        "fingerprint": "embed-delta-fp",
+    }
+    assert manifest["tokenizer_identity"] == {"tokenizer_sha256": "tok-fp"}
+    assert manifest["embedding_delta_identity"] == {
+        "status": "loaded",
+        "fingerprint": "embed-delta-fp",
+    }
+
+
 def test_trace_artifact_recomputes_stored_scores(tmp_path: Path) -> None:
     from src.inference.artifacts import recompute_scores_from_artifacts, write_inference_artifacts
 
@@ -238,7 +278,7 @@ def test_trace_artifact_recomputes_stored_scores(tmp_path: Path) -> None:
         output_dir=tmp_path,
         rows=[_raw_row("row-1", 0)],
         decode_results={"row-1": _decode_result("row-1")},
-        image_plan_rows=[{"row_id": "row-1"}],
+        image_plan_rows=[_image_plan_row("row-1", 0)],
         metadata=_metadata(),
     )
 
@@ -259,7 +299,7 @@ def test_manifest_records_artifact_paths_without_claiming_wave5_benchmark_eligib
         output_dir=tmp_path,
         rows=[_raw_row("row-1", 0)],
         decode_results={"row-1": _decode_result("row-1")},
-        image_plan_rows=[{"row_id": "row-1"}],
+        image_plan_rows=[_image_plan_row("row-1", 0)],
         metadata=_metadata(),
     )
 
@@ -339,7 +379,7 @@ def test_artifact_writer_rejects_non_finite_generated_token_logprob_without_json
             output_dir=tmp_path,
             rows=[_raw_row("row-1", 0)],
             decode_results={"row-1": _decode_result("row-1", token_trace=bad_trace)},
-            image_plan_rows=[{"row_id": "row-1"}],
+            image_plan_rows=[_image_plan_row("row-1", 0)],
             metadata=_metadata(),
         )
 
@@ -355,7 +395,7 @@ def test_artifact_writer_preserves_prior_final_artifacts_when_rerun_fails(tmp_pa
         output_dir=tmp_path,
         rows=[_raw_row("row-1", 0)],
         decode_results={"row-1": _decode_result("row-1")},
-        image_plan_rows=[{"row_id": "row-1"}],
+        image_plan_rows=[_image_plan_row("row-1", 0)],
         metadata=_metadata(),
     )
     prior_scored = valid_paths.scored_jsonl.read_text(encoding="utf-8")
@@ -368,7 +408,7 @@ def test_artifact_writer_preserves_prior_final_artifacts_when_rerun_fails(tmp_pa
             output_dir=tmp_path,
             rows=[_raw_row("row-1", 0)],
             decode_results={"row-1": _decode_result("row-1", token_trace=bad_trace)},
-            image_plan_rows=[{"row_id": "row-1"}],
+            image_plan_rows=[_image_plan_row("row-1", 0)],
             metadata=_metadata(),
         )
 
@@ -387,7 +427,7 @@ def test_artifact_writer_rolls_back_all_final_artifacts_when_publish_replace_fai
         output_dir=tmp_path,
         rows=[_raw_row("row-1", 0)],
         decode_results={"row-1": _decode_result("row-1")},
-        image_plan_rows=[{"row_id": "row-1"}],
+        image_plan_rows=[_image_plan_row("row-1", 0)],
         metadata=_metadata(),
     )
     final_paths = [
@@ -421,7 +461,7 @@ def test_artifact_writer_rolls_back_all_final_artifacts_when_publish_replace_fai
             output_dir=tmp_path,
             rows=[_raw_row("row-1", 0)],
             decode_results={"row-1": _decode_result("row-1")},
-            image_plan_rows=[{"row_id": "row-1"}],
+            image_plan_rows=[_image_plan_row("row-1", 0)],
             metadata=_metadata(),
         )
 
@@ -438,7 +478,7 @@ def test_artifact_writer_rejects_decode_result_request_id_mismatch(tmp_path: Pat
             output_dir=tmp_path,
             rows=[_raw_row("row-1", 0)],
             decode_results={"row-1": _decode_result("other-row")},
-            image_plan_rows=[{"row_id": "row-1"}],
+            image_plan_rows=[_image_plan_row("row-1", 0)],
             metadata=_metadata(),
         )
 
@@ -453,7 +493,7 @@ def test_scored_artifact_production_refuses_missing_trace(tmp_path: Path) -> Non
             output_dir=tmp_path,
             rows=[_raw_row("row-1", 0)],
             decode_results={},
-            image_plan_rows=[{"row_id": "row-1"}],
+            image_plan_rows=[_image_plan_row("row-1", 0)],
             metadata=_metadata(),
         )
 
@@ -467,7 +507,7 @@ def test_scored_artifact_validation_refuses_missing_provenance(tmp_path: Path) -
         output_dir=tmp_path,
         rows=[_raw_row("row-1", 0)],
         decode_results={"row-1": _decode_result("row-1")},
-        image_plan_rows=[{"row_id": "row-1"}],
+        image_plan_rows=[_image_plan_row("row-1", 0)],
         metadata=_metadata(),
     )
     paths.provenance_json.unlink()
@@ -485,7 +525,7 @@ def test_trace_recomputation_fails_when_selected_generated_token_row_is_missing(
         output_dir=tmp_path,
         rows=[_raw_row("row-1", 0)],
         decode_results={"row-1": _decode_result("row-1")},
-        image_plan_rows=[{"row_id": "row-1"}],
+        image_plan_rows=[_image_plan_row("row-1", 0)],
         metadata=_metadata(),
     )
     rows = _read_jsonl(paths.token_trace_jsonl)
@@ -516,7 +556,7 @@ def test_trace_recomputation_fails_when_selected_generated_token_row_mismatches(
         output_dir=tmp_path,
         rows=[_raw_row("row-1", 0)],
         decode_results={"row-1": _decode_result("row-1")},
-        image_plan_rows=[{"row_id": "row-1"}],
+        image_plan_rows=[_image_plan_row("row-1", 0)],
         metadata=_metadata(),
     )
     rows = _read_jsonl(paths.token_trace_jsonl)
