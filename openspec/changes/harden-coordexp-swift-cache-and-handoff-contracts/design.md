@@ -1,0 +1,113 @@
+## Context
+
+CoordExp-Swift now owns the local supervised training path, Qwen packed
+forward boundary, checkpoint writing, and HF inference/eval infrastructure.
+The remaining risk addressed here is not that those paths are missing; it is
+that two production boundaries are still too easy to misuse:
+
+- Packing caches are intentionally reusable and efficient, but their semantic
+  identity must cover every source producer that can change the packed forward
+  contract.
+- Checkpoints can be useful on disk while still being ambiguous for production
+  inference if base model, adapter, selected-token embedding delta, tokenizer,
+  processor, template, and intended inference family are recomposed manually.
+
+The active baseline remains the rebuilt CoordExp-Swift design and OpenSpec
+artifacts. Archived OpenSpec material and MS-Swift are reference material only.
+
+## Goals / Non-Goals
+
+**Goals:**
+
+- make stale cache reuse less likely by adding Qwen forward-side source
+  identities to packing-cache determinants;
+- preserve cache-hit efficiency and the existing cache payload shape;
+- make checkpoint-to-inference identity canonical through
+  `checkpoint_handoff.json`;
+- keep production inference handoff-driven by default while allowing marked
+  research/dev manual composition;
+- add small tests and receipts that prove the contracts instead of relying on
+  operator memory.
+
+**Non-Goals:**
+
+- no broad `run_training_pipeline` refactor in this change;
+- no loss-runner or zero-weight loss implementation change in this change;
+- no redesign of cache payload structure;
+- no new public config knob for packing-cache worker count or source identity;
+- no change to prompt rendering, object order, tokenization, Qwen position
+  computation, FA2 execution, loss math, optimizer behavior, or evaluator
+  metric reduction;
+- no DeepSpeed or vLLM production-readiness claim.
+
+## Decisions
+
+### Pack Cache Determinants Use Conservative Source Identity
+
+`src/training/pack_cache.py` keeps the existing semantic fingerprint mechanism
+and adds forward-side producer files to the source identity set:
+
+- `src/qwen/positions.py`
+- `src/qwen/fa2.py`
+- `src/qwen/forward.py`
+
+Alternative considered: cache only lower-level packed/supervision data and
+rebuild Qwen position/FA2/forward decorations after every cache load. That is
+cleaner in theory, but it is a larger migration with more artifact churn. The
+approved V1 path is conservative invalidation first because it protects
+correctness without broad refactor.
+
+Worker count remains provenance. It MUST NOT enter the cache fingerprint
+because it is an execution strategy for materialization, not a semantic
+description of the packed examples.
+
+### Handoff Is The Production Identity Boundary
+
+`checkpoint_handoff.json` is the canonical production bridge from training to
+inference. Production inference should consume the handoff and verify it
+matches the requested base model, adapter payload, selected-token embedding
+delta, tokenizer, processor, prompt/template identity, and intended inference
+family.
+
+Manual base/adapter/delta paths remain useful for research and debugging, but
+they must be marked as noncanonical evidence. This avoids treating a manually
+assembled run as equivalent to an audited production handoff.
+
+### Readiness Validator Is Read-Only And Small
+
+The readiness validator should inspect an existing run/checkpoint artifact
+tree and return pass/fail with concrete missing or mismatched handles. It is
+not a reporting framework and should not own training or inference behavior.
+
+The first implementation pass may land the cache identity patch before the full
+handoff validator, because Wave A is independent and smaller.
+
+## Risks / Trade-offs
+
+- **More cache misses after source edits** -> accepted; rebuilding is cheaper
+  than silently training through stale packed-forward semantics.
+- **Source identity is conservative rather than semantic AST diffing** -> keep
+  file hashing simple and auditable. False-positive invalidation is acceptable.
+- **Handoff validation can become a large checklist** -> keep V1 read-only and
+  limited to artifact identities needed to prevent wrong checkpoint inference.
+- **Manual inference paths remain possible** -> require explicit research/dev
+  provenance so they are not cited as canonical production evidence.
+
+## Migration Plan
+
+1. Commit the roadmap and this OpenSpec baseline.
+2. Add failing tests proving Qwen forward-side source files affect packing
+   cache fingerprints while worker count does not.
+3. Add the minimal source identity implementation.
+4. Run targeted packing-cache tests and OpenSpec validation.
+5. Implement the handoff/readiness validator in a later task group after the
+   cache identity patch is green.
+
+Rollback is simple: revert the source identity file-list change and its tests.
+Existing cache manifests remain readable because the payload shape is unchanged.
+
+## Open Questions
+
+No user-blocking questions remain for Wave A. The exact readiness validator CLI
+or Python entrypoint name can be chosen during Wave B implementation, provided
+it remains read-only and does not add broad process.
