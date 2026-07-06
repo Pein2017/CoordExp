@@ -2,22 +2,22 @@
 
 - [x] 1.1 Draft proposal, design, delta specs, and this task ledger.
 - [x] 1.2 Validate the OpenSpec change strictly before source edits.
-- [ ] 1.3 Commit the planning baseline separately from implementation changes.
+- [x] 1.3 Commit the planning baseline separately from implementation changes.
 
 ## 2. Wave A: Pack Cache Semantic Identity
 
-- [ ] 2.1 Use CodeGraph to inspect the current packing-cache fingerprint flow,
+- [x] 2.1 Use CodeGraph to inspect the current packing-cache fingerprint flow,
   source identity helpers, and impacted tests.
-- [ ] 2.2 Add failing tests proving `src/qwen/positions.py`,
+- [x] 2.2 Add failing tests proving `src/qwen/positions.py`,
   `src/qwen/fa2.py`, and `src/qwen/forward.py` participate in the
   packing-cache fingerprint determinants.
-- [ ] 2.3 Add or confirm tests proving worker count remains provenance only
+- [x] 2.3 Add or confirm tests proving worker count remains provenance only
   and does not change the semantic fingerprint.
-- [ ] 2.4 Implement the minimal determinant-file update without changing cache
+- [x] 2.4 Implement the minimal determinant-file update without changing cache
   payload shape or packing behavior.
-- [ ] 2.5 Run targeted packing-cache tests and verify the new tests fail before
+- [x] 2.5 Run targeted packing-cache tests and verify the new tests fail before
   implementation and pass after implementation.
-- [ ] 2.6 Validate OpenSpec and run `git diff --check`.
+- [x] 2.6 Validate OpenSpec and run `git diff --check`.
 
 ## 3. Wave B: Checkpoint Handoff And Readiness
 

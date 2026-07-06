@@ -183,6 +183,9 @@ def test_packing_cache_determinants_include_code_identity(tmp_path: Path) -> Non
     assert set(code_identity) == {
         "template_renderer",
         "qwen_encoding",
+        "qwen_positions",
+        "qwen_fa2",
+        "qwen_forward",
         "packing_planner",
         "packing_supervision",
         "supervision_tokens",

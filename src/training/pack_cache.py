@@ -23,6 +23,9 @@ PACKING_CACHE_MATERIALIZATION_STRATEGY = "fork_process_pool"
 PACKING_CACHE_CODE_IDENTITY_FILES = {
     "template_renderer": "src/templates/renderer.py",
     "qwen_encoding": "src/qwen/encoding.py",
+    "qwen_positions": "src/qwen/positions.py",
+    "qwen_fa2": "src/qwen/fa2.py",
+    "qwen_forward": "src/qwen/forward.py",
     "packing_planner": "src/packing/planner.py",
     "packing_supervision": "src/packing/supervision.py",
     "supervision_tokens": "src/supervision/tokens.py",
