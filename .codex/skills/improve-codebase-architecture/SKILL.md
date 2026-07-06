@@ -97,7 +97,7 @@ Side effects happen inline as decisions crystallize:
 
 - **Stable behavior or workflow changes?** Update the routed `docs/` page.
 - **Compatibility-sensitive contract changes?** Use OpenSpec, only when the contract is genuinely stable and normative.
-- **Empirical or historical reasons?** Prefer `research/` for new synthesis; use `progress/` only when current docs route there as legacy evidence.
+- **Empirical or historical reasons?** Record them in `progress/`.
 - **Implementation checklists or handoff notes?** Keep them in the active super-power plan/spec when available.
-- **User rejects the candidate with a load-bearing reason?** Use `grill-me record=local` and record the decision in the narrowest durable surface so future architecture reviews do not re-suggest it.
+- **User rejects the candidate with a load-bearing reason?** Record it in the right durable surface using `$grill-me record=local` guidance so future architecture reviews do not re-suggest it.
 - **Want to explore alternative interfaces for the deepened module?** See [INTERFACE-DESIGN.md](INTERFACE-DESIGN.md).

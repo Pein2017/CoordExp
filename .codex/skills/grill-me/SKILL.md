@@ -1,13 +1,16 @@
 ---
 name: grill-me
-description: Use when the user explicitly asks for a grill, stress test, pressure test, decision-sharpening loop, or rigorous CoordExp discussion, with optional chat-only or local-record modes.
+description: Use when the user explicitly asks for a grill, stress test, pressure test, or rigorous CoordExp decision discussion where approvals may be expensive or hard to revise, with optional chat-only or local-record modes.
 ---
 
 # Grill Me
 
-Pressure-test an idea, plan, result, workflow, or architecture decision. Default
-to plain chat. Record local context only when the user asks for it or approves a
-durable record.
+Pressure-test an idea, plan, result, workflow, or architecture decision. Focus
+only on decisions that are expensive, hard to reverse, hard to compensate after
+approval, or likely to change research meaning, reproducibility, evaluation
+validity, compatibility, cost, or implementation direction. Default to plain
+chat. Record local context only when the user asks for it or approves a durable
+record.
 
 ## Mode
 
@@ -30,9 +33,17 @@ requested, recommend the target and ask before writing.
   notes.
 - Walk the decision tree branch by branch, resolving dependencies in order.
 - Inspect repo evidence before asking questions when the answer is discoverable.
-- Batch independent questions with recommended answers; ask exactly one question
-  only when the answer gates research meaning, reproducibility, eval validity,
-  cost, compatibility, durable records, or the next action.
+- Ask only load-bearing questions: decisions whose approval would be hard to
+  revise, expensive to rerun, difficult to compensate in analysis, or likely to
+  create confusing artifacts if wrong.
+- Do not ask about reversible naming, local implementation details, cosmetic
+  preferences, small config defaults, or choices that can be cheaply adjusted
+  later unless they affect artifact identity, metric validity, stable contracts,
+  or research interpretation.
+- Batch independent load-bearing questions with recommended answers; ask
+  exactly one question only when the answer gates research meaning,
+  reproducibility, eval validity, cost, compatibility, durable records, or the
+  next action.
 - Separate hypothesis, mechanism, implementation plan, experiment result,
   interpretation, and stable contract.
 - Stress-test against concrete CoordExp risks: geometry/order preservation,
@@ -52,7 +63,17 @@ Prefer questions that expose a real fork:
 - what belongs in docs, research notes, OpenSpec, configs, tests, or manifests.
 
 Avoid questions already answered by current docs, configs, tests, artifacts, or
-the conversation.
+the conversation. Also avoid questions where a reasonable default can be
+changed cheaply after seeing evidence.
+
+Before asking, apply this filter:
+
+```text
+Would a wrong approval be hard to revise, expensive to rerun, or likely to
+invalidate interpretation?
+```
+
+If no, choose a reasonable default and continue.
 
 ## Recording
 
