@@ -55,6 +55,11 @@ def test_checkpoint_writer_saves_payloads_metadata_and_final_alias(
         base_model_path=Path("/models/qwen-base"),
         base_config_sha256="base-config-sha",
         tokenizer_sha256="tokenizer-sha",
+        template_identity={
+            "object_field_order": "desc_first",
+            "object_ordering": "geo_sorted",
+            "assistant_format": "object_box_closed",
+        },
     )
 
     checkpoint_dir = tmp_path / "run-a" / "checkpoints" / "step-5"
@@ -167,6 +172,11 @@ def test_checkpoint_writer_saves_payloads_metadata_and_final_alias(
         "checkpoints/step-5/adapter/adapter_model.safetensors",
     ]
     assert handoff["adapter"]["identity"] == adapter_identity
+    assert handoff["template_identity"] == {
+        "object_field_order": "desc_first",
+        "object_ordering": "geo_sorted",
+        "assistant_format": "object_box_closed",
+    }
     assert handoff["special_token_embeddings"]["metadata_path"] == (
         "checkpoints/step-5/special_token_embeddings/"
         f"{SPECIAL_TOKEN_EMBEDDINGS_JSON}"
@@ -336,6 +346,9 @@ def test_checkpoint_writer_best_acc_top1_ignores_unsafe_candidate(
     assert best_alias["checkpoint_id"] == "step-1"
     assert best_alias["metadata_path"] == manager.relative_artifact_path(
         first.metadata_path
+    )
+    assert best_alias["handoff_path"] == manager.relative_artifact_path(
+        first.handoff_path
     )
     assert best_alias["metric"]["value"] == 0.25
 
@@ -519,6 +532,86 @@ def test_checkpoint_writer_repairs_manifest_after_registration_failure(
     assert result.metadata_path == tmp_path / "run-a" / "checkpoints" / "step-1" / "checkpoint.json"
 
 
+def test_checkpoint_writer_reuses_identity_payloads_after_registration_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.artifacts import checkpoints as checkpoint_module
+
+    manager = _manager(tmp_path)
+    writer = CheckpointWriter(manager)
+    kwargs = {
+        "planned_step_id": 1,
+        "adapter_receipt": _adapter_receipt(),
+        "special_token_result": _special_token_result(),
+        "trainable_surface": _trainable_surface(),
+        "processor_identity": {"name": "qwen3-vl-test-processor"},
+        "resolved_config_fingerprint": "config-fingerprint",
+        "schedule_identity": {"resolved_max_steps": 1, "fingerprint": "schedule"},
+        "metric_status": {"finite_status": "finite", "warning_status": "none"},
+        "optimizer_update_status": "applied",
+        "trigger_reasons": ("checkpoint.final",),
+        "is_final": True,
+        "base_model_path": Path("model_cache/qwen-base"),
+        "base_config_sha256": "base-config-sha",
+        "tokenizer_sha256": "tokenizer-sha",
+    }
+    _fail_next_manifest_write(monkeypatch)
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        writer.write_checkpoint(model=FakePeftModel(), **kwargs)
+
+    assert exc_info.value.code == "test.manifest_write_failed"
+    checkpoint_dir = tmp_path / "run-a" / "checkpoints" / "step-1"
+    adapter_config = checkpoint_dir / "adapter" / "adapter_config.json"
+    adapter_tensor = checkpoint_dir / "adapter" / "adapter_model.safetensors"
+    embed_metadata = (
+        checkpoint_dir / "special_token_embeddings" / SPECIAL_TOKEN_EMBEDDINGS_JSON
+    )
+    embed_tensor = (
+        checkpoint_dir
+        / "special_token_embeddings"
+        / SPECIAL_TOKEN_EMBEDDINGS_SAFE_TENSORS
+    )
+    before = {
+        "metadata": json.loads((checkpoint_dir / "checkpoint.json").read_text(encoding="utf-8")),
+        "handoff": json.loads((checkpoint_dir / "checkpoint_handoff.json").read_text(encoding="utf-8")),
+        "adapter_config": adapter_config.read_bytes(),
+        "adapter_tensor": adapter_tensor.read_bytes(),
+        "embed_metadata": embed_metadata.read_bytes(),
+        "embed_tensor": embed_tensor.read_bytes(),
+    }
+
+    class ExplodingPeftModel(nn.Module):
+        def save_pretrained(self, output_dir: str | Path) -> None:
+            raise AssertionError("existing adapter payload must be reused")
+
+    monkeypatch.setattr(
+        checkpoint_module,
+        "save_special_token_embedding_deltas",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("existing special-token payload must be reused")
+        ),
+    )
+
+    result = writer.write_checkpoint(model=ExplodingPeftModel(), **kwargs)
+
+    after_metadata = json.loads(result.metadata_path.read_text(encoding="utf-8"))
+    after_handoff = json.loads(result.handoff_path.read_text(encoding="utf-8"))
+    assert after_metadata["adapter"]["identity"] == before["metadata"]["adapter"]["identity"]
+    assert after_metadata["special_token_embeddings"]["identity"] == (
+        before["metadata"]["special_token_embeddings"]["identity"]
+    )
+    assert after_handoff["adapter"]["identity"] == before["handoff"]["adapter"]["identity"]
+    assert after_handoff["special_token_embeddings"]["identity"] == (
+        before["handoff"]["special_token_embeddings"]["identity"]
+    )
+    assert adapter_config.read_bytes() == before["adapter_config"]
+    assert adapter_tensor.read_bytes() == before["adapter_tensor"]
+    assert embed_metadata.read_bytes() == before["embed_metadata"]
+    assert embed_tensor.read_bytes() == before["embed_tensor"]
+
+
 def test_checkpoint_writer_rejects_full_model_save_pretrained_payload(
     tmp_path: Path,
 ) -> None:
@@ -637,6 +730,7 @@ def test_checkpoint_writer_marks_lower_best_candidate_not_improved(
         )
     )
     assert best_alias["checkpoint_id"] == "step-1"
+    assert best_alias["handoff_path"] == "checkpoints/step-1/checkpoint_handoff.json"
 
 
 def test_checkpoint_writer_allows_warning_only_best_checkpoint(
@@ -703,6 +797,7 @@ def test_checkpoint_writer_allows_warning_only_best_checkpoint(
         )
     )
     assert best_alias["checkpoint_id"] == "step-2"
+    assert best_alias["handoff_path"] == "checkpoints/step-2/checkpoint_handoff.json"
 
 
 def test_checkpoint_writer_rejects_adapter_receipt_without_savable_model(

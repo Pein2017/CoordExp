@@ -79,6 +79,7 @@ def test_strict_merge_restores_original_order_and_regenerates_bound_provenance(t
     token_trace_rows = _read_jsonl(paths.token_trace_jsonl)
     diagnostic_rows = _read_jsonl(paths.parse_diagnostics_jsonl)
     provenance = _read_json(paths.provenance_json)
+    manifest = _read_json(paths.run_manifest_json)
 
     assert [row["row_id"] for row in raw_rows] == list(row_ids)
     assert [row["row_id"] for row in scored_rows] == list(row_ids)
@@ -97,6 +98,14 @@ def test_strict_merge_restores_original_order_and_regenerates_bound_provenance(t
     assert provenance["tokenizer_identity"] == {"tokenizer_sha256": "tok-fp"}
     assert provenance["adapter_identity"]["status"] == "loaded"
     assert provenance["embedding_delta_identity"]["status"] == "loaded"
+    assert provenance["composition_mode"] == "canonical_handoff"
+    assert provenance["handoff_readiness"] == "handoff"
+    assert provenance["checkpoint_handoff"]["path"] == (
+        "checkpoints/step-5/checkpoint_handoff.json"
+    )
+    assert manifest["composition_mode"] == "canonical_handoff"
+    assert manifest["handoff_readiness"] == "handoff"
+    assert manifest["checkpoint_handoff"]["fingerprint"] == "handoff-fp"
     assert provenance["parallelism"]["merge_status"] == "completed"
     assert provenance["parallelism"]["active_ranks"] == 2
     assert provenance["parallelism"]["visible_cuda_tokens"] == ["0", "1"]
@@ -194,6 +203,22 @@ def test_strict_merge_rejects_missing_duplicate_order_failed_worker_and_identity
         expected_code="merge.identity_mismatch",
     )
     assert result.context["field"] == "model_identity_fingerprint"
+    result = _assert_merge_failure(
+        tmp_path / "handoff-identity",
+        row_ids=row_ids,
+        mutate=lambda shard_dirs, plan: _rewrite_json(
+            shard_dirs[1] / MANIFEST_NAME,
+            lambda payload: {
+                **payload,
+                "checkpoint_handoff": {
+                    **payload["checkpoint_handoff"],
+                    "fingerprint": "different-handoff",
+                },
+            },
+        ),
+        expected_code="merge.identity_mismatch",
+    )
+    assert result.context["field"] == "checkpoint_handoff"
     _assert_merge_failure(
         tmp_path / "controller-identity",
         row_ids=row_ids,
@@ -214,6 +239,17 @@ def test_strict_merge_rejects_missing_duplicate_order_failed_worker_and_identity
         },
         expected_code="merge.controller_identity_mismatch",
     )
+    result = _assert_merge_failure(
+        tmp_path / "controller-composition-mode",
+        row_ids=row_ids,
+        mutate=lambda shard_dirs, plan: None,
+        metadata_transform=lambda metadata: {
+            **metadata,
+            "composition_mode": "research_manual",
+        },
+        expected_code="merge.controller_identity_mismatch",
+    )
+    assert result.context["field"] == "composition_mode"
 
 
 def test_strict_merge_rejects_missing_required_shard_metadata(tmp_path: Path) -> None:
@@ -652,6 +688,14 @@ def _base_metadata() -> dict[str, Any]:
         "embedding_delta_identity": {
             "status": "loaded",
             "fingerprint": "embed-delta-fp",
+        },
+        "composition_mode": "canonical_handoff",
+        "handoff_readiness": "handoff",
+        "checkpoint_handoff": {
+            "path": "checkpoints/step-5/checkpoint_handoff.json",
+            "fingerprint": "handoff-fp",
+            "adapter_identity": {"fingerprint": "adapter-fp"},
+            "special_token_embedding_identity": {"fingerprint": "embed-delta-fp"},
         },
         "template_identity": {
             "id": "compact-object-box-closed",

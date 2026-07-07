@@ -23,9 +23,9 @@ small, auditable contracts.
 - Add a checkpoint handoff identity-readiness contract centered on
   `checkpoint_handoff.json`.
 - Define `handoff`, `eval`, and future `production` gates explicitly. The
-  `handoff` gate checks payload identity only; the `eval` gate additionally
-  requires accepted eval artifact roots; a future production gate must not be
-  claimed by this narrowed change.
+  `handoff` gate checks runtime handoff identity; the `eval` gate additionally
+  requires accepted eval artifact roots; a future production gate must return
+  hold and must not be claimed by this narrowed change.
 - Make inference provenance honest: handoff-backed composition is canonical,
   while explicit manual path composition remains useful research evidence but
   is not handoff-ready.

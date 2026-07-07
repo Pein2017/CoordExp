@@ -29,6 +29,7 @@ def validate_checkpoint_handoff(
         run_dir=run_dir,
         checkpoint_ref=checkpoint_ref,
         missing=missing,
+        mismatches=mismatches,
     )
     if resolved.handoff_path is None or resolved.handoff is None:
         return _verdict(
@@ -43,6 +44,20 @@ def validate_checkpoint_handoff(
 
     handoff = resolved.handoff
     checkpoint_id = str(handoff.get("checkpoint_id") or resolved.checkpoint_id or "")
+    _validate_required_handoff_fields(handoff, missing=missing)
+    _validate_reference_consistency(
+        resolved=resolved,
+        handoff=handoff,
+        run_dir=run_dir,
+        mismatches=mismatches,
+    )
+    _validate_checkpoint_metadata_backlink(
+        handoff=handoff,
+        handoff_path=resolved.handoff_path,
+        run_dir=run_dir,
+        missing=missing,
+        mismatches=mismatches,
+    )
     adapter_identity = _validate_adapter_identity(
         handoff,
         run_dir=run_dir,
@@ -55,6 +70,8 @@ def validate_checkpoint_handoff(
         missing=missing,
         mismatches=mismatches,
     )
+    if gate == "production":
+        missing.append("production_gate_unimplemented")
     if gate in {"eval", "production"}:
         eval_roots = handoff.get("accepted_eval_artifact_roots")
         if not isinstance(eval_roots, Sequence) or isinstance(eval_roots, (str, bytes)) or not eval_roots:
@@ -87,6 +104,8 @@ def _validate_adapter_identity(
     if not isinstance(identity, Mapping):
         missing.append("adapter.identity")
         return None
+    if identity.get("payload_path") in (None, "", [], {}):
+        missing.append("adapter.identity.payload_path")
     required = identity.get("required_files")
     if not isinstance(required, Mapping):
         missing.append("adapter.identity.required_files")
@@ -120,6 +139,12 @@ def _validate_adapter_identity(
         )
     if not identity.get("fingerprint"):
         missing.append("adapter.identity.fingerprint")
+    else:
+        _compare_identity_fingerprint(
+            identity,
+            field="adapter.identity.fingerprint",
+            mismatches=mismatches,
+        )
     return identity
 
 
@@ -171,7 +196,127 @@ def _validate_special_token_embedding_identity(
     ):
         if identity.get(field) in (None, "", []):
             missing.append(f"special_token_embeddings.identity.{field}")
+    if identity.get("fingerprint"):
+        _compare_identity_fingerprint(
+            identity,
+            field="special_token_embeddings.identity.fingerprint",
+            mismatches=mismatches,
+        )
     return identity
+
+
+def _validate_required_handoff_fields(
+    handoff: Mapping[str, Any],
+    *,
+    missing: list[str],
+) -> None:
+    required_top_level = (
+        "schema_version",
+        "checkpoint_id",
+        "planned_step_id",
+        "checkpoint_path",
+        "checkpoint_metadata_path",
+        "processor_identity",
+        "template_identity",
+        "resolved_config_fingerprint",
+        "intended_inference_config_family",
+    )
+    for field in required_top_level:
+        value = handoff.get(field)
+        if value in (None, "", [], {}):
+            missing.append(field)
+    base_model = handoff.get("base_model")
+    if not isinstance(base_model, Mapping):
+        missing.extend(
+            (
+                "base_model.path",
+                "base_model.base_config_sha256",
+                "base_model.tokenizer_sha256",
+            )
+        )
+        return
+    for field in ("path", "base_config_sha256", "tokenizer_sha256"):
+        if base_model.get(field) in (None, "", [], {}):
+            missing.append(f"base_model.{field}")
+
+
+def _validate_reference_consistency(
+    *,
+    resolved: "_ResolvedHandoff",
+    handoff: Mapping[str, Any],
+    run_dir: Path,
+    mismatches: list[str],
+) -> None:
+    if resolved.expected_checkpoint_id is not None and (
+        str(handoff.get("checkpoint_id") or "") != resolved.expected_checkpoint_id
+    ):
+        mismatches.append(f"{resolved.source_kind}.checkpoint_id")
+    if resolved.expected_planned_step_id is not None and (
+        handoff.get("planned_step_id") != resolved.expected_planned_step_id
+    ):
+        mismatches.append(f"{resolved.source_kind}.planned_step_id")
+    if resolved.expected_metadata_path is not None and (
+        str(handoff.get("checkpoint_metadata_path") or "")
+        != _relative_to_run(resolved.expected_metadata_path, run_dir=run_dir)
+    ):
+        mismatches.append(f"{resolved.source_kind}.metadata_path")
+    if resolved.expected_handoff_path is not None and resolved.handoff_path is not None:
+        if resolved.expected_handoff_path.resolve() != resolved.handoff_path.resolve():
+            mismatches.append(f"{resolved.source_kind}.handoff_path")
+
+
+def _validate_checkpoint_metadata_backlink(
+    *,
+    handoff: Mapping[str, Any],
+    handoff_path: Path,
+    run_dir: Path,
+    missing: list[str],
+    mismatches: list[str],
+) -> None:
+    metadata_ref = handoff.get("checkpoint_metadata_path")
+    if not isinstance(metadata_ref, str) or not metadata_ref:
+        return
+    metadata_path = _resolve_run_relative(run_dir, metadata_ref)
+    if not metadata_path.exists():
+        missing.append("checkpoint_metadata")
+        return
+    metadata = _read_json_for_verdict(
+        metadata_path,
+        field="checkpoint_metadata",
+        mismatches=mismatches,
+    )
+    if metadata is None:
+        return
+    for field in ("checkpoint_id", "planned_step_id"):
+        if metadata.get(field) != handoff.get(field):
+            mismatches.append(f"checkpoint_metadata.{field}")
+    handoff_ref = metadata.get("checkpoint_handoff")
+    if not isinstance(handoff_ref, str) or not handoff_ref:
+        missing.append("checkpoint_metadata.checkpoint_handoff")
+        return
+    if _resolve_run_relative(run_dir, handoff_ref).resolve() != handoff_path.resolve():
+        mismatches.append("checkpoint_metadata.checkpoint_handoff")
+
+
+def _compare_identity_fingerprint(
+    identity: Mapping[str, Any],
+    *,
+    field: str,
+    mismatches: list[str],
+) -> None:
+    payload = dict(identity)
+    observed = payload.pop("fingerprint", None)
+    expected = hashlib.sha256(
+        json.dumps(
+            payload,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    if observed != expected:
+        mismatches.append(field)
 
 
 def _compare_file_hash(
@@ -201,10 +346,22 @@ class _ResolvedHandoff:
         handoff_path: Path | None,
         handoff: Mapping[str, Any] | None,
         checkpoint_id: str | None = None,
+        source_kind: str = "checkpoint_ref",
+        source_path: Path | None = None,
+        expected_checkpoint_id: str | None = None,
+        expected_planned_step_id: int | None = None,
+        expected_metadata_path: Path | None = None,
+        expected_handoff_path: Path | None = None,
     ) -> None:
         self.handoff_path = handoff_path
         self.handoff = handoff
         self.checkpoint_id = checkpoint_id
+        self.source_kind = source_kind
+        self.source_path = source_path
+        self.expected_checkpoint_id = expected_checkpoint_id
+        self.expected_planned_step_id = expected_planned_step_id
+        self.expected_metadata_path = expected_metadata_path
+        self.expected_handoff_path = expected_handoff_path
 
 
 def _resolve_handoff_reference(
@@ -212,6 +369,7 @@ def _resolve_handoff_reference(
     run_dir: Path,
     checkpoint_ref: str | Path | None,
     missing: list[str],
+    mismatches: list[str],
 ) -> _ResolvedHandoff:
     if checkpoint_ref is None:
         missing.append("checkpoint_ref")
@@ -220,20 +378,52 @@ def _resolve_handoff_reference(
     if path.is_dir():
         handoff_path = path / "checkpoint_handoff.json"
         if handoff_path.exists():
-            return _ResolvedHandoff(handoff_path=handoff_path, handoff=_read_json(handoff_path))
+            return _ResolvedHandoff(
+                handoff_path=handoff_path,
+                handoff=_read_json_for_verdict(
+                    handoff_path,
+                    field="checkpoint_handoff",
+                    mismatches=mismatches,
+                ),
+                source_kind="checkpoint_dir",
+                source_path=path,
+            )
         metadata_path = path / "checkpoint.json"
         if metadata_path.exists():
-            return _resolve_from_metadata(run_dir=run_dir, metadata_path=metadata_path, missing=missing)
+            return _resolve_from_metadata(
+                run_dir=run_dir,
+                metadata_path=metadata_path,
+                missing=missing,
+                mismatches=mismatches,
+            )
         missing.append("checkpoint_handoff")
         return _ResolvedHandoff(handoff_path=None, handoff=None)
     if path.name == "checkpoint_handoff.json":
         if not path.exists():
             missing.append("checkpoint_handoff")
             return _ResolvedHandoff(handoff_path=None, handoff=None)
-        return _ResolvedHandoff(handoff_path=path, handoff=_read_json(path))
+        return _ResolvedHandoff(
+            handoff_path=path,
+            handoff=_read_json_for_verdict(
+                path,
+                field="checkpoint_handoff",
+                mismatches=mismatches,
+            ),
+            source_kind="checkpoint_handoff",
+            source_path=path,
+        )
     if path.name == "checkpoint.json":
-        return _resolve_from_metadata(run_dir=run_dir, metadata_path=path, missing=missing)
-    payload = _read_json_if_exists(path)
+        return _resolve_from_metadata(
+            run_dir=run_dir,
+            metadata_path=path,
+            missing=missing,
+            mismatches=mismatches,
+        )
+    payload = _read_json_if_exists(
+        path,
+        field="checkpoint_ref",
+        mismatches=mismatches,
+    )
     if payload is None:
         missing.append("checkpoint_ref")
         return _ResolvedHandoff(handoff_path=None, handoff=None)
@@ -241,13 +431,45 @@ def _resolve_handoff_reference(
     if isinstance(handoff_ref, str) and handoff_ref:
         handoff_path = _resolve_run_relative(run_dir, handoff_ref)
         if handoff_path.exists():
-            return _ResolvedHandoff(handoff_path=handoff_path, handoff=_read_json(handoff_path))
+            return _ResolvedHandoff(
+                handoff_path=handoff_path,
+                handoff=_read_json_for_verdict(
+                    handoff_path,
+                    field="checkpoint_handoff",
+                    mismatches=mismatches,
+                ),
+                checkpoint_id=None
+                if not isinstance(payload.get("checkpoint_id"), str)
+                else payload["checkpoint_id"],
+                source_kind="alias",
+                source_path=path,
+                expected_checkpoint_id=None
+                if not isinstance(payload.get("checkpoint_id"), str)
+                else payload["checkpoint_id"],
+                expected_planned_step_id=payload.get("planned_step_id")
+                if isinstance(payload.get("planned_step_id"), int)
+                else None,
+                expected_metadata_path=_resolve_run_relative(run_dir, payload["metadata_path"])
+                if isinstance(payload.get("metadata_path"), str)
+                and payload.get("metadata_path")
+                else None,
+                expected_handoff_path=handoff_path,
+            )
     metadata_ref = payload.get("metadata_path")
     if isinstance(metadata_ref, str) and metadata_ref:
         return _resolve_from_metadata(
             run_dir=run_dir,
             metadata_path=_resolve_run_relative(run_dir, metadata_ref),
             missing=missing,
+            mismatches=mismatches,
+            source_kind="alias",
+            source_path=path,
+            expected_checkpoint_id=None
+            if not isinstance(payload.get("checkpoint_id"), str)
+            else payload["checkpoint_id"],
+            expected_planned_step_id=payload.get("planned_step_id")
+            if isinstance(payload.get("planned_step_id"), int)
+            else None,
         )
     missing.append("checkpoint_handoff")
     return _ResolvedHandoff(
@@ -262,8 +484,17 @@ def _resolve_from_metadata(
     run_dir: Path,
     metadata_path: Path,
     missing: list[str],
+    mismatches: list[str],
+    source_kind: str = "metadata",
+    source_path: Path | None = None,
+    expected_checkpoint_id: str | None = None,
+    expected_planned_step_id: int | None = None,
 ) -> _ResolvedHandoff:
-    metadata = _read_json_if_exists(metadata_path)
+    metadata = _read_json_if_exists(
+        metadata_path,
+        field="checkpoint_metadata",
+        mismatches=mismatches,
+    )
     checkpoint_id = None if metadata is None else str(metadata.get("checkpoint_id") or "")
     if metadata is None:
         missing.append("checkpoint_metadata")
@@ -286,8 +517,24 @@ def _resolve_from_metadata(
         )
     return _ResolvedHandoff(
         handoff_path=handoff_path,
-        handoff=_read_json(handoff_path),
+        handoff=_read_json_for_verdict(
+            handoff_path,
+            field="checkpoint_handoff",
+            mismatches=mismatches,
+        ),
         checkpoint_id=checkpoint_id,
+        source_kind=source_kind,
+        source_path=source_path or metadata_path,
+        expected_checkpoint_id=expected_checkpoint_id or checkpoint_id,
+        expected_planned_step_id=(
+            expected_planned_step_id
+            if expected_planned_step_id is not None
+            else metadata.get("planned_step_id")
+            if isinstance(metadata.get("planned_step_id"), int)
+            else None
+        ),
+        expected_metadata_path=metadata_path,
+        expected_handoff_path=handoff_path,
     )
 
 
@@ -336,16 +583,34 @@ def _relative_to_run(path: Path, *, run_dir: Path) -> str:
         return str(path)
 
 
-def _read_json_if_exists(path: Path) -> dict[str, Any] | None:
+def _read_json_if_exists(
+    path: Path,
+    *,
+    field: str,
+    mismatches: list[str],
+) -> dict[str, Any] | None:
     if not path.exists():
         return None
-    return _read_json(path)
+    return _read_json_for_verdict(path, field=field, mismatches=mismatches)
 
 
-def _read_json(path: Path) -> dict[str, Any]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
+def _read_json_for_verdict(
+    path: Path,
+    *,
+    field: str,
+    mismatches: list[str],
+) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        mismatches.append(f"{field}.invalid_json")
+        return None
+    except OSError:
+        mismatches.append(f"{field}.read_failed")
+        return None
     if not isinstance(payload, dict):
-        raise ValueError(f"checkpoint handoff JSON must contain an object: {path}")
+        mismatches.append(f"{field}.invalid_json")
+        return None
     return payload
 
 

@@ -590,6 +590,7 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
                 special_token_result=special_token_result,
                 trainable_surface=trainable_surface,
                 processor_identity=_artifact_dict(components.processor_identity),
+                template_identity=_template_identity(config),
                 resolved_config_fingerprint=resolved_config.fingerprint,
                 schedule=schedule,
                 base_model_path=components.base_model_path,
@@ -1170,6 +1171,7 @@ def _checkpoint_handler(
     special_token_result: Any,
     trainable_surface: Any,
     processor_identity: dict[str, Any],
+    template_identity: dict[str, Any],
     resolved_config_fingerprint: str,
     schedule: ResolvedStepSchedule,
     base_model_path: Path,
@@ -1188,6 +1190,7 @@ def _checkpoint_handler(
             special_token_result=special_token_result,
             trainable_surface=trainable_surface,
             processor_identity=processor_identity,
+            template_identity=template_identity,
             resolved_config_fingerprint=resolved_config_fingerprint,
             schedule_identity={
                 "resolved_max_steps": schedule.resolved_max_steps,
@@ -1222,6 +1225,13 @@ def _checkpoint_handler(
         )
 
     return handle
+
+
+def _template_identity(config: Any) -> dict[str, Any]:
+    template = config.template
+    if hasattr(template, "model_dump"):
+        return dict(template.model_dump(mode="json"))
+    return dict(template)
 
 
 def _unwrap_checkpoint_model(model: Any, *, runtime: Any | None) -> Any:

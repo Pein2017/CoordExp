@@ -37,16 +37,20 @@ composition MAY remain allowed, but it MUST be recorded as noncanonical
 
 #### Scenario: Matching handoff inference
 
-- **WHEN** production inference is launched from a checkpoint handoff manifest
-  and the resolved inference config matches the manifest identities
+- **WHEN** inference is launched with configured checkpoint adapter or selected
+  special-token embedding payload paths and a neighboring handoff manifest is
+  discovered whose identities match those payload paths
 - **THEN** inference MAY proceed
 - **AND** the run manifest MUST record the handoff manifest path and identity
-  fingerprint.
+  fingerprint
+- **AND** runtime MUST reject mismatches in base model path, base config hash,
+  tokenizer hash, processor identity, template identity, or intended inference
+  config family before generation.
 
 #### Scenario: Adapter mismatch
 
-- **WHEN** production inference resolves an adapter payload that differs from
-  the adapter identity in `checkpoint_handoff.json`
+- **WHEN** handoff-backed inference resolves an adapter payload that differs
+  from the adapter identity in `checkpoint_handoff.json`
 - **THEN** inference MUST fail before model generation
 - **AND** the diagnostic MUST identify the handoff adapter identity and the
   resolved adapter identity.
@@ -64,8 +68,10 @@ CoordExp-Swift SHALL provide a read-only handoff readiness validation surface
 for run and checkpoint artifacts. The validator MUST inspect artifact presence
 and identity consistency without modifying training checkpoints, inference
 outputs, cached packs, or model payloads. It MUST return a pass/hold decision
-for the requested `handoff`, `eval`, or future `production` gate with concrete
-missing or mismatched artifact handles.
+for the requested `handoff` or `eval` gate with concrete missing or mismatched
+artifact handles. The future `production` gate MAY be accepted as a validator
+argument in V1, but it MUST return hold with `production_gate_unimplemented`
+until a later change defines production readiness.
 
 #### Scenario: Complete ready checkpoint
 
@@ -79,6 +85,12 @@ missing or mismatched artifact handles.
   identity but no accepted eval artifact roots for the `eval` gate
 - **THEN** it MUST return hold
 - **AND** the failure list MUST name `accepted_eval_artifact_roots`.
+
+#### Scenario: Production gate requested before implementation
+
+- **WHEN** the validator is called with `gate: production` in V1
+- **THEN** it MUST return hold
+- **AND** the failure list MUST name `production_gate_unimplemented`.
 
 #### Scenario: Validator execution
 

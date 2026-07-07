@@ -31,6 +31,9 @@
   broad reporting framework.
 - [x] 3.5 Run targeted checkpoint, inference handoff, and readiness-validator
   tests.
+- [x] 3.6 Apply review-convergence fixes for required handoff fields, alias
+  consistency, canonical inference identity propagation, and data-parallel merge
+  propagation without broadening V1 into a production-readiness framework.
 
 ## 4. Final Verification And Cleanup
 

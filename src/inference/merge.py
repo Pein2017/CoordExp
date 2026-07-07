@@ -57,6 +57,9 @@ SHARD_OWNED_IDENTITY_FIELDS = (
     "tokenizer_identity",
     "adapter_identity",
     "embedding_delta_identity",
+    "composition_mode",
+    "handoff_readiness",
+    "checkpoint_handoff",
 )
 
 
@@ -127,6 +130,12 @@ def merge_identity_vector(
         "tokenizer_identity": manifest.get("tokenizer_identity"),
         "adapter_identity": manifest.get("adapter_identity"),
         "embedding_delta_identity": manifest.get("embedding_delta_identity"),
+        "composition_mode": manifest.get("composition_mode")
+        or provenance.get("composition_mode"),
+        "handoff_readiness": manifest.get("handoff_readiness")
+        or provenance.get("handoff_readiness"),
+        "checkpoint_handoff": manifest.get("checkpoint_handoff")
+        or provenance.get("checkpoint_handoff"),
         "template_identity": manifest.get("template_identity")
         or provenance.get("template_identity"),
         "prompt_policy_fingerprint": manifest.get("prompt_policy_fingerprint")
@@ -879,6 +888,9 @@ def _controller_identity_vector(metadata: dict[str, Any]) -> dict[str, Any]:
         "tokenizer_identity": metadata.get("tokenizer_identity"),
         "adapter_identity": metadata.get("adapter_identity"),
         "embedding_delta_identity": metadata.get("embedding_delta_identity"),
+        "composition_mode": metadata.get("composition_mode"),
+        "handoff_readiness": metadata.get("handoff_readiness"),
+        "checkpoint_handoff": metadata.get("checkpoint_handoff"),
         "template_identity": metadata.get("template_identity"),
         "prompt_policy_fingerprint": metadata.get("prompt_policy_fingerprint"),
         "generation_config_fingerprint": metadata.get("generation_config_fingerprint"),
@@ -1771,6 +1783,9 @@ def _merged_provenance(
         "tokenizer_identity": dict(metadata.get("tokenizer_identity") or {}),
         "adapter_identity": metadata.get("adapter_identity"),
         "embedding_delta_identity": metadata.get("embedding_delta_identity"),
+        "composition_mode": metadata.get("composition_mode"),
+        "handoff_readiness": metadata.get("handoff_readiness"),
+        "checkpoint_handoff": metadata.get("checkpoint_handoff"),
         "template_identity": metadata["template_identity"],
         "parser_policy": metadata["parser_policy"],
         "score_policy_fingerprint": SCORE_POLICY_FINGERPRINT,
@@ -1829,6 +1844,9 @@ def _merged_manifest(
         "tokenizer_identity": metadata.get("tokenizer_identity", {}),
         "adapter_identity": metadata.get("adapter_identity"),
         "embedding_delta_identity": metadata.get("embedding_delta_identity"),
+        "composition_mode": metadata.get("composition_mode"),
+        "handoff_readiness": metadata.get("handoff_readiness"),
+        "checkpoint_handoff": metadata.get("checkpoint_handoff"),
         "backend": metadata["backend"],
         "backend_mode": metadata["backend_mode"],
         "response_family": metadata["response_family"],

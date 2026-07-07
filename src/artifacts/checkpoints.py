@@ -73,6 +73,7 @@ class CheckpointWriter:
         base_model_path: Path | str | None = None,
         base_config_sha256: str | None = None,
         tokenizer_sha256: str | None = None,
+        template_identity: Mapping[str, Any] | None = None,
     ) -> CheckpointWriteResult:
         if planned_step_id <= 0:
             raise ArtifactContractError(
@@ -157,6 +158,7 @@ class CheckpointWriter:
                 special_token_payload=special_token_payload,
                 trainable_surface=trainable_surface,
                 processor_identity=processor_identity,
+                template_identity=template_identity,
                 resolved_config_fingerprint=resolved_config_fingerprint,
             ),
             code="checkpoint.handoff_exists",
@@ -348,6 +350,7 @@ def _handoff_manifest(
     special_token_payload: Mapping[str, Any],
     trainable_surface: TrainableSurfaceReceipt | Mapping[str, Any],
     processor_identity: Mapping[str, Any],
+    template_identity: Mapping[str, Any] | None,
     resolved_config_fingerprint: str,
 ) -> dict[str, Any]:
     special_metadata = special_token_payload.get("metadata")
@@ -390,6 +393,7 @@ def _handoff_manifest(
         },
         "trainable_surface": _artifact_dict(trainable_surface),
         "processor_identity": dict(processor_identity),
+        "template_identity": dict(template_identity or {}),
         "resolved_config_fingerprint": resolved_config_fingerprint,
         "intended_inference_config_family": "configs/coordexp_swift/infer",
         "accepted_eval_artifact_roots": [],

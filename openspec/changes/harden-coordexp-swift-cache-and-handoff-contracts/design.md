@@ -64,11 +64,11 @@ description of the packed examples.
 ### Handoff Is The Identity Boundary
 
 `checkpoint_handoff.json` is the canonical bridge from training to inference
-for payload identity. The `handoff` gate checks base model, adapter payload,
-selected-token embedding delta, tokenizer, processor, prompt/template identity,
-and intended inference family. The `eval` gate layers accepted eval artifact
-roots on top. A future `production` gate remains out of scope for this narrowed
-implementation.
+for runtime handoff identity. The `handoff` gate checks base model, adapter
+payload, selected-token embedding delta, tokenizer, processor, prompt/template
+identity, and intended inference family. The `eval` gate layers accepted eval
+artifact roots on top. A requested `production` gate returns hold in V1 because
+production readiness remains out of scope for this narrowed implementation.
 
 Manual base/adapter/delta paths remain useful for research and debugging, but
 they must be marked as noncanonical evidence. This avoids treating a manually
@@ -80,8 +80,12 @@ The readiness validator should inspect an existing run/checkpoint artifact
 tree and return pass/fail with concrete missing or mismatched handles. It is
 not a reporting framework and should not own training or inference behavior.
 
-The first implementation pass may land the cache identity patch before the full
-handoff validator, because Wave A is independent and smaller.
+The implemented V1 surface keeps the validator small and read-only. Canonical
+inference discovers a neighboring `checkpoint_handoff.json` from configured
+checkpoint adapter or special-token embedding payload paths, validates it, and
+records the validated identities. Direct inference config fields that point to a
+handoff manifest or `checkpoint-final.json` alias are intentionally left for a
+future change.
 
 ## Risks / Trade-offs
 
@@ -101,14 +105,15 @@ handoff validator, because Wave A is independent and smaller.
    cache fingerprints while worker count does not.
 3. Add the minimal source identity implementation.
 4. Run targeted packing-cache tests and OpenSpec validation.
-5. Implement the handoff/readiness validator in a later task group after the
-   cache identity patch is green.
+5. Implement the handoff/readiness validator and neighboring-handoff inference
+   provenance after the cache identity patch is green.
 
 Rollback is simple: revert the source identity file-list change and its tests.
 Existing cache manifests remain readable because the payload shape is unchanged.
 
 ## Open Questions
 
-No user-blocking questions remain for Wave A. The exact readiness validator CLI
-or Python entrypoint name can be chosen during Wave B implementation, provided
-it remains read-only and does not add broad process.
+No user-blocking questions remain for this narrowed change. A future CLI,
+direct `checkpoint-final.json` inference resolver, and broader production gate
+may be proposed later, provided they remain separate from the V1 read-only
+handoff validator and do not turn this change into a report framework.
