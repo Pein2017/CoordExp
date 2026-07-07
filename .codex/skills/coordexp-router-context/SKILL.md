@@ -22,11 +22,11 @@ Exact leaf skills win over this router: use `coordexp-infer-eval-workflow` for l
 
 Use project agents as role boundaries, not as tool identities:
 
-- `codebase_pioneer`: cheap read-only scout for first-pass candidate paths, symbols, configs, artifacts, and search seeds; never assign edits, final diagnosis, architecture verdicts, indexing, cleanup, staging, or commits.
-- `coordexp_mapper`: first-pass read-only map of docs, configs, code owners, artifacts, and likely checks.
-- `upstream_relation_tracer`: read-only cross-root or upstream-library dependency tracing.
-- `contract_auditor`: read-only severity-ranked contract, reproducibility, artifact, metric, docs/spec, or launch-gate audit.
+- `repo_scout`: cheap read-only scout/map for first-pass candidate paths, symbols, configs, artifacts, owner surfaces, and likely checks; never assign edits, final diagnosis, architecture verdicts, indexing, cleanup, staging, or commits.
+- `upstream_relation_tracer`: read-only cross-root or upstream-library dependency tracing; dispatch on demand, not as a standing fleet lane.
+- `contract_auditor`: read-only severity-ranked contract, reproducibility, artifact, metric, docs/spec, or launch-gate audit; runtime-dependent findings stay PLAUSIBLE until `probe_runner` receipts them.
 - `model_diagnostician`: read-only artifact-first diagnosis of abnormal model behavior.
+- `probe_runner`: bounded execution probes that attest executed semantics with receipts (manifest/config diffs, decode-kwarg echoes, parser round-trips, step-bounded smokes); never source-only conclusions or long jobs.
 - `research_synthesizer`: research synthesis, legacy progress migration,
   supervisor packets, and OKF-style research hubs.
 - `implementation_worker`: bounded code/config/docs patch when the parent supplies owned files/modules and verification target.

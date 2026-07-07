@@ -81,10 +81,11 @@ Use subagents only when the user explicitly requested subagents or the active wo
 
 Use 2 lanes by default. Use 3-4 only for genuinely independent surfaces. Use 5-6 only for high-stakes launch, merge, architecture, or expensive-run gates where each lane has a different evidence axis. Keep lanes independent. Prefer project custom-agent roles when they fit:
 
-- `coordexp_mapper`: unknown surface map before other lanes spend tokens.
+- `repo_scout`: unknown surface map before other lanes spend tokens.
 - `upstream_relation_tracer`: upstream/library or cross-root dependency claims.
 - `contract_auditor`: governance/spec, implementation-contract, config/runtime, artifact/eval, docs, or launch-gate risks.
 - `model_diagnostician`: abnormal model behavior, rollout symptoms, metric drops, or artifact-root diagnosis.
+- `probe_runner`: execution receipts for runtime-dependent findings; upgrades PLAUSIBLE to CONFIRMED or refutes it.
 - `research_synthesizer`: research-note clustering, supervisor packets, or OKF-style hub drafts.
 - `implementation_worker`: assigned patch lane after the parent gives owned files/modules and verification target.
 
@@ -229,7 +230,7 @@ for path in pathlib.Path(".codex/agents").glob("*.toml"):
         raise SystemExit(f"{path}: missing {sorted(missing)}")
     print(f"{path}: ok")
 PY
-git check-ignore -v .codex/agents/coordexp_mapper.toml || true
+git check-ignore -v .codex/agents/repo_scout.toml || true
 git diff --check
 ```
 
