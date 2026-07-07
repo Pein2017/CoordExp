@@ -28,6 +28,8 @@ from src.adapters import (
     load_default_adapter_source_gate_evidence,
     setup_dora_adapter,
 )
+from src.augmentation.factory import build_augmentation_processor
+from src.augmentation.processor import AugmentationMaterializationResult
 from src.artifacts import MetricStreamEvent, RunArtifactManager
 from src.artifacts.checkpoints import CheckpointWriter
 from src.common.errors import RuntimeContractError
@@ -741,6 +743,7 @@ def _resolve_or_build_pack_cache(
             fingerprint=fingerprint,
             determinants=determinants,
             materialization=materialization,
+            augmentation=_augmentation_receipt_from_micro_steps(micro_steps),
         )
     _wait_for_pack_cache(cache_dir, fingerprint=fingerprint)
     manifest = load_cache_manifest(cache_dir)
@@ -765,6 +768,7 @@ def _resolve_or_build_pack_cache(
         "chunk_sha256s": [str(chunk["sha256"]) for chunk in manifest["chunks"]],
         "determinants": determinants,
         "materialization": manifest.get("materialization"),
+        "augmentation": manifest.get("augmentation"),
     }
 
 
@@ -1061,7 +1065,12 @@ def _build_micro_steps_for_dataset(
             code="training.dataset_split_missing",
             context={"split": split},
         )
-    raw_examples = load_raw_examples(dataset)
+    augmentation_result = _materialize_raw_examples_for_dataset(
+        config,
+        dataset,
+        split=split,
+    )
+    raw_examples = augmentation_result.examples
     encoded_examples = _build_encoded_examples_for_dataset(
         config,
         components,
@@ -1097,6 +1106,7 @@ def _build_micro_steps_for_dataset(
                     "split": split,
                     "pack_id": pack.pack_index,
                     "example_ids": [segment.example_id for segment in pack.segments],
+                    "augmentation_receipt": augmentation_result.receipt,
                 },
                 expected_vocab_size=components.token_identity.tokenizer_vocab_size,
                 fa2_model_dtype=config.training.precision,
@@ -1112,6 +1122,21 @@ def _build_micro_steps_for_dataset(
             context={"split": split},
         )
     return tuple(micro_steps)
+
+
+def _materialize_raw_examples_for_dataset(
+    config: Any,
+    dataset: Any,
+    *,
+    split: str,
+) -> AugmentationMaterializationResult:
+    raw_examples = load_raw_examples(dataset)
+    processor = build_augmentation_processor(config, split=split)
+    return processor.materialize(
+        raw_examples,
+        split=split,
+        object_ordering=config.template.object_ordering,
+    )
 
 
 def enable_training_memory_savers(model: Any) -> dict[str, Any]:
@@ -1276,6 +1301,7 @@ def _pack_plan_artifact(
             "determinants_sha256": cache["determinants_sha256"],
             "chunk_sha256s": list(cache["chunk_sha256s"]),
             "materialization": cache.get("materialization"),
+            "augmentation": cache.get("augmentation"),
         },
         "actual_pack_presentations": schedule.actual_pack_presentations,
         "tail_fill_pack_count": schedule.tail_fill_pack_count,
@@ -1296,6 +1322,19 @@ def _file_sha256(path: Path) -> str:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _augmentation_receipt_from_micro_steps(
+    micro_steps: Sequence[SupervisedMicroStep],
+) -> dict[str, Any] | None:
+    for micro_step in micro_steps:
+        metadata = getattr(micro_step, "metadata", None)
+        if not isinstance(metadata, Mapping):
+            continue
+        receipt = metadata.get("augmentation_receipt")
+        if isinstance(receipt, Mapping):
+            return dict(receipt)
+    return None
 
 
 def _sha256_json(payload: Mapping[str, Any]) -> str:

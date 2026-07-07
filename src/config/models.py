@@ -148,10 +148,44 @@ class DatasetSplitConfig(StrictConfigModel):
     sample_limit: int | None = Field(default=None, gt=0)
 
 
+class GeometryFlipsAugmentationConfig(StrictConfigModel):
+    enabled: bool = False
+    horizontal_prob: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        allow_inf_nan=False,
+    )
+    vertical_prob: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        allow_inf_nan=False,
+    )
+
+    @field_validator("horizontal_prob", "vertical_prob", mode="before")
+    @classmethod
+    def _probability_is_numeric(cls, value: object) -> object:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError("geometry flip probabilities must be numeric")
+        return value
+
+
+class TrainAugmentationConfig(StrictConfigModel):
+    geometry_flips: GeometryFlipsAugmentationConfig = Field(
+        default_factory=GeometryFlipsAugmentationConfig
+    )
+
+
+class DataAugmentationConfig(StrictConfigModel):
+    train: TrainAugmentationConfig = Field(default_factory=TrainAugmentationConfig)
+
+
 class DataConfig(StrictConfigModel):
     train: DatasetSplitConfig
     eval: DatasetSplitConfig | None = None
     train_order: Literal["source_order"] = "source_order"
+    augmentation: DataAugmentationConfig = Field(default_factory=DataAugmentationConfig)
 
 
 class TemplatePromptConfig(StrictConfigModel):

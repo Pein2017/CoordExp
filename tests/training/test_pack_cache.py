@@ -181,8 +181,12 @@ def test_packing_cache_determinants_include_code_identity(tmp_path: Path) -> Non
 
     code_identity = determinants["code_identity"]
     assert set(code_identity) == {
+        "augmentation_factory",
+        "augmentation_geometry",
+        "augmentation_processor",
         "template_renderer",
         "qwen_encoding",
+        "qwen_images",
         "qwen_positions",
         "qwen_fa2",
         "qwen_forward",
@@ -194,6 +198,68 @@ def test_packing_cache_determinants_include_code_identity(tmp_path: Path) -> Non
         assert payload["sha256"]
         assert len(payload["sha256"]) == 64
         assert payload["path"].startswith("src/")
+
+
+def test_packing_cache_fingerprint_tracks_augmentation_config_and_seed(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "train.coord.jsonl"
+    dataset.write_text('{"example_id":"ex-0"}\n', encoding="utf-8")
+    config = load_train_config(FIXTURE_CONFIG).config
+    config = config.model_copy(
+        update={
+            "data": config.data.model_copy(
+                update={
+                    "train": config.data.train.model_copy(
+                        update={"path": str(dataset)}
+                    )
+                }
+            )
+        }
+    )
+    components = FakeComponents()
+
+    baseline = build_packing_cache_fingerprint(
+        config,
+        components,
+        dataset=config.data.train,
+        split="train",
+    )
+    enabled = build_packing_cache_fingerprint(
+        _config_with_geometry_flips(config, horizontal_prob=1.0),
+        components,
+        dataset=config.data.train,
+        split="train",
+    )
+    changed_probability = build_packing_cache_fingerprint(
+        _config_with_geometry_flips(config, horizontal_prob=0.5),
+        components,
+        dataset=config.data.train,
+        split="train",
+    )
+    changed_seed = build_packing_cache_fingerprint(
+        _config_with_geometry_flips(
+            config.model_copy(
+                update={"runtime": config.runtime.model_copy(update={"seed": 99})}
+            ),
+            horizontal_prob=1.0,
+        ),
+        components,
+        dataset=config.data.train,
+        split="train",
+    )
+    determinants = build_packing_cache_determinants(
+        _config_with_geometry_flips(config, horizontal_prob=1.0),
+        components,
+        dataset=config.data.train,
+        split="train",
+    )
+
+    assert enabled != baseline
+    assert changed_probability != enabled
+    assert changed_seed != enabled
+    assert determinants["augmentation"]["policy"] == "geometry_flips"
+    assert determinants["augmentation"]["train"]["geometry_flips"]["enabled"] is True
 
 
 def test_packing_cache_fingerprint_ignores_materialization_worker_count(
@@ -549,3 +615,36 @@ class FakeComponents:
     def __init__(self, *, image_pad_token_id: int = 151655) -> None:
         self.tokenizer = FakeTokenizer(image_pad_token_id=image_pad_token_id)
         self.processor = FakeProcessor()
+
+
+def _config_with_geometry_flips(
+    config: Any,
+    *,
+    horizontal_prob: float = 0.0,
+    vertical_prob: float = 0.0,
+) -> Any:
+    return config.model_copy(
+        update={
+            "data": config.data.model_copy(
+                update={
+                    "augmentation": config.data.augmentation.model_copy(
+                        update={
+                            "train": config.data.augmentation.train.model_copy(
+                                update={
+                                    "geometry_flips": (
+                                        config.data.augmentation.train.geometry_flips.model_copy(
+                                            update={
+                                                "enabled": True,
+                                                "horizontal_prob": horizontal_prob,
+                                                "vertical_prob": vertical_prob,
+                                            }
+                                        )
+                                    )
+                                }
+                            )
+                        }
+                    )
+                }
+            )
+        }
+    )

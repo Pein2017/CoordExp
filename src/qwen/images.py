@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import torch
-from PIL import Image
+from PIL import Image, ImageOps
 
+from src.augmentation.geometry import COORD_AFFINE_MATRICES
 from src.common.errors import EncodingContractError
 from src.config.models import ProcessorConfig
 from src.data import RawExample
@@ -33,8 +34,12 @@ class QwenNoResizeImagePlan:
     merged_visual_tokens: int
     max_raw_pixels: int
     max_merged_visual_tokens: int
+    logical_transform_id: str = "identity"
+    logical_transform_matrix: tuple[tuple[int, int, int], ...] = (
+        COORD_AFFINE_MATRICES["identity"]
+    )
 
-    def to_artifact_dict(self) -> dict[str, int | str | list[int]]:
+    def to_artifact_dict(self) -> dict[str, Any]:
         return {
             "example_id": self.example_id,
             "image_path": str(self.image_path),
@@ -51,6 +56,10 @@ class QwenNoResizeImagePlan:
             "merged_visual_tokens": self.merged_visual_tokens,
             "max_raw_pixels": self.max_raw_pixels,
             "max_merged_visual_tokens": self.max_merged_visual_tokens,
+            "logical_transform_id": self.logical_transform_id,
+            "logical_transform_matrix": [
+                list(row) for row in self.logical_transform_matrix
+            ],
         }
 
 
@@ -203,6 +212,9 @@ def build_no_resize_image_plan(
             },
         )
 
+    logical_transform_id, logical_transform_matrix = _logical_transform_from_example(
+        raw_example
+    )
     return QwenNoResizeImagePlan(
         example_id=raw_example.example_id,
         image_path=raw_example.image.path,
@@ -219,6 +231,8 @@ def build_no_resize_image_plan(
         merged_visual_tokens=merged_visual_tokens,
         max_raw_pixels=processor_config.max_raw_pixels,
         max_merged_visual_tokens=processor_config.max_merged_visual_tokens,
+        logical_transform_id=logical_transform_id,
+        logical_transform_matrix=logical_transform_matrix,
     )
 
 
@@ -502,7 +516,56 @@ def _load_rgb_image_from_plan(plan: QwenNoResizeImagePlan) -> Image.Image:
                     "decoded_height": decoded_height,
                 },
             )
-        return image.convert("RGB")
+        return _apply_logical_transform(image.convert("RGB"), plan)
+
+
+def _logical_transform_from_example(
+    raw_example: RawExample,
+) -> tuple[str, tuple[tuple[int, int, int], ...]]:
+    augmentation = raw_example.metadata.get("augmentation")
+    transform_id = "identity"
+    if isinstance(augmentation, Mapping):
+        raw_transform_id = augmentation.get("transform_id")
+        if raw_transform_id is not None:
+            transform_id = str(raw_transform_id)
+    try:
+        matrix = COORD_AFFINE_MATRICES[transform_id]
+    except KeyError as exc:
+        raise EncodingContractError(
+            "Qwen image plan received an unsupported logical transform id",
+            code="qwen.image_logical_transform",
+            context={
+                "example_id": raw_example.example_id,
+                "image_path": str(raw_example.image.path),
+                "logical_transform_id": transform_id,
+            },
+            cause=exc,
+        ) from exc
+    return transform_id, matrix
+
+
+def _apply_logical_transform(
+    image: Image.Image,
+    plan: QwenNoResizeImagePlan,
+) -> Image.Image:
+    transform_id = plan.logical_transform_id
+    if transform_id == "identity":
+        return image
+    if transform_id == "hflip":
+        return ImageOps.mirror(image)
+    if transform_id == "vflip":
+        return ImageOps.flip(image)
+    if transform_id == "hvflip":
+        return ImageOps.flip(ImageOps.mirror(image))
+    raise EncodingContractError(
+        "Qwen image materialization received an unsupported logical transform id",
+        code="qwen.image_logical_transform",
+        context={
+            "example_id": plan.example_id,
+            "image_path": str(plan.image_path),
+            "logical_transform_id": transform_id,
+        },
+    )
 
 
 def _validate_processor_output(

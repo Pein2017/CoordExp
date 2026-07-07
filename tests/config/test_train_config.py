@@ -209,6 +209,98 @@ def test_train_order_defaults_to_source_order_and_rejects_shuffle(tmp_path: Path
     assert "shuffle" in str(exc_info.value)
 
 
+def test_geometry_flip_augmentation_defaults_disabled(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    payload = _minimal_config()
+    payload["data"].pop("augmentation", None)
+    _write_yaml(config_path, payload)
+
+    resolved = load_train_config(config_path)
+
+    geometry_flips = resolved.config.data.augmentation.train.geometry_flips
+    assert geometry_flips.enabled is False
+    assert geometry_flips.horizontal_prob == 0.0
+    assert geometry_flips.vertical_prob == 0.0
+
+
+def test_geometry_flip_augmentation_accepts_probabilities(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    payload = _minimal_config()
+    payload["data"]["augmentation"] = {
+        "train": {
+            "geometry_flips": {
+                "enabled": True,
+                "horizontal_prob": 0.5,
+                "vertical_prob": 0.25,
+            }
+        }
+    }
+    _write_yaml(config_path, payload)
+
+    resolved = load_train_config(config_path)
+
+    geometry_flips = resolved.config.data.augmentation.train.geometry_flips
+    assert geometry_flips.enabled is True
+    assert geometry_flips.horizontal_prob == pytest.approx(0.5)
+    assert geometry_flips.vertical_prob == pytest.approx(0.25)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("horizontal_prob", -0.01),
+        ("horizontal_prob", 1.01),
+        ("vertical_prob", float("inf")),
+        ("vertical_prob", "0.5"),
+    ],
+)
+def test_geometry_flip_augmentation_rejects_invalid_probabilities(
+    tmp_path: Path,
+    field: str,
+    value: Any,
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    payload = _minimal_config()
+    payload["data"]["augmentation"] = {
+        "train": {
+            "geometry_flips": {
+                "enabled": True,
+                "horizontal_prob": 0.5,
+                "vertical_prob": 0.5,
+            }
+        }
+    }
+    payload["data"]["augmentation"]["train"]["geometry_flips"][field] = value
+    _write_yaml(config_path, payload)
+
+    with pytest.raises(ConfigContractError) as exc_info:
+        load_train_config(config_path)
+
+    assert "data.augmentation.train.geometry_flips" in exc_info.value.context["field"]
+    assert field in exc_info.value.context["field"]
+
+
+def test_geometry_flip_augmentation_rejects_unknown_fields(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    payload = _minimal_config()
+    payload["data"]["augmentation"] = {
+        "train": {
+            "geometry_flips": {
+                "enabled": True,
+                "horizontal_prob": 0.5,
+                "vertical_prob": 0.5,
+                "include_composed": True,
+            }
+        }
+    }
+    _write_yaml(config_path, payload)
+
+    with pytest.raises(ConfigContractError) as exc_info:
+        load_train_config(config_path)
+
+    assert "include_composed" in exc_info.value.context["field"]
+
+
 def test_legacy_dlora_adapter_spelling_explains_v1_dora_name(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     payload = _minimal_config()

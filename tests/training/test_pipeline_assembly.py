@@ -775,6 +775,103 @@ def test_pack_cache_miss_receipt_records_materialization_override(
     assert manifest["materialization"] == receipt["materialization"]
 
 
+def test_materialize_raw_examples_applies_train_augmentation_before_encoding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _config_with_temp_dataset(tmp_path)
+    raw_examples = (SimpleNamespace(example_id="raw-a"), SimpleNamespace(example_id="raw-b"))
+    augmentation_receipt = {
+        "mode": "static_stochastic_view",
+        "policy": "geometry_flips",
+        "input_example_count": 2,
+        "output_example_count": 2,
+    }
+    log: list[str] = []
+
+    class FakeAugmentationProcessor:
+        def materialize(
+            self,
+            examples: Any,
+            *,
+            split: str,
+            object_ordering: str,
+        ) -> Any:
+            log.append(f"materialize:{split}:{object_ordering}:{len(examples)}")
+            return SimpleNamespace(
+                examples=(
+                    SimpleNamespace(example_id="aug-a"),
+                    SimpleNamespace(example_id="aug-b"),
+                ),
+                receipt=augmentation_receipt,
+            )
+
+    monkeypatch.setattr(
+        pipeline_mod,
+        "load_raw_examples",
+        lambda dataset: raw_examples,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        pipeline_mod,
+        "build_augmentation_processor",
+        lambda cfg, split: FakeAugmentationProcessor(),
+        raising=False,
+    )
+
+    result = pipeline_mod._materialize_raw_examples_for_dataset(
+        config,
+        config.data.train,
+        split="train",
+    )
+
+    assert [example.example_id for example in result.examples] == ["aug-a", "aug-b"]
+    assert result.receipt == augmentation_receipt
+    assert log == ["materialize:train:source_order:2"]
+
+
+def test_pack_cache_miss_receipt_records_augmentation_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _config_with_temp_dataset(tmp_path)
+    components = FakeComponents()
+    augmentation_receipt = {
+        "mode": "static_stochastic_view",
+        "policy": "geometry_flips",
+        "policy_version": "coordexp-swift-geometry-flips-v1",
+        "input_example_count": 2,
+        "output_example_count": 2,
+        "transform_counts": {
+            "identity": 0,
+            "hflip": 1,
+            "vflip": 1,
+            "hvflip": 0,
+        },
+    }
+    monkeypatch.setenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", str(tmp_path / "pack-cache"))
+
+    receipt = pipeline_mod._resolve_or_build_pack_cache(
+        config,
+        components,
+        FakeVocabGroups(),
+        repo_root=tmp_path,
+        dataset=config.data.train,
+        split="train",
+        build_micro_steps=lambda materialization_workers: (
+            _micro_step_with_metadata(
+                materialization_workers,
+                {"augmentation_receipt": augmentation_receipt},
+            ),
+        ),
+        materialization_workers=1,
+    )
+    manifest = load_cache_manifest(receipt["cache_dir"])
+
+    assert receipt["augmentation"] == augmentation_receipt
+    assert manifest["augmentation"] == augmentation_receipt
+
+
 def test_pack_cache_hit_does_not_rebuild_or_construct_process_pool(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -824,6 +921,60 @@ def test_pack_cache_hit_does_not_rebuild_or_construct_process_pool(
 
     assert receipt["build_status"] == "hit"
     assert receipt["micro_step_count"] == 1
+
+
+def test_pack_cache_hit_reuses_cached_augmentation_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _config_with_temp_dataset(tmp_path)
+    components = FakeComponents()
+    cache_root = tmp_path / "pack-cache"
+    fingerprint = build_packing_cache_fingerprint(
+        config,
+        components,
+        dataset=config.data.train,
+        split="train",
+    )
+    determinants = build_packing_cache_determinants(
+        config,
+        components,
+        dataset=config.data.train,
+        split="train",
+    )
+    augmentation_receipt = {
+        "mode": "static_stochastic_view",
+        "policy": "geometry_flips",
+        "input_example_count": 2,
+        "output_example_count": 2,
+        "transform_counts": {
+            "identity": 1,
+            "hflip": 1,
+            "vflip": 0,
+            "hvflip": 0,
+        },
+    }
+    write_micro_step_cache(
+        cache_dir_for_fingerprint(cache_root, fingerprint),
+        (_micro_step(0),),
+        fingerprint=fingerprint,
+        determinants=determinants,
+        augmentation=augmentation_receipt,
+    )
+    monkeypatch.setenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", str(cache_root))
+
+    receipt = pipeline_mod._resolve_or_build_pack_cache(
+        config,
+        components,
+        FakeVocabGroups(),
+        repo_root=tmp_path,
+        dataset=config.data.train,
+        split="train",
+        build_micro_steps=lambda materialization_workers: (_raise_rebuild(),),
+    )
+
+    assert receipt["build_status"] == "hit"
+    assert receipt["augmentation"] == augmentation_receipt
 
 
 def test_pack_cache_materialization_uses_default_pool_and_restores_order(
@@ -1385,6 +1536,23 @@ def _micro_step(index: int) -> SupervisedMicroStep:
         token_sequence=f"tokens-{index}",
         vocab_groups=f"vocab-{index}",
         metadata={"pack_id": index},
+    )
+
+
+def _micro_step_with_metadata(
+    index: int,
+    metadata: dict[str, Any],
+) -> SupervisedMicroStep:
+    step = _micro_step(index)
+    merged = dict(step.metadata)
+    merged.update(metadata)
+    return SupervisedMicroStep(
+        pack=step.pack,
+        encoded_examples=step.encoded_examples,
+        position_inputs=step.position_inputs,
+        token_sequence=step.token_sequence,
+        vocab_groups=step.vocab_groups,
+        metadata=merged,
     )
 
 

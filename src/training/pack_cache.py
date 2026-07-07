@@ -10,6 +10,7 @@ from pathlib import Path
 import pickle
 from typing import Any
 
+from src.augmentation.geometry import GEOMETRY_FLIP_POLICY_VERSION
 from src.config.models import DatasetSplitConfig, TrainConfig
 from src.training.schedule import ResolvedStepSchedule
 from src.training.supervised_trainer import SupervisedMicroStep
@@ -21,8 +22,12 @@ PACKING_CACHE_CHUNK_DIR = "chunks"
 DEFAULT_PACK_CACHE_MATERIALIZATION_WORKERS = 16
 PACKING_CACHE_MATERIALIZATION_STRATEGY = "fork_process_pool"
 PACKING_CACHE_CODE_IDENTITY_FILES = {
+    "augmentation_factory": "src/augmentation/factory.py",
+    "augmentation_geometry": "src/augmentation/geometry.py",
+    "augmentation_processor": "src/augmentation/processor.py",
     "template_renderer": "src/templates/renderer.py",
     "qwen_encoding": "src/qwen/encoding.py",
+    "qwen_images": "src/qwen/images.py",
     "qwen_positions": "src/qwen/positions.py",
     "qwen_fa2": "src/qwen/fa2.py",
     "qwen_forward": "src/qwen/forward.py",
@@ -99,6 +104,7 @@ def build_packing_cache_determinants(
             "train_order": config.data.train_order,
             "runtime_seed": config.runtime.seed,
         },
+        "augmentation": _augmentation_determinants(config, split=split),
         "qwen": {
             "base_model_path": str(base_model_path),
             "processor_identity": processor_identity.to_artifact_dict(),
@@ -147,6 +153,7 @@ def write_micro_step_cache(
     determinants: Mapping[str, Any],
     chunk_size: int = 512,
     materialization: Mapping[str, Any] | None = None,
+    augmentation: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     if chunk_size <= 0:
         raise ValueError("chunk_size must be positive")
@@ -180,6 +187,8 @@ def write_micro_step_cache(
         "chunks": chunks,
         "materialization": materialization_payload,
     }
+    if augmentation is not None:
+        manifest["augmentation"] = dict(augmentation)
     _atomic_write_json(manifest_path(root), manifest)
     return manifest
 
@@ -344,6 +353,23 @@ def _qwen_encoding_identity(components: Any, *, tokenizer: Any) -> dict[str, Any
             or getattr(getattr(components, "processor", None), "chat_template", None)
         ),
         "package_versions": dict(getattr(components, "package_versions", {}) or {}),
+    }
+
+
+def _augmentation_determinants(config: TrainConfig, *, split: str) -> dict[str, Any]:
+    enabled_for_split = split == "train"
+    geometry_flips = config.data.augmentation.train.geometry_flips
+    return {
+        "policy": "geometry_flips",
+        "policy_version": GEOMETRY_FLIP_POLICY_VERSION,
+        "split": split,
+        "train_only": True,
+        "seed": int(config.runtime.seed),
+        "seed_source": "runtime.seed",
+        "effective_enabled": bool(enabled_for_split and geometry_flips.enabled),
+        "train": {
+            "geometry_flips": geometry_flips.model_dump(mode="json"),
+        },
     }
 
 

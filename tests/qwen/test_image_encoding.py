@@ -10,8 +10,9 @@ import torch
 from PIL import Image
 
 from src.common.errors import EncodingContractError
+from src.augmentation.processor import GeometryFlipAugmentationProcessor
 from src.config.loader import load_train_config
-from src.config.models import ProcessorConfig
+from src.config.models import GeometryFlipsAugmentationConfig, ProcessorConfig
 from src.data import ImageRef, RawExample, RawObject, SourceProvenance, load_raw_examples
 from src.qwen.images import (
     attach_qwen_image_processor,
@@ -74,6 +75,52 @@ def test_lazy_smoke_image_plan_defers_pixels_until_materialized() -> None:
     assert tuple(materialized.pixel_values.shape) == (4056, 1536)
     assert tuple(materialized.image_grid_thw_tensor.shape) == (1, 3)
     assert materialized.to_artifact_dict()["pixel_values_materialized"] is True
+
+
+def test_logical_flip_plan_materializes_in_memory_without_changing_grid(
+    tmp_path: Path,
+) -> None:
+    source = _raw_example(tmp_path, width=96, height=64)
+    image = Image.open(source.image.path).convert("RGB")
+    image.putpixel((0, 0), (255, 0, 0))
+    image.putpixel((95, 0), (0, 255, 0))
+    image.putpixel((0, 63), (0, 0, 255))
+    image.putpixel((95, 63), (255, 255, 0))
+    image.save(source.image.path, format="PNG")
+    augmented = GeometryFlipAugmentationProcessor(
+        GeometryFlipsAugmentationConfig(
+            enabled=True,
+            horizontal_prob=1.0,
+            vertical_prob=1.0,
+        ),
+        runtime_seed=17,
+    ).materialize(
+        (source,),
+        split="train",
+        object_ordering="source_order",
+    ).examples[0]
+    components = FakeComponents(
+        processor_identity=_processor_identity(),
+        processor=FakeProcessor(),
+    )
+
+    planned = plan_qwen_image(
+        augmented,
+        components=components,
+        processor_config=_processor_config(),
+    )
+    materialized = materialize_qwen_image_encoding(planned)
+
+    assert planned.plan.logical_transform_id == "hvflip"
+    assert planned.image_grid_thw == (1, 4, 6)
+    assert planned.merged_visual_tokens == 6
+    assert planned.to_artifact_dict()["logical_transform_id"] == "hvflip"
+    assert tuple(materialized.pixel_values.shape) == (24, 1536)
+    assert len(components.processor.image_processor.captured_images) == 1
+    captured = components.processor.image_processor.captured_images[0]
+    assert captured.size == (96, 64)
+    assert captured.getpixel((0, 0)) == (255, 255, 0)
+    assert captured.getpixel((95, 63)) == (255, 0, 0)
 
 
 def test_real_smoke_image_batch_matches_single_image_materialization() -> None:
@@ -372,11 +419,13 @@ class FakeImageProcessor:
         self.include_image_grid_thw = include_image_grid_thw
         self.include_pixel_values = include_pixel_values
         self.batch_sizes: list[int] = []
+        self.captured_images: list[Image.Image] = []
 
     def __call__(self, **kwargs: Any) -> dict[str, torch.Tensor]:
         images = kwargs.get("images")
         if images is not None:
             self.batch_sizes.append(len(images))
+            self.captured_images.extend(image.copy() for image in images)
         payload: dict[str, torch.Tensor] = {}
         if self.include_image_grid_thw:
             payload["image_grid_thw"] = self.image_grid_thw
