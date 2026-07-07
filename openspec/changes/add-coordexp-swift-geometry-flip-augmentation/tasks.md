@@ -42,6 +42,6 @@
 - [x] 6.1 Run targeted tests for config, geometry, processor/order, Qwen image materialization, packing cache, and pipeline assembly.
 - [x] 6.2 Run an augmentation-enabled dry run with `packing.global_max_length: 12000`, sample-limited `len12000` data, and a fresh cache root; verify the receipt records static stochastic view and `output_example_count == input_example_count`.
 - [x] 6.3 Re-run the same dry run with the same cache root and verify it reports a cache hit and does not resample transforms.
-- [ ] 6.4 Run a five planned-step smoke with two `eval.forward` steps, real `global_max_length: 12000`, metrics, checkpoint metadata, and `checkpoint-final` when GPU availability allows.
+- [x] 6.4 Run a five planned-step smoke with two `eval.forward` steps, real `global_max_length: 12000`, metrics, checkpoint metadata, and `checkpoint-final` when GPU availability allows.
 - [x] 6.5 Run residue checks for stale deterministic-expansion wording, stale `include_composed`, stale `max60` authority in the augmentation path, and old OpenSpec/old-src authority wording.
 - [x] 6.6 Run `openspec validate add-coordexp-swift-geometry-flip-augmentation --strict` and `git diff --check`.
