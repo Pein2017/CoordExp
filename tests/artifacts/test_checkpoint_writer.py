@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -88,11 +89,45 @@ def test_checkpoint_writer_saves_payloads_metadata_and_final_alias(
     assert metadata["processor_identity"] == {"name": "qwen3-vl-test-processor"}
     assert metadata["adapter"]["enabled"] is True
     assert metadata["adapter"]["payload_path"] == "checkpoints/step-5/adapter"
+    adapter_identity = metadata["adapter"]["identity"]
+    assert adapter_identity["payload_path"] == "checkpoints/step-5/adapter"
+    assert adapter_identity["required_files"] == {
+        "adapter_config.json": "checkpoints/step-5/adapter/adapter_config.json",
+        "adapter_model.safetensors": "checkpoints/step-5/adapter/adapter_model.safetensors",
+    }
+    assert adapter_identity["adapter_config_sha256"] == _sha256(
+        checkpoint_dir / "adapter" / "adapter_config.json"
+    )
+    assert adapter_identity["adapter_model_sha256"] == _sha256(
+        checkpoint_dir / "adapter" / "adapter_model.safetensors"
+    )
+    assert adapter_identity["fingerprint"]
     assert metadata["special_token_embeddings"]["enabled"] is True
     assert metadata["special_token_embeddings"]["tensor_path"] == (
         "checkpoints/step-5/special_token_embeddings/"
         f"{SPECIAL_TOKEN_EMBEDDINGS_SAFE_TENSORS}"
     )
+    embedding_identity = metadata["special_token_embeddings"]["identity"]
+    assert embedding_identity["metadata_path"] == (
+        "checkpoints/step-5/special_token_embeddings/"
+        f"{SPECIAL_TOKEN_EMBEDDINGS_JSON}"
+    )
+    assert embedding_identity["tensor_path"] == (
+        "checkpoints/step-5/special_token_embeddings/"
+        f"{SPECIAL_TOKEN_EMBEDDINGS_SAFE_TENSORS}"
+    )
+    assert embedding_identity["metadata_sha256"] == _sha256(
+        checkpoint_dir / "special_token_embeddings" / SPECIAL_TOKEN_EMBEDDINGS_JSON
+    )
+    assert embedding_identity["tensor_sha256"] == _sha256(
+        checkpoint_dir / "special_token_embeddings" / SPECIAL_TOKEN_EMBEDDINGS_SAFE_TENSORS
+    )
+    assert embedding_identity["tensor_key"] == DEFAULT_EMBED_DELTA_TENSOR_KEY
+    assert embedding_identity["tensor_shape"] == [2, 4]
+    assert embedding_identity["tensor_dtype"] == "float32"
+    assert embedding_identity["base_config_sha256"] == "base-config-sha"
+    assert embedding_identity["tokenizer_sha256"] == "tokenizer-sha"
+    assert embedding_identity["fingerprint"]
     assert metadata["special_token_embeddings"]["metadata"]["semantics"] == (
         SPECIAL_TOKEN_EMBEDDING_SEMANTICS
     )
@@ -131,11 +166,13 @@ def test_checkpoint_writer_saves_payloads_metadata_and_final_alias(
         "checkpoints/step-5/adapter/adapter_config.json",
         "checkpoints/step-5/adapter/adapter_model.safetensors",
     ]
+    assert handoff["adapter"]["identity"] == adapter_identity
     assert handoff["special_token_embeddings"]["metadata_path"] == (
         "checkpoints/step-5/special_token_embeddings/"
         f"{SPECIAL_TOKEN_EMBEDDINGS_JSON}"
     )
     assert handoff["special_token_embeddings"]["tensor_dtype"] == "float32"
+    assert handoff["special_token_embeddings"]["identity"] == embedding_identity
     assert handoff["trainable_token_set"]["token_ids"] == [2, 3]
     assert handoff["trainable_token_set"]["token_strings"] == [
         "<|object_ref_start|>",
@@ -147,6 +184,7 @@ def test_checkpoint_writer_saves_payloads_metadata_and_final_alias(
     alias = json.loads(final_alias_path.read_text(encoding="utf-8"))
     assert alias["checkpoint_id"] == "step-5"
     assert alias["metadata_path"] == "checkpoints/step-5/checkpoint.json"
+    assert alias["handoff_path"] == "checkpoints/step-5/checkpoint_handoff.json"
 
     manifest = manager.read_manifest()
     assert manifest["checkpoints"]["items"] == [
@@ -825,3 +863,7 @@ def _trainable_surface() -> TrainableSurfaceReceipt:
             ),
         ),
     )
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()

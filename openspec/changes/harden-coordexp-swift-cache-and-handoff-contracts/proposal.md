@@ -20,11 +20,15 @@ small, auditable contracts.
 - Preserve the current packed-cache payload shape for this wave; do not
   redesign the cache into lower-level partial artifacts unless later evidence
   shows that broader invalidation is insufficient.
-- Add a production-readiness and checkpoint-handoff contract centered on
+- Add a checkpoint handoff identity-readiness contract centered on
   `checkpoint_handoff.json`.
-- Define production inference as handoff-driven by default, with explicit
-  manual path composition treated as research/dev evidence rather than
-  canonical production evidence.
+- Define `handoff`, `eval`, and future `production` gates explicitly. The
+  `handoff` gate checks payload identity only; the `eval` gate additionally
+  requires accepted eval artifact roots; a future production gate must not be
+  claimed by this narrowed change.
+- Make inference provenance honest: handoff-backed composition is canonical,
+  while explicit manual path composition remains useful research evidence but
+  is not handoff-ready.
 - Keep worker count as packing-cache provenance only, not part of semantic
   cache identity.
 - Defer `run_training_pipeline` refactoring, loss-plan authority changes, and
@@ -42,7 +46,7 @@ intentional correctness trade-off.
   provenance, and invalidation behavior for deterministic supervised packing
   caches.
 - `coordexp-swift-checkpoint-handoff-readiness`: canonical checkpoint handoff
-  manifest and read-only production-readiness validation for training-to-
+  manifest and read-only handoff/eval readiness validation for training-to-
   inference continuity.
 
 ### Modified Capabilities
@@ -60,8 +64,8 @@ Affected surfaces:
 - `src/qwen/positions.py`, `src/qwen/fa2.py`, and `src/qwen/forward.py` as
   cache identity determinants, not behavior changes.
 - Checkpoint metadata and handoff artifacts under the training artifact stack.
-- Inference config/runtime loading paths that distinguish canonical
-  production handoff from explicit research/dev manual composition.
+- Inference config/runtime loading paths that distinguish canonical handoff
+  identity from explicit research/dev manual composition.
 - OpenSpec/docs surfaces that define the first two upgrade waves from
   `docs/superpowers/plans/2026-07-06-coordexp-swift-architecture-upgrade-roadmap.md`.
 

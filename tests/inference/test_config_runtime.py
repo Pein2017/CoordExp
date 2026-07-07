@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 import subprocess
 import sys
@@ -541,6 +542,57 @@ def test_embedding_delta_runtime_loads_and_installs_delta_with_qwen_identity(
     )
 
 
+def test_runtime_marks_neighbor_handoff_composition_canonical(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.config.inference import load_infer_config
+    from src.inference import runtime as runtime_module
+
+    checkpoint_dir = _write_minimal_handoff_checkpoint(tmp_path)
+    config_path = _write_config(
+        tmp_path,
+        adapter={
+            "type": "dora",
+            "path": str(checkpoint_dir / "adapter"),
+            "name": "default",
+        },
+        embedding_delta={"path": str(checkpoint_dir / "special_token_embeddings")},
+        debug={"smoke": True, "dry_run": True},
+    )
+    resolved = load_infer_config(config_path)
+    monkeypatch.setattr(
+        runtime_module,
+        "load_qwen_components_from_options",
+        lambda options: SimpleNamespace(
+            base_model_path=resolved.config.model.base_model,
+            model=FakeGenerationModel(),
+        ),
+    )
+    monkeypatch.setattr(
+        runtime_module,
+        "load_inference_dora_adapter",
+        lambda *, config, qwen: {"status": "validated", "adapter_path": config.adapter.path},
+    )
+    monkeypatch.setattr(
+        runtime_module,
+        "load_inference_embedding_delta",
+        lambda *, config, qwen: {"status": "loaded", "delta_path": config.embedding_delta.path},
+    )
+
+    runtime = runtime_module.assemble_runtime(resolved.config)
+
+    handoff = runtime.model_identity["checkpoint_handoff"]
+    assert handoff["path"] == "checkpoints/step-5/checkpoint_handoff.json"
+    assert handoff["fingerprint"] == _sha256(
+        checkpoint_dir / "checkpoint_handoff.json"
+    )
+    assert handoff["adapter_identity"]["fingerprint"] == "adapter-fingerprint"
+    assert handoff["special_token_embedding_identity"]["fingerprint"] == (
+        "embed-fingerprint"
+    )
+
+
 def test_qwen_components_shape_exposes_delta_identity_sha_fields() -> None:
     import dataclasses
 
@@ -764,3 +816,85 @@ def _write_delta_metadata(path: Path) -> None:
         json.dumps(metadata, sort_keys=True),
         encoding="utf-8",
     )
+
+
+def _write_minimal_handoff_checkpoint(tmp_path: Path) -> Path:
+    checkpoint_dir = tmp_path / "run-a" / "checkpoints" / "step-5"
+    adapter_dir = checkpoint_dir / "adapter"
+    embed_dir = checkpoint_dir / "special_token_embeddings"
+    adapter_dir.mkdir(parents=True)
+    embed_dir.mkdir(parents=True)
+    adapter_config = adapter_dir / "adapter_config.json"
+    adapter_tensor = adapter_dir / "adapter_model.safetensors"
+    embed_metadata = embed_dir / "special_token_embeddings.json"
+    embed_tensor = embed_dir / "special_token_embeddings.safetensors"
+    adapter_config.write_text(
+        json.dumps({"peft_type": "LORA", "use_dora": True}),
+        encoding="utf-8",
+    )
+    adapter_tensor.write_bytes(b"adapter")
+    embed_metadata.write_text(
+        json.dumps(
+            {
+                "tensor_key": "shared_embed_delta",
+                "tensor_shape": [2, 4],
+                "tensor_dtype": "float32",
+                "base_config_sha256": "base-config-sha",
+                "tokenizer_sha256": "tokenizer-sha",
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    embed_tensor.write_bytes(b"embed")
+    handoff = {
+        "schema_version": 1,
+        "checkpoint_id": "step-5",
+        "planned_step_id": 5,
+        "adapter": {
+            "enabled": True,
+            "identity": {
+                "payload_path": "checkpoints/step-5/adapter",
+                "required_files": {
+                    "adapter_config.json": "checkpoints/step-5/adapter/adapter_config.json",
+                    "adapter_model.safetensors": (
+                        "checkpoints/step-5/adapter/adapter_model.safetensors"
+                    ),
+                },
+                "adapter_config_sha256": _sha256(adapter_config),
+                "adapter_model_sha256": _sha256(adapter_tensor),
+                "fingerprint": "adapter-fingerprint",
+            },
+        },
+        "special_token_embeddings": {
+            "enabled": True,
+            "identity": {
+                "metadata_path": (
+                    "checkpoints/step-5/special_token_embeddings/"
+                    "special_token_embeddings.json"
+                ),
+                "tensor_path": (
+                    "checkpoints/step-5/special_token_embeddings/"
+                    "special_token_embeddings.safetensors"
+                ),
+                "metadata_sha256": _sha256(embed_metadata),
+                "tensor_sha256": _sha256(embed_tensor),
+                "tensor_key": "shared_embed_delta",
+                "tensor_shape": [2, 4],
+                "tensor_dtype": "float32",
+                "base_config_sha256": "base-config-sha",
+                "tokenizer_sha256": "tokenizer-sha",
+                "fingerprint": "embed-fingerprint",
+            },
+        },
+        "accepted_eval_artifact_roots": [],
+    }
+    (checkpoint_dir / "checkpoint_handoff.json").write_text(
+        json.dumps(handoff, sort_keys=True),
+        encoding="utf-8",
+    )
+    return checkpoint_dir
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()

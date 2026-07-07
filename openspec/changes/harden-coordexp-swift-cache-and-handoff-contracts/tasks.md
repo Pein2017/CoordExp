@@ -19,26 +19,26 @@
   implementation and pass after implementation.
 - [x] 2.6 Validate OpenSpec and run `git diff --check`.
 
-## 3. Wave B: Checkpoint Handoff And Readiness
+## 3. Wave B: Checkpoint Handoff Identity Readiness
 
-- [ ] 3.1 Inspect the current checkpoint writer, checkpoint metadata, inference
+- [x] 3.1 Inspect the current checkpoint writer, checkpoint metadata, inference
   loader, and existing handoff manifest behavior.
-- [ ] 3.2 Add failing tests for canonical production handoff identity and
-  research/dev manual composition provenance.
-- [ ] 3.3 Add failing tests for a read-only readiness validator that returns
+- [x] 3.2 Add failing tests for canonical handoff identity and research/dev
+  manual composition provenance.
+- [x] 3.3 Add failing tests for a read-only readiness validator that returns
   pass/hold with concrete missing or mismatched handles.
-- [ ] 3.4 Implement the minimal handoff/readiness contract without adding a
+- [x] 3.4 Implement the minimal handoff/readiness contract without adding a
   broad reporting framework.
-- [ ] 3.5 Run targeted checkpoint, inference handoff, and readiness-validator
+- [x] 3.5 Run targeted checkpoint, inference handoff, and readiness-validator
   tests.
 
 ## 4. Final Verification And Cleanup
 
-- [ ] 4.1 Run targeted test slices for packing cache, checkpoint handoff, and
+- [x] 4.1 Run targeted test slices for packing cache, checkpoint handoff, and
   inference handoff behavior.
-- [ ] 4.2 Run `openspec validate
+- [x] 4.2 Run `openspec validate
   harden-coordexp-swift-cache-and-handoff-contracts --strict`.
-- [ ] 4.3 Run `git diff --check`.
-- [ ] 4.4 Update only directly affected docs or OpenSpec artifacts; defer broad
+- [x] 4.3 Run `git diff --check`.
+- [x] 4.4 Update only directly affected docs or OpenSpec artifacts; defer broad
   docs sweep to the later authority-docs wave.
-- [ ] 4.5 Commit implementation changes in logical groups.
+- [x] 4.5 Commit implementation changes in logical groups.

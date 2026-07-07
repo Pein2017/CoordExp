@@ -461,6 +461,8 @@ def _provenance(
         "tokenizer_identity": dict(metadata.get("tokenizer_identity") or {}),
         "adapter_identity": metadata.get("adapter_identity"),
         "embedding_delta_identity": metadata.get("embedding_delta_identity"),
+        "composition_mode": _composition_mode(metadata),
+        "checkpoint_handoff": metadata.get("checkpoint_handoff"),
         "template_identity": metadata["template_identity"],
         "parser_policy": metadata["parser_policy"],
         "score_policy_fingerprint": SCORE_POLICY_FINGERPRINT,
@@ -491,6 +493,9 @@ def _manifest(*, metadata: dict[str, Any], summary: dict[str, Any]) -> dict[str,
         "processor_identity": metadata.get("processor_identity", {}),
         "adapter_identity": metadata.get("adapter_identity"),
         "embedding_delta_identity": metadata.get("embedding_delta_identity"),
+        "composition_mode": _composition_mode(metadata),
+        "handoff_readiness": _handoff_readiness(metadata),
+        "checkpoint_handoff": metadata.get("checkpoint_handoff"),
         "tokenizer_identity": metadata.get("tokenizer_identity", {}),
         "backend": metadata["backend"],
         "backend_mode": metadata["backend_mode"],
@@ -524,6 +529,9 @@ def _terminal_manifest(*, metadata: dict[str, Any], summary: dict[str, Any]) -> 
         "processor_identity": metadata.get("processor_identity", {}),
         "adapter_identity": metadata.get("adapter_identity"),
         "embedding_delta_identity": metadata.get("embedding_delta_identity"),
+        "composition_mode": _composition_mode(metadata),
+        "handoff_readiness": _handoff_readiness(metadata),
+        "checkpoint_handoff": metadata.get("checkpoint_handoff"),
         "tokenizer_identity": metadata.get("tokenizer_identity", {}),
         "backend": metadata.get("backend"),
         "backend_mode": metadata.get("backend_mode"),
@@ -543,6 +551,26 @@ def _terminal_manifest(*, metadata: dict[str, Any], summary: dict[str, Any]) -> 
         "terminal_status": summary.get("terminal_status", "failed"),
         "failure_class": summary.get("failure_class"),
     }
+
+
+def _composition_mode(metadata: dict[str, Any]) -> str:
+    explicit = metadata.get("composition_mode")
+    if isinstance(explicit, str) and explicit:
+        return explicit
+    if isinstance(metadata.get("checkpoint_handoff"), dict):
+        return "canonical_handoff"
+    if (
+        metadata.get("adapter_identity") is not None
+        or metadata.get("embedding_delta_identity") is not None
+    ):
+        return "research_manual"
+    return "base_only"
+
+
+def _handoff_readiness(metadata: dict[str, Any]) -> str:
+    if _composition_mode(metadata) == "canonical_handoff":
+        return "handoff"
+    return "not_handoff_ready"
 
 
 def _verified_selected_logprobs_from_generated_trace(

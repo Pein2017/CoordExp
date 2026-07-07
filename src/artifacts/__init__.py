@@ -5,6 +5,7 @@ from src.artifacts.checkpoint_reload import (
     build_checkpoint_reload_plan,
     verify_checkpoint_reload_payloads,
 )
+from src.artifacts.checkpoint_handoff import validate_checkpoint_handoff
 from src.artifacts.checkpoints import CheckpointWriteResult, CheckpointWriter
 from src.artifacts.manager import RunArtifactManager
 from src.artifacts.metric_stream import (
@@ -20,5 +21,6 @@ __all__ = [
     "RunArtifactManager",
     "build_checkpoint_reload_plan",
     "metric_stream_events_from_runtime_payload",
+    "validate_checkpoint_handoff",
     "verify_checkpoint_reload_payloads",
 ]

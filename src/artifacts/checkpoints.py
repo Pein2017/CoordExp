@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import hashlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -171,6 +172,7 @@ class CheckpointWriter:
                     checkpoint_id=checkpoint_id,
                     planned_step_id=planned_step_id,
                     metadata_path=self.manager.relative_artifact_path(metadata_path),
+                    handoff_path=self.manager.relative_artifact_path(handoff_path),
                 ),
                 code="checkpoint.alias_exists",
             )
@@ -184,6 +186,7 @@ class CheckpointWriter:
                 checkpoint_id=checkpoint_id,
                 planned_step_id=planned_step_id,
                 metadata_path=self.manager.relative_artifact_path(metadata_path),
+                handoff_path=self.manager.relative_artifact_path(handoff_path),
                 metric=best_record,
                 selector=BEST_ACC_TOP1_SELECTOR,
             )
@@ -238,10 +241,17 @@ class CheckpointWriter:
             )
         files = _relative_file_list(adapter_dir, root=self.manager.run_dir)
         _validate_adapter_payload(files, adapter_dir=adapter_dir)
+        payload_path = self.manager.relative_artifact_path(adapter_dir)
         return {
             "enabled": True,
-            "payload_path": self.manager.relative_artifact_path(adapter_dir),
+            "payload_path": payload_path,
             "files": files,
+            "identity": _adapter_payload_identity(
+                adapter_dir=adapter_dir,
+                payload_path=payload_path,
+                files=files,
+                run_dir=self.manager.run_dir,
+            ),
             "receipt": _artifact_dict(adapter_receipt),
         }
 
@@ -295,11 +305,16 @@ class CheckpointWriter:
         )
         output_dir = checkpoint_dir / "special_token_embeddings"
         if reuse_existing:
-            return _special_token_payload_from_existing(
+            artifact = _special_token_payload_from_existing(
                 output_dir,
                 manager=self.manager,
                 install_receipt=special_token_result.receipt.to_artifact_dict(),
             )
+            artifact["identity"] = _special_token_payload_identity(
+                artifact,
+                run_dir=self.manager.run_dir,
+            )
+            return artifact
         payload = save_special_token_embedding_deltas(
             special_token_result,
             output_dir,
@@ -312,6 +327,10 @@ class CheckpointWriter:
         artifact["metadata_path"] = self.manager.relative_artifact_path(payload.metadata_path)
         artifact["enabled"] = True
         artifact["install_receipt"] = special_token_result.receipt.to_artifact_dict()
+        artifact["identity"] = _special_token_payload_identity(
+            artifact,
+            run_dir=self.manager.run_dir,
+        )
         return artifact
 
 
@@ -351,6 +370,7 @@ def _handoff_manifest(
             "enabled": bool(adapter_payload.get("enabled", False)),
             "payload_path": adapter_payload.get("payload_path"),
             "files": list(adapter_payload.get("files", ())),
+            "identity": adapter_payload.get("identity"),
             "receipt": dict(adapter_payload.get("receipt") or {}),
         },
         "special_token_embeddings": {
@@ -360,6 +380,7 @@ def _handoff_manifest(
             "tensor_key": special_token_payload.get("tensor_key"),
             "tensor_shape": list(special_token_payload.get("tensor_shape", ())),
             "tensor_dtype": special_token_payload.get("tensor_dtype"),
+            "identity": special_token_payload.get("identity"),
             "metadata": dict(special_metadata),
         },
         "trainable_token_set": {
@@ -555,6 +576,7 @@ def _alias_payload(
     checkpoint_id: str,
     planned_step_id: int,
     metadata_path: str,
+    handoff_path: str | None = None,
     metric: Mapping[str, Any] | None = None,
     selector: str | None = None,
 ) -> dict[str, Any]:
@@ -564,6 +586,8 @@ def _alias_payload(
         "planned_step_id": planned_step_id,
         "metadata_path": metadata_path,
     }
+    if handoff_path is not None:
+        payload["handoff_path"] = handoff_path
     if selector is not None:
         payload["selector"] = selector
     if metric is not None:
@@ -610,6 +634,68 @@ def _validate_adapter_payload(files: Sequence[str], *, adapter_dir: Path) -> Non
         )
 
 
+def _adapter_payload_identity(
+    *,
+    adapter_dir: Path,
+    payload_path: str,
+    files: Sequence[str],
+    run_dir: Path,
+) -> dict[str, Any]:
+    config_rel = _required_relative_file(files, ADAPTER_CONFIG_NAME)
+    weight_rel = _preferred_adapter_weight_file(files)
+    config_path = _resolve_run_relative(run_dir, config_rel)
+    weight_path = _resolve_run_relative(run_dir, weight_rel)
+    config_sha = _sha256_file(config_path)
+    weight_sha = _sha256_file(weight_path)
+    identity = {
+        "payload_path": payload_path,
+        "required_files": {
+            ADAPTER_CONFIG_NAME: config_rel,
+            Path(weight_rel).name: weight_rel,
+        },
+        "file_sha256": {
+            config_rel: config_sha,
+            weight_rel: weight_sha,
+        },
+        "adapter_config_sha256": config_sha,
+        "adapter_model_sha256": weight_sha,
+    }
+    identity["fingerprint"] = _fingerprint_payload(identity)
+    return identity
+
+
+def _required_relative_file(files: Sequence[str], basename: str) -> str:
+    matches = sorted(str(file_path) for file_path in files if Path(str(file_path)).name == basename)
+    if not matches:
+        raise ArtifactContractError(
+            "adapter payload identity requires a declared file",
+            code="checkpoint.adapter_identity_file_missing",
+            context={"basename": basename, "files": [str(file_path) for file_path in files]},
+        )
+    return matches[0]
+
+
+def _preferred_adapter_weight_file(files: Sequence[str]) -> str:
+    matches = sorted(
+        str(file_path)
+        for file_path in files
+        if Path(str(file_path)).name in ADAPTER_WEIGHT_NAMES
+    )
+    if not matches:
+        raise ArtifactContractError(
+            "adapter payload identity requires a declared adapter weight file",
+            code="checkpoint.adapter_identity_weight_missing",
+            context={"files": [str(file_path) for file_path in files]},
+        )
+    return sorted(
+        matches,
+        key=lambda item: (
+            0 if Path(item).name == "adapter_model.safetensors" else 1,
+            item,
+        ),
+    )[0]
+
+
 def _special_token_payload_from_existing(
     output_dir: Path,
     *,
@@ -638,6 +724,70 @@ def _special_token_payload_from_existing(
         "metadata": metadata,
         "install_receipt": dict(install_receipt),
     }
+
+
+def _special_token_payload_identity(
+    payload: Mapping[str, Any],
+    *,
+    run_dir: Path,
+) -> dict[str, Any]:
+    metadata_path_value = payload.get("metadata_path")
+    tensor_path_value = payload.get("tensor_path")
+    if not isinstance(metadata_path_value, str) or not metadata_path_value:
+        raise ArtifactContractError(
+            "special-token embedding identity requires metadata_path",
+            code="checkpoint.special_token_identity_metadata_path",
+        )
+    if not isinstance(tensor_path_value, str) or not tensor_path_value:
+        raise ArtifactContractError(
+            "special-token embedding identity requires tensor_path",
+            code="checkpoint.special_token_identity_tensor_path",
+        )
+    metadata = payload.get("metadata")
+    if not isinstance(metadata, Mapping):
+        metadata = _read_json(_resolve_run_relative(run_dir, metadata_path_value))
+    metadata_sha = _sha256_file(_resolve_run_relative(run_dir, metadata_path_value))
+    tensor_sha = _sha256_file(_resolve_run_relative(run_dir, tensor_path_value))
+    identity = {
+        "metadata_path": metadata_path_value,
+        "tensor_path": tensor_path_value,
+        "metadata_sha256": metadata_sha,
+        "tensor_sha256": tensor_sha,
+        "tensor_key": payload.get("tensor_key"),
+        "tensor_shape": list(payload.get("tensor_shape", ())),
+        "tensor_dtype": payload.get("tensor_dtype"),
+        "base_config_sha256": metadata.get("base_config_sha256"),
+        "tokenizer_sha256": metadata.get("tokenizer_sha256"),
+    }
+    identity["fingerprint"] = _fingerprint_payload(identity)
+    return identity
+
+
+def _resolve_run_relative(run_dir: Path, value: str) -> Path:
+    path = Path(value).expanduser()
+    if path.is_absolute():
+        return path
+    return run_dir / path
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _fingerprint_payload(payload: Mapping[str, Any]) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            payload,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def _read_json_if_exists(path: Path) -> dict[str, Any] | None:

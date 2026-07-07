@@ -3,12 +3,12 @@
 CoordExp-Swift now owns the local supervised training path, Qwen packed
 forward boundary, checkpoint writing, and HF inference/eval infrastructure.
 The remaining risk addressed here is not that those paths are missing; it is
-that two production boundaries are still too easy to misuse:
+that two artifact boundaries are still too easy to misuse:
 
 - Packing caches are intentionally reusable and efficient, but their semantic
   identity must cover every source producer that can change the packed forward
   contract.
-- Checkpoints can be useful on disk while still being ambiguous for production
+- Checkpoints can be useful on disk while still being ambiguous for future
   inference if base model, adapter, selected-token embedding delta, tokenizer,
   processor, template, and intended inference family are recomposed manually.
 
@@ -22,10 +22,10 @@ artifacts. Archived OpenSpec material and MS-Swift are reference material only.
 - make stale cache reuse less likely by adding Qwen forward-side source
   identities to packing-cache determinants;
 - preserve cache-hit efficiency and the existing cache payload shape;
-- make checkpoint-to-inference identity canonical through
-  `checkpoint_handoff.json`;
-- keep production inference handoff-driven by default while allowing marked
-  research/dev manual composition;
+- make checkpoint-to-inference identity canonical for the `handoff` gate
+  through `checkpoint_handoff.json`;
+- keep inference provenance honest by labeling handoff-backed composition
+  separately from research/dev manual composition;
 - add small tests and receipts that prove the contracts instead of relying on
   operator memory.
 
@@ -38,7 +38,7 @@ artifacts. Archived OpenSpec material and MS-Swift are reference material only.
 - no change to prompt rendering, object order, tokenization, Qwen position
   computation, FA2 execution, loss math, optimizer behavior, or evaluator
   metric reduction;
-- no DeepSpeed or vLLM production-readiness claim.
+- no DeepSpeed, vLLM, or broad production-readiness claim.
 
 ## Decisions
 
@@ -61,17 +61,18 @@ Worker count remains provenance. It MUST NOT enter the cache fingerprint
 because it is an execution strategy for materialization, not a semantic
 description of the packed examples.
 
-### Handoff Is The Production Identity Boundary
+### Handoff Is The Identity Boundary
 
-`checkpoint_handoff.json` is the canonical production bridge from training to
-inference. Production inference should consume the handoff and verify it
-matches the requested base model, adapter payload, selected-token embedding
-delta, tokenizer, processor, prompt/template identity, and intended inference
-family.
+`checkpoint_handoff.json` is the canonical bridge from training to inference
+for payload identity. The `handoff` gate checks base model, adapter payload,
+selected-token embedding delta, tokenizer, processor, prompt/template identity,
+and intended inference family. The `eval` gate layers accepted eval artifact
+roots on top. A future `production` gate remains out of scope for this narrowed
+implementation.
 
 Manual base/adapter/delta paths remain useful for research and debugging, but
 they must be marked as noncanonical evidence. This avoids treating a manually
-assembled run as equivalent to an audited production handoff.
+assembled run as equivalent to an audited handoff identity.
 
 ### Readiness Validator Is Read-Only And Small
 
@@ -91,7 +92,7 @@ handoff validator, because Wave A is independent and smaller.
 - **Handoff validation can become a large checklist** -> keep V1 read-only and
   limited to artifact identities needed to prevent wrong checkpoint inference.
 - **Manual inference paths remain possible** -> require explicit research/dev
-  provenance so they are not cited as canonical production evidence.
+  provenance so they are not cited as canonical handoff evidence.
 
 ## Migration Plan
 

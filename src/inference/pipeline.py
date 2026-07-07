@@ -661,6 +661,7 @@ def _runtime_metadata(*, runtime: Any, qwen: Any) -> dict[str, Any]:
     model_identity = dict(getattr(runtime, "model_identity", {}) or {})
     tokenizer_identity = _tokenizer_identity(qwen)
     processor_identity = qwen.processor_identity.to_artifact_dict()
+    checkpoint_handoff = model_identity.get("checkpoint_handoff")
     return {
         "model_identity": model_identity,
         "tokenizer_identity": tokenizer_identity,
@@ -669,6 +670,17 @@ def _runtime_metadata(*, runtime: Any, qwen: Any) -> dict[str, Any]:
         "processor_identity_fingerprint": _fingerprint(processor_identity),
         "adapter_identity": getattr(runtime, "adapter_receipt", None),
         "embedding_delta_identity": getattr(runtime, "embedding_delta_receipt", None),
+        "composition_mode": (
+            "canonical_handoff"
+            if isinstance(checkpoint_handoff, dict)
+            else (
+                "research_manual"
+                if getattr(runtime, "adapter_receipt", None) is not None
+                or getattr(runtime, "embedding_delta_receipt", None) is not None
+                else "base_only"
+            )
+        ),
+        "checkpoint_handoff": checkpoint_handoff,
     }
 
 
