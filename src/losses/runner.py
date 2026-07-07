@@ -13,6 +13,7 @@ from src.common.errors import LossContractError
 from src.config.models import LossesConfig
 from src.losses.base_ce import BaseTokenCE
 from src.losses.context import LossContext
+from src.losses.coord_gaussian_rps import CoordGaussianRPSLoss
 from src.losses.normalizers import (
     PlannedStepLossSlice,
     SegmentBalancedDenominator,
@@ -102,11 +103,20 @@ class LossRunner:
     base_ce_weight: float
     token_type_gate_weight: float
     token_type_gate_groups: tuple[str, ...]
+    coord_gaussian_rps_weight: float = 0.0
+    coord_gaussian_rps: CoordGaussianRPSLoss | None = None
 
     def __post_init__(self) -> None:
         _validate_weight("base_ce", self.base_ce_weight)
         _validate_weight("token_type_gate", self.token_type_gate_weight)
+        _validate_weight("coord_gaussian_rps", self.coord_gaussian_rps_weight)
         _validate_token_type_groups(self.token_type_gate_groups)
+        if self.coord_gaussian_rps_weight > 0.0 and self.coord_gaussian_rps is None:
+            raise LossContractError(
+                "coord_gaussian_rps weight requires a configured loss term",
+                code="loss.coord_gaussian_rps_missing_term",
+                context={"weight": self.coord_gaussian_rps_weight},
+            )
 
     @classmethod
     def from_config(cls, config: LossesConfig) -> "LossRunner":
@@ -116,10 +126,26 @@ class LossRunner:
                 code="loss.normalizer_unsupported",
                 context={"normalizer": config.normalizer},
             )
+        coord_cfg = config.protected.coord_gaussian_rps
+        coord_term = (
+            CoordGaussianRPSLoss(
+                gaussian_weight=coord_cfg.gaussian_weight,
+                rps_weight=coord_cfg.rps_weight,
+                temperature=coord_cfg.temperature,
+                gaussian_r95_axis_fraction=coord_cfg.gaussian_r95_axis_fraction,
+                gaussian_r95_cap_bins=coord_cfg.gaussian_r95_cap_bins,
+                gaussian_r95_min_bins=coord_cfg.gaussian_r95_min_bins,
+                gaussian_r95_fallback_bins=coord_cfg.gaussian_r95_fallback_bins,
+            )
+            if coord_cfg.weight > 0.0
+            else None
+        )
         return cls(
             base_ce_weight=config.protected.base_ce.weight,
             token_type_gate_weight=config.protected.token_type_gate.weight,
             token_type_gate_groups=tuple(config.protected.token_type_gate.groups),
+            coord_gaussian_rps_weight=coord_cfg.weight,
+            coord_gaussian_rps=coord_term,
         )
 
     def compute(self, contexts: Sequence[LossContext]) -> LossBundle:
@@ -138,7 +164,18 @@ class LossRunner:
             term=TokenTypeGateLoss(),
             token_types=self.token_type_gate_groups,
         )
-        terms = (base_result, gate_result)
+        terms_list = [base_result, gate_result]
+        if self.coord_gaussian_rps_weight > 0.0 and self.coord_gaussian_rps is not None:
+            terms_list.append(
+                _compute_token_term(
+                    name="coord_gaussian_rps",
+                    contexts=checked_contexts,
+                    weight=self.coord_gaussian_rps_weight,
+                    term=self.coord_gaussian_rps,
+                    token_types=("coordinate",),
+                )
+            )
+        terms = tuple(terms_list)
         total_loss = sum(
             (term.weighted_loss for term in terms),
             terms[0].weighted_loss.new_zeros(()),
@@ -202,12 +239,19 @@ class LossRunner:
             token_sequences,
             token_types=self.token_type_gate_groups,
         )
+        local_denominators = {
+            "base_ce": base_denominator,
+            "token_type_gate": gate_denominator,
+        }
+        if self.coord_gaussian_rps_weight > 0.0:
+            local_denominators["coord_gaussian_rps"] = _build_denominator_from_token_sequences(
+                "coord_gaussian_rps",
+                token_sequences,
+                token_types=("coordinate",),
+            )
         denominators, denominator_scope, backend_gradient_scale = (
             _resolve_streaming_denominators(
-                {
-                    "base_ce": base_denominator,
-                    "token_type_gate": gate_denominator,
-                },
+                local_denominators,
                 denominator_gatherer=denominator_gatherer,
                 world_size=world_size,
                 rank=rank,
@@ -259,7 +303,25 @@ class LossRunner:
             local_micro_step_index=local_micro_step_index,
             backend_gradient_scale=plan.backend_gradient_scale,
         )
-        terms = (base_result, gate_result)
+        terms_list = [base_result, gate_result]
+        if (
+            self.coord_gaussian_rps_weight > 0.0
+            and self.coord_gaussian_rps is not None
+            and "coord_gaussian_rps" in plan.denominators
+        ):
+            terms_list.append(
+                _compute_token_term_contribution(
+                    name="coord_gaussian_rps",
+                    context=context,
+                    weight=self.coord_gaussian_rps_weight,
+                    term=self.coord_gaussian_rps,
+                    token_types=("coordinate",),
+                    denominator=plan.denominators["coord_gaussian_rps"],
+                    local_micro_step_index=local_micro_step_index,
+                    backend_gradient_scale=plan.backend_gradient_scale,
+                )
+            )
+        terms = tuple(terms_list)
         total_loss = sum(
             (term.weighted_loss for term in terms),
             terms[0].weighted_loss.new_zeros(()),
@@ -368,10 +430,11 @@ def _compute_token_term(
     name: str,
     contexts: tuple[LossContext, ...],
     weight: float,
-    term: BaseTokenCE | TokenTypeGateLoss,
+    term: BaseTokenCE | TokenTypeGateLoss | CoordGaussianRPSLoss,
     token_types: tuple[str, ...] | None,
 ) -> LossTermResult:
     slices: list[PlannedStepLossSlice] = []
+    term_diagnostics: list[dict[str, Any]] = []
     for local_index, context in enumerate(contexts):
         term_context = (
             context
@@ -380,6 +443,14 @@ def _compute_token_term(
         )
         if term_context.atoms:
             per_atom_losses = term.per_atom_loss(term_context)
+            diagnostics_payload = getattr(term, "last_diagnostics", None)
+            if diagnostics_payload is not None:
+                term_diagnostics.append(
+                    {
+                        "local_micro_step_index": local_index,
+                        **dict(diagnostics_payload),
+                    }
+                )
         else:
             per_atom_losses = term_context.logits.new_empty((0,), dtype=torch.float32)
         slices.append(
@@ -405,6 +476,8 @@ def _compute_token_term(
             tuple(slices),
             token_types=token_types,
         )
+    if term_diagnostics:
+        diagnostics["term_diagnostics"] = term_diagnostics
     return LossTermResult(
         name=name,
         raw_loss=reduced.loss,
@@ -426,7 +499,7 @@ def _compute_token_term_contribution(
     name: str,
     context: LossContext,
     weight: float,
-    term: BaseTokenCE | TokenTypeGateLoss,
+    term: BaseTokenCE | TokenTypeGateLoss | CoordGaussianRPSLoss,
     token_types: tuple[str, ...] | None,
     denominator: SegmentBalancedDenominator,
     local_micro_step_index: int,
@@ -474,6 +547,9 @@ def _compute_token_term_contribution(
             )
             for token_type in token_types
         }
+    diagnostics_payload = getattr(term, "last_diagnostics", None)
+    if diagnostics_payload is not None:
+        diagnostics["term_diagnostics"] = dict(diagnostics_payload)
     return LossTermResult(
         name=name,
         raw_loss=raw,
@@ -866,7 +942,7 @@ def _merge_term_artifacts(
             terms_by_name.setdefault(str(term_dict["name"]), []).append(term_dict)
 
     merged: list[dict[str, Any]] = []
-    for name in ("base_ce", "token_type_gate"):
+    for name in plan.denominators:
         term_items = terms_by_name.get(name, [])
         if not term_items:
             continue
@@ -883,6 +959,11 @@ def _merge_term_artifacts(
             )
         )
         denominator = plan.denominators[name].to_artifact_dict()
+        diagnostics = _merge_term_diagnostics(
+            name=name,
+            term_items=tuple(term_items),
+            denominator=denominator,
+        )
         merged.append(
             {
                 "name": name,
@@ -897,13 +978,118 @@ def _merge_term_artifacts(
                 "skipped_count": int(denominator["skipped_segment_count"]),
                 "math_dtype": "float32",
                 "token_weighted_diagnostic": token_weighted,
-                "diagnostics": {
-                    "denominator_scope": denominator["denominator_scope"],
-                    "context_count": denominator["context_count"],
-                },
+                "diagnostics": diagnostics,
             }
         )
     return merged
+
+
+def _merge_term_diagnostics(
+    *,
+    name: str,
+    term_items: tuple[dict[str, Any], ...],
+    denominator: Mapping[str, Any],
+) -> dict[str, Any]:
+    diagnostics: dict[str, Any] = {
+        "denominator_scope": denominator["denominator_scope"],
+        "context_count": denominator["context_count"],
+    }
+    source_diagnostics = [
+        dict(item.get("diagnostics", {}))
+        for item in term_items
+        if isinstance(item.get("diagnostics", {}), Mapping)
+    ]
+    configured = next(
+        (
+            item.get("configured_token_types")
+            for item in source_diagnostics
+            if "configured_token_types" in item
+        ),
+        None,
+    )
+    if configured is not None:
+        diagnostics["configured_token_types"] = list(configured)
+    selected_counts = _merge_selected_count_by_token_type(source_diagnostics)
+    if selected_counts:
+        diagnostics["selected_count_by_token_type"] = selected_counts
+
+    term_diagnostics: list[dict[str, Any]] = []
+    for term_item in term_items:
+        source = term_item.get("diagnostics", {})
+        if not isinstance(source, Mapping):
+            continue
+        payload = source.get("term_diagnostics")
+        if isinstance(payload, Mapping):
+            diagnostic = dict(payload)
+        else:
+            continue
+        diagnostic.setdefault("selected_count", int(term_item.get("selected_count", 0)))
+        term_diagnostics.append(diagnostic)
+    if term_diagnostics:
+        diagnostics["term_diagnostics"] = term_diagnostics
+        diagnostics.update(_aggregate_numeric_term_diagnostics(name, term_diagnostics))
+    return diagnostics
+
+
+def _merge_selected_count_by_token_type(
+    source_diagnostics: Iterable[Mapping[str, Any]],
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for source in source_diagnostics:
+        payload = source.get("selected_count_by_token_type")
+        if not isinstance(payload, Mapping):
+            continue
+        for token_type, count in payload.items():
+            counts[str(token_type)] = counts.get(str(token_type), 0) + int(count)
+    return counts
+
+
+def _aggregate_numeric_term_diagnostics(
+    name: str,
+    term_diagnostics: Iterable[Mapping[str, Any]],
+) -> dict[str, float]:
+    diagnostics = tuple(term_diagnostics)
+    weighted_keys = (
+        "target_entropy_mean",
+        "target_peak_prob_mean",
+        "target_r95_radius_mean",
+        "gaussian_ce_mean",
+        "rps_mean",
+    )
+    aggregated: dict[str, float] = {}
+    for key in weighted_keys:
+        values_and_weights: list[tuple[float, int]] = []
+        for diagnostic in diagnostics:
+            if key not in diagnostic:
+                continue
+            value = _finite_diagnostic_value(name, key, diagnostic[key])
+            weight = int(diagnostic.get("selected_count", 0))
+            values_and_weights.append((value, weight))
+        if values_and_weights:
+            aggregated[key] = _weighted_average(values_and_weights)
+    max_values = [
+        _finite_diagnostic_value(
+            name,
+            "target_r95_radius_max",
+            diagnostic["target_r95_radius_max"],
+        )
+        for diagnostic in diagnostics
+        if "target_r95_radius_max" in diagnostic
+    ]
+    if max_values:
+        aggregated["target_r95_radius_max"] = max(max_values)
+    return aggregated
+
+
+def _finite_diagnostic_value(name: str, key: str, value: Any) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise LossContractError(
+            "loss term diagnostic must be finite",
+            code="loss.term_diagnostic_non_finite",
+            context={"term": name, "key": key, "value": parsed},
+        )
+    return parsed
 
 
 def _merge_accuracy_metric(

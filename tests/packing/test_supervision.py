@@ -7,6 +7,7 @@ import pytest
 
 from src.common.errors import PackingContractError
 from src.config.loader import load_train_config
+from src.coordinate_targets import CoordinateLossTarget
 from src.data import load_raw_examples
 from src.packing.planner import plan_packed_sequences
 from src.packing.supervision import build_packed_supervision
@@ -49,6 +50,39 @@ def test_packed_supervision_remaps_encoded_spans_to_pack_positions() -> None:
     assert supervision.atoms[-1].token_type == "coordinate"
     assert supervision.atoms[-1].token_id == 21
     assert supervision.to_artifact_dict()["atom_count"] == 3
+
+
+def test_packed_supervision_preserves_coordinate_target_metadata() -> None:
+    target = CoordinateLossTarget(bbox=(10, 20, 50, 80), slot_index=2)
+    examples = (
+        FakeEncodedExample(
+            "ex-0",
+            (10, 11),
+            (
+                FakeTokenSpan(
+                    "coordinate",
+                    base=1,
+                    physical=1,
+                    token_id=11,
+                    text="<|coord_50|>",
+                    object_id="obj-1",
+                    field="bbox[2]",
+                    coordinate_target=target,
+                ),
+            ),
+        ),
+    )
+    packs = plan_packed_sequences(examples, global_max_length=4)
+
+    supervision = build_packed_supervision(packs, examples)
+
+    assert len(supervision.atoms) == 1
+    assert supervision.atoms[0].coordinate_target == target
+    artifact = supervision.to_artifact_dict()
+    assert artifact["atoms"][0]["coordinate_target"] == {
+        "bbox": [10, 20, 50, 80],
+        "slot_index": 2,
+    }
 
 
 def test_packed_supervision_maps_real_encoded_smoke_examples() -> None:
@@ -195,6 +229,7 @@ class FakeTokenSpan:
     object_id: str | None = None
     field: str | None = None
     source: str | None = None
+    coordinate_target: CoordinateLossTarget | None = None
 
     @property
     def physical_token_start(self) -> int:

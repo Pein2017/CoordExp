@@ -223,9 +223,44 @@ class TokenTypeGateLossConfig(WeightedLossConfig):
         return value
 
 
+class CoordGaussianRPSLossConfig(WeightedLossConfig):
+    weight: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
+    gaussian_weight: float = Field(default=0.5, ge=0.0, allow_inf_nan=False)
+    rps_weight: float = Field(default=0.2, ge=0.0, allow_inf_nan=False)
+    temperature: float = Field(default=1.0, ge=1.0e-6, allow_inf_nan=False)
+    gaussian_r95_axis_fraction: float = Field(
+        default=0.04,
+        gt=0.0,
+        le=1.0,
+        allow_inf_nan=False,
+    )
+    gaussian_r95_cap_bins: int = Field(default=8, ge=0, le=999)
+    gaussian_r95_min_bins: int = Field(default=1, ge=0, le=999)
+    gaussian_r95_fallback_bins: int = Field(default=8, ge=0, le=999)
+
+    @model_validator(mode="after")
+    def _enabled_term_has_differentiable_weight(self) -> "CoordGaussianRPSLossConfig":
+        if self.gaussian_r95_min_bins > self.gaussian_r95_cap_bins:
+            raise ValueError(
+                "coord_gaussian_rps.gaussian_r95_min_bins must be <= gaussian_r95_cap_bins"
+            )
+        if self.gaussian_r95_fallback_bins > self.gaussian_r95_cap_bins:
+            raise ValueError(
+                "coord_gaussian_rps.gaussian_r95_fallback_bins must be <= gaussian_r95_cap_bins"
+            )
+        if self.weight > 0.0 and self.gaussian_weight == 0.0 and self.rps_weight == 0.0:
+            raise ValueError(
+                "coord_gaussian_rps.weight > 0 requires gaussian_weight or rps_weight > 0"
+            )
+        return self
+
+
 class ProtectedLossesConfig(StrictConfigModel):
     base_ce: WeightedLossConfig
     token_type_gate: TokenTypeGateLossConfig
+    coord_gaussian_rps: CoordGaussianRPSLossConfig = Field(
+        default_factory=CoordGaussianRPSLossConfig
+    )
 
 
 class LossesConfig(StrictConfigModel):

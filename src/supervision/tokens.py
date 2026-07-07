@@ -7,6 +7,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.common.errors import LossContractError
+from src.coordinate_targets import (
+    CoordinateLossTarget,
+    coordinate_target_to_artifact,
+)
 from src.packing.planner import PackedSegment, PackedSequence
 from src.packing.supervision import PackedSupervision, PackedTokenAtom
 
@@ -31,6 +35,7 @@ class TokenAtom:
     object_id: str | None = None
     field: str | None = None
     source: str | None = None
+    coordinate_target: CoordinateLossTarget | None = None
 
     @property
     def target_end(self) -> int:
@@ -40,8 +45,8 @@ class TokenAtom:
     def causal_logits_position(self) -> int:
         return self.target_position - 1
 
-    def to_artifact_dict(self) -> dict[str, int | str | None]:
-        return {
+    def to_artifact_dict(self) -> dict[str, Any]:
+        payload = {
             "pack_index": self.pack_index,
             "segment_index": self.segment_index,
             "example_index": self.example_index,
@@ -60,6 +65,10 @@ class TokenAtom:
             "field": self.field,
             "source": self.source,
         }
+        coordinate_target = coordinate_target_to_artifact(self.coordinate_target)
+        if coordinate_target is not None:
+            payload["coordinate_target"] = coordinate_target
+        return payload
 
     @classmethod
     def from_packed(cls, atom: PackedTokenAtom) -> TokenAtom:
@@ -79,6 +88,7 @@ class TokenAtom:
             object_id=atom.object_id,
             field=atom.field,
             source=atom.source,
+            coordinate_target=atom.coordinate_target,
         )
 
 
@@ -96,6 +106,7 @@ class TokenSpan:
     object_id: str | None = None
     field: str | None = None
     source: str | None = None
+    coordinate_target: CoordinateLossTarget | None = None
 
     def __post_init__(self) -> None:
         if not self.atoms:
@@ -120,6 +131,7 @@ class TokenSpan:
                 or atom.object_id != self.object_id
                 or atom.field != self.field
                 or atom.source != self.source
+                or atom.coordinate_target != self.coordinate_target
                 or atom.text != self.text
             ):
                 raise LossContractError(
@@ -140,6 +152,12 @@ class TokenSpan:
                         "atom_field": atom.field,
                         "span_source": self.source,
                         "atom_source": atom.source,
+                        "span_coordinate_target": coordinate_target_to_artifact(
+                            self.coordinate_target
+                        ),
+                        "atom_coordinate_target": coordinate_target_to_artifact(
+                            atom.coordinate_target
+                        ),
                     },
                 )
 
@@ -156,7 +174,7 @@ class TokenSpan:
         return (self.target_start, self.target_end)
 
     def to_artifact_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "pack_index": self.pack_index,
             "segment_index": self.segment_index,
             "example_index": self.example_index,
@@ -173,6 +191,10 @@ class TokenSpan:
             "source": self.source,
             "atoms": [atom.to_artifact_dict() for atom in self.atoms],
         }
+        coordinate_target = coordinate_target_to_artifact(self.coordinate_target)
+        if coordinate_target is not None:
+            payload["coordinate_target"] = coordinate_target
+        return payload
 
 
 @dataclass(frozen=True)
@@ -382,6 +404,7 @@ def _span_key(atom: TokenAtom) -> tuple[Any, ...]:
         atom.object_id,
         atom.field,
         atom.source,
+        atom.coordinate_target,
         atom.text,
     )
 
@@ -401,6 +424,7 @@ def _span_from_atoms(atoms: tuple[TokenAtom, ...]) -> TokenSpan:
         object_id=first.object_id,
         field=first.field,
         source=first.source,
+        coordinate_target=first.coordinate_target,
     )
 
 

@@ -6,6 +6,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.common.errors import PackingContractError
+from src.coordinate_targets import (
+    CoordinateLossTarget,
+    coordinate_target_to_artifact,
+)
 from src.packing.planner import PackedSequence, PackedSegment
 
 
@@ -28,9 +32,10 @@ class PackedTokenAtom:
     object_id: str | None
     field: str | None
     source: str | None
+    coordinate_target: CoordinateLossTarget | None = None
 
-    def to_artifact_dict(self) -> dict[str, int | str | None]:
-        return {
+    def to_artifact_dict(self) -> dict[str, Any]:
+        payload = {
             "pack_index": self.pack_index,
             "segment_index": self.segment_index,
             "example_index": self.example_index,
@@ -49,6 +54,10 @@ class PackedTokenAtom:
             "field": self.field,
             "source": self.source,
         }
+        coordinate_target = coordinate_target_to_artifact(self.coordinate_target)
+        if coordinate_target is not None:
+            payload["coordinate_target"] = coordinate_target
+        return payload
 
 
 @dataclass(frozen=True)
@@ -71,9 +80,10 @@ class OmittedPackedTokenAtom:
     field: str | None
     source: str | None
     reason: str
+    coordinate_target: CoordinateLossTarget | None = None
 
-    def to_artifact_dict(self) -> dict[str, int | str | None]:
-        return {
+    def to_artifact_dict(self) -> dict[str, Any]:
+        payload = {
             "pack_index": self.pack_index,
             "segment_index": self.segment_index,
             "example_index": self.example_index,
@@ -93,6 +103,10 @@ class OmittedPackedTokenAtom:
             "source": self.source,
             "reason": self.reason,
         }
+        coordinate_target = coordinate_target_to_artifact(self.coordinate_target)
+        if coordinate_target is not None:
+            payload["coordinate_target"] = coordinate_target
+        return payload
 
 
 @dataclass(frozen=True)
@@ -219,6 +233,7 @@ def _remap_span(
     object_id = getattr(span, "object_id", None)
     field = getattr(span, "field", None)
     source = getattr(span, "source", None)
+    coordinate_target = getattr(span, "coordinate_target", None)
     for offset, token_id in enumerate(token_ids):
         logical_target = logical_start + offset
         target_position = segment.start + logical_target
@@ -244,6 +259,7 @@ def _remap_span(
                     field=field,
                     source=source,
                     reason="logits_position_crosses_segment_boundary",
+                    coordinate_target=coordinate_target,
                 )
             )
             continue
@@ -266,6 +282,7 @@ def _remap_span(
                 object_id=object_id,
                 field=field,
                 source=source,
+                coordinate_target=coordinate_target,
             )
         )
     return atoms, omitted_atoms

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from src.common.errors import TemplateContractError
+from src.coordinate_targets import CoordinateLossTarget
 
 
 RenderedSpanKind = Literal[
@@ -49,6 +50,7 @@ class RenderedSpan:
     object_id: str | None = None
     field: str | None = None
     source: str | None = None
+    coordinate_target: CoordinateLossTarget | None = None
 
     def __post_init__(self) -> None:
         if self.char_start < 0 or self.char_end <= self.char_start:
@@ -114,6 +116,7 @@ def validate_rendered_spans(rendered_text: str, spans: tuple[RenderedSpan, ...])
             )
         assert_span_text(rendered_text, span)
         _validate_leaf_literal(span)
+        _validate_coordinate_target_polarity(span)
     _validate_no_crossing_spans(spans)
     _validate_exact_leaf_coverage(rendered_text, spans)
 
@@ -182,6 +185,33 @@ def _validate_leaf_literal(span: RenderedSpan) -> None:
             "eos leaf span must cover the approved assistant transition token",
             code="template.special_span_literal",
             context={"kind": span.kind, "text": span.text},
+        )
+
+
+def _validate_coordinate_target_polarity(span: RenderedSpan) -> None:
+    if span.kind == "coordinate_token":
+        if span.coordinate_target is None:
+            raise TemplateContractError(
+                "coordinate leaf span must carry coordinate target metadata",
+                code="template.coordinate_target_missing",
+                context={
+                    "kind": span.kind,
+                    "text": span.text,
+                    "object_id": span.object_id,
+                    "field": span.field,
+                },
+            )
+        return
+    if span.coordinate_target is not None:
+        raise TemplateContractError(
+            "only coordinate leaf spans may carry coordinate target metadata",
+            code="template.coordinate_target_unexpected",
+            context={
+                "kind": span.kind,
+                "text": span.text,
+                "object_id": span.object_id,
+                "field": span.field,
+            },
         )
 
 

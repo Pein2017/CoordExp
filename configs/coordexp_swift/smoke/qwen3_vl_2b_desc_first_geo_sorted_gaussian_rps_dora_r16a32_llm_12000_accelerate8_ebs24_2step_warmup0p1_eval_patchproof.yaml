@@ -1,0 +1,135 @@
+schema_version: 1
+
+run:
+  name: qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_llm_12000_accelerate8_ebs24_2step_warmup0p1_eval_patchproof
+  artifact_root: outputs/smoke/coord_gaussian_rps
+  collision_policy: timestamp
+
+model:
+  base_model: /data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent
+  attn_implementation: flash_attention_2
+  fa2_branch_proof: first_micro_step
+  logits_memory_budget_bytes: 4000000000
+  processor:
+    do_resize: false
+    max_raw_pixels: 1048576
+    max_merged_visual_tokens: 4096
+  special_token_embeddings:
+    groups:
+      coordinate_tokens: default_coord_0_999
+      wrapper_tokens: default_object_box_wrappers
+
+adapter:
+  type: dora
+  target_towers:
+    - language
+  target_modules: all_linear
+  rank: 16
+  alpha: 32
+  dropout: 0.0
+  bias: none
+
+data:
+  train:
+    path: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/train.coord.jsonl
+    sample_limit: 256
+  eval:
+    path: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl
+    sample_limit: 64
+  train_order: source_order
+  augmentation:
+    train:
+      geometry_flips:
+        enabled: true
+        horizontal_prob: 0.5
+        vertical_prob: 0.2
+
+template:
+  object_field_order: desc_first
+  object_ordering: geo_sorted
+  assistant_format: object_box_closed
+  prompt:
+    system: >-
+      You are a general-purpose object detection and grounding assistant. Output one compact detection row per object by concatenating rows directly with no separator, no newline, and no extra text. Use this row pattern exactly: <|object_ref_start|>{desc}<|object_ref_end|><|box_start|><|coord_100|><|coord_200|><|coord_300|><|coord_400|><|box_end|>. Descriptions are raw class text; bbox coords are four coord tokens in x1 y1 x2 y2 order.
+    user: >-
+      Locate each clearly visible object instance in the image. Return compact rows using this exact pattern: <|object_ref_start|>{desc}<|object_ref_end|><|box_start|><|coord_100|><|coord_200|><|coord_300|><|coord_400|><|box_end|>. Use one row per object; concatenate rows directly with no separator and do not insert newline characters. Restrict `desc` to this COCO-80 class list: person, bicycle, car, motorcycle, airplane, bus, train, truck, boat, traffic light, fire hydrant, stop sign, parking meter, bench, bird, cat, dog, horse, sheep, cow, elephant, bear, zebra, giraffe, backpack, umbrella, handbag, tie, suitcase, frisbee, skis, snowboard, sports ball, kite, baseball bat, baseball glove, skateboard, surfboard, tennis racket, bottle, wine glass, cup, fork, knife, spoon, bowl, banana, apple, sandwich, orange, broccoli, carrot, hot dog, pizza, donut, cake, chair, couch, potted plant, bed, dining table, toilet, tv, laptop, mouse, remote, keyboard, cell phone, microwave, oven, toaster, sink, refrigerator, book, clock, vase, scissors, teddy bear, hair drier, toothbrush.
+
+packing:
+  global_max_length: 12000
+
+losses:
+  normalizer: segment_balanced
+  protected:
+    base_ce:
+      weight: 1.0
+    token_type_gate:
+      weight: 0.25
+      groups:
+        - desc_text
+        - schema
+        - coordinate
+        - eos
+    coord_gaussian_rps:
+      weight: 1.0
+      gaussian_weight: 0.5
+      rps_weight: 0.2
+      temperature: 1.0
+      gaussian_r95_axis_fraction: 0.04
+      gaussian_r95_cap_bins: 8
+      gaussian_r95_min_bins: 1
+      gaussian_r95_fallback_bins: 8
+
+optimizer:
+  name: adamw_torch
+  betas:
+    - 0.9
+    - 0.999
+  epsilon: 1.0e-8
+  kwargs: {}
+  groups:
+    adapters:
+      language:
+        lr: 2.0e-4
+        weight_decay: 0.0
+    token_embeddings:
+      lr: 1.0e-4
+      weight_decay: 0.0
+  scheduler:
+    name: cosine_with_warmup
+    warmup_ratio: 0.1
+    warmup_steps: null
+    kwargs: {}
+
+training:
+  mode: supervised
+  epochs: 4
+  max_steps: 2
+  effective_batch_size: 24
+  precision: bf16
+  max_grad_norm: 1.0
+  logging:
+    every_fraction: null
+    steps:
+      - 1
+      - 2
+
+runtime:
+  backend: accelerate
+  seed: 17
+  accelerate:
+    mixed_precision: bf16
+    gradient_accumulation_steps: null
+
+eval:
+  forward:
+    every_fraction: null
+    steps:
+      - 1
+  inference:
+    enabled: false
+
+checkpoint:
+  every_fraction: null
+  steps:
+    - 2
+  save_final: true

@@ -8,6 +8,7 @@ import pytest
 
 from src.common.errors import ConfigContractError, TemplateContractError
 from src.config import load_train_config
+from src.coordinate_targets import CoordinateLossTarget
 from src.data import ImageRef, RawExample, RawObject, SourceProvenance, load_raw_examples
 from src.templates import (
     BOX_END_TOKEN,
@@ -146,6 +147,43 @@ def test_rendered_spans_cover_wrappers_coordinates_eos_and_ignored_newline() -> 
     assert leaf[-1].text == "\n"
 
 
+def test_coordinate_spans_carry_bbox_target_metadata() -> None:
+    resolved = load_train_config(FIXTURE / "config.yaml")
+    first = load_raw_examples(resolved.config.data.train)[0]
+
+    rendered = render_example(first, resolved.config.template)
+
+    coordinate_spans = [
+        span for span in rendered.spans if span.kind == "coordinate_token"
+    ]
+    assert [span.field for span in coordinate_spans[:4]] == [
+        "bbox[0]",
+        "bbox[1]",
+        "bbox[2]",
+        "bbox[3]",
+    ]
+    assert [span.coordinate_target.slot_index for span in coordinate_spans[:4]] == [
+        0,
+        1,
+        2,
+        3,
+    ]
+    assert [span.coordinate_target.bbox for span in coordinate_spans[:4]] == [
+        first.objects[0].bbox,
+        first.objects[0].bbox,
+        first.objects[0].bbox,
+        first.objects[0].bbox,
+    ]
+    artifact = rendered.to_artifact_dict()
+    artifact_coordinates = [
+        span for span in artifact["spans"] if span["kind"] == "coordinate_token"
+    ]
+    assert artifact_coordinates[0]["coordinate_target"] == {
+        "bbox": list(first.objects[0].bbox),
+        "slot_index": 0,
+    }
+
+
 def test_rendered_span_validation_rejects_crossing_spans() -> None:
     text = "abcdef"
     spans = (
@@ -214,6 +252,31 @@ def test_rendered_span_validation_rejects_partial_or_loose_special_literals() ->
         IM_END_TOKEN,
         (RenderedSpan("eos_transition", 0, len(IM_END_TOKEN), IM_END_TOKEN),),
     )
+
+
+def test_rendered_span_validation_rejects_coordinate_metadata_polarity_errors() -> None:
+    with pytest.raises(TemplateContractError) as missing_exc:
+        validate_rendered_spans(
+            "<|coord_7|>",
+            (RenderedSpan("coordinate_token", 0, len("<|coord_7|>"), "<|coord_7|>"),),
+        )
+    assert missing_exc.value.code == "template.coordinate_target_missing"
+
+    target = CoordinateLossTarget(bbox=(1, 2, 8, 10), slot_index=0)
+    with pytest.raises(TemplateContractError) as unexpected_exc:
+        validate_rendered_spans(
+            "description",
+            (
+                RenderedSpan(
+                    "description",
+                    0,
+                    len("description"),
+                    "description",
+                    coordinate_target=target,
+                ),
+            ),
+        )
+    assert unexpected_exc.value.code == "template.coordinate_target_unexpected"
 
 
 def test_random_object_ordering_is_seeded_and_reproducible() -> None:

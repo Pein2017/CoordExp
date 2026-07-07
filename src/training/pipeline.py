@@ -1465,11 +1465,14 @@ def _multi_rank_launch_suffix() -> str | None:
 
 
 def _loss_plan_artifact(config: Any, vocab_groups_artifact: dict[str, Any]) -> dict[str, Any]:
+    term_order = ["base_ce", "token_type_gate"]
+    if config.losses.protected.coord_gaussian_rps.weight > 0.0:
+        term_order.append("coord_gaussian_rps")
     return {
         "normalizer": config.losses.normalizer,
         "objective_dtype": "float32_selected_logits",
         "protected": config.losses.protected.model_dump(mode="json"),
-        "term_order": ["base_ce", "token_type_gate"],
+        "term_order": term_order,
         "vocabulary_groups": vocab_groups_artifact,
         "finite_policy": {
             "pre_backward_scalar_gate": "all_rank_consensus",
@@ -1477,7 +1480,10 @@ def _loss_plan_artifact(config: Any, vocab_groups_artifact: dict[str, Any]) -> d
         },
         "metric_definitions": {
             "top_level": ["acc_top1", "acc_top5"],
-            "weighted_losses": ["loss/base_ce", "loss/token_type_gate", "loss/total"],
+            "weighted_losses": [
+                *(f"loss/{term_name}" for term_name in term_order),
+                "loss/total",
+            ],
             "counts": [
                 "count/supervised_atoms",
                 "count/eligible_segments",

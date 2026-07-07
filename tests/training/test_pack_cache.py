@@ -184,6 +184,8 @@ def test_packing_cache_determinants_include_code_identity(tmp_path: Path) -> Non
         "augmentation_factory",
         "augmentation_geometry",
         "augmentation_processor",
+        "coordinate_targets",
+        "template_spans",
         "template_renderer",
         "qwen_encoding",
         "qwen_images",

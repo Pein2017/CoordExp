@@ -5,13 +5,16 @@ import torch
 
 from src.common.errors import LossContractError
 from src.config.models import (
+    CoordGaussianRPSLossConfig,
     LossesConfig,
     ProtectedLossesConfig,
     TokenTypeGateLossConfig,
     WeightedLossConfig,
 )
+from src.coordinate_targets import CoordinateLossTarget
 from src.losses import (
     BaseTokenCE,
+    CoordGaussianRPSLoss,
     LossContext,
     LossRunner,
     PlannedStepLossSlice,
@@ -235,6 +238,68 @@ def test_loss_runner_global_streaming_denominator_scales_for_ddp_mean() -> None:
     assert term.diagnostics["backend_gradient_scale"] == 2.0
 
 
+def test_loss_runner_streaming_finalization_preserves_coord_gaussian_rps_diagnostics() -> None:
+    context = _context(
+        _logits(
+            (
+                (0.0, 0.0, 8.0, 2.0, 0.0, 0.0, 0.0, 1.0),
+                (0.0, 0.0, 0.0, 7.0, 1.0, 0.0, 0.0, 1.0),
+            ),
+            requires_grad=True,
+        ),
+        (_segment(0, 0, 2),),
+        (
+            _atom(
+                segment_index=0,
+                target_position=1,
+                token_id=3,
+                token_type="coordinate",
+                coordinate_target=CoordinateLossTarget(
+                    bbox=(2, 3, 8, 13),
+                    slot_index=0,
+                ),
+            ),
+        ),
+    )
+    runner = LossRunner(
+        base_ce_weight=1.0,
+        token_type_gate_weight=0.25,
+        token_type_gate_groups=("desc_text", "schema", "coordinate", "eos"),
+        coord_gaussian_rps_weight=1.0,
+        coord_gaussian_rps=CoordGaussianRPSLoss(
+            gaussian_weight=0.5,
+            rps_weight=0.2,
+            temperature=1.0,
+            gaussian_r95_axis_fraction=0.5,
+            gaussian_r95_cap_bins=4,
+            gaussian_r95_min_bins=1,
+            gaussian_r95_fallback_bins=4,
+        ),
+    )
+    plan = runner.prepare_planned_step((context.token_sequence,))
+    micro_bundle = runner.compute_micro_step(
+        context,
+        plan,
+        local_micro_step_index=0,
+    )
+
+    artifact = runner.finalize_planned_step(
+        (micro_bundle.to_artifact_dict(),),
+        plan,
+    )
+
+    coord_term = next(
+        term for term in artifact["terms"] if term["name"] == "coord_gaussian_rps"
+    )
+    diagnostics = coord_term["diagnostics"]
+    assert diagnostics["target_r95_radius_mean"] == pytest.approx(3.0)
+    assert diagnostics["target_r95_radius_max"] == pytest.approx(3.0)
+    assert diagnostics["gaussian_ce_mean"] > 0.0
+    assert diagnostics["rps_mean"] >= 0.0
+    assert diagnostics["target_entropy_mean"] > 0.0
+    assert diagnostics["target_peak_prob_mean"] > 0.0
+
+
 def test_loss_runner_requires_explicit_configured_weights() -> None:
     config = LossesConfig(
         normalizer="segment_balanced",
@@ -244,6 +309,16 @@ def test_loss_runner_requires_explicit_configured_weights() -> None:
                 weight=0.25,
                 groups=("coordinate", "eos"),
             ),
+            coord_gaussian_rps=CoordGaussianRPSLossConfig(
+                weight=0.5,
+                gaussian_weight=0.5,
+                rps_weight=0.2,
+                temperature=1.0,
+                gaussian_r95_axis_fraction=0.04,
+                gaussian_r95_cap_bins=8,
+                gaussian_r95_min_bins=1,
+                gaussian_r95_fallback_bins=8,
+            ),
         ),
     )
 
@@ -252,6 +327,8 @@ def test_loss_runner_requires_explicit_configured_weights() -> None:
     assert runner.base_ce_weight == 1.7
     assert runner.token_type_gate_weight == 0.25
     assert runner.token_type_gate_groups == ("coordinate", "eos")
+    assert runner.coord_gaussian_rps_weight == 0.5
+    assert runner.coord_gaussian_rps is not None
     with pytest.raises(TypeError):
         LossRunner()  # type: ignore[call-arg]
 
@@ -404,7 +481,10 @@ def _context(
                     token_type=atom.token_type,
                     text=atom.text,
                     logical_target_position=atom.logical_target_position,
+                    object_id=atom.object_id,
+                    field=atom.field,
                     source=atom.source,
+                    coordinate_target=atom.coordinate_target,
                 )
                 for atom in atoms
             ),
@@ -455,6 +535,7 @@ def _atom(
     target_position: int,
     token_id: int,
     token_type: str = "desc_text",
+    coordinate_target: CoordinateLossTarget | None = None,
 ) -> TokenAtom:
     return TokenAtom(
         pack_index=0,
@@ -466,7 +547,10 @@ def _atom(
         token_type=token_type,
         text="x",
         logical_target_position=target_position,
+        object_id="obj-1" if coordinate_target is not None else None,
+        field="bbox[0]" if coordinate_target is not None else None,
         source="unit",
+        coordinate_target=coordinate_target,
     )
 
 

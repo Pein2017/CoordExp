@@ -12,7 +12,7 @@ import yaml
 from src.common.errors import ConfigContractError
 from src.config.fingerprint import sha256_json
 from src.config.loader import load_train_config
-from src.config.models import OptimizerGroupConfig
+from src.config.models import CoordGaussianRPSLossConfig, OptimizerGroupConfig
 from src.config.paths import resolve_run_directory
 from src.config.resolve import (
     estimate_full_logits_bytes,
@@ -20,6 +20,7 @@ from src.config.resolve import (
     resolve_qwen_runtime_controls,
 )
 from src.config.writer import write_resolved_config_artifacts
+from src.training.schedule import resolve_planned_step_schedule
 
 
 FIXTURE_CONFIG = Path("tests/fixtures/smoke/qwen3_vl_single_image_pack/config.yaml")
@@ -59,6 +60,11 @@ def test_optimizer_group_config_rejects_non_finite_scalars(field: str) -> None:
         OptimizerGroupConfig(**payload)
 
 
+def test_coord_gaussian_rps_loss_config_rejects_tiny_temperature() -> None:
+    with pytest.raises(ValueError):
+        CoordGaussianRPSLossConfig(weight=1.0, temperature=1e-45)
+
+
 @pytest.mark.parametrize(
     ("field_path", "value"),
     [
@@ -66,6 +72,14 @@ def test_optimizer_group_config_rejects_non_finite_scalars(field: str) -> None:
         ("adapter.dropout", float("inf")),
         ("losses.protected.base_ce.weight", float("inf")),
         ("losses.protected.token_type_gate.weight", float("inf")),
+        ("losses.protected.coord_gaussian_rps.weight", float("inf")),
+        ("losses.protected.coord_gaussian_rps.gaussian_weight", float("inf")),
+        ("losses.protected.coord_gaussian_rps.rps_weight", float("inf")),
+        ("losses.protected.coord_gaussian_rps.temperature", float("inf")),
+        (
+            "losses.protected.coord_gaussian_rps.gaussian_r95_axis_fraction",
+            float("inf"),
+        ),
         ("optimizer.epsilon", float("inf")),
         ("optimizer.betas", [0.9, float("inf")]),
         ("optimizer.scheduler.warmup_ratio", float("inf")),
@@ -299,6 +313,45 @@ def test_geometry_flip_augmentation_rejects_unknown_fields(tmp_path: Path) -> No
         load_train_config(config_path)
 
     assert "include_composed" in exc_info.value.context["field"]
+
+
+def test_coord_gaussian_rps_loss_config_defaults_disabled_and_loads_plugin_params(
+    tmp_path: Path,
+) -> None:
+    default_path = tmp_path / "default.yaml"
+    payload = _minimal_config()
+    _write_yaml(default_path, payload)
+
+    default_config = load_train_config(default_path).config
+    default_coord_loss = default_config.losses.protected.coord_gaussian_rps
+    assert default_coord_loss.weight == 0.0
+    assert default_coord_loss.gaussian_weight == pytest.approx(0.5)
+    assert default_coord_loss.rps_weight == pytest.approx(0.2)
+    assert default_coord_loss.gaussian_r95_axis_fraction == pytest.approx(0.04)
+    assert default_coord_loss.gaussian_r95_cap_bins == 8
+    assert default_coord_loss.gaussian_r95_min_bins == 1
+    assert default_coord_loss.gaussian_r95_fallback_bins == 8
+
+    enabled_path = tmp_path / "enabled.yaml"
+    payload = _minimal_config()
+    payload["losses"]["protected"]["coord_gaussian_rps"] = {
+        "weight": 1.0,
+        "gaussian_weight": 0.5,
+        "rps_weight": 0.2,
+        "temperature": 1.0,
+        "gaussian_r95_axis_fraction": 0.04,
+        "gaussian_r95_cap_bins": 8,
+        "gaussian_r95_min_bins": 1,
+        "gaussian_r95_fallback_bins": 8,
+    }
+    _write_yaml(enabled_path, payload)
+
+    enabled_coord_loss = (
+        load_train_config(enabled_path).config.losses.protected.coord_gaussian_rps
+    )
+    assert enabled_coord_loss.weight == pytest.approx(1.0)
+    assert enabled_coord_loss.gaussian_weight == pytest.approx(0.5)
+    assert enabled_coord_loss.rps_weight == pytest.approx(0.2)
 
 
 def test_legacy_dlora_adapter_spelling_explains_v1_dora_name(tmp_path: Path) -> None:
@@ -564,6 +617,145 @@ def test_production_relaunch_configs_load_strictly() -> None:
     assert smoke.checkpoint.steps == (2,)
     assert smoke.runtime.accelerate is not None
     assert smoke.runtime.accelerate.gradient_accumulation_steps is None
+
+
+def test_coord_gaussian_rps_length12000_smoke_config_loads_strictly() -> None:
+    smoke_path = Path(
+        "configs/coordexp_swift/smoke/"
+        "qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_llm_12000_"
+        "accelerate8_ebs24_2step_warmup0p1_eval_patchproof.yaml"
+    )
+
+    smoke = load_train_config(smoke_path).config
+    batch = resolve_effective_batch_runtime(smoke, world_size=8)
+
+    assert smoke.run.name == (
+        "qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_llm_12000_"
+        "accelerate8_ebs24_2step_warmup0p1_eval_patchproof"
+    )
+    assert smoke.adapter.rank == 16
+    assert smoke.adapter.alpha == 32
+    assert smoke.template.object_field_order == "desc_first"
+    assert smoke.template.object_ordering == "geo_sorted"
+    assert smoke.data.train.sample_limit == 256
+    assert smoke.data.eval is not None
+    assert smoke.data.eval.sample_limit == 64
+    assert smoke.data.augmentation.train.geometry_flips.enabled is True
+    assert smoke.data.augmentation.train.geometry_flips.horizontal_prob == pytest.approx(
+        0.5
+    )
+    assert smoke.data.augmentation.train.geometry_flips.vertical_prob == pytest.approx(
+        0.2
+    )
+    assert smoke.packing.global_max_length == 12_000
+    assert smoke.training.effective_batch_size == 24
+    assert smoke.training.max_steps == 2
+    assert smoke.optimizer.scheduler.warmup_ratio == 0.1
+    assert smoke.runtime.seed == 17
+    assert smoke.runtime.backend == "accelerate"
+    assert smoke.runtime.accelerate is not None
+    assert smoke.runtime.accelerate.gradient_accumulation_steps is None
+    assert batch.resolved_grad_accum_steps == 3
+
+    protected = smoke.losses.protected
+    assert protected.base_ce.weight == pytest.approx(1.0)
+    assert protected.token_type_gate.weight == pytest.approx(0.25)
+    assert protected.token_type_gate.groups == (
+        "desc_text",
+        "schema",
+        "coordinate",
+        "eos",
+    )
+    assert protected.coord_gaussian_rps.weight == pytest.approx(1.0)
+    assert protected.coord_gaussian_rps.gaussian_weight == pytest.approx(0.5)
+    assert protected.coord_gaussian_rps.rps_weight == pytest.approx(0.2)
+    assert protected.coord_gaussian_rps.gaussian_r95_axis_fraction == pytest.approx(
+        0.04
+    )
+    assert protected.coord_gaussian_rps.gaussian_r95_cap_bins == 8
+    assert protected.coord_gaussian_rps.gaussian_r95_min_bins == 1
+    assert protected.coord_gaussian_rps.gaussian_r95_fallback_bins == 8
+
+
+def test_coord_gaussian_rps_prod_config_loads_strictly() -> None:
+    prod_path = Path(
+        "configs/coordexp_swift/prod/"
+        "qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_llm_12000_"
+        "accelerate8_ebs24_8epoch_warmup0p1.yaml"
+    )
+
+    prod = load_train_config(prod_path).config
+    batch = resolve_effective_batch_runtime(prod, world_size=8)
+    schedule = resolve_planned_step_schedule(
+        prod,
+        packs_per_epoch=14_660,
+        world_size=8,
+        source_config_path=str(prod_path),
+    )
+
+    assert prod.run.name == (
+        "qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_llm_12000_"
+        "accelerate8_ebs24_8epoch_warmup0p1"
+    )
+    assert prod.adapter.rank == 16
+    assert prod.adapter.alpha == 32
+    assert prod.adapter.target_towers == ("language",)
+    assert prod.adapter.target_modules == "all_linear"
+    assert prod.template.object_field_order == "desc_first"
+    assert prod.template.object_ordering == "geo_sorted"
+    assert prod.data.train.sample_limit is None
+    assert prod.data.eval is not None
+    assert prod.data.eval.sample_limit is None
+    assert prod.data.augmentation.train.geometry_flips.enabled is True
+    assert prod.data.augmentation.train.geometry_flips.horizontal_prob == pytest.approx(
+        0.5
+    )
+    assert prod.data.augmentation.train.geometry_flips.vertical_prob == pytest.approx(
+        0.2
+    )
+    assert prod.packing.global_max_length == 12_000
+    assert prod.training.effective_batch_size == 24
+    assert prod.training.max_steps is None
+    assert prod.training.epochs == 8
+    assert prod.training.max_grad_norm == 1.0
+    assert prod.training.logging.every_fraction == pytest.approx(0.002)
+    assert prod.training.logging.steps == (1,)
+    assert prod.optimizer.scheduler.warmup_ratio == 0.1
+    assert prod.optimizer.scheduler.warmup_steps is None
+    assert prod.runtime.seed == 17
+    assert prod.runtime.backend == "accelerate"
+    assert prod.runtime.accelerate is not None
+    assert prod.runtime.accelerate.gradient_accumulation_steps is None
+    assert batch.resolved_grad_accum_steps == 3
+    assert schedule.resolved_max_steps == 4887
+    assert [
+        event.planned_step_id for event in schedule.events["training.logging"][:4]
+    ] == [1, 10, 20, 30]
+    assert schedule.events["training.logging"][-1].planned_step_id == 4887
+    assert prod.eval.forward.every_fraction == pytest.approx(0.1)
+    assert prod.eval.forward.steps == ()
+    assert prod.checkpoint.every_fraction == pytest.approx(0.3)
+    assert prod.checkpoint.steps == ()
+
+    protected = prod.losses.protected
+    assert protected.base_ce.weight == pytest.approx(1.0)
+    assert protected.token_type_gate.weight == pytest.approx(0.2)
+    assert protected.token_type_gate.groups == (
+        "desc_text",
+        "schema",
+        "coordinate",
+        "eos",
+    )
+    assert protected.coord_gaussian_rps.weight == pytest.approx(1.0)
+    assert protected.coord_gaussian_rps.gaussian_weight == pytest.approx(0.5)
+    assert protected.coord_gaussian_rps.rps_weight == pytest.approx(0.2)
+    assert protected.coord_gaussian_rps.temperature == pytest.approx(1.0)
+    assert protected.coord_gaussian_rps.gaussian_r95_axis_fraction == pytest.approx(
+        0.04
+    )
+    assert protected.coord_gaussian_rps.gaussian_r95_cap_bins == 8
+    assert protected.coord_gaussian_rps.gaussian_r95_min_bins == 1
+    assert protected.coord_gaussian_rps.gaussian_r95_fallback_bins == 8
 
 
 def _minimal_config() -> dict[str, Any]:

@@ -27,6 +27,7 @@ from src.training.pipeline import (
     build_repeating_micro_step_stream,
     enable_training_memory_savers,
     _checkpoint_handler,
+    _loss_plan_artifact,
     _pack_plan_artifact,
     _resolve_rank_local_run_directory,
     run_training_pipeline,
@@ -114,9 +115,54 @@ def test_run_training_pipeline_writes_core_artifacts_with_fake_boundaries(
         (run_dir / "receipts" / "losses" / "loss_plan.json").read_text()
     )
     assert loss_plan["objective_dtype"] == "float32_selected_logits"
+    assert loss_plan["term_order"] == ["base_ce", "token_type_gate"]
     assert loss_plan["metric_definitions"]["top_level"] == ["acc_top1", "acc_top5"]
+    assert loss_plan["metric_definitions"]["weighted_losses"] == [
+        "loss/base_ce",
+        "loss/token_type_gate",
+        "loss/total",
+    ]
     assert loss_plan["vocabulary_groups"]["coordinate_count"] == 1000
     assert log == ["trainer.run"]
+
+
+def test_loss_plan_artifact_declares_enabled_coord_gaussian_rps_term() -> None:
+    resolved = load_train_config(FIXTURE_CONFIG)
+    config = resolved.config
+    config = config.model_copy(
+        update={
+            "losses": config.losses.model_copy(
+                update={
+                    "protected": config.losses.protected.model_copy(
+                        update={
+                            "coord_gaussian_rps": config.losses.protected.coord_gaussian_rps.model_copy(
+                                update={
+                                    "weight": 1.0,
+                                    "gaussian_weight": 0.5,
+                                    "rps_weight": 0.2,
+                                }
+                            )
+                        }
+                    )
+                }
+            )
+        }
+    )
+
+    artifact = _loss_plan_artifact(config, {"coordinate_count": 1000})
+
+    assert artifact["term_order"] == [
+        "base_ce",
+        "token_type_gate",
+        "coord_gaussian_rps",
+    ]
+    assert artifact["metric_definitions"]["weighted_losses"] == [
+        "loss/base_ce",
+        "loss/token_type_gate",
+        "loss/coord_gaussian_rps",
+        "loss/total",
+    ]
+    assert artifact["protected"]["coord_gaussian_rps"]["weight"] == pytest.approx(1.0)
 
 
 def test_run_training_pipeline_seeds_before_stochastic_setup(

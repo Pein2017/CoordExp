@@ -83,6 +83,15 @@
         {
           "char_end": 76,
           "char_start": 63,
+          "coordinate_target": {
+            "bbox": [
+              319,
+              72,
+              718,
+              830
+            ],
+            "slot_index": 0
+          },
           "field": "bbox[0]",
           "kind": "coordinate_token",
           "object_id": "291613",
@@ -92,6 +101,15 @@
         {
           "char_end": 88,
           "char_start": 76,
+          "coordinate_target": {
+            "bbox": [
+              319,
+              72,
+              718,
+              830
+            ],
+            "slot_index": 1
+          },
           "field": "bbox[1]",
           "kind": "coordinate_token",
           "object_id": "291613",
@@ -101,6 +119,15 @@
         {
           "char_end": 101,
           "char_start": 88,
+          "coordinate_target": {
+            "bbox": [
+              319,
+              72,
+              718,
+              830
+            ],
+            "slot_index": 2
+          },
           "field": "bbox[2]",
           "kind": "coordinate_token",
           "object_id": "291613",
@@ -110,6 +137,15 @@
         {
           "char_end": 114,
           "char_start": 101,
+          "coordinate_target": {
+            "bbox": [
+              319,
+              72,
+              718,
+              830
+            ],
+            "slot_index": 3
+          },
           "field": "bbox[3]",
           "kind": "coordinate_token",
           "object_id": "291613",
@@ -173,6 +209,15 @@
         {
           "char_end": 193,
           "char_start": 180,
+          "coordinate_target": {
+            "bbox": [
+              370,
+              364,
+              632,
+              820
+            ],
+            "slot_index": 0
+          },
           "field": "bbox[0]",
           "kind": "coordinate_token",
           "object_id": "1155486",
@@ -182,6 +227,15 @@
         {
           "char_end": 206,
           "char_start": 193,
+          "coordinate_target": {
+            "bbox": [
+              370,
+              364,
+              632,
+              820
+            ],
+            "slot_index": 1
+          },
           "field": "bbox[1]",
           "kind": "coordinate_token",
           "object_id": "1155486",
@@ -191,6 +245,15 @@
         {
           "char_end": 219,
           "char_start": 206,
+          "coordinate_target": {
+            "bbox": [
+              370,
+              364,
+              632,
+              820
+            ],
+            "slot_index": 2
+          },
           "field": "bbox[2]",
           "kind": "coordinate_token",
           "object_id": "1155486",
@@ -200,6 +263,15 @@
         {
           "char_end": 232,
           "char_start": 219,
+          "coordinate_target": {
+            "bbox": [
+              370,
+              364,
+              632,
+              820
+            ],
+            "slot_index": 3
+          },
           "field": "bbox[3]",
           "kind": "coordinate_token",
           "object_id": "1155486",
@@ -338,6 +410,15 @@
         {
           "char_end": 70,
           "char_start": 59,
+          "coordinate_target": {
+            "bbox": [
+              0,
+              78,
+              952,
+              751
+            ],
+            "slot_index": 0
+          },
           "field": "bbox[0]",
           "kind": "coordinate_token",
           "object_id": "284996",
@@ -347,6 +428,15 @@
         {
           "char_end": 82,
           "char_start": 70,
+          "coordinate_target": {
+            "bbox": [
+              0,
+              78,
+              952,
+              751
+            ],
+            "slot_index": 1
+          },
           "field": "bbox[1]",
           "kind": "coordinate_token",
           "object_id": "284996",
@@ -356,6 +446,15 @@
         {
           "char_end": 95,
           "char_start": 82,
+          "coordinate_target": {
+            "bbox": [
+              0,
+              78,
+              952,
+              751
+            ],
+            "slot_index": 2
+          },
           "field": "bbox[2]",
           "kind": "coordinate_token",
           "object_id": "284996",
@@ -365,6 +464,15 @@
         {
           "char_end": 108,
           "char_start": 95,
+          "coordinate_target": {
+            "bbox": [
+              0,
+              78,
+              952,
+              751
+            ],
+            "slot_index": 3
+          },
           "field": "bbox[3]",
           "kind": "coordinate_token",
           "object_id": "284996",
@@ -428,6 +536,15 @@
         {
           "char_end": 189,
           "char_start": 176,
+          "coordinate_target": {
+            "bbox": [
+              348,
+              254,
+              995,
+              982
+            ],
+            "slot_index": 0
+          },
           "field": "bbox[0]",
           "kind": "coordinate_token",
           "object_id": "453991",
@@ -437,6 +554,15 @@
         {
           "char_end": 202,
           "char_start": 189,
+          "coordinate_target": {
+            "bbox": [
+              348,
+              254,
+              995,
+              982
+            ],
+            "slot_index": 1
+          },
           "field": "bbox[1]",
           "kind": "coordinate_token",
           "object_id": "453991",
@@ -446,6 +572,15 @@
         {
           "char_end": 215,
           "char_start": 202,
+          "coordinate_target": {
+            "bbox": [
+              348,
+              254,
+              995,
+              982
+            ],
+            "slot_index": 2
+          },
           "field": "bbox[2]",
           "kind": "coordinate_token",
           "object_id": "453991",
@@ -455,6 +590,15 @@
         {
           "char_end": 228,
           "char_start": 215,
+          "coordinate_target": {
+            "bbox": [
+              348,
+              254,
+              995,
+              982
+            ],
+            "slot_index": 3
+          },
           "field": "bbox[3]",
           "kind": "coordinate_token",
           "object_id": "453991",

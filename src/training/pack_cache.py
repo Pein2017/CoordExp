@@ -25,6 +25,8 @@ PACKING_CACHE_CODE_IDENTITY_FILES = {
     "augmentation_factory": "src/augmentation/factory.py",
     "augmentation_geometry": "src/augmentation/geometry.py",
     "augmentation_processor": "src/augmentation/processor.py",
+    "coordinate_targets": "src/coordinate_targets.py",
+    "template_spans": "src/templates/spans.py",
     "template_renderer": "src/templates/renderer.py",
     "qwen_encoding": "src/qwen/encoding.py",
     "qwen_images": "src/qwen/images.py",

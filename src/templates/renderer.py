@@ -13,6 +13,10 @@ from typing import Any, Literal
 from src.common.errors import TemplateContractError
 from src.common.qwen_aliases import find_invalid_qwen_wrapper_alias
 from src.config.models import TemplateConfig
+from src.coordinate_targets import (
+    CoordinateLossTarget,
+    coordinate_target_to_artifact,
+)
 from src.data import RawExample, RawObject
 from src.templates.spans import RenderedSpan, validate_rendered_spans
 
@@ -80,18 +84,7 @@ class RenderedExample:
             "prompt_text": self.prompt_text,
             "assistant_content_text": self.assistant_content_text,
             "supervised_response_text": self.supervised_response_text,
-            "spans": [
-                {
-                    "kind": span.kind,
-                    "char_start": span.char_start,
-                    "char_end": span.char_end,
-                    "text": span.text,
-                    "object_id": span.object_id,
-                    "field": span.field,
-                    "source": span.source,
-                }
-                for span in self.spans
-            ],
+            "spans": [_rendered_span_artifact(span) for span in self.spans],
             "realized_object_order": [
                 item.to_artifact_dict() for item in self.realized_object_order
             ],
@@ -100,6 +93,22 @@ class RenderedExample:
             "object_order_seed": self.object_order_seed,
             "object_order_seed_source": self.object_order_seed_source,
         }
+
+
+def _rendered_span_artifact(span: RenderedSpan) -> dict[str, Any]:
+    payload = {
+        "kind": span.kind,
+        "char_start": span.char_start,
+        "char_end": span.char_end,
+        "text": span.text,
+        "object_id": span.object_id,
+        "field": span.field,
+        "source": span.source,
+    }
+    coordinate_target = coordinate_target_to_artifact(span.coordinate_target)
+    if coordinate_target is not None:
+        payload["coordinate_target"] = coordinate_target
+    return payload
 
 
 def render_example(
@@ -318,7 +327,19 @@ def _box_segment(obj: RawObject, cursor: int) -> tuple[str, list[RenderedSpan]]:
     spans = [_span("schema_token", cursor, BOX_START_TOKEN, obj, "box_start")]
     coord_cursor = cursor + len(BOX_START_TOKEN)
     for index, token in enumerate(coord_tokens):
-        spans.append(_span("coordinate_token", coord_cursor, token, obj, f"bbox[{index}]"))
+        spans.append(
+            _span(
+                "coordinate_token",
+                coord_cursor,
+                token,
+                obj,
+                f"bbox[{index}]",
+                coordinate_target=CoordinateLossTarget(
+                    bbox=obj.bbox,
+                    slot_index=index,
+                ),
+            )
+        )
         coord_cursor += len(token)
     spans.append(_span("schema_token", coord_cursor, BOX_END_TOKEN, obj, "box_end"))
     return segment, spans
@@ -330,6 +351,8 @@ def _span(
     text: str,
     obj: RawObject,
     field: str,
+    *,
+    coordinate_target: CoordinateLossTarget | None = None,
 ) -> RenderedSpan:
     return RenderedSpan(
         kind=kind,
@@ -339,6 +362,7 @@ def _span(
         object_id=obj.object_id,
         field=field,
         source=f"object_id:{obj.object_id}",
+        coordinate_target=coordinate_target,
     )
 
 

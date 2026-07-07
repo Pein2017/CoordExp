@@ -10,6 +10,10 @@ from typing import Any, Literal
 
 from src.common.errors import EncodingContractError
 from src.config.models import ProcessorConfig
+from src.coordinate_targets import (
+    CoordinateLossTarget,
+    coordinate_target_to_artifact,
+)
 from src.data import RawExample
 from src.qwen.images import QwenImageEncoding, encode_qwen_image, plan_qwen_image
 from src.qwen.tokens import IM_END_SUFFIX
@@ -38,13 +42,14 @@ class EncodedTokenSpan:
     object_id: str | None
     field: str | None
     source: str | None
+    coordinate_target: CoordinateLossTarget | None = None
 
     @property
     def token_count(self) -> int:
         return len(self.token_ids)
 
     def to_artifact_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "token_type": self.token_type,
             "text": self.text,
             "char_start": self.char_start,
@@ -60,6 +65,10 @@ class EncodedTokenSpan:
             "field": self.field,
             "source": self.source,
         }
+        coordinate_target = coordinate_target_to_artifact(self.coordinate_target)
+        if coordinate_target is not None:
+            payload["coordinate_target"] = coordinate_target
+        return payload
 
 
 @dataclass(frozen=True)
@@ -410,6 +419,7 @@ def _align_one_span(
         object_id=span.object_id,
         field=span.field,
         source=span.source,
+        coordinate_target=getattr(span, "coordinate_target", None),
     )
 
 
