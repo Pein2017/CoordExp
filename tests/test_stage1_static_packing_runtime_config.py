@@ -1179,6 +1179,70 @@ def test_coord_gaussian_rps_desc_first_standard_sft_config_contract() -> None:
     assert configs["launch_smoke"].template["max_length"] == 6000
 
 
+def test_coord_gaussian_rps_len12000_ebs24_launch_config_contract() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    configs = {
+        "prod": ConfigLoader.load_materialized_training_config(
+            str(
+                repo_root
+                / "configs/stage1/profiles/2b/coord_gaussian_rps_coco80_desc_first_1024_len12000_object_ref_close_box_close_sorted_packed12k_ebs24_8epoch.yaml"
+            )
+        ),
+        "launch_smoke": ConfigLoader.load_materialized_training_config(
+            str(
+                repo_root
+                / "configs/stage1/smoke/coord_gaussian_rps_coco80_desc_first_1024_len12000_object_ref_close_box_close_sorted_packed12k_ebs24_8gpu_smoke.yaml"
+            )
+        ),
+    }
+
+    for cfg in configs.values():
+        assert isinstance(cfg, DetectionTrainingConfig)
+        assert cfg.pipeline.id == "stage1_standard_sft"
+        assert cfg.objective.id == "standard_ce"
+        assert cfg.objective.auxiliaries.coord_soft_ce.enabled is False
+        assert cfg.objective.auxiliaries.geometry.enabled is False
+        aux = cfg.objective.auxiliaries.coord_gaussian_rps
+        assert aux.enabled is True
+        assert aux.ce_weight == pytest.approx(1.0)
+        assert aux.gaussian_weight == pytest.approx(0.5)
+        assert aux.rps_weight == pytest.approx(0.2)
+        assert aux.type_gate.enabled is True
+        assert aux.type_gate.mode == "allowed_type_mass"
+        assert aux.type_gate.weights.struct == pytest.approx(1.0)
+        assert aux.type_gate.weights.coord == pytest.approx(1.0)
+        assert aux.type_gate.weights.desc == pytest.approx(1.0)
+        assert aux.type_gate.weights.eos == pytest.approx(1.0)
+        assert cfg.sample_factory.target_sequence.object_ordering == "sorted"
+        assert cfg.sample_factory.target_sequence.object_field_order == "desc_first"
+        assert cfg.sample_factory.target_sequence.bbox_format == "xyxy"
+        assert cfg.detection_template.id == "compact_object_box_closed"
+        assert cfg.evaluation.expected_template == "compact_object_box_closed"
+        assert cfg.global_max_length == 12000
+        assert cfg.template["max_length"] == 12000
+        assert cfg.data.train_jsonl == (
+            "public_data/coco/rescale_32_1024_bbox_len12000/train.coord.jsonl"
+        )
+        assert cfg.data.val_jsonl == (
+            "public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl"
+        )
+        assert cfg.data.image_root == "public_data/coco/rescale_32_1024_bbox"
+        assert cfg.training["effective_batch_size"] == 24
+        assert cfg.training.get("gradient_accumulation_steps") is None
+        assert cfg.training["save_model_only"] is True
+
+    assert configs["prod"].training["num_train_epochs"] == 8
+    assert configs["prod"].training["eval_steps"] == 200
+    assert configs["prod"].training["save_steps"] == 400
+    assert configs["prod"].training["save_delay_steps"] == 1200
+    assert configs["launch_smoke"].training["max_steps"] == 12
+    assert configs["launch_smoke"].training["eval_steps"] == 4
+    assert configs["launch_smoke"].training["save_steps"] == 4
+    assert configs["launch_smoke"].training["save_delay_steps"] == 0
+    assert configs["launch_smoke"].debug.train_sample_limit == 768
+    assert configs["launch_smoke"].debug.val_sample_limit == 128
+
+
 def test_lvis_stage1_smoke_config_only_overrides_runtime_limits() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     cfg = ConfigLoader.load_materialized_training_config(
