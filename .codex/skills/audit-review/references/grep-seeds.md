@@ -23,8 +23,8 @@ Use these as a breadth-pass index. Prefer scoping with `--glob` or `relative_pat
 - `rg -n \"stage2_rollout_correction|Stage2RolloutCorrectionTrainer|stage2_coordination|stage2_rollout_runtime|GreedyIoUAssignment|duplicate_filter|CorrectionEvent\" src tests docs openspec configs -S`
 - `rg -n \"geometry_from_dict|transform_geometry|compute_coverage|bbox_2d|poly\" src/datasets tests docs -S`
 
-### Progress / Benchmark Scope
-- `rg -n \"val200|limit=200|first 200|full-val|full val|raw-text|coord-token|coco_real|strict_plausible|throughput|GPU\" progress docs -S`
+### Research / Legacy Benchmark Scope
+- `rg -n \"val200|limit=200|first 200|full-val|full val|raw-text|coord-token|coco_real|strict_plausible|throughput|GPU\" research docs progress -S`
 
 ### Silent Failures / Exception Swallowing
 - `rg -n \"except Exception:\\\\s*(pass|continue|return|\\\"\\\")\" src -S`

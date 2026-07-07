@@ -10,10 +10,10 @@ Canonical entrypoints:
 - `docs/IMPLEMENTATION_MAP.md`
 
 Rules:
-- Precedence is `openspec/specs/` > `docs/` > `openspec/changes/<active-change>/` > `progress/`.
+- Precedence is `openspec/specs/` > `docs/` > `openspec/changes/<active-change>/` > `research/` > legacy `progress/`.
 - For agent-first routing, start with `docs/AGENT_INDEX.md`; for machine-readable inventory, use `docs/catalog.yaml`.
-- Core read spine after entry is `PROJECT_CONTEXT -> SYSTEM_OVERVIEW -> IMPLEMENTATION_MAP -> domain router -> relevant openspec/specs -> progress` only for history or evidence.
-- Use `progress/` only for design history, diagnostics, benchmarks, or empirical evidence when current docs/specs do not answer the question.
+- Core read spine after entry is `PROJECT_CONTEXT -> SYSTEM_OVERVIEW -> IMPLEMENTATION_MAP -> domain router -> relevant openspec/specs -> research -> legacy progress only for unmigrated provenance`.
+- Use `research/` for active research interpretation. Use `progress/` only as a deprecated legacy archive; do not add new records there.
 - Route by domain: `docs/data/` for data contracts and preprocessing, `docs/training/` for training, `docs/eval/` for inference and evaluation, `docs/standards/` for repo policy.
 - Treat `docs/ARTIFACTS.md` as the cross-cutting router for runtime artifacts, provenance, and logging surfaces.
 - Treat `docs/catalog.yaml` as the canonical inventory; do not recreate its document list in memory.

@@ -453,6 +453,6 @@ current contract surfaces.
 
 ## Historical Reference
 
-The deprecation rationale lives in:
+The legacy deprecation rationale lives in:
 
 - `progress/diagnostics/2026-03-20_stage2_channel_a_self_context_iter_ablation.md`

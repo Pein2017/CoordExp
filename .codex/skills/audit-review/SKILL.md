@@ -1,6 +1,6 @@
 ---
 name: audit-review
-description: "Use when producing a read-only CoordExp audit of code, configs, specs, artifacts, docs, progress notes, or OpenSpec changes for correctness, reproducibility, governance, pipeline, and eval-validity risks."
+description: "Use when producing a read-only CoordExp audit of code, configs, specs, artifacts, docs, legacy progress notes, or OpenSpec changes for correctness, reproducibility, governance, pipeline, and eval-validity risks."
 ---
 
 # Audit Review
@@ -10,6 +10,8 @@ Produce read-only audits for another implementer. Prioritize correctness, reprod
 ## Role Boundary
 
 Use this for severity-ranked audits, not implementation. If the user gives a concrete model symptom such as a metric drop, invalid spike, duplication burst, or length collapse, start with `model-diagnosis`; return here only for independent correctness or claim-validity review. If the user asks whether a new mechanism is contract-safe before launch, use `model-innovation-risk-audit`.
+
+Do not let audit findings default to implementation TODOs. For each P0/P1, decide whether the finding means `fix`, `narrow`, `drop`, `probe`, or `needs user decision`.
 
 ## Audit Mode Selector
 
@@ -24,6 +26,25 @@ Name the mode before searching broadly:
 
 If the user requests blocker-only review, stop after blocking findings, confirmed OK checks, and residual risks.
 
+## Decision Compression
+
+Before broad reading, name:
+
+- decision at stake
+- evidence scope
+- stop condition
+- finding ledger or prior review packet, if one exists
+
+For each P0/P1, classify the decision implication:
+
+- `fix`: intended direction is still valid; implement a bounded correction.
+- `narrow`: reduce the claim, launch scope, supported workflow, or design surface before fixing.
+- `drop`: evidence suggests the mechanism, claim, or path is not worth continuing as framed.
+- `probe`: missing execution, artifact, baseline, ablation, or upstream-runtime evidence is the next step.
+- `needs user decision`: next step changes research meaning, compatibility, cost, destructive behavior, or publication/launch risk.
+
+Prefer `probe` over speculative fixes when runtime semantics, artifact identity, matched baselines, or installed upstream behavior are unverified. Prefer `needs user decision` over quietly converting research-meaning forks into engineering tasks.
+
 ## Authority Model
 
 Use current repo truth in this order:
@@ -34,9 +55,11 @@ Use current repo truth in this order:
 4. relevant domain docs under `docs/`
 5. `openspec/specs/` only for stable compatibility-sensitive contracts
 6. `openspec/changes/<active-change>/` only when explicitly in scope
-7. `progress/` only for history, diagnostics, benchmark evidence, or empirical failures
+7. `progress/` only for deprecated legacy provenance when explicitly needed
 
-Use `docs/AGENT_INDEX.md` and `docs/catalog.yaml` for routing. Treat `progress/audits/` and other temporary notes as removable evidence, not durable codebase references.
+Use `docs/AGENT_INDEX.md` and `docs/catalog.yaml` for routing. Treat
+`progress/audits/` and other progress notes as legacy evidence, not durable
+codebase references or destinations for new audit work.
 
 ## Governance Checks
 
@@ -60,14 +83,15 @@ Each finding needs:
 
 - evidence handle: file path, symbol, config key, artifact path, command output summary, or doc/spec line reference
 - impact: why it matters for correctness, reproducibility, eval validity, or maintainability
-- fix direction: what an implementer should change
+- decision implication: `fix`, `narrow`, `drop`, `probe`, or `needs user decision`
+- fix/probe direction: what an implementer should change, or the smallest evidence that would decide the issue
 - verification: the smallest realistic command, artifact check, or targeted test that would prove the fix
 
 Also include:
 
 - confirmed OK / ruled out checks that prevent backtracking
 - open questions only when they block a reliable conclusion
-- suggested next actions for an implementer
+- suggested next actions, grouped as `fix now`, `probe before fixing`, `narrow/drop discussion`, or `user decision`
 
 For approval audits, also include the verdict, validation run, skipped checks, and residual risks. If the user asks for a report artifact, write a standalone Markdown report and verify section structure, placeholder markers, and whitespace.
 
@@ -82,6 +106,8 @@ Use `references/report-template.md` when a skeleton is helpful.
 - Use Git inspection only when the audit scope depends on dirty state, a PR/change diff, or the user asks for it; otherwise do not run Git by reflex.
 - For Python code exploration, route docs/configs first, then use a correct local CodeGraph index only for broad "where should I look?" maps. Once files or symbols are known, switch to Serena for exact references, bodies, declarations/implementations, diagnostics, and edit-risk checks. In linked worktrees, do not trust CodeGraph results from another checkout.
 - For broad approval audits, use `contract_auditor` as the default custom-agent role. Add `coordexp_mapper` for unknown surfaces and `upstream_relation_tracer` for cross-root dependencies; reconcile every lane into one verdict. A timed-out or vague lane is unresolved, not approval.
+- Do not launch or recommend broad audit fleets by default. Use one focused audit or 2 independent lanes; add a cross-model lane only for high-stakes launch, merge, architecture, or expensive-run gates. A third clean wave needs changed evidence or a new decision.
+- If a finding ledger such as `agent_verdict/<surface>-ledger.md` exists in scope, read it first and report only new findings, status changes, rejected findings, or closure evidence.
 - If a temporary probe is unavoidable, prefer `/tmp/`. Ask before writing under repo `temp/`.
 
 ## Audit Workflow
@@ -92,10 +118,13 @@ Identify the smallest relevant set of:
 
 - docs: `docs/AGENT_INDEX.md`, `docs/catalog.yaml`, `docs/PROJECT_CONTEXT.md`, `docs/SYSTEM_OVERVIEW.md`, `docs/IMPLEMENTATION_MAP.md`, domain docs
 - stable specs: only exact `openspec/specs/` contracts needed by the question
-- progress: only matching benchmark, diagnostic, exploration, direction, pretrain, or audit evidence
+- progress: only matching legacy benchmark, diagnostic, exploration, direction,
+  pretrain, or audit evidence; do not write new audit outputs there
 - code: likely `src/config/`, `src/datasets/`, `src/detection/`, `src/trainers/`, `src/infer/`, `src/eval/`, `src/bootstrap/`, `src/common/`
 - configs: the concrete YAML profiles under review
 - tests/artifacts: targeted surfaces from `docs/IMPLEMENTATION_MAP.md` or artifact manifests
+
+If the prompt contains broad words such as "all", "fully understand", "every detail", or "fragile boundaries", compress them into one falsifiable audit question before expanding scope.
 
 ### 2. Trace High-Risk Flows
 
@@ -108,6 +137,8 @@ Prioritize 3-5 flows with the highest impact:
 - Infer/eval: `src/infer/pipeline.py::run_pipeline`, `resolved_config.json`, `resolved_config.path`, confidence post-op compatibility, `src/eval/detection.py::evaluate_and_save`, guarded metrics.
 - Artifacts/provenance: `summary.json`, `metrics.json`, `run_metadata.json`, `pipeline_manifest.json`, `experiment_manifest.json`, `effective_runtime.json`, durable copied summaries.
 
+For artifact/run or claim-validity audits, produce an execution receipt before interpreting metrics: code/config identity, checkpoint, data/sample scope, training budget, decode kwargs, effective runtime, optimizer/scheduler when relevant, metric artifact, and comparison validity (`matched` or `confounded-by-X`).
+
 ### 3. Look For Failure Classes
 
 Check for:
@@ -118,7 +149,7 @@ Check for:
 - artifact names or metric keys that drift from docs/specs
 - benchmark claims missing scope labels
 - confidence/eval paths applied to incompatible bbox formats
-- temporary audit/progress notes being used as durable docs
+- temporary audit/progress notes being used as durable docs or new work carriers
 - broad runtime fusion assumptions on paths that should use offline-prepared JSONL
 
 ### 4. Validate Only When In Scope
@@ -131,6 +162,19 @@ When validation is allowed or requested:
 - for long or sharded runs, check merged summaries/manifests rather than log lines
 
 If validation is not allowed or too expensive, provide exact verification steps and expected failure signals.
+
+### 5. Decide Before Hand-Off
+
+End by making the next step explicit:
+
+- `approve`
+- `hold`
+- `fix bounded issues`
+- `probe before fixing`
+- `narrow or drop claim/scope`
+- `needs user decision`
+
+Do not present "suggested fixes" as the only path when the evidence could instead mean the claim should narrow, the mechanism should stop, or a discriminating probe should run first.
 
 ## Resources
 

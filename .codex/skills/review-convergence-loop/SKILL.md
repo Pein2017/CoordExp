@@ -11,6 +11,7 @@ Use this to run an explicit convergence loop:
 produce artifact/work
 -> independent review/audit/discussion lanes
 -> triage findings
+-> decide fix/narrow/drop/probe/user decision
 -> revise
 -> repeat until convergence or explicit gate
 ```
@@ -53,10 +54,14 @@ State:
 - mode
 - allowed mutation level: read-only, docs-only, code/config allowed, or launch/deploy allowed
 - source-of-truth surfaces
+- decision at stake
+- evidence that would change the decision
 - stop condition
 - approval gates
 
 If the user asks for a side conversation or read-only exploration, do not mutate files.
+
+If the request says "all", "every detail", "fully understand", "maximize subagents", or similar broad language, compress it into one decision and one stop condition before dispatching lanes.
 
 ### 2. Produce The First Artifact
 
@@ -74,7 +79,7 @@ Use current repo/docs/artifacts as authority.
 
 Use subagents only when the user explicitly requested subagents or the active workflow already permits them.
 
-Use 2-6 lanes. Keep them independent. Prefer project custom-agent roles when they fit:
+Use 2 lanes by default. Use 3-4 only for genuinely independent surfaces. Use 5-6 only for high-stakes launch, merge, architecture, or expensive-run gates where each lane has a different evidence axis. Keep lanes independent. Prefer project custom-agent roles when they fit:
 
 - `coordexp_mapper`: unknown surface map before other lanes spend tokens.
 - `upstream_relation_tracer`: upstream/library or cross-root dependency claims.
@@ -97,7 +102,8 @@ Output:
 - P0/P1/P2 findings
 - evidence handles
 - impact
-- fix direction
+- decision implication: fix, narrow, drop, probe, or needs user decision
+- fix/probe direction
 - verification
 - confirmed OK checks
 - unresolved questions
@@ -106,6 +112,7 @@ Rules:
 - do not edit unless explicitly assigned an implementation slice
 - reviewer timeout/disconnection is unresolved, not approval
 - do not broaden beyond assigned lane
+- report only new findings or status changes when a finding ledger/prior packet exists
 ```
 
 Do not wait idly. While agents run, continue local non-overlapping work.
@@ -123,19 +130,31 @@ Classify every returned issue:
 
 Timeouts, missing reviewers, or vague reviewer claims are not approval.
 
-### 5. Revise
+### 5. Decision Turn
+
+Before revising, classify each accepted P0/P1:
+
+- `fix`: intended direction still stands; make a bounded correction.
+- `narrow`: reduce the claim, workflow, support matrix, or launch scope.
+- `drop`: stop the mechanism/path as framed.
+- `probe`: run or specify the cheapest discriminating artifact/runtime/baseline check first.
+- `needs user decision`: next step changes research meaning, compatibility, cost, destructive behavior, or publication/launch risk.
+
+If any P0/P1 is `narrow`, `drop`, `probe`, or `needs user decision`, do not automatically patch through it. Record the decision, ask the user when required, or produce the probe plan/artifact gate. Treat "fix everything" as valid only after the decision turn says the direction still deserves fixing.
+
+### 6. Revise
 
 Revise only the surfaces allowed by the current mode.
 
-For each accepted P0/P1, update the artifact/work and add or update verification coverage. Fix P2 only when cheap and aligned.
+For each accepted P0/P1 classified as `fix`, update the artifact/work and add or update verification coverage. For `probe`, produce or request the probe before revising unless the probe itself is the allowed work. For `narrow` or `drop`, revise claims, scope, or plan rather than code by default. Fix P2 only when cheap and aligned.
 
 For docs/spec/plan loops, capture important review resolutions in a review log or plan section. For implementation loops, run targeted tests after fixes.
 
-### 6. Check Convergence
+### 7. Check Convergence
 
 Converged only when all required conditions are true:
 
-- all P0/P1 findings are fixed, explicitly rejected with evidence, or converted into a user decision
+- all P0/P1 findings are fixed, narrowed, dropped, probed, explicitly rejected with evidence, or converted into a user decision
 - no reviewer output is pending if it is needed for the stop condition
 - verification commands or doc/routing checks cover the actual requirement
 - approval gates are explicit
@@ -150,7 +169,9 @@ Default max rounds:
 
 Continue beyond the default only when each round is closing material findings. Do not churn on style-only P2s.
 
-### 7. Stop Correctly
+Do not run a third clean review wave without changed evidence, a new artifact version, or an unresolved high-stakes decision.
+
+### 8. Stop Correctly
 
 Stop state must be one of:
 
@@ -159,10 +180,12 @@ Stop state must be one of:
 - `implemented and verified`: code/config/docs changed and verification passed
 - `hold`: blocking issue remains with concrete reason
 - `needs user decision`: the next fork changes research meaning, compatibility, cost, or irreversible behavior
+- `probe required`: implementation/revision should wait for a concrete discriminating check
+- `narrowed/dropped`: review changed the claim, scope, mechanism, or launch path rather than producing a patch
 
 Never imply production readiness from skipped hardware smoke, timed-out review, partial tests, or narrow evidence.
 
-For each loop, record the artifact/version reviewed, review lanes used, accepted/rejected findings, revision made or reason skipped, and the next gate or convergence decision.
+For each loop, record the artifact/version reviewed, review lanes used, accepted/rejected findings, decision implication for every P0/P1, revision made or reason skipped, and the next gate or convergence decision.
 
 ## Verification
 
@@ -172,12 +195,12 @@ For docs/spec/plan loops:
 python - <<'PY'
 import yaml
 from pathlib import Path
-for path in ["docs/catalog.yaml", "progress/index.yaml"]:
+for path in ["docs/catalog.yaml"]:
     if Path(path).exists():
         yaml.safe_load(Path(path).read_text())
         print(f"{path}: ok")
 PY
-rg -n "approval gate|not production eligible|OpenSpec|TODO|TBD|\\.\\.\\." docs progress openspec
+rg -n "approval gate|not production eligible|OpenSpec|TODO|TBD|\\.\\.\\." docs research openspec
 git diff --check
 ```
 
@@ -217,10 +240,11 @@ For implementation loops, run the targeted tests named in the plan, docs, OpenSp
 Report:
 
 - mode and mutation scope
+- decision at stake and stop condition
 - artifact/work produced
 - review lanes launched
-- accepted findings and revisions
+- accepted findings, decision implications, and revisions/probes/scope changes
 - rejected findings with reason
 - verification run
 - remaining gates
-- exact next state: `ready for user approval`, `hold`, `needs user decision`, or `implemented and verified`
+- exact next state: `ready for user approval`, `hold`, `needs user decision`, `probe required`, `narrowed/dropped`, or `implemented and verified`

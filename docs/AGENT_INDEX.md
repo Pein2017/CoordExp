@@ -20,7 +20,8 @@ Primary machine entrypoint:
 Human support entrypoints:
 
 - [docs/README.md](README.md)
-- [progress/README.md](../progress/README.md)
+- [research/index.md](../research/index.md)
+- [progress/README.md](../progress/README.md) for legacy/deprecated evidence only
 - [docs/history/README.md](history/README.md) for non-normative implementation-plan and design provenance
 
 ## Default Read Order
@@ -32,7 +33,8 @@ Human support entrypoints:
 5. relevant `openspec/specs/` only for stable contract semantics
    - use [`runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md) for runtime structure, internal seams, and compatibility-preserving refactors
    - use [`stage2-rollout-correction/spec.md`](../openspec/specs/stage2-rollout-correction/spec.md) for active Stage-2 behavior and config contracts
-6. `progress/` only when current docs do not answer the historical or empirical question
+6. `research/` for active research interpretation and continuation context
+7. `progress/` only when explicitly reconstructing legacy evidence not yet migrated into `research/`
 
 ## Query Routing
 
@@ -89,16 +91,22 @@ Human support entrypoints:
 - Standards and repo policy:
   - [docs/standards/README.md](standards/README.md)
 
-## Progress Usage Rule
+## Progress Legacy Rule
 
-Use `progress/` only for:
+`progress/` is a deprecated legacy archive. Do not create new notes there and do
+not treat it as a destination for probes, audits, benchmark summaries, or
+implementation roadmaps.
+
+Read `progress/` only for:
 
 - why a design exists
 - what failed empirically
 - benchmark evidence
 - historical derivations
 
-Do not answer current-behavior questions from `progress/` if `docs/` or `openspec/specs/` already cover them.
+When a legacy note is useful, migrate or synthesize the decision-useful material
+into `research/`, `docs/`, or OpenSpec according to authority. Do not answer
+current-behavior questions from `progress/`.
 
 ## Historical Docs Usage Rule
 
@@ -116,8 +124,8 @@ Do not answer current-behavior questions from `docs/history/` unless a current d
 Use [research/](../research/) for the OKF-style idea, investigation, and
 mechanism pilot.
 
-During the pilot, `progress/` remains the historical/evidence source of truth
-and `research/` is the synthesized reading path.
+`research/` is the active synthesized reading path for new research knowledge.
+`progress/` is legacy intake/provenance only.
 
 - Current synthesized investigations:
   - [`autoregressive-binding-template-study`](../research/investigations/autoregressive-binding-template-study/) absorbs the June 10-12 deleted diagnostics bundle and the June 20-27 branch-local Codex experiment records into a compact OKF research path.

@@ -324,7 +324,8 @@ This workflow page keeps only the contract boundary:
 - run inference on the offline 1024-budget test-dev JSONL
 - score canonical `xyxy` outputs through confidence post-op, or follow the constant-score compatibility rule for non-canonical bbox surfaces
 - export predictions back to original COCO test-dev resolution before upload
-- record official server scores in `progress/benchmarks/` with exact checkpoint, config, artifact root, and score surface
+- record official server scores in `research/` with exact checkpoint, config,
+  artifact root, and score surface
 
 Do not duplicate the official command sequence here; keep download, resize, inference, scoring, export, and upload details in [COCO_TEST_SUBMISSION.md](COCO_TEST_SUBMISSION.md).\n
 ## Validation Checklist

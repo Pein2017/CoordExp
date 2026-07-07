@@ -1,8 +1,13 @@
 # Research OKF Migration Implementation Plan
 
+> Superseded routing note (2026-07-06): `research/` is now the active surface
+> for new research knowledge. `progress/` is a deprecated legacy archive and
+> must not receive new records. Keep this file as provenance for the June 2026
+> migration pilot, not as current implementation guidance.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Create a side-by-side OKF-style `research/` pilot for `prefix-denoising-sft` while preserving `progress/`, raw worktree intake, and CoordExp docs/OpenSpec authority boundaries.
+**Goal:** Create a side-by-side OKF-style `research/` pilot for `prefix-denoising-sft` while treating `progress/` as legacy provenance, preserving raw worktree intake, and preserving CoordExp docs/OpenSpec authority boundaries.
 
 **Architecture:** Build the new `research/` tree as a synthesized reading path, not a file-move mirror of old `progress/` folders. Keep `index.md` files as routers, put typed content in named Markdown files, and link every synthesized claim back to progress, history, configs, artifacts, commits, or worktree handles.
 
@@ -644,13 +649,13 @@ handle for the `ed610b284219` dirty/untracked source row.
 
 - [ ] **Step 1: Update `docs/AGENT_INDEX.md`**
 
-Add `research/` as an experimental side-by-side research knowledge entrypoint.
-Preserve the current `progress/` usage rule until the full migration lands.
+Add `research/` as the active research knowledge entrypoint. Replace the old
+pilot-era `progress/` usage rule with the current legacy-progress rule.
 Update the file frontmatter `updated` date to the implementation date.
 Insert a new `## Research Knowledge Pilot` subsection after the existing
 `## Historical Docs Usage Rule` section and before `## Suggested Search Seeds`.
-Preserve the existing `## Progress Usage Rule` and `## Historical Docs Usage
-Rule` text.
+Preserve the `## Historical Docs Usage Rule` text and update the progress
+section to state that `progress/` is deprecated legacy provenance only.
 
 Required routing text:
 
@@ -660,8 +665,8 @@ Required routing text:
 Use [research/](../research/) for the OKF-style idea, investigation, and
 mechanism pilot.
 
-During the pilot, `progress/` remains the historical/evidence source of truth
-and `research/` is the synthesized reading path.
+`research/` is the active synthesized reading path for new research knowledge.
+`progress/` is legacy intake/provenance only and must not receive new records.
 
 Do not answer current coding, architecture, infrastructure, operator, schema,
 artifact, metric, or training/eval behavior from `research/` when `docs/` or
@@ -813,9 +818,9 @@ assert catalog["entrypoints"]["agent"]["progress"] == "progress/index.yaml"
 assert catalog["entrypoints"]["agent"]["research"] == "research/index.md"
 assert catalog["authority"]["current_truth"] == "docs/"
 assert catalog["authority"]["stable_contracts"] == "openspec/specs/"
-assert catalog["authority"]["historical_evidence"] == "progress/"
-assert catalog["authority"]["research_knowledge_pilot"] == "research/"
-assert "not_current_behavior_authority" in catalog["authority"]["research_knowledge_pilot_status"]
+assert catalog["authority"]["legacy_evidence_archive"] == "progress/"
+assert catalog["authority"]["active_research_knowledge"] == "research/"
+assert catalog["authority"]["legacy_evidence_archive_status"] == "deprecated_read_only_migrate_to_research"
 
 target = "progress/explorations/2026-06-20_docs_progress_okf_upgrade_alignment.md"
 group_count = progress["groups"]["explorations"].count(target)

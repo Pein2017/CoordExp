@@ -1,6 +1,6 @@
 ---
 name: coordexp-research-knowledge-workflow
-description: Use when CoordExp research knowledge must be collected, preserved, migrated, or synthesized across worktrees, progress notes, research notes, diagnostics, supervisor packets, or OKF-style research hubs without confusing historical evidence with current docs/spec authority.
+description: Use when CoordExp research knowledge must be collected, preserved, migrated, or synthesized across worktrees, legacy progress notes, research notes, diagnostics, supervisor packets, or OKF-style research hubs without confusing historical evidence with current docs/spec authority.
 ---
 
 # CoordExp Research Knowledge Workflow
@@ -12,7 +12,7 @@ Use this when the work product is durable research knowledge, not current-behavi
 Use for:
 
 - cross-worktree Markdown union collection;
-- migrating or reorganizing `progress/` evidence into `research/`;
+- migrating or reorganizing legacy `progress/` evidence into `research/`;
 - OKF-style research hubs, idea/investigation/mechanism notes, and continuation context;
 - compressing many diagnostic notes into supervisor-facing packets;
 - preserving provenance before cleanup, merge, or archive decisions.
@@ -32,10 +32,13 @@ Use the `research_synthesizer` custom agent for large note clustering, cross-wor
 - `docs/` explains current behavior and operator guidance.
 - `openspec/specs/` owns stable compatibility-sensitive contracts.
 - `research/` is for ideas, mechanisms, investigations, interpretation, negative results, and continuation context.
-- `progress/` is legacy evidence, diagnostics, benchmark history, and provenance.
+- `progress/` is deprecated legacy evidence, diagnostics, benchmark history, and
+  provenance. Do not create new `progress/` records.
 - `docs/history/` may preserve raw intake snapshots, but those snapshots are non-normative.
 
-When sources disagree, treat `research/` and `progress/` as evidence to explain or motivate; do not promote them to current-behavior authority without an explicit docs/spec update.
+When sources disagree, treat `research/` as active interpretation and
+`progress/` as legacy provenance; do not promote either to current-behavior
+authority without an explicit docs/spec update.
 
 ## Workflow
 
@@ -43,7 +46,7 @@ When sources disagree, treat `research/` and `progress/` as evidence to explain 
 2. **Inspect worktree state.** Use `git worktree list --porcelain` and focused status checks. Dirty worktrees are expected; ignore non-Markdown dirt unless it affects the requested evidence.
 3. **Preserve raw provenance first.** For union collection, classify by content hash plus path, then snapshot new or divergent Markdown under a dated `docs/history/worktree-union/<date>/` bundle with a manifest.
 4. **Separate phases.** Keep raw intake, migration design, synthesized research hubs, and supervisor packets in distinct files or commits.
-5. **Synthesize intentionally.** Build reading paths under `research/` rather than mirrors of raw `progress/` files. Prefer `index.md`, `overview.md`, `draft.md`, `discussion.md`, `implementation.md`, `experiments/`, and `archive/` when they fit.
+5. **Synthesize intentionally.** Build reading paths under `research/` rather than mirrors of raw legacy `progress/` files. Prefer `index.md`, `overview.md`, `draft.md`, `discussion.md`, `implementation.md`, `experiments/`, and `archive/` when they fit.
 6. **Route discoveries.** Promote only stable current behavior into `docs/`; use OpenSpec only for stable compatibility-sensitive contracts.
 7. **Verify the boundary.** Check source counts, manifest rows, tracked file set, local links, YAML/frontmatter where used, and ignored-file behavior before reporting.
 
@@ -138,7 +141,8 @@ For supervisor packets, also check headings, placeholder tokens, trailing whites
 Report:
 
 - source boundary and evidence date window;
-- created or updated research/progress/history files;
+- created or updated research/history files, plus any legacy `progress/` sources
+  migrated or intentionally left untouched;
 - what stayed raw provenance versus synthesized interpretation;
 - authority caveats and current-behavior docs/specs touched or intentionally untouched;
 - verification commands and scope;

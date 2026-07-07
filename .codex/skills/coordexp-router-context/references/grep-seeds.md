@@ -16,12 +16,12 @@ rg -n "contract|jsonl|geometry|packing" docs/data src/datasets src/detection tes
 ```bash
 rg -n "infer|backend|artifacts|orchestration|confidence|metrics|Oracle-K|proxy_eval_bundle" docs/eval docs/training src scripts tests
 rg -n "duplicate_control|metrics_guarded|per_image_guarded|duplicate_guard_report|gt_vs_pred_scored_guarded|run_metadata|pipeline_manifest" docs openspec tests src
-rg -n "raw-text|coord-token|norm1000|pred_coord_mode|bbox_format|confidence_postop|constant-score|cxcy_logw_logh|cxcywh" docs progress src configs tests
+rg -n "raw-text|coord-token|norm1000|pred_coord_mode|bbox_format|confidence_postop|constant-score|cxcy_logw_logh|cxcywh" docs research src configs tests
 ```
 
-## Evidence / History
+## Legacy Evidence / History
 
 ```bash
-rg -n "val200|limit=200|first 200|full-val|full val|throughput|GPU|launch shape|kept / total" progress/benchmarks progress/diagnostics
-rg -n "full_idea|near_dup|symptom|diagnosis|audit|canonical|supersedes|artifact" progress
+rg -n "val200|limit=200|first 200|full-val|full val|throughput|GPU|launch shape|kept / total" research progress/benchmarks progress/diagnostics
+rg -n "full_idea|near_dup|symptom|diagnosis|audit|canonical|supersedes|artifact" research progress
 ```

@@ -91,7 +91,7 @@ status_taxonomy:
     rule: New callers need owner review; removal requires a documented condition.
   historical-evidence:
     meaning: Evidence or rerun material preserved for research provenance.
-    rule: Keep discoverable through docs/progress, but do not present as current guidance.
+    rule: Keep discoverable through research/docs/history; old progress links are legacy provenance only and must not present as current guidance.
   retired:
     meaning: No new use; remaining references are docs/history/archive/rejection tests.
     rule: Active invocation should fail fast with guidance.

@@ -2,7 +2,7 @@
 doc_id: progress.benchmarks.index
 layer: progress
 doc_type: router
-status: canonical
+status: legacy-router
 domain: research-history
 summary: Router for measured run comparisons, checkpoint selection notes, and evaluation sweeps.
 tags: [progress, benchmarks, evaluation]
@@ -11,7 +11,8 @@ updated: 2026-05-07
 
 # Benchmarks Index
 
-Use this folder when the primary output is a measured comparison, selection decision, or scoreboard-style report.
+Use this legacy folder only to reconstruct old measured comparisons, selection
+decisions, or scoreboard-style reports.
 
 Typical fits:
 
@@ -20,12 +21,13 @@ Typical fits:
 - training-dynamics comparisons used to explain outcome differences
 - official benchmark results after a run is complete
 
-Prefer `progress/diagnostics/` when the main question is root cause or failure analysis.
+Prefer `research/` for new measured comparisons, root-cause analyses, and
+benchmark interpretation.
 
-Family-specific score audits can stay in `progress/diagnostics/` when the main
-point is failure-mode interpretation rather than a final run-vs-run benchmark.
+Family-specific score audits should be authored in `research/`; old
+`progress/diagnostics/` entries remain legacy provenance only.
 
-## Current Clusters
+## Legacy Clusters
 
 - Stage-1 detection result reports
   - [stage1_2b_val200_leaderboard.md](stage1_2b_val200_leaderboard.md)
@@ -45,5 +47,7 @@ point is failure-mode interpretation rather than a final run-vs-run benchmark.
 
 ## COCO Official Results
 
-When an official COCO test-dev submission returns a server score, record the measured result here and use
-[docs/eval/COCO_TEST_SUBMISSION.md](../../docs/eval/COCO_TEST_SUBMISSION.md) as the workflow reference.
+When an official COCO test-dev submission returns a server score, record the new
+interpretation under `research/` and use
+[docs/eval/COCO_TEST_SUBMISSION.md](../../docs/eval/COCO_TEST_SUBMISSION.md) as
+the workflow reference. Do not create new `progress/` benchmark notes.

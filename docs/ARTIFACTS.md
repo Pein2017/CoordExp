@@ -476,7 +476,7 @@ artifact, run config, and rollout/eval window.
 | `raw_rollouts.jsonl` | Stage-2 eval artifact materialization under `eval_detection/step_<global_step>/` | Keep per-sample rollout text, token IDs, parse diagnostics, match diagnostics, score metadata, and pre/post score prediction views. |
 | `pred_token_trace.jsonl` | Inference and traced Stage-2 eval generation paths | Keep line-aligned token text/logprob traces whenever trace metadata is available; downstream confidence and rollout inspection depend on this name. |
 | guarded eval/post-op artifacts (`gt_vs_pred_guarded.jsonl`, `gt_vs_pred_scored_guarded.jsonl`, `metrics_guarded.json`, `per_image_guarded.json`) | `src/eval/detection_duplicate_guard.py`, `src/eval/artifacts.py`, and confidence/eval orchestration | Keep guarded artifacts additive to the raw/scored families; do not replace authoritative raw artifacts with guarded-only outputs. |
-| duplicate/EOS diagnostic probes | `src/analysis/duplication_collapse_analysis.py`, `src/analysis/small_object_duplication_diagnostics.py`, prefix-rollin / raw-text coordinate analysis probes, and related progress notes | Keep probe outputs as structured analysis artifacts with explicit source artifact roots, checkpoint/config handles, token-trace links, duplicate counters, and EOS/continue evidence. |
+| duplicate/EOS diagnostic probes | `src/analysis/duplication_collapse_analysis.py`, `src/analysis/small_object_duplication_diagnostics.py`, prefix-rollin / raw-text coordinate analysis probes, related `research/` notes, and legacy progress notes | Keep probe outputs as structured analysis artifacts with explicit source artifact roots, checkpoint/config handles, token-trace links, duplicate counters, and EOS/continue evidence. |
 
 Notes:
 

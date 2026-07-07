@@ -27,7 +27,8 @@ Use project agents as role boundaries, not as tool identities:
 - `upstream_relation_tracer`: read-only cross-root or upstream-library dependency tracing.
 - `contract_auditor`: read-only severity-ranked contract, reproducibility, artifact, metric, docs/spec, or launch-gate audit.
 - `model_diagnostician`: read-only artifact-first diagnosis of abnormal model behavior.
-- `research_synthesizer`: research/progress note synthesis, supervisor packets, and OKF-style research hubs.
+- `research_synthesizer`: research synthesis, legacy progress migration,
+  supervisor packets, and OKF-style research hubs.
 - `implementation_worker`: bounded code/config/docs patch when the parent supplies owned files/modules and verification target.
 
 Do not create MCP-specific agents such as "Serena agent" or "CodeGraph agent"; choose the role first and let this router pick CodeGraph, Serena, RTK, or shell by phase.
@@ -42,9 +43,12 @@ Use current repo truth in this order:
 4. relevant domain docs under `docs/`
 5. `openspec/specs/` only for stable compatibility-sensitive contracts
 6. `openspec/changes/<active-change>/` only when explicitly in scope
-7. `progress/` only for history, diagnostics, benchmark evidence, or design derivation
+7. `research/` for active research interpretation and continuation context
+8. `progress/` only for deprecated legacy provenance when explicitly needed
 
-Start with `docs/AGENT_INDEX.md` and `docs/catalog.yaml` before broad source search. When docs and progress disagree, answer current behavior from `docs/` and use `progress/` only to explain how the project got there.
+Start with `docs/AGENT_INDEX.md` and `docs/catalog.yaml` before broad source
+search. When docs and progress disagree, answer current behavior from `docs/`
+and use `progress/` only to reconstruct legacy provenance before migration.
 
 ## Current Route Loop
 
@@ -74,7 +78,7 @@ For current-vs-historical reads, produce:
 - question;
 - current contract and authoritative docs/specs;
 - current code/config/artifact handles;
-- historical evidence with scope labels;
+- research interpretation and legacy evidence with scope labels;
 - mechanism read, explicitly labeled as inference;
 - counterevidence, stale handles, repaired runs, missing baselines, or artifact-validity caveats;
 - decision: `enough`, `one more probe`, `do not interpret yet`, `archive or pause`, or `hand off`;
@@ -109,7 +113,7 @@ Search `.codex/memories/MEMORY.md` only when prior session context is relevant. 
 - Prefer CodeGraph as the single-MCP default for broad read-only maps. Prefer Serena as the single-MCP fallback for exact Python edits or reference-sensitive changes. Use raw shell/source reads for exact cross-root or installed-package verification when CodeGraph is unavailable or insufficient.
 - Use `rtk` when output is noisy and a compact summary is enough: broad search, docs reads, git summaries, tests, logs, and file discovery.
 - Use raw shell for exact stdout, machine-readable JSON/YAML, narrow `sed` reads, delicate quoting, or tiny commands.
-- Use `rg`/raw parsers over CodeGraph/Serena for exact literal search in configs, docs, OpenSpec, progress notes, JSONL, logs, metrics, and artifact manifests.
+- Use `rg`/raw parsers over CodeGraph/Serena for exact literal search in configs, docs, OpenSpec, research notes, legacy progress notes, JSONL, logs, metrics, and artifact manifests.
 - Do not run Serena repo-wide pattern scans with `relative_path` unset or `"."`.
 
 ## MCP Anti-Patterns

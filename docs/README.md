@@ -39,7 +39,7 @@ For AI-agent-first routing, use [AGENT_INDEX.md](AGENT_INDEX.md).
 
 - [ARTIFACTS.md](ARTIFACTS.md): runtime artifacts, provenance, and logging surfaces
 - [AGENT_INDEX.md](AGENT_INDEX.md): fast-path retrieval guide for coding assistants
-- [catalog.yaml](catalog.yaml): curated machine-readable catalog for `docs/` and important `progress/` routes
+- [catalog.yaml](catalog.yaml): curated machine-readable catalog for `docs/` and legacy `progress/` provenance routes
 - [`runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md): stable runtime-structure and compatibility contract
 
 ## Supplemental And Historical Docs
@@ -47,10 +47,10 @@ For AI-agent-first routing, use [AGENT_INDEX.md](AGENT_INDEX.md).
 - [docs/history/README.md](history/README.md): non-normative implementation plans, design specs, handoffs, and historical training notes
 - [docs/supplemental/patent/draft.md](supplemental/patent/draft.md): supplemental patent draft
 
-## Research History
+## Legacy Research History
 
-- [progress/README.md](../progress/README.md): human router for historical notes
-- [progress/index.yaml](../progress/index.yaml): machine-readable progress catalog
+- [progress/README.md](../progress/README.md): deprecated legacy router for old historical notes only
+- [progress/index.yaml](../progress/index.yaml): deprecated legacy progress catalog
 
 ## Read Order Rule
 
@@ -62,4 +62,6 @@ Read current behavior in this order:
 4. the relevant domain router under `docs/`
 5. `openspec/specs/` only for stable compatibility-sensitive contract semantics
 6. `openspec/changes/<active-change>/` only when explicitly in scope
-7. `progress/` for historical evidence, diagnostics, and benchmark context
+7. `research/` for active research interpretation and continuation context
+8. `progress/` only when explicitly reconstructing legacy evidence that has not
+   yet been migrated into `research/`

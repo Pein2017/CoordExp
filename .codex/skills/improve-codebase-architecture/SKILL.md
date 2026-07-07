@@ -45,7 +45,8 @@ provenance, and evidence scope matter as much as code shape.
 
 Start from the repo route before broad source search:
 `docs/AGENT_INDEX.md`, `docs/catalog.yaml`, then relevant docs, stable specs,
-configs, tests, artifacts, and `progress/` notes.
+configs, tests, artifacts, `research/` notes, and legacy `progress/`
+provenance when explicitly relevant.
 
 Use CodeGraph when a correct local index exists to map modules, call chains,
 grouped source context, and impact radius before token-heavy file reads. In
@@ -97,7 +98,8 @@ Side effects happen inline as decisions crystallize:
 
 - **Stable behavior or workflow changes?** Update the routed `docs/` page.
 - **Compatibility-sensitive contract changes?** Use OpenSpec, only when the contract is genuinely stable and normative.
-- **Empirical or historical reasons?** Record them in `progress/`.
+- **Empirical or historical reasons?** Record new interpretation in `research/`;
+  read `progress/` only as legacy provenance.
 - **Implementation checklists or handoff notes?** Keep them in the active super-power plan/spec when available.
 - **User rejects the candidate with a load-bearing reason?** Record it in the right durable surface using `$grill-me record=local` guidance so future architecture reviews do not re-suggest it.
 - **Want to explore alternative interfaces for the deepened module?** See [INTERFACE-DESIGN.md](INTERFACE-DESIGN.md).

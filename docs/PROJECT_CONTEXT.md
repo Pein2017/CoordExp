@@ -26,9 +26,13 @@ ordinary implementation work.
 Use `openspec/changes/<active-change>/` only when an active change is explicitly
 in scope.
 
-Use `progress/` for dated evidence, diagnostics, benchmark reports, empirical
-failures, design derivations, and historical reasoning. Do not answer current
-behavior from `progress/` when `docs/` or a stable spec covers the contract.
+Use `research/` for active research ideas, investigations, interpretations,
+negative results, and continuation context.
+
+Use `progress/` only as a legacy/deprecated archive for old dated evidence,
+diagnostics, benchmark reports, empirical failures, design derivations, and
+historical reasoning that has not yet been migrated. Do not create new
+`progress/` records, and do not answer current behavior from `progress/`.
 
 ## Layer Responsibilities
 
@@ -40,11 +44,15 @@ behavior from `progress/` when `docs/` or a stable spec covers the contract.
   - use for exact semantics of supported training/eval/config/artifact surfaces
 - `openspec/changes/`
   - active deltas and implementation intent only when explicitly in scope
+- `research/`
+  - active research ideas, investigations, interpretations, negative results,
+    and continuation context
 - `progress/`
-  - historical notes, experiments, audits, diagnostics, and benchmark evidence
-  - evidence-first, dated, non-normative
+  - legacy/deprecated archive of old historical notes, experiments, audits,
+    diagnostics, and benchmark evidence
+  - read-only for reconstruction unless the user explicitly asks for migration
 - `docs/catalog.yaml`
-  - machine-readable curated inventory for `docs/` and important `progress/` routes
+  - machine-readable curated inventory for `docs/` and legacy `progress/` routes
 - `docs/AGENT_INDEX.md`
   - fast-path retrieval instructions for AI agents
 
@@ -59,13 +67,18 @@ For most work:
 5. the relevant domain router under `docs/`
 6. relevant `openspec/specs/` only for stable contract semantics
 7. `openspec/changes/<active-change>/` only when explicitly in scope
-8. `progress/` only for design history, empirical evidence, diagnostics, or benchmarks
+8. `research/` for active research interpretation and continuation context
+9. `progress/` only for explicit legacy evidence reconstruction before
+   migration into `research/`
 
 ## Authoring Rules
 
 - Do not duplicate stable contracts across multiple router pages.
 - Put stable workflows in `docs/`.
-- Put dated evidence, investigations, and audits in `progress/`.
+- Put dated evidence, investigations, negative results, audits, and research
+  continuation records in `research/`.
+- Do not add new notes under `progress/`; migrate or synthesize old material
+  into `research/` instead.
 - Remove obsolete paths instead of preserving compatibility stubs.
 - Prefer one canonical page per question:
   - data contract -> `docs/data/CONTRACT.md`
@@ -79,13 +92,17 @@ For most work:
 
 ## Promotion Rule
 
-Promote a note from `progress/` into `docs/` when all of the following are true:
+Promote or migrate a legacy `progress/` note when all of the following are true:
 
 - it is no longer tied to one dated run or diagnosis
 - it defines the current recommended workflow
 - people would reasonably expect it to be the first page they open
 
-Keep a topic in `progress/` when it is primarily:
+Move it to `docs/` only when it defines stable current behavior. Otherwise
+synthesize it into `research/` and leave `progress/` as legacy provenance.
+
+Leave a topic only in legacy `progress/` when it is old material that has not yet
+been migrated and is primarily:
 
 - an experiment log
 - a benchmark report

@@ -18,9 +18,9 @@ authority:
   non_normative_doc_history: docs/history/
   stable_contracts: openspec/specs/
   active_deltas: openspec/changes/<active-change>/
-  historical_evidence: progress/
-  research_knowledge_pilot: research/
-  research_knowledge_pilot_status: pilot_synthesized_reading_path_not_current_behavior_authority
+  active_research_knowledge: research/
+  legacy_evidence_archive: progress/
+  legacy_evidence_archive_status: deprecated_read_only_migrate_to_research
   research_raw_intake: docs/history/research-intake/
 
 config_surfaces:
@@ -248,7 +248,7 @@ docs:
     - path: docs/history/training/STAGE2_DESIGN.md
       title: Stage-2 Design History
       type: historical-note
-      status: historical
+      status: legacy-direction
   supplemental:
     - path: docs/supplemental/patent/draft.md
       title: Patent Draft
@@ -260,326 +260,326 @@ progress:
     - path: progress/README.md
       title: Progress Index
       type: router
-      status: canonical
+      status: legacy-router
   directions:
     - path: progress/directions/README.md
       title: Directions Index
       type: router
-      status: canonical
+      status: legacy-router
     - path: progress/directions/full_idea_v5.md
       title: Full Idea v5
       type: direction
-      status: active-reference
+      status: legacy-reference
     - path: progress/directions/2026-06-07_segment_aware_packing_infra.md
       title: Segment-Aware Packing Infrastructure
       type: direction
-      status: draft-reference
+      status: legacy-draft
     - path: progress/directions/2026-06-05_row_conditioned_visual_coverage.md
       title: Row-Conditioned Visual Coverage
       type: direction
-      status: historical-reference
+      status: legacy-reference
     - path: progress/directions/prefix_denoising_sft_v1.md
       title: Prefix-Denoising SFT V1
       type: direction
-      status: branch-provenance
+      status: legacy-branch-provenance
     - path: progress/directions/full_idea_v4.md
       title: Full Idea v4
       type: direction
-      status: superseded
+      status: legacy-superseded
     - path: progress/directions/full_idea_v3.md
       title: Full Idea v3
       type: direction
-      status: historical-reference
+      status: legacy-reference
     - path: progress/directions/stage2_clean_prefix_v2.md
       title: Full Idea v2
       type: direction
-      status: historical-reference
+      status: legacy-reference
     - path: progress/directions/stage2_emish_set_supervision_v1.md
       title: CoordExp + EM-ish Set-Supervision for V-LLM Detection (Qwen3-VL, norm1000)
       type: historical-direction
-      status: historical
+      status: legacy-direction
   diagnostics:
     - path: progress/diagnostics/README.md
       title: Diagnostics Index
       type: router
-      status: canonical
+      status: legacy-router
     - path: progress/diagnostics/artifacts/README.md
       title: Diagnostics Artifact Copies
       type: router
-      status: canonical
+      status: legacy-router
     - path: progress/diagnostics/2026-06-12_autoregressive_duplication_causal_chain_synthesis.md
       title: Autoregressive Duplication Causal Chain Synthesis
       type: diagnostic-synthesis
-      status: canonical
+      status: legacy-router
     - path: progress/diagnostics/2026-06-12_fn_guidance_and_coord_basin_synthesis.md
       title: False-Negative Guidance And Coordinate-Basin Synthesis
       type: diagnostic-synthesis
-      status: canonical
+      status: legacy-router
     - path: progress/diagnostics/2026-06-12_pre_onset_duplication_precursor_synthesis.md
       title: Pre-Onset Duplication Precursor Synthesis
       type: diagnostic-synthesis
-      status: canonical
+      status: legacy-router
     - path: progress/diagnostics/2026-06-12_diagnostics_consolidation_summary.md
       title: June 10-12 Diagnostics Consolidation Summary
       type: consolidation-summary
-      status: canonical
+      status: legacy-router
     - path: progress/diagnostics/2026-06-15_prefix_denoising_branch_isolation_repair.md
       title: Prefix-Denoising Branch-Isolation Repair
       type: launch-health
-      status: branch-provenance
+      status: legacy-branch-provenance
     - path: progress/diagnostics/2026-06-14_prefix_denoising_launch_health.md
       title: Prefix-Denoising SFT V1 Launch-Health Smoke
       type: launch-health
-      status: superseded-branch-evidence
+      status: legacy-superseded-branch-evidence
     - path: progress/diagnostics/2026-04-21_raw_text_coordinate_mechanism_findings.md
       title: Raw-Text Coordinate Mechanism Findings
       type: mechanism-summary
-      status: active-reference
+      status: legacy-reference
     - path: progress/diagnostics/2026-04-22_raw_text_decode_bias_mechanism_findings.md
       title: Raw-Text Decode-Bias Mechanism Findings
       type: diagnostic-study
-      status: active-reference
+      status: legacy-reference
     - path: progress/diagnostics/2026-04-20_coord_family_basin_and_recall_comparison.md
       title: Coordinate Family Basin and Recall Comparison
       type: diagnostic-study
-      status: active-reference
+      status: legacy-reference
     - path: progress/diagnostics/2026-04-20_raw_text_and_coord_family_decision_summary.md
       title: Raw-Text and Coord-Family Decision Summary
       type: decision-summary
-      status: supporting-reference
+      status: legacy-supporting-reference
     - path: progress/diagnostics/2026-04-20_raw_text_coord_continuity_probe.md
       title: Raw-Text Coordinate Continuity Probe
       type: diagnostic-study
-      status: supporting-reference
+      status: legacy-supporting-reference
     - path: progress/diagnostics/2026-04-22_stage2_birth_first_channel_b_decision_study.md
       title: Stage-2 Birth-First Channel-B Decision Study
       type: diagnostic-study
-      status: decision-evidence
+      status: legacy-decision-evidence
     - path: progress/diagnostics/2026-05-14_a5_a6_iou_gibbs_softce_negative_result.md
       title: A5/A6 IoU-Gibbs Coordinate SoftCE Negative Result
       type: diagnostic-study
-      status: concluded-negative
+      status: legacy-concluded-negative
     - path: progress/diagnostics/2026-06-03_candidate_field_cardinality_representative8192_analysis.md
       title: Candidate Field Cardinality Representative8192 Analysis
       type: diagnostic-study
-      status: active-diagnostic
+      status: legacy-diagnostic
     - path: progress/diagnostics/2026-06-04_prefix_state_transition_phase_a3_1_analysis.md
       title: Prefix-State Transition Tomography Phase A3.1 Analysis
       type: diagnostic-study
-      status: completed-diagnostic
+      status: legacy-diagnostic
     - path: progress/diagnostics/2026-06-04_a3_2_sorted_random_no_newline_smoke_findings.md
       title: A3.2 Sorted-Random No-Newline Smoke Findings
       type: diagnostic-evidence
-      status: diagnostic-evidence
+      status: legacy-diagnostic-evidence
     - path: progress/diagnostics/2026-06-05_a3_3_post_x1_instance_basin_real_tiny_smoke.md
       title: A3.3 Post-X1 Instance-Basin Tomography Real-Tiny Smoke
       type: diagnostic-evidence
-      status: diagnostic-evidence
+      status: legacy-diagnostic-evidence
     - path: progress/diagnostics/2026-04-11_stage1_coord_basin_duplication_mechanism.md
       title: Stage-1 Coordinate-Basin Duplication Mechanism
       type: mechanism-summary
-      status: mechanism-evidence
+      status: legacy-mechanism-evidence
     - path: progress/diagnostics/2026-04-13_duplication_collapse_final_analysis.md
       title: Duplication Collapse Final Analysis
       type: diagnostic-study
-      status: mechanism-evidence
+      status: legacy-mechanism-evidence
     - path: progress/diagnostics/2026-04-15_cxcy_logw_logh_retrained_performance_analysis.md
       title: cxcy_logw_logh Retrained Performance Analysis
       type: diagnostic-study
-      status: active-reference
+      status: legacy-reference
     - path: progress/diagnostics/2026-04-17_cxcywh_quickcheck_val200.md
       title: cxcywh Quick Check on COCO val200
       type: diagnostic-study
-      status: active-reference
+      status: legacy-reference
     - path: progress/diagnostics/2026-03-17_stage2_2b_fn_factor_results.md
       title: 2B Rollout FN-Factor Results After Hard-16 Prefix Repair
       type: diagnosis
-      status: completed-diagnostic
+      status: legacy-diagnostic
     - path: progress/diagnostics/2026-03-17_stage2_2b_fn_factor_artifact_guide.md
       title: 2B FN-Factor Artifact Guide
       type: operator-note
-      status: supporting-reference
+      status: legacy-supporting-reference
     - path: progress/diagnostics/2026-03-16_stage2_2b_stage1_vs_aonly_prefix_fn_hypotheses_plan.md
       title: 2B Stage-1 vs A-Only Prefix/FN Hypotheses Plan
       type: diagnosis-plan
-      status: supporting-reference
+      status: legacy-supporting-reference
     - path: progress/diagnostics/2026-03-17_stage2_2b_prefix_random_order_followup.md
       title: 2B Prefix-Control Repair and Random-Order Stage-1 Follow-Up
       type: follow-up-note
-      status: supporting-reference
+      status: legacy-supporting-reference
     - path: progress/diagnostics/2026-03-26_stage2_small_object_duplication_offline_synthesis.md
       title: Stage-2 Small-Object Duplication Offline Diagnostics Synthesis
       type: diagnostic-study
-      status: mechanism-evidence
+      status: legacy-mechanism-evidence
     - path: progress/diagnostics/2026-03-25_stage2_small_object_duplication_offline_protocol.md
       title: Stage-2 Small-Object Duplication Offline Protocol
       type: supporting-note
-      status: supporting-reference
+      status: legacy-supporting-reference
     - path: progress/diagnostics/2026-03-26_stage2_small_object_duplication_offline_harness_findings.md
       title: Stage-2 Small-Object Duplication Offline Harness Findings (Checkpoint 300, Fixed-Checkpoint Study)
       type: diagnostic-study
-      status: supporting-reference
+      status: legacy-supporting-reference
     - path: progress/diagnostics/2026-03-26_stage2_small_object_duplication_crowded_deep_dive.md
       title: Stage-2 Small-Object Duplication Crowded Deep-Dive
       type: diagnostic-study
-      status: supporting-reference
+      status: legacy-supporting-reference
     - path: progress/diagnostics/2026-03-05_stage2_near_duplication.md
       title: 'Stage-2 AB Near-Duplication: Diagnosis + EM/MLE-Aligned Directions (2026-03-05)'
       type: diagnosis
-      status: active-diagnostic
+      status: legacy-diagnostic
     - path: progress/diagnostics/2026-03-09_stage2_ul_capture_highres1024.md
       title: 'Stage-2 AB Continuation @ ~1024px: UL Capture Baseline and Post-Fix Rerun'
       type: diagnosis
-      status: active-diagnostic
+      status: legacy-diagnostic
     - path: progress/diagnostics/2026-03-12_stage2_triage_posterior_coco1024_train_dynamics.md
       title: Stage-2 AB COCO1024 Triage-Posterior Train Dynamics Through Step 300
       type: diagnosis
-      status: active-diagnostic
+      status: legacy-diagnostic
     - path: progress/diagnostics/2026-03-24_stage2_pseudo_positive_k4_coord_only_findings.md
       title: Stage-2 K=4 Pseudo-Positive Findings (Coord-Only, Prefix Structure Disabled)
       type: diagnosis
-      status: active-diagnostic
+      status: legacy-diagnostic
     - path: progress/diagnostics/2026-03-11_gt_overlap_threshold_search.md
       title: GT Overlap Threshold Search on COCO1024 Val
       type: diagnostic-study
-      status: completed-diagnostic
+      status: legacy-diagnostic
     - path: progress/diagnostics/2026-03-11_rollout_duplication_thresholds_ul_vs_ulv2.md
       title: Rollout Duplication Thresholds on `ul_res_1024` vs `ul_res_1024_v2`
       type: diagnostic-study
-      status: completed-diagnostic
+      status: legacy-diagnostic
     - path: progress/diagnostics/2026-03-20_stage2_channel_a_self_context_iter_ablation.md
       title: Stage-2 Channel-A Self-Context Iteration Ablation (2026-03-20, Removal Rationale)
       type: diagnostic-study
-      status: completed-diagnostic
+      status: legacy-diagnostic
     - path: progress/diagnostics/2026-02-17_stage2_b_ratio_085_instability.md
       title: 'Stage-2 (AB) symptoms after `b_ratio=0.85`: rollout length growth + stability crash'
       type: diagnosis
-      status: historical-diagnostic
+      status: legacy-diagnostic
     - path: progress/diagnostics/2026-02-21_stage2_channel_a_coord_gate.md
       title: Stage-2 (AB) Channel-A Only — COCO Parseability Degradation Diagnosis + Coord-Vocab Gate (2026-02-21)
       type: diagnosis
-      status: historical-diagnostic
+      status: legacy-diagnostic
     - path: progress/diagnostics/2026-02-25_stage2_channel_a_coord_loss.md
       title: 'Stage-2 (Channel-A only) Diagnosis: Coord Loss Dynamics from Monitor Dumps (2026-02-25)'
       type: diagnosis
-      status: historical-diagnostic
+      status: legacy-diagnostic
     - path: progress/diagnostics/2026-02-25_stage2_channel_a_visual_audit.md
       title: 'Stage-2 (Channel-A Only) Visual Audit: Coord Token Drift, Duplicate Boxes, and A1 Coord-Loss Decision (2026-02-25)'
       type: visual-audit
-      status: historical-diagnostic
+      status: legacy-diagnostic
     - path: progress/diagnostics/2026-02-22_stage2_softctx_discretization_vs_stage1_bbox.md
       title: 'Stage-2 AB: Continuous Soft-Context Mismatch vs Discrete Rollouts (and Stage-1 Loss Alignment)'
       type: diagnosis
-      status: historical-diagnostic
+      status: legacy-diagnostic
     - path: progress/diagnostics/2026-03-11_visualization_tools_index.md
       title: Visualization Tools Index for Detection and Rollout Inspection
       type: tool-index
-      status: completed-diagnostic
+      status: legacy-diagnostic
   audits:
     - path: progress/audits/README.md
       title: Audits Index
       type: router
-      status: canonical
+      status: legacy-router
     - path: progress/audits/2026-06-14_prefix_denoising_sft_v1_audit.md
       title: Prefix-Denoising SFT V1 Audit
       type: audit
-      status: branch-provenance
+      status: legacy-branch-provenance
     - path: progress/audits/2026-05-03_type_schema_architecture_audit.md
       title: Type-System And Schema-Boundary Audit
       type: audit
-      status: active-audit
+      status: legacy-audit
     - path: progress/audits/2026-06-01_detection_scene_cleanup_validation.md
       title: DetectionScene Cleanup And Validation Gate
       type: audit
-      status: active
+      status: legacy-provenance
     - path: progress/audits/2026-01-22_stage1_softce_logging.md
       title: 'Stage-1 SoftCE (W1) Audit: Loss Dynamics, Logging Alignment, and Efficiency Notes (2026-01-22)'
       type: audit
-      status: historical-audit
+      status: legacy-audit
     - path: progress/audits/2026-02-25_stage2_channel_a_coord_loss.md
       title: Stage-2 AB (Channel-A only) — Coord Loss Dynamics + “A1 coord loss?” Decision Note (2026-02-25)
       type: audit
-      status: historical-audit
+      status: legacy-audit
   benchmarks:
     - path: progress/benchmarks/README.md
       title: Benchmarks Index
       type: router
-      status: canonical
+      status: legacy-router
     - path: progress/benchmarks/2026-04-23_stage1_raw_text_vs_coord_token_repetition_penalty_sweep.md
       title: Raw-Text vs Coord-Token Repetition-Penalty Sweep (2026-04-23)
       type: benchmark
-      status: completed-benchmark
+      status: legacy-benchmark
     - path: progress/benchmarks/2026-04-21_mixed_objective_sota_checkpoint_probe.md
       title: Mixed-Objective SOTA Checkpoint Probe (2026-04-21)
       type: benchmark
-      status: completed-benchmark
+      status: legacy-benchmark
     - path: progress/benchmarks/2026-02-26_stage1_coco80_4b_res_768_vs_1024.md
       title: 'COCO80 Bench (200 samples): 4B Checkpoints @ max_pixels=32*32*{768,1024} (2026-02-26)'
       type: benchmark
-      status: historical-benchmark
+      status: legacy-benchmark
     - path: progress/benchmarks/2026-02-26_stage1_coco80_temp0_compare.md
       title: Detection Run Comparison
       type: benchmark
-      status: historical-benchmark
+      status: legacy-benchmark
     - path: progress/benchmarks/2026-02-27_stage1_coco_2b_ce_softce_res_768_vs_1024.md
       title: 'COCO Bench (200 samples): 2B Mixed CE+softCE Checkpoint @ max_pixels=32*32*{768,1024} (2026-02-27)'
       type: benchmark
-      status: historical-benchmark
+      status: legacy-benchmark
     - path: progress/benchmarks/2026-02-26_stage1_training_dynamics_4b.md
       title: 'Stage-1 Training Dynamics (4B): soft_ce_only vs pure_ce_only vs soft_ce_hard_ce_mixed (2026-02-26)'
       type: benchmark
-      status: historical-benchmark
+      status: legacy-benchmark
     - path: progress/benchmarks/2026-02-01_stage2_channel_a_infer_eval.md
       title: Stage-2 (AB) Channel-A Only — Inference/Eval Notes (2026-02-01)
       type: benchmark
-      status: historical-benchmark
+      status: legacy-benchmark
     - path: progress/benchmarks/2026-03-11_stage2_oracle_k_first200.md
       title: Oracle-K on Stage-2 High-Res 1024 Runs (First-200 COCO Val)
       type: benchmark
-      status: completed-benchmark
+      status: legacy-benchmark
     - path: progress/benchmarks/2026-03-11_stage2_rollout_temperature_refinement.md
       title: '`ul_res_1024_v2` Rollout Temperature Refinement'
       type: benchmark
-      status: completed-benchmark
+      status: legacy-benchmark
   explorations:
     - path: progress/explorations/README.md
       title: Explorations Index
       type: router
-      status: canonical
+      status: legacy-router
     - path: progress/explorations/2026-06-20_docs_progress_okf_upgrade_alignment.md
       title: Docs/Progress OKF Upgrade Alignment
       type: alignment-decision
-      status: active-decision
+      status: legacy-decision
     - path: progress/explorations/2026-05-15_training_infrastructure_architecture_decisions.md
       title: Training Infrastructure Architecture Decisions
       type: exploration
-      status: active-reference
+      status: legacy-reference
     - path: progress/explorations/2026-06-12_coord_repel_stage1_sft_design_decisions.md
       title: Coord-Repel Stage-1 SFT Design Decisions
       type: exploration
-      status: branch-provenance
+      status: legacy-branch-provenance
     - path: progress/explorations/2026-05-31_grid_anchor_pending_record.md
       title: Grid Anchor Compact Detection Pending Record
       type: exploration
-      status: historical-reference
+      status: legacy-reference
     - path: progress/explorations/2026-03-19_runtime_refactor_architecture_program.md
       title: Runtime Refactor Architecture Program (2026-03-19)
       type: exploration
-      status: completed-exploration
+      status: legacy-exploration
     - path: progress/explorations/2026-01-26_stage2_infrastructure.md
       title: Stage-2 Infrastructure Exploration Request
       type: exploration
-      status: historical-exploration
+      status: legacy-exploration
   pretrain:
     - path: progress/pretrain/README.md
       title: Pretrain Index
       type: router
-      status: canonical
+      status: legacy-router
     - path: progress/pretrain/stage1_foundation.md
       title: 'Phase 1 / Stage-1 Training: Coord-Token SFT (Distribution Supervision)'
       type: historical-reference
-      status: historical-reference
+      status: legacy-reference
     - path: progress/pretrain/2026-01-26_stage1_ablation.md
       title: Stage-1 Pretraining Ablation (2026-01-26/27)
       type: benchmark
-      status: historical-reference
+      status: legacy-reference

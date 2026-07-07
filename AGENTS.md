@@ -9,10 +9,19 @@
 
 - User request > nested `AGENTS.md` > this guide > personal/global defaults.
 - Start from the user-named evidence: path, worktree, artifact, config, spec, diff, run, or question. Inspect before explaining or editing.
-- Make the smallest reversible change that handles the request. Preserve unrelated work; dirty worktrees and parallel edits are expected.
+- Make the smallest reversible change that handles the request. Do not add features, knobs, cleanup, formatting, or refactors unless they are required by the request or by verification. Preserve unrelated work; dirty worktrees and parallel edits are expected.
 - Ask only when the choice changes research meaning, is costly/destructive, publishes externally, touches secrets, or risks irreversible compatibility.
 - In this checkout, Python checks normally run in the conda environment `ms`; use it explicitly if the shell is not already there.
 - When subagents are allowed or requested, dispatch independent lanes instead of stacking broad raw context in one thread. Give each lane scope, permissions, and a stop condition; the parent agent must synthesize, remove duplication, and decide.
+
+## Execution Harness
+
+- Before changing files, identify the task type, success criterion, and smallest evidence that would prove the work is done. For tiny edits this can stay implicit, but it must still guide the change.
+- State assumptions only when they affect implementation, research meaning, cost, compatibility, or the verification path. If an assumption is cheap to verify locally, verify it instead of asking.
+- If multiple meaningful interpretations exist, present the tradeoff and ask or pause only when the wrong choice would be costly; otherwise choose the conservative repo-local default and continue.
+- For multi-step work, use a brief plan with a verification handle for each step. For simple work, proceed directly and keep the verification path explicit.
+- Every changed line should trace to the user request, concrete evidence, a failing check, a documented contract, or cleanup caused by the current change.
+- If a finding implies `fix`, `narrow`, `drop`, `probe`, or `needs user decision`, make that decision before patching through it.
 
 ## Judgment Taste
 
@@ -43,10 +52,14 @@
 - For experiments and model behavior, record the evidence scope: config, checkpoint or version, artifact root, counters, metric files, representative samples, and known limitations.
 - Every code, config, data, docs-contract, or workflow change needs a verification path: test, smoke, parse, artifact/manifest check, metric check, replay, residue grep, or explicit skipped reason.
 - Narrow checks first; broaden only when shared contracts or user-facing workflows changed. Label partial evidence honestly and never present it as full validation.
-- Put new investigations and interpretations in research space, historical evidence in history/progress space, and only stable current behavior in docs.
+- Put new investigations, interpretations, negative results, and durable
+  research context in `research/`. Use `docs/history/` for raw provenance
+  snapshots. Treat `progress/` as a legacy/deprecated archive only: read it only
+  when explicitly reconstructing old evidence, migrate useful material to
+  `research/`, and do not create new `progress/` records.
 
 ## Reporting
 
 - Reviews lead with severity-ranked findings and concrete handles. If there are no findings, say so and name residual risk or skipped checks.
 - Handoffs should include objective, current state, exact paths, commands, evidence scope, risks, and continuation seeds.
-- Final summaries should name changed files, verification run, skipped checks, and residual risks without restating generic process.
+- For implementation or docs changes, report the outcome and any material verification, skipped checks, or residual risks. Keep the shape concise; do not force a fixed summary template.

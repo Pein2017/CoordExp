@@ -96,7 +96,10 @@ Branch prefix defaults to `codex/`.
 - Use CodeGraph for first-pass "where is this?" maps, then Serena for exact Python symbol semantics once files/classes/functions are known; do not let CodeGraph replace Serena for reference-sensitive edits.
 - For infer/eval fanout, preserve canonical image roots or explicitly rewrite them before launching shards.
 - Dirty files in other worktrees are expected and out of scope.
-- If a research worktree produced durable findings, promote canonical outputs to `progress/`, docs, or requested artifact locations before cleanup.
+- If a research worktree produced durable findings, promote interpretation and
+  continuation context to `research/`, stable behavior to `docs/` or OpenSpec,
+  and concrete artifacts to requested artifact locations before cleanup. Do not
+  create new `progress/` records.
 
 ## Final Status Block
 

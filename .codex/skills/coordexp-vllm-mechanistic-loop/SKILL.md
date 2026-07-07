@@ -30,7 +30,7 @@ This skill complements `model-diagnosis`. Use `model-diagnosis` for immediate sy
    - available GPUs and cost permission;
    - stop condition.
 2. Set or refine a `/goal` for long runs. If the user's words are rough, translate them into a precise objective with mechanism targets, contrast axes, evidence surfaces, and manual-review gates.
-3. Load local routing first: `docs/AGENT_INDEX.md`, `docs/catalog.yaml`, relevant specs/docs, prior `research/` or `progress/` notes, and existing analysis scripts. Use `coordexp-router-context` when navigation is nontrivial.
+3. Load local routing first: `docs/AGENT_INDEX.md`, `docs/catalog.yaml`, relevant specs/docs, prior `research/` notes, legacy `progress/` provenance when explicitly relevant, and existing analysis scripts. Use `coordexp-router-context` when navigation is nontrivial.
 4. If the user asks to grill or record local decision context, use `grill-me record=local` before implementation. Batch obvious decisions with recommendations; reserve one-at-a-time questions for forks that change research meaning.
 5. Inventory existing probes before writing new ones. Reuse or extend local analysis surfaces for hidden states, attention evidence, residual streams, source ablation, coordinate logit locality, duplication collapse, and visualization.
 
@@ -73,7 +73,10 @@ Good probe families include object pointer trajectory, guidance separability mat
 
 ## Artifacts And Notes
 
-- Write new research knowledge under `research/` when the checkout uses it; use `progress/` for legacy diagnostics or when working inside an older branch that still records there.
+- Write new research knowledge under `research/`. Treat `progress/` as
+  deprecated legacy diagnostics/provenance; migrate useful old material rather
+  than adding new records there, except when the user explicitly asks to preserve
+  an older branch's format.
 - Every durable note should include scope, checkpoints, configs, artifact roots, sample IDs, commands or scripts, evidence scope, core tables/figures, interpretation, caveats, and next probe seeds.
 - Keep one-off scratch under `temp/`; promote repeated utilities to `scripts/analysis/` or `src/analysis/` with tests when they become reusable.
 - When using parallel GPU jobs, make split-run merge keys collision-safe. Include checkpoint, image/sample identity, candidate identity, source spec, history variant, slot, and mode as needed.

@@ -30,7 +30,7 @@ Do not recommend removing or merging official/plugin-managed skills unless the u
 When subagents are explicitly requested or the parent workflow permits them, split broad evidence into read-only lanes instead of stacking all context in one thread:
 
 - memory and rollout summaries;
-- recent Git history plus `progress/` / docs;
+- recent Git history plus `research/`, legacy `progress/` provenance, and docs;
 - existing assets and overlap risks;
 - operations/artifact/data-transfer or another domain-heavy lane.
 

@@ -160,7 +160,7 @@ def test_catalog_does_not_advertise_removed_a2e_training_surface() -> None:
         "progress/diagnostics/2026-05-14_a2_eos_"
         "loosen_ablation.md"
     ]
-    assert a2e_note["status"] == "concluded-negative"
+    assert a2e_note["status"] == "legacy-concluded-negative"
 
     training_surfaces = {
         surface["id"]: surface for surface in catalog["config_surfaces"]["training"]
@@ -188,7 +188,7 @@ def test_progress_routers_do_not_promote_concluded_negative_a2e_as_active() -> N
         "progress/diagnostics/2026-05-14_a2_eos_"
         "loosen_ablation.md"
     ]
-    assert a2e_note["status"] == "concluded-negative"
+    assert a2e_note["status"] == "legacy-concluded-negative"
 
     training_surfaces = {
         surface["id"]: surface for surface in catalog["config_surfaces"]["training"]

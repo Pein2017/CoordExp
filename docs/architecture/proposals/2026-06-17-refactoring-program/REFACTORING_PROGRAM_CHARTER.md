@@ -406,8 +406,8 @@ Short-lived local or experimental code. It should live outside durable current d
 
 Temporary is a lifecycle reality, not a failure. Some research scripts and
 configs exist to answer one question once; when their evidence is preserved in
-`progress/` or artifacts, the scratch implementation does not need to remain a
-durable reusable surface.
+`research/`, legacy `progress/`, or artifacts, the scratch implementation does
+not need to remain a durable reusable surface.
 
 ### Status Discipline
 
@@ -418,7 +418,10 @@ lifecycle labels would become another navigation problem.
 
 ### Historical Evidence
 
-Evidence or rerun material preserved for research provenance. It should usually live in `progress/`, archive folders, or proposal/history docs, not as an active-looking production route.
+Evidence or rerun material preserved for research provenance. New material
+should live in `research/`, archive folders, or proposal/history docs, not as an
+active-looking production route. Existing `progress/` references are legacy
+provenance only.
 
 ### Retired
 
@@ -444,7 +447,7 @@ Do first:
 - mark active/reusable/historical/delete-candidate,
 - explicitly mark one-off scratch scripts as non-durable when their evidence is
   already preserved elsewhere,
-- preserve artifacts and progress links before moves.
+- preserve artifacts, research notes, and legacy progress links before moves.
 
 Do not:
 
@@ -465,7 +468,8 @@ Why:
 Do first:
 
 - separate active rerunnable configs from historical artifact pointers,
-- move completed-study config context into `progress/` where possible.
+- move completed-study config context into `research/` or current
+  proposal/history docs where possible.
 
 ### 6.3 `scripts/analysis`
 
@@ -480,7 +484,7 @@ Why:
 
 Do first:
 
-- preserve exact commands and artifact roots in progress notes,
+- preserve exact commands and artifact roots in `research/` notes or handoffs,
 - archive launch recipes that are not maintained entrypoints.
 
 ### 6.4 Stage-2 Rollout Correction Monoliths
@@ -796,7 +800,7 @@ Actions:
 1. Classify `configs/bench`.
 2. Consolidate repeated infer/postop/eval leaves.
 3. Label dead-checkpoint configs historical or make preflight fail clearly.
-4. Convert completed-study configs into progress/artifact references.
+4. Convert completed-study configs into research/artifact references.
 5. Keep `configs/infer/recursive_detection_ce` as preserved comparator lineage; consolidate repeated launch knobs only when the canonical ET-RMP comparison handles remain obvious.
 
 Risk: medium.
@@ -1099,7 +1103,7 @@ This file is proposal-scoped. If the program is accepted:
 1. Keep this full document as proposal/history.
 2. Promote the stable vocabulary and gates into `docs/standards/REPO_HYGIENE.md` or a canonical architecture document.
 3. Add lifecycle registry metadata in the selected location.
-4. Track phase outcomes in `progress/` or a dedicated refactoring program progress note.
+4. Track phase outcomes in `research/` or a dedicated refactoring program note.
 
 ## Bottom Line
 

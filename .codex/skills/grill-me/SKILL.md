@@ -50,13 +50,16 @@ requested, recommend the target and ask before writing.
   config inheritance, eval validity, artifact completeness, cost, rollback, and
   evidence scope.
 - Stop once the remaining uncertainty no longer changes the decision, evidence
-  plan, compatibility story, or next action.
+  plan, compatibility story, or next action. End with exactly one next state:
+  `drop`, `narrow`, `probe`, `build-probe`, `implement`, `document`, or
+  `needs user decision`.
 
 ## Question Style
 
 Prefer questions that expose a real fork:
 
 - what evidence would accept or reject the idea;
+- what implementation must exist before that evidence can be collected;
 - which artifact, config, checkpoint, metric file, or test is source of truth;
 - which scope is `tiny`, `smoke`, `val200`, `proxy`, `partial`, or `full`;
 - which default or contract must remain backward-compatible;
@@ -90,10 +93,39 @@ Use the narrowest durable surface:
 - `openspec/changes/<active-change>/`: active OpenSpec work only when explicitly
   in scope.
 - configs, tests, scripts, manifests, and artifact paths: executable truth.
-- `progress/`: legacy evidence only, unless the current docs explicitly route
-  the topic there.
+- `progress/`: deprecated legacy archive only. Read old notes only when
+  reconstructing provenance; do not use it as a carrier for new records.
 
-Use a compact record shape:
+If the next evidence is cheap and immediate, use `probe`. If the evidence needs
+new forward-pass hooks, dataset/template variants, logging, evaluator support, or
+other feature work before launch, use `build-probe`. For `build-probe`, record a
+minimal probe-enablement plan before implementation:
+
+```md
+## Research Question
+{What uncertainty this work will resolve.}
+
+## Evidence Target
+{The metric, artifact, visualization, or comparison that will decide.}
+
+## Build Requirements
+- {Minimal code/config/data/template change needed before the probe can run.}
+
+## Probe Run
+- Scope: `tiny|smoke|val200|proxy|partial|full`
+- Baseline/comparison: `{required matched target}`
+- Stop condition: `{what result changes the decision}`
+
+## Carrier
+{chat|handoff|research/<slug>|docs/history/<slug>|openspec/changes/<change>}
+```
+
+Use `openspec/changes/<change>` only when probe-enablement changes a stable
+compatibility-sensitive contract such as schema, artifact names, metric
+semantics, training/eval behavior, or public config behavior. Use a research note
+or handoff for ordinary experiment scaffolding.
+
+Otherwise use a compact decision record:
 
 ```md
 ## Decision
@@ -108,6 +140,12 @@ Use a compact record shape:
 ## Evidence
 - Scope: `tiny|smoke|val200|proxy|partial|full|none-yet`
 - Handles: `{configs, artifacts, tests, metrics, docs, commits}`
+
+## Next State
+{drop|narrow|probe|build-probe|implement|document|needs user decision}
+
+## Carrier
+{chat|handoff|research|docs|openspec|none}
 ```
 
 After recording, continue the loop unless the user asked to pause, stop, or only
