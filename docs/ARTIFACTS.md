@@ -254,7 +254,7 @@ runtime behavior:
   `objectives`, `observability`, `artifacts`, and `runtime`; optional
   `experimental` remains an explicit opt-in escape hatch, not a hidden store.
 
-During training (`python -m src.sft ...`), rank 0 writes reproducibility
+During canonical Swift training (`python -m src.train --config ...`), rank 0 writes reproducibility
 artifacts into `training.output_dir` before training starts:
 
 - `resolved_config.json`

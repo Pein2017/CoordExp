@@ -10,13 +10,15 @@ updated: 2026-06-07
 
 # Training Ecosystem
 
-Source scope: active `ms` environment and local `${MS_SWIFT_ROOT}`.
+Source scope: the canonical Swift implementation on `main` plus the active
+`ms` environment. `${MS_SWIFT_ROOT}` is an upstream/reference source only.
 
 ## Boundary
 
-CoordExp training should integrate through ms-swift config/trainer surfaces, not
-raw HF Trainer or TRL imports. ms-swift wraps, patches, and subclasses several
-upstream libraries; direct imports can bypass required compatibility handling.
+CoordExp-Swift owns the training loop and should keep its Transformers,
+Accelerate, PEFT, and model-boundary behavior explicit. MS-Swift notes below
+are upstream/reference evidence and do not define the canonical CoordExp
+runtime.
 
 CoordExp-specific supervision metadata is not upstream model state. Packing
 maps, teacher-forcing target IR, row-coverage state, token-type metrics, and

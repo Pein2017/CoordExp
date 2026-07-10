@@ -19,8 +19,10 @@ For AI-agent-first routing, use [AGENT_INDEX.md](AGENT_INDEX.md).
 ## Start Here
 
 1. [Project Context & Documentation Authority](PROJECT_CONTEXT.md)
-2. [System Overview](SYSTEM_OVERVIEW.md)
-3. [Implementation Map](IMPLEMENTATION_MAP.md)
+2. [Branch And Worktree Policy](BRANCH_AND_WORKTREE_POLICY.md)
+3. [CoordExp-Swift](COORDEXP_SWIFT.md)
+4. [System Overview](SYSTEM_OVERVIEW.md)
+5. [Implementation Map](IMPLEMENTATION_MAP.md)
 
 ## Domain Routers
 

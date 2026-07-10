@@ -33,7 +33,7 @@ config_surfaces:
       entrypoint: src/train.py
       runtime: src/training/pipeline.py
       trainer: src/training/supervised_trainer.py
-      notes: "Current rebuilt supervised-training route in the CoordExp-Swift worktree."
+      notes: "Canonical rebuilt supervised-training route on repository main."
     - id: coordexp_swift_rebuilt_inference_eval
       status: active
       config_root: configs/coordexp_swift/infer/
@@ -42,9 +42,9 @@ config_surfaces:
       evaluator: src/eval/detection_consumer.py
       accepted_validation_config: configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_step917_val200.yaml
       notes: "Fixed val200 inference/eval is the accepted V1 validation gate; full validation-dataset evaluation is optional."
-  training:
+  historical_ms_swift:
     - id: unified_training_pipeline_stage2_rollout_correction
-      status: active
+      status: historical-archive
       pipeline_id: stage2_rollout_correction
       resolver: src/training/pipeline_registry.py::TrainingPipelineRegistry
       pipeline: src/trainers/stage2_rollout_correction.py::Stage2RolloutCorrectionTrainer
@@ -61,14 +61,14 @@ config_surfaces:
       assignment_strategy: greedy_iou
       duplicate_filter_order: before_assignment_and_target_realization
       residual_set_correction: true
-      notes: "Active Stage-2 rollout-correction direction selected by pipeline.id. Duplicate filtering runs before greedy-IoU assignment; unmatched GT becomes residual GT-correction events. Greedy IoU is the only live Stage-2 assignment strategy."
+      notes: "Historical MS-Swift/mainline Stage-2 route. Retained for provenance and old-run interpretation; not an active main-branch entrypoint."
     - id: stage1_research_teacher_forcing
-      status: canonical
+      status: historical-archive
       config: configs/stage1/detection_teacher_forcing/prod/compact_support2.yaml
       smoke_config: configs/stage1/detection_teacher_forcing/smoke/compact_tiny.yaml
       parser: src/config/schema.py::DetectionTrainingConfig
       runtime: src/detection/runtime.py
-      notes: "Canonical clean-break Stage-1 research teacher-forcing public route. New compact teacher-forcing configs should use pipeline.id: stage1_research_teacher_forcing under configs/stage1/detection_teacher_forcing/."
+      notes: "Historical MS-Swift/mainline Stage-1 route. Retained for provenance and old-run interpretation; new work uses configs/coordexp_swift/ and src/train.py."
     - id: stage1_retired_recursive_detection_archive
       status: historical-archive
       archive_root: configs/archive/detection_scene_clean_break/stage1/
@@ -93,9 +93,13 @@ docs:
       title: Project Context & Precedence
       type: root-context
       status: canonical
+    - path: docs/BRANCH_AND_WORKTREE_POLICY.md
+      title: Branch And Worktree Policy
+      type: workflow
+      status: canonical
     - path: docs/COORDEXP_SWIFT.md
-      title: CoordExp-Swift Worktree
-      type: worktree-authority
+      title: CoordExp-Swift Canonical Infrastructure
+      type: canonical-implementation-guide
       status: canonical
     - path: docs/SYSTEM_OVERVIEW.md
       title: System Overview

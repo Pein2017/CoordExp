@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Pure config-driven training script
+# LEGACY MS-SWIFT/MAINLINE COMPATIBILITY LAUNCHER
+# Canonical main training uses: python -m src.train --config ...
+# Keep this wrapper only for explicit historical reproduction.
 # All hyperparameters are in YAML config files
 # This script only handles runtime settings
 

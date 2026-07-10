@@ -1,26 +1,26 @@
 # Scripts
 
-This directory contains stable, user-facing entrypoints plus compatibility
-wrappers and historical diagnostics. Treat YAML-first entrypoints as the
-reportable path except for the rebuilt CoordExp-Swift direct artifact reducers;
-shell wrappers that take only environment variables are manual/debug.
+This directory contains user-facing entrypoints plus compatibility wrappers and
+historical diagnostics. The canonical training/inference implementation is
+owned by `src/train.py`, `src/infer.py`, and `src/inference/`; see
+`docs/COORDEXP_SWIFT.md` and `docs/BRANCH_AND_WORKTREE_POLICY.md`.
 
 ## Stable entrypoints
 
-- Training (YAML-first): `scripts/train.sh` (wraps `python -m src.sft --config ...`).
-- Stage-2 rollout-correction server-mode launcher (vLLM server + multi-GPU learner): `scripts/train_stage2.sh`.
-- Unified inference pipeline (YAML-first): `scripts/run_infer.py`.
-- Confidence scoring / score materialization (YAML-first): `scripts/postop_confidence.py`.
+- Training (canonical Swift): `python -m src.train --config configs/coordexp_swift/...`.
+- Inference (canonical Swift): `python -m src.infer --config configs/coordexp_swift/infer/...`.
 - Offline CoordExp-Swift detection evaluation (direct artifact reducer):
   `scripts/evaluate_detection.py --artifact-dir ... --out-dir ...`.
-- One-run proxy bundle evaluation (YAML-first): `scripts/evaluate_proxy_detection_bundle.py`.
 - Export helper (merge LoRA + token-embeddings adapter offsets): `scripts/merge_coord.sh`.
 
 ## Compatibility / debug wrappers
 
-- `scripts/run_infer_eval.sh`: legacy/mainline environment-variable
-  convenience wrapper. It is not the standardized CoordExp-Swift evaluator
-  path in this worktree.
+- `scripts/train.sh`, `scripts/train_stage2.sh`, `scripts/run_infer.py`,
+  `scripts/postop_confidence.py`, and
+  `scripts/evaluate_proxy_detection_bundle.py`: legacy/mainline wrappers.
+  They are not the canonical Swift entrypoints and should be used only for
+  explicit compatibility or historical reproduction.
+- `scripts/run_infer_eval.sh`: legacy/mainline environment-variable wrapper.
 - `scripts/run_vis.sh`: manual/debug visualization wrapper for an explicitly
   supplied prediction artifact and image root. Prefer evaluator overlays or
   `vis_resources/` artifacts tied to resolved pipeline provenance for

@@ -10,6 +10,11 @@ updated: 2026-07-03
 
 # System Overview
 
+CoordExp-Swift on repository `main` is the canonical implementation. The
+legacy/mainline sections later in this document are historical context only;
+they must not override the Swift route above or the branch policy in
+[`BRANCH_AND_WORKTREE_POLICY.md`](BRANCH_AND_WORKTREE_POLICY.md).
+
 Purpose: map the end-to-end CoordExp flow from data intake to training, inference, evaluation, and reproducibility artifacts.
 Authority: explanatory system guide for the current codebase; if this page conflicts with a spec or runbook, defer to `docs/PROJECT_CONTEXT.md` and `openspec/specs/`.
 Read this after: `docs/PROJECT_CONTEXT.md`

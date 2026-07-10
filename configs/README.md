@@ -15,17 +15,18 @@ attempt.
 
 ## Training Surfaces
 
-- `configs/stage1/sft_base.yaml`: baseline Stage-1 runtime base.
-- `configs/stage1/profiles/`: small legacy Stage-1 SFT profile set. Keep only
-  non-redundant 2B/4B hyperparameter surfaces that remain useful as baselines
-  or comparison anchors.
-- `configs/stage1/detection_teacher_forcing/`: canonical
-  `stage1_detection_teacher_forcing` Stage-1 detection teacher-forcing surface.
-  New compact-full teacher-forcing production and smoke configs belong here.
-- `configs/archive/detection_scene_clean_break/stage1/recursive_detection_ce/`: quarantined legacy/comparator recursive-detection CE production, smoke, and ablation configs for historical inspection only. Do not add new canonical teacher-forcing configs here.
-- `configs/stage2/rollout_correction/`: active Stage-2 rollout-correction
-  surface. These configs use rollout prefix plus GT/residual correction and the
-  canonical `stage2_rollout_correction` namespace.
+- `configs/coordexp_swift/prod/`: canonical Swift production-style training
+  configs.
+- `configs/coordexp_swift/smoke/`: canonical Swift implementation and
+  promotion smokes.
+- `configs/coordexp_swift/infer/`: canonical Swift inference configs.
+- `configs/coordexp_swift/deepspeed/`: Swift backend helper configuration;
+  production support remains governed by the Swift contracts.
+
+The former `configs/stage1/`, `configs/stage2/`, and related root-level
+training families are MS-Swift/mainline compatibility or historical surfaces.
+They are not the current `main` training route. The old route is preserved on
+the `ms-swift` branch and should be used only for explicit legacy reproduction.
 
 ## Policy
 

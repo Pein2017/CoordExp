@@ -1,7 +1,7 @@
 ---
 doc_id: docs.coordexp-swift
 layer: docs
-doc_type: worktree-authority
+doc_type: canonical-implementation-guide
 status: canonical
 domain: repo
 summary: Current routing and evidence guide for the CoordExp-Swift rebuilt training, inference, and evaluation infrastructure.
@@ -9,14 +9,19 @@ tags: [coordexp-swift, training, inference, eval, routing]
 updated: 2026-07-03
 ---
 
-# CoordExp-Swift Worktree
+# CoordExp-Swift Canonical Infrastructure
 
-This page is the first stop for the rebuilt CoordExp-Swift worktree under
-`/data/CoordExp/.worktrees/CoordExp-swift`.
+CoordExp-Swift is the canonical implementation on repository `main`. The old
+MS-Swift-centered line is preserved as the `ms-swift` history archive. See
+[`BRANCH_AND_WORKTREE_POLICY.md`](BRANCH_AND_WORKTREE_POLICY.md) for branch,
+worktree, and Codex-session routing.
 
-The active goal of this worktree is a locally owned, inspectable training and
-inference stack for Qwen3-VL detection research. It replaces the old
-MS-Swift-centered execution path for this worktree. Legacy/mainline docs and
+This page is the first stop for the rebuilt CoordExp-Swift checkout under
+`/data/CoordExp/.worktrees/CoordExp-swift`, attached to `main`.
+
+The active goal of this canonical checkout is a locally owned, inspectable
+training and inference stack for Qwen3-VL detection research. It replaces the
+old MS-Swift-centered execution path for current `main` work. Legacy/mainline docs and
 paths remain useful as reference material only when this page or an active
 OpenSpec change explicitly points to them.
 
@@ -72,7 +77,7 @@ Primary code handles:
 - Direct Swift evaluator: `src/eval/detection_consumer.py`
 - Eval-forward helper: `src/eval/forward.py`
 
-Do not create or route to a `src/infer/` package in this worktree. The public
+Do not create or route to a `src/infer/` package in the canonical Swift checkout. The public
 entry is the file `src/infer.py`; the implementation package is
 `src/inference/`.
 
@@ -166,7 +171,7 @@ COCO sidecars are invalid.
 
 ## Evaluation Gate Policy
 
-For this worktree:
+For canonical Swift `main`:
 
 - Tiny/smoke inference runs prove implementation readiness only.
 - The fixed val200 run is sufficient for V1 local validation and benchmark-style

@@ -11,6 +11,11 @@ updated: 2026-06-15
 
 # Training Docs
 
+> Legacy MS-Swift/mainline training reference. The canonical `main` training
+> route is CoordExp-Swift under `configs/coordexp_swift/` and `src/train.py`;
+> use [`docs/COORDEXP_SWIFT.md`](../COORDEXP_SWIFT.md) first. This page is
+> retained for historical contract and old-run interpretation.
+
 Open this folder when you need current training behavior, recommended configs,
 or metric interpretation.
 

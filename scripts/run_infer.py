@@ -1,7 +1,11 @@
 #!/usr/bin/env python
-"""Unified pipeline runner for CoordExp inference/eval/vis (YAML-first).
+"""Legacy MS-Swift/mainline inference runner.
 
-Primary usage:
+Canonical main inference is ``python -m src.infer --config ...`` using the
+``configs/coordexp_swift/infer/`` schema. This module remains only for explicit
+historical compatibility reproduction.
+
+Historical usage:
   python scripts/run_infer.py --config configs/infer/<exp>.yaml
 
 The YAML config is treated as a single file (no extends/inherit, no variable

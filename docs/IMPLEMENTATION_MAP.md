@@ -10,6 +10,10 @@ updated: 2026-07-03
 
 # Implementation Map
 
+CoordExp-Swift on repository `main` is the canonical implementation. Sections
+below the current Swift route are retained as historical MS-Swift/mainline
+reference and are not active routing instructions.
+
 Purpose: route common research and engineering changes to the smallest useful set of files, configs, docs, and tests.
 Authority: code-navigation guide for the current repo; for current defaults, defer to `docs/PROJECT_CONTEXT.md` and runbooks; for stable contract semantics, defer to `openspec/specs/`.
 Read this after: `docs/SYSTEM_OVERVIEW.md`

@@ -11,9 +11,10 @@ updated: 2026-06-07
 # Upstream Dependencies
 
 Use this page as the upstream dependency router. Detailed notes live under
-[`upstream/`](upstream/). The current source of truth is the active `ms`
-environment plus the current ms-swift checkout, not stale paths from older
-CoordExp runs.
+[`upstream/`](upstream/). The current source of truth for CoordExp behavior is
+the canonical Swift implementation on `main` plus the active `ms` environment.
+The ms-swift checkout remains an upstream/reference dependency, not the
+CoordExp application entrypoint.
 
 Local handle variables used below:
 
@@ -65,9 +66,10 @@ should record at least `transformers`, `ms-swift`, `flash_attn`,
   `modeling_qwen3_vl.py`. Transformers Qwen3-VL files are generated from
   modular upstream sources; local edits are not a maintainable integration
   strategy.
-- Treat ms-swift as the training integration boundary. CoordExp should extend
-  ms-swift config, template, dataset, trainer, callback, loss, or plugin maps
-  before importing raw TRL/HF Trainer classes directly.
+- Treat Transformers, Accelerate, PEFT, and other installed packages as
+  upstream boundaries for the canonical Swift implementation. The ms-swift
+  checkout is a source-study and compatibility reference; it is not a current
+  CoordExp training runtime dependency.
 - Preserve CoordExp geometry. Runtime training uses offline-prepared images and
   `do_resize=false`; never rely on upstream processor resizing unless the run is
   explicitly designed around that semantic.

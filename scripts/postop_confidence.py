@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""YAML-first entrypoint for offline confidence post-operation."""
+"""Legacy MS-Swift/mainline entrypoint for offline confidence post-operation."""
 
 from __future__ import annotations
 

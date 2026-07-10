@@ -213,6 +213,16 @@ class TaskSpec:
         command = str(raw.get("command", "") or "")
         config_raw = str(raw.get("config", "") or "")
         launcher = str(raw.get("launcher", "") or "scripts/train.sh")
+        if (
+            config_raw.startswith("configs/coordexp_swift/")
+            and not command
+            and "launcher" not in raw
+        ):
+            fail(
+                f"Queue line {line_no}: canonical Swift configs require an explicit "
+                "command or launcher; the default scripts/train.sh is legacy "
+                "MS-Swift/mainline infrastructure."
+            )
         gpus = str(raw.get("gpus", "") or "")
         run_dir_raw = str(raw.get("run_dir", "") or "")
         env = raw.get("env", {})

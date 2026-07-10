@@ -13,22 +13,26 @@ updated: 2026-07-03
 
 This page defines how to interpret every Markdown file in the repository.
 
+CoordExp-Swift is the canonical implementation on repository `main`. See
+[`BRANCH_AND_WORKTREE_POLICY.md`](BRANCH_AND_WORKTREE_POLICY.md) for the live
+branch, archive branch, worktree, and Codex-session boundary.
+
 ## Authority Model
 
 Use `docs/` as the current operator-facing truth for architecture, workflows,
 routing, artifact names, and recommended development practice.
 
-CoordExp-Swift worktree authority:
+CoordExp-Swift canonical authority:
 
-- In `/data/CoordExp/.worktrees/CoordExp-swift`, start with
-  [`docs/COORDEXP_SWIFT.md`](COORDEXP_SWIFT.md) before following older
-  mainline routing pages.
+- In the `main` checkout at `/data/CoordExp/.worktrees/CoordExp-swift`, start
+  with [`docs/COORDEXP_SWIFT.md`](COORDEXP_SWIFT.md). The parent checkout on
+  `ms-swift` is an archive/reference line, not current behavior authority.
 - The rebuilt Swift source route is `src/train.py`, `src/infer.py`,
   `src/inference/`, `src/training/`, `src/qwen/`, `src/packing/`,
   `src/losses/`, and `src/eval/detection_consumer.py`.
 - Legacy/mainline handles such as `src/sft.py`, `src/infer/*`,
   `src/trainers/*`, `configs/stage1/*`, and `configs/stage2/*` are reference
-  material in this worktree unless an active Swift doc or OpenSpec change
+  material in the canonical Swift checkout unless an active Swift doc or OpenSpec change
   explicitly points to them.
 - The accepted Swift V1 validation gate is the fixed val200 inference/eval run.
   Full validation-dataset evaluation is optional and not required for the V1
@@ -70,14 +74,15 @@ For most work:
 
 1. [docs/README.md](README.md)
 2. [docs/AGENT_INDEX.md](AGENT_INDEX.md) if the consumer is an AI agent
-3. [docs/COORDEXP_SWIFT.md](COORDEXP_SWIFT.md) in this worktree
-4. [docs/SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md)
-5. [docs/IMPLEMENTATION_MAP.md](IMPLEMENTATION_MAP.md)
-6. the relevant domain router under `docs/`
-7. relevant `openspec/specs/` only for stable contract semantics
-8. `openspec/changes/<active-change>/` only when explicitly in scope
-9. `research/` for active research interpretation and continuation context
-10. `progress/` only for design history, empirical evidence, diagnostics, or benchmarks
+3. [docs/BRANCH_AND_WORKTREE_POLICY.md](BRANCH_AND_WORKTREE_POLICY.md)
+4. [docs/COORDEXP_SWIFT.md](COORDEXP_SWIFT.md)
+5. [docs/SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md)
+6. [docs/IMPLEMENTATION_MAP.md](IMPLEMENTATION_MAP.md)
+7. the relevant domain router under `docs/`
+8. relevant `openspec/specs/` only for stable contract semantics
+9. `openspec/changes/<active-change>/` only when explicitly in scope
+10. `research/` for active research interpretation and continuation context
+11. `progress/` only for design history, empirical evidence, diagnostics, or benchmarks
 
 ## Authoring Rules
 

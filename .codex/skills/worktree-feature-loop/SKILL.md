@@ -31,7 +31,12 @@ Use a worktree for:
 
 Use inplace only for narrow edits with explicit verification, no stable contract change, no long-running outputs, and no unrelated dirt in the same files. If tradeoff is unclear, ask before creating.
 
-CoordExp default root: `.worktrees/`, unless the user explicitly requests another path. Remember `mcp/codexUI` is a nested git repo; never sweep nested-repo changes into parent commits.
+CoordExp canonical implementation checkout: `/data/CoordExp/.worktrees/CoordExp-swift` on `main`.
+The parent `/data/CoordExp` checkout is the preserved `ms-swift` archive line;
+do not use it as the default implementation base. Worktree roots still default
+to `.worktrees/` unless the user explicitly requests another path. Remember
+`mcp/codexUI` is a nested git repo; never sweep nested-repo changes into parent
+commits.
 
 ## Inputs
 
@@ -49,6 +54,7 @@ Branch prefix defaults to `codex/`.
 3. After creating or entering a worktree, restore runtime path parity with the
    main checkout by manually adding local symlinks for ignored heavy roots:
    ```bash
+   # Shared data/artifact root, not the archived ms-swift checkout.
    main_root=/data/CoordExp
    for name in model_cache outputs; do
      target="$main_root/$name"
@@ -83,7 +89,10 @@ Branch prefix defaults to `codex/`.
 10. For commits or sync, invoke `git-hygiene` before staging anything and delegate detailed staging, PAT, fetch/pull/push, and conflict handling there; keep this skill focused on lifecycle state.
 11. For OpenSpec contract artifacts, delegate mode-specific workflow to `openspec-lifecycle`.
 12. Finish with `finishing-a-development-branch` or the user's requested commit/push/merge flow.
-13. Remove worktree only after merge/discard, from the main root, with provenance check and no uncommitted work.
+13. Remove worktree only after merge/discard, from the repository control
+    checkout, with provenance check and no uncommitted work. Confirm that
+    `/data/CoordExp/.worktrees/CoordExp-swift` remains the `main` worktree
+    before any cleanup.
 
 ## CoordExp Gotchas
 

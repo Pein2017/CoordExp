@@ -11,6 +11,15 @@ updated: 2026-07-03
 
 # Evaluation Workflow
 
+Canonical Swift inference starts with:
+
+```bash
+conda run -n ms python -m src.infer --config configs/coordexp_swift/infer/<config>.yaml
+```
+
+The older `scripts/run_infer.py` and `configs/infer/pipeline.yaml` command
+below is retained only as an explicitly labeled MS-Swift/mainline reference.
+
 This page describes the current production path from inference to scored evaluation artifacts, plus the additive Oracle-K repeated-sampling analysis workflow.
 
 CoordExp-Swift rebuild note:
@@ -70,7 +79,12 @@ Validation-scope rule:
 - a full validation-dataset run is optional and should not be treated as a
   required gate unless a future task explicitly asks for full-dataset evidence.
 
-## YAML-First Commands
+## Legacy MS-Swift/Mainline YAML Commands
+
+The commands in this section are retained for historical reproduction only.
+They are not the canonical `main` inference/evaluation route. Use
+`python -m src.infer --config configs/coordexp_swift/infer/<config>.yaml`
+above for current Swift work.
 
 Run inference:
 

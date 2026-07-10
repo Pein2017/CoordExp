@@ -10,6 +10,11 @@ updated: 2026-05-16
 
 # Stage-2 Training Runbook
 
+> Historical MS-Swift/mainline runbook. This route is preserved for old-run
+> reproduction and contract archaeology; it is not a current `main` entrypoint.
+> Current implementation work starts from `docs/COORDEXP_SWIFT.md` and
+> `configs/coordexp_swift/`.
+
 Use this page for the active Stage-2 path.
 
 The current contract is:

@@ -20,21 +20,24 @@ Primary machine entrypoint:
 Human support entrypoints:
 
 - [docs/README.md](README.md)
+- [Branch And Worktree Policy](BRANCH_AND_WORKTREE_POLICY.md) for canonical
+  `main`, the `ms-swift` archive branch, and Codex-session routing
 - [progress/README.md](../progress/README.md)
 - [docs/history/README.md](history/README.md) for non-normative implementation-plan and design provenance
 
 ## Default Read Order
 
 1. [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md)
-2. [COORDEXP_SWIFT.md](COORDEXP_SWIFT.md) for this rebuilt worktree
-3. [SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md)
-4. [IMPLEMENTATION_MAP.md](IMPLEMENTATION_MAP.md)
-5. the relevant domain router
-6. relevant `openspec/specs/` only for stable contract semantics
+2. [BRANCH_AND_WORKTREE_POLICY.md](BRANCH_AND_WORKTREE_POLICY.md)
+3. [COORDEXP_SWIFT.md](COORDEXP_SWIFT.md) for canonical `main`
+4. [SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md)
+5. [IMPLEMENTATION_MAP.md](IMPLEMENTATION_MAP.md)
+6. the relevant domain router
+7. relevant `openspec/specs/` only for stable contract semantics
    - use [`runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md) for runtime structure, internal seams, and compatibility-preserving refactors
    - use [`stage2-rollout-correction/spec.md`](../openspec/specs/stage2-rollout-correction/spec.md) for active Stage-2 behavior and config contracts
-7. `research/` for active research interpretation and continuation context
-8. `progress/` only when current docs do not answer the historical or empirical question
+8. `research/` for active research interpretation and continuation context
+9. `progress/` only when current docs do not answer the historical or empirical question
 
 ## Query Routing
 
@@ -63,37 +66,37 @@ Human support entrypoints:
   - [docs/data/CONTRACT.md](data/CONTRACT.md)
   - [docs/data/PREPARATION.md](data/PREPARATION.md)
   - [docs/data/PACKING.md](data/PACKING.md) for Stage-1 static-packing and hard-cap questions
-- Stage-1 training:
+- Canonical Swift training:
+  - `configs/coordexp_swift/{prod,smoke}/` and `src/train.py` are the current
+    training entrypoints on `main`.
+  - Use `docs/COORDEXP_SWIFT.md` and the `coordexp-swift-*` stable specs for
+    current semantics.
+- Legacy MS-Swift/mainline Stage-1 reference:
   - [docs/training/README.md](training/README.md)
   - [docs/training/STAGE1_OBJECTIVE.md](training/STAGE1_OBJECTIVE.md) for baseline Stage-1 behavior, canonical detection teacher forcing, legacy prefix-rollin ablation boundaries, and retired candidate-objective boundaries
   - [docs/data/PACKING.md](data/PACKING.md)
-  - Current public Stage-1 research teacher-forcing route: `pipeline.id: stage1_research_teacher_forcing`; configs live under `configs/stage1/detection_teacher_forcing/`.
-  - Public Stage-1 pipeline ids: `stage1_standard_sft` for standard assistant-label CE and `stage1_research_teacher_forcing` for compact objective research.
-  - Pipeline registry and descriptor map: `src/training/pipeline_registry.py::TrainingPipelineRegistry`, `src/training/pipelines/stage1_json_ce.py`, and `src/training/pipelines/stage1_compact_trie_ce.py`.
-  - Public Stage-1 objective ids: `standard_ce` and `research_teacher_forcing`; implementation terms such as `token_ce`, `trie_ce`, and `coord_soft_ce` stay internal to objective modules or term config.
-  - Recursive-detection / ET-RMP is a preserved comparator and ablation family, not the default new Stage-1 SFT route. Current infer/eval comparator lineage lives under `configs/infer/recursive_detection_ce`; quarantined Stage-1 training roots and authoring snippets under `configs/archive/detection_scene_clean_break/stage1/` remain historical evidence.
-- Stage-2 training:
+  - The old `configs/stage1/`, `src/sft.py`, and pipeline-registry routes are
+    preserved for archive/reference analysis and are not current `main` routes.
+- Legacy MS-Swift/mainline Stage-2 reference:
   - [docs/training/README.md](training/README.md)
   - [docs/training/STAGE2_RUNBOOK.md](training/STAGE2_RUNBOOK.md) for current behavior, launcher workflow, and historical-context pointers
   - [docs/training/METRICS.md](training/METRICS.md)
   - [`stage2-rollout-correction/spec.md`](../openspec/specs/stage2-rollout-correction/spec.md)
   - [`rollout-matching-sft/spec.md`](../openspec/specs/rollout-matching-sft/spec.md) for the retired rollout-matching trainer contract
   - [`runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md)
-  - Public Stage-2 pipeline id: `stage2_rollout_correction`, resolved through `src/training/pipeline_registry.py::TrainingPipelineRegistry`.
-  - Planning direction: duplicate filtering before target realization, greedy-IoU assignment over retained rollout objects, and GT correction event construction for unmatched GT.
-  - Greedy IoU is the only live Stage-2 assignment strategy; do not reintroduce alternate assignment mechanisms without a new spec.
+  - The old `stage2_rollout_correction` route is not a current Swift `main`
+    entrypoint; use the Swift contracts and `src/train.py` for current work.
 - Metrics, diagnostics, and artifacts:
   - [docs/training/METRICS.md](training/METRICS.md) for `MetricEvent`, `DiagnosticEvent`, bounded diagnostic profiles, and clean-write/tolerant-read metric behavior
   - [ARTIFACTS.md](ARTIFACTS.md) for resolved config artifacts, rank-0 artifact names, and Stage-2 policy provenance
 - Inference and evaluation:
-  - [COORDEXP_SWIFT.md](COORDEXP_SWIFT.md) first for this worktree's rebuilt inference/eval route
+  - [COORDEXP_SWIFT.md](COORDEXP_SWIFT.md) first for canonical `main`'s rebuilt inference/eval route
   - [docs/eval/README.md](eval/README.md)
   - [docs/eval/CONTRACT.md](eval/CONTRACT.md)
   - [docs/eval/WORKFLOW.md](eval/WORKFLOW.md)
   - [ARTIFACTS.md](ARTIFACTS.md)
-  - [`inference-pipeline/spec.md`](../openspec/specs/inference-pipeline/spec.md)
-  - [`inference-engine/spec.md`](../openspec/specs/inference-engine/spec.md)
-  - [`detection-evaluator/spec.md`](../openspec/specs/detection-evaluator/spec.md)
+  - Swift inference/eval contracts under `openspec/specs/coordexp-swift-infer-*`
+    and `openspec/specs/coordexp-swift-detection-evaluator/`
   - [`runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md)
 - Standards and repo policy:
   - [docs/standards/README.md](standards/README.md)

@@ -5,15 +5,19 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
 ## Why
 - **Better geometry**: Softmax-on-coordinate-subvocab + expectation gives continuous boxes and smooth gradients (L1/GIoU) without extra detection heads.
 - **Order-invariant**: Hungarian/OT matching supervises object sets, not sequences, reducing wasted supervision.
-- **Practical training**: Stays in the standard SFT pipeline (ms-swift), no heavy RL; compatible with native chat templates.
+- **Canonical infrastructure**: CoordExp-Swift owns the active training,
+  inference, evaluation, packing, loss, and artifact paths on repository
+  `main`. The old MS-Swift-centered implementation is preserved on the
+  `ms-swift` archive branch.
 - **Dataset focus**: Defaults to single-source JSONL training; multi-dataset training uses offline-merged JSONL; runtime `custom.fusion_config` is dormant in the supported training surface.
 
 ## Repo layout
 - `src/` - importable CoordExp library code for config loading, datasets,
   training, inference, evaluation, metrics, and visualization helpers.
 - `configs/` - YAML-first training, inference, evaluation, benchmark, and
-  analysis configs. Current training surfaces live under `configs/stage1/` and
-  `configs/stage2_two_channel/`.
+  analysis configs. Current Swift training surfaces live under
+  `configs/coordexp_swift/`; older `configs/stage1/` and `configs/stage2/`
+  families are compatibility or historical routes.
 - `scripts/` - stable user-facing entrypoints plus maintained wrappers and
   utilities. See `scripts/README.md`.
 - `public_data/` - dataset tooling and local raw/processed public datasets.
@@ -36,7 +40,10 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
 - `AGENTS.md` - project instructions for coding agents.
 
 ## Quick start
-1) **Environment**: activate `ms` conda env (`/root/miniconda3/envs/ms`), transformers in that env, ms-swift at `/data/ms-swift`.
+
+1) **Environment**: activate the `ms` conda environment with the installed
+   Transformers/PyTorch runtime. The canonical Swift path does not require a
+   sibling `/data/ms-swift` checkout as its application entrypoint.
 2) **Expand vocab once** (creates coord tokens 0–999 + optional wildcard and saves a new checkpoint):
    ```bash
    cd .
@@ -44,20 +51,15 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
      --src /data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-4B-Instruct \
      --dst /data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-4B-Instruct-coordexp
    ```
-3) **Train (examples)**:
+3) **Train (canonical Swift example)**:
    ```bash
-   conda run -n ms python -m src.sft \
-     --config configs/stage1/sft_base.yaml
-
-   conda run -n ms python -m src.sft \
-     --config configs/stage1/recursive_detection_ce/prod/compact_full_support2.yaml
+   conda run -n ms python -m src.train \
+     --config configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_2step_warmup0p1_eval_patchproof.yaml
    ```
-   - Set `custom.train_jsonl` / `custom.val_jsonl` in legacy Stage-1 SFT YAMLs
-     to the prepared single-source dataset.
-   - Compact recursive detection uses the top-level detection
-     schema in `configs/stage1/recursive_detection_ce/`.
-   - Merge prepared JSONLs offline for multi-dataset training; runtime
-     `custom.fusion_config` is dormant in the supported training surface.
+   - Use `configs/coordexp_swift/prod/` for production-style training and
+     `configs/coordexp_swift/infer/` with `src.infer` for inference.
+   - The fixed val200 inference/eval run is the accepted V1 validation gate;
+     tiny smokes are implementation evidence only.
 
 ### Data prep: LVIS end-to-end (raw → resized JSONL → coord tokens → tiny)
 - After `public_data/scripts/download_lvis.py`, run:
@@ -73,12 +75,17 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
 - All geometry in the emitted JSONLs is rounded to nearest integers by default, so they are directly safe for `<|coord_*|>` conversion.
 - Tunables via env: `FACTOR` (default 32), `MAX_BLOCKS` (pixel budget, default 768), `MIN_BLOCKS` (default 4), `POLY_MAX_POINTS` (default 20), `TINY` (default 256), `NUM_WORKERS`, `RAW_ROOT`, `OUTPUT_BASE`, `SPLITS`.
 
-4) **Key config knobs**
+4) **Key Swift config surfaces**
 - `custom.emit_norm`: must be `none` (runtime normalization is disabled; training assumes pre-normalized norm1000 coords)
 - `custom.coord_tokens.*`: required (`enabled`, `skip_bbox_norm`) to consume pre-quantized coords without double normalization
 - `custom.json_format`: required (currently only `standard`; typo-guard for deterministic parsing)
 - `custom.object_field_order`: required (`desc_first|geometry_first`); keep train/infer parity with `infer.object_field_order`
-- `training.*`: ms-swift trainer settings (deepspeed, schedulers, etc.)
+- `training.*`: CoordExp-Swift training settings; backend/runtime derivation is
+  recorded in the resolved and effective runtime artifacts.
+
+The old MS-Swift launch commands and legacy config roots remain available on
+the `ms-swift` archive branch and in explicitly labeled historical/reference
+documentation. They are not the current `main` workflow.
 
 ### Token-embeddings adapter tuning (opt-in)
 - Purpose: lets role-resolved special token rows learn without touching the rest of the vocab. Adds trainable offsets on `embed_tokens` and `lm_head` for coord IDs 151670-152669 and any compact schema tokens required by the template.

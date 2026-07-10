@@ -1,7 +1,10 @@
 # coordexp-swift-infer-config-runtime Specification
 
 ## Purpose
-TBD - created by archiving change build-coordexp-swift-inference-infra. Update Purpose after archive.
+Canonical CoordExp-Swift inference configuration contract for strict YAML
+loading, inheritance, runtime projection, and provenance on repository `main`.
+The contract is owned by the rebuilt `src/inference/` runtime and is separate
+from the archived MS-Swift/mainline inference configuration surfaces.
 ## Requirements
 ### Requirement: Strict inference config
 The system SHALL define a strict `InferConfig` for offline inference separate from `TrainConfig`.
