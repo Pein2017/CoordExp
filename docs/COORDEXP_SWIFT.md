@@ -6,7 +6,7 @@ status: canonical
 domain: repo
 summary: Current routing and evidence guide for the CoordExp-Swift rebuilt training, inference, and evaluation infrastructure.
 tags: [coordexp-swift, training, inference, eval, routing]
-updated: 2026-07-03
+updated: 2026-07-10
 ---
 
 # CoordExp-Swift Canonical Infrastructure
@@ -16,8 +16,10 @@ MS-Swift-centered line is preserved as the `ms-swift` history archive. See
 [`BRANCH_AND_WORKTREE_POLICY.md`](BRANCH_AND_WORKTREE_POLICY.md) for branch,
 worktree, and Codex-session routing.
 
-This page is the first stop for the rebuilt CoordExp-Swift checkout under
-`/data/CoordExp/.worktrees/CoordExp-swift`, attached to `main`.
+This page is the first stop for the rebuilt CoordExp-Swift implementation in
+the stable `/data/CoordExp` checkout on `main`. Active feature development
+uses `/data/CoordExp/.worktrees/CoordExp-swift` on `coordexp-swift`; validated
+work is promoted by an explicit merge into `main`.
 
 The active goal of this canonical checkout is a locally owned, inspectable
 training and inference stack for Qwen3-VL detection research. It replaces the

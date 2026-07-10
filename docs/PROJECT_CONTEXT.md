@@ -6,7 +6,7 @@ status: canonical
 domain: repo
 summary: Defines documentation ownership, contract authority, and the universal read order for CoordExp.
 tags: [precedence, docs, agents]
-updated: 2026-07-03
+updated: 2026-07-10
 ---
 
 # Project Context & Documentation Authority
@@ -24,9 +24,10 @@ routing, artifact names, and recommended development practice.
 
 CoordExp-Swift canonical authority:
 
-- In the `main` checkout at `/data/CoordExp/.worktrees/CoordExp-swift`, start
-  with [`docs/COORDEXP_SWIFT.md`](COORDEXP_SWIFT.md). The parent checkout on
-  `ms-swift` is an archive/reference line, not current behavior authority.
+- In the stable `main` checkout at `/data/CoordExp`, start with
+  [`docs/COORDEXP_SWIFT.md`](COORDEXP_SWIFT.md). Feature development happens
+  in `/data/CoordExp/.worktrees/CoordExp-swift` on `coordexp-swift`; `ms-swift`
+  is an archive/reference line, not current behavior authority.
 - The rebuilt Swift source route is `src/train.py`, `src/infer.py`,
   `src/inference/`, `src/training/`, `src/qwen/`, `src/packing/`,
   `src/losses/`, and `src/eval/detection_consumer.py`.

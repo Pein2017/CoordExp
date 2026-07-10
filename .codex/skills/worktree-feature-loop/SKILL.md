@@ -31,10 +31,12 @@ Use a worktree for:
 
 Use inplace only for narrow edits with explicit verification, no stable contract change, no long-running outputs, and no unrelated dirt in the same files. If tradeoff is unclear, ask before creating.
 
-CoordExp canonical implementation checkout: `/data/CoordExp/.worktrees/CoordExp-swift` on `main`.
-The parent `/data/CoordExp` checkout is the preserved `ms-swift` archive line;
-do not use it as the default implementation base. Worktree roots still default
-to `.worktrees/` unless the user explicitly requests another path. Remember
+CoordExp stable operational checkout: `/data/CoordExp` on `main`; use it for
+official training and evaluation. The active development checkout is
+`/data/CoordExp/.worktrees/CoordExp-swift` on `coordexp-swift`; implement and
+validate features there before an explicit merge to `main`. `ms-swift` is an
+unmounted history archive branch. Worktree roots still default to `.worktrees/`
+unless the user explicitly requests another path. Remember
 `mcp/codexUI` is a nested git repo; never sweep nested-repo changes into parent
 commits.
 
@@ -54,7 +56,7 @@ Branch prefix defaults to `codex/`.
 3. After creating or entering a worktree, restore runtime path parity with the
    main checkout by manually adding local symlinks for ignored heavy roots:
    ```bash
-   # Shared data/artifact root, not the archived ms-swift checkout.
+# Shared data/artifact root in the stable main checkout.
    main_root=/data/CoordExp
    for name in model_cache outputs; do
      target="$main_root/$name"
@@ -91,8 +93,8 @@ Branch prefix defaults to `codex/`.
 12. Finish with `finishing-a-development-branch` or the user's requested commit/push/merge flow.
 13. Remove worktree only after merge/discard, from the repository control
     checkout, with provenance check and no uncommitted work. Confirm that
-    `/data/CoordExp/.worktrees/CoordExp-swift` remains the `main` worktree
-    before any cleanup.
+    `/data/CoordExp/.worktrees/CoordExp-swift` remains the `coordexp-swift`
+    development worktree before any cleanup.
 
 ## CoordExp Gotchas
 

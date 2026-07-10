@@ -15,19 +15,25 @@ CoordExp-Swift is now the canonical implementation on repository `main`.
 
 ## Canonical routing
 
-- `main` is the active CoordExp-Swift branch.
-- `/data/CoordExp/.worktrees/CoordExp-swift` is the active checkout attached
-  to `main`.
+- `main` is the stable CoordExp-Swift branch. `/data/CoordExp` is its
+  operational checkout for official training and evaluation.
+- `coordexp-swift` is the active development branch. It is checked out at
+  `/data/CoordExp/.worktrees/CoordExp-swift` for feature and experiment work.
 - `ms-swift` is the preserved pre-promotion mainline, retained as a history
-  archive and compatibility/reference branch. It is not the default target
-  for new implementation work.
-- `origin/coordexp-swift` is a transition and rollback alias for the current
-  Swift promotion commit. New work should target `main`.
+  archive and compatibility/reference branch. It has no active worktree and
+  is not a target for new implementation or launches.
+- `origin/coordexp-swift` tracks the active development branch; promote
+  validated work from it into `main` through an explicit merge.
 
 When a task asks for the current repository, current implementation, or default
-branch, resolve it against `main` and the Swift checkout. Use `ms-swift` only
-for historical reconstruction, old-run reproduction, or explicit archive
-maintenance.
+branch, resolve it against `main` at `/data/CoordExp`. For feature work, use
+the Swift development checkout. Use `ms-swift` only for historical
+reconstruction, old-run reproduction, or explicit archive maintenance.
+
+The normal iteration is: develop and validate in `coordexp-swift`; merge the
+accepted commits into `main`; launch official training/evaluation from the
+root `main` checkout; then update the development branch from the promoted
+`main` state before the next feature slice.
 
 ## Codex sessions and task worktrees
 
@@ -44,11 +50,13 @@ git worktree list --porcelain
 git rev-parse --show-toplevel
 ```
 
-The active implementation checkout should report branch `main` and path
-`/data/CoordExp/.worktrees/CoordExp-swift`. A Codex task that still displays an
-older task branch is stale app-owned metadata; starting from or sending a new
-message in the live `main` checkout should refresh that association. Historical
-session content remains unchanged by design.
+The stable implementation checkout should report branch `main` and path
+`/data/CoordExp`; the active development checkout should report branch
+`coordexp-swift` and path `/data/CoordExp/.worktrees/CoordExp-swift`. A Codex
+task that still displays an older task branch is stale app-owned metadata;
+starting from or sending a new message in the intended live checkout should
+refresh that association. Historical session content remains unchanged by
+design.
 
 ## Legacy and upstream wording
 
