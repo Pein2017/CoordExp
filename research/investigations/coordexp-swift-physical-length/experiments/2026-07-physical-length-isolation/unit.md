@@ -1,6 +1,26 @@
+---
+type: investigation
+role: research-unit
+authority: non_normative_research
+promotion_status: not_promoted
+unit_id: 2026-07-physical-length-isolation
+topic: coordexp-swift-physical-length
+status: complete
+title: CoordExp-Swift Physical-Length Isolation
+description: Tiered smoke evidence showing the initial physical-length pair is count-confounded and should not be interpreted as a clean length-isolation result.
+tags: [coordexp-swift, physical-length, packing, smoke, negative-result]
+updated: 2026-07-09
+---
+
 # CoordExp-Swift Physical-Length Isolation Summary
 
 Evidence scope: `tiered smoke`.
+
+## Question
+
+Does changing physical packed-row length while preserving runtime and boundary
+health isolate a precision-sensitive training/eval effect in the current
+CoordExp-Swift smoke pair?
 
 ## Runs
 
@@ -47,6 +67,22 @@ Verdict: `unresolved_count_confounded`.
 - `pure_physical_length_eliminated_smoke_scope` means the pair changed physical packed-row length, preserved boundary/runtime/count gates, and stayed inside the metric tolerances.
 - `unresolved_count_confounded` means physical row length changed, but examples or supervised atoms per compared step also changed, so the run cannot isolate pure length by itself.
 - This report is smoke evidence only; it is not a full validation or benchmark claim.
+
+## Research Unit Closeout
+
+Observed: the pair changed physical packed-row length and preserved basic
+boundary/runtime health, but examples and supervised atoms did not match.
+
+Supported: this smoke pair is count-confounded and cannot isolate pure physical
+length.
+
+Not supported yet: any benchmark or training-quality claim about physical
+packed-row length effects.
+
+Next decider: create a count-matched follow-up arm before running a larger
+confirmation.
+
+Promotion decision: keep as research-unit evidence; do not promote to OpenSpec.
 
 ## Recommended Next Action
 

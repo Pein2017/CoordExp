@@ -3,6 +3,7 @@
 ## Main Reading Path
 
 - [Overview](overview.md)
+- [Conditions](conditions.md)
 - [Draft](draft.md)
 - [Discussion](discussion.md)
 - [Implementation](implementation.md)

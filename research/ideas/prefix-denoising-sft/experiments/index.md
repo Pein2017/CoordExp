@@ -1,7 +1,7 @@
 # Prefix Denoising SFT Experiments
 
-## Experiment Notes
+## Units
 
-- [Launch Health And Branch Isolation](2026-06-14_launch_health_and_branch_isolation.md)
-- [Axis-Sort Repair Negative Result](2026-06-16_axis_sort_negative_result.md)
-- [Inert Objective Root-Cause Analysis](2026-06-17_inert_objective_root_cause.md)
+- [2026-06-14 Launch Health And Branch Isolation](2026-06-14-launch-health-and-branch-isolation/unit.md)
+- [2026-06-16 Axis-Sort Repair Negative Result](2026-06-16-axis-sort-negative-result/unit.md)
+- [2026-06-17 Inert Objective Root-Cause](2026-06-17-inert-objective-root-cause/unit.md)

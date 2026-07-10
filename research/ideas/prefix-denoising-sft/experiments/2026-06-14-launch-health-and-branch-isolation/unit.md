@@ -1,5 +1,11 @@
 ---
 type: idea
+role: research-unit
+authority: non_normative_research
+promotion_status: not_promoted
+unit_id: 2026-06-14-launch-health-and-branch-isolation
+topic: prefix-denoising-sft
+status: complete
 title: Prefix Denoising Launch Health And Branch Isolation
 description: Tiny launch-health and branch-isolation repair evidence for prefix-denoising SFT V1.
 tags: [stage1, prefix-denoising, launch-health, tiny]
@@ -67,6 +73,22 @@ runtime.prefix_denoising.dataset.train.skipped_rows=0
 The repaired branch was healthy for V1 launch wiring. The evidence does not
 show that prefix denoising improves free decode, localization, recall,
 coordinate robustness, or downstream AP.
+
+## Research Unit Closeout
+
+Observed: repaired branch-isolated CE-only and KL-on tiny GPU smokes completed
+2/2 steps and emitted the expected runtime and metric payloads.
+
+Supported: the V1 launch path was healthy at tiny scope after branch-isolation
+repair.
+
+Not supported yet: rollout robustness, localization improvement, recall
+improvement, coordinate-prefix robustness, or downstream AP benefit.
+
+Next decider: matched denoising-OFF hard-CE LoRA control and evaluation-quality
+probe before any training-guidance promotion.
+
+Promotion decision: keep as research evidence; do not promote to OpenSpec.
 
 Manifest handles:
 

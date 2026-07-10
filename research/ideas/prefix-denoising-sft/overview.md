@@ -60,11 +60,12 @@ denoising benefit or harm.
 ## Main Reading Path
 
 - [Draft](draft.md) - original V1 idea and rationale
+- [Conditions](conditions.md) - recurring checkpoint, config, eval, and artifact condition names
 - [Discussion](discussion.md) - audit findings, repair decisions, and interpretation boundaries
 - [Implementation](implementation.md) - worktree, branch, code/config, verification, and artifact handles
-- [Launch Health And Branch Isolation](experiments/2026-06-14_launch_health_and_branch_isolation.md)
-- [Axis-Sort Repair Negative Result](experiments/2026-06-16_axis_sort_negative_result.md)
-- [Inert Objective Root-Cause Analysis](experiments/2026-06-17_inert_objective_root_cause.md)
+- [Launch Health And Branch Isolation](experiments/2026-06-14-launch-health-and-branch-isolation/unit.md)
+- [Axis-Sort Repair Negative Result](experiments/2026-06-16-axis-sort-negative-result/unit.md)
+- [Inert Objective Root-Cause Analysis](experiments/2026-06-17-inert-objective-root-cause/unit.md)
 
 This idea is active and does not yet have a final `conclusion.md`.
 

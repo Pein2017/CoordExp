@@ -1,5 +1,11 @@
 ---
 type: idea
+role: research-unit
+authority: non_normative_research
+promotion_status: not_promoted
+unit_id: 2026-06-16-axis-sort-negative-result
+topic: prefix-denoising-sft
+status: complete
 title: Prefix Denoising Axis-Sort Repair Negative Result
 description: Diagnostic negative result showing bbox endpoint sorting improves materialization but does not recover localization quality.
 tags: [stage1, prefix-denoising, negative-result, eval]
@@ -66,6 +72,23 @@ from broader coordinate failure. It improves artifact coverage but does not
 recover localization quality. The checkpoint is not merely swapping `x1/x2` or
 `y1/y2`; it also produces edge-saturated, degenerate, wrong-arity, and poorly
 localized boxes.
+
+## Research Unit Closeout
+
+Observed: endpoint sorting reduced empty materialization but AP remained low
+under post-repair and immediate-repair variants.
+
+Supported: endpoint inversion is only one symptom; localization failure remains
+after sorting.
+
+Not supported yet: a claim that prefix-denoising harm is explained primarily by
+coordinate endpoint order.
+
+Next decider: compare against a matched denoising-OFF hard-CE LoRA control and
+decode settings before attributing degradation to the denoising objective.
+
+Promotion decision: keep as negative research evidence; do not promote to
+OpenSpec.
 
 ## Artifact Handles
 

@@ -1,5 +1,11 @@
 ---
 type: idea
+role: research-unit
+authority: non_normative_research
+promotion_status: not_promoted
+unit_id: 2026-06-17-inert-objective-root-cause
+topic: prefix-denoising-sft
+status: complete
 title: Prefix Denoising Inert Objective Root-Cause Analysis
 description: Root-cause analysis arguing that the tested prefix-denoising objective was inert and baseline comparison was confounded.
 tags: [stage1, prefix-denoising, root-cause, eval-validity]
@@ -68,6 +74,25 @@ self-rollout or relative-encoding variants.
 Confidence: high for objective inertness and baseline mismatch in this record;
 medium for the prediction that a matched denoising-OFF control will land near
 the same AP until that control is run.
+
+## Research Unit Closeout
+
+Observed: clean/noisy branch CE and local-window KL were nearly identical, and
+the analyzed baseline comparison differed on objective, training length,
+adapter/full-merge state, and recipe.
+
+Supported: the tested V1 objective likely did not engage the intended
+coordinate-prefix mechanism, and the recorded baseline comparison is
+confounded.
+
+Not supported yet: a final rejection of geometry-aware denoising, or a
+directional conclusion about denoising benefit/harm without a matched control.
+
+Next decider: run or locate the matched denoising-OFF hard-CE LoRA control and
+coordinate-objective comparison.
+
+Promotion decision: keep as research interpretation; do not promote to
+OpenSpec until a reusable metric or artifact contract emerges.
 
 Manifest handle:
 
