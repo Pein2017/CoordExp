@@ -14,7 +14,7 @@ Key constraints:
 
 Existing project packing infrastructure:
 - Dataset packing wrapper: `src/datasets/wrappers/packed_caption.py` groups encoded samples and relies on ms-swift template packing/padding-free collator.
-- ms-swift "packing row" implementation: `/data/home/xiaoyan/AIteam/data/ms-swift/swift/llm/template/base.py`:
+- ms-swift "packing row" implementation: `/data/ms-swift/swift/llm/template/base.py`:
   - `Template.packing_row(...)` concatenates `input_ids/labels/loss_scale` and resets `position_ids` per segment.
   - Packing / padding-free collation is driven by template flags:
     - `template.padding_free` / `template.packing` control whether `Template.data_collator(batch, padding_to=...)` collapses a multi-sample batch into a single packed row.
@@ -213,14 +213,14 @@ Rollout-matching depends on strict token-level alignment, so a rollout backend m
 
 ### Relevant code references (existing ecosystem)
 - ms-swift rollout + vLLM infrastructure (used by GRPO/GKD):
-  - `/data/home/xiaoyan/AIteam/data/ms-swift/swift/trainers/rlhf_trainer/rollout_mixin.py`:
+  - `/data/ms-swift/swift/trainers/rlhf_trainer/rollout_mixin.py`:
     - colocate rollout mode (`_colocate_rollout`) with TP-group gather/slice
     - weight sync (`_move_model_to_vllm`) gated by `global_step`
     - optional sleep/wake for KV cache and weights
-  - `/data/home/xiaoyan/AIteam/data/ms-swift/swift/llm/infer/infer_engine/grpo_vllm_engine.py`:
+  - `/data/ms-swift/swift/llm/infer/infer_engine/grpo_vllm_engine.py`:
     - vLLM engine wrapper returning `RolloutOutput` with `token_ids` and `prompt_token_ids`
 - Qwen3-VL vLLM backend (inference-oriented, helpful as a multimodal request reference):
-  - `/data/home/xiaoyan/AIteam/data/Qwen3-VL/src/generation/backends/vllm_backend.py`
+  - `/data/Qwen3-VL/src/generation/backends/vllm_backend.py`
   - demonstrates vLLM VLM request payloads (`multi_modal_data: {"image": ...}`) and stop handling.
 
 ### vLLM colocate mode (the only supported mode for this change)
@@ -231,7 +231,7 @@ Concept:
 How ms-swift does it (reference pattern):
 - For `vllm_tensor_parallel_size > 1`, it gathers inputs inside each TP subgroup, runs one engine infer on the gathered
   list, then slices outputs back per-rank.
-- See `_colocate_rollout` in `/data/home/xiaoyan/AIteam/data/ms-swift/swift/trainers/rlhf_trainer/rollout_mixin.py`.
+- See `_colocate_rollout` in `/data/ms-swift/swift/trainers/rlhf_trainer/rollout_mixin.py`.
 
 Pros:
 - No additional GPUs needed.
@@ -273,7 +273,7 @@ Implication for this change:
 
 ### Multimodal + LoRA compatibility analysis (high risk area)
 ms-swift warns about vLLM LoRA for multimodal models:
-- In `/data/home/xiaoyan/AIteam/data/ms-swift/swift/trainers/rlhf_trainer/rollout_mixin.py`, when `vllm_enable_lora`
+- In `/data/ms-swift/swift/trainers/rlhf_trainer/rollout_mixin.py`, when `vllm_enable_lora`
   is enabled it warns that multimodal LoRA may misbehave if LoRA touches the ViT component.
 
 Implications for CoordExp stage_2:

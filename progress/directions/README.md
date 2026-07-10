@@ -2,7 +2,7 @@
 doc_id: progress.directions.index
 layer: progress
 doc_type: router
-status: canonical
+status: legacy-router
 domain: research-history
 summary: Router for historical research directions and Stage-2 design lineage.
 tags: [progress, directions, stage1, stage2]
@@ -11,23 +11,24 @@ updated: 2026-06-15
 
 # Directions Index
 
-Use this folder when the main question is:
+Use this legacy folder only when the main question is:
 
-- which historical design note best explains the current Stage-1 or Stage-2 line?
-- how did the repo move from clean-prefix v2 to the current pseudo-positive v4 direction?
-- what is the source idea for Stage-1 set-continuation / multi-positive training?
+- which historical design note explains an older Stage-1 or Stage-2 line?
+- how did the repo move from clean-prefix v2 to later pseudo-positive directions?
+- what old source idea shaped Stage-1 set-continuation / multi-positive training?
 - which older direction note is still worth reading versus only keeping for lineage?
 
-Prefer `docs/` and `openspec/specs/` for the current contract. Use
-`progress/directions/` for the historical why.
+Prefer `docs/` and `openspec/specs/` for the current contract, and `research/`
+for new research directions. Use `progress/directions/` only for the legacy
+historical why.
 
-## Current Entry Point
+## Legacy Entry Point
 
 - [full_idea_v5.md](full_idea_v5.md)
-  - current Stage-1 set-continuation direction note
-  - source research note for subset-conditioned full-entry multi-positive supervision
+  - legacy Stage-1 set-continuation direction note
+  - old source research note for subset-conditioned full-entry multi-positive supervision
 
-## Recent Draft Direction Notes
+## Legacy Draft Direction Notes
 
 - [2026-06-07_segment_aware_packing_infra.md](2026-06-07_segment_aware_packing_infra.md)
   - segment-aware packing infrastructure direction; draft/provenance only until promoted into current packing docs

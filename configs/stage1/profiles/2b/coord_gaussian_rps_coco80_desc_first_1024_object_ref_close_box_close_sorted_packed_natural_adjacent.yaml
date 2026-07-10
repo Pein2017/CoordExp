@@ -1,0 +1,45 @@
+extends:
+  - ./pure_ce_coco80_desc_first_1024_object_ref_close_box_close_sorted_packed_natural_adjacent.yaml
+
+objective:
+  id: standard_ce
+  variant: sorted_sft
+  auxiliaries:
+    coord_soft_ce:
+      enabled: false
+      ce_weight: 0.0
+      soft_ce_weight: 0.0
+      w1_weight: 0.0
+      gate_weight: 0.0
+      text_gate_weight: 0.0
+    coord_gaussian_rps:
+      enabled: true
+      ce_weight: 1.0
+      gaussian_weight: 0.5
+      rps_weight: 0.2
+      temperature: 1.0
+      gaussian_r95_axis_fraction: 0.04
+      gaussian_r95_cap_bins: 8
+      gaussian_r95_min_bins: 1
+      gaussian_r95_fallback_bins: 8
+      type_gate:
+        enabled: true
+        mode: allowed_type_mass
+        weights:
+          struct: 1.0
+          coord: 1.0
+          desc: 1.0
+          eos: 1.0
+    geometry:
+      enabled: false
+
+data:
+  image_root: public_data/coco/rescale_32_1024_bbox_max60
+
+training:
+  artifact_subdir: stage1_2b/coco_bbox_max60_1024-coco80-desc_first-compact_object_box_closed-sorted-packed12k-natural_adjacent-coord_gaussian_rps
+  run_name: epoch_4-coord_gaussian_rps-coco80-desc_first-1024-compact_object_box_closed-sorted-packed12k-natural_adjacent-llm_only
+  logging_steps: 10
+  eval_steps: 100
+  save_steps: 300
+  # save_delay_steps remains inherited from the 12k packed base profile.

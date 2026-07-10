@@ -76,7 +76,8 @@ For most work:
 6. the relevant domain router under `docs/`
 7. relevant `openspec/specs/` only for stable contract semantics
 8. `openspec/changes/<active-change>/` only when explicitly in scope
-9. `progress/` only for design history, empirical evidence, diagnostics, or benchmarks
+9. `research/` for active research interpretation and continuation context
+10. `progress/` only for design history, empirical evidence, diagnostics, or benchmarks
 
 ## Authoring Rules
 

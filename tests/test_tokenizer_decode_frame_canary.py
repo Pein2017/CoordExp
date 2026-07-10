@@ -201,7 +201,7 @@ def test_tokenizer_decode_frame_consistency_canary():
     repo_root = Path(__file__).resolve().parent.parent
 
     # Preferred: explicit path. Fallback: a stable local checkpoint path if present.
-    default_path = "/data/home/xiaoyan/AIteam/data/Qwen3-VL"
+    default_path = "/data/Qwen3-VL"
     tok_path = str(os.environ.get("COORDEXP_TOKENIZER_PATH", default_path) or "").strip()
     p = Path(tok_path) if tok_path else Path()
 

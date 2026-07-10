@@ -26,16 +26,29 @@ For large or independent diagnosis lanes, delegate to the `model_diagnostician` 
 Start from the exact artifact root named by the user before interpreting metrics.
 
 - Identify run root, checkpoint, dataset slice, config, decode surface, bbox format, and scope label.
-- Open durable summaries before logs: `resolved_config.json`, `summary.json`, `metrics*.json`, `run_metadata.json`, and relevant manifests.
+- Open durable summaries before logs when present: `resolved_config.json`, `summary.json`, `metrics*.json`, `run_metadata.json`, and relevant manifests.
 - For infer/eval, check raw and scored prediction JSONL, parser/drop counters, token traces, confidence/scoring sidecars, and duplicate guard reports when present.
 - For invalid outputs, aggregate failure families before sampling examples: wrong arity, missing fields, unexpected keys, bad coordinate slots, empty objects, truncation, repetition tails, and max-token saturation.
 - Decide whether the evidence is `artifact invalid`, `implementation bug likely`, `objective mismatch`, `decoding/parser mismatch`, `data distribution issue`, `optimization issue`, `model limitation`, or `inconclusive-needs-probe`.
 
+## Run Receipt Boundary Check
+
+Use a compact run receipt to rule out surface and provenance traps before explaining a score:
+
+- authored config and resolved/effective config or runtime when available;
+- checkpoint/adapter identity, step count, and training budget;
+- data slice, image/sample count, bbox/coord format, and evaluation scope;
+- decode kwargs, tokenizer/template surface, max tokens, stop handling, and parser/scorer path;
+- metric artifact, raw prediction artifact, and intended baseline/comparison target.
+
+This receipt is a boundary check, not the diagnosis. It catches wrong-run, stale-artifact, decode/config, budget, and scorer mismatches, but low performance often comes from hidden behavioral roots. If the receipt is consistent, continue to symptom deltas, raw rollouts, failure-family counts, and mechanism-specific probes instead of concluding "runtime/config is fine, so the model is bad." If receipt facts are missing or ambiguous, label artifact validity as unresolved and name the smallest check that would settle it.
+
 ## Diagnostic Order
 
 1. **Pin the observed run**: artifact root, checkpoint, config, dataset slice, decoding, seed, step count, baseline, and intended change if any.
-2. **Build symptom deltas**: AP/AP50/AP75/AR, precision/recall or FP/FN, prediction counts, parse/drop validity, duplicate tails, length/stop/repetition, loss terms, gradient/LR, data counts/weights/packing, and raw-vs-guarded metrics.
-3. **Classify symptoms** before explaining:
+2. **Build the run receipt**: verify the observed run is comparable enough to interpret; treat mismatches as artifact/eval validity blockers, but do not overfit the diagnosis to surface receipt fields.
+3. **Build symptom deltas**: AP/AP50/AP75/AR, precision/recall or FP/FN, prediction counts, parse/drop validity, duplicate tails, length/stop/repetition, loss terms, gradient/LR, data counts/weights/packing, and raw-vs-guarded metrics.
+4. **Classify symptoms** before explaining:
    - train improves, eval drops -> objective/eval mismatch or overfit;
    - teacher-forced improves, free rollout worsens -> exposure/off-policy mismatch;
    - validity collapses -> serialization, constrained decoding, token type, or boundary-state failure;
@@ -44,8 +57,8 @@ Start from the exact artifact root named by the user before interpreting metrics
    - both down -> optimization, corruption, mask/shift, checkpoint/eval bug;
    - crowded-only failure -> sampling, annotation incompleteness, exposure bias;
    - impossible provenance -> stale checkpoint, wrong adapter, merge/shard bug.
-4. **Inspect raw rollouts**: start form, field token type, boundary transition, stop, repetition, per-sample bucket.
-5. **Propose mechanism-specific fixes**: implementation, objective, distribution, decoding, optimization, or evaluation.
+5. **Inspect raw rollouts**: start form, field token type, boundary transition, stop, repetition, per-sample bucket.
+6. **Propose mechanism-specific fixes or probes**: implementation, objective, distribution, decoding, optimization, or evaluation. Prefer a discriminating probe when multiple hidden roots remain plausible.
 
 ## Tiny Probe Gate
 
@@ -114,6 +127,7 @@ If a direct script launch cannot import `src`, set `PYTHONPATH=/data/CoordExp` e
 ```text
 Diagnosis
 Evidence
+Run Receipt / Artifact Validity
 Probe Scope
 Symptom Taxonomy
 Likely Root Cause

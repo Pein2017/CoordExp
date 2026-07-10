@@ -1,0 +1,36 @@
+extends:
+  - ../smoke/compact_full_tiny.yaml
+
+training:
+  artifact_subdir: loss_only_instance_enumeration_random_sft_smoke
+  run_name: smoke-loss-only-instance-enumeration-random-sft
+  packing: false
+  eval_packing: false
+  group_by_length: false
+  weight_decay: 0.0
+
+data:
+  object_ordering: random_permutation
+
+objective:
+  id: teacher_forcing
+  profile: hard_sft
+  target_ir:
+    rollin_policy:
+      name: random_permutation
+      base_seed: 17
+
+row_conditioned_visual_coverage:
+  enabled: false
+
+pixel_painted_row_coverage:
+  enabled: false
+
+instance_enumeration_aux:
+  enabled: true
+  version: v1
+  probe_lr: 1.0e-5
+  positive_weight: 0.5
+  negative_weight: 0.2
+  negative_margin: 0.5
+  support_floor: 0.10

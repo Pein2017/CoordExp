@@ -47,6 +47,19 @@ Extract the intended algorithm contract, then compare it across:
 - decode/eval/parser behavior;
 - artifacts and manifests.
 
+## Runtime Ownership Gate
+
+When upstream libraries, wrappers, launchers, or distributed runtimes can own behavior, identify the executable owner before trusting receipts or mocks.
+
+Check who owns:
+
+- optimizer and scheduler stepping;
+- gradient accumulation, scaling, clipping, skipped updates, and distributed reduction;
+- model wrapping/unwrapping, adapter visibility, trainable groups, and checkpoint payloads;
+- tokenizer, template, decode, parser, and artifact/provenance side effects.
+
+Fake wrappers, dry-run receipts, and plan artifacts prove wiring shape only. If the claim depends on installed runtime semantics, inspect installed source or run a tiny executable probe.
+
 ## Config And Loss Footguns
 
 - `ConfigLoader.load_yaml_with_extends()` deep-merges dicts but replaces lists wholesale; inspect final resolved objective lists.

@@ -1,0 +1,24 @@
+extends:
+  - ../profiles/2b/coord_gaussian_rps_coco80_desc_first_1024_len12000_object_ref_close_box_close_sorted_packed12k_ebs24_8epoch.yaml
+
+training:
+  output_root: temp/stage1_smoke_outputs
+  logging_root: temp/stage1_smoke_tb
+  artifact_subdir: stage1/smoke/coco_bbox_len12000_1024-coco80-desc_first-compact_object_box_closed-sorted-packed12k-natural_adjacent-coord_gaussian_rps-ebs24-8gpu
+  run_name: smoke_12steps-ebs24-coord_gaussian_rps-coco80-desc_first-1024-len12000-compact_object_box_closed-sorted-packed12k-natural_adjacent-llm_only-8gpu
+  max_steps: 12
+  eval_steps: 4
+  save_steps: 4
+  save_delay_steps: 0
+  logging_steps: 1
+  dataloader_num_workers: 0
+  dataloader_pin_memory: false
+  dataloader_prefetch_factor: null
+  dataloader_persistent_workers: false
+  static_packing_cache:
+    root_dir: temp/static_packing_smoke/stage1_coco80_desc_first_1024_len12000_compact_object_box_closed_sorted_packed12k_natural_adjacent_coord_gaussian_rps_ebs24_8gpu
+
+debug:
+  enabled: true
+  train_sample_limit: 768
+  val_sample_limit: 128

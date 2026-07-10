@@ -37,7 +37,8 @@ attempt.
 - Prefer a small prod config plus a smoke overlay over separate tiny/DDP/single
   GPU files for every variant.
 - If a config exists only to remember an old run, record the artifact path in
-  `progress/` and remove the runnable YAML from `configs/`.
+  `research/` or a current handoff note and remove the runnable YAML from
+  `configs/`. Do not create new `progress/` notes.
 - The retired Stage-2 AB/two-channel config root is removed; do not add active
   configs under old `stage2_ab` or `stage2_two_channel` names.
 - `configs/analysis/`, `configs/infer/`, `configs/eval/`, `configs/postop/`,

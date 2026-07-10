@@ -1,0 +1,21 @@
+extends:
+  - ./row_coverage_random_sft_ce_cont_from_random_pure_sft_1epoch_eval512_8gpu.yaml
+  - ../smoke/common_prodlike.yaml
+
+training:
+  artifact_subdir: row_coverage_random_sft_ce_cont_random_pure_sft_all_layers_8gpu_preflight
+  run_name: preflight-row-coverage-random-sft-ce-cont-random-pure-sft-all-layers-8gpu
+  max_steps: 4
+  save_strategy: steps
+  save_steps: 4
+  save_total_limit: 1
+  save_delay_steps: 0
+  save_model_only: true
+  eval_strategy: "no"
+  logging_steps: 1
+  logging_first_step: true
+
+debug:
+  enabled: true
+  train_sample_limit: 512
+  val_sample_limit: 8

@@ -370,7 +370,8 @@ Docs should route agents to truth, not mirror implementation.
 - Current behavior, workflows, artifact names, and source-owner links belong in
   `docs/`.
 - Stable contract semantics belong in `openspec/specs/`.
-- Dated diagnostics, benchmarks, and design derivations belong in `progress/`.
+- New dated diagnostics, benchmarks, and design derivations belong in
+  `research/`. Existing `progress/` notes are legacy provenance only.
 - Research synthesis may live in `research/`, but it is not authority for
   current operator/schema/artifact behavior.
 - Do not duplicate volatile constants, benchmark claims without scope, or

@@ -33,7 +33,8 @@ Human support entrypoints:
 6. relevant `openspec/specs/` only for stable contract semantics
    - use [`runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md) for runtime structure, internal seams, and compatibility-preserving refactors
    - use [`stage2-rollout-correction/spec.md`](../openspec/specs/stage2-rollout-correction/spec.md) for active Stage-2 behavior and config contracts
-7. `progress/` only when current docs do not answer the historical or empirical question
+7. `research/` for active research interpretation and continuation context
+8. `progress/` only when current docs do not answer the historical or empirical question
 
 ## Query Routing
 

@@ -20,7 +20,7 @@
   - Stage-1: `stop_signal/gt/{eligible_seq_count,branch_count,weight_mean,p_stop_mean,p_cont_mean,margin_mean}`
   - Stage-2 Channel-A: `stop_signal/A1/{eligible_seq_count,branch_count,weight_mean,p_stop_mean,p_cont_mean,margin_mean}`
 - [x] 3.3 Add or update tests so stop-signal counters aggregate additively, gauge metrics remain mean-like, and disabled / no-eligible-branch steps omit `stop_signal/gt/*` and `stop_signal/A1/*` keys.
-- [x] 3.4 Update [METRICS.md](/data/home/xiaoyan/AIteam/data/CoordExp/.worktrees/adaptive-stop-signal-damping/docs/training/METRICS.md) and [STAGE2_RUNBOOK.md](/data/home/xiaoyan/AIteam/data/CoordExp/.worktrees/adaptive-stop-signal-damping/docs/training/STAGE2_RUNBOOK.md) so the new objective atoms, diagnostics, and downstream readout expectations are documented.
+- [x] 3.4 Update [METRICS.md](/data/CoordExp/.worktrees/adaptive-stop-signal-damping/docs/training/METRICS.md) and [STAGE2_RUNBOOK.md](/data/CoordExp/.worktrees/adaptive-stop-signal-damping/docs/training/STAGE2_RUNBOOK.md) so the new objective atoms, diagnostics, and downstream readout expectations are documented.
 
 ## 4. YAML Surfaces
 

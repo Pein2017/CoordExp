@@ -1,0 +1,76 @@
+# Compact-full A5 instance-trie Gaussian SoftCE checkpoint-3664 val200 infer/eval.
+#
+# Scope:
+# - dataset: COCO rescale_32_1024_bbox_max60 val.coord.jsonl
+# - slice: first 200 records (`val200`, via infer.limit)
+# - checkpoint: adapter checkpoint-3664 from the A5 instance-trie Gaussian SoftCE run
+# - template surface: compact_full coord-token detection rows
+# - chat parity: shared image-before-text detection chat builder
+# - launch shape: 1 GPU via CUDA_VISIBLE_DEVICES=<gpu> scripts/run_infer.py
+# - comparison knob: generation.repetition_penalty = 1.10
+# - max token ablation: generation.max_new_tokens = 3084
+
+run:
+  name: a5_instance_trie_gaussian_ckpt3664_val200_bsz4_temp0_rep1p10_max3084_chatfix_1gpu
+  output_dir: /data/CoordExp/outputs/infer/recursive_detection_ce
+
+stages:
+  infer: true
+  eval: true
+  vis: false
+
+infer:
+  gt_jsonl: public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl
+  model_checkpoint: /data/CoordExp/outputs/stage1_2b/compact_full_et_rmp_instance_trie_gaussian_softce_a5_support2_bsz16_8gpu_4epoch_tokenrows_v2/compact-full-et-rmp-instance_trie_gaussian_softce_a5-support2-bsz16-8gpu-4epoch-tokenrows-v2/v0-20260514-152238/checkpoint-3664
+
+  prompt_variant: coco_80
+  detection_sequence_format: compact_full
+  bbox_format: xyxy
+  object_field_order: desc_first
+  object_ordering: random
+
+  mode: coord
+  pred_coord_mode: auto
+
+  backend:
+    type: hf
+    attn_implementation: flash_attention_2
+
+  generation:
+    temperature: 0.0
+    top_p: 0.9
+    max_new_tokens: 3084
+    repetition_penalty: 1.10
+    batch_size: 4
+    seed: 42
+
+  device: cuda:0
+  limit: 200
+  detect_samples: 128
+
+confidence:
+  fusion_w_geom: 1.0
+  fusion_w_desc: 0.0
+  desc_span_policy: best_effort
+  empty_desc_policy: geom_only
+
+eval:
+  metrics: both
+  strict_parse: false
+  use_segm: false
+  lvis_max_dets: 300
+
+  overlay: false
+  overlay_k: 12
+  num_workers: 8
+
+  semantic_model: model_cache/all-MiniLM-L6-v2-local
+  semantic_threshold: 0.5
+  semantic_device: cuda:0
+  semantic_batch_size: 64
+
+  f1ish_iou_thrs: [0.3, 0.5]
+  f1ish_pred_scope: annotated
+
+  duplicate_control:
+    enabled: true

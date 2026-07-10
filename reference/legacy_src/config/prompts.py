@@ -252,10 +252,10 @@ def _compact_prompt_pattern(
         contract,
         desc="{desc}",
         bbox_tokens=(
-            "<|coord_x1|>",
-            "<|coord_y1|>",
-            "<|coord_x2|>",
-            "<|coord_y2|>",
+            "<|coord_100|>",
+            "<|coord_200|>",
+            "<|coord_300|>",
+            "<|coord_400|>",
         ),
         object_field_order=object_field_order,
     )

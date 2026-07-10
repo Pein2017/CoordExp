@@ -1,0 +1,104 @@
+schema_version: 1
+
+study:
+  name: ckpt928_desc_first_vs_geometry_first_val200
+  output_namespace: autoregressive_binding_template_ablation
+  canonical_gt_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl
+  image_root: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000
+  evidence_scope: val200
+
+resources:
+  available_gpus: [0, 1, 2, 3, 4, 5, 6, 7]
+  note: Use GPU shards only after deterministic cohort/probe manifests are written.
+
+template_contract:
+  detection_template_id: compact_object_box_closed
+  object_ordering: sorted
+  prompt_variant: coco_80
+  bbox_format: xyxy
+  pred_coord_mode: auto
+  processor_do_resize: false
+  stop_token: "<|im_end|>"
+  coordinate_tokens:
+    start_token: "<|coord_0|>"
+    end_token: "<|coord_999|>"
+    expected_start: 151670
+    expected_end: 152669
+  wrapper_tokens:
+    "<|object_ref_start|>": 151646
+    "<|object_ref_end|>": 151647
+    "<|box_start|>": 151648
+    "<|box_end|>": 151649
+
+decode_contract:
+  temperature: 0.0
+  repetition_penalty: 1.10
+  max_new_tokens: 3084
+
+checkpoints:
+  desc_first:
+    object_field_order: desc_first
+    adapter_surface: token_embeddings_adapter
+    checkpoint: /data/CoordExp/outputs/analysis/autoregressive_binding_template_ablation/converted_adapters/desc_first_ckpt928_token_embeddings_adapter/checkpoint-928
+    legacy_source_checkpoint: /data/CoordExp/outputs/stage1_2b/coco_bbox_len12000_1024-coco80-desc_first-compact_object_box_closed-sorted-packed12k-natural_adjacent-pure_ce/epoch_4-pure_ce-coco80-desc_first-1024-coco_bbox_len12000-compact_object_box_closed-sorted-packed12k-natural_adjacent-llm_only/v0-20260617-133335/checkpoint-928
+    conversion_manifest: /data/CoordExp/outputs/analysis/autoregressive_binding_template_ablation/converted_adapters/desc_first_ckpt928_token_embeddings_adapter/checkpoint-928/conversion_manifest.json
+  geometry_first:
+    object_field_order: geometry_first
+    adapter_surface: token_embeddings_adapter
+    checkpoint: /data/CoordExp/output/stage1_2b/coco_bbox_max60_1024-coco80-geometry_first-compact_object_box_closed-sorted-packed12k-natural_adjacent-pure_ce/epoch_4-pure_ce-coco80-geometry_first-1024-compact_object_box_closed-sorted-packed12k-natural_adjacent-llm_only/v5-20260617-141636/checkpoint-928
+
+artifacts:
+  desc_first:
+    root: /data/CoordExp/outputs/infer/natadj_len12000_free_val200/natadj_sorted_ckpt928_val200_free_temp0_rp1p10_max3084_bsz1_8gpu_symlinkbase
+    gt_vs_pred_scored: /data/CoordExp/outputs/infer/natadj_len12000_free_val200/natadj_sorted_ckpt928_val200_free_temp0_rp1p10_max3084_bsz1_8gpu_symlinkbase/gt_vs_pred_scored.jsonl
+    summary: /data/CoordExp/outputs/infer/natadj_len12000_free_val200/natadj_sorted_ckpt928_val200_free_temp0_rp1p10_max3084_bsz1_8gpu_symlinkbase/summary.json
+    metrics: /data/CoordExp/outputs/infer/natadj_len12000_free_val200/natadj_sorted_ckpt928_val200_free_temp0_rp1p10_max3084_bsz1_8gpu_symlinkbase/eval/metrics.json
+    provenance_caveat: Summary records requested adapter under singular /data/CoordExp/output even though the verified checkpoint is under /data/CoordExp/outputs.
+  geometry_first:
+    root: /data/CoordExp/outputs/infer/recursive_detection_ce/geometry_first_object_box_closed_ckpt928_val200_bsz4_temp0_rep1p10_max3084_8gpu_diag
+    gt_vs_pred_scored: /data/CoordExp/outputs/infer/recursive_detection_ce/geometry_first_object_box_closed_ckpt928_val200_bsz4_temp0_rep1p10_max3084_8gpu_diag/gt_vs_pred_scored.jsonl
+    summary: /data/CoordExp/outputs/infer/recursive_detection_ce/geometry_first_object_box_closed_ckpt928_val200_bsz4_temp0_rep1p10_max3084_8gpu_diag/summary.json
+    provenance_caveat: Existing diagnostic artifact used the max60-named validation root, but its first-200 image IDs and GT counts match the desc-first len12000 artifact.
+
+selection:
+  duplicate_iou: 0.70
+  pred_pair_match_iou: 0.50
+  recall_iou: 0.30
+  extreme_area_fraction: 0.45
+  tiny_gt_area_fraction: 0.002
+  dense_gt_count: 20
+  same_class_gt_count: 3
+  per_bucket: 3
+  reserve_count: 24
+
+probe:
+  output_root: /data/CoordExp/outputs/analysis/autoregressive_binding_template_ablation/ckpt928_pair_val200_deep_probe_v2_token_embeddings_surface
+  case_image_ids:
+    - 15254  # desc-first duplication-heavy, geometry-first compact
+    - 2685   # geometry-first duplication-heavy
+    - 1761   # desc-first strict mismatch, geometry-first long burst
+    - 3255   # geometry-first strict mismatch, desc-first predictions
+    - 16010  # desc-first low-recall contrast
+    - 12670  # geometry-first low-recall contrast
+    - 2157   # geometry-first extreme-box candidate
+    - 1000   # clean shared-success control
+  max_focus_objects_per_case: 12
+  roles:
+    - pre_object
+    - pre_desc
+    - desc_end
+    - pre_box_start
+    - pre_x1
+    - post_x1
+    - post_y1
+    - post_x2
+    - row_end
+  layer_groups:
+    early: [0, 1]
+    middle: [12, 13]
+    late: [24, 25, 26, 27]
+    last: [-4, -3, -2, -1]
+  top_k: 8
+  radii: [0, 1, 2, 4, 8, 16, 32, 64]
+  capture_attention: true
+  max_attention_layers: 4

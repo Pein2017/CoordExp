@@ -6,12 +6,22 @@ import math
 from collections.abc import Mapping
 from contextlib import nullcontext
 from dataclasses import dataclass
+from types import MappingProxyType
 
 import torch
 import torch.nn.functional as F
 
 from src.training.teacher_forcing.ir import SupervisionAtom
+from src.training.teacher_forcing.roles import TokenRole
 from src.training.teacher_forcing.vocab import RoleVocab
+
+
+_TOKEN_TYPE_FAMILIES = (
+    (TokenRole.SCHEMA, "schema"),
+    (TokenRole.TEXT, "desc"),
+    (TokenRole.COORD, "coord"),
+    (TokenRole.STOP, "stop"),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,6 +32,11 @@ class TeacherForcingAtomLoss:
     type: torch.Tensor
     valid: torch.Tensor
     coverage: torch.Tensor
+    token_type_mass: torch.Tensor
+    token_type_mass_contribution: torch.Tensor
+    target_family_mass: torch.Tensor
+    target_family: str | None
+    family_masses: Mapping[str, torch.Tensor]
     allowed_probability: torch.Tensor
     valid_probability: torch.Tensor
 
@@ -32,6 +47,8 @@ def teacher_forcing_atom_loss(
     atom: SupervisionAtom,
     role_vocab: RoleVocab,
     coverage_strength: float,
+    token_type_mass_enabled: bool = False,
+    token_type_mass_weight: float = 1.0,
 ) -> TeacherForcingAtomLoss:
     """Return the atom-local teacher-forcing loss decomposition."""
 
@@ -41,6 +58,11 @@ def teacher_forcing_atom_loss(
         raise FloatingPointError("teacher_forcing logits contain non-finite values")
     if coverage_strength < 0.0 or not math.isfinite(float(coverage_strength)):
         raise ValueError("coverage_strength must be finite and >= 0")
+    parsed_token_type_mass_weight = 0.0
+    if token_type_mass_enabled:
+        parsed_token_type_mass_weight = _parse_token_type_mass_weight(
+            token_type_mass_weight
+        )
 
     device = logits_row.device
     vocab_size = int(logits_row.shape[-1])
@@ -85,7 +107,39 @@ def teacher_forcing_atom_loss(
             within_valid_log_probs = valid_log_probs - log_valid
             coverage_loss = -(target * within_valid_log_probs).sum()
 
-        total = type_loss + valid_loss + float(coverage_strength) * coverage_loss
+        zero = type_loss * 0.0
+        token_type_mass = zero
+        token_type_mass_contribution = zero
+        target_family_mass = zero
+        target_family: str | None = None
+        family_masses: Mapping[str, torch.Tensor] = _zero_family_masses(zero)
+        if token_type_mass_enabled:
+            family_names, family_logits = _family_logits(
+                log_probs,
+                role_vocab=role_vocab,
+                device=device,
+                vocab_size=vocab_size,
+            )
+            family_log_probs = torch.log_softmax(family_logits, dim=-1)
+            family_probs = family_log_probs.exp()
+            target_family_index = _target_family_index(atom.selected_token_role)
+            target_family = family_names[target_family_index]
+            token_type_mass = -family_log_probs[target_family_index]
+            token_type_mass_contribution = parsed_token_type_mass_weight * token_type_mass
+            target_family_mass = family_probs[target_family_index]
+            family_masses = MappingProxyType(
+                {
+                    name: family_probs[index].to(dtype=torch.float32)
+                    for index, name in enumerate(family_names)
+                }
+            )
+
+        total = (
+            type_loss
+            + valid_loss
+            + float(coverage_strength) * coverage_loss
+            + token_type_mass_contribution
+        )
         if not bool(torch.isfinite(total).all().detach().cpu().item()):
             raise FloatingPointError(
                 "teacher_forcing atom loss contains non-finite values"
@@ -96,6 +150,13 @@ def teacher_forcing_atom_loss(
         type=type_loss.to(dtype=torch.float32),
         valid=valid_loss.to(dtype=torch.float32),
         coverage=coverage_loss.to(dtype=torch.float32),
+        token_type_mass=token_type_mass.to(dtype=torch.float32),
+        token_type_mass_contribution=token_type_mass_contribution.to(
+            dtype=torch.float32
+        ),
+        target_family_mass=target_family_mass.to(dtype=torch.float32),
+        target_family=target_family,
+        family_masses=family_masses,
         allowed_probability=log_allowed.exp().to(dtype=torch.float32),
         valid_probability=log_valid.exp().to(dtype=torch.float32),
     )
@@ -117,6 +178,51 @@ def _token_ids_tensor(
         if token_id < 0 or token_id >= vocab_size:
             raise ValueError(f"{field_name} contains an id outside logits vocab")
     return torch.tensor(ordered, device=device, dtype=torch.long)
+
+
+def _parse_token_type_mass_weight(value: object) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError("token_type_mass_weight must be numeric")
+    parsed = float(value)
+    if not math.isfinite(parsed) or parsed < 0.0:
+        raise ValueError("token_type_mass_weight must be finite and >= 0")
+    return parsed
+
+
+def _family_logits(
+    log_probs: torch.Tensor,
+    *,
+    role_vocab: RoleVocab,
+    device: torch.device,
+    vocab_size: int,
+) -> tuple[tuple[str, ...], torch.Tensor]:
+    names: list[str] = []
+    logits: list[torch.Tensor] = []
+    for role, name in _TOKEN_TYPE_FAMILIES:
+        ids = _token_ids_tensor(
+            role_vocab.token_ids_for_role(role),
+            device=device,
+            vocab_size=vocab_size,
+            field_name=f"{name}_token_ids",
+        )
+        names.append(name)
+        logits.append(
+            torch.logsumexp(log_probs.index_select(dim=-1, index=ids), dim=-1)
+        )
+    return tuple(names), torch.stack(logits)
+
+
+def _target_family_index(role: TokenRole) -> int:
+    for index, (candidate, _name) in enumerate(_TOKEN_TYPE_FAMILIES):
+        if role is candidate:
+            return index
+    raise ValueError(f"unsupported token role: {role!r}")
+
+
+def _zero_family_masses(zero: torch.Tensor) -> Mapping[str, torch.Tensor]:
+    return MappingProxyType(
+        {name: zero.to(dtype=torch.float32) for _role, name in _TOKEN_TYPE_FAMILIES}
+    )
 
 
 def _coverage_target(

@@ -622,6 +622,208 @@ class CoordSoftCEW1Config:
 
 
 @dataclass(frozen=True)
+class CoordGaussianRPSTypeGateWeights:
+    struct: float = 1.0
+    coord: float = 1.0
+    desc: float = 1.0
+    eos: float = 0.5
+
+    @classmethod
+    def from_mapping(
+        cls,
+        payload: Optional[Mapping[str, Any]],
+        *,
+        path: str,
+    ) -> "CoordGaussianRPSTypeGateWeights":
+        if payload is None:
+            return cls()
+        if not isinstance(payload, Mapping):
+            raise TypeError(f"{path} section must be a mapping when provided")
+        allowed = {"struct", "coord", "desc", "eos"}
+        unknown = sorted(str(k) for k in payload.keys() if str(k) not in allowed)
+        if unknown:
+            raise ValueError(f"Unknown {path} keys: {[f'{path}.{k}' for k in unknown]}")
+
+        def _parse(name: str, default: float) -> float:
+            raw = payload.get(name, default)
+            try:
+                value = float(raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{path}.{name} must be numeric") from exc
+            if not math.isfinite(value) or value < 0.0:
+                raise ValueError(f"{path}.{name} must be finite and >= 0")
+            return value
+
+        return cls(
+            struct=_parse("struct", cls.struct),
+            coord=_parse("coord", cls.coord),
+            desc=_parse("desc", cls.desc),
+            eos=_parse("eos", cls.eos),
+        )
+
+
+@dataclass(frozen=True)
+class CoordGaussianRPSTypeGateConfig:
+    enabled: bool = True
+    mode: Literal["allowed_type_mass"] = "allowed_type_mass"
+    weights: CoordGaussianRPSTypeGateWeights = field(
+        default_factory=CoordGaussianRPSTypeGateWeights
+    )
+
+    @classmethod
+    def from_mapping(
+        cls,
+        payload: Optional[Mapping[str, Any]],
+        *,
+        path: str,
+    ) -> "CoordGaussianRPSTypeGateConfig":
+        if payload is None:
+            return cls()
+        if not isinstance(payload, Mapping):
+            raise TypeError(f"{path} section must be a mapping when provided")
+        allowed = {"enabled", "mode", "weights"}
+        unknown = sorted(str(k) for k in payload.keys() if str(k) not in allowed)
+        if unknown:
+            raise ValueError(f"Unknown {path} keys: {[f'{path}.{k}' for k in unknown]}")
+        enabled = bool(payload.get("enabled", cls.enabled))
+        mode = str(payload.get("mode", cls.mode))
+        if mode != "allowed_type_mass":
+            raise ValueError(f"{path}.mode must be 'allowed_type_mass'")
+        weights = CoordGaussianRPSTypeGateWeights.from_mapping(
+            payload.get("weights"),
+            path=f"{path}.weights",
+        )
+        return cls(enabled=enabled, mode="allowed_type_mass", weights=weights)
+
+
+@dataclass(frozen=True)
+class StandardCECoordGaussianRPSAuxiliaryConfig:
+    """Ordinary Stage-1 coordinate auxiliary: CE + Gaussian softCE + RPS."""
+
+    enabled: bool = False
+    ce_weight: float = 1.0
+    gaussian_weight: float = 1.0
+    rps_weight: float = 1.0
+    temperature: float = 1.0
+    gaussian_r95_axis_fraction: float = 0.04
+    gaussian_r95_cap_bins: int = 8
+    gaussian_r95_min_bins: int = 1
+    gaussian_r95_fallback_bins: int = 8
+    type_gate: CoordGaussianRPSTypeGateConfig = field(
+        default_factory=CoordGaussianRPSTypeGateConfig
+    )
+
+    @classmethod
+    def from_mapping(
+        cls,
+        payload: Optional[Mapping[str, Any]],
+        *,
+        path: str = "coord_gaussian_rps",
+    ) -> "StandardCECoordGaussianRPSAuxiliaryConfig":
+        if payload is None:
+            return cls()
+        if not isinstance(payload, Mapping):
+            raise TypeError(f"{path} section must be a mapping when provided")
+        allowed = {
+            "enabled",
+            "ce_weight",
+            "gaussian_weight",
+            "rps_weight",
+            "temperature",
+            "gaussian_r95_axis_fraction",
+            "gaussian_r95_cap_bins",
+            "gaussian_r95_min_bins",
+            "gaussian_r95_fallback_bins",
+            "type_gate",
+        }
+        unknown = sorted(str(k) for k in payload.keys() if str(k) not in allowed)
+        if unknown:
+            raise ValueError(f"Unknown {path} keys: {[f'{path}.{k}' for k in unknown]}")
+
+        def _float(name: str, default: float) -> float:
+            raw = payload.get(name, default)
+            try:
+                value = float(raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{path}.{name} must be numeric") from exc
+            if not math.isfinite(value):
+                raise ValueError(f"{path}.{name} must be finite")
+            return value
+
+        def _int(name: str, default: int) -> int:
+            raw = payload.get(name, default)
+            if isinstance(raw, bool):
+                raise ValueError(f"{path}.{name} must be an integer")
+            try:
+                value = int(raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{path}.{name} must be an integer") from exc
+            return value
+
+        enabled = bool(payload.get("enabled", cls.enabled))
+        ce_weight = _float("ce_weight", cls.ce_weight)
+        gaussian_weight = _float("gaussian_weight", cls.gaussian_weight)
+        rps_weight = _float("rps_weight", cls.rps_weight)
+        temperature = _float("temperature", cls.temperature)
+        r95_fraction = _float(
+            "gaussian_r95_axis_fraction",
+            cls.gaussian_r95_axis_fraction,
+        )
+        cap_bins = _int("gaussian_r95_cap_bins", cls.gaussian_r95_cap_bins)
+        min_bins = _int("gaussian_r95_min_bins", cls.gaussian_r95_min_bins)
+        fallback_bins = _int(
+            "gaussian_r95_fallback_bins",
+            cls.gaussian_r95_fallback_bins,
+        )
+        type_gate = CoordGaussianRPSTypeGateConfig.from_mapping(
+            payload.get("type_gate"),
+            path=f"{path}.type_gate",
+        )
+
+        for name, value in (
+            ("ce_weight", ce_weight),
+            ("gaussian_weight", gaussian_weight),
+            ("rps_weight", rps_weight),
+        ):
+            if value < 0.0:
+                raise ValueError(f"{path}.{name} must be >= 0")
+        if enabled and ce_weight == 0.0 and gaussian_weight == 0.0 and rps_weight == 0.0:
+            raise ValueError(
+                f"{path} is enabled but ce_weight, gaussian_weight, and rps_weight are all 0"
+            )
+        if temperature <= 0.0:
+            raise ValueError(f"{path}.temperature must be > 0")
+        if not (0.0 < r95_fraction <= 1.0):
+            raise ValueError(
+                f"{path}.gaussian_r95_axis_fraction must be finite and within (0, 1]"
+            )
+        for name, value in (
+            ("gaussian_r95_cap_bins", cap_bins),
+            ("gaussian_r95_min_bins", min_bins),
+            ("gaussian_r95_fallback_bins", fallback_bins),
+        ):
+            if value < 0 or value > 999:
+                raise ValueError(f"{path}.{name} must be within [0, 999]")
+        if min_bins > cap_bins:
+            raise ValueError(
+                f"{path}.gaussian_r95_min_bins must be <= gaussian_r95_cap_bins"
+            )
+
+        return cls(
+            enabled=enabled,
+            ce_weight=ce_weight,
+            gaussian_weight=gaussian_weight,
+            rps_weight=rps_weight,
+            temperature=temperature,
+            gaussian_r95_axis_fraction=r95_fraction,
+            gaussian_r95_cap_bins=cap_bins,
+            gaussian_r95_min_bins=min_bins,
+            gaussian_r95_fallback_bins=fallback_bins,
+            type_gate=type_gate,
+        )
+
+
+@dataclass(frozen=True)
 class BBoxGeoConfig:
     enabled: bool = False
     smoothl1_weight: float = 0.0
@@ -1353,6 +1555,9 @@ class CustomConfig:
         default_factory=TokenEmbeddingsAdapterConfig
     )
     coord_soft_ce_w1: CoordSoftCEW1Config = field(default_factory=CoordSoftCEW1Config)
+    coord_gaussian_rps: StandardCECoordGaussianRPSAuxiliaryConfig = field(
+        default_factory=StandardCECoordGaussianRPSAuxiliaryConfig
+    )
     bbox_geo: BBoxGeoConfig = field(default_factory=BBoxGeoConfig)
     bbox_size_aux: BBoxSizeAuxConfig = field(default_factory=BBoxSizeAuxConfig)
     sft_structural_close: Stage1SFTStructuralCloseConfig = field(
@@ -1629,6 +1834,11 @@ class CustomConfig:
             )
         coord_soft_ce_w1_raw = data.pop("coord_soft_ce_w1", None)
         coord_soft_ce_w1 = CoordSoftCEW1Config.from_mapping(coord_soft_ce_w1_raw)
+        coord_gaussian_rps_raw = data.pop("coord_gaussian_rps", None)
+        coord_gaussian_rps = StandardCECoordGaussianRPSAuxiliaryConfig.from_mapping(
+            coord_gaussian_rps_raw,
+            path="custom.coord_gaussian_rps",
+        )
         bbox_geo_raw = data.pop("bbox_geo", None)
         bbox_geo = BBoxGeoConfig.from_mapping(bbox_geo_raw)
         bbox_size_aux_raw = data.pop("bbox_size_aux", None)
@@ -1671,6 +1881,7 @@ class CustomConfig:
             coord_tokens=coord_tokens,
             token_embeddings_adapter=token_embeddings_adapter,
             coord_soft_ce_w1=coord_soft_ce_w1,
+            coord_gaussian_rps=coord_gaussian_rps,
             bbox_geo=bbox_geo,
             bbox_size_aux=bbox_size_aux,
             sft_structural_close=sft_structural_close,
@@ -3906,6 +4117,26 @@ class TeacherForcingEnabledModuleConfig:
 
 
 @dataclass(frozen=True)
+class TeacherForcingTokenTypeMassConfig:
+    enabled: bool = False
+    weight: float = 1.0
+
+    def __post_init__(self) -> None:
+        _detection_validate_bool(
+            self.enabled,
+            path="objective.terms.token_type_mass.enabled",
+        )
+        if not isinstance(self.weight, (int, float)) or isinstance(self.weight, bool):
+            raise TypeError("objective.terms.token_type_mass.weight must be numeric")
+        value = float(self.weight)
+        if not math.isfinite(value):
+            raise ValueError("objective.terms.token_type_mass.weight must be finite")
+        if value < 0.0:
+            raise ValueError("objective.terms.token_type_mass.weight must be >= 0")
+        object.__setattr__(self, "weight", value)
+
+
+@dataclass(frozen=True)
 class TeacherForcingWithinValidCoverageConfig:
     enabled: bool = False
     coverage_strength: float = 0.0
@@ -3935,8 +4166,8 @@ class TeacherForcingWithinValidCoverageConfig:
 
 @dataclass(frozen=True)
 class TeacherForcingModulesConfig:
-    token_type_mass: TeacherForcingEnabledModuleConfig = field(
-        default_factory=TeacherForcingEnabledModuleConfig
+    token_type_mass: TeacherForcingTokenTypeMassConfig = field(
+        default_factory=TeacherForcingTokenTypeMassConfig
     )
     conditional_valid_set_likelihood: TeacherForcingEnabledModuleConfig = field(
         default_factory=TeacherForcingEnabledModuleConfig
@@ -3956,7 +4187,7 @@ class TeacherForcingModulesConfig:
             raise TypeError("objective.terms must be a mapping")
         data: MutableMapping[str, Any] = dict(payload)
         token_type_mass = parse_dataclass_strict(
-            TeacherForcingEnabledModuleConfig,
+            TeacherForcingTokenTypeMassConfig,
             data.pop("token_type_mass", {}),
             path="objective.terms.token_type_mass",
         )
@@ -4032,10 +4263,6 @@ class TeacherForcingObjectiveConfig:
             )
         if self.profile == "hard_sft":
             hard_sft_module_checks = (
-                (
-                    "objective.terms.token_type_mass.enabled",
-                    bool(self.terms.token_type_mass.enabled),
-                ),
                 (
                     "objective.terms.conditional_valid_set_likelihood.enabled",
                     bool(self.terms.conditional_valid_set_likelihood.enabled),
@@ -4122,6 +4349,9 @@ class StandardCEAuxiliariesConfig:
     coord_soft_ce: StandardCECoordSoftAuxiliaryConfig = field(
         default_factory=StandardCECoordSoftAuxiliaryConfig
     )
+    coord_gaussian_rps: StandardCECoordGaussianRPSAuxiliaryConfig = field(
+        default_factory=StandardCECoordGaussianRPSAuxiliaryConfig
+    )
     geometry: StandardCEGeometryAuxiliaryConfig = field(
         default_factory=StandardCEGeometryAuxiliaryConfig
     )
@@ -4137,6 +4367,10 @@ class StandardCEAuxiliariesConfig:
             data.pop("coord_soft_ce", None),
             path="objective.auxiliaries.coord_soft_ce",
         )
+        coord_gaussian_rps = StandardCECoordGaussianRPSAuxiliaryConfig.from_mapping(
+            data.pop("coord_gaussian_rps", None),
+            path="objective.auxiliaries.coord_gaussian_rps",
+        )
         geometry = parse_dataclass_strict(
             StandardCEGeometryAuxiliaryConfig,
             data.pop("geometry", {}),
@@ -4148,7 +4382,16 @@ class StandardCEAuxiliariesConfig:
                 for k in sorted(data.keys(), key=lambda x: str(x))
             ]
             raise ValueError(f"Unknown objective.auxiliaries keys: {unknown}")
-        return cls(coord_soft_ce=coord_soft_ce, geometry=geometry)
+        if bool(coord_soft_ce.enabled) and bool(coord_gaussian_rps.enabled):
+            raise ValueError(
+                "objective.auxiliaries.coord_soft_ce and "
+                "objective.auxiliaries.coord_gaussian_rps cannot both be enabled"
+            )
+        return cls(
+            coord_soft_ce=coord_soft_ce,
+            coord_gaussian_rps=coord_gaussian_rps,
+            geometry=geometry,
+        )
 
 
 @dataclass(frozen=True)

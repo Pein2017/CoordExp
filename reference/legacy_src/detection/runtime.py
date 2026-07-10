@@ -159,6 +159,9 @@ def build_detection_runtime_custom_shim(
         eval_detection=None,
         token_type_metrics=None,
         coord_soft_ce_w1=_standard_ce_coord_soft_auxiliary(training_config),
+        coord_gaussian_rps=_standard_ce_coord_gaussian_rps_auxiliary(
+            training_config
+        ),
         bbox_geo=None,
         bbox_size_aux=None,
         sft_structural_close=None,
@@ -178,6 +181,18 @@ def _standard_ce_coord_soft_auxiliary(
     if auxiliaries is None:
         return None
     return getattr(auxiliaries, "coord_soft_ce", None)
+
+
+def _standard_ce_coord_gaussian_rps_auxiliary(
+    training_config: DetectionTrainingConfig,
+) -> Any | None:
+    objective = getattr(training_config, "objective", None)
+    if getattr(objective, "id", None) != "standard_ce":
+        return None
+    auxiliaries = getattr(objective, "auxiliaries", None)
+    if auxiliaries is None:
+        return None
+    return getattr(auxiliaries, "coord_gaussian_rps", None)
 
 
 def detection_mode(

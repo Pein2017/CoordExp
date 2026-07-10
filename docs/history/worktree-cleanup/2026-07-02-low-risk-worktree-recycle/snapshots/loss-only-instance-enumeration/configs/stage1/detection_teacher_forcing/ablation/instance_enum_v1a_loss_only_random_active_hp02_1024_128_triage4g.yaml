@@ -1,0 +1,8 @@
+extends:
+  - ./instance_enum_v1a_loss_only_random_hp02_stronger_1024_128_triage4g.yaml
+
+training:
+  output_root: /data/CoordExp/outputs/stage1_2b/loss_only_instance_enumeration_ablation_active_vs_none
+  logging_root: /data/CoordExp/outputs/stage1_2b/loss_only_instance_enumeration_ablation_active_vs_none/tb
+  artifact_subdir: random_active_hp02_1024_128_triage4g
+  run_name: loss-only-instance-enum-random-active-hp02-1024-128-triage4g

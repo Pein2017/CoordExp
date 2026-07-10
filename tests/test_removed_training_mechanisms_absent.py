@@ -81,7 +81,7 @@ TASK_1C_ACTIVE_SCAN_EXCLUDED_PREFIXES = (
 )
 TASK_1C_ALLOWED_DECISION_EVIDENCE_PATHS = {
     "progress/diagnostics/2026-04-22_stage2_birth_first_channel_b_decision_study.md": {
-        "catalog_status": "decision-evidence",
+        "catalog_status": "legacy-decision-evidence",
         "terms": {"birth_first"},
     },
 }

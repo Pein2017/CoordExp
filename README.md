@@ -21,9 +21,10 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
   `manifests/public_data_provenance/`.
 - `docs/` - current operator-facing documentation and standards. Start with
   `docs/README.md`.
-- `progress/` - historical notes, diagnostics, audits, and benchmark evidence.
-  Do not treat it as current behavior when `docs/` or `openspec/specs/`
-  already cover the contract.
+- `progress/` - legacy/deprecated archive of old historical notes,
+  diagnostics, audits, and benchmark evidence. Do not add new records here;
+  migrate or synthesize useful material into `research/`, and never treat this
+  tree as current behavior.
 - `openspec/` - stable compatibility-sensitive contracts and active contract
   deltas.
 - `outputs/` - local experiment artifacts and Baidu Netdisk sync surface. This
@@ -40,8 +41,8 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
    ```bash
    cd .
    python scripts/tools/expand_coord_vocab.py \
-     --src /data/home/xiaoyan/AIteam/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-4B-Instruct \
-     --dst /data/home/xiaoyan/AIteam/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-4B-Instruct-coordexp
+     --src /data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-4B-Instruct \
+     --dst /data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-4B-Instruct-coordexp
    ```
 3) **Train (examples)**:
    ```bash

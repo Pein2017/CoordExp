@@ -1,0 +1,11 @@
+extends:
+  - ./row_coverage_random_sft_ce_cont_from_random_pure_sft_1epoch_eval512_8gpu.yaml
+
+tuner:
+  # Freeze the ViT/vision-tower block adapters by excluding model.visual.blocks.*
+  # while keeping post-vision merger/deepstack merger and LLM LoRA trainable.
+  target_regex: '^(model\.visual\.merger\.(linear_fc1|linear_fc2)|model\.visual\.deepstack_merger_list\.(0|1|2)\.(linear_fc1|linear_fc2)|model\.language_model\.layers\.(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17|18|19|20|21|22|23|24|25|26|27)\.(self_attn\.(q_proj|k_proj|v_proj|o_proj)|mlp\.(gate_proj|up_proj|down_proj)))$'
+
+training:
+  artifact_subdir: row_coverage_random_sft_ce_cont_random_pure_sft_freeze_vitblocks_1epoch_eval512_len12000_8gpu
+  run_name: row-coverage-random-sft-ce-cont-random-pure-sft-freeze-vitblocks-1epoch-eval512-len12000-8gpu

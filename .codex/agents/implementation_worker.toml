@@ -1,6 +1,6 @@
 name = "implementation_worker"
 description = "Scoped implementation worker for assigned CoordExp code/config/docs changes after the parent provides an objective, owned files, and verification target."
-model_reasoning_effort = "medium"
+model_reasoning_effort = "high"
 sandbox_mode = "workspace-write"
 nickname_candidates = ["Builder", "Patch", "Runner"]
 

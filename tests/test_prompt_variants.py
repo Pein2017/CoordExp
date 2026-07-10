@@ -128,10 +128,10 @@ def test_prompt_template_hash_changes_when_detection_template_changes() -> None:
 def test_compact_prompt_template_hash_changes_when_object_field_order_changes() -> None:
     desc_first_pattern = (
         "<|object_ref_start|>{desc}<|object_ref_end|><|box_start|>"
-        "<|coord_x1|><|coord_y1|><|coord_x2|><|coord_y2|><|box_end|>"
+        "<|coord_100|><|coord_200|><|coord_300|><|coord_400|><|box_end|>"
     )
     geometry_first_pattern = (
-        "<|box_start|><|coord_x1|><|coord_y1|><|coord_x2|><|coord_y2|><|box_end|>"
+        "<|box_start|><|coord_100|><|coord_200|><|coord_300|><|coord_400|><|box_end|>"
         "<|object_ref_start|>{desc}<|object_ref_end|>"
     )
 
@@ -163,7 +163,7 @@ def test_compact_prompt_template_hash_changes_when_object_field_order_changes() 
     assert desc_first_hash != geometry_first_hash
 
 
-@pytest.mark.parametrize("object_ordering", ["sorted", "random"])
+@pytest.mark.parametrize("object_ordering", ["sorted", "geo_sorted", "random"])
 def test_prompt_variant_cross_surface_parity_between_training_and_inference(
     object_ordering: str,
 ) -> None:
@@ -501,10 +501,10 @@ def test_coco_80_prompt_variant_has_compact_canonical_unique_list() -> None:
 @pytest.mark.parametrize(
     ("fmt", "expected_pattern"),
     [
-        ("compact", "<|object_ref_start|>{desc}<|box_start|><|coord_x1|><|coord_y1|><|coord_x2|><|coord_y2|>"),
-        ("compact_box_closed", "<|object_ref_start|>{desc}<|box_start|><|coord_x1|><|coord_y1|><|coord_x2|><|coord_y2|><|box_end|>"),
-        ("compact_object_box_closed", "<|object_ref_start|>{desc}<|object_ref_end|><|box_start|><|coord_x1|><|coord_y1|><|coord_x2|><|coord_y2|><|box_end|>"),
-        ("compact_object_box_closed_lines", "<|object_ref_start|>{desc}<|object_ref_end|><|box_start|><|coord_x1|><|coord_y1|><|coord_x2|><|coord_y2|><|box_end|>\n"),
+        ("compact", "<|object_ref_start|>{desc}<|box_start|><|coord_100|><|coord_200|><|coord_300|><|coord_400|>"),
+        ("compact_box_closed", "<|object_ref_start|>{desc}<|box_start|><|coord_100|><|coord_200|><|coord_300|><|coord_400|><|box_end|>"),
+        ("compact_object_box_closed", "<|object_ref_start|>{desc}<|object_ref_end|><|box_start|><|coord_100|><|coord_200|><|coord_300|><|coord_400|><|box_end|>"),
+        ("compact_object_box_closed_lines", "<|object_ref_start|>{desc}<|object_ref_end|><|box_start|><|coord_100|><|coord_200|><|coord_300|><|coord_400|><|box_end|>\n"),
     ],
 )
 def test_coco_80_prompt_variant_renders_each_compact_template(

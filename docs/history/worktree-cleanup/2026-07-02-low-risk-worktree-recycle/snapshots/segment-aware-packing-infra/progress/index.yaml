@@ -1,0 +1,257 @@
+schema_version: 1
+updated: 2026-06-07
+
+entrypoints:
+  human: progress/README.md
+  agent: docs/catalog.yaml
+
+recommended_read_order:
+  - docs/PROJECT_CONTEXT.md
+  - docs/SYSTEM_OVERVIEW.md
+  - the relevant current docs router under docs/
+  - progress/README.md
+  - progress/directions/README.md
+  - the specific category router and note relevant to the question
+
+groups:
+  root:
+    - progress/README.md
+  directions:
+    - progress/directions/README.md
+    - progress/directions/2026-06-07_segment_aware_packing_infra.md
+    - progress/directions/2026-06-05_row_conditioned_visual_coverage.md
+    - progress/directions/full_idea_v5.md
+    - progress/directions/full_idea_v4.md
+    - progress/directions/full_idea_v3.md
+    - progress/directions/stage2_clean_prefix_v2.md
+    - progress/directions/stage2_emish_set_supervision_v1.md
+  diagnostics:
+    - progress/diagnostics/README.md
+    - progress/diagnostics/artifacts/README.md
+    - progress/diagnostics/2026-05-18_hard_ce_coord_logit_embedding_locality.md
+    - progress/diagnostics/2026-05-18_gaussian_softce_a5_a6_coord_logit_locality.md
+    - progress/diagnostics/2026-06-02_fn_rescue_attention_binding_findings.md
+    - progress/diagnostics/2026-05-08_compact_full_coord_confidence_stop_gate_diagnostics.md
+    - progress/diagnostics/artifacts/et_rmp_continuation_diagnostics_2026-05-01/README.md
+    - progress/diagnostics/2026-04-29_et_rmp_rp_continuation_bias_hypothesis.md
+    - progress/diagnostics/2026-04-24_qwen3_vl_instance_binding_mechanism_findings.md
+    - progress/diagnostics/2026-04-22_stage2_birth_first_channel_b_decision_study.md
+    - progress/diagnostics/2026-04-21_raw_text_coordinate_mechanism_findings.md
+    - progress/diagnostics/2026-04-22_raw_text_decode_bias_mechanism_findings.md
+    - progress/diagnostics/2026-04-20_coord_family_basin_and_recall_comparison.md
+    - progress/diagnostics/2026-04-20_raw_text_and_coord_family_decision_summary.md
+    - progress/diagnostics/2026-04-20_raw_text_coord_continuity_probe.md
+    - progress/diagnostics/2026-05-14_a2_eos_loosen_ablation.md
+    - progress/diagnostics/2026-04-11_stage1_coord_basin_duplication_mechanism.md
+    - progress/diagnostics/2026-04-13_duplication_collapse_final_analysis.md
+    - progress/diagnostics/2026-04-15_cxcy_logw_logh_retrained_performance_analysis.md
+    - progress/diagnostics/2026-04-17_cxcywh_quickcheck_val200.md
+    - progress/diagnostics/2026-03-17_stage2_2b_fn_factor_results.md
+    - progress/diagnostics/2026-03-17_stage2_2b_fn_factor_artifact_guide.md
+    - progress/diagnostics/2026-03-16_stage2_2b_stage1_vs_aonly_prefix_fn_hypotheses_plan.md
+    - progress/diagnostics/2026-03-17_stage2_2b_prefix_random_order_followup.md
+    - progress/diagnostics/2026-03-26_stage2_small_object_duplication_offline_synthesis.md
+    - progress/diagnostics/2026-03-25_stage2_small_object_duplication_offline_protocol.md
+    - progress/diagnostics/2026-03-26_stage2_small_object_duplication_offline_harness_findings.md
+    - progress/diagnostics/2026-03-26_stage2_small_object_duplication_crowded_deep_dive.md
+    - progress/diagnostics/2026-03-05_stage2_near_duplication.md
+    - progress/diagnostics/2026-03-09_stage2_ul_capture_highres1024.md
+    - progress/diagnostics/2026-03-12_stage2_triage_posterior_coco1024_train_dynamics.md
+    - progress/diagnostics/2026-03-24_stage2_pseudo_positive_k4_coord_only_findings.md
+    - progress/diagnostics/2026-03-11_gt_overlap_threshold_search.md
+    - progress/diagnostics/2026-03-11_rollout_duplication_thresholds_ul_vs_ulv2.md
+    - progress/diagnostics/2026-03-20_stage2_channel_a_self_context_iter_ablation.md
+    - progress/diagnostics/2026-02-17_stage2_b_ratio_085_instability.md
+    - progress/diagnostics/2026-02-21_stage2_channel_a_coord_gate.md
+    - progress/diagnostics/2026-02-25_stage2_channel_a_coord_loss.md
+    - progress/diagnostics/2026-02-25_stage2_channel_a_visual_audit.md
+    - progress/diagnostics/2026-02-22_stage2_softctx_discretization_vs_stage1_bbox.md
+    - progress/diagnostics/2026-03-11_visualization_tools_index.md
+  audits:
+    - progress/audits/README.md
+    - progress/audits/2026-05-20_repository_stewardship_audit.md
+    - progress/audits/2026-05-19_openspec_reactivation_audit.md
+    - progress/audits/2026-05-03_type_schema_architecture_audit.md
+    - progress/audits/2026-01-22_stage1_softce_logging.md
+    - progress/audits/2026-02-25_stage2_channel_a_coord_loss.md
+  benchmarks:
+    - progress/benchmarks/README.md
+    - progress/benchmarks/stage1_2b_val200_leaderboard.md
+    - progress/benchmarks/2026-05-07_stage1_2b_coord_component_rp110_ablation.md
+    - progress/benchmarks/2026-05-07_compact_full_rp110_top3_union_unlabeled_prior.md
+    - progress/benchmarks/2026-04-28_stage1_mp_branch_runtime_packing_probe.md
+    - progress/benchmarks/2026-04-23_stage1_raw_text_vs_coord_token_repetition_penalty_sweep.md
+    - progress/benchmarks/2026-04-21_mixed_objective_sota_checkpoint_probe.md
+    - progress/benchmarks/2026-02-26_stage1_coco80_4b_res_768_vs_1024.md
+    - progress/benchmarks/2026-02-26_stage1_coco80_temp0_compare.md
+    - progress/benchmarks/2026-02-27_stage1_coco_2b_ce_softce_res_768_vs_1024.md
+    - progress/benchmarks/2026-02-26_stage1_training_dynamics_4b.md
+    - progress/benchmarks/2026-02-01_stage2_channel_a_infer_eval.md
+    - progress/benchmarks/2026-03-11_stage2_oracle_k_first200.md
+    - progress/benchmarks/2026-03-11_stage2_rollout_temperature_refinement.md
+  explorations:
+    - progress/explorations/README.md
+    - progress/explorations/2026-05-15_training_infrastructure_architecture_decisions.md
+    - progress/explorations/2026-03-19_runtime_refactor_architecture_program.md
+    - progress/explorations/2026-01-26_stage2_infrastructure.md
+  pretrain:
+    - progress/pretrain/README.md
+    - progress/pretrain/stage1_foundation.md
+    - progress/pretrain/2026-01-26_stage1_ablation.md
+
+notes:
+  - path: progress/README.md
+    title: Progress Index
+    kind: router
+    status: canonical
+    summary: Top-level router for the historical and evidence layer under progress.
+  - path: progress/directions/README.md
+    title: Directions Index
+    kind: router
+    status: canonical
+    summary: Router for historical research directions and Stage-2 design lineage.
+  - path: progress/directions/full_idea_v5.md
+    title: Full Idea v5
+    kind: direction
+    status: active-reference
+    summary: Current Stage-1 set-continuation direction note for subset-conditioned full-entry multi-positive supervision.
+  - path: progress/directions/2026-06-05_row_conditioned_visual_coverage.md
+    title: Row-Conditioned Visual Coverage
+    kind: direction
+    status: active-grill-record
+    summary: Active research-design record for row-conditioned feature-level coverage under standard SFT/CE, with visual feature tuning as the primary mechanism and coverage defined as a learned visual state marker rather than suppression.
+  - path: progress/directions/full_idea_v4.md
+    title: Full Idea v4
+    kind: direction
+    status: superseded
+    summary: Superseded Stage-1 plus Stage-2 pseudo-positive direction summary; preserve for design lineage and K=4 context, not current training guidance.
+  - path: progress/diagnostics/README.md
+    title: Diagnostics Index
+    kind: router
+    status: canonical
+    summary: Router for mechanism studies, failure investigations, threshold sweeps, and operator notes.
+  - path: progress/diagnostics/2026-05-18_hard_ce_coord_logit_embedding_locality.md
+    title: Hard-CE Coordinate-Logit And Embedding Locality Diagnosis
+    kind: diagnostic-study
+    status: active-reference
+    summary: Val200 mechanism diagnosis comparing ET-RMP-CE and random-shuffled pure hard-CE SFT at checkpoint 3664, showing strong coordinate-token row adjacency but fragile dynamic x1 onset locality and a narrowed SoftCE decision read.
+  - path: progress/diagnostics/2026-05-18_gaussian_softce_a5_a6_coord_logit_locality.md
+    title: Gaussian SoftCE A5/A6 Coordinate-Logit Locality Follow-Up
+    kind: diagnostic-study
+    status: active-reference
+    summary: Val200 follow-up for Gaussian SoftCE A5/A6 checkpoint 3664, showing A6 CE-anchored mix-0.2 is much healthier than A5 Gaussian/default but still does not beat the ET-RMP-CE baseline, while embedding locality remains strong across all runs.
+  - path: progress/diagnostics/2026-06-02_fn_rescue_attention_binding_findings.md
+    title: FN-Rescue Attention And Instance-Binding Findings
+    kind: diagnostic-study
+    status: active-reference
+    summary: Full linked checkpoint-3664 FN-rescue continuation mechanism note showing desc-first rescue can recover many rollout false negatives, correct x1 is a strong instance-binding seed, wrong-control x1 misdirects binding, same-desc competitors are the sharpest failure surface, and attention remains background/context-heavy rather than a clean target-object spotlight.
+  - path: progress/diagnostics/2026-04-21_raw_text_coordinate_mechanism_findings.md
+    title: Raw-Text Coordinate Mechanism Findings
+    kind: diagnostic-study
+    status: canonical-mechanism-summary
+    summary: Canonical raw-text-only mechanism note for continuity, duplicate-burst attraction, and FN stop-pressure under the fixed checkpoint pair.
+  - path: progress/diagnostics/2026-05-08_compact_full_coord_confidence_stop_gate_diagnostics.md
+    title: Compact-Full Coord-Confidence And Stop-Gate Diagnostics
+    kind: diagnostic-study
+    status: mechanism-evidence
+    summary: Diagnostic-only root-cause evidence for compact-full prefix-rollin training where low loss coexists with conservative decode, covering the HF batched compact-grammar prompt-offset bug, fixed val200 comparison, coord_mean_logprob separation, and A3/A4 follow-up instability with mechanism-probe caveats.
+  - path: progress/diagnostics/2026-05-14_a2_eos_loosen_ablation.md
+    title: A2 EOS-Loosen Clean Ablation
+    kind: ablation-tracking-note
+    status: concluded-negative
+    summary: Negative result for A2E, the clean A2+EOS-loosen ablation; matched val200 greedy rp=1.10 rollout shows lower AP/F1 than A2 plus severe concentrated duplicate bursts, so EOS loosen alone should not be promoted without objectness or duplicate gating.
+  - path: progress/diagnostics/2026-04-29_et_rmp_rp_continuation_bias_hypothesis.md
+    title: ET-RMP Continuation Diagnostics Source
+    kind: diagnostic-study
+    status: canonical-cluster-entry
+    summary: Canonical source for pre-support-mass ET-RMP continuation diagnostics, including objective context, RP sweeps, representative sample bank, FN latent probes, length-bias read, and stop-control ablations.
+  - path: progress/diagnostics/2026-04-20_coord_family_basin_and_recall_comparison.md
+    title: Coordinate Family Basin and Recall Comparison
+    kind: diagnostic-study
+    status: canonical-comparison
+    summary: Canonical cross-family comparison note for the decision-relevant 2B parameterization families.
+  - path: progress/diagnostics/2026-04-22_stage2_birth_first_channel_b_decision_study.md
+    title: Stage-2 Birth-First Channel-B Decision Study
+    kind: diagnostic-study
+    status: decision-evidence
+    summary: Recorded decision context for the merged-vLLM operator fix and the birth-first versus control small-fraction study; preserve as evidence, not active routing guidance.
+  - path: progress/diagnostics/2026-04-24_qwen3_vl_instance_binding_mechanism_findings.md
+    title: Qwen3-VL Instance Binding Mechanism Findings
+    kind: diagnostic-study
+    status: canonical-mechanism-summary
+    summary: Fixed-checkpoint coord-token instance-binding mechanism conclusion supporting partial pre-x1 binding, late schema/pre-coordinate readout, and x1/y1 as the hard commitment boundary.
+  - path: progress/diagnostics/2026-03-17_stage2_2b_fn_factor_results.md
+    title: 2B Rollout FN-Factor Results After Hard-16 Prefix Repair
+    kind: diagnostic-study
+    status: canonical-cluster-entry
+    summary: Canonical 2B prefix/FN cluster entrypoint after the repaired Hard-16 prefix rerun.
+  - path: progress/diagnostics/2026-03-26_stage2_small_object_duplication_offline_synthesis.md
+    title: Stage-2 Small-Object Duplication Offline Diagnostics Synthesis
+    kind: diagnostic-study
+    status: mechanism-evidence
+    summary: Diagnostic-only synthesis for the small-object duplication offline cluster, unifying the protocol, broad harness, and crowded deep-dive as duplicate evidence rather than duplicate-burst UL launch guidance.
+  - path: progress/diagnostics/2026-04-11_stage1_coord_basin_duplication_mechanism.md
+    title: Stage-1 Coordinate-Basin Duplication Mechanism
+    kind: mechanism-summary
+    status: mechanism-evidence
+    summary: Diagnostic-only mechanism evidence for Stage-1 coordinate-basin duplication; keep it as failure analysis, not active anti-duplication training guidance.
+  - path: progress/benchmarks/stage1_2b_val200_leaderboard.md
+    title: Stage-1 2B Val200 Detection Leaderboard
+    kind: dashboard
+    status: active-dashboard
+    summary: Live CSV-backed progress dashboard for Stage-1 2B-ish val200 detection benchmark rows and comparable-group winners.
+  - path: progress/benchmarks/2026-05-07_stage1_2b_coord_component_rp110_ablation.md
+    title: Stage-1 2B Coord-Component RP1.10 Ablation Benchmark
+    kind: benchmark
+    status: completed-benchmark
+    summary: Canonical val200 record for the Stage-1 2B coord-token loss-component ablation, including the hard-CE rp=1.10 rescue and updated ranking.
+  - path: progress/diagnostics/2026-04-13_duplication_collapse_final_analysis.md
+    title: Duplication Collapse Final Analysis
+    kind: diagnostic-study
+    status: mechanism-evidence
+    summary: Consolidated diagnostic record of the duplication-collapse investigation and its supporting artifact map; keep it as mechanism evidence, not current anti-duplication training guidance.
+  - path: progress/benchmarks/README.md
+    title: Benchmarks Index
+    kind: router
+    status: canonical
+    summary: Router for measured comparisons, checkpoint selection notes, and evaluation sweeps.
+  - path: progress/benchmarks/2026-05-07_compact_full_rp110_top3_union_unlabeled_prior.md
+    title: Compact-Full RP1.10 Top-3 Rollout Union and Unlabeled-Object Prior
+    kind: benchmark-study
+    status: completed-benchmark
+    summary: Val200 compact-full rp=1.10 top-3 checkpoint ranking plus bbox-only bootstrap-union estimate of unlabeled positives relative to GT count, with A3/A4 prefix-rollin follow-up results now caveated as mechanism probes rather than fair A2 challengers.
+  - path: progress/benchmarks/2026-04-28_stage1_mp_branch_runtime_packing_probe.md
+    title: Stage-1 MP Branch Runtime Packing Probe
+    kind: benchmark-study
+    status: rough-evidence
+    summary: Rough 8-GPU production-like comparison showing smart_batched_exact remains the recommended Stage-1 MP branch runtime over current packed-varlen experiments.
+  - path: progress/benchmarks/2026-04-23_stage1_raw_text_vs_coord_token_repetition_penalty_sweep.md
+    title: Raw-Text vs Coord-Token Repetition-Penalty Sweep
+    kind: benchmark-study
+    status: active-reference
+    summary: Latest val200 comparison of raw-text and coord-token checkpoints across repetition_penalty settings.
+  - path: progress/benchmarks/2026-04-21_mixed_objective_sota_checkpoint_probe.md
+    title: Mixed-Objective SOTA Checkpoint Probe
+    kind: benchmark-study
+    status: active-reference
+    summary: Checkpoint-selection probe for the new 2B mixed-objective adapter on val200 detection.
+  - path: progress/explorations/README.md
+    title: Explorations Index
+    kind: router
+    status: canonical
+    summary: Router for architecture, infrastructure, and implementation-planning explorations.
+  - path: progress/explorations/2026-05-15_training_infrastructure_architecture_decisions.md
+    title: Training Infrastructure Architecture Decisions
+    kind: exploration
+    status: active-reference
+    summary: Architecture decision record from the 2026-05-15 training infrastructure audit and grill-me loop, including duplicate-negative training and adjacent-repulsion removal, training-time EOS hack removal with diagnostics retained, and staged Hungarian replacement.
+  - path: progress/explorations/2026-03-19_runtime_refactor_architecture_program.md
+    title: Runtime Refactor Architecture Program (2026-03-19)
+    kind: exploration
+    status: completed-exploration
+    summary: Consolidated architecture diagnosis and completion checkpoint for the March 2026 runtime refactor program.
+  - path: progress/pretrain/README.md
+    title: Pretrain Index
+    kind: router
+    status: canonical
+    summary: Router for Stage-1 foundation history and early pretraining evidence.

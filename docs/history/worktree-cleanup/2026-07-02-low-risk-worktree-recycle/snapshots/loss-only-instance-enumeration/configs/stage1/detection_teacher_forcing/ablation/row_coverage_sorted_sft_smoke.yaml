@@ -1,0 +1,25 @@
+extends:
+  - ../smoke/compact_full_tiny.yaml
+
+training:
+  artifact_subdir: row_coverage_sorted_sft_smoke
+  run_name: smoke-row-coverage-sorted-sft
+  packing: false
+  group_by_length: false
+
+data:
+  object_ordering: sorted
+
+objective:
+  id: teacher_forcing
+  profile: hard_sft
+
+row_conditioned_visual_coverage:
+  enabled: true
+  version: v1
+  row_state_policy: prefix_expansion
+  tune_operator: additive_residual
+  training:
+    unpacked_only: true
+    include_terminal_state: true
+    ordering_modes: [random_sft, sorted_sft]

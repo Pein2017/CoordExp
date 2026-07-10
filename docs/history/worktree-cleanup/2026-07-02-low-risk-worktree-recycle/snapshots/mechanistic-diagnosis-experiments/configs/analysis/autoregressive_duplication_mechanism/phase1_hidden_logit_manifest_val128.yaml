@@ -1,0 +1,21 @@
+run:
+  phase: phase1_hidden_logit_manifest
+  output_base: /data/CoordExp/outputs/analysis/autoregressive_duplication_mechanism
+  output_slug: phase1_hidden_logit_manifest
+inputs:
+  phase0_root: /data/CoordExp/outputs/analysis/autoregressive_duplication_mechanism/phase0_joint_onset_ledger_20260610-073246
+execution:
+  num_shards: 4
+  gpu_ids: [0, 1, 2, 3]
+probe:
+  token_phases:
+    - row_start
+    - desc_end
+    - box_start/pre_x1
+    - post_x1/pre_y1
+    - post_y1/pre_x2
+    - post_x2/pre_y2
+    - post_y2/row_boundary
+    - next_row_or_stop_decision
+  layer_indices: [0, 4, 8, 12, 16, 20, 24, 28, -1]
+  coord_basin_radii: [4, 8, 16]

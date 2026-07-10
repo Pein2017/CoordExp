@@ -241,7 +241,7 @@ ms-swift uses a **strict key-value convention** for multimodal content where the
 - Custom preprocessing: Verify content dict keys match the type
 - Debug: Print `sample.keys()` after encoding; must include `pixel_values` and `image_grid_thw`
 
-**Reference:** See `/data/home/xiaoyan/AIteam/data/ms-swiftllm/template/template_inputs.py:241` for extraction logic.
+**Reference:** See `/data/ms-swiftllm/template/template_inputs.py:241` for extraction logic.
 
 **Configuration**:
 - `global_max_length`: Single knob for full conversation length (prompt + completion); overrides `model.max_model_len` and `template.max_length`

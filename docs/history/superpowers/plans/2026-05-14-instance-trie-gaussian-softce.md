@@ -13,7 +13,7 @@
 Date: 2026-05-14
 
 Status: implementation and smoke/preflight verification completed on the isolated worktree
-`/data/home/xiaoyan/AIteam/data/CoordExp/.worktrees/instance-trie-gaussian-softce`
+`/data/CoordExp/.worktrees/instance-trie-gaussian-softce`
 on branch `codex/instance-trie-gaussian-softce`. The objective is implemented
 and has passed the focused test suite, no-training target-shape audit, tiny
 smoke, and 8-GPU DDP preflight. It is not merged, stable, or current
@@ -26,7 +26,7 @@ Branch/worktree:
 
 ```text
 branch: codex/instance-trie-gaussian-softce
-worktree: /data/home/xiaoyan/AIteam/data/CoordExp/.worktrees/instance-trie-gaussian-softce
+worktree: /data/CoordExp/.worktrees/instance-trie-gaussian-softce
 ```
 
 ## Guardrails
@@ -152,7 +152,7 @@ and a fresh explicit user approval.
 Run:
 
 ```bash
-git -C /data/home/xiaoyan/AIteam/data/CoordExp/.worktrees/instance-trie-gaussian-softce status --short --branch
+git -C /data/CoordExp/.worktrees/instance-trie-gaussian-softce status --short --branch
 ```
 
 Expected: branch is `codex/instance-trie-gaussian-softce`; only approved

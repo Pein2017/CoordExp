@@ -19,7 +19,7 @@ from src.tokens.coord.codec import sequence_has_coord_tokens
 PromptTokenParity = Literal["verified", "unverified", "unverifiable"]
 AllowedBBoxFormat = Literal["xyxy", "cxcy_logw_logh", "cxcywh"]
 ObjectFieldOrder = Literal["desc_first", "geometry_first"]
-ObjectOrdering = Literal["sorted", "random"]
+ObjectOrdering = Literal["sorted", "geo_sorted", "random"]
 
 COORDJSON_FORMAT = "coordjson"
 DEFAULT_PROMPT_VARIANT = "default"
@@ -102,6 +102,48 @@ ERROR_CANONICAL = {
     "no_valid_prediction_objects": "no_valid_prediction_objects",
     "raw_empty_generation": "raw_empty_generation",
 }
+
+
+def _load_token_embeddings_adapter_delta(adapter: Any, spec: Any) -> None:
+    delta_path = getattr(spec, "embed_delta_path", None)
+    if not delta_path:
+        return
+
+    try:
+        from safetensors.torch import load_file
+    except ImportError as exc:
+        raise RuntimeError(
+            "Loading CoordExp-Swift special token embedding deltas requires "
+            "the 'safetensors' package in the active environment."
+        ) from exc
+    import torch
+
+    tensor_key = str(getattr(spec, "embed_delta_key", "") or "shared_embed_delta")
+    tensors = load_file(str(delta_path), device="cpu")
+    if tensor_key not in tensors:
+        available = ", ".join(sorted(tensors))
+        raise RuntimeError(
+            f"Special token embedding delta key {tensor_key!r} is missing from "
+            f"{delta_path!r}. Available keys: [{available}]"
+        )
+    delta = tensors[tensor_key]
+    embed_offset = getattr(adapter, "embed_offset", None)
+    if embed_offset is None:
+        raise RuntimeError(
+            "token_embeddings_adapter is missing embed_offset needed for "
+            "CoordExp-Swift special token embedding deltas."
+        )
+    if tuple(delta.shape) != tuple(embed_offset.shape):
+        raise RuntimeError(
+            "Special token embedding delta shape does not match runtime "
+            f"token_embeddings_adapter.embed_offset: delta={tuple(delta.shape)} "
+            f"embed_offset={tuple(embed_offset.shape)}"
+        )
+
+    with torch.no_grad():
+        embed_offset.copy_(
+            delta.to(device=embed_offset.device, dtype=embed_offset.dtype)
+        )
 
 
 def _owner_instance_override(owner: Any, name: str) -> Any:
@@ -1502,10 +1544,14 @@ class OfflineInferenceEngine:
                     model = base_model.to(self.cfg.device)
                     if resolved_adapter_checkpoint:
                         if token_embeddings_adapter_spec is not None:
-                            install_token_embeddings_adapter_fn(
+                            installed_token_adapter = install_token_embeddings_adapter_fn(
                                 model,
                                 token_ids=token_embeddings_adapter_spec.token_ids,
                                 tie_head=token_embeddings_adapter_spec.tie_head,
+                            )
+                            _load_token_embeddings_adapter_delta(
+                                installed_token_adapter,
+                                token_embeddings_adapter_spec,
                             )
                         try:
                             from swift import Swift
@@ -1534,6 +1580,10 @@ class OfflineInferenceEngine:
                                     "checkpoint, but its runtime hooks could not be "
                                     "reattached after Swift loading."
                                 )
+                            _load_token_embeddings_adapter_delta(
+                                reattached,
+                                token_embeddings_adapter_spec,
+                            )
                     self.model = model
                     self.model.eval()
                     self.attn_implementation_selected = cand

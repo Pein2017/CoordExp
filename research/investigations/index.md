@@ -10,4 +10,5 @@ subtree.
 ## Current Investigations
 
 - [Docs vs MCP Authority Boundary](docs-vs-mcp-authority/)
+- [Autoregressive Binding Template Study](autoregressive-binding-template-study/)
 - [CoordExp-Swift Physical Length](coordexp-swift-physical-length/)

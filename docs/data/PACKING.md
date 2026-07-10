@@ -40,9 +40,10 @@ Note:
 | Historical 12k packing probe | `12000` | `12` | historical probe | Useful as prior efficiency evidence, not the global default. |
 
 Branch-provenance notes for segment-aware packing, coord-repel exact remapping,
-and prefix-denoising hybrid packing live under `progress/` and `docs/history/`.
-They are not current packing contract until their code/config surfaces are
-merged and this matrix is updated.
+and prefix-denoising hybrid packing may still exist in legacy `progress/` and
+`docs/history/`. They are not current packing contract until their code/config
+surfaces are merged and this matrix is updated; new interpretation should be
+recorded under `research/`.
 
 ## Effective Batch Source Of Truth
 

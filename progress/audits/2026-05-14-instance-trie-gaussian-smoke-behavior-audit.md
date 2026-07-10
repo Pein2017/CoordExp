@@ -10,7 +10,7 @@ updated: 2026-05-14
 
 # Instance-Trie Gaussian SoftCE Smoke Behavior Audit (2026-05-14)
 
-Scope: `/data/home/xiaoyan/AIteam/data/CoordExp/.worktrees/instance-trie-gaussian-softce` on branch `codex/instance-trie-gaussian-softce`.
+Scope: `/data/CoordExp/.worktrees/instance-trie-gaussian-softce` on branch `codex/instance-trie-gaussian-softce`.
 
 Status: smoke/preflight audit concluded. This is production-readiness evidence for the 8-GPU launch path, not a final validation-quality result.
 

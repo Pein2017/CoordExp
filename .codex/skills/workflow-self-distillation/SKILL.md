@@ -1,18 +1,18 @@
 ---
 name: workflow-self-distillation
-description: Use when asked to review recent Codex work, memories, sessions, or task history to identify repeated manual workflows worth packaging as skills, custom subagents, automations, extensions, or deliberate skips.
+description: Use when asked to review recent Codex work, memories, sessions, task history, or recurring design/research preferences to identify durable skills, subagents, automations, docs, extensions, or deliberate skips.
 ---
 
 # Workflow Self-Distillation
 
-Use this to turn repeated work into durable agent assets.
+Use this to turn repeated work and recurring judgment preferences into durable agent assets.
 
 ## Evidence Order
 
 1. Read the user's brief or `self-distillation.md`.
 2. Mine recent Codex threads, task summaries, memories, and rollout summaries.
 3. Check Chronicle only if an enabled tool exists; use it for discovery and confirm important facts elsewhere.
-4. Inventory existing skills, `agents/openai.yaml`, repo docs, hooks, ops helpers, and automations before proposing anything new.
+4. Inventory existing skills, `agents/openai.yaml`, `.codex/agents/*.toml`, repo docs, hooks, ops helpers, and automations before proposing anything new.
 
 Prefer a 30-day window unless the user gives another window. If history is shorter, say so.
 
@@ -27,14 +27,14 @@ Do not recommend removing or merging official/plugin-managed skills unless the u
 
 ## Parallel Split
 
-When subagents are available, split read-only lanes by evidence source:
+When subagents are explicitly requested or the parent workflow permits them, split broad evidence into read-only lanes instead of stacking all context in one thread:
 
 - memory and rollout summaries;
-- recent Git history plus `progress/` / docs;
+- recent Git history plus `research/`, legacy `progress/` provenance, and docs;
 - existing assets and overlap risks;
 - operations/artifact/data-transfer or another domain-heavy lane.
 
-Give each subagent a self-contained prompt, forbid edits, and ask for evidence handles, confidence, recommended form, and overlap warnings.
+Give each subagent a self-contained prompt, forbid edits, and ask for evidence handles, confidence, recommended form, and overlap warnings. The parent must synthesize, remove duplicate reasoning, and decide.
 
 ## Candidate Test
 
@@ -53,6 +53,7 @@ Choose the smallest form:
 - custom subagent: bounded delegated role with clear inputs and output;
 - automation: recurring reminder, monitor, report, or scheduled check;
 - extend existing: when the gap belongs to a current skill;
+- docs or agent metadata: when the durable lesson is an authority boundary, delegation rule, or agent role tweak;
 - skip: one-off, sensitive, ambiguous, poorly evidenced, or overlapping.
 
 ## Output First

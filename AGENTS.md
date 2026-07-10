@@ -1,76 +1,66 @@
 # Agent Guide - CoordExp
 
-> One shared source for Claude, Codex, Gemini, and other coding agents.
-> Distilled from the prior root/Codex guides, `.codex/RTK.md`, current repo docs,
-> recent git history, and workflow memory. Tool-specific mechanics belong in
-> short parentheticals; shared behavior belongs here.
+> Shared, agent-agnostic principles for CoordExp. Keep surface-specific routes,
+> command recipes, and one-off research details in `docs/`, `.codex/skills/`,
+> memory, or the active user prompt. This file is only what every agent should
+> know before starting.
 
-## Precedence And Posture
+## Operating Posture
 
-- User request > nested instruction file > this file > personal/global defaults.
-- Make the smallest reversible change that handles the request; inspect relevant files before editing.
-- State assumptions when requirements are underspecified. Ask only for choices that affect research meaning, high cost, destructive cleanup, external publication, security/privacy, or irreversible compatibility.
-- Prefer implementation plus verification over extended planning. For long work, set an explicit objective, scope boundary, and stop condition (Codex: `/goal`; no token budget unless asked).
-- Use subagents only for independent lanes such as audits, subsystem exploration, disjoint implementation slices, or verification tracks. Respect platform limits (Codex: 6 active).
-- Give direct verdicts when the user asks for a decision. For cross-agent prompts, set background and purpose, require evidence, keep read-only when appropriate, and leave room for each agent's own judgment.
+- User request > nested `AGENTS.md` > this guide > personal/global defaults.
+- Start from the user-named evidence: path, worktree, artifact, config, spec, diff, run, or question. Inspect before explaining or editing.
+- Make the smallest reversible change that handles the request. Do not add features, knobs, cleanup, formatting, or refactors unless they are required by the request or by verification. Preserve unrelated work; dirty worktrees and parallel edits are expected.
+- Ask only when the choice changes research meaning, is costly/destructive, publishes externally, touches secrets, or risks irreversible compatibility.
+- In this checkout, Python checks normally run in the conda environment `ms`; use it explicitly if the shell is not already there.
+- When subagents are allowed or requested, dispatch independent lanes instead of stacking broad raw context in one thread. Give each lane scope, permissions, and a stop condition; the parent agent must synthesize, remove duplication, and decide.
 
-## CoordExp Authority
+## Execution Harness
 
-- CoordExp is a grounding/detection research stack for reproducible data preparation, Stage-1 training, Stage-2 rollout-aware training, inference, evaluation, and artifacts.
-- Route current-behavior reads through `docs/AGENT_INDEX.md` and `docs/catalog.yaml`, then `docs/PROJECT_CONTEXT.md` -> `docs/SYSTEM_OVERVIEW.md` -> `docs/IMPLEMENTATION_MAP.md` -> relevant `docs/` domain router.
-- Use `openspec/specs/` only for stable compatibility-sensitive contracts: training/eval behavior, config schemas, loss semantics, artifact names, and normative metrics.
-- Treat `progress/` as a legacy historical/evidence archive for unmigrated diagnostics, audits, benchmark context, and design derivation; do not treat it as current behavior authority.
-- Prefer `research/` for new research ideas, investigations, mechanisms, interpretation, negative results, and continuation context. It is not authority for current coding, operator, schema, artifact, metric, or training/eval behavior.
-- For deeper engineering posture, consult `docs/AGENT_ENGINEERING_CONSTITUTION.md` if still present and relevant.
+- Before changing files, identify the task type, success criterion, and smallest evidence that would prove the work is done. For tiny edits this can stay implicit, but it must still guide the change.
+- Create or refine a persistent/self-driven goal only for explicit long-running or multi-turn work, and only after bounding the lane; the goal must include a concrete stop condition.
+- State assumptions only when they affect implementation, research meaning, cost, compatibility, or the verification path. If an assumption is cheap to verify locally, verify it instead of asking.
+- If multiple meaningful interpretations exist, present the tradeoff and ask or pause only when the wrong choice would be costly; otherwise choose the conservative repo-local default and continue.
+- For multi-step work, use a brief plan with a verification handle for each step. For simple work, proceed directly and keep the verification path explicit.
+- Every changed line should trace to the user request, concrete evidence, a failing check, a documented contract, or cleanup caused by the current change.
+- If a finding implies `fix`, `narrow`, `drop`, `probe`, or `needs user decision`, make that decision before patching through it.
 
-## Hard Rules
+## Judgment Taste
 
-- Config-first: prefer YAML/schema changes over new stable CLI flags.
-- Default training surface: offline-prepared single-dataset JSONL; runtime fusion configs are legacy or experimental.
-- Stage-1 baseline SFT and Stage-2 rollout-aware training are active first-class surfaces.
-- Preserve image/geometry alignment end to end; never drop or reorder coordinates.
-- Route bbox math through `src/datasets/geometry.py` unless editing detection serialization code.
-- Training uses `do_resize=false`; do not introduce silent resizing.
-- Do not edit upstream HF model files, including `modeling_qwen3_vl.py`.
-- Do not add hidden agent memory stores, self-modifying persistence, or auto-commit watchers for local agent state.
+- Prefer concise, scalable, readable designs over broad new surfaces. Add knobs, abstractions, workflows, or interfaces only when they protect correctness or remove real complexity.
+- For research mechanisms, make semantics explicit, monitorable, numerically stable, and compatible with the existing flow before expanding scope.
+- Give direct verdicts when asked to compare, rank, approve, or decide. Tie the verdict to the requested axis and the concrete evidence.
+- Prefer uncomfortable but specific findings over defending prior decisions. Separate symptom, root cause, uncertainty, and current-vs-historical status.
+- Keep shared guidance compact and operational. Avoid generic tutorials, stale one-off details, and duplicated policy layers.
 
-## Navigation And Tools
+## Authority
 
-- Docs route first, then narrow with `rg`, `rtk`, structured parsers, exact reads, or current artifact inspection.
-- Inspect the smallest code/config/artifact surface that answers the task.
-- CodeGraph: broad symbol/file/call maps when indexed for the exact worktree; keep docs/specs/configs/artifacts authoritative.
-- Serena: Python symbol exploration, references, diagnostics, and precise edits after narrowing.
-- Raw shell: exact stdout, JSON/YAML, NUL output, delicate quoting, pipelines, and small machine-readable checks.
-- RTK: compact noisy output when exact stdout is not required, e.g. `rtk git status --short --branch`, `rtk git diff --stat`, `rtk grep "<pattern>" <path>`, `rtk pytest <target>`. If surprising, rerun with raw command or `rtk proxy`; see `.codex/RTK.md`.
-- In this checkout, shells normally start in `ms`; use plain `python`, `pytest`, and repo entrypoints. If another checkout lacks that setup, follow its local guide.
+- Use canonical docs for current behavior and workflows, starting with `docs/AGENT_INDEX.md` and `docs/catalog.yaml`.
+- Use stable specs only for compatibility-sensitive contracts. Use active change artifacts only when the user or current task puts that change in scope.
+- Treat historical notes, old worktrees, memories, and research writeups as evidence or idea context, not current-behavior authority. Revalidate live files before relying on them.
+- Work in the exact checkout or worktree named by the user. Do not mix facts across roots without checking the target root.
 
-## Change Governance
+## Safety Principles
 
-- Update docs when changing stable defaults, entrypoints, config schemas, artifact names, metric semantics, or recommended workflows.
-- Use OpenSpec for stable compatibility-sensitive contracts, not ordinary experiment planning or implementation checklists.
-- Keep code where future contributors would look first: contracts in `src/common/`, data/geometry in `src/datasets/`, config schema in `src/config/`, training in `src/training/` or `src/trainers/`, inference in `src/infer/`, eval in `src/eval/`, maintained utilities in `scripts/`.
-- Prefer strict current schemas and fail-fast behavior. Keep compatibility shims visibly separate from canonical behavior.
-- Do not add production dependencies, services, credentials, expensive jobs, destructive cleanup, or data deletion without explicit approval.
+- Preserve semantic alignment end to end: data, images, coordinates, prompts, tokens, losses, metrics, configs, and artifacts must not be silently dropped, reordered, resized, reinterpreted, or compared across incompatible scopes.
+- Prefer explicit config/schema contracts and fail-fast behavior over hidden compatibility. Unknown, obsolete, or removed surfaces should not quietly become defaults.
+- Keep compatibility shims visibly separate from canonical behavior.
+- Treat upstream/vendor/runtime boundaries as correctness boundaries. When they own behavior, verify the installed or executed semantics instead of trusting plans, receipts, mocks, or memory.
+- Do not add hidden agent persistence, credentials, services, production dependencies, expensive jobs, destructive cleanup, broad git operations, or data deletion without explicit approval.
 
-## Research And Git Routine
+## Evidence Routine
 
-- Dirty worktrees are expected. Inspect state before broad edits, staging, committing, merging, or cleanup.
-- Use worktrees for independent research directions or risky branch work; keep runs, notes, and artifacts isolated by direction.
-- Keep experiments config-first and artifact-backed: record config, checkpoint, artifact root, parse/drop counters, metric files, and evidence scope before interpretation.
-- Put one-off probes under `temp/`; promote repeated utilities to `scripts/tools/` or `scripts/analysis/` only when they become reusable.
-- Keep outputs/checkpoints/rollout dumps/visual galleries/TensorBoard/raw logs under `outputs/` or documented external artifact roots. Do not delete them automatically.
-- Prefer `research/` for new research writing. Use `progress/` only for old evidence that has not migrated yet or when current docs explicitly point there. Promote only stable current behavior into `docs/`.
-- Track `.codex/skills/` only when a skill encodes non-obvious repo workflow. Do not track `.codex/memories/`, sessions, logs, plugin caches, auth, or app state.
-- Stage narrowly by explicit path when dirty. Use small logical commits when requested. Run relevant checks and `git diff --cached --check` before commit. Confirm before retrying interrupted or unrequested pushes.
+- Diagnose behavior from the exact artifacts, files, or runs the user names before theorizing from config, docs, or memory.
+- For experiments and model behavior, record the evidence scope: config, checkpoint or version, artifact root, counters, metric files, representative samples, and known limitations.
+- Every code, config, data, docs-contract, or workflow change needs a verification path: test, smoke, parse, artifact/manifest check, metric check, replay, residue grep, or explicit skipped reason.
+- Narrow checks first; broaden only when shared contracts or user-facing workflows changed. Label partial evidence honestly and never present it as full validation.
+- Put new investigations, interpretations, negative results, and durable
+  research context in `research/`. Use `docs/history/` for raw provenance
+  snapshots. Treat `progress/` as a legacy/deprecated archive only: read it only
+  when explicitly reconstructing old evidence, migrate useful material to
+  `research/`, and do not create new `progress/` records.
 
-## Verification, Evidence, Reporting
+## Reporting
 
-- Every code/config/data/docs-contract/workflow change needs a verification path: targeted test, smoke run, config parse, artifact/manifest check, metric check, replay, residue grep, or explicit reason skipped.
-- Narrow checks first; broaden only when shared contracts or user-facing workflows changed.
-- Before production training, deployment, release, or benchmark claims, verify geometry/image alignment, prompt/template compatibility, config resolution, cache/packing, loss semantics, metric scope, artifact completeness, eval validity, and rollback/restore.
-- For docs-only changes, verify referenced paths and links enough to avoid stale handles.
-- Attach concrete handles to claims: paths, symbols, config keys, commands, artifact roots, metrics, or minimal I/O examples.
-- Label evidence scope (`tiny`, `smoke`, `val200`, `limit=200`, `proxy`, `partial`, `full`) and never present partial evidence as full validation.
-- When diagnosing model behavior, inspect the exact artifact tree the user names before explaining from config theory or memory.
-- Preserve unrelated user work. Never revert changes you did not make unless explicitly asked.
-- Final responses should include changed files, verification commands, skipped checks, residual risks, and useful next actions. Reviews should lead with findings; handoffs should include objective, current state, exact paths, commands, evidence scope, risks, and continuation seeds.
+- Reviews lead with severity-ranked findings and concrete handles. If there are no findings, say so and name residual risk or skipped checks.
+- Handoffs should include objective, current state, exact paths, commands, evidence scope, risks, and continuation seeds.
+- For implementation or docs changes, report the outcome and any material verification, skipped checks, or residual risks. Keep the shape concise; do not force a fixed summary template.

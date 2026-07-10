@@ -1,4 +1,4 @@
 interface:
   display_name: "Review Convergence Loop"
-  short_description: "Iterate work through review and revision"
-  default_prompt: "Use $review-convergence-loop to produce the work artifact, launch focused review or audit subagents, revise from findings, and repeat until the agreed approval or hold gate is reached."
+  short_description: "Review, decide, revise, and stop"
+  default_prompt: "Use $review-convergence-loop to iterate a CoordExp task through work, independent review lanes, a fix/narrow/drop/probe decision turn, bounded revision, and an explicit stop state."

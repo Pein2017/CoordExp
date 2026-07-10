@@ -1,0 +1,27 @@
+extends:
+  - ./row_coverage_random_sft_ce_cont_from_random_pure_sft_all_layers_1gpu_debug.yaml
+
+training:
+  output_root: temp/pixel_painted_row_coverage/output
+  logging_root: temp/pixel_painted_row_coverage/tb
+  artifact_subdir: pixel_painted_row_coverage_random_sft_all_layers_smoke
+  run_name: smoke-pixel-painted-row-coverage-random-sft-all-layers
+
+row_conditioned_visual_coverage:
+  enabled: false
+
+pixel_painted_row_coverage:
+  enabled: true
+  version: v1
+  row_state_policy: prefix_expansion
+  marker:
+    style: boundary_translucent_tint
+    boundary_rgb: [0, 255, 255]
+    interior_rgb: [0, 255, 255]
+    interior_alpha: 0.18
+    boundary_width_px: 4
+  prompt:
+    marker_instruction: true
+  training:
+    unpacked_only: true
+    include_terminal_state: true

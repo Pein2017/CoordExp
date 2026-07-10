@@ -1,0 +1,33 @@
+run:
+  name: embedding_paint_ckpt2000_freezevit_val64
+  output_dir: /data/CoordExp/outputs/analysis/row_conditioned_visual_coverage
+  overwrite: false
+
+data:
+  val_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl
+  image_root: /data/CoordExp/public_data/coco/rescale_32_1024_bbox
+  limit: 64
+
+model:
+  checkpoint: /data/CoordExp/outputs/stage1_2b/row_conditioned_visual_coverage/row_coverage_random_sft_ce_cont_random_pure_sft_freeze_vitblocks_1epoch_eval512_len12000_8gpu/row-coverage-random-sft-ce-cont-random-pure-sft-freeze-vitblocks-1epoch-eval512-len12000-8gpu/v0-20260607-162710/checkpoint-2000
+  alias: row_coverage_freezevit_ckpt2000
+  device: cuda:0
+  prompt_variant: coco_80
+  object_ordering: sorted
+  object_field_order: desc_first
+  detection_sequence_format: compact_full
+  compact_full_parse_mode: marker_delimited_strict
+  attn_implementation: auto
+
+decode:
+  coverage_enabled: true
+  temperature: 0.0
+  top_p: 1.0
+  repetition_penalty: 1.10
+  seed: 17
+  max_rows: 64
+  max_row_tokens: 256
+  sanitize_malformed_rows: true
+  drop_invalid_rows: true
+  deepstack_policy: tune_or_raise
+  allow_diagnostic_gt_vs_pred: true

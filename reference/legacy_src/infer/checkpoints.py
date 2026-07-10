@@ -4,7 +4,7 @@ import json
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from src.common.model_paths import normalize_coordexp_base_model_path
 from src.detection.template_contracts import (
@@ -34,6 +34,8 @@ class TokenEmbeddingsAdapterSpec:
     tie_head: bool
     embed_offset_rows: int
     head_offset_rows: int | None = None
+    embed_delta_path: str | None = None
+    embed_delta_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -176,6 +178,137 @@ def load_adapter_checkpoint_info(adapter_checkpoint: str) -> AdapterCheckpointIn
     )
 
 
+def _read_json_object(path: Path) -> dict[str, Any]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"{path} must contain a JSON object.")
+    return payload
+
+
+def _run_dir_for_checkpoint_metadata(path: Path) -> Path:
+    if path.name == "checkpoint.json" and path.parent.parent.name == "checkpoints":
+        return path.parent.parent.parent
+    if path.parent.name == "checkpoints":
+        return path.parent.parent
+    return path.parent
+
+
+def _resolve_run_relative(run_dir: Path, raw: Any, *, field: str) -> Path:
+    if not isinstance(raw, str) or not raw.strip():
+        raise ValueError(f"CoordExp-Swift checkpoint metadata missing {field}.")
+    candidate = Path(raw).expanduser()
+    if not candidate.is_absolute():
+        candidate = run_dir / candidate
+    return candidate
+
+
+def _maybe_load_coordexp_swift_checkpoint_info(
+    checkpoint_json: Path,
+) -> AdapterCheckpointInfo | None:
+    payload = _read_json_object(checkpoint_json)
+    if "metadata_path" in payload and "adapter" not in payload:
+        alias_run_dir = _run_dir_for_checkpoint_metadata(checkpoint_json)
+        metadata_path = _resolve_run_relative(
+            alias_run_dir,
+            payload.get("metadata_path"),
+            field="metadata_path",
+        )
+        payload = _read_json_object(metadata_path)
+        checkpoint_json = metadata_path
+
+    adapter = payload.get("adapter")
+    special = payload.get("special_token_embeddings")
+    if not isinstance(adapter, dict) or not isinstance(special, dict):
+        return None
+    if not adapter.get("enabled") or not special.get("enabled"):
+        return None
+
+    run_dir = _run_dir_for_checkpoint_metadata(checkpoint_json)
+    adapter_dir = _resolve_run_relative(
+        run_dir,
+        adapter.get("payload_path"),
+        field="adapter.payload_path",
+    )
+    if not adapter_dir.is_dir() or not (adapter_dir / "adapter_config.json").is_file():
+        raise ValueError(
+            "CoordExp-Swift checkpoint metadata resolves to an invalid adapter "
+            f"directory: {adapter_dir}"
+        )
+
+    adapter_cfg = _read_json_object(adapter_dir / "adapter_config.json")
+    base_raw = adapter_cfg.get("base_model_name_or_path")
+    if not isinstance(base_raw, str) or not base_raw.strip():
+        receipt_base = (
+            ((adapter.get("receipt") or {}).get("base_model_identity") or {}).get("path")
+            if isinstance(adapter.get("receipt"), dict)
+            else None
+        )
+        metadata_base = (
+            (special.get("metadata") or {}).get("base_model_path")
+            if isinstance(special.get("metadata"), dict)
+            else None
+        )
+        base_raw = receipt_base or metadata_base
+    if not isinstance(base_raw, str) or not base_raw.strip():
+        raise ValueError(
+            "CoordExp-Swift checkpoint metadata must define a base model path "
+            "in adapter_config.json, adapter.receipt.base_model_identity.path, "
+            "or special_token_embeddings.metadata.base_model_path."
+        )
+    base_model_name_or_path = normalize_coordexp_base_model_path(base_raw.strip())
+
+    special_metadata = special.get("metadata")
+    if not isinstance(special_metadata, dict):
+        special_metadata = {}
+    token_ids_raw = special_metadata.get("token_ids")
+    if not isinstance(token_ids_raw, list) or not token_ids_raw:
+        raise ValueError(
+            "CoordExp-Swift special_token_embeddings metadata must include "
+            "a non-empty token_ids list."
+        )
+    token_ids = tuple(int(token_id) for token_id in token_ids_raw)
+
+    tensor_shape_raw = special.get("tensor_shape") or special_metadata.get("tensor_shape")
+    if (
+        not isinstance(tensor_shape_raw, list)
+        or len(tensor_shape_raw) != 2
+        or int(tensor_shape_raw[0]) != len(token_ids)
+    ):
+        raise ValueError(
+            "CoordExp-Swift special_token_embeddings tensor_shape must be "
+            "[len(token_ids), embed_dim]."
+        )
+    tensor_path = _resolve_run_relative(
+        run_dir,
+        special.get("tensor_path"),
+        field="special_token_embeddings.tensor_path",
+    )
+    if not tensor_path.is_file():
+        raise ValueError(
+            "CoordExp-Swift special token embedding tensor does not exist: "
+            f"{tensor_path}"
+        )
+    tensor_key = special.get("tensor_key") or special_metadata.get("tensor_key")
+    if not isinstance(tensor_key, str) or not tensor_key.strip():
+        raise ValueError(
+            "CoordExp-Swift special_token_embeddings must define tensor_key."
+        )
+
+    return AdapterCheckpointInfo(
+        path=str(adapter_dir),
+        base_model_name_or_path=base_model_name_or_path,
+        modules_to_save=("token_embeddings_adapter",),
+        token_embeddings_adapter_spec=TokenEmbeddingsAdapterSpec(
+            token_ids=token_ids,
+            tie_head=bool(special_metadata.get("tie_word_embeddings", True)),
+            embed_offset_rows=len(token_ids),
+            head_offset_rows=None,
+            embed_delta_path=str(tensor_path),
+            embed_delta_key=tensor_key.strip(),
+        ),
+    )
+
+
 def resolve_inference_checkpoint(
     *,
     model_checkpoint: str,
@@ -211,6 +344,24 @@ def resolve_inference_checkpoint(
             resolved_adapter_checkpoint=requested_model_checkpoint,
             adapter_info=adapter_info,
         )
+
+    checkpoint_json = Path(requested_model_checkpoint).expanduser()
+    if checkpoint_json.is_file() and checkpoint_json.suffix == ".json":
+        adapter_info = _maybe_load_coordexp_swift_checkpoint_info(checkpoint_json)
+        if adapter_info is not None:
+            base_model = str(adapter_info.base_model_name_or_path or "").strip()
+            if not base_model:
+                raise ValueError(
+                    "CoordExp-Swift checkpoint requires a resolved base model path."
+                )
+            return ResolvedInferenceCheckpoint(
+                checkpoint_mode="base_plus_adapter",
+                requested_model_checkpoint=requested_model_checkpoint,
+                requested_adapter_checkpoint=None,
+                resolved_base_model_checkpoint=base_model,
+                resolved_adapter_checkpoint=adapter_info.path,
+                adapter_info=adapter_info,
+            )
 
     return ResolvedInferenceCheckpoint(
         checkpoint_mode="full_model",

@@ -2,7 +2,7 @@
 doc_id: progress.diagnostics.index
 layer: progress
 doc_type: router
-status: canonical
+status: legacy-router
 domain: research-history
 summary: Router for failure investigations, mechanism studies, threshold sweeps, and operator notes that support diagnosis.
 tags: [progress, diagnostics, investigations]
@@ -11,18 +11,19 @@ updated: 2026-06-15
 
 # Diagnostics Index
 
-Use this folder when the primary question is:
+Use this legacy folder only when reconstructing old answers to:
 
 - what is going wrong?
 - why is a behavior happening?
 - which overlap / decoding threshold looks safe?
 - which operator tool should I open to inspect a failure?
 
-Prefer `progress/benchmarks/` when the output is mainly a measured run-vs-run or checkpoint-vs-checkpoint comparison.
+Prefer `research/` for new diagnosis, mechanism work, negative results, and
+measured run comparisons.
 
 ## Diagnostic Clusters
 
-- Active autoregressive duplication mechanism diagnosis
+- Legacy autoregressive duplication mechanism diagnosis
   - Start with
     [2026-06-12_autoregressive_duplication_causal_chain_synthesis.md](2026-06-12_autoregressive_duplication_causal_chain_synthesis.md)
     for the consolidated June 10-11 causal-chain read on residual localization,
@@ -46,7 +47,7 @@ Prefer `progress/benchmarks/` when the output is mainly a measured run-vs-run or
 - Prefix-denoising branch launch-health notes
   - [2026-06-14_prefix_denoising_launch_health.md](2026-06-14_prefix_denoising_launch_health.md)
     records the original tiny launch-health smoke on `codex/prefix-denoising-sft`;
-    it is superseded by the branch-isolation repair note for current branch
+    it is superseded by the branch-isolation repair note for branch
     interpretation.
   - [2026-06-15_prefix_denoising_branch_isolation_repair.md](2026-06-15_prefix_denoising_branch_isolation_repair.md)
     records the post-audit branch-isolation repair and focused verification on
@@ -55,7 +56,7 @@ Prefer `progress/benchmarks/` when the output is mainly a measured run-vs-run or
 - Hard-CE coordinate-logit and token-embedding locality diagnostics
   - Start with
     [2026-05-18_hard_ce_coord_logit_embedding_locality.md](2026-05-18_hard_ce_coord_logit_embedding_locality.md)
-    for the current `val200` mechanism read comparing ET-RMP-CE and
+    for the legacy `val200` mechanism read comparing ET-RMP-CE and
     random-shuffled pure hard-CE SFT at checkpoint `3664`, including
     coordinate-logit locality, self-prefix fragility, effective coordinate-row
     embedding geometry, and the narrowed SoftCE decision read.

@@ -60,6 +60,92 @@ def _write_token_embeddings_adapter_weights(
     save_file(payload, str(path / "adapter_model.safetensors"))
 
 
+def _write_coordexp_swift_split_checkpoint(
+    run_dir: Path,
+    *,
+    base_model_name_or_path: str = "base-model",
+    token_ids: list[int],
+) -> tuple[Path, Path, Path, Path]:
+    import torch
+    from safetensors.torch import save_file
+
+    adapter_dir = run_dir / "checkpoints" / "step-7" / "adapter"
+    _write_adapter_checkpoint(
+        adapter_dir,
+        base_model_name_or_path=base_model_name_or_path,
+        modules_to_save=None,
+    )
+    special_dir = run_dir / "checkpoints" / "step-7" / "special_token_embeddings"
+    special_dir.mkdir(parents=True, exist_ok=True)
+    tensor_path = special_dir / "special_token_embeddings.safetensors"
+    save_file(
+        {"shared_embed_delta": torch.zeros(len(token_ids), 4, dtype=torch.bfloat16)},
+        str(tensor_path),
+    )
+    metadata_path = special_dir / "special_token_embeddings.json"
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "base_model_path": base_model_name_or_path,
+                "semantics": "additive_delta",
+                "tensor_dtype": "bfloat16",
+                "tensor_key": "shared_embed_delta",
+                "tensor_shape": [len(token_ids), 4],
+                "tie_word_embeddings": True,
+                "token_ids": token_ids,
+            },
+            ensure_ascii=True,
+        ),
+        encoding="utf-8",
+    )
+    checkpoint_path = run_dir / "checkpoints" / "step-7" / "checkpoint.json"
+    checkpoint_path.write_text(
+        json.dumps(
+            {
+                "checkpoint_id": "step-7",
+                "adapter": {
+                    "enabled": True,
+                    "payload_path": "checkpoints/step-7/adapter",
+                    "receipt": {
+                        "base_model_identity": {"path": base_model_name_or_path}
+                    },
+                },
+                "special_token_embeddings": {
+                    "enabled": True,
+                    "metadata_path": "checkpoints/step-7/special_token_embeddings/special_token_embeddings.json",
+                    "tensor_path": "checkpoints/step-7/special_token_embeddings/special_token_embeddings.safetensors",
+                    "tensor_key": "shared_embed_delta",
+                    "tensor_shape": [len(token_ids), 4],
+                    "tensor_dtype": "bfloat16",
+                    "metadata": {
+                        "base_model_path": base_model_name_or_path,
+                        "tensor_key": "shared_embed_delta",
+                        "tensor_shape": [len(token_ids), 4],
+                        "tie_word_embeddings": True,
+                        "token_ids": token_ids,
+                    },
+                },
+            },
+            ensure_ascii=True,
+        ),
+        encoding="utf-8",
+    )
+    final_alias_path = run_dir / "checkpoints" / "checkpoint-final.json"
+    final_alias_path.write_text(
+        json.dumps(
+            {
+                "alias": "final",
+                "checkpoint_id": "step-7",
+                "metadata_path": "checkpoints/step-7/checkpoint.json",
+                "planned_step_id": 7,
+            },
+            ensure_ascii=True,
+        ),
+        encoding="utf-8",
+    )
+    return checkpoint_path, final_alias_path, adapter_dir, tensor_path
+
+
 def test_resolve_inference_checkpoint_keeps_full_model_inputs() -> None:
     resolved = resolve_inference_checkpoint(model_checkpoint="merged-model")
 
@@ -98,6 +184,43 @@ def test_resolve_inference_checkpoint_supports_adapter_shorthand(
     assert resolved.resolved_base_model_checkpoint == "base-from-config"
     assert resolved.resolved_adapter_checkpoint == str(adapter_dir)
     assert resolved.adapter_info is not None
+
+
+@pytest.mark.parametrize("use_alias", [False, True])
+def test_resolve_inference_checkpoint_supports_coordexp_swift_split_checkpoint(
+    tmp_path: Path,
+    use_alias: bool,
+) -> None:
+    base_model = str(tmp_path / "base-model")
+    token_ids = list(required_trainable_token_row_ids("compact_object_box_closed"))
+    checkpoint_path, final_alias_path, adapter_dir, tensor_path = (
+        _write_coordexp_swift_split_checkpoint(
+            tmp_path / "run",
+            base_model_name_or_path=base_model,
+            token_ids=token_ids,
+        )
+    )
+
+    resolved = resolve_inference_checkpoint(
+        model_checkpoint=str(final_alias_path if use_alias else checkpoint_path)
+    )
+
+    assert resolved.checkpoint_mode == "base_plus_adapter"
+    assert resolved.resolved_base_model_checkpoint == base_model
+    assert resolved.resolved_adapter_checkpoint == str(adapter_dir)
+    assert resolved.adapter_info is not None
+    assert resolved.adapter_info.modules_to_save == ("token_embeddings_adapter",)
+    spec = resolved.adapter_info.token_embeddings_adapter_spec
+    assert spec is not None
+    assert spec.token_ids == tuple(token_ids)
+    assert spec.tie_head is True
+    assert spec.embed_offset_rows == len(token_ids)
+    assert spec.embed_delta_path == str(tensor_path)
+    assert spec.embed_delta_key == "shared_embed_delta"
+    validate_compact_token_embeddings_adapter_contract(
+        resolved,
+        detection_template_id="compact_object_box_closed",
+    )
 
 
 def test_resolve_inference_checkpoint_normalizes_worktree_coordexp_base_path(

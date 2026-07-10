@@ -1,0 +1,20 @@
+extends:
+  - ../prod/packed_len12000_2b_coordexp.yaml
+  - ../../smoke/common_prodlike.yaml
+
+training:
+  artifact_subdir: smoke_packed_len12000_coord_repel_w0p05_2b_coordexp
+  run_name: smoke-packed-len12000-coord-repel-w0p05-2b-coordexp
+  max_steps: 2
+  num_train_epochs: 1
+  per_device_train_batch_size: 1
+  effective_batch_size: 1
+  per_device_eval_batch_size: 1
+  save_strategy: "no"
+  eval_strategy: "no"
+  logging_steps: 1
+
+debug:
+  enabled: true
+  train_sample_limit: 16
+  val_sample_limit: 8

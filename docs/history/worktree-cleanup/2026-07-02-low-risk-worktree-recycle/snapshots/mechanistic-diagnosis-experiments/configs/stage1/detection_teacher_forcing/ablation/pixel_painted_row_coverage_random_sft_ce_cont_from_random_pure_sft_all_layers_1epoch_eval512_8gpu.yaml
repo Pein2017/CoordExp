@@ -1,0 +1,32 @@
+extends:
+  - ./row_coverage_random_sft_ce_cont_from_random_pure_sft_1epoch_eval512_8gpu.yaml
+
+row_conditioned_visual_coverage:
+  # Keep the teacher-forcing hard-SFT objective, checkpoint, data, optimizer,
+  # all-layer LoRA target surface, token-row coord_offset adapter, and
+  # eval/length settings aligned with the all-trainable SOTA comparison run,
+  # but replace late feature residual painting with early in-memory pixel
+  # painting.
+  enabled: false
+
+pixel_painted_row_coverage:
+  enabled: true
+  version: v1
+  row_state_policy: prefix_expansion
+  marker:
+    style: boundary_translucent_tint
+    boundary_rgb: [0, 255, 255]
+    interior_rgb: [0, 255, 255]
+    interior_alpha: 0.18
+    boundary_width_px: 4
+  prompt:
+    marker_instruction: true
+  training:
+    unpacked_only: true
+    include_terminal_state: true
+
+training:
+  output_root: /data/CoordExp/outputs/stage1_2b/pixel_painted_row_coverage
+  logging_root: /data/CoordExp/outputs/stage1_2b/pixel_painted_row_coverage/tb
+  artifact_subdir: pixel_painted_row_coverage_random_sft_ce_cont_random_pure_sft_all_layers_1epoch_eval512_len12000_8gpu
+  run_name: pixel-painted-row-coverage-random-sft-ce-cont-random-pure-sft-all-layers-1epoch-eval512-len12000-8gpu

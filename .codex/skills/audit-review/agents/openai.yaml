@@ -1,4 +1,4 @@
 interface:
   display_name: "Audit Review"
-  short_description: "Deep code/spec/design audit (read-only)"
-  default_prompt: "Audit the requested CoordExp code/spec/design/artifact/change. Follow source precedence: current docs and repo behavior first, stable openspec/specs only for compatibility contracts, active changes only when explicitly in scope, and progress as historical evidence. Use a correct local CodeGraph index for broad call/impact maps when helpful, rg/RTK for exact discovery, and Serena for narrowed Python symbols; stay read-only and report P0/P1/P2 findings with file:line evidence, benchmark scope, artifact/provenance risks, and concrete verification steps."
+  short_description: "Read-only audit with decision impact"
+  default_prompt: "Use $audit-review for a read-only CoordExp audit; report P0/P1/P2 findings with evidence, decision implication (fix, narrow, drop, probe, or user decision), and the smallest verification path."

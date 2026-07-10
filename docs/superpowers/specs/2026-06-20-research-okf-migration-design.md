@@ -1,8 +1,12 @@
 # Research OKF Migration Design
 
+> Superseded routing note (2026-07-06): this design is provenance for the June
+> 2026 migration pilot. Current policy treats `research/` as the active research
+> knowledge surface and `progress/` as a deprecated legacy archive.
+
 ## Objective
 
-Design the staged migration from the current `progress/` research-history
+Design the staged migration from the legacy `progress/` research-history
 corpus to an OKF-style `research/` knowledge bundle, starting with a
 side-by-side pilot for `prefix-denoising-sft`.
 
@@ -18,7 +22,7 @@ implementation begins.
   `docs/history/worktree-union/2026-06-20/manifest.tsv`
 - Current docs authority:
   `docs/AGENT_INDEX.md`, `docs/catalog.yaml`
-- Current progress router:
+- Legacy progress router:
   `progress/README.md`, `progress/index.yaml`
 - OKF upstream references checked on 2026-06-20:
   - `https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf`
@@ -221,7 +225,7 @@ Use synthesis-first migration:
 - Preserve `docs/history/worktree-union/` raw snapshots.
 - Avoid one-to-one file moves from old top-level folders.
 
-Existing `progress/` folders are source pools, not target folders. Do not map
+Existing `progress/` folders are legacy source pools, not target folders. Do not map
 `directions/`, `diagnostics/`, `benchmarks/`, `audits/`, or other old
 production-mode folders directly into `research/`.
 

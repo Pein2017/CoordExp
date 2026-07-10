@@ -1,0 +1,85 @@
+extends:
+  - ../../prod/compact_full_support2.yaml
+
+model:
+  model: /data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp
+  model_type: qwen3_vl
+  attn_impl: flash_attention_2
+  torch_dtype: bfloat16
+
+template:
+  max_length: 12000
+
+training:
+  output_root: /data/CoordExp/outputs/stage1_2b/detection_teacher_forcing_coord_repel
+  logging_root: /data/CoordExp/outputs/stage1_2b/detection_teacher_forcing_coord_repel/tb
+  artifact_subdir: packed_len12000_coord_repel_w0p05_2b_coordexp_4epoch
+  run_name: packed-len12000-coord-repel-w0p05-2b-coordexp-4epoch
+  num_train_epochs: 4
+  max_steps: -1
+  per_device_train_batch_size: 1
+  effective_batch_size: 32
+  per_device_eval_batch_size: 1
+  train_type: lora
+  freeze_llm: false
+  freeze_vit: true
+  freeze_aligner: true
+  packing: true
+  eval_packing: true
+  packing_mode: static
+  packing_buffer: 512
+  packing_min_fill_ratio: 0.7
+  packing_drop_last: false
+  packing_length_precompute_workers: 8
+  padding_side: right
+  encoded_sample_cache:
+    enabled: false
+  use_logits_to_keep: false
+  dataloader_num_workers: 8
+  dataloader_pin_memory: true
+  dataloader_persistent_workers: true
+  dataloader_prefetch_factor: 2
+  eval_steps: 459
+  save_steps: 459
+  save_delay_steps: 600
+  logging_steps: 10
+
+data:
+  train_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/train.coord.jsonl
+  val_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl
+  image_root: /data/CoordExp/public_data/coco/rescale_32_1024_bbox
+  object_ordering: random_permutation
+
+objective:
+  id: teacher_forcing
+  profile: pure_valid_set_marginal
+  target_ir:
+    rollin_policy:
+      name: random_permutation
+      base_seed: 17
+    exact_packing_mapping:
+      enabled: true
+  modules:
+    token_type_mass:
+      enabled: false
+    conditional_valid_set_likelihood:
+      enabled: false
+    within_valid_coverage:
+      enabled: false
+      coverage_strength: 0.0
+    continuation_margin:
+      enabled: false
+    coord_repel:
+      enabled: true
+      weight: 0.05
+      margin: 0.25
+      top_k: 32
+      negative_source: last_and_same_desc
+
+packing:
+  static_packing: true
+  padding_free_packed: false
+
+evaluation:
+  expected_template: compact_full
+  parser_mode: strict_expected
