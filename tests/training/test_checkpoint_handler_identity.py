@@ -35,6 +35,7 @@ def test_checkpoint_handler_passes_qwen_sha_identity_to_writer() -> None:
         special_token_result={"status": "installed"},
         trainable_surface={"trainable": True},
         processor_identity={"name": "qwen-test"},
+        template_identity={"assistant_format": "object_box_closed"},
         resolved_config_fingerprint="config-fingerprint",
         schedule=schedule,
         base_model_path=Path("/models/qwen-base"),
@@ -47,3 +48,4 @@ def test_checkpoint_handler_passes_qwen_sha_identity_to_writer() -> None:
     assert calls[0]["base_model_path"] == Path("/models/qwen-base")
     assert calls[0]["base_config_sha256"] == "base-config-sha"
     assert calls[0]["tokenizer_sha256"] == "tokenizer-sha"
+    assert calls[0]["template_identity"] == {"assistant_format": "object_box_closed"}

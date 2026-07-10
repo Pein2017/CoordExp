@@ -37,6 +37,7 @@
 !tests/**
 !.cursorignore
 !.cursorindexingignore
+!pytest.ini
 !*.md
 !public_data/**/
 !public_data/**/*.py
