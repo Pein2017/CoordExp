@@ -8,6 +8,16 @@ import pytest
 import torch
 import yaml
 
+# This module is the legacy MS-Swift/Stage-1 configuration contract suite.
+# CoordExp-Swift owns a strict typed loader in ``src.config.loader`` and does
+# not expose the retired ``ConfigLoader``/``src.config.schema`` surface. Keep
+# the historical test file available for provenance, but do not let it fail
+# collection or imply that the legacy contract is part of the Swift suite.
+pytest.importorskip(
+    "src.config.schema",
+    reason="legacy MS-Swift config contract is not active in CoordExp-Swift",
+)
+
 from src.config.loader import ConfigLoader
 from src.config.schema import (
     DebugConfig,

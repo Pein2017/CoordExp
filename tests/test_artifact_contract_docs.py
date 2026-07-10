@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 
 
@@ -65,13 +66,18 @@ def test_artifact_contract_docs_freeze_rank0_and_stage2_eval_surfaces() -> None:
 def test_stage2_rollout_correction_spec_rejects_removed_scheduler_and_channel_keys() -> None:
     spec = (
         REPO_ROOT / "openspec" / "specs" / "stage2-rollout-correction" / "spec.md"
-    ).read_text(encoding="utf-8")
+    )
+    if not spec.exists():
+        pytest.skip(
+            "legacy Stage-2 rollout-correction spec is not active in CoordExp-Swift"
+        )
+    spec_text = spec.read_text(encoding="utf-8")
 
-    assert "`stage2_rollout_correction.schedule`" in spec
-    assert "`stage2_rollout_correction.b_ratio`" in spec
-    assert "`stage2_rollout_correction.channel_b`" in spec
-    assert "`stage2_rollout_correction.pipeline.objective[].channels`" in spec
-    assert "`_stage2_ab_channel`" in spec
+    assert "`stage2_rollout_correction.schedule`" in spec_text
+    assert "`stage2_rollout_correction.b_ratio`" in spec_text
+    assert "`stage2_rollout_correction.channel_b`" in spec_text
+    assert "`stage2_rollout_correction.pipeline.objective[].channels`" in spec_text
+    assert "`_stage2_ab_channel`" in spec_text
 
 
 def test_training_decision_export_matches_stage2_shadow_ordering_contract() -> None:
