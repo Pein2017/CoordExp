@@ -97,7 +97,6 @@ training:
       - 1
 
 runtime:
-  backend: single
   seed: 17
 
 eval:

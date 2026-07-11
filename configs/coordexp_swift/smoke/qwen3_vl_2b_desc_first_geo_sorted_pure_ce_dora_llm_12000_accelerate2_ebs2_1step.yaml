@@ -97,11 +97,7 @@ training:
       - 1
 
 runtime:
-  backend: accelerate
   seed: 17
-  accelerate:
-    mixed_precision: bf16
-    gradient_accumulation_steps: null
 
 eval:
   forward:

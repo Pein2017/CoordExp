@@ -56,7 +56,7 @@ def test_epoch_led_schedule_tail_fills_complete_optimizer_window(tmp_path: Path)
                 "effective_batch_size": 4,
                 "logging": {"every_fraction": None, "steps": [1, 2, 3]},
             },
-            "runtime": {"backend": "single", "seed": 17},
+            "runtime": {"seed": 17},
             "checkpoint": {"every_fraction": None, "steps": [], "save_final": True},
             "eval": {"forward": {"every_fraction": None, "steps": []}},
         },

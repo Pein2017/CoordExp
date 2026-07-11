@@ -15,7 +15,6 @@ PATH_FIELDS = (
     "adapter.path",
     "data.train.path",
     "data.eval.path",
-    "runtime.deepspeed.config_path",
 )
 
 

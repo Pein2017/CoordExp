@@ -26,30 +26,78 @@ if TYPE_CHECKING:
     from src.training.supervised_trainer import SupervisedMicroStep
 
 
+def validate_accelerator_runtime(
+    accelerator: Any,
+    *,
+    expected_mixed_precision: str,
+) -> None:
+    """Reject unsupported launcher state before training-side mutation."""
+
+    distributed_type = getattr(accelerator, "distributed_type", None)
+    distributed_name = getattr(distributed_type, "name", str(distributed_type))
+    if distributed_name not in {"NO", "MULTI_GPU"}:
+        raise RuntimeContractError(
+            f"unsupported Accelerate distributed type: {distributed_name}",
+            code="runtime.distributed_type_unsupported",
+            context={"distributed_type": distributed_name},
+        )
+    expected_precision = _normalize_mixed_precision(expected_mixed_precision)
+    observed_precision = _normalize_mixed_precision(
+        getattr(accelerator, "mixed_precision", None)
+    )
+    if observed_precision != expected_precision:
+        raise RuntimeContractError(
+            "constructed Accelerator mixed precision does not match resolved training precision",
+            code="runtime.mixed_precision_mismatch",
+            context={
+                "expected_mixed_precision": expected_precision,
+                "observed_mixed_precision": observed_precision,
+            },
+        )
+    world_size = int(accelerator.num_processes)
+    rank = int(accelerator.process_index)
+    if world_size <= 0:
+        raise RuntimeContractError(
+            "runtime world_size must be positive",
+            code="runtime.world_size",
+            context={"world_size": world_size},
+        )
+    if rank < 0 or rank >= world_size:
+        raise RuntimeContractError(
+            "runtime rank must be inside world size",
+            code="runtime.rank",
+            context={"rank": rank, "world_size": world_size},
+        )
+    accelerator_accumulation = int(
+        getattr(accelerator, "gradient_accumulation_steps", 1)
+    )
+    if accelerator_accumulation != 1:
+        raise RuntimeContractError(
+            "Accelerate accumulation must remain neutral; CoordExp owns accumulation",
+            code="runtime.accelerator_accumulation_non_neutral",
+            context={
+                "accelerator_gradient_accumulation_steps": accelerator_accumulation,
+            },
+        )
+
+
 @dataclass(frozen=True)
 class TrainRuntimeSetupReceipt:
-    backend: str
     rank: int
     world_size: int
     device: str
     seed: int
     runtime_batch: RuntimeBatchResolution
-    backend_status: dict[str, tuple[str, ...]]
     max_grad_norm: float | None
     scheduler_semantics: Mapping[str, Any]
 
     def to_artifact_dict(self) -> dict[str, Any]:
         return {
-            "backend": self.backend,
             "rank": self.rank,
             "world_size": self.world_size,
             "device": self.device,
             "seed": self.seed,
             "runtime_batch": self.runtime_batch.to_artifact_dict(),
-            "backend_status": {
-                backend: list(labels)
-                for backend, labels in sorted(self.backend_status.items())
-            },
             "max_grad_norm": self.max_grad_norm,
             "scheduler_semantics": dict(self.scheduler_semantics),
         }
@@ -64,11 +112,9 @@ class TrainRuntime:
         model: torch.nn.Module,
         optimizer: torch.optim.Optimizer | None,
         scheduler: Any | None,
-        device: torch.device | str,
-        rank: int,
-        world_size: int,
+        expected_mixed_precision: str,
         max_grad_norm: float | None = None,
-        accelerator: Any | None = None,
+        accelerator: Any,
         rank_report_gatherer: Callable[
             [Any],
             Sequence[Any],
@@ -80,13 +126,13 @@ class TrainRuntime:
         self.model = model
         self.optimizer = optimizer
         self.scheduler = scheduler
-        self.device = torch.device(device)
-        self.rank = int(rank)
-        self.world_size = int(world_size)
-        self.max_grad_norm = max_grad_norm
+        self.expected_mixed_precision = expected_mixed_precision
         self.accelerator = accelerator
+        self.device = torch.device(accelerator.device)
+        self.rank = int(accelerator.process_index)
+        self.world_size = int(accelerator.num_processes)
+        self.max_grad_norm = max_grad_norm
         self.rank_report_gatherer = rank_report_gatherer
-        self._accelerate_prepared = False
         self.optimizer_step_count = 0
         self.scheduler_step_count = 0
         self.zero_grad_count = 0
@@ -97,27 +143,20 @@ class TrainRuntime:
             phase="runtime_setup_reapplied",
         )
         self.model.to(self.device)
-        self._prepare_backend()
+        self._prepare_training_objects()
         self.setup_receipt = TrainRuntimeSetupReceipt(
-            backend=runtime_config.backend,
             rank=self.rank,
             world_size=self.world_size,
             device=str(self.device),
             seed=runtime_config.seed,
             runtime_batch=runtime_batch,
-            backend_status=_backend_status(
-                runtime_config,
-                accelerate_prepared=self._accelerate_prepared,
-            ),
             max_grad_norm=max_grad_norm,
             scheduler_semantics=_scheduler_semantics(),
         )
 
     @property
     def is_main_process(self) -> bool:
-        if self.accelerator is not None and hasattr(self.accelerator, "is_main_process"):
-            return bool(self.accelerator.is_main_process)
-        return self.rank == 0
+        return bool(self.accelerator.is_main_process)
 
     def move_micro_step(
         self,
@@ -127,7 +166,6 @@ class TrainRuntime:
         local_micro_step_index: int,
     ) -> SupervisedMicroStep:
         del planned_step_id, local_micro_step_index
-        self._ensure_training_backend_can_execute()
         return replace(micro_step, forward_device=self.device)
 
     def pre_backward(
@@ -145,10 +183,7 @@ class TrainRuntime:
         return reduce_scalar_finite_reports(self._gather_rank_reports(report))
 
     def accumulation_context(self, *, sync_gradients: bool) -> Any:
-        self._ensure_training_backend_can_execute()
-        if sync_gradients or self.accelerator is None:
-            return nullcontext()
-        if self.runtime_config.backend == "deepspeed":
+        if sync_gradients:
             return nullcontext()
         no_sync = getattr(self.accelerator, "no_sync", None)
         if callable(no_sync):
@@ -163,57 +198,26 @@ class TrainRuntime:
         sync_gradients: bool = True,
     ) -> None:
         del planned_step_id
-        self._ensure_training_backend_can_execute()
-        if self.accelerator is not None and hasattr(self.accelerator, "backward"):
-            if self.runtime_config.backend == "deepspeed":
-                old_sync = getattr(self.accelerator, "sync_gradients", None)
-                has_sync_state = hasattr(self.accelerator, "sync_gradients")
-                if has_sync_state:
-                    setattr(self.accelerator, "sync_gradients", bool(sync_gradients))
-                try:
-                    self.accelerator.backward(loss, scale_wrt_gas=False)
-                finally:
-                    if has_sync_state:
-                        setattr(self.accelerator, "sync_gradients", old_sync)
-                return
-            self.accelerator.backward(loss)
-        else:
-            loss.backward()
+        self.accelerator.backward(loss)
 
     def post_backward(self, *, planned_step_id: int) -> GateDecision:
-        self._ensure_training_backend_can_execute()
-        if self.runtime_config.backend == "deepspeed":
-            report = RankGradientFiniteReport(
-                planned_step_id=planned_step_id,
-                rank=self.rank,
-                world_size=self.world_size,
-                gradients_finite=True,
-                backend_overflow=_backend_overflow(self.accelerator),
-                grad_norm=_deepspeed_global_grad_norm(self.accelerator),
-            )
-        else:
-            report = build_gradient_finite_report(
-                self.model.parameters(),
-                planned_step_id=planned_step_id,
-                rank=self.rank,
-                world_size=self.world_size,
-                backend_overflow=_backend_overflow(self.accelerator),
-            )
+        report = build_gradient_finite_report(
+            self.model.parameters(),
+            planned_step_id=planned_step_id,
+            rank=self.rank,
+            world_size=self.world_size,
+            backend_overflow=_accelerator_overflow(self.accelerator),
+        )
         return reduce_gradient_overflow_reports(self._gather_rank_reports(report))
 
     def clip_gradients(self, *, planned_step_id: int) -> None:
         del planned_step_id
-        self._ensure_training_backend_can_execute()
         if self.max_grad_norm is None:
             return
-        if self.accelerator is not None and hasattr(self.accelerator, "clip_grad_norm_"):
-            self.accelerator.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
-        else:
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
+        self.accelerator.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
 
     def optimizer_step(self, *, planned_step_id: int) -> None:
         del planned_step_id
-        self._ensure_training_backend_can_execute()
         if self.optimizer is None:
             raise RuntimeContractError(
                 "optimizer_step requires an optimizer",
@@ -223,7 +227,6 @@ class TrainRuntime:
         self.optimizer_step_count += 1
 
     def scheduler_step(self, *, planned_step_id: int) -> dict[str, Any]:
-        self._ensure_training_backend_can_execute()
         if self.scheduler is None:
             return {
                 "planned_step_id": int(planned_step_id),
@@ -249,7 +252,6 @@ class TrainRuntime:
 
     def zero_gradients(self, *, planned_step_id: int) -> None:
         del planned_step_id
-        self._ensure_training_backend_can_execute()
         if self.optimizer is not None:
             self.optimizer.zero_grad(set_to_none=True)
         else:
@@ -338,18 +340,10 @@ class TrainRuntime:
         return path
 
     def _validate_runtime_contract(self) -> None:
-        if self.world_size <= 0:
-            raise RuntimeContractError(
-                "runtime world_size must be positive",
-                code="runtime.world_size",
-                context={"world_size": self.world_size},
-            )
-        if self.rank < 0 or self.rank >= self.world_size:
-            raise RuntimeContractError(
-                "runtime rank must be inside world size",
-                code="runtime.rank",
-                context={"rank": self.rank, "world_size": self.world_size},
-            )
+        validate_accelerator_runtime(
+            self.accelerator,
+            expected_mixed_precision=self.expected_mixed_precision,
+        )
         if self.runtime_batch.world_size != self.world_size:
             raise RuntimeContractError(
                 "runtime batch world size must match runtime world size",
@@ -365,76 +359,12 @@ class TrainRuntime:
                 code="runtime.report_gather_unavailable",
                 context={"rank": self.rank, "world_size": self.world_size},
             )
-        accelerate = self.runtime_config.accelerate
-        if (
-            self.runtime_config.backend == "accelerate"
-            and accelerate is not None
-            and accelerate.gradient_accumulation_steps not in (
-                None,
-                self.runtime_batch.resolved_grad_accum_steps,
-            )
-        ):
-            raise RuntimeContractError(
-                "accelerate accumulation conflicts with runtime-derived value",
-                code="runtime.accumulation_conflict",
-                context={
-                    "backend": "accelerate",
-                    "authored": accelerate.gradient_accumulation_steps,
-                    "resolved": self.runtime_batch.resolved_grad_accum_steps,
-                },
-            )
-        if self.runtime_config.backend == "accelerate" and self.accelerator is None:
-            raise RuntimeContractError(
-                "accelerate backend requires an accelerator instance",
-                code="runtime.accelerator_required",
-            )
-        if self.runtime_config.backend == "deepspeed" and self.accelerator is None:
-            raise RuntimeContractError(
-                "deepspeed backend requires an accelerator instance",
-                code="runtime.deepspeed_accelerator_required",
-            )
-        deepspeed = self.runtime_config.deepspeed
-        if (
-            self.runtime_config.backend == "deepspeed"
-            and deepspeed is not None
-            and deepspeed.gradient_accumulation_steps not in (
-                None,
-                self.runtime_batch.resolved_grad_accum_steps,
-            )
-        ):
-            raise RuntimeContractError(
-                "deepspeed accumulation conflicts with runtime-derived value",
-                code="runtime.accumulation_conflict",
-                context={
-                    "backend": "deepspeed",
-                    "authored": deepspeed.gradient_accumulation_steps,
-                    "resolved": self.runtime_batch.resolved_grad_accum_steps,
-                },
-            )
-        if (
-            self.runtime_config.backend == "deepspeed"
-            and deepspeed is not None
-            and deepspeed.train_batch_size not in (
-                None,
-                self.runtime_batch.effective_batch_size,
-            )
-        ):
-            raise RuntimeContractError(
-                "deepspeed train batch size conflicts with effective batch size",
-                code="runtime.deepspeed_batch_conflict",
-                context={
-                    "authored": deepspeed.train_batch_size,
-                    "effective_batch_size": self.runtime_batch.effective_batch_size,
-                },
-            )
 
-    def _prepare_backend(self) -> None:
-        if self.runtime_config.backend not in ("accelerate", "deepspeed"):
-            return
+    def _prepare_training_objects(self) -> None:
         prepare = getattr(self.accelerator, "prepare", None)
         if not callable(prepare):
             raise RuntimeContractError(
-                f"{self.runtime_config.backend} backend requires accelerator.prepare",
+                "TrainRuntime requires accelerator.prepare",
                 code="runtime.accelerator_prepare_missing",
             )
         names: list[str] = ["model"]
@@ -459,7 +389,6 @@ class TrainRuntime:
         self.model = prepared_by_name["model"]
         if "optimizer" in prepared_by_name:
             self.optimizer = prepared_by_name["optimizer"]
-        self._accelerate_prepared = True
 
     def _gather_rank_reports(
         self,
@@ -483,63 +412,7 @@ class TrainRuntime:
             ) from exc
         return reports
 
-    def _ensure_training_backend_can_execute(self) -> None:
-        if self.runtime_config.backend in ("accelerate", "deepspeed") and not self._accelerate_prepared:
-            raise RuntimeContractError(
-                f"{self.runtime_config.backend} execution requires prepared runtime objects",
-                code="runtime.accelerator_unprepared",
-            )
-
-
-def _backend_status(
-    runtime_config: RuntimeConfig,
-    *,
-    accelerate_prepared: bool = False,
-) -> dict[str, tuple[str, ...]]:
-    if runtime_config.backend == "single":
-        return {
-            "single": ("active",),
-            "accelerate": (),
-            "deepspeed": (),
-        }
-    if runtime_config.backend == "accelerate":
-        return {
-            "single": (),
-            "accelerate": (
-                "schema_accepted",
-                "prepared",
-                "active",
-            )
-            if accelerate_prepared
-            else ("schema_accepted",),
-            "deepspeed": (),
-        }
-    if runtime_config.backend == "deepspeed":
-        return {
-            "single": (),
-            "accelerate": (),
-            "deepspeed": (
-                "schema_accepted",
-                "conflict_validation_implemented",
-                "prepared",
-                "active",
-            )
-            if accelerate_prepared
-            else (
-                "schema_accepted",
-                "conflict_validation_implemented",
-            ),
-        }
-    raise RuntimeContractError(
-        "unsupported runtime backend",
-        code="runtime.backend_unsupported",
-        context={"backend": runtime_config.backend},
-    )
-
-
-def _backend_overflow(accelerator: Any | None) -> bool:
-    if accelerator is None:
-        return False
+def _accelerator_overflow(accelerator: Any) -> bool:
     scaler = getattr(accelerator, "scaler", None)
     if scaler is None:
         return False
@@ -554,26 +427,19 @@ def _backend_overflow(accelerator: Any | None) -> bool:
     return False
 
 
-def _deepspeed_global_grad_norm(accelerator: Any | None) -> float | None:
-    if accelerator is None:
-        return None
-    engine_wrapper = getattr(accelerator, "deepspeed_engine_wrapped", None)
-    get_global_grad_norm = getattr(engine_wrapper, "get_global_grad_norm", None)
-    if not callable(get_global_grad_norm):
-        return None
-    grad_norm = get_global_grad_norm()
-    if grad_norm is None:
-        return None
-    try:
-        return float(torch.as_tensor(grad_norm).detach().cpu().item())
-    except (TypeError, ValueError, RuntimeError):
-        return None
+def _normalize_mixed_precision(value: Any) -> str:
+    if value is None:
+        return "no"
+    normalized = str(getattr(value, "value", value)).strip().lower()
+    if normalized in {"", "none", "null", "false", "no"}:
+        return "no"
+    return normalized
 
 
 def _scheduler_semantics() -> dict[str, Any]:
     return {
         "scheduler_owner": "coordexp_runtime",
-        "scheduler_prepared_by_backend": False,
+        "scheduler_prepared_by_accelerate": False,
         "step_policy": "once_per_planned_step",
     }
 
@@ -616,4 +482,8 @@ def _float_scalar(value: Any) -> float:
         return float(torch.as_tensor(value).detach().cpu().item())
 
 
-__all__ = ["TrainRuntime", "TrainRuntimeSetupReceipt"]
+__all__ = [
+    "TrainRuntime",
+    "TrainRuntimeSetupReceipt",
+    "validate_accelerator_runtime",
+]

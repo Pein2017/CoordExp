@@ -17,7 +17,8 @@ from src.config.models import AdapterConfig
 
 
 DEFAULT_DORA_SOURCE_STUDY_PATH = Path(
-    "docs/architecture/proposals/2026-06-27-coordexp-swift/source-studies/dora.md"
+    "docs/history/architecture/proposals/2026-06-27-coordexp-swift/"
+    "source-studies/dora.md"
 )
 DEFAULT_DORA_PROBE_RECEIPT_PATH = Path(
     "outputs/probes/coordexp_swift/dora_roundtrip/receipt.json"

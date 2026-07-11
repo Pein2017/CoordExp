@@ -28,7 +28,7 @@ SPECIAL_TOKEN_EMBEDDINGS_JSON = "special_token_embeddings.json"
 DEFAULT_EMBED_DELTA_TENSOR_KEY = "shared_embed_delta"
 SPECIAL_TOKEN_EMBEDDING_SEMANTICS = "additive_delta"
 DEFAULT_SPECIAL_TOKEN_EMBEDDING_SOURCE_STUDY_PATH = Path(
-    "docs/architecture/proposals/2026-06-27-coordexp-swift/source-studies/"
+    "docs/history/architecture/proposals/2026-06-27-coordexp-swift/source-studies/"
     "special-token-embeddings.md"
 )
 DEFAULT_SPECIAL_TOKEN_EMBEDDING_PROBE_RECEIPT_PATH = Path(

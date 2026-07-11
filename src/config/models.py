@@ -327,27 +327,13 @@ class TrainingConfig(StrictConfigModel):
     epochs: int = Field(gt=0)
     max_steps: int | None = Field(default=None, gt=0)
     effective_batch_size: int = Field(gt=0)
-    precision: Literal["bf16", "fp16", "fp32"]
+    precision: Literal["bf16", "fp16"]
     max_grad_norm: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
     logging: LoggingConfig
 
 
-class AccelerateConfig(StrictConfigModel):
-    mixed_precision: Literal["bf16", "fp16", "no"] | None = None
-    gradient_accumulation_steps: int | None = Field(default=None, gt=0)
-
-
-class DeepSpeedConfig(StrictConfigModel):
-    config_path: str | None = None
-    gradient_accumulation_steps: int | None = Field(default=None, gt=0)
-    train_batch_size: int | None = Field(default=None, gt=0)
-
-
 class RuntimeConfig(StrictConfigModel):
-    backend: Literal["single", "accelerate", "deepspeed"]
     seed: int = 17
-    accelerate: AccelerateConfig | None = None
-    deepspeed: DeepSpeedConfig | None = None
 
 
 class EvalForwardConfig(CadenceConfig):

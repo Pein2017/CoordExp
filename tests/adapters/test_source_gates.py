@@ -7,10 +7,24 @@ import pytest
 from src.adapters.source_gates import (
     AdapterSourceGateEvidence,
     build_adapter_setup_plan,
+    load_default_adapter_source_gate_evidence,
     load_dora_probe_receipt,
 )
 from src.common.errors import RuntimeContractError
 from src.config.models import AdapterConfig
+
+
+def test_default_dora_source_gate_loads_historical_evidence() -> None:
+    evidence = load_default_adapter_source_gate_evidence(
+        Path(__file__).resolve().parents[2]
+    )
+
+    assert evidence.dora_source_study_passed is True
+    assert evidence.dora_probe_passed is True
+    assert evidence.dora_source_study_path is not None
+    assert "docs/history/architecture/proposals" in str(
+        evidence.dora_source_study_path
+    )
 
 
 def test_dora_setup_plan_requires_source_study_before_initialization() -> None:

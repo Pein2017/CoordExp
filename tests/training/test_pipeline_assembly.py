@@ -29,7 +29,7 @@ from src.training.pipeline import (
     _checkpoint_handler,
     _loss_plan_artifact,
     _pack_plan_artifact,
-    _resolve_rank_local_run_directory,
+    _resolve_shared_run_directory,
     run_training_pipeline,
 )
 from src.training.pack_cache import (
@@ -94,11 +94,7 @@ def test_run_training_pipeline_writes_core_artifacts_with_fake_boundaries(
     assert scheduler_plan["warmup_steps"] is None
     assert scheduler_plan["resolved_warmup_steps"] == 0
     assert scheduler_plan["total_training_steps"] == 5
-    assert manifest["backend_status"]["deepspeed"] == [
-        "schema_accepted",
-        "conflict_validation_implemented",
-    ]
-    assert "systems_smoke_verified" not in manifest["backend_status"]["deepspeed"]
+    assert manifest["backend_status"] == {"active": ["accelerate"]}
     assert manifest["status"] == "completed"
     assert manifest["reports"]["token_type_vocab"] == "reports/token_type_vocab.json"
     assert (run_dir / "reports" / "token_type_vocab.json").exists()
@@ -411,12 +407,7 @@ def test_run_training_pipeline_wires_accelerate_runtime_for_multirank(
     payload["run"]["artifact_root"] = str(tmp_path / "artifacts")
     payload["run"]["name"] = "fake-accelerate-smoke"
     payload["runtime"] = {
-        "backend": "accelerate",
         "seed": 17,
-        "accelerate": {
-            "mixed_precision": "bf16",
-            "gradient_accumulation_steps": None,
-        },
     }
     config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
     log: list[str] = []
@@ -431,10 +422,15 @@ def test_run_training_pipeline_wires_accelerate_runtime_for_multirank(
         FakePipelineAccelerator,
         raising=False,
     )
+    monkeypatch.setattr(
+        "src.training.pipeline.broadcast_object_list",
+        lambda objects, from_process: objects,
+        raising=False,
+    )
     _install_fake_training_pipeline_boundaries(monkeypatch, log)
     monkeypatch.setattr(
         "src.training.pipeline._resolve_or_build_train_pack_cache",
-        lambda config, components, vocab_groups, repo_root: _fake_train_cache(tmp_path),
+        lambda config, components, vocab_groups, repo_root, rank: _fake_train_cache(tmp_path),
         raising=False,
     )
     monkeypatch.setattr(
@@ -455,133 +451,12 @@ def test_run_training_pipeline_wires_accelerate_runtime_for_multirank(
     accelerator = FakePipelineRuntime.last_kwargs["accelerator"]
     assert accelerator.mixed_precision == "bf16"
     assert accelerator.gradient_accumulation_steps == 1
-    assert FakePipelineRuntime.last_kwargs["world_size"] == 2
+    assert accelerator.num_processes == 2
     assert FakePipelineRuntime.last_kwargs["runtime_batch"].world_size == 2
 
 
-def test_run_training_pipeline_wires_deepspeed_runtime_with_plugin(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    config_path = tmp_path / "config.yaml"
-    deepspeed_config_path = tmp_path / "ds_config.json"
-    deepspeed_config_path.write_text(
-        '{"zero_optimization": {"stage": 2}}\n',
-        encoding="utf-8",
-    )
-    payload = yaml.safe_load(FIXTURE_CONFIG.read_text())
-    _point_dataset_paths_at_fixture(payload)
-    payload["run"]["artifact_root"] = str(tmp_path / "artifacts")
-    payload["run"]["name"] = "fake-deepspeed-smoke"
-    payload["training"]["effective_batch_size"] = 2
-    payload["runtime"] = {
-        "backend": "deepspeed",
-        "seed": 17,
-        "deepspeed": {
-            "config_path": str(deepspeed_config_path),
-            "gradient_accumulation_steps": None,
-            "train_batch_size": None,
-        },
-    }
-    config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
-    log: list[str] = []
-    FakePipelineRuntime.last_kwargs = None
-    FakePipelineDeepSpeedPlugin.last_kwargs = None
-
-    monkeypatch.setenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", str(tmp_path / "pack-cache"))
-    monkeypatch.setenv("RANK", "0")
-    monkeypatch.setenv("LOCAL_RANK", "0")
-    monkeypatch.setenv("WORLD_SIZE", "2")
-    monkeypatch.setattr(
-        "src.training.pipeline.Accelerator",
-        FakePipelineAccelerator,
-        raising=False,
-    )
-    monkeypatch.setattr(
-        "src.training.pipeline.DeepSpeedPlugin",
-        FakePipelineDeepSpeedPlugin,
-        raising=False,
-    )
-    _install_fake_training_pipeline_boundaries(monkeypatch, log)
-    monkeypatch.setattr(
-        "src.training.pipeline._resolve_or_build_train_pack_cache",
-        lambda config, components, vocab_groups, repo_root: _fake_train_cache(tmp_path),
-        raising=False,
-    )
-    monkeypatch.setattr(
-        "src.training.pipeline.load_rank_micro_steps_from_cache",
-        lambda cache_dir, schedule, rank, world_size: (_micro_step(0),),
-        raising=False,
-    )
-
-    summary = run_training_pipeline(config_path)
-
-    assert summary["completed_steps"] == 5
-    assert FakePipelineRuntime.last_kwargs is not None
-    accelerator = FakePipelineRuntime.last_kwargs["accelerator"]
-    assert isinstance(accelerator, FakePipelineAccelerator)
-    assert FakePipelineRuntime.last_kwargs["runtime_config"].backend == "deepspeed"
-    assert FakePipelineRuntime.last_kwargs["runtime_batch"].resolved_grad_accum_steps == 1
-    assert FakePipelineRuntime.last_kwargs["runtime_batch"].world_size == 2
-    assert FakePipelineDeepSpeedPlugin.last_kwargs == {
-        "hf_ds_config": str(deepspeed_config_path),
-        "gradient_accumulation_steps": 1,
-        "gradient_clipping": 1.0,
-        "zero_stage": None,
-    }
-    assert accelerator.deepspeed_plugin is not None
-
-
-def test_run_training_pipeline_uses_rank_local_artifacts_for_nonzero_rank(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    config_path = tmp_path / "config.yaml"
-    payload = yaml.safe_load(FIXTURE_CONFIG.read_text())
-    _point_dataset_paths_at_fixture(payload)
-    payload["run"]["artifact_root"] = str(tmp_path / "artifacts")
-    payload["run"]["name"] = "fake-rank-local-smoke"
-    payload["runtime"] = {
-        "backend": "accelerate",
-        "seed": 17,
-        "accelerate": {
-            "mixed_precision": "bf16",
-            "gradient_accumulation_steps": None,
-        },
-    }
-    config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
-    log: list[str] = []
-
-    monkeypatch.setenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", str(tmp_path / "pack-cache"))
-    monkeypatch.setenv("RANK", "1")
-    monkeypatch.setenv("LOCAL_RANK", "1")
-    monkeypatch.setenv("WORLD_SIZE", "2")
-    monkeypatch.setattr(
-        "src.training.pipeline.Accelerator",
-        FakePipelineAccelerator,
-        raising=False,
-    )
-    _install_fake_training_pipeline_boundaries(monkeypatch, log)
-    monkeypatch.setattr(
-        "src.training.pipeline._resolve_or_build_train_pack_cache",
-        lambda config, components, vocab_groups, repo_root: _fake_train_cache(tmp_path),
-        raising=False,
-    )
-    monkeypatch.setattr(
-        "src.training.pipeline.load_rank_micro_steps_from_cache",
-        lambda cache_dir, schedule, rank, world_size: (_micro_step(0),),
-        raising=False,
-    )
-
-    summary = run_training_pipeline(config_path)
-
-    assert Path(summary["run_dir"]).name.endswith("-rank1")
-    assert Path(summary["run_dir"]).exists()
-
-
-def test_multi_rank_run_suffix_keeps_rank_dirs_under_one_launch_identity(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+def test_shared_timestamp_run_descriptor_agrees_without_rank_suffix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     payload = yaml.safe_load(FIXTURE_CONFIG.read_text())
     _point_dataset_paths_at_fixture(payload)
@@ -590,21 +465,131 @@ def test_multi_rank_run_suffix_keeps_rank_dirs_under_one_launch_identity(
     payload["run"]["collision_policy"] = "timestamp"
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
-    config = __import__(
-        "src.config.loader",
-        fromlist=["load_train_config"],
-    ).load_train_config(config_path).config
+    config = load_train_config(config_path).config
     (tmp_path / "artifacts" / "fake-prod").mkdir(parents=True)
+    shared: list[Any] = []
 
-    monkeypatch.setenv("COORDEXP_SWIFT_RUN_SUFFIX", "launch-123")
-    monkeypatch.setenv("RANK", "1")
-    monkeypatch.setenv("LOCAL_RANK", "1")
-    monkeypatch.setenv("WORLD_SIZE", "8")
-    (tmp_path / "artifacts" / "fake-prod-launch-123").mkdir()
+    def broadcast(objects: list[Any], *, from_process: int) -> None:
+        assert from_process == 0
+        if objects[0] is None:
+            objects[0] = shared[0]
+        else:
+            shared[:] = objects
 
-    run_directory = _resolve_rank_local_run_directory(config, cwd=tmp_path)
+    monkeypatch.setattr(pipeline_mod, "broadcast_object_list", broadcast)
+    main = _resolve_shared_run_directory(
+        config, cwd=tmp_path, accelerator=FakeProcessContext(0, 2)
+    )
+    peer = _resolve_shared_run_directory(
+        config, cwd=tmp_path, accelerator=FakeProcessContext(1, 2)
+    )
 
-    assert run_directory.run_dir.name == "fake-prod-launch-123-rank1"
+    assert main == peer
+    assert "rank" not in main.run_dir.name
+
+
+def test_shared_fail_run_descriptor_propagates_rank_zero_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = SimpleNamespace(run=SimpleNamespace(collision_policy="fail"))
+    shared: list[Any] = []
+    monkeypatch.setattr(
+        pipeline_mod,
+        "resolve_run_directory",
+        lambda config, cwd: (_ for _ in ()).throw(ValueError("collision")),
+    )
+
+    def broadcast(objects: list[Any], *, from_process: int) -> None:
+        if objects[0] is None:
+            objects[0] = shared[0]
+        else:
+            shared[:] = objects
+
+    monkeypatch.setattr(pipeline_mod, "broadcast_object_list", broadcast)
+    for rank in (0, 1):
+        with pytest.raises(RuntimeContractError, match="rank zero failed"):
+            _resolve_shared_run_directory(
+                config, cwd=tmp_path, accelerator=FakeProcessContext(rank, 2)
+            )
+
+
+def test_non_main_artifact_bridge_never_initializes_or_writes_legacy_manager(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_directory = RunDirectory(
+        run_name="shared",
+        artifact_root=tmp_path,
+        run_dir=tmp_path / "shared",
+        collision_policy="fail",
+    )
+    shared = [{"ok": True}]
+    monkeypatch.setattr(
+        pipeline_mod,
+        "broadcast_object_list",
+        lambda objects, from_process: objects.__setitem__(0, shared[0]),
+    )
+
+    bridge = pipeline_mod._initialize_artifact_owner(
+        accelerator=FakeProcessContext(1, 2),
+        run_directory=run_directory,
+        run_id="shared-id",
+        created_at="2026-07-11T00:00:00+00:00",
+        repo_root=tmp_path,
+        resolved_config=SimpleNamespace(),
+    )
+    bridge.write_resolved_config(SimpleNamespace())
+    bridge.write_receipt("ignored", {}, category="runtime")
+    bridge.append_metric_event(SimpleNamespace())
+
+    assert bridge.run_dir == tmp_path / "shared"
+    assert not (tmp_path / "shared").exists()
+
+
+@pytest.mark.parametrize("failure_phase", ["initialize", "resolved_config"])
+def test_artifact_initialization_failure_is_shared_before_downstream_work(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_phase: str,
+) -> None:
+    run_directory = RunDirectory(
+        run_name="shared",
+        artifact_root=tmp_path,
+        run_dir=tmp_path / "shared",
+        collision_policy="fail",
+    )
+    shared: list[Any] = []
+    class FailingManager:
+        def write_resolved_config(self, resolved_config: Any) -> None:
+            del resolved_config
+            raise OSError("resolved config denied")
+
+    def initialize(**kwargs: Any) -> Any:
+        del kwargs
+        if failure_phase == "initialize":
+            raise OSError("manifest denied")
+        return FailingManager()
+
+    monkeypatch.setattr(pipeline_mod.RunArtifactManager, "initialize", initialize)
+
+    def broadcast(objects: list[Any], *, from_process: int) -> None:
+        if objects[0] is None:
+            objects[0] = shared[0]
+        else:
+            shared[:] = objects
+
+    monkeypatch.setattr(pipeline_mod, "broadcast_object_list", broadcast)
+    for rank in (0, 1):
+        with pytest.raises(RuntimeContractError, match="failed to initialize") as exc:
+            pipeline_mod._initialize_artifact_owner(
+                accelerator=FakeProcessContext(rank, 2),
+                run_directory=run_directory,
+                run_id="shared-id",
+                created_at="2026-07-11T00:00:00+00:00",
+                repo_root=tmp_path,
+                resolved_config=SimpleNamespace(),
+            )
+        assert exc.value.code == "runtime.artifact_initialization_failed"
+        assert exc.value.context["error_type"] == "OSError"
 
 
 def test_repeating_micro_step_stream_fills_planned_rank_local_window() -> None:
@@ -1237,11 +1222,11 @@ def test_training_artifact_bridge_writes_train_metrics_and_forward_receipt(tmp_p
     assert qwen_receipt["qwen_forward_receipts"][0]["segment_count"] == 2
 
 
-def test_training_artifact_bridge_progress_stays_outside_metric_stream(
+def test_main_training_artifact_bridge_progress_stays_outside_metric_stream(
     tmp_path: Path,
 ) -> None:
     manager = _manager(tmp_path)
-    bridge = TrainingArtifactBridge(manager, rank=1, world_size=2)
+    bridge = TrainingArtifactBridge(manager, rank=0, world_size=2)
 
     bridge(
         SupervisedTrainerEvent(
@@ -1286,7 +1271,7 @@ def test_training_artifact_bridge_progress_stays_outside_metric_stream(
         )
     )
 
-    progress_path = manager.run_dir / "diagnostics" / "progress.rank-1.jsonl"
+    progress_path = manager.run_dir / "diagnostics" / "progress.rank-0.jsonl"
     records = [
         __import__("json").loads(line)
         for line in progress_path.read_text().splitlines()
@@ -1306,7 +1291,7 @@ def test_training_artifact_bridge_progress_stays_outside_metric_stream(
             "pixel_values_shape": [4096, 1536],
             "placeholder_token_count": 4096,
             "planned_step_id": 3,
-            "rank": 1,
+            "rank": 0,
             "segment_count": 11,
             "sync_gradients": False,
             "timings_ns": {
@@ -1323,7 +1308,7 @@ def test_training_artifact_bridge_progress_stays_outside_metric_stream(
             "monotonic_ns": records[1]["monotonic_ns"],
             "optimizer_update_status": "pending_backward",
             "planned_step_id": 3,
-            "rank": 1,
+            "rank": 0,
             "stage": "pre_backward_scalar",
             "sync_gradients": False,
             "world_size": 2,
@@ -1332,6 +1317,38 @@ def test_training_artifact_bridge_progress_stays_outside_metric_stream(
     assert not (manager.run_dir / "metrics" / "train.jsonl").exists()
     manifest = __import__("json").loads((manager.run_dir / "run_manifest.json").read_text())
     assert manifest["metrics"]["streams"] == {}
+
+
+def test_non_main_pipeline_event_wiring_cannot_write_any_event_artifacts(
+    tmp_path: Path,
+) -> None:
+    bridge = pipeline_mod._NonWritingArtifactBridge(
+        run_dir=tmp_path / "shared",
+        run_id="shared-id",
+    )
+    runtime = SimpleNamespace(is_main_process=False, rank=1, world_size=2)
+
+    sink = pipeline_mod._training_artifact_event_sink(bridge, runtime)
+
+    assert sink is None
+    for event_type in (
+        "micro_step.forward",
+        "planned_step.completed",
+        "eval.forward",
+        "final",
+    ):
+        if sink is not None:
+            sink(
+                SupervisedTrainerEvent(
+                    event_type=event_type,
+                    planned_step_id=1,
+                    payload={},
+                )
+            )
+    bridge.write_eval_forward_summary(planned_step_id=1)
+    bridge.finalize(status="completed", completed_at="2026-07-11T00:00:00+00:00")
+
+    assert not (tmp_path / "shared").exists()
 
 
 def test_enable_training_memory_savers_records_gradient_checkpointing_and_cache_disable() -> None:
@@ -1656,8 +1673,8 @@ def _manager(tmp_path: Path) -> RunArtifactManager:
         ),
         run_id="run-pipeline-test",
         created_at="2026-06-30T00:00:00+00:00",
-        runtime_identity={"backend": "single"},
-        backend_status={"deepspeed": ["schema_accepted", "conflict_validation_implemented"]},
+        runtime_identity={"entrypoint": "pipeline-test"},
+        backend_status={"active": ["accelerate"]},
     )
 
 
@@ -1972,18 +1989,24 @@ class FakePipelineAccelerator:
         *,
         mixed_precision: str | None = None,
         gradient_accumulation_steps: int | None = None,
-        deepspeed_plugin: Any | None = None,
     ) -> None:
         self.mixed_precision = mixed_precision
         self.gradient_accumulation_steps = gradient_accumulation_steps
-        self.deepspeed_plugin = deepspeed_plugin
+        self.process_index = int(__import__("os").environ.get("RANK", "0"))
+        self.num_processes = int(__import__("os").environ.get("WORLD_SIZE", "1"))
+        self.is_main_process = self.process_index == 0
+        self.device = torch.device("cpu")
+        self.distributed_type = "NO" if self.num_processes == 1 else "MULTI_GPU"
 
 
-class FakePipelineDeepSpeedPlugin:
-    last_kwargs: dict[str, Any] | None = None
-
-    def __init__(self, **kwargs: Any) -> None:
-        FakePipelineDeepSpeedPlugin.last_kwargs = dict(kwargs)
+class FakeProcessContext:
+    def __init__(self, process_index: int, num_processes: int) -> None:
+        self.process_index = process_index
+        self.num_processes = num_processes
+        self.is_main_process = process_index == 0
+        self.device = torch.device("cpu")
+        self.distributed_type = "NO" if num_processes == 1 else "MULTI_GPU"
+        self.gradient_accumulation_steps = 1
 
 
 class _FakeFuture:
@@ -2056,18 +2079,16 @@ class FakePipelineRuntime:
     def __init__(self, **kwargs: Any) -> None:
         FakePipelineRuntime.last_kwargs = dict(kwargs)
         self.model = kwargs["model"]
-        self.rank = kwargs["rank"]
-        self.world_size = kwargs["world_size"]
+        accelerator = kwargs["accelerator"]
+        self.rank = accelerator.process_index
+        self.world_size = accelerator.num_processes
+        self.is_main_process = accelerator.is_main_process
         self.setup_receipt = FakeReceipt(
             {
-                "backend": kwargs["runtime_config"].backend,
+                "backend": "accelerate",
                 "world_size": self.world_size,
                 "runtime_batch": kwargs["runtime_batch"].to_artifact_dict(),
-                "backend_status": {
-                    "single": ["active"],
-                    "accelerate": [],
-                    "deepspeed": [],
-                },
+                "backend_status": {"active": ["accelerate"]},
             }
         )
 

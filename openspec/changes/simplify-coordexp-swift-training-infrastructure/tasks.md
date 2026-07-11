@@ -8,12 +8,31 @@ production ownership paths active.
 
 ## 1. Wave 1 — Accelerate Process And Runtime Foundation
 
-- [ ] 1.1 Refine Wave 1 into file-owned slices and add failing config/runtime tests for Accelerate world size one, replicated multi-GPU DDP, Accelerator-owned rank/world/device identity, and pre-prepare rejection of externally selected FSDP, DeepSpeed, tensor-parallel, or other unsupported distributed types.
-- [ ] 1.2 Initialize one Accelerator process context early enough for rank zero to resolve collision policy once, broadcast one run descriptor/path to every rank, and prove identical `fail`/`timestamp` collision outcomes without creating rank-suffixed directories.
-- [ ] 1.3 Collapse the embedded `runtime.backend` branches in `RuntimeConfig`, `TrainRuntime`, pipeline Accelerator construction, and status helpers into the concrete Accelerate path; remove DeepSpeed plugin/config/status code and the implicit `single` fallback without inventing replacement backend interfaces.
-- [ ] 1.4 Derive effective accumulation and scheduler/runtime setup from Accelerator world size while preserving all-rank denominator/finite decisions, gradient clipping, optimizer order, CoordExp-owned planned-step scheduler order, barriers, and neutral Accelerate accumulation.
-- [ ] 1.5 Migrate every checked-in active production and smoke profile away from backend/DeepSpeed fields, delete DeepSpeed helper/smoke configs, and compare old/new resolved mappings after removing only the approved backend-field allowlist; every other value MUST match.
-- [ ] 1.6 Gate Wave 1 with config/runtime/schedule tests, a public-entrypoint one-process Accelerate smoke, an unsupported-wrapper negative subprocess probe, strict OpenSpec validation, `git diff --check`, backend residue searches, and separate engineering-standards plus intent/contract audits with no unresolved P0/P1.
+Wave 1 execution ownership is split into three non-overlapping implementation
+lanes: `src/runtime/train_runtime.py` plus runtime-facing tests; early process
+context and shared-run assembly in `src/training/pipeline.py` plus pipeline
+assembly tests; and runtime schema/profile migration in `src/config/`, active
+`configs/coordexp_swift/{prod,smoke}/`, and config/schedule tests. The Wave gate
+and task ledger remain parent-owned so no worker can self-approve its slice.
+
+- [x] 1.1 Refine Wave 1 into file-owned slices and add failing config/runtime tests for Accelerate world size one, replicated multi-GPU DDP, Accelerator-owned rank/world/device identity, and pre-prepare rejection of externally selected FSDP, DeepSpeed, tensor-parallel, or other unsupported distributed types.
+- [x] 1.2 Initialize one Accelerator process context early enough for rank zero to resolve collision policy once, broadcast one run descriptor/path to every rank, and prove identical `fail`/`timestamp` collision outcomes without creating rank-suffixed directories.
+- [x] 1.3 Collapse the embedded `runtime.backend` branches in `RuntimeConfig`, `TrainRuntime`, pipeline Accelerator construction, and status helpers into the concrete Accelerate path; remove DeepSpeed plugin/config/status code and the implicit `single` fallback without inventing replacement backend interfaces.
+- [x] 1.4 Derive effective accumulation and scheduler/runtime setup from Accelerator world size while preserving all-rank denominator/finite decisions, gradient clipping, optimizer order, CoordExp-owned planned-step scheduler order, barriers, and neutral Accelerate accumulation.
+- [x] 1.5 Migrate every checked-in active production and smoke profile away from backend/DeepSpeed fields, delete DeepSpeed helper/smoke configs, and compare old/new resolved mappings after removing only the approved backend-field allowlist; every other value MUST match.
+- [x] 1.6 Gate Wave 1 with config/runtime/schedule tests, a public-entrypoint one-process Accelerate smoke, an unsupported-wrapper negative subprocess probe, strict OpenSpec validation, `git diff --check`, backend residue searches, and separate engineering-standards plus intent/contract audits with no unresolved P0/P1.
+
+Wave 1 gate evidence (2026-07-11): the integrated runtime/config/pipeline/
+trainer/source-gate slice passed 194 tests; the public one-process entrypoint
+completed one planned step, two micro-steps, eval, checkpoint, and finalization
+at `outputs/smoke/production_mimic/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate2_ebs2_1step-20260711T122737Z`;
+an ambient `ACCELERATE_MIXED_PRECISION=fp16` probe still constructed and
+validated the configured `bf16` mode; and a real two-rank `--use_fsdp` launch
+failed on both ranks at `runtime.distributed_type_unsupported` before run or
+model mutation. Strict OpenSpec validation and `git diff --check` passed. The
+only backend residue is intentional deleted-field migration/rejection evidence.
+Independent engineering and intent/contract re-audits both approved with no
+remaining P0/P1 findings.
 
 ## 2. Wave 2 — Atomic Replacement Of The Artifact/Event/Checkpoint Graph
 

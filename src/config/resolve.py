@@ -44,7 +44,6 @@ def resolve_effective_batch_runtime(
             },
         )
     resolved = effective_batch_size // world_size
-    _validate_backend_accumulation(config, resolved)
     return RuntimeBatchResolution(
         world_size=world_size,
         effective_batch_size=effective_batch_size,
@@ -129,38 +128,3 @@ def resolve_qwen_runtime_controls(
         estimated_logits_bytes=estimate,
         logits_memory_budget_bytes=config.model.logits_memory_budget_bytes,
     )
-
-
-def _validate_backend_accumulation(config: TrainConfig, resolved: int) -> None:
-    accelerate = config.runtime.accelerate
-    if accelerate and accelerate.gradient_accumulation_steps not in (None, resolved):
-        raise ConfigContractError(
-            "runtime.accelerate gradient accumulation conflicts with derived value",
-            code="config.accelerate_accumulation_conflict",
-            context={
-                "authored": accelerate.gradient_accumulation_steps,
-                "resolved_grad_accum_steps": resolved,
-            },
-        )
-    deepspeed = config.runtime.deepspeed
-    if deepspeed and deepspeed.gradient_accumulation_steps not in (None, resolved):
-        raise ConfigContractError(
-            "runtime.deepspeed gradient accumulation conflicts with derived value",
-            code="config.deepspeed_accumulation_conflict",
-            context={
-                "authored": deepspeed.gradient_accumulation_steps,
-                "resolved_grad_accum_steps": resolved,
-            },
-        )
-    if deepspeed and deepspeed.train_batch_size not in (
-        None,
-        config.training.effective_batch_size,
-    ):
-        raise ConfigContractError(
-            "runtime.deepspeed train batch size conflicts with effective batch",
-            code="config.deepspeed_batch_conflict",
-            context={
-                "authored": deepspeed.train_batch_size,
-                "effective_batch_size": config.training.effective_batch_size,
-            },
-        )

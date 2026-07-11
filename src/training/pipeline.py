@@ -11,17 +11,17 @@ import json
 import multiprocessing
 import os
 from pathlib import Path
-import re
 import time
 from typing import Any
 
 import torch
 
 try:
-    from accelerate import Accelerator, DeepSpeedPlugin
+    from accelerate import Accelerator
+    from accelerate.utils import broadcast_object_list
 except ImportError:  # pragma: no cover - exercised only in stripped environments.
     Accelerator = None  # type: ignore[assignment]
-    DeepSpeedPlugin = None  # type: ignore[assignment]
+    broadcast_object_list = None  # type: ignore[assignment]
 
 from src.adapters import (
     build_adapter_setup_plan,
@@ -60,7 +60,11 @@ from src.qwen.special_token_embeddings import (
     install_special_token_embedding_deltas,
     load_special_token_embedding_deltas,
 )
-from src.runtime import TrainRuntime, seed_training_runtime
+from src.runtime import (
+    TrainRuntime,
+    seed_training_runtime,
+    validate_accelerator_runtime,
+)
 from src.supervision import (
     build_token_sequence_from_packed_supervision,
     index_token_atoms_by_pack,
@@ -334,24 +338,132 @@ class BestEvalMetricStore:
         return self._events_by_step.get(int(planned_step_id))
 
 
+@dataclass(frozen=True)
+class _NonWritingArtifactBridge:
+    """Temporary Wave-1 no-write bridge; Wave 2 deletes this legacy surface."""
+
+    run_dir: Path
+    run_id: str
+
+    def append_metric_event(self, event: Any) -> None:
+        del event
+
+    def finalize(self, *, status: str, completed_at: str) -> None:
+        del status, completed_at
+
+    def write_receipt(self, name: str, payload: Any, *, category: str) -> None:
+        del name, payload, category
+
+    def write_report(self, name: str, payload: Any) -> None:
+        del name, payload
+
+    def write_resolved_config(self, resolved_config: Any) -> None:
+        del resolved_config
+
+    def write_schedule(self, schedule: Any) -> None:
+        del schedule
+
+    def write_eval_forward_summary(self, **payload: Any) -> Path:
+        del payload
+        return self.run_dir / "eval" / "non-main.json"
+
+
+def _initialize_artifact_owner(
+    *,
+    accelerator: Any,
+    run_directory: RunDirectory,
+    run_id: str,
+    created_at: str,
+    repo_root: Path,
+    resolved_config: Any,
+) -> Any:
+    manager: Any | None = None
+    status: dict[str, Any] | None = None
+    if bool(accelerator.is_main_process):
+        try:
+            manager = RunArtifactManager.initialize(
+                run_directory=run_directory,
+                run_id=run_id,
+                created_at=created_at,
+                runtime_identity={
+                    "entrypoint": "python -m src.train",
+                    "cwd": str(repo_root),
+                },
+                backend_status={"active": ["accelerate"]},
+            )
+            manager.write_resolved_config(resolved_config)
+            status = {"ok": True}
+        except Exception as exc:
+            status = {
+                "ok": False,
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            }
+    objects: list[Any] = [status]
+    if int(accelerator.num_processes) > 1:
+        if broadcast_object_list is None:
+            raise RuntimeContractError(
+                "artifact initialization handshake requires accelerate",
+                code="runtime.artifact_init_broadcast_unavailable",
+            )
+        broadcast_object_list(objects, from_process=0)
+    shared = objects[0]
+    if not isinstance(shared, Mapping) or not bool(shared.get("ok")):
+        raise RuntimeContractError(
+            "rank zero failed to initialize shared run artifacts",
+            code="runtime.artifact_initialization_failed",
+            context={
+                "error_type": str(
+                    shared.get("error_type", "unknown")
+                    if isinstance(shared, Mapping)
+                    else "invalid_status"
+                ),
+                "error": str(
+                    shared.get("error", "unknown error")
+                    if isinstance(shared, Mapping)
+                    else shared
+                ),
+            },
+        )
+    if bool(accelerator.is_main_process):
+        return manager
+    return _NonWritingArtifactBridge(run_directory.run_dir, run_id)
+
+
+def _training_artifact_event_sink(manager: Any, runtime: Any) -> Any | None:
+    if not bool(runtime.is_main_process):
+        return None
+    return TrainingArtifactBridge(
+        manager,
+        rank=runtime.rank,
+        world_size=runtime.world_size,
+    )
+
+
 def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
     repo_root = Path.cwd().resolve()
     resolved_config = load_train_config(config_path)
     config = resolved_config.config
-    run_directory = _resolve_rank_local_run_directory(config, cwd=repo_root)
-    created_at = datetime.now(UTC).isoformat()
-    manager = RunArtifactManager.initialize(
-        run_directory=run_directory,
-        run_id=_run_id(config.run.name, resolved_config.fingerprint),
-        created_at=created_at,
-        runtime_identity={
-            "entrypoint": "python -m src.train",
-            "backend": config.runtime.backend,
-            "cwd": str(repo_root),
-        },
-        backend_status=_first_smoke_backend_status(config.runtime.backend),
+    accelerator = _build_accelerator(config.training.precision)
+    validate_accelerator_runtime(
+        accelerator,
+        expected_mixed_precision=config.training.precision,
     )
-    manager.write_resolved_config(resolved_config)
+    run_directory = _resolve_shared_run_directory(
+        config,
+        cwd=repo_root,
+        accelerator=accelerator,
+    )
+    created_at = datetime.now(UTC).isoformat()
+    run_id = _run_id(config.run.name, resolved_config.fingerprint)
+    manager = _initialize_artifact_owner(
+        accelerator=accelerator,
+        run_directory=run_directory,
+        run_id=run_id,
+        created_at=created_at,
+        repo_root=repo_root,
+        resolved_config=resolved_config,
+    )
     seed_receipt = seed_training_runtime(
         config.runtime.seed,
         deterministic=False,
@@ -447,19 +559,20 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
         components,
         vocab_groups,
         repo_root=repo_root,
+        rank=int(accelerator.process_index),
     )
     schedule = resolve_planned_step_schedule(
         config,
         packs_per_epoch=train_cache["micro_step_count"],
-        world_size=_world_size(),
+        world_size=int(accelerator.num_processes),
         source_config_path=str(resolved_config.entry_config_path),
     )
     manager.write_schedule(schedule)
     train_micro_steps = load_rank_micro_steps_from_cache(
         train_cache["cache_dir"],
         schedule=schedule,
-        rank=_rank(),
-        world_size=_world_size(),
+        rank=int(accelerator.process_index),
+        world_size=int(accelerator.num_processes),
     )
     train_micro_steps = _attach_image_processors_to_micro_steps(
         train_micro_steps,
@@ -519,24 +632,18 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
         category="optimizer",
     )
 
-    device = _runtime_device(_rank())
-    accelerator = _build_accelerator(
-        config.runtime,
-        schedule.runtime_batch,
-        max_grad_norm=config.training.max_grad_norm,
-    )
     runtime = TrainRuntime(
         runtime_config=config.runtime,
         runtime_batch=schedule.runtime_batch,
         model=model,
         optimizer=optimizer,
         scheduler=scheduler,
-        device=device,
-        rank=_rank(),
-        world_size=_world_size(),
+        expected_mixed_precision=config.training.precision,
         max_grad_norm=config.training.max_grad_norm,
         accelerator=accelerator,
-        rank_report_gatherer=_build_rank_report_gatherer(_world_size()),
+        rank_report_gatherer=_build_rank_report_gatherer(
+            int(accelerator.num_processes)
+        ),
     )
     manager.write_receipt(
         "runtime_setup",
@@ -549,6 +656,7 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
         components,
         vocab_groups,
         repo_root=repo_root,
+        rank=int(accelerator.process_index),
     )
     if eval_cache is None:
         eval_micro_steps = train_micro_steps
@@ -576,11 +684,7 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
         pack_stream=iter(train_micro_steps),
         loss_runner=loss_runner,
         runtime=runtime,
-        event_sink=TrainingArtifactBridge(
-            manager,
-            rank=runtime.rank,
-            world_size=runtime.world_size,
-        ),
+        event_sink=_training_artifact_event_sink(manager, runtime),
         scheduled_event_handlers={
             "checkpoint": _checkpoint_handler(
                 checkpoint_writer,
@@ -652,6 +756,7 @@ def _resolve_or_build_train_pack_cache(
     vocab_groups: Any,
     *,
     repo_root: Path,
+    rank: int = 0,
 ) -> dict[str, Any]:
     return _resolve_or_build_pack_cache(
         config,
@@ -660,6 +765,7 @@ def _resolve_or_build_train_pack_cache(
         repo_root=repo_root,
         dataset=config.data.train,
         split=TRAIN_SPLIT,
+        rank=rank,
         build_micro_steps=lambda workers: build_base_micro_steps(
             config,
             components,
@@ -675,6 +781,7 @@ def _resolve_eval_pack_cache(
     vocab_groups: Any,
     *,
     repo_root: Path,
+    rank: int = 0,
 ) -> dict[str, Any] | None:
     if config.data.eval is None:
         return None
@@ -687,6 +794,7 @@ def _resolve_eval_pack_cache(
         repo_root=repo_root,
         dataset=config.data.eval,
         split="eval.forward",
+        rank=rank,
         build_micro_steps=lambda workers: _build_micro_steps_for_dataset(
             config,
             components,
@@ -706,6 +814,7 @@ def _resolve_or_build_pack_cache(
     repo_root: Path,
     dataset: Any,
     split: str,
+    rank: int = 0,
     build_micro_steps: Callable[[int], Sequence[SupervisedMicroStep]],
     materialization_workers: int | None = None,
 ) -> dict[str, Any]:
@@ -736,7 +845,7 @@ def _resolve_or_build_pack_cache(
     )
     cache_dir = cache_dir_for_fingerprint(cache_root, fingerprint)
     cache_complete_before = cache_is_complete(cache_dir, fingerprint=fingerprint)
-    if _rank() == 0 and not cache_complete_before:
+    if rank == 0 and not cache_complete_before:
         micro_steps = tuple(build_micro_steps(resolved_materialization_workers))
         write_micro_step_cache(
             cache_dir,
@@ -760,7 +869,7 @@ def _resolve_or_build_pack_cache(
             "hit"
             if cache_complete_before
             else "built"
-            if _rank() == 0
+            if rank == 0
             else "waited"
         ),
         "manifest_path": cache_manifest_path,
@@ -1359,119 +1468,60 @@ def _sha256_json(payload: Mapping[str, Any]) -> str:
     ).hexdigest()
 
 
-def _resolve_rank_local_run_directory(config: Any, *, cwd: Path) -> Any:
-    rank = _rank()
-    world_size = _world_size()
-    if world_size <= 1 or rank == 0:
-        run_directory = resolve_run_directory(
-            config,
-            cwd=cwd,
-            timestamp=_multi_rank_launch_suffix() if world_size > 1 else None,
-        )
-        if world_size > 1:
-            run_directory = _apply_explicit_multi_rank_launch_suffix(
-                run_directory,
-                allow_existing=False,
-        )
-        return run_directory
-    suffix = _multi_rank_launch_suffix()
-    run_directory = (
-        _explicit_multi_rank_base_run_directory(config, cwd=cwd, suffix=suffix)
-        if suffix is not None
-        else resolve_run_directory(config, cwd=cwd, timestamp=None)
-    )
-    rank_suffix = f"rank{rank}"
-    if run_directory.run_dir.name.endswith(f"-{rank_suffix}"):
-        return run_directory
-    rank_run_dir = run_directory.run_dir.with_name(
-        f"{run_directory.run_dir.name}-{rank_suffix}"
-    )
-    if rank_run_dir.exists():
-        if config.run.collision_policy == "fail":
-            raise RuntimeContractError(
-                "rank-local run output directory already exists",
-                code="runtime.rank_run_dir_exists",
-                context={
-                    "rank": rank,
-                    "world_size": world_size,
-                    "run_dir": str(rank_run_dir),
-                },
-            )
-        rank_run_dir = run_directory.run_dir.with_name(
-            f"{run_directory.run_dir.name}-"
-            f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{rank_suffix}"
-        )
-    return replace(run_directory, run_dir=rank_run_dir.resolve())
-
-
-def _explicit_multi_rank_base_run_directory(
+def _resolve_shared_run_directory(
     config: Any,
     *,
     cwd: Path,
-    suffix: str,
+    accelerator: Any,
 ) -> RunDirectory:
-    root_base = Path(config.run.artifact_root)
-    root = root_base if root_base.is_absolute() else cwd / root_base
-    root = root.resolve()
-    run_dir_name = config.run.output_dir or config.run.name
-    run_dir_path = Path(run_dir_name)
-    if run_dir_path.is_absolute() or ".." in run_dir_path.parts:
+    """Resolve one rank-zero run path and share its compact descriptor."""
+
+    descriptor: dict[str, Any] | None = None
+    if bool(accelerator.is_main_process):
+        try:
+            selected = resolve_run_directory(config, cwd=cwd)
+            descriptor = {
+                "ok": True,
+                "run_name": selected.run_name,
+                "artifact_root": str(selected.artifact_root),
+                "run_dir": str(selected.run_dir),
+                "collision_policy": selected.collision_policy,
+            }
+        except Exception as exc:
+            descriptor = {
+                "ok": False,
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            }
+    objects: list[Any] = [descriptor]
+    if int(accelerator.num_processes) > 1:
+        if broadcast_object_list is None:
+            raise RuntimeContractError(
+                "distributed run descriptor broadcast requires accelerate",
+                code="runtime.run_descriptor_broadcast_unavailable",
+            )
+        broadcast_object_list(objects, from_process=0)
+    shared = objects[0]
+    if not isinstance(shared, Mapping):
         raise RuntimeContractError(
-            "run.output_dir must stay under run.artifact_root",
-            code="runtime.run_output_dir_escape",
-            context={"output_dir": run_dir_name},
+            "run descriptor broadcast returned an invalid payload",
+            code="runtime.run_descriptor_invalid",
         )
-    base_run_dir = (root / run_dir_path).resolve()
-    try:
-        base_run_dir.relative_to(root)
-    except ValueError as exc:
+    if not bool(shared.get("ok")):
         raise RuntimeContractError(
-            "run output directory escaped artifact root",
-            code="runtime.run_output_dir_escape",
-            context={"artifact_root": str(root), "run_dir": str(base_run_dir)},
-            cause=exc,
-        ) from exc
-    launch_run_dir = base_run_dir.with_name(f"{base_run_dir.name}-{suffix}")
-    return RunDirectory(
-        run_name=config.run.name,
-        artifact_root=root,
-        run_dir=launch_run_dir.resolve(),
-        collision_policy=config.run.collision_policy,
-    )
-
-
-def _apply_explicit_multi_rank_launch_suffix(
-    run_directory: Any,
-    *,
-    allow_existing: bool,
-) -> Any:
-    suffix = _multi_rank_launch_suffix()
-    if suffix is None:
-        return run_directory
-    run_dir = run_directory.run_dir
-    if run_dir.name.endswith(f"-{suffix}"):
-        return run_directory
-    suffixed_run_dir = run_dir.with_name(f"{run_dir.name}-{suffix}")
-    if suffixed_run_dir.exists():
-        if allow_existing:
-            return replace(run_directory, run_dir=suffixed_run_dir.resolve())
-        raise RuntimeContractError(
-            "explicit multi-rank run output directory already exists",
-            code="runtime.multirank_run_dir_exists",
+            "rank zero failed to resolve the shared run directory",
+            code="runtime.run_directory_resolution_failed",
             context={
-                "run_dir": str(suffixed_run_dir),
-                "suffix": suffix,
+                "error_type": str(shared.get("error_type", "unknown")),
+                "error": str(shared.get("error", "unknown error")),
             },
         )
-    return replace(run_directory, run_dir=suffixed_run_dir.resolve())
-
-
-def _multi_rank_launch_suffix() -> str | None:
-    value = os.environ.get("COORDEXP_SWIFT_RUN_SUFFIX")
-    if value is None or not value.strip():
-        return None
-    suffix = re.sub(r"[^A-Za-z0-9_.-]+", "-", value.strip()).strip(".-")
-    return suffix or None
+    return RunDirectory(
+        run_name=str(shared["run_name"]),
+        artifact_root=Path(str(shared["artifact_root"])),
+        run_dir=Path(str(shared["run_dir"])),
+        collision_policy=str(shared["collision_policy"]),
+    )
 
 
 def _loss_plan_artifact(config: Any, vocab_groups_artifact: dict[str, Any]) -> dict[str, Any]:
@@ -1558,65 +1608,21 @@ def _disable_use_cache(model: Any) -> list[str]:
     return disabled
 
 
-def _build_accelerator(
-    runtime_config: Any,
-    runtime_batch: Any,
-    *,
-    max_grad_norm: float | None = None,
-) -> Any | None:
-    if runtime_config.backend not in ("accelerate", "deepspeed"):
-        return None
+def _build_accelerator(training_precision: str) -> Any:
     if Accelerator is None:
         raise RuntimeContractError(
-            "accelerate backend requires the accelerate package",
+            "training requires the accelerate package",
             code="runtime.accelerate_unavailable",
         )
-    if runtime_config.backend == "deepspeed":
-        return Accelerator(
-            gradient_accumulation_steps=runtime_batch.resolved_grad_accum_steps,
-            deepspeed_plugin=_build_deepspeed_plugin(
-                runtime_config,
-                runtime_batch,
-                max_grad_norm=max_grad_norm,
-            ),
-        )
-    accelerate_config = runtime_config.accelerate
     kwargs: dict[str, Any] = {
         # CoordExp-Swift owns planned-step loss normalization and optimizer
         # cadence. Accelerate's accumulation counter would additionally divide
         # loss inside accelerator.backward(), so keep it neutral and use
         # TrainRuntime.no_sync for intermediate microsteps.
         "gradient_accumulation_steps": 1,
+        "mixed_precision": str(training_precision),
     }
-    mixed_precision = (
-        None
-        if accelerate_config is None
-        else accelerate_config.mixed_precision
-    )
-    if mixed_precision is not None:
-        kwargs["mixed_precision"] = mixed_precision
     return Accelerator(**kwargs)
-
-
-def _build_deepspeed_plugin(
-    runtime_config: Any,
-    runtime_batch: Any,
-    *,
-    max_grad_norm: float | None = None,
-) -> Any:
-    if DeepSpeedPlugin is None:
-        raise RuntimeContractError(
-            "deepspeed backend requires accelerate DeepSpeedPlugin",
-            code="runtime.deepspeed_plugin_unavailable",
-        )
-    deepspeed_config = runtime_config.deepspeed
-    hf_ds_config = None if deepspeed_config is None else deepspeed_config.config_path
-    return DeepSpeedPlugin(
-        hf_ds_config=hf_ds_config,
-        gradient_accumulation_steps=runtime_batch.resolved_grad_accum_steps,
-        gradient_clipping=max_grad_norm,
-        zero_stage=None,
-    )
 
 
 def _build_rank_report_gatherer(world_size: int) -> Any | None:
@@ -1705,32 +1711,9 @@ def _model_and_base_model_owners(model: Any) -> tuple[tuple[str, Any], ...]:
     return tuple(owners)
 
 
-def _runtime_device(rank: int) -> torch.device:
-    if torch.cuda.is_available():
-        device_count = max(1, torch.cuda.device_count())
-        return torch.device(f"cuda:{rank % device_count}")
-    return torch.device("cpu")
-
-
-def _rank() -> int:
-    return int(os.environ.get("RANK", "0"))
-
-
-def _world_size() -> int:
-    return int(os.environ.get("WORLD_SIZE", "1"))
-
-
 def _run_id(run_name: str, fingerprint: str) -> str:
     return f"{run_name}-{fingerprint[:12]}"
 
-
-def _first_smoke_backend_status(runtime_backend: str) -> dict[str, list[str]]:
-    return {
-        "active": [runtime_backend],
-        "single": ["active"] if runtime_backend == "single" else ["schema_accepted"],
-        "accelerate": ["schema_accepted"],
-        "deepspeed": ["schema_accepted", "conflict_validation_implemented"],
-    }
 
 
 def _artifact_dict(value: Any) -> dict[str, Any]:

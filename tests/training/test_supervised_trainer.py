@@ -10,9 +10,8 @@ import torch
 
 import src.training.supervised_trainer as trainer_module
 from src.common.errors import RuntimeContractError
-from src.config.models import DeepSpeedConfig, RuntimeBatchResolution, RuntimeConfig
+from src.config.models import RuntimeBatchResolution
 from src.runtime import GateDecision
-from src.runtime.train_runtime import TrainRuntime
 from src.training.schedule import ResolvedStepSchedule, StepScheduleEvent
 from src.training.supervised_trainer import (
     LossContextFactory,
@@ -396,10 +395,10 @@ def test_supervised_trainer_forwards_with_runtime_owned_model() -> None:
     assert result.step_results[0].qwen_forward_receipts == ({"prepared": True},)
 
 
-def test_supervised_trainer_runs_deepspeed_with_runtime_owned_model() -> None:
+def test_supervised_trainer_runs_with_accelerate_prepared_runtime_model() -> None:
     original_model = object()
-    prepared_deepspeed_model = object()
-    runtime = RuntimeWithPreparedModel([], prepared_deepspeed_model)
+    prepared_model = object()
+    runtime = RuntimeWithPreparedModel([], prepared_model)
     observed_models: list[object] = []
 
     def qwen_forward(observed_model: object, _micro_step: SupervisedMicroStep) -> FakeForwardResult:

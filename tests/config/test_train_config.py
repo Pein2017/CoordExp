@@ -12,7 +12,7 @@ import yaml
 from src.common.errors import ConfigContractError
 from src.config.fingerprint import sha256_json
 from src.config.loader import load_train_config
-from src.config.models import CoordGaussianRPSLossConfig, OptimizerGroupConfig
+from src.config.models import CoordGaussianRPSLossConfig, OptimizerGroupConfig, TrainConfig
 from src.config.paths import resolve_run_directory
 from src.config.resolve import (
     estimate_full_logits_bytes,
@@ -24,6 +24,19 @@ from src.training.schedule import resolve_planned_step_schedule
 
 
 FIXTURE_CONFIG = Path("tests/fixtures/smoke/qwen3_vl_single_image_pack/config.yaml")
+ACTIVE_TRAIN_CONFIG_ROOTS = (
+    Path("configs/coordexp_swift/prod"),
+    Path("configs/coordexp_swift/smoke"),
+)
+BACKEND_DELETION_ALLOWLIST = (
+    "runtime.backend",
+    "runtime.deepspeed",
+    "runtime.accelerate.gradient_accumulation_steps",
+    "runtime.accelerate.mixed_precision",
+)
+ACTIVE_PROFILE_BASELINE = Path(
+    "tests/config/fixtures/active_profile_wave1_baseline.json"
+)
 
 
 def test_smoke_config_loads_and_writes_resolved_artifacts(tmp_path: Path) -> None:
@@ -185,6 +198,10 @@ def test_three_level_inheritance_required_and_path_origins(tmp_path: Path) -> No
         ("checkpoint.save_steps", 5),
         ("model.adapter.type", "dora"),
         ("runtime.accelerate.unknown_key", True),
+        ("runtime.backend", "accelerate"),
+        ("runtime.deepspeed", {"config_path": "zero2.json"}),
+        ("runtime.accelerate.gradient_accumulation_steps", 2),
+        ("runtime.accelerate.mixed_precision", "bf16"),
     ],
 )
 def test_unknown_keys_and_legacy_aliases_fail(
@@ -195,6 +212,18 @@ def test_unknown_keys_and_legacy_aliases_fail(
     config_path = tmp_path / "config.yaml"
     payload = _minimal_config()
     _set_nested(payload, field_path, value)
+    _write_yaml(config_path, payload)
+
+    with pytest.raises(ConfigContractError, match="schema validation"):
+        load_train_config(config_path)
+
+
+def test_training_precision_rejects_fp32_before_accelerator_construction(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    payload = _minimal_config()
+    payload["training"]["precision"] = "fp32"
     _write_yaml(config_path, payload)
 
     with pytest.raises(ConfigContractError, match="schema validation"):
@@ -595,9 +624,6 @@ def test_production_relaunch_configs_load_strictly() -> None:
     assert prod.training.epochs == 4
     assert prod.training.max_grad_norm == 1.0
     assert prod.runtime.seed == 17
-    assert prod.runtime.backend == "accelerate"
-    assert prod.runtime.accelerate is not None
-    assert prod.runtime.accelerate.gradient_accumulation_steps is None
     assert prod.adapter.target_towers == ("language",)
     assert prod.adapter.target_modules == "all_linear"
     assert prod.template.object_field_order == "desc_first"
@@ -615,8 +641,55 @@ def test_production_relaunch_configs_load_strictly() -> None:
     assert smoke.training.max_steps == 2
     assert smoke.eval.forward.steps == (1,)
     assert smoke.checkpoint.steps == (2,)
-    assert smoke.runtime.accelerate is not None
-    assert smoke.runtime.accelerate.gradient_accumulation_steps is None
+
+
+def test_active_profile_migration_changes_only_backend_allowlist() -> None:
+    """Guard the migration against scientific drift in every active profile."""
+    baseline = json.loads(ACTIVE_PROFILE_BASELINE.read_text(encoding="utf-8"))
+    assert baseline["baseline_revision"] == "ff9b0a9c"
+    assert tuple(baseline["normalization_allowlist"]) == BACKEND_DELETION_ALLOWLIST
+    current_paths = {
+        str(path)
+        for root in ACTIVE_TRAIN_CONFIG_ROOTS
+        for path in root.rglob("*.yaml")
+    }
+    assert current_paths == set(baseline["profiles"])
+
+    payloads = {
+        path: yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+        for path in baseline["profiles"]
+    }
+    mismatches = _profile_digest_mismatches(payloads, baseline["profiles"])
+    assert mismatches == {}
+
+    assert baseline["removed_profiles"] == [
+        {
+            "authored_backend": "deepspeed",
+            "path": (
+                "configs/coordexp_swift/smoke/"
+                "qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_"
+                "deepspeed4_ebs128_2step.yaml"
+            ),
+            "source_sha256": (
+                "33ab070db00cd345626a5afe70107da2e5024d6c705bce2236dfdb283b707288"
+            ),
+        }
+    ]
+    assert not Path(baseline["removed_profiles"][0]["path"]).exists()
+
+
+def test_active_profile_semantic_digest_detects_non_allowlisted_seed_drift() -> None:
+    baseline = json.loads(ACTIVE_PROFILE_BASELINE.read_text(encoding="utf-8"))
+    path, expected = next(iter(baseline["profiles"].items()))
+    payload = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    assert _profile_digest_mismatches({path: payload}, {path: expected}) == {}
+
+    payload["runtime"]["seed"] += 1
+
+    mismatches = _profile_digest_mismatches({path: payload}, {path: expected})
+    assert set(mismatches) == {path}
+    assert mismatches[path]["expected"] == expected
+    assert mismatches[path]["actual"] != expected
 
 
 def test_coord_gaussian_rps_length12000_smoke_config_loads_strictly() -> None:
@@ -652,9 +725,6 @@ def test_coord_gaussian_rps_length12000_smoke_config_loads_strictly() -> None:
     assert smoke.training.max_steps == 2
     assert smoke.optimizer.scheduler.warmup_ratio == 0.1
     assert smoke.runtime.seed == 17
-    assert smoke.runtime.backend == "accelerate"
-    assert smoke.runtime.accelerate is not None
-    assert smoke.runtime.accelerate.gradient_accumulation_steps is None
     assert batch.resolved_grad_accum_steps == 3
 
     protected = smoke.losses.protected
@@ -723,9 +793,6 @@ def test_coord_gaussian_rps_prod_config_loads_strictly() -> None:
     assert prod.optimizer.scheduler.warmup_ratio == 0.1
     assert prod.optimizer.scheduler.warmup_steps is None
     assert prod.runtime.seed == 17
-    assert prod.runtime.backend == "accelerate"
-    assert prod.runtime.accelerate is not None
-    assert prod.runtime.accelerate.gradient_accumulation_steps is None
     assert batch.resolved_grad_accum_steps == 3
     assert schedule.resolved_max_steps == 4887
     assert [
@@ -836,7 +903,7 @@ def _minimal_config() -> dict[str, Any]:
             "max_grad_norm": 1.0,
             "logging": {"every_fraction": None, "steps": [1, 2, 3, 4, 5]},
         },
-        "runtime": {"backend": "single", "seed": 17},
+        "runtime": {"seed": 17},
         "eval": {
             "forward": {"every_fraction": None, "steps": [2, 4]},
             "inference": {"enabled": False},
@@ -857,3 +924,35 @@ def _set_nested(payload: dict[str, Any], dotted: str, value: Any) -> None:
     for part in parts[:-1]:
         current = current.setdefault(part, {})
     current[parts[-1]] = value
+
+
+def _remove_backend_allowlist(payload: dict[str, Any]) -> dict[str, Any]:
+    normalized = json.loads(json.dumps(payload))
+    runtime = normalized["runtime"]
+    runtime.pop("backend", None)
+    runtime.pop("deepspeed", None)
+    accelerate = runtime.get("accelerate")
+    if accelerate is not None:
+        accelerate.pop("gradient_accumulation_steps", None)
+        accelerate.pop("mixed_precision", None)
+        if not accelerate:
+            runtime.pop("accelerate")
+    return normalized
+
+
+def _active_profile_semantic_digest(payload: dict[str, Any]) -> str:
+    normalized = _remove_backend_allowlist(payload)
+    resolved_mapping = TrainConfig.model_validate(normalized).model_dump(mode="json")
+    return sha256_json(resolved_mapping)
+
+
+def _profile_digest_mismatches(
+    payloads: dict[str, dict[str, Any]],
+    expected_digests: dict[str, str],
+) -> dict[str, dict[str, str]]:
+    mismatches = {}
+    for path, expected in expected_digests.items():
+        actual = _active_profile_semantic_digest(payloads[path])
+        if actual != expected:
+            mismatches[path] = {"expected": expected, "actual": actual}
+    return mismatches
