@@ -1,5 +1,6 @@
 name = "model_diagnostician"
 description = "Read-only model-behavior diagnostician for CoordExp metric drops, malformed outputs, duplication, train/eval divergence, rollout symptoms, and artifact-root evidence."
+model = "gpt-5.6-sol"
 model_reasoning_effort = "xhigh"
 sandbox_mode = "read-only"
 nickname_candidates = ["Probe", "Signal", "Triage"]

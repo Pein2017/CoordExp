@@ -1,5 +1,6 @@
 name = "contract_auditor"
 description = "Read-only CoordExp contract auditor for correctness, reproducibility, schema, artifact, metric, docs/spec, and launch-gate risks."
+model = "gpt-5.6-terra"
 model_reasoning_effort = "high"
 sandbox_mode = "read-only"
 nickname_candidates = ["Ledger", "Review", "Verifier"]

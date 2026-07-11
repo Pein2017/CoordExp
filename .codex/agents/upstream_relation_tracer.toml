@@ -1,5 +1,6 @@
 name = "upstream_relation_tracer"
 description = "Read-only relation tracer for CoordExp dependencies across local code, indexed upstream libraries, and external roots such as transformers and ms-swift."
+model = "gpt-5.6-sol"
 model_reasoning_effort = "xhigh"
 sandbox_mode = "read-only"
 nickname_candidates = ["Bridge", "Linker", "Resolver"]

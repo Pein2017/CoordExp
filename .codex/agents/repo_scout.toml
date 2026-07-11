@@ -1,5 +1,6 @@
 name = "repo_scout"
 description = "Read-only first-pass scout and mapper for CoordExp: candidate paths, symbols, configs, artifacts, owner surfaces, and authority ranking before stronger agents reason."
+model = "gpt-5.6-luna"
 model_reasoning_effort = "medium"
 sandbox_mode = "read-only"
 nickname_candidates = ["Scout", "Atlas", "Compass"]
