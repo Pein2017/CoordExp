@@ -6,7 +6,7 @@ status: canonical
 domain: eval
 summary: Router for inference and evaluation contracts, workflows, and artifacts.
 tags: [eval, infer, workflow]
-updated: 2026-07-03
+updated: 2026-07-11
 ---
 
 # Evaluation & Inference
@@ -39,7 +39,8 @@ CoordExp-Swift note:
 - [../ARTIFACTS.md](../ARTIFACTS.md)
   - full infer/eval/training artifact inventory, provenance, helper ownership, and run-directory expectations
 - [COCO_TEST_SUBMISSION.md](COCO_TEST_SUBMISSION.md)
-  - end-to-end runbook for 1024-budget COCO test-dev inference and official submission export
+  - historical mainline runbook for 1024-budget COCO test-dev inference and
+    official submission export; verify current Swift support separately
 - [drafts/UNMATCHED_PROPOSAL_VERIFIER_STUDY.md](drafts/UNMATCHED_PROPOSAL_VERIFIER_STUDY.md)
   - draft supplementary study; not part of the default infer -> score -> evaluate path
 
@@ -47,10 +48,10 @@ CoordExp-Swift note:
 
 Use these only when exact stable contract semantics matter:
 
-- [`inference-pipeline/spec.md`](../../openspec/specs/inference-pipeline/spec.md)
-- [`inference-engine/spec.md`](../../openspec/specs/inference-engine/spec.md)
-- [`detection-evaluator/spec.md`](../../openspec/specs/detection-evaluator/spec.md)
-- [`runtime-architecture-refactor-program/spec.md`](../../openspec/specs/runtime-architecture-refactor-program/spec.md)
+- [`coordexp-swift-infer-pipeline/spec.md`](../../openspec/specs/coordexp-swift-infer-pipeline/spec.md)
+- [`coordexp-swift-infer-backend-trace/spec.md`](../../openspec/specs/coordexp-swift-infer-backend-trace/spec.md)
+- [`coordexp-swift-infer-scoring-artifacts/spec.md`](../../openspec/specs/coordexp-swift-infer-scoring-artifacts/spec.md)
+- [`coordexp-swift-detection-evaluator/spec.md`](../../openspec/specs/coordexp-swift-detection-evaluator/spec.md)
 
 ## Use This Router For
 

@@ -2,13 +2,17 @@
 doc_id: docs.data.visual-genome
 layer: docs
 doc_type: dataset-note
-status: canonical
+status: historical-reference
 domain: data
 summary: Visual Genome-specific preparation notes for CoordExp JSONL.
-updated: 2026-03-30
+updated: 2026-07-11
 ---
 
 # Visual Genome (VG) -> CoordExp JSONL
+
+> Historical dataset-specific preparation note. The JSONL contract remains
+> current, but training/inference routing and config examples below must be
+> checked against the current Swift source and `configs/coordexp_swift/`.
 
 This repo consumes detection/grounding data via a single JSONL contract (`CONTRACT.md`).
 Visual Genome is supported via a downloader + converter script that follows the HuggingFace dataset loader:

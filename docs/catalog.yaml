@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-07-03
+updated: 2026-07-11
 
 entrypoints:
   human:
@@ -17,11 +17,15 @@ authority:
   current_truth: docs/
   non_normative_doc_history: docs/history/
   stable_contracts: openspec/specs/
-  active_deltas: openspec/changes/<active-change>/
+  active_code_change_workspace: openspec/changes/<change>/
+  stable_contract_delta_specs: only_when_stable_compatibility_contract_changes
   active_research_knowledge: research/
   legacy_evidence_archive: progress/
   legacy_evidence_archive_status: deprecated_read_only_migrate_to_research
   research_raw_intake: docs/history/research-intake/
+  architecture_snapshot: docs/architecture/
+  architecture_snapshot_status: stable_accepted_architecture_only
+  completed_proposals_route: docs/history/
 
 config_surfaces:
   coordexp_swift:
@@ -131,34 +135,34 @@ docs:
       type: workflow
       status: canonical
     - path: docs/data/PACKING.md
-      title: Packing Policy Matrix
+      title: Packing Policy
       type: reference
       status: canonical
     - path: docs/data/VISUAL_GENOME.md
       title: Visual Genome (VG) -> CoordExp JSONL
       type: dataset-note
-      status: canonical
+      status: historical-reference
   training:
     - path: docs/training/README.md
       title: Training Docs
       type: router
-      status: canonical
+      status: historical-router
     - path: docs/training/STAGE1_OBJECTIVE.md
       title: Coord Objective & Adapter
       type: reference
-      status: canonical
+      status: historical-reference
     - path: docs/training/STAGE2_RUNBOOK.md
       title: Stage-2 Training Runbook
       type: runbook
-      status: canonical
+      status: historical-reference
     - path: docs/training/LVIS.md
       title: LVIS Integration Guide
       type: design-note
-      status: canonical
+      status: historical-reference
     - path: docs/training/METRICS.md
       title: Training Metrics and Losses
       type: reference
-      status: canonical
+      status: historical-reference
     - path: docs/training/drafts/INSTANCE_TRIE_GAUSSIAN_SOFTCE_DRAFT.md
       title: Instance-Trie Gaussian SoftCE Draft
       type: implementation-draft
@@ -179,40 +183,16 @@ docs:
     - path: docs/eval/COCO_TEST_SUBMISSION.md
       title: COCO Test-Dev Submission
       type: runbook
-      status: canonical
+      status: historical-reference
     - path: docs/eval/drafts/UNMATCHED_PROPOSAL_VERIFIER_STUDY.md
       title: Unmatched Proposal Verifier Study
       type: runbook
       status: draft
   architecture:
     - path: docs/architecture/README.md
-      title: CoordExp Architecture Notes
-      type: proposal-router
-      status: proposal
-    - path: docs/architecture/INDEPENDENT_ARCHITECTURE_REVIEW.md
-      title: CoordExp Independent Architecture Review
-      type: architecture-review
-      status: review
-    - path: docs/architecture/proposals/2026-05-31-simplification/CODEBASE_SIMPLIFICATION_PROPOSAL.md
-      title: CoordExp Codebase Simplification Proposal
-      type: architecture-proposal
-      status: proposal
-    - path: docs/architecture/proposals/2026-05-31-simplification/OWNERSHIP_BOUNDARIES.md
-      title: CoordExp Subsystem Ownership Boundaries
-      type: architecture-proposal
-      status: proposal
-    - path: docs/architecture/proposals/2026-05-31-simplification/SIMPLIFICATION_ROADMAP.md
-      title: CoordExp Architecture Simplification Roadmap
-      type: architecture-roadmap
-      status: proposal
-    - path: docs/architecture/proposals/2026-06-17-refactoring-program/REFACTORING_PROGRAM_CHARTER.md
-      title: CoordExp Refactoring Program Charter
-      type: architecture-charter
-      status: proposal
-    - path: docs/architecture/proposals/2026-06-17-refactoring-program/lifecycle_registry.yaml
-      title: CoordExp Refactoring Program Lifecycle Registry
-      type: lifecycle-registry
-      status: proposal
+      title: Accepted Architecture
+      type: architecture-router
+      status: canonical-router
   standards:
     - path: docs/standards/README.md
       title: Standards
@@ -223,7 +203,7 @@ docs:
       type: standard
       status: canonical
     - path: docs/standards/CODE_STYLE.md
-      title: Code & Architecture Style (Transformers-Inspired, Option A)
+      title: Code And Architecture Style
       type: standard
       status: canonical
     - path: docs/standards/UPSTREAM.md
@@ -263,8 +243,8 @@ docs:
       title: Documentation History
       type: history-router
       status: historical-router
-    - path: docs/history/superpowers/README.md
-      title: Superpowers Plan And Spec Archive
+    - path: docs/history/architecture/README.md
+      title: Architecture History
       type: history-router
       status: historical-router
     - path: docs/history/training/STAGE1_ET_RMP_CE.md

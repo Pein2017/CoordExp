@@ -6,7 +6,7 @@ status: canonical
 domain: data
 summary: Router for dataset contracts, offline preparation, packing, and dataset-specific notes.
 tags: [data, datasets, jsonl]
-updated: 2026-05-03
+updated: 2026-07-11
 ---
 
 # Data & Datasets
@@ -48,11 +48,17 @@ workflow, packing policy, or dataset-specific intake caveats.
 - "What happens if a raw JSONL sample exceeds `global_max_length`?"
 - "How should I handle multi-dataset mixing after runtime fusion removal?"
 
-## Primary Code Handles
+## Primary current code handles
 
-- `src/datasets/`
-- `src/datasets/geometry.py`
-- `src/datasets/builders/jsonlines.py`
-- `src/config/schema.py`
-- `public_data/scripts/`
-- `public_data/run.sh`
+- `src/data/`
+- `src/data/jsonl.py`
+- `src/data/examples.py`
+- `src/data/geometry.py`
+- `src/data/images.py`
+- `src/templates/`
+- `src/qwen/encoding.py`
+- `src/packing/`
+- `src/config/loader.py`
+
+Older `src/datasets/` and `src/config/schema.py` references belong to the
+historical MS-Swift/mainline path and are not current Swift ownership.

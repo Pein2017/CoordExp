@@ -4,316 +4,117 @@ layer: docs
 doc_type: overview
 status: canonical
 domain: repo
-summary: End-to-end flow from data intake to training, inference, evaluation, and artifacts.
-updated: 2026-07-03
+summary: End-to-end current flow from data intake to CoordExp-Swift training, inference, evaluation, and artifacts.
+updated: 2026-07-11
 ---
 
 # System Overview
 
-CoordExp-Swift on repository `main` is the canonical implementation. The
-legacy/mainline sections later in this document are historical context only;
-they must not override the Swift route above or the branch policy in
-[`BRANCH_AND_WORKTREE_POLICY.md`](BRANCH_AND_WORKTREE_POLICY.md).
+This page explains the current CoordExp-Swift flow. It is an explanatory
+operator guide; exact compatibility-sensitive semantics belong to
+`openspec/specs/`, and historical MS-Swift routes belong in historical docs.
 
-Purpose: map the end-to-end CoordExp flow from data intake to training, inference, evaluation, and reproducibility artifacts.
-Authority: explanatory system guide for the current codebase; if this page conflicts with a spec or runbook, defer to `docs/PROJECT_CONTEXT.md` and `openspec/specs/`.
-Read this after: `docs/PROJECT_CONTEXT.md`
-Read this before: domain runbooks under `docs/data/`, `docs/training/`, and `docs/eval/`
-Primary code handles for this worktree: `src/train.py`, `src/training/pipeline.py`, `src/training/supervised_trainer.py`, `src/data/`, `src/templates/`, `src/qwen/`, `src/packing/`, `src/losses/`, `src/adapters/`, `src/optim/`, `src/artifacts/`, `src/infer.py`, `src/inference/`, `src/eval/detection_consumer.py`, `src/eval/forward.py`
-Verification search: `rg -n "detection/runtime|detection_sequence|detection_compact_rows|MetricEvent|flatten_metric_events|TrainingPipelineRegistry|stage1_research_teacher_forcing|stage2_rollout_correction|stage2_rollout_runtime|pipeline_manifest|run_metadata|backends|artifacts|orchestration" src scripts configs docs`
-
-## Flow At A Glance
-
-CoordExp-Swift worktree note:
-
-- Read [`docs/COORDEXP_SWIFT.md`](COORDEXP_SWIFT.md) first for the current
-  rebuilt route and evidence handles.
-- The active entrypoints are `src/train.py`, `src/infer.py`, and
-  `scripts/evaluate_detection.py --artifact-dir ... --out-dir ...`.
-- Active configs live under `configs/coordexp_swift/`.
-- The accepted V1 validation gate is the fixed val200 inference/eval run. A full
-  validation-dataset run is optional and is not required for readiness.
-- Legacy/mainline path references in older sections are retained only as
-  reference context for work outside the Swift rebuild.
-
-## CoordExp-Swift Flow
+## Flow at a glance
 
 ```text
-raw coord JSONL
+validated coord JSONL + images
   -> src/data/
   -> src/templates/
-  -> src/qwen/
-  -> src/packing/
-  -> src/losses/
+  -> src/qwen/ encoding and forward helpers
+  -> src/packing/ + src/supervision/
+  -> src/losses/ + src/runtime/
   -> src/training/supervised_trainer.py
   -> src/artifacts/
-  -> src/infer.py + src/inference/
+
+inference config + checkpoint composition
+  -> src/infer.py -> src/inference/
+  -> raw/scored/provenance artifacts
   -> src/eval/detection_consumer.py
+  -> COCO artifacts + metrics.json + evaluation_receipt.json
 ```
 
-For current Swift work, route through the code handles in
-[`docs/COORDEXP_SWIFT.md`](COORDEXP_SWIFT.md). The rest of this page preserves
-mainline context and should not override the Swift route.
+Current public entrypoints are `src/train.py`, `src/infer.py`, and the wrapper
+`scripts/evaluate_detection.py` for scored detection evaluation. Current config
+roots are under `configs/coordexp_swift/`.
 
-```text
-raw annotations / public datasets
-  -> offline conversion + resize + coord-tokenization
-  -> JSONL contract
-  -> dataset build + chat-template encode
-  -> training (Stage-1 baseline or Stage-2 rollout-aware)
-  -> inference artifacts
-  -> confidence post-op (optional for scored COCO)
-  -> evaluation + visualizations
-  -> reproducibility artifacts and logs
-```
+## Data and encoding
 
-## 1. Data Intake And Offline Preparation
+`src/data/` owns typed raw examples, image references, dimensions, object
+identity, descriptions, and geometry validation. `src/templates/` owns prompt
+and assistant rendering plus semantic spans. `src/qwen/encoding.py` applies the
+chat template, tokenizes with offsets, accounts for image-pad positions, and
+aligns spans to physical token positions.
 
-Mainline reference note: this and later sections preserve older/mainline routing
-context. For CoordExp-Swift source ownership, use
-[`docs/COORDEXP_SWIFT.md`](COORDEXP_SWIFT.md).
+The source-order contract is explicit: `source_order` preserves authored order;
+`geo_sorted` asserts that authored rows are already top-to-bottom then
+left-to-right. It is not an implicit sort. Offline preparation and data
+contract details live in [`data/CONTRACT.md`](data/CONTRACT.md) and
+[`data/PREPARATION.md`](data/PREPARATION.md).
 
-CoordExp expects offline-prepared JSONL rather than ad-hoc runtime transforms.
+## Packing, supervision, and loss
 
-- Current contract docs:
-  - [`docs/data/CONTRACT.md`](data/CONTRACT.md)
-  - [`docs/data/PREPARATION.md`](data/PREPARATION.md)
-- Main code handles:
-  - `public_data/scripts/`
-  - `src/datasets/geometry.py`
-  - `src/datasets/builders/jsonlines.py`
-- Key config surfaces:
-  - `custom.train_jsonl`
-  - `custom.val_jsonl`
-  - `custom.emit_norm: none`
-  - `custom.coord_tokens.*`
+`src/packing/planner.py` builds no-padding concatenative segments under
+`global_max_length`; `src/packing/supervision.py` remaps logical supervision
+spans to packed positions. `src/supervision/tokens.py` carries token type,
+object/field identity, target position, causal-logit position, and optional
+coordinate targets.
 
-Important invariant:
-- images are resized offline,
-- geometry stays aligned with images,
-- all training and evaluation consume those offline-prepared images as-is,
-- runtime vision processors must not resize them,
-- training uses `do_resize=false`.
+`src/losses/runner.py` assembles the configured terms and emits loss,
+denominator, and finite-status diagnostics. The current source route exposes
+base CE, optional token-type gating, and optional coordinate Gaussian/RPS; do
+not describe old recursive-detection or rollout-matching trainers as current
+Swift V1 ownership.
 
-## 2. Dataset Build And Template Encoding
+## Training assembly and runtime
 
-Training and inference both pass through the same CoordExp-style multimodal formatting layer.
+`src/train.py` requires a config and delegates to
+`src/training/pipeline.py`. The pipeline resolves the typed config, initializes
+the run artifact manager, loads Qwen, installs adapters and selected-token
+embedding deltas, builds the pack cache and schedule, assembles losses and
+optimizer/scheduler, creates the runtime, registers eval/checkpoint handlers,
+and runs `SupervisedTrainer`.
 
-- Main code handles:
-  - `src/datasets/dense_caption.py`
-  - `src/datasets/builders/jsonlines.py`
-  - `src/config/prompts.py`
-  - `src/config/loader.py`
-  - `src/detection/template.py`
-  - `src/common/detection_sequence.py`
-  - `src/common/detection_compact_rows.py`
-- What happens here:
-  - JSONL rows are read,
-  - image paths are resolved,
-  - assistant targets are rendered as CoordJSON,
-  - compact detection sequence rows can be rendered or parsed through the strict template and common compatibility facade,
-  - multimodal chat-template inputs are prepared for Qwen3-VL-compatible training/inference.
+`src/training/supervised_trainer.py` owns planned-step and micro-step iteration
+through explicit runtime and loss interfaces. `src/runtime/train_runtime.py`
+owns device movement, accumulation, distributed operations, finite gates,
+gradient clipping, optimizer/scheduler stepping, and safe artifact writes.
 
-This is the layer to inspect when:
-  - a JSONL record renders incorrectly,
-  - prompt variants drift between train and infer,
-  - tokenization or coord-token boundaries look wrong.
+## Inference and evaluation
 
-Compact detection sequence ownership:
-- strict template behavior lives in `src/detection/template.py`;
-- the strict factory-visible template IDs are `stage1_json_pretty`, `compact`,
-  `compact_box_closed`, `compact_object_box_closed`, and
-  `compact_object_box_closed_lines`;
-- `src/common/detection_sequence.py` is the common compatibility facade;
-- `src/common/detection_compact_rows.py` owns stdlib-only compact row markers, rendering, and splitting;
-- `compact_no_desc`, `compact_no_bbox`, and `compact_min` remain helper/compatibility formats, not strict factory IDs.
+`src/infer.py` delegates to `src/inference/pipeline.py`. The pipeline resolves
+the inference config, writes resolved config artifacts, loads input rows,
+plans optional data-parallel shards, runs direct inference, writes shard
+artifacts, and merges them. `src/inference/runtime.py` composes the base Qwen
+model, optional adapter, optional selected-token embedding delta, and validated
+checkpoint handoff identity. `src/inference/backend.py` provides the current HF
+generation adapter and trace normalization boundary.
 
-## 3. Training Surfaces
+`src/inference/parsing.py` owns best-effort parser diagnostics and
+`src/inference/scoring.py` owns selected-token scoring. The evaluator does not
+reparse raw text. `src/eval/detection_consumer.py` validates raw/scored row and
+provenance binding, converts inline GT norm1000 boxes to pixel `xyxy`, keeps
+empty-prediction rows visible as false negatives, and writes COCO artifacts and
+mAP/mRecall metrics.
 
-### Shared Entry Point
+## Artifact and handoff flow
 
-- CoordExp-Swift entry point: `src/train.py`
-- CoordExp-Swift runtime assembler: `src/training/pipeline.py`
-- CoordExp-Swift trainer core: `src/training/supervised_trainer.py`
-- Shared lower-level config base: `configs/coordexp_swift/`
-- Typed config loading and validation:
-  - `src/config/loader.py`
-  - `src/config/schema.py`
-- Bootstrap and provenance helpers:
-  - `src/bootstrap/pipeline_manifest.py`
-  - `src/bootstrap/trainer_setup.py`
-  - `src/bootstrap/run_metadata.py`
+Training artifacts are initialized by `src/artifacts/manager.py`; checkpoints
+are written by `src/artifacts/checkpoints.py`; handoff validation is read-only
+in `src/artifacts/checkpoint_handoff.py`. Inference artifacts are written by
+`src/inference/artifacts.py`; evaluation artifacts are written by
+`src/eval/detection_consumer.py`. The canonical inventory is
+[`ARTIFACTS.md`](ARTIFACTS.md).
 
-### Stage-1 Baseline SFT
+The handoff binds model, processor, template, adapter, selected-token payload,
+and resolved-config identities. It is not an exact optimizer/scheduler/scaler/
+dataloader/iterator/RNG resume contract.
 
-Use Stage-1 when you want teacher-forced baseline training without rollout-aware matching.
+## Authority and historical boundary
 
-- Current config tree: `configs/stage1/`
-- Main docs:
-  - [`docs/training/README.md`](training/README.md)
-  - [`docs/training/STAGE1_OBJECTIVE.md`](training/STAGE1_OBJECTIVE.md)
-  - [`docs/data/PACKING.md`](data/PACKING.md)
-- Main code handles:
-  - `src/sft.py`
-  - `src/detection/runtime.py`
-  - `src/detection/template.py`
-  - `src/common/detection_sequence.py`
-  - `src/common/detection_compact_rows.py`
-  - `src/metrics/dataset_metrics.py`
-  - `src/metrics/events.py`
-  - `src/trainers/losses/coord_soft_ce_w1.py`
-  - `src/trainers/metrics/mixins.py`
-  - `src/trainers/metrics/batch_contract.py`
-  - `src/trainers/metrics/structural_close.py`
-- `src/trainers/metrics/recursive_detection.py`
-- `src/trainers/metrics/aggregate_tokens.py`
-- `src/trainers/metrics/coord_losses.py`
-
-### Stage-1 Detection Teacher Forcing
-
-Use this surface for the canonical clean-break Stage-1 detection
-teacher-forcing route, `pipeline.id: stage1_research_teacher_forcing`.
-
-- Current config route: `configs/stage1/detection_teacher_forcing/`
-- Runtime policy owner: `src/detection/runtime.py`
-- Template owner: `src/detection/template.py`
-- Compatibility sequence facade: `src/common/detection_sequence.py`
-- Row helper: `src/common/detection_compact_rows.py`
-
-Current source contract:
-- `src/detection/runtime.py` owns detection runtime support/preflight,
-  teacher-forcing runtime policy, prompt/mode/custom shim resolution, and
-  `build_detection_training_dataset`.
-- `src/sft.py` delegates these policies and keeps backward-compatible private aliases.
-- packing/cache fail fast remains in force for compact Stage-1 detection
-  teacher-forcing surfaces.
-- no new CLI flags or config schema keys are introduced by this extraction.
-
-Quarantined legacy/comparator note:
-- `configs/archive/detection_scene_clean_break/stage1/` contains quarantined
-  recursive-detection CE migration history and comparator/ablation material. Do
-  not use it as the current public Stage-1 detection teacher-forcing route.
-
-### Stage-2 Rollout-Aware Training
-
-Use Stage-2 when you need rollout prefix plus GT correction supervision or vLLM server-mode training.
-
-- Current config tree: `configs/stage2/rollout_correction/`
-- Main docs:
-  - [`docs/training/STAGE2_RUNBOOK.md`](training/STAGE2_RUNBOOK.md)
-  - [`docs/training/METRICS.md`](training/METRICS.md)
-  - [`openspec/specs/stage2-rollout-correction/spec.md`](../openspec/specs/stage2-rollout-correction/spec.md)
-  - [`openspec/specs/rollout-matching-sft/spec.md`](../openspec/specs/rollout-matching-sft/spec.md) only for retired-contract rejection checks
-  - [`openspec/specs/runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md)
-- Main code handles:
-  - `src/trainers/stage2_rollout_correction.py`
-  - `src/trainers/stage2_coordination.py`
-  - `src/trainers/rollout_aligned_targets.py`
-  - `src/trainers/rollout_aligned_evaluator.py`
-  - `src/launchers/stage2_vllm_server.py`
-  - `src/infer/runtime.py`
-  - `src/infer/backend.py`
-  - `src/infer/backend_vllm_server.py`
-  - `src/infer/backend_sync.py`
-  - `src/infer/rollout_dispatch.py`
-  - `src/trainers/rollout_matching/parsing.py`
-  - `src/trainers/rollout_matching/matching.py`
-  - `src/trainers/teacher_forcing/module_registry.py`
-
-Compatibility note:
-- `src/trainers/stage2_rollout_correction.py` is the public Stage-2 trainer surface.
-- Shared Stage-2 rollout prompt/decode/backend/trace behavior routes through
-  `src/infer/*`; trainer modules own residual correction orchestration,
-  post-rollout packing, and training/eval metric projection.
-- Stage-2 historical rationale is summarized from the current runbook; use [`docs/training/STAGE2_RUNBOOK.md`](training/STAGE2_RUNBOOK.md) and stable specs for current behavior.
-
-## 4. Inference, Confidence, And Evaluation
-
-### Inference
-
-- CLI / pipeline entry point:
-  - `src/infer.py`
-- Main runtime code:
-  - `src/inference/pipeline.py`
-  - `src/inference/runtime.py`
-  - `src/inference/backend.py`
-  - `src/inference/artifacts.py`
-- Config surfaces:
-  - `configs/coordexp_swift/infer/`
-
-Primary artifact:
-- `gt_vs_pred.jsonl`
-
-### Confidence Post-Op
-
-- CLI entry point:
-  - `scripts/postop_confidence.py`
-- Config surface:
-  - `configs/postop/confidence.yaml`
-
-Primary scored artifact:
-- `gt_vs_pred_scored.jsonl`
-
-### Evaluation
-
-- Offline evaluator entry point:
-  - `scripts/evaluate_detection.py`
-- Main runtime code:
-  - `src/eval/detection_consumer.py`
-  - `src/eval/detection_categories.py`
-  - `src/data/geometry.py`
-- Callback path for training-time offline eval:
-  - `src/callbacks/detection_eval.py`
-
-Important distinction:
-- offline evaluator logs `eval_det_*`,
-- trainer-native Stage-2 rollout evaluation logs `eval/detection/*, eval/parsing/*, eval/description/*, eval/config/*, eval/runtime/*`.
-
-Import compatibility note:
-- `src/eval/detection.py` is the import-compatible facade.
-- `src/eval/detection_orchestrator.py` owns the durable orchestration entrypoint for decomposed detection eval.
-- `SemanticDescEncoder` facade patch/import compatibility is preserved for existing callers.
-
-## 5. Artifacts And Reproducibility
-
-CoordExp writes paper-ready artifacts as part of normal execution.
-
-- Artifact guide:
-  - [`docs/ARTIFACTS.md`](ARTIFACTS.md)
-- Current architecture contract:
-  - [`runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md)
-- Training outputs usually include:
-  - `resolved_config.json`
-  - `runtime_env.json`
-  - `effective_runtime.json`
-  - `pipeline_manifest.json`
-  - `experiment_manifest.json`
-  - `run_metadata.json`
-  - `logging.jsonl`
-- Inference/eval outputs usually include:
-  - `summary.json`
-  - `resolved_config.path`
-  - `metrics.json`
-  - scored JSONLs and overlays when enabled
-
-## 6. Where To Go Next
-
-- Change data format or preprocessing:
-  - [`docs/data/README.md`](data/README.md)
-  - [`docs/IMPLEMENTATION_MAP.md`](IMPLEMENTATION_MAP.md)
-- Change Stage-1 baseline behavior:
-  - [`docs/training/README.md`](training/README.md)
-  - [`docs/training/STAGE1_OBJECTIVE.md`](training/STAGE1_OBJECTIVE.md)
-- Change Stage-2 training behavior:
-  - [`docs/training/STAGE2_RUNBOOK.md`](training/STAGE2_RUNBOOK.md)
-  - [`docs/training/METRICS.md`](training/METRICS.md)
-  - [`openspec/specs/stage2-rollout-correction/spec.md`](../openspec/specs/stage2-rollout-correction/spec.md)
-  - [`openspec/specs/runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md)
-  - [`docs/IMPLEMENTATION_MAP.md`](IMPLEMENTATION_MAP.md)
-- Change infer/eval artifacts:
-  - [`docs/eval/README.md`](eval/README.md)
-  - [`docs/eval/WORKFLOW.md`](eval/WORKFLOW.md) for operational flow; [`docs/ARTIFACTS.md`](ARTIFACTS.md) owns the full artifact inventory
-  - [`openspec/specs/inference-pipeline/spec.md`](../openspec/specs/inference-pipeline/spec.md)
-  - [`openspec/specs/inference-engine/spec.md`](../openspec/specs/inference-engine/spec.md)
-  - [`openspec/specs/detection-evaluator/spec.md`](../openspec/specs/detection-evaluator/spec.md)
-  - [`docs/IMPLEMENTATION_MAP.md`](IMPLEMENTATION_MAP.md)
+Use [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md) for precedence,
+[`IMPLEMENTATION_MAP.md`](IMPLEMENTATION_MAP.md) for targeted source/test
+routing, and the relevant `coordexp-swift-*` stable spec for normative details.
+Old `src/sft.py`, `src/trainers/`, `src/datasets/`, `src/detection/`, and
+`src/infer/` references are historical or comparator-only. Old plans and
+architecture proposals are not current behavior authority and are routed by
+[`architecture/README.md`](architecture/README.md).

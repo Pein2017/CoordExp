@@ -2,13 +2,16 @@
 doc_id: docs.training.stage1-objective
 layer: docs
 doc_type: reference
-status: canonical
+status: historical-reference
 domain: training
 summary: Stage-1 objective surfaces and coord-token training behavior.
-updated: 2026-06-30
+updated: 2026-07-11
 ---
 
 # Coord Objective & Adapter
+
+> Historical MS-Swift/mainline objective reference. Current Swift training is
+> routed through `src/train.py`, `src/training/`, and `configs/coordexp_swift/`.
 
 This document details the specialized training objectives and architectural adapters used for coordinate tokens in CoordExp.
 

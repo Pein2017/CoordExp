@@ -2,13 +2,16 @@
 doc_id: docs.training.lvis
 layer: docs
 doc_type: design-note
-status: canonical
+status: historical-reference
 domain: training
 summary: LVIS federated-label integration design, implementation notes, and migration guide for Stage-1, Stage-2, and evaluation.
-updated: 2026-05-20
+updated: 2026-07-11
 ---
 
 # LVIS Integration Guide
+
+> Historical LVIS training/inference integration note. Current routing and
+> config ownership are defined by the CoordExp-Swift docs and source.
 
 This page explains how CoordExp's COCO-oriented training/eval stack changes when
 the dataset is LVIS.

@@ -6,7 +6,7 @@ status: canonical
 domain: eval
 summary: YAML-first runbook for inference, confidence post-processing, evaluation, and visualization.
 tags: [eval, infer, runbook]
-updated: 2026-07-03
+updated: 2026-07-11
 ---
 
 # Evaluation Workflow
@@ -20,7 +20,9 @@ conda run -n ms python -m src.infer --config configs/coordexp_swift/infer/<confi
 The older `scripts/run_infer.py` and `configs/infer/pipeline.yaml` command
 below is retained only as an explicitly labeled MS-Swift/mainline reference.
 
-This page describes the current production path from inference to scored evaluation artifacts, plus the additive Oracle-K repeated-sampling analysis workflow.
+This page describes the current source path from inference to scored evaluation
+artifacts. Additive legacy analysis workflows are historical unless their own
+current contract is named.
 
 CoordExp-Swift rebuild note:
 

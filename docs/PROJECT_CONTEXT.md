@@ -6,112 +6,127 @@ status: canonical
 domain: repo
 summary: Defines documentation ownership, contract authority, and the universal read order for CoordExp.
 tags: [precedence, docs, agents]
-updated: 2026-07-10
+updated: 2026-07-11
 ---
 
 # Project Context & Documentation Authority
 
-This page defines how to interpret every Markdown file in the repository.
+This page defines how to interpret repository documentation at the current
+fixed point. It is a routing and authority contract, not a description of every
+historical implementation that remains in the tree.
 
-CoordExp-Swift is the canonical implementation on repository `main`. See
-[`BRANCH_AND_WORKTREE_POLICY.md`](BRANCH_AND_WORKTREE_POLICY.md) for the live
-branch, archive branch, worktree, and Codex-session boundary.
+## Fixed point
 
-## Authority Model
+Unless a task names another checkout, the canonical evidence root is the
+current `/data/CoordExp` checkout on `main`. Git state, executable source,
+configs, tests, artifacts, and stable specs outrank an older document or a
+different worktree. See [`BRANCH_AND_WORKTREE_POLICY.md`](BRANCH_AND_WORKTREE_POLICY.md)
+for branch and worktree boundaries. Pin a commit in a dated audit or handoff,
+not in this evergreen router.
 
-Use `docs/` as the current operator-facing truth for architecture, workflows,
-routing, artifact names, and recommended development practice.
+CoordExp-Swift is the current implementation on `main`. The development
+worktree at `/data/CoordExp/.worktrees/CoordExp-swift` is a separate checkout
+for active feature work; it is not a substitute for the fixed point when
+answering a question about `main`.
 
-CoordExp-Swift canonical authority:
+## Authority model
 
-- In the stable `main` checkout at `/data/CoordExp`, start with
-  [`docs/COORDEXP_SWIFT.md`](COORDEXP_SWIFT.md). Feature development happens
-  in `/data/CoordExp/.worktrees/CoordExp-swift` on `coordexp-swift`; `ms-swift`
-  is an archive/reference line, not current behavior authority.
-- The rebuilt Swift source route is `src/train.py`, `src/infer.py`,
-  `src/inference/`, `src/training/`, `src/qwen/`, `src/packing/`,
-  `src/losses/`, and `src/eval/detection_consumer.py`.
-- Legacy/mainline handles such as `src/sft.py`, `src/infer/*`,
-  `src/trainers/*`, `configs/stage1/*`, and `configs/stage2/*` are reference
-  material in the canonical Swift checkout unless an active Swift doc or OpenSpec change
-  explicitly points to them.
-- The accepted Swift V1 validation gate is the fixed val200 inference/eval run.
-  Full validation-dataset evaluation is optional and not required for the V1
-  backbone readiness claim.
+Use these layers in order, with the narrower layer winning for the question it
+owns:
 
-Use `openspec/specs/` only when a question needs a stable compatibility contract:
-training/eval behavior, config schemas, loss semantics, artifact names, or
-normative metric semantics. OpenSpec is not the default planning layer for
-ordinary implementation work.
+| Layer | Authority | Owns | Does not own |
+| --- | --- | --- | --- |
+| Current operator docs | `docs/` | Current routes, workflows, ownership, and recommended practice | Normative contract details that belong in stable specs |
+| Stable compatibility contracts | `openspec/specs/` | Supported config/schema, training/eval semantics, artifacts, cache identity, and normative metrics | General roadmap or historical explanation |
+| Active code-change workspace | `openspec/changes/<change>/` | The sole local workspace for bounded code/config/docs work that benefits from durable proposal/design/tasks/apply/verify/archive lifecycle, including architectural refactors and internal implementation changes | Accepted current behavior before the change is implemented and verified; delta specs are conditional on a stable compatibility-sensitive contract change |
+| Active research knowledge | `research/` | Current interpretation, investigations, and durable empirical reasoning | Operator instructions or implementation authority |
+| Historical provenance | `docs/history/` | Superseded plans, migrations, old architecture reasoning, and provenance | Current behavior |
+| Legacy evidence archive | `progress/` | Dated diagnostics, benchmarks, failed directions, and historical derivations | New canonical docs or current implementation claims |
 
-Use `openspec/changes/<active-change>/` only when an active change is explicitly
-in scope.
+Do not duplicate a stable requirement in several canonical pages. A current doc
+should summarize and link to the owning spec; a proposal may explain why a
+direction is useful, but it must not silently become a contract.
 
-Use `progress/` for dated evidence, diagnostics, benchmark reports, empirical
-failures, design derivations, and historical reasoning. Do not answer current
-behavior from `progress/` when `docs/` or a stable spec covers the contract.
+## Current implementation spine
 
-## Layer Responsibilities
+The live Swift route is:
 
-- `docs/`
-  - stable interfaces, workflows, runbooks, routing, architecture, and current status
-  - concise, pointer-first, low-duplication
-- `openspec/specs/`
-  - stable compatibility contracts only
-  - use for exact semantics of supported training/eval/config/artifact surfaces
-- `openspec/changes/`
-  - active deltas and implementation intent only when explicitly in scope
-- `progress/`
-  - historical notes, experiments, audits, diagnostics, and benchmark evidence
-  - evidence-first, dated, non-normative
-- `docs/catalog.yaml`
-  - machine-readable curated inventory for `docs/` and important `progress/` routes
-- `docs/AGENT_INDEX.md`
-  - fast-path retrieval instructions for AI agents
+```text
+configs/coordexp_swift/
+  -> src/train.py -> src/training/pipeline.py
+  -> src/training/supervised_trainer.py
+  -> src/data -> src/templates -> src/qwen -> src/packing
+  -> src/supervision -> src/losses -> src/runtime -> src/artifacts
 
-## Universal Read Order
+configs/coordexp_swift/infer/
+  -> src/infer.py -> src/inference/
+  -> scored inference artifacts -> src/eval/detection_consumer.py
+```
 
-For most work:
+The old `src/sft.py`, `src/trainers/`, `src/datasets/`, `src/detection/`, and
+`src/infer/` package references that appear in legacy docs are historical or
+compatibility evidence. They are not current Swift entrypoints. Existing
+`configs/stage1/`, `configs/stage2/`, and `configs/archive/` trees must be
+treated according to their catalog status and should not be presented as the
+default `main` route.
 
-1. [docs/README.md](README.md)
-2. [docs/AGENT_INDEX.md](AGENT_INDEX.md) if the consumer is an AI agent
-3. [docs/BRANCH_AND_WORKTREE_POLICY.md](BRANCH_AND_WORKTREE_POLICY.md)
-4. [docs/COORDEXP_SWIFT.md](COORDEXP_SWIFT.md)
-5. [docs/SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md)
-6. [docs/IMPLEMENTATION_MAP.md](IMPLEMENTATION_MAP.md)
-7. the relevant domain router under `docs/`
-8. relevant `openspec/specs/` only for stable contract semantics
-9. `openspec/changes/<active-change>/` only when explicitly in scope
-10. `research/` for active research interpretation and continuation context
-11. `progress/` only for design history, empirical evidence, diagnostics, or benchmarks
+## Universal read order
 
-## Authoring Rules
+For a new repository question:
 
-- Do not duplicate stable contracts across multiple router pages.
-- Put stable workflows in `docs/`.
-- Put dated evidence, investigations, and audits in `progress/`.
-- Remove obsolete paths instead of preserving compatibility stubs.
-- Prefer one canonical page per question:
-  - data contract -> `docs/data/CONTRACT.md`
-  - data preparation -> `docs/data/PREPARATION.md`
-  - packing policy -> `docs/data/PACKING.md`
-  - Stage-1 objective/status -> `docs/training/STAGE1_OBJECTIVE.md`
-  - Stage-2 runbook -> `docs/training/STAGE2_RUNBOOK.md`
-  - evaluation contract -> `docs/eval/CONTRACT.md`
-  - evaluation workflow -> `docs/eval/WORKFLOW.md`
-  - artifacts and provenance -> `docs/ARTIFACTS.md`
+1. [`docs/AGENT_INDEX.md`](AGENT_INDEX.md) and [`docs/catalog.yaml`](catalog.yaml)
+   for retrieval routes and the machine-readable inventory.
+2. [`docs/BRANCH_AND_WORKTREE_POLICY.md`](BRANCH_AND_WORKTREE_POLICY.md) for
+   checkout and branch scope.
+3. [`docs/COORDEXP_SWIFT.md`](COORDEXP_SWIFT.md) for the current implementation
+   spine and current evidence boundaries.
+4. [`docs/SYSTEM_OVERVIEW.md`](SYSTEM_OVERVIEW.md) for the end-to-end flow.
+5. [`docs/IMPLEMENTATION_MAP.md`](IMPLEMENTATION_MAP.md) for source ownership
+   and targeted verification.
+6. The relevant domain router under `docs/`.
+7. The exact `openspec/specs/coordexp-swift-*` contract only when stable
+   compatibility semantics matter.
+8. The named `openspec/changes/<change>/` workspace when work is being carried
+   through its durable proposal/design/tasks/apply/verify/archive lifecycle.
+9. `research/` for active research interpretation, then `docs/history/` or
+   `progress/` only for explicitly historical questions.
 
-## Promotion Rule
+## Authoring and lifecycle rules
 
-Promote a note from `progress/` into `docs/` when all of the following are true:
+- Put current operator-facing behavior and workflows in `docs/`.
+- Put stable compatibility-sensitive requirements in `openspec/specs/`.
+- Use a named `openspec/changes/<change>/` directory as the sole local active
+  code-change workspace for bounded work that benefits from durable
+  proposal/design/tasks/apply/verify/archive lifecycle, including architectural
+  refactors and internal implementation changes. Include or modify delta
+  `specs/` only when a stable compatibility-sensitive contract changes; do not
+  invent normative deltas for internal refactors.
+- Put research interpretation in `research/`; keep `progress/` read-only and
+  historical.
+- Keep architecture proposals and one-time project plans non-normative. They
+  may record design reasoning and sequencing, but they do not authorize
+  implementation or override code/spec evidence. The canonical architecture
+  snapshot does not own dynamic program state.
+- PWSG is sequencing discipline inside an OpenSpec change, not a docs
+  directory: Program/change, Wave/task group, Slice/task, Gate (verify + audit).
+- Preserve old proposals and plans as evidence. Mark them historical or
+  superseded, and route completed material to `docs/history/` when it can be
+  moved without breaking provenance links.
+- Do not edit a stable spec merely to repair a documentation link. If code and a
+  stable spec genuinely disagree, record the semantic conflict and stop before
+  choosing a new contract.
 
-- it is no longer tied to one dated run or diagnosis
-- it defines the current recommended workflow
-- people would reasonably expect it to be the first page they open
+## Current validation boundary
 
-Keep a topic in `progress/` when it is primarily:
+The current source and stable specs support the Swift route described above.
+Inference has an implemented HF generation backend; vLLM fields are reserved
+and validated as unavailable in the current implementation. Checkpoint handoff
+identity is validated, but V1 checkpoint artifacts explicitly do not provide
+exact optimizer, scheduler, scaler, dataloader, iterator, or RNG training-state
+resume.
 
-- an experiment log
-- a benchmark report
-- a diagnosis or audit
-- long-form design history
+The fixed val200 inference/evaluation receipt is a historical, scope-labeled
+validation handle, not a live artifact in every checkout. Tiny smokes are
+implementation checks. A full validation-dataset run is optional unless a task
+explicitly requests it. Do not turn these boundaries into broader readiness
+claims without fresh artifacts.

@@ -4,237 +4,166 @@ layer: docs
 doc_type: standard
 status: canonical
 domain: standards
-summary: Code and architecture style guidance for CoordExp.
-updated: 2026-03-09
+summary: Medium-weight code and architecture style guidance for the current CoordExp-Swift tree.
+updated: 2026-07-11
 ---
 
-# Code & Architecture Style (Transformers-Inspired, Option A)
+# Code And Architecture Style
 
-This document captures a **medium-weight** set of style/architecture guidelines inspired by Hugging Face
-Transformers (i.e. *mature, professional Python ML library* patterns), adapted to CoordExp’s
-**research-grade + YAML-first** workflow.
+This is a medium-weight style guide for a research-grade, YAML-first Python ML
+repository. It preserves stable interfaces and research meaning without
+turning every experiment into a framework.
+
+## Goals and non-goals
 
 Goals:
-- Keep the repo reproducible and paper-ready.
-- Keep imports light, avoid optional-dependency footguns.
-- Make new features easy to locate, test, and document.
-- Keep “core contracts” stable even as experiments evolve.
+
+- keep runs reproducible and paper-ready;
+- keep imports light and optional dependencies isolated;
+- make features easy to locate, test, and document;
+- keep core contracts stable while experiments evolve;
+- expose research-semantic choices rather than hiding them in orchestration.
 
 Non-goals:
-- Enforcing a perfect, fully uniform style across all files.
-- Large architectural rewrites (use `openspec/` governance for breaking/contract changes).
 
----
+- perfect uniformity across every historical file;
+- speculative abstractions or one-adapter interfaces for imagined variation;
+- broad rewrites to make the tree look newer;
+- changing a stable contract without the OpenSpec lifecycle.
 
-## 1) Structural principles (what to copy from Transformers)
+## Current module map
 
-### 1.1 Layered API surface
-Keep a clear separation between:
-- **Contracts / schemas** (stable): typed structures, IO formats, invariants.
-- **Algorithms** (stable-ish): loss functions, decoding, matching, metrics.
-- **Pipelines / entrypoints** (change-friendly): training loops, evaluation runs, CLI wrappers.
+Use the current source tree as the first routing signal:
 
-Transformers is effective because “core primitives” are stable and shared across models/tasks. In CoordExp:
-- Put contracts in `src/common/` and `src/datasets/contracts.py`.
-- Put reusable algorithmic building blocks in `src/coord_tokens/`, `src/metrics/`, `src/eval/`.
-- Keep orchestration in `src/trainers/`, `src/infer/`, and `src/sft.py`.
+- `src/config/`: strict YAML loading, typed models, path resolution, and
+  resolved-config artifacts;
+- `src/data/`: raw examples, images, JSONL, and geometry validation;
+- `src/templates/`: prompt rendering and semantic spans;
+- `src/qwen/`: model/processor loading, encoding, image planning, positions,
+  forward helpers, and special-token embeddings;
+- `src/packing/`: no-padding pack planning and packed supervision;
+- `src/supervision/`: token-level target and span records;
+- `src/losses/`: CE, token-type gates, coordinate terms, normalization, and
+  loss diagnostics;
+- `src/runtime/`, `src/optim/`, `src/adapters/`: execution, optimizer, and
+  trainable-surface boundaries;
+- `src/training/`: training assembly, schedule, pack cache, and planned-step
+  trainer;
+- `src/artifacts/`: run manifest, metric streams, checkpoints, and handoff;
+- `src/inference/`: inference pipeline, runtime, backend, parsing, scoring,
+  artifact writing, and data-parallel merge;
+- `src/eval/`: forward-only evaluation and the detection consumer;
+- `src/vis/`: visualization normalization, matching, rendering, and API.
 
-### 1.2 Prefer small, composable base abstractions
-When you need a “base class”, make it:
-- Narrow in responsibility (e.g. decoding, schema validation, token typing).
-- Easy to test without GPUs or huge checkpoints.
-- Backward compatible in serialized formats and metric keys.
+The public entrypoints are `src/train.py` and `src/infer.py`. Do not route new
+Swift work through historical `src/sft.py`, `src/trainers/`, `src/datasets/`,
+`src/detection/`, or the old `src/infer/` package.
 
-### 1.3 Explicit outputs over ad-hoc tuples
-Transformers uses dataclass outputs (`ModelOutput` + `@dataclass` subclasses) to keep returns stable.
+## Interfaces and module depth
 
-In CoordExp:
-- Prefer returning a small `@dataclass` (or a typed dict) instead of a positional tuple.
-- Document shapes/units (e.g. `norm1000` coords vs pixel coords).
-- Keep optional fields defaulting to `None` (eases backwards compatibility).
+Use a deep module where substantial behavior is hidden behind a small, honest
+interface. The interface includes types, invariants, ordering, configuration,
+failure modes, artifacts, and research semantics.
 
----
+- Prefer a real owner over a pass-through facade.
+- Put variation at an explicit seam only when it exists in the current code.
+- Accept dependencies explicitly rather than creating hidden global coupling.
+- Return observable typed results or receipts when side effects matter.
+- Test through the same semantic interface callers use.
+- Do not hide user-owned choices about data order, geometry, targets, loss,
+  optimization, metric scope, or artifact interpretation.
 
-## 2) Where code goes (CoordExp mapping)
+The deletion test is useful: if deleting a module makes complexity disappear,
+it was probably pass-through structure; if complexity reappears in callers, the
+module was hiding useful behavior.
 
-Use these directories as “modules by responsibility”:
+## Typed outputs and contracts
 
-- `src/common/`: low-level shared contracts (schemas, IO helpers, coord standardization).
-  - Avoid importing heavy training frameworks here.
-  - Keep functions deterministic and dependency-light.
-- `src/config/`: configuration schema + loader.
-  - Prefer adding YAML knobs + schema validation here, not new CLI flags.
-- `src/datasets/`: dataset builders, packing, augmentation, and geometry.
-  - Geometry invariants live in `src/datasets/geometry.py` (do not reimplement elsewhere).
-- `src/coord_tokens/`: coord vocab, codec, validators, and losses specific to coord tokens.
-- `src/trainers/`: training loops and rollout-matching orchestration.
-  - Keep “algorithm” pieces in reusable modules; trainers should mainly wire them together.
-- `src/infer/`: inference pipeline utilities and visualization.
-- `src/eval/`: evaluation parsing + metrics computation.
-- `src/utils/`: cross-cutting utilities (logging, optional-dependency helpers, env detection).
+Prefer small dataclasses or typed mappings over positional tuples. Document
+units and invariants, especially norm1000 versus pixel coordinates, logical
+versus packed positions, and raw versus scored artifacts.
 
-If you are unsure, choose the simplest rule:
-> Put code where a new contributor would look for it first.
+Keep `src/__init__.py` and low-level import surfaces light. Stable records,
+config models, artifact receipts, and metric events should be explicit enough
+for tests and downstream readers to validate them without opening implementation
+internals.
 
----
+## Imports and optional dependencies
 
-## 3) Module and symbol naming conventions
+Do not import heavyweight optional dependencies at module import time when
+avoidable. Keep backend-specific loading behind the current runtime/backend
+seams and fail with an actionable message that names the missing dependency and
+the supported alternative.
 
-### 3.1 File/module naming
-Follow Transformers’ “role-first” naming:
-- `*_utils.py` for shared utilities.
-- `contracts.py`, `schemas.py` for stable IO / typed structures.
-- `codec.py`, `validator.py`, `parser.py` for format transformations.
-- Prefer **snake_case** for filenames and modules.
+Do not introduce a new backend or framework merely to make a document or
+interface symmetrical. The current inference source implements HF generation;
+reserved fields do not establish an available backend.
 
-### 3.2 Class/function naming
-- Classes: `PascalCase`
-- Functions/vars: `snake_case`
-- Constants: `UPPER_SNAKE_CASE`
-- Mixins (if used): suffix `Mixin` and keep them small.
-
-### 3.3 Public vs private
-- Use `__all__` in modules that intentionally define a public surface.
-- Prefix private helpers with `_` and keep them close to their usage.
-- Keep `src/__init__.py` thin (avoid heavy imports at import-time).
-
----
-
-## 4) Optional dependencies (avoid import-time pain)
-
-Transformers treats backends as optional and provides *actionable* errors.
-
-In CoordExp:
-- Do not import heavyweight optional deps at module import time when avoidable (e.g., `vllm`, `opencv`, large HF backends).
-- Centralize availability checks in `src/utils/` (e.g., `is_vllm_available()`), and gate usage inside functions.
-- When failing, raise errors that tell the user what to install and why.
-
-Recommended error message style:
-- Include the missing package name(s).
-- Include the feature they tried to use.
-- Provide a next action (“install X” / “use config Y instead”).
-
----
-
-## 5) Logging and warnings
-
-Transformers uses a centralized logging wrapper and “warn once” patterns to reduce noise.
-
-In CoordExp:
-- Prefer a repo-wide logger helper (see `src/utils/logger.py`) rather than configuring logging ad-hoc.
-- Use warnings sparingly; a warning should be:
-  - actionable,
-  - non-spammy,
-  - and never hide silent correctness changes.
-- For deprecations, prefer:
-  - a single warning per process (or per call site),
-  - a concrete timeline (“deprecated now; remove after <date>/<version>”), and
-  - a migration path (which YAML knob replaces it).
-
----
-
-## 6) Documentation style
-
-### 6.1 Docstrings
-Keep docstrings “docs-grade” for public entrypoints and contracts:
-- First line: what the function/class does.
-- Then: important invariants (especially around geometry and coord normalization).
-- Then: arguments/returns in simple Markdown style.
-
-Do not over-comment obvious code; instead:
-- document invariants,
-- document non-obvious tradeoffs,
-- and link to the relevant `docs/` page when the explanation is long.
-
-### 6.2 Docs-as-source-of-truth
-Stable behavior belongs in `docs/` (not in ad-hoc comments or chat history):
-- Data contracts: `docs/data/`
-- Training runbooks: `docs/training/`
-- Repo standards: `docs/standards/`
-
-If you add a new user-facing feature, add a doc entry and link it from `docs/README.md`.
-
----
-
-## 7) Testing style
-
-CoordExp tests should aim to be:
-- deterministic (seeded, stable ordering),
-- contract-focused (geometry, JSONL schema, packing invariants),
-- runnable from repo root without special cwd assumptions.
-
-Patterns to copy from mature libraries:
-- Use `tests/conftest.py` for environment bootstrapping (path setup, dependency checks).
-- Prefer small unit tests for pure functions (geometry, codec, parsing).
-- Add at least one “smoke” test for any new end-to-end pipeline component.
-- Gate truly expensive tests behind an explicit opt-in (env var / marker).
-
----
-
-## 8) Config style (YAML-first)
+## Configuration: YAML first and strict
 
 Treat configs as first-class artifacts:
-- Prefer adding knobs to YAML + `src/config/schema.py` over adding CLI flags.
-- Keep experiment names descriptive and reproducible (dataset + model + key knobs + seed).
-- Keep `prompts:` empty unless the code explicitly supports it (prompt changes should live in code, not in YAML).
-- Config loading is strict and schema-derived: unknown keys fail fast at load time with dotted-path errors
-  (including list indices like `rollout_matching.vllm.server.servers[0].unknown_flag`).
 
-### 8.1 Strict Schema-Derived Validation (Unknown Keys)
+- prefer a YAML key plus typed validation over a new CLI flag;
+- keep names descriptive and reproducible;
+- reject unknown keys and invalid combinations at load time;
+- record authored/resolved config identity and fingerprints;
+- keep defaults neutral unless a research choice is intentionally explicit.
 
-Config validation is intentionally fail-fast:
-- Unknown top-level keys are rejected during config load.
-- Each top-level section (`model`, `quantization`, `template`, `data`, `tuner`, `training`, `rlhf`, `custom`,
-  `debug`, `stage2_rollout_correction`, `rollout_matching`, `deepspeed`, `global_max_length`) is validated for unknown keys
-  before trainer construction.
-- Top-level `extra:` is reserved and rejected. Use `custom.extra` for minor residual knobs only.
+The current config seam is `src/config/loader.py` and `src/config/models.py`.
+Do not copy an old schema from `configs/stage1/` or `configs/stage2/` into a
+current `configs/coordexp_swift/` document without checking the live models and
+stable specs.
 
-Extension-bucket policy:
-- `custom.extra` is the only explicit author-facing escape hatch.
-- Unknown `custom.*` keys do not silently "fall into" `custom.extra`; they fail fast.
-- `custom.extra.rollout_matching.*` is explicitly unsupported; rollout settings must live under top-level
-  `rollout_matching.*`.
+When adding a config key:
 
-Implementation references:
-- Loader orchestrator: `src/config/schema.py` (`TrainingConfig.from_mapping`)
-- Strict nested parser: `src/config/strict_dataclass.py` (`parse_dataclass_strict`)
-- Rollout schema: `src/config/rollout_matching_schema.py`
+1. name the owning model and invariant;
+2. add strict schema validation;
+3. document the user-visible meaning and default;
+4. add a negative test for invalid/unknown input;
+5. update the relevant stable spec if the compatibility contract changes.
 
-### 8.2 Rollout Matching Authoring Rules
+## Logging and artifacts
 
-Rollout-matching settings are a first-class top-level namespace:
-- Author all rollout knobs under `rollout_matching.*` (not under `custom.extra.*`).
-- vLLM server connectivity supports only:
-  - `rollout_matching.vllm.server.servers: [{base_url: ..., group_port: ...}, ...]`
-- Legacy paired-list server form (`rollout_matching.vllm.server.base_url` + `rollout_matching.vllm.server.group_port`)
-  is removed and must fail fast with migration guidance.
+Logs and artifacts should make correctness failures visible, not merely reduce
+noise. Prefer the current typed metric stream and artifact receipts. Preserve
+artifact names and provenance when moving ownership; a migration needs explicit
+tests and documentation.
 
-### 8.3 Adding a New YAML Knob (Checklist)
+Checkpoint handoff identity is distinct from exact training-state resume. Do not
+use the word “resume” without qualifying which payload and state are actually
+restored.
 
-When adding a new config key, keep strictness and reproducibility intact:
-1) Decide ownership:
-   - If ms-swift supports it as a `TrainArguments` / `RLHFArguments` dataclass field, put it in the appropriate
-     YAML section and keep the name exact (typos are rejected).
-   - If it's CoordExp-specific, add it as a first-class schema key (preferred) or explicitly enumerate it as an
-     internal key in the loader with a clear comment (do not rely on permissive dict pass-through).
-2) Add schema validation (shape + invariants):
-   - For structured/nested namespaces, define a typed `@dataclass` schema and parse via `parse_dataclass_strict`.
-3) Add tests:
-   - Add at least one negative test proving unknown keys fail with dotted-path errors (including list indices for lists).
-   - `tests/test_training_config_strict_unknown_keys.py` is a good reference template.
+## Documentation style
 
-When adding a new knob:
-1) Add it to the schema with validation and sensible defaults.
-2) Document it (short note in the relevant runbook, or a new doc if it’s a new capability).
-3) Add/adjust a test if it affects contracts or output formats.
+Document public entrypoints and contracts with:
 
----
+- a first line stating the behavior;
+- the important invariants and units;
+- the inputs, outputs, and failure modes;
+- a link to the owning `docs/` page or stable OpenSpec for longer semantics.
 
-## 9) Hard guardrails (do not violate)
+Keep canonical docs concise and pointer-first. Put dated evidence, experiments,
+and historical architecture reasoning in their designated history/research
+surfaces rather than duplicating it in current routers.
 
-These are correctness/compatibility constraints:
-- Preserve geometry: never drop/reorder coords; use `src/datasets/geometry.py`.
-- Maintain Qwen3-VL chat-template compatibility.
-- Do not edit upstream HF model internals (off-limits files).
+## Testing style
 
-If you need to change a contract or introduce a breaking change, follow `openspec/` governance.
+Tests should be deterministic, contract-focused, and runnable from the repo
+root. Prefer small tests for pure geometry, parsing, encoding, packing, and
+artifact functions; test the real interface rather than private incidental
+helpers. Add a focused smoke test for a new end-to-end component and gate
+expensive tests behind explicit opt-in.
+
+Useful current test areas are `tests/config/`, `tests/data/`, `tests/templates/`,
+`tests/qwen/`, `tests/packing/`, `tests/supervision/`, `tests/losses/`,
+`tests/training/`, `tests/runtime/`, `tests/artifacts/`, `tests/inference/`, and
+`tests/eval/`.
+
+## Hard guardrails
+
+- Preserve geometry, object order, token alignment, and artifact row identity.
+- Keep Qwen chat-template and image-token contracts explicit.
+- Do not silently resize, reorder, drop, or renormalize research inputs.
+- Do not edit upstream model internals to work around a local contract.
+- If a stable behavior, config schema, loss, metric, or artifact contract must
+  change, use the OpenSpec lifecycle and update current docs after promotion.

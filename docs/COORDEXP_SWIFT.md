@@ -4,204 +4,135 @@ layer: docs
 doc_type: canonical-implementation-guide
 status: canonical
 domain: repo
-summary: Current routing and evidence guide for the CoordExp-Swift rebuilt training, inference, and evaluation infrastructure.
+summary: Current routing guide for the CoordExp-Swift training, inference, evaluation, and artifact infrastructure.
 tags: [coordexp-swift, training, inference, eval, routing]
-updated: 2026-07-10
+updated: 2026-07-11
 ---
 
 # CoordExp-Swift Canonical Infrastructure
 
-CoordExp-Swift is the canonical implementation on repository `main`. The old
-MS-Swift-centered line is preserved as the `ms-swift` history archive. See
-[`BRANCH_AND_WORKTREE_POLICY.md`](BRANCH_AND_WORKTREE_POLICY.md) for branch,
-worktree, and Codex-session routing.
+CoordExp-Swift is the current implementation route on repository `main`. This
+page describes the live source and config ownership; stable compatibility
+semantics belong to the linked `coordexp-swift-*` OpenSpecs.
 
-This page is the first stop for the rebuilt CoordExp-Swift implementation in
-the stable `/data/CoordExp` checkout on `main`. Active feature development
-uses `/data/CoordExp/.worktrees/CoordExp-swift` on `coordexp-swift`; validated
-work is promoted by an explicit merge into `main`.
+The public entrypoints are `src/train.py` and `src/infer.py`. Active feature
+work may be developed in a named worktree, but a worktree or an old branch does
+not change the authority of the current `main` checkout. See
+[`BRANCH_AND_WORKTREE_POLICY.md`](BRANCH_AND_WORKTREE_POLICY.md) for checkout
+boundaries.
 
-The active goal of this canonical checkout is a locally owned, inspectable
-training and inference stack for Qwen3-VL detection research. It replaces the
-old MS-Swift-centered execution path for current `main` work. Legacy/mainline docs and
-paths remain useful as reference material only when this page or an active
-OpenSpec change explicitly points to them.
-
-## Current Verdict
-
-CoordExp-Swift is a successful V1 backbone.
-
-- Training: production-style supervised training completed with the rebuilt
-  `src/` infrastructure and wrote a usable final checkpoint.
-- Inference: the rebuilt `src/infer.py` plus `src/inference/` path runs real
-  HF/Qwen generation with adapter and special-token embedding delta support.
-- Evaluation: the rebuilt `src/eval/detection_consumer.py` consumes the Swift
-  scored artifact family and writes bbox mAP/mRecall metrics.
-- Validation scope: the accepted correctness gate is the fixed val200 run.
-  A full validation-dataset or full benchmark run is not required for this V1
-  readiness claim unless the user explicitly asks for one.
-
-Tiny Wave 7 smokes are implementation-readiness evidence only. The val200 run is
-the accepted local validation evidence because it uses real data, scored
-artifacts, the standardized Swift evaluator, and expected mAP scale.
-
-## Active Source Topology
+## Current source topology
 
 ```text
-raw coord JSONL
-  -> src/data/
-  -> src/templates/
-  -> src/qwen/ encoding and no-resize image planning
-  -> src/packing/
-  -> src/qwen/ forward inputs
-  -> src/losses/
+training config
+  -> src/train.py
+  -> src/training/pipeline.py
   -> src/training/supervised_trainer.py
-  -> src/artifacts/
-  -> src/infer.py + src/inference/
+  -> src/data -> src/templates -> src/qwen -> src/packing
+  -> src/supervision -> src/losses -> src/runtime -> src/artifacts
+
+inference config
+  -> src/infer.py
+  -> src/inference/pipeline.py
+  -> src/inference/runtime.py / src/inference/backend.py
+  -> src/inference/artifacts.py
   -> src/eval/detection_consumer.py
 ```
 
-Primary code handles:
+The source map is intentionally a set of real modules, not a proposed
+framework. Current ownership is:
 
-- Training entry: `src/train.py`
-- Training orchestration: `src/training/pipeline.py`
-- Trainer core: `src/training/supervised_trainer.py`
-- Data/examples: `src/data/`
-- Template rendering: `src/templates/`
-- Packing and supervision: `src/packing/`, `src/supervision/`
-- Qwen loading, encoding, image, position, and forward helpers: `src/qwen/`
-- Losses and token-type gates: `src/losses/`
-- Adapter and DoRA source gates: `src/adapters/`
-- Optimizer parameter groups: `src/optim/`
-- Artifacts and checkpoints: `src/artifacts/`
-- Inference entry: `src/infer.py`
-- Inference runtime/backend/prompt/parser/scoring/artifacts: `src/inference/`
-- Direct Swift evaluator: `src/eval/detection_consumer.py`
-- Eval-forward helper: `src/eval/forward.py`
+| Surface | Owner | Responsibility |
+| --- | --- | --- |
+| Entry and assembly | `src/train.py`, `src/training/pipeline.py` | Resolve config and assemble model, adapters, embedding deltas, pack cache, schedule, losses, optimizer/scheduler, runtime, eval, checkpoints, and artifacts |
+| Planned-step training | `src/training/supervised_trainer.py` | Iterate micro-steps and planned steps through explicit runtime and loss interfaces |
+| Config | `src/config/loader.py`, `src/config/models.py`, `src/config/resolve.py` | YAML extends resolution, strict typed validation, path resolution, and resolved-config fingerprinting |
+| Data and geometry | `src/data/` | Validate JSONL examples, images, object identity, descriptions, dimensions, and geometry |
+| Template and spans | `src/templates/` | Render prompts/assistant content and expose semantic supervision spans |
+| Qwen boundary | `src/qwen/` | Load model/processor/tokenizer, encode chat/image inputs, build positions, and run forward helpers |
+| Packing and supervision | `src/packing/`, `src/supervision/` | Concatenate no-padding segments and map logical token atoms to physical positions |
+| Losses | `src/losses/` | Assemble CE, token-type gating, optional coordinate Gaussian/RPS, normalization, and diagnostics |
+| Runtime and optimization | `src/runtime/`, `src/optim/`, `src/adapters/` | Device/distributed operations, finite gates, optimizer/scheduler steps, adapter and selected-token trainable surfaces |
+| Training artifacts | `src/artifacts/` | Run manifest, resolved config, metric streams, eval-forward summaries, checkpoints, and handoff identity |
+| Inference | `src/infer.py`, `src/inference/` | Resolve infer config, compose the model, decode, parse, score, shard, merge, and write provenance-bearing artifacts |
+| Detection evaluation | `src/eval/detection_consumer.py` | Validate raw/scored binding, normalize geometry units, write COCO artifacts, and emit mAP/mRecall metrics |
 
-Do not create or route to a `src/infer/` package in the canonical Swift checkout. The public
-entry is the file `src/infer.py`; the implementation package is
-`src/inference/`.
+There is no current `src/infer/` package route. Do not document or create one
+as a sibling of `src/inference/`.
 
-## Active Config Routes
+## Config routes
 
-- Training production configs: `configs/coordexp_swift/prod/`
-- Training smoke configs: `configs/coordexp_swift/smoke/`
-- Inference configs: `configs/coordexp_swift/infer/`
-- DeepSpeed helper config: `configs/coordexp_swift/deepspeed/`
+Current config roots are:
 
-The current accepted validation config is:
+- `configs/coordexp_swift/prod/` for production-shaped training configs;
+- `configs/coordexp_swift/smoke/` for small training checks;
+- `configs/coordexp_swift/infer/` for inference configs;
+- `configs/coordexp_swift/deepspeed/` for the DeepSpeed helper config.
 
-- `configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_step917_val200.yaml`
+Config loading is strict and schema-first. A runnable training config declares
+`schema_version: 1`; extends resolution, path origins, resolved values, and the
+config fingerprint are part of the runtime evidence. Training runtime choices
+are explicit (`single`, `accelerate`, or `deepspeed` where supported by the
+schema). A helper config does not by itself establish production benchmark
+support.
 
-The full-dataset benchmark config is optional reference material:
+## Semantic boundaries that docs must preserve
 
-- `configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_benchmark.yaml`
+- `source_order` preserves authored object order. `geo_sorted` validates the
+  authored top-to-bottom/left-to-right order; it does not silently sort rows.
+- `src/data/` validates raw records, `src/templates/` renders semantic spans,
+  `src/qwen/encoding.py` aligns spans with physical Qwen tokens, and
+  `src/packing/` remaps them into packed positions. Do not collapse these into
+  one generic dataset owner.
+- The active loss assembly is owned by `src/losses/runner.py`. Current source
+  terms are base CE, optional token-type gating, and optional coordinate
+  Gaussian/RPS; normalization and finite diagnostics are explicit.
+- Inference score-bearing artifacts require backend-neutral trace evidence,
+  selected-token score provenance, row binding, and identity fingerprints.
+  Predictions alone are not sufficient COCO evidence.
+- Swift GT boxes are inline norm1000 `xyxy`; scored predictions are parser-
+  normalized pixel `xyxy`. The evaluator converts the GT side and rejects
+  mixed-unit COCO sidecars.
+- `checkpoint_handoff.json` is an identity and payload-composition seam. V1
+  checkpoint metadata records optimizer, scheduler, scaler, dataloader,
+  iterator, and RNG resume state as not saved; handoff is not exact training
+  continuation.
 
-Do not treat the full-dataset benchmark config as a required readiness gate.
+Stable semantics are owned by these specs:
 
-## Evidence Handles
+- [config runtime](../openspec/specs/coordexp-swift-config-runtime/spec.md)
+- [data/template/encoding](../openspec/specs/coordexp-swift-data-template-encoding/spec.md)
+- [packing/forward](../openspec/specs/coordexp-swift-packing-forward/spec.md)
+- [supervision/losses](../openspec/specs/coordexp-swift-supervision-losses/spec.md)
+- [training artifacts](../openspec/specs/coordexp-swift-training-artifacts/spec.md)
+- [checkpoint handoff](../openspec/specs/coordexp-swift-checkpoint-handoff-readiness/spec.md)
+- [inference pipeline](../openspec/specs/coordexp-swift-infer-pipeline/spec.md)
+- [inference backend trace](../openspec/specs/coordexp-swift-infer-backend-trace/spec.md)
+- [inference scoring artifacts](../openspec/specs/coordexp-swift-infer-scoring-artifacts/spec.md)
+- [detection evaluator](../openspec/specs/coordexp-swift-detection-evaluator/spec.md)
 
-Production training checkpoint:
+## Current evaluation boundary
 
-- `outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_accelerate8_ebs64_4epoch_warmup0p1-prod8-r16a32-ebs64-warmup0p1-20260702T170007Z/checkpoints/step-917`
-- This checkpoint is valid model/eval evidence for the accepted val200 result,
-  but do not cite that historical run as clean evidence for the declared
-  warmup/cosine LR trajectory unless the actual LR trajectory is reconstructed.
-  The stabilized runtime keeps scheduler ownership in CoordExp, does not pass
-  the scheduler through `accelerator.prepare(...)`, and records actual
-  `lr/group_*` values plus scheduler state on planned-step artifacts.
+The implemented inference backend is HF generation through
+`src/inference/backend.py`. vLLM fields are reserved and validated as
+unimplemented in this source route. The direct evaluator consumes
+`gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, and the scored provenance sidecar
+from the same artifact directory, then writes COCO artifacts and metrics.
 
-Official repaired special-token embedding support payload for the accepted
-step-917 val200 launch:
+Tiny and two-row runs are implementation checks. A prior val200 result may be
+useful as historical evidence, but its output directory is not part of every
+checkout; reproduce or cite its receipt before making a current benchmark
+claim. Full validation-dataset evaluation and official test-dev submission are
+separate workflows.
 
-- `outputs/coordexp_swift/infer/val200_support/repaired_special_token_embeddings_step917`
-- `outputs/coordexp_swift/infer/val200_support/repaired_special_token_embeddings_step917/repair_receipt.json`
-- New checkpoints written after the stabilization pass also create
-  `checkpoint_handoff.json` beside `checkpoint.json` so inference can discover
-  base identity, adapter payload, selected embedding-delta payload, trainable
-  token set, and intended config family from one file.
+## Historical boundaries
 
-Accepted val200 inference/eval run:
-
-- `outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-pure-ce-dora-r16a32-step917-val200-20260703T035007Z`
-
-Accepted evaluator metrics:
-
-- `outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-pure-ce-dora-r16a32-step917-val200-20260703T035007Z/eval_coco_fixed_gt_scale/metrics.json`
-
-Key values from that metrics file:
-
-- `row_count: 200`
-- `gt_object_count: 1444`
-- `pred_object_count: 1243`
-- `mAP: 0.4111788135144427`
-- `mAP_50: 0.5616311086141887`
-- `mAP_75: 0.43402742703563857`
-- `mRecall: 0.4790356074108587`
-
-The evaluator converts inline GT norm1000 coord-bin boxes to pixel `xyxy`.
-Scored predictions are already parser-normalized pixel `xyxy`. Mixed-unit
-COCO sidecars are invalid.
-
-## Stabilized Contracts
-
-- `data.train_order` is `source_order` only in V1. Unsupported values such as
-  `shuffle` are rejected rather than allowed to perturb cache fingerprints
-  without changing behavior.
-- `template.object_ordering: geo_sorted` is a source-order geometry assertion:
-  it preserves authored object order and fails if rows are not already
-  top-to-bottom then left-to-right. It is not a silent sort. Legacy `sorted` is
-  rejected.
-- Packing-cache identity includes dataset/template/Qwen/processor/global-length
-  inputs plus code identity for renderer, Qwen encoding, packing planner,
-  packed supervision, and supervision-token construction. Worker count is
-  provenance only.
-- Distributed `segment_balanced` protected losses use an all-rank planned-step
-  denominator, with backend gradient scaling recorded in diagnostics.
-- Selected special-token embedding deltas are owned and checkpointed as fp32
-  compact payloads even when the base Qwen model runs bf16.
-- DoRA continuation can expand an existing adapter checkpoint to a broader
-  target set: every configured target is created, complete source target
-  tensors are reused by exact key, missing targets keep fresh initialization,
-  partial source targets fail, and the configured selected-token embedding
-  delta payload is loaded before optimizer setup.
-- Inference code defaults are neutral: deterministic greedy generation with
-  `repetition_penalty=1.0`. Non-neutral decode choices, including the current
-  step-917 val200 `repetition_penalty=1.10`, must come from explicit config and
-  are recorded in generation-policy artifacts.
-
-## Evaluation Gate Policy
-
-For canonical Swift `main`:
-
-- Tiny/smoke inference runs prove implementation readiness only.
-- The fixed val200 run is sufficient for V1 local validation and benchmark-style
-  regression evidence.
-- A full validation-dataset run is optional and requires an explicit user request.
-- Official COCO test-dev submission remains a separate workflow and is not
-  implied by local val200 acceptance.
-
-This policy supersedes older wording that required full validation or full
-benchmark inference before claiming the CoordExp-Swift V1 backbone is working.
-
-## OpenSpec And Roadmap Authority
-
-Active OpenSpec changes for the rebuild:
-
-- `openspec/changes/rebuild-coordexp-swift-training-infra/`
-- `openspec/changes/build-coordexp-swift-inference-infra/`
-- `openspec/changes/standardize-coordexp-swift-detection-evaluator/`
-- `openspec/changes/prepare-coordexp-swift-production-relaunch/`
-
-Planning artifacts under `docs/superpowers/plans/` are useful provenance, but
-the current status is this page plus the active OpenSpec task ledgers. If a dated
-roadmap still contains unchecked boxes or old "blocked pending full benchmark"
-wording, treat it as historical unless this page points to it as a live gate.
-
-## Future Work Boundary
-
-The V1 backbone intentionally does not claim rollout training, hidden-state
-losses, feature-cache losses, vLLM execution, exact optimizer/RNG resume, or
-DeepSpeed production benchmark completeness. Those should enter through a new
-OpenSpec proposal after the V1 backbone is kept stable.
+Old MS-Swift/mainline paths such as `src/sft.py`, `src/trainers/`,
+`src/datasets/`, `src/detection/`, `src/infer/`, `configs/stage1/`, and
+`configs/stage2/` remain in historical docs, archived configs, tests, and old
+run evidence. They are not current Swift ownership. Completed rebuild changes
+are preserved under `openspec/changes/archive/`; a named
+`openspec/changes/<change>/` directory is the sole local workspace for bounded
+code/config/docs or architecture work that benefits from durable lifecycle.
+Delta specs are included only when a stable compatibility-sensitive contract
+changes; internal refactors do not require invented normative deltas.

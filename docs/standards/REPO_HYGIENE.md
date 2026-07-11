@@ -141,7 +141,7 @@ Retention note:
 
 ## 9) Contract guardrails (do not violate)
 
-- Preserve geometry: never drop/reorder coords; use `src/datasets/geometry.py`.
+- Preserve geometry: never drop/reorder coords; use `src/data/geometry.py`.
 - Golden rule: all training and evaluation use offline-preprocessed images, and runtime vision processors must not resize them.
 - Training uses `do_resize: false` unless explicitly justified in config/docs.
 - Maintain Qwen3-VL chat-template compatibility.

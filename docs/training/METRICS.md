@@ -2,13 +2,17 @@
 doc_id: docs.training.metrics
 layer: docs
 doc_type: reference
-status: canonical
+status: historical-reference
 domain: training
 summary: Canonical training metric families for Stage-1 and the active Stage-2 single-pass contract.
-updated: 2026-06-24
+updated: 2026-07-11
 ---
 
 # Training Metrics and Losses
+
+> Historical metric vocabulary and old-run reference. Verify current metric
+> ownership in `src/artifacts/`, `src/losses/`, `src/metrics/`, and the stable
+> Swift specs before making a current claim.
 
 This reference describes the canonical metric families for Stage-1 and the
 active single-pass Stage-2 contract.

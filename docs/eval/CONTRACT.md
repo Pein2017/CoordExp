@@ -6,7 +6,7 @@ status: canonical
 domain: eval
 summary: Contract for CoordExp inference and detection-evaluation artifacts.
 tags: [eval, contract, jsonl]
-updated: 2026-07-03
+updated: 2026-07-11
 ---
 
 # Evaluation Contract
@@ -130,21 +130,14 @@ CoordExp-Swift rebuilt inference rows use the narrower fields `row_id`,
 
 ## Output Artifacts
 
-- always:
+- Legacy evaluator families may additionally write `per_image.json`,
+  `matches*.jsonl`, `per_class.csv`, or `coco_preds.json`; those names are not
+  emitted by the current Swift direct consumer.
+- CoordExp-Swift direct evaluator:
   - `metrics.json`
-  - `per_image.json`
-- when F1-ish matching is enabled:
-  - `matches.jsonl`
-  - optional threshold-specific `matches@<thr>.jsonl`
-- when COCO is enabled:
-  - `per_class.csv`
-  - `coco_gt.json`
-  - `coco_preds.json`
-- CoordExp-Swift direct evaluator V1:
-  - `metrics.json`
+  - `evaluation_receipt.json`
   - `coco_gt.json`
   - `coco_predictions.json`
-  - no `per_class.csv` or `per_image.json` in V1
 - when shared-review overlays are materialized:
   - `vis_resources/gt_vs_pred.jsonl`
 

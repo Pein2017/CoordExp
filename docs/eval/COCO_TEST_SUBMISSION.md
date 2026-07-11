@@ -2,14 +2,18 @@
 doc_id: docs.eval.coco-test-submission
 layer: docs
 doc_type: runbook
-status: canonical
+status: historical-reference
 domain: eval
-summary: End-to-end runbook for 1024-budget COCO test-dev inference, submission export, and official scoring.
+summary: Historical runbook for legacy 1024-budget COCO test-dev inference, submission export, and official scoring.
 tags: [eval, coco, test-dev, submission]
-updated: 2026-05-03
+updated: 2026-07-11
 ---
 
 # COCO Test-Dev Submission
+
+> Historical mainline submission workflow. Current Swift inference/evaluation
+> starts from `src/infer.py`, `src/inference/`, and the scored-artifact
+> contract; verify any official-submission path separately before use.
 
 Use this runbook when you want a **real official COCO benchmark** after training finishes.
 
@@ -139,7 +143,8 @@ Recommended note location:
 - iteration / failure analysis:
   - `research/` investigation note
 
-Do not create a workflow note in `progress/`; this runbook is the canonical supported path.
+Do not treat this historical runbook as current launch authorization or as a
+replacement for the current Swift evaluator contract.
 
 ## 7. Local Val Anchor
 

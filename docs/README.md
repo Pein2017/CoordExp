@@ -6,17 +6,17 @@ status: canonical
 domain: repo
 summary: Human-first router for the stable CoordExp documentation layer.
 tags: [entrypoint, docs]
-updated: 2026-06-15
+updated: 2026-07-11
 ---
 
 # Documentation Index
 
 Use this page as the human starting point for current CoordExp behavior.
+Agents should start with [AGENT_INDEX.md](AGENT_INDEX.md) and
+[catalog.yaml](catalog.yaml). The canonical implementation at the current
+fixed point is CoordExp-Swift on `main`.
 
-For machine-readable routing, use [docs/catalog.yaml](catalog.yaml).
-For AI-agent-first routing, use [AGENT_INDEX.md](AGENT_INDEX.md).
-
-## Start Here
+## Start here
 
 1. [Project Context & Documentation Authority](PROJECT_CONTEXT.md)
 2. [Branch And Worktree Policy](BRANCH_AND_WORKTREE_POLICY.md)
@@ -24,46 +24,36 @@ For AI-agent-first routing, use [AGENT_INDEX.md](AGENT_INDEX.md).
 4. [System Overview](SYSTEM_OVERVIEW.md)
 5. [Implementation Map](IMPLEMENTATION_MAP.md)
 
-## Domain Routers
+## Domain routers
 
-- Data and dataset interfaces:
-  - [docs/data/README.md](data/README.md)
-- Training behavior and runbooks:
-  - [docs/training/README.md](training/README.md)
-- Inference and evaluation:
-  - [docs/eval/README.md](eval/README.md)
-- Standards and repo policy:
-  - [docs/standards/README.md](standards/README.md)
-- Architecture proposals and reviews:
-  - [docs/architecture/README.md](architecture/README.md)
+- [Data and datasets](data/README.md)
+- [Training history and runbooks](training/README.md)
+- [Inference and evaluation](eval/README.md)
+- [Standards and repo policy](standards/README.md)
+- [Architecture proposals and lifecycle](architecture/README.md)
+- [Artifacts and provenance](ARTIFACTS.md)
 
-## Cross-Cutting Docs
+## Contract and proposal boundaries
 
-- [ARTIFACTS.md](ARTIFACTS.md): runtime artifacts, provenance, and logging surfaces
-- [AGENT_INDEX.md](AGENT_INDEX.md): fast-path retrieval guide for coding assistants
-- [catalog.yaml](catalog.yaml): curated machine-readable catalog for `docs/` and legacy `progress/` provenance routes
-- [`runtime-architecture-refactor-program/spec.md`](../openspec/specs/runtime-architecture-refactor-program/spec.md): stable runtime-structure and compatibility contract
+- Stable compatibility semantics live in the relevant
+  [`openspec/specs/`](../openspec/specs/) contract.
+- Bounded active code-change work lives only in an explicitly scoped
+  `openspec/changes/<change>/` workspace, which may
+  carry durable proposal/design/tasks/apply/verify/archive artifacts. Add
+  delta specs only when a stable compatibility-sensitive contract changes; do
+  not invent normative deltas for internal refactors.
+- Architecture proposals and one-time project plans are non-normative design
+  reasoning and sequencing; they do not authorize implementation.
+- Current and historical architecture material is routed from
+  [architecture/README.md](architecture/README.md). Completed or superseded
+  proposal material is preserved and routed to [history/](history/README.md)
+  when migration is safe.
+- [progress/](../progress/README.md) is a deprecated historical evidence route;
+  [research/](../research/index.md) is the active research interpretation route.
 
-## Supplemental And Historical Docs
+## Read-order rule
 
-- [docs/history/README.md](history/README.md): non-normative implementation plans, design specs, handoffs, and historical training notes
-- [docs/supplemental/patent/draft.md](supplemental/patent/draft.md): supplemental patent draft
-
-## Legacy Research History
-
-- [progress/README.md](../progress/README.md): deprecated legacy router for old historical notes only
-- [progress/index.yaml](../progress/index.yaml): deprecated legacy progress catalog
-
-## Read Order Rule
-
-Read current behavior in this order:
-
-1. `docs/PROJECT_CONTEXT.md`
-2. `docs/SYSTEM_OVERVIEW.md`
-3. `docs/IMPLEMENTATION_MAP.md`
-4. the relevant domain router under `docs/`
-5. `openspec/specs/` only for stable compatibility-sensitive contract semantics
-6. `openspec/changes/<active-change>/` only when explicitly in scope
-7. `research/` for active research interpretation and continuation context
-8. `progress/` only when explicitly reconstructing legacy evidence that has not
-   yet been migrated into `research/`
+For current behavior, read `PROJECT_CONTEXT.md`, then the Swift guide, system
+overview, implementation map, relevant domain router, and only then the exact
+stable spec needed for compatibility-sensitive semantics. Do not use an older
+plan, proposal, worktree, or progress note as a current source of truth.

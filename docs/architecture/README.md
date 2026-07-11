@@ -1,49 +1,74 @@
 ---
 doc_id: docs.architecture.index
 layer: docs
-doc_type: proposal-router
-status: proposal
+doc_type: architecture-router
+status: canonical-router
 domain: architecture
-summary: Router for the CoordExp architecture simplification proposal documents.
-updated: 2026-06-17
+summary: Stable router for the accepted current CoordExp architecture.
+updated: 2026-07-11
 ---
 
-# CoordExp Architecture Notes
+# Accepted Architecture
 
-This directory contains architecture reviews and proposal-only migration notes for converging the CoordExp codebase around fewer core concepts, fewer execution paths, and clearer ownership boundaries.
+This directory is the stable snapshot of accepted current architecture. It is
+not a home for dynamic progress, implementation plans, one-time project specs,
+historical proposals, or a runtime framework. Historical architecture material
+is quarantined under [`../history/architecture/`](../history/architecture/README.md).
 
-The documents are written for implementation agents working inside the repository. They are not a request to refactor immediately. They define the intended direction, migration concerns, and concrete planning units for future changes.
+## Authority boundaries
 
-## Documents
+| Surface | Authority | Purpose |
+| --- | --- | --- |
+| `docs/` | Current canonical operator-facing architecture and workflow | Describes what the current `main` implementation does and how to use it |
+| `openspec/specs/` | Stable compatibility-sensitive contract | Owns normative config/schema, training/eval, artifact, cache, and metric requirements |
+| `openspec/changes/<change>/` | Sole local active code-change workspace | Owns durable proposal/design/tasks/apply/verify/archive lifecycle for bounded code, config, docs, architectural-refactor, or internal-implementation work; delta specs are included only when a stable compatibility-sensitive contract changes |
+| `docs/architecture/` | Stable accepted-architecture snapshot | Records accepted current ownership only |
+| `docs/history/` | Historical/provenance layer | Holds completed or superseded proposal material, old plans, and migration evidence |
 
-1. [Independent Architecture Review](INDEPENDENT_ARCHITECTURE_REVIEW.md)
-   - Review of risks, stale-target language, and implementation-boundary concerns.
-   - Use this before treating any proposal document as actionable.
+An architecture proposal may explain a seam or recommend a future direction. It
+does not authorize implementation, override executable source, or duplicate
+normative requirements from an OpenSpec. When a proposal and current code or a
+stable spec disagree, record the conflict and resolve the contract separately.
 
-2. [Codebase Simplification Proposal](proposals/2026-05-31-simplification/CODEBASE_SIMPLIFICATION_PROPOSAL.md)
-   - High-level diagnosis.
-   - Target architecture.
-   - Simplification principles.
-   - Major recommendations and rationale.
+## Current accepted architecture
 
-3. [Subsystem Ownership Boundaries](proposals/2026-05-31-simplification/OWNERSHIP_BOUNDARIES.md)
-   - Proposed ownership boundaries for training, inference, data, evaluation, metrics, configuration, artifacts, and experiment code.
-   - Active / compatibility / retired classification guidance.
-   - Boundary rules for future changes.
+The current architecture is described by this canonical docs chain:
 
-4. [Refactoring Roadmap](proposals/2026-05-31-simplification/SIMPLIFICATION_ROADMAP.md)
-   - Phased migration plan.
-   - Validation strategy.
-   - Risk areas and migration concerns.
-   - Suggested PR sequencing.
+1. [`../PROJECT_CONTEXT.md`](../PROJECT_CONTEXT.md)
+2. [`../COORDEXP_SWIFT.md`](../COORDEXP_SWIFT.md)
+3. [`../SYSTEM_OVERVIEW.md`](../SYSTEM_OVERVIEW.md)
+4. [`../IMPLEMENTATION_MAP.md`](../IMPLEMENTATION_MAP.md)
+5. the relevant `coordexp-swift-*` stable specs under
+   [`../../openspec/specs/`](../../openspec/specs/)
 
-5. [Refactoring Program Charter](proposals/2026-06-17-refactoring-program/REFACTORING_PROGRAM_CHARTER.md)
-   - Practical 2026-06-17 refactoring-program guide merged from the Claude and Codex broad audits.
-   - Protected surfaces, lifecycle categories, phased roadmap, and report-only hygiene gates.
-   - Companion lifecycle registry: [lifecycle_registry.yaml](proposals/2026-06-17-refactoring-program/lifecycle_registry.yaml).
+Those pages describe the live `src/train.py` / `src/infer.py` route, current
+ownership seams, and contract links. This README and the linked current docs
+are the evergreen architecture surfaces. A proposal front matter status alone
+does not make it current architecture authority.
 
-## How to use these documents
+## Change and history lifecycle
 
-Start with `INDEPENDENT_ARCHITECTURE_REVIEW.md` to understand what is current-vs-target. Then use `proposals/2026-05-31-simplification/CODEBASE_SIMPLIFICATION_PROPOSAL.md` for the architectural diagnosis and target model, `proposals/2026-05-31-simplification/OWNERSHIP_BOUNDARIES.md` when deciding where a proposed change should live, and `proposals/2026-05-31-simplification/SIMPLIFICATION_ROADMAP.md` when turning the proposal into implementation tasks. Use the 2026-06-17 refactoring-program charter when the question is deletion/archive/refactor sequencing, lifecycle labels, preserved comparator status, or how to start the large cleanup safely.
+New architecture proposals, designs, tasks, and implementation state belong in
+a named `openspec/changes/<change>/` workspace. Accepted outcomes are reflected
+back into current docs and stable specs; the change is then archived by
+OpenSpec. Older blueprint, decision-log, lifecycle-registry, refactoring-program,
+and super-power material is retained only under [`../history/`](../history/README.md)
+for explicit historical reconstruction.
 
-When these documents conflict with existing canonical behavior, treat the current `docs/`, `openspec/specs/`, and tests as the executable source of truth. This proposal describes a migration direction, not a completed refactor.
+PWSG is sequencing discipline inside a named OpenSpec change, not a directory
+under `docs/`: Program/change, Wave/task group, Slice/task, Gate (verify + audit).
+The stable architecture snapshot contains no active implementation state.
+
+## Historical material
+
+Historical architecture reviews and proposals are intentionally absent from
+this directory. Use the [history router](../history/README.md) only when a task
+explicitly asks for provenance or reconstruction.
+
+## Review rule
+
+When deciding whether an accepted architecture statement represents a real
+module owner, interface, or seam, use the live source and tests with the
+codebase-design vocabulary: name the owner, caller knowledge, invariant, and
+verification surface. Do not add an abstraction merely because a proposal
+names one.
