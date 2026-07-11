@@ -12,6 +12,26 @@ validity, compatibility, cost, or implementation direction. Default to plain
 chat. Record local context only when the user asks for it or approves a durable
 record.
 
+## Philosophy And Agency
+
+Grilling is a coordination discipline, not an examination of the user's coding
+knowledge. The agent must do the repository homework, translate implementation
+facts into architectural consequences, and provide a recommended answer. The
+user should not be forced to decide syntax, class layout, library trivia, or
+other reversible implementation details.
+
+The user owns decisions that change research meaning: algorithmic behavior,
+model forward semantics, data construction and geometry, targets and loss
+normalization, optimization/training trade-offs, statistical assumptions,
+metric interpretation, evidence thresholds, and expensive experiment scope.
+The agent owns discoverable facts, implementation alternatives, risk analysis,
+and the smallest verification path.
+
+Walk the decision tree together. Resolve one dependency before exposing the
+next. The goal is shared understanding: the user can state what scientific or
+architectural choice is being made and why, while the agent can implement it
+without inventing semantics.
+
 ## Mode
 
 Choose the mode up front:
@@ -40,10 +60,12 @@ requested, recommend the target and ask before writing.
   preferences, small config defaults, or choices that can be cheaply adjusted
   later unless they affect artifact identity, metric validity, stable contracts,
   or research interpretation.
-- Batch independent load-bearing questions with recommended answers; ask
-  exactly one question only when the answer gates research meaning,
-  reproducibility, eval validity, cost, compatibility, durable records, or the
-  next action.
+- Ask exactly one question at a time and wait for the answer before continuing.
+  Never batch decisions, even when they appear independent: an answer can
+  change the framing, priority, or vocabulary of the next branch.
+- Attach a recommended answer to every question. Explain the consequence in
+  terms the user controls: research meaning, evidence, cost, compatibility, or
+  architecture. Do not outsource technical due diligence to the user.
 - Separate hypothesis, mechanism, implementation plan, experiment result,
   interpretation, and stable contract.
 - Stress-test against concrete CoordExp risks: geometry/order preservation,
@@ -53,6 +75,9 @@ requested, recommend the target and ask before writing.
   plan, compatibility story, or next action. End with exactly one next state:
   `drop`, `narrow`, `probe`, `build-probe`, `implement`, `document`, or
   `needs user decision`.
+- Do not enact the plan during the grilling session. A next state such as
+  `implement` or `probe` is a recommendation until the user explicitly confirms
+  the shared understanding and asks to proceed.
 
 ## Question Style
 
@@ -77,6 +102,19 @@ invalidate interpretation?
 ```
 
 If no, choose a reasonable default and continue.
+
+When a question is needed, keep it compact but include four things:
+
+```text
+Decision: what must be chosen now
+Why it matters: the semantic, evidence, cost, or compatibility consequence
+Recommendation: the agent's preferred answer and why
+Question: one concrete choice for the user
+```
+
+Do not ask the user to choose between code shapes before explaining which
+algorithmic or architectural invariant each shape protects. If the alternatives
+do not change a user-owned decision, choose the sound implementation yourself.
 
 ## Recording
 
@@ -148,5 +186,6 @@ Otherwise use a compact decision record:
 {chat|handoff|research|docs|openspec|none}
 ```
 
-After recording, continue the loop unless the user asked to pause, stop, or only
-record.
+After recording, continue the decision loop unless the user asked to pause,
+stop, or only record. Never treat permission to record a decision as permission
+to implement it.

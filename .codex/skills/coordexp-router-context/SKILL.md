@@ -16,7 +16,7 @@ Other skills may keep one-line reminders, but CodeGraph/Serena/RTK/raw-shell rul
 - `map`: give a module/config/artifact map before returning to a narrow task.
 - `navigation-tools`: choose between CodeGraph MCP/CLI, Serena MCP, `rtk`, and raw shell by phase.
 
-Exact leaf skills win over this router: use `coordexp-infer-eval-workflow` for launch/repair/eval artifacts, `coordexp-public-data-provenance` for `public_data`, `model-diagnosis` for abnormal behavior, `model-innovation-risk-audit` for pre-launch trust gates, `audit-review` for findings-first audits, and `worktree-feature-loop` for isolation.
+Exact leaf skills win over this router: use `coordexp-infer-eval-workflow` for launch/repair/eval artifacts, `coordexp-public-data-provenance` for `public_data`, `model-diagnosis` for abnormal model behavior, `debug-feedback-loop` for reproducible code/config/CLI/runtime/performance failures, `model-innovation-risk-audit` for pre-launch trust gates, `audit-review` for findings-first or fixed-diff reviews, `codebase-design` for interface/seam design, `improve-codebase-architecture` for architecture candidate discovery, and `worktree-feature-loop` for isolation.
 
 ## Custom Agent Handoff
 

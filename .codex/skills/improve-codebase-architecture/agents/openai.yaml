@@ -1,4 +1,4 @@
 interface:
   display_name: "Architecture Review"
-  short_description: "Find deeper CoordExp module seams"
-  default_prompt: "Use $improve-codebase-architecture when the user wants CoordExp architecture review, refactoring opportunities, deeper modules, cleaner research workflow seams, or code that is easier to test, audit, and navigate. Route through docs first, use CodeGraph for broad module/call/impact maps when indexed, Serena for exact Python symbols, and present candidates before designing interfaces."
+  short_description: "Rank CoordExp deepening opportunities"
+  default_prompt: "Use $improve-codebase-architecture for a read-only CoordExp architecture review. Apply $codebase-design philosophy, rank evidence-backed deepening candidates, preserve user control of research semantics, and stop at an explicit approval boundary."

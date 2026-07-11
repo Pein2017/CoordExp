@@ -1,105 +1,131 @@
 ---
 name: improve-codebase-architecture
-description: Use when the user wants CoordExp architecture review, refactoring opportunities, deeper modules, cleaner research workflow seams, or code that is easier to test, audit, and navigate.
+description: Use when the user wants a read-only CoordExp architecture review, ranked deepening/refactoring opportunities, visual architecture report, or a user-guided path from codebase friction to an approved module/interface design.
 ---
 
 # Improve Codebase Architecture
 
-Surface architectural friction and propose **deepening opportunities**:
-refactors that turn shallow modules into deeper, easier-to-test modules without
-changing research meaning or stable contracts by accident.
+Find architectural friction and propose deepening opportunities without
+silently changing research meaning. Use [codebase-design](../codebase-design/SKILL.md)
+for the shared module/interface philosophy; this skill owns CoordExp-specific
+discovery, evidence, ranking, and user coordination.
 
-## Glossary
+## Default Posture
 
-Use these terms consistently in suggestions. Full definitions live in
-[LANGUAGE.md](LANGUAGE.md).
+Architecture review is read-only and analysis-first unless the user explicitly
+asks to record or implement the result. Do not turn a review request into a
+refactor, docs rewrite, OpenSpec change, or durable decision record.
 
-- **Module** — anything with an interface and an implementation (function, class, package, slice).
-- **Interface** — everything a caller must know to use the module: types, invariants, error modes, ordering, config. Not just the type signature.
-- **Implementation** — the code inside.
-- **Depth** — leverage at the interface: a lot of behaviour behind a small interface. **Deep** = high leverage. **Shallow** = interface nearly as complex as the implementation.
-- **Seam** — where an interface lives; a place behaviour can be altered without editing in place. (Use this, not "boundary.")
-- **Adapter** — a concrete thing satisfying an interface at a seam.
-- **Leverage** — what callers get from depth.
-- **Locality** — what maintainers get from depth: change, bugs, knowledge concentrated in one place.
+The agent should absorb code-level exploration and explain the architecture at
+the level the user needs to control. The user owns choices that alter algorithm
+semantics, model forward behavior, data construction/geometry/order, loss and
+normalization, optimization/training trade-offs, statistical assumptions,
+metric comparability, or artifact meaning. Reversible code organization is the
+agent's responsibility.
 
-## Prompt And Comparison Modes
+## Review Modes
 
-When the user asks for a prompt to send to multiple architecture reviewers, produce one shared read-only prompt. Set background, purpose, scope, and evidence expectations, but do not force a traversal order, hierarchy, or checklist unless requested. The prompt should let each reviewer reveal its own architecture taste.
-
-When comparing review artifacts, give a direct verdict on the user's stated axis. Separate hierarchy/design taste, factual grounding, implementation safety, and actionability. Do not flatten "better" into a generic score.
-
-Key principles:
-
-- **Deletion test**: imagine deleting the module. If complexity vanishes, it was a pass-through. If complexity reappears across N callers, it was earning its keep.
-- **The interface is the test surface.**
-- **One adapter = hypothetical seam. Two adapters = real seam.**
-
-CoordExp architecture is constrained by research semantics: image/geometry
-alignment, config inheritance, training/eval parity, artifact contracts,
-provenance, and evidence scope matter as much as code shape.
+- `report=chat`: default. Return a ranked candidate list with exact evidence.
+- `report=visual`: use when the user asks for a visual report or when three or
+  more interacting modules make the relationship materially clearer. Prefer a
+  compact Mermaid diagram in chat; use a self-contained `/tmp/` HTML report
+  only when the requested comparison needs richer before/after visuals.
+- `compare=reviews`: compare existing architecture reports on factual grounding,
+  hierarchy/design taste, research safety, and actionability; give a direct
+  verdict on the user's stated axis.
+- `prompt=reviewers`: write one shared read-only prompt for multiple reviewers.
+  Set scope and evidence expectations without forcing them into one design
+  taste.
 
 ## Process
 
-### 1. Explore
+### 1. Load authority and design language
 
-Start from the repo route before broad source search:
-`docs/AGENT_INDEX.md`, `docs/catalog.yaml`, then relevant docs, stable specs,
-configs, tests, artifacts, `research/` notes, and legacy `progress/`
-provenance when explicitly relevant.
+Read `docs/AGENT_INDEX.md`, `docs/catalog.yaml`, and the relevant canonical
+docs/specs/configs/tests/artifacts before broad source search. Read
+[codebase-design](../codebase-design/SKILL.md) for the shared vocabulary. Read
+[DEEPENING.md](../codebase-design/DEEPENING.md) when consolidating a candidate,
+and [DESIGN-IT-TWICE.md](../codebase-design/DESIGN-IT-TWICE.md) only after a
+candidate has been selected for interface exploration.
 
-Use CodeGraph when a correct local index exists to map modules, call chains,
-grouped source context, and impact radius before token-heavy file reads. In
-linked worktrees, initialize/query the exact worktree and pass `projectPath` to
-CodeGraph MCP calls when ambiguous. Treat CodeGraph as the scout: after it
-identifies Python files or symbols, switch to Serena for exact symbol overview,
-references, declarations/implementations, diagnostics, and symbolic edits. Use
-`rg`/`rtk` for exact literal search in docs, configs, specs, artifacts, and
-logs. Use subagents when parallel architecture audits materially help or the
-user explicitly asks for parallel agent work.
+Use CodeGraph only as a broad map when the exact worktree has a correct index.
+Once Python files or symbols are known, use Serena for precise bodies,
+references, declarations, and diagnostics. Use `rg`/raw reads for docs, YAML,
+specs, artifacts, metrics, and manifests.
 
-Look for friction:
+### 2. Explore friction organically
 
-- Where does understanding one concept require bouncing between many small modules?
-- Where are modules **shallow** — interface nearly as complex as the implementation?
-- Where have pure functions been extracted just for testability, but the real bugs hide in how they're called (no **locality**)?
-- Where do tightly-coupled modules leak across their seams?
-- Which parts of the codebase are untested, or hard to test through their current interface?
-- Where does code shape obscure config inheritance, loss semantics, geometry/order preservation, artifact contracts, or eval validity?
+Look for places where:
 
-Apply the **deletion test** to anything you suspect is shallow: would deleting it concentrate complexity, or just move it? A "yes, concentrates" is the signal you want.
+- understanding one concept requires bouncing across many shallow modules;
+- callers need nearly as much knowledge as the implementation contains;
+- pure helpers were extracted for unit testing but orchestration owns the real
+  failure;
+- config, forward, data, loss, metric, or artifact policy has multiple owners;
+- compatibility or diagnostic paths leak into canonical behavior;
+- a large entrypoint accumulates decisions that belong to a source owner;
+- tests cross internal structure because no honest interface exists;
+- research meaning is hidden behind generic framework abstractions;
+- user-facing knobs encode choices the implementation should simply get right.
 
-### 2. Present candidates
+Apply the deletion test. If deleting a module makes complexity disappear, it
+was likely pass-through structure. If the complexity spreads across callers,
+the module was buying locality.
 
-Present a numbered list of deepening opportunities. For each candidate:
+### 3. Present ranked candidates
 
-- **Files** — which files/modules are involved
-- **Problem** — why the current architecture is causing friction
-- **Solution** — plain English description of what would change
-- **Benefits** — locality, leverage, testability, auditability, and research-safety gain
-- **Verification** — the narrow check that would prove behavior or contracts stayed intact
+For each candidate include:
 
-Use CoordExp vocabulary from the relevant docs/specs and the architecture
-vocabulary from [LANGUAGE.md](LANGUAGE.md). Prefer names already present in
-configs, artifacts, docs, and tests over new terminology.
+- **Files and current owner**;
+- **Friction**, with concrete call/config/artifact evidence;
+- **Deepening direction**, without prematurely fixing the interface;
+- **Hidden versus visible knowledge** after the change;
+- **Research-semantic risk**: forward, data, loss, statistics, metrics, or
+  artifacts touched;
+- **Benefits** in depth, locality, testability, auditability, and navigation;
+- **Verification** that would prove behavior and contracts stayed intact;
+- **Strength**: `strong`, `worth exploring`, or `speculative`.
 
-If a candidate contradicts a stable spec, documented workflow, or active
-experiment constraint, surface that conflict clearly and explain whether the
-proposal needs OpenSpec, a docs update, or a smaller compatibility-preserving
-shape.
+End with one top recommendation and why. Do not propose interfaces yet. Ask the
+user which candidate to explore, one question only.
 
-Do NOT propose interfaces yet. Ask the user: "Which of these would you like to explore?"
+### 4. Design the chosen interface
 
-### 3. Grilling loop
+For the selected candidate, follow
+[DESIGN-IT-TWICE.md](../codebase-design/DESIGN-IT-TWICE.md) when the seam is
+consequential. Generate meaningfully different alternatives before choosing by
+momentum. Compare depth, locality, contract visibility, testability, migration
+cost, and the burden placed on the user.
 
-Once the user picks a candidate, drop into a grilling conversation. Walk the design tree with them — constraints, dependencies, the shape of the deepened module, what sits behind the seam, what tests survive.
+Use `grill-me` for user-owned semantic forks. Ask one decision at a time, attach
+the recommended answer, and wait. Do not ask the user to choose between class or
+function layouts unless those layouts encode a real architectural or research
+trade-off.
 
-Side effects happen inline as decisions crystallize:
+### 5. Stop at an approval boundary
 
-- **Stable behavior or workflow changes?** Update the routed `docs/` page.
-- **Compatibility-sensitive contract changes?** Use OpenSpec, only when the contract is genuinely stable and normative.
-- **Empirical or historical reasons?** Record new interpretation in `research/`;
-  read `progress/` only as legacy provenance.
-- **Implementation checklists or handoff notes?** Keep them in the active super-power plan/spec when available.
-- **User rejects the candidate with a load-bearing reason?** Record it in the right durable surface using `$grill-me record=local` guidance so future architecture reviews do not re-suggest it.
-- **Want to explore alternative interfaces for the deepened module?** See [INTERFACE-DESIGN.md](INTERFACE-DESIGN.md).
+Finish the review with exactly one state:
+
+- `drop candidate`;
+- `probe architecture assumption`;
+- `ready for interface decision`;
+- `ready for implementation approval`;
+- `needs user decision`.
+
+Do not implement until the user explicitly approves the candidate and intended
+interface. After approval, use the smallest appropriate carrier: ordinary plan
+for reversible refactoring, OpenSpec for stable compatibility-sensitive
+contracts, or `research/` for empirical rationale. Update canonical docs only
+when behavior or recommended workflows actually change.
+
+## Philosophy
+
+Architecture is not professional-coder theater. Its job is to compress the
+implementation burden while making semantic choices easier to see and control.
+A beautiful hierarchy that obscures model behavior, data meaning, loss, or
+statistical assumptions is worse than plain code.
+
+The agent should bring codebase literacy, alternatives, and evidence. The user
+should be able to reason about promises, trade-offs, and experimental meaning
+without mastering every implementation detail. The chosen interface is the
+coordination surface between those responsibilities.

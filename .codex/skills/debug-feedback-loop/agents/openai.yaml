@@ -1,0 +1,4 @@
+interface:
+  display_name: "Debug Feedback Loop"
+  short_description: "Reproduce and diagnose hard engineering bugs"
+  default_prompt: "Use $debug-feedback-loop to reproduce, minimize, and diagnose this code, config, CLI, runtime, or performance failure before proposing a fix."

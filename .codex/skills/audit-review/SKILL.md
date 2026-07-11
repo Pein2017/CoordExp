@@ -1,6 +1,6 @@
 ---
 name: audit-review
-description: "Use when producing a read-only CoordExp audit of code, configs, specs, artifacts, docs, legacy progress notes, or OpenSpec changes for correctness, reproducibility, governance, pipeline, and eval-validity risks."
+description: "Use for read-only CoordExp audits and fixed-point diff/code reviews of branches, commits, work-in-progress changes, configs, specs, artifacts, docs, or OpenSpec changes, with separate engineering-standards and intent/contract judgments."
 ---
 
 # Audit Review
@@ -10,6 +10,10 @@ Produce read-only audits for another implementer. Prioritize correctness, reprod
 ## Role Boundary
 
 Use this for severity-ranked audits, not implementation. If the user gives a concrete model symptom such as a metric drop, invalid spike, duplication burst, or length collapse, start with `model-diagnosis`; return here only for independent correctness or claim-validity review. If the user asks whether a new mechanism is contract-safe before launch, use `model-innovation-risk-audit`.
+
+For a reproducible code, config, CLI, runtime, or performance failure, use
+`debug-feedback-loop`. Return here only when the question is whether a proposed
+or completed change is reviewable, contract-safe, or ready to approve.
 
 Do not let audit findings default to implementation TODOs. For each P0/P1, decide whether the finding means `fix`, `narrow`, `drop`, `probe`, or `needs user decision`.
 
@@ -23,6 +27,7 @@ Name the mode before searching broadly:
 - `launch gate`: decide `promote`, `hold`, `rerun gate`, or `needs user decision`.
 - `claim validity audit`: identify the claim, scope, baseline/ablation, metrics, counterevidence, and falsification gap.
 - `implementation-vs-contract audit`: verify code/config/runtime/artifacts implement the documented contract.
+- `diff/code review`: review a branch, commit range, staged/unstaged work, or PR-equivalent snapshot against a pinned fixed point along two independent axes: engineering standards and intent/contract fidelity.
 
 If the user requests blocker-only review, stop after blocking findings, confirmed OK checks, and residual risks.
 
@@ -44,6 +49,83 @@ For each P0/P1, classify the decision implication:
 - `needs user decision`: next step changes research meaning, compatibility, cost, destructive behavior, or publication/launch risk.
 
 Prefer `probe` over speculative fixes when runtime semantics, artifact identity, matched baselines, or installed upstream behavior are unverified. Prefer `needs user decision` over quietly converting research-meaning forks into engineering tasks.
+
+## Diff And Code Review
+
+Use this mode when the user says `review this branch`, `review since <ref>`,
+`review this diff`, `review my changes`, or names a PR-equivalent change set.
+Read [code-review-baseline.md](references/code-review-baseline.md) for the
+standards/smell baseline and CoordExp-specific review smells.
+
+### 1. Pin the snapshot
+
+- Use the fixed point supplied by the user.
+- If none is supplied and the canonical merge base is unambiguous from the
+  current branch/worktree policy, use it and state it. Otherwise ask one
+  question; the base changes what is being reviewed.
+- Verify the ref before reviewing. Capture the merge base, commit list, diff
+  stat, changed paths, and worktree status once.
+- Distinguish committed branch changes (`<base>...HEAD`), staged changes,
+  unstaged changes, and untracked files. Do not silently omit any category the
+  user put in scope.
+- Stop early on an invalid ref or empty in-scope diff.
+
+Useful handles:
+
+```bash
+git rev-parse --verify <base>
+git merge-base <base> HEAD
+git log <base>..HEAD --oneline
+git diff --stat <base>...HEAD
+git diff --name-only <base>...HEAD
+git diff --cached --stat
+git diff --stat
+git status --short
+```
+
+### 2. Resolve intent and standards
+
+Resolve intent in this order:
+
+1. the user's brief or named acceptance criteria;
+2. the active OpenSpec change, only when explicitly in scope;
+3. stable OpenSpec contracts;
+4. canonical docs, config/schema contracts, tests, and artifact contracts;
+5. commit/branch description as weak evidence when no stronger source exists.
+
+If no originating spec exists, say so. Still review against repository
+contracts and the user's stated intent; do not invent requirements.
+
+Resolve standards from `AGENTS.md`, canonical standards docs, local test and
+tooling conventions, and the baseline reference. Repo-specific rules override
+generic smell heuristics. Tool-enforced formatting is not a manual finding.
+
+### 3. Review two axes independently
+
+**Engineering Standards** asks whether the change is understandable,
+source-owned, testable, proportionate, and consistent with repository
+standards. It catches unnecessary surface area, shallow modules, hidden
+coupling, speculative knobs, weak tests, and accidental complexity.
+
+**Intent And Contract** asks whether the change implements what was requested
+without changing research meaning by accident. For CoordExp, explicitly trace
+algorithm semantics, model forward behavior, data/geometry/order, targets and
+loss normalization, optimization/training behavior, statistical assumptions,
+metric comparability, and artifact/provenance contracts when touched.
+
+Do not let a pass on one axis wash out a failure on the other. Report findings
+under separate headings, severity-rank within each axis, then give one overall
+decision using CoordExp correctness and research-validity priorities.
+
+### 4. Protect the user's decision surface
+
+The agent owns code-level evidence, standards analysis, implementation risk,
+and verification design. The user owns changes to algorithmic intent, forward
+semantics, data meaning, loss/objective meaning, statistical assumptions,
+metric interpretation, and expensive training trade-offs. When review exposes
+one of those forks, explain the alternatives at the architectural level, give
+a recommendation, and return `needs user decision` rather than choosing
+silently.
 
 ## Authority Model
 
@@ -92,6 +174,14 @@ Also include:
 - confirmed OK / ruled out checks that prevent backtracking
 - open questions only when they block a reliable conclusion
 - suggested next actions, grouped as `fix now`, `probe before fixing`, `narrow/drop discussion`, or `user decision`
+
+For `diff/code review`, report:
+
+1. snapshot and fixed point;
+2. **Engineering Standards** findings;
+3. **Intent And Contract** findings;
+4. confirmed OK / ruled-out checks for each axis;
+5. overall verdict and residual risk.
 
 For approval audits, also include the verdict, validation run, skipped checks, and residual risks. If the user asks for a report artifact, write a standalone Markdown report and verify section structure, placeholder markers, and whitespace.
 
@@ -184,3 +274,21 @@ Open only when helpful:
 - `references/grep-seeds.md`: high-signal `rg` starting points
 - `references/pipeline-checklist.md`: end-to-end correctness and reproducibility checklist
 - `references/governance-claim-checks.md`: OpenSpec governance, claim-validity, and review-closure checklist
+- `references/code-review-baseline.md`: fixed-diff engineering standards, smell heuristics, and CoordExp-specific review smells
+
+## Review Philosophy
+
+A change can pass engineering standards and still implement the wrong thing.
+A change can match the requested behavior and still be fragile, opaque, or
+unsafe to extend. These are different failures, so review them separately.
+
+Code review is not a test of whether the author can sound like a professional
+coder. It is a coordination mechanism: the agent makes implementation facts,
+risks, and evidence legible; the user keeps control of scientific intent and
+high-level architecture. Good abstractions reduce the implementation knowledge
+the user must carry without hiding algorithmic, data, loss, or statistical
+choices the user must own.
+
+Do not reward polish that obscures semantic drift. Do not reward literal spec
+compliance that leaves an unmaintainable trap. The review is done when both
+axes are visible, the evidence is concrete, and the next decision has an owner.

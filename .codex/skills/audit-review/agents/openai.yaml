@@ -1,4 +1,4 @@
 interface:
   display_name: "Audit Review"
-  short_description: "Read-only audit with decision impact"
-  default_prompt: "Use $audit-review for a read-only CoordExp audit; report P0/P1/P2 findings with evidence, decision implication (fix, narrow, drop, probe, or user decision), and the smallest verification path."
+  short_description: "Audit contracts or review a fixed diff"
+  default_prompt: "Use $audit-review for a read-only CoordExp audit or fixed-point diff/code review, keeping engineering-standards and intent/contract judgments separate and returning evidence-backed decision implications."
