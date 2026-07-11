@@ -81,15 +81,15 @@ Branch prefix defaults to `codex/`.
    - activate the exact worktree path with Serena MCP before narrowed Python symbol inspection, reference checks, diagnostics, or symbolic edits;
    - for CodeGraph MCP calls in linked worktrees, pass `projectPath=/absolute/worktree/path`.
 5. Choose planning surface:
-   - `existing`: continue existing `openspec-lifecycle` or super-power artifacts;
-   - `new`: create only the appropriate repo-local plan/spec artifacts;
+   - `existing`: continue the named OpenSpec change;
+   - `new`: create a bounded OpenSpec change when durable proposal/design/tasks/apply/verify/archive state is useful;
    - `none`: implement directly and record acceptance checks in final/PR text.
 6. Implement only in the approved tree.
 7. Use absolute or shared-root paths for heavy data, checkpoints, caches, and outputs.
 8. Put one-off debug artifacts under `temp/` and clean them after durable evidence is extracted.
 9. Validate the smallest realistic surface.
 10. For commits or sync, invoke `git-hygiene` before staging anything and delegate detailed staging, PAT, fetch/pull/push, and conflict handling there; keep this skill focused on lifecycle state.
-11. For OpenSpec contract artifacts, delegate mode-specific workflow to `openspec-lifecycle`.
+11. For OpenSpec artifacts, follow the installed OpenSpec workflow and the selected change's CLI-generated instructions directly.
 12. Finish with `finishing-a-development-branch` or the user's requested commit/push/merge flow.
 13. Remove worktree only after merge/discard, from the repository control
     checkout, with provenance check and no uncommitted work. Confirm that

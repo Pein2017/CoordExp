@@ -16,7 +16,7 @@ produce artifact/work
 -> repeat until convergence or explicit gate
 ```
 
-This is an orchestration skill. Use narrower skills inside the loop when relevant: `grill-me record=local` for durable research/design pressure-testing, `audit-review` for read-only severity-ranked audits, `model-innovation-risk-audit` for launch-risk gates, `openspec-lifecycle` for stable contract changes, and Superpowers review/execution skills for implementation-plan execution.
+This is an orchestration skill. Use narrower skills inside the loop when relevant: `grill-me record=local` for durable research/design pressure-testing, `audit-review` for read-only severity-ranked audits, and `model-innovation-risk-audit` for launch-risk gates. When an OpenSpec change is in scope, follow the installed OpenSpec workflow and the change's CLI-generated artifact instructions directly.
 
 ## Use When
 

@@ -3,22 +3,6 @@
 ## Purpose
 TBD - created by archiving change rebuild-coordexp-swift-training-infra. Update Purpose after archive.
 ## Requirements
-### Requirement: Fresh OpenSpec Authority
-
-CoordExp-swift SHALL treat this change's specs as the new active OpenSpec
-baseline for the rebuilt training infrastructure. Archived legacy OpenSpec
-files under `reference/legacy_openspec_2026-06-29/` MUST remain reference-only
-and MUST NOT be synced, modified in place, or treated as current contract
-authority for the new `src/` architecture.
-
-#### Scenario: Legacy spec referenced during implementation
-
-- **WHEN** an implementation task needs historical context from the archived
-  OpenSpec tree
-- **THEN** the implementation MAY read the archived file as reference
-- **AND** the active requirement MUST be taken from this fresh OpenSpec change
-  or a later approved change.
-
 ### Requirement: Strict Resolved Config
 
 Training configuration SHALL be loaded through a strict schema that rejects

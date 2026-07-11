@@ -128,8 +128,9 @@ Use the narrowest durable surface:
 - `docs/`: stable current behavior, recommended workflows, entrypoints,
   artifact names, metric meaning, and operator-facing architecture.
 - `openspec/specs/`: normative compatibility-sensitive contracts only.
-- `openspec/changes/<active-change>/`: active OpenSpec work only when explicitly
-  in scope.
+- `openspec/changes/<change>/`: the sole local active workspace for bounded
+  code/config/docs changes that benefit from durable proposal, design, tasks,
+  implementation, verification, and archive state.
 - configs, tests, scripts, manifests, and artifact paths: executable truth.
 - `progress/`: deprecated legacy archive only. Read old notes only when
   reconstructing provenance; do not use it as a carrier for new records.
@@ -158,10 +159,10 @@ minimal probe-enablement plan before implementation:
 {chat|handoff|research/<slug>|docs/history/<slug>|openspec/changes/<change>}
 ```
 
-Use `openspec/changes/<change>` only when probe-enablement changes a stable
-compatibility-sensitive contract such as schema, artifact names, metric
-semantics, training/eval behavior, or public config behavior. Use a research note
-or handoff for ordinary experiment scaffolding.
+Use `openspec/changes/<change>` when probe-enablement is a bounded implementation
+change that benefits from durable proposal/design/tasks/verification state.
+Add delta specs only when a stable compatibility-sensitive contract changes.
+Use a research note or handoff for ordinary experiment scaffolding.
 
 Otherwise use a compact decision record:
 

@@ -30,7 +30,7 @@ This skill complements `model-diagnosis`. Use `model-diagnosis` for immediate sy
    - available GPUs and cost permission;
    - stop condition.
 2. Set or refine a `/goal` for long runs. If the user's words are rough, translate them into a precise objective with mechanism targets, contrast axes, evidence surfaces, and manual-review gates.
-3. Load local routing first: `docs/AGENT_INDEX.md`, `docs/catalog.yaml`, relevant specs/docs, prior `research/` notes, legacy `progress/` provenance when explicitly relevant, and existing analysis scripts. Use `coordexp-router-context` when navigation is nontrivial.
+3. Load local routing first: `docs/AGENT_INDEX.md`, `docs/catalog.yaml`, relevant specs/docs, prior `research/` notes, legacy `progress/` provenance when explicitly relevant, and existing analysis scripts.
 4. If the user asks to grill or record local decision context, use `grill-me record=local` before implementation. Resolve discoverable facts and reversible implementation details yourself; for user-owned research decisions, follow `grill-me` and ask exactly one recommended question at a time.
 5. Inventory existing probes before writing new ones. Reuse or extend local analysis surfaces for hidden states, attention evidence, residual streams, source ablation, coordinate logit locality, duplication collapse, and visualization.
 

@@ -1,48 +1,48 @@
 schema: spec-driven
 
 context: |
-  CoordExp-swift is a clean rebuild of the CoordExp training infrastructure in
-  this worktree. The active design baseline is proposal-scoped and lives in:
-  - docs/architecture/proposals/2026-06-27-coordexp-swift/DECISIONS.md
-  - docs/architecture/proposals/2026-06-27-coordexp-swift/BLUEPRINT.md
+  CoordExp-Swift on repository main is the accepted implementation. Read
+  docs/PROJECT_CONTEXT.md, docs/COORDEXP_SWIFT.md, docs/SYSTEM_OVERVIEW.md,
+  and docs/IMPLEMENTATION_MAP.md before proposing a change.
 
-  The previous OpenSpec tree was archived to:
-  - reference/legacy_openspec_2026-06-29/
+  docs/ describes accepted current architecture and operator workflows.
+  openspec/specs/ owns stable compatibility-sensitive behavior contracts.
+  openspec/changes/<change>/ is the sole local workspace for bounded changes
+  that benefit from durable proposal, design, tasks, implementation,
+  verification, and archive state.
 
-  Do not treat archived OpenSpec specs or archived changes as current behavior
-  authority for CoordExp-swift. They are reference/reminder material only.
+  PWSG is sequencing discipline inside a change: Program is the change, Wave
+  is a task group, Slice is a small dependency-ordered task, and Gate is
+  verification plus an independent audit. Detail only the active wave.
 
-  The V1 target is Qwen3-VL single-image supervised training with
-  Transformers/PyTorch as the substrate. CoordExp-swift owns data loading,
-  rendering, Qwen encoding boundaries, packing, token-wise supervision, loss
-  computation, optimizer grouping, training/runtime orchestration, artifacts,
-  metrics, checkpointing, and forward eval contracts.
+  Protect semantic alignment across data, images, geometry, ordering,
+  templates, tokens, packing, forward behavior, losses, metrics, configs,
+  caches, and artifacts. Exact training-state resume is not a current promise.
 
   User priority order:
   1. accuracy and precision;
   2. training and overall system efficiency;
-  3. simplicity to avoid over-design and redundancy;
-  4. scalability and extension capability.
+  3. simplicity and low implementation overhead;
+  4. scalability and future extension.
 
 rules:
   proposal:
-    - State how the change protects accuracy/precision, efficiency, simplicity, and future extension, in that order.
-    - Anchor stable contracts to DECISIONS.md and BLUEPRINT.md; do not invent competing architecture terms.
-    - Preserve the sequence Raw Dataset -> Dataset Processing -> Chat Template -> Packing -> Tokenization -> Visual Processing -> Model Construction -> Forward Pass -> Loss Computation -> Backward Pass -> Distributed Training -> Checkpoint Management -> Inference/Eval.
-    - Treat implementation as blocked until module/card approval gates are explicit.
-    - Keep MS-Swift and the archived OpenSpec tree as references, not runtime dependencies or current contract authority.
+    - State the user-visible problem, intended outcome, scope, non-goals, protected semantics, and expected contract impact.
+    - Separate current evidence, proposed behavior, implementation direction, and deferred work.
+    - Do not use historical blueprints, decision logs, lifecycle registries, super-power plans, or archived changes as current authority.
+    - Name user-owned decisions only when they alter research meaning, compatibility, supported runtime behavior, or significant cost.
   specs:
-    - "Encode only stable compatibility-sensitive contracts: config schema, data/template/packing semantics, Qwen forward boundaries, loss semantics, metric names, artifact/checkpoint names, and normative eval behavior."
-    - Preserve image/geometry/token alignment end to end; never drop or reorder coordinates silently.
-    - Training uses explicit no-resize Qwen image processing; any resize/pad policy requires a separate approved contract.
-    - Do not add stable CLI flags when a strict config/schema surface is sufficient.
+    - Encode only verifiable stable behavior changes using capability-named specs and concrete scenarios.
+    - Do not invent normative deltas for internal refactors whose observable contracts remain unchanged.
+    - Preserve image, geometry, token, packing, loss, metric, cache, and artifact identity end to end.
   design:
-    - "Describe ownership by module: src/data, src/templates, src/qwen, src/packing, src/supervision, src/losses, src/optim, src/training, src/runtime, src/artifacts, src/metrics, src/eval."
-    - Name source-study gates before implementation for DoRA and special-token embedding mechanisms.
-    - Keep Transformers/PEFT/Accelerate/DeepSpeed interactions explicit and evidence-scoped.
-    - Avoid placeholder frameworks, broad registries, empty future modules, and compatibility shims unless a concrete V1 contract requires them.
+    - Name the concept and owner, current caller knowledge, proposed interface, hidden implementation, dependencies, failure modes, and observable receipts.
+    - Prefer deep modules, explicit dependencies, tests through interfaces, and replacement with deletion over pass-through layers or speculative frameworks.
+    - For consequential seams, compare meaningfully different designs before selecting one.
+    - Keep historical implementation machinery and compatibility paths visibly separate from canonical behavior.
   tasks:
-    - Start from source-study and smoke-fixture tasks before broad implementation.
-    - Include the DoRA definition/source-study gate before any adapter-enabled DoRA smoke validates.
-    - Include verification for real global_max_length, sample-limited data, five planned train steps, two eval.forward steps, metrics, checkpoint metadata, and checkpoint-final.
-    - Include residue checks for stale old-OpenSpec and old-src assumptions after each milestone.
+    - Use dependency-ordered tracer-bullet slices that each leave a verifiable working state; use expand-contract only for genuinely wide mechanical refactors.
+    - Add or identify the interface-level failing test or executed probe before changing production behavior when feasible.
+    - Include replacement and deletion tasks so old caller knowledge and superseded paths do not remain layered underneath the new design.
+    - End each wave with targeted tests, relevant runtime or performance probes, OpenSpec validation, residue checks, and separate standards and intent-contract audit verdicts.
+    - Do not begin the next wave while the current gate has unresolved P0 or P1 findings.
