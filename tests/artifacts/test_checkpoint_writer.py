@@ -1,26 +1,19 @@
 from __future__ import annotations
 
 import json
-import hashlib
 from pathlib import Path
+from typing import Any
 
 import pytest
 import torch
+from safetensors.torch import save_file
 from torch import nn
 
-from src.adapters.dora import DoraAdapterSetupReceipt, DoraTargetDiscoveryReceipt
-from src.artifacts import CheckpointWriter, MetricStreamEvent, RunArtifactManager
-from src.artifacts.checkpoint_reload import (
-    build_checkpoint_reload_plan,
-    verify_checkpoint_reload_payloads,
-)
+from src.artifacts.checkpoints import CheckpointWriter
+from src.artifacts.run_writer import RunWriter
 from src.common.errors import ArtifactContractError
-from src.config.models import RunDirectory
-from src.optim.trainable_surface import FrozenReasonSummary, TrainableSurfaceReceipt
 from src.qwen.special_token_embeddings import (
     DEFAULT_EMBED_DELTA_TENSOR_KEY,
-    SPECIAL_TOKEN_EMBEDDINGS_JSON,
-    SPECIAL_TOKEN_EMBEDDINGS_SAFE_TENSORS,
     SPECIAL_TOKEN_EMBEDDING_SEMANTICS,
     SpecialTokenEmbeddingInstallReceipt,
     SpecialTokenEmbeddingInstallResult,
@@ -28,872 +21,327 @@ from src.qwen.special_token_embeddings import (
 )
 
 
-def test_checkpoint_writer_saves_payloads_metadata_and_final_alias(
-    tmp_path: Path,
-) -> None:
-    manager = _manager(tmp_path)
-    writer = CheckpointWriter(manager)
-    model = FakePeftModel()
-
-    result = writer.write_checkpoint(
-        planned_step_id=5,
-        model=model,
-        adapter_receipt=_adapter_receipt(),
-        special_token_result=_special_token_result(),
-        trainable_surface=_trainable_surface(),
-        processor_identity={"name": "qwen3-vl-test-processor"},
-        resolved_config_fingerprint="config-fingerprint",
-        schedule_identity={"resolved_max_steps": 5, "fingerprint": "schedule"},
-        metric_status={
-            "finite_status": "finite",
-            "warning_status": "warned",
-            "best_selector": None,
-        },
-        optimizer_update_status="skipped_non_finite",
-        trigger_reasons=("checkpoint.final",),
-        is_final=True,
-        base_model_path=Path("/models/qwen-base"),
-        base_config_sha256="base-config-sha",
-        tokenizer_sha256="tokenizer-sha",
-        template_identity={
-            "object_field_order": "desc_first",
-            "object_ordering": "geo_sorted",
-            "assistant_format": "object_box_closed",
-        },
-    )
-
-    checkpoint_dir = tmp_path / "run-a" / "checkpoints" / "step-5"
-    metadata_path = checkpoint_dir / "checkpoint.json"
-    handoff_path = checkpoint_dir / "checkpoint_handoff.json"
-    final_alias_path = tmp_path / "run-a" / "checkpoints" / "checkpoint-final.json"
-
-    assert result.metadata_path == metadata_path
-    assert result.handoff_path == handoff_path
-    assert metadata_path.exists()
-    assert handoff_path.exists()
-    assert final_alias_path.exists()
-    assert not (tmp_path / "run-a" / "checkpoints" / "step-000005").exists()
-    assert (checkpoint_dir / "adapter" / "adapter_config.json").exists()
-    assert (checkpoint_dir / "adapter" / "adapter_model.safetensors").exists()
-    assert (
-        checkpoint_dir
-        / "special_token_embeddings"
-        / SPECIAL_TOKEN_EMBEDDINGS_SAFE_TENSORS
-    ).exists()
-    assert (
-        checkpoint_dir / "special_token_embeddings" / SPECIAL_TOKEN_EMBEDDINGS_JSON
-    ).exists()
-
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    assert metadata["checkpoint_id"] == "step-5"
-    assert metadata["planned_step_id"] == 5
-    assert metadata["checkpoint_path"] == "checkpoints/step-5"
-    assert metadata["optimizer_update_status"] == "skipped_non_finite"
-    assert metadata["resolved_config_fingerprint"] == "config-fingerprint"
-    assert metadata["checkpoint_handoff"] == "checkpoints/step-5/checkpoint_handoff.json"
-    assert metadata["processor_identity"] == {"name": "qwen3-vl-test-processor"}
-    assert metadata["adapter"]["enabled"] is True
-    assert metadata["adapter"]["payload_path"] == "checkpoints/step-5/adapter"
-    adapter_identity = metadata["adapter"]["identity"]
-    assert adapter_identity["payload_path"] == "checkpoints/step-5/adapter"
-    assert adapter_identity["required_files"] == {
-        "adapter_config.json": "checkpoints/step-5/adapter/adapter_config.json",
-        "adapter_model.safetensors": "checkpoints/step-5/adapter/adapter_model.safetensors",
-    }
-    assert adapter_identity["adapter_config_sha256"] == _sha256(
-        checkpoint_dir / "adapter" / "adapter_config.json"
-    )
-    assert adapter_identity["adapter_model_sha256"] == _sha256(
-        checkpoint_dir / "adapter" / "adapter_model.safetensors"
-    )
-    assert adapter_identity["fingerprint"]
-    assert metadata["special_token_embeddings"]["enabled"] is True
-    assert metadata["special_token_embeddings"]["tensor_path"] == (
-        "checkpoints/step-5/special_token_embeddings/"
-        f"{SPECIAL_TOKEN_EMBEDDINGS_SAFE_TENSORS}"
-    )
-    embedding_identity = metadata["special_token_embeddings"]["identity"]
-    assert embedding_identity["metadata_path"] == (
-        "checkpoints/step-5/special_token_embeddings/"
-        f"{SPECIAL_TOKEN_EMBEDDINGS_JSON}"
-    )
-    assert embedding_identity["tensor_path"] == (
-        "checkpoints/step-5/special_token_embeddings/"
-        f"{SPECIAL_TOKEN_EMBEDDINGS_SAFE_TENSORS}"
-    )
-    assert embedding_identity["metadata_sha256"] == _sha256(
-        checkpoint_dir / "special_token_embeddings" / SPECIAL_TOKEN_EMBEDDINGS_JSON
-    )
-    assert embedding_identity["tensor_sha256"] == _sha256(
-        checkpoint_dir / "special_token_embeddings" / SPECIAL_TOKEN_EMBEDDINGS_SAFE_TENSORS
-    )
-    assert embedding_identity["tensor_key"] == DEFAULT_EMBED_DELTA_TENSOR_KEY
-    assert embedding_identity["tensor_shape"] == [2, 4]
-    assert embedding_identity["tensor_dtype"] == "float32"
-    assert embedding_identity["base_config_sha256"] == "base-config-sha"
-    assert embedding_identity["tokenizer_sha256"] == "tokenizer-sha"
-    assert embedding_identity["fingerprint"]
-    assert metadata["special_token_embeddings"]["metadata"]["semantics"] == (
-        SPECIAL_TOKEN_EMBEDDING_SEMANTICS
-    )
-    assert (
-        metadata["special_token_embeddings"]["metadata"]["base_config_sha256"]
-        == "base-config-sha"
-    )
-    assert (
-        metadata["special_token_embeddings"]["metadata"]["tokenizer_sha256"]
-        == "tokenizer-sha"
-    )
-    payload_metadata = json.loads(
-        (
-            checkpoint_dir
-            / "special_token_embeddings"
-            / SPECIAL_TOKEN_EMBEDDINGS_JSON
-        ).read_text(encoding="utf-8")
-    )
-    assert payload_metadata["base_config_sha256"] == "base-config-sha"
-    assert payload_metadata["tokenizer_sha256"] == "tokenizer-sha"
-    assert metadata["trainable_surface"]["trainable_towers"] == [
-        "adapter.language",
-        "token_embeddings",
-    ]
-    assert "optimizer_state" not in metadata
-    assert "scheduler_state" not in metadata
-    assert "rng_state" not in metadata
-    handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
-    assert handoff["base_model"] == {
-        "path": "/models/qwen-base",
-        "base_config_sha256": "base-config-sha",
-        "tokenizer_sha256": "tokenizer-sha",
-    }
-    assert handoff["adapter"]["payload_path"] == "checkpoints/step-5/adapter"
-    assert handoff["adapter"]["files"] == [
-        "checkpoints/step-5/adapter/adapter_config.json",
-        "checkpoints/step-5/adapter/adapter_model.safetensors",
-    ]
-    assert handoff["adapter"]["identity"] == adapter_identity
-    assert handoff["template_identity"] == {
-        "object_field_order": "desc_first",
-        "object_ordering": "geo_sorted",
-        "assistant_format": "object_box_closed",
-    }
-    assert handoff["special_token_embeddings"]["metadata_path"] == (
-        "checkpoints/step-5/special_token_embeddings/"
-        f"{SPECIAL_TOKEN_EMBEDDINGS_JSON}"
-    )
-    assert handoff["special_token_embeddings"]["tensor_dtype"] == "float32"
-    assert handoff["special_token_embeddings"]["identity"] == embedding_identity
-    assert handoff["trainable_token_set"]["token_ids"] == [2, 3]
-    assert handoff["trainable_token_set"]["token_strings"] == [
-        "<|object_ref_start|>",
-        "<|coord_0|>",
-    ]
-    assert handoff["intended_inference_config_family"] == "configs/coordexp_swift/infer"
-    assert handoff["accepted_eval_artifact_roots"] == []
-
-    alias = json.loads(final_alias_path.read_text(encoding="utf-8"))
-    assert alias["checkpoint_id"] == "step-5"
-    assert alias["metadata_path"] == "checkpoints/step-5/checkpoint.json"
-    assert alias["handoff_path"] == "checkpoints/step-5/checkpoint_handoff.json"
-
-    manifest = manager.read_manifest()
-    assert manifest["checkpoints"]["items"] == [
-        "checkpoints/step-5/checkpoint.json"
-    ]
-    assert manifest["checkpoints"]["aliases"]["final"] == (
-        "checkpoints/checkpoint-final.json"
-    )
+VALID_KEYS = {
+    "base_model.model.q_proj.lora_A.default.weight": torch.ones(2, 3),
+    "base_model.model.q_proj.lora_B.default.weight": torch.ones(3, 2),
+    "base_model.model.q_proj.lora_magnitude_vector.default.weight": torch.ones(3),
+}
 
 
-@pytest.mark.parametrize(
-    ("base_config_sha256", "tokenizer_sha256", "missing_field"),
-    [
-        (None, "tokenizer-sha", "base_config_sha256"),
-        ("", "tokenizer-sha", "base_config_sha256"),
-        ("base-config-sha", None, "tokenizer_sha256"),
-        ("base-config-sha", "", "tokenizer_sha256"),
-    ],
-)
-def test_checkpoint_writer_requires_special_token_sha_evidence(
-    tmp_path: Path,
-    base_config_sha256: str | None,
-    tokenizer_sha256: str | None,
-    missing_field: str,
-) -> None:
-    writer = CheckpointWriter(_manager(tmp_path))
+class FakeAccelerator:
+    def __init__(self, *, main: bool = True, shared: dict[str, Any] | None = None) -> None:
+        self.is_main_process = main
+        self.shared = shared if shared is not None else {}
+        self.barriers = 0
 
-    with pytest.raises(ArtifactContractError) as exc_info:
-        writer.write_checkpoint(
-            planned_step_id=5,
-            model=FakePeftModel(),
-            adapter_receipt=_adapter_receipt(),
-            special_token_result=_special_token_result(),
-            trainable_surface=_trainable_surface(),
-            processor_identity={"name": "qwen3-vl-test-processor"},
-            resolved_config_fingerprint="config-fingerprint",
-            schedule_identity={"resolved_max_steps": 5, "fingerprint": "schedule"},
-            metric_status={"finite_status": "finite", "warning_status": "none"},
-            optimizer_update_status="applied",
-            trigger_reasons=("checkpoint.final",),
-            is_final=True,
-            base_model_path=Path("/models/qwen-base"),
-            base_config_sha256=base_config_sha256,
-            tokenizer_sha256=tokenizer_sha256,
-        )
+    def wait_for_everyone(self) -> None:
+        self.barriers += 1
 
-    assert exc_info.value.code == "checkpoint.special_token_identity_missing"
-    assert exc_info.value.context["missing_field"] == missing_field
+    def unwrap_model(self, model: Any) -> Any:
+        return model
 
-
-def test_checkpoint_reload_plan_verifies_adapter_and_special_token_payloads(
-    tmp_path: Path,
-) -> None:
-    manager = _manager(tmp_path)
-    writer = CheckpointWriter(manager)
-    result = writer.write_checkpoint(
-        planned_step_id=5,
-        model=FakePeftModel(),
-        adapter_receipt=_adapter_receipt(),
-        special_token_result=_special_token_result(),
-        trainable_surface=_trainable_surface(),
-        processor_identity={"name": "qwen3-vl-test-processor"},
-        resolved_config_fingerprint="config-fingerprint",
-        schedule_identity={"resolved_max_steps": 5, "fingerprint": "schedule"},
-        metric_status={"finite_status": "finite", "warning_status": "none"},
-        optimizer_update_status="applied",
-        trigger_reasons=("checkpoint.final",),
-        is_final=True,
-        base_model_path=Path("model_cache/qwen-base"),
-        base_config_sha256="base-config-sha",
-        tokenizer_sha256="tokenizer-sha",
-    )
-
-    plan = build_checkpoint_reload_plan(result.final_alias_path)
-    receipt = verify_checkpoint_reload_payloads(plan)
-
-    assert plan.checkpoint_id == "step-5"
-    assert plan.base_model_path == Path("model_cache/qwen-base")
-    assert plan.adapter_dir == manager.run_dir / "checkpoints" / "step-5" / "adapter"
-    assert receipt["adapter"]["enabled"] is True
-    assert receipt["adapter"]["config"]["use_dora"] is True
-    assert receipt["adapter"]["weight_files"] == [
-        "checkpoints/step-5/adapter/adapter_model.safetensors"
-    ]
-    assert receipt["special_token_embeddings"]["enabled"] is True
-    assert receipt["special_token_embeddings"]["tensor_key"] == DEFAULT_EMBED_DELTA_TENSOR_KEY
-    assert receipt["special_token_embeddings"]["tensor_shape"] == [2, 4]
-    assert receipt["reload_contract"] == "base_model_plus_dora_adapter_plus_token_embed_delta"
-
-
-def test_checkpoint_writer_best_acc_top1_ignores_unsafe_candidate(
-    tmp_path: Path,
-) -> None:
-    manager = _manager(tmp_path)
-    writer = CheckpointWriter(manager)
-
-    first = writer.write_checkpoint(
-        planned_step_id=1,
-        model=None,
-        adapter_receipt=None,
-        special_token_result=None,
-        trainable_surface=_trainable_surface(),
-        processor_identity={"name": "processor"},
-        resolved_config_fingerprint="config",
-        schedule_identity={"resolved_max_steps": 2},
-        metric_status={"finite_status": "finite", "warning_status": "none"},
-        optimizer_update_status="applied",
-        trigger_reasons=("eval.forward",),
-        best_metric_event=MetricStreamEvent(
-            event_type="metric",
-            planned_step_id=1,
-            split="eval.forward",
-            name="acc_top1",
-            value=0.25,
-            trigger_reasons=("eval.forward",),
-            optimizer_update_status="applied",
-            finite_status="finite",
-            warning_status="none",
-        ),
-    )
-
-    writer.write_checkpoint(
-        planned_step_id=2,
-        model=None,
-        adapter_receipt=None,
-        special_token_result=None,
-        trainable_surface=_trainable_surface(),
-        processor_identity={"name": "processor"},
-        resolved_config_fingerprint="config",
-        schedule_identity={"resolved_max_steps": 2},
-        metric_status={"finite_status": "non_finite", "warning_status": "warned"},
-        optimizer_update_status="skipped_non_finite",
-        trigger_reasons=("eval.forward",),
-        best_metric_event=MetricStreamEvent(
-            event_type="metric",
-            planned_step_id=2,
-            split="eval.forward",
-            name="acc_top1",
-            value=0.95,
-            trigger_reasons=("eval.forward",),
-            optimizer_update_status="skipped_non_finite",
-            finite_status="non_finite",
-            warning_status="warned",
-        ),
-    )
-
-    best_alias_path = tmp_path / "run-a" / "checkpoints" / "best_acc_top1.json"
-    best_alias = json.loads(best_alias_path.read_text(encoding="utf-8"))
-    assert best_alias["checkpoint_id"] == "step-1"
-    assert best_alias["metadata_path"] == manager.relative_artifact_path(
-        first.metadata_path
-    )
-    assert best_alias["handoff_path"] == manager.relative_artifact_path(
-        first.handoff_path
-    )
-    assert best_alias["metric"]["value"] == 0.25
-
-    manifest = manager.read_manifest()
-    assert manifest["checkpoints"]["aliases"]["best_acc_top1"] == (
-        "checkpoints/best_acc_top1.json"
-    )
-    assert manifest["checkpoints"]["best_acc_top1"]["checkpoint_id"] == "step-1"
-
-
-def test_checkpoint_writer_rejects_best_candidate_status_mismatch(
-    tmp_path: Path,
-) -> None:
-    manager = _manager(tmp_path)
-    writer = CheckpointWriter(manager)
-    writer.write_checkpoint(
-        planned_step_id=1,
-        model=None,
-        adapter_receipt=None,
-        special_token_result=None,
-        trainable_surface=_trainable_surface(),
-        processor_identity={"name": "processor"},
-        resolved_config_fingerprint="config",
-        schedule_identity={"resolved_max_steps": 2},
-        metric_status={"finite_status": "finite", "warning_status": "none"},
-        optimizer_update_status="applied",
-        trigger_reasons=("eval.forward",),
-        best_metric_event=MetricStreamEvent(
-            event_type="metric",
-            planned_step_id=1,
-            split="eval.forward",
-            name="acc_top1",
-            value=0.25,
-            trigger_reasons=("eval.forward",),
-            optimizer_update_status="applied",
-            finite_status="finite",
-            warning_status="none",
-        ),
-    )
-
-    with pytest.raises(ArtifactContractError) as exc_info:
-        writer.write_checkpoint(
-            planned_step_id=2,
-            model=None,
-            adapter_receipt=None,
-            special_token_result=None,
-            trainable_surface=_trainable_surface(),
-            processor_identity={"name": "processor"},
-            resolved_config_fingerprint="config",
-            schedule_identity={"resolved_max_steps": 2},
-            metric_status={"finite_status": "finite", "warning_status": "none"},
-            optimizer_update_status="skipped_non_finite",
-            trigger_reasons=("eval.forward",),
-            best_metric_event={
-                "event_type": "metric",
-                "planned_step_id": 2,
-                "split": "eval.forward",
-                "name": "acc_top1",
-                "value": 0.95,
-                "trigger_reasons": ["eval.forward"],
-                "optimizer_update_status": "applied",
-                "finite_status": "finite",
-                "warning_status": "none",
-                "reduction": "global_mean",
-                "rank": None,
-                "world_size": None,
-                "selector_eligible": True,
-                "metadata": {},
-            },
-        )
-
-    assert exc_info.value.code == "checkpoint.best_selector_status_mismatch"
-    best_alias_path = tmp_path / "run-a" / "checkpoints" / "best_acc_top1.json"
-    best_alias = json.loads(best_alias_path.read_text(encoding="utf-8"))
-    assert best_alias["checkpoint_id"] == "step-1"
-    assert not (tmp_path / "run-a" / "checkpoints" / "step-2").exists()
-
-
-def test_checkpoint_writer_rejects_best_candidate_without_checkpoint_finite_status(
-    tmp_path: Path,
-) -> None:
-    writer = CheckpointWriter(_manager(tmp_path))
-
-    with pytest.raises(ArtifactContractError) as exc_info:
-        writer.write_checkpoint(
-            planned_step_id=1,
-            model=None,
-            adapter_receipt=None,
-            special_token_result=None,
-            trainable_surface=_trainable_surface(),
-            processor_identity={"name": "processor"},
-            resolved_config_fingerprint="config",
-            schedule_identity={"resolved_max_steps": 1},
-            metric_status={},
-            optimizer_update_status="applied",
-            trigger_reasons=("eval.forward",),
-            best_metric_event=MetricStreamEvent(
-                event_type="metric",
-                planned_step_id=1,
-                split="eval.forward",
-                name="acc_top1",
-                value=0.25,
-                trigger_reasons=("eval.forward",),
-                optimizer_update_status="applied",
-                finite_status="finite",
-                warning_status="none",
-            ),
-        )
-
-    assert exc_info.value.code == "checkpoint.best_selector_status_missing"
-    assert not (tmp_path / "run-a" / "checkpoints" / "step-1").exists()
-
-
-def test_checkpoint_writer_repairs_manifest_after_registration_failure(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    manager = _manager(tmp_path)
-    writer = CheckpointWriter(manager)
-    best_event = MetricStreamEvent(
-        event_type="metric",
-        planned_step_id=1,
-        split="eval.forward",
-        name="acc_top1",
-        value=0.25,
-        trigger_reasons=("eval.forward",),
-        optimizer_update_status="applied",
-        finite_status="finite",
-        warning_status="none",
-    )
-    _fail_next_manifest_write(monkeypatch)
-
-    with pytest.raises(ArtifactContractError) as exc_info:
-        writer.write_checkpoint(
-            planned_step_id=1,
-            model=None,
-            adapter_receipt=None,
-            special_token_result=None,
-            trainable_surface=_trainable_surface(),
-            processor_identity={"name": "processor"},
-            resolved_config_fingerprint="config",
-            schedule_identity={"resolved_max_steps": 1},
-            metric_status={"finite_status": "finite", "warning_status": "none"},
-            optimizer_update_status="applied",
-            trigger_reasons=("checkpoint.final", "eval.forward"),
-            is_final=True,
-            best_metric_event=best_event,
-        )
-
-    assert exc_info.value.code == "test.manifest_write_failed"
-    assert (tmp_path / "run-a" / "checkpoints" / "step-1" / "checkpoint.json").exists()
-    assert manager.read_manifest()["checkpoints"]["items"] == []
-
-    result = writer.write_checkpoint(
-        planned_step_id=1,
-        model=None,
-        adapter_receipt=None,
-        special_token_result=None,
-        trainable_surface=_trainable_surface(),
-        processor_identity={"name": "processor"},
-        resolved_config_fingerprint="config",
-        schedule_identity={"resolved_max_steps": 1},
-        metric_status={"finite_status": "finite", "warning_status": "none"},
-        optimizer_update_status="applied",
-        trigger_reasons=("checkpoint.final", "eval.forward"),
-        is_final=True,
-        best_metric_event=best_event,
-    )
-
-    manifest = manager.read_manifest()
-    assert manifest["checkpoints"]["items"] == [
-        "checkpoints/step-1/checkpoint.json"
-    ]
-    assert manifest["checkpoints"]["latest"]["checkpoint_id"] == "step-1"
-    assert manifest["checkpoints"]["aliases"]["final"] == (
-        "checkpoints/checkpoint-final.json"
-    )
-    assert manifest["checkpoints"]["aliases"]["best_acc_top1"] == (
-        "checkpoints/best_acc_top1.json"
-    )
-    assert result.metadata_path == tmp_path / "run-a" / "checkpoints" / "step-1" / "checkpoint.json"
-
-
-def test_checkpoint_writer_reuses_identity_payloads_after_registration_failure(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from src.artifacts import checkpoints as checkpoint_module
-
-    manager = _manager(tmp_path)
-    writer = CheckpointWriter(manager)
-    kwargs = {
-        "planned_step_id": 1,
-        "adapter_receipt": _adapter_receipt(),
-        "special_token_result": _special_token_result(),
-        "trainable_surface": _trainable_surface(),
-        "processor_identity": {"name": "qwen3-vl-test-processor"},
-        "resolved_config_fingerprint": "config-fingerprint",
-        "schedule_identity": {"resolved_max_steps": 1, "fingerprint": "schedule"},
-        "metric_status": {"finite_status": "finite", "warning_status": "none"},
-        "optimizer_update_status": "applied",
-        "trigger_reasons": ("checkpoint.final",),
-        "is_final": True,
-        "base_model_path": Path("model_cache/qwen-base"),
-        "base_config_sha256": "base-config-sha",
-        "tokenizer_sha256": "tokenizer-sha",
-    }
-    _fail_next_manifest_write(monkeypatch)
-
-    with pytest.raises(ArtifactContractError) as exc_info:
-        writer.write_checkpoint(model=FakePeftModel(), **kwargs)
-
-    assert exc_info.value.code == "test.manifest_write_failed"
-    checkpoint_dir = tmp_path / "run-a" / "checkpoints" / "step-1"
-    adapter_config = checkpoint_dir / "adapter" / "adapter_config.json"
-    adapter_tensor = checkpoint_dir / "adapter" / "adapter_model.safetensors"
-    embed_metadata = (
-        checkpoint_dir / "special_token_embeddings" / SPECIAL_TOKEN_EMBEDDINGS_JSON
-    )
-    embed_tensor = (
-        checkpoint_dir
-        / "special_token_embeddings"
-        / SPECIAL_TOKEN_EMBEDDINGS_SAFE_TENSORS
-    )
-    before = {
-        "metadata": json.loads((checkpoint_dir / "checkpoint.json").read_text(encoding="utf-8")),
-        "handoff": json.loads((checkpoint_dir / "checkpoint_handoff.json").read_text(encoding="utf-8")),
-        "adapter_config": adapter_config.read_bytes(),
-        "adapter_tensor": adapter_tensor.read_bytes(),
-        "embed_metadata": embed_metadata.read_bytes(),
-        "embed_tensor": embed_tensor.read_bytes(),
-    }
-
-    class ExplodingPeftModel(nn.Module):
-        def save_pretrained(self, output_dir: str | Path) -> None:
-            raise AssertionError("existing adapter payload must be reused")
-
-    monkeypatch.setattr(
-        checkpoint_module,
-        "save_special_token_embedding_deltas",
-        lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("existing special-token payload must be reused")
-        ),
-    )
-
-    result = writer.write_checkpoint(model=ExplodingPeftModel(), **kwargs)
-
-    after_metadata = json.loads(result.metadata_path.read_text(encoding="utf-8"))
-    after_handoff = json.loads(result.handoff_path.read_text(encoding="utf-8"))
-    assert after_metadata["adapter"]["identity"] == before["metadata"]["adapter"]["identity"]
-    assert after_metadata["special_token_embeddings"]["identity"] == (
-        before["metadata"]["special_token_embeddings"]["identity"]
-    )
-    assert after_handoff["adapter"]["identity"] == before["handoff"]["adapter"]["identity"]
-    assert after_handoff["special_token_embeddings"]["identity"] == (
-        before["handoff"]["special_token_embeddings"]["identity"]
-    )
-    assert adapter_config.read_bytes() == before["adapter_config"]
-    assert adapter_tensor.read_bytes() == before["adapter_tensor"]
-    assert embed_metadata.read_bytes() == before["embed_metadata"]
-    assert embed_tensor.read_bytes() == before["embed_tensor"]
-
-
-def test_checkpoint_writer_rejects_full_model_save_pretrained_payload(
-    tmp_path: Path,
-) -> None:
-    manager = _manager(tmp_path)
-    writer = CheckpointWriter(manager)
-
-    with pytest.raises(ArtifactContractError) as exc_info:
-        writer.write_checkpoint(
-            planned_step_id=1,
-            model=FakeFullModel(),
-            adapter_receipt=_adapter_receipt(),
-            special_token_result=None,
-            trainable_surface=_trainable_surface(),
-            processor_identity={},
-            resolved_config_fingerprint="config",
-            schedule_identity={},
-            metric_status={"finite_status": "finite", "warning_status": "none"},
-            optimizer_update_status="applied",
-            trigger_reasons=("checkpoint",),
-        )
-
-    assert exc_info.value.code == "checkpoint.adapter_payload_forbidden_file"
-    assert manager.read_manifest()["checkpoints"]["items"] == []
-    assert not (
-        tmp_path / "run-a" / "checkpoints" / "step-1" / "adapter" / "config.json"
-    ).exists()
-    assert not (
-        tmp_path / "run-a" / "checkpoints" / "step-1" / "adapter" / "model.safetensors"
-    ).exists()
-    assert not (
-        tmp_path / "run-a" / "checkpoints" / "checkpoint-final.json"
-    ).exists()
-
-    result = writer.write_checkpoint(
-        planned_step_id=1,
-        model=FakePeftModel(),
-        adapter_receipt=_adapter_receipt(),
-        special_token_result=None,
-        trainable_surface=_trainable_surface(),
-        processor_identity={},
-        resolved_config_fingerprint="config",
-        schedule_identity={},
-        metric_status={"finite_status": "finite", "warning_status": "none"},
-        optimizer_update_status="applied",
-        trigger_reasons=("checkpoint",),
-    )
-
-    assert result.metadata_path.exists()
-    assert manager.read_manifest()["checkpoints"]["items"] == [
-        "checkpoints/step-1/checkpoint.json"
-    ]
-
-
-def test_checkpoint_writer_marks_lower_best_candidate_not_improved(
-    tmp_path: Path,
-) -> None:
-    manager = _manager(tmp_path)
-    writer = CheckpointWriter(manager)
-    writer.write_checkpoint(
-        planned_step_id=1,
-        model=None,
-        adapter_receipt=None,
-        special_token_result=None,
-        trainable_surface=_trainable_surface(),
-        processor_identity={"name": "processor"},
-        resolved_config_fingerprint="config",
-        schedule_identity={"resolved_max_steps": 2},
-        metric_status={"finite_status": "finite", "warning_status": "none"},
-        optimizer_update_status="applied",
-        trigger_reasons=("eval.forward",),
-        best_metric_event=MetricStreamEvent(
-            event_type="metric",
-            planned_step_id=1,
-            split="eval.forward",
-            name="acc_top1",
-            value=0.9,
-            trigger_reasons=("eval.forward",),
-            optimizer_update_status="applied",
-            finite_status="finite",
-            warning_status="none",
-        ),
-    )
-
-    second = writer.write_checkpoint(
-        planned_step_id=2,
-        model=None,
-        adapter_receipt=None,
-        special_token_result=None,
-        trainable_surface=_trainable_surface(),
-        processor_identity={"name": "processor"},
-        resolved_config_fingerprint="config",
-        schedule_identity={"resolved_max_steps": 2},
-        metric_status={"finite_status": "finite", "warning_status": "none"},
-        optimizer_update_status="applied",
-        trigger_reasons=("eval.forward",),
-        best_metric_event=MetricStreamEvent(
-            event_type="metric",
-            planned_step_id=2,
-            split="eval.forward",
-            name="acc_top1",
-            value=0.1,
-            trigger_reasons=("eval.forward",),
-            optimizer_update_status="applied",
-            finite_status="finite",
-            warning_status="none",
-        ),
-    )
-
-    metadata = json.loads(second.metadata_path.read_text(encoding="utf-8"))
-    assert metadata["best_selection"]["selected"] is False
-    assert metadata["best_selection"]["reason"] == "not_improved"
-    assert metadata["best_selection"]["current_best"]["checkpoint_id"] == "step-1"
-    best_alias = json.loads(
-        (tmp_path / "run-a" / "checkpoints" / "best_acc_top1.json").read_text(
-            encoding="utf-8"
-        )
-    )
-    assert best_alias["checkpoint_id"] == "step-1"
-    assert best_alias["handoff_path"] == "checkpoints/step-1/checkpoint_handoff.json"
-
-
-def test_checkpoint_writer_allows_warning_only_best_checkpoint(
-    tmp_path: Path,
-) -> None:
-    manager = _manager(tmp_path)
-    writer = CheckpointWriter(manager)
-    writer.write_checkpoint(
-        planned_step_id=1,
-        model=None,
-        adapter_receipt=None,
-        special_token_result=None,
-        trainable_surface=_trainable_surface(),
-        processor_identity={"name": "processor"},
-        resolved_config_fingerprint="config",
-        schedule_identity={"resolved_max_steps": 2},
-        metric_status={"finite_status": "finite", "warning_status": "none"},
-        optimizer_update_status="applied",
-        trigger_reasons=("eval.forward",),
-        best_metric_event=MetricStreamEvent(
-            event_type="metric",
-            planned_step_id=1,
-            split="eval.forward",
-            name="acc_top1",
-            value=0.25,
-            trigger_reasons=("eval.forward",),
-            optimizer_update_status="applied",
-            finite_status="finite",
-            warning_status="none",
-        ),
-    )
-
-    second = writer.write_checkpoint(
-        planned_step_id=2,
-        model=None,
-        adapter_receipt=None,
-        special_token_result=None,
-        trainable_surface=_trainable_surface(),
-        processor_identity={"name": "processor"},
-        resolved_config_fingerprint="config",
-        schedule_identity={"resolved_max_steps": 2},
-        metric_status={"finite_status": "finite", "warning_status": "warned"},
-        optimizer_update_status="applied",
-        trigger_reasons=("eval.forward",),
-        best_metric_event=MetricStreamEvent(
-            event_type="metric",
-            planned_step_id=2,
-            split="eval.forward",
-            name="acc_top1",
-            value=0.95,
-            trigger_reasons=("eval.forward",),
-            optimizer_update_status="applied",
-            finite_status="finite",
-            warning_status="warned",
-        ),
-    )
-
-    metadata = json.loads(second.metadata_path.read_text(encoding="utf-8"))
-    assert metadata["best_selection"]["selected"] is True
-    assert metadata["best_selection"]["reason"] == "improved"
-    best_alias = json.loads(
-        (tmp_path / "run-a" / "checkpoints" / "best_acc_top1.json").read_text(
-            encoding="utf-8"
-        )
-    )
-    assert best_alias["checkpoint_id"] == "step-2"
-    assert best_alias["handoff_path"] == "checkpoints/step-2/checkpoint_handoff.json"
-
-
-def test_checkpoint_writer_rejects_adapter_receipt_without_savable_model(
-    tmp_path: Path,
-) -> None:
-    writer = CheckpointWriter(_manager(tmp_path))
-
-    with pytest.raises(ArtifactContractError) as exc_info:
-        writer.write_checkpoint(
-            planned_step_id=1,
-            model=nn.Linear(2, 2),
-            adapter_receipt=_adapter_receipt(),
-            special_token_result=None,
-            trainable_surface=_trainable_surface(),
-            processor_identity={},
-            resolved_config_fingerprint="config",
-            schedule_identity={},
-            metric_status={},
-            optimizer_update_status="applied",
-            trigger_reasons=("checkpoint",),
-        )
-
-    assert exc_info.value.code == "checkpoint.adapter_model_unsavable"
+    def broadcast_object_list(self, values: list[Any], *, from_process: int) -> None:
+        assert from_process == 0
+        if self.is_main_process:
+            self.shared["status"] = values[0]
+        else:
+            values[0] = self.shared["status"]
 
 
 class FakePeftModel(nn.Module):
-    def save_pretrained(self, output_dir: str | Path) -> None:
+    def __init__(self, tensors: dict[str, torch.Tensor] | None = None, *, fail=False) -> None:
+        super().__init__()
+        self.tensors = VALID_KEYS if tensors is None else tensors
+        self.fail = fail
+        self.calls: list[dict[str, Any]] = []
+
+    def save_pretrained(self, output_dir: str | Path, **kwargs: Any) -> None:
+        self.calls.append(kwargs)
         path = Path(output_dir)
         path.mkdir(parents=True, exist_ok=True)
         (path / "adapter_config.json").write_text(
-            json.dumps({"peft_type": "LORA", "use_dora": True}) + "\n",
-            encoding="utf-8",
+            json.dumps({"peft_type": "LORA", "use_dora": True}) + "\n"
         )
-        (path / "adapter_model.safetensors").write_bytes(b"adapter")
+        if self.fail:
+            raise RuntimeError("synthetic rank-zero save failure")
+        save_file(self.tensors, str(path / "adapter_model.safetensors"))
 
 
-class FakeFullModel(nn.Module):
-    def save_pretrained(self, output_dir: str | Path) -> None:
-        path = Path(output_dir)
-        path.mkdir(parents=True, exist_ok=True)
-        (path / "config.json").write_text("{}\n", encoding="utf-8")
-        (path / "model.safetensors").write_bytes(b"full-model")
-
-
-def _manager(tmp_path: Path) -> RunArtifactManager:
-    return RunArtifactManager.initialize(
-        run_directory=RunDirectory(
-            run_name="run-a",
-            artifact_root=tmp_path,
-            run_dir=tmp_path / "run-a",
-            collision_policy="fail",
-        ),
-        run_id="run-a",
-        created_at="2026-06-30T00:00:00Z",
-        runtime_identity={},
-        backend_status={"single": ["active"], "accelerate": [], "deepspeed": []},
+def test_adapter_only_atomic_checkpoint_and_safe_peft_arguments(tmp_path: Path) -> None:
+    model = FakePeftModel()
+    accelerator = FakeAccelerator()
+    result = CheckpointWriter(tmp_path).write_checkpoint(
+        step=3, accelerator=accelerator, model=model, adapter_name="default"
     )
+    assert result.checkpoint_dir == tmp_path / "checkpoints" / "step-3"
+    assert (result.checkpoint_dir / "adapter" / "adapter_model.safetensors").is_file()
+    assert model.calls == [{
+        "safe_serialization": True,
+        "selected_adapters": ["default"],
+        "save_embedding_layers": False,
+    }]
+    assert accelerator.barriers == 1
+    assert _staging(tmp_path) == []
 
 
-def _fail_next_manifest_write(monkeypatch: pytest.MonkeyPatch) -> None:
-    original = RunArtifactManager._write_manifest
-    remaining_failures = 1
-
-    def fail_once(self: RunArtifactManager, payload: dict[str, object]) -> None:
-        nonlocal remaining_failures
-        if remaining_failures:
-            remaining_failures -= 1
-            raise ArtifactContractError(
-                "synthetic manifest write failure",
-                code="test.manifest_write_failed",
-            )
-        original(self, payload)
-
-    monkeypatch.setattr(RunArtifactManager, "_write_manifest", fail_once)
-
-
-def _adapter_receipt() -> DoraAdapterSetupReceipt:
-    return DoraAdapterSetupReceipt(
-        mode="initialize_new",
-        adapter_type="dora",
+def test_adapter_plus_compact_selected_token_delta(tmp_path: Path) -> None:
+    result = CheckpointWriter(tmp_path).write_checkpoint(
+        step=1,
+        accelerator=FakeAccelerator(),
+        model=FakePeftModel(),
         adapter_name="default",
-        adapter_path=None,
-        base_model_path=Path("model_cache/qwen-base"),
-        target_discovery=DoraTargetDiscoveryReceipt(
-            target_policy="all_linear",
-            target_towers=("language",),
-            matched_modules=("model.language_model.q_proj",),
-            counts_by_tower={"language": 1},
-            lm_head_seen=True,
-            lm_head_excluded=True,
-        ),
-        peft_config={"use_dora": True, "target_modules": ["q_proj"]},
-        trainable_names=("base_model.model.language_model.q_proj.lora_A.default.weight",),
-        trainable_counts={"lora_A": 1, "lora_B": 1, "lora_magnitude_vector": 1},
-        package_versions={"peft": "test", "torch": "test"},
+        special_token_result=_special_token_result(),
+        base_model_path="base",
+        base_config_sha256="base-sha",
+        tokenizer_sha256="tokenizer-sha",
     )
+    delta = result.checkpoint_dir / "special_token_embeddings"
+    assert sorted(path.name for path in delta.iterdir()) == [
+        "special_token_embeddings.json", "special_token_embeddings.safetensors"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("tensors", "code"),
+    [
+        ({"base_model.model.q.lora_A.default.weight": torch.ones(1)},
+         "checkpoint.adapter_required_tensors_missing"),
+        ({**VALID_KEYS, "base_model.model.embed_tokens.weight": torch.ones(2, 2)},
+         "checkpoint.adapter_forbidden_tensors"),
+        ({**VALID_KEYS, "base_model.model.lm_head.weight": torch.ones(2, 2)},
+         "checkpoint.adapter_forbidden_tensors"),
+    ],
+)
+def test_missing_or_forbidden_adapter_tensors_leave_no_residue(
+    tmp_path: Path, tensors: dict[str, torch.Tensor], code: str
+) -> None:
+    with pytest.raises(ArtifactContractError, match="checkpoint save failed") as exc_info:
+        CheckpointWriter(tmp_path).write_checkpoint(
+            step=1, accelerator=FakeAccelerator(), model=FakePeftModel(tensors),
+            adapter_name="default"
+        )
+    assert exc_info.value.code == "checkpoint.save_failed"
+    assert code in str(exc_info.value)
+    assert not (tmp_path / "checkpoints" / "step-1").exists()
+    assert _staging(tmp_path) == []
+
+
+def test_failure_after_staging_begins_is_atomic(tmp_path: Path) -> None:
+    with pytest.raises(ArtifactContractError) as exc_info:
+        CheckpointWriter(tmp_path).write_checkpoint(
+            step=7, accelerator=FakeAccelerator(), model=FakePeftModel(fail=True),
+            adapter_name="default"
+        )
+    assert exc_info.value.code == "checkpoint.save_failed"
+    assert "synthetic rank-zero save failure" in str(exc_info.value)
+    assert not (tmp_path / "checkpoints" / "step-7").exists()
+    assert _staging(tmp_path) == []
+
+
+def test_rank_zero_failure_is_shared_with_peer_without_post_save_barrier(tmp_path: Path) -> None:
+    shared: dict[str, Any] = {}
+    with pytest.raises(ArtifactContractError) as main_error:
+        CheckpointWriter(tmp_path).write_checkpoint(
+            step=2, accelerator=FakeAccelerator(main=True, shared=shared),
+            model=FakePeftModel(fail=True), adapter_name="default"
+        )
+    with pytest.raises(ArtifactContractError) as peer_error:
+        CheckpointWriter(tmp_path).write_checkpoint(
+            step=2, accelerator=FakeAccelerator(main=False, shared=shared),
+            model=object(), adapter_name="default"
+        )
+    assert main_error.value.code == peer_error.value.code == "checkpoint.save_failed"
+    assert str(main_error.value) == str(peer_error.value)
+
+
+def test_preexisting_step_collision_preserves_checkpoint_and_aliases_for_all_ranks(
+    tmp_path: Path,
+) -> None:
+    checkpoint_dir = tmp_path / "checkpoints" / "step-2"
+    checkpoint_dir.mkdir(parents=True)
+    payload = checkpoint_dir / "existing.bin"
+    payload.write_bytes(b"valid-existing-checkpoint")
+    final_alias = tmp_path / "checkpoints" / "final.json"
+    best_alias = tmp_path / "checkpoints" / "best.json"
+    final_alias.write_bytes(b'{"step":1,"checkpoint_path":"checkpoints/step-1"}\n')
+    best_alias.write_bytes(
+        b'{"step":1,"checkpoint_path":"checkpoints/step-1","value":0.5}\n'
+    )
+    before = {
+        "payload": payload.read_bytes(),
+        "final": final_alias.read_bytes(),
+        "best": best_alias.read_bytes(),
+    }
+    shared: dict[str, Any] = {}
+
+    with pytest.raises(ArtifactContractError) as main_error:
+        CheckpointWriter(tmp_path).write_checkpoint(
+            step=2,
+            accelerator=FakeAccelerator(main=True, shared=shared),
+            model=FakePeftModel(),
+            adapter_name="default",
+        )
+    with pytest.raises(ArtifactContractError) as peer_error:
+        CheckpointWriter(tmp_path).write_checkpoint(
+            step=2,
+            accelerator=FakeAccelerator(main=False, shared=shared),
+            model=object(),
+            adapter_name="default",
+        )
+
+    assert main_error.value.code == peer_error.value.code == "checkpoint.save_failed"
+    assert str(main_error.value) == str(peer_error.value)
+    assert "checkpoint.step_exists" in str(main_error.value)
+    assert payload.read_bytes() == before["payload"]
+    assert final_alias.read_bytes() == before["final"]
+    assert best_alias.read_bytes() == before["best"]
+    assert sorted(path.name for path in checkpoint_dir.iterdir()) == ["existing.bin"]
+    assert _staging(tmp_path) == []
+
+
+def test_alias_update_and_restore_failure_still_broadcasts_safe_shared_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from src.artifacts import checkpoints as checkpoint_module
+
+    writer = _run_writer(tmp_path)
+    original_write_final = type(writer).write_final
+
+    def update_final_then_fail(self: RunWriter, *, step: int) -> Path:
+        original_write_final(self, step=step)
+        raise RuntimeError("synthetic alias update failure")
+
+    monkeypatch.setattr(RunWriter, "write_final", update_final_then_fail)
+    monkeypatch.setattr(
+        checkpoint_module,
+        "_restore_aliases",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            RuntimeError("synthetic alias restoration failure")
+        ),
+    )
+    shared: dict[str, Any] = {}
+    main_accelerator = FakeAccelerator(main=True, shared=shared)
+    peer_accelerator = FakeAccelerator(main=False, shared=shared)
+
+    with pytest.raises(ArtifactContractError) as main_error:
+        CheckpointWriter(tmp_path).write_checkpoint(
+            step=2, accelerator=main_accelerator, model=FakePeftModel(),
+            adapter_name="default", run_writer=writer, is_final=True,
+        )
+    with pytest.raises(ArtifactContractError) as peer_error:
+        CheckpointWriter(tmp_path).write_checkpoint(
+            step=2, accelerator=peer_accelerator, model=object(),
+            adapter_name="default",
+        )
+
+    assert "status" in shared
+    assert main_error.value.code == peer_error.value.code == "checkpoint.save_failed"
+    assert str(main_error.value) == str(peer_error.value)
+    assert "synthetic alias update failure" in str(main_error.value)
+    assert "synthetic alias restoration failure" in str(main_error.value)
+    alias = json.loads((tmp_path / "checkpoints/final.json").read_text())
+    selected = tmp_path / alias["checkpoint_path"]
+    assert selected == tmp_path / "checkpoints/step-2"
+    assert (selected / "adapter/adapter_model.safetensors").is_file()
+    assert _staging(tmp_path) == []
+
+
+def test_checkpoint_cleanup_failure_still_broadcasts_identical_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from src.artifacts import checkpoints as checkpoint_module
+
+    writer = _run_writer(tmp_path)
+    monkeypatch.setattr(
+        RunWriter,
+        "write_final",
+        lambda self, **kwargs: (_ for _ in ()).throw(
+            RuntimeError("synthetic alias failure")
+        ),
+    )
+    original_rmtree = checkpoint_module.shutil.rmtree
+
+    def fail_checkpoint_cleanup(path: str | Path, *args: Any, **kwargs: Any) -> None:
+        if Path(path).name == "step-2":
+            raise RuntimeError("synthetic checkpoint cleanup failure")
+        original_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(checkpoint_module.shutil, "rmtree", fail_checkpoint_cleanup)
+    shared: dict[str, Any] = {}
+
+    with pytest.raises(ArtifactContractError) as main_error:
+        CheckpointWriter(tmp_path).write_checkpoint(
+            step=2, accelerator=FakeAccelerator(main=True, shared=shared),
+            model=FakePeftModel(), adapter_name="default", run_writer=writer,
+            is_final=True,
+        )
+    with pytest.raises(ArtifactContractError) as peer_error:
+        CheckpointWriter(tmp_path).write_checkpoint(
+            step=2, accelerator=FakeAccelerator(main=False, shared=shared),
+            model=object(), adapter_name="default",
+        )
+
+    assert "status" in shared
+    assert main_error.value.code == peer_error.value.code == "checkpoint.save_failed"
+    assert str(main_error.value) == str(peer_error.value)
+    assert "synthetic checkpoint cleanup failure" in str(main_error.value)
+    assert not (tmp_path / "checkpoints/final.json").exists()
+    assert not (tmp_path / "checkpoints/best.json").exists()
+    # Cleanup failed, but the residue is a complete payload and no alias selects it.
+    assert (tmp_path / "checkpoints/step-2/adapter/adapter_model.safetensors").is_file()
+    assert _staging(tmp_path) == []
+
+
+def test_final_and_best_are_rank_zero_owned_and_safe(tmp_path: Path) -> None:
+    writer = _run_writer(tmp_path)
+    shared: dict[str, Any] = {}
+    main = CheckpointWriter(tmp_path).write_checkpoint(
+        step=1, accelerator=FakeAccelerator(main=True, shared=shared),
+        model=FakePeftModel(), adapter_name="default", run_writer=writer, is_final=True,
+        best_candidate={"completed": True, "selector": "eval/acc:max", "value": .5,
+                        "optimizer_update_status": "applied", "finite_status": "finite"},
+    )
+    peer = CheckpointWriter(tmp_path).write_checkpoint(
+        step=1, accelerator=FakeAccelerator(main=False, shared=shared),
+        model=object(), adapter_name="default", run_writer=None, is_final=True,
+    )
+    assert main.final_updated and main.best_updated
+    assert not peer.final_updated and not peer.best_updated
+    assert json.loads((tmp_path / "checkpoints/final.json").read_text())["step"] == 1
+    assert json.loads((tmp_path / "checkpoints/best.json").read_text())["step"] == 1
+    assert not any(path.name.startswith("checkpoint-") for path in (tmp_path / "checkpoints").iterdir())
+    assert not list(tmp_path.rglob("checkpoint.json"))
+    assert not list(tmp_path.rglob("checkpoint_handoff.json"))
+
+
+@pytest.mark.parametrize("candidate", [
+    {"completed": False, "value": .9, "optimizer_update_status": "applied", "finite_status": "finite"},
+    {"completed": True, "value": .9, "optimizer_update_status": "skipped_non_finite", "finite_status": "finite"},
+    {"completed": True, "value": .9, "optimizer_update_status": "applied", "finite_status": "non_finite"},
+    {"completed": True, "value": float("nan"), "optimizer_update_status": "applied", "finite_status": "finite"},
+])
+def test_unsafe_or_incomplete_candidate_never_advances_best(tmp_path: Path, candidate: dict[str, Any]) -> None:
+    writer = _run_writer(tmp_path)
+    result = CheckpointWriter(tmp_path).write_checkpoint(
+        step=1, accelerator=FakeAccelerator(), model=FakePeftModel(),
+        adapter_name="default", run_writer=writer, best_candidate=candidate,
+    )
+    assert not result.best_updated
+    assert not (tmp_path / "checkpoints/best.json").exists()
+
+
+def _run_writer(run_dir: Path) -> RunWriter:
+    return RunWriter.initialize(
+        run_dir=run_dir, run_id="run", run_name="run", artifact_root=run_dir.parent,
+        collision_outcome="created", created_at="2026-07-11T00:00:00Z",
+        config_fingerprint="config", resolved_config={}, world_size=2,
+        resolved_max_steps=2,
+    )
+
+
+def _staging(run_dir: Path) -> list[Path]:
+    root = run_dir / "checkpoints"
+    return [] if not root.exists() else list(root.glob(".step-*.tmp"))
 
 
 def _special_token_result() -> SpecialTokenEmbeddingInstallResult:
@@ -901,64 +349,12 @@ def _special_token_result() -> SpecialTokenEmbeddingInstallResult:
         semantics=SPECIAL_TOKEN_EMBEDDING_SEMANTICS,
         tensor_key=DEFAULT_EMBED_DELTA_TENSOR_KEY,
         tie_word_embeddings=True,
-        token_selection=SpecialTokenSelection(
-            token_strings=("<|object_ref_start|>", "<|coord_0|>"),
-            token_ids=(2, 3),
-        ),
-        delta_shape=(2, 4),
-        delta_dtype="float32",
-        delta_parameter_names=("embed_tokens.shared_embed_delta",),
-        base_embedding_parameter_name="model.embed_tokens.weight",
-        base_lm_head_parameter_name="lm_head.weight",
+        token_selection=SpecialTokenSelection(token_strings=("<x>",), token_ids=(2,)),
+        delta_shape=(1, 2), delta_dtype="float32",
+        delta_parameter_names=("embed.shared_embed_delta",),
+        base_embedding_parameter_name="embed.weight", base_lm_head_parameter_name="lm_head.weight",
     )
     return SpecialTokenEmbeddingInstallResult(
-        model=nn.Module(),
-        input_wrapper=nn.Identity(),
-        output_wrapper=nn.Identity(),
-        shared_embed_delta=nn.Parameter(
-            torch.tensor(
-                [[0.25, -0.25, 0.5, -0.5], [0.75, 0.5, -0.75, -0.5]],
-                dtype=torch.float32,
-            )
-        ),
-        receipt=receipt,
+        model=nn.Module(), input_wrapper=nn.Identity(), output_wrapper=nn.Identity(),
+        shared_embed_delta=nn.Parameter(torch.ones(1, 2)), receipt=receipt,
     )
-
-
-def _trainable_surface() -> TrainableSurfaceReceipt:
-    return TrainableSurfaceReceipt(
-        phase="before_first_backward",
-        frozen_towers=("language", "vision", "aligner"),
-        trainable_towers=("adapter.language", "token_embeddings"),
-        adapter_targets={
-            "enabled": True,
-            "matched_modules": ["model.language_model.q_proj"],
-        },
-        selected_embedding_tokens={
-            "enabled": True,
-            "selected_token_count": 2,
-            "token_ids": [2, 3],
-        },
-        parameter_counts={"trainable_parameter_count": 2},
-        optimizer_groups=(
-            {"group_name": "adapter.language", "parameter_names": ["adapter.weight"]},
-            {
-                "group_name": "token_embeddings",
-                "parameter_names": ["embed_tokens.shared_embed_delta"],
-            },
-        ),
-        unmatched_trainable_names=(),
-        frozen_reason_summaries=(
-            FrozenReasonSummary(
-                reason="base_towers_frozen_v1",
-                parameter_count=1,
-                scalar_count=4,
-                parameter_names_preview=("model.embed_tokens.weight",),
-                context={},
-            ),
-        ),
-    )
-
-
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()

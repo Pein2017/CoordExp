@@ -36,16 +36,49 @@ remaining P0/P1 findings.
 
 ## 2. Wave 2 — Atomic Replacement Of The Artifact/Event/Checkpoint Graph
 
-- [ ] 2.1 Refine Wave 2 into file-owned slices and add failing interface tests for the final run inventory, one typed completed-step observation, bounded trainer result, wide train/eval rows, NaN/Inf-to-null normalization with `non_finite_fields`, bounded warning counters, immutable materialization handles, safe best selection, and one canonical checkpoint alias owner.
-- [ ] 2.2 Replace generic trainer event-name dispatch and full `step_results` retention with one typed `on_completed_step(observation)` callback, direct scheduled handlers, compact counters/latest state, and release of step-local tensors/receipts after consumers finish.
-- [ ] 2.3 Refactor `ForwardEvalRunner` to return counts, triggers, and one wide reduced scalar mapping without importing artifact-writer or metric-event types; make its rank-zero `logging.jsonl` row the only durable eval scalar schema and remove separate eval-summary metric files.
-- [ ] 2.4 Implement one concrete rank-zero run writer for atomic `run.json`, one self-contained `resolved_config.json`, direct single-writer `logging.jsonl`, and atomic checkpoint aliases; bind cache format/fingerprint/determinant digest in `run.json` without copying cache payloads, presentations, or selector state.
-- [ ] 2.5 Implement replicated-DDP checkpoint choreography with a pre-save barrier, one rank-zero staged PEFT save using safe serialization/the configured adapter/`save_embedding_layers=False`, optional compact selected-token delta, required LoRA A/B/DoRA and forbidden full-tensor validation, atomic step commit, and a failure-aware success/error collective that makes every rank continue or raise together while cleaning staging residue.
-- [ ] 2.6 Make `final.json` and optional `best.json` the sole checkpoint selector owners; test that update-skipped, unsafe, or non-finite steps cannot advance `best.json` by default even with a better eval value.
-- [ ] 2.7 Remove new handoff generation, neighboring-handoff and `checkpoint-final` metadata resolution, readiness gates, and downstream inference identity/provenance/merge fields/tests that only propagate those metadata objects; migrate supported inference configs/smokes to explicit adapter and optional delta paths, preserve actual loaded base/adapter/delta provenance, and document/test the narrower standard-PEFT identity boundary plus the stronger embedding-delta hash boundary.
-- [ ] 2.8 Delete `RunArtifactManager`, `MetricStreamEvent`, `TrainingArtifactBridge`, per-step Qwen files, per-rank progress streams, receipt/report registries, resolved YAML, durable schedule receipt, full-history `training_result.json`, and every production import/caller/test of those schemas in the same Wave; do not leave a compatibility facade or dual writer.
-- [ ] 2.9 Migrate all active configs/tests off `training.logging` cadence and old artifact/debug receipt controls; compare old/new resolved mappings after removing only the complete approved infrastructure-deletion allowlist so seeds, order/augmentation, precision/attention, adapter/embedding sources, cache semantics, losses, optimizer/scheduler, batch, and eval/checkpoint cadence remain identical.
-- [ ] 2.10 Gate Wave 2 with artifact/trainer/eval/checkpoint/inference/config tests, a public-entrypoint five-step one-process Accelerate smoke with exactly five train and two eval rows, real adapter-only and adapter-plus-delta load round trips, a two-rank injected rank-zero save-failure subprocess proving shared failure/no hang/no alias/no partial commit, file/byte inventory assertions, removed-surface residue searches, strict OpenSpec validation, and separate standards plus intent/contract audits with no unresolved P0/P1.
+Wave 2 executes in two implementation phases without an intermediate
+production commit. Phase 2A has five disjoint owners: the trainer contract in
+`src/training/supervised_trainer.py`; the pure eval contract in
+`src/eval/forward.py`; the concrete run writer and legacy manager/metric-stream
+deletion in `src/artifacts/`; the training logging-schema/profile migration in
+`src/config/`, `src/training/schedule.py`, and active train configs; and the
+explicit-path inference migration in `src/inference/` plus inference tests.
+Phase 2B starts only after those interfaces pass their focused tests: one
+checkpoint owner rewrites `src/artifacts/checkpoints.py`, and one integration
+owner rewires `src/training/pipeline.py`, deletes every remaining legacy
+caller, and owns the full inventory/smoke gate. `src/artifacts/__init__.py` is
+integration-owned until exports can switch atomically. No worker may commit or
+self-approve; the parent owns the task ledger, cross-lane integration, real
+subprocess probes, independent audits, and the single Wave 2 commit.
+
+- [x] 2.1 Refine Wave 2 into file-owned slices and add failing interface tests for the final run inventory, one typed completed-step observation, bounded trainer result, wide train/eval rows, NaN/Inf-to-null normalization with `non_finite_fields`, bounded warning counters, immutable materialization handles, safe best selection, and one canonical checkpoint alias owner.
+- [x] 2.2 Replace generic trainer event-name dispatch and full `step_results` retention with one typed `on_completed_step(observation)` callback, direct scheduled handlers, compact counters/latest state, and release of step-local tensors/receipts after consumers finish.
+- [x] 2.3 Refactor `ForwardEvalRunner` to return counts, triggers, and one wide reduced scalar mapping without importing artifact-writer or metric-event types; make its rank-zero `logging.jsonl` row the only durable eval scalar schema and remove separate eval-summary metric files.
+- [x] 2.4 Implement one concrete rank-zero run writer for atomic `run.json`, one self-contained `resolved_config.json`, direct single-writer `logging.jsonl`, and atomic checkpoint aliases; bind cache format/fingerprint/determinant digest in `run.json` without copying cache payloads, presentations, or selector state.
+- [x] 2.5 Implement replicated-DDP checkpoint choreography with a pre-save barrier, one rank-zero staged PEFT save using safe serialization/the configured adapter/`save_embedding_layers=False`, optional compact selected-token delta, required LoRA A/B/DoRA and forbidden full-tensor validation, atomic step commit, and a failure-aware success/error collective that makes every rank continue or raise together while cleaning staging residue.
+- [x] 2.6 Make `final.json` and optional `best.json` the sole checkpoint selector owners; test that update-skipped, unsafe, or non-finite steps cannot advance `best.json` by default even with a better eval value.
+- [x] 2.7 Remove new handoff generation, neighboring-handoff and `checkpoint-final` metadata resolution, readiness gates, and downstream inference identity/provenance/merge fields/tests that only propagate those metadata objects; migrate supported inference configs/smokes to explicit adapter and optional delta paths, preserve actual loaded base/adapter/delta provenance, and document/test the narrower standard-PEFT identity boundary plus the stronger embedding-delta hash boundary.
+- [x] 2.8 Delete `RunArtifactManager`, `MetricStreamEvent`, `TrainingArtifactBridge`, per-step Qwen files, per-rank progress streams, receipt/report registries, resolved YAML, durable schedule receipt, full-history `training_result.json`, and every production import/caller/test of those schemas in the same Wave; do not leave a compatibility facade or dual writer.
+- [x] 2.9 Migrate all active configs/tests off `training.logging` cadence and old artifact/debug receipt controls; compare old/new resolved mappings after removing only the complete approved infrastructure-deletion allowlist so seeds, order/augmentation, precision/attention, adapter/embedding sources, cache semantics, losses, optimizer/scheduler, batch, and eval/checkpoint cadence remain identical.
+- [x] 2.10 Gate Wave 2 with artifact/trainer/eval/checkpoint/inference/config tests, a public-entrypoint five-step one-process Accelerate smoke with exactly five train and two eval rows, real adapter-only and adapter-plus-delta load round trips, a two-rank injected rank-zero save-failure subprocess proving shared failure/no hang/no alias/no partial commit, file/byte inventory assertions, removed-surface residue searches, strict OpenSpec validation, and separate standards plus intent/contract audits with no unresolved P0/P1.
+
+Wave 2 gate evidence (2026-07-11): the final runtime/training/eval/artifact/
+config/inference slice passed 393 tests. The public entrypoint completed five
+planned steps and ten micro-steps at
+`outputs/smoke/wave2_training_infra/wave2-training-infra-5step-postaudit`,
+producing exactly five `train` and two `eval` rows. Its fixed inventory is ten
+files: 45,511,096 bytes of inference-required checkpoint payload and 13,270
+bytes of run, logging, config, and alias state. Real inference assembly loaded
+both its adapter-only payload and its adapter-plus-selected-token-delta payload
+from explicit paths. Real two-rank Accelerate probes made both ranks receive
+the same `checkpoint.save_failed` after an injected rank-zero staging failure,
+with no hang, step directory, staging residue, `final.json`, or `best.json`; a
+second probe likewise shared `runtime.logging_append_failed` after injected
+rank-zero logging I/O failure. Removed-surface searches, strict OpenSpec
+validation, and `git diff --check` passed. Independent engineering-standards
+and intent/contract fixed-point audits approved with no unresolved P0/P1; both
+non-blocking P2 cleanup requests (replicated same-dataset eval coverage and
+direct trainer scheduled-handler dispatch) were also completed before commit.
 
 ## 3. Wave 3 — Rebuild-Only Packing Cache
 

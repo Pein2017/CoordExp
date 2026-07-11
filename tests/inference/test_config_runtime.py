@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ast
-import hashlib
 import json
 import subprocess
 import sys
@@ -317,7 +316,7 @@ def test_runtime_assembly_uses_default_owner_wired_adapter_and_delta_paths(
 
     config_path = _write_config(
         tmp_path,
-        adapter={"type": "dora", "path": "adapter/checkpoint-final"},
+        adapter={"type": "dora", "path": "adapter/step-5"},
         embedding_delta={"path": "delta/special-token-delta.safetensors"},
         debug={"smoke": True, "dry_run": True},
     )
@@ -359,7 +358,7 @@ def test_runtime_assembly_uses_default_owner_wired_adapter_and_delta_paths(
     assert runtime.model_identity["family"] == "base-plus-adapter-plus-delta"
     assert runtime.model_identity["base"]["path"] == resolved.config.model.base_model
     assert runtime.model_identity["adapter"]["adapter_path"].endswith(
-        "adapter/checkpoint-final"
+        "adapter/step-5"
     )
     assert runtime.model_identity["embedding_delta"]["identity"]["delta_path"].endswith(
         "delta/special-token-delta.safetensors"
@@ -375,7 +374,7 @@ def test_adapter_runtime_loads_qwen_model_and_uses_adapter_owner(
 
     config_path = _write_config(
         tmp_path,
-        adapter={"type": "dora", "path": "adapter/checkpoint-final"},
+        adapter={"type": "dora", "path": "adapter/step-5"},
         debug={"smoke": True, "dry_run": False},
     )
     resolved = load_infer_config(config_path)
@@ -403,7 +402,7 @@ def test_adapter_runtime_loads_qwen_model_and_uses_adapter_owner(
     runtime = runtime_module.assemble_runtime(resolved.config)
 
     assert observed_load_model == [True]
-    assert fake_model.loaded_path.endswith("adapter/checkpoint-final")
+    assert fake_model.loaded_path.endswith("adapter/step-5")
     assert fake_model.active_adapter == "default"
     assert runtime.adapter_receipt is not None
     assert runtime.adapter_receipt["status"] == "validated"
@@ -542,312 +541,46 @@ def test_embedding_delta_runtime_loads_and_installs_delta_with_qwen_identity(
     )
 
 
-def test_runtime_marks_neighbor_handoff_composition_canonical(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+def test_runtime_propagates_explicit_adapter_and_delta_loader_receipts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from src.config.inference import load_infer_config
     from src.inference import runtime as runtime_module
 
-    checkpoint_dir = _write_minimal_handoff_checkpoint(tmp_path)
+    adapter_dir = tmp_path / "payloads" / "adapter"
+    delta_dir = tmp_path / "payloads" / "special_token_embeddings"
+    adapter_dir.mkdir(parents=True)
+    delta_dir.mkdir(parents=True)
     config_path = _write_config(
-        tmp_path,
-        adapter={
-            "type": "dora",
-            "path": str(checkpoint_dir / "adapter"),
-            "name": "default",
-        },
-        embedding_delta={"path": str(checkpoint_dir / "special_token_embeddings")},
-        debug={"smoke": True, "dry_run": True},
+        tmp_path, adapter={"type": "dora", "path": str(adapter_dir), "name": "default"},
+        embedding_delta={"path": str(delta_dir)}, debug={"smoke": True, "dry_run": True},
     )
     resolved = load_infer_config(config_path)
-    monkeypatch.setattr(
-        runtime_module,
-        "load_qwen_components_from_options",
-        lambda options: _fake_qwen_components(resolved.config),
-    )
-    monkeypatch.setattr(
-        runtime_module,
-        "load_inference_dora_adapter",
-        lambda *, config, qwen: {"status": "validated", "adapter_path": config.adapter.path},
-    )
-    monkeypatch.setattr(
-        runtime_module,
-        "load_inference_embedding_delta",
-        lambda *, config, qwen: {"status": "loaded", "delta_path": config.embedding_delta.path},
-    )
-
+    monkeypatch.setattr(runtime_module, "load_qwen_components_from_options", lambda options: _fake_qwen_components(resolved.config))
+    monkeypatch.setattr(runtime_module, "load_inference_dora_adapter", lambda *, config, qwen: {"status": "validated", "adapter_path": config.adapter.path})
+    monkeypatch.setattr(runtime_module, "load_inference_embedding_delta", lambda *, config, qwen: {"status": "loaded", "delta_path": config.embedding_delta.path})
     runtime = runtime_module.assemble_runtime(resolved.config)
-
-    handoff = runtime.model_identity["checkpoint_handoff"]
-    assert handoff["path"] == "checkpoints/step-5/checkpoint_handoff.json"
-    assert handoff["fingerprint"] == _sha256(
-        checkpoint_dir / "checkpoint_handoff.json"
-    )
-    assert handoff["adapter_identity"]["fingerprint"] == runtime.adapter_receipt["fingerprint"]
-    assert handoff["special_token_embedding_identity"]["fingerprint"] == (
-        runtime.embedding_delta_receipt["fingerprint"]
-    )
-    assert runtime.adapter_receipt == handoff["adapter_identity"]
-    assert runtime.embedding_delta_receipt == handoff["special_token_embedding_identity"]
-    assert runtime.model_identity["adapter_loader_receipt"]["status"] == "validated"
-    assert runtime.model_identity["embedding_delta_loader_receipt"]["status"] == "loaded"
+    assert runtime.adapter_receipt == {"status": "validated", "adapter_path": str(adapter_dir)}
+    assert runtime.embedding_delta_receipt == {"status": "loaded", "delta_path": str(delta_dir)}
+    assert runtime.model_identity["adapter"] == runtime.adapter_receipt
+    assert runtime.model_identity["embedding_delta"] == runtime.embedding_delta_receipt
 
 
-def test_runtime_rejects_neighbor_handoff_payload_path_mismatch(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+def test_runtime_uses_explicit_embedding_delta_tensor_file_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from src.config.inference import load_infer_config
     from src.inference import runtime as runtime_module
 
-    checkpoint_dir = _write_minimal_handoff_checkpoint(tmp_path)
-    handoff_path = checkpoint_dir / "checkpoint_handoff.json"
-    handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
-    handoff["adapter"]["identity"]["payload_path"] = "checkpoints/step-5/other-adapter"
-    handoff["adapter"]["identity"]["fingerprint"] = _fingerprint_payload(
-        {
-            key: value
-            for key, value in handoff["adapter"]["identity"].items()
-            if key != "fingerprint"
-        }
-    )
-    handoff_path.write_text(json.dumps(handoff, sort_keys=True), encoding="utf-8")
-    config_path = _write_config(
-        tmp_path,
-        adapter={
-            "type": "dora",
-            "path": str(checkpoint_dir / "adapter"),
-            "name": "default",
-        },
-        embedding_delta={"path": str(checkpoint_dir / "special_token_embeddings")},
-        debug={"smoke": True, "dry_run": True},
-    )
+    delta_tensor = tmp_path / "payloads" / "special_token_embeddings.safetensors"
+    delta_tensor.parent.mkdir(parents=True)
+    delta_tensor.write_bytes(b"delta")
+    config_path = _write_config(tmp_path, adapter=None, embedding_delta={"path": str(delta_tensor)}, debug={"smoke": True, "dry_run": True})
     resolved = load_infer_config(config_path)
-    monkeypatch.setattr(
-        runtime_module,
-        "load_qwen_components_from_options",
-        lambda options: _fake_qwen_components(resolved.config),
-    )
-    monkeypatch.setattr(
-        runtime_module,
-        "load_inference_dora_adapter",
-        lambda *, config, qwen: {"status": "validated", "adapter_path": config.adapter.path},
-    )
-    monkeypatch.setattr(
-        runtime_module,
-        "load_inference_embedding_delta",
-        lambda *, config, qwen: {"status": "loaded", "delta_path": config.embedding_delta.path},
-    )
-
-    with pytest.raises(RuntimeContractError) as exc_info:
-        runtime_module.assemble_runtime(resolved.config)
-
-    assert exc_info.value.code == "inference.checkpoint_handoff_payload_mismatch"
-
-
-def test_runtime_rejects_neighbor_handoff_missing_configured_adapter_identity(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from src.config.inference import load_infer_config
-    from src.inference import runtime as runtime_module
-
-    checkpoint_dir = _write_minimal_handoff_checkpoint(tmp_path)
-    handoff_path = checkpoint_dir / "checkpoint_handoff.json"
-    handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
-    handoff["adapter"] = {"enabled": False}
-    handoff_path.write_text(json.dumps(handoff, sort_keys=True), encoding="utf-8")
-    config_path = _write_config(
-        tmp_path,
-        adapter={
-            "type": "dora",
-            "path": str(checkpoint_dir / "adapter"),
-            "name": "default",
-        },
-        embedding_delta={"path": str(checkpoint_dir / "special_token_embeddings")},
-        debug={"smoke": True, "dry_run": True},
-    )
-    resolved = load_infer_config(config_path)
-    monkeypatch.setattr(
-        runtime_module,
-        "load_qwen_components_from_options",
-        lambda options: _fake_qwen_components(resolved.config),
-    )
-    monkeypatch.setattr(
-        runtime_module,
-        "load_inference_dora_adapter",
-        lambda *, config, qwen: {"status": "validated", "adapter_path": config.adapter.path},
-    )
-    monkeypatch.setattr(
-        runtime_module,
-        "load_inference_embedding_delta",
-        lambda *, config, qwen: {"status": "loaded", "delta_path": config.embedding_delta.path},
-    )
-
-    with pytest.raises(RuntimeContractError) as exc_info:
-        runtime_module.assemble_runtime(resolved.config)
-
-    assert exc_info.value.code == "inference.checkpoint_handoff_payload_mismatch"
-    assert exc_info.value.context["field"] == "adapter_identity"
-
-
-@pytest.mark.parametrize(
-    ("mutation", "expected_field"),
-    [
-        ("base_model.path", "base_model.path"),
-        ("base_model.base_config_sha256", "base_model.base_config_sha256"),
-        ("base_model.tokenizer_sha256", "base_model.tokenizer_sha256"),
-        ("processor_identity", "processor_identity"),
-        ("template_identity", "template_identity"),
-        ("intended_inference_config_family", "intended_inference_config_family"),
-    ],
-)
-def test_runtime_rejects_neighbor_handoff_non_payload_identity_mismatch(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    mutation: str,
-    expected_field: str,
-) -> None:
-    from src.config.inference import load_infer_config
-    from src.inference import runtime as runtime_module
-
-    checkpoint_dir = _write_minimal_handoff_checkpoint(tmp_path)
-    handoff_path = checkpoint_dir / "checkpoint_handoff.json"
-    handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
-    if mutation.startswith("base_model."):
-        handoff["base_model"][mutation.split(".", 1)[1]] = "different"
-    elif mutation == "processor_identity":
-        handoff["processor_identity"] = {"processor_class": "different"}
-    elif mutation == "template_identity":
-        handoff["template_identity"] = {
-            **handoff["template_identity"],
-            "object_ordering": "random",
-        }
-    elif mutation == "intended_inference_config_family":
-        handoff["intended_inference_config_family"] = "configs/other"
-    else:  # pragma: no cover - param guard.
-        raise AssertionError(mutation)
-    handoff_path.write_text(json.dumps(handoff, sort_keys=True), encoding="utf-8")
-    config_path = _write_config(
-        tmp_path,
-        adapter={
-            "type": "dora",
-            "path": str(checkpoint_dir / "adapter"),
-            "name": "default",
-        },
-        embedding_delta={"path": str(checkpoint_dir / "special_token_embeddings")},
-        debug={"smoke": True, "dry_run": True},
-    )
-    resolved = load_infer_config(config_path)
-    monkeypatch.setattr(
-        runtime_module,
-        "load_qwen_components_from_options",
-        lambda options: _fake_qwen_components(resolved.config),
-    )
-    monkeypatch.setattr(
-        runtime_module,
-        "load_inference_dora_adapter",
-        lambda *, config, qwen: {"status": "validated", "adapter_path": config.adapter.path},
-    )
-    monkeypatch.setattr(
-        runtime_module,
-        "load_inference_embedding_delta",
-        lambda *, config, qwen: {"status": "loaded", "delta_path": config.embedding_delta.path},
-    )
-
-    with pytest.raises(RuntimeContractError) as exc_info:
-        runtime_module.assemble_runtime(resolved.config)
-
-    assert exc_info.value.code == "inference.checkpoint_handoff_identity_mismatch"
-    assert exc_info.value.context["field"] == expected_field
-
-
-def test_runtime_discovers_handoff_from_embedding_delta_tensor_file_path(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from src.config.inference import load_infer_config
-    from src.inference import runtime as runtime_module
-
-    checkpoint_dir = _write_minimal_handoff_checkpoint(tmp_path)
-    handoff_path = checkpoint_dir / "checkpoint_handoff.json"
-    handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
-    handoff["adapter"] = {"enabled": False}
-    handoff_path.write_text(json.dumps(handoff, sort_keys=True), encoding="utf-8")
-    delta_tensor = (
-        checkpoint_dir
-        / "special_token_embeddings"
-        / "special_token_embeddings.safetensors"
-    )
-    config_path = _write_config(
-        tmp_path,
-        adapter=None,
-        embedding_delta={"path": str(delta_tensor)},
-        debug={"smoke": True, "dry_run": True},
-    )
-    resolved = load_infer_config(config_path)
-    monkeypatch.setattr(
-        runtime_module,
-        "load_qwen_components_from_options",
-        lambda options: _fake_qwen_components(resolved.config),
-    )
-    monkeypatch.setattr(
-        runtime_module,
-        "load_inference_embedding_delta",
-        lambda *, config, qwen: {"status": "loaded", "delta_path": config.embedding_delta.path},
-    )
-
+    monkeypatch.setattr(runtime_module, "load_qwen_components_from_options", lambda options: _fake_qwen_components(resolved.config))
+    monkeypatch.setattr(runtime_module, "load_inference_embedding_delta", lambda *, config, qwen: {"status": "loaded", "delta_path": config.embedding_delta.path})
     runtime = runtime_module.assemble_runtime(resolved.config)
-
-    assert runtime.model_identity["checkpoint_handoff"]["path"] == (
-        "checkpoints/step-5/checkpoint_handoff.json"
-    )
-
-
-def test_runtime_rejects_incomplete_neighbor_handoff(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from src.config.inference import load_infer_config
-    from src.inference import runtime as runtime_module
-
-    checkpoint_dir = _write_minimal_handoff_checkpoint(tmp_path)
-    handoff_path = checkpoint_dir / "checkpoint_handoff.json"
-    handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
-    handoff.pop("base_model")
-    handoff_path.write_text(json.dumps(handoff, sort_keys=True), encoding="utf-8")
-    config_path = _write_config(
-        tmp_path,
-        adapter={
-            "type": "dora",
-            "path": str(checkpoint_dir / "adapter"),
-            "name": "default",
-        },
-        embedding_delta={"path": str(checkpoint_dir / "special_token_embeddings")},
-        debug={"smoke": True, "dry_run": True},
-    )
-    resolved = load_infer_config(config_path)
-    monkeypatch.setattr(
-        runtime_module,
-        "load_qwen_components_from_options",
-        lambda options: _fake_qwen_components(resolved.config),
-    )
-    monkeypatch.setattr(
-        runtime_module,
-        "load_inference_dora_adapter",
-        lambda *, config, qwen: {"status": "validated", "adapter_path": config.adapter.path},
-    )
-    monkeypatch.setattr(
-        runtime_module,
-        "load_inference_embedding_delta",
-        lambda *, config, qwen: {"status": "loaded", "delta_path": config.embedding_delta.path},
-    )
-
-    with pytest.raises(RuntimeContractError) as exc_info:
-        runtime_module.assemble_runtime(resolved.config)
-
-    assert exc_info.value.code == "inference.checkpoint_handoff_hold"
+    assert runtime.embedding_delta_receipt["delta_path"] == str(delta_tensor)
 
 
 def test_qwen_components_shape_exposes_delta_identity_sha_fields() -> None:
@@ -1085,127 +818,3 @@ def _write_delta_metadata(path: Path) -> None:
         json.dumps(metadata, sort_keys=True),
         encoding="utf-8",
     )
-
-
-def _write_minimal_handoff_checkpoint(tmp_path: Path) -> Path:
-    checkpoint_dir = tmp_path / "run-a" / "checkpoints" / "step-5"
-    adapter_dir = checkpoint_dir / "adapter"
-    embed_dir = checkpoint_dir / "special_token_embeddings"
-    adapter_dir.mkdir(parents=True)
-    embed_dir.mkdir(parents=True)
-    adapter_config = adapter_dir / "adapter_config.json"
-    adapter_tensor = adapter_dir / "adapter_model.safetensors"
-    embed_metadata = embed_dir / "special_token_embeddings.json"
-    embed_tensor = embed_dir / "special_token_embeddings.safetensors"
-    adapter_config.write_text(
-        json.dumps({"peft_type": "LORA", "use_dora": True}),
-        encoding="utf-8",
-    )
-    adapter_tensor.write_bytes(b"adapter")
-    embed_metadata.write_text(
-        json.dumps(
-            {
-                "tensor_key": "shared_embed_delta",
-                "tensor_shape": [2, 4],
-                "tensor_dtype": "float32",
-                "base_config_sha256": "base-config-sha",
-                "tokenizer_sha256": "tokenizer-sha",
-            },
-            sort_keys=True,
-        ),
-        encoding="utf-8",
-    )
-    embed_tensor.write_bytes(b"embed")
-    adapter_identity = {
-        "payload_path": "checkpoints/step-5/adapter",
-        "required_files": {
-            "adapter_config.json": "checkpoints/step-5/adapter/adapter_config.json",
-            "adapter_model.safetensors": (
-                "checkpoints/step-5/adapter/adapter_model.safetensors"
-            ),
-        },
-        "adapter_config_sha256": _sha256(adapter_config),
-        "adapter_model_sha256": _sha256(adapter_tensor),
-    }
-    adapter_identity["fingerprint"] = _fingerprint_payload(adapter_identity)
-    embed_identity = {
-        "metadata_path": (
-            "checkpoints/step-5/special_token_embeddings/"
-            "special_token_embeddings.json"
-        ),
-        "tensor_path": (
-            "checkpoints/step-5/special_token_embeddings/"
-            "special_token_embeddings.safetensors"
-        ),
-        "metadata_sha256": _sha256(embed_metadata),
-        "tensor_sha256": _sha256(embed_tensor),
-        "tensor_key": "shared_embed_delta",
-        "tensor_shape": [2, 4],
-        "tensor_dtype": "float32",
-        "base_config_sha256": "base-config-sha",
-        "tokenizer_sha256": "tokenizer-sha",
-    }
-    embed_identity["fingerprint"] = _fingerprint_payload(embed_identity)
-    handoff = {
-        "schema_version": 1,
-        "checkpoint_id": "step-5",
-        "planned_step_id": 5,
-        "checkpoint_path": "checkpoints/step-5",
-        "checkpoint_metadata_path": "checkpoints/step-5/checkpoint.json",
-        "base_model": {
-            "path": str(tmp_path / "model_cache" / "qwen"),
-            "base_config_sha256": "base-config-sha",
-            "tokenizer_sha256": "tokenizer-sha",
-        },
-        "adapter": {
-            "enabled": True,
-            "identity": adapter_identity,
-        },
-        "special_token_embeddings": {
-            "enabled": True,
-            "identity": embed_identity,
-        },
-        "processor_identity": {"processor_class": "unit-processor"},
-        "template_identity": {
-            "object_field_order": "desc_first",
-            "object_ordering": "source_order",
-            "assistant_format": "object_box_closed",
-            "prompt": {"system": None, "user": "Describe objects."},
-        },
-        "resolved_config_fingerprint": "infer-config-fp",
-        "intended_inference_config_family": "configs/coordexp_swift/infer",
-        "accepted_eval_artifact_roots": [],
-    }
-    (checkpoint_dir / "checkpoint.json").write_text(
-        json.dumps(
-            {
-                "checkpoint_id": "step-5",
-                "planned_step_id": 5,
-                "checkpoint_path": "checkpoints/step-5",
-                "checkpoint_handoff": "checkpoints/step-5/checkpoint_handoff.json",
-            },
-            sort_keys=True,
-        ),
-        encoding="utf-8",
-    )
-    (checkpoint_dir / "checkpoint_handoff.json").write_text(
-        json.dumps(handoff, sort_keys=True),
-        encoding="utf-8",
-    )
-    return checkpoint_dir
-
-
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def _fingerprint_payload(payload: dict[str, Any]) -> str:
-    return hashlib.sha256(
-        json.dumps(
-            payload,
-            allow_nan=False,
-            ensure_ascii=True,
-            separators=(",", ":"),
-            sort_keys=True,
-        ).encode("utf-8")
-    ).hexdigest()

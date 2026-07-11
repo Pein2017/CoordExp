@@ -1,15 +1,14 @@
-"""Packed forward-only evaluation runner."""
+"""Artifact-independent packed forward evaluation."""
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Protocol
 
 import torch
 
-from src.artifacts import MetricStreamEvent, RunArtifactManager
 from src.common.errors import RuntimeContractError
 from src.training.supervised_trainer import (
     LossContextFactory,
@@ -21,7 +20,7 @@ from src.training.supervised_trainer import (
 )
 
 
-EVAL_FORWARD_SPLIT = "eval.forward"
+EVAL_FORWARD_SPLIT = "eval"
 
 
 class EvalRuntimeBoundary(Protocol):
@@ -33,20 +32,39 @@ class EvalRuntimeBoundary(Protocol):
         local_micro_step_index: int,
     ) -> SupervisedMicroStep: ...
 
+    def gather_metrics(
+        self,
+        metrics: Mapping[str, float],
+        *,
+        planned_step_id: int,
+        split: str,
+    ) -> Mapping[str, Any]: ...
+
 
 @dataclass(frozen=True)
-class ForwardEvalResult:
-    planned_step_id: int
-    summary_path: Path
-    summary: Mapping[str, Any]
-    metric_events: tuple[MetricStreamEvent, ...]
+class ForwardEvalObservation:
+    """One completed eval invocation, ready for a canonical wide logging row."""
 
-    def to_artifact_dict(self) -> dict[str, Any]:
+    planned_step_id: int
+    split: str
+    trigger_reasons: tuple[str, ...]
+    example_count: int
+    pack_count: int
+    scalars: Mapping[str, float | None]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "scalars", MappingProxyType(dict(self.scalars)))
+
+    def to_logging_row(self) -> dict[str, Any]:
+        """Return writer input without normalizing non-finite scalar values."""
+
         return {
-            "planned_step_id": self.planned_step_id,
-            "summary_path": str(self.summary_path),
-            "summary": dict(self.summary),
-            "metric_events": [event.to_record() for event in self.metric_events],
+            "step": self.planned_step_id,
+            "split": self.split,
+            "trigger_reasons": list(self.trigger_reasons),
+            "example_count": self.example_count,
+            "pack_count": self.pack_count,
+            **self.scalars,
         }
 
 
@@ -57,7 +75,6 @@ class ForwardEvalRunner:
         model: Any,
         micro_step_stream: Iterable[SupervisedMicroStep],
         loss_runner: LossRunnerBoundary,
-        artifact_manager: RunArtifactManager,
         eval_source: Mapping[str, Any] | None,
         qwen_forward: QwenForwardFn | None = None,
         loss_context_factory: LossContextFactory | None = None,
@@ -66,7 +83,6 @@ class ForwardEvalRunner:
         self.model = model
         self.micro_step_stream = micro_step_stream
         self.loss_runner = loss_runner
-        self.artifact_manager = artifact_manager
         self.eval_source = None if eval_source is None else dict(eval_source)
         self.qwen_forward = qwen_forward or _default_qwen_forward
         self.loss_context_factory = loss_context_factory or _default_loss_context
@@ -77,10 +93,7 @@ class ForwardEvalRunner:
         *,
         planned_step_id: int,
         trigger_reasons: Sequence[str],
-        optimizer_update_status: str,
-        finite_status: str,
-        warning_status: str,
-    ) -> ForwardEvalResult:
+    ) -> ForwardEvalObservation:
         if planned_step_id <= 0:
             raise RuntimeContractError(
                 "eval.forward planned_step_id must be positive",
@@ -92,6 +105,7 @@ class ForwardEvalRunner:
                 "eval.forward requires an explicit eval source",
                 code="eval_forward.source_required",
             )
+
         was_training = getattr(self.model, "training", None)
         eval_method = getattr(self.model, "eval", None)
         train_method = getattr(self.model, "train", None)
@@ -99,38 +113,25 @@ class ForwardEvalRunner:
             if callable(eval_method):
                 eval_method()
             with torch.no_grad():
-                summary, metric_events = self._run_forward_only(
-                    planned_step_id=planned_step_id,
-                    trigger_reasons=trigger_reasons,
-                    optimizer_update_status=optimizer_update_status,
-                    finite_status=finite_status,
-                    warning_status=warning_status,
+                example_count, pack_count, scalars = self._run_forward_only(
+                    planned_step_id=planned_step_id
                 )
         finally:
             if was_training is not None and callable(train_method):
                 train_method(bool(was_training))
-        summary_path = self.artifact_manager.write_eval_forward_summary(
+
+        return ForwardEvalObservation(
             planned_step_id=planned_step_id,
-            summary=summary,
-        )
-        for event in metric_events:
-            self.artifact_manager.append_metric_event(event)
-        return ForwardEvalResult(
-            planned_step_id=planned_step_id,
-            summary_path=summary_path,
-            summary=summary,
-            metric_events=metric_events,
+            split=EVAL_FORWARD_SPLIT,
+            trigger_reasons=tuple(str(reason) for reason in trigger_reasons),
+            example_count=example_count,
+            pack_count=pack_count,
+            scalars=scalars,
         )
 
     def _run_forward_only(
-        self,
-        *,
-        planned_step_id: int,
-        trigger_reasons: Sequence[str],
-        optimizer_update_status: str,
-        finite_status: str,
-        warning_status: str,
-    ) -> tuple[dict[str, Any], tuple[MetricStreamEvent, ...]]:
+        self, *, planned_step_id: int
+    ) -> tuple[int, int, dict[str, float | None]]:
         micro_steps = tuple(self.micro_step_stream)
         if not micro_steps:
             raise RuntimeContractError(
@@ -140,152 +141,110 @@ class ForwardEvalRunner:
             )
         if _supports_streaming_loss(self.loss_runner):
             return self._run_streaming_forward_only(
-                micro_steps,
-                planned_step_id=planned_step_id,
-                trigger_reasons=trigger_reasons,
-                optimizer_update_status=optimizer_update_status,
-                finite_status=finite_status,
-                warning_status=warning_status,
+                micro_steps, planned_step_id=planned_step_id
             )
 
         contexts: list[Any] = []
-        qwen_receipts: list[Mapping[str, Any]] = []
         example_count = 0
         for local_index, micro_step in enumerate(micro_steps):
             example_count += len(tuple(micro_step.encoded_examples))
-            moved = (
-                self.runtime.move_micro_step(
-                    micro_step,
-                    planned_step_id=planned_step_id,
-                    local_micro_step_index=local_index,
-                )
-                if self.runtime is not None
-                else micro_step
+            moved = self._move_micro_step(
+                micro_step,
+                planned_step_id=planned_step_id,
+                local_micro_step_index=local_index,
             )
             forward_result = self.qwen_forward(
-                _runtime_model(self.runtime, self.model),
-                moved,
+                _runtime_model(self.runtime, self.model), moved
             )
             contexts.append(self.loss_context_factory(moved, forward_result))
-            qwen_receipts.append(_receipt_artifact(forward_result))
         loss_bundle = self.loss_runner.compute(tuple(contexts))
-        loss_artifact = _artifact(loss_bundle)
-        metric_summary = _metric_summary(loss_bundle, loss_artifact)
-        metric_events = tuple(
-            MetricStreamEvent(
-                event_type="metric",
-                planned_step_id=planned_step_id,
-                split=EVAL_FORWARD_SPLIT,
-                name=name,
-                value=None if metric_summary[name] is None else float(metric_summary[name]),
-                trigger_reasons=trigger_reasons,
-                optimizer_update_status=optimizer_update_status,
-                finite_status=finite_status,
-                warning_status=warning_status,
-            )
-            for name in sorted(metric_summary)
+        scalars = _metric_scalars(loss_bundle, _artifact(loss_bundle))
+        return example_count, len(micro_steps), self._gather_scalars(
+            scalars, planned_step_id=planned_step_id
         )
-        summary_relative_path = f"eval/forward/step-{planned_step_id}.json"
-        metric_stream_path = f"metrics/{EVAL_FORWARD_SPLIT}.jsonl"
-        summary = {
-            "planned_step_id": planned_step_id,
-            "split": EVAL_FORWARD_SPLIT,
-            "trigger_reasons": [str(reason) for reason in trigger_reasons],
-            "example_count": example_count,
-            "pack_count": len(contexts),
-            "eval_source": dict(self.eval_source or {}),
-            "loss_summary": loss_artifact,
-            "metric_summary": metric_summary,
-            "artifact_links": {
-                "summary": summary_relative_path,
-                "metric_stream": metric_stream_path,
-            },
-            "optimizer_update_status": optimizer_update_status,
-            "finite_status": finite_status,
-            "warning_status": warning_status,
-            "qwen_forward_receipts": [dict(receipt) for receipt in qwen_receipts],
-        }
-        return summary, metric_events
 
     def _run_streaming_forward_only(
         self,
         micro_steps: Sequence[SupervisedMicroStep],
         *,
         planned_step_id: int,
-        trigger_reasons: Sequence[str],
-        optimizer_update_status: str,
-        finite_status: str,
-        warning_status: str,
-    ) -> tuple[dict[str, Any], tuple[MetricStreamEvent, ...]]:
+    ) -> tuple[int, int, dict[str, float | None]]:
         plan = self.loss_runner.prepare_planned_step(tuple(micro_steps))
         micro_loss_artifacts: list[Mapping[str, Any]] = []
-        qwen_receipts: list[Mapping[str, Any]] = []
         example_count = 0
         for local_index, micro_step in enumerate(micro_steps):
             example_count += len(tuple(micro_step.encoded_examples))
-            moved = (
-                self.runtime.move_micro_step(
-                    micro_step,
-                    planned_step_id=planned_step_id,
-                    local_micro_step_index=local_index,
-                )
-                if self.runtime is not None
-                else micro_step
+            moved = self._move_micro_step(
+                micro_step,
+                planned_step_id=planned_step_id,
+                local_micro_step_index=local_index,
             )
             forward_result = self.qwen_forward(
-                _runtime_model(self.runtime, self.model),
-                moved,
+                _runtime_model(self.runtime, self.model), moved
             )
             context = self.loss_context_factory(moved, forward_result)
             loss_bundle = self.loss_runner.compute_micro_step(
-                context,
-                plan,
-                local_micro_step_index=local_index,
+                context, plan, local_micro_step_index=local_index
             )
             micro_loss_artifacts.append(_artifact(loss_bundle))
-            qwen_receipts.append(_receipt_artifact(forward_result))
             del loss_bundle, context, forward_result, moved
 
         loss_artifact = self.loss_runner.finalize_planned_step(
-            tuple(dict(item) for item in micro_loss_artifacts),
-            plan,
+            tuple(dict(item) for item in micro_loss_artifacts), plan
         )
-        metric_summary = _metric_summary_from_artifact(loss_artifact)
-        metric_events = _metric_events(
-            metric_summary,
+        scalars = _metric_scalars(None, loss_artifact)
+        return example_count, len(micro_steps), self._gather_scalars(
+            scalars, planned_step_id=planned_step_id
+        )
+
+    def _move_micro_step(
+        self,
+        micro_step: SupervisedMicroStep,
+        *,
+        planned_step_id: int,
+        local_micro_step_index: int,
+    ) -> SupervisedMicroStep:
+        if self.runtime is None:
+            return micro_step
+        return self.runtime.move_micro_step(
+            micro_step,
             planned_step_id=planned_step_id,
-            trigger_reasons=trigger_reasons,
-            optimizer_update_status=optimizer_update_status,
-            finite_status=finite_status,
-            warning_status=warning_status,
+            local_micro_step_index=local_micro_step_index,
         )
-        summary = _summary(
+
+    def _gather_scalars(
+        self,
+        scalars: Mapping[str, float | None],
+        *,
+        planned_step_id: int,
+    ) -> dict[str, float | None]:
+        gather = getattr(self.runtime, "gather_metrics", None)
+        if not callable(gather):
+            return dict(scalars)
+        finite_or_nonfinite = {
+            name: float(value) for name, value in scalars.items() if value is not None
+        }
+        gathered = gather(
+            finite_or_nonfinite,
             planned_step_id=planned_step_id,
-            trigger_reasons=trigger_reasons,
-            example_count=example_count,
-            pack_count=len(micro_steps),
-            eval_source=self.eval_source,
-            loss_artifact=loss_artifact,
-            metric_summary=metric_summary,
-            optimizer_update_status=optimizer_update_status,
-            finite_status=finite_status,
-            warning_status=warning_status,
-            qwen_receipts=qwen_receipts,
+            split=EVAL_FORWARD_SPLIT,
         )
-        return summary, metric_events
+        reduced = gathered.get("metrics") if isinstance(gathered, Mapping) else None
+        if not isinstance(reduced, Mapping):
+            raise RuntimeContractError(
+                "eval.forward runtime metric reduction returned no scalar mapping",
+                code="eval_forward.metric_reduction",
+                context={"planned_step_id": planned_step_id},
+            )
+        result = {str(name): _optional_float(value) for name, value in reduced.items()}
+        for name, value in scalars.items():
+            if value is None:
+                result.setdefault(name, None)
+        return result
 
 
 def _runtime_model(runtime: EvalRuntimeBoundary | None, fallback_model: Any) -> Any:
     return getattr(runtime, "model", fallback_model)
-
-
-def _receipt_artifact(forward_result: Any) -> Mapping[str, Any]:
-    receipt = getattr(forward_result, "receipt", None)
-    if hasattr(receipt, "to_artifact_dict"):
-        return receipt.to_artifact_dict()
-    if isinstance(receipt, Mapping):
-        return dict(receipt)
-    return {"receipt_type": type(receipt).__name__}
 
 
 def _artifact(value: Any) -> dict[str, Any]:
@@ -296,93 +255,19 @@ def _artifact(value: Any) -> dict[str, Any]:
     return {"type": type(value).__name__}
 
 
-def _metric_summary(loss_bundle: Any, loss_artifact: Mapping[str, Any]) -> dict[str, float | None]:
+def _metric_scalars(
+    loss_bundle: Any, loss_artifact: Mapping[str, Any]
+) -> dict[str, float | None]:
     metrics = getattr(loss_bundle, "metrics", None)
+    if not isinstance(metrics, Mapping):
+        metrics = loss_artifact.get("metrics")
     if isinstance(metrics, Mapping):
-        return {
-            str(name): (None if value is None else float(value))
-            for name, value in metrics.items()
-        }
-    artifact_metrics = loss_artifact.get("metrics")
-    if isinstance(artifact_metrics, Mapping):
-        return {
-            str(name): (None if value is None else float(value))
-            for name, value in artifact_metrics.items()
-        }
-    total_loss = loss_artifact.get("total_loss")
-    return {"loss/total": None if total_loss is None else float(total_loss)}
+        return {str(name): _optional_float(value) for name, value in metrics.items()}
+    return {"loss/total": _optional_float(loss_artifact.get("total_loss"))}
 
 
-def _metric_summary_from_artifact(loss_artifact: Mapping[str, Any]) -> dict[str, float | None]:
-    artifact_metrics = loss_artifact.get("metrics")
-    if isinstance(artifact_metrics, Mapping):
-        return {
-            str(name): (None if value is None else float(value))
-            for name, value in artifact_metrics.items()
-        }
-    total_loss = loss_artifact.get("total_loss")
-    return {"loss/total": None if total_loss is None else float(total_loss)}
-
-
-def _metric_events(
-    metric_summary: Mapping[str, float | None],
-    *,
-    planned_step_id: int,
-    trigger_reasons: Sequence[str],
-    optimizer_update_status: str,
-    finite_status: str,
-    warning_status: str,
-) -> tuple[MetricStreamEvent, ...]:
-    return tuple(
-        MetricStreamEvent(
-            event_type="metric",
-            planned_step_id=planned_step_id,
-            split=EVAL_FORWARD_SPLIT,
-            name=name,
-            value=None if metric_summary[name] is None else float(metric_summary[name]),
-            trigger_reasons=trigger_reasons,
-            optimizer_update_status=optimizer_update_status,
-            finite_status=finite_status,
-            warning_status=warning_status,
-        )
-        for name in sorted(metric_summary)
-    )
-
-
-def _summary(
-    *,
-    planned_step_id: int,
-    trigger_reasons: Sequence[str],
-    example_count: int,
-    pack_count: int,
-    eval_source: Mapping[str, Any] | None,
-    loss_artifact: Mapping[str, Any],
-    metric_summary: Mapping[str, float | None],
-    optimizer_update_status: str,
-    finite_status: str,
-    warning_status: str,
-    qwen_receipts: Sequence[Mapping[str, Any]],
-) -> dict[str, Any]:
-    summary_relative_path = f"eval/forward/step-{planned_step_id}.json"
-    metric_stream_path = f"metrics/{EVAL_FORWARD_SPLIT}.jsonl"
-    return {
-        "planned_step_id": planned_step_id,
-        "split": EVAL_FORWARD_SPLIT,
-        "trigger_reasons": [str(reason) for reason in trigger_reasons],
-        "example_count": int(example_count),
-        "pack_count": int(pack_count),
-        "eval_source": dict(eval_source or {}),
-        "loss_summary": dict(loss_artifact),
-        "metric_summary": dict(metric_summary),
-        "artifact_links": {
-            "summary": summary_relative_path,
-            "metric_stream": metric_stream_path,
-        },
-        "optimizer_update_status": optimizer_update_status,
-        "finite_status": finite_status,
-        "warning_status": warning_status,
-        "qwen_forward_receipts": [dict(receipt) for receipt in qwen_receipts],
-    }
+def _optional_float(value: Any) -> float | None:
+    return None if value is None else float(value)
 
 
 def _supports_streaming_loss(loss_runner: Any) -> bool:
@@ -396,4 +281,4 @@ def _supports_streaming_loss(loss_runner: Any) -> bool:
     )
 
 
-__all__ = ["EVAL_FORWARD_SPLIT", "ForwardEvalResult", "ForwardEvalRunner"]
+__all__ = ["EVAL_FORWARD_SPLIT", "ForwardEvalObservation", "ForwardEvalRunner"]

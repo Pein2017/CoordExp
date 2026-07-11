@@ -459,42 +459,8 @@ def test_pipeline_manifest_records_embedding_delta_load_receipt(tmp_path: Path) 
     )
     assert manifest["model_identity"]["embedding_delta"]["status"] == "loaded"
     assert manifest["model_identity"]["embedding_delta"]["load"]["loaded"] is True
-    assert manifest["composition_mode"] == "research_manual"
-    assert manifest["handoff_readiness"] == "not_handoff_ready"
-
-
-def test_pipeline_manifest_records_canonical_handoff_composition(
-    tmp_path: Path,
-) -> None:
-    from src.inference import pipeline
-
-    config_path = _write_config(tmp_path, batch_size=1, row_count=1)
-    runtime = _runtime()
-    runtime.model_identity["checkpoint_handoff"] = {
-        "path": "checkpoints/step-5/checkpoint_handoff.json",
-        "fingerprint": "handoff-fp",
-        "adapter_identity": {"fingerprint": "adapter-fp"},
-        "special_token_embedding_identity": {"fingerprint": "embed-fp"},
-    }
-    runtime.adapter_receipt = runtime.model_identity["checkpoint_handoff"]["adapter_identity"]
-    runtime.embedding_delta_receipt = runtime.model_identity["checkpoint_handoff"][
-        "special_token_embedding_identity"
-    ]
-
-    pipeline.run(
-        config_path=config_path,
-        runtime_factory=lambda config: runtime,
-        backend_factory=lambda runtime, config: FakeBackend([]),
-    )
-
-    manifest = json.loads(
-        (tmp_path / "outputs" / "wave6-pipeline" / "run_manifest.json").read_text(
-            encoding="utf-8"
-        )
-    )
-    assert manifest["composition_mode"] == "canonical_handoff"
-    assert manifest["handoff_readiness"] == "handoff"
-    assert manifest["checkpoint_handoff"] == runtime.model_identity["checkpoint_handoff"]
+    assert manifest["adapter_identity"] == runtime.adapter_receipt
+    assert manifest["embedding_delta_identity"] == runtime.embedding_delta_receipt
 
 
 def test_pipeline_terminal_artifact_failure_writes_status_without_row_artifacts(tmp_path: Path) -> None:

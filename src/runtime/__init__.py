@@ -11,7 +11,6 @@ from src.runtime.finite_gates import (
 from src.runtime.seeding import TrainingSeedReceipt, seed_training_runtime
 from src.runtime.train_runtime import (
     TrainRuntime,
-    TrainRuntimeSetupReceipt,
     validate_accelerator_runtime,
 )
 
@@ -20,7 +19,6 @@ __all__ = [
     "RankGradientFiniteReport",
     "RankScalarFiniteReport",
     "TrainRuntime",
-    "TrainRuntimeSetupReceipt",
     "TrainingSeedReceipt",
     "build_gradient_finite_report",
     "reduce_gradient_overflow_reports",

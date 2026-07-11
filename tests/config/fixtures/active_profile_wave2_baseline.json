@@ -1,0 +1,36 @@
+{
+  "baseline_revision": "d86be1b3",
+  "normalization_allowlist": [
+    "runtime.backend",
+    "runtime.deepspeed",
+    "runtime.accelerate.gradient_accumulation_steps",
+    "runtime.accelerate.mixed_precision",
+    "training.logging",
+    "debug.dry_run_writes_artifacts"
+  ],
+  "profiles": {
+    "configs/coordexp_swift/prod/qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1.yaml": "8220dba11779f5bc0a6aac103ff261e528ef60949ef11dc0692936c43559aa11",
+    "configs/coordexp_swift/prod/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate8_ebs128_4epoch.yaml": "6989b3d9f3acda0c763199a5cb22bddb2ebea126dca9bb37d980ce649b533a3f",
+    "configs/coordexp_swift/prod/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_accelerate8_ebs64_4epoch_warmup0p1.yaml": "4fd48194236be33d65de08527b341bb23e9ac9648dd1ac55efc88198461386b3",
+    "configs/coordexp_swift/prod/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1.yaml": "1b0c31a266042d9522352db4c0215a603f2d90981707d6267af277e8858e948a",
+    "configs/coordexp_swift/smoke/length_isolation/physical_length_12k_ebs64_1step.yaml": "53b72431e38a4d967c871d1f5ae76f7ae8cdb4d14cc27e347a4c14f83e7b4d0f",
+    "configs/coordexp_swift/smoke/length_isolation/physical_length_12k_ebs64_2step.yaml": "16025d1c67b4e3e3fed111128e6407cab0da51689274391befbdc4ce3c640fe3",
+    "configs/coordexp_swift/smoke/length_isolation/physical_length_6k_ebs64_1step.yaml": "b49b8439035f3a854a6dcde86844e27d054222e07cf7c42987adbd9862289840",
+    "configs/coordexp_swift/smoke/length_isolation/physical_length_6k_ebs64_2step.yaml": "6a5bebac5fba8de091706058a765e8c4f0d90e40b3c5feee6ace8c68b6b0a48f",
+    "configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_llm_12000_accelerate8_ebs24_2step_warmup0p1_eval_patchproof.yaml": "f3af77ef6cf9f0aae9868fa127682ad0ae90a4574bec4316252639cfad504fa6",
+    "configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate2_ebs2_1step.yaml": "ac09c0578595e05ffcc58d518a4bf2118b6167fe3c696ff8f532f7ef8d62e170",
+    "configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate4_ebs128_2step.yaml": "434e0b3c9af15bb22e348e4cfba27caef34989db8c0a4342c9469bd6af547684",
+    "configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate8_ebs128_2step_patchproof.yaml": "0b977d8a511584e739e1e84aaca367f8d2839c02e2f4dceca9484035e229bf71",
+    "configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate8_ebs8_full_eval_cycle.yaml": "f7b9ae115e688323d0f162b257c538cebfd86cbad78197436b7a7c1a7c0bc866",
+    "configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate8_ebs8_profile_1step.yaml": "8f0dd173805d3341bcbebcc3fedc2eabf562d054f0bacf59f496f9ddaddb64e6",
+    "configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_ebs128_1step.yaml": "7ba1c0635aef1e6d32bfb0daa34760665c20f4f1898bc67925afcab3057e482b",
+    "configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_ebs128_2step.yaml": "505789aa0b042b0fdc8c9cbe9ec9494909a99bd65e243af42d121ee23672438c",
+    "configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_ebs16_streamprobe_1step.yaml": "6876707e346a82a1cec86d04cdd4d9c69cb1d3662d20611e3ceb37e3d765ed19",
+    "configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_ebs1_memprobe_1step.yaml": "2c9edd9cee518c862e379793f22a1d89e910ce27dd05c2ce0607e14bb4aea6f6",
+    "configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_ebs4_streamprobe_1step.yaml": "0c19f604241486c643c5dfb77e2c94bb9100c34a387ea41d92dcffb7c3a23d60",
+    "configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_single_gpu_full_eval_stream.yaml": "a507b4a96a4f6ef55d7585f03b3c49880a573f7ac5217433858c9b414ba5ec3b",
+    "configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_memfit6000_ebs128_1step.yaml": "e95c7d48a6ae1fbaa2da6927ae15e04d26720851a62446d92bf66a98a3c4fb17",
+    "configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_accelerate8_ebs64_2step_warmup0p1_eval_patchproof.yaml": "a23e5cfcb6997737b4639ca25697f99f500cf9dcccca5f152edf862b5e70be83",
+    "configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_2step_warmup0p1_eval_patchproof.yaml": "1d725c263f26f745d8ce29bdb7764368132ee82df4dfed85535a639299630504"
+  }
+}

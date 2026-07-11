@@ -1,887 +1,330 @@
-"""Checkpoint metadata and alias writer."""
+"""Replicated-DDP checkpoint save choreography."""
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
-import hashlib
-from collections.abc import Mapping, Sequence
+import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from src.adapters.dora import DoraAdapterSetupReceipt
-from src.artifacts.manager import RunArtifactManager
-from src.artifacts.metric_stream import MetricStreamEvent
+from safetensors import safe_open
+
+from src.artifacts.run_writer import RunWriter
 from src.common.errors import ArtifactContractError
-from src.optim.trainable_surface import TrainableSurfaceReceipt
 from src.qwen.special_token_embeddings import (
-    SPECIAL_TOKEN_EMBEDDINGS_JSON,
-    SPECIAL_TOKEN_EMBEDDINGS_SAFE_TENSORS,
     SpecialTokenEmbeddingInstallResult,
     save_special_token_embedding_deltas,
 )
 
 
-BEST_ACC_TOP1_SELECTOR = "eval.forward/acc_top1:max"
+_MAX_COLLECTIVE_ERROR_CHARS = 1024
+_ADAPTER_TENSOR_FILE = "adapter_model.safetensors"
 ADAPTER_CONFIG_NAME = "adapter_config.json"
-ADAPTER_WEIGHT_NAMES = frozenset({"adapter_model.safetensors", "adapter_model.bin"})
-FORBIDDEN_ADAPTER_PAYLOAD_NAMES = frozenset(
-    {
-        "config.json",
-        "generation_config.json",
-        "model.safetensors",
-        "pytorch_model.bin",
-        "model.safetensors.index.json",
-        "pytorch_model.bin.index.json",
-    }
-)
+ADAPTER_WEIGHT_NAMES = frozenset({_ADAPTER_TENSOR_FILE})
 
 
 @dataclass(frozen=True)
 class CheckpointWriteResult:
-    checkpoint_id: str
+    step: int
     checkpoint_dir: Path
-    metadata_path: Path
-    handoff_path: Path
-    final_alias_path: Path | None
-    best_alias_path: Path | None
-    metadata: Mapping[str, Any]
+    final_updated: bool
+    best_updated: bool
 
 
 @dataclass(frozen=True)
 class CheckpointWriter:
-    manager: RunArtifactManager
+    """Save one canonical checkpoint; every replicated-DDP rank must call it."""
+
+    run_dir: Path
 
     def write_checkpoint(
         self,
         *,
-        planned_step_id: int,
-        model: Any | None,
-        adapter_receipt: DoraAdapterSetupReceipt | Mapping[str, Any] | None,
-        special_token_result: SpecialTokenEmbeddingInstallResult | None,
-        trainable_surface: TrainableSurfaceReceipt | Mapping[str, Any],
-        processor_identity: Mapping[str, Any],
-        resolved_config_fingerprint: str,
-        schedule_identity: Mapping[str, Any],
-        metric_status: Mapping[str, Any],
-        optimizer_update_status: str,
-        trigger_reasons: Sequence[str],
-        is_final: bool = False,
-        best_metric_event: MetricStreamEvent | Mapping[str, Any] | None = None,
+        step: int,
+        accelerator: Any,
+        model: Any,
+        adapter_name: str,
+        special_token_result: SpecialTokenEmbeddingInstallResult | None = None,
         base_model_path: Path | str | None = None,
         base_config_sha256: str | None = None,
         tokenizer_sha256: str | None = None,
-        template_identity: Mapping[str, Any] | None = None,
+        run_writer: RunWriter | None = None,
+        is_final: bool = False,
+        best_candidate: Mapping[str, Any] | None = None,
     ) -> CheckpointWriteResult:
-        if planned_step_id <= 0:
+        """Save a step atomically and synchronize one bounded outcome to all ranks."""
+        if isinstance(step, bool) or not isinstance(step, int) or step <= 0:
             raise ArtifactContractError(
-                "checkpoint planned_step_id must be positive",
-                code="checkpoint.planned_step_id",
-                context={"planned_step_id": planned_step_id},
+                "checkpoint step must be a positive integer",
+                code="checkpoint.invalid_step",
             )
-        best_record = _metric_record(best_metric_event)
-        checkpoint_best_rejection_reason = _checkpoint_best_rejection_reason(
-            optimizer_update_status=optimizer_update_status,
-            metric_status=metric_status,
-        )
-        _validate_best_checkpoint_status(
-            record=best_record,
-            optimizer_update_status=optimizer_update_status,
-            metric_status=metric_status,
-            checkpoint_rejection_reason=checkpoint_best_rejection_reason,
-        )
-        checkpoint_id = f"step-{planned_step_id}"
-        checkpoint_dir = self.manager.run_dir / "checkpoints" / checkpoint_id
-        metadata_path = checkpoint_dir / "checkpoint.json"
-        handoff_path = checkpoint_dir / "checkpoint_handoff.json"
-        existing_metadata = _read_json_if_exists(metadata_path)
-
-        adapter_payload = self._save_adapter_payload(
-            model=model,
-            adapter_receipt=adapter_receipt,
-            checkpoint_dir=checkpoint_dir,
-            reuse_existing=existing_metadata is not None,
-        )
-        special_token_payload = self._save_special_token_payload(
-            special_token_result=special_token_result,
-            checkpoint_dir=checkpoint_dir,
-            base_model_path=base_model_path,
-            base_config_sha256=base_config_sha256,
-            tokenizer_sha256=tokenizer_sha256,
-            reuse_existing=existing_metadata is not None,
-        )
-        manifest = self.manager.read_manifest()
-        best_selection = _best_selection_decision(
-            manifest,
-            best_record,
-            checkpoint_rejection_reason=checkpoint_best_rejection_reason,
-        )
-        metadata = {
-            "checkpoint_id": checkpoint_id,
-            "planned_step_id": planned_step_id,
-            "checkpoint_path": self.manager.relative_artifact_path(checkpoint_dir),
-            "adapter": adapter_payload,
-            "special_token_embeddings": special_token_payload,
-            "processor_identity": dict(processor_identity),
-            "resolved_config_fingerprint": resolved_config_fingerprint,
-            "schedule_identity": dict(schedule_identity),
-            "metric_status": dict(metric_status),
-            "trainable_surface": _artifact_dict(trainable_surface),
-            "optimizer_update_status": optimizer_update_status,
-            "trigger_reasons": list(trigger_reasons),
-            "best_selection": best_selection,
-            "checkpoint_handoff": self.manager.relative_artifact_path(handoff_path),
-            "resume_state": {
-                "optimizer": "not_saved_v1",
-                "scheduler": "not_saved_v1",
-                "scaler": "not_saved_v1",
-                "dataloader": "not_saved_v1",
-                "iterator": "not_saved_v1",
-                "rng": "not_saved_v1",
-            },
-        }
-        _write_json_or_reuse(metadata_path, metadata, code="checkpoint.exists")
-        _write_json_or_reuse(
-            handoff_path,
-            _handoff_manifest(
-                checkpoint_id=checkpoint_id,
-                planned_step_id=planned_step_id,
-                metadata_path=metadata_path,
-                checkpoint_dir=checkpoint_dir,
-                manager=self.manager,
-                base_model_path=base_model_path,
-                base_config_sha256=base_config_sha256,
-                tokenizer_sha256=tokenizer_sha256,
-                adapter_payload=adapter_payload,
-                special_token_payload=special_token_payload,
-                trainable_surface=trainable_surface,
-                processor_identity=processor_identity,
-                template_identity=template_identity,
-                resolved_config_fingerprint=resolved_config_fingerprint,
-            ),
-            code="checkpoint.handoff_exists",
-        )
-
-        final_alias_path = None
-        if is_final:
-            final_alias_path = self.manager.run_dir / "checkpoints" / "checkpoint-final.json"
-            _write_json_or_reuse(
-                final_alias_path,
-                _alias_payload(
-                    alias="final",
-                    checkpoint_id=checkpoint_id,
-                    planned_step_id=planned_step_id,
-                    metadata_path=self.manager.relative_artifact_path(metadata_path),
-                    handoff_path=self.manager.relative_artifact_path(handoff_path),
-                ),
-                code="checkpoint.alias_exists",
+        if not adapter_name.strip():
+            raise ArtifactContractError(
+                "checkpoint adapter name must be nonempty",
+                code="checkpoint.invalid_adapter_name",
             )
 
-        best_alias_path = None
-        best_acc_top1 = None
-        if best_selection["selected"]:
-            best_alias_path = self.manager.run_dir / "checkpoints" / "best_acc_top1.json"
-            best_acc_top1 = _alias_payload(
-                alias="best_acc_top1",
-                checkpoint_id=checkpoint_id,
-                planned_step_id=planned_step_id,
-                metadata_path=self.manager.relative_artifact_path(metadata_path),
-                handoff_path=self.manager.relative_artifact_path(handoff_path),
-                metric=best_record,
-                selector=BEST_ACC_TOP1_SELECTOR,
-            )
-            _write_json(best_alias_path, best_acc_top1)
+        checkpoints_dir = self.run_dir / "checkpoints"
+        checkpoint_dir = checkpoints_dir / f"step-{step}"
+        staging_dir = checkpoints_dir / f".step-{step}.{uuid.uuid4().hex}.tmp"
+        is_main = bool(accelerator.is_main_process)
+        status: dict[str, Any] = {"ok": True, "error": None}
+        final_updated = False
+        best_updated = False
 
-        self.manager.register_checkpoint(
-            checkpoint_id=checkpoint_id,
-            planned_step_id=planned_step_id,
-            metadata_path=metadata_path,
-            final_alias_path=final_alias_path,
-            best_alias_path=best_alias_path,
-            best_acc_top1=best_acc_top1,
-        )
+        accelerator.wait_for_everyone()
+        if is_main:
+            alias_backups = _capture_aliases(checkpoints_dir)
+            committed_this_call = False
+            try:
+                if checkpoint_dir.exists():
+                    raise ArtifactContractError(
+                        "checkpoint step already exists",
+                        code="checkpoint.step_exists",
+                        context={"path": str(checkpoint_dir)},
+                    )
+                checkpoints_dir.mkdir(parents=True, exist_ok=True)
+                unwrapped = accelerator.unwrap_model(model)
+                adapter_dir = staging_dir / "adapter"
+                adapter_dir.mkdir(parents=True)
+                save_pretrained = getattr(unwrapped, "save_pretrained", None)
+                if not callable(save_pretrained):
+                    raise ArtifactContractError(
+                        "adapter checkpoint requires save_pretrained",
+                        code="checkpoint.adapter_unsavable",
+                    )
+                save_pretrained(
+                    adapter_dir,
+                    safe_serialization=True,
+                    selected_adapters=[adapter_name],
+                    save_embedding_layers=False,
+                )
+                _validate_adapter_payload(adapter_dir)
+                if special_token_result is not None:
+                    save_special_token_embedding_deltas(
+                        special_token_result,
+                        staging_dir / "special_token_embeddings",
+                        base_model_path=base_model_path,
+                        base_config_sha256=base_config_sha256,
+                        tokenizer_sha256=tokenizer_sha256,
+                    )
+                os.replace(staging_dir, checkpoint_dir)
+                committed_this_call = True
+                _fsync_directory(checkpoints_dir)
+
+                if run_writer is not None:
+                    if is_final:
+                        run_writer.write_final(step=step)
+                        final_updated = True
+                    if best_candidate is not None:
+                        best_updated = _write_best_if_eligible(
+                            run_writer=run_writer,
+                            step=step,
+                            candidate=best_candidate,
+                        )
+            except BaseException as exc:
+                try:
+                    rollback_errors = _rollback_after_failure(
+                        staging_dir=staging_dir,
+                        checkpoint_dir=checkpoint_dir,
+                        checkpoints_dir=checkpoints_dir,
+                        alias_backups=alias_backups,
+                        committed_this_call=committed_this_call,
+                        step=step,
+                    )
+                except BaseException as rollback_exc:
+                    rollback_errors = (
+                        f"rollback_internal={type(rollback_exc).__name__}",
+                    )
+                status = {
+                    "ok": False,
+                    "error": _bounded_failure(exc, rollback_errors),
+                }
+
+        status = _broadcast_status(accelerator, status)
+        if not status.get("ok"):
+            raise ArtifactContractError(
+                f"checkpoint save failed on rank zero: {status.get('error')}",
+                code="checkpoint.save_failed",
+                context={"step": step},
+            )
         return CheckpointWriteResult(
-            checkpoint_id=checkpoint_id,
+            step=step,
             checkpoint_dir=checkpoint_dir,
-            metadata_path=metadata_path,
-            handoff_path=handoff_path,
-            final_alias_path=final_alias_path,
-            best_alias_path=best_alias_path,
-            metadata=metadata,
+            final_updated=final_updated if is_main else False,
+            best_updated=best_updated if is_main else False,
         )
 
-    def _save_adapter_payload(
-        self,
-        *,
-        model: Any | None,
-        adapter_receipt: DoraAdapterSetupReceipt | Mapping[str, Any] | None,
-        checkpoint_dir: Path,
-        reuse_existing: bool,
-    ) -> dict[str, Any]:
-        if adapter_receipt is None:
-            return {"enabled": False}
-        adapter_dir = checkpoint_dir / "adapter"
-        if reuse_existing:
-            if not adapter_dir.exists():
-                raise ArtifactContractError(
-                    "checkpoint metadata exists but adapter payload is missing",
-                    code="checkpoint.adapter_payload_missing",
-                    context={"path": str(adapter_dir)},
-                )
-        else:
-            save_pretrained = getattr(model, "save_pretrained", None)
-            if model is None or not callable(save_pretrained):
-                raise ArtifactContractError(
-                    "adapter checkpoint requires a model with save_pretrained",
-                    code="checkpoint.adapter_model_unsavable",
-                )
-            self._save_adapter_to_staging(
-                save_pretrained=save_pretrained,
-                adapter_dir=adapter_dir,
-            )
-        files = _relative_file_list(adapter_dir, root=self.manager.run_dir)
-        _validate_adapter_payload(files, adapter_dir=adapter_dir)
-        payload_path = self.manager.relative_artifact_path(adapter_dir)
-        return {
-            "enabled": True,
-            "payload_path": payload_path,
-            "files": files,
-            "identity": _adapter_payload_identity(
-                adapter_dir=adapter_dir,
-                payload_path=payload_path,
-                files=files,
-                run_dir=self.manager.run_dir,
-            ),
-            "receipt": _artifact_dict(adapter_receipt),
-        }
 
-    def _save_adapter_to_staging(
-        self,
-        *,
-        save_pretrained: Any,
-        adapter_dir: Path,
-    ) -> None:
-        if adapter_dir.exists():
-            raise ArtifactContractError(
-                "adapter checkpoint payload already exists before save",
-                code="checkpoint.adapter_payload_exists",
-                context={"path": str(adapter_dir)},
-            )
-        staging_dir = adapter_dir.with_name(f".{adapter_dir.name}.{os.getpid()}.tmp")
-        if staging_dir.exists():
-            shutil.rmtree(staging_dir)
-        try:
-            save_pretrained(staging_dir)
-            staged_files = _relative_file_list(staging_dir, root=staging_dir)
-            _validate_adapter_payload(staged_files, adapter_dir=staging_dir)
-            adapter_dir.parent.mkdir(parents=True, exist_ok=True)
-            os.replace(staging_dir, adapter_dir)
-            _fsync_directory(adapter_dir.parent)
-        finally:
-            if staging_dir.exists():
-                shutil.rmtree(staging_dir)
-
-    def _save_special_token_payload(
-        self,
-        *,
-        special_token_result: SpecialTokenEmbeddingInstallResult | None,
-        checkpoint_dir: Path,
-        base_model_path: Path | str | None,
-        base_config_sha256: str | None,
-        tokenizer_sha256: str | None,
-        reuse_existing: bool,
-    ) -> dict[str, Any]:
-        if special_token_result is None:
-            return {"enabled": False}
-        _require_special_token_identity_sha(
-            base_config_sha256,
-            field="base_config_sha256",
-            checkpoint_dir=checkpoint_dir,
-        )
-        _require_special_token_identity_sha(
-            tokenizer_sha256,
-            field="tokenizer_sha256",
-            checkpoint_dir=checkpoint_dir,
-        )
-        output_dir = checkpoint_dir / "special_token_embeddings"
-        if reuse_existing:
-            artifact = _special_token_payload_from_existing(
-                output_dir,
-                manager=self.manager,
-                install_receipt=special_token_result.receipt.to_artifact_dict(),
-            )
-            artifact["identity"] = _special_token_payload_identity(
-                artifact,
-                run_dir=self.manager.run_dir,
-            )
-            return artifact
-        payload = save_special_token_embedding_deltas(
-            special_token_result,
-            output_dir,
-            base_model_path=base_model_path,
-            base_config_sha256=base_config_sha256,
-            tokenizer_sha256=tokenizer_sha256,
-        )
-        artifact = payload.to_artifact_dict()
-        artifact["tensor_path"] = self.manager.relative_artifact_path(payload.tensor_path)
-        artifact["metadata_path"] = self.manager.relative_artifact_path(payload.metadata_path)
-        artifact["enabled"] = True
-        artifact["install_receipt"] = special_token_result.receipt.to_artifact_dict()
-        artifact["identity"] = _special_token_payload_identity(
-            artifact,
-            run_dir=self.manager.run_dir,
-        )
-        return artifact
-
-
-def _handoff_manifest(
-    *,
-    checkpoint_id: str,
-    planned_step_id: int,
-    metadata_path: Path,
-    checkpoint_dir: Path,
-    manager: RunArtifactManager,
-    base_model_path: Path | str | None,
-    base_config_sha256: str | None,
-    tokenizer_sha256: str | None,
-    adapter_payload: Mapping[str, Any],
-    special_token_payload: Mapping[str, Any],
-    trainable_surface: TrainableSurfaceReceipt | Mapping[str, Any],
-    processor_identity: Mapping[str, Any],
-    template_identity: Mapping[str, Any] | None,
-    resolved_config_fingerprint: str,
-) -> dict[str, Any]:
-    special_metadata = special_token_payload.get("metadata")
-    if not isinstance(special_metadata, Mapping):
-        special_metadata = {}
-    token_strings = tuple(str(item) for item in special_metadata.get("token_strings", ()))
-    token_ids = tuple(int(item) for item in special_metadata.get("token_ids", ()))
-    return {
-        "schema_version": 1,
-        "checkpoint_id": checkpoint_id,
-        "planned_step_id": int(planned_step_id),
-        "checkpoint_path": manager.relative_artifact_path(checkpoint_dir),
-        "checkpoint_metadata_path": manager.relative_artifact_path(metadata_path),
-        "base_model": {
-            "path": None if base_model_path is None else str(base_model_path),
-            "base_config_sha256": base_config_sha256,
-            "tokenizer_sha256": tokenizer_sha256,
-        },
-        "adapter": {
-            "enabled": bool(adapter_payload.get("enabled", False)),
-            "payload_path": adapter_payload.get("payload_path"),
-            "files": list(adapter_payload.get("files", ())),
-            "identity": adapter_payload.get("identity"),
-            "receipt": dict(adapter_payload.get("receipt") or {}),
-        },
-        "special_token_embeddings": {
-            "enabled": bool(special_token_payload.get("enabled", False)),
-            "tensor_path": special_token_payload.get("tensor_path"),
-            "metadata_path": special_token_payload.get("metadata_path"),
-            "tensor_key": special_token_payload.get("tensor_key"),
-            "tensor_shape": list(special_token_payload.get("tensor_shape", ())),
-            "tensor_dtype": special_token_payload.get("tensor_dtype"),
-            "identity": special_token_payload.get("identity"),
-            "metadata": dict(special_metadata),
-        },
-        "trainable_token_set": {
-            "token_count": len(token_ids),
-            "token_ids": list(token_ids),
-            "token_strings": list(token_strings),
-        },
-        "trainable_surface": _artifact_dict(trainable_surface),
-        "processor_identity": dict(processor_identity),
-        "template_identity": dict(template_identity or {}),
-        "resolved_config_fingerprint": resolved_config_fingerprint,
-        "intended_inference_config_family": "configs/coordexp_swift/infer",
-        "accepted_eval_artifact_roots": [],
-    }
-
-
-def _require_special_token_identity_sha(
-    value: str | None,
-    *,
-    field: str,
-    checkpoint_dir: Path,
-) -> None:
-    if value is None or not str(value).strip():
+def _validate_adapter_payload(adapter_dir: Path) -> None:
+    tensor_path = adapter_dir / _ADAPTER_TENSOR_FILE
+    if not (adapter_dir / "adapter_config.json").is_file() or not tensor_path.is_file():
         raise ArtifactContractError(
-            "checkpoint special-token embedding payload requires runtime identity SHA evidence",
-            code="checkpoint.special_token_identity_missing",
-            context={
-                "missing_field": field,
-                "checkpoint_dir": str(checkpoint_dir),
-            },
+            "adapter checkpoint is missing its config or safetensor",
+            code="checkpoint.adapter_payload_missing",
         )
-
-
-def _artifact_dict(value: Any) -> dict[str, Any]:
-    if hasattr(value, "to_artifact_dict"):
-        return value.to_artifact_dict()
-    return dict(value)
-
-
-def _metric_record(
-    event: MetricStreamEvent | Mapping[str, Any] | None,
-) -> dict[str, Any] | None:
-    if event is None:
-        return None
-    if isinstance(event, MetricStreamEvent):
-        return event.to_record()
-    return dict(event)
-
-
-def _validate_best_checkpoint_status(
-    *,
-    record: Mapping[str, Any] | None,
-    optimizer_update_status: str,
-    metric_status: Mapping[str, Any],
-    checkpoint_rejection_reason: str | None,
-) -> None:
-    if record is None or not _is_best_selector_record(record):
-        return
-    missing_status_fields = [
-        field
-        for field in ("finite_status", "warning_status")
-        if field not in metric_status
+    with safe_open(str(tensor_path), framework="pt", device="cpu") as handle:
+        keys = tuple(handle.keys())
+        empty = [key for key in keys if handle.get_tensor(key).numel() == 0]
+    forbidden = [
+        key
+        for key in keys
+        if "embed_tokens" in key
+        or "word_embeddings" in key
+        or "lm_head" in key
+        or not any(token in key for token in ("lora_A", "lora_B", "lora_magnitude_vector"))
     ]
-    if missing_status_fields:
+    required = {
+        "lora_A": any("lora_A" in key for key in keys),
+        "lora_B": any("lora_B" in key for key in keys),
+        "lora_magnitude_vector": any("lora_magnitude_vector" in key for key in keys),
+    }
+    if forbidden:
         raise ArtifactContractError(
-            "best checkpoint selection requires explicit checkpoint status",
-            code="checkpoint.best_selector_status_missing",
-            context={
-                "missing_fields": missing_status_fields,
-                "optimizer_update_status": optimizer_update_status,
-            },
+            "adapter checkpoint contains forbidden full-model tensors",
+            code="checkpoint.adapter_forbidden_tensors",
+            context={"keys": forbidden[:20]},
         )
-    mismatch_fields = _record_checkpoint_status_mismatches(
-        record=record,
-        optimizer_update_status=optimizer_update_status,
-        metric_status=metric_status,
+    if empty or not all(required.values()):
+        raise ArtifactContractError(
+            "adapter checkpoint requires nonempty LoRA A/B and DoRA magnitude tensors",
+            code="checkpoint.adapter_required_tensors_missing",
+            context={"required": required, "empty_keys": empty[:20]},
+        )
+
+
+def _write_best_if_eligible(
+    *, run_writer: RunWriter, step: int, candidate: Mapping[str, Any]
+) -> bool:
+    completed = candidate.get("completed") is True
+    value = candidate.get("value")
+    if not completed or isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    return run_writer.write_best(
+        step=step,
+        selector=str(candidate.get("selector", "eval/metric:max")),
+        value=float(value),
+        optimizer_update_status=str(candidate.get("optimizer_update_status", "")),
+        finite_status=str(candidate.get("finite_status", "")),
+        checkpoint_committed=True,
     )
-    if not mismatch_fields and (
-        checkpoint_rejection_reason is None
-        or record.get("selector_eligible") is not True
-    ):
-        return
-    raise ArtifactContractError(
-        "best checkpoint metric status conflicts with checkpoint status",
-        code="checkpoint.best_selector_status_mismatch",
-        context={
-            "checkpoint_rejection_reason": checkpoint_rejection_reason,
-            "mismatch_fields": mismatch_fields,
-            "record_optimizer_update_status": record.get("optimizer_update_status"),
-            "checkpoint_optimizer_update_status": optimizer_update_status,
-            "record_finite_status": record.get("finite_status"),
-            "checkpoint_finite_status": metric_status.get("finite_status"),
-            "record_warning_status": record.get("warning_status"),
-            "checkpoint_warning_status": metric_status.get("warning_status"),
-        },
-    )
 
 
-def _record_checkpoint_status_mismatches(
-    *,
-    record: Mapping[str, Any],
-    optimizer_update_status: str,
-    metric_status: Mapping[str, Any],
-) -> list[str]:
-    mismatches: list[str] = []
-    if record.get("optimizer_update_status") != optimizer_update_status:
-        mismatches.append("optimizer_update_status")
-    finite_status = metric_status.get("finite_status")
-    if finite_status is not None and record.get("finite_status") != finite_status:
-        mismatches.append("finite_status")
-    warning_status = metric_status.get("warning_status")
-    if warning_status is not None and record.get("warning_status") != warning_status:
-        mismatches.append("warning_status")
-    return mismatches
+def _broadcast_status(accelerator: Any, status: dict[str, Any]) -> dict[str, Any]:
+    values = [status]
+    broadcast = getattr(accelerator, "broadcast_object_list", None)
+    if callable(broadcast):
+        result = broadcast(values, from_process=0)
+        if result is not None:
+            values = result
+    else:
+        from accelerate.utils import broadcast_object_list
+
+        broadcast_object_list(values, from_process=0)
+    received = values[0]
+    if not isinstance(received, Mapping) or not isinstance(received.get("ok"), bool):
+        raise ArtifactContractError(
+            "checkpoint status collective returned an invalid descriptor",
+            code="checkpoint.invalid_collective_status",
+        )
+    return dict(received)
 
 
-def _checkpoint_best_rejection_reason(
-    *,
-    optimizer_update_status: str,
-    metric_status: Mapping[str, Any],
-) -> str | None:
-    if optimizer_update_status != "applied":
-        return "checkpoint_update_not_applied"
-    finite_status = metric_status.get("finite_status")
-    if finite_status is not None and finite_status != "finite":
-        return "checkpoint_non_finite"
-    return None
-
-
-def _best_selection_decision(
-    manifest: Mapping[str, Any],
-    record: Mapping[str, Any] | None,
-    *,
-    checkpoint_rejection_reason: str | None,
-) -> dict[str, Any]:
-    if record is None:
-        return {
-            "selector": BEST_ACC_TOP1_SELECTOR,
-            "candidate_seen": False,
-            "selected": False,
-            "reason": "no_candidate",
-        }
-    reason = checkpoint_rejection_reason or _best_rejection_reason(record)
-    if reason is not None:
-        return {
-            "selector": BEST_ACC_TOP1_SELECTOR,
-            "candidate_seen": True,
-            "selected": False,
-            "reason": reason,
-            "metric": dict(record),
-        }
-    current = manifest.get("checkpoints", {}).get("best_acc_top1")
-    if current:
-        current_value = current.get("metric", {}).get("value")
-        if current_value is not None and record["value"] <= current_value:
-            return {
-                "selector": BEST_ACC_TOP1_SELECTOR,
-                "candidate_seen": True,
-                "selected": False,
-                "reason": "not_improved",
-                "metric": dict(record),
-                "current_best": dict(current),
-            }
+def _capture_aliases(checkpoints_dir: Path) -> dict[str, bytes | None]:
     return {
-        "selector": BEST_ACC_TOP1_SELECTOR,
-        "candidate_seen": True,
-        "selected": True,
-        "reason": "improved",
-        "metric": dict(record),
+        name: (path.read_bytes() if path.exists() else None)
+        for name in ("final.json", "best.json")
+        for path in (checkpoints_dir / name,)
     }
 
 
-def _best_rejection_reason(record: Mapping[str, Any]) -> str | None:
-    if not _is_best_selector_record(record):
-        return "selector_mismatch"
-    if record.get("value") is None:
-        return "metric_unavailable"
-    if record.get("reduction") == "rank_local":
-        return "metric_rank_local"
-    if record.get("optimizer_update_status") != "applied":
-        return "metric_update_not_applied"
-    if record.get("finite_status") != "finite":
-        return "metric_non_finite"
-    return None
+def _restore_aliases(checkpoints_dir: Path, backups: Mapping[str, bytes | None]) -> None:
+    for name, content in backups.items():
+        path = checkpoints_dir / name
+        if content is None:
+            path.unlink(missing_ok=True)
+        else:
+            path.write_bytes(content)
 
 
-def _is_best_selector_record(record: Mapping[str, Any]) -> bool:
-    return record.get("split") == "eval.forward" and record.get("name") == "acc_top1"
-
-
-def _alias_payload(
+def _rollback_after_failure(
     *,
-    alias: str,
-    checkpoint_id: str,
-    planned_step_id: int,
-    metadata_path: str,
-    handoff_path: str | None = None,
-    metric: Mapping[str, Any] | None = None,
-    selector: str | None = None,
-) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "alias": alias,
-        "checkpoint_id": checkpoint_id,
-        "planned_step_id": planned_step_id,
-        "metadata_path": metadata_path,
-    }
-    if handoff_path is not None:
-        payload["handoff_path"] = handoff_path
-    if selector is not None:
-        payload["selector"] = selector
-    if metric is not None:
-        payload["metric"] = dict(metric)
-    return payload
-
-
-def _relative_file_list(path: Path, *, root: Path) -> list[str]:
-    return sorted(
-        file_path.resolve().relative_to(root).as_posix()
-        for file_path in path.rglob("*")
-        if file_path.is_file()
-    )
-
-
-def _validate_adapter_payload(files: Sequence[str], *, adapter_dir: Path) -> None:
-    if not files:
-        raise ArtifactContractError(
-            "adapter save_pretrained produced no files",
-            code="checkpoint.adapter_payload_empty",
-            context={"path": str(adapter_dir)},
-        )
-    basenames = {Path(path).name for path in files}
-    for basename in sorted(basenames):
-        if basename in FORBIDDEN_ADAPTER_PAYLOAD_NAMES or (
-            basename.startswith("model-") and basename.endswith(".safetensors")
-        ):
-            raise ArtifactContractError(
-                "adapter payload contains full-model weight artifact",
-                code="checkpoint.adapter_payload_forbidden_file",
-                context={"path": str(adapter_dir), "file": basename},
-            )
-    if ADAPTER_CONFIG_NAME not in basenames:
-        raise ArtifactContractError(
-            "adapter payload is missing adapter_config.json",
-            code="checkpoint.adapter_payload_missing_config",
-            context={"path": str(adapter_dir), "files": list(files)},
-        )
-    if not basenames.intersection(ADAPTER_WEIGHT_NAMES):
-        raise ArtifactContractError(
-            "adapter payload is missing adapter weight file",
-            code="checkpoint.adapter_payload_missing_weights",
-            context={"path": str(adapter_dir), "files": list(files)},
-        )
-
-
-def _adapter_payload_identity(
-    *,
-    adapter_dir: Path,
-    payload_path: str,
-    files: Sequence[str],
-    run_dir: Path,
-) -> dict[str, Any]:
-    config_rel = _required_relative_file(files, ADAPTER_CONFIG_NAME)
-    weight_rel = _preferred_adapter_weight_file(files)
-    config_path = _resolve_run_relative(run_dir, config_rel)
-    weight_path = _resolve_run_relative(run_dir, weight_rel)
-    config_sha = _sha256_file(config_path)
-    weight_sha = _sha256_file(weight_path)
-    identity = {
-        "payload_path": payload_path,
-        "required_files": {
-            ADAPTER_CONFIG_NAME: config_rel,
-            Path(weight_rel).name: weight_rel,
-        },
-        "file_sha256": {
-            config_rel: config_sha,
-            weight_rel: weight_sha,
-        },
-        "adapter_config_sha256": config_sha,
-        "adapter_model_sha256": weight_sha,
-    }
-    identity["fingerprint"] = _fingerprint_payload(identity)
-    return identity
-
-
-def _required_relative_file(files: Sequence[str], basename: str) -> str:
-    matches = sorted(str(file_path) for file_path in files if Path(str(file_path)).name == basename)
-    if not matches:
-        raise ArtifactContractError(
-            "adapter payload identity requires a declared file",
-            code="checkpoint.adapter_identity_file_missing",
-            context={"basename": basename, "files": [str(file_path) for file_path in files]},
-        )
-    return matches[0]
-
-
-def _preferred_adapter_weight_file(files: Sequence[str]) -> str:
-    matches = sorted(
-        str(file_path)
-        for file_path in files
-        if Path(str(file_path)).name in ADAPTER_WEIGHT_NAMES
-    )
-    if not matches:
-        raise ArtifactContractError(
-            "adapter payload identity requires a declared adapter weight file",
-            code="checkpoint.adapter_identity_weight_missing",
-            context={"files": [str(file_path) for file_path in files]},
-        )
-    return sorted(
-        matches,
-        key=lambda item: (
-            0 if Path(item).name == "adapter_model.safetensors" else 1,
-            item,
-        ),
-    )[0]
-
-
-def _special_token_payload_from_existing(
-    output_dir: Path,
-    *,
-    manager: RunArtifactManager,
-    install_receipt: Mapping[str, Any],
-) -> dict[str, Any]:
-    tensor_path = output_dir / SPECIAL_TOKEN_EMBEDDINGS_SAFE_TENSORS
-    metadata_path = output_dir / SPECIAL_TOKEN_EMBEDDINGS_JSON
-    if not tensor_path.exists() or not metadata_path.exists():
-        raise ArtifactContractError(
-            "checkpoint metadata exists but special-token payload is incomplete",
-            code="checkpoint.special_token_payload_missing",
-            context={
-                "tensor_path": str(tensor_path),
-                "metadata_path": str(metadata_path),
-            },
-        )
-    metadata = _read_json(metadata_path)
-    return {
-        "enabled": True,
-        "tensor_path": manager.relative_artifact_path(tensor_path),
-        "metadata_path": manager.relative_artifact_path(metadata_path),
-        "tensor_key": metadata["tensor_key"],
-        "tensor_shape": list(metadata["tensor_shape"]),
-        "tensor_dtype": metadata["tensor_dtype"],
-        "metadata": metadata,
-        "install_receipt": dict(install_receipt),
-    }
-
-
-def _special_token_payload_identity(
-    payload: Mapping[str, Any],
-    *,
-    run_dir: Path,
-) -> dict[str, Any]:
-    metadata_path_value = payload.get("metadata_path")
-    tensor_path_value = payload.get("tensor_path")
-    if not isinstance(metadata_path_value, str) or not metadata_path_value:
-        raise ArtifactContractError(
-            "special-token embedding identity requires metadata_path",
-            code="checkpoint.special_token_identity_metadata_path",
-        )
-    if not isinstance(tensor_path_value, str) or not tensor_path_value:
-        raise ArtifactContractError(
-            "special-token embedding identity requires tensor_path",
-            code="checkpoint.special_token_identity_tensor_path",
-        )
-    metadata = payload.get("metadata")
-    if not isinstance(metadata, Mapping):
-        metadata = _read_json(_resolve_run_relative(run_dir, metadata_path_value))
-    metadata_sha = _sha256_file(_resolve_run_relative(run_dir, metadata_path_value))
-    tensor_sha = _sha256_file(_resolve_run_relative(run_dir, tensor_path_value))
-    identity = {
-        "metadata_path": metadata_path_value,
-        "tensor_path": tensor_path_value,
-        "metadata_sha256": metadata_sha,
-        "tensor_sha256": tensor_sha,
-        "tensor_key": payload.get("tensor_key"),
-        "tensor_shape": list(payload.get("tensor_shape", ())),
-        "tensor_dtype": payload.get("tensor_dtype"),
-        "base_config_sha256": metadata.get("base_config_sha256"),
-        "tokenizer_sha256": metadata.get("tokenizer_sha256"),
-    }
-    identity["fingerprint"] = _fingerprint_payload(identity)
-    return identity
-
-
-def _resolve_run_relative(run_dir: Path, value: str) -> Path:
-    path = Path(value).expanduser()
-    if path.is_absolute():
-        return path
-    return run_dir / path
-
-
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _fingerprint_payload(payload: Mapping[str, Any]) -> str:
-    return hashlib.sha256(
-        json.dumps(
-            payload,
-            allow_nan=False,
-            ensure_ascii=True,
-            separators=(",", ":"),
-            sort_keys=True,
-        ).encode("utf-8")
-    ).hexdigest()
-
-
-def _read_json_if_exists(path: Path) -> dict[str, Any] | None:
-    if not path.exists():
-        return None
-    return _read_json(path)
-
-
-def _read_json(path: Path) -> dict[str, Any]:
+    staging_dir: Path,
+    checkpoint_dir: Path,
+    checkpoints_dir: Path,
+    alias_backups: Mapping[str, bytes | None],
+    committed_this_call: bool,
+    step: int,
+) -> tuple[str, ...]:
+    """Best-effort rollback that never prevents the status collective."""
+    errors: list[str] = []
     try:
-        return json.loads(
-            path.read_text(encoding="utf-8"),
-            parse_constant=lambda constant: (_raise_invalid_json_constant(path, constant)),
-        )
-    except json.JSONDecodeError as exc:
-        raise ArtifactContractError(
-            "existing checkpoint JSON artifact is not readable",
-            code="checkpoint.existing_json_invalid",
-            context={"path": str(path)},
-            cause=exc,
-        ) from exc
-
-
-def _raise_invalid_json_constant(path: Path, constant: str) -> None:
-    raise ArtifactContractError(
-        "existing checkpoint JSON artifact contains non-finite values",
-        code="checkpoint.existing_json_non_finite",
-        context={"path": str(path), "constant": constant},
-    )
-
-
-def _write_json_or_reuse(
-    path: Path,
-    payload: Mapping[str, Any],
-    *,
-    code: str,
-) -> None:
-    existing = _read_json_if_exists(path)
-    if existing is not None:
-        if existing != dict(payload):
-            raise ArtifactContractError(
-                "checkpoint artifact already exists with different content",
-                code=code,
-                context={"path": str(path)},
-            )
-        return
-    _write_json(path, payload)
-
-
-def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+        shutil.rmtree(staging_dir, ignore_errors=True)
+    except BaseException as exc:
+        errors.append(f"staging_cleanup={_bounded_error(exc)}")
     try:
-        with temp_path.open("w", encoding="utf-8") as handle:
-            handle.write(_json_dumps(payload) + "\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temp_path, path)
-        _fsync_directory(path.parent)
-    finally:
-        if temp_path.exists():
-            temp_path.unlink()
+        _restore_aliases(checkpoints_dir, alias_backups)
+    except BaseException as exc:
+        errors.append(f"alias_restore={_bounded_error(exc)}")
 
-
-def _json_dumps(payload: Mapping[str, Any]) -> str:
+    # If rollback left an alias selecting this step, retaining the fully committed
+    # payload is safer than deleting it and publishing a dangling selector.
+    alias_may_select_step = False
     try:
-        return json.dumps(
-            payload,
-            allow_nan=False,
-            ensure_ascii=True,
-            indent=2,
-            sort_keys=True,
-        )
-    except ValueError as exc:
-        raise ArtifactContractError(
-            "checkpoint payload contains non-finite JSON values",
-            code="checkpoint.non_finite_json",
-            cause=exc,
-        ) from exc
+        alias_may_select_step = _alias_selects_step(checkpoints_dir, step=step)
+    except BaseException as exc:
+        alias_may_select_step = True
+        errors.append(f"alias_safety_check={_bounded_error(exc)}")
+    if committed_this_call and not alias_may_select_step:
+        try:
+            shutil.rmtree(checkpoint_dir, ignore_errors=True)
+        except BaseException as exc:
+            errors.append(f"checkpoint_cleanup={_bounded_error(exc)}")
+    elif committed_this_call and alias_may_select_step:
+        errors.append("checkpoint_retained=alias_may_select_failed_step")
+    return tuple(errors)
+
+
+def _alias_selects_step(checkpoints_dir: Path, *, step: int) -> bool:
+    expected_path = f"checkpoints/step-{step}"
+    for name in ("final.json", "best.json"):
+        path = checkpoints_dir / name
+        if not path.exists():
+            continue
+        try:
+            import json
+
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except BaseException:
+            return True
+        if payload.get("step") == step or payload.get("checkpoint_path") == expected_path:
+            return True
+    return False
+
+
+def _bounded_failure(exc: BaseException, rollback_errors: tuple[str, ...]) -> str:
+    primary = _bounded_error(exc)
+    if not rollback_errors:
+        return primary
+    return f"{primary}; rollback: {'; '.join(rollback_errors)}"[
+        :_MAX_COLLECTIVE_ERROR_CHARS
+    ]
+
+
+def _bounded_error(exc: BaseException) -> str:
+    if isinstance(exc, ArtifactContractError):
+        value = f"{exc.code}: {exc}"
+    else:
+        value = f"{type(exc).__name__}: {exc}"
+    return value[:_MAX_COLLECTIVE_ERROR_CHARS]
 
 
 def _fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
     try:
-        directory_fd = os.open(path, os.O_RDONLY)
-    except OSError:
-        return
-    try:
-        os.fsync(directory_fd)
+        os.fsync(descriptor)
     finally:
-        os.close(directory_fd)
-
-
-__all__ = ["CheckpointWriteResult", "CheckpointWriter"]
+        os.close(descriptor)

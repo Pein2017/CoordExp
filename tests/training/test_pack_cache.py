@@ -580,7 +580,7 @@ def _schedule(
             effective_batch_size=effective_batch_size,
             resolved_grad_accum_steps=grad_accum_steps,
         ),
-        events={"checkpoint": (), "eval.forward": (), "training.logging": (), "final": ()},
+        events={"checkpoint": (), "eval.forward": (), "final": ()},
     )
 
 

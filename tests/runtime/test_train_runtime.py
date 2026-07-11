@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-import json
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -126,7 +124,6 @@ def test_accelerator_mixed_precision_matches_resolved_training_precision() -> No
         expected_mixed_precision="BF16",
     )
     runtime = _runtime(accelerator=accelerator, expected_mixed_precision="bf16")
-    assert runtime.expected_mixed_precision == "bf16"
     assert accelerator.prepare_calls == 1
 
 
@@ -158,11 +155,6 @@ def test_prepare_owns_model_and_optimizer_but_not_scheduler() -> None:
     )
     assert accelerator.prepared_objects == (model, optimizer)
     assert runtime.scheduler is scheduler
-    assert runtime.setup_receipt.to_artifact_dict()["scheduler_semantics"] == {
-        "scheduler_owner": "coordexp_runtime",
-        "scheduler_prepared_by_accelerate": False,
-        "step_policy": "once_per_planned_step",
-    }
 
 
 def test_runtime_preserves_accumulation_backward_clip_optimizer_scheduler_order() -> None:
@@ -233,7 +225,7 @@ def test_multirank_runtime_requires_report_gatherer() -> None:
     assert exc_info.value.code == "runtime.report_gather_unavailable"
 
 
-def test_move_metrics_and_rank_safe_save(tmp_path: Path) -> None:
+def test_move_and_single_rank_metrics() -> None:
     runtime = _runtime()
     moved = runtime.move_micro_step(
         SupervisedMicroStep(
@@ -250,9 +242,69 @@ def test_move_metrics_and_rank_safe_save(tmp_path: Path) -> None:
     assert runtime.gather_metrics(
         {"loss/total": 1.5}, planned_step_id=1, split="train"
     )["reduction"] == "single_rank"
-    path = tmp_path / "payload.json"
-    assert runtime.safe_save_json({"rank": 0}, path) == path
-    assert json.loads(path.read_text()) == {"rank": 0}
+
+
+def test_multirank_metrics_are_reduced_to_deterministic_mean() -> None:
+    runtime = _runtime(
+        world_size=2,
+        gatherer=MetricReportGatherer(peer_metrics={"acc": 0.75, "loss": 3.0}),
+    )
+    result = runtime.gather_metrics(
+        {"loss": 1.0, "acc": 0.25},
+        planned_step_id=4,
+        split="eval",
+    )
+    assert result["metrics"] == {"acc": 0.5, "loss": 2.0}
+    assert result["reduction"] == "all_rank_mean"
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_code"),
+    [
+        ({"metrics": {"other": 1.0}}, "runtime.metric_gather_keys"),
+        ({"planned_step_id": 5}, "runtime.metric_gather_step"),
+        ({"split": "train"}, "runtime.metric_gather_split"),
+    ],
+)
+def test_multirank_metric_identity_mismatch_is_rejected(
+    mutation: dict[str, Any],
+    expected_code: str,
+) -> None:
+    runtime = _runtime(
+        world_size=2,
+        gatherer=MetricReportGatherer(
+            peer_metrics={"loss": 3.0},
+            peer_mutation=mutation,
+        ),
+    )
+    with pytest.raises(RuntimeContractError) as exc_info:
+        runtime.gather_metrics({"loss": 1.0}, planned_step_id=4, split="eval")
+    assert exc_info.value.code == expected_code
+
+
+def test_multirank_metric_report_count_mismatch_is_rejected() -> None:
+    runtime = _runtime(
+        world_size=2,
+        gatherer=lambda local_report: (local_report,),
+    )
+    with pytest.raises(RuntimeContractError) as exc_info:
+        runtime.gather_metrics({"loss": 1.0}, planned_step_id=4, split="eval")
+    assert exc_info.value.code == "runtime.metric_gather_count"
+
+
+@pytest.mark.parametrize("peer_value", [float("nan"), float("inf"), float("-inf")])
+def test_multirank_metric_mean_preserves_nonfinite_values(peer_value: float) -> None:
+    runtime = _runtime(
+        world_size=2,
+        gatherer=MetricReportGatherer(peer_metrics={"loss": peer_value}),
+    )
+    reduced = runtime.gather_metrics(
+        {"loss": 1.0}, planned_step_id=4, split="eval"
+    )["metrics"]["loss"]
+    if torch.isnan(torch.tensor(peer_value)):
+        assert torch.isnan(torch.tensor(reduced))
+    else:
+        assert reduced == peer_value
 
 
 class FakeLossBundle:
@@ -306,6 +358,26 @@ class DenominatorGatherer:
             },
         }
         return payload, peer
+
+
+class MetricReportGatherer:
+    def __init__(
+        self,
+        *,
+        peer_metrics: dict[str, float],
+        peer_mutation: dict[str, Any] | None = None,
+    ) -> None:
+        self.peer_metrics = peer_metrics
+        self.peer_mutation = peer_mutation or {}
+
+    def __call__(self, local_report: dict[str, Any]) -> tuple[Any, Any]:
+        peer = {
+            **local_report,
+            "rank": 1,
+            "metrics": dict(self.peer_metrics),
+            **self.peer_mutation,
+        }
+        return local_report, peer
 
 
 class FakeAccelerator:

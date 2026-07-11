@@ -6,7 +6,6 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 import inspect
 import os
-import time
 from typing import Any, Protocol
 
 import torch
@@ -40,20 +39,10 @@ class SupervisedMicroStep:
 
 
 @dataclass(frozen=True)
-class SupervisedTrainerEvent:
-    event_type: str
-    planned_step_id: int
-    payload: Mapping[str, Any]
-
-
-@dataclass(frozen=True)
-class PlannedStepResult:
+class CompletedStepObservation:
     planned_step_id: int
     micro_step_count: int
     loss_bundle_artifact: Mapping[str, Any]
-    pre_backward_decision: GateDecision
-    post_backward_decision: GateDecision | None
-    qwen_forward_receipts: tuple[Mapping[str, Any], ...]
     optimizer_update_status: str
     finite_status: str
     scheduler_artifact: Mapping[str, Any] = field(default_factory=dict)
@@ -63,13 +52,6 @@ class PlannedStepResult:
             "planned_step_id": self.planned_step_id,
             "micro_step_count": self.micro_step_count,
             "loss_bundle": dict(self.loss_bundle_artifact),
-            "pre_backward_decision": self.pre_backward_decision.to_artifact_dict(),
-            "post_backward_decision": (
-                None
-                if self.post_backward_decision is None
-                else self.post_backward_decision.to_artifact_dict()
-            ),
-            "qwen_forward_receipts": [dict(item) for item in self.qwen_forward_receipts],
             "optimizer_update_status": self.optimizer_update_status,
             "finite_status": self.finite_status,
             "scheduler": dict(self.scheduler_artifact),
@@ -77,24 +59,22 @@ class PlannedStepResult:
 
 
 @dataclass(frozen=True)
-class ScheduledTrainerEvent:
-    scheduled_event: StepScheduleEvent
-    step_result: PlannedStepResult
-
-
-@dataclass(frozen=True)
 class SupervisedTrainingResult:
     completed_steps: int
     consumed_micro_steps: int
-    step_results: tuple[PlannedStepResult, ...]
     scheduled_event_counts: dict[str, int]
+    latest_observation: CompletedStepObservation | None
 
     def to_artifact_dict(self) -> dict[str, Any]:
         return {
             "completed_steps": self.completed_steps,
             "consumed_micro_steps": self.consumed_micro_steps,
             "scheduled_event_counts": dict(self.scheduled_event_counts),
-            "step_results": [result.to_artifact_dict() for result in self.step_results],
+            "latest_observation": (
+                None
+                if self.latest_observation is None
+                else self.latest_observation.to_artifact_dict()
+            ),
         }
 
 
@@ -136,8 +116,8 @@ class LossRunnerBoundary(Protocol):
 
 QwenForwardFn = Callable[[Any, SupervisedMicroStep], Any]
 LossContextFactory = Callable[[SupervisedMicroStep, Any], Any]
-TrainerEventSink = Callable[[SupervisedTrainerEvent], None]
-ScheduledEventHandler = Callable[[ScheduledTrainerEvent], None]
+CompletedStepHandler = Callable[[CompletedStepObservation], None]
+ScheduledStepHandler = Callable[[StepScheduleEvent, CompletedStepObservation], None]
 
 
 class SupervisedTrainer:
@@ -151,8 +131,10 @@ class SupervisedTrainer:
         loss_context_factory: LossContextFactory | None = None,
         loss_runner: LossRunnerBoundary,
         runtime: RuntimeBoundary,
-        event_sink: TrainerEventSink | None = None,
-        scheduled_event_handlers: Mapping[str, ScheduledEventHandler] | None = None,
+        on_completed_step: CompletedStepHandler | None = None,
+        on_eval: ScheduledStepHandler | None = None,
+        on_checkpoint: ScheduledStepHandler | None = None,
+        on_final: ScheduledStepHandler | None = None,
     ) -> None:
         self.model = model
         self.schedule = schedule
@@ -161,11 +143,13 @@ class SupervisedTrainer:
         self.loss_context_factory = loss_context_factory or _default_loss_context
         self.loss_runner = loss_runner
         self.runtime = runtime
-        self.event_sink = event_sink
-        self.scheduled_event_handlers = dict(scheduled_event_handlers or {})
+        self.on_completed_step = on_completed_step
+        self.on_eval = on_eval
+        self.on_checkpoint = on_checkpoint
+        self.on_final = on_final
 
     def run(self) -> SupervisedTrainingResult:
-        step_results: list[PlannedStepResult] = []
+        latest_observation: CompletedStepObservation | None = None
         scheduled_event_counts = {
             name: 0 for name in sorted(self.schedule.events)
         }
@@ -175,32 +159,22 @@ class SupervisedTrainer:
         )
 
         for planned_step_id in range(1, self.schedule.resolved_max_steps + 1):
-            self._emit(
-                "planned_step.started",
-                planned_step_id,
-                {"micro_steps_per_planned_step": micro_steps_per_planned_step},
-            )
             if _supports_streaming_loss(self.loss_runner):
-                step_result, consumed_count = self._run_streaming_planned_step(
+                observation, consumed_count = self._run_streaming_planned_step(
                     planned_step_id=planned_step_id,
                     micro_steps_per_planned_step=micro_steps_per_planned_step,
                 )
                 consumed_micro_steps += consumed_count
-                step_results.append(step_result)
-                self._emit(
-                    "planned_step.completed",
-                    planned_step_id,
-                    step_result.to_artifact_dict(),
-                )
+                latest_observation = observation
+                self._notify_completed_step(observation)
                 self._trigger_scheduled_events(
                     planned_step_id=planned_step_id,
-                    step_result=step_result,
+                    observation=observation,
                     scheduled_event_counts=scheduled_event_counts,
                 )
                 continue
 
             contexts: list[Any] = []
-            qwen_receipts: list[Mapping[str, Any]] = []
             for local_micro_step_index in range(micro_steps_per_planned_step):
                 micro_step = self._next_micro_step(
                     planned_step_id=planned_step_id,
@@ -219,30 +193,12 @@ class SupervisedTrainer:
                 contexts.append(
                     self.loss_context_factory(micro_step, forward_result)
                 )
-                qwen_receipts.append(_receipt_artifact(forward_result))
-                self._emit(
-                    "micro_step.forward",
-                    planned_step_id,
-                    {
-                        "local_micro_step_index": local_micro_step_index,
-                        "receipt": qwen_receipts[-1],
-                    },
-                )
+                del forward_result, micro_step
 
             loss_bundle = self.loss_runner.compute(tuple(contexts))
-            self._emit(
-                "planned_step.loss",
-                planned_step_id,
-                {"loss_bundle": _artifact(loss_bundle)},
-            )
             pre_decision = self.runtime.pre_backward(
                 loss_bundle,
                 planned_step_id=planned_step_id,
-            )
-            self._emit(
-                "planned_step.pre_backward_gate",
-                planned_step_id,
-                pre_decision.to_artifact_dict(),
             )
             post_decision: GateDecision | None = None
             optimizer_update_status = pre_decision.optimizer_update_status
@@ -257,11 +213,6 @@ class SupervisedTrainer:
                 post_decision = self.runtime.post_backward(
                     planned_step_id=planned_step_id,
                 )
-                self._emit(
-                    "planned_step.post_backward_gate",
-                    planned_step_id,
-                    post_decision.to_artifact_dict(),
-                )
                 optimizer_update_status = post_decision.optimizer_update_status
                 finite_status = post_decision.finite_status
                 if post_decision.should_call_optimizer_step:
@@ -274,34 +225,28 @@ class SupervisedTrainer:
             )
             self.runtime.zero_gradients(planned_step_id=planned_step_id)
 
-            step_result = PlannedStepResult(
+            observation = CompletedStepObservation(
                 planned_step_id=planned_step_id,
                 micro_step_count=len(contexts),
                 loss_bundle_artifact=_artifact(loss_bundle),
-                pre_backward_decision=pre_decision,
-                post_backward_decision=post_decision,
-                qwen_forward_receipts=tuple(qwen_receipts),
                 optimizer_update_status=optimizer_update_status,
                 finite_status=finite_status,
                 scheduler_artifact=scheduler_artifact,
             )
-            step_results.append(step_result)
-            self._emit(
-                "planned_step.completed",
-                planned_step_id,
-                step_result.to_artifact_dict(),
-            )
+            del contexts, loss_bundle, pre_decision, post_decision, scheduler_artifact
+            latest_observation = observation
+            self._notify_completed_step(observation)
             self._trigger_scheduled_events(
                 planned_step_id=planned_step_id,
-                step_result=step_result,
+                observation=observation,
                 scheduled_event_counts=scheduled_event_counts,
             )
 
         return SupervisedTrainingResult(
-            completed_steps=len(step_results),
+            completed_steps=self.schedule.resolved_max_steps,
             consumed_micro_steps=consumed_micro_steps,
-            step_results=tuple(step_results),
             scheduled_event_counts=scheduled_event_counts,
+            latest_observation=latest_observation,
         )
 
     def _run_streaming_planned_step(
@@ -309,8 +254,7 @@ class SupervisedTrainer:
         *,
         planned_step_id: int,
         micro_steps_per_planned_step: int,
-    ) -> tuple[PlannedStepResult, int]:
-        move_start_ns = time.perf_counter_ns()
+    ) -> tuple[CompletedStepObservation, int]:
         moved_micro_steps: list[SupervisedMicroStep] = []
         for local_micro_step_index in range(micro_steps_per_planned_step):
             micro_step = self._next_micro_step(
@@ -325,7 +269,6 @@ class SupervisedTrainer:
                 )
             )
 
-        prepare_start_ns = time.perf_counter_ns()
         plan = _prepare_streaming_loss_plan(
             self.loss_runner,
             tuple(moved_micro_steps),
@@ -333,18 +276,6 @@ class SupervisedTrainer:
             schedule=self.schedule,
             planned_step_id=planned_step_id,
         )
-        self._emit(
-            "planned_step.prepared",
-            planned_step_id,
-            {
-                "micro_steps_per_planned_step": micro_steps_per_planned_step,
-                "timings_ns": {
-                    "move_micro_steps_ns": _elapsed_ns(move_start_ns),
-                    "prepare_planned_step_ns": _elapsed_ns(prepare_start_ns),
-                },
-            },
-        )
-        qwen_receipts: list[Mapping[str, Any]] = []
         micro_loss_artifacts: list[Mapping[str, Any]] = []
         pre_decision: GateDecision | None = None
         post_decision: GateDecision | None = None
@@ -355,97 +286,38 @@ class SupervisedTrainer:
             sync_gradients = local_micro_step_index == len(moved_micro_steps) - 1
             with self.runtime.accumulation_context(sync_gradients=sync_gradients):
                 _sync_device_if_requested(micro_step.forward_device)
-                forward_start_ns = time.perf_counter_ns()
                 forward_result = self.qwen_forward(
                     _runtime_model(self.runtime, self.model),
                     micro_step,
                 )
                 _sync_forward_result_if_requested(forward_result)
-                forward_total_ns = _elapsed_ns(forward_start_ns)
                 _sync_forward_result_if_requested(forward_result)
-                context_start_ns = time.perf_counter_ns()
                 context = self.loss_context_factory(micro_step, forward_result)
                 _sync_forward_result_if_requested(forward_result)
-                loss_context_ns = _elapsed_ns(context_start_ns)
                 _sync_forward_result_if_requested(forward_result)
-                loss_start_ns = time.perf_counter_ns()
                 loss_bundle = self.loss_runner.compute_micro_step(
                     context,
                     plan,
                     local_micro_step_index=local_micro_step_index,
                 )
                 _sync_loss_bundle_if_requested(loss_bundle)
-                loss_compute_ns = _elapsed_ns(loss_start_ns)
-                qwen_receipts.append(_receipt_artifact(forward_result))
                 micro_loss_artifact = _artifact(loss_bundle)
                 micro_loss_artifacts.append(micro_loss_artifact)
-                self._emit(
-                    "micro_step.forward",
-                    planned_step_id,
-                    {
-                        "local_micro_step_index": local_micro_step_index,
-                        "sync_gradients": sync_gradients,
-                        "receipt": qwen_receipts[-1],
-                        "timings_ns": {
-                            "qwen_forward_total_ns": forward_total_ns,
-                        },
-                    },
-                )
-                self._emit(
-                    "micro_step.loss",
-                    planned_step_id,
-                    {
-                        "local_micro_step_index": local_micro_step_index,
-                        "sync_gradients": sync_gradients,
-                        "loss_bundle": micro_loss_artifact,
-                        "timings_ns": {
-                            "loss_context_ns": loss_context_ns,
-                            "loss_compute_ns": loss_compute_ns,
-                        },
-                    },
-                )
-                pre_backward_start_ns = time.perf_counter_ns()
                 pre_decision = self.runtime.pre_backward(
                     loss_bundle,
                     planned_step_id=planned_step_id,
-                )
-                pre_backward_gate_ns = _elapsed_ns(pre_backward_start_ns)
-                self._emit(
-                    "micro_step.pre_backward_gate",
-                    planned_step_id,
-                    {
-                        "local_micro_step_index": local_micro_step_index,
-                        "sync_gradients": sync_gradients,
-                        "timings_ns": {
-                            "pre_backward_gate_ns": pre_backward_gate_ns,
-                        },
-                        **pre_decision.to_artifact_dict(),
-                    },
                 )
                 optimizer_update_status = pre_decision.optimizer_update_status
                 finite_status = pre_decision.finite_status
                 if not pre_decision.should_call_backward:
                     break
                 _sync_loss_bundle_if_requested(loss_bundle)
-                backward_start_ns = time.perf_counter_ns()
                 self.runtime.backward(
                     _total_loss(loss_bundle),
                     planned_step_id=planned_step_id,
                     sync_gradients=sync_gradients,
                 )
                 _sync_loss_bundle_if_requested(loss_bundle)
-                backward_ns = _elapsed_ns(backward_start_ns)
-                self._emit(
-                    "micro_step.backward",
-                    planned_step_id,
-                    {
-                        "local_micro_step_index": local_micro_step_index,
-                        "sync_gradients": sync_gradients,
-                        "timings_ns": {
-                            "backward_ns": backward_ns,
-                        },
-                    },
-                )
             del loss_bundle, context, forward_result
 
         if pre_decision is None:
@@ -465,20 +337,9 @@ class SupervisedTrainer:
                 processed_micro_step_count=len(micro_loss_artifacts),
                 planned_micro_step_count=len(moved_micro_steps),
             )
-        self._emit(
-            "planned_step.loss",
-            planned_step_id,
-            {"loss_bundle": loss_bundle_artifact},
-        )
-
         if pre_decision.should_call_backward:
             post_decision = self.runtime.post_backward(
                 planned_step_id=planned_step_id,
-            )
-            self._emit(
-                "planned_step.post_backward_gate",
-                planned_step_id,
-                post_decision.to_artifact_dict(),
             )
             optimizer_update_status = post_decision.optimizer_update_status
             finite_status = post_decision.finite_status
@@ -492,20 +353,18 @@ class SupervisedTrainer:
         )
         self.runtime.zero_gradients(planned_step_id=planned_step_id)
 
-        return (
-            PlannedStepResult(
-                planned_step_id=planned_step_id,
-                micro_step_count=len(micro_loss_artifacts),
-                loss_bundle_artifact=dict(loss_bundle_artifact),
-                pre_backward_decision=pre_decision,
-                post_backward_decision=post_decision,
-                qwen_forward_receipts=tuple(qwen_receipts),
-                optimizer_update_status=optimizer_update_status,
-                finite_status=finite_status,
-                scheduler_artifact=scheduler_artifact,
-            ),
-            len(moved_micro_steps),
+        consumed_count = len(moved_micro_steps)
+        observation = CompletedStepObservation(
+            planned_step_id=planned_step_id,
+            micro_step_count=len(micro_loss_artifacts),
+            loss_bundle_artifact=dict(loss_bundle_artifact),
+            optimizer_update_status=optimizer_update_status,
+            finite_status=finite_status,
+            scheduler_artifact=scheduler_artifact,
         )
+        del moved_micro_steps, micro_loss_artifacts, plan
+        del pre_decision, post_decision, scheduler_artifact, loss_bundle_artifact
+        return observation, consumed_count
 
     def _next_micro_step(
         self,
@@ -534,55 +393,60 @@ class SupervisedTrainer:
         self,
         *,
         planned_step_id: int,
-        step_result: PlannedStepResult,
+        observation: CompletedStepObservation,
         scheduled_event_counts: dict[str, int],
     ) -> None:
-        for event_name in _scheduled_event_order(self.schedule.events):
-            for scheduled_event in self.schedule.events[event_name]:
-                if scheduled_event.planned_step_id != planned_step_id:
-                    continue
-                scheduled_event_counts[event_name] += 1
-                payload = scheduled_event.to_artifact_dict()
-                payload["optimizer_update_status"] = step_result.optimizer_update_status
-                self._emit(
-                    f"schedule.{scheduled_event.event}",
-                    planned_step_id,
-                    payload,
-                )
-                handler = self.scheduled_event_handlers.get(scheduled_event.event)
-                if handler is None and scheduled_event.required:
-                    raise RuntimeContractError(
-                        "required scheduled trainer event has no handler",
-                        code="trainer.required_event_handler_missing",
-                        context={
-                            "event": scheduled_event.event,
-                            "planned_step_id": planned_step_id,
-                            "trigger_reasons": list(scheduled_event.trigger_reasons),
-                        },
-                    )
-                if handler is not None:
-                    handler(
-                        ScheduledTrainerEvent(
-                            scheduled_event=scheduled_event,
-                            step_result=step_result,
-                        )
-                    )
-
-    def _emit(
-        self,
-        event_type: str,
-        planned_step_id: int,
-        payload: Mapping[str, Any],
-    ) -> None:
-        if self.event_sink is None:
-            return
-        self.event_sink(
-            SupervisedTrainerEvent(
-                event_type=event_type,
-                planned_step_id=planned_step_id,
-                payload=dict(payload),
-            )
+        self._run_scheduled_group(
+            scheduled_events=self.schedule.events["eval.forward"],
+            handler=self.on_eval,
+            planned_step_id=planned_step_id,
+            observation=observation,
+            scheduled_event_counts=scheduled_event_counts,
         )
+        self._run_scheduled_group(
+            scheduled_events=self.schedule.events["checkpoint"],
+            handler=self.on_checkpoint,
+            planned_step_id=planned_step_id,
+            observation=observation,
+            scheduled_event_counts=scheduled_event_counts,
+        )
+        self._run_scheduled_group(
+            scheduled_events=self.schedule.events["final"],
+            handler=self.on_final,
+            planned_step_id=planned_step_id,
+            observation=observation,
+            scheduled_event_counts=scheduled_event_counts,
+        )
+
+    @staticmethod
+    def _run_scheduled_group(
+        *,
+        scheduled_events: Sequence[StepScheduleEvent],
+        handler: ScheduledStepHandler | None,
+        planned_step_id: int,
+        observation: CompletedStepObservation,
+        scheduled_event_counts: dict[str, int],
+    ) -> None:
+        for scheduled_event in scheduled_events:
+            if scheduled_event.planned_step_id != planned_step_id:
+                continue
+            scheduled_event_counts[scheduled_event.event] += 1
+            if handler is None and scheduled_event.required:
+                raise RuntimeContractError(
+                    "required scheduled trainer event has no handler",
+                    code="trainer.required_event_handler_missing",
+                    context={
+                        "event": scheduled_event.event,
+                        "planned_step_id": planned_step_id,
+                        "trigger_reasons": list(scheduled_event.trigger_reasons),
+                    },
+                )
+            if handler is not None:
+                handler(scheduled_event, observation)
+
+    def _notify_completed_step(self, observation: CompletedStepObservation) -> None:
+        if self.on_completed_step is not None:
+            self.on_completed_step(observation)
 
 
 def _default_qwen_forward(model: Any, micro_step: SupervisedMicroStep) -> Any:
@@ -727,10 +591,6 @@ def _total_loss(loss_bundle: LossBundle | Any) -> torch.Tensor:
     return total_loss
 
 
-def _elapsed_ns(start_ns: int) -> int:
-    return max(0, time.perf_counter_ns() - int(start_ns))
-
-
 def _profile_sync_enabled() -> bool:
     return os.environ.get("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS") == "1"
 
@@ -753,13 +613,6 @@ def _sync_device_if_requested(device: torch.device | str | None) -> None:
     torch_device = torch.device(device)
     if torch_device.type == "cuda" and torch.cuda.is_available():
         torch.cuda.synchronize(torch_device)
-
-
-def _receipt_artifact(forward_result: Any) -> Mapping[str, Any]:
-    receipt = getattr(forward_result, "receipt", None)
-    if receipt is None:
-        return {}
-    return _artifact(receipt)
 
 
 def _artifact(value: Any) -> Mapping[str, Any]:
@@ -806,29 +659,15 @@ def _partial_loss_artifact(
     return result
 
 
-def _scheduled_event_order(
-    events: Mapping[str, Sequence[StepScheduleEvent]],
-) -> tuple[str, ...]:
-    priority = {
-        "eval.forward": 0,
-        "checkpoint": 1,
-        "training.logging": 2,
-        "final": 3,
-    }
-    return tuple(sorted(events, key=lambda name: (priority.get(name, 100), name)))
-
-
 __all__ = [
+    "CompletedStepHandler",
+    "CompletedStepObservation",
     "LossContextFactory",
     "LossRunnerBoundary",
-    "PlannedStepResult",
     "QwenForwardFn",
     "RuntimeBoundary",
-    "ScheduledEventHandler",
-    "ScheduledTrainerEvent",
+    "ScheduledStepHandler",
     "SupervisedMicroStep",
     "SupervisedTrainer",
-    "SupervisedTrainerEvent",
     "SupervisedTrainingResult",
-    "TrainerEventSink",
 ]

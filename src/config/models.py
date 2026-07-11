@@ -318,10 +318,6 @@ class OptimizerConfig(StrictConfigModel):
         return value
 
 
-class LoggingConfig(CadenceConfig):
-    pass
-
-
 class TrainingConfig(StrictConfigModel):
     mode: Literal["supervised"]
     epochs: int = Field(gt=0)
@@ -329,7 +325,6 @@ class TrainingConfig(StrictConfigModel):
     effective_batch_size: int = Field(gt=0)
     precision: Literal["bf16", "fp16"]
     max_grad_norm: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
-    logging: LoggingConfig
 
 
 class RuntimeConfig(StrictConfigModel):
@@ -353,10 +348,6 @@ class CheckpointConfig(CadenceConfig):
     save_final: bool = True
 
 
-class DebugConfig(StrictConfigModel):
-    dry_run_writes_artifacts: bool = False
-
-
 class TrainConfig(StrictConfigModel):
     schema_version: Literal[1]
     run: RunConfig
@@ -371,7 +362,6 @@ class TrainConfig(StrictConfigModel):
     runtime: RuntimeConfig
     eval: EvalConfig
     checkpoint: CheckpointConfig
-    debug: DebugConfig = Field(default_factory=DebugConfig)
 
 
 @dataclass(frozen=True)

@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import math
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from src.common.errors import ConfigContractError
@@ -113,14 +111,6 @@ def resolve_planned_step_schedule(
             include_final=config.checkpoint.save_final,
         ),
         "eval.forward": eval_forward_events,
-        "training.logging": _resolve_cadence_events(
-            config.training.logging,
-            event_name="training.logging",
-            resolved_max_steps=resolved_max_steps,
-            source_config_path=source_config_path,
-            required=False,
-            include_final=False,
-        ),
         "final": (
             StepScheduleEvent(
                 planned_step_id=resolved_max_steps,
@@ -141,27 +131,6 @@ def resolve_planned_step_schedule(
         runtime_batch=runtime_batch,
         events=events,
     )
-
-
-def write_resolved_step_schedule(
-    schedule: ResolvedStepSchedule,
-    run_dir: str | Path,
-    *,
-    overwrite: bool = False,
-) -> Path:
-    output_path = Path(run_dir) / "resolved_step_schedule.json"
-    if output_path.exists() and not overwrite:
-        raise ConfigContractError(
-            "resolved step schedule already exists",
-            code="schedule.artifact_exists",
-            context={"path": str(output_path)},
-        )
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(
-        json.dumps(schedule.to_artifact_dict(), indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    return output_path
 
 
 def _resolve_cadence_events(

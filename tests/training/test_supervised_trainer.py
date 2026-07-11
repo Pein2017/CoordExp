@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import replace
 from dataclasses import dataclass
+import inspect
 from typing import Any
 
 import pytest
@@ -14,13 +15,12 @@ from src.config.models import RuntimeBatchResolution
 from src.runtime import GateDecision
 from src.training.schedule import ResolvedStepSchedule, StepScheduleEvent
 from src.training.supervised_trainer import (
+    CompletedStepObservation,
     LossContextFactory,
     LossRunnerBoundary,
-    ScheduledTrainerEvent,
-    ScheduledEventHandler,
+    ScheduledStepHandler,
     SupervisedMicroStep,
     SupervisedTrainer,
-    TrainerEventSink,
     QwenForwardFn,
     RuntimeBoundary,
 )
@@ -28,6 +28,7 @@ from src.training.supervised_trainer import (
 
 def test_supervised_trainer_orchestrates_accumulation_and_runtime_boundaries() -> None:
     log: list[str] = []
+    observations: list[CompletedStepObservation] = []
     schedule = _schedule(
         resolved_max_steps=2,
         grad_accum_steps=2,
@@ -40,72 +41,60 @@ def test_supervised_trainer_orchestrates_accumulation_and_runtime_boundaries() -
         loss_context_factory=_loss_context(log),
         loss_runner=FakeLossRunner(log),
         runtime=FakeRuntime(log),
-        event_sink=lambda event: log.append(f"event:{event.event_type}:{event.planned_step_id}"),
+        on_completed_step=observations.append,
     )
 
     result = trainer.run()
 
     assert result.completed_steps == 2
     assert result.consumed_micro_steps == 4
-    assert result.step_results[0].micro_step_count == 2
-    assert result.step_results[0].optimizer_update_status == "applied"
-    assert result.step_results[0].loss_bundle_artifact == {"total_loss": 1.0}
-    assert result.step_results[0].scheduler_artifact == {
+    assert [item.planned_step_id for item in observations] == [1, 2]
+    assert observations[0].micro_step_count == 2
+    assert observations[0].optimizer_update_status == "applied"
+    assert observations[0].loss_bundle_artifact == {"total_loss": 1.0}
+    assert observations[0].scheduler_artifact == {
         "scheduler_step_count": 1,
         "learning_rates": [{"group_index": 0, "lr": 0.01}],
     }
-    assert result.step_results[0].to_artifact_dict()["scheduler"] == {
+    assert observations[0].to_artifact_dict()["scheduler"] == {
         "scheduler_step_count": 1,
         "learning_rates": [{"group_index": 0, "lr": 0.01}],
     }
-    assert not hasattr(result.step_results[0], "loss_bundle")
+    assert not hasattr(observations[0], "loss_bundle")
+    assert result.latest_observation is observations[-1]
     assert log == [
-        "event:planned_step.started:1",
         "stream:0",
         "runtime.move:1:0",
         "forward:0",
         "context:0",
-        "event:micro_step.forward:1",
         "stream:1",
         "runtime.move:1:1",
         "forward:1",
         "context:1",
-        "event:micro_step.forward:1",
         "loss:2",
-        "event:planned_step.loss:1",
         "runtime.pre:1",
-        "event:planned_step.pre_backward_gate:1",
         "runtime.backward:1.0:sync=True",
         "runtime.post:1",
-        "event:planned_step.post_backward_gate:1",
         "runtime.clip:1",
         "runtime.optimizer:1",
         "runtime.scheduler:1",
         "runtime.zero:1",
-        "event:planned_step.completed:1",
-        "event:planned_step.started:2",
         "stream:2",
         "runtime.move:2:0",
         "forward:2",
         "context:2",
-        "event:micro_step.forward:2",
         "stream:3",
         "runtime.move:2:1",
         "forward:3",
         "context:3",
-        "event:micro_step.forward:2",
         "loss:2",
-        "event:planned_step.loss:2",
         "runtime.pre:2",
-        "event:planned_step.pre_backward_gate:2",
         "runtime.backward:1.0:sync=True",
         "runtime.post:2",
-        "event:planned_step.post_backward_gate:2",
         "runtime.clip:2",
         "runtime.optimizer:2",
         "runtime.scheduler:2",
         "runtime.zero:2",
-        "event:planned_step.completed:2",
     ]
 
 
@@ -121,9 +110,6 @@ def test_supervised_trainer_triggers_scheduled_eval_checkpoint_and_final_events(
             "checkpoint": (
                 _event(2, "checkpoint", ("save_final",)),
             ),
-            "training.logging": (
-                _event(1, "training.logging", ("explicit_step",)),
-            ),
             "final": (
                 _event(2, "final", ("final",), required=True),
             ),
@@ -137,11 +123,9 @@ def test_supervised_trainer_triggers_scheduled_eval_checkpoint_and_final_events(
         loss_context_factory=_loss_context([]),
         loss_runner=FakeLossRunner([]),
         runtime=FakeRuntime([]),
-        scheduled_event_handlers={
-            "eval.forward": lambda event: scheduled_calls.append(_scheduled_tuple(event)),
-            "checkpoint": lambda event: scheduled_calls.append(_scheduled_tuple(event)),
-            "final": lambda event: scheduled_calls.append(_scheduled_tuple(event)),
-        },
+        on_eval=lambda event, observation: scheduled_calls.append(_scheduled_tuple(event, observation)),
+        on_checkpoint=lambda event, observation: scheduled_calls.append(_scheduled_tuple(event, observation)),
+        on_final=lambda event, observation: scheduled_calls.append(_scheduled_tuple(event, observation)),
     )
 
     result = trainer.run()
@@ -151,7 +135,6 @@ def test_supervised_trainer_triggers_scheduled_eval_checkpoint_and_final_events(
         "checkpoint": 1,
         "eval.forward": 1,
         "final": 1,
-        "training.logging": 1,
     }
     assert scheduled_calls == [
         ("eval.forward", 1, ("explicit_step",), "applied"),
@@ -172,9 +155,6 @@ def test_supervised_trainer_runs_same_step_eval_before_checkpoint() -> None:
             "eval.forward": (
                 _event(1, "eval.forward", ("explicit_step",)),
             ),
-            "training.logging": (
-                _event(1, "training.logging", ("explicit_step",)),
-            ),
             "final": (
                 _event(1, "final", ("final",), required=True),
             ),
@@ -188,11 +168,9 @@ def test_supervised_trainer_runs_same_step_eval_before_checkpoint() -> None:
         loss_context_factory=_loss_context([]),
         loss_runner=FakeLossRunner([]),
         runtime=FakeRuntime([]),
-        scheduled_event_handlers={
-            "eval.forward": lambda event: scheduled_calls.append(event.scheduled_event.event),
-            "checkpoint": lambda event: scheduled_calls.append(event.scheduled_event.event),
-            "final": lambda event: scheduled_calls.append(event.scheduled_event.event),
-        },
+        on_eval=lambda event, _observation: scheduled_calls.append(event.event),
+        on_checkpoint=lambda event, _observation: scheduled_calls.append(event.event),
+        on_final=lambda event, _observation: scheduled_calls.append(event.event),
     )
 
     result = trainer.run()
@@ -201,9 +179,79 @@ def test_supervised_trainer_runs_same_step_eval_before_checkpoint() -> None:
         "checkpoint": 1,
         "eval.forward": 1,
         "final": 1,
-        "training.logging": 1,
     }
     assert scheduled_calls == ["eval.forward", "checkpoint", "final"]
+
+
+def test_completed_callback_precedes_direct_same_step_handlers() -> None:
+    calls: list[tuple[str, int]] = []
+    schedule = _schedule(
+        resolved_max_steps=1,
+        grad_accum_steps=1,
+        events={
+            "eval.forward": (_event(1, "eval.forward", ("explicit_step",)),),
+            "checkpoint": (_event(1, "checkpoint", ("save_final",)),),
+            "final": (_event(1, "final", ("final",), required=True),),
+        },
+    )
+    trainer = SupervisedTrainer(
+        model=object(),
+        schedule=schedule,
+        pack_stream=_micro_steps(1),
+        qwen_forward=_forward([]),
+        loss_context_factory=_loss_context([]),
+        loss_runner=FakeLossRunner([]),
+        runtime=FakeRuntime([]),
+        on_completed_step=lambda observation: calls.append(
+            ("completed", observation.planned_step_id)
+        ),
+        on_eval=lambda _event, observation: calls.append(
+            ("eval", observation.planned_step_id)
+        ),
+        on_checkpoint=lambda _event, observation: calls.append(
+            ("checkpoint", observation.planned_step_id)
+        ),
+        on_final=lambda _event, observation: calls.append(
+            ("final", observation.planned_step_id)
+        ),
+    )
+
+    trainer.run()
+
+    assert calls == [
+        ("completed", 1),
+        ("eval", 1),
+        ("checkpoint", 1),
+        ("final", 1),
+    ]
+
+
+@pytest.mark.parametrize("step_count", [1, 25])
+def test_supervised_training_result_is_bounded_independent_of_step_count(
+    step_count: int,
+) -> None:
+    trainer = SupervisedTrainer(
+        model=object(),
+        schedule=_schedule(resolved_max_steps=step_count, grad_accum_steps=1),
+        pack_stream=_micro_steps(step_count),
+        qwen_forward=_forward([]),
+        loss_context_factory=_loss_context([]),
+        loss_runner=FakeLossRunner([]),
+        runtime=FakeRuntime([]),
+    )
+
+    result = trainer.run()
+    artifact = result.to_artifact_dict()
+
+    assert result.completed_steps == step_count
+    assert result.latest_observation.planned_step_id == step_count
+    assert "step_results" not in artifact
+    assert set(artifact) == {
+        "completed_steps",
+        "consumed_micro_steps",
+        "scheduled_event_counts",
+        "latest_observation",
+    }
 
 
 def test_supervised_trainer_rejects_required_scheduled_event_without_handler() -> None:
@@ -213,7 +261,6 @@ def test_supervised_trainer_rejects_required_scheduled_event_without_handler() -
         events={
             "checkpoint": (),
             "eval.forward": (),
-            "training.logging": (),
             "final": (_event(1, "final", ("final",), required=True),),
         },
     )
@@ -236,15 +283,13 @@ def test_supervised_trainer_rejects_required_scheduled_event_without_handler() -
 
 
 def test_supervised_trainer_allows_optional_unhandled_scheduled_events() -> None:
-    observed_events: list[str] = []
     schedule = _schedule(
         resolved_max_steps=1,
         grad_accum_steps=1,
         events={
             "checkpoint": (),
-            "eval.forward": (),
-            "training.logging": (
-                _event(1, "training.logging", ("explicit_step",), required=False),
+            "eval.forward": (
+                _event(1, "eval.forward", ("explicit_step",), required=False),
             ),
             "final": (),
         },
@@ -257,13 +302,20 @@ def test_supervised_trainer_allows_optional_unhandled_scheduled_events() -> None
         loss_context_factory=_loss_context([]),
         loss_runner=FakeLossRunner([]),
         runtime=FakeRuntime([]),
-        event_sink=lambda event: observed_events.append(event.event_type),
     )
 
     result = trainer.run()
 
-    assert result.scheduled_event_counts["training.logging"] == 1
-    assert "schedule.training.logging" in observed_events
+    assert result.scheduled_event_counts["eval.forward"] == 1
+
+
+def test_supervised_trainer_has_no_generic_scheduled_event_dispatch_residue() -> None:
+    trainer_source = inspect.getsource(trainer_module.SupervisedTrainer)
+
+    assert "_scheduled" + "_handler" not in trainer_source
+    assert "event_" + "name" not in trainer_source
+    assert "scheduled_event" + "_handlers" not in trainer_source
+    assert "training." + "logging" not in inspect.getsource(trainer_module)
 
 
 def test_supervised_trainer_skips_backward_and_update_when_scalar_gate_is_unsafe() -> None:
@@ -280,7 +332,7 @@ def test_supervised_trainer_skips_backward_and_update_when_scalar_gate_is_unsafe
 
     result = trainer.run()
 
-    assert result.step_results[0].optimizer_update_status == "skipped_non_finite_scalar"
+    assert result.latest_observation.optimizer_update_status == "skipped_non_finite_scalar"
     assert not any(item.startswith("runtime.backward:1.0") for item in log)
     assert "runtime.post:1" not in log
     assert "runtime.optimizer:1" not in log
@@ -302,7 +354,7 @@ def test_supervised_trainer_advances_scheduler_when_post_backward_gate_skips_upd
 
     result = trainer.run()
 
-    assert result.step_results[0].optimizer_update_status == "skipped_gradient_or_overflow"
+    assert result.latest_observation.optimizer_update_status == "skipped_gradient_or_overflow"
     assert "runtime.backward:1.0:sync=True" in log
     assert "runtime.optimizer:1" not in log
     assert log[-3:] == ["runtime.post:1", "runtime.scheduler:1", "runtime.zero:1"]
@@ -363,7 +415,7 @@ def test_default_qwen_forward_uses_runtime_selected_forward_device(monkeypatch) 
     result = trainer.run()
 
     assert observed_devices == ["cuda:7"]
-    assert result.step_results[0].qwen_forward_receipts == ({"device": "cuda:7"},)
+    assert result.latest_observation.planned_step_id == 1
 
 
 def test_supervised_trainer_forwards_with_runtime_owned_model() -> None:
@@ -392,7 +444,7 @@ def test_supervised_trainer_forwards_with_runtime_owned_model() -> None:
     result = trainer.run()
 
     assert observed_models == [prepared_model]
-    assert result.step_results[0].qwen_forward_receipts == ({"prepared": True},)
+    assert result.latest_observation.planned_step_id == 1
 
 
 def test_supervised_trainer_runs_with_accelerate_prepared_runtime_model() -> None:
@@ -423,9 +475,7 @@ def test_supervised_trainer_runs_with_accelerate_prepared_runtime_model() -> Non
 
     assert result.completed_steps == 1
     assert observed_models == [runtime.model]
-    assert result.step_results[0].qwen_forward_receipts == (
-        {"runtime_owned_model": True},
-    )
+    assert result.latest_observation.planned_step_id == 1
 
 
 def test_supervised_training_result_contains_no_live_tensors() -> None:
@@ -442,7 +492,7 @@ def test_supervised_training_result_contains_no_live_tensors() -> None:
     result = trainer.run()
 
     assert not _contains_tensor(result.to_artifact_dict())
-    assert not _contains_tensor(result.step_results[0].loss_bundle_artifact)
+    assert not _contains_tensor(result.latest_observation.loss_bundle_artifact)
 
 
 def test_training_package_exports_integration_boundary_types() -> None:
@@ -451,16 +501,14 @@ def test_training_package_exports_integration_boundary_types() -> None:
         LossRunnerBoundary as PackageLossRunnerBoundary,
         QwenForwardFn as PackageQwenForwardFn,
         RuntimeBoundary as PackageRuntimeBoundary,
-        ScheduledEventHandler as PackageScheduledEventHandler,
-        TrainerEventSink as PackageTrainerEventSink,
+        ScheduledStepHandler as PackageScheduledStepHandler,
     )
 
     assert PackageLossContextFactory is LossContextFactory
     assert PackageLossRunnerBoundary is LossRunnerBoundary
     assert PackageQwenForwardFn is QwenForwardFn
     assert PackageRuntimeBoundary is RuntimeBoundary
-    assert PackageScheduledEventHandler is ScheduledEventHandler
-    assert PackageTrainerEventSink is TrainerEventSink
+    assert PackageScheduledStepHandler is ScheduledStepHandler
 
 
 def test_supervised_trainer_fails_if_pack_stream_cannot_fill_planned_window() -> None:
@@ -498,8 +546,8 @@ def test_supervised_trainer_streams_backward_before_next_forward_when_supported(
 
     assert result.completed_steps == 1
     assert result.consumed_micro_steps == 2
-    assert result.step_results[0].loss_bundle_artifact["total_loss"] == 1.0
-    assert result.step_results[0].loss_bundle_artifact.get("partial") is None
+    assert result.latest_observation.loss_bundle_artifact["total_loss"] == 1.0
+    assert result.latest_observation.loss_bundle_artifact.get("partial") is None
     assert (
         log.index("runtime.accumulation:False:enter")
         < log.index("forward:0")
@@ -549,15 +597,15 @@ def test_streaming_multirank_loss_plan_uses_runtime_denominator_gatherer() -> No
     result = trainer.run()
 
     assert result.completed_steps == 1
-    assert result.step_results[0].loss_bundle_artifact["diagnostics"][
+    assert result.latest_observation.loss_bundle_artifact["diagnostics"][
         "denominator_scope"
     ] == "planned_step_global"
     assert "runtime.gather_denominators:1" in log
     assert "streaming.prepare_global:1:2:0:3" in log
 
 
-def test_streaming_micro_step_events_expose_sync_gradients_boundary() -> None:
-    events: list[SupervisedTrainerEvent] = []
+def test_streaming_completion_callback_does_not_expose_micro_or_gate_events() -> None:
+    observations: list[CompletedStepObservation] = []
     trainer = SupervisedTrainer(
         model=object(),
         schedule=_schedule(resolved_max_steps=1, grad_accum_steps=2),
@@ -566,28 +614,13 @@ def test_streaming_micro_step_events_expose_sync_gradients_boundary() -> None:
         loss_context_factory=_loss_context([]),
         loss_runner=StreamingFakeLossRunner([]),
         runtime=FakeRuntime([]),
-        event_sink=events.append,
+        on_completed_step=observations.append,
     )
 
     trainer.run()
 
-    by_type = {
-        event_type: [
-            event.payload["sync_gradients"]
-            for event in events
-            if event.event_type == event_type
-        ]
-        for event_type in (
-            "micro_step.forward",
-            "micro_step.loss",
-            "micro_step.pre_backward_gate",
-        )
-    }
-    assert by_type == {
-        "micro_step.forward": [False, True],
-        "micro_step.loss": [False, True],
-        "micro_step.pre_backward_gate": [False, True],
-    }
+    assert len(observations) == 1
+    assert observations[0].micro_step_count == 2
 
 
 def test_trainer_profile_sync_helper_is_exact_env_gated(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -623,14 +656,14 @@ def test_streaming_scalar_gate_partial_window_marks_metrics_unavailable() -> Non
 
     result = trainer.run()
 
-    artifact = result.step_results[0].loss_bundle_artifact
+    artifact = result.latest_observation.loss_bundle_artifact
     assert artifact["partial"] is True
     assert artifact["metrics"] == {}
     assert artifact["diagnostics"]["normalizer_scope"] == "partial_planned_step"
     assert artifact["diagnostics"]["processed_micro_step_count"] == 1
     assert artifact["diagnostics"]["planned_micro_step_count"] == 2
-    assert result.step_results[0].micro_step_count == 1
-    assert result.step_results[0].optimizer_update_status == "skipped_non_finite_scalar"
+    assert result.latest_observation.micro_step_count == 1
+    assert result.latest_observation.optimizer_update_status == "skipped_non_finite_scalar"
     assert not any(item.startswith("runtime.backward:0.5") for item in log)
     assert "runtime.accumulation:False:enter" in log
     assert "runtime.accumulation:False:exit" in log
@@ -929,12 +962,15 @@ def _loss_context(log: list[str]):
     return build
 
 
-def _scheduled_tuple(event: ScheduledTrainerEvent) -> tuple[str, int, tuple[str, ...], str]:
+def _scheduled_tuple(
+    event: StepScheduleEvent,
+    observation: CompletedStepObservation,
+) -> tuple[str, int, tuple[str, ...], str]:
     return (
-        event.scheduled_event.event,
-        event.scheduled_event.planned_step_id,
-        event.scheduled_event.trigger_reasons,
-        event.step_result.optimizer_update_status,
+        event.event,
+        event.planned_step_id,
+        event.trigger_reasons,
+        observation.optimizer_update_status,
     )
 
 
@@ -970,7 +1006,6 @@ def _schedule(
         or {
             "checkpoint": (),
             "eval.forward": (),
-            "training.logging": (),
             "final": (),
         },
     )

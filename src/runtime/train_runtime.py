@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import json
 from contextlib import nullcontext
-from dataclasses import dataclass, replace
-from pathlib import Path
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence
 
 import torch
@@ -81,28 +79,6 @@ def validate_accelerator_runtime(
         )
 
 
-@dataclass(frozen=True)
-class TrainRuntimeSetupReceipt:
-    rank: int
-    world_size: int
-    device: str
-    seed: int
-    runtime_batch: RuntimeBatchResolution
-    max_grad_norm: float | None
-    scheduler_semantics: Mapping[str, Any]
-
-    def to_artifact_dict(self) -> dict[str, Any]:
-        return {
-            "rank": self.rank,
-            "world_size": self.world_size,
-            "device": self.device,
-            "seed": self.seed,
-            "runtime_batch": self.runtime_batch.to_artifact_dict(),
-            "max_grad_norm": self.max_grad_norm,
-            "scheduler_semantics": dict(self.scheduler_semantics),
-        }
-
-
 class TrainRuntime:
     def __init__(
         self,
@@ -121,12 +97,9 @@ class TrainRuntime:
         ]
         | None = None,
     ) -> None:
-        self.runtime_config = runtime_config
-        self.runtime_batch = runtime_batch
         self.model = model
         self.optimizer = optimizer
         self.scheduler = scheduler
-        self.expected_mixed_precision = expected_mixed_precision
         self.accelerator = accelerator
         self.device = torch.device(accelerator.device)
         self.rank = int(accelerator.process_index)
@@ -136,7 +109,10 @@ class TrainRuntime:
         self.optimizer_step_count = 0
         self.scheduler_step_count = 0
         self.zero_grad_count = 0
-        self._validate_runtime_contract()
+        self._validate_runtime_contract(
+            runtime_batch=runtime_batch,
+            expected_mixed_precision=expected_mixed_precision,
+        )
         seed_training_runtime(
             runtime_config.seed,
             deterministic=False,
@@ -144,15 +120,6 @@ class TrainRuntime:
         )
         self.model.to(self.device)
         self._prepare_training_objects()
-        self.setup_receipt = TrainRuntimeSetupReceipt(
-            rank=self.rank,
-            world_size=self.world_size,
-            device=str(self.device),
-            seed=runtime_config.seed,
-            runtime_batch=runtime_batch,
-            max_grad_norm=max_grad_norm,
-            scheduler_semantics=_scheduler_semantics(),
-        )
 
     @property
     def is_main_process(self) -> bool:
@@ -267,13 +234,24 @@ class TrainRuntime:
         split: str,
     ) -> dict[str, Any]:
         values = {str(key): float(metrics[key]) for key in sorted(metrics)}
+        if self.world_size > 1:
+            values = self._reduce_metric_reports(
+                {
+                    "kind": "metrics",
+                    "planned_step_id": int(planned_step_id),
+                    "split": str(split),
+                    "rank": self.rank,
+                    "world_size": self.world_size,
+                    "metrics": values,
+                }
+            )
         return {
             "planned_step_id": int(planned_step_id),
             "split": split,
             "rank": self.rank,
             "world_size": self.world_size,
             "metrics": values,
-            "reduction": "single_rank" if self.world_size == 1 else "rank_local",
+            "reduction": "single_rank" if self.world_size == 1 else "all_rank_mean",
         }
 
     def gather_loss_denominators(
@@ -328,28 +306,22 @@ class TrainRuntime:
             )
         return tuple(gathered)
 
-    def safe_save_json(self, payload: Mapping[str, Any], path: Path) -> Path | None:
-        if not self.is_main_process:
-            return None
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(payload, allow_nan=False, ensure_ascii=True, indent=2, sort_keys=True)
-            + "\n",
-            encoding="utf-8",
-        )
-        return path
-
-    def _validate_runtime_contract(self) -> None:
+    def _validate_runtime_contract(
+        self,
+        *,
+        runtime_batch: RuntimeBatchResolution,
+        expected_mixed_precision: str,
+    ) -> None:
         validate_accelerator_runtime(
             self.accelerator,
-            expected_mixed_precision=self.expected_mixed_precision,
+            expected_mixed_precision=expected_mixed_precision,
         )
-        if self.runtime_batch.world_size != self.world_size:
+        if runtime_batch.world_size != self.world_size:
             raise RuntimeContractError(
                 "runtime batch world size must match runtime world size",
                 code="runtime.batch_world_size",
                 context={
-                    "runtime_batch_world_size": self.runtime_batch.world_size,
+                    "runtime_batch_world_size": runtime_batch.world_size,
                     "world_size": self.world_size,
                 },
             )
@@ -411,6 +383,98 @@ class TrainRuntime:
                 context={"rank": self.rank, "world_size": self.world_size},
             ) from exc
         return reports
+
+    def _reduce_metric_reports(self, local_report: Mapping[str, Any]) -> dict[str, float]:
+        reports = self._gather_rank_reports(local_report)
+        if len(reports) != self.world_size:
+            raise RuntimeContractError(
+                "metric gather must return exactly one report per world rank",
+                code="runtime.metric_gather_count",
+                context={
+                    "expected_report_count": self.world_size,
+                    "observed_report_count": len(reports),
+                },
+            )
+        expected_step = int(local_report["planned_step_id"])
+        expected_split = str(local_report["split"])
+        expected_keys = tuple(local_report["metrics"])
+        reports_by_rank: dict[int, Mapping[str, Any]] = {}
+        for report_index, report in enumerate(reports):
+            if not isinstance(report, Mapping):
+                raise RuntimeContractError(
+                    "metric gatherer must return mapping reports",
+                    code="runtime.metric_gather_invalid",
+                    context={
+                        "report_index": report_index,
+                        "value_type": type(report).__name__,
+                    },
+                )
+            try:
+                report_rank = int(report["rank"])
+                report_step = int(report["planned_step_id"])
+                report_split = str(report["split"])
+                report_metrics = report["metrics"]
+            except (KeyError, TypeError, ValueError) as exc:
+                raise RuntimeContractError(
+                    "metric gather report is missing required identity fields",
+                    code="runtime.metric_gather_invalid",
+                    context={"report_index": report_index},
+                ) from exc
+            if report_rank < 0 or report_rank >= self.world_size or report_rank in reports_by_rank:
+                raise RuntimeContractError(
+                    "metric gather must contain one unique report per world rank",
+                    code="runtime.metric_gather_ranks",
+                    context={"report_index": report_index, "rank": report_rank},
+                )
+            if report_step != expected_step:
+                raise RuntimeContractError(
+                    "metric gather reports disagree on planned step",
+                    code="runtime.metric_gather_step",
+                    context={
+                        "rank": report_rank,
+                        "expected_planned_step_id": expected_step,
+                        "observed_planned_step_id": report_step,
+                    },
+                )
+            if report_split != expected_split:
+                raise RuntimeContractError(
+                    "metric gather reports disagree on split",
+                    code="runtime.metric_gather_split",
+                    context={
+                        "rank": report_rank,
+                        "expected_split": expected_split,
+                        "observed_split": report_split,
+                    },
+                )
+            if not isinstance(report_metrics, Mapping):
+                raise RuntimeContractError(
+                    "metric gather report metrics must be a mapping",
+                    code="runtime.metric_gather_invalid",
+                    context={"rank": report_rank},
+                )
+            observed_keys = tuple(sorted(str(key) for key in report_metrics))
+            if observed_keys != expected_keys:
+                raise RuntimeContractError(
+                    "metric gather reports disagree on metric keys",
+                    code="runtime.metric_gather_keys",
+                    context={
+                        "rank": report_rank,
+                        "expected_metric_keys": list(expected_keys),
+                        "observed_metric_keys": list(observed_keys),
+                    },
+                )
+            reports_by_rank[report_rank] = report_metrics
+        if tuple(sorted(reports_by_rank)) != tuple(range(self.world_size)):
+            raise RuntimeContractError(
+                "metric gather must contain every world rank",
+                code="runtime.metric_gather_ranks",
+                context={"observed_ranks": sorted(reports_by_rank)},
+            )
+        return {
+            key: sum(float(reports_by_rank[rank][key]) for rank in range(self.world_size))
+            / self.world_size
+            for key in expected_keys
+        }
 
 def _accelerator_overflow(accelerator: Any) -> bool:
     scaler = getattr(accelerator, "scaler", None)
@@ -484,6 +548,5 @@ def _float_scalar(value: Any) -> float:
 
 __all__ = [
     "TrainRuntime",
-    "TrainRuntimeSetupReceipt",
     "validate_accelerator_runtime",
 ]

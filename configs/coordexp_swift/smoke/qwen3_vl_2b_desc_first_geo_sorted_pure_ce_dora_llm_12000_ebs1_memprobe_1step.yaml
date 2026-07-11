@@ -91,10 +91,6 @@ training:
   effective_batch_size: 1
   precision: bf16
   max_grad_norm: 1.0
-  logging:
-    every_fraction: null
-    steps:
-      - 1
 
 runtime:
   seed: 17
@@ -112,6 +108,3 @@ checkpoint:
   steps:
     - 1
   save_final: true
-
-debug:
-  dry_run_writes_artifacts: true

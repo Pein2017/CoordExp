@@ -98,10 +98,6 @@ training:
   effective_batch_size: 24
   precision: bf16
   max_grad_norm: 1.0
-  logging:
-    every_fraction: 0.002
-    steps:
-      - 1
 
 runtime:
   seed: 17

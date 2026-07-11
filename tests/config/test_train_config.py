@@ -28,14 +28,16 @@ ACTIVE_TRAIN_CONFIG_ROOTS = (
     Path("configs/coordexp_swift/prod"),
     Path("configs/coordexp_swift/smoke"),
 )
-BACKEND_DELETION_ALLOWLIST = (
+INFRASTRUCTURE_DELETION_ALLOWLIST = (
     "runtime.backend",
     "runtime.deepspeed",
     "runtime.accelerate.gradient_accumulation_steps",
     "runtime.accelerate.mixed_precision",
+    "training.logging",
+    "debug.dry_run_writes_artifacts",
 )
 ACTIVE_PROFILE_BASELINE = Path(
-    "tests/config/fixtures/active_profile_wave1_baseline.json"
+    "tests/config/fixtures/active_profile_wave2_baseline.json"
 )
 
 
@@ -97,7 +99,6 @@ def test_coord_gaussian_rps_loss_config_rejects_tiny_temperature() -> None:
         ("optimizer.betas", [0.9, float("inf")]),
         ("optimizer.scheduler.warmup_ratio", float("inf")),
         ("training.max_grad_norm", float("inf")),
-        ("training.logging.every_fraction", float("inf")),
         ("eval.forward.every_fraction", float("inf")),
     ],
 )
@@ -643,11 +644,13 @@ def test_production_relaunch_configs_load_strictly() -> None:
     assert smoke.checkpoint.steps == (2,)
 
 
-def test_active_profile_migration_changes_only_backend_allowlist() -> None:
+def test_active_profile_migration_changes_only_infrastructure_allowlist() -> None:
     """Guard the migration against scientific drift in every active profile."""
     baseline = json.loads(ACTIVE_PROFILE_BASELINE.read_text(encoding="utf-8"))
-    assert baseline["baseline_revision"] == "ff9b0a9c"
-    assert tuple(baseline["normalization_allowlist"]) == BACKEND_DELETION_ALLOWLIST
+    assert baseline["baseline_revision"] == "d86be1b3"
+    assert tuple(baseline["normalization_allowlist"]) == (
+        INFRASTRUCTURE_DELETION_ALLOWLIST
+    )
     current_paths = {
         str(path)
         for root in ACTIVE_TRAIN_CONFIG_ROOTS
@@ -662,34 +665,50 @@ def test_active_profile_migration_changes_only_backend_allowlist() -> None:
     mismatches = _profile_digest_mismatches(payloads, baseline["profiles"])
     assert mismatches == {}
 
-    assert baseline["removed_profiles"] == [
-        {
-            "authored_backend": "deepspeed",
-            "path": (
-                "configs/coordexp_swift/smoke/"
-                "qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_"
-                "deepspeed4_ebs128_2step.yaml"
-            ),
-            "source_sha256": (
-                "33ab070db00cd345626a5afe70107da2e5024d6c705bce2236dfdb283b707288"
-            ),
-        }
-    ]
-    assert not Path(baseline["removed_profiles"][0]["path"]).exists()
-
-
-def test_active_profile_semantic_digest_detects_non_allowlisted_seed_drift() -> None:
+@pytest.mark.parametrize(
+    ("field_path", "value"),
+    [
+        ("runtime.seed", 18),
+        ("eval.forward.every_fraction", 0.2),
+        ("checkpoint.every_fraction", 0.2),
+    ],
+)
+def test_active_profile_semantic_digest_detects_non_allowlisted_drift(
+    field_path: str,
+    value: Any,
+) -> None:
     baseline = json.loads(ACTIVE_PROFILE_BASELINE.read_text(encoding="utf-8"))
     path, expected = next(iter(baseline["profiles"].items()))
     payload = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     assert _profile_digest_mismatches({path: payload}, {path: expected}) == {}
 
-    payload["runtime"]["seed"] += 1
+    _set_nested(payload, field_path, value)
 
     mismatches = _profile_digest_mismatches({path: payload}, {path: expected})
     assert set(mismatches) == {path}
     assert mismatches[path]["expected"] == expected
     assert mismatches[path]["actual"] != expected
+
+
+@pytest.mark.parametrize(
+    ("field_path", "value"),
+    [
+        ("training.logging", {"every_fraction": None, "steps": [1]}),
+        ("debug.dry_run_writes_artifacts", True),
+    ],
+)
+def test_removed_infrastructure_fields_are_rejected_strictly(
+    tmp_path: Path,
+    field_path: str,
+    value: Any,
+) -> None:
+    payload = _minimal_config()
+    _set_nested(payload, field_path, value)
+    config_path = tmp_path / "removed-field.yaml"
+    _write_yaml(config_path, payload)
+
+    with pytest.raises(ConfigContractError, match="Extra inputs are not permitted"):
+        load_train_config(config_path)
 
 
 def test_coord_gaussian_rps_length12000_smoke_config_loads_strictly() -> None:
@@ -788,17 +807,12 @@ def test_coord_gaussian_rps_prod_config_loads_strictly() -> None:
     assert prod.training.max_steps is None
     assert prod.training.epochs == 8
     assert prod.training.max_grad_norm == 1.0
-    assert prod.training.logging.every_fraction == pytest.approx(0.002)
-    assert prod.training.logging.steps == (1,)
     assert prod.optimizer.scheduler.warmup_ratio == 0.1
     assert prod.optimizer.scheduler.warmup_steps is None
     assert prod.runtime.seed == 17
     assert batch.resolved_grad_accum_steps == 3
     assert schedule.resolved_max_steps == 4887
-    assert [
-        event.planned_step_id for event in schedule.events["training.logging"][:4]
-    ] == [1, 10, 20, 30]
-    assert schedule.events["training.logging"][-1].planned_step_id == 4887
+    assert set(schedule.events) == {"checkpoint", "eval.forward", "final"}
     assert prod.eval.forward.every_fraction == pytest.approx(0.1)
     assert prod.eval.forward.steps == ()
     assert prod.checkpoint.every_fraction == pytest.approx(0.3)
@@ -901,7 +915,6 @@ def _minimal_config() -> dict[str, Any]:
             "effective_batch_size": 2,
             "precision": "bf16",
             "max_grad_norm": 1.0,
-            "logging": {"every_fraction": None, "steps": [1, 2, 3, 4, 5]},
         },
         "runtime": {"seed": 17},
         "eval": {
@@ -909,7 +922,6 @@ def _minimal_config() -> dict[str, Any]:
             "inference": {"enabled": False},
         },
         "checkpoint": {"every_fraction": 0.4, "steps": [], "save_final": True},
-        "debug": {"dry_run_writes_artifacts": True},
     }
 
 
@@ -926,7 +938,7 @@ def _set_nested(payload: dict[str, Any], dotted: str, value: Any) -> None:
     current[parts[-1]] = value
 
 
-def _remove_backend_allowlist(payload: dict[str, Any]) -> dict[str, Any]:
+def _remove_infrastructure_allowlist(payload: dict[str, Any]) -> dict[str, Any]:
     normalized = json.loads(json.dumps(payload))
     runtime = normalized["runtime"]
     runtime.pop("backend", None)
@@ -937,11 +949,19 @@ def _remove_backend_allowlist(payload: dict[str, Any]) -> dict[str, Any]:
         accelerate.pop("mixed_precision", None)
         if not accelerate:
             runtime.pop("accelerate")
+    training = normalized.get("training")
+    if training is not None:
+        training.pop("logging", None)
+    debug = normalized.get("debug")
+    if debug is not None:
+        debug.pop("dry_run_writes_artifacts", None)
+        if not debug:
+            normalized.pop("debug")
     return normalized
 
 
 def _active_profile_semantic_digest(payload: dict[str, Any]) -> str:
-    normalized = _remove_backend_allowlist(payload)
+    normalized = _remove_infrastructure_allowlist(payload)
     resolved_mapping = TrainConfig.model_validate(normalized).model_dump(mode="json")
     return sha256_json(resolved_mapping)
 

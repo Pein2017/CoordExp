@@ -6,7 +6,7 @@ not import forward-eval training dependencies just to parse CLI arguments.
 
 __all__ = [
     "EVAL_FORWARD_SPLIT",
-    "ForwardEvalResult",
+    "ForwardEvalObservation",
     "ForwardEvalRunner",
     "METRIC_FAMILY",
     "DetectionConsumerResult",
@@ -23,7 +23,7 @@ def __getattr__(name: str) -> object:
         from src.eval import detection_consumer
 
         return getattr(detection_consumer, name)
-    if name in {"EVAL_FORWARD_SPLIT", "ForwardEvalResult", "ForwardEvalRunner"}:
+    if name in {"EVAL_FORWARD_SPLIT", "ForwardEvalObservation", "ForwardEvalRunner"}:
         from src.eval import forward
 
         return getattr(forward, name)

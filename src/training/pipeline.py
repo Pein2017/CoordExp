@@ -11,7 +11,6 @@ import json
 import multiprocessing
 import os
 from pathlib import Path
-import time
 from typing import Any
 
 import torch
@@ -30,8 +29,7 @@ from src.adapters import (
 )
 from src.augmentation.factory import build_augmentation_processor
 from src.augmentation.processor import AugmentationMaterializationResult
-from src.artifacts import MetricStreamEvent, RunArtifactManager
-from src.artifacts.checkpoints import CheckpointWriter
+from src.artifacts import CheckpointWriter, RunWriter
 from src.common.errors import RuntimeContractError
 from src.config.loader import load_train_config
 from src.config.models import RunDirectory
@@ -86,31 +84,15 @@ from src.training.pack_cache import (
     write_micro_step_cache,
 )
 from src.training.supervised_trainer import (
-    ScheduledTrainerEvent,
+    CompletedStepObservation,
     SupervisedMicroStep,
     SupervisedTrainer,
-    SupervisedTrainerEvent,
 )
 
 
 TRAIN_SPLIT = "train"
 _PACK_CACHE_WORKER_CONTEXT: dict[str, Any] | None = None
-BEST_EVAL_SELECTOR_SPLIT = "eval.forward"
 BEST_EVAL_SELECTOR_NAME = "acc_top1"
-PROGRESS_EVENT_TYPES = frozenset(
-    {
-        "planned_step.started",
-        "planned_step.prepared",
-        "micro_step.forward",
-        "micro_step.loss",
-        "micro_step.pre_backward_gate",
-        "micro_step.backward",
-        "planned_step.loss",
-        "planned_step.pre_backward_gate",
-        "planned_step.post_backward_gate",
-        "planned_step.completed",
-    }
-)
 
 
 def build_repeating_micro_step_stream(
@@ -151,143 +133,6 @@ def build_repeating_micro_step_stream(
     return iter_repeated()
 
 
-@dataclass
-class TrainingArtifactBridge:
-    manager: RunArtifactManager
-    rank: int
-    world_size: int
-
-    def __call__(self, event: SupervisedTrainerEvent) -> None:
-        if event.event_type in PROGRESS_EVENT_TYPES:
-            self._append_progress_event(event)
-        if event.event_type != "planned_step.completed":
-            return
-        payload = dict(event.payload)
-        qwen_receipts = [
-            dict(receipt)
-            for receipt in payload.get("qwen_forward_receipts", ())
-        ]
-        if qwen_receipts:
-            self.manager.write_receipt(
-                f"forward_step_{event.planned_step_id}",
-                {
-                    "planned_step_id": event.planned_step_id,
-                    "qwen_forward_receipts": qwen_receipts,
-                },
-                category="qwen",
-            )
-        loss_artifact = payload.get("loss_bundle")
-        if loss_artifact is None:
-            loss_artifact = payload.get("loss_bundle_artifact")
-        if not isinstance(loss_artifact, dict):
-            return
-        metrics = loss_artifact.get("metrics")
-        if not isinstance(metrics, dict):
-            return
-        optimizer_update_status = str(
-            payload.get("optimizer_update_status", "unavailable")
-        )
-        finite_status = str(payload.get("finite_status", loss_artifact.get("finite_status", "unavailable")))
-        scheduler_artifact = payload.get("scheduler")
-        for name, value in _scheduler_lr_metrics(scheduler_artifact).items():
-            self.manager.append_metric_event(
-                MetricStreamEvent(
-                    event_type="metric",
-                    planned_step_id=event.planned_step_id,
-                    split=TRAIN_SPLIT,
-                    name=name,
-                    value=value,
-                    trigger_reasons=("planned_step.completed",),
-                    optimizer_update_status=optimizer_update_status,
-                    finite_status=finite_status,
-                    warning_status="none",
-                    rank=self.rank,
-                    world_size=self.world_size,
-                )
-            )
-        for name in sorted(metrics):
-            value = metrics[name]
-            self.manager.append_metric_event(
-                MetricStreamEvent(
-                    event_type="metric",
-                    planned_step_id=event.planned_step_id,
-                    split=TRAIN_SPLIT,
-                    name=str(name),
-                    value=None if value is None else float(value),
-                    trigger_reasons=("planned_step.completed",),
-                    optimizer_update_status=optimizer_update_status,
-                    finite_status=finite_status,
-                    warning_status="none",
-                    rank=self.rank,
-                    world_size=self.world_size,
-                )
-            )
-
-    def _append_progress_event(self, event: SupervisedTrainerEvent) -> None:
-        payload = dict(event.payload)
-        record: dict[str, Any] = {
-            "event_type": event.event_type,
-            "planned_step_id": event.planned_step_id,
-            "rank": self.rank,
-            "world_size": self.world_size,
-            "monotonic_ns": time.monotonic_ns(),
-        }
-        if "local_micro_step_index" in payload:
-            record["local_micro_step_index"] = int(payload["local_micro_step_index"])
-        sync_gradients = payload.get("sync_gradients")
-        if sync_gradients is not None:
-            record["sync_gradients"] = bool(sync_gradients)
-        optimizer_update_status = payload.get("optimizer_update_status")
-        if optimizer_update_status is not None:
-            record["optimizer_update_status"] = str(optimizer_update_status)
-        finite_status = payload.get("finite_status")
-        if finite_status is not None:
-            record["finite_status"] = str(finite_status)
-        stage = payload.get("stage")
-        if stage is not None:
-            record["stage"] = str(stage)
-        timings = _timings_artifact(payload.get("timings_ns"))
-        receipt = payload.get("receipt")
-        if isinstance(receipt, Mapping):
-            for key in ("pack_index", "pack_length", "segment_count"):
-                if key in receipt:
-                    record[key] = receipt[key]
-            for key in (
-                "pixel_values_shape",
-                "output_logits_shape",
-                "placeholder_token_count",
-                "expected_visual_token_count",
-            ):
-                if key in receipt:
-                    record[key] = receipt[key]
-            receipt_timings = _timings_artifact(receipt.get("timings_ns"))
-            if receipt_timings:
-                timings.update(receipt_timings)
-            fa2_varlen = receipt.get("fa2_varlen")
-            if isinstance(fa2_varlen, Mapping):
-                for key in ("max_length_q", "max_length_k", "segment_boundaries"):
-                    if key in fa2_varlen:
-                        record[f"fa2_{key}"] = fa2_varlen[key]
-        if timings:
-            record["timings_ns"] = timings
-        output_path = (
-            self.manager.run_dir
-            / "diagnostics"
-            / f"progress.rank-{self.rank}.jsonl"
-        )
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        with output_path.open("a", encoding="utf-8") as handle:
-            handle.write(
-                json.dumps(
-                    record,
-                    allow_nan=False,
-                    ensure_ascii=True,
-                    sort_keys=True,
-                )
-                + "\n"
-            )
-
-
 def _scheduler_lr_metrics(scheduler_artifact: Any) -> dict[str, float]:
     if not isinstance(scheduler_artifact, Mapping):
         return {}
@@ -306,92 +151,29 @@ def _scheduler_lr_metrics(scheduler_artifact: Any) -> dict[str, float]:
     return metrics
 
 
-def _timings_artifact(value: Any) -> dict[str, int]:
-    if not isinstance(value, Mapping):
-        return {}
-    timings: dict[str, int] = {}
-    for key, raw in value.items():
-        if isinstance(raw, bool):
-            timings[str(key)] = int(raw)
-            continue
-        if isinstance(raw, int):
-            timings[str(key)] = raw
-            continue
-        if isinstance(raw, float) and raw.is_integer():
-            timings[str(key)] = int(raw)
-    return timings
-
-
-@dataclass
-class BestEvalMetricStore:
-    _events_by_step: dict[int, MetricStreamEvent]
-
-    def __init__(self) -> None:
-        self._events_by_step = {}
-
-    def record(self, event: MetricStreamEvent) -> None:
-        if event.split != BEST_EVAL_SELECTOR_SPLIT or event.name != BEST_EVAL_SELECTOR_NAME:
-            return
-        self._events_by_step[event.planned_step_id] = event
-
-    def best_for_step(self, planned_step_id: int) -> MetricStreamEvent | None:
-        return self._events_by_step.get(int(planned_step_id))
-
-
-@dataclass(frozen=True)
-class _NonWritingArtifactBridge:
-    """Temporary Wave-1 no-write bridge; Wave 2 deletes this legacy surface."""
-
-    run_dir: Path
-    run_id: str
-
-    def append_metric_event(self, event: Any) -> None:
-        del event
-
-    def finalize(self, *, status: str, completed_at: str) -> None:
-        del status, completed_at
-
-    def write_receipt(self, name: str, payload: Any, *, category: str) -> None:
-        del name, payload, category
-
-    def write_report(self, name: str, payload: Any) -> None:
-        del name, payload
-
-    def write_resolved_config(self, resolved_config: Any) -> None:
-        del resolved_config
-
-    def write_schedule(self, schedule: Any) -> None:
-        del schedule
-
-    def write_eval_forward_summary(self, **payload: Any) -> Path:
-        del payload
-        return self.run_dir / "eval" / "non-main.json"
-
-
 def _initialize_artifact_owner(
     *,
     accelerator: Any,
     run_directory: RunDirectory,
     run_id: str,
     created_at: str,
-    repo_root: Path,
     resolved_config: Any,
-) -> Any:
-    manager: Any | None = None
+) -> RunWriter | None:
+    writer: RunWriter | None = None
     status: dict[str, Any] | None = None
     if bool(accelerator.is_main_process):
         try:
-            manager = RunArtifactManager.initialize(
-                run_directory=run_directory,
+            writer = RunWriter.initialize(
+                run_dir=run_directory.run_dir,
                 run_id=run_id,
+                run_name=run_directory.run_name,
+                artifact_root=run_directory.artifact_root,
+                collision_outcome=run_directory.collision_policy,
                 created_at=created_at,
-                runtime_identity={
-                    "entrypoint": "python -m src.train",
-                    "cwd": str(repo_root),
-                },
-                backend_status={"active": ["accelerate"]},
+                config_fingerprint=resolved_config.fingerprint,
+                resolved_config=resolved_config.to_artifact_dict(),
+                world_size=int(accelerator.num_processes),
             )
-            manager.write_resolved_config(resolved_config)
             status = {"ok": True}
         except Exception as exc:
             status = {
@@ -426,18 +208,93 @@ def _initialize_artifact_owner(
             },
         )
     if bool(accelerator.is_main_process):
-        return manager
-    return _NonWritingArtifactBridge(run_directory.run_dir, run_id)
+        return writer
+    return None
 
 
-def _training_artifact_event_sink(manager: Any, runtime: Any) -> Any | None:
-    if not bool(runtime.is_main_process):
-        return None
-    return TrainingArtifactBridge(
-        manager,
-        rank=runtime.rank,
-        world_size=runtime.world_size,
+def _train_logging_handler(
+    writer: RunWriter | None, lifecycle: dict[str, Any], runtime: Any
+) -> Any:
+
+    def handle(observation: CompletedStepObservation) -> None:
+        lifecycle.update(
+            completed_steps=observation.planned_step_id,
+            consumed_packs=int(lifecycle.get("consumed_packs", 0))
+            + observation.micro_step_count,
+            optimizer_update_status=observation.optimizer_update_status,
+            finite_status=observation.finite_status,
+        )
+        loss_bundle = dict(observation.loss_bundle_artifact)
+        metrics = loss_bundle.get("metrics", {})
+        scalar_metrics = _scheduler_lr_metrics(observation.scheduler_artifact)
+        if isinstance(metrics, Mapping):
+            scalar_metrics.update({str(name): value for name, value in metrics.items()})
+        gathered = runtime.gather_metrics(
+            scalar_metrics,
+            planned_step_id=observation.planned_step_id,
+            split=TRAIN_SPLIT,
+        )
+        reduced = gathered.get("metrics") if isinstance(gathered, Mapping) else None
+        if not isinstance(reduced, Mapping):
+            raise RuntimeContractError(
+                "train metric reduction returned no scalar mapping",
+                code="runtime.train_metric_reduction_failed",
+            )
+        row: dict[str, Any] = {
+            "step": observation.planned_step_id,
+            "split": TRAIN_SPLIT,
+            "micro_step_count": observation.micro_step_count,
+            "optimizer_update_status": observation.optimizer_update_status,
+            "finite_status": observation.finite_status,
+            **dict(reduced),
+        }
+        _append_logging_row_shared(writer=writer, row=row, runtime=runtime)
+
+    return handle
+
+
+def _append_logging_row_shared(
+    *, writer: RunWriter | None, row: Mapping[str, Any], runtime: Any
+) -> None:
+    """Append on rank zero and make its bounded outcome common to every rank."""
+    accelerator = getattr(runtime, "accelerator", runtime)
+    is_main = bool(
+        getattr(runtime, "is_main_process", getattr(accelerator, "is_main_process", True))
     )
+    status: dict[str, Any] = {"ok": True}
+    if is_main:
+        try:
+            if writer is None:
+                raise RuntimeError("rank zero has no run writer")
+            writer.append_logging_row(row)
+        except BaseException as exc:
+            status = {
+                "ok": False,
+                "error": f"{type(exc).__name__}: {exc}"[:1024],
+            }
+    values: list[Any] = [status]
+    if int(
+        getattr(runtime, "world_size", getattr(accelerator, "num_processes", 1))
+    ) > 1:
+        broadcast = getattr(accelerator, "broadcast_object_list", None)
+        if callable(broadcast):
+            result = broadcast(values, from_process=0)
+            if result is not None:
+                values = result
+        elif broadcast_object_list is not None:
+            broadcast_object_list(values, from_process=0)
+        else:
+            raise RuntimeContractError(
+                "logging outcome broadcast requires accelerate",
+                code="runtime.logging_broadcast_unavailable",
+            )
+    shared = values[0]
+    if not isinstance(shared, Mapping) or not bool(shared.get("ok")):
+        error = shared.get("error", "invalid status") if isinstance(shared, Mapping) else shared
+        raise RuntimeContractError(
+            f"rank zero logging append failed: {error}",
+            code="runtime.logging_append_failed",
+        )
 
 
 def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
@@ -456,25 +313,65 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
     )
     created_at = datetime.now(UTC).isoformat()
     run_id = _run_id(config.run.name, resolved_config.fingerprint)
-    manager = _initialize_artifact_owner(
+    writer = _initialize_artifact_owner(
         accelerator=accelerator,
         run_directory=run_directory,
         run_id=run_id,
         created_at=created_at,
-        repo_root=repo_root,
         resolved_config=resolved_config,
     )
-    seed_receipt = seed_training_runtime(
+    lifecycle: dict[str, Any] = {
+        "completed_steps": 0,
+        "consumed_packs": 0,
+        "checkpoint_event_count": 0,
+        "optimizer_update_status": None,
+        "finite_status": None,
+    }
+    try:
+        return _run_initialized_training(
+            repo_root=repo_root,
+            resolved_config=resolved_config,
+            config=config,
+            accelerator=accelerator,
+            run_directory=run_directory,
+            run_id=run_id,
+            writer=writer,
+            lifecycle=lifecycle,
+        )
+    except BaseException as exc:
+        if writer is not None:
+            try:
+                writer.finalize(
+                    status="failed",
+                    updated_at=datetime.now(UTC).isoformat(),
+                    completed_steps=int(lifecycle["completed_steps"]),
+                    consumed_packs=int(lifecycle["consumed_packs"]),
+                    checkpoint_event_count=int(lifecycle["checkpoint_event_count"]),
+                    optimizer_update_status=lifecycle["optimizer_update_status"],
+                    finite_status=lifecycle["finite_status"],
+                    terminal_error=f"{type(exc).__name__}: {exc}",
+                )
+            except BaseException:
+                pass
+        raise
+
+
+def _run_initialized_training(
+    *,
+    repo_root: Path,
+    resolved_config: Any,
+    config: Any,
+    accelerator: Any,
+    run_directory: RunDirectory,
+    run_id: str,
+    writer: RunWriter | None,
+    lifecycle: dict[str, Any],
+) -> dict[str, Any]:
+    seed_training_runtime(
         config.runtime.seed,
         deterministic=False,
         phase="pipeline_assembly",
     )
-    manager.write_receipt(
-        "seed_control",
-        _artifact_dict(seed_receipt),
-        category="runtime",
-    )
-
     components = load_qwen_components(config, load_model=True)
     if components.model is None:
         raise RuntimeContractError(
@@ -487,25 +384,13 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
         tokenizer_vocab_size=components.token_identity.tokenizer_vocab_size,
         model_logits_dtype=config.training.precision,
     )
-    manager.write_receipt(
-        "setup",
-        {
-            "components": _artifact_dict(components),
-            "runtime_controls": _artifact_dict(runtime_controls),
-        },
-        category="qwen",
-    )
+    del runtime_controls
 
     adapter_evidence = load_default_adapter_source_gate_evidence(repo_root)
     adapter_plan = build_adapter_setup_plan(
         config.adapter,
         adapter_evidence,
         base_model_path=components.base_model_path,
-    )
-    manager.write_receipt(
-        "adapter_setup_plan",
-        adapter_plan.to_artifact_dict(),
-        category="optimizer",
     )
     adapter_plan_mode = getattr(adapter_plan, "mode", None)
     adapter_result = setup_dora_adapter(components.model, adapter_plan)
@@ -530,30 +415,19 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
                 "warm_start_expand_dora requires repaired embedding payload path",
                 code="adapter.warm_start_embedding_payload_required",
             )
-        special_token_load_receipt = load_special_token_embedding_deltas(
+        load_special_token_embedding_deltas(
             special_token_result,
             adapter_plan.repaired_embedding_payload_path,
             expected_base_model_path=components.base_model_path,
             expected_base_config_sha256=components.base_config_sha256,
             expected_tokenizer_sha256=components.tokenizer_sha256,
         )
-        manager.write_receipt(
-            "special_token_embedding_seed",
-            _artifact_dict(special_token_load_receipt),
-            category="qwen",
-        )
-    manager.write_receipt(
-        "memory_savers",
-        enable_training_memory_savers(model),
-        category="runtime",
-    )
+    enable_training_memory_savers(model)
 
     vocab_groups = build_token_vocabulary_groups(
         components.token_identity,
         tokenizer=components.tokenizer,
     )
-    vocab_groups_artifact = _artifact_dict(vocab_groups)
-    manager.write_report("token_type_vocab", vocab_groups_artifact)
     train_cache = _resolve_or_build_train_pack_cache(
         config,
         components,
@@ -567,7 +441,9 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
         world_size=int(accelerator.num_processes),
         source_config_path=str(resolved_config.entry_config_path),
     )
-    manager.write_schedule(schedule)
+    if writer is not None:
+        writer.bind_schedule(resolved_max_steps=schedule.resolved_max_steps)
+        _bind_cache_materialization(writer, "train", train_cache)
     train_micro_steps = load_rank_micro_steps_from_cache(
         train_cache["cache_dir"],
         schedule=schedule,
@@ -579,21 +455,7 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
         image_processor=_qwen_image_processor(components),
     )
     train_micro_steps = _apply_fa2_branch_proof_policy(train_micro_steps, config)
-    manager.write_receipt(
-        "pack_plan",
-        _pack_plan_artifact(
-            train_micro_steps,
-            schedule=schedule,
-            cache=train_cache,
-        ),
-        category="packing",
-    )
     loss_runner = LossRunner.from_config(config.losses)
-    manager.write_receipt(
-        "loss_plan",
-        _loss_plan_artifact(config, vocab_groups_artifact),
-        category="losses",
-    )
 
     optimizer_group_plan = build_optimizer_group_plan(
         model,
@@ -601,35 +463,21 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
         adapter_receipt=adapter_result.receipt,
         special_token_receipt=special_token_result.receipt,
     )
-    manager.write_receipt(
-        "optimizer_groups",
-        optimizer_group_plan.to_artifact_dict(),
-        category="optimizer",
-    )
     scheduler_plan = build_scheduler_plan(
         config.optimizer,
         total_training_steps=schedule.resolved_max_steps,
     )
-    manager.write_receipt(
-        "scheduler_plan",
-        scheduler_plan.to_artifact_dict(),
-        category="optimizer",
-    )
+    del scheduler_plan
     optimizer, scheduler = build_optimizer_and_scheduler(
         config.optimizer,
         optimizer_group_plan,
         total_training_steps=schedule.resolved_max_steps,
     )
-    trainable_surface = build_trainable_surface_receipt(
+    build_trainable_surface_receipt(
         model,
         adapter_receipt=adapter_result.receipt,
         special_token_receipt=special_token_result.receipt,
         optimizer_group_plan=optimizer_group_plan,
-    )
-    manager.write_receipt(
-        "trainable_surface",
-        trainable_surface.to_artifact_dict(),
-        category="optimizer",
     )
 
     runtime = TrainRuntime(
@@ -645,11 +493,6 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
             int(accelerator.num_processes)
         ),
     )
-    manager.write_receipt(
-        "runtime_setup",
-        _artifact_dict(runtime.setup_receipt),
-        category="runtime",
-    )
 
     eval_cache = _resolve_eval_pack_cache(
         config,
@@ -658,7 +501,18 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
         repo_root=repo_root,
         rank=int(accelerator.process_index),
     )
-    if eval_cache is None:
+    if eval_cache is None and _explicit_eval_reuses_train_dataset(config):
+        # Eval is intentionally replicated on every rank.  Reusing the rank-local
+        # training shard would make the canonical rank-zero counts local and turn
+        # the all-rank scalar mean into an unequally weighted reduction.
+        eval_micro_steps = load_all_micro_steps_from_cache(train_cache["cache_dir"])
+        eval_micro_steps = _attach_image_processors_to_micro_steps(
+            eval_micro_steps,
+            image_processor=_qwen_image_processor(components),
+        )
+        if writer is not None:
+            _bind_cache_materialization(writer, "eval", train_cache)
+    elif eval_cache is None:
         eval_micro_steps = train_micro_steps
     else:
         eval_micro_steps = load_all_micro_steps_from_cache(eval_cache["cache_dir"])
@@ -666,66 +520,68 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
             eval_micro_steps,
             image_processor=_qwen_image_processor(components),
         )
-        manager.write_receipt(
-            "eval_pack_plan",
-            _pack_plan_artifact(
-                eval_micro_steps,
-                schedule=schedule,
-                cache=eval_cache,
-            ),
-            category="packing",
-        )
+        if writer is not None:
+            _bind_cache_materialization(writer, "eval", eval_cache)
     eval_micro_steps = _apply_fa2_branch_proof_policy(eval_micro_steps, config)
-    checkpoint_writer = CheckpointWriter(manager)
-    best_eval_metrics = BestEvalMetricStore()
+    checkpoint_writer = CheckpointWriter(run_directory.run_dir)
+    eval_by_step: dict[int, dict[str, Any]] = {}
+    committed_checkpoint_steps: set[int] = set()
+    checkpoint_handler = _checkpoint_handler(
+        checkpoint_writer,
+        model=runtime.model,
+        runtime=runtime,
+        adapter_name=str(getattr(adapter_result.receipt, "adapter_name", "default")),
+        special_token_result=special_token_result,
+        schedule=schedule,
+        base_model_path=components.base_model_path,
+        base_config_sha256=components.base_config_sha256,
+        tokenizer_sha256=components.tokenizer_sha256,
+        writer=writer,
+        eval_by_step=eval_by_step,
+        committed_steps=committed_checkpoint_steps,
+        lifecycle=lifecycle,
+        save_final=config.checkpoint.save_final,
+    )
     trainer = SupervisedTrainer(
         model=model,
         schedule=schedule,
         pack_stream=iter(train_micro_steps),
         loss_runner=loss_runner,
         runtime=runtime,
-        event_sink=_training_artifact_event_sink(manager, runtime),
-        scheduled_event_handlers={
-            "checkpoint": _checkpoint_handler(
-                checkpoint_writer,
-                model=runtime.model,
-                runtime=runtime,
-                adapter_receipt=adapter_result.receipt,
-                special_token_result=special_token_result,
-                trainable_surface=trainable_surface,
-                processor_identity=_artifact_dict(components.processor_identity),
-                template_identity=_template_identity(config),
-                resolved_config_fingerprint=resolved_config.fingerprint,
-                schedule=schedule,
-                base_model_path=components.base_model_path,
-                base_config_sha256=components.base_config_sha256,
-                tokenizer_sha256=components.tokenizer_sha256,
-                best_eval_metrics=best_eval_metrics,
-            ),
-            "eval.forward": _eval_forward_handler(
+        on_completed_step=_train_logging_handler(writer, lifecycle, runtime),
+        on_checkpoint=checkpoint_handler,
+        on_eval=_eval_forward_handler(
                 model=runtime.model,
                 runtime=runtime,
                 eval_micro_steps=eval_micro_steps,
                 loss_runner=loss_runner,
-                manager=manager,
+                writer=writer,
                 eval_source=config.data.eval.model_dump(mode="json")
                 if config.data.eval is not None
                 else None,
-                best_eval_metrics=best_eval_metrics,
+                eval_by_step=eval_by_step,
             ),
-            "final": _final_handler(),
-        },
+        on_final=_final_handler(
+            checkpoint_handler=checkpoint_handler,
+            committed_steps=committed_checkpoint_steps,
+            save_final=config.checkpoint.save_final,
+        ),
     )
     result = trainer.run()
-    manager.write_receipt(
-        "training_result",
-        result.to_artifact_dict(),
-        category="runtime",
-    )
-    manager.finalize(status="completed", completed_at=datetime.now(UTC).isoformat())
+    latest = result.latest_observation
+    if writer is not None:
+        writer.finalize(
+            status="completed",
+            updated_at=datetime.now(UTC).isoformat(),
+            completed_steps=result.completed_steps,
+            consumed_packs=result.consumed_micro_steps,
+            checkpoint_event_count=result.scheduled_event_counts.get("checkpoint", 0),
+            optimizer_update_status=None if latest is None else latest.optimizer_update_status,
+            finite_status=None if latest is None else latest.finite_status,
+        )
     return {
-        "run_dir": str(manager.run_dir),
-        "run_id": manager.run_id,
+        "run_dir": str(run_directory.run_dir),
+        "run_id": run_id,
         "resolved_config_fingerprint": resolved_config.fingerprint,
         "completed_steps": result.completed_steps,
         "consumed_micro_steps": result.consumed_micro_steps,
@@ -860,6 +716,7 @@ def _resolve_or_build_pack_cache(
     cache_manifest_path = manifest_path(cache_dir)
     return {
         "cache_dir": cache_dir,
+        "format_version": str(manifest["version"]),
         "fingerprint": fingerprint,
         "micro_step_count": int(manifest["micro_step_count"]),
         "chunk_count": len(manifest["chunks"]),
@@ -880,6 +737,18 @@ def _resolve_or_build_pack_cache(
         "materialization": manifest.get("materialization"),
         "augmentation": manifest.get("augmentation"),
     }
+
+
+def _bind_cache_materialization(
+    writer: RunWriter, split: str, cache: Mapping[str, Any]
+) -> None:
+    writer.bind_materialization(
+        split,
+        cache_format_version=str(cache["format_version"]),
+        semantic_fingerprint=str(cache["fingerprint"]),
+        determinant_digest=str(cache["determinants_sha256"]),
+        cache_path=str(cache["cache_dir"]),
+    )
 
 
 def _attach_image_processors_to_micro_steps(
@@ -1276,62 +1145,45 @@ def _checkpoint_handler(
     *,
     model: Any,
     runtime: Any | None = None,
-    adapter_receipt: Any,
+    adapter_name: str,
     special_token_result: Any,
-    trainable_surface: Any,
-    processor_identity: dict[str, Any],
-    template_identity: dict[str, Any],
-    resolved_config_fingerprint: str,
     schedule: ResolvedStepSchedule,
     base_model_path: Path,
     base_config_sha256: str,
     tokenizer_sha256: str,
-    best_eval_metrics: BestEvalMetricStore | None = None,
+    writer: RunWriter | None,
+    eval_by_step: Mapping[int, Mapping[str, Any]],
+    committed_steps: set[int],
+    lifecycle: dict[str, Any],
+    save_final: bool = True,
 ) -> Any:
-    def handle(event: ScheduledTrainerEvent) -> None:
-        if runtime is not None and not bool(getattr(runtime, "is_main_process", True)):
-            return
-        step_artifact = event.step_result.to_artifact_dict()
+    def handle(scheduled_event: Any, observation: CompletedStepObservation) -> None:
+        accelerator = getattr(runtime, "accelerator", runtime)
+        step = int(scheduled_event.planned_step_id)
+        eval_observation = eval_by_step.get(step)
         checkpoint_writer.write_checkpoint(
-            planned_step_id=event.scheduled_event.planned_step_id,
-            model=_unwrap_checkpoint_model(model, runtime=runtime),
-            adapter_receipt=adapter_receipt,
+            step=step,
+            accelerator=accelerator,
+            model=model,
+            adapter_name=adapter_name,
             special_token_result=special_token_result,
-            trainable_surface=trainable_surface,
-            processor_identity=processor_identity,
-            template_identity=template_identity,
-            resolved_config_fingerprint=resolved_config_fingerprint,
-            schedule_identity={
-                "resolved_max_steps": schedule.resolved_max_steps,
-                "runtime_batch": schedule.runtime_batch.to_artifact_dict(),
-                "events": {
-                    name: [
-                        item.to_artifact_dict()
-                        for item in event_list
-                    ]
-                    for name, event_list in sorted(schedule.events.items())
-                },
-            },
-            metric_status={
-                "finite_status": event.step_result.finite_status,
-                "warning_status": "none",
-                "loss_bundle": step_artifact.get("loss_bundle", {}),
-                "scheduler": step_artifact.get("scheduler", {}),
-            },
-            optimizer_update_status=event.step_result.optimizer_update_status,
-            trigger_reasons=event.scheduled_event.trigger_reasons,
-            is_final=(
-                event.scheduled_event.planned_step_id == schedule.resolved_max_steps
-            ),
-            best_metric_event=(
-                None
-                if best_eval_metrics is None
-                else best_eval_metrics.best_for_step(event.scheduled_event.planned_step_id)
-            ),
             base_model_path=base_model_path,
             base_config_sha256=base_config_sha256,
             tokenizer_sha256=tokenizer_sha256,
+            run_writer=writer,
+            is_final=save_final and step == schedule.resolved_max_steps,
+            best_candidate=None if eval_observation is None else {
+                "completed": True,
+                "selector": BEST_EVAL_SELECTOR_NAME,
+                "value": eval_observation.get(BEST_EVAL_SELECTOR_NAME),
+                "optimizer_update_status": observation.optimizer_update_status,
+                "finite_status": observation.finite_status,
+            },
         )
+        committed_steps.add(step)
+        lifecycle["checkpoint_event_count"] = int(
+            lifecycle.get("checkpoint_event_count", 0)
+        ) + 1
 
     return handle
 
@@ -1359,35 +1211,36 @@ def _eval_forward_handler(
     runtime: Any,
     eval_micro_steps: tuple[SupervisedMicroStep, ...],
     loss_runner: LossRunner,
-    manager: RunArtifactManager,
+    writer: RunWriter | None,
     eval_source: dict[str, Any] | None,
-    best_eval_metrics: BestEvalMetricStore | None = None,
+    eval_by_step: dict[int, dict[str, Any]],
 ) -> Any:
-    def handle(event: ScheduledTrainerEvent) -> None:
+    def handle(scheduled_event: Any, observation: CompletedStepObservation) -> None:
         result = ForwardEvalRunner(
             model=model,
             micro_step_stream=iter(eval_micro_steps),
             loss_runner=loss_runner,
-            artifact_manager=manager,
             eval_source=eval_source,
             runtime=runtime,
         ).run(
-            planned_step_id=event.scheduled_event.planned_step_id,
-            trigger_reasons=event.scheduled_event.trigger_reasons,
-            optimizer_update_status=event.step_result.optimizer_update_status,
-            finite_status=event.step_result.finite_status,
-            warning_status="none",
+            planned_step_id=scheduled_event.planned_step_id,
+            trigger_reasons=scheduled_event.trigger_reasons,
         )
-        if best_eval_metrics is not None:
-            for metric_event in result.metric_events:
-                best_eval_metrics.record(metric_event)
+        row = result.to_logging_row()
+        row["optimizer_update_status"] = observation.optimizer_update_status
+        row["finite_status"] = observation.finite_status
+        eval_by_step[int(scheduled_event.planned_step_id)] = row
+        _append_logging_row_shared(writer=writer, row=row, runtime=runtime)
 
     return handle
 
 
-def _final_handler() -> Any:
-    def handle(event: ScheduledTrainerEvent) -> None:
-        del event
+def _final_handler(
+    *, checkpoint_handler: Any, committed_steps: set[int], save_final: bool = True
+) -> Any:
+    def handle(scheduled_event: Any, observation: CompletedStepObservation) -> None:
+        if save_final and int(scheduled_event.planned_step_id) not in committed_steps:
+            checkpoint_handler(scheduled_event, observation)
 
     return handle
 

@@ -271,7 +271,7 @@ def test_provenance_and_manifest_record_tokenizer_and_embedding_delta_identity_w
     }
 
 
-def test_manual_adapter_delta_composition_is_marked_noncanonical(tmp_path: Path) -> None:
+def test_explicit_adapter_and_delta_provenance_is_recorded(tmp_path: Path) -> None:
     from src.inference.artifacts import write_inference_artifacts
 
     metadata = {
@@ -296,47 +296,8 @@ def test_manual_adapter_delta_composition_is_marked_noncanonical(tmp_path: Path)
 
     provenance = json.loads(paths.provenance_json.read_text(encoding="utf-8"))
     manifest = json.loads(paths.run_manifest_json.read_text(encoding="utf-8"))
-    assert provenance["composition_mode"] == "research_manual"
-    assert manifest["composition_mode"] == "research_manual"
-    assert manifest["handoff_readiness"] == "not_handoff_ready"
-
-
-def test_canonical_handoff_composition_records_handoff_identity(
-    tmp_path: Path,
-) -> None:
-    from src.inference.artifacts import write_inference_artifacts
-
-    checkpoint_handoff = {
-        "path": "checkpoints/step-5/checkpoint_handoff.json",
-        "fingerprint": "handoff-fp",
-        "adapter_identity": {"fingerprint": "adapter-fp"},
-        "special_token_embedding_identity": {"fingerprint": "embed-fp"},
-    }
-    metadata = {
-        **_metadata(),
-        "composition_mode": "canonical_handoff",
-        "checkpoint_handoff": checkpoint_handoff,
-        "adapter_identity": checkpoint_handoff["adapter_identity"],
-        "embedding_delta_identity": checkpoint_handoff[
-            "special_token_embedding_identity"
-        ],
-    }
-
-    paths = write_inference_artifacts(
-        output_dir=tmp_path,
-        rows=[_raw_row("row-1", 0)],
-        decode_results={"row-1": _decode_result("row-1")},
-        image_plan_rows=[_image_plan_row("row-1", 0)],
-        metadata=metadata,
-    )
-
-    provenance = json.loads(paths.provenance_json.read_text(encoding="utf-8"))
-    manifest = json.loads(paths.run_manifest_json.read_text(encoding="utf-8"))
-    assert provenance["composition_mode"] == "canonical_handoff"
-    assert provenance["checkpoint_handoff"] == checkpoint_handoff
-    assert manifest["composition_mode"] == "canonical_handoff"
-    assert manifest["handoff_readiness"] == "handoff"
-    assert manifest["checkpoint_handoff"] == checkpoint_handoff
+    assert provenance["adapter_identity"] == metadata["adapter_identity"]
+    assert manifest["embedding_delta_identity"] == metadata["embedding_delta_identity"]
 
 
 def test_trace_artifact_recomputes_stored_scores(tmp_path: Path) -> None:

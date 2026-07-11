@@ -17,9 +17,6 @@ BENCHMARK_CONFIG = Path(
 )
 SINGLE_FIXTURE = Path("tests/fixtures/smoke/qwen3_vl_single_image_pack/examples.single.jsonl")
 TWO_ROW_FIXTURE = Path("tests/fixtures/smoke/qwen3_vl_single_image_pack/examples.jsonl")
-BENCHMARK_PACKET = Path(
-    "docs/superpowers/plans/2026-07-02-coordexp-swift-wave7-benchmark-readiness.md"
-)
 
 
 def test_wave7_single_fixture_is_pinned_from_training_smoke_family() -> None:
@@ -78,31 +75,6 @@ def test_wave7_benchmark_leaf_is_not_a_smoke_config() -> None:
     embedding_delta_path = Path(config.embedding_delta.path)
     assert embedding_delta_path.is_dir()
     assert (embedding_delta_path / "repair_receipt.json").is_file()
-
-
-def test_benchmark_packet_contains_required_handles_and_approval_stop() -> None:
-    text = BENCHMARK_PACKET.read_text(encoding="utf-8")
-    required = {
-        "STATUS: VAL200_ACCEPTED_NO_FULL_DATASET_REQUIRED",
-        "Accepted val200 config: `configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_step917_val200.yaml`",
-        "Accepted val200 dataset: `outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl`",
-        "Base model: `/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent`",
-        "Adapter checkpoint:",
-        "Official repaired embedding delta support payload for accepted val200 launch:",
-        "model_identity.embedding_delta.status=loaded",
-        "Artifact root: `outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-pure-ce-dora-r16a32-step917-val200-20260703T035007Z`",
-        "Evaluator command:",
-        "Optional full-dataset benchmark config remains available at `configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_benchmark.yaml`, but it is not a required V1 gate.",
-        "No blocker remains for the V1 val200 validation claim.",
-        "full validation-dataset benchmark from this packet",
-        "Production-Adapter Smoke Evidence",
-        "scoreable_prediction_count=4",
-        "`pred_token_trace.jsonl`: 48 trace rows with `is_stop=2` and `is_pad=2`.",
-        "Rollback path:",
-    }
-
-    for needle in required:
-        assert needle in text
 
 
 def test_new_inference_configs_do_not_use_legacy_infer_authority() -> None:
