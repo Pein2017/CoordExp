@@ -82,12 +82,46 @@ direct trainer scheduled-handler dispatch) were also completed before commit.
 
 ## 3. Wave 3 — Rebuild-Only Packing Cache
 
-- [ ] 3.1 Refine Wave 3 into file-owned slices and add failing direct-reader tests for old-version, partial, corrupt, mismatched expected fingerprint, invalid chunk hash, chunk gap, and count mismatch behavior.
-- [ ] 3.2 Increment the cache format version and require every manifest/rank/all-step load API to accept or derive the expected semantic fingerprint and verify current version, matching fingerprint, complete status, contiguous chunks, declared counts, and chunk hashes before returning payloads.
-- [ ] 3.3 Delete legacy manifest tolerance, optional old provenance handling, cache migrations, and old payload readers; make deterministic rebuild the sole recovery path for every invalid cache state.
-- [ ] 3.4 Preserve semantic determinants across data content, template/order/augmentation, seeds, tokenizer/processor, packing budget, supervision, and Qwen position/FA2/forward sources while keeping worker count operational and order-neutral.
-- [ ] 3.5 Keep compact augmentation/materialization provenance in the cache manifest, bind only the format/fingerprint/determinant digest into `run.json`, and prove cache deletion after a run does not erase its consumed-materialization identity.
-- [ ] 3.6 Gate Wave 3 with cache/augmentation/packing tests, deterministic cross-worker comparison, mismatch/corruption rebuild execution probes, strict OpenSpec validation, and separate standards plus intent/contract audits with no unresolved P0/P1.
+Wave 3 has two non-overlapping implementation owners. The cache-format owner
+owns `src/training/pack_cache.py` and direct cache tests: version/API changes,
+strict manifest and payload validation, transactional directory publication,
+and removal of legacy tolerance. After that interface passes, the integration
+owner owns cache callers in `src/training/pipeline.py`, the cache binding in
+`src/artifacts/run_writer.py`, and their focused tests: rank-zero reuse/rebuild
+selection, waiter behavior, expected-fingerprint propagation, and the durable
+identity boundary. Neither owner edits this ledger or commits; the parent owns
+the execution probes, cross-worker determinism comparison, independent audits,
+task closure, and the single Wave 3 commit.
+
+- [x] 3.1 Refine Wave 3 into the file-owned slices above and add failing direct-reader tests for old-version, partial/incomplete, corrupt JSON/pickle, mismatched expected fingerprint, invalid declared or actual chunk hash, missing/gapped chunks, per-chunk count mismatch, and total-count mismatch behavior.
+- [x] 3.2 Increment the cache format version and require every manifest/rank/all-step load API to accept an explicit expected semantic fingerprint and verify current version, matching canonical determinant fingerprint, complete status, mandatory materialization/augmentation provenance, contiguous safe chunk paths, declared per-chunk/total counts, chunk hashes, and current tuple payload shape through an exact-class restricted unpickler before returning.
+- [x] 3.3 Delete legacy manifest tolerance, optional old provenance handling, cache migrations, unrestricted pickle loading, and old payload readers; serialize same-root writers with a persistent POSIX advisory lock, publish writes through an isolated sibling staging directory with the manifest last, and make a rank-zero deterministic rebuild plus bounded shared Accelerate outcome followed by strict peer reads the sole recovery path for every invalid cache state.
+- [x] 3.4 Preserve semantic determinants across data content, template/order/augmentation, seeds, tokenizer/processor, packing budget, supervision, and Qwen position/FA2/forward sources while keeping worker count operational and order-neutral.
+- [x] 3.5 Require compact augmentation/materialization provenance in the current manifest, bind only format/fingerprint/determinant digest (not cache path, manifest path/hash, chunk hashes, or payload metadata) into `run.json`, and prove cache deletion after a run does not erase its consumed-materialization identity.
+- [x] 3.6 Gate Wave 3 with direct cache plus augmentation/packing suites, deterministic one-worker versus multi-worker sequence/fingerprint comparison, real mismatch/corruption rebuild and waiter probes, partial-publication residue checks, removed-legacy residue searches, strict OpenSpec validation, `git diff --check`, and separate standards plus intent/contract audits with no unresolved P0/P1.
+
+Wave 3 gate evidence (2026-07-11): 66 focused direct-cache and distributed
+resolver tests passed, including malicious-reduce rejection without executing
+its side effect, mandatory provenance checks, cache deletion after durable run
+binding, and spawned-process overlap at both staging and live-root backup. The
+broader runtime/training/eval/artifact/config/inference/augmentation/packing
+suite passed 476 tests with one upstream sparse-CSR warning. Real rich-Qwen
+materialization with one and two workers produced the same ordered payload and
+semantic digest
+`d1427121da12a7a35d7050ddbafd840e2d7e969ad3b5db0857d659bce170718b`.
+Fresh two-rank Accelerate probes rebuilt both fingerprint-mismatched and
+corrupted caches with rank zero reporting `built`, its peer reporting `waited`,
+and both consuming pack IDs `[10, 11]`. Injected materialization, staged
+validation, and publication failures produced the same
+`training.pack_cache_resolution_failed` descriptor on both ranks without a
+hang; each clean retry succeeded and left no stage/backup residue. Legacy
+reader/path residue searches, strict OpenSpec validation, and `git diff
+--check` passed. Independent engineering and intent/contract fixed-point
+audits approved with no unresolved P0/P1. The retained double integrity pass
+on cache hits and possible duplicate pre-publication work during simultaneous
+independent cold starts are deliberate correctness-first P2 trade-offs; they
+remain measurement-triggered optimizations rather than new coordination
+machinery.
 
 ## 4. Wave 4 — Multi-Rank Evidence And Accepted Snapshot
 

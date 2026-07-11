@@ -83,7 +83,7 @@ def test_materialization_binding_is_one_time_and_survives_cache_deletion(tmp_pat
     cache = tmp_path / "cache"
     cache.mkdir()
     writer.bind_materialization(
-        "train", cache_format_version=4, semantic_fingerprint="fp", determinant_digest="digest", cache_path=str(cache)
+        "train", cache_format_version=4, semantic_fingerprint="fp", determinant_digest="digest"
     )
     cache.rmdir()
     with pytest.raises(ArtifactContractError) as exc_info:
@@ -91,7 +91,11 @@ def test_materialization_binding_is_one_time_and_survives_cache_deletion(tmp_pat
             "train", cache_format_version=4, semantic_fingerprint="changed", determinant_digest="changed"
         )
     assert exc_info.value.code == "run_writer.materialization_already_bound"
-    assert writer.read_run()["materializations"]["train"]["determinant_digest"] == "digest"
+    assert writer.read_run()["materializations"]["train"] == {
+        "cache_format_version": 4,
+        "semantic_fingerprint": "fp",
+        "determinant_digest": "digest",
+    }
 
 
 def test_schedule_can_be_bound_once_after_early_initialization(tmp_path: Path) -> None:

@@ -1,32 +1,121 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import gc
+import hashlib
 import json
+import multiprocessing
 import os
 from pathlib import Path
 import pickle
+import re
+import time
 from typing import Any
+import weakref
 
 import pytest
 
 from src.config.loader import load_train_config
 from src.config.models import RuntimeBatchResolution
 from src.training.pipeline import build_repeating_micro_step_stream
+from src.training import pack_cache
 from src.training.pack_cache import (
     DEFAULT_PACK_CACHE_MATERIALIZATION_WORKERS,
+    PackingCacheInvalidError,
     PACKING_CACHE_MATERIALIZATION_STRATEGY,
+    build_packing_cache_materialization,
     build_packing_cache_determinants,
     build_packing_cache_fingerprint,
     load_all_micro_steps_from_cache,
     load_cache_manifest,
     load_rank_micro_steps_from_cache,
-    write_micro_step_cache,
+    write_micro_step_cache as _write_micro_step_cache,
 )
 from src.training.schedule import ResolvedStepSchedule
 from src.training.supervised_trainer import SupervisedMicroStep
 
 
 FIXTURE_CONFIG = Path("tests/fixtures/smoke/qwen3_vl_single_image_pack/config.yaml")
+UNIT_DETERMINANTS = {"purpose": "unit-test"}
+UNIT_FINGERPRINT = hashlib.sha256(
+    json.dumps(
+        UNIT_DETERMINANTS,
+        allow_nan=False,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+).hexdigest()
+DISABLED_AUGMENTATION = {
+    "split": "train",
+    "mode": "disabled",
+    "policy": "geometry_flips",
+    "enabled": False,
+    "seed": 7,
+    "input_example_count": 1,
+    "output_example_count": 1,
+    "presentation_count": 1,
+    "object_ordering": "source_order",
+}
+
+
+def write_micro_step_cache(*args: Any, **kwargs: Any) -> dict[str, Any]:
+    kwargs.setdefault("augmentation", DISABLED_AUGMENTATION)
+    kwargs.setdefault("materialization", build_packing_cache_materialization())
+    return _write_micro_step_cache(*args, **kwargs)
+
+
+def _overlap_writer_process(
+    cache_dir_text: str,
+    pause_phase: str | None,
+    paused: Any,
+    release: Any,
+    started: Any,
+    results: Any,
+) -> None:
+    cache_dir = Path(cache_dir_text)
+    started.set()
+    if pause_phase == "stage":
+        real_dump = pack_cache.pickle.dump
+
+        def paused_dump(*args: Any, **kwargs: Any) -> Any:
+            paused.set()
+            if not release.wait(timeout=30):
+                raise RuntimeError("stage pause timed out")
+            return real_dump(*args, **kwargs)
+
+        pack_cache.pickle.dump = paused_dump
+    elif pause_phase == "backup":
+        real_replace = pack_cache.os.replace
+
+        def paused_replace(source: Any, destination: Any) -> None:
+            real_replace(source, destination)
+            if Path(source) == cache_dir and ".backup-" in Path(destination).name:
+                paused.set()
+                if not release.wait(timeout=30):
+                    raise RuntimeError("backup pause timed out")
+
+        pack_cache.os.replace = paused_replace
+    try:
+        manifest = write_micro_step_cache(
+            cache_dir,
+            tuple(_micro_step(index) for index in range(4)),
+            fingerprint=UNIT_FINGERPRINT,
+            determinants=UNIT_DETERMINANTS,
+            chunk_size=2,
+        )
+        loaded = load_all_micro_steps_from_cache(
+            cache_dir, expected_fingerprint=UNIT_FINGERPRINT
+        )
+        results.put(
+            (
+                "ok",
+                manifest["fingerprint"],
+                [step.metadata["pack_id"] for step in loaded],
+            )
+        )
+    except Exception as exc:
+        results.put(("error", type(exc).__name__, str(exc)))
 
 
 def test_packing_cache_fingerprint_tracks_data_template_and_encoding_only(
@@ -288,6 +377,12 @@ def test_packing_cache_fingerprint_ignores_materialization_worker_count(
         dataset=config.data.train,
         split="train",
     )
+    determinants = build_packing_cache_determinants(
+        config,
+        components,
+        dataset=config.data.train,
+        split="train",
+    )
 
     default_cache = tmp_path / "default-cache"
     override_cache = tmp_path / "override-cache"
@@ -295,13 +390,13 @@ def test_packing_cache_fingerprint_ignores_materialization_worker_count(
         default_cache,
         (_micro_step(0),),
         fingerprint=fingerprint,
-        determinants={"purpose": "unit-test"},
+        determinants=determinants,
     )
     override_manifest = write_micro_step_cache(
         override_cache,
         (_micro_step(0),),
         fingerprint=fingerprint,
-        determinants={"purpose": "unit-test"},
+        determinants=determinants,
         materialization={
             "strategy": PACKING_CACHE_MATERIALIZATION_STRATEGY,
             "workers": 3,
@@ -323,7 +418,7 @@ def test_micro_step_cache_manifest_records_default_materialization_workers(
     manifest = write_micro_step_cache(
         cache_dir,
         (_micro_step(0),),
-        fingerprint="abc123",
+        fingerprint=UNIT_FINGERPRINT,
         determinants={"purpose": "unit-test"},
     )
 
@@ -331,7 +426,9 @@ def test_micro_step_cache_manifest_records_default_materialization_workers(
         "strategy": PACKING_CACHE_MATERIALIZATION_STRATEGY,
         "workers": DEFAULT_PACK_CACHE_MATERIALIZATION_WORKERS,
     }
-    assert load_cache_manifest(cache_dir)["materialization"] == manifest["materialization"]
+    assert load_cache_manifest(
+        cache_dir, expected_fingerprint=UNIT_FINGERPRINT
+    )["materialization"] == manifest["materialization"]
 
 
 def test_micro_step_cache_manifest_records_explicit_materialization_override(
@@ -342,7 +439,7 @@ def test_micro_step_cache_manifest_records_explicit_materialization_override(
     manifest = write_micro_step_cache(
         cache_dir,
         (_micro_step(0),),
-        fingerprint="abc123",
+        fingerprint=UNIT_FINGERPRINT,
         determinants={"purpose": "unit-test"},
         materialization={
             "strategy": PACKING_CACHE_MATERIALIZATION_STRATEGY,
@@ -356,26 +453,72 @@ def test_micro_step_cache_manifest_records_explicit_materialization_override(
     }
 
 
-def test_legacy_micro_step_cache_manifest_without_materialization_still_loads(
+def test_micro_step_cache_manifest_requires_current_provenance(
     tmp_path: Path,
 ) -> None:
     cache_dir = tmp_path / "cache"
     write_micro_step_cache(
         cache_dir,
         (_micro_step(0),),
-        fingerprint="abc123",
+        fingerprint=UNIT_FINGERPRINT,
         determinants={"purpose": "unit-test"},
     )
     manifest_path = cache_dir / "manifest.json"
-    legacy_manifest = json.loads(manifest_path.read_text())
-    legacy_manifest.pop("materialization")
-    manifest_path.write_text(json.dumps(legacy_manifest), encoding="utf-8")
+    invalid_manifest = json.loads(manifest_path.read_text())
+    invalid_manifest.pop("materialization")
+    manifest_path.write_text(json.dumps(invalid_manifest), encoding="utf-8")
 
-    loaded_manifest = load_cache_manifest(cache_dir)
-    loaded_steps = load_all_micro_steps_from_cache(cache_dir)
+    with pytest.raises(ValueError, match="materialization"):
+        load_cache_manifest(cache_dir, expected_fingerprint=UNIT_FINGERPRINT)
 
-    assert "materialization" not in loaded_manifest
-    assert [step.metadata["pack_id"] for step in loaded_steps] == [0]
+
+@pytest.mark.parametrize("augmentation", [None, {}])
+def test_cache_writer_rejects_missing_or_empty_augmentation_receipt(
+    tmp_path: Path, augmentation: Any
+) -> None:
+    with pytest.raises(ValueError, match="augmentation.*non-empty"):
+        _write_micro_step_cache(
+            tmp_path / "cache",
+            (_micro_step(0),),
+            fingerprint=UNIT_FINGERPRINT,
+            determinants=UNIT_DETERMINANTS,
+            materialization=build_packing_cache_materialization(),
+            augmentation=augmentation,
+        )
+
+
+def test_cache_writer_requires_explicit_materialization(tmp_path: Path) -> None:
+    with pytest.raises(TypeError, match="materialization"):
+        _write_micro_step_cache(
+            tmp_path / "cache",
+            (_micro_step(0),),
+            fingerprint=UNIT_FINGERPRINT,
+            determinants=UNIT_DETERMINANTS,
+            augmentation=DISABLED_AUGMENTATION,
+        )
+
+
+@pytest.mark.parametrize("mutation", ["omit", "empty"])
+def test_cache_reader_rejects_missing_or_empty_augmentation_receipt(
+    tmp_path: Path, mutation: str
+) -> None:
+    cache_dir = tmp_path / "cache"
+    write_micro_step_cache(
+        cache_dir,
+        (_micro_step(0),),
+        fingerprint=UNIT_FINGERPRINT,
+        determinants=UNIT_DETERMINANTS,
+    )
+    manifest_path = cache_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    if mutation == "omit":
+        manifest.pop("augmentation")
+    else:
+        manifest["augmentation"] = {}
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(PackingCacheInvalidError, match="augmentation.*non-empty"):
+        load_cache_manifest(cache_dir, expected_fingerprint=UNIT_FINGERPRINT)
 
 
 def test_micro_step_cache_loads_exact_rank_local_training_order(tmp_path: Path) -> None:
@@ -384,7 +527,7 @@ def test_micro_step_cache_loads_exact_rank_local_training_order(tmp_path: Path) 
     manifest = write_micro_step_cache(
         cache_dir,
         micro_steps,
-        fingerprint="abc123",
+        fingerprint=UNIT_FINGERPRINT,
         determinants={"purpose": "unit-test"},
         chunk_size=3,
     )
@@ -397,12 +540,14 @@ def test_micro_step_cache_loads_exact_rank_local_training_order(tmp_path: Path) 
 
     rank0 = load_rank_micro_steps_from_cache(
         cache_dir,
+        expected_fingerprint=UNIT_FINGERPRINT,
         schedule=schedule,
         rank=0,
         world_size=2,
     )
     rank1 = load_rank_micro_steps_from_cache(
         cache_dir,
+        expected_fingerprint=UNIT_FINGERPRINT,
         schedule=schedule,
         rank=1,
         world_size=2,
@@ -419,7 +564,7 @@ def test_micro_step_cache_wraps_tail_presentations_by_pack_count(tmp_path: Path)
     write_micro_step_cache(
         cache_dir,
         micro_steps,
-        fingerprint="abc123",
+        fingerprint=UNIT_FINGERPRINT,
         determinants={"purpose": "unit-test"},
         chunk_size=2,
     )
@@ -432,6 +577,7 @@ def test_micro_step_cache_wraps_tail_presentations_by_pack_count(tmp_path: Path)
 
     rank1 = load_rank_micro_steps_from_cache(
         cache_dir,
+        expected_fingerprint=UNIT_FINGERPRINT,
         schedule=schedule,
         rank=1,
         world_size=2,
@@ -446,12 +592,27 @@ def test_micro_step_cache_loads_complete_sequence_for_eval(tmp_path: Path) -> No
     write_micro_step_cache(
         cache_dir,
         micro_steps,
-        fingerprint="abc123",
+        fingerprint=hashlib.sha256(
+            json.dumps(
+                {"purpose": "unit-test", "split": "eval.forward"},
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest(),
         determinants={"purpose": "unit-test", "split": "eval.forward"},
         chunk_size=3,
     )
 
-    loaded = load_all_micro_steps_from_cache(cache_dir)
+    loaded = load_all_micro_steps_from_cache(
+        cache_dir,
+        expected_fingerprint=hashlib.sha256(
+            json.dumps(
+                {"purpose": "unit-test", "split": "eval.forward"},
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest(),
+    )
 
     assert [step.metadata["pack_id"] for step in loaded] == list(range(7))
 
@@ -462,7 +623,7 @@ def test_cached_rank_local_steps_must_not_be_sharded_again(tmp_path: Path) -> No
     write_micro_step_cache(
         cache_dir,
         micro_steps,
-        fingerprint="abc123",
+        fingerprint=UNIT_FINGERPRINT,
         determinants={"purpose": "unit-test"},
         chunk_size=256,
     )
@@ -475,6 +636,7 @@ def test_cached_rank_local_steps_must_not_be_sharded_again(tmp_path: Path) -> No
 
     rank0 = load_rank_micro_steps_from_cache(
         cache_dir,
+        expected_fingerprint=UNIT_FINGERPRINT,
         schedule=schedule,
         rank=0,
         world_size=8,
@@ -498,7 +660,7 @@ def test_micro_step_cache_rejects_corrupt_required_chunk(tmp_path: Path) -> None
     write_micro_step_cache(
         cache_dir,
         micro_steps,
-        fingerprint="abc123",
+        fingerprint=UNIT_FINGERPRINT,
         determinants={"purpose": "unit-test"},
         chunk_size=2,
     )
@@ -515,6 +677,7 @@ def test_micro_step_cache_rejects_corrupt_required_chunk(tmp_path: Path) -> None
     with pytest.raises(ValueError, match="checksum mismatch"):
         load_rank_micro_steps_from_cache(
             cache_dir,
+            expected_fingerprint=UNIT_FINGERPRINT,
             schedule=schedule,
             rank=0,
             world_size=1,
@@ -527,7 +690,7 @@ def test_micro_step_cache_manifest_rejects_chunk_gaps(tmp_path: Path) -> None:
     write_micro_step_cache(
         cache_dir,
         micro_steps,
-        fingerprint="abc123",
+        fingerprint=UNIT_FINGERPRINT,
         determinants={"purpose": "unit-test"},
         chunk_size=2,
     )
@@ -545,10 +708,499 @@ def test_micro_step_cache_manifest_rejects_chunk_gaps(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="contiguous"):
         load_rank_micro_steps_from_cache(
             cache_dir,
+            expected_fingerprint=UNIT_FINGERPRINT,
             schedule=schedule,
             rank=0,
             world_size=1,
         )
+
+
+@pytest.mark.parametrize(
+    ("mutation", "match"),
+    [
+        (lambda manifest: manifest.__setitem__("version", "old-version"), "version"),
+        (lambda manifest: manifest.__setitem__("status", "writing"), "complete"),
+        (lambda manifest: manifest.__setitem__("fingerprint", "other"), "fingerprint"),
+        (lambda manifest: manifest.__setitem__("determinants", None), "determinants"),
+        (lambda manifest: manifest.__setitem__("augmentation", None), "augmentation"),
+        (lambda manifest: manifest.__setitem__("micro_step_count", 5), "cover"),
+        (lambda manifest: manifest["chunks"][0].__setitem__("count", 1), "count"),
+        (lambda manifest: manifest["chunks"][0].__setitem__("sha256", "z" * 64), "sha256"),
+        (lambda manifest: manifest["chunks"][0].__setitem__("path", "../escape.pkl"), "path"),
+    ],
+)
+def test_cache_manifest_rejects_invalid_current_contract(
+    tmp_path: Path, mutation: Any, match: str
+) -> None:
+    cache_dir = tmp_path / "cache"
+    write_micro_step_cache(
+        cache_dir,
+        tuple(_micro_step(index) for index in range(4)),
+        fingerprint=UNIT_FINGERPRINT,
+        determinants={"purpose": "unit-test"},
+        chunk_size=2,
+    )
+    path = cache_dir / "manifest.json"
+    manifest = json.loads(path.read_text())
+    mutation(manifest)
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=match):
+        load_cache_manifest(cache_dir, expected_fingerprint=UNIT_FINGERPRINT)
+
+
+def test_cache_manifest_rejects_corrupt_json(tmp_path: Path) -> None:
+    cache_dir = tmp_path / "cache"
+    write_micro_step_cache(
+        cache_dir,
+        (_micro_step(0),),
+        fingerprint=UNIT_FINGERPRINT,
+        determinants={"purpose": "unit-test"},
+    )
+    (cache_dir / "manifest.json").write_text("{", encoding="utf-8")
+
+    with pytest.raises(PackingCacheInvalidError):
+        load_cache_manifest(cache_dir, expected_fingerprint=UNIT_FINGERPRINT)
+
+
+def test_cache_reader_rejects_corrupt_pickle_with_matching_declared_hash(
+    tmp_path: Path,
+) -> None:
+    cache_dir = tmp_path / "cache"
+    write_micro_step_cache(
+        cache_dir,
+        (_micro_step(0),),
+        fingerprint=UNIT_FINGERPRINT,
+        determinants={"purpose": "unit-test"},
+    )
+    chunk_path = cache_dir / "chunks" / "chunk-00000.pkl"
+    chunk_path.write_bytes(b"not-a-pickle")
+    manifest_path = cache_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["chunks"][0]["sha256"] = _sha256(chunk_path)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="unreadable"):
+        load_all_micro_steps_from_cache(
+            cache_dir, expected_fingerprint=UNIT_FINGERPRINT
+        )
+
+
+@pytest.mark.parametrize("reader", ["manifest", "rank", "all"])
+@pytest.mark.parametrize("failure", [ModuleNotFoundError, AttributeError, RuntimeError])
+def test_cache_readers_normalize_state_restoration_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    reader: str,
+    failure: type[Exception],
+) -> None:
+    cache_dir = tmp_path / "cache"
+    write_micro_step_cache(
+        cache_dir,
+        (_micro_step(0),),
+        fingerprint=UNIT_FINGERPRINT,
+        determinants=UNIT_DETERMINANTS,
+    )
+    schedule = _schedule(
+        resolved_max_steps=1,
+        grad_accum_steps=1,
+        world_size=1,
+        effective_batch_size=1,
+    )
+
+    def fail_restore(_self: Any) -> Any:
+        raise failure("injected restoration failure")
+
+    monkeypatch.setattr(pack_cache._RestrictedCacheUnpickler, "load", fail_restore)
+    with pytest.raises(PackingCacheInvalidError, match="unreadable"):
+        if reader == "manifest":
+            load_cache_manifest(
+                cache_dir, expected_fingerprint=UNIT_FINGERPRINT
+            )
+        elif reader == "rank":
+            load_rank_micro_steps_from_cache(
+                cache_dir,
+                expected_fingerprint=UNIT_FINGERPRINT,
+                schedule=schedule,
+                rank=0,
+                world_size=1,
+            )
+        else:
+            load_all_micro_steps_from_cache(
+                cache_dir, expected_fingerprint=UNIT_FINGERPRINT
+            )
+
+
+@pytest.mark.parametrize("interrupt", [KeyboardInterrupt, SystemExit])
+def test_cache_reader_does_not_normalize_process_interrupts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    interrupt: type[BaseException],
+) -> None:
+    cache_dir = tmp_path / "cache"
+    write_micro_step_cache(
+        cache_dir,
+        (_micro_step(0),),
+        fingerprint=UNIT_FINGERPRINT,
+        determinants=UNIT_DETERMINANTS,
+    )
+
+    def interrupt_restore(_self: Any) -> Any:
+        raise interrupt()
+
+    monkeypatch.setattr(
+        pack_cache._RestrictedCacheUnpickler, "load", interrupt_restore
+    )
+    with pytest.raises(interrupt):
+        load_all_micro_steps_from_cache(
+            cache_dir, expected_fingerprint=UNIT_FINGERPRINT
+        )
+
+
+def test_restricted_cache_unpickler_rejects_reduce_before_side_effect(
+    tmp_path: Path,
+) -> None:
+    cache_dir = tmp_path / "cache"
+    write_micro_step_cache(
+        cache_dir,
+        (_micro_step(0),),
+        fingerprint=UNIT_FINGERPRINT,
+        determinants=UNIT_DETERMINANTS,
+    )
+    side_effect = tmp_path / "must-not-exist"
+
+    class MaliciousPayload:
+        def __reduce__(self) -> Any:
+            return os.system, (f"touch {side_effect}",)
+
+    chunk_path = cache_dir / "chunks" / "chunk-00000.pkl"
+    with chunk_path.open("wb") as handle:
+        pickle.dump((MaliciousPayload(),), handle)
+    manifest_path = cache_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["chunks"][0]["sha256"] = _sha256(chunk_path)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(PackingCacheInvalidError, match="unreadable"):
+        load_all_micro_steps_from_cache(
+            cache_dir, expected_fingerprint=UNIT_FINGERPRINT
+        )
+    assert not side_effect.exists()
+
+
+def test_cache_manifest_rejects_missing_chunk(tmp_path: Path) -> None:
+    cache_dir = tmp_path / "cache"
+    write_micro_step_cache(
+        cache_dir,
+        (_micro_step(0),),
+        fingerprint=UNIT_FINGERPRINT,
+        determinants={"purpose": "unit-test"},
+    )
+    (cache_dir / "chunks" / "chunk-00000.pkl").unlink()
+
+    with pytest.raises(ValueError, match="missing"):
+        load_cache_manifest(cache_dir, expected_fingerprint=UNIT_FINGERPRINT)
+
+
+@pytest.mark.parametrize("reader", ["manifest", "rank", "all"])
+def test_cache_readers_reject_mutated_determinants_with_unchanged_fingerprint(
+    tmp_path: Path, reader: str
+) -> None:
+    cache_dir = tmp_path / "cache"
+    write_micro_step_cache(
+        cache_dir,
+        (_micro_step(0),),
+        fingerprint=UNIT_FINGERPRINT,
+        determinants=UNIT_DETERMINANTS,
+    )
+    manifest_path = cache_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["determinants"]["purpose"] = "tampered"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    schedule = _schedule(
+        resolved_max_steps=1,
+        grad_accum_steps=1,
+        world_size=1,
+        effective_batch_size=1,
+    )
+
+    with pytest.raises(ValueError, match="canonical determinants"):
+        if reader == "manifest":
+            load_cache_manifest(
+                cache_dir, expected_fingerprint=UNIT_FINGERPRINT
+            )
+        elif reader == "rank":
+            load_rank_micro_steps_from_cache(
+                cache_dir,
+                expected_fingerprint=UNIT_FINGERPRINT,
+                schedule=schedule,
+                rank=0,
+                world_size=1,
+            )
+        else:
+            load_all_micro_steps_from_cache(
+                cache_dir, expected_fingerprint=UNIT_FINGERPRINT
+            )
+
+
+@pytest.mark.parametrize("reader", ["manifest", "rank", "all"])
+def test_cache_readers_require_explicit_materialization_strategy(
+    tmp_path: Path, reader: str
+) -> None:
+    cache_dir = tmp_path / "cache"
+    write_micro_step_cache(
+        cache_dir,
+        (_micro_step(0),),
+        fingerprint=UNIT_FINGERPRINT,
+        determinants=UNIT_DETERMINANTS,
+    )
+    manifest_path = cache_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["materialization"].pop("strategy")
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    schedule = _schedule(
+        resolved_max_steps=1,
+        grad_accum_steps=1,
+        world_size=1,
+        effective_batch_size=1,
+    )
+
+    with pytest.raises(PackingCacheInvalidError, match="strategy"):
+        if reader == "manifest":
+            load_cache_manifest(
+                cache_dir, expected_fingerprint=UNIT_FINGERPRINT
+            )
+        elif reader == "rank":
+            load_rank_micro_steps_from_cache(
+                cache_dir,
+                expected_fingerprint=UNIT_FINGERPRINT,
+                schedule=schedule,
+                rank=0,
+                world_size=1,
+            )
+        else:
+            load_all_micro_steps_from_cache(
+                cache_dir, expected_fingerprint=UNIT_FINGERPRINT
+            )
+
+
+def test_rank_reader_validates_unselected_chunks(tmp_path: Path) -> None:
+    cache_dir = tmp_path / "cache"
+    write_micro_step_cache(
+        cache_dir,
+        tuple(_micro_step(index) for index in range(4)),
+        fingerprint=UNIT_FINGERPRINT,
+        determinants={"purpose": "unit-test"},
+        chunk_size=2,
+    )
+    (cache_dir / "chunks" / "chunk-00001.pkl").write_bytes(b"corrupt")
+    schedule = _schedule(
+        resolved_max_steps=1,
+        grad_accum_steps=1,
+        world_size=1,
+        effective_batch_size=1,
+    )
+
+    with pytest.raises(ValueError, match="checksum mismatch"):
+        load_rank_micro_steps_from_cache(
+            cache_dir,
+            expected_fingerprint=UNIT_FINGERPRINT,
+            schedule=schedule,
+            rank=0,
+            world_size=1,
+        )
+
+
+def test_rank_reader_releases_validated_unselected_steps(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache_dir = tmp_path / "cache"
+    write_micro_step_cache(
+        cache_dir,
+        tuple(_micro_step(index) for index in range(4)),
+        fingerprint=UNIT_FINGERPRINT,
+        determinants={"purpose": "unit-test"},
+        chunk_size=2,
+    )
+    schedule = _schedule(
+        resolved_max_steps=1,
+        grad_accum_steps=1,
+        world_size=1,
+        effective_batch_size=1,
+    )
+    real_load = pack_cache._RestrictedCacheUnpickler.load
+    loaded_refs: dict[int, weakref.ReferenceType[SupervisedMicroStep]] = {}
+
+    def tracking_load(unpickler: Any) -> Any:
+        payload = real_load(unpickler)
+        for step in payload:
+            loaded_refs[step.metadata["pack_id"]] = weakref.ref(step)
+        return payload
+
+    monkeypatch.setattr(pack_cache._RestrictedCacheUnpickler, "load", tracking_load)
+    selected = load_rank_micro_steps_from_cache(
+        cache_dir,
+        expected_fingerprint=UNIT_FINGERPRINT,
+        schedule=schedule,
+        rank=0,
+        world_size=1,
+    )
+    gc.collect()
+
+    assert selected[0].metadata["pack_id"] == 0
+    assert loaded_refs[0]() is selected[0]
+    assert all(loaded_refs[index]() is None for index in (1, 2, 3))
+
+
+@pytest.mark.parametrize("payload_kind", ["list", "wrong-length-tuple"])
+def test_cache_reader_rejects_invalid_chunk_payload_shape_or_count(
+    tmp_path: Path, payload_kind: str
+) -> None:
+    cache_dir = tmp_path / "cache"
+    write_micro_step_cache(
+        cache_dir,
+        (_micro_step(0),),
+        fingerprint=UNIT_FINGERPRINT,
+        determinants={"purpose": "unit-test"},
+    )
+    chunk_path = cache_dir / "chunks" / "chunk-00000.pkl"
+    payload = (
+        [_micro_step(0)]
+        if payload_kind == "list"
+        else (_micro_step(0), _micro_step(1))
+    )
+    with chunk_path.open("wb") as handle:
+        pickle.dump(payload, handle)
+    manifest_path = cache_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["chunks"][0]["sha256"] = _sha256(chunk_path)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="tuple|payload length"):
+        load_all_micro_steps_from_cache(
+            cache_dir, expected_fingerprint=UNIT_FINGERPRINT
+        )
+
+
+def test_failed_cache_publication_preserves_previous_valid_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache_dir = tmp_path / "cache"
+    old_determinants = {"purpose": "old-unit-test"}
+    new_determinants = {"purpose": "new-unit-test"}
+    old_fingerprint = _fingerprint(old_determinants)
+    new_fingerprint = _fingerprint(new_determinants)
+    write_micro_step_cache(
+        cache_dir,
+        (_micro_step(0),),
+        fingerprint=old_fingerprint,
+        determinants=old_determinants,
+    )
+    real_replace = os.replace
+
+    def fail_stage_publish(source: Any, destination: Any) -> None:
+        if Path(destination) == cache_dir and re.search(r"\.stage-", Path(source).name):
+            raise OSError("injected publication failure")
+        real_replace(source, destination)
+
+    monkeypatch.setattr(os, "replace", fail_stage_publish)
+    with pytest.raises(OSError, match="injected publication failure"):
+        write_micro_step_cache(
+            cache_dir,
+            (_micro_step(1),),
+            fingerprint=new_fingerprint,
+            determinants=new_determinants,
+        )
+
+    loaded = load_all_micro_steps_from_cache(
+        cache_dir, expected_fingerprint=old_fingerprint
+    )
+    assert [step.metadata["pack_id"] for step in loaded] == [0]
+    assert not list(tmp_path.glob(".cache.stage-*"))
+    assert not list(tmp_path.glob(".cache.backup-*"))
+
+
+def test_cache_writer_removes_stale_stage_and_backup_siblings(tmp_path: Path) -> None:
+    cache_dir = tmp_path / "cache"
+    stale_stage = tmp_path / ".cache.stage-crashed"
+    stale_backup = tmp_path / ".cache.backup-crashed"
+    stale_stage.mkdir()
+    stale_backup.mkdir()
+    (stale_stage / "manifest.json").write_text('{"status":"complete"}')
+    (stale_backup / "manifest.json").write_text('{"status":"complete"}')
+
+    write_micro_step_cache(
+        cache_dir,
+        (_micro_step(0),),
+        fingerprint=UNIT_FINGERPRINT,
+        determinants=UNIT_DETERMINANTS,
+    )
+
+    assert not stale_stage.exists()
+    assert not stale_backup.exists()
+    assert load_cache_manifest(
+        cache_dir, expected_fingerprint=UNIT_FINGERPRINT
+    )["status"] == "complete"
+
+
+@pytest.mark.parametrize("pause_phase", ["stage", "backup"])
+def test_same_fingerprint_writers_serialize_across_processes(
+    tmp_path: Path, pause_phase: str
+) -> None:
+    cache_dir = tmp_path / "cache"
+    if pause_phase == "backup":
+        write_micro_step_cache(
+            cache_dir,
+            (_micro_step(99),),
+            fingerprint=UNIT_FINGERPRINT,
+            determinants=UNIT_DETERMINANTS,
+        )
+        (cache_dir / "chunks" / "chunk-00000.pkl").write_bytes(b"invalid")
+
+    context = multiprocessing.get_context("spawn")
+    paused = context.Event()
+    release = context.Event()
+    started_a = context.Event()
+    started_b = context.Event()
+    unused_paused_b = context.Event()
+    unused_release_b = context.Event()
+    results = context.Queue()
+    writer_a = context.Process(
+        target=_overlap_writer_process,
+        args=(str(cache_dir), pause_phase, paused, release, started_a, results),
+    )
+    writer_b = context.Process(
+        target=_overlap_writer_process,
+        args=(
+            str(cache_dir),
+            None,
+            unused_paused_b,
+            unused_release_b,
+            started_b,
+            results,
+        ),
+    )
+    writer_a.start()
+    assert started_a.wait(timeout=20)
+    assert paused.wait(timeout=20)
+    writer_b.start()
+    assert started_b.wait(timeout=20)
+    time.sleep(0.2)
+    assert writer_b.is_alive(), "writer B must block on the cache-root lock"
+
+    release.set()
+    writer_a.join(timeout=30)
+    writer_b.join(timeout=30)
+    assert writer_a.exitcode == 0
+    assert writer_b.exitcode == 0
+    outcomes = [results.get(timeout=2), results.get(timeout=2)]
+    assert outcomes == [
+        ("ok", UNIT_FINGERPRINT, [0, 1, 2, 3]),
+        ("ok", UNIT_FINGERPRINT, [0, 1, 2, 3]),
+    ]
+    assert not list(tmp_path.glob(".cache.stage-*"))
+    assert not list(tmp_path.glob(".cache.backup-*"))
+    assert (tmp_path / ".cache.lock").is_file()
 
 
 def _micro_step(index: int) -> SupervisedMicroStep:
@@ -560,6 +1212,22 @@ def _micro_step(index: int) -> SupervisedMicroStep:
         vocab_groups=f"vocab-{index}",
         metadata={"pack_id": index},
     )
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _fingerprint(determinants: dict[str, Any]) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            determinants,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def _schedule(

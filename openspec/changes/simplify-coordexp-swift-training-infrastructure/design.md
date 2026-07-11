@@ -261,6 +261,29 @@ files. Direct rank/all-step load APIs MUST carry or derive that expected
 fingerprint; they may not bypass identity validation merely because a manifest
 is structurally complete. Any mismatch is a cache miss followed by rebuild. No
 legacy optional fields, version migrations, or old payload decoders remain.
+Current manifests require nonempty compact materialization and augmentation
+provenance. Cached tuple payloads are read through an exact-class restricted
+unpickler; arbitrary globals and persistent IDs are forbidden, and tensor
+storage bytes use `torch.load(..., weights_only=True)`. Thus an
+environment-selected cache root is not treated as an authenticated executable
+pickle source merely because its adjacent manifest supplies a matching hash.
+Rank zero performs the reuse decision and writes a rebuilt cache into an
+isolated sibling staging directory whose manifest is published last; only a
+complete staged directory may replace the invalid/current cache root. Other
+runs that target the same physical cache root serialize validation, stale
+cleanup, staging, publication, and rollback through one persistent POSIX
+`fcntl.flock` lock beside that root. This assumes a Linux/shared filesystem
+with working advisory locks and cooperating writers that use the cache-owner
+API; the lock is cache coordination state, not durable run provenance. Other
+ranks wait on one bounded Accelerate success/error outcome and then use the
+same strict direct-reader contract, so no reader can consume chunks while rank
+zero is rewriting the live directory. Rank-zero materialization, validation,
+or publication failure is shared before every rank raises the same named
+error; peers do not poll the filesystem after the producer has failed. A
+failed rebuild leaves no complete manifest that can make a partial cache
+appear reusable. Train and `eval.forward` always retain distinct role
+identities and cache roots, even when their source path and sample limit match,
+so train-only augmentation cannot leak into eval semantics.
 Cache files live under the cache root and are not copied into the durable run
 tree. `run.json` retains only the cache format version and semantic
 fingerprint/determinant digest so the consumed materialization remains

@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
+import fcntl
 import hashlib
+import importlib
+import io
 import json
 import os
 from pathlib import Path
 import pickle
+import re
+import shutil
 from typing import Any
+import uuid
+
+import torch
 
 from src.augmentation.geometry import GEOMETRY_FLIP_POLICY_VERSION
 from src.config.models import DatasetSplitConfig, TrainConfig
@@ -16,7 +24,7 @@ from src.training.schedule import ResolvedStepSchedule
 from src.training.supervised_trainer import SupervisedMicroStep
 
 
-PACKING_CACHE_VERSION = "coordexp-swift-pack-cache-v1"
+PACKING_CACHE_VERSION = "coordexp-swift-pack-cache-v2"
 PACKING_CACHE_MANIFEST = "manifest.json"
 PACKING_CACHE_CHUNK_DIR = "chunks"
 DEFAULT_PACK_CACHE_MATERIALIZATION_WORKERS = 16
@@ -36,6 +44,45 @@ PACKING_CACHE_CODE_IDENTITY_FILES = {
     "packing_planner": "src/packing/planner.py",
     "packing_supervision": "src/packing/supervision.py",
     "supervision_tokens": "src/supervision/tokens.py",
+}
+
+
+class PackingCacheInvalidError(ValueError):
+    """The cache root cannot be consumed under the current strict contract."""
+
+
+_INVALID_CACHE_ERRORS = (
+    OSError,
+    json.JSONDecodeError,
+    pickle.PickleError,
+    ImportError,
+    AttributeError,
+    EOFError,
+    RuntimeError,
+    TypeError,
+    KeyError,
+    ValueError,
+)
+
+_ALLOWED_PICKLE_GLOBALS = {
+    ("src.training.supervised_trainer", "SupervisedMicroStep"),
+    ("src.packing.planner", "PackedSequence"),
+    ("src.packing.planner", "PackedSegment"),
+    ("src.qwen.encoding", "EncodedExample"),
+    ("src.qwen.encoding", "EncodedTokenSpan"),
+    ("src.qwen.images", "QwenImageEncoding"),
+    ("src.qwen.images", "QwenNoResizeImagePlan"),
+    ("pathlib", "PosixPath"),
+    ("src.coordinate_targets", "CoordinateLossTarget"),
+    ("src.qwen.positions", "QwenPositionInputs"),
+    ("src.qwen.positions", "QwenPositionBoundaryValidation"),
+    ("src.qwen.positions", "QwenPositionSegmentSummary"),
+    ("src.supervision.tokens", "TokenSequence"),
+    ("src.supervision.tokens", "TokenAtom"),
+    ("src.supervision.tokens", "TokenSpan"),
+    ("src.losses.vocab", "TokenVocabularyGroups"),
+    ("torch._utils", "_rebuild_tensor_v2"),
+    ("collections", "OrderedDict"),
 }
 
 
@@ -125,11 +172,20 @@ def manifest_path(cache_dir: str | Path) -> Path:
     return Path(cache_dir) / PACKING_CACHE_MANIFEST
 
 
-def load_cache_manifest(cache_dir: str | Path) -> dict[str, Any]:
-    with manifest_path(cache_dir).open("r", encoding="utf-8") as handle:
-        manifest = json.load(handle)
-    _validate_manifest(manifest, cache_dir=Path(cache_dir))
-    return manifest
+def load_cache_manifest(
+    cache_dir: str | Path, *, expected_fingerprint: str
+) -> dict[str, Any]:
+    try:
+        manifest = _load_validated_manifest(
+            Path(cache_dir), expected_fingerprint=expected_fingerprint
+        )
+        for _start, _chunk_steps in _iter_validated_chunks(Path(cache_dir), manifest):
+            pass
+        return manifest
+    except PackingCacheInvalidError:
+        raise
+    except _INVALID_CACHE_ERRORS as exc:
+        raise PackingCacheInvalidError(f"invalid packing cache: {exc}") from exc
 
 
 def cache_is_complete(cache_dir: str | Path, *, fingerprint: str) -> bool:
@@ -137,8 +193,10 @@ def cache_is_complete(cache_dir: str | Path, *, fingerprint: str) -> bool:
     if not path.exists():
         return False
     try:
-        manifest = load_cache_manifest(cache_dir)
-    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+        manifest = load_cache_manifest(
+            cache_dir, expected_fingerprint=fingerprint
+        )
+    except PackingCacheInvalidError:
         return False
     return (
         manifest.get("version") == PACKING_CACHE_VERSION
@@ -154,31 +212,66 @@ def write_micro_step_cache(
     fingerprint: str,
     determinants: Mapping[str, Any],
     chunk_size: int = 512,
-    materialization: Mapping[str, Any] | None = None,
+    materialization: Mapping[str, Any],
     augmentation: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     if chunk_size <= 0:
         raise ValueError("chunk_size must be positive")
     materialization_payload = _coerce_materialization(materialization)
+    if not micro_steps:
+        raise ValueError("packing cache must contain at least one micro-step")
+    if not isinstance(fingerprint, str) or not fingerprint:
+        raise ValueError("fingerprint must be a non-empty string")
+    if not isinstance(determinants, Mapping):
+        raise ValueError("determinants must be a mapping")
+    if fingerprint != _determinant_fingerprint(determinants):
+        raise ValueError("fingerprint must match canonical determinants")
+    augmentation_payload = _validate_augmentation_receipt(augmentation)
     root = Path(cache_dir)
-    chunks_dir = root / PACKING_CACHE_CHUNK_DIR
-    chunks_dir.mkdir(parents=True, exist_ok=True)
-    chunks: list[dict[str, Any]] = []
-    for chunk_index, start in enumerate(range(0, len(micro_steps), chunk_size)):
-        end = min(start + chunk_size, len(micro_steps))
-        chunk_name = f"chunk-{chunk_index:05d}.pkl"
-        chunk_path = chunks_dir / chunk_name
-        with chunk_path.open("wb") as handle:
-            pickle.dump(tuple(micro_steps[start:end]), handle, protocol=pickle.HIGHEST_PROTOCOL)
-        chunks.append(
-            {
-                "path": f"{PACKING_CACHE_CHUNK_DIR}/{chunk_name}",
-                "start": start,
-                "end": end,
-                "count": end - start,
-                "sha256": _file_sha256(chunk_path),
-            }
-        )
+    root.parent.mkdir(parents=True, exist_ok=True)
+    # Serialize mutations by physical cache root, not only by semantic identity.
+    # The canonical pipeline uses one root per fingerprint, while this lower-level
+    # API also remains safe if a direct caller reuses a root for new determinants.
+    lock_path = root.parent / f".{root.name}.lock"
+    with lock_path.open("a+b") as lock_handle:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+        try:
+            if root.exists():
+                try:
+                    existing_manifest = load_cache_manifest(
+                        root, expected_fingerprint=fingerprint
+                    )
+                    if existing_manifest["determinants"] == dict(determinants):
+                        return existing_manifest
+                except PackingCacheInvalidError:
+                    pass
+            _cleanup_stale_cache_siblings(root)
+            return _publish_micro_step_cache(
+                root,
+                micro_steps,
+                fingerprint=fingerprint,
+                determinants=determinants,
+                chunk_size=chunk_size,
+                materialization=materialization_payload,
+                augmentation=augmentation_payload,
+            )
+        finally:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+
+
+def _publish_micro_step_cache(
+    root: Path,
+    micro_steps: Sequence[SupervisedMicroStep],
+    *,
+    fingerprint: str,
+    determinants: Mapping[str, Any],
+    chunk_size: int,
+    materialization: Mapping[str, Any],
+    augmentation: Mapping[str, Any],
+) -> dict[str, Any]:
+    token = f"{os.getpid()}-{uuid.uuid4().hex}"
+    stage = root.with_name(f".{root.name}.stage-{token}")
+    backup = root.with_name(f".{root.name}.backup-{token}")
     manifest = {
         "version": PACKING_CACHE_VERSION,
         "status": "complete",
@@ -186,18 +279,60 @@ def write_micro_step_cache(
         "determinants": dict(determinants),
         "micro_step_count": len(micro_steps),
         "chunk_size": chunk_size,
-        "chunks": chunks,
-        "materialization": materialization_payload,
+        "chunks": [],
+        "materialization": dict(materialization),
+        "augmentation": dict(augmentation),
     }
-    if augmentation is not None:
-        manifest["augmentation"] = dict(augmentation)
-    _atomic_write_json(manifest_path(root), manifest)
-    return manifest
+    try:
+        chunks_dir = stage / PACKING_CACHE_CHUNK_DIR
+        chunks_dir.mkdir(parents=True)
+        for chunk_index, start in enumerate(range(0, len(micro_steps), chunk_size)):
+            end = min(start + chunk_size, len(micro_steps))
+            chunk_name = f"chunk-{chunk_index:05d}.pkl"
+            chunk_path = chunks_dir / chunk_name
+            with chunk_path.open("wb") as handle:
+                pickle.dump(
+                    tuple(micro_steps[start:end]),
+                    handle,
+                    protocol=pickle.HIGHEST_PROTOCOL,
+                )
+            manifest["chunks"].append(
+                {
+                    "path": f"{PACKING_CACHE_CHUNK_DIR}/{chunk_name}",
+                    "start": start,
+                    "end": end,
+                    "count": end - start,
+                    "sha256": _file_sha256(chunk_path),
+                }
+            )
+        # The complete manifest is the final write inside the isolated stage.
+        _atomic_write_json(manifest_path(stage), manifest)
+        load_cache_manifest(stage, expected_fingerprint=fingerprint)
+        if root.exists():
+            os.replace(root, backup)
+        try:
+            os.replace(stage, root)
+        except Exception:
+            if backup.exists() and not root.exists():
+                os.replace(backup, root)
+            raise
+        if backup.exists():
+            shutil.rmtree(backup)
+        return manifest
+    finally:
+        if stage.exists():
+            shutil.rmtree(stage)
+        if backup.exists():
+            if not root.exists():
+                os.replace(backup, root)
+            else:
+                shutil.rmtree(backup)
 
 
 def load_rank_micro_steps_from_cache(
     cache_dir: str | Path,
     *,
+    expected_fingerprint: str,
     schedule: ResolvedStepSchedule,
     rank: int,
     world_size: int,
@@ -208,46 +343,48 @@ def load_rank_micro_steps_from_cache(
         raise ValueError("rank must be inside world_size")
     if schedule.runtime_batch.world_size != world_size:
         raise ValueError("world_size must match schedule runtime_batch")
-    manifest = load_cache_manifest(cache_dir)
-    micro_step_count = int(manifest["micro_step_count"])
-    indices = _rank_local_pack_indices(
-        schedule,
-        rank=rank,
-        world_size=world_size,
-        micro_step_count=micro_step_count,
-    )
-    required = set(indices)
-    loaded: dict[int, SupervisedMicroStep] = {}
-    root = Path(cache_dir)
-    for chunk in manifest["chunks"]:
-        start = int(chunk["start"])
-        end = int(chunk["end"])
-        if not any(start <= index < end for index in required):
-            continue
-        chunk_path = root / str(chunk["path"])
-        _validate_chunk_sha256(chunk_path, expected_sha256=str(chunk["sha256"]))
-        with chunk_path.open("rb") as handle:
-            chunk_steps = pickle.load(handle)
-        for offset, micro_step in enumerate(chunk_steps):
-            absolute_index = start + offset
-            if absolute_index in required:
-                loaded[absolute_index] = micro_step
-    return tuple(loaded[index] for index in indices)
+    try:
+        root = Path(cache_dir)
+        manifest = _load_validated_manifest(
+            root, expected_fingerprint=expected_fingerprint
+        )
+        micro_step_count = int(manifest["micro_step_count"])
+        indices = _rank_local_pack_indices(
+            schedule,
+            rank=rank,
+            world_size=world_size,
+            micro_step_count=micro_step_count,
+        )
+        required = set(indices)
+        selected: dict[int, SupervisedMicroStep] = {}
+        for start, chunk_steps in _iter_validated_chunks(root, manifest):
+            for offset, micro_step in enumerate(chunk_steps):
+                absolute_index = start + offset
+                if absolute_index in required:
+                    selected[absolute_index] = micro_step
+        return tuple(selected[index] for index in indices)
+    except PackingCacheInvalidError:
+        raise
+    except _INVALID_CACHE_ERRORS as exc:
+        raise PackingCacheInvalidError(f"invalid packing cache: {exc}") from exc
 
 
-def load_all_micro_steps_from_cache(cache_dir: str | Path) -> tuple[SupervisedMicroStep, ...]:
-    manifest = load_cache_manifest(cache_dir)
-    loaded: list[SupervisedMicroStep] = []
-    root = Path(cache_dir)
-    for chunk in manifest["chunks"]:
-        chunk_path = root / str(chunk["path"])
-        _validate_chunk_sha256(chunk_path, expected_sha256=str(chunk["sha256"]))
-        with chunk_path.open("rb") as handle:
-            chunk_steps = pickle.load(handle)
-        loaded.extend(chunk_steps)
-    if len(loaded) != int(manifest["micro_step_count"]):
-        raise ValueError("packing cache load did not cover every micro-step")
-    return tuple(loaded)
+def load_all_micro_steps_from_cache(
+    cache_dir: str | Path, *, expected_fingerprint: str
+) -> tuple[SupervisedMicroStep, ...]:
+    try:
+        root = Path(cache_dir)
+        manifest = _load_validated_manifest(
+            root, expected_fingerprint=expected_fingerprint
+        )
+        loaded: list[SupervisedMicroStep] = []
+        for _start, chunk_steps in _iter_validated_chunks(root, manifest):
+            loaded.extend(chunk_steps)
+        return tuple(loaded)
+    except PackingCacheInvalidError:
+        raise
+    except _INVALID_CACHE_ERRORS as exc:
+        raise PackingCacheInvalidError(f"invalid packing cache: {exc}") from exc
 
 
 def _rank_local_pack_indices(
@@ -280,55 +417,214 @@ def _rank_local_pack_indices(
     return tuple(indices)
 
 
-def _validate_manifest(manifest: dict[str, Any], *, cache_dir: Path) -> None:
+def _validate_manifest(
+    manifest: dict[str, Any], *, cache_dir: Path, expected_fingerprint: str
+) -> None:
+    if not isinstance(expected_fingerprint, str) or not expected_fingerprint:
+        raise ValueError("expected_fingerprint must be a non-empty string")
     if manifest.get("version") != PACKING_CACHE_VERSION:
         raise ValueError("unsupported packing cache version")
     if manifest.get("status") != "complete":
         raise ValueError("packing cache manifest is not complete")
-    count = int(manifest["micro_step_count"])
-    if count <= 0:
-        raise ValueError("packing cache must contain at least one micro-step")
+    if manifest.get("fingerprint") != expected_fingerprint:
+        raise ValueError("packing cache fingerprint does not match expected fingerprint")
+    if not isinstance(manifest.get("determinants"), Mapping):
+        raise ValueError("packing cache determinants must be a mapping")
+    if manifest["fingerprint"] != _determinant_fingerprint(manifest["determinants"]):
+        raise ValueError("packing cache fingerprint does not match canonical determinants")
+    if not isinstance(manifest.get("materialization"), Mapping):
+        raise ValueError("packing cache materialization must be a mapping")
+    _coerce_materialization(manifest["materialization"])
+    _validate_augmentation_receipt(manifest.get("augmentation"))
+    count = _positive_int(manifest.get("micro_step_count"), field="micro_step_count")
+    _positive_int(manifest.get("chunk_size"), field="chunk_size")
     chunks = manifest.get("chunks")
     if not isinstance(chunks, list) or not chunks:
         raise ValueError("packing cache manifest must contain chunks")
-    materialization = manifest.get("materialization")
-    if materialization is not None:
-        _coerce_materialization(materialization)
     expected_start = 0
     for chunk in chunks:
-        start = int(chunk["start"])
-        end = int(chunk["end"])
+        if not isinstance(chunk, Mapping):
+            raise ValueError("packing cache chunk declarations must be mappings")
+        start = _nonnegative_int(chunk.get("start"), field="chunk start")
+        end = _positive_int(chunk.get("end"), field="chunk end")
         count_from_range = end - start
         if start != expected_start:
             raise ValueError("packing cache chunks must be contiguous")
-        if count_from_range <= 0 or int(chunk["count"]) != count_from_range:
+        if count_from_range <= 0 or _positive_int(
+            chunk.get("count"), field="chunk count"
+        ) != count_from_range:
             raise ValueError("packing cache chunk count must match range")
         expected_start = end
-        path = cache_dir / str(chunk["path"])
+        path = _safe_chunk_path(cache_dir, chunk.get("path"))
         if not path.exists():
             raise ValueError(f"packing cache chunk is missing: {path}")
         sha256 = chunk.get("sha256")
-        if not isinstance(sha256, str) or len(sha256) != 64:
-            raise ValueError("packing cache chunk must record sha256")
+        if not isinstance(sha256, str) or re.fullmatch(r"[0-9a-f]{64}", sha256) is None:
+            raise ValueError("packing cache chunk must record a valid sha256")
     if expected_start != count:
         raise ValueError("packing cache chunks must cover every micro-step")
 
 
-def _coerce_materialization(
-    materialization: Mapping[str, Any] | None,
+def _load_validated_manifest(
+    cache_dir: Path, *, expected_fingerprint: str
 ) -> dict[str, Any]:
-    if materialization is None:
-        return build_packing_cache_materialization()
-    if not isinstance(materialization, Mapping):
-        raise ValueError("packing cache materialization must be a mapping")
-    strategy = materialization.get("strategy", PACKING_CACHE_MATERIALIZATION_STRATEGY)
-    workers = materialization.get("workers")
-    if workers is None:
-        raise ValueError("packing cache materialization must record workers")
+    with manifest_path(cache_dir).open("r", encoding="utf-8") as handle:
+        manifest = json.load(handle)
+    if not isinstance(manifest, dict):
+        raise ValueError("packing cache manifest must be a mapping")
+    _validate_manifest(
+        manifest,
+        cache_dir=cache_dir,
+        expected_fingerprint=expected_fingerprint,
+    )
+    return manifest
+
+
+def _iter_validated_chunks(
+    cache_dir: Path, manifest: Mapping[str, Any]
+) -> Iterator[tuple[int, tuple[SupervisedMicroStep, ...]]]:
+    for chunk in manifest["chunks"]:
+        chunk_path = _safe_chunk_path(cache_dir, chunk["path"])
+        _validate_chunk_sha256(chunk_path, expected_sha256=chunk["sha256"])
+        try:
+            with chunk_path.open("rb") as handle:
+                chunk_steps = _RestrictedCacheUnpickler(handle).load()
+        except _INVALID_CACHE_ERRORS as exc:
+            raise ValueError(f"packing cache chunk payload is unreadable: {chunk_path}") from exc
+        if not isinstance(chunk_steps, tuple):
+            raise ValueError("packing cache chunk payload must be a tuple")
+        if len(chunk_steps) != chunk["count"]:
+            raise ValueError("packing cache chunk payload length must match declared count")
+        if not all(isinstance(step, SupervisedMicroStep) for step in chunk_steps):
+            raise ValueError("packing cache chunk payload must contain supervised micro-steps")
+        yield chunk["start"], chunk_steps
+
+
+def _safe_chunk_path(cache_dir: Path, value: Any) -> Path:
+    if not isinstance(value, str) or not value:
+        raise ValueError("packing cache chunk path must be a non-empty relative path")
+    relative = Path(value)
+    if relative.is_absolute():
+        raise ValueError("packing cache chunk path must be relative")
+    root = cache_dir.resolve()
+    path = (root / relative).resolve()
+    if path == root or root not in path.parents:
+        raise ValueError("packing cache chunk path must stay inside cache root")
+    return path
+
+
+def _positive_int(value: Any, *, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError(f"packing cache {field} must be a positive integer")
+    return value
+
+
+def _nonnegative_int(value: Any, *, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"packing cache {field} must be a non-negative integer")
+    return value
+
+
+def _coerce_materialization(
+    materialization: Mapping[str, Any],
+) -> dict[str, Any]:
+    if not isinstance(materialization, Mapping) or not materialization:
+        raise ValueError("packing cache materialization must be a non-empty mapping")
+    strategy = materialization.get("strategy")
+    if not isinstance(strategy, str) or not strategy:
+        raise ValueError("packing cache materialization must record a non-empty strategy")
+    workers = _positive_int(materialization.get("workers"), field="materialization workers")
     return build_packing_cache_materialization(
         workers=workers,
         strategy=strategy,
     )
+
+
+def _validate_augmentation_receipt(value: Any) -> dict[str, Any]:
+    if not isinstance(value, Mapping) or not value:
+        raise ValueError("packing cache augmentation must be a non-empty mapping")
+    required = {
+        "split",
+        "mode",
+        "policy",
+        "enabled",
+        "seed",
+        "input_example_count",
+        "output_example_count",
+        "presentation_count",
+        "object_ordering",
+    }
+    missing = required.difference(value)
+    if missing:
+        raise ValueError(
+            f"packing cache augmentation is missing fields: {sorted(missing)}"
+        )
+    for field in ("split", "mode", "policy", "object_ordering"):
+        if not isinstance(value[field], str) or not value[field]:
+            raise ValueError(f"packing cache augmentation {field} must be non-empty")
+    if not isinstance(value["enabled"], bool):
+        raise ValueError("packing cache augmentation enabled must be boolean")
+    if isinstance(value["seed"], bool) or not isinstance(value["seed"], int):
+        raise ValueError("packing cache augmentation seed must be an integer")
+    for field in ("input_example_count", "output_example_count", "presentation_count"):
+        _nonnegative_int(value[field], field=f"augmentation {field}")
+    if value["enabled"]:
+        enabled_fields = {
+            "policy_version",
+            "horizontal_prob",
+            "vertical_prob",
+            "transform_counts",
+            "random_object_order_presentations",
+        }
+        missing_enabled = enabled_fields.difference(value)
+        if missing_enabled:
+            raise ValueError(
+                "packing cache enabled augmentation is missing fields: "
+                f"{sorted(missing_enabled)}"
+            )
+        if not isinstance(value["policy_version"], str) or not value["policy_version"]:
+            raise ValueError("packing cache augmentation policy_version must be non-empty")
+        for field in ("horizontal_prob", "vertical_prob"):
+            probability = value[field]
+            if isinstance(probability, bool) or not isinstance(probability, (int, float)):
+                raise ValueError(f"packing cache augmentation {field} must be numeric")
+            if probability < 0.0 or probability > 1.0:
+                raise ValueError(f"packing cache augmentation {field} must be in [0, 1]")
+        if not isinstance(value["transform_counts"], Mapping):
+            raise ValueError("packing cache augmentation transform_counts must be a mapping")
+        if not isinstance(value["random_object_order_presentations"], list):
+            raise ValueError(
+                "packing cache augmentation random-order receipt must be a list"
+            )
+    return dict(value)
+
+
+def _safe_torch_load_from_bytes(payload: bytes) -> Any:
+    return torch.load(io.BytesIO(payload), weights_only=True)
+
+
+class _RestrictedCacheUnpickler(pickle.Unpickler):
+    def find_class(self, module: str, name: str) -> Any:
+        if (module, name) == ("torch.storage", "_load_from_bytes"):
+            return _safe_torch_load_from_bytes
+        if (module, name) not in _ALLOWED_PICKLE_GLOBALS:
+            raise pickle.UnpicklingError(
+                f"packing cache pickle global is forbidden: {module}.{name}"
+            )
+        imported = importlib.import_module(module)
+        return getattr(imported, name)
+
+    def persistent_load(self, pid: Any) -> Any:
+        raise pickle.UnpicklingError("packing cache pickle persistent IDs are forbidden")
+
+
+def _cleanup_stale_cache_siblings(root: Path) -> None:
+    for prefix in (f".{root.name}.stage-", f".{root.name}.backup-"):
+        for residue in root.parent.glob(f"{prefix}*"):
+            if residue.is_dir() and not residue.is_symlink():
+                shutil.rmtree(residue)
+            else:
+                residue.unlink()
 
 
 def _validate_chunk_sha256(path: Path, *, expected_sha256: str) -> None:
@@ -403,6 +699,10 @@ def _canonical_json(payload: Mapping[str, Any]) -> str:
     )
 
 
+def _determinant_fingerprint(determinants: Mapping[str, Any]) -> str:
+    return hashlib.sha256(_canonical_json(determinants).encode("utf-8")).hexdigest()
+
+
 def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
@@ -428,6 +728,7 @@ def _file_sha256(path: Path) -> str:
 
 __all__ = [
     "DEFAULT_PACK_CACHE_MATERIALIZATION_WORKERS",
+    "PackingCacheInvalidError",
     "PACKING_CACHE_MANIFEST",
     "PACKING_CACHE_MATERIALIZATION_STRATEGY",
     "PACKING_CACHE_VERSION",

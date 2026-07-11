@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import concurrent.futures
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from datetime import UTC, datetime
 import hashlib
 import json
@@ -72,11 +72,11 @@ from src.training.schedule import ResolvedStepSchedule, resolve_planned_step_sch
 from src.training.pack_cache import (
     DEFAULT_PACK_CACHE_MATERIALIZATION_WORKERS,
     PACKING_CACHE_MATERIALIZATION_STRATEGY,
+    PackingCacheInvalidError,
     build_packing_cache_materialization,
     build_packing_cache_determinants,
     build_packing_cache_fingerprint,
     cache_dir_for_fingerprint,
-    cache_is_complete,
     load_all_micro_steps_from_cache,
     load_cache_manifest,
     load_rank_micro_steps_from_cache,
@@ -433,6 +433,7 @@ def _run_initialized_training(
         components,
         vocab_groups,
         repo_root=repo_root,
+        accelerator=accelerator,
         rank=int(accelerator.process_index),
     )
     schedule = resolve_planned_step_schedule(
@@ -446,6 +447,7 @@ def _run_initialized_training(
         _bind_cache_materialization(writer, "train", train_cache)
     train_micro_steps = load_rank_micro_steps_from_cache(
         train_cache["cache_dir"],
+        expected_fingerprint=str(train_cache["fingerprint"]),
         schedule=schedule,
         rank=int(accelerator.process_index),
         world_size=int(accelerator.num_processes),
@@ -499,23 +501,16 @@ def _run_initialized_training(
         components,
         vocab_groups,
         repo_root=repo_root,
+        accelerator=accelerator,
         rank=int(accelerator.process_index),
     )
-    if eval_cache is None and _explicit_eval_reuses_train_dataset(config):
-        # Eval is intentionally replicated on every rank.  Reusing the rank-local
-        # training shard would make the canonical rank-zero counts local and turn
-        # the all-rank scalar mean into an unequally weighted reduction.
-        eval_micro_steps = load_all_micro_steps_from_cache(train_cache["cache_dir"])
-        eval_micro_steps = _attach_image_processors_to_micro_steps(
-            eval_micro_steps,
-            image_processor=_qwen_image_processor(components),
-        )
-        if writer is not None:
-            _bind_cache_materialization(writer, "eval", train_cache)
-    elif eval_cache is None:
+    if eval_cache is None:
         eval_micro_steps = train_micro_steps
     else:
-        eval_micro_steps = load_all_micro_steps_from_cache(eval_cache["cache_dir"])
+        eval_micro_steps = load_all_micro_steps_from_cache(
+            eval_cache["cache_dir"],
+            expected_fingerprint=str(eval_cache["fingerprint"]),
+        )
         eval_micro_steps = _attach_image_processors_to_micro_steps(
             eval_micro_steps,
             image_processor=_qwen_image_processor(components),
@@ -612,6 +607,7 @@ def _resolve_or_build_train_pack_cache(
     vocab_groups: Any,
     *,
     repo_root: Path,
+    accelerator: Any,
     rank: int = 0,
 ) -> dict[str, Any]:
     return _resolve_or_build_pack_cache(
@@ -621,6 +617,7 @@ def _resolve_or_build_train_pack_cache(
         repo_root=repo_root,
         dataset=config.data.train,
         split=TRAIN_SPLIT,
+        accelerator=accelerator,
         rank=rank,
         build_micro_steps=lambda workers: build_base_micro_steps(
             config,
@@ -637,11 +634,10 @@ def _resolve_eval_pack_cache(
     vocab_groups: Any,
     *,
     repo_root: Path,
+    accelerator: Any,
     rank: int = 0,
 ) -> dict[str, Any] | None:
     if config.data.eval is None:
-        return None
-    if _explicit_eval_reuses_train_dataset(config):
         return None
     return _resolve_or_build_pack_cache(
         config,
@@ -650,6 +646,7 @@ def _resolve_eval_pack_cache(
         repo_root=repo_root,
         dataset=config.data.eval,
         split="eval.forward",
+        accelerator=accelerator,
         rank=rank,
         build_micro_steps=lambda workers: _build_micro_steps_for_dataset(
             config,
@@ -670,49 +667,109 @@ def _resolve_or_build_pack_cache(
     repo_root: Path,
     dataset: Any,
     split: str,
+    accelerator: Any,
     rank: int = 0,
     build_micro_steps: Callable[[int], Sequence[SupervisedMicroStep]],
     materialization_workers: int | None = None,
 ) -> dict[str, Any]:
-    fingerprint = build_packing_cache_fingerprint(
-        config,
-        components,
-        dataset=dataset,
-        split=split,
-    )
-    determinants = build_packing_cache_determinants(
-        config,
-        components,
-        dataset=dataset,
-        split=split,
-    )
     cache_root = Path(
         os.environ.get(
             "COORDEXP_SWIFT_PACK_CACHE_ROOT",
             str(repo_root / ".cache" / "coordexp_swift" / "packing"),
         )
     )
-    resolved_materialization_workers = _resolve_pack_cache_materialization_workers(
-        materialization_workers
+    cache_complete_before: bool | None = None
+    status: dict[str, Any] | None = None
+    manifest: dict[str, Any] | None = None
+    fingerprint: str | None = None
+    cache_dir: Path | None = None
+    if rank == 0:
+        try:
+            fingerprint = build_packing_cache_fingerprint(
+                config,
+                components,
+                dataset=dataset,
+                split=split,
+            )
+            determinants = build_packing_cache_determinants(
+                config,
+                components,
+                dataset=dataset,
+                split=split,
+            )
+            resolved_materialization_workers = (
+                _resolve_pack_cache_materialization_workers(materialization_workers)
+            )
+            materialization = build_packing_cache_materialization(
+                workers=resolved_materialization_workers,
+                strategy=PACKING_CACHE_MATERIALIZATION_STRATEGY,
+            )
+            cache_dir = cache_dir_for_fingerprint(cache_root, fingerprint)
+            try:
+                manifest = load_cache_manifest(
+                    cache_dir, expected_fingerprint=fingerprint
+                )
+                cache_complete_before = True
+            except PackingCacheInvalidError:
+                cache_complete_before = False
+                micro_steps = tuple(build_micro_steps(resolved_materialization_workers))
+                manifest = write_micro_step_cache(
+                    cache_dir,
+                    micro_steps,
+                    fingerprint=fingerprint,
+                    determinants=determinants,
+                    materialization=materialization,
+                    augmentation=_augmentation_receipt_from_micro_steps(micro_steps),
+                )
+            status = {
+                "ok": True,
+                "build_status": "hit" if cache_complete_before else "built",
+                "fingerprint": fingerprint,
+                "cache_dir": str(cache_dir),
+            }
+        except BaseException as exc:
+            status = {
+                "ok": False,
+                "error_type": type(exc).__name__,
+                "error": str(exc)[:1024],
+                "fingerprint": fingerprint,
+                "cache_dir": None if cache_dir is None else str(cache_dir),
+            }
+    shared = _share_pack_cache_resolution_status(
+        accelerator=accelerator,
+        rank=rank,
+        status=status,
     )
-    materialization = build_packing_cache_materialization(
-        workers=resolved_materialization_workers,
-        strategy=PACKING_CACHE_MATERIALIZATION_STRATEGY,
-    )
-    cache_dir = cache_dir_for_fingerprint(cache_root, fingerprint)
-    cache_complete_before = cache_is_complete(cache_dir, fingerprint=fingerprint)
-    if rank == 0 and not cache_complete_before:
-        micro_steps = tuple(build_micro_steps(resolved_materialization_workers))
-        write_micro_step_cache(
-            cache_dir,
-            micro_steps,
-            fingerprint=fingerprint,
-            determinants=determinants,
-            materialization=materialization,
-            augmentation=_augmentation_receipt_from_micro_steps(micro_steps),
+    if not bool(shared.get("ok")):
+        raise RuntimeContractError(
+            "rank zero failed to resolve packing cache",
+            code="training.pack_cache_resolution_failed",
+            context={
+                "cache_dir": str(shared.get("cache_dir", cache_root)),
+                "fingerprint": str(shared.get("fingerprint", "unknown")),
+                "error_type": str(shared.get("error_type", "unknown")),
+                "error": str(shared.get("error", "unknown error")),
+            },
         )
-    _wait_for_pack_cache(cache_dir, fingerprint=fingerprint)
-    manifest = load_cache_manifest(cache_dir)
+    fingerprint = str(shared.get("fingerprint", ""))
+    cache_dir_value = shared.get("cache_dir")
+    if not fingerprint or not isinstance(cache_dir_value, str) or not cache_dir_value:
+        raise RuntimeContractError(
+            "packing cache resolution returned an incomplete shared descriptor",
+            code="training.pack_cache_resolution_failed",
+            context={"rank": rank},
+        )
+    cache_dir = Path(cache_dir_value)
+    if rank != 0:
+        manifest = load_cache_manifest(
+            cache_dir, expected_fingerprint=fingerprint
+        )
+    if manifest is None:
+        raise RuntimeContractError(
+            "packing cache resolution returned no manifest",
+            code="training.pack_cache_resolution_failed",
+            context={"cache_dir": str(cache_dir), "fingerprint": fingerprint},
+        )
     cache_manifest_path = manifest_path(cache_dir)
     return {
         "cache_dir": cache_dir,
@@ -723,17 +780,12 @@ def _resolve_or_build_pack_cache(
         "chunk_size": int(manifest["chunk_size"]),
         "status": manifest["status"],
         "build_status": (
-            "hit"
-            if cache_complete_before
-            else "built"
-            if rank == 0
-            else "waited"
+            "waited" if rank != 0 else str(shared["build_status"])
         ),
         "manifest_path": cache_manifest_path,
         "manifest_sha256": _file_sha256(cache_manifest_path),
         "determinants_sha256": _sha256_json(manifest["determinants"]),
         "chunk_sha256s": [str(chunk["sha256"]) for chunk in manifest["chunks"]],
-        "determinants": determinants,
         "materialization": manifest.get("materialization"),
         "augmentation": manifest.get("augmentation"),
     }
@@ -747,7 +799,6 @@ def _bind_cache_materialization(
         cache_format_version=str(cache["format_version"]),
         semantic_fingerprint=str(cache["fingerprint"]),
         determinant_digest=str(cache["determinants_sha256"]),
-        cache_path=str(cache["cache_dir"]),
     )
 
 
@@ -825,31 +876,30 @@ def _qwen_image_processor(components: Any) -> Any:
     return image_processor
 
 
-def _wait_for_pack_cache(
-    cache_dir: Path,
-    *,
-    fingerprint: str,
-    timeout_seconds: float = 7200.0,
-    poll_seconds: float = 5.0,
-) -> None:
-    import time
-
-    deadline = time.monotonic() + timeout_seconds
-    path = manifest_path(cache_dir)
-    while time.monotonic() < deadline:
-        if cache_is_complete(cache_dir, fingerprint=fingerprint):
-            return
-        time.sleep(poll_seconds)
-    raise RuntimeContractError(
-        "timed out waiting for train packing cache",
-        code="training.pack_cache_timeout",
-        context={
-            "cache_dir": str(cache_dir),
-            "manifest_path": str(path),
-            "fingerprint": fingerprint,
-            "timeout_seconds": timeout_seconds,
-        },
-    )
+def _share_pack_cache_resolution_status(
+    *, accelerator: Any, rank: int, status: Mapping[str, Any] | None
+) -> dict[str, Any]:
+    values: list[Any] = [dict(status) if status is not None else None]
+    if int(accelerator.num_processes) > 1:
+        broadcast = getattr(accelerator, "broadcast_object_list", None)
+        if callable(broadcast):
+            broadcast(values, from_process=0)
+        elif broadcast_object_list is not None:
+            broadcast_object_list(values, from_process=0)
+        else:
+            raise RuntimeContractError(
+                "packing cache resolution handshake requires accelerate",
+                code="training.pack_cache_resolution_failed",
+                context={"rank": rank},
+            )
+    shared = values[0]
+    if not isinstance(shared, Mapping):
+        raise RuntimeContractError(
+            "packing cache resolution returned an invalid shared descriptor",
+            code="training.pack_cache_resolution_failed",
+            context={"rank": rank},
+        )
+    return dict(shared)
 
 
 def _build_encoded_examples_for_dataset(
@@ -1245,49 +1295,6 @@ def _final_handler(
     return handle
 
 
-def _pack_plan_artifact(
-    micro_steps: Sequence[SupervisedMicroStep],
-    *,
-    schedule: ResolvedStepSchedule,
-    cache: Mapping[str, Any] | None = None,
-) -> dict[str, Any]:
-    packs_per_epoch = (
-        len(micro_steps)
-        if cache is None
-        else int(cache["micro_step_count"])
-    )
-    return {
-        "packs_per_epoch": packs_per_epoch,
-        "cache": None
-        if cache is None
-        else {
-            "cache_dir": str(cache["cache_dir"]),
-            "fingerprint": cache["fingerprint"],
-            "global_micro_step_count": cache["micro_step_count"],
-            "chunk_count": cache["chunk_count"],
-            "chunk_size": cache["chunk_size"],
-            "status": cache["status"],
-            "build_status": cache.get("build_status"),
-            "manifest_path": str(cache["manifest_path"]),
-            "manifest_sha256": cache["manifest_sha256"],
-            "determinants_sha256": cache["determinants_sha256"],
-            "chunk_sha256s": list(cache["chunk_sha256s"]),
-            "materialization": cache.get("materialization"),
-            "augmentation": cache.get("augmentation"),
-        },
-        "actual_pack_presentations": schedule.actual_pack_presentations,
-        "tail_fill_pack_count": schedule.tail_fill_pack_count,
-        "rank_local_micro_step_count": len(micro_steps),
-        "rank_local_micro_step_preview": [
-            {
-                "metadata": dict(micro_step.metadata or {}),
-                "pack": _artifact_dict(micro_step.pack),
-            }
-            for micro_step in micro_steps[:8]
-        ],
-    }
-
-
 def _file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -1417,15 +1424,6 @@ def _encoded_examples_for_pack(
         for example in encoded_examples
     }
     return tuple(examples_by_id[segment.example_id] for segment in pack.segments)
-
-
-def _explicit_eval_reuses_train_dataset(config: Any) -> bool:
-    if config.data.eval is None:
-        return False
-    return (
-        Path(config.data.eval.path).resolve() == Path(config.data.train.path).resolve()
-        and config.data.eval.sample_limit == config.data.train.sample_limit
-    )
 
 
 def _object_order_seed(config: Any, example_id: str) -> int | None:
@@ -1566,15 +1564,3 @@ def _model_and_base_model_owners(model: Any) -> tuple[tuple[str, Any], ...]:
 
 def _run_id(run_name: str, fingerprint: str) -> str:
     return f"{run_name}-{fingerprint[:12]}"
-
-
-
-def _artifact_dict(value: Any) -> dict[str, Any]:
-    to_artifact_dict = getattr(value, "to_artifact_dict", None)
-    if callable(to_artifact_dict):
-        artifact = to_artifact_dict()
-        if isinstance(artifact, dict):
-            return artifact
-    if isinstance(value, dict):
-        return dict(value)
-    return {"repr": repr(value), "type": type(value).__name__}

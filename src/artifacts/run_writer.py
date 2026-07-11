@@ -149,7 +149,6 @@ class RunWriter:
         cache_format_version: int | str,
         semantic_fingerprint: str,
         determinant_digest: str,
-        cache_path: str | None = None,
     ) -> None:
         if split not in {"train", "eval"}:
             raise ArtifactContractError(
@@ -163,13 +162,11 @@ class RunWriter:
                 code="run_writer.materialization_already_bound",
                 context={"split": split},
             )
-        binding: dict[str, Any] = {
+        binding = {
             "cache_format_version": cache_format_version,
             "semantic_fingerprint": semantic_fingerprint,
             "determinant_digest": determinant_digest,
         }
-        if cache_path is not None:
-            binding["cache_path"] = cache_path
         state["materializations"][split] = binding
         self._write_json_atomic(self.run_path, state)
 

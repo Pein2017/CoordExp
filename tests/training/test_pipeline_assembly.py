@@ -265,7 +265,7 @@ def test_pre_trainer_failure_finalizes_initialized_run_without_masking_original(
     assert state["terminal_error"] == "ValueError: pre-trainer failure"
 
 
-def test_same_dataset_eval_reuse_loads_full_cache_and_binds_eval_materialization(
+def test_same_dataset_eval_resolves_distinct_full_cache_and_binding(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     dataset = SimpleNamespace(path=tmp_path / "shared.jsonl", sample_limit=2)
@@ -291,6 +291,12 @@ def test_same_dataset_eval_reuse_loads_full_cache_and_binds_eval_materialization
         "format_version": "v1", "fingerprint": "fp",
         "determinants_sha256": "digest",
     }
+    eval_cache = {
+        **cache,
+        "cache_dir": tmp_path / "eval-cache",
+        "fingerprint": "eval-fp",
+        "determinants_sha256": "eval-digest",
+    }
     schedule = SimpleNamespace(resolved_max_steps=1, runtime_batch=object())
     bindings: list[tuple[str, dict[str, object]]] = []
     writer = SimpleNamespace(
@@ -298,7 +304,7 @@ def test_same_dataset_eval_reuse_loads_full_cache_and_binds_eval_materialization
         bind_materialization=lambda split, **kwargs: bindings.append((split, kwargs)),
         finalize=lambda **kwargs: None,
     )
-    loaded_full: list[Path] = []
+    loaded_full: list[tuple[Path, str]] = []
 
     monkeypatch.setattr(pipeline, "seed_training_runtime", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline, "load_qwen_components", lambda *args, **kwargs: components)
@@ -323,10 +329,12 @@ def test_same_dataset_eval_reuse_loads_full_cache_and_binds_eval_materialization
     monkeypatch.setattr(pipeline, "build_trainable_surface_receipt", lambda *args, **kwargs: object())
     runtime = SimpleNamespace(model=object(), accelerator=_Accelerator(), is_main_process=True, world_size=1)
     monkeypatch.setattr(pipeline, "TrainRuntime", lambda **kwargs: runtime)
-    monkeypatch.setattr(pipeline, "_resolve_eval_pack_cache", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        pipeline, "_resolve_eval_pack_cache", lambda *args, **kwargs: eval_cache
+    )
 
-    def load_full(path: Path) -> tuple[object, ...]:
-        loaded_full.append(path)
+    def load_full(path: Path, *, expected_fingerprint: str) -> tuple[object, ...]:
+        loaded_full.append((path, expected_fingerprint))
         return full_cache
 
     monkeypatch.setattr(pipeline, "load_all_micro_steps_from_cache", load_full)
@@ -348,7 +356,11 @@ def test_same_dataset_eval_reuse_loads_full_cache_and_binds_eval_materialization
         lifecycle={"completed_steps": 0, "consumed_packs": 0, "checkpoint_event_count": 0, "optimizer_update_status": None, "finite_status": None},
     )
 
-    assert loaded_full == [cache["cache_dir"]]
+    assert loaded_full == [(eval_cache["cache_dir"], "eval-fp")]
     assert full_cache != train_shard
     assert [split for split, _ in bindings] == ["train", "eval"]
-    assert bindings[1][1]["semantic_fingerprint"] == "fp"
+    assert bindings[0][1]["semantic_fingerprint"] == "fp"
+    assert bindings[1][1]["semantic_fingerprint"] == "eval-fp"
+    assert set(bindings[1][1]) == {
+        "cache_format_version", "semantic_fingerprint", "determinant_digest"
+    }
