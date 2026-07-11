@@ -18,35 +18,28 @@ linked OpenSpecs.
 
 | Surface | Owner |
 | --- | --- |
-| Training run directory and metrics | `src/artifacts/manager.py`, `src/artifacts/metric_stream.py` |
-| Training config snapshots | `src/config/writer.py` through the artifact manager |
-| Checkpoint payloads and aliases | `src/artifacts/checkpoints.py` |
-| Checkpoint handoff validation | `src/artifacts/checkpoint_handoff.py` |
+| Training run, resolved config, and logging | `src/artifacts/run_writer.py` (rank zero) |
+| Checkpoint payloads and aliases | `src/artifacts/checkpoints.py` (all-rank synchronization; rank-zero publication) |
 | Inference rows, traces, manifests, and merge | `src/inference/artifacts.py`, `src/inference/merge.py` |
 | Detection evaluation artifacts | `src/eval/detection_consumer.py` |
 
 ## Training artifacts
 
-The run artifact manager initializes a run directory with a `run_manifest.json`
-and then registers outputs as they are produced. Current names include:
+`RunWriter` initializes one shared run directory on rank zero. Current names
+include:
 
-- `run_manifest.json`: run status, config references, metric streams, eval
-  summaries, checkpoints, warnings, and terminal status;
-- `configs/resolved.json` and `configs/resolved.yaml`: resolved config
-  snapshots and their fingerprinted resolution metadata;
-- `metrics/<split>.jsonl`: typed metric stream events;
-- `eval/forward/step-<planned_step_id>.json`: forward-only eval summaries;
-- `resolved_step_schedule.json`: the resolved planned-step schedule;
-- `checkpoints/step-<planned_step_id>/checkpoint.json`: checkpoint metadata;
-- `checkpoints/step-<planned_step_id>/checkpoint_handoff.json`: model and
-  payload identity handoff;
-- `checkpoints/checkpoint-final.json` and
-  `checkpoints/best_acc_top1.json`: aliases when the corresponding selection
-  applies.
+- `run.json`: lifecycle, runtime world size, schedule/counters, warnings, and
+  compact immutable train/eval cache-materialization bindings;
+- `resolved_config.json`: the resolved config and fingerprint evidence;
+- `logging.jsonl`: rank-zero-appended train and eval scalar rows;
+- `checkpoints/step-<step>/adapter/`: standard staged PEFT adapter payload;
+- `checkpoints/step-<step>/special_token_embeddings/`: optional selected-token
+  embedding-delta metadata and safetensor payload;
+- `checkpoints/final.json` and `checkpoints/best.json`: checkpoint selectors.
 
-Checkpoint directories may also contain adapter payload files and selected
-special-token embedding metadata/tensor payloads. The checkpoint metadata
-records these V1 resume fields as `not_saved_v1`:
+The training run does not emit `run_manifest.json`, per-split metric streams,
+per-step receipts, `checkpoint_handoff.json`, or `checkpoint-final` aliases.
+It also does not save these exact-resume surfaces:
 
 - optimizer;
 - scheduler;
@@ -55,8 +48,9 @@ records these V1 resume fields as `not_saved_v1`:
 - iterator;
 - RNG.
 
-Therefore a checkpoint handoff supports identity-checked model composition; it
-does not claim exact training-state resume.
+Therefore checkpoints support explicit adapter-plus-delta model composition;
+they do not claim exact training-state resume. Pack cache v2 is rebuild-only,
+lives outside the run tree, and contributes only compact bindings to `run.json`.
 
 ## Inference artifacts
 
@@ -76,7 +70,7 @@ shard directory:
 - `image_plan.jsonl`: image planning evidence;
 - `summary.json`: terminal inference summary;
 - `run_manifest.json`: artifact names, identity fingerprints, backend and
-  generation policy, handoff readiness, and terminal/benchmark eligibility
+  generation policy, loaded base/adapter/delta identity, and terminal/benchmark eligibility
   fields.
 
 Data-parallel inference also writes shard metadata and a merge plan. The merge
@@ -110,15 +104,15 @@ For a result to be interpreted, retain enough evidence to identify:
 - the template/prompt and generation policy;
 - the backend and trace/scoring policy;
 - raw/scored artifact hashes and row binding;
-- checkpoint handoff identity and evaluator receipt where applicable.
+- explicit loaded base/adapter/delta identity and evaluator receipt where
+  applicable.
 
 Do not reconstruct score-bearing evaluation from a copied prediction file whose
 provenance sidecar or source raw artifact is missing.
 
 ## Stable contract routes
 
-- [training artifacts](../openspec/specs/coordexp-swift-training-artifacts/spec.md)
-- [checkpoint handoff readiness](../openspec/specs/coordexp-swift-checkpoint-handoff-readiness/spec.md)
+- [adapter and selected-token payloads](../openspec/specs/coordexp-swift-adapters-embeddings-optim/spec.md)
 - [inference scoring artifacts](../openspec/specs/coordexp-swift-infer-scoring-artifacts/spec.md)
 - [detection evaluator](../openspec/specs/coordexp-swift-detection-evaluator/spec.md)
 - [inference pipeline](../openspec/specs/coordexp-swift-infer-pipeline/spec.md)

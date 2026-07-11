@@ -15,7 +15,10 @@ the PEFT load result/status. It MUST NOT claim immutable base-config or
 tokenizer-content validation absent from standard adapter metadata. When a
 selected-token embedding delta is configured, runtime MUST additionally
 validate that payload's recorded base-config hash, tokenizer hash, token
-strings/ids, tensor key, shape, dtype, and tied-weight semantics.
+strings/ids, tensor key, shape, source tensor dtype, and tied-weight semantics.
+The declared source dtype MUST match the actual payload tensor. Runtime MAY
+convert that validated tensor into the installed delta-parameter dtype, but it
+MUST record both source and runtime dtypes when they differ.
 
 #### Scenario: Base-only inference
 
@@ -30,6 +33,16 @@ strings/ids, tensor key, shape, dtype, and tied-weight semantics.
 - **THEN** runtime MUST load those concrete payloads directly
 - **AND** MUST record their actual loader identities without resolving
   checkpoint-final or handoff metadata.
+
+#### Scenario: Validated delta dtype conversion
+
+- **WHEN** an embedding-delta payload tensor matches its declared source dtype
+  and every other payload identity, but the installed runtime delta parameter
+  uses a different supported dtype
+- **THEN** runtime MAY convert the validated tensor into the installed dtype
+- **AND** MUST record both the source and runtime tensor dtypes
+- **BUT** a mismatch between the payload tensor and its declared source dtype
+  MUST fail before conversion.
 
 #### Scenario: Wrong adapter base
 

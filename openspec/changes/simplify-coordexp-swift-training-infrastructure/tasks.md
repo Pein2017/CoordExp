@@ -125,11 +125,75 @@ machinery.
 
 ## 4. Wave 4 — Multi-Rank Evidence And Accepted Snapshot
 
-- [ ] 4.1 Refine Wave 4 with exact smoke configs, supported hardware/distributed type, representative existing checkpoint root, expected final file inventory, disk-measurement command, and stop conditions.
-- [ ] 4.2 Run the public-entrypoint multi-rank Accelerate smoke and verify Accelerator-owned rank identity, identical run descriptor on every rank, symmetric checkpoint barriers, synchronized update decisions, exactly one logical run directory/logging stream/checkpoint tree, and no rank-suffixed duplicates.
-- [ ] 4.3 Load a representative existing adapter and optional selected-token delta plus the newly written multi-rank payload through the real inference engine using explicit payload paths and without consulting `checkpoint-final`, `checkpoint.json`, or `checkpoint_handoff.json`; verify exact standard PEFT and embedding-delta identity guarantees claimed by the specs.
-- [ ] 4.4 Compare file count and non-checkpoint bytes against a representative current run family and confirm absence of `metrics/`, `eval/` scalar summaries, `receipts/`, per-step Qwen files, progress streams, full-history training results, handoff manifests, and duplicate rank trees.
-- [ ] 4.5 Run targeted tests followed by the relevant broader training/runtime/artifact/config/inference suite; record exact commands, passes, skipped hardware/evidence, and artifact roots in the change verification evidence.
-- [ ] 4.6 Update current `docs/` architecture, implementation map, artifact/operator guidance, and catalog only after implementation evidence passes; do not add dynamic proposal/progress material under `docs/architecture/`.
-- [ ] 4.7 Run final strict OpenSpec validation, documentation link/catalog checks, `git diff --check`, independent fixed-point engineering and intent/contract audits, and resolve or explicitly gate every P0/P1.
+Wave 4 uses the checked-in
+`configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate2_ebs2_1step.yaml`
+through `python -m src.train`. The evidence launch is two replicated Accelerate
+processes in BF16 on GPUs 0 and 1 of the available A100 80-GiB host, with
+`PYTHONPATH` set to this worktree and `--multi_gpu --num_processes 2
+--mixed_precision bf16`. Its model and sample-limited train/eval roots are the
+absolute checked-in config values and MUST exist before launch. The timestamp
+collision policy MUST create exactly one shared run directory under
+`outputs/smoke/production_mimic/`, with one completed planned step, one
+rank-local micro-step on each rank (two packs globally), one eval row, and one
+step-1 checkpoint. The expected ten-file
+inventory is `run.json`, `resolved_config.json`, `logging.jsonl`, the three
+standard adapter files, the two selected-token-delta files, `final.json`, and
+an eligible `best.json`; no rank-suffixed tree or removed artifact family may
+exist.
+
+The representative old multiplicative baseline is
+`outputs/smoke/production_mimic/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_accelerate8_ebs64_2step_warmup0p1_eval_patchproof-smoke-a8-r16a32-ebs64-receipt-20260702T164342Z`
+(30 files, 7,483,325 non-checkpoint bytes). File counts use `find <run> -type f
+| wc -l`; non-checkpoint bytes use `find <run> -type f ! -path
+'*/checkpoints/*' -printf '%s\n' | awk '{s+=$1} END{print s+0}'`. Existing
+inference compatibility is checked through the real `src.infer` entrypoint and
+`configs/coordexp_swift/infer/wave7_real_adapter_smoke.yaml`, whose explicit
+adapter and repaired selected-token-delta roots already exist. The newly
+written step-1 adapter and delta are then loaded through the same runtime
+assembly boundary using explicit paths. Stop on any rank failure/hang,
+unsupported distributed type, missing prerequisite, non-finite or skipped
+update, cache/checkpoint collective failure, duplicate/rank-suffixed output,
+inventory mismatch, or inference payload rejection; diagnose before
+continuing to accepted docs.
+
+- [x] 4.1 Refine Wave 4 with exact smoke configs, supported hardware/distributed type, representative existing checkpoint root, expected final file inventory, disk-measurement command, and stop conditions.
+- [x] 4.2 Run the public-entrypoint multi-rank Accelerate smoke and verify Accelerator-owned rank identity, identical run descriptor on every rank, symmetric checkpoint barriers, synchronized update decisions, exactly one logical run directory/logging stream/checkpoint tree, and no rank-suffixed duplicates.
+- [x] 4.3 Load a representative existing adapter and optional selected-token delta plus the newly written multi-rank payload through the real inference engine using explicit payload paths and without consulting `checkpoint-final`, `checkpoint.json`, or `checkpoint_handoff.json`; verify exact standard PEFT and embedding-delta identity guarantees claimed by the specs.
+- [x] 4.4 Compare file count and non-checkpoint bytes against a representative current run family and confirm absence of `metrics/`, `eval/` scalar summaries, `receipts/`, per-step Qwen files, progress streams, full-history training results, handoff manifests, and duplicate rank trees.
+- [x] 4.5 Run targeted tests followed by the relevant broader training/runtime/artifact/config/inference suite; record exact commands, passes, skipped hardware/evidence, and artifact roots in the change verification evidence.
+
+Wave 4 execution evidence (2026-07-11): the exact two-rank A100 BF16 public
+launch completed at
+`outputs/smoke/production_mimic/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate2_ebs2_1step-20260711T152707Z`.
+Both ranks returned the same run path, run ID, config fingerprint, one completed
+step, one rank-local micro-step, and the same eval/checkpoint/final schedule.
+The single shared `run.json` records world size two, finite/applied completion,
+one checkpoint event, and separate compact cache-v2 train/eval bindings. The
+two-row `logging.jsonl` contains one finite/applied train row and one finite
+eval row. The exact ten-file run contains only three run-level files, the
+standard three-file adapter, two-file selected-token delta, and final/best
+aliases; it has 9,092 non-checkpoint bytes versus 7,483,325 in the 30-file old
+representative run (99.878503% fewer non-checkpoint bytes and 66.666667% fewer
+files), with no removed family or rank-suffixed sibling.
+
+Real `python -m src.infer` runs loaded both the representative existing
+rank-16/alpha-32 adapter plus bf16 selected-token delta and the newly written
+rank-8/alpha-16 adapter plus float32 delta from explicit paths. The existing
+smoke exposed and closed one loader-boundary defect: payload tensor dtype is
+still required to match its metadata, but a validated source tensor may now be
+converted into the installed runtime parameter dtype. Its receipt records
+`source_tensor_dtype=bfloat16` and `runtime_tensor_dtype=float32`; the new
+payload records float32 for both, and both preserve the 1004-by-2048 selected
+delta shape. Focused Qwen/inference tests passed 57 tests. The relevant
+runtime/training/eval/artifact/config/inference/augmentation/packing/Qwen suite
+passed 505 tests with one upstream sparse-CSR warning, and the complete active
+`pytest.ini` Swift suite passed 787 tests with three upstream warnings. No
+required hardware evidence was skipped. The quarantined root-level legacy docs
+test is outside the active Swift testpaths and still encodes retired MS-Swift
+artifact/progress contracts; an explicit module-level quarantine now makes a
+direct invocation skip all seven historical tests instead of reporting false
+current-contract failures. It was not used to redefine the accepted Swift
+surface.
+- [x] 4.6 Update current `docs/` architecture, implementation map, artifact/operator guidance, and catalog only after implementation evidence passes; do not add dynamic proposal/progress material under `docs/architecture/`.
+- [x] 4.7 Run final strict OpenSpec validation, documentation link/catalog checks, `git diff --check`, independent fixed-point engineering and intent/contract audits, and resolve or explicitly gate every P0/P1.
 - [ ] 4.8 Present the completed change for user acceptance; only after acceptance sync delta specs, archive the OpenSpec change, promote accepted commits to `main`, and refresh the development worktree according to repository policy.

@@ -7,6 +7,12 @@ import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+pytestmark = pytest.mark.skip(
+    reason=(
+        "quarantined retired MS-Swift/progress documentation contract; "
+        "current CoordExp-Swift docs are covered by pytest.ini testpaths"
+    )
+)
 
 
 def test_artifact_contract_docs_freeze_rank0_and_stage2_eval_surfaces() -> None:

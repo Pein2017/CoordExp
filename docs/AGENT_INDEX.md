@@ -64,7 +64,10 @@ Current config roots are:
 - `configs/coordexp_swift/prod/`
 - `configs/coordexp_swift/smoke/`
 - `configs/coordexp_swift/infer/`
-- `configs/coordexp_swift/deepspeed/`
+
+Training is Accelerate-only replicated DDP. Route training artifacts through
+`src/artifacts/run_writer.py` and `src/artifacts/checkpoints.py`; removed
+manager, metric-stream, and checkpoint-handoff modules are not current routes.
 
 Do not route current work through `src/sft.py`, `src/trainers/`,
 `src/datasets/`, `src/detection/`, or the old `src/infer/` package. Those names
@@ -76,8 +79,8 @@ Use the smallest relevant spec family:
 
 - Config and data: [`coordexp-swift-config-runtime`](../openspec/specs/coordexp-swift-config-runtime/spec.md), [`coordexp-swift-data-template-encoding`](../openspec/specs/coordexp-swift-data-template-encoding/spec.md)
 - Packing, forward, and losses: [`coordexp-swift-packing-forward`](../openspec/specs/coordexp-swift-packing-forward/spec.md), [`coordexp-swift-supervision-losses`](../openspec/specs/coordexp-swift-supervision-losses/spec.md), [`coordexp-swift-pack-cache-semantic-identity`](../openspec/specs/coordexp-swift-pack-cache-semantic-identity/spec.md)
-- Training artifacts and handoff: [`coordexp-swift-training-artifacts`](../openspec/specs/coordexp-swift-training-artifacts/spec.md), [`coordexp-swift-checkpoint-handoff-readiness`](../openspec/specs/coordexp-swift-checkpoint-handoff-readiness/spec.md), [`coordexp-swift-adapters-embeddings-optim`](../openspec/specs/coordexp-swift-adapters-embeddings-optim/spec.md)
-- Inference and evaluation: [`coordexp-swift-infer-config-runtime`](../openspec/specs/coordexp-swift-infer-config-runtime/spec.md), [`coordexp-swift-infer-pipeline`](../openspec/specs/coordexp-swift-infer-pipeline/spec.md), [`coordexp-swift-infer-backend-trace`](../openspec/specs/coordexp-swift-infer-backend-trace/spec.md), [`coordexp-swift-infer-scoring-artifacts`](../openspec/specs/coordexp-swift-infer-scoring-artifacts/spec.md), [`coordexp-swift-detection-evaluator`](../openspec/specs/coordexp-swift-detection-evaluator/spec.md)
+- Trainable payloads: [`coordexp-swift-adapters-embeddings-optim`](../openspec/specs/coordexp-swift-adapters-embeddings-optim/spec.md)
+- Inference and evaluation: [`coordexp-swift-infer-pipeline`](../openspec/specs/coordexp-swift-infer-pipeline/spec.md), [`coordexp-swift-infer-backend-trace`](../openspec/specs/coordexp-swift-infer-backend-trace/spec.md), [`coordexp-swift-infer-scoring-artifacts`](../openspec/specs/coordexp-swift-infer-scoring-artifacts/spec.md), [`coordexp-swift-detection-evaluator`](../openspec/specs/coordexp-swift-detection-evaluator/spec.md)
 
 The remaining `coordexp-swift-*` specs are reachable from the
 [`openspec/specs/`](../openspec/specs/) directory. Do not invent a missing

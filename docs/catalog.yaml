@@ -37,7 +37,10 @@ config_surfaces:
       entrypoint: src/train.py
       runtime: src/training/pipeline.py
       trainer: src/training/supervised_trainer.py
-      notes: "Canonical rebuilt supervised-training route on repository main."
+      distributed_backend: accelerate_replicated_ddp
+      artifact_writer: src/artifacts/run_writer.py
+      checkpoint_writer: src/artifacts/checkpoints.py
+      notes: "Canonical Accelerate-only supervised-training route with one process per rank and rank-zero shared run artifacts."
     - id: coordexp_swift_rebuilt_inference_eval
       status: active
       config_root: configs/coordexp_swift/infer/

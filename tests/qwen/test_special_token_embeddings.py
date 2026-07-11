@@ -390,6 +390,48 @@ def test_special_token_embedding_load_rejects_tensor_dtype_mismatch(
     assert exc_info.value.code == "special_token_embeddings.dtype_mismatch"
 
 
+def test_special_token_embedding_load_converts_self_consistent_bf16_payload_to_fp32(
+    tmp_path: Path,
+) -> None:
+    selection = SpecialTokenSelection(token_strings=("<a>",), token_ids=(2,))
+    result = install_special_token_embedding_deltas(
+        TinyTiedQwenModel(vocab_size=8, hidden_size=4),
+        selection,
+        source_gate=_source_gate(selected_count=1),
+    )
+    expected = torch.tensor([[0.125, -0.5, 1.75, 3.0]], dtype=torch.bfloat16)
+    metadata = result.receipt.to_metadata_dict(
+        base_model_path=Path("/models/qwen-base"),
+        base_config_sha256="config-sha",
+        tokenizer_sha256="tokenizer-sha",
+    )
+    metadata["tensor_dtype"] = "bfloat16"
+    (tmp_path / SPECIAL_TOKEN_EMBEDDINGS_JSON).write_text(
+        json.dumps(metadata, sort_keys=True),
+        encoding="utf-8",
+    )
+    save_file(
+        {DEFAULT_EMBED_DELTA_TENSOR_KEY: expected},
+        str(tmp_path / SPECIAL_TOKEN_EMBEDDINGS_SAFE_TENSORS),
+    )
+
+    receipt = load_special_token_embedding_deltas(
+        result,
+        tmp_path,
+        expected_base_model_path=Path("/models/qwen-base"),
+        expected_base_config_sha256="config-sha",
+        expected_tokenizer_sha256="tokenizer-sha",
+    )
+
+    assert result.shared_embed_delta.dtype == torch.float32
+    assert torch.equal(result.shared_embed_delta, expected.float())
+    assert receipt.tensor_dtype == "float32"
+    assert receipt.source_tensor_dtype == "bfloat16"
+    assert receipt.runtime_tensor_dtype == "float32"
+    assert receipt.to_artifact_dict()["source_tensor_dtype"] == "bfloat16"
+    assert receipt.to_artifact_dict()["runtime_tensor_dtype"] == "float32"
+
+
 def test_special_token_embedding_load_rejects_full_embedding_payload(
     tmp_path: Path,
 ) -> None:

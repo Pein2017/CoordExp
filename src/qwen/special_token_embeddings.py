@@ -221,6 +221,8 @@ class SpecialTokenEmbeddingLoadReceipt:
     tensor_key: str
     tensor_shape: tuple[int, int]
     tensor_dtype: str
+    source_tensor_dtype: str
+    runtime_tensor_dtype: str
 
     def to_artifact_dict(self) -> dict[str, Any]:
         return {
@@ -230,6 +232,8 @@ class SpecialTokenEmbeddingLoadReceipt:
             "tensor_key": self.tensor_key,
             "tensor_shape": list(self.tensor_shape),
             "tensor_dtype": self.tensor_dtype,
+            "source_tensor_dtype": self.source_tensor_dtype,
+            "runtime_tensor_dtype": self.runtime_tensor_dtype,
         }
 
 
@@ -598,6 +602,8 @@ def load_special_token_embedding_deltas(
         tensor_key=DEFAULT_EMBED_DELTA_TENSOR_KEY,
         tensor_shape=expected_shape,
         tensor_dtype=_dtype_name(result.shared_embed_delta.dtype),
+        source_tensor_dtype=_dtype_name(loaded_delta.dtype),
+        runtime_tensor_dtype=_dtype_name(result.shared_embed_delta.dtype),
     )
 
 
@@ -974,15 +980,6 @@ def _validate_metadata(
                     "actual": actual_value,
                 },
             )
-    if metadata.get("tensor_dtype") != _dtype_name(result.shared_embed_delta.dtype):
-        raise RuntimeContractError(
-            "special-token embedding metadata dtype does not match installed delta",
-            code="special_token_embeddings.dtype_mismatch",
-            context={
-                "expected_dtype": _dtype_name(result.shared_embed_delta.dtype),
-                "actual_dtype": metadata.get("tensor_dtype"),
-            },
-        )
 
 
 def _delta_parameter_name(model: nn.Module, delta: nn.Parameter) -> str:

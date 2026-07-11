@@ -56,7 +56,8 @@ configs/coordexp_swift/
   -> src/train.py -> src/training/pipeline.py
   -> src/training/supervised_trainer.py
   -> src/data -> src/templates -> src/qwen -> src/packing
-  -> src/supervision -> src/losses -> src/runtime -> src/artifacts
+  -> src/supervision -> src/losses -> Accelerate replicated DDP
+  -> src/runtime -> src/artifacts/run_writer.py + src/artifacts/checkpoints.py
 
 configs/coordexp_swift/infer/
   -> src/infer.py -> src/inference/
@@ -118,15 +119,23 @@ For a new repository question:
 
 ## Current validation boundary
 
-The current source and stable specs support the Swift route described above.
+The current source supports the Swift route described above as one Accelerate
+backend: one process per rank with replicated DDP. There are no separate
+single-process or DeepSpeed training modes. Rank zero owns the shared run
+files, while every rank participates in checkpoint synchronization.
+
 Inference has an implemented HF generation backend; vLLM fields are reserved
 and validated as unavailable in the current implementation. Checkpoint handoff
-identity is validated, but V1 checkpoint artifacts explicitly do not provide
-exact optimizer, scheduler, scaler, dataloader, iterator, or RNG training-state
-resume.
+is through explicit adapter and optional selected-token embedding-delta paths;
+the training artifacts do not provide exact optimizer, scheduler, scaler,
+dataloader, iterator, or RNG training-state resume.
 
-The fixed val200 inference/evaluation receipt is a historical, scope-labeled
-validation handle, not a live artifact in every checkout. Tiny smokes are
+The accepted two-rank BF16 production-mimic smoke completed one finite applied
+step and emitted one train plus one eval logging row in one shared ten-file run
+tree. This proves the bounded executed path, including real adapter-plus-delta
+reload through explicit inference paths; it is not a benchmark or an exact
+resume claim. The fixed val200 inference/evaluation receipt is a historical,
+scope-labeled validation handle, not a live artifact in every checkout. Tiny smokes are
 implementation checks. A full validation-dataset run is optional unless a task
 explicitly requests it. Do not turn these boundaries into broader readiness
 claims without fresh artifacts.

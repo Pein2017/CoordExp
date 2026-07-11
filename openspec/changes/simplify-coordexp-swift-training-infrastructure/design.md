@@ -334,8 +334,10 @@ identifier/model class, PEFT type, `use_dora`, target modules, tensor shapes,
 and required LoRA/DoRA keys; it does not promise immutable base-config or
 tokenizer hashes that standard PEFT metadata does not carry. The optional
 selected-token delta retains its existing stronger base-config/tokenizer hash
-checks. This is the user-approved inference-loader boundary, not a replacement
-handoff dossier.
+checks. Its payload tensor must match its declared source dtype before the
+loader may convert it into the installed runtime delta dtype; provenance
+records both dtypes. This is the user-approved inference-loader boundary, not
+a replacement handoff dossier.
 
 ### 8. Config migration is strict and in place
 

@@ -52,8 +52,8 @@ framework. Current ownership is:
 | Qwen boundary | `src/qwen/` | Load model/processor/tokenizer, encode chat/image inputs, build positions, and run forward helpers |
 | Packing and supervision | `src/packing/`, `src/supervision/` | Concatenate no-padding segments and map logical token atoms to physical positions |
 | Losses | `src/losses/` | Assemble CE, token-type gating, optional coordinate Gaussian/RPS, normalization, and diagnostics |
-| Runtime and optimization | `src/runtime/`, `src/optim/`, `src/adapters/` | Device/distributed operations, finite gates, optimizer/scheduler steps, adapter and selected-token trainable surfaces |
-| Training artifacts | `src/artifacts/` | Run manifest, resolved config, metric streams, eval-forward summaries, checkpoints, and handoff identity |
+| Runtime and optimization | `src/runtime/`, `src/optim/`, `src/adapters/` | Accelerate replicated-DDP operations, finite gates, optimizer/scheduler steps, adapter and selected-token trainable surfaces |
+| Training artifacts | `src/artifacts/run_writer.py`, `src/artifacts/checkpoints.py` | Rank-zero run/config/log ownership and synchronized staged adapter-plus-delta checkpoints |
 | Inference | `src/infer.py`, `src/inference/` | Resolve infer config, compose the model, decode, parse, score, shard, merge, and write provenance-bearing artifacts |
 | Detection evaluation | `src/eval/detection_consumer.py` | Validate raw/scored binding, normalize geometry units, write COCO artifacts, and emit mAP/mRecall metrics |
 
@@ -66,15 +66,13 @@ Current config roots are:
 
 - `configs/coordexp_swift/prod/` for production-shaped training configs;
 - `configs/coordexp_swift/smoke/` for small training checks;
-- `configs/coordexp_swift/infer/` for inference configs;
-- `configs/coordexp_swift/deepspeed/` for the DeepSpeed helper config.
+- `configs/coordexp_swift/infer/` for inference configs.
 
 Config loading is strict and schema-first. A runnable training config declares
 `schema_version: 1`; extends resolution, path origins, resolved values, and the
-config fingerprint are part of the runtime evidence. Training runtime choices
-are explicit (`single`, `accelerate`, or `deepspeed` where supported by the
-schema). A helper config does not by itself establish production benchmark
-support.
+config fingerprint are part of the runtime evidence. The training runtime is
+Accelerate-only: one process per rank, replicated DDP, with no separate
+single-process or DeepSpeed backend mode.
 
 ## Semantic boundaries that docs must preserve
 
@@ -93,10 +91,12 @@ support.
 - Swift GT boxes are inline norm1000 `xyxy`; scored predictions are parser-
   normalized pixel `xyxy`. The evaluator converts the GT side and rejects
   mixed-unit COCO sidecars.
-- `checkpoint_handoff.json` is an identity and payload-composition seam. V1
-  checkpoint metadata records optimizer, scheduler, scaler, dataloader,
-  iterator, and RNG resume state as not saved; handoff is not exact training
-  continuation.
+- Checkpoints contain a standard PEFT adapter and, when configured, a separate
+  selected-token embedding delta. Inference loads both through explicit paths.
+  No exact optimizer, scheduler, scaler, dataloader, iterator, or RNG training
+  continuation is provided.
+- Pack cache v2 is a rebuild-only internal cache outside the run tree. The run
+  records only compact immutable train/eval materialization bindings.
 
 Stable semantics are owned by these specs:
 
@@ -104,8 +104,7 @@ Stable semantics are owned by these specs:
 - [data/template/encoding](../openspec/specs/coordexp-swift-data-template-encoding/spec.md)
 - [packing/forward](../openspec/specs/coordexp-swift-packing-forward/spec.md)
 - [supervision/losses](../openspec/specs/coordexp-swift-supervision-losses/spec.md)
-- [training artifacts](../openspec/specs/coordexp-swift-training-artifacts/spec.md)
-- [checkpoint handoff](../openspec/specs/coordexp-swift-checkpoint-handoff-readiness/spec.md)
+- [adapter and selected-token payloads](../openspec/specs/coordexp-swift-adapters-embeddings-optim/spec.md)
 - [inference pipeline](../openspec/specs/coordexp-swift-infer-pipeline/spec.md)
 - [inference backend trace](../openspec/specs/coordexp-swift-infer-backend-trace/spec.md)
 - [inference scoring artifacts](../openspec/specs/coordexp-swift-infer-scoring-artifacts/spec.md)
@@ -119,11 +118,14 @@ unimplemented in this source route. The direct evaluator consumes
 `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, and the scored provenance sidecar
 from the same artifact directory, then writes COCO artifacts and metrics.
 
-Tiny and two-row runs are implementation checks. A prior val200 result may be
-useful as historical evidence, but its output directory is not part of every
-checkout; reproduce or cite its receipt before making a current benchmark
-claim. Full validation-dataset evaluation and official test-dev submission are
-separate workflows.
+The accepted two-rank BF16 production-mimic smoke completed one finite applied
+step, one train row, one eval row, and one shared ten-file run tree with no
+rank-local trees or legacy artifact families. Its 9,092 non-checkpoint bytes
+are bounded implementation evidence, not a benchmark. A prior val200 result
+may be useful as historical evidence, but its output directory is not part of
+every checkout; reproduce or cite its receipt before making a current
+benchmark claim. Full validation-dataset evaluation and official test-dev
+submission are separate workflows.
 
 ## Historical boundaries
 

@@ -30,7 +30,8 @@ reuse.
 | Token supervision | `src/supervision/` | `tests/supervision/` |
 | Loss assembly | `src/losses/` | `tests/losses/` |
 | Runtime and optimization | `src/runtime/`, `src/optim/`, `src/adapters/` | `tests/runtime/`, `tests/optim/`, `tests/adapters/` |
-| Training artifacts/checkpoints | `src/artifacts/` | `tests/artifacts/` |
+| Training run files | `src/artifacts/run_writer.py` | `tests/artifacts/test_run_artifacts.py` |
+| Training checkpoints | `src/artifacts/checkpoints.py` | `tests/artifacts/test_checkpoint_writer.py` |
 | Inference entry and pipeline | `src/infer.py`, `src/inference/pipeline.py` | `tests/inference/test_pipeline.py` |
 | Inference composition/backend | `src/inference/runtime.py`, `src/inference/backend.py` | `tests/inference/test_config_runtime.py`, `tests/inference/test_scoring.py` |
 | Inference artifacts | `src/inference/artifacts.py`, `src/inference/merge.py` | `tests/inference/` |
@@ -44,7 +45,6 @@ Open these roots first:
 - `configs/coordexp_swift/prod/`
 - `configs/coordexp_swift/smoke/`
 - `configs/coordexp_swift/infer/`
-- `configs/coordexp_swift/deepspeed/`
 
 The loader requires strict typed config resolution. Do not infer a current
 schema from an archived YAML file or an old plan.
@@ -58,10 +58,14 @@ schema from an archived YAML file or an old plan.
 - `src/packing/` creates physical packed segments and remaps supervision.
 - `src/supervision/tokens.py` is the token-level record interface.
 - `src/losses/runner.py` owns configured loss assembly and normalization.
-- `src/runtime/train_runtime.py` owns execution-side device, distributed,
-  finite-gate, optimizer, and scheduler behavior.
-- `src/artifacts/checkpoints.py` owns checkpoint payloads and handoff metadata;
-  `src/artifacts/checkpoint_handoff.py` validates identity without mutating it.
+- `src/runtime/train_runtime.py` owns the Accelerate-only replicated-DDP
+  execution boundary, finite gates, optimizer, and scheduler behavior.
+- `src/artifacts/run_writer.py` owns rank-zero `run.json`,
+  `resolved_config.json`, and `logging.jsonl`; `src/artifacts/checkpoints.py`
+  owns synchronized staged PEFT adapter and optional selected-token delta
+  payloads plus `final.json` and `best.json`.
+- `src/training/pack_cache.py` owns rebuild-only cache v2 outside the run tree;
+  the run retains only compact materialization bindings.
 - `src/inference/backend.py` owns backend-neutral trace normalization; the
   implemented adapter in this route is HF generation.
 - `src/eval/detection_consumer.py` owns score-provenance validation, coordinate
@@ -75,8 +79,7 @@ Use the exact relevant spec, not a proposal copy:
 - `openspec/specs/coordexp-swift-data-template-encoding/spec.md`
 - `openspec/specs/coordexp-swift-packing-forward/spec.md`
 - `openspec/specs/coordexp-swift-supervision-losses/spec.md`
-- `openspec/specs/coordexp-swift-training-artifacts/spec.md`
-- `openspec/specs/coordexp-swift-checkpoint-handoff-readiness/spec.md`
+- `openspec/specs/coordexp-swift-adapters-embeddings-optim/spec.md`
 - `openspec/specs/coordexp-swift-infer-pipeline/spec.md`
 - `openspec/specs/coordexp-swift-infer-backend-trace/spec.md`
 - `openspec/specs/coordexp-swift-infer-scoring-artifacts/spec.md`
