@@ -11,6 +11,7 @@ entrypoints:
     catalog: docs/catalog.yaml
     progress: progress/index.yaml
     research: research/index.md
+    research_decisions: research/decisions/index.md
     research_investigations: research/investigations/index.md
 
 authority:

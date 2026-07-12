@@ -39,6 +39,9 @@ machine-readable [catalog](catalog.yaml), then read
   there only when a stable compatibility-sensitive contract changes; internal
   refactors do not require invented normative deltas.
 - `research/` contains active research interpretation.
+- `research/decisions/` contains the current non-normative belief layer: use it
+  to find evidence-backed route choices and their next discriminators, not as a
+  runtime or architecture contract.
 - `docs/history/` contains non-normative provenance for superseded plans and old
   implementation history.
 - `progress/` is a legacy evidence archive. Do not use it for current behavior
@@ -94,6 +97,7 @@ pre-promotion spec path to make a link look normative.
 - Training-history interpretation: [docs/training/README.md](training/README.md), marked as a legacy router for old MS-Swift/mainline runs
 - Standards: [docs/standards/README.md](standards/README.md)
 - Accepted architecture: [docs/architecture/README.md](architecture/README.md)
+- Active research beliefs and route gates: [research/decisions/](../research/decisions/)
 
 ## Historical-material rule
 

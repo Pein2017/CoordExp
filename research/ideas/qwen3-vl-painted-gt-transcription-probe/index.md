@@ -7,6 +7,14 @@
 - [Experiment Units](experiments/index.md)
 - [Review Log](review-log.md)
 
+## Current Decisions
+
+- [Visual designation is a causal teacher, not the final interface](../../decisions/use-visual-designation-as-a-causal-teacher.md)
+- [Selection, transcription, commit, and stop require separate evidence](../../decisions/separate-selection-transcription-commit-and-stop.md)
+- [A representation must be consumed target-specifically](../../decisions/require-target-specific-causal-consumption.md)
+- [Specialization must preserve native capability](../../decisions/protect-native-capability-during-specialization.md)
+- [Architecture remains downstream of hypothesis gates](../../decisions/let-architecture-emerge-from-hypothesis-gates.md)
+
 This idea remains open and does not yet have a final `conclusion.md`. The
 temporary implementation branches have been retired as implementation bases;
 their durable evidence is preserved here so future probes can be reimplemented

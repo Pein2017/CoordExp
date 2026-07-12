@@ -12,6 +12,7 @@ behavior remain in `docs/`. Stable compatibility-sensitive contracts remain in
 
 ## Entry Points
 
+- [Decisions](decisions/) - current research belief updates, constraints, and route gates linked to their evidence
 - [Ideas](ideas/) - synthesized research directions that may become CoordExp capabilities
 - [Investigations](investigations/) - bounded analysis, ablation, diagnosis, checkpoint surgery, and post-analysis
 - [Mechanisms](mechanisms/) - reusable semantic explanations and failure models
@@ -20,9 +21,13 @@ behavior remain in `docs/`. Stable compatibility-sensitive contracts remain in
 ## OKF Conventions
 
 - `index.md` files are routers and contain no frontmatter.
-- Non-router Markdown files use YAML frontmatter with `type: idea`, `type: investigation`, or `type: mechanism`.
-- `type` denotes the top-level semantic bucket: idea, investigation, or mechanism. Document role is carried by filename, headings, tags, and links.
+- Non-router Markdown files use YAML frontmatter with `type: decision`, `type: idea`, `type: investigation`, or `type: mechanism`.
+- `type` denotes the top-level semantic bucket: decision, idea, investigation,
+  or mechanism. Document role is carried by filename, headings, tags, and links.
 - Markdown links carry graph edges; surrounding prose explains the relationship.
+- Decision nodes summarize a current research choice without becoming a product
+  contract. Each decision names its evidence, belief update, and next
+  discriminator. Evidence may revise or retire a decision later.
 - Artifact files stay outside `research/`; research docs store handles and interpretation.
 - Individual probes belong under the owning idea or investigation, usually
   `research/ideas/<topic>/experiments/<unit-id>/unit.md` or
@@ -38,6 +43,7 @@ behavior remain in `docs/`. Stable compatibility-sensitive contracts remain in
 ```text
 research/
   index.md
+  decisions/<slug>.md         # current evidence-backed research choices
   ideas/<topic>/              # synthesized idea reading path
   ideas/<topic>/experiments/<unit>/unit.md
   investigations/<topic>/     # bounded cross-cutting analysis
@@ -48,3 +54,13 @@ research/
 
 Research units are not OpenSpec changes. They may recommend an OpenSpec
 promotion when a result hardens into a stable compatibility-sensitive contract.
+
+## Active Frontier
+
+| Question | Current belief | Decision |
+|---|---|---|
+| Can Qwen3-VL consume an object-specific visual control signal? | Yes, under bounded painted/post-scatter interventions; this is a privileged causal handle, not a final interface. | [Use visual designation as a causal teacher](decisions/use-visual-designation-as-a-causal-teacher.md) |
+| Does pure-CE serialization learn an order-free object ledger? | No evidence yet. It learns a strong order-conditioned, mostly coordinate-level transition. | [Separate selection, transcription, commit, and stop](decisions/separate-selection-transcription-commit-and-stop.md) |
+| Is a decodable proposal representation sufficient? | No. The tested bridge produced non-specific continuation and unsafe rollout behavior. | [Require target-specific causal consumption](decisions/require-target-specific-causal-consumption.md) |
+| May a row-specialized checkpoint replace the detector baseline? | No. Cursor-row specialization can preserve designation while collapsing enumeration. | [Protect native capability during specialization](decisions/protect-native-capability-during-specialization.md) |
+| Should slots, a ledger, or a final architecture be built now? | Not from current evidence. Promote only the smallest mechanism that passes its discriminator. | [Let architecture emerge from hypothesis gates](decisions/let-architecture-emerge-from-hypothesis-gates.md) |
