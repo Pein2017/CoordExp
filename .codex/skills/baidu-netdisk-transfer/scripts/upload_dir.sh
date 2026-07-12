@@ -9,7 +9,7 @@ Environment overrides:
   BAIDUPCS_UPLOAD_FILE_THREADS     per-file upload threads, default: 1
   BAIDUPCS_UPLOAD_PARALLEL_FILES   number of files uploaded concurrently, default: 1
   BAIDUPCS_UPLOAD_RETRY            retry count, default: 8
-  BAIDUPCS_UPLOAD_POLICY           overwrite policy, default: overwrite
+  BAIDUPCS_UPLOAD_POLICY           overwrite policy, default: skip
   BAIDUPCS_UPLOAD_NO_RAPID         1 keeps --norapid (default), 0 allows rapid upload
 
 Notes:
@@ -32,7 +32,7 @@ BAIDUPCS_BIN="${3:-${BAIDUPCS_BIN:-BaiduPCS-Go}}"
 UPLOAD_FILE_THREADS="${BAIDUPCS_UPLOAD_FILE_THREADS:-1}"
 UPLOAD_PARALLEL_FILES="${BAIDUPCS_UPLOAD_PARALLEL_FILES:-1}"
 UPLOAD_RETRY="${BAIDUPCS_UPLOAD_RETRY:-8}"
-UPLOAD_POLICY="${BAIDUPCS_UPLOAD_POLICY:-overwrite}"
+UPLOAD_POLICY="${BAIDUPCS_UPLOAD_POLICY:-skip}"
 UPLOAD_NO_RAPID="${BAIDUPCS_UPLOAD_NO_RAPID:-1}"
 
 if [[ ! -d "$LOCAL_DIR" ]]; then

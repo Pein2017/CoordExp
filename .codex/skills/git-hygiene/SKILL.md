@@ -1,6 +1,6 @@
 ---
 name: git-hygiene
-description: Use when the user asks to stage, commit, sync, push, split dirty CoordExp work, or use the repo HTTPS token workflow.
+description: Use when CoordExp Git work needs worktree isolation, staging, committing, dirty-tree splitting, branch cleanup, remote sync or push, or the repo HTTPS token workflow.
 ---
 
 # Git Hygiene
@@ -21,6 +21,14 @@ git ls-files --error-unmatch github_personal_token.txt 2>/dev/null && echo TRACK
 
 Stop if secrets are tracked, remote identity is surprising, or the requested scope is ambiguous.
 
+## Worktree isolation
+
+Use a linked worktree when parallel work, unrelated dirt, long-running outputs, or a multi-file/multi-commit change makes isolation valuable. Use the current checkout for a narrow change when its owned files are clear.
+
+The user-named checkout always wins. Verify its root, branch, status, and linked-worktree record before acting; do not infer current behavior from another checkout. New branch names default to `codex/<task-slug>`.
+
+Read [references/worktrees.md](references/worktrees.md) before creating, entering, repairing, or removing a worktree. It contains the safe lifecycle, shared-root setup, and cleanup gates.
+
 ## Commit Loop
 
 1. Inspect `rtk git diff --stat` and `rtk git diff --name-only`.
@@ -31,7 +39,7 @@ Stop if secrets are tracked, remote identity is surprising, or the requested sco
 6. Commit with an imperative message; use minimal messages for mechanical config/arg/default changes.
 7. Repeat until only intentional leftovers remain.
 
-## Stale Worktree And Cleanup Checks
+## Stale worktree and cleanup checks
 
 Before branch deletion, worktree cleanup, grouped commits, or sync:
 
@@ -78,6 +86,7 @@ Skip `pull` when already up to date; skip `push` when there is nothing to publis
 
 - No `reset --hard`, history rewrite, `push --force`, or destructive cleanup without explicit user request.
 - Do not create a branch unless asked or required by the user's workflow.
+- Remove a worktree only after its work is merged or explicitly discarded, its status is clean, and its durable research evidence or artifacts have been promoted.
 - If a pull/merge is needed, split local work into logical commits first when feasible.
 - Final report should include commits created, checks run, sync status (fetch/pull/push), and remaining dirty files.
 

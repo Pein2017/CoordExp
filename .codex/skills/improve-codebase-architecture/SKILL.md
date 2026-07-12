@@ -1,110 +1,103 @@
 ---
 name: improve-codebase-architecture
-description: Use when the user wants a read-only CoordExp architecture review, ranked deepening/refactoring opportunities, visual architecture report, or a user-guided path from codebase friction to an approved module/interface design.
+description: Use for read-only CoordExp architecture reviews, ranked deepening opportunities, or selected module/interface design while preserving research contracts and user-owned scientific decisions.
 ---
 
 # Improve Codebase Architecture
 
-Find architectural friction and propose deepening opportunities without
-silently changing research meaning. Use [codebase-design](../codebase-design/SKILL.md)
-for the shared module/interface philosophy; this skill owns CoordExp-specific
-discovery, evidence, ranking, and user coordination.
+Find architectural friction, rank deepening opportunities, and design an
+approved interface without silently changing research meaning. Default to
+read-only analysis; do not turn a review into implementation or a durable
+decision record without explicit approval.
 
-## Default Posture
+## Design language
 
-Architecture review is read-only and analysis-first unless the user explicitly
-asks to record or implement the result. Do not turn a review request into a
-refactor, docs rewrite, OpenSpec change, or durable decision record.
+Use these terms precisely:
 
-The agent should absorb code-level exploration and explain the architecture at
-the level the user needs to control. The user owns choices that alter algorithm
-semantics, model forward behavior, data construction/geometry/order, loss and
-normalization, optimization/training trade-offs, statistical assumptions,
-metric comparability, or artifact meaning. Reversible code organization is the
-agent's responsibility.
+- **Module**: a function, class, package, or cross-layer slice with an interface
+  and implementation.
+- **Interface**: everything callers must know: types, invariants, order, errors,
+  configuration, performance, artifacts, and research semantics.
+- **Depth**: substantial behavior behind a small, honest interface.
+- **Seam**: where behavior can vary without editing the caller; adapters occupy
+  a seam.
+- **Leverage**: capability delivered per unit of caller knowledge.
+- **Locality**: change, knowledge, bugs, and verification concentrated in one
+  owner instead of scattered across callers.
 
-## Review Modes
+Research contracts are interface facts: config/schema, data geometry and order,
+token/template and forward semantics, targets and loss normalization, metric
+scope, artifact names, cache identity, and provenance.
 
-- `report=chat`: default. Return a ranked candidate list with exact evidence.
-- `report=visual`: use when the user asks for a visual report or when three or
-  more interacting modules make the relationship materially clearer. Prefer a
-  compact Mermaid diagram in chat; use a self-contained `/tmp/` HTML report
-  only when the requested comparison needs richer before/after visuals.
-- `compare=reviews`: compare existing architecture reports on factual grounding,
-  hierarchy/design taste, research safety, and actionability; give a direct
-  verdict on the user's stated axis.
-- `prompt=reviewers`: write one shared read-only prompt for multiple reviewers.
-  Set scope and evidence expectations without forcing them into one design
-  taste.
+Apply three checks throughout:
 
-## Process
+- **Deletion test**: if deleting a module removes complexity, it was probably
+  pass-through structure; if complexity spreads into callers, it bought
+  locality.
+- **Interface test**: callers and tests should cross the same semantic seam.
+- **Variation test**: one adapter is hypothetical; add a seam when real
+  variation or a correctness boundary justifies it.
 
-### 1. Load authority and design language
+Read [deepening.md](references/deepening.md) when consolidating an existing
+cluster. Read [design-it-twice.md](references/design-it-twice.md) only after a
+consequential interface or seam has been selected.
 
-Read `docs/AGENT_INDEX.md`, `docs/catalog.yaml`, and the relevant canonical
-docs/specs/configs/tests/artifacts before broad source search. Read
-[codebase-design](../codebase-design/SKILL.md) for the shared vocabulary. Read
-[DEEPENING.md](../codebase-design/DEEPENING.md) when consolidating a candidate,
-and [DESIGN-IT-TWICE.md](../codebase-design/DESIGN-IT-TWICE.md) only after a
-candidate has been selected for interface exploration.
+## Authority and tools
 
-Use CodeGraph only as a broad map when the exact worktree has a correct index.
-Once Python files or symbols are known, use Serena for precise bodies,
-references, declarations, and diagnostics. Use `rg`/raw reads for docs, YAML,
-specs, artifacts, metrics, and manifests.
+Start with `docs/AGENT_INDEX.md`, `docs/catalog.yaml`, and the smallest relevant
+canonical docs, stable specs, configs, tests, and artifacts. Treat historical
+notes and old worktrees as evidence, not current authority.
 
-### 2. Explore friction organically
+Use CodeGraph only when its index matches the exact worktree. Use Serena for
+precise Python symbol bodies and references when available. Use `rg` and direct
+reads for docs, YAML, specs, artifacts, metrics, and manifests.
 
-Look for places where:
+## Review workflow
 
-- understanding one concept requires bouncing across many shallow modules;
-- callers need nearly as much knowledge as the implementation contains;
-- pure helpers were extracted for unit testing but orchestration owns the real
-  failure;
-- config, forward, data, loss, metric, or artifact policy has multiple owners;
-- compatibility or diagnostic paths leak into canonical behavior;
-- a large entrypoint accumulates decisions that belong to a source owner;
-- tests cross internal structure because no honest interface exists;
-- research meaning is hidden behind generic framework abstractions;
-- user-facing knobs encode choices the implementation should simply get right.
+1. **Map ownership and callers.** Trace one concept across entrypoint, config,
+   implementation, tests, artifacts, and docs.
+2. **Find friction.** Look for scattered caller knowledge, pass-through layers,
+   tests coupled to internals, duplicated policy, large orchestration owners,
+   compatibility leaking into canonical behavior, or hidden research meaning.
+3. **Rank candidates.** For each, report files/current owner, concrete friction,
+   deepening direction, knowledge hidden versus kept visible, research risk,
+   benefit, verification, and strength: `strong`, `worth exploring`, or
+   `speculative`.
+4. **Recommend one candidate.** Give the direct reason and stop for selection;
+   do not prematurely lock its interface.
 
-Apply the deletion test. If deleting a module makes complexity disappear, it
-was likely pass-through structure. If the complexity spreads across callers,
-the module was buying locality.
+Review output defaults to concise chat. Use a compact Mermaid diagram only when
+three or more interacting modules make the relationship clearer. When comparing
+existing reviews, judge factual grounding, design depth, research safety, and
+actionability against the user's requested axis.
 
-### 3. Present ranked candidates
+## Selected-interface workflow
 
-For each candidate include:
+After the user selects a candidate:
 
-- **Files and current owner**;
-- **Friction**, with concrete call/config/artifact evidence;
-- **Deepening direction**, without prematurely fixing the interface;
-- **Hidden versus visible knowledge** after the change;
-- **Research-semantic risk**: forward, data, loss, statistics, metrics, or
-  artifacts touched;
-- **Benefits** in depth, locality, testability, auditability, and navigation;
-- **Verification** that would prove behavior and contracts stayed intact;
-- **Strength**: `strong`, `worth exploring`, or `speculative`.
+1. Name the concept and single owner.
+2. Inventory caller knowledge: inputs, outputs, order, configuration, failure
+   modes, artifacts, performance, and research semantics.
+3. Classify dependencies and seams using
+   [deepening.md](references/deepening.md).
+4. Propose the full interface before internals, including invariants, errors,
+   ordering, configuration, and observable receipts.
+5. Keep incidental complexity hidden while exposing user-owned scientific
+   choices.
+6. Test through the interface with behavior, contract, artifact, replay, or
+   smoke evidence that survives internal refactoring.
+7. For a consequential seam, compare genuinely different designs with
+   [design-it-twice.md](references/design-it-twice.md).
 
-End with one top recommendation and why. Do not propose interfaces yet. Ask the
-user which candidate to explore, one question only.
+The user owns choices that alter algorithm or forward semantics, data
+construction/geometry/order, targets, loss or normalization, optimization or
+training cost, statistical assumptions, metric comparability, artifact meaning,
+or supported research claims. Use `grill-me` for one such decision at a time.
+Choose reversible code structure without making the user decide code aesthetics.
 
-### 4. Design the chosen interface
+## Approval boundary
 
-For the selected candidate, follow
-[DESIGN-IT-TWICE.md](../codebase-design/DESIGN-IT-TWICE.md) when the seam is
-consequential. Generate meaningfully different alternatives before choosing by
-momentum. Compare depth, locality, contract visibility, testability, migration
-cost, and the burden placed on the user.
-
-Use `grill-me` for user-owned semantic forks. Ask one decision at a time, attach
-the recommended answer, and wait. Do not ask the user to choose between class or
-function layouts unless those layouts encode a real architectural or research
-trade-off.
-
-### 5. Stop at an approval boundary
-
-Finish the review with exactly one state:
+End with one state:
 
 - `drop candidate`;
 - `probe architecture assumption`;
@@ -112,20 +105,7 @@ Finish the review with exactly one state:
 - `ready for implementation approval`;
 - `needs user decision`.
 
-Do not implement until the user explicitly approves the candidate and intended
-interface. After approval, use the smallest appropriate carrier: ordinary plan
-for reversible refactoring, OpenSpec for stable compatibility-sensitive
-contracts, or `research/` for empirical rationale. Update canonical docs only
-when behavior or recommended workflows actually change.
-
-## Philosophy
-
-Architecture is not professional-coder theater. Its job is to compress the
-implementation burden while making semantic choices easier to see and control.
-A beautiful hierarchy that obscures model behavior, data meaning, loss, or
-statistical assumptions is worse than plain code.
-
-The agent should bring codebase literacy, alternatives, and evidence. The user
-should be able to reason about promises, trade-offs, and experimental meaning
-without mastering every implementation detail. The chosen interface is the
-coordination surface between those responsibilities.
+Do not implement until the candidate and intended interface are approved. After
+approval, use an ordinary plan for reversible refactoring, OpenSpec only for a
+stable compatibility-sensitive contract, or `research/` for empirical rationale.
+Update canonical docs only when current behavior or recommended workflows change.

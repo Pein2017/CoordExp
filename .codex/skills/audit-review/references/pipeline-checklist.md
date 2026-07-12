@@ -32,8 +32,8 @@ Use this to find correctness, reproducibility, and evaluation-validity risks in 
 - Outputs include enough metadata to reproduce: dataset id, preset/run name, seed, max_objects, etc.
 - Artifact naming is self-describing (avoid ambiguous “train.jsonl” meaning multiple things).
 - Manifest/summaries are written deterministically and consistently.
-- Training outputs include the expected manifest family: `resolved_config.json`, `runtime_env.json`, `effective_runtime.json`, `pipeline_manifest.json`, `experiment_manifest.json`, `run_metadata.json`.
-- Infer/eval outputs include the expected artifact family: `summary.json`, `resolved_config.json`, `resolved_config.path`, `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, `metrics.json`, and guarded companions when enabled.
+- Derive expected training artifacts from the current config, stable contract, and `src/training/` owners; do not assume a historical manifest family still applies.
+- Derive expected infer/eval artifacts from `src/inference/artifacts.py`, `src/eval/detection_consumer.py`, and the current docs/spec; distinguish required artifacts from optional diagnostic companions.
 - Downstream eval/vis jobs can recover authoritative root-image and config provenance without guessing from the current working directory.
 
 ### 6.1 Evaluation Validity

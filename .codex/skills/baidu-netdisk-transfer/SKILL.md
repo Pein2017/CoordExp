@@ -15,8 +15,8 @@ commands because the overwrite policy is different.
 - `mode=union-sync`: use append-only sync for large artifact trees shared across
   machines. Add missing files, detect conflicts, never delete, never overwrite.
 
-Ask before switching modes when overwrite behavior, delete behavior, or remote
-layout is ambiguous.
+Require fresh explicit user approval before any remote or local overwrite,
+replacement, or deletion. Mode selection does not carry that approval forward.
 
 ## One-Off Transfer
 
@@ -31,10 +31,9 @@ Non-obvious facts:
 - Preserve the intended repo-relative remote layout unless the user gives a
   different root.
 - Upload safest default: `--norapid -p 1 -l 1 --retry 8`.
-- The upload helper defaults to overwrite for deliberate replacement. Set
-  `BAIDUPCS_UPLOAD_POLICY=skip` when preserving existing remote files matters.
-- The download helper overwrites by default. Set
-  `BAIDUPCS_DOWNLOAD_OVERWRITE=0` when preserving local files matters.
+- The helpers default to non-overwrite behavior. Use
+  `BAIDUPCS_UPLOAD_POLICY=overwrite` or `BAIDUPCS_DOWNLOAD_OVERWRITE=1` only
+  after fresh explicit approval for the named paths.
 - Large transfers should run in `tmux`.
 
 Scripts:

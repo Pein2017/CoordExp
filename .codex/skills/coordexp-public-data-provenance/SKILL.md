@@ -20,7 +20,8 @@ Do not treat `public_data/raw`, image caches, or whole processed trees as normal
 
 1. Bound the requested roots.
    - Identify the keep-set, delete-set, and any active training roots before touching data.
-   - If the user says a root is in active use, do not rewrite, move, regenerate, or delete it without a fresh explicit request.
+   - Require fresh explicit user approval for the exact delete-set immediately before destructive cleanup. Prior audit, planning, regeneration, or general cleanup approval is not deletion approval.
+   - If a root is active, do not rewrite, move, regenerate, or delete it without a fresh explicit request naming that root and action.
    - Track only materialized roots. If a requested variant was never generated, mark it absent instead of adding a speculative manifest.
 
 2. Map roots to manifests.
@@ -59,6 +60,7 @@ Report `tiny`, `val200`, proxy, or full scope only after naming the exact manife
 ## Cleanup Guardrails
 
 - Use `du -sh`, `/usr/bin/find`, and `git ls-files` to distinguish raw inputs, processed roots, generated caches, and Git-tracked manifests.
-- Remove data only after the keep-set is explicit and active roots are excluded.
+- Remove data only after the keep-set is explicit, active roots are excluded,
+  and fresh approval names the exact delete-set.
 - Leave `.json` manifests in Git; they are the portable contract.
 - Keep one-off cleanup scripts under `temp/` and delete them when finished.

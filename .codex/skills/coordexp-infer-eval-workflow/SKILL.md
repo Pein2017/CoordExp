@@ -1,138 +1,118 @@
 ---
 name: coordexp-infer-eval-workflow
-description: Use when launching, repairing, checking artifact contracts, or summarizing CoordExp infer/scoring/eval/Oracle-K/proxy-bundle workflows.
+description: Use for current CoordExp-Swift inference, selected-token scoring, raw/scored/provenance artifact checks, accepted val200 validation, and detection-evaluator results. Treat older MS-Swift confidence, Oracle-K, proxy, guarded, and Stage-2 paths as historical.
 ---
 
-# CoordExp Inference And Evaluation Workflow
+# CoordExp-Swift Infer And Eval
 
-Use YAML-first production paths. Do not invent stable CLI flags when config already captures the run.
-Treat this skill as the stable workflow guide, not a promise that one exact script path will never move.
+Start from `docs/AGENT_INDEX.md`, `docs/catalog.yaml`, and
+`docs/eval/README.md`. Read `docs/eval/CONTRACT.md`,
+`docs/eval/WORKFLOW.md`, or `docs/ARTIFACTS.md` only when their exact contract is
+needed. Use the stable `coordexp-swift-infer-*` or
+`coordexp-swift-detection-evaluator` OpenSpec only for compatibility-sensitive
+semantics.
 
-## Entry Points
+## Current route
 
-- Primary pipeline surfaces:
-  - infer entrypoints such as `scripts/run_infer.py`, `src/infer/pipeline.py::run_pipeline`, `src/infer/runtime.py`, and `src/infer/backend.py`
-  - confidence / scoring surfaces such as `scripts/postop_confidence.py`, `src/eval/confidence_postop.py`
-  - evaluation surfaces such as `scripts/evaluate_detection.py`, `src/eval/detection.py::evaluate_and_save`
-  - proxy / bundle surfaces such as `scripts/evaluate_proxy_detection_bundle.py`, `src/eval/proxy_eval_bundle.py`
-  - artifact ownership such as `src/infer/artifacts.py`, `src/eval/artifacts.py`
-- Workflow references:
-  - `docs/eval/WORKFLOW.md`
-  - `docs/eval/CONTRACT.md`
-  - `docs/ARTIFACTS.md`
+- Configs: `configs/coordexp_swift/infer/`
+- Entrypoint: `src/infer.py`
+- Runtime: `src/inference/pipeline.py`, `runtime.py`, `backend.py`
+- Artifact owner: `src/inference/artifacts.py`
+- Evaluator: `scripts/evaluate_detection.py` ->
+  `src/eval/detection_consumer.py`
 
-When code moves, prefer the current checked-in pipeline/config surfaces over memorized script names. First verify:
+Do not route current work through `scripts/run_infer.py`, `src/infer/`, legacy
+confidence post-op wrappers, proxy bundles, or Stage-2 configs. Use those only
+for an explicitly requested historical reproduction after verifying that the
+named checkout still supports them.
 
-1. which config schema currently owns infer, scoring, and eval;
-2. which entrypoint actually consumes that schema;
-3. where the canonical output artifacts are written;
-4. whether the run is coord-token, raw-text, or another coordinate surface.
+## Run
 
-Commands:
-
-```bash
-PYTHONPATH=. python scripts/run_infer.py --config <infer.yaml>
-PYTHONPATH=. python scripts/postop_confidence.py --config <postop.yaml>
-PYTHONPATH=. python scripts/evaluate_detection.py --config <eval.yaml>
-PYTHONPATH=. python scripts/evaluate_oracle_k.py --config <oracle.yaml>
-```
-
-Codex shells initialize the `ms` conda environment by default; do not add `conda run -n ms` unless working outside that initialized environment.
-
-Wrap with `rtk` when filtered output is acceptable.
-
-## Default Decode Assumptions
-
-Unless the user explicitly asks otherwise, use:
-
-- `temperature = 0.0`
-- `repeat_penalty = 1.10`
-
-Treat these as the default reproducibility settings for ordinary CoordExp infer/eval prep. Override them only for intentional decoding ablations, legacy reproduction, or when a checked-in config already pins different values.
-
-## Coordinate-Surface Rules
-
-- Coord-token `xyxy`: run confidence post-op.
-- Raw-text `xyxy` norm1000: set `infer.mode: text`, `infer.pred_coord_mode: norm1000`; confidence post-op must use numeric-text alignment, not coord-token geometry.
-- `cxcy_logw_logh` or `cxcywh`: do not run confidence post-op; use deterministic constant-score compatibility only for checkpoints trained on that serialization.
-
-## Diagnostic Completion
-
-When the user wants raw rollout behavior inspected, prefer completing the rollout and preserving invalid or non-metric-bearing rows with parser metadata over aborting on the first malformed output, unless the official eval contract requires strict failure. Label diagnostic artifacts as non-metric-bearing unless strict parser, source image identity, dimensions, coordinate surface, and metric-bearing provenance all pass.
-
-Before launch, compare training-side names with infer/eval schema names. Do not pass training-only enum values into infer configs; if translation is needed, record the mapping in the generated config or run note.
-
-## Proxy Bundle
-
-For COCO + LVIS-proxy runs:
-
-1. infer once;
-2. score once;
-3. evaluate the same scored artifact under:
-   - `coco_real`: benchmark-aligned headline;
-   - `coco_real_strict`: COCO plus strict same-extent proxies;
-   - `coco_real_strict_plausible`: broad analysis view, not standard COCO.
-
-Do not compare proxy-expanded views against standard COCO baselines without the label.
-
-## Reusable Helper
+Use a checked-in YAML; do not reconstruct its model, adapter, embedding, prompt,
+or decode settings as ad hoc flags.
 
 ```bash
-HELPER=.codex/skills/coordexp-infer-eval-workflow/scripts/coordexp_infer_eval.py
-python "$HELPER" prepare-recursive --repo-root <root> --checkpoint <ckpt> --run-tag <tag> --gpus <ids> --master-port <port>
-python "$HELPER" summarize <run_dir> --format markdown
+conda run -n ms python -m src.infer \
+  --config configs/coordexp_swift/infer/<config>.yaml
 ```
 
-The helper defaults to `temperature=0.0` and `repeat_penalty=1.10`. Pass `--rp` only when intentionally overriding the default repetition penalty.
+The accepted V1 readiness gate is the fixed val200 config recorded by
+`docs/catalog.yaml`:
 
-Use `--dry-run` before writing and `--force` only when intentionally reusing an output directory.
+```text
+configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_step917_val200.yaml
+```
 
-## Verification
+Tiny smoke runs prove implementation only. A full validation-dataset run is
+optional unless the user asks for it.
 
-Before launch, check intended JSONL, image roots, checkpoint/adapter, prompt/order settings, coordinate surface, scope label, decoding knobs, entrypoint ownership, and GPU launch shape.
+Evaluate the inference artifact directory:
 
-After infer:
+```bash
+conda run -n ms python scripts/evaluate_detection.py \
+  --artifact-dir <run-dir> \
+  --out-dir <run-dir>/eval
+```
 
-- `summary.json`
+If the scored path is already known, the supported alias is:
+
+```bash
+conda run -n ms python scripts/evaluate_detection.py \
+  --pred-jsonl <run-dir>/gt_vs_pred_scored.jsonl \
+  --out-dir <run-dir>/eval
+```
+
+`--pred-jsonl` must name `gt_vs_pred_scored.jsonl`; the evaluator still loads
+the sibling raw artifact and provenance sidecar.
+
+## Artifact contract
+
+Current inference writes:
+
 - `gt_vs_pred.jsonl`
-- `resolved_config.json`
-- `resolved_config.path` next to downstream artifacts when needed
-
-After scoring:
-
-- `confidence_postop_summary.json`
-- `pred_confidence.jsonl` for confidence-scored paths
 - `gt_vs_pred_scored.jsonl`
+- `gt_vs_pred_scored.jsonl.provenance.json`
+- `pred_token_trace.jsonl`
+- `parse_diagnostics.jsonl`
+- `image_plan.jsonl`
+- `summary.json`
+- `run_manifest.json`
+- resolved config snapshots under the run directory
 
-After eval:
+Before calling a result metric-bearing, verify:
 
-- `metrics.json`, `per_image.json`
-- guarded companions when `duplicate_control.enabled`
-- proxy bundle summary when used
+1. raw, scored, and provenance files come from the same artifact directory;
+2. raw/scored hashes and ordered row IDs match the provenance binding;
+3. row identity, image path/dimensions, and GT are unchanged by scoring;
+4. each prediction has finite score plus selected-token source evidence bound to
+   its `row_id`, `object_span_id`, and score-policy fingerprint;
+5. GT norm1000 `xyxy` is converted once to pixels, while scored prediction
+   boxes are already pixel `xyxy`.
 
-For sharded runs, trust merged top-level summaries/manifests over shard logs.
+The direct Swift evaluator writes only:
 
-## Stage-2 Eval Validity Gate
+- `metrics.json`
+- `evaluation_receipt.json`
+- `coco_gt.json`
+- `coco_predictions.json`
 
-Before treating Stage-2 eval artifacts as metric-bearing, reject or repair runs where:
+Its COCO sidecars use evaluator-local categories and are not test-server
+submission files. V1 is aggregate-only: do not promise `per_image.json`, LVIS,
+duplicate guards, overlays, proxy views, or confidence reconstruction.
 
-- a row lacks real source image identity or dimensions;
-- strict parser status is replaced by diagnostic fallback or `metric_bearing=false`;
-- multi-image inputs were collapsed instead of rejected;
-- prompt-token / detection-format provenance or score fingerprints are missing;
-- `resolved_config.path` cannot recover the authoritative pipeline config.
+## Repair and reporting
 
-Useful debug surfaces:
+- Inspect the exact run config, manifest, summary, provenance, receipt, and a
+  few raw/scored row pairs before theorizing.
+- Preserve malformed diagnostic rows and parser evidence, but do not label
+  non-metric-bearing rows as benchmark evidence.
+- Re-run evaluation without inference when only evaluator code or output views
+  changed and the scored contract still validates.
+- Report config, checkpoint and payload identity, row scope, artifact root,
+  metric file, representative parser failures, and evidence limitations.
+- Keep legacy and current results visibly separated; never compare proxy-expanded
+  or reconstructed-score artifacts to the Swift V1 headline as if equivalent.
 
-- `monitor_dumps/eval_phase_trace` for the last completed eval phase;
-- source-JSONL provenance and image-root metadata when archived artifacts need geometry recovery;
-- `configs/stage2/rollout_correction/smoke/compact_full_vllm_train64_val32_6steps_coco80_evaltrace.yaml` for compact-full COCO-80 evaltrace smoke coverage.
-
-## Failure Modes
-
-- `metrics: both` on COCO proxy artifacts can route into LVIS-federated assumptions; inspect `src/eval/detection.py`.
-- Missing visualization images usually means `provenance.source_jsonl_dir` or root image provenance is wrong.
-- Proxy-expanded GT count surprises should be checked against `metadata.coordexp_proxy_supervision.object_supervision`.
-- A scored raw-text collapse usually means the wrong confidence alignment path ran.
-- If a familiar script disappeared, do not force the old command shape; trace the current config owner and artifact writer first.
-- Do not re-run inference when only eval views changed.
+The bundled `scripts/coordexp_infer_eval.py` remains a legacy recursive-run
+compatibility helper because repository tests cover its old free-decode config
+surface. It is not a current Swift launcher and should not be used for new runs.

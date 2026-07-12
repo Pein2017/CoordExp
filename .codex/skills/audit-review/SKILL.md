@@ -1,74 +1,54 @@
 ---
 name: audit-review
-description: "Use for read-only CoordExp audits and fixed-point diff/code reviews of branches, commits, work-in-progress changes, configs, specs, artifacts, docs, or OpenSpec changes, with separate engineering-standards and intent/contract judgments."
+description: Use for read-only CoordExp audits, fixed-point diff/code reviews, approval or launch gates, and explicitly requested bounded review-revise loops, with engineering and intent/contract judgments kept separate.
 ---
 
 # Audit Review
 
-Produce read-only audits for another implementer. Prioritize correctness, reproducibility, governance, pipeline integrity, and eval validity over style commentary.
+Audit correctness, reproducibility, governance, pipeline integrity, and evaluation validity. Default to a concise, blocker-first result. Expand only when requested or needed to justify a decision.
 
-## Role Boundary
+## Route Before Reviewing
 
-Use this for severity-ranked audits, not implementation. If the user gives a concrete model symptom such as a metric drop, invalid spike, duplication burst, or length collapse, start with `model-diagnosis`; return here only for independent correctness or claim-validity review. If the user asks whether a new mechanism is contract-safe before launch, use `model-innovation-risk-audit`.
+- Use `model-diagnosis` first for metric drops, malformed outputs, duplication, length/stop changes, train/eval divergence, or other model-behavior symptoms.
+- Use `model-innovation-risk-audit` for pre-launch trust gates on a new mechanism, objective, loss, or eval path.
+- Use `debug-feedback-loop` for a reproducible code, config, CLI, runtime, integration, flake, or performance failure.
+- Use this skill for independent correctness, contract, claim-validity, diff, approval, or launch judgment.
 
-For a reproducible code, config, CLI, runtime, or performance failure, use
-`debug-feedback-loop`. Return here only when the question is whether a proposed
-or completed change is reviewable, contract-safe, or ready to approve.
+One-shot audits are read-only. Enter convergence mode only when the user explicitly asks for review, revision, and repeated checking; honor the mutation scope they authorized.
 
-Do not let audit findings default to implementation TODOs. For each P0/P1, decide whether the finding means `fix`, `narrow`, `drop`, `probe`, or `needs user decision`.
-
-## Audit Mode Selector
-
-Name the mode before searching broadly:
-
-- `approval audit`: pre-implementation, pre-merge, pre-launch, or final approval review; return `approve`, `hold`, `reject`, or `needs user decision`.
-- `change/spec audit`: compare implementation, docs, stable specs, and active OpenSpec deltas.
-- `artifact/run audit`: start from the exact artifact root; label scope and do not generalize beyond it.
-- `launch gate`: decide `promote`, `hold`, `rerun gate`, or `needs user decision`.
-- `claim validity audit`: identify the claim, scope, baseline/ablation, metrics, counterevidence, and falsification gap.
-- `implementation-vs-contract audit`: verify code/config/runtime/artifacts implement the documented contract.
-- `diff/code review`: review a branch, commit range, staged/unstaged work, or PR-equivalent snapshot against a pinned fixed point along two independent axes: engineering standards and intent/contract fidelity.
-
-If the user requests blocker-only review, stop after blocking findings, confirmed OK checks, and residual risks.
-
-## Decision Compression
+## Bound The Decision
 
 Before broad reading, name:
 
-- decision at stake
-- evidence scope
+- mode: `approval`, `change/spec`, `artifact/run`, `launch`, `claim validity`, `implementation-vs-contract`, or `diff/code review`
+- decision at stake and evidence scope
+- fixed point or artifact version
 - stop condition
-- finding ledger or prior review packet, if one exists
+- prior finding ledger, if any
 
-For each P0/P1, classify the decision implication:
+Compress broad requests into a falsifiable question. For blocker-only review, stop after blocking findings, confirmed-OK checks, verdict, and residual risk.
 
-- `fix`: intended direction is still valid; implement a bounded correction.
-- `narrow`: reduce the claim, launch scope, supported workflow, or design surface before fixing.
-- `drop`: evidence suggests the mechanism, claim, or path is not worth continuing as framed.
-- `probe`: missing execution, artifact, baseline, ablation, or upstream-runtime evidence is the next step.
-- `needs user decision`: next step changes research meaning, compatibility, cost, destructive behavior, or publication/launch risk.
+## Authority And Routing
 
-Prefer `probe` over speculative fixes when runtime semantics, artifact identity, matched baselines, or installed upstream behavior are unverified. Prefer `needs user decision` over quietly converting research-meaning forks into engineering tasks.
+Start with `docs/AGENT_INDEX.md` and `docs/catalog.yaml`, then follow the relevant canonical docs and `docs/IMPLEMENTATION_MAP.md`. Use stable specs for compatibility-sensitive contracts and active OpenSpec artifacts only when the user puts that change in scope. Treat `research/`, old worktrees, memories, and `progress/` as historical evidence, not current behavior; do not create new `progress/` records.
 
-## Diff And Code Review
+Current route examples:
 
-Use this mode when the user says `review this branch`, `review since <ref>`,
-`review this diff`, `review my changes`, or names a PR-equivalent change set.
-Read [code-review-baseline.md](references/code-review-baseline.md) for the
-standards/smell baseline and CoordExp-specific review smells.
+- training: `src/train.py` -> `src/training/pipeline.py` -> `src/training/supervised_trainer.py`
+- inference: `src/infer.py` -> `src/inference/pipeline.py` -> `src/inference/runtime.py` / `src/inference/backend.py`
+- detection evaluation: `scripts/evaluate_detection.py` -> `src/eval/detection_consumer.py`
 
-### 1. Pin the snapshot
+Verify these routes against the live docs before relying on them; paths preserved only in history are not current architecture.
 
-- Use the fixed point supplied by the user.
-- If none is supplied and the canonical merge base is unambiguous from the
-  current branch/worktree policy, use it and state it. Otherwise ask one
-  question; the base changes what is being reviewed.
-- Verify the ref before reviewing. Capture the merge base, commit list, diff
-  stat, changed paths, and worktree status once.
-- Distinguish committed branch changes (`<base>...HEAD`), staged changes,
-  unstaged changes, and untracked files. Do not silently omit any category the
-  user put in scope.
-- Stop early on an invalid ref or empty in-scope diff.
+## Fixed-Point Diff Review
+
+When reviewing a branch, commit range, staged/unstaged work, or PR-equivalent snapshot:
+
+1. Use the user-supplied base. If none is supplied, use an unambiguous canonical merge base and state it; ask only when the choice materially changes scope.
+2. Capture the base, merge base, commit list, changed paths, diff stat, and worktree status once.
+3. Separate committed, staged, unstaged, and untracked changes. Stop on an invalid ref or empty in-scope diff.
+4. Resolve intent from the user brief, explicitly scoped active change, stable contracts, canonical docs/configs/tests, then commit text as weak evidence.
+5. Read [code-review-baseline.md](references/code-review-baseline.md) when smell and standards guidance is useful.
 
 Useful handles:
 
@@ -78,217 +58,98 @@ git merge-base <base> HEAD
 git log <base>..HEAD --oneline
 git diff --stat <base>...HEAD
 git diff --name-only <base>...HEAD
-git diff --cached --stat
-git diff --stat
 git status --short
 ```
 
-### 2. Resolve intent and standards
+## Two Independent Judgment Axes
 
-Resolve intent in this order:
+**Engineering Standards** covers ownership, readability, depth, coupling, proportionality, testability, and repository conventions.
 
-1. the user's brief or named acceptance criteria;
-2. the active OpenSpec change, only when explicitly in scope;
-3. stable OpenSpec contracts;
-4. canonical docs, config/schema contracts, tests, and artifact contracts;
-5. commit/branch description as weak evidence when no stronger source exists.
+**Intent And Contract** covers requested behavior, algorithm and forward semantics, data/geometry/order, targets and loss normalization, optimization, statistical assumptions, metric comparability, and artifact/provenance contracts.
 
-If no originating spec exists, say so. Still review against repository
-contracts and the user's stated intent; do not invent requirements.
+Do not let a pass on one axis cancel a failure on the other. The agent owns code-level evidence, implementation risk, and verification design. The user owns changes to research meaning, forward semantics, data/loss meaning, statistical assumptions, metric interpretation, expensive runs, and compatibility or publication trade-offs.
 
-Resolve standards from `AGENTS.md`, canonical standards docs, local test and
-tooling conventions, and the baseline reference. Repo-specific rules override
-generic smell heuristics. Tool-enforced formatting is not a manual finding.
+## Findings And Decisions
 
-### 3. Review two axes independently
+Severity:
 
-**Engineering Standards** asks whether the change is understandable,
-source-owned, testable, proportionate, and consistent with repository
-standards. It catches unnecessary surface area, shallow modules, hidden
-coupling, speculative knobs, weak tests, and accidental complexity.
+- `P0`: likely invalidates correctness, reproducibility, evaluation claims, or launch safety.
+- `P1`: substantial risk to supported workflows, contracts, metrics, artifacts, or maintainability.
+- `P2`: clarity, coverage, or future-maintenance risk.
 
-**Intent And Contract** asks whether the change implements what was requested
-without changing research meaning by accident. For CoordExp, explicitly trace
-algorithm semantics, model forward behavior, data/geometry/order, targets and
-loss normalization, optimization/training behavior, statistical assumptions,
-metric comparability, and artifact/provenance contracts when touched.
+Every material finding needs an evidence handle, impact, decision implication, fix/probe direction, and smallest realistic verification. Classify each P0/P1 before proposing changes:
 
-Do not let a pass on one axis wash out a failure on the other. Report findings
-under separate headings, severity-rank within each axis, then give one overall
-decision using CoordExp correctness and research-validity priorities.
+- `fix`: the direction remains valid; make a bounded correction.
+- `narrow`: reduce the claim, workflow, support matrix, or launch scope.
+- `drop`: stop the mechanism or path as framed.
+- `probe`: obtain the cheapest discriminating runtime, artifact, baseline, ablation, or upstream receipt.
+- `needs user decision`: the fork changes research meaning, compatibility, cost, destructive behavior, or publication/launch risk.
 
-### 4. Protect the user's decision surface
+Prefer `probe` to speculative fixes when executed semantics or matched evidence is missing. Reviewer timeout, disconnection, vague output, or a skipped hardware check is unresolved, not approval.
 
-The agent owns code-level evidence, standards analysis, implementation risk,
-and verification design. The user owns changes to algorithmic intent, forward
-semantics, data meaning, loss/objective meaning, statistical assumptions,
-metric interpretation, and expensive training trade-offs. When review exposes
-one of those forks, explain the alternatives at the architectural level, give
-a recommendation, and return `needs user decision` rather than choosing
-silently.
+## Evidence Routine
 
-## Authority Model
+Prioritize the highest-risk touched flows rather than auditing everything:
 
-Use current repo truth in this order:
+- data schema, image/geometry/order, and coordinate transitions
+- config strictness and removed-key rejection
+- training assembly, packing/cache ownership, loss normalization, and manifests
+- inference runtime, scoring evidence, merge parity, and resolved configuration
+- evaluator input contract, metric scope, and artifact provenance
 
-1. `docs/PROJECT_CONTEXT.md`
-2. `docs/SYSTEM_OVERVIEW.md`
-3. `docs/IMPLEMENTATION_MAP.md`
-4. relevant domain docs under `docs/`
-5. `openspec/specs/` only for stable compatibility-sensitive contracts
-6. `openspec/changes/<active-change>/` only when explicitly in scope
-7. `progress/` only for deprecated legacy provenance when explicitly needed
+For run or claim audits, identify code/config identity, checkpoint, data/sample scope, training budget, decode/runtime settings, relevant metric artifacts, and whether the comparator is matched or confounded.
 
-Use `docs/AGENT_INDEX.md` and `docs/catalog.yaml` for routing. Treat
-`progress/audits/` and other progress notes as legacy evidence, not durable
-codebase references or destinations for new audit work.
+Route runtime-dependent P0/P1 confirmation through `probe_runner` when available. Treat source reading, mocks, or plans as insufficient when upstream/vendor/runtime behavior owns the result. Prefer targeted tests from `docs/IMPLEMENTATION_MAP.md`, artifact/manifest checks, and narrow receipts over broad reruns.
 
-## Governance Checks
+Open references only when useful:
 
-For stable contracts or OpenSpec work:
+- [pipeline-checklist.md](references/pipeline-checklist.md) for end-to-end semantics and reproducibility
+- [governance-claim-checks.md](references/governance-claim-checks.md) for OpenSpec, claims, and closure
+- [grep-seeds.md](references/grep-seeds.md) for scoped discovery
+- [report-template.md](references/report-template.md) for a requested standalone report
 
-- Check active-change state when it matters.
-- Validate specs strictly when specs changed.
-- Verify code/docs/spec sync when schema, artifact names, metrics, loss semantics, entrypoints, or recommended workflows move.
-- Treat incomplete proposals as active or explicitly deprecated; do not let stale changes masquerade as current contract.
-- Reviewer timeout or disconnection is unresolved, not approval.
+## Explicit Convergence Mode
+
+Use this only when the user asks to iterate work through review and revision.
+
+1. State objective, mode, allowed mutation level, artifact/version, decision, evidence that could change it, approval gates, and stop condition.
+2. Produce or inspect the first bounded artifact.
+3. If subagents are allowed or requested, use two independent lanes by default. Assign exact scope, read/write boundary, evidence output, and stop condition. Suitable roles include `contract_auditor`, `repo_scout`, `upstream_relation_tracer`, `model_diagnostician`, and `probe_runner`; use `implementation_worker` only for an explicitly owned patch.
+4. Triage results as P0/P1/P2, non-blocking, wrong, or duplicate. Reject findings only with technical evidence.
+5. Classify every accepted P0/P1 as `fix`, `narrow`, `drop`, `probe`, or `needs user decision` before revision.
+6. Revise only authorized surfaces. Do not patch through research-meaning, compatibility, cost, destructive, or publication decisions.
+7. Re-review changed evidence. Default to at most two review/revision rounds. Continue only when a round closes a material finding; do not run another clean wave without changed evidence or an unresolved high-stakes decision.
+
+Convergence requires all P0/P1 findings to be resolved, narrowed, dropped, probed, evidence-rejected, or assigned to the user; required reviewers and verification must be complete; and claims must not exceed evidence.
+
+End in exactly one state:
+
+- `approve` (one-shot gate)
+- `approved to implement`
+- `ready for user approval`
+- `implemented and verified`
+- `hold`
+- `needs user decision`
+- `probe required`
+- `narrowed/dropped`
 
 ## Output Contract
 
-Lead with findings, ordered by severity:
+Lead with severity-ranked blockers and concrete handles. For diff/code review, use:
 
-- `P0`: likely invalidates correctness, reproducibility, or evaluation claims.
-- `P1`: substantial risk to supported workflows, artifacts, metrics, or config contracts.
-- `P2`: maintainability, clarity, or missing-coverage risks that could become failures.
+1. snapshot and fixed point
+2. Engineering Standards findings
+3. Intent And Contract findings
+4. confirmed OK / ruled-out checks
+5. verdict and residual risk
 
-Each finding needs:
+If no findings remain, say so and name skipped checks or residual risk. Keep open questions only when they block a reliable conclusion. For convergence mode, also state artifact/version, lanes used, accepted/rejected findings, decisions and revisions, verification, remaining gate, and exact stop state.
 
-- evidence handle: file path, symbol, config key, artifact path, command output summary, or doc/spec line reference
-- impact: why it matters for correctness, reproducibility, eval validity, or maintainability
-- decision implication: `fix`, `narrow`, `drop`, `probe`, or `needs user decision`
-- fix/probe direction: what an implementer should change, or the smallest evidence that would decide the issue
-- verification: the smallest realistic command, artifact check, or targeted test that would prove the fix
+## Guardrails
 
-Also include:
-
-- confirmed OK / ruled out checks that prevent backtracking
-- open questions only when they block a reliable conclusion
-- suggested next actions, grouped as `fix now`, `probe before fixing`, `narrow/drop discussion`, or `user decision`
-
-For `diff/code review`, report:
-
-1. snapshot and fixed point;
-2. **Engineering Standards** findings;
-3. **Intent And Contract** findings;
-4. confirmed OK / ruled-out checks for each axis;
-5. overall verdict and residual risk.
-
-For approval audits, also include the verdict, validation run, skipped checks, and residual risks. If the user asks for a report artifact, write a standalone Markdown report and verify section structure, placeholder markers, and whitespace.
-
-Use `references/report-template.md` when a skeleton is helpful.
-
-## Read-Only Guardrails
-
-- Do not modify production code, configs, docs, specs, or artifacts during an audit.
-- Do not invent results. Label unverified ideas as hypotheses and keep them out of severity-ranked findings.
-- Do not treat benchmark scopes as interchangeable. Always label `tiny`, `val200`, `limit=200`, first-200, full-val, proxy view, raw-text, coord-token, bbox format, checkpoint id, and launch shape when relevant.
-- Do not use `progress/` as current behavior when `docs/` or stable specs cover the contract.
-- Use Git inspection only when the audit scope depends on dirty state, a PR/change diff, or the user asks for it; otherwise do not run Git by reflex.
-- For Python code exploration, route docs/configs first, then use a correct local CodeGraph index only for broad "where should I look?" maps. Once files or symbols are known, switch to Serena for exact references, bodies, declarations/implementations, diagnostics, and edit-risk checks. In linked worktrees, do not trust CodeGraph results from another checkout.
-- For broad approval audits, use `contract_auditor` as the default custom-agent role. Add `repo_scout` for unknown surfaces and `upstream_relation_tracer` for cross-root dependencies; route runtime-dependent P0/P1 confirmation through `probe_runner` receipts; reconcile every lane into one verdict. A timed-out or vague lane is unresolved, not approval.
-- Do not launch or recommend broad audit fleets by default. Use one focused audit or 2 independent lanes; add a cross-model lane only for high-stakes launch, merge, architecture, or expensive-run gates. A third clean wave needs changed evidence or a new decision.
-- If a finding ledger such as `agent_verdict/<surface>-ledger.md` exists in scope, read it first and report only new findings, status changes, rejected findings, or closure evidence.
-- If a temporary probe is unavoidable, prefer `/tmp/`. Ask before writing under repo `temp/`.
-
-## Audit Workflow
-
-### 1. Bound The Surface
-
-Identify the smallest relevant set of:
-
-- docs: `docs/AGENT_INDEX.md`, `docs/catalog.yaml`, `docs/PROJECT_CONTEXT.md`, `docs/SYSTEM_OVERVIEW.md`, `docs/IMPLEMENTATION_MAP.md`, domain docs
-- stable specs: only exact `openspec/specs/` contracts needed by the question
-- progress: only matching legacy benchmark, diagnostic, exploration, direction,
-  pretrain, or audit evidence; do not write new audit outputs there
-- code: likely `src/config/`, `src/datasets/`, `src/detection/`, `src/trainers/`, `src/infer/`, `src/eval/`, `src/bootstrap/`, `src/common/`
-- configs: the concrete YAML profiles under review
-- tests/artifacts: targeted surfaces from `docs/IMPLEMENTATION_MAP.md` or artifact manifests
-
-If the prompt contains broad words such as "all", "fully understand", "every detail", or "fragile boundaries", compress them into one falsifiable audit question before expanding scope.
-
-### 2. Trace High-Risk Flows
-
-Prioritize 3-5 flows with the highest impact:
-
-- Data contract and geometry: JSONL schema, `bbox_2d` xor `poly`, ordering, pixel/norm1000/token transitions, image-root resolution.
-- Training: config schema, `src/sft.py`, `src/training_runtime/plan.py`, trainer variant, collator family, packing owner, cache eligibility, manifests.
-- Stage-1 compact detection: `LatestDetectionTrainingConfig`, `DetectionTrainingDataset`, recursive detection objective, sidecar/packing policy.
-- Stage-2 rollout correction: `stage2_rollout_correction`, rollout runtime, residual-set planning, duplicate filtering before assignment, teacher-forcing modules, diagnostic events, and metric keys.
-- Infer/eval: `src/infer/pipeline.py::run_pipeline`, `resolved_config.json`, `resolved_config.path`, confidence post-op compatibility, `src/eval/detection.py::evaluate_and_save`, guarded metrics.
-- Artifacts/provenance: `summary.json`, `metrics.json`, `run_metadata.json`, `pipeline_manifest.json`, `experiment_manifest.json`, `effective_runtime.json`, durable copied summaries.
-
-For artifact/run or claim-validity audits, produce an execution receipt before interpreting metrics: code/config identity, checkpoint, data/sample scope, training budget, decode kwargs, effective runtime, optimizer/scheduler when relevant, metric artifact, and comparison validity (`matched` or `confounded-by-X`).
-
-### 3. Look For Failure Classes
-
-Check for:
-
-- silent fallback where fail-fast is expected
-- geometry drop/reorder/renormalization without contract support
-- stale config keys accepted as no-ops
-- artifact names or metric keys that drift from docs/specs
-- benchmark claims missing scope labels
-- confidence/eval paths applied to incompatible bbox formats
-- temporary audit/progress notes being used as durable docs or new work carriers
-- broad runtime fusion assumptions on paths that should use offline-prepared JSONL
-
-### 4. Validate Only When In Scope
-
-When validation is allowed or requested:
-
-- prefer existing targeted tests from `docs/IMPLEMENTATION_MAP.md`
-- Codex shells initialize the `ms` conda environment by default; use `rtk pytest ...` for noisy test output in this repo
-- prefer artifact and manifest checks over broad reruns
-- for long or sharded runs, check merged summaries/manifests rather than log lines
-
-If validation is not allowed or too expensive, provide exact verification steps and expected failure signals.
-
-### 5. Decide Before Hand-Off
-
-End by making the next step explicit:
-
-- `approve`
-- `hold`
-- `fix bounded issues`
-- `probe before fixing`
-- `narrow or drop claim/scope`
-- `needs user decision`
-
-Do not present "suggested fixes" as the only path when the evidence could instead mean the claim should narrow, the mechanism should stop, or a discriminating probe should run first.
-
-## Resources
-
-Open only when helpful:
-
-- `references/report-template.md`: audit report skeleton
-- `references/grep-seeds.md`: high-signal `rg` starting points
-- `references/pipeline-checklist.md`: end-to-end correctness and reproducibility checklist
-- `references/governance-claim-checks.md`: OpenSpec governance, claim-validity, and review-closure checklist
-- `references/code-review-baseline.md`: fixed-diff engineering standards, smell heuristics, and CoordExp-specific review smells
-
-## Review Philosophy
-
-A change can pass engineering standards and still implement the wrong thing.
-A change can match the requested behavior and still be fragile, opaque, or
-unsafe to extend. These are different failures, so review them separately.
-
-Code review is not a test of whether the author can sound like a professional
-coder. It is a coordination mechanism: the agent makes implementation facts,
-risks, and evidence legible; the user keeps control of scientific intent and
-high-level architecture. Good abstractions reduce the implementation knowledge
-the user must carry without hiding algorithmic, data, loss, or statistical
-choices the user must own.
-
-Do not reward polish that obscures semantic drift. Do not reward literal spec
-compliance that leaves an unmaintainable trap. The review is done when both
-axes are visible, the evidence is concrete, and the next decision has an owner.
+- Do not modify production code, configs, docs, specs, or artifacts during a one-shot audit.
+- Do not invent results or promote hypotheses into findings.
+- Label benchmark and artifact scope precisely; do not compare incompatible dataset slices, bbox/coordinate surfaces, checkpoints, parsers, or launch shapes.
+- Use Git only when the audit scope depends on it.
+- Read an in-scope finding ledger first and report only new findings, status changes, rejected findings, or closure evidence.
+- Ask before writing temporary probes inside the repository; prefer `/tmp/`.

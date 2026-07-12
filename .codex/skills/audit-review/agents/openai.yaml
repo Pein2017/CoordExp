@@ -1,4 +1,4 @@
 interface:
   display_name: "Audit Review"
-  short_description: "Audit contracts or review a fixed diff"
-  default_prompt: "Use $audit-review for a read-only CoordExp audit or fixed-point diff/code review, keeping engineering-standards and intent/contract judgments separate and returning evidence-backed decision implications."
+  short_description: "Audit, review, or converge on evidence"
+  default_prompt: "Use $audit-review for a concise CoordExp audit, fixed-point two-axis review, or explicitly requested bounded review-revise loop with evidence-backed decision implications and a clear stop state."

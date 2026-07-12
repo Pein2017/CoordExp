@@ -1,4 +1,0 @@
-interface:
-  display_name: "Codebase Design"
-  short_description: "Design deep modules and research-safe seams"
-  default_prompt: "Use $codebase-design to design or compare deep module interfaces, seam placement, adapters, and contract-safe testing strategies."

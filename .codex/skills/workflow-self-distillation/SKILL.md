@@ -1,40 +1,31 @@
 ---
 name: workflow-self-distillation
-description: Use when asked to review recent Codex work, memories, sessions, task history, or recurring design/research preferences to identify durable skills, subagents, automations, docs, extensions, or deliberate skips.
+description: Use when reviewing Codex tasks, memories, sessions, or recurring CoordExp preferences to distill durable skills, subagents, automations, docs, extensions, or deliberate skips.
 ---
 
 # Workflow Self-Distillation
 
-Use this to turn repeated work and recurring judgment preferences into durable agent assets.
+Turn repeated work and judgment preferences into the smallest durable agent asset.
 
 ## Evidence Order
 
 1. Read the user's brief or `self-distillation.md`.
-2. Mine recent Codex threads, task summaries, memories, and rollout summaries.
-3. Check Chronicle only if an enabled tool exists; use it for discovery and confirm important facts elsewhere.
-4. Inventory existing skills, `agents/openai.yaml`, `.codex/agents/*.toml`, repo docs, hooks, ops helpers, and automations before proposing anything new.
+2. Mine recent tasks, memories, and rollout summaries.
+3. Use Chronicle only when enabled, and confirm its discoveries elsewhere.
+4. Inventory skills, agent metadata, repo docs, hooks, helpers, and automations before proposing additions.
 
 Prefer a 30-day window unless the user gives another window. If history is shorter, say so.
 
-Classify provenance before recommending skill changes:
-
-- personal/repo-local;
-- official/plugin-managed;
-- generated/vendor-provided;
-- local wrapper around an official workflow.
-
-Do not recommend removing or merging official/plugin-managed skills unless the user explicitly puts them in scope.
+Classify each asset as personal/repo-local, official/plugin-managed,
+generated/vendor-provided, or a local wrapper. Do not remove or merge official
+or plugin-managed assets unless the user explicitly puts them in scope.
 
 ## Parallel Split
 
-When subagents are explicitly requested or the parent workflow permits them, split broad evidence into read-only lanes instead of stacking all context in one thread:
-
-- memory and rollout summaries;
-- recent Git history plus `research/`, legacy `progress/` provenance, and docs;
-- existing assets and overlap risks;
-- operations/artifact/data-transfer or another domain-heavy lane.
-
-Give each subagent a self-contained prompt, forbid edits, and ask for evidence handles, confidence, recommended form, and overlap warnings. The parent must synthesize, remove duplicate reasoning, and decide.
+When subagents are requested or permitted, split independent read-only evidence
+lanes: history/memory, repo/docs, asset overlap, and domain-heavy operations.
+Give each lane a self-contained scope and request evidence handles, confidence,
+recommended form, and overlap warnings. The parent synthesizes and decides.
 
 ## Candidate Test
 
@@ -45,7 +36,8 @@ Act only when the candidate:
 - improves speed, consistency, reliability, or correctness;
 - is not already adequately covered.
 
-Search recent memories and rollout summaries for prior consolidation, retirement, or restoration decisions. If prior decisions conflict with current state, report the conflict and explain whether provenance changes the recommendation.
+Search memory for prior consolidation, retirement, or restoration decisions and
+report conflicts with the live state.
 
 Choose the smallest form:
 
@@ -53,20 +45,16 @@ Choose the smallest form:
 - custom subagent: bounded delegated role with clear inputs and output;
 - automation: recurring reminder, monitor, report, or scheduled check;
 - extend existing: when the gap belongs to a current skill;
-- docs or agent metadata: when the durable lesson is an authority boundary, delegation rule, or agent role tweak;
+- docs or agent metadata: authority, delegation, communication, or role guidance;
 - skip: one-off, sensitive, ambiguous, poorly evidenced, or overlapping.
 
 ## Output First
 
-Before creating assets, produce a compact shortlist with:
+Before creating assets, give a compact shortlist: workflow, dated evidence,
+frequency/confidence, recommended form, and why it is worth creating or skipping.
 
-- repeated workflow;
-- evidence and dates;
-- frequency / confidence;
-- recommended form;
-- why it is or is not worth creating.
-
-Create only when the user explicitly asks for asset creation or approves the shortlist. Validate changed skill/agent assets before reporting them complete.
+Create only when explicitly asked or after approval. Put communication
+preferences in `AGENTS.md` or memory, not a new skill. Validate changed assets.
 
 ## Verification
 
@@ -81,4 +69,4 @@ for path in pathlib.Path(".codex/skills").glob("*/agents/openai.yaml"):
 PY
 ```
 
-For final reporting, include created/extended assets, deliberate skips, unresolved evidence gaps, and commands run.
+Report created/extended assets, deliberate skips, unresolved evidence gaps, and commands run.

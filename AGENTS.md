@@ -16,13 +16,10 @@
 
 ## Execution Harness
 
-- Before changing files, identify the task type, success criterion, and smallest evidence that would prove the work is done. For tiny edits this can stay implicit, but it must still guide the change.
-- Create or refine a persistent/self-driven goal only for explicit long-running or multi-turn work, and only after bounding the lane; the goal must include a concrete stop condition.
-- State assumptions only when they affect implementation, research meaning, cost, compatibility, or the verification path. If an assumption is cheap to verify locally, verify it instead of asking.
-- If multiple meaningful interpretations exist, present the tradeoff and ask or pause only when the wrong choice would be costly; otherwise choose the conservative repo-local default and continue.
-- For multi-step work, use a brief plan with a verification handle for each step. For simple work, proceed directly and keep the verification path explicit.
-- Every changed line should trace to the user request, concrete evidence, a failing check, a documented contract, or cleanup caused by the current change.
-- If a finding implies `fix`, `narrow`, `drop`, `probe`, or `needs user decision`, make that decision before patching through it.
+- Identify the success criterion and smallest proof before editing. Use a brief, verification-linked plan only for multi-step work.
+- Create a persistent/self-driven goal only for explicitly long-running or multi-turn work; bound it and give it a concrete stop condition.
+- Verify cheap assumptions locally. Ask only when a wrong interpretation would be costly; otherwise use the conservative repo-local default.
+- Trace every changed line to the request, evidence, a failing check, a contract, or cleanup caused by the change. Classify material findings as `fix`, `narrow`, `drop`, `probe`, or `needs user decision`; the user owns choices that change research meaning, compatibility, cost, destructive scope, or publication.
 
 ## Judgment Taste
 
@@ -58,16 +55,20 @@
   snapshots. Treat `progress/` as a legacy/deprecated archive only: read it only
   when explicitly reconstructing old evidence, migrate useful material to
   `research/`, and do not create new `progress/` records.
-  
+
 ## Subagent context inheritance
+
 For every V2 `spawn_agent` call, set `fork_turns` explicitly.
+
 - `none`: self-contained discovery, artifact lookup, narrow probes.
 - `1`-`3`: tasks needing only recent hypotheses or decisions.
 - `all`: full-history synthesis or tasks that explicitly depend on the entire discussion.
+
 Never omit `fork_turns`, because the runtime defaults an omitted V2 value to `all`. Explain the selected value briefly before spawning.
 
 ## Reporting
 
+- Lead with the verdict and crucial evidence. Default to a short answer; expand only when requested or needed to support a decision. Explain unfamiliar concepts with one concrete example, demo, or artifact before adding abstract detail.
 - Reviews lead with severity-ranked findings and concrete handles. If there are no findings, say so and name residual risk or skipped checks.
 - Handoffs should include objective, current state, exact paths, commands, evidence scope, risks, and continuation seeds.
 - For implementation or docs changes, report the outcome and any material verification, skipped checks, or residual risks. Keep the shape concise; do not force a fixed summary template.

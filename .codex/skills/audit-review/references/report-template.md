@@ -21,21 +21,24 @@ single severity sequence below.
 - Finding:
 - Evidence:
 - Why it matters:
-- Suggested fix direction (for implementer):
+- Decision implication: `<fix | narrow | drop | probe | needs user decision>`
+- Fix/probe direction:
 - How to verify:
 
 #### P1 (Likely Bug / Reproducibility / Contract Drift)
 - Finding:
 - Evidence:
 - Why it matters:
-- Suggested fix direction (for implementer):
+- Decision implication: `<fix | narrow | drop | probe | needs user decision>`
+- Fix/probe direction:
 - How to verify:
 
 #### P2 (Maintainability / Footguns / Coverage Gaps)
 - Finding:
 - Evidence:
 - Why it matters:
-- Suggested fix direction (for implementer):
+- Decision implication: `<fix | narrow | drop | probe | needs user decision>`
+- Fix/probe direction:
 - How to verify:
 
 ### Confirmed OK / Ruled Out
@@ -50,5 +53,5 @@ For `diff/code review`, identify the axis each confirmed check supports.
 - `<1-3 questions that unblock the implementer>`
 
 ### Verdict
-- `<approve | hold | reject | probe required | needs user decision>`
+- `<approve | approved to implement | ready for user approval | implemented and verified | hold | needs user decision | probe required | narrowed/dropped>`
 - Residual risk: `<what remains unverified>`

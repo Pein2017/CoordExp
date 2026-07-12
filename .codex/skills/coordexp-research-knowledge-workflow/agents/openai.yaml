@@ -1,4 +1,4 @@
 interface:
   display_name: "CoordExp Research Knowledge"
   short_description: "Research knowledge synthesis workflow"
-  default_prompt: "Use $coordexp-research-knowledge-workflow to collect, preserve, and synthesize CoordExp research notes across worktrees."
+  default_prompt: "Use $coordexp-research-knowledge-workflow to preserve and synthesize CoordExp research across worktrees while keeping raw provenance, active interpretation, current docs, and stable specs distinct."

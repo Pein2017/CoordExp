@@ -1,97 +1,81 @@
 ---
 name: full-pipeline-smoke
-description: Use when validating a CoordExp change through a production-like multi-stage data/train-or-rollout/infer/eval/artifact smoke path, including checkpoint-save and evaluation-step behavior, not for narrow unit or config checks.
-metadata:
-  short-description: Full-cycle smoke workflow
+description: Use for a production-like CoordExp data, training, checkpoint, inference, evaluation, and artifact smoke; not for a narrow unit, schema, or config check.
 ---
 
 # Full Pipeline Smoke
 
-Smoke configs must be production configs with fewer samples. Preserve model, template, packing, max lengths, geometry, decoding, checkpoint, and artifact contracts unless those knobs are the feature under test.
+Use the smallest run that crosses every changed production boundary. Keep model,
+template, geometry, packing, lengths, loss, optimizer, checkpoint, decode, and
+artifact semantics production-like unless that surface is under test.
 
-## What A Full Smoke Proves
+## Current route
 
-Exercise the relevant chain:
+Start from `docs/AGENT_INDEX.md`, `docs/catalog.yaml`, and the relevant stable
+`coordexp-swift-*` specs. Current roots and entrypoints are:
 
-- data read and sample contract;
-- Qwen3-VL template/multimodal encode;
-- packing/position ids when enabled;
-- forward/backward/optimizer or rollout step;
-- checkpoint save/load-adjacent behavior for the changed checkpoint surface;
-- at least one configured evaluation step when the production config evaluates;
-- feature-specific decode/matching/scoring/eval path;
-- logs/metrics;
-- reproducibility artifacts.
+- training: `configs/coordexp_swift/prod/`, `configs/coordexp_swift/smoke/`,
+  and `python -m src.train`;
+- inference: `configs/coordexp_swift/infer/` and `python -m src.infer`;
+- evaluation: `scripts/evaluate_detection.py` and
+  `src/eval/detection_consumer.py`.
 
-Expected artifacts by surface:
+`configs/stage1/`, `configs/stage2/`, `src/sft.py`, `src/trainers/`, and the old
+`src/infer/` package are historical MS-Swift routes. Use them only when the user
+explicitly requests historical reproduction.
 
-- training: `resolved_config.json`, `runtime_env.json`, `effective_runtime.json`, `pipeline_manifest.json`, `experiment_manifest.json`, `run_metadata.json`, `logging.jsonl`, and the checkpoint directory/file set implied by the production save mode;
-- infer/eval: `summary.json`, `resolved_config.json`, `resolved_config.path`, `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, `metrics.json`;
-- guarded eval: `metrics_guarded.json`, `per_image_guarded.json`, `duplicate_guard_report.json`.
+## Design the smoke
 
-## YAML Pattern
+1. Name the production config, changed boundaries, and proof artifacts.
+2. Select an existing config under `configs/coordexp_swift/smoke/` when it
+   preserves the relevant production contract; otherwise derive the smallest
+   explicit smoke config from the current production config.
+3. Limit samples or steps only enough to keep the changed path real. Force one
+   checkpoint save and one eval-forward step when those production surfaces are
+   in scope.
+4. Launch from the repository root in the `ms` environment.
+5. Check artifacts and semantic counters, then run current inference/evaluation
+   when the change crosses those boundaries.
 
-```yaml
-extends:
-  - ../prod/<variant>.yaml
-  - common_prodlike.yaml
-```
-
-Allowed smoke overrides:
-
-- run/output/log dir;
-- `training.max_steps` or tightly justified epoch cap, but high enough to cross the first production save and eval boundaries;
-- checkpoint cadence shortened to force at least one save, while preserving the same checkpoint mode and saved module/artifact contract;
-- eval cadence shortened to force at least one evaluation when production evaluates, while preserving the same eval dataset/template/loss path;
-- sample limits;
-- dataloader stability knobs: workers `0`, prefetch `null`, persistent workers `false`.
-
-Do not set `training.save_strategy: "no"` for a full smoke unless checkpointing is genuinely out of scope and explicitly called out in the report. Avoid overriding learning rate, optimizer, checkpoint mode, template, packing, max lengths, or decoding unless that is the test.
-
-## Design Checklist
-
-1. Identify the production config.
-2. Choose the minimum steps that hit the feature path.
-3. Set sample limits high enough for those steps.
-4. Force the smoke through at least one checkpoint save when production saves.
-5. Force the smoke through at least one eval step when production evaluates.
-6. Keep length/packing/geometry contracts production-like.
-7. Name the artifacts that prove success before launching.
-
-## Launch Gate
-
-Before declaring a full smoke sufficient for production training:
-
-- Verify the training loop reaches the planned terminal step, not just the first optimizer step.
-- Verify at least one checkpoint is written and contains the expected adapter/full-model files, `modules_to_save`, and any feature-specific trainable modules.
-- Verify at least one eval step runs successfully when production has eval enabled; check eval metrics are finite and that trainer prediction/eval paths receive normal model outputs.
-- Verify `logging.jsonl` contains the feature metrics under the canonical namespace and does not contain retired/debug-only metric namespaces.
-- Verify `effective_runtime.json` records the intended world size, per-device batch size, gradient accumulation, effective batch size, save cadence, eval cadence, and packing state.
-
-Run from repo root:
+Canonical command shapes:
 
 ```bash
-rtk python <entrypoint> --config <smoke.yaml>
+conda run -n ms python -m src.train --config configs/coordexp_swift/smoke/<smoke>.yaml
+conda run -n ms python -m src.infer --config configs/coordexp_swift/infer/<infer>.yaml
+conda run -n ms python scripts/evaluate_detection.py \
+  --artifact-dir <infer-run-dir> --out-dir <infer-run-dir>/eval
 ```
 
-Codex shells initialize the `ms` conda environment by default. Use raw `python ...` only when exact stdout matters.
+## Evidence gate
 
-## CoordExp Gotchas
+Require the evidence relevant to the changed surface:
 
-- Worktrees may lack ignored data/model roots. Prefer symlinks at the same relative paths expected by config, not path overrides:
-  ```bash
-  mkdir -p public_data/coco
-  test -e public_data/coco/rescale_32_1024_bbox_max60 || \
-    ln -s /data/CoordExp/public_data/coco/rescale_32_1024_bbox_max60 public_data/coco/rescale_32_1024_bbox_max60
-  test -e model_cache || ln -s /data/CoordExp/model_cache model_cache
-  ```
-- Do not stage runtime symlinks unless explicitly requested.
-- For server-mode rollouts, clear local proxy vars and ensure `NO_PROXY` includes `127.0.0.1,localhost`.
-- Stage-2 rollout correction uses `stage2_rollout_correction` and rollout-correction configs under `configs/stage2/rollout_correction/`.
-- Latest recursive detection sidecars require the current runtime-supported packing policy; do not silently enable unsupported packing.
-- Raw-text `xyxy` norm1000 infer/eval must use `infer.mode: text` and `infer.pred_coord_mode: norm1000`.
-- `cxcy_logw_logh` or `cxcywh` evidence is valid only for checkpoints trained on that serialization.
+- data/template/packing: accepted sample counts, semantic spans, position or
+  packing receipts, and no silent drops or reordering;
+- training: terminal planned step, finite losses/gradients, canonical metrics,
+  and resolved runtime/config receipts;
+- checkpoint: at least one written checkpoint with the expected adapter,
+  selected-token, and handoff composition;
+- eval-forward: at least one configured step with finite outputs when enabled;
+- inference: merged raw/scored row parity, provenance sidecar, selected-token
+  score evidence, and run summary;
+- evaluation: `metrics.json`, `coco_gt.json`, and `coco_predictions.json` from
+  the current Swift evaluator.
 
-## Report
+Typical training receipts include `resolved_config.json`,
+`effective_runtime.json`, `experiment_manifest.json`, `run_metadata.json`, and
+`logging.jsonl`; exact files remain contract/config dependent. Current Swift V1
+evaluation is aggregate-only. Do not require legacy guarded/F1-ish/LVIS outputs
+unless the task explicitly targets that historical evaluator family.
 
-Always label scope: `tiny`, smoke sample count, `val200`, `limit=200`, first-200, full-val, proxy view, raw-text vs coord-token, bbox format, checkpoint id, and launch shape. Verify top-level summaries/manifests, not just process exit.
+## Guardrails
+
+- Do not disable checkpointing or evaluation merely to make a full smoke pass;
+  use a narrower validation label if those surfaces are out of scope.
+- Do not silently reduce `global_max_length`, packing, geometry, serialization,
+  or distributed shape when the changed behavior depends on them.
+- A worktree may need approved local symlinks for ignored data/model roots; do
+  not stage them.
+- Tiny, two-row, val200, first-200, and full-validation results are different
+  evidence scopes. Report the exact config, checkpoint, artifact root, sample
+  scope, bbox/serialization mode, and skipped boundaries.

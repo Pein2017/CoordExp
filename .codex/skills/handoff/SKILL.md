@@ -5,18 +5,18 @@ description: Use when the user asks for a handoff, continuation prompt, compact 
 
 # Handoff
 
-Write a continuation document containing only the state a fresh agent or another machine needs.
+Write only the state a fresh agent or another machine needs to continue correctly.
 
 ## Output Target
 
 - If the user gives a path, write there.
-- If the user asks for a durable or cross-machine handoff file, save to a temporary Markdown file from `mktemp -t handoff-XXXXXX.md`.
+- For durable or cross-machine output, use the user-named path or an explicitly agreed stable project/shared path. Never use `mktemp` or `/tmp`.
 - Otherwise return the handoff inline in chat.
 - Read the target path before writing if it already exists.
 
 ## CoordExp Content
 
-Include:
+Include only relevant items:
 
 - repo root, branch if relevant, and dirty-file scope;
 - exact artifact/config/checkpoint paths that matter;
@@ -25,23 +25,9 @@ Include:
 - which skills or repo docs the next agent should use;
 - verification that still needs to run.
 
-Do not duplicate large artifacts, PRDs, plans, metrics, or docs. Link exact paths instead; repo files, docs, and artifacts remain executable truth.
+Link exact paths instead of copying large artifacts, plans, metrics, or docs. Live repo files and artifacts remain the source of truth.
 
-## Common CoordExp Templates
-
-Public data provenance handoff:
-
-- manifest path under `manifests/public_data_provenance/`;
-- processed root and whether it exists locally;
-- raw dataset prerequisite;
-- exact regeneration command from the manifest;
-- `python -m pytest tests/test_public_data_provenance_manifests.py -q` result or pending status;
-- reminder that routine recovery is regenerate-from-raw-plus-manifest, not Baidu sync.
-
-Baidu artifact transfer handoff:
-
-- local artifact root and intended remote `/CoordExp/outputs/...` path;
-- BaiduPCS-Go binary path and login status;
-- tmux session/log path if already running;
-- unsafe filename mapping manifest, if created;
-- post-transfer checks: shard/index/tokenizer/config files, file counts, sizes, and representative `resolved_config.json`.
+For domain-specific continuation fields, follow the owning skill: use
+`coordexp-public-data-provenance` for manifests/regeneration and
+`baidu-netdisk-transfer` for transfer state, tmux/log handles, mappings, and
+post-transfer checks.
