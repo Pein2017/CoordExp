@@ -54,7 +54,7 @@ mapping for one planned step SHALL be written together in that step's wide
 with JSON `null` values and MUST be listed in `non_finite_fields` rather than
 making the planned step unwriteable.
 
-#### Scenario: Train logging row emitted
+#### Scenario: Train metric event emitted
 
 - **WHEN** a train step completes
 - **THEN** its single logging row MUST include weighted protected-loss metrics

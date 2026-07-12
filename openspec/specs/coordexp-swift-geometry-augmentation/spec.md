@@ -56,31 +56,43 @@ same presentation sequence.
 - **AND** it MUST NOT resample geometry flip decisions on cache hit
 
 ### Requirement: Matrix-based bbox transforms
-CoordExp-Swift SHALL define geometry flips as affine transforms over the
-inclusive `0..999` coordinate-bin plane.
 
-The implementation MUST transform all four corners of each bbox and
-canonicalize the result to `x1,y1,x2,y2` by min/max. Transformed bboxes MUST
-pass the same validation contract as loaded `RawObject` bboxes.
+CoordExp-Swift SHALL define geometry flips as affine transforms over the
+inclusive `0..999` coordinate-bin plane. The implementation MUST transform all
+four corners of each bbox and canonicalize the result to `x1,y1,x2,y2` by
+min/max. Transformed bboxes MUST pass the same validation contract as loaded
+`RawObject` bboxes. Realized transform identity MUST stay attached to the
+in-memory presentation and current cache materialization metadata.
 
 #### Scenario: Horizontal flip maps boundary boxes correctly
-- **WHEN** a bbox has coordinates `(x1, y1, x2, y2)` and the realized transform is `hflip`
-- **THEN** the transformed bbox MUST equal `(999 - x2, y1, 999 - x1, y2)`
-- **AND** boundary coordinates at `0` and `999` MUST remain valid
+
+- **WHEN** a bbox has coordinates `(x1, y1, x2, y2)` and the realized transform
+  is `hflip`
+- **THEN** the transformed bbox MUST equal
+  `(999 - x2, y1, 999 - x1, y2)`
+- **AND** boundary coordinates at `0` and `999` MUST remain valid.
 
 #### Scenario: Vertical flip maps boundary boxes correctly
-- **WHEN** a bbox has coordinates `(x1, y1, x2, y2)` and the realized transform is `vflip`
-- **THEN** the transformed bbox MUST equal `(x1, 999 - y2, x2, 999 - y1)`
-- **AND** boundary coordinates at `0` and `999` MUST remain valid
+
+- **WHEN** a bbox has coordinates `(x1, y1, x2, y2)` and the realized transform
+  is `vflip`
+- **THEN** the transformed bbox MUST equal
+  `(x1, 999 - y2, x2, 999 - y1)`
+- **AND** boundary coordinates at `0` and `999` MUST remain valid.
 
 #### Scenario: Composed flip uses one matrix-equivalent transform
+
 - **WHEN** the realized transform is `hvflip`
-- **THEN** the transformed bbox MUST equal `(999 - x2, 999 - y2, 999 - x1, 999 - y1)`
-- **AND** the receipt MUST identify the transform as `hvflip`
+- **THEN** the transformed bbox MUST equal
+  `(999 - x2, 999 - y2, 999 - x1, 999 - y1)`
+- **AND** presentation/cache metadata MUST identify the transform as `hvflip`.
 
 #### Scenario: Invalid transformed bbox fails
-- **WHEN** a transformed bbox is degenerate or outside the inclusive `0..999` range
-- **THEN** materialization MUST fail with a data contract error rather than silently dropping or clipping the object
+
+- **WHEN** a transformed bbox is degenerate or outside the inclusive
+  `0..999` range
+- **THEN** materialization MUST fail with a data contract error rather than
+  silently dropping or clipping the object.
 
 ### Requirement: In-memory Qwen image transform alignment
 CoordExp-Swift SHALL apply the realized geometry transform to image pixels in
@@ -105,33 +117,43 @@ visual token count, and packing image-token cost remain unchanged by the flip.
 - **THEN** the in-memory pixel transform MUST correspond to the same coordinate-plane transform id recorded for bbox transformation
 
 ### Requirement: Object ordering remains explicit and reproducible
-CoordExp-Swift SHALL preserve the existing object-ordering contract while
-supporting augmentation.
 
-For `source_order`, the processor MUST preserve source object tuple order after
-bbox transform. For `geo_sorted`, the processor MUST transform bboxes first and
-then prepare the presentation object tuple in top-to-bottom then left-to-right
-order before renderer assertion. For `random`, the processor MUST support
-augmentation and random order together and MUST emit an explicit object-order
-seed/key receipt for every randomized presentation.
+CoordExp-Swift SHALL preserve the existing object-ordering contract while
+supporting augmentation. For `source_order`, the processor MUST preserve
+source object tuple order after bbox transform. For `geo_sorted`, the
+processor MUST transform bboxes first and then prepare the presentation object
+tuple in top-to-bottom then left-to-right order before renderer assertion. For
+`random`, the processor MUST support augmentation and random order together
+and MUST retain a deterministic object-order seed/key or equivalent handle in
+the cached presentation metadata. Normal training MUST NOT persist a separate
+per-presentation ordering receipt family.
 
 #### Scenario: Source order is preserved after transform
+
 - **WHEN** object ordering is `source_order` and geometry flips are enabled
-- **THEN** the rendered presentation MUST see objects in the original source tuple order after bbox transformation
+- **THEN** the rendered presentation MUST see objects in original source tuple
+  order after bbox transformation.
 
 #### Scenario: Geo sorted is asserted after transform
+
 - **WHEN** object ordering is `geo_sorted` and geometry flips are enabled
-- **THEN** bboxes MUST be transformed before the presentation object tuple is sorted
-- **AND** the renderer's existing `geo_sorted` assertion MUST pass on the transformed presentation
+- **THEN** bboxes MUST be transformed before the presentation object tuple is
+  sorted
+- **AND** the renderer's existing `geo_sorted` assertion MUST pass on the
+  transformed presentation.
 
 #### Scenario: Random ordering records seed key
+
 - **WHEN** object ordering is `random` and geometry flips are enabled
 - **THEN** the transform MUST be sampled before randomized object ordering
-- **AND** the receipt or metadata MUST include the object-order seed/key needed to reproduce the rendered order
+- **AND** cached presentation metadata MUST retain the object-order seed/key
+  needed to reproduce rendered order.
 
 #### Scenario: Worker order does not affect random ordering
+
 - **WHEN** examples are materialized with different worker completion orders
-- **THEN** presentation transform ids and randomized object-order seed/keys MUST remain identical for the same resolved config and seed
+- **THEN** presentation transform ids and randomized object-order seed/keys
+  MUST remain identical for the same resolved config and seed.
 
 ### Requirement: Packing cache identity includes augmentation semantics
 CoordExp-Swift SHALL include augmentation semantics in the packing-cache
@@ -158,26 +180,32 @@ recorded only as provenance and MUST NOT affect the semantic fingerprint.
 - **WHEN** the augmentation geometry, processor, factory, or relevant Qwen image materialization code identity changes
 - **THEN** the packing-cache fingerprint MUST change
 
-### Requirement: Augmentation receipts are compact and sufficient
-CoordExp-Swift SHALL record compact augmentation provenance for cache misses and
-training runs with augmentation enabled.
+### Requirement: Augmentation Provenance Stays In Cache State
 
-The receipt MUST include mode `static_stochastic_view`, split, policy,
-probabilities, seed or seed source, input/output example counts, transform
-counts, dataset family, and enough presentation-level metadata to reproduce
-transform assignment and randomized object order. The receipt MUST show
-`output_example_count == input_example_count`.
+When train-only geometry augmentation is enabled, the current-version packing
+cache manifest SHALL contain compact materialization provenance sufficient to
+explain and reproduce the sampled presentation set. It MUST include mode,
+split, policy and probabilities, seed source, input/output example counts,
+transform counts, dataset identity, and reproducibility handles for randomized
+object order. Normal training MUST NOT copy presentation-level augmentation
+receipts into every run directory.
 
-#### Scenario: Receipt summarizes transform distribution
+#### Scenario: Augmented cache is materialized
+
 - **WHEN** a cache miss materializes augmented training presentations
-- **THEN** the receipt MUST include counts for `identity`, `hflip`, `vflip`, and `hvflip`
-- **AND** the sum of those counts MUST equal both input and output example count
+- **THEN** the cache manifest MUST record counts for `identity`, `hflip`,
+  `vflip`, and `hvflip`
+- **AND** their sum MUST equal both input and output example count.
 
-#### Scenario: Randomized receipt is reproducible
-- **WHEN** any presentation uses randomized object ordering
-- **THEN** its provenance MUST include an object-order seed/key or equivalent reproducibility handle
+#### Scenario: Random object order is used
 
-#### Scenario: Disabled augmentation receipt remains minimal
-- **WHEN** augmentation is disabled
-- **THEN** receipts MUST NOT claim transformed presentations were sampled
-- **AND** cache identity MUST remain compatible with the disabled behavior
+- **WHEN** an augmented presentation uses randomized object ordering
+- **THEN** cache materialization metadata MUST retain the deterministic
+  seed/key or equivalent reproducibility handle.
+
+#### Scenario: Cache is reused by training
+
+- **WHEN** training consumes a matching complete augmented cache
+- **THEN** the run MUST reuse its sampled presentations without resampling
+- **AND** MUST NOT duplicate the cache's presentation provenance as a run
+  receipt family.

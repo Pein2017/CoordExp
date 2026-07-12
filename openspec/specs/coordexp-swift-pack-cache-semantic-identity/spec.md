@@ -16,59 +16,58 @@ sources.
 
 - **WHEN** the source identity for `src/qwen/positions.py` changes
 - **THEN** the packing-cache fingerprint MUST change
-- **AND** a later run MUST not reuse a cache written under the previous
-  position-source identity.
+- **AND** a later run MUST rebuild rather than reuse the previous cache.
 
 #### Scenario: Qwen FA2 source changes
 
 - **WHEN** the source identity for `src/qwen/fa2.py` changes
 - **THEN** the packing-cache fingerprint MUST change
-- **AND** a later run MUST rebuild rather than trusting a cache produced under
-  the previous FA2-source identity.
+- **AND** a later run MUST rebuild rather than trust the previous cache.
 
 #### Scenario: Qwen forward source changes
 
 - **WHEN** the source identity for `src/qwen/forward.py` changes
 - **THEN** the packing-cache fingerprint MUST change
-- **AND** the cache manifest or receipt MUST expose enough source-identity
-  evidence to explain the invalidation.
+- **AND** the current cache manifest MUST expose the determinant evidence that
+  caused invalidation.
 
 ### Requirement: Cache Materialization Provenance Is Not Semantic Identity
 
-Packing-cache materialization strategy and worker count SHALL be recorded as
-operational provenance, but MUST NOT participate in the semantic cache
-fingerprint. Changing only the materialization worker count MUST NOT change
-the cache fingerprint or the packed micro-step order.
+Packing-cache materialization strategy and worker count SHALL be recorded in
+the current cache manifest as operational provenance, but MUST NOT participate
+in the semantic cache fingerprint. Changing only materialization worker count
+MUST NOT change the cache fingerprint or packed micro-step order.
 
 #### Scenario: Worker count changes
 
-- **WHEN** the resolved packing-cache worker count changes from 16 to another
-  positive internal test value
-- **THEN** `build_packing_cache_fingerprint()` MUST return the same semantic
-  fingerprint for otherwise identical inputs
-- **AND** the cache manifest or receipt MUST still record the resolved worker
-  count as provenance for newly written caches.
+- **WHEN** the resolved packing-cache worker count changes for an otherwise
+  identical materialization
+- **THEN** the semantic fingerprint and packed micro-step sequence MUST remain
+  identical
+- **AND** a newly written current-version cache manifest MUST record the
+  resolved worker count.
 
-### Requirement: Existing Cache Payload Shape Remains Stable
+### Requirement: Cache Payload Is Current-Version-Only
 
-This change SHALL preserve the existing supervised packing-cache payload shape.
-Existing readable cache manifests MUST remain readable when they omit newer
-source-identity or materialization provenance fields, but new cache writes MUST
-record the expanded determinant evidence.
+The supervised packing cache SHALL be disposable acceleration state. A cache
+reader MUST accept only the current cache format version, matching semantic
+fingerprint, complete status, valid contiguous chunk plan, declared counts,
+and readable current payload files. Missing, partial, corrupt, old-version, or
+semantically mismatched caches MUST be treated as cache misses and rebuilt.
+The implementation MUST NOT provide cache migrations, legacy manifest
+tolerance, or old payload decoders.
 
-#### Scenario: Legacy manifest loaded
+#### Scenario: Old cache version is discovered
 
-- **WHEN** a previously written cache manifest lacks the newer forward-side
-  source identity fields or materialization provenance
-- **THEN** cache loading MUST fail only if semantic validation requires a
-  rebuild
-- **AND** the loader MUST NOT crash because optional provenance fields are
-  absent.
+- **WHEN** the cache root contains a complete cache written with an older
+  format version
+- **THEN** the reader MUST reject it as a cache miss
+- **AND** the training pipeline MUST rebuild it with the current format before
+  use.
 
-#### Scenario: New manifest written
+#### Scenario: Cache manifest is incomplete
 
-- **WHEN** a new supervised packing cache is materialized
-- **THEN** the manifest or packing receipt MUST record the expanded source
-  identity determinant set
-- **AND** the payload format MUST remain compatible with the existing
-  micro-step cache reader.
+- **WHEN** a manifest is missing chunks, contains a chunk gap, has mismatched
+  counts, or does not declare complete status
+- **THEN** the cache MUST NOT be consumed
+- **AND** rebuild MUST be the recovery path.

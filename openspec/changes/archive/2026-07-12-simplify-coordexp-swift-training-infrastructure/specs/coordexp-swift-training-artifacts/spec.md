@@ -213,7 +213,7 @@ MUST NOT be wrapped in backend scheduler semantics through
 `accelerator.prepare(...)`, and MUST advance exactly once per completed
 planned-step boundary.
 
-#### Scenario: Rank-safe artifact write
+#### Scenario: Distributed artifact write
 
 - **WHEN** a distributed checkpoint payload requires Accelerate-safe saving
 - **THEN** all ranks MUST follow the same runtime save/barrier order

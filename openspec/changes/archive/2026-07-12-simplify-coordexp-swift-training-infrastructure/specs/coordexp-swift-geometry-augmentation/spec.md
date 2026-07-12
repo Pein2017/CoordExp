@@ -97,7 +97,7 @@ per-presentation ordering receipt family.
 - **AND** the renderer's existing `geo_sorted` assertion MUST pass on the
   transformed presentation.
 
-#### Scenario: Random ordering retains seed key
+#### Scenario: Random ordering records seed key
 
 - **WHEN** object ordering is `random` and geometry flips are enabled
 - **THEN** the transform MUST be sampled before randomized object ordering

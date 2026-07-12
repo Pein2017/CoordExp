@@ -144,6 +144,13 @@ and checkpoint aliases.
   `logging.jsonl`
 - **AND** no authored logging cadence may suppress that row.
 
+#### Scenario: Resolved schedule artifact written
+
+- **WHEN** runtime resolves the planned-step schedule
+- **THEN** it MUST retain the schedule in memory for train, eval, checkpoint,
+  and final dispatch
+- **AND** it MUST NOT write a separate `resolved_step_schedule.json` artifact.
+
 #### Scenario: Legacy cadence alias authored
 
 - **WHEN** a config authors `save_steps`, `eval_steps`, `logging_steps`,
@@ -177,6 +184,14 @@ or mutate the effective batch when the division is not exact.
 - **WHEN** world size is 2 and `training.effective_batch_size` is 1
 - **THEN** runtime setup MUST fail before training begins
 - **AND** it MUST NOT drop a rank or create uneven rank ownership.
+
+#### Scenario: Backend accumulation conflict
+
+- **WHEN** an externally configured Accelerate accumulation value conflicts
+  with the CoordExp-derived rank-local micro-step count
+- **THEN** runtime setup MUST fail before model training begins
+- **AND** the public training schema MUST NOT expose a second accumulation
+  owner.
 
 #### Scenario: Incomplete final window
 

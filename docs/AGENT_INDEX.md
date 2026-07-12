@@ -79,8 +79,8 @@ Use the smallest relevant spec family:
 
 - Config and data: [`coordexp-swift-config-runtime`](../openspec/specs/coordexp-swift-config-runtime/spec.md), [`coordexp-swift-data-template-encoding`](../openspec/specs/coordexp-swift-data-template-encoding/spec.md)
 - Packing, forward, and losses: [`coordexp-swift-packing-forward`](../openspec/specs/coordexp-swift-packing-forward/spec.md), [`coordexp-swift-supervision-losses`](../openspec/specs/coordexp-swift-supervision-losses/spec.md), [`coordexp-swift-pack-cache-semantic-identity`](../openspec/specs/coordexp-swift-pack-cache-semantic-identity/spec.md)
-- Trainable payloads: [`coordexp-swift-adapters-embeddings-optim`](../openspec/specs/coordexp-swift-adapters-embeddings-optim/spec.md)
-- Inference and evaluation: [`coordexp-swift-infer-pipeline`](../openspec/specs/coordexp-swift-infer-pipeline/spec.md), [`coordexp-swift-infer-backend-trace`](../openspec/specs/coordexp-swift-infer-backend-trace/spec.md), [`coordexp-swift-infer-scoring-artifacts`](../openspec/specs/coordexp-swift-infer-scoring-artifacts/spec.md), [`coordexp-swift-detection-evaluator`](../openspec/specs/coordexp-swift-detection-evaluator/spec.md)
+- Trainable payloads and training artifacts: [`coordexp-swift-adapters-embeddings-optim`](../openspec/specs/coordexp-swift-adapters-embeddings-optim/spec.md), [`coordexp-swift-training-artifacts`](../openspec/specs/coordexp-swift-training-artifacts/spec.md)
+- Inference and evaluation: [`coordexp-swift-infer-config-runtime`](../openspec/specs/coordexp-swift-infer-config-runtime/spec.md), [`coordexp-swift-infer-pipeline`](../openspec/specs/coordexp-swift-infer-pipeline/spec.md), [`coordexp-swift-infer-backend-trace`](../openspec/specs/coordexp-swift-infer-backend-trace/spec.md), [`coordexp-swift-infer-scoring-artifacts`](../openspec/specs/coordexp-swift-infer-scoring-artifacts/spec.md), [`coordexp-swift-detection-evaluator`](../openspec/specs/coordexp-swift-detection-evaluator/spec.md)
 
 The remaining `coordexp-swift-*` specs are reachable from the
 [`openspec/specs/`](../openspec/specs/) directory. Do not invent a missing

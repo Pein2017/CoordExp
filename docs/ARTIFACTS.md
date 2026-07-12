@@ -23,6 +23,11 @@ linked OpenSpecs.
 | Inference rows, traces, manifests, and merge | `src/inference/artifacts.py`, `src/inference/merge.py` |
 | Detection evaluation artifacts | `src/eval/detection_consumer.py` |
 
+Stable training artifact behavior is specified by
+[`coordexp-swift-training-artifacts`](../openspec/specs/coordexp-swift-training-artifacts/spec.md);
+explicit inference composition is specified by
+[`coordexp-swift-infer-config-runtime`](../openspec/specs/coordexp-swift-infer-config-runtime/spec.md).
+
 ## Training artifacts
 
 `RunWriter` initializes one shared run directory on rank zero. Current names

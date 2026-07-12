@@ -60,6 +60,11 @@ framework. Current ownership is:
 There is no current `src/infer/` package route. Do not document or create one
 as a sibling of `src/inference/`.
 
+The stable contracts for these boundaries are
+[`coordexp-swift-training-artifacts`](../openspec/specs/coordexp-swift-training-artifacts/spec.md)
+and
+[`coordexp-swift-infer-config-runtime`](../openspec/specs/coordexp-swift-infer-config-runtime/spec.md).
+
 ## Config routes
 
 Current config roots are:

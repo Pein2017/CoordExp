@@ -16,7 +16,7 @@ resolution.
 - **THEN** runtime MUST load those payloads, validate their declared identity
   boundaries, and record the identities actually loaded.
 
-#### Scenario: Legacy checkpoint-final metadata is used
+#### Scenario: Adapter checkpoint final
 
 - **WHEN** a new canonical smoke config depends on `checkpoint-final`,
   `checkpoint.json`, or `checkpoint_handoff.json` to resolve payload paths

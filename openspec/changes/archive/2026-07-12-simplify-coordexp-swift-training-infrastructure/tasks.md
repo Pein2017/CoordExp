@@ -196,4 +196,4 @@ current-contract failures. It was not used to redefine the accepted Swift
 surface.
 - [x] 4.6 Update current `docs/` architecture, implementation map, artifact/operator guidance, and catalog only after implementation evidence passes; do not add dynamic proposal/progress material under `docs/architecture/`.
 - [x] 4.7 Run final strict OpenSpec validation, documentation link/catalog checks, `git diff --check`, independent fixed-point engineering and intent/contract audits, and resolve or explicitly gate every P0/P1.
-- [ ] 4.8 Present the completed change for user acceptance; only after acceptance sync delta specs, archive the OpenSpec change, promote accepted commits to `main`, and refresh the development worktree according to repository policy.
+- [x] 4.8 Present the completed change for user acceptance; only after acceptance sync delta specs, archive the OpenSpec change, promote accepted commits to `main`, and refresh the development worktree according to repository policy.

@@ -76,46 +76,94 @@ The canonical artifacts are `configs/resolved.json` and
 - **THEN** it records paths and fingerprints for both resolved config artifacts
 
 ### Requirement: Model adapter delta identity
-Inference SHALL load a base model from a configured `model_cache/<model-id>` path and MAY apply explicit adapter or embedding-delta payloads.
-When adapter or delta payloads are used, the runtime MUST record resolved
-payload identity and MUST validate base and tokenizer identity before
-generation.
+
+Inference SHALL load a base model from a configured
+`model_cache/<model-id>` path and MAY apply explicit `adapter.path` and
+`embedding_delta.path` payloads. It MUST NOT require `checkpoint-final`,
+`checkpoint.json`, or `checkpoint_handoff.json` metadata to resolve those
+paths. Runtime MUST record the identities it actually loads before generation.
+
+For a standard PEFT/DoRA adapter, runtime MUST validate the configured base
+identifier and model compatibility, `peft_type: LORA`, `use_dora: true`, target
+modules, tensor shapes, nonempty LoRA A/B and DoRA magnitude-vector state, and
+the PEFT load result/status. It MUST NOT claim immutable base-config or
+tokenizer-content validation absent from standard adapter metadata. When a
+selected-token embedding delta is configured, runtime MUST additionally
+validate that payload's recorded base-config hash, tokenizer hash, token
+strings/ids, tensor key, shape, source tensor dtype, and tied-weight semantics.
+The declared source dtype MUST match the actual payload tensor. Runtime MAY
+convert that validated tensor into the installed delta-parameter dtype, but it
+MUST record both source and runtime dtypes when they differ.
 
 #### Scenario: Base-only inference
-- **WHEN** a config declares only a base model and no adapter or embedding delta
-- **THEN** runtime setup succeeds and records base-only model identity
+
+- **WHEN** a config declares only a base model and no adapter or embedding
+  delta
+- **THEN** runtime setup MUST succeed and record base-only model identity.
+
+#### Scenario: Explicit adapter and delta paths
+
+- **WHEN** a config declares `adapter.path` and optional
+  `embedding_delta.path`
+- **THEN** runtime MUST load those concrete payloads directly
+- **AND** MUST record their actual loader identities without resolving
+  checkpoint-final or handoff metadata.
 
 #### Scenario: Final checkpoint alias
-- **WHEN** a config points to `checkpoint-final` metadata
-- **THEN** runtime resolves concrete adapter and embedding-delta payload paths
-  and records the resolved identities
+
+- **WHEN** a new canonical inference config points to `checkpoint-final`
+  metadata instead of explicit adapter and optional delta paths
+- **THEN** config or runtime validation MUST fail before generation.
+
+#### Scenario: Validated delta dtype conversion
+
+- **WHEN** an embedding-delta payload tensor matches its declared source dtype
+  and every other payload identity, but the installed runtime delta parameter
+  uses a different supported dtype
+- **THEN** runtime MAY convert the validated tensor into the installed dtype
+- **AND** MUST record both the source and runtime tensor dtypes
+- **BUT** a mismatch between the payload tensor and its declared source dtype
+  MUST fail before conversion.
 
 #### Scenario: Wrong adapter base
-- **WHEN** an adapter payload declares an incompatible base model identity
-- **THEN** runtime setup fails before generation
+
+- **WHEN** an adapter payload declares an incompatible base identifier or model
+  contract
+- **THEN** runtime setup MUST fail before generation.
 
 #### Scenario: PEFT irregular load result
+
 - **WHEN** adapter loading reports missing adapter keys, unexpected keys,
   disabled adapter status, an unexpected active adapter list, irregular status
   fields, or an unexpected merged state
-- **THEN** runtime setup fails before generation and records the failed identity
-  check diagnostically
+- **THEN** runtime setup MUST fail before generation and record the failed
+  identity check diagnostically.
 
 #### Scenario: Warning-only PEFT load path
+
 - **WHEN** an adapter loader relies only on warning output instead of capturing
   the PEFT `load_result` or equivalent missing/unexpected-key evidence
-- **THEN** the implementation is noncompliant and adapter-enabled runtime setup
-  cannot be accepted
+- **THEN** the implementation MUST be rejected for adapter-enabled runtime
+  setup.
+
+#### Scenario: Adapter base contents change at the same path
+
+- **WHEN** adapter-only inference uses a base path whose contents changed while
+  its standard adapter identifier/model/shape contract still matches
+- **THEN** runtime MUST apply the declared standard PEFT checks
+- **AND** MUST NOT claim immutable base/tokenizer hash validation.
 
 #### Scenario: Missing delta identity
-- **WHEN** a special-token embedding delta lacks required base/tokenizer
+
+- **WHEN** a selected-token embedding delta lacks required base/tokenizer
   metadata
-- **THEN** runtime setup fails before generation
+- **THEN** runtime setup MUST fail before generation.
 
 #### Scenario: Delta token mismatch
+
 - **WHEN** an embedding delta records token strings or token ids that disagree
   with the runtime tokenizer identity
-- **THEN** runtime setup fails before generation
+- **THEN** runtime setup MUST fail before generation.
 
 ### Requirement: Owner-neutral shared runtime APIs
 Inference-facing config, Qwen, and artifact helpers SHALL be callable without training-owned configuration classes.

@@ -38,6 +38,11 @@ reuse.
 | Forward-only eval | `src/eval/forward.py` | `tests/eval/test_forward_eval.py` |
 | Detection eval | `src/eval/detection_consumer.py` | `tests/eval/test_detection_consumer.py` |
 
+Normative routes: [`coordexp-swift-training-artifacts`](../openspec/specs/coordexp-swift-training-artifacts/spec.md)
+for run/checkpoint publication and
+[`coordexp-swift-infer-config-runtime`](../openspec/specs/coordexp-swift-infer-config-runtime/spec.md)
+for explicit inference payload composition.
+
 ## Current config route
 
 Open these roots first:

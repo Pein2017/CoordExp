@@ -82,6 +82,13 @@ sequence splits, same-segment causal loss mapping, and `segment_balanced`
 behavior on unequal eligible-atom counts. Those proof details MUST NOT be
 required as per-step production artifacts.
 
+#### Scenario: Smoke lacks pack plan
+
+- **WHEN** the five-step smoke does not emit a separate pack-plan receipt
+- **THEN** that omission alone MUST NOT make the smoke incomplete
+- **AND** the normal run files plus focused tests and explicit bounded proof
+  MUST still satisfy the acceptance contract.
+
 #### Scenario: Smoke lacks required normal-run file
 
 - **WHEN** the five-step smoke omits `run.json`, `resolved_config.json`,

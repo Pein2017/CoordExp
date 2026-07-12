@@ -47,7 +47,7 @@ or mismatched caches MUST be rejected and rebuilt rather than migrated.
 - **THEN** the training pipeline MUST load the cached micro-step plan
 - **AND** MUST NOT repack the JSONL again.
 
-#### Scenario: Semantic producer code changes
+#### Scenario: Renderer code changes
 
 - **WHEN** renderer, Qwen encoding/position/FA2/forward, packing planner,
   supervision builder, or supervision-token source identity changes
@@ -125,7 +125,7 @@ evidence exists while retaining all runtime input validation.
   padding-style mask for packed isolation
 - **THEN** Qwen forward validation MUST fail before training.
 
-#### Scenario: Explicit FA2 proof emitted
+#### Scenario: FA2 branch proof emitted
 
 - **WHEN** an explicit packed-forward smoke/probe claims FlashAttention segment
   isolation
@@ -133,7 +133,7 @@ evidence exists while retaining all runtime input validation.
   lengths, segment count, attention implementation, and the observed upstream
   varlen branch.
 
-#### Scenario: Production proof capture disabled
+#### Scenario: FA2 branch proof disabled for production throughput
 
 - **WHEN** a production profile disables FA2 proof capture after representative
   evidence exists

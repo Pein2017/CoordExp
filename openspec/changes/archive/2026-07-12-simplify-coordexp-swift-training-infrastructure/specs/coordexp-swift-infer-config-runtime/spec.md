@@ -34,6 +34,12 @@ MUST record both source and runtime dtypes when they differ.
 - **AND** MUST record their actual loader identities without resolving
   checkpoint-final or handoff metadata.
 
+#### Scenario: Final checkpoint alias
+
+- **WHEN** a new canonical inference config points to `checkpoint-final`
+  metadata instead of explicit adapter and optional delta paths
+- **THEN** config or runtime validation MUST fail before generation.
+
 #### Scenario: Validated delta dtype conversion
 
 - **WHEN** an embedding-delta payload tensor matches its declared source dtype

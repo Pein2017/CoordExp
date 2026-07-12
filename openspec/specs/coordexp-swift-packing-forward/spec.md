@@ -41,48 +41,53 @@ examples unless a future continuous-stream recipe is explicitly approved.
 
 Packing materialization SHALL support a deterministic reusable cache for packed
 micro-step plans. For the same dataset content, template, object-ordering
-policy, Qwen token/processor identity, no-resize processor controls, and
-`packing.global_max_length`, a cache hit MUST avoid rendering, encoding, and
-packing the dataset again. The semantic fingerprint MUST also include source
-identity for the renderer/template code, Qwen encoding code, packing planner,
-packed supervision builder, and supervision-token construction so code changes
-that alter examples cannot reuse stale caches. A cache miss MUST materialize
-the cache through a forced default of 16 CPU workers. The worker count MUST be
-recorded in the cache manifest or packing receipt as operational provenance,
-but it MUST NOT participate in the semantic cache fingerprint because changing
-worker count must not create a different training example order or supervision
-contract.
+policy, augmentation semantics, Qwen token/processor identity, no-resize
+processor controls, and `packing.global_max_length`, a current-version cache
+hit MUST avoid rendering, encoding, and packing the dataset again. The semantic
+fingerprint MUST include source identity for renderer/template code, Qwen
+encoding/position/FA2/forward code, packing planner, packed supervision
+builder, and supervision-token construction so code changes that alter packed
+semantics cannot reuse stale caches. A cache miss MUST materialize through the
+resolved worker policy, with 16 CPU workers as the production default. Worker
+count MUST be recorded in the current cache manifest but MUST NOT participate
+in semantic identity or change packed order. Old-version, incomplete, corrupt,
+or mismatched caches MUST be rejected and rebuilt rather than migrated.
 
 #### Scenario: Same template and data are relaunched
 
-- **GIVEN** a complete packing cache exists for the dataset/template/Qwen
-  encoding/processor/global-length/code identity
+- **GIVEN** a complete current-version packing cache exists for the resolved
+  semantic fingerprint
 - **WHEN** a later run uses the same semantic inputs
 - **THEN** the training pipeline MUST load the cached micro-step plan
 - **AND** MUST NOT repack the JSONL again.
 
 #### Scenario: Renderer code changes
 
-- **WHEN** renderer, Qwen encoding, packing planner, supervision builder, or
-  supervision-token construction source identity changes
+- **WHEN** renderer, Qwen encoding/position/FA2/forward, packing planner,
+  supervision builder, or supervision-token source identity changes
 - **THEN** the packing-cache fingerprint MUST change
-- **AND** the run MUST rebuild rather than trusting an older semantic cache.
+- **AND** the run MUST rebuild rather than trust the older cache.
 
 #### Scenario: Cache miss on production JSONL
 
-- **GIVEN** no complete cache exists for the resolved packing fingerprint
-- **WHEN** the training pipeline materializes the packing cache
+- **GIVEN** no complete current-version cache exists for the resolved
+  fingerprint
+- **WHEN** the pipeline materializes the cache
 - **THEN** it MUST use 16 CPU workers by default
-- **AND** the manifest or packing receipt MUST record the resolved worker
-  count.
+- **AND** the cache manifest MUST record the resolved worker count.
 
 #### Scenario: Worker count changes
 
-- **WHEN** a debug or implementation test changes the worker count without
-  changing dataset, template, ordering, Qwen identity, processor controls, or
-  `packing.global_max_length`
+- **WHEN** a debug or implementation test changes worker count without
+  changing semantic inputs
 - **THEN** the cache fingerprint MUST remain unchanged
 - **AND** the produced packed micro-step sequence MUST remain deterministic.
+
+#### Scenario: Older payload version exists
+
+- **WHEN** an otherwise complete cache uses an older payload version
+- **THEN** the reader MUST treat it as a miss
+- **AND** rebuild MUST occur before training consumes packed micro-steps.
 
 ### Requirement: Supervision Position Mapping
 
@@ -145,13 +150,15 @@ segments.
 
 ### Requirement: Qwen Forward Boundary
 
-CoordExp-swift SHALL call the Qwen3-VL model for logits and declared model
-outputs while computing all training losses in repo-owned code. V1 Qwen forward
+CoordExp-Swift SHALL call the Qwen3-VL model for logits and declared model
+outputs while computing all training losses in repo-owned code. Qwen forward
 MUST pass `labels=None`, `use_cache=False`, avoid `inputs_embeds`, and validate
-the returned output object shape instead of depending on model-side CE. The
-forward MAY request a compact logits time axis for explicitly selected
-supervised causal rows, but every returned row MUST keep the full vocabulary and
-MUST be accompanied by a physical-pack-position map consumed by `LossContext`.
+the returned output object shape instead of depending on model-side CE. Forward
+MAY request a compact logits time axis for explicitly selected supervised
+causal rows, but every returned row MUST keep the full vocabulary and MUST be
+accompanied by an in-memory physical-pack-position map consumed and validated
+by `LossContext`. Normal training MUST NOT persist that map as a per-step
+receipt.
 
 #### Scenario: Model returns built-in loss
 
@@ -163,13 +170,13 @@ MUST be accompanied by a physical-pack-position map consumed by `LossContext`.
 
 - **WHEN** Qwen forward uses `logits_to_keep` for supervised rows
 - **THEN** the returned logits MUST have full vocabulary width
-- **AND** receipts MUST record the exact physical positions kept
+- **AND** the in-memory map MUST identify the exact physical positions kept
 - **AND** `LossContext` MUST fail if any supervised atom lacks a matching kept
   physical position.
 
 #### Scenario: Inputs embeds shortcut requested
 
-- **WHEN** a V1 training path attempts to pass `inputs_embeds`
+- **WHEN** training attempts to pass `inputs_embeds`
 - **THEN** Qwen forward validation MUST fail because the shortcut can bypass
   Qwen3-VL visual replacement behavior.
 
@@ -179,37 +186,32 @@ Packed forward with FlashAttention SHALL always derive explicit varlen segment
 inputs from `PackedSegment` boundaries, including cumulative sequence lengths
 and maximum sequence lengths, and SHALL pass those inputs to Qwen forward. A 2D
 zero mask over a packed row MUST NOT be accepted as the mechanism for isolated
-packed attention. Branch-level proof capture is policy-gated: smoke/debug gates
-MUST record representative upstream-backed evidence that Qwen forward reached
-the varlen path with cumulative sequence lengths and max lengths derived from
-`PackedSegment` boundaries, while production profiles MAY disable hot-path proof
-capture after that evidence exists. When emitted, "equivalent" proof MUST name
-the installed upstream branch and record the observed varlen evidence.
+packed attention. Explicit smoke/debug proof MUST capture representative
+upstream-backed evidence that Qwen forward reached the varlen path with
+cumulative and maximum sequence lengths derived from `PackedSegment`
+boundaries. Production profiles MUST disable hot-path proof capture after that
+evidence exists while retaining all runtime input validation.
 
 #### Scenario: FA2 enabled with ordinary 2D mask
 
-- **WHEN** FlashAttention is enabled and the forward inputs rely only on a 2D
+- **WHEN** FlashAttention is enabled and forward inputs rely only on a 2D
   padding-style mask for packed isolation
 - **THEN** Qwen forward validation MUST fail before training.
 
 #### Scenario: FA2 branch proof emitted
 
-- **WHEN** a packed forward debug receipt claims FlashAttention segment
+- **WHEN** an explicit packed-forward smoke/probe claims FlashAttention segment
   isolation
-- **THEN** it MUST include cumulative sequence lengths, max sequence lengths,
-  segment count, resolved attention implementation, and evidence of the
-  upstream varlen branch used for the call.
+- **THEN** its bounded proof MUST include cumulative sequence lengths, maximum
+  lengths, segment count, attention implementation, and the observed upstream
+  varlen branch.
 
 #### Scenario: FA2 branch proof disabled for production throughput
 
-- **WHEN** a packed supervised training config sets the FA2 branch-proof policy
-  to a production-disabled mode after representative FA2 evidence has already
-  been recorded by smoke/probe artifacts
-- **THEN** the runtime MUST still pass explicit FA2 varlen inputs to Qwen
-  forward
-- **AND** forward receipts MUST record the resolved branch-proof policy
-- **AND** forward receipts MUST NOT claim branch-proof evidence for calls where
-  hot-path proof capture was disabled.
+- **WHEN** a production profile disables FA2 proof capture after representative
+  evidence exists
+- **THEN** runtime MUST still pass explicit FA2 varlen inputs
+- **AND** normal forward calls MUST not emit proof artifacts.
 
 ### Requirement: Visual Replacement Remains In Transformers
 
@@ -235,14 +237,23 @@ model architecture.
 - **AND** an off-by-one placeholder or grid mismatch MUST fail before model
   forward.
 
-### Requirement: Packed Forward Receipts
+### Requirement: Packed Forward Proof Is Explicit And Non-Durable By Default
 
-Each smoke or debug run SHALL be able to emit a compact Qwen forward contract
-receipt containing pack length, segment count, image grid metadata, position-id
-summary, FA2 branch evidence, output shape, and supervision row counts.
+Packed-forward contract proof SHALL be collected through focused unit tests or
+an explicitly enabled smoke/probe. Normal training MUST NOT emit a per-step
+Qwen forward receipt. An explicit proof artifact MUST identify its scope and
+contain the pack length, segment count, image-grid summary, position-reset
+summary, FA2 varlen evidence, output shape, and supervision-row mapping needed
+for the claim being tested.
 
-#### Scenario: Vertical smoke Qwen receipt
+#### Scenario: Production training runs normally
 
-- **WHEN** the vertical smoke completes a forward pass
-- **THEN** `debug/qwen_forward_contract.json` or an equivalent linked receipt
-  MUST summarize the packed forward contract for that run.
+- **WHEN** a production profile executes packed Qwen forward
+- **THEN** runtime MUST perform all required input and output validation
+- **AND** MUST NOT emit a per-step forward proof file.
+
+#### Scenario: Vertical smoke requests proof
+
+- **WHEN** the explicit vertical smoke enables packed-forward proof capture
+- **THEN** one bounded proof artifact MUST summarize the representative call
+- **AND** the proof MUST NOT become a stream copied across every step or rank.
