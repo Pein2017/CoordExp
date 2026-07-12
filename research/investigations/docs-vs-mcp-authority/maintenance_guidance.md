@@ -1,8 +1,8 @@
 ---
 type: investigation
 title: Docs vs MCP Authority Maintenance Guidance
-description: Practical maintenance rules for keeping CoordExp-Swift docs useful without duplicating MCP-powered code exploration.
-tags: [docs, mcp, maintenance, authority, codegraph, serena]
+description: Practical maintenance rules for keeping CoordExp-Swift docs useful without duplicating direct source inspection.
+tags: [docs, maintenance, authority]
 updated: 2026-07-07
 ---
 
@@ -11,8 +11,8 @@ updated: 2026-07-07
 ## Principle
 
 Maintain docs as authority and routing, not as a hand-written source index.
-Maintain MCPs as live implementation discovery, not as a substitute for project
-intent or accepted evidence.
+Use direct shell/source inspection and executable checks for implementation
+discovery, not as a substitute for project intent or accepted evidence.
 
 ## Docs Own
 
@@ -26,12 +26,12 @@ Docs should own:
 - future-work boundaries and explicit non-claims.
 
 Docs should be pointer-first. A good current doc names the right entrypoint,
-contract, artifact, or check, then lets CodeGraph, Serena, tests, and source
-reads carry the implementation detail.
+contract, artifact, or check, then lets focused source reads, tests, and probes
+carry the implementation detail.
 
-## MCPs Own
+## Source Inspection Owns
 
-CodeGraph and Serena should own:
+Direct repository inspection should own:
 
 - live code navigation;
 - symbol lookup and grouped source context;
@@ -39,9 +39,9 @@ CodeGraph and Serena should own:
 - exact Python symbol references and diagnostics after a target file is known;
 - implementation verification support before edits or reviews.
 
-Before using CodeGraph for a worktree-specific claim, check that the index
-belongs to the exact worktree and is fresh enough for the files under review.
-Use Serena for narrowed Python precision, not broad repo governance.
+Use `rg`/`git grep` to narrow targets, then direct reads, AST/structured parsers,
+and focused tests or probes for narrowed Python precision. Do not use broad
+repository search as a substitute for authority docs.
 
 ## What To Prune Later
 
@@ -78,9 +78,9 @@ For CoordExp-Swift work:
    `docs/COORDEXP_SWIFT.md` to establish authority.
 2. Use `docs/catalog.yaml` and `docs/IMPLEMENTATION_MAP.md` to narrow the
    relevant route.
-3. Check CodeGraph freshness before broad implementation mapping.
-4. Use Serena or exact source reads for narrowed Python semantics.
+3. Use `rg`/`git grep` to narrow broad implementation mapping.
+4. Use exact source reads, AST/structured parsers, or focused probes for narrowed Python semantics.
 5. Verify claims with tests, artifacts, manifests, metrics, or stable specs.
 
-This keeps docs small and durable while letting MCPs do the heavy lifting for
-live code exploration.
+This keeps docs small and durable while keeping live code exploration explicit,
+reproducible, and locally verifiable.

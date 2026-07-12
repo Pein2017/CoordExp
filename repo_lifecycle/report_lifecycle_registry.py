@@ -79,7 +79,7 @@ def _text_files_under(repo_root: Path, include: list[str], allow: list[str]) -> 
             resolved = path.resolve()
             if any(_is_under(resolved, allowed) for allowed in allow_paths):
                 continue
-            if ".git" in path.parts or ".codegraph" in path.parts:
+            if ".git" in path.parts:
                 continue
             files.append(path)
     return files

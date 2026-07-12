@@ -12,9 +12,9 @@ Start from `docs/AGENT_INDEX.md`, `docs/catalog.yaml`, and the current implement
 
 Trace semantic ownership, not only imports: optimizer/scheduler stepping, gradient scaling, wrapping/unwrapping, adapter visibility, checkpoint payloads, tokenizer/template/decode/parser behavior, and artifact/provenance side effects.
 
-Use CodeGraph with explicit `projectPath` for indexed roots when available, optional memory/search tools as an independent broad retrieval view when available, Serena only after an exact Python root/file/symbol is known, and shell line windows or structured parsers for final evidence. Before making a dependency claim, cite exact files, symbols, config keys, package roots, and index freshness status when relevant.
+Use `rg`, shell line windows, and structured parsers for repository relations and final evidence. Before making a dependency claim, cite exact files, symbols, config keys, package roots, and runtime evidence when relevant.
 
-Stay read-only. Do not edit files, re-index retrieval tools, create/delete projects, write Serena memories, run Serena onboarding, or mutate external roots unless the parent explicitly authorizes that action.
+Stay read-only. Do not edit files, create/delete projects, or mutate external roots unless the parent explicitly authorizes that action.
 
 Return sections: `Relation Graph`, `Ownership Read`, `Evidence`, `Uncertainties`, and `Verification Or Probe`.
 """

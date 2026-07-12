@@ -61,7 +61,8 @@ Repo guardrails:
 - Do **not** add ad hoc CLI flags if a config-driven path is possible.
 - Keep Qwen3-VL chat-template compatibility.
 - Do **not** edit upstream HF model files like `modeling_qwen3_vl.py`.
-- For any `*.py` exploration/editing, **Serena MCP is mandatory**.
+- For any `*.py` exploration/editing, use `rg`/`git grep`, focused direct reads,
+  and the narrowest executable verification available.
 - Use `conda run -n ms python ...` for Python commands.
 
 ---
@@ -292,7 +293,7 @@ Verification:
 - If a new config is needed, place it under `configs/bench/` or another appropriate infer/eval location.
 - If a new progress note is added, index it in `progress/index.yaml`.
 - If code changes are needed:
-  - use Serena MCP for all `*.py` exploration/editing,
+  - use `rg`/`git grep` and focused direct reads for all `*.py` exploration/editing,
   - add the smallest possible verification path,
   - avoid generic refactors.
 
@@ -353,4 +354,3 @@ This task is **not** complete if it ends only with:
 - [ ] local val sanity metrics
 - [ ] official test-dev result or explicit external blocker
 - [ ] progress note with reproducibility details
-

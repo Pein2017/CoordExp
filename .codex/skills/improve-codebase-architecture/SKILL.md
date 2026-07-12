@@ -48,9 +48,9 @@ Start with `docs/AGENT_INDEX.md`, `docs/catalog.yaml`, and the smallest relevant
 canonical docs, stable specs, configs, tests, and artifacts. Treat historical
 notes and old worktrees as evidence, not current authority.
 
-Use CodeGraph only when its index matches the exact worktree. Use Serena for
-precise Python symbol bodies and references when available. Use `rg` and direct
-reads for docs, YAML, specs, artifacts, metrics, and manifests.
+Use `rg`, `git grep`, Python AST or structured parsers, and direct reads for
+source, docs, YAML, specs, artifacts, metrics, and manifests. Verify executable
+semantics with focused tests or probes when textual inspection is insufficient.
 
 ## Review workflow
 

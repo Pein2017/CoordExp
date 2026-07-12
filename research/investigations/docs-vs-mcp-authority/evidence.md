@@ -2,7 +2,7 @@
 type: investigation
 title: Docs vs MCP Authority Evidence
 description: Live evidence snapshot for the CoordExp-Swift docs and MCP boundary decision.
-tags: [docs, codegraph, serena, evidence, coordexp-swift]
+tags: [docs, evidence, coordexp-swift]
 updated: 2026-07-07
 ---
 
@@ -46,9 +46,14 @@ Key current-authority and routing files:
 These are governance and interpretation facts. They are not reliably derivable
 from symbol graphs.
 
-## MCP State
+## Retired MCP State
 
-The worktree has a local CodeGraph index:
+The former CodeGraph and Serena integrations were retired after a controlled
+comparison. Their local indexes and active Codex server entries are removed;
+the measurements below are retained only as historical provenance and are not
+an operational recommendation.
+
+The former worktree CodeGraph index reported:
 
 | field | value |
 | --- | ---: |
@@ -65,13 +70,12 @@ The same status report showed pending index drift:
 | added files | 4 |
 | modified files | 16 |
 
-CodeGraph also reported that the index was built by an earlier engine version
+The historical report also said the index was built by an earlier engine version
 and recommended `codegraph sync` or a full rebuild before relying on the graph
 for fresh implementation claims.
 
-This is expected and not a CodeGraph failure. It means graph exploration is a
-live-code discovery tool whose freshness must be checked in the exact worktree.
-It should not replace docs as the stable authority layer.
+This historical evidence is not a current runtime dependency. Current work
+uses direct repository inspection and executable verification.
 
 ## Boundary Evidence
 
@@ -84,4 +88,4 @@ validation evidence is accepted.
 The evidence supports a two-layer workflow:
 
 - read docs first to establish authority and scope;
-- use MCPs next to inspect and verify the current implementation.
+- use direct source inspection and focused probes to inspect and verify the current implementation.

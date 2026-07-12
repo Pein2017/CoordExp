@@ -7,5 +7,5 @@
 - [Maintenance Guidance](maintenance_guidance.md)
 
 This investigation is a governance and navigation pilot. It records how
-CoordExp-Swift should balance compact current-authority docs with powerful code
-exploration tools such as CodeGraph and Serena.
+CoordExp-Swift should balance compact current-authority docs with direct,
+repository-local code exploration.
