@@ -28,5 +28,6 @@ Only use this archive when reconstructing history, reviewing why an implementati
   simplification proposals, refactoring programs, blueprints, and decision logs
 - [superpowers/README.md](superpowers/README.md): dated agent implementation plans, design specs, and handoffs
 - [worktree-union/README.md](worktree-union/README.md): raw Markdown union intakes from linked worktrees before cleanup and migration
+- [worktree-cleanup/README.md](worktree-cleanup/README.md): preservation receipts for recycled experimental worktrees
 - [research-intake/](research-intake/): raw research-note intakes used as provenance for synthesized `research/` reading paths
 - [training/](training/): superseded training design notes moved out of the current training docs layer

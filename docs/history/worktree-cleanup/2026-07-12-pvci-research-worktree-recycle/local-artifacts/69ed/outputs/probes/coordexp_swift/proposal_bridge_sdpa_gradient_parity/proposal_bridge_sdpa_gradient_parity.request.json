@@ -1,0 +1,40 @@
+{
+  "argv": [
+    "scripts/probes/coordexp_swift/proposal_bridge_sdpa_gradient_parity.py",
+    "--execute"
+  ],
+  "checkpoint_json": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/checkpoint.json",
+  "created_at_utc": "2026-07-11T14:20:39.048246+00:00",
+  "fixture_path": "/data/CoordExp/.codex/worktrees/69ed/CoordExp/tests/fixtures/smoke/qwen3_vl_single_image_pack",
+  "model_path": "/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent",
+  "no_hooks": true,
+  "phase": "PVCI VF4 SDPA companion exact train-mode backward parity",
+  "policy": {
+    "attention_backend": "sdpa",
+    "feedback": false,
+    "gradient_checkpointing": "non-reentrant",
+    "model_dtype": "bfloat16",
+    "packing": false,
+    "seed": 20260711,
+    "tolerances": {
+      "bf16_atol": 0.02,
+      "bf16_rtol": 0.02,
+      "exact_atol": 0.0,
+      "exact_rtol": 0.0,
+      "fp32_atol": 1e-06,
+      "fp32_rtol": 1e-06
+    }
+  },
+  "probe": "proposal_bridge_sdpa_gradient_parity",
+  "required_gates": [
+    "exact step-4887 DoRA adapter",
+    "real Qwen3-VL-2B train mode",
+    "GPU1 deterministic CUDA",
+    "native versus functional C-off exact logits/loss/argmax",
+    "every authorized trainable DoRA gradient exact parity",
+    "two layer replays and one logical bridge event",
+    "three deepstack events",
+    "no hooks"
+  ],
+  "scope": "probe-only; no production forward owner or checkpoint mutation"
+}

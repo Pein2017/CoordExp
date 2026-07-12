@@ -1,0 +1,8 @@
+{
+  "created_at_utc": "2026-07-11T13:47:06.157478+00:00",
+  "exception": "expected exactly one box end for first row, got 2",
+  "exception_type": "AttestationHold",
+  "request_sha256": "03f8a64a6aa70eb1d62cf0f47bf5331386575406eb9430966c7a1522ccef75e7",
+  "status": "HOLD",
+  "traceback": "Traceback (most recent call last):\n  File \"/data/CoordExp/.codex/worktrees/69ed/CoordExp/scripts/probes/coordexp_swift/proposal_bridge_training_backward_attestation.py\", line 649, in run\n    result = _run_gpu(args)\n             ^^^^^^^^^^^^^^\n  File \"/data/CoordExp/.codex/worktrees/69ed/CoordExp/scripts/probes/coordexp_swift/proposal_bridge_training_backward_attestation.py\", line 500, in _run_gpu\n    row_start, row_end = _row_start_and_end(\n                         ^^^^^^^^^^^^^^^^^^^\n  File \"/data/CoordExp/.codex/worktrees/69ed/CoordExp/scripts/probes/coordexp_swift/proposal_bridge_training_backward_attestation.py\", line 274, in _row_start_and_end\n    raise AttestationHold(f\"expected exactly one box end for first row, got {ends.numel()}\")\nAttestationHold: expected exactly one box end for first row, got 2\n"
+}
