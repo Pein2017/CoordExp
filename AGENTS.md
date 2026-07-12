@@ -58,6 +58,13 @@
   snapshots. Treat `progress/` as a legacy/deprecated archive only: read it only
   when explicitly reconstructing old evidence, migrate useful material to
   `research/`, and do not create new `progress/` records.
+  
+## Subagent context inheritance
+For every V2 `spawn_agent` call, set `fork_turns` explicitly.
+- `none`: self-contained discovery, artifact lookup, narrow probes.
+- `1`-`3`: tasks needing only recent hypotheses or decisions.
+- `all`: full-history synthesis or tasks that explicitly depend on the entire discussion.
+Never omit `fork_turns`, because the runtime defaults an omitted V2 value to `all`. Explain the selected value briefly before spawning.
 
 ## Reporting
 
