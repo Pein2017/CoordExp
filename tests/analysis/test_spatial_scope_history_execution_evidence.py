@@ -8,6 +8,13 @@ import torch
 from src.analysis.spatial_scope_history.cohort_ledger import sha256_payload
 from src.analysis.spatial_scope_history.execution_evidence import (
     ExecutedRequestBatchEvidence,
+    _validate_sealed_request_batch,
+)
+from src.analysis.spatial_scope_history.schedule import (
+    INDEPENDENT_EXECUTION_WAVE_PARTITION,
+    PhysicalBatchPlan,
+    RequestBatch,
+    cumulative_execution_wave_partition,
 )
 from src.analysis.spatial_scope_history.spatial import (
     ExecutedVisualTensorReceipt,
@@ -251,6 +258,52 @@ def test_singleton_executed_batch_evidence_is_rejected() -> None:
             batch_prompt_token_ids_sha256=(batch.batch_prompt_token_ids_sha256[0],),
             evidence_sha256="0" * 64,
         )
+
+
+def test_three_request_tail_is_valid_before_a_later_execution_wave_partition() -> (
+    None
+):
+    independent_requests = tuple(
+        build_test_execution_evidence(
+            arm_code="FULL_SINGLE",
+            image_id=image_id,
+            sampling_seed=500 + image_id,
+        ).scheduled_request
+        for image_id in range(1, 4)
+    )
+    cumulative_requests = tuple(
+        build_test_execution_evidence(
+            arm_code="MASK_CUMULATIVE",
+            image_id=image_id,
+            cell_index=0,
+            sampling_seed=500 + image_id,
+        ).scheduled_request
+        for image_id in range(4, 8)
+    )
+    all_requests = (*independent_requests, *cumulative_requests)
+    cumulative_partition = cumulative_execution_wave_partition(0)
+    physical_batch_plan = PhysicalBatchPlan.build(
+        schedule_identity_sha256=independent_requests[0].schedule_identity_sha256,
+        request_ids=tuple(request.request_id for request in all_requests),
+        execution_wave_partitions=(
+            *(INDEPENDENT_EXECUTION_WAVE_PARTITION for _ in independent_requests),
+            *(cumulative_partition for _ in cumulative_requests),
+        ),
+    )
+    sealed_batch = physical_batch_plan.batches[0]
+    request_batch = RequestBatch(
+        batch_index=sealed_batch.batch_index,
+        requests=independent_requests,
+        physical_batch_sha256=sealed_batch.fingerprint,
+        physical_batch_plan_sha256=physical_batch_plan.fingerprint,
+        execution_wave_partition=sealed_batch.execution_wave_partition,
+    )
+
+    _validate_sealed_request_batch(
+        scheduled_request=independent_requests[0],
+        request_batch=request_batch,
+        physical_batch_plan=physical_batch_plan,
+    )
 
 
 def _rebuild_batch_evidence(

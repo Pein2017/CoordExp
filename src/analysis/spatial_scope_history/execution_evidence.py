@@ -1840,9 +1840,14 @@ def _validate_sealed_request_batch(
             "analysis.execution_evidence_batch_membership",
         )
     if request_batch.cardinality == 3:
-        if request_batch.batch_index != len(physical_batch_plan.batches) - 1:
+        next_batch_index = request_batch.batch_index + 1
+        if (
+            next_batch_index < len(physical_batch_plan.batches)
+            and physical_batch_plan.batches[next_batch_index].execution_wave_partition
+            == sealed_batch.execution_wave_partition
+        ):
             _fail(
-                "only the final sealed physical batch may use the natural tail of three",
+                "only the final sealed physical batch of an execution-wave partition may use the natural tail of three",
                 "analysis.execution_evidence_batch_tail",
             )
     elif request_batch.cardinality != 4:
