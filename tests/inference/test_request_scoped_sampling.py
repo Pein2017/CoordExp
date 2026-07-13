@@ -2053,6 +2053,110 @@ def test_custom_generate_uses_installed_hf_loop_with_four_generators_scores_and_
     assert capture.prepared_generation_profile["token_healing"] is False
 
 
+def test_stock_generation_scores_are_captured_after_sampling_warpers() -> None:
+    from transformers import GPT2Config, GPT2LMHeadModel
+    from transformers.generation.logits_process import (
+        LogitsProcessorList,
+        TemperatureLogitsWarper,
+        TopPLogitsWarper,
+    )
+
+    from src.inference.backend import (
+        _ProcessedLogitCapture,
+        _generation_config_from_arguments,
+        effective_generation_arguments,
+    )
+
+    model = GPT2LMHeadModel(
+        GPT2Config(
+            vocab_size=10,
+            n_positions=16,
+            n_ctx=16,
+            n_embd=8,
+            n_layer=1,
+            n_head=1,
+            bos_token_id=1,
+            eos_token_id=9,
+            pad_token_id=9,
+        )
+    ).eval()
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.zero_()
+    policy = _sampled_policy(temperature=0.5, top_p=0.4)
+    generation_config = _generation_config_from_arguments(
+        effective_generation_arguments(
+            policy,
+            eos_token_id=9,
+            pad_token_id=9,
+            bos_token_id=1,
+        ),
+        policy=policy,
+    )
+    generation_config.max_new_tokens = 1
+    generation_config.max_length = 3
+    pre_warper_capture = _ProcessedLogitCapture()
+
+    outputs = model.generate(
+        input_ids=torch.tensor([[1, 2]], dtype=torch.long),
+        attention_mask=torch.ones((1, 2), dtype=torch.long),
+        generation_config=generation_config,
+        logits_processor=LogitsProcessorList([pre_warper_capture]),
+        use_model_defaults=False,
+    )
+
+    assert pre_warper_capture.first_scores_float32 is not None
+    pre_warper = pre_warper_capture.first_scores_float32
+    post_warper = outputs.scores[0].detach().to(dtype=torch.float32, device="cpu")
+    expected_post_warper = TemperatureLogitsWarper(policy.temperature)(
+        torch.tensor([[1, 2]], dtype=torch.long), pre_warper.clone()
+    )
+    expected_post_warper = TopPLogitsWarper(policy.top_p)(
+        torch.tensor([[1, 2]], dtype=torch.long), expected_post_warper
+    )
+    assert torch.isfinite(pre_warper).all()
+    assert torch.isneginf(post_warper).any()
+    assert torch.equal(post_warper, expected_post_warper)
+
+
+def test_processed_logit_match_accepts_matching_negative_infinity_masks() -> None:
+    from src.inference.backend import _processed_logits_match
+
+    custom = torch.tensor([[0.0, float("-inf"), 1.0]], dtype=torch.float32)
+    stock = torch.tensor([[0.0, float("-inf"), 1.0 + 1e-7]], dtype=torch.float32)
+    assert _processed_logits_match(
+        custom,
+        stock,
+        absolute_tolerance=1e-6,
+        relative_tolerance=1e-6,
+    )
+
+
+@pytest.mark.parametrize(
+    ("custom", "stock"),
+    [
+        (
+            [0.0, float("-inf"), float("inf")],
+            [0.0, float("inf"), float("-inf")],
+        ),
+        ([0.0, float("-inf"), 1.0], [0.0, 2.0, 1.0]),
+        ([0.0, float("nan"), 1.0], [0.0, float("nan"), 1.0]),
+        ([0.0, float("-inf"), 1.0], [0.0, float("-inf"), 1.01]),
+    ],
+)
+def test_processed_logit_match_rejects_infinity_nan_and_finite_drift(
+    custom: list[float], stock: list[float]
+) -> None:
+    from src.inference.backend import _processed_logits_match
+
+    assert not _processed_logits_match(
+        torch.tensor([custom], dtype=torch.float32),
+        torch.tensor([stock], dtype=torch.float32),
+        absolute_tolerance=1e-6,
+        relative_tolerance=1e-6,
+    )
+
+
 def test_real_generation_mixin_request_seeds_ignore_global_rng_and_batch_order() -> (
     None
 ):

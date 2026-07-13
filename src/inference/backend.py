@@ -1543,27 +1543,28 @@ class HFGenerateBackend:
         generation_config = _generation_config_from_arguments(arguments, policy=policy)
         generation_config.max_new_tokens = 1
         generation_config.max_length = prompt_width + 1
-        capture = _ProcessedLogitCapture()
-        try:
-            from transformers.generation.logits_process import LogitsProcessorList
-        except ImportError as exc:
-            raise RuntimeContractError(
-                "installed Transformers logits processors are unavailable",
-                code="backend_sampling.transformers_unavailable",
-                cause=exc,
-            ) from exc
-        self.model.generate(
+        outputs = self.model.generate(
             **generate_inputs,
             generation_config=generation_config,
-            logits_processor=LogitsProcessorList([capture]),
             use_model_defaults=False,
         )
-        stock_scores = capture.first_scores_float32
-        if stock_scores is None:
+        output_scores = getattr(outputs, "scores", None)
+        if output_scores is None or len(output_scores) != 1:
             raise RuntimeContractError(
                 "stock generation did not expose first-step processed logits",
                 code="backend_sampling.attestation_logit_stock_capture_missing",
+                context={
+                    "score_step_count": (
+                        None if output_scores is None else len(output_scores)
+                    )
+                },
             )
+        stock_scores = (
+            output_scores[0]
+            .detach()
+            .to(device="cpu", dtype=torch.float32)
+            .contiguous()
+        )
         return _build_processed_logit_parity_attestation(
             request_ids=request_ids,
             custom_scores=custom_scores,
@@ -3863,6 +3864,36 @@ def _float32_tensor_from_artifact(payload: Mapping[str, Any]) -> torch.Tensor:
     return values.reshape(shape).clone()
 
 
+def _processed_logits_match(
+    custom_scores: torch.Tensor,
+    stock_scores: torch.Tensor,
+    *,
+    absolute_tolerance: float,
+    relative_tolerance: float,
+) -> bool:
+    """Compare processed logits while preserving top-p infinity semantics."""
+
+    if custom_scores.shape != stock_scores.shape:
+        return False
+    if torch.isnan(custom_scores).any() or torch.isnan(stock_scores).any():
+        return False
+    if not torch.equal(torch.isposinf(custom_scores), torch.isposinf(stock_scores)):
+        return False
+    if not torch.equal(torch.isneginf(custom_scores), torch.isneginf(stock_scores)):
+        return False
+    finite = torch.isfinite(custom_scores)
+    if not torch.equal(finite, torch.isfinite(stock_scores)):
+        return False
+    return bool(
+        torch.allclose(
+            custom_scores[finite],
+            stock_scores[finite],
+            atol=absolute_tolerance,
+            rtol=relative_tolerance,
+        )
+    )
+
+
 def _build_processed_logit_parity_attestation(
     *,
     request_ids: tuple[str, ...],
@@ -5172,13 +5203,11 @@ def _validate_sampled_runtime_attestation_bundle(
     if (
         tuple(custom_tensor.shape) != four_forward.score_tensor_shapes[0]
         or stock_tensor.shape != custom_tensor.shape
-        or not torch.isfinite(custom_tensor).all()
-        or not torch.isfinite(stock_tensor).all()
-        or not torch.allclose(
+        or not _processed_logits_match(
             custom_tensor,
             stock_tensor,
-            atol=parity.absolute_tolerance,
-            rtol=parity.relative_tolerance,
+            absolute_tolerance=parity.absolute_tolerance,
+            relative_tolerance=parity.relative_tolerance,
         )
     ):
         raise RuntimeContractError(
