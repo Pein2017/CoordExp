@@ -60,21 +60,11 @@ near the artifact, for example `outputs/_baidu_filename_mapping/`.
 
 ## Union Sync
 
-Use when Baidu Netdisk should act like a conservative large-asset remote:
-
-```text
-node A tree + node B tree + remote tree => union of known files
-```
-
-- `pull`: download remote-only files into staging, then merge locally with
-  ignore-existing behavior.
-- `push`: upload local-only files with skip-existing behavior.
-- `manifest`: record per-node state so same-path/different-content conflicts
-  are detected.
-
-The helper keeps legacy default state names such as
-`temp/baidudisk-union-sync` and `.baidudisk-union-sync-node-id` so existing
-nodes do not silently lose manifest continuity after this skill merge.
+For append-only multi-node synchronization, read
+[semantics.md](references/semantics.md) before running `status`, `push`, `pull`,
+`sync`, conflict recovery, or deletion maintenance. It owns the command
+semantics, manifest continuity, conflict policy, filename policy, and delete
+procedure.
 
 ```bash
 python .codex/skills/baidu-netdisk-transfer/scripts/baidu_union_sync.py --help
@@ -83,24 +73,9 @@ python .codex/skills/baidu-netdisk-transfer/scripts/baidu_union_sync.py --config
 python .codex/skills/baidu-netdisk-transfer/scripts/baidu_union_sync.py --config temp/baidu-netdisk-transfer/config.json status outputs
 ```
 
-Transfers are dry-run unless `--apply` is present:
-
-```bash
-tmux new -s baidudisk_union_sync_outputs
-python .codex/skills/baidu-netdisk-transfer/scripts/baidu_union_sync.py \
-  --config temp/baidu-netdisk-transfer/config.json sync outputs --apply
-```
-
-Union-sync safety rules:
-
-- Use `--policy skip` for automated uploads.
-- Pull into staging and merge with `rsync --ignore-existing`.
-- Stop on conflicts unless the user explicitly requests manual recovery.
-- Reject symlinks, special files, and unsafe Baidu/Windows-hostile names by
-  default.
-- Do not add `--delete`, `--ow`, overwrite, or mirror semantics to timers.
-- For deletes, stop sync loops, delete manually on every relevant surface, then
-  add a denylist rule before restarting old nodes.
+The preflight is complete when `doctor` passes and `status` reports no
+unresolved same-path/different-content conflict. Transfers remain dry-run until
+an authorized command includes `--apply`.
 
 ## Failure Triage
 
@@ -114,8 +89,4 @@ Union-sync safety rules:
 - ETA questions need live evidence: combine current shard progress, local file
   size, and remote `BaiduPCS-Go ls` visibility rather than pane output alone.
 
-## References
-
-- `references/semantics.md`: append-only union policy, conflict, and delete
-  semantics.
-- `references/config-template.json`: portable node/root config.
+`references/config-template.json` is the portable node/root config.

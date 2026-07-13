@@ -67,65 +67,22 @@ This receipt is a boundary check, not the diagnosis. It catches wrong-run, stale
 
 ## Tiny Probe Gate
 
-Use before expensive training when abnormal behavior needs a causal read and the change affects objective math, targets, tokenizer/template, sampling, packing, precision, optimizer groups, decoding, or eval semantics.
-
-Probe requirements:
-
-- tens to a few hundred examples plus held-out slice;
-- enough steps for repeated exposure, not one optimizer step;
-- closest baseline with same model/tokenizer/preprocessing/decode/batch semantics;
-- scope label: tiny, smoke, subset, valN, full-val, proxy, teacher-forced, free-rollout;
-- artifacts: resolved config, sample counts, tokenizer ids, trainable groups, loss weights, raw predictions, parse/drop counters, metrics.
-
-Track innovation-specific probability mass:
-
-- valid vs invalid target mass;
-- entropy/KL inside valid set;
-- stop vs continue margin;
-- allowed token-type mass;
-- malformed/empty/duplicate/truncation rates;
-- effective target counts, mask density, support size;
-- gradient norm, LR, NaN/Inf, update norms.
-
-Healthy launch signal: intended terms move, valid mass rises, schema health holds, free rollout agrees with teacher-forced trend, and no provenance/mask/precision contradiction is visible.
+When abnormal behavior needs a causal read before expensive training, read
+[probe-gates.md](references/probe-gates.md). It defines tiny-run comparability,
+mechanism-conditioned negative-result checks, and Stage-1 coordinate-locality
+evidence.
 
 ## Mechanism-Conditioned Probe Gate
 
-Use this before interpreting weak or negative results from denoising, robustness, prefix, hidden-state, coordinate-basin, binding, or duplicate-control experiments.
-
-Do not infer "the mechanism is irrelevant" from low average CE/KL deltas, mild metric movement, or a valid-looking perturbation until you verify the probe actually targets the documented mechanism surface.
-
-Check:
-
-- known healthy baseline quality gate, such as the user's expected mAP/AP/F1 range;
-- authored config, resolved runtime, and exact artifact root;
-- whether the perturbation can move the state basin or only stays inside a local valid-bbox neighborhood;
-- slot-wise effects for `x1`, `y1`, `x2`, `y2`, boundary/control tokens, and stop/continue sites;
-- mechanism-sensitive rows, not only aggregate averages;
-- wrong-control or same-desc competitor prefixes when prefix/binding is the claimed handle;
-- hidden-state patch, visual-region mask, or rollout-generated bad-prefix evidence when prior notes identify those as causal handles;
-- sparse sampling traps such as `num_objects_per_image=1`, identical-prefix cases, or mostly insensitive rows.
-
-If prior mechanism notes conflict with the new aggregate result, reconcile them explicitly. Prefer the verdict "probe handle mismatch" or "inconclusive-needs-mechanism-panel" over broad causal claims when the perturbation family does not match the documented failure mode.
+Before interpreting weak or negative mechanism results, use the corresponding
+gate in [probe-gates.md](references/probe-gates.md). A negative claim is complete
+only when baseline health, probe handle, sensitive rows, slot-wise effects, and
+relevant controls have been checked.
 
 ## Stage-1 Coordinate Locality
 
-For SoftCE, Gaussian, or hard-CE coordinate objective decisions, keep the readout slot-wise and rollout-aware:
-
-- compare `x1`, `y1`, `x2`, and `y2` separately;
-- include teacher-forced logits and self-prefix logits;
-- pair distribution tables with plots when judging shape;
-- keep A5/A6 or other variants separate instead of flattening them into one "SoftCE" verdict;
-- use guarded rollout metrics only with explicit scope labels such as `val200`, checkpoint id, and decode settings.
-
-Existing harness:
-
-```bash
-PYTHONPATH=/data/CoordExp python scripts/analysis/run_hard_ce_coord_logit_locality.py --help
-python -m pytest tests/test_hard_ce_coord_logit_locality.py -q
-```
-
-If a direct script launch cannot import `src`, set `PYTHONPATH=/data/CoordExp` explicitly.
+For SoftCE, Gaussian, or hard-CE coordinate decisions, read the slot-wise
+coordinate-locality branch in [probe-gates.md](references/probe-gates.md).
 
 ## Output
 

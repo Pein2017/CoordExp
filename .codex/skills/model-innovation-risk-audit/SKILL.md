@@ -62,18 +62,17 @@ Fake wrappers, dry-run receipts, and plan artifacts prove wiring shape only. If 
 
 ## Config And Loss Footguns
 
-- `ConfigLoader.load_yaml_with_extends()` deep-merges dicts but replaces lists wholesale; inspect final resolved objective lists.
-- Reject legacy keys in semantic modes instead of warning or ignoring.
-- Separate monitoring-only knobs from differentiable objective weights.
-- Verify raw loss terms and effective weighted contributions are both logged.
-- Check zero-weight targets, EOS/type-gate composition, duplicate multiplicity, and teacher-token membership.
-- Use deterministic tiny-logit tests for scalar formulas before trusting training curves.
+Read [contract-diff.md](references/contract-diff.md) when config inheritance,
+legacy keys, objective lists, loss support, weighting, precision, or scalar math
+is in scope.
 
 ## Loss/Numerics Gate
 
-For new or changed objectives, verify one authored config, one resolved config, one encoded sample, one collated batch, and one deterministic tiny-logit formula probe before trusting training curves.
-
-Report raw and weighted loss terms, valid-count denominators, mask density, zero-mask behavior, target support membership, finite checks, dtype/fp32 islands, gradient path, accumulation, distributed reduction semantics, and metric/logging names for each term. If wiring is correct but behavior is already abnormal, hand off to `model-diagnosis`.
+For each changed objective, the gate requires one authored config, one resolved
+config, one encoded sample, one collated batch, and one deterministic tiny-logit
+formula probe. Record the full numerics receipt defined in
+[contract-diff.md](references/contract-diff.md). If wiring is correct but
+behavior is abnormal, hand off to `model-diagnosis`.
 
 ## Probes
 
@@ -91,28 +90,8 @@ Probe goal: prove or falsify a contract mismatch. Do not explain a metric regres
 
 ## Findings-First Report
 
-Use:
-
-```text
-Findings
-Minimal Contract Diff
-Confirmed OK
-Decision Questions
-Patch Recommendations
-Unit Tests And Diagnostics
-Smoke Run Suggestions
-Residual Risks
-```
-
-Finding format:
-
-```text
-[P0/P1/P2/P3] Title
-Evidence
-Impact
-Fix direction
-Minimal test/diagnostic
-```
+Use [report-template.md](references/report-template.md) for a standalone report.
+Every finding needs evidence, impact, fix direction, and a minimal diagnostic.
 
 Severity:
 
@@ -148,11 +127,6 @@ For high-risk model innovations, return a bounded launch/promote decision instea
 
 Output one of: `promote`, `hold`, `rerun gate`, or `needs user decision`, with the smallest verification command or artifact check that would change the verdict.
 
-## References
-
-Load only when needed:
-
-- `references/risk-taxonomy.md`
-- `references/subagent-prompts.md`
-- `references/report-template.md`
-- `references/contract-diff.md`
+Load [risk-taxonomy.md](references/risk-taxonomy.md) for a broad surface audit
+and [subagent-prompts.md](references/subagent-prompts.md) only when independent
+audit lanes are actually used.

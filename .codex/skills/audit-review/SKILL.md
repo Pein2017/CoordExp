@@ -110,28 +110,14 @@ Open references only when useful:
 
 ## Explicit Convergence Mode
 
-Use this only when the user asks to iterate work through review and revision.
+Use this branch only when the user asks to iterate work through review and
+revision. Before the first revision, read
+[convergence.md](references/convergence.md) for lane design, bounded rounds,
+triage, mutation gates, and terminal states.
 
-1. State objective, mode, allowed mutation level, artifact/version, decision, evidence that could change it, approval gates, and stop condition.
-2. Produce or inspect the first bounded artifact.
-3. If subagents are allowed or requested, use two independent lanes by default. Assign exact scope, read/write boundary, evidence output, and stop condition. Suitable roles include `contract_auditor`, `repo_scout`, `upstream_relation_tracer`, `model_diagnostician`, and `probe_runner`; use `implementation_worker` only for an explicitly owned patch.
-4. Triage results as P0/P1/P2, non-blocking, wrong, or duplicate. Reject findings only with technical evidence.
-5. Classify every accepted P0/P1 as `fix`, `narrow`, `drop`, `probe`, or `needs user decision` before revision.
-6. Revise only authorized surfaces. Do not patch through research-meaning, compatibility, cost, destructive, or publication decisions.
-7. Re-review changed evidence. Default to at most two review/revision rounds. Continue only when a round closes a material finding; do not run another clean wave without changed evidence or an unresolved high-stakes decision.
-
-Convergence requires all P0/P1 findings to be resolved, narrowed, dropped, probed, evidence-rejected, or assigned to the user; required reviewers and verification must be complete; and claims must not exceed evidence.
-
-End in exactly one state:
-
-- `approve` (one-shot gate)
-- `approved to implement`
-- `ready for user approval`
-- `implemented and verified`
-- `hold`
-- `needs user decision`
-- `probe required`
-- `narrowed/dropped`
+Convergence is complete only when every P0/P1 has a recorded disposition,
+required verification is complete, and the final claim does not exceed the
+evidence.
 
 ## Output Contract
 
@@ -143,7 +129,7 @@ Lead with severity-ranked blockers and concrete handles. For diff/code review, u
 4. confirmed OK / ruled-out checks
 5. verdict and residual risk
 
-If no findings remain, say so and name skipped checks or residual risk. Keep open questions only when they block a reliable conclusion. For convergence mode, also state artifact/version, lanes used, accepted/rejected findings, decisions and revisions, verification, remaining gate, and exact stop state.
+If no findings remain, say so and name skipped checks or residual risk. Keep open questions only when they block a reliable conclusion. In convergence mode, use the output contract in [convergence.md](references/convergence.md).
 
 ## Guardrails
 

@@ -22,6 +22,10 @@ Automated sync must not:
 
 ## Commands
 
+The helper preserves legacy state names such as `temp/baidudisk-union-sync`
+and `.baidudisk-union-sync-node-id`; changing them can sever manifest
+continuity for existing nodes.
+
 `doctor`
 : Verifies that required tools are present and BaiduPCS-Go can talk to the
   account.
@@ -44,6 +48,19 @@ Automated sync must not:
 `sync ROOT --apply`
 : Runs pull, then push.
 
+Transfers are dry-run unless `--apply` is present. For a long authorized sync:
+
+```bash
+tmux new -s baidudisk_union_sync_outputs
+python .codex/skills/baidu-netdisk-transfer/scripts/baidu_union_sync.py \
+  --config temp/baidu-netdisk-transfer/config.json sync outputs --apply
+```
+
+Automated upload uses `--policy skip`; pull merges staging with
+`rsync --ignore-existing`. Stop on conflicts. Reject symlinks, special files,
+and unsafe cross-platform names. Timers never use `--delete`, `--ow`, overwrite,
+or mirror semantics.
+
 ## Conflict
 
 A conflict is a same relative path where local and remote manifests disagree on
@@ -61,6 +78,9 @@ Common manual resolutions:
 
 Deletes are manual. If old nodes may re-upload deleted files, place the path in
 a denylist before restarting automated sync.
+
+Stop every relevant sync loop, delete manually on each relevant local and
+remote surface, add the denylist entry, then restart old nodes.
 
 The denylist only blocks upload. It is not a deletion mechanism.
 

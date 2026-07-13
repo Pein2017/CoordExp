@@ -71,42 +71,8 @@ implementation yourself.
 
 ## Recording
 
-For `record=local`, write only resolved outcomes. Do not create placeholder
-docs, generic ADRs, root `CONTEXT.md`, or duplicate summaries. Use the narrowest
-durable surface:
-
-- `research/`: new research ideas, investigations, interpretations, negative
-  results, mechanisms, and continuation context.
-- `docs/`: stable current behavior, recommended workflows, entrypoints,
-  artifact names, metric meaning, and operator-facing architecture.
-- `openspec/specs/`: normative compatibility-sensitive contracts only.
-- `openspec/changes/<change>/`: bounded implementation changes needing durable
-  proposal/design/tasks/verification state.
-- configs, tests, scripts, manifests, and artifact paths: executable truth.
-- `progress/`: deprecated legacy archive only. Read old notes only when
-  reconstructing provenance; do not use it as a carrier for new records.
-
-Use `probe` for cheap immediate evidence and `build-probe` when new hooks, data,
-logging, evaluator support, or other feature work is required first. For
-`build-probe`, record the research question, evidence target, minimal build,
-scope, matched baseline, stop condition, and carrier before implementation.
-
-Otherwise record:
-
-```md
-## Decision
-{What is now true or planned.}
-
-## Evidence
-- Scope: `tiny|smoke|val200|proxy|partial|full|none-yet`
-- Handles: `{configs, artifacts, tests, metrics, docs, commits}`
-
-## Next State
-{drop|narrow|probe|build-probe|implement|document|needs user decision}
-
-## Carrier
-{chat|handoff|research|docs|openspec|none}
-```
-
-Include rationale and consequence in `Decision`. Continue unless asked to pause
-or only record. Permission to record is not permission to implement.
+For `record=local`, read [recording.md](references/recording.md) after the
+decision resolves. It selects the narrowest durable carrier and defines the
+record template. Recording is complete only when the decision, evidence scope,
+handles, next state, and carrier are explicit. Permission to record does not
+authorize implementation.

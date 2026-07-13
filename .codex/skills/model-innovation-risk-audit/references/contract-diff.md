@@ -29,3 +29,12 @@ Do not treat a smoke as trustworthy if any layer silently falls back to legacy b
 - Check zero-weight targets, support size, target membership, duplicate multiplicity, and EOS/type-gate composition.
 - Use fp32 for probability/log-probability math even when model forward uses bf16.
 - Prefer deterministic tiny-logit scalar tests before trusting aggregate loss curves.
+
+## Numerics Receipt
+
+For each changed loss term, record raw and weighted values, valid-count
+denominator, mask density, zero-mask behavior, target support membership,
+finite checks, dtype/fp32 islands, gradient path, accumulation and distributed
+reduction semantics, plus metric/logging names. The gate is complete only when
+one authored config, one resolved config, one encoded sample, one collated
+batch, and one deterministic tiny-logit formula probe agree.

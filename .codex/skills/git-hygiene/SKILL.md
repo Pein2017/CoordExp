@@ -59,26 +59,9 @@ Default to the current branch. Sync means integrate remote commits, then publish
 3. If behind or diverged, pull first (prefer `git pull --rebase` on feature branches when history is linear).
 4. Push only after the branch is up to date with its upstream (or you have an explicit user-approved merge/rebase plan).
 
-CoordExp's HTTPS remote is normally:
-
-```text
-https://github.com/Pein2017/CoordExp.git
-```
-
-For one-shot PAT fetch/pull/push, use a temporary credential helper that reads the ignored local token file:
-
-```bash
-_branch="$(git branch --show-current)"
-_git_https() {
-  GIT_TERMINAL_PROMPT=0 git \
-    -c credential.helper= \
-    -c "credential.helper=!f() { if [ \"$1\" = get ]; then echo username=x-access-token; printf 'password='; tr -d '\n' < github_personal_token.txt; echo; fi; }; f" \
-    "$@"
-}
-_git_https fetch origin
-_git_https pull --rebase origin "$_branch"
-_git_https push origin HEAD
-```
+CoordExp's HTTPS remote is normally
+`https://github.com/Pein2017/CoordExp.git`. For PAT-based fetch, pull, or push,
+read [https-auth.md](references/https-auth.md) before handling credentials.
 
 Skip `pull` when already up to date; skip `push` when there is nothing to publish. Never place the token in remotes, commit messages, PR bodies, shell output, or tracked files.
 
