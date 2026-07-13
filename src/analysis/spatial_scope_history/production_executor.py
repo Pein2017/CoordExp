@@ -217,6 +217,7 @@ class ProductionExecutorFactory(WorkerExecutorFactory):
         loaded = _load_worker_inputs(config)
         runtime_binding = _load_runtime_binding(
             infer_config=loaded.infer_config,
+            source_gate_root=loaded.source_gate_root,
             sampled_runtime_attestation_path=loaded.sampled_runtime_attestation_path,
             decode_provenance=loaded.schedule.identity.decode,
         )
@@ -234,6 +235,7 @@ class ProductionExecutorFactory(WorkerExecutorFactory):
 @dataclass(frozen=True)
 class _LoadedWorkerInputs:
     infer_config: InferConfig
+    source_gate_root: Path
     schedule: ResearchSchedule
     cohort: CohortLedger
     raw_examples_by_image_id: Mapping[int, RawExample]
@@ -900,6 +902,11 @@ def _load_worker_inputs(config: ProductionExecutorFactoryConfig) -> _LoadedWorke
     resolved = load_infer_config(config_path)
     return _LoadedWorkerInputs(
         infer_config=resolved.config,
+        source_gate_root=(
+            config_path.parents[3]
+            if len(config_path.parents) >= 4
+            else config_path.parent
+        ),
         schedule=schedule,
         cohort=cohort,
         raw_examples_by_image_id=raw_examples,
@@ -1021,10 +1028,14 @@ def _validate_schedule_source_receipts(
 def _load_runtime_binding(
     *,
     infer_config: InferConfig,
+    source_gate_root: Path,
     sampled_runtime_attestation_path: Path,
     decode_provenance: DecodeProvenance,
 ) -> ProductionRuntimeBinding:
-    runtime = assemble_runtime(infer_config)
+    runtime = assemble_runtime(
+        infer_config,
+        source_gate_root=source_gate_root,
+    )
     qwen = runtime.qwen
     model = _component(qwen, "model")
     tokenizer = _component(qwen, "tokenizer")

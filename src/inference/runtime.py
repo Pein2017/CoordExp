@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -22,18 +23,28 @@ class InferenceRuntime:
     model_identity: dict[str, Any]
 
 
-def assemble_runtime(config: InferConfig) -> InferenceRuntime:
+def assemble_runtime(
+    config: InferConfig,
+    *,
+    source_gate_root: str | Path | None = None,
+) -> InferenceRuntime:
     qwen = _load_qwen(config)
     adapter_receipt = (
         load_inference_dora_adapter(config=config, qwen=qwen)
         if config.adapter is not None
         else None
     )
-    embedding_delta_receipt = (
-        load_inference_embedding_delta(config=config, qwen=qwen)
-        if config.embedding_delta is not None
-        else None
-    )
+    if config.embedding_delta is None:
+        embedding_delta_receipt = None
+    else:
+        embedding_delta_kwargs: dict[str, Any] = {"config": config, "qwen": qwen}
+        # Preserve the legacy call shape for unrelated callers and test doubles;
+        # production research paths pass the canonical repository root explicitly.
+        if source_gate_root is not None:
+            embedding_delta_kwargs["source_gate_root"] = source_gate_root
+        embedding_delta_receipt = load_inference_embedding_delta(
+            **embedding_delta_kwargs
+        )
     _prepare_model_for_generation(qwen)
     return InferenceRuntime(
         qwen=qwen,

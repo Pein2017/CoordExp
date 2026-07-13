@@ -365,6 +365,50 @@ def test_runtime_assembly_uses_default_owner_wired_adapter_and_delta_paths(
     )
 
 
+def test_runtime_forwards_explicit_source_gate_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.config.inference import load_infer_config
+    from src.inference import runtime as runtime_module
+
+    config_path = _write_config(
+        tmp_path,
+        embedding_delta={"path": "delta/special-token-delta.safetensors"},
+        debug={"smoke": True, "dry_run": True},
+    )
+    resolved = load_infer_config(config_path)
+    observed: list[Path | str] = []
+
+    monkeypatch.setattr(
+        runtime_module,
+        "load_qwen_components_from_options",
+        lambda options: _fake_qwen_components(resolved.config),
+    )
+
+    def fake_load_embedding_delta(
+        *, config: Any, qwen: Any, source_gate_root: Path | str | None = None
+    ) -> dict[str, Any]:
+        del config, qwen
+        assert source_gate_root is not None
+        observed.append(source_gate_root)
+        return {"status": "loaded"}
+
+    monkeypatch.setattr(
+        runtime_module,
+        "load_inference_embedding_delta",
+        fake_load_embedding_delta,
+    )
+
+    source_gate_root = tmp_path / "canonical-root"
+    runtime_module.assemble_runtime(
+        resolved.config,
+        source_gate_root=source_gate_root,
+    )
+
+    assert observed == [source_gate_root]
+
+
 def test_adapter_runtime_loads_qwen_model_and_uses_adapter_owner(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

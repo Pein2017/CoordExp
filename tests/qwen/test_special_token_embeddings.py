@@ -59,7 +59,7 @@ def test_default_special_token_selection_uses_wrappers_then_coordinates() -> Non
 
 def test_default_special_token_embedding_source_gate_loads_canonical_evidence() -> None:
     evidence = load_default_special_token_embedding_source_gate_evidence(
-        Path(__file__).resolve().parents[2]
+        _canonical_source_gate_root()
     )
 
     assert evidence.source_study_passed is True
@@ -69,6 +69,20 @@ def test_default_special_token_embedding_source_gate_loads_canonical_evidence() 
     assert evidence.probe_receipt["semantics"] == "additive_delta"
     assert evidence.probe_receipt["num_selected_tokens"] == 1004
     assert evidence.probe_receipt["runtime_tied_input_lm_head_identity"] is True
+
+
+def test_source_gate_explicit_root_passes_and_wrong_root_fails(tmp_path: Path) -> None:
+    canonical_root = _canonical_source_gate_root()
+
+    valid = load_default_special_token_embedding_source_gate_evidence(canonical_root)
+    invalid = load_default_special_token_embedding_source_gate_evidence(tmp_path)
+
+    assert valid.source_study_passed is True
+    assert valid.roundtrip_probe_passed is True
+    assert valid.probe_receipt is not None
+    assert invalid.source_study_passed is False
+    assert invalid.roundtrip_probe_passed is False
+    assert invalid.probe_receipt is None
 
 
 def test_special_token_embedding_install_requires_source_gate() -> None:
@@ -515,7 +529,11 @@ def test_inference_embedding_delta_load_installs_wrappers_and_payload(
         tokenizer_sha256="tokenizer-sha",
     )
 
-    receipt = load_inference_embedding_delta(config=_delta_config(tmp_path), qwen=qwen)
+    receipt = load_inference_embedding_delta(
+        config=_delta_config(tmp_path),
+        qwen=qwen,
+        source_gate_root=_canonical_source_gate_root(),
+    )
 
     assert receipt["status"] == "loaded"
     assert receipt["identity"]["status"] == "validated"
@@ -662,6 +680,18 @@ class TinyTiedQwenWithAdapter(TinyTiedQwenModel):
     def __init__(self, *, vocab_size: int = 8, hidden_size: int = 4) -> None:
         super().__init__(vocab_size=vocab_size, hidden_size=hidden_size)
         self.adapter_weight = nn.Parameter(torch.ones(hidden_size))
+
+
+def _canonical_source_gate_root() -> Path:
+    """Find the checked-in canonical evidence root without copying receipts."""
+
+    receipt_relative = Path(
+        "outputs/probes/coordexp_swift/special_token_embeddings_roundtrip/receipt.json"
+    )
+    for candidate in Path(__file__).resolve().parents:
+        if (candidate / receipt_relative).is_file():
+            return candidate
+    raise AssertionError("canonical special-token source-gate receipt is unavailable")
 
 
 def _source_gate(*, selected_count: int) -> SpecialTokenEmbeddingSourceGateEvidence:

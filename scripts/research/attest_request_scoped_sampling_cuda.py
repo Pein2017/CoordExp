@@ -704,7 +704,7 @@ def run(arguments: argparse.Namespace) -> None:
     )
     records = _load_calibration_records(calibration_manifest)
     examples = _load_source_examples(records)
-    runtime = assemble_runtime(resolved.config)
+    runtime = assemble_runtime(resolved.config, source_gate_root=config_root)
     qwen = runtime.qwen
     model_identity = dict(runtime.model_identity)
     tokenizer_identity = _tokenizer_identity(qwen)

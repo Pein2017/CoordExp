@@ -191,7 +191,10 @@ def _main(arguments: argparse.Namespace) -> int:
     )
     with _temporary_cwd(infer_config_path.parents[3]):
         resolved = load_infer_config(infer_config_path)
-    runtime = assemble_runtime(resolved.config)
+    runtime = assemble_runtime(
+        resolved.config,
+        source_gate_root=infer_config_path.parents[3],
+    )
     qwen = runtime.qwen
     model_identity = dict(runtime.model_identity)
     tokenizer_identity = _tokenizer_identity(qwen)

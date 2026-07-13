@@ -284,6 +284,7 @@ def load_inference_embedding_delta(
     *,
     config: Any,
     qwen: Any,
+    source_gate_root: str | Path | None = None,
 ) -> dict[str, Any]:
     identity_receipt = validate_inference_embedding_delta_identity(
         config=config,
@@ -314,7 +315,7 @@ def load_inference_embedding_delta(
         model,
         selection,
         source_gate=load_default_special_token_embedding_source_gate_evidence(
-            Path.cwd()
+            Path.cwd() if source_gate_root is None else source_gate_root
         ),
     )
     payload_dir = _inference_delta_payload_dir(Path(config.embedding_delta.path))
