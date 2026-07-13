@@ -610,7 +610,10 @@ class ProductionBatchExecutor(BatchExecutor):
                     spatial_coordinate_receipt=coordinate_receipt,
                 )
             except DataContractError as exc:
-                if exc.code != "analysis.spatial_merge_category_unknown":
+                if exc.code not in {
+                    "analysis.spatial_merge_bbox_empty",
+                    "analysis.spatial_merge_category_unknown",
+                }:
                     raise
                 continue
             accepted_receipts.append(receipt)

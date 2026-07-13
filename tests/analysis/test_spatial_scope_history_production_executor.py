@@ -21,6 +21,10 @@ from src.analysis.spatial_scope_history.cohort_ledger import (
     sha256_file,
     sha256_payload,
 )
+from src.analysis.spatial_scope_history.execution_evidence import (
+    TerminalCallOutputBundle,
+)
+from src.analysis.spatial_scope_history.postrun_loader import _load_terminal_call
 from src.analysis.spatial_scope_history.production_executor import (
     ACCEPTED_ROW_PREFIX_STATE_SCHEMA_VERSION,
     ProductionBatchExecutor,
@@ -891,8 +895,13 @@ def test_cumulative_successor_reloads_predecessor_state_across_executor_instance
         for batch in schedule.batches()
         if batch.execution_wave_partition == "cumulative-cell-01"
     )
+    invalid_predecessor_request = cell_zero_batch.requests[0]
     cell_zero_coordinates = {
-        request.request_id: (50, 50, 200, 200)
+        request.request_id: (
+            (1, 100, 2, 200)
+            if request == invalid_predecessor_request
+            else (50, 50, 200, 200)
+        )
         for request in cell_zero_batch.requests
     }
     first_backend = _ReceiptBuildingBackend(
@@ -995,6 +1004,120 @@ def test_cumulative_successor_reloads_predecessor_state_across_executor_instance
         rows = _read_accepted_row_state(
             Path(record.produced_cumulative_state_artifact_path)
         )
-        assert len(rows) == 2
-        assert "<|coord_50|>" in rows[0]
-        assert "<|coord_300|>" in rows[1]
+        if request.image_frozen_order == invalid_predecessor_request.image_frozen_order:
+            assert len(rows) == 1
+            assert "<|coord_300|>" in rows[0]
+        else:
+            assert len(rows) == 2
+            assert "<|coord_50|>" in rows[0]
+            assert "<|coord_300|>" in rows[1]
+
+
+def test_pixel_degenerate_model_row_is_invalid_without_failing_batch_or_replay(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    schedule, _, _, _, executor = _primary_fixture(tmp_path)
+    monkeypatch.setattr(
+        "src.analysis.spatial_scope_history.production_executor.build_prompt_record",
+        lambda example, template, *, processor, row_index, visual_input_image=None: _prompt_record(
+            example,
+            row_index=row_index,
+        ),
+    )
+    monkeypatch.setattr(
+        "src.analysis.spatial_scope_history.production_executor.build_cumulative_prompt_record",
+        lambda example, template, *, processor, row_index, accepted_global_coordinate_rows, visual_input_image: _prompt_record(
+            example,
+            row_index=row_index,
+            continuation_text=accepted_global_coordinate_rows,
+        ),
+    )
+    batch = next(
+        candidate
+        for candidate in schedule.batches()
+        if candidate.execution_wave_partition == "independent"
+        and any(
+            request.arm.arm_code == "TILE_RESET" and request.cell_index == 2
+            for request in candidate.requests
+        )
+    )
+    invalid_request = next(
+        request
+        for request in batch.requests
+        if request.arm.arm_code == "TILE_RESET" and request.cell_index == 2
+    )
+    backend = _ReceiptBuildingBackend(
+        model_identity=dict(executor._binding.model_identity),
+        tokenizer_identity=dict(executor._binding.tokenizer_identity),
+        generation_config_fingerprint=(
+            executor._binding.generation_config_fingerprint
+        ),
+        coordinate_bins_by_request_id={
+            request.request_id: (
+                (1, 100, 2, 200)
+                if request == invalid_request
+                else (50, 50, 200, 200)
+            )
+            for request in batch.requests
+        },
+    )
+    executor._binding = replace(executor._binding, backend=backend)
+    dispatch = BatchDispatch(
+        wave_index=0,
+        execution_wave_partition=batch.execution_wave_partition,
+        batch=batch,
+        worker=WorkerDeviceAssignment(worker_index=0, physical_gpu_token="0"),
+        run_id=schedule.identity.run_id,
+        schedule_sha256=schedule.fingerprint,
+    )
+    artifact_root = tmp_path / "pixel-degenerate-artifacts"
+    journals = {}
+    for request in batch.requests:
+        RequestArtifactJournal(
+            root=artifact_root,
+            dispatch=dispatch,
+            request_id=request.request_id,
+        ).write_call_intent()
+        journals[request.request_id] = RequestArtifactJournal.open_after_call_intent(
+            root=artifact_root,
+            dispatch=dispatch,
+            request_id=request.request_id,
+        )
+
+    executor(BatchExecutionContext(dispatch=dispatch, journals=journals))
+
+    attempts = executor._read_attempt_ledger()
+    assert all(record.attempt_status == "completed" for record in attempts.records)
+    invalid_attempt = attempts.records_by_request_id[invalid_request.request_id]
+    invalid_bundle = TerminalCallOutputBundle.from_path(
+        Path(invalid_attempt.output_artifact_path or "")
+    )
+    assert invalid_bundle.payload["parse_score_receipts"] == []
+    assert invalid_bundle.payload["row_diagnostics"] == [
+        {
+            "canonical_call_id": invalid_request.request_id,
+            "generated_row_index": 0,
+            "matched_reference_ids": [],
+            "ownership_status": "not_applicable",
+            "parse_status": "parsed",
+            "prediction_id": None,
+            "validity_status": "invalid",
+        }
+    ]
+    assert invalid_bundle.payload["call_diagnostics"]["invalid_row_count"] == 1
+    assert invalid_attempt.produced_cumulative_state_artifact_path is None
+    replayed_invalid = _load_terminal_call(
+        request=invalid_request,
+        attempt=invalid_attempt,
+    )
+    assert replayed_invalid.normalized_predictions == ()
+    assert replayed_invalid.row_diagnostics[0].validity_status == "invalid"
+
+    for request in batch.requests[1:]:
+        attempt = attempts.records_by_request_id[request.request_id]
+        replayed = _load_terminal_call(request=request, attempt=attempt)
+        assert len(replayed.parse_score_receipts) == 1
+        assert len(replayed.normalized_predictions) == 1
+        assert replayed.row_diagnostics[0].validity_status == "valid"
+        assert attempt.produced_cumulative_state_artifact_path is None

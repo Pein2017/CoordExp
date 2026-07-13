@@ -43,7 +43,6 @@ from src.analysis.spatial_scope_history.spatial import (
     spatial_variant_mode_for_arm,
 )
 from src.common.errors import ArtifactContractError, DataContractError
-from src.eval.detection_categories import COCO_80_EVALUATOR_LOCAL_CATEGORY_ID_BY_NAME
 from src.inference.backend import DecodeResult
 
 
@@ -278,15 +277,21 @@ def _load_terminal_call(
         CanonicalParseScoreReceipt.from_artifact_dict(item)
         for item in receipt_payloads
     )
-    replayed_receipts = tuple(
-        receipt
-        for receipt in build_canonical_parse_score_receipts(
-            execution_evidence=execution,
-            decode_result=decode_result,
-        )
-        if receipt.normalized_category_name
-        in COCO_80_EVALUATOR_LOCAL_CATEGORY_ID_BY_NAME
-    )
+    replayed_receipts: list[CanonicalParseScoreReceipt] = []
+    for receipt in build_canonical_parse_score_receipts(
+        execution_evidence=execution,
+        decode_result=decode_result,
+    ):
+        try:
+            _normalize_receipt(execution=execution, receipt=receipt)
+        except DataContractError as exc:
+            if exc.code not in {
+                "analysis.spatial_merge_bbox_empty",
+                "analysis.spatial_merge_category_unknown",
+            }:
+                raise
+            continue
+        replayed_receipts.append(receipt)
     if tuple(item.to_artifact_dict() for item in stored_receipts) != tuple(
         item.to_artifact_dict() for item in replayed_receipts
     ):
