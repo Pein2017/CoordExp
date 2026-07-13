@@ -111,6 +111,7 @@ def assemble_supported_postrun_metrics(
 ) -> SupportedPostrunAssembly:
     """Invoke only the canonical five-arm merge, metric, and bootstrap formulas."""
 
+    root_seed = evidence.schedule.identity.root_seed
     expected_images = tuple(
         ExpectedImageFrame(
             image_id=str(record.image_id),
@@ -234,6 +235,7 @@ def assemble_supported_postrun_metrics(
                             baseline,
                             metric_name=metric_name,
                             scope=f"{ledger_scope}:{threshold_scope}:{arm_code}",
+                            root_seed=root_seed,
                         )
                     )
             bootstrap_reports.append(
@@ -246,6 +248,7 @@ def assemble_supported_postrun_metrics(
                         "MASK_RESET_vs_FULL_BAG_K_owning_seed"
                     ),
                     paired_full_bag=arm_primitives["FULL_BAG_K"],
+                    root_seed=root_seed,
                 )
             )
             for candidate_arm, comparator_arm in PAIRED_ARM_DIRECTIONS:
@@ -260,6 +263,7 @@ def assemble_supported_postrun_metrics(
                                 f"{ledger_scope}:{threshold_scope}:"
                                 f"{candidate_arm}_vs_{comparator_arm}"
                             ),
+                            root_seed=root_seed,
                         )
                     )
     return SupportedPostrunAssembly(

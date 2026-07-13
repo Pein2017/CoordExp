@@ -25,11 +25,18 @@ from src.analysis.spatial_scope_history.postrun_assembler import (
     write_supported_postrun_assembly,
 )
 from src.analysis.spatial_scope_history.postrun_loader import load_postrun_evidence
+from src.analysis.spatial_scope_history.schedule import (
+    PRIMARY_ROOT_SEED,
+    SECOND_ROOT_SEED,
+    ResearchSchedule,
+    derive_sampling_seed,
+)
 from src.common.errors import ArtifactContractError, DataContractError
 from test_spatial_scope_history_metrics import (
     _metric_admission_fixture,
     _prediction,
     _reference,
+    _write_failure_attempt_ledger,
 )
 
 
@@ -37,8 +44,23 @@ def _write_input_artifacts(
     tmp_path: Path,
     *,
     cohort_artifact_name: str = "cohort-manifest.jsonl",
+    root_seed: int = PRIMARY_ROOT_SEED,
 ):
     _, schedule, cohort, _, attempt_ledger, _ = _metric_admission_fixture(tmp_path)
+    if root_seed != schedule.identity.root_seed:
+        schedule = ResearchSchedule.build_primary(
+            unit_id=schedule.identity.unit_id,
+            run_id=schedule.identity.run_id,
+            cohort=cohort,
+            root_seed=root_seed,
+            decode=schedule.identity.decode,
+            execution_identity=schedule.identity.execution_identity,
+            grid=schedule.identity.grid,
+        )
+        attempt_ledger = _write_failure_attempt_ledger(
+            root=tmp_path / "terminal-second-root",
+            schedule=schedule,
+        )
     schedule_path = tmp_path / "schedule.json"
     cohort_path = tmp_path / "cohort.jsonl"
     attempt_path = tmp_path / "attempts.jsonl"
@@ -84,6 +106,37 @@ def _write_input_artifacts(
     )
     attempt_path.write_bytes(attempt_ledger.to_jsonl_bytes())
     return schedule_path, cohort_path, attempt_path, readiness_root
+
+
+def test_second_root_schedule_controls_every_postrun_bootstrap_seed(
+    tmp_path: Path,
+) -> None:
+    paths = _write_input_artifacts(tmp_path, root_seed=SECOND_ROOT_SEED)
+    evidence = load_postrun_evidence(
+        schedule_path=paths[0],
+        cohort_path=paths[1],
+        attempt_ledger_path=paths[2],
+        readiness_root=paths[3],
+    )
+
+    assembly = assemble_supported_postrun_metrics(evidence)
+
+    expected_seed = derive_sampling_seed(
+        root_seed=SECOND_ROOT_SEED,
+        role="image-bootstrap",
+        image_id=0,
+        cell_or_call_label="replicates-10000",
+    )
+    primary_seed = derive_sampling_seed(
+        root_seed=PRIMARY_ROOT_SEED,
+        role="image-bootstrap",
+        image_id=0,
+        cell_or_call_label="replicates-10000",
+    )
+    assert expected_seed != primary_seed
+    assert {report.sampling_seed for report in assembly.bootstrap_reports} == {
+        expected_seed
+    }
 
 
 def test_loader_uses_schedule_selected_alternate_sealed_cohort_for_references(
