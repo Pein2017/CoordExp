@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from src.analysis.spatial_scope_history.calibration import (
     CalibrationRequest,
     CalibrationTerminalBundle,
     _decode_receipt_runtime_contract,
+    load_calibration_backend_attestation_binding,
     reconstruct_calibration_observation,
 )
 from src.analysis.spatial_scope_history.cohort_ledger import sha256_file, sha256_payload
@@ -43,11 +45,13 @@ def _digest(label: str) -> str:
     return sha256_payload({"label": label})
 
 
-def _request(*, image_sha256: str, call_index: int) -> CalibrationRequest:
+def _request(
+    *, image_sha256: str, call_index: int, temperature: float = 0.4
+) -> CalibrationRequest:
     policy = DecodeGenerationPolicy.sampled(
         max_new_tokens=512,
         repetition_penalty=1.0,
-        temperature=0.4,
+        temperature=temperature,
         top_p=0.95,
     )
     call_label = f"call-{call_index:02d}"
@@ -65,7 +69,7 @@ def _request(*, image_sha256: str, call_index: int) -> CalibrationRequest:
             cell_or_call_label=call_label,
         ),
         "schema_version": "spatial_scope_history.calibration_request.v1",
-        "temperature": 0.4,
+        "temperature": temperature,
     }
     return CalibrationRequest(
         **payload,
@@ -76,13 +80,19 @@ def _request(*, image_sha256: str, call_index: int) -> CalibrationRequest:
     )
 
 
-def _terminal_bundle(tmp_path: Path, *, call_index: int) -> CalibrationTerminalBundle:
+def _terminal_bundle(
+    tmp_path: Path, *, call_index: int, temperature: float = 0.4
+) -> CalibrationTerminalBundle:
     image_path = tmp_path / "image.png"
     if not image_path.exists():
         image = Image.new("RGB", (128, 128), color=(11, 23, 37))
         image.save(image_path)
         image.close()
-    request = _request(image_sha256=sha256_file(image_path), call_index=call_index)
+    request = _request(
+        image_sha256=sha256_file(image_path),
+        call_index=call_index,
+        temperature=temperature,
+    )
 
     def image_processor(*, images, return_tensors, do_resize):
         assert len(images) == 1
@@ -103,7 +113,7 @@ def _terminal_bundle(tmp_path: Path, *, call_index: int) -> CalibrationTerminalB
     policy = DecodeGenerationPolicy.sampled(
         max_new_tokens=512,
         repetition_penalty=1.0,
-        temperature=0.4,
+        temperature=temperature,
         top_p=0.95,
     )
     decode_request = DecodeRequest(
@@ -319,3 +329,49 @@ def test_terminal_bundle_unknown_field_is_rejected(tmp_path: Path) -> None:
     payload["trusted_gate_counter"] = 48
     with pytest.raises(ArtifactContractError, match="keys"):
         CalibrationTerminalBundle.from_artifact_dict(payload)
+
+
+def test_backend_binding_accepts_validated_backend_serialization(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bundles = [
+        _terminal_bundle(tmp_path, call_index=index, temperature=temperature)
+        for index, temperature in enumerate((0.2, 0.4, 0.6))
+    ]
+    receipts = [bundle.decode_result.execution_receipt for bundle in bundles]
+    assert all(receipt is not None for receipt in receipts)
+    aggregate_fingerprint = _digest("aggregate-payload")
+    artifact = {
+        "policy_attestations": [
+            {
+                "decode_generation_policy_fingerprint": (
+                    bundle.request.decode_generation_policy_fingerprint
+                ),
+                "attestation_bundle": {
+                    "executed_cases": [
+                        {
+                            "result_artifacts": [
+                                bundle.decode_result.to_artifact_dict()
+                            ]
+                        }
+                    ]
+                },
+            }
+            for bundle in bundles
+        ]
+    }
+    path = tmp_path / "backend-attestation.json"
+    path.write_text(json.dumps(artifact, indent=2) + "\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "src.analysis.spatial_scope_history.calibration."
+        "validate_sampled_runtime_attestation_aggregate_output",
+        lambda _path: {"aggregate_payload_fingerprint": aggregate_fingerprint},
+    )
+
+    binding = load_calibration_backend_attestation_binding(path)
+
+    assert binding.aggregate_payload_fingerprint == aggregate_fingerprint
+    assert binding.aggregate_artifact_sha256 == sha256_file(path)
+    assert [policy for policy, _contract in binding.execution_contracts_by_policy] == [
+        bundle.request.decode_generation_policy_fingerprint for bundle in bundles
+    ]

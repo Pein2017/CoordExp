@@ -1055,7 +1055,10 @@ def load_calibration_backend_attestation_binding(
 
     path = aggregate_path.expanduser().resolve()
     validation = validate_sampled_runtime_attestation_aggregate_output(path)
-    payload = load_canonical_json(path)
+    # The inference backend owns and validates this artifact.  Its producer uses
+    # the backend's human-readable aggregate serialization, not this module's
+    # compact research-receipt serialization.
+    payload = json.loads(path.read_text(encoding="utf-8"))
     entries = payload.get("policy_attestations")
     if not isinstance(entries, list):
         _artifact_error(
