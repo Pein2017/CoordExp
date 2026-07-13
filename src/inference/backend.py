@@ -53,7 +53,11 @@ ADMITTED_PRODUCTION_REPLAY_SCHEMA_VERSION = (
 )
 PORTABLE_RUNTIME_STATE_SEAL_SCHEMA_VERSION = "portable_sampled_runtime_state_seal.v1"
 EXPECTED_ATTESTED_RUNTIME_PAYLOAD_TENSOR_COUNT = 589
-EXPECTED_ATTESTED_RUNTIME_PAYLOAD_BYTE_COUNT = 80_248_832
+# The frozen Brain Floating Point 16 (bfloat16) runtime holds 588
+# Weight-Decomposed Low-Rank Adaptation (DoRA) tensors in two-byte storage
+# (36,012,032 bytes) and one float32 selected-token delta (8,224,768 bytes).
+# Checkpoint-file integrity remains bound separately to the source float32 files.
+EXPECTED_ATTESTED_RUNTIME_PAYLOAD_BYTE_COUNT = 44_236_800
 MAX_SIGNED_64_BIT_SEED = (1 << 63) - 1
 _AUTHORIZED_ATTESTATION_CONFIG_TO_CHECKPOINT_SHA256 = {
     "f3000588accbcf1d9ada3b2f3e0b3324d660b4810b75d8f5d050d9f184f9ca80": (
