@@ -5,11 +5,11 @@ type: investigation
 role: research-unit
 authority: non_normative_research
 architecture_promotion_status: not_promoted
-implementation_status: authorized_in_progress
+implementation_status: complete_for_unit
 unit_id: 2026-07-13-spatial-scope-history-disentanglement
 topic: qwen3-vl-dense-enumeration
-status: implementation_in_progress
-evidence_status: none
+status: complete
+evidence_status: verified
 tags:
   - coordexp-swift
   - research-unit
@@ -23,13 +23,13 @@ updated: 2026-07-13
 
 # Masked Spatial Policy and Accepted-Row Prefix Policy Disentanglement
 
-The exact frozen scientific and desired execution semantics are owned by the
-[readiness amendment](readiness-amendment.md). That amendment passed focused
-review. On 2026-07-13 the user explicitly authorized bounded implementation,
-the score-preserving custom batched sampling branch, and gated execution on the
-available eight-Graphics-Processing-Unit layout up to the frozen primary and
-triggered-replication ceilings. Metric-bearing execution remains blocked until
-every pre-output gate in the readiness amendment passes.
+The exact frozen scientific and execution semantics are owned by the
+[readiness amendment](readiness-amendment.md). That immutable pre-output
+contract passed focused review. Both required seed-root executions are now
+complete and locally verified; [the results record](results.md) owns their
+artifact handles, observed facts, bounded verdict, and next discriminator.
+Pre-execution language below is retained as the frozen protocol rather than
+rewritten after observing results.
 
 The active long-running research goal is owned by Codex task
 `019f4a19-d81c-75a2-84b0-2c20379e686e`. Its valid terminal outcomes include a
@@ -964,4 +964,14 @@ does not define or promote a new stable production artifact schema.
 
 ## Result
 
-Not executed. No evidence or mechanism is promoted.
+Execution and bounded interpretation are complete. Across two independently
+derived seed roots, full-canvas masking reproducibly improved the one-call
+Owning-Seed Raw Rescue Difference but did not improve post-merge policy utility
+over equal-call full-image bagging. The cumulative accepted-row prefix policy
+was reproducibly worse than reset as a total policy effect, native-scale tiling
+was worse than full-canvas masking, and required retention, mask-harm, manual-
+precision, and prediction-count safety gates failed. See
+[Masked Spatial Policy and Accepted-Row Prefix Policy Results](results.md) for
+the exact metrics, receipts, hashes, limitations, and next discriminator.
+
+No mechanism or architecture is promoted.

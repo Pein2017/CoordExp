@@ -153,8 +153,31 @@ versus cumulative estimates a total accepted-row prefix-policy effect. A later
 same-feature spatial intervention and a separate controlled-prefix panel are
 required for stronger localization.
 
+## Current Evidence Update
+
+The completed [Masked Spatial Policy and Accepted-Row Prefix Policy
+Disentanglement unit](experiments/2026-07-13-spatial-scope-history-disentanglement/unit.md)
+executed two independently derived seed roots on the sealed Dense-Union-51
+cohort. [Its results](experiments/2026-07-13-spatial-scope-history-disentanglement/results.md)
+support a reproducible local input-level spatial-restriction effect in one
+seed-matched owning opportunity. They do not show a final masked-policy benefit
+over equal-call full-image bagging, and the masked policy fails retention,
+mask-harm, manual-precision, and prediction-count safety gates.
+
+The same evidence shows that the complete cumulative accepted-row prefix policy
+is harmful relative to reset and that native-scale tiling is worse than
+full-canvas masking. Because the cumulative intervention bundles length,
+content, correctness, order, and visibility consistency, pure history-horizon
+instability remains unresolved. Post-vision competition, a language-only root
+cause, and the need for a ledger or architecture change also remain unresolved.
+
+The narrow next discriminator is input-level pixel masking versus spatial
+restriction after one fixed full-image visual encoding. A separately controlled
+prefix panel should follow; no architecture is promoted from the completed
+unit.
+
 ## Active Units
 
 | Unit | Status | Purpose |
 |---|---|---|
-| [Masked Spatial Policy and Accepted-Row Prefix Policy Disentanglement](experiments/2026-07-13-spatial-scope-history-disentanglement/unit.md) | implementation authorized and in progress; [readiness amendment passed focused review](experiments/2026-07-13-spatial-scope-history-disentanglement/readiness-amendment.md); metric execution blocked pending gates | Compare full image, matched-call bagging, no-resize tiles, and full-size masked canvases under reset and cumulative accepted-row prefix policies. |
+| [Masked Spatial Policy and Accepted-Row Prefix Policy Disentanglement](experiments/2026-07-13-spatial-scope-history-disentanglement/unit.md) | complete; dual-root evidence verified; [results](experiments/2026-07-13-spatial-scope-history-disentanglement/results.md); architecture not promoted | Localized a reproducible one-opportunity input-mask effect and a harmful cumulative prompt-policy effect while rejecting safe final-policy promotion. |

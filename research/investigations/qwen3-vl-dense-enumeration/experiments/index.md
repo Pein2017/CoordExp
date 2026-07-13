@@ -2,11 +2,7 @@
 
 | Unit | Status | Main discriminator |
 |---|---|---|
-| [2026-07-13 Masked Spatial Policy and Accepted-Row Prefix Policy Disentanglement](2026-07-13-spatial-scope-history-disentanglement/unit.md) | planned; [readiness amendment](2026-07-13-spatial-scope-history-disentanglement/readiness-amendment.md) passed focused review; execution blocked; implementation not authorized | Owning-seed raw spatial comparison plus post-merge Full-Canvas Masked Region with Per-Region Reset versus Full-Canvas Masked Region with Cumulative Accepted-Row Prefix versus Full-Image K-Rollout Independent Bagging |
+| [2026-07-13 Masked Spatial Policy and Accepted-Row Prefix Policy Disentanglement](2026-07-13-spatial-scope-history-disentanglement/unit.md) | complete; dual-root evidence verified; architecture not promoted; [results](2026-07-13-spatial-scope-history-disentanglement/results.md) | Reproducible one-opportunity masked-scope effect, but no safe final-policy benefit over equal-call full-image bagging; cumulative accepted-row prompting is harmful as a total policy, not an isolated length effect. |
 
 The independent reviews and accepted revision gate are synthesized in
 [Review Synthesis and Protocol Revision Gate](2026-07-13-spatial-scope-history-disentanglement/review.md).
-
-Create `results.md` only after a run has fixed evidence handles and a bounded
-verdict. Create `review.md` only when an independent audit materially narrows a
-claim, finds a confound, or requires a rerun.
