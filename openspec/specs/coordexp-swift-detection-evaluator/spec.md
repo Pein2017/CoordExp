@@ -130,10 +130,18 @@ The evaluator MUST NOT perform semantic remapping, alias expansion, or
 description embedding matching in V1. Unknown GT categories MUST fail before
 metric computation. Unknown prediction categories MUST be excluded from COCO
 prediction conversion and counted in metrics.
+The evaluator SHALL preserve its historical contiguous one-based,
+evaluator-local category identifiers in its private COCO-format sidecars.
+Those evaluator-local values MUST NOT be interpreted as the gapped official
+Common Objects in Context annotation identifiers. The registry SHALL expose
+both namespaces through a one-to-one normalized-name join, and raw annotation
+or research provenance consumers MUST select the official namespace
+explicitly.
 
 #### Scenario: Canonical category match
 - **WHEN** GT and prediction descriptions normalize to a COCO-80 class name
-- **THEN** they are converted to the corresponding COCO category id
+- **THEN** they are converted to the corresponding evaluator-local category id
+  for the direct Swift evaluator's private COCO-format sidecars
 
 #### Scenario: Unknown GT category
 - **WHEN** a GT object description is not in the canonical COCO-80 registry

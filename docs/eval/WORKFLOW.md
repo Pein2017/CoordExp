@@ -72,6 +72,21 @@ Official metric guardrail:
   boxes to pixel boxes, while scored predictions are already parser-normalized
   pixel boxes. Mixed-unit COCO sidecars are invalid.
 
+Category identifier namespaces:
+
+- Common Objects in Context 80-class names are the shared semantic join key.
+- The direct Swift evaluator preserves its historical contiguous one-based
+  evaluator-local identifiers (`person=1`, `stop sign=12`, `bottle=40`,
+  `toothbrush=80`) in its private `coco_gt.json` and
+  `coco_predictions.json` sidecars.
+- Official Common Objects in Context annotation identifiers are gapped
+  (`person=1`, `stop sign=13`, `bottle=44`, `toothbrush=90`). Raw annotation
+  joins, provenance ledgers, and research cohort materialization must use this
+  official namespace explicitly.
+- Code must not compare or join the two integer namespaces directly. Use the
+  normalized category name or the canonical three-column registry and bind
+  derived artifacts to its Secure Hash Algorithm 256-bit fingerprint.
+
 Validation-scope rule:
 
 - tiny single-row and two-row runs are implementation smokes only;
