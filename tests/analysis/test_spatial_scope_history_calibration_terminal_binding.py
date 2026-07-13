@@ -81,7 +81,11 @@ def _request(
 
 
 def _terminal_bundle(
-    tmp_path: Path, *, call_index: int, temperature: float = 0.4
+    tmp_path: Path,
+    *,
+    call_index: int,
+    temperature: float = 0.4,
+    prompt_suffix_count: int = 0,
 ) -> CalibrationTerminalBundle:
     image_path = tmp_path / "image.png"
     if not image_path.exists():
@@ -109,7 +113,7 @@ def _terminal_bundle(
         image_processor=image_processor,
         processor_contract_sha256=_digest("processor-contract"),
     )
-    prompt_ids = [11, 12, call_index + 13]
+    prompt_ids = [11, 12, call_index + 13, *range(20, 20 + prompt_suffix_count)]
     policy = DecodeGenerationPolicy.sampled(
         max_new_tokens=512,
         repetition_penalty=1.0,
@@ -335,7 +339,12 @@ def test_backend_binding_accepts_validated_backend_serialization(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     bundles = [
-        _terminal_bundle(tmp_path, call_index=index, temperature=temperature)
+        _terminal_bundle(
+            tmp_path,
+            call_index=index,
+            temperature=temperature,
+            prompt_suffix_count=index,
+        )
         for index, temperature in enumerate((0.2, 0.4, 0.6))
     ]
     receipts = [bundle.decode_result.execution_receipt for bundle in bundles]

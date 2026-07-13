@@ -2600,6 +2600,10 @@ def _validate_visual_input_receipt(
 
 def _decode_receipt_runtime_contract(receipt: Any) -> dict[str, Any]:
     artifact = receipt.to_artifact_dict()
+    executed_generation_arguments = dict(artifact["executed_generation_arguments"])
+    executed_generation_arguments["max_length"] = (
+        "padded_prompt_width_plus_max_new_tokens"
+    )
     fields = (
         "attention_implementation",
         "backend",
@@ -2607,8 +2611,6 @@ def _decode_receipt_runtime_contract(receipt: Any) -> dict[str, Any]:
         "custom_sampler_code_hash",
         "custom_sampler_identity",
         "decode_generation_policy_fingerprint",
-        "effective_generation_profile_fingerprint",
-        "executed_generation_arguments",
         "generation_config_fingerprint",
         "installed_runtime_identity_fingerprint",
         "model_eval_mode",
@@ -2621,7 +2623,13 @@ def _decode_receipt_runtime_contract(receipt: Any) -> dict[str, Any]:
         "sampling_profile_fingerprint",
         "tokenizer_identity_fingerprint",
     )
-    return {field: artifact[field] for field in fields}
+    return {
+        **{field: artifact[field] for field in fields},
+        # max_length is derived per physical batch from its padded prompt width.
+        # The exact value remains bound inside each immutable decode receipt;
+        # cross-request runtime identity binds the invariant generation policy.
+        "executed_generation_arguments": executed_generation_arguments,
+    }
 
 
 def _canonical_calibration_trace(trace: TokenTrace) -> TokenTrace:
