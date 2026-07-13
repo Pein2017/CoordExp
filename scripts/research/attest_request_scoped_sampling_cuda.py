@@ -776,9 +776,9 @@ def run(arguments: argparse.Namespace) -> None:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", required=False)
-    parser.add_argument("--checkpoint-manifest", required=False)
-    parser.add_argument("--calibration-manifest", required=False)
+    parser.add_argument("--config", required=True)
+    parser.add_argument("--checkpoint-manifest", required=True)
+    parser.add_argument("--calibration-manifest", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--validate-only", action="store_true")
     return parser
