@@ -518,6 +518,75 @@ def test_cumulative_batches_are_separated_by_cell_wave_barriers() -> None:
     ]
 
 
+def test_resume_preserves_sealed_global_worker_and_wave_identity(
+    tmp_path: Path,
+) -> None:
+    batches = (
+        _batch(48, 4),
+        _batch(
+            49,
+            4,
+            cumulative=True,
+            cell_index=0,
+            execution_wave_partition="cumulative-cell-00",
+        ),
+        _batch(
+            50,
+            4,
+            cumulative=True,
+            cell_index=1,
+            execution_wave_partition="cumulative-cell-01",
+        ),
+    )
+    schedule = _Schedule(batches)
+    full_plan = build_coordinator_plan(  # type: ignore[arg-type]
+        schedule,
+        physical_gpu_tokens=("physical-zero", "physical-one"),
+    )
+    orphan_batch = batches[1]
+
+    def resume_only_orphan(attempt_ledger: Any) -> ResumePlan:
+        schedule.resume_calls.append(attempt_ledger)
+        return ResumePlan(
+            physical_batch_plan_sha256=schedule.physical_batch_plan.fingerprint,
+            runnable_batches=(orphan_batch,),
+            held_batch=None,
+            completed_physical_batch_sha256s=(batches[0].physical_batch_sha256,),
+            blocked_dependencies=(),
+            deferred_dependencies=(),
+            already_attempted_request_ids=batches[0].request_ids,
+        )
+
+    schedule.resume_batches = resume_only_orphan  # type: ignore[method-assign]
+    resumed_plan = build_coordinator_plan(  # type: ignore[arg-type]
+        schedule,
+        physical_gpu_tokens=("physical-zero", "physical-one"),
+    )
+
+    original = full_plan.waves[1].dispatches[0]
+    resumed = resumed_plan.waves[0].dispatches[0]
+    assert original.batch.batch_index == resumed.batch.batch_index == 49
+    assert original.wave_index == resumed.wave_index == 1
+    assert original.worker == resumed.worker
+    assert resumed.worker.worker_index == 1
+    assert resumed.worker.environment == {"CUDA_VISIBLE_DEVICES": "physical-one"}
+    original_journal = RequestArtifactJournal(
+        root=tmp_path,
+        dispatch=original,
+        request_id=orphan_batch.request_ids[0],
+    )
+    intent_path = original_journal.write_call_intent()
+    original_intent_bytes = intent_path.read_bytes()
+
+    resumed_journal = RequestArtifactJournal(
+        root=tmp_path,
+        dispatch=resumed,
+        request_id=orphan_batch.request_ids[0],
+    )
+    assert resumed_journal.write_call_intent() == intent_path
+    assert intent_path.read_bytes() == original_intent_bytes
+
+
 @pytest.mark.parametrize(
     "failure_code",
     [
@@ -758,6 +827,100 @@ def test_cumulative_prompt_uses_canonical_assistant_continuation(monkeypatch: An
     assert captured["max_prompt_tokens"] == 2048
 
 
+class _RecordingTaskQueue:
+    def __init__(self, submissions: list[dict[str, Any]]) -> None:
+        self._submissions = submissions
+
+    def put(self, payload: dict[str, Any]) -> None:
+        assert payload["kind"] == "execute"
+        self._submissions.append(payload)
+
+
+def _intent_batch_indexes(artifact_root: Path) -> set[int]:
+    return {
+        int(json.loads(path.read_text(encoding="utf-8"))["payload"]["batch_index"])
+        for path in (artifact_root / "calls").glob("*/00-call_intent.json")
+    }
+
+
+def _completed_batch_message(submission: dict[str, Any]) -> dict[str, Any]:
+    dispatch = submission["dispatch"]
+    return {
+        "kind": "batch_completed",
+        "receipt": {
+            "execution_wave_partition": dispatch.execution_wave_partition,
+            "finished_at_unix_nanoseconds": 2,
+            "physical_batch_sha256": dispatch.batch.physical_batch_sha256,
+            "process_id": 10_000 + dispatch.worker.worker_index,
+            "request_terminal_receipts": (),
+            "started_at_unix_nanoseconds": 1,
+            "task_id": submission["task_id"],
+            "worker_index": dispatch.worker.worker_index,
+        },
+    }
+
+
+def _coordinator_only_pool(
+    plan: Any,
+    submissions: list[dict[str, Any]],
+) -> PersistentWorkerPool:
+    pool = object.__new__(PersistentWorkerPool)
+    pool._workers = plan.workers
+    pool._started = True
+    pool._closed = False
+    pool._startup_receipts = ()
+    pool._task_queues = {
+        worker.worker_index: _RecordingTaskQueue(submissions) for worker in plan.workers
+    }
+    return pool
+
+
+def test_persistent_pool_refills_only_completed_worker_with_bounded_intents(
+    tmp_path: Path,
+) -> None:
+    plan = build_coordinator_plan(  # type: ignore[arg-type]
+        _Schedule(tuple(_batch(index, 4) for index in range(4))),
+        physical_gpu_tokens=("physical-zero", "physical-one"),
+    )
+    artifact_root = tmp_path / "artifacts"
+    submissions: list[dict[str, Any]] = []
+    pool = _coordinator_only_pool(plan, submissions)
+    completion_order = (1, 0, 3, 2)
+    message_index = 0
+
+    def next_message() -> dict[str, Any]:
+        nonlocal message_index
+        expected_submission_order = {
+            0: [0, 1],
+            1: [0, 1, 3],
+            2: [0, 1, 3, 2],
+            3: [0, 1, 3, 2],
+        }[message_index]
+        assert [
+            item["dispatch"].batch.batch_index for item in submissions
+        ] == expected_submission_order
+        assert _intent_batch_indexes(artifact_root) == set(expected_submission_order)
+        batch_index = completion_order[message_index]
+        message_index += 1
+        submission = next(
+            item
+            for item in submissions
+            if item["dispatch"].batch.batch_index == batch_index
+        )
+        return _completed_batch_message(submission)
+
+    pool._next_message = next_message  # type: ignore[method-assign]
+
+    receipt = pool.execute_plan(plan, artifact_root=artifact_root)
+
+    assert [item["dispatch"].batch.batch_index for item in submissions] == [0, 1, 3, 2]
+    assert [item.worker_index for item in receipt.batch_receipts] == [1, 0, 1, 0]
+    assert [item.physical_batch_sha256 for item in receipt.batch_receipts] == [
+        plan.waves[0].dispatches[index].batch.physical_batch_sha256
+        for index in completion_order
+    ]
+
+
 def test_persistent_process_pool_overlaps_within_wave_and_barriers_between_waves(
     tmp_path: Path,
 ) -> None:
@@ -846,8 +1009,10 @@ def test_persistent_process_pool_propagates_executor_failure_fail_closed(
     tmp_path: Path,
 ) -> None:
     plan = build_coordinator_plan(  # type: ignore[arg-type]
-        _Schedule((_batch(0, 4),)), physical_gpu_tokens=("physical-zero",)
+        _Schedule(tuple(_batch(index, 4) for index in range(4))),
+        physical_gpu_tokens=("physical-zero", "physical-one"),
     )
+    artifact_root = tmp_path / "artifacts"
     pool = PersistentWorkerPool(
         workers=plan.workers,
         executor_factory=_process_fake_executor_factory,
@@ -860,8 +1025,9 @@ def test_persistent_process_pool_propagates_executor_failure_fail_closed(
     )
     with pytest.raises(RunnerContractError, match="failed closed"):
         with pool:
-            pool.execute_plan(plan, artifact_root=tmp_path / "artifacts")
+            pool.execute_plan(plan, artifact_root=artifact_root)
     assert all(not process.is_alive() for process in pool._processes.values())
+    assert _intent_batch_indexes(artifact_root) == {0, 1}
 
 
 def test_persistent_process_pool_propagates_legal_scientific_terminal_states(

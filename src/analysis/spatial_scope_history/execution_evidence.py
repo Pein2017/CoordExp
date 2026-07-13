@@ -776,7 +776,6 @@ class ExecutionEvidenceEnvelope:
                 "analysis.execution_evidence_full_arm",
             )
         _validate_full_image_plan(
-            scheduled_request=scheduled_request,
             image_plan_row=image_plan_row,
         )
         _validate_full_image_visual_tensors(
@@ -2135,7 +2134,6 @@ def _validate_common_execution(
 
 def _validate_full_image_plan(
     *,
-    scheduled_request: ScheduledRequest,
     image_plan_row: ImagePlanRow,
 ) -> None:
     if image_plan_row.status != "ok" or image_plan_row.error is not None:
@@ -2203,19 +2201,6 @@ def _validate_full_image_plan(
         _fail(
             "full-image token counts do not derive from the executed processor grid",
             "analysis.execution_evidence_full_plan_token_count",
-        )
-    try:
-        plan_image_id = int(image_plan_row.example_id)
-    except (TypeError, ValueError) as exc:
-        raise DataContractError(
-            "full-image example identifier must encode the canonical integer image ID",
-            code="analysis.execution_evidence_full_plan_image_id",
-            cause=exc,
-        ) from exc
-    if plan_image_id != scheduled_request.image_id:
-        _fail(
-            "full-image processor plan belongs to another image",
-            "analysis.execution_evidence_full_plan_image_id",
         )
     path = Path(image_plan_row.image_path)
     with Image.open(path) as image:

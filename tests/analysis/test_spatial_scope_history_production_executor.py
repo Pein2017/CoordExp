@@ -185,7 +185,7 @@ def _primary_fixture(tmp_path: Path):
             )
         )
         examples[image_id] = RawExample(
-            example_id=str(image_id),
+            example_id=f"coco2017_val_{image_id:012d}",
             image=ImageRef(
                 declared_path=image_path.name,
                 path=image_path,
@@ -371,6 +371,7 @@ def test_prepare_materializes_full_tile_and_mask_without_resize(
 
     assert full.visual_materialization.receipt.input_kind == "full_image"
     assert full.image_plan_row is not None
+    assert full.image_plan_row.example_id == "coco2017_val_000000070000"
     assert tile.visual_materialization.spatial_image_encoding is not None
     assert (
         tile.visual_materialization.spatial_image_encoding.plan.variant_mode

@@ -9,6 +9,7 @@ barriers, and makes the append-only artifact ordering executable and testable.
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 import hashlib
@@ -287,22 +288,27 @@ def _build_coordinator_plan_from_resume(
             "runner.resume_plan_identity",
         )
     workers = build_worker_assignments(physical_gpu_tokens)
+    full_wave_indexes = {
+        partition: wave_index
+        for wave_index, (partition, _) in enumerate(
+            _group_batches_by_sealed_execution_wave(schedule.batches())
+        )
+    }
     grouped = _group_batches_by_sealed_execution_wave(resume_plan.runnable_batches)
     waves: list[DispatchWave] = []
-    worker_cursor = 0
-    for wave_index, (partition, wave_batches) in enumerate(grouped):
+    for partition, wave_batches in grouped:
+        wave_index = full_wave_indexes[partition]
         dispatches = tuple(
             BatchDispatch(
                 wave_index=wave_index,
                 execution_wave_partition=partition,
                 batch=batch,
-                worker=workers[(worker_cursor + offset) % len(workers)],
+                worker=workers[batch.batch_index % len(workers)],
                 run_id=schedule.identity.run_id,
                 schedule_sha256=schedule.fingerprint,
             )
-            for offset, batch in enumerate(wave_batches)
+            for batch in wave_batches
         )
-        worker_cursor += len(wave_batches)
         waves.append(
             DispatchWave(
                 wave_index=wave_index,
@@ -757,17 +763,54 @@ class PersistentWorkerPool:
                 "runner.pool_worker_identity",
             )
         batch_receipts: list[BatchProcessReceipt] = []
+        workers_by_index = {worker.worker_index: worker for worker in self._workers}
+        if len(workers_by_index) != len(self._workers):
+            _fail(
+                "persistent pool worker indexes must be unique",
+                "runner.pool_worker_identity",
+            )
         for wave in plan.waves:
-            task_ids: set[str] = set()
+            pending_by_worker = {
+                worker.worker_index: deque() for worker in self._workers
+            }
             for dispatch in wave.dispatches:
-                _write_dispatch_call_intents(dispatch, artifact_root=artifact_root)
-            for dispatch in wave.dispatches:
+                worker_index = dispatch.worker.worker_index
+                if (
+                    worker_index not in pending_by_worker
+                    or dispatch.worker != workers_by_index[worker_index]
+                ):
+                    _fail(
+                        "wave dispatch uses an unplanned worker",
+                        "runner.wave_worker_identity",
+                        worker_index=worker_index,
+                    )
+                pending_by_worker[worker_index].append(dispatch)
+            issued_task_ids: set[str] = set()
+            in_flight_by_worker: dict[int, tuple[str, BatchDispatch]] = {}
+
+            def submit_next(worker_index: int) -> None:
+                if worker_index in in_flight_by_worker:
+                    _fail(
+                        "worker already has an in-flight physical batch",
+                        "runner.worker_in_flight_limit",
+                        worker_index=worker_index,
+                    )
+                pending = pending_by_worker[worker_index]
+                if not pending:
+                    return
+                dispatch = pending.popleft()
                 task_id = (
                     f"wave-{wave.wave_index}:batch-{dispatch.batch.batch_index}:"
                     f"{dispatch.batch.physical_batch_sha256}"
                 )
-                task_ids.add(task_id)
-                self._task_queues[dispatch.worker.worker_index].put(
+                if task_id in issued_task_ids:
+                    _fail(
+                        "wave contains a duplicate physical batch task",
+                        "runner.worker_task_identity",
+                        task_id=task_id,
+                    )
+                _write_dispatch_call_intents(dispatch, artifact_root=artifact_root)
+                self._task_queues[worker_index].put(
                     {
                         "artifact_root": str(artifact_root),
                         "dispatch": dispatch,
@@ -775,8 +818,14 @@ class PersistentWorkerPool:
                         "task_id": task_id,
                     }
                 )
-            completed: set[str] = set()
-            while completed != task_ids:
+                issued_task_ids.add(task_id)
+                in_flight_by_worker[worker_index] = (task_id, dispatch)
+
+            for worker in self._workers:
+                submit_next(worker.worker_index)
+
+            completed_count = 0
+            while completed_count != len(wave.dispatches):
                 message = self._next_message()
                 if message["kind"] == "worker_error":
                     self._raise_worker_error(message)
@@ -787,14 +836,30 @@ class PersistentWorkerPool:
                         message_kind=message["kind"],
                     )
                 receipt = BatchProcessReceipt(**message["receipt"])
-                if receipt.task_id not in task_ids or receipt.task_id in completed:
+                expected = in_flight_by_worker.get(receipt.worker_index)
+                if expected is None:
                     _fail(
                         "worker result does not belong uniquely to the current wave",
                         "runner.worker_result_identity",
                         task_id=receipt.task_id,
                     )
-                completed.add(receipt.task_id)
+                expected_task_id, expected_dispatch = expected
+                if (
+                    receipt.task_id != expected_task_id
+                    or receipt.physical_batch_sha256
+                    != expected_dispatch.batch.physical_batch_sha256
+                    or receipt.execution_wave_partition != wave.execution_wave_partition
+                ):
+                    _fail(
+                        "worker result differs from its in-flight physical batch",
+                        "runner.worker_result_identity",
+                        task_id=receipt.task_id,
+                        expected_task_id=expected_task_id,
+                    )
+                del in_flight_by_worker[receipt.worker_index]
+                completed_count += 1
                 batch_receipts.append(receipt)
+                submit_next(receipt.worker_index)
             if after_wave is not None:
                 after_wave(wave)
         return ProcessPoolRunReceipt(
