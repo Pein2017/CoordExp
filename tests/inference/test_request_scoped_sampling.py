@@ -209,6 +209,40 @@ def _new_bound_rebind_backend() -> tuple[Any, dict[str, Any], dict[str, Any], st
     )
 
 
+def _payload_model_identity(root: str) -> dict[str, Any]:
+    return {
+        "base_model": {
+            "model_type": "qwen3_vl",
+            "model_path": "/models/canonical-qwen3-vl",
+            "revision": "immutable-base-revision",
+        },
+        "adapter": {
+            "adapter_path": f"{root}/adapter",
+            "adapter_type": "Weight-Decomposed Low-Rank Adaptation",
+            "adapter_payload_evidence": {
+                "config_path": f"{root}/adapter/adapter_config.json",
+                "config_sha256": "a" * 64,
+                "tensor_path": f"{root}/adapter/adapter_model.safetensors",
+                "tensor_sha256": "b" * 64,
+            },
+        },
+        "embedding_delta": {
+            "identity": {
+                "delta_path": f"{root}/embedding/shared_embed_delta.safetensors",
+                "delta_sha256": "c" * 64,
+                "metadata_path": f"{root}/embedding/metadata.json",
+                "metadata_sha256": "d" * 64,
+            },
+            "load": {
+                "metadata_path": f"{root}/embedding/metadata.json",
+                "metadata_sha256": "d" * 64,
+                "tensor_path": f"{root}/embedding/shared_embed_delta.safetensors",
+                "tensor_sha256": "c" * 64,
+            },
+        },
+    }
+
+
 def _case_with_mutated_result(
     case: Any,
     request_id: str,
@@ -1141,6 +1175,42 @@ def _live_state_validation_fixture() -> tuple[Any, Any, Any, dict[str, Any]]:
     return model, tokenizer, capability, arguments
 
 
+def _relocated_payload_active_call_fixture() -> tuple[Any, dict[str, Any]]:
+    _, _, original_capability, arguments = (
+        _live_state_validation_fixture()
+    )
+    capability = _capability_with_attested_model_identity(
+        original_capability,
+        arguments,
+        _payload_model_identity("/attested/root"),
+    )
+    arguments["model_identity"] = _payload_model_identity("/active/root")
+    return capability, arguments
+
+
+def _capability_with_attested_model_identity(
+    original_capability: Any,
+    arguments: dict[str, Any],
+    model_identity: dict[str, Any],
+) -> Any:
+    from src.inference import backend as backend_module
+
+    contract = backend_module._thaw_json(original_capability.admission_contract)
+    contract["model_identity"] = model_identity
+    capability = backend_module.VerifiedSampledRuntimeAttestation(
+        bundle_payload_fingerprint=original_capability.bundle_payload_fingerprint,
+        admission_contract=contract,
+        backend_object_id=id(arguments["backend"]),
+        model_object_id=id(arguments["backend"].model),
+        tokenizer_object_id=id(arguments["backend"].tokenizer),
+        runtime_state_seal=backend_module._thaw_json(
+            original_capability.runtime_state_seal
+        ),
+        _sentinel=backend_module._VERIFIED_SAMPLED_RUNTIME_ATTESTATION_SENTINEL,
+    )
+    return capability
+
+
 @pytest.mark.parametrize(
     "mutation",
     [
@@ -1212,6 +1282,152 @@ def test_live_state_value_rehash_is_bounded_and_reports_call_overhead() -> None:
     assert diagnostics["adapter_and_selected_embedding_hash_elapsed_seconds"] >= 0.0
     assert diagnostics["live_runtime_state_seal_elapsed_seconds"] >= 0.0
     assert diagnostics["base_model_payload_hashed"] is False
+
+
+def test_active_call_accepts_only_payload_location_relocation() -> None:
+    from src.inference.backend import _validate_verified_sampled_runtime_for_active_call
+
+    capability, arguments = _relocated_payload_active_call_fixture()
+
+    _validate_verified_sampled_runtime_for_active_call(capability, **arguments)
+
+
+def test_active_call_rejects_non_location_payload_identity_change() -> None:
+    from src.inference.backend import _validate_verified_sampled_runtime_for_active_call
+
+    capability, arguments = _relocated_payload_active_call_fixture()
+    arguments["model_identity"]["embedding_delta"]["identity"][
+        "delta_sha256"
+    ] = "f" * 64
+
+    with pytest.raises(RuntimeContractError) as error:
+        _validate_verified_sampled_runtime_for_active_call(capability, **arguments)
+
+    assert error.value.code == "backend_sampling.attestation_active_runtime_mismatch"
+
+
+@pytest.mark.parametrize(
+    "invalid_path",
+    ["missing", "relative", "null", "non_string", "malformed_family"],
+)
+def test_active_call_rejects_matching_invalid_payload_paths(
+    invalid_path: str,
+) -> None:
+    from src.inference.backend import _validate_verified_sampled_runtime_for_active_call
+
+    capability, arguments = _relocated_payload_active_call_fixture()
+    attested_identity = _payload_model_identity("/same/root")
+    active_identity = copy.deepcopy(attested_identity)
+    attested_adapter = attested_identity["adapter"]
+    active_adapter = active_identity["adapter"]
+    if invalid_path == "malformed_family":
+        attested_identity["adapter"] = 17
+        active_identity["adapter"] = 17
+    elif invalid_path == "missing":
+        attested_adapter.pop("adapter_path")
+        active_adapter.pop("adapter_path")
+    elif invalid_path == "relative":
+        attested_adapter["adapter_path"] = "relative/adapter"
+        active_adapter["adapter_path"] = "relative/adapter"
+    elif invalid_path == "null":
+        attested_adapter["adapter_path"] = None
+        active_adapter["adapter_path"] = None
+    else:
+        attested_adapter["adapter_path"] = 17
+        active_adapter["adapter_path"] = 17
+    capability = _capability_with_attested_model_identity(
+        capability,
+        arguments,
+        attested_identity,
+    )
+    arguments["model_identity"] = active_identity
+
+    with pytest.raises(RuntimeContractError) as error:
+        _validate_verified_sampled_runtime_for_active_call(capability, **arguments)
+
+    assert (
+        error.value.code
+        == "backend_sampling.attestation_model_payload_path_invalid"
+    )
+
+
+@pytest.mark.parametrize("payload_families", ["base_only", "adapter_only", "delta_only"])
+def test_active_call_accepts_valid_optional_payload_families(
+    payload_families: str,
+) -> None:
+    from src.inference.backend import _validate_verified_sampled_runtime_for_active_call
+
+    capability, arguments = _relocated_payload_active_call_fixture()
+    attested_identity = _payload_model_identity("/attested/root")
+    active_identity = _payload_model_identity("/active/root")
+    if payload_families == "base_only":
+        attested_identity["adapter"] = None
+        active_identity["adapter"] = None
+        attested_identity["embedding_delta"] = None
+        active_identity["embedding_delta"] = None
+    elif payload_families == "adapter_only":
+        attested_identity["embedding_delta"] = None
+        active_identity["embedding_delta"] = None
+    else:
+        attested_identity["adapter"] = None
+        active_identity["adapter"] = None
+    capability = _capability_with_attested_model_identity(
+        capability,
+        arguments,
+        attested_identity,
+    )
+    arguments["model_identity"] = active_identity
+
+    _validate_verified_sampled_runtime_for_active_call(capability, **arguments)
+
+
+def test_active_call_rejects_optional_payload_family_presence_mismatch() -> None:
+    from src.inference.backend import _validate_verified_sampled_runtime_for_active_call
+
+    capability, arguments = _relocated_payload_active_call_fixture()
+    attested_identity = _payload_model_identity("/attested/root")
+    attested_identity["adapter"] = None
+    capability = _capability_with_attested_model_identity(
+        capability,
+        arguments,
+        attested_identity,
+    )
+
+    with pytest.raises(RuntimeContractError) as error:
+        _validate_verified_sampled_runtime_for_active_call(capability, **arguments)
+
+    assert error.value.code == "backend_sampling.attestation_active_runtime_mismatch"
+
+
+@pytest.mark.parametrize("mutation", ["base_model_path", "unrecognized_extra_path"])
+def test_active_call_does_not_normalize_other_model_identity_paths(
+    mutation: str,
+) -> None:
+    from src.inference.backend import _validate_verified_sampled_runtime_for_active_call
+
+    capability, arguments = _relocated_payload_active_call_fixture()
+    if mutation == "base_model_path":
+        arguments["model_identity"]["base_model"]["model_path"] = (
+            "/models/different-qwen3-vl"
+        )
+    else:
+        attested_identity = _payload_model_identity("/attested/root")
+        attested_identity["adapter"]["unrecognized_extra_path"] = (
+            "/attested/root/extra"
+        )
+        capability = _capability_with_attested_model_identity(
+            capability,
+            arguments,
+            attested_identity,
+        )
+        arguments["model_identity"]["adapter"]["unrecognized_extra_path"] = (
+            "/active/root/extra"
+        )
+
+    with pytest.raises(RuntimeContractError) as error:
+        _validate_verified_sampled_runtime_for_active_call(capability, **arguments)
+
+    assert error.value.code == "backend_sampling.attestation_active_runtime_mismatch"
 
 
 def test_cuda_attestation_script_executes_real_capability_gated_cpu_replay() -> None:
@@ -1645,6 +1861,86 @@ def test_persisted_aggregate_rebinds_equivalent_runtime_and_validates_all_polici
         missing_policy.value.code
         == "backend_sampling.attestation_rebind_policy_not_found"
     )
+
+
+def test_persisted_rebind_accepts_only_payload_location_relocation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Any,
+    cpu_three_policy_attestation_aggregate: dict[str, Any],
+) -> None:
+    from scripts.research import attest_request_scoped_sampling_cuda as script
+    from src.inference import backend as backend_module
+
+    _use_cpu_fixture_payload_contract(monkeypatch)
+    fixture = copy.deepcopy(cpu_three_policy_attestation_aggregate)
+    fixture["model_identity"] = _payload_model_identity("/attested/root")
+    output = tmp_path / "relocated-payload.json"
+    output.write_text(script.json.dumps(fixture["artifact"]), encoding="utf-8")
+    monkeypatch.setattr(
+        backend_module,
+        "_validate_sampled_runtime_attestation_bundle",
+        _fake_full_bundle_validation(fixture),
+    )
+    active_model_identity = _payload_model_identity("/active/root")
+    backend = backend_module.HFGenerateBackend(
+        model=MutableRuntimeModel(),
+        tokenizer=MutableTokenizer(),
+        model_identity=active_model_identity,
+        tokenizer_identity=fixture["tokenizer_identity"],
+        generation_config_fingerprint=fixture["generation_config_fingerprint"],
+    )
+
+    capability = backend_module.load_and_rebind_sampled_runtime_attestation_aggregate(
+        output,
+        decode_generation_policy_fingerprint=fixture["artifact"][
+            "policy_attestations"
+        ][0]["decode_generation_policy_fingerprint"],
+        backend=backend,
+    )
+
+    assert capability.is_bound_to(backend)
+
+
+def test_persisted_rebind_rejects_non_location_payload_identity_change(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Any,
+    cpu_three_policy_attestation_aggregate: dict[str, Any],
+) -> None:
+    from scripts.research import attest_request_scoped_sampling_cuda as script
+    from src.inference import backend as backend_module
+
+    _use_cpu_fixture_payload_contract(monkeypatch)
+    fixture = copy.deepcopy(cpu_three_policy_attestation_aggregate)
+    fixture["model_identity"] = _payload_model_identity("/attested/root")
+    output = tmp_path / "changed-payload.json"
+    output.write_text(script.json.dumps(fixture["artifact"]), encoding="utf-8")
+    monkeypatch.setattr(
+        backend_module,
+        "_validate_sampled_runtime_attestation_bundle",
+        _fake_full_bundle_validation(fixture),
+    )
+    active_model_identity = _payload_model_identity("/active/root")
+    active_model_identity["adapter"]["adapter_payload_evidence"][
+        "tensor_sha256"
+    ] = "e" * 64
+    backend = backend_module.HFGenerateBackend(
+        model=MutableRuntimeModel(),
+        tokenizer=MutableTokenizer(),
+        model_identity=active_model_identity,
+        tokenizer_identity=fixture["tokenizer_identity"],
+        generation_config_fingerprint=fixture["generation_config_fingerprint"],
+    )
+
+    with pytest.raises(RuntimeContractError) as error:
+        backend_module.load_and_rebind_sampled_runtime_attestation_aggregate(
+            output,
+            decode_generation_policy_fingerprint=fixture["artifact"][
+                "policy_attestations"
+            ][0]["decode_generation_policy_fingerprint"],
+            backend=backend,
+        )
+
+    assert error.value.code == "backend_sampling.attestation_active_runtime_mismatch"
 
 
 @pytest.mark.parametrize(

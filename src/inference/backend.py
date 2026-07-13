@@ -5764,6 +5764,90 @@ def load_and_rebind_sampled_runtime_attestation_aggregate(
     return capability
 
 
+_RELOCATABLE_ATTESTED_MODEL_PAYLOAD_PATHS = (
+    ("adapter", "adapter_path"),
+    ("adapter", "adapter_payload_evidence", "config_path"),
+    ("adapter", "adapter_payload_evidence", "tensor_path"),
+    ("embedding_delta", "identity", "delta_path"),
+    ("embedding_delta", "identity", "metadata_path"),
+    ("embedding_delta", "load", "metadata_path"),
+    ("embedding_delta", "load", "tensor_path"),
+)
+_RELOCATABLE_ATTESTED_MODEL_PAYLOAD_PATHS_BY_FAMILY = {
+    family: tuple(
+        components
+        for components in _RELOCATABLE_ATTESTED_MODEL_PAYLOAD_PATHS
+        if components[0] == family
+    )
+    for family in ("adapter", "embedding_delta")
+}
+_RELOCATABLE_ATTESTED_MODEL_PAYLOAD_PATH_MARKER = (
+    "<relocatable-attested-model-payload-path>"
+)
+
+
+def _normalized_attested_model_identity_for_runtime_comparison(
+    identity: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Ignore only declared absolute payload locations during runtime matching."""
+
+    normalized = _thaw_json(identity)
+    for family, family_paths in (
+        _RELOCATABLE_ATTESTED_MODEL_PAYLOAD_PATHS_BY_FAMILY.items()
+    ):
+        family_identity = normalized.get(family)
+        if family_identity is None:
+            continue
+        if not isinstance(family_identity, Mapping):
+            raise RuntimeContractError(
+                "attested model payload family must be an object or null",
+                code="backend_sampling.attestation_model_payload_path_invalid",
+                context={"field": family},
+            )
+        for components in family_paths:
+            container: Any = normalized
+            for component in components[:-1]:
+                if not isinstance(container, Mapping) or component not in container:
+                    raise RuntimeContractError(
+                        "attested model payload identity is missing a required path",
+                        code=(
+                            "backend_sampling."
+                            "attestation_model_payload_path_invalid"
+                        ),
+                        context={"field": ".".join(components)},
+                    )
+                container = container[component]
+            if not isinstance(container, dict):
+                raise RuntimeContractError(
+                    "attested model payload identity path parent is malformed",
+                    code="backend_sampling.attestation_model_payload_path_invalid",
+                    context={"field": ".".join(components)},
+                )
+            field = components[-1]
+            location = container.get(field)
+            if (
+                not isinstance(location, str)
+                or not location.strip()
+                or not Path(location).is_absolute()
+            ):
+                raise RuntimeContractError(
+                    "attested model payload path must be a non-empty absolute string",
+                    code=(
+                        "backend_sampling.attestation_model_payload_path_invalid"
+                    ),
+                    context={"field": ".".join(components)},
+                )
+            container[field] = _RELOCATABLE_ATTESTED_MODEL_PAYLOAD_PATH_MARKER
+    return normalized
+
+
+def _attested_runtime_identity_comparison_value(field: str, value: Any) -> Any:
+    thawed = _thaw_json(value)
+    if field == "model_identity" and isinstance(thawed, Mapping):
+        return _normalized_attested_model_identity_for_runtime_comparison(thawed)
+    return thawed
+
+
 def _mint_verified_sampled_runtime_attestation(
     parsed: SampledRuntimeAttestationBundle,
     *,
@@ -5824,7 +5908,13 @@ def _mint_verified_sampled_runtime_attestation(
         "custom_sampler_code_hash": custom_sampler_code_hash(),
     }
     for field, expected in expected_values.items():
-        if _thaw_json(active_values[field]) != _thaw_json(expected):
+        normalized_active = _attested_runtime_identity_comparison_value(
+            field, active_values[field]
+        )
+        normalized_expected = _attested_runtime_identity_comparison_value(
+            field, expected
+        )
+        if normalized_active != normalized_expected:
             mismatches[field] = {
                 "expected": _thaw_json(expected),
                 "observed": _thaw_json(active_values[field]),
@@ -5941,14 +6031,16 @@ def _validate_verified_sampled_runtime_for_active_call(
         "custom_sampler_code_hash": custom_sampler_code_hash(),
         "execution_device_identity": dict(execution_device_identity),
     }
-    mismatches = {
-        field: {
-            "expected": _thaw_json(contract.get(field)),
-            "observed": _thaw_json(value),
-        }
-        for field, value in active.items()
-        if _thaw_json(contract.get(field)) != _thaw_json(value)
-    }
+    mismatches = {}
+    for field, value in active.items():
+        expected = contract.get(field)
+        if _attested_runtime_identity_comparison_value(
+            field, expected
+        ) != _attested_runtime_identity_comparison_value(field, value):
+            mismatches[field] = {
+                "expected": _thaw_json(expected),
+                "observed": _thaw_json(value),
+            }
     if any(
         value is not None
         for value in (
