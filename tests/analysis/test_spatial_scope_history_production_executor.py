@@ -403,6 +403,50 @@ def test_prepare_materializes_full_tile_and_mask_without_resize(
     )
 
 
+def test_deterministic_infer_defaults_do_not_override_sealed_request_policy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    schedule, cohort, examples, _, executor = _primary_fixture(tmp_path)
+    deterministic_infer_config = SimpleNamespace(
+        generation=SimpleNamespace(
+            batch_size=4,
+            max_new_tokens=3084,
+            repetition_penalty=1.1,
+            temperature=0.0,
+            top_p=1.0,
+        ),
+        template=executor._infer_config.template,
+    )
+    executor = ProductionBatchExecutor(
+        assignment=WorkerDeviceAssignment(worker_index=0, physical_gpu_token="0"),
+        schedule=schedule,
+        cohort=cohort,
+        raw_examples_by_image_id=examples,
+        infer_config=deterministic_infer_config,
+        runtime_binding=executor._binding,
+        attempt_ledger_path=tmp_path / "deterministic-default-attempts.jsonl",
+    )
+    monkeypatch.setattr(
+        "src.analysis.spatial_scope_history.production_executor.build_prompt_record",
+        lambda example, template, *, processor, row_index: _prompt_record(
+            example, row_index=row_index
+        ),
+    )
+
+    prepared = executor._prepare_request(
+        _request(schedule, "FULL_SINGLE"),
+        attempt_ledger=_empty_attempt_ledger(schedule),
+    )
+
+    assert prepared.decode_request.generation_policy == DecodeGenerationPolicy.sampled(
+        max_new_tokens=512,
+        repetition_penalty=1.0,
+        temperature=schedule.identity.decode.temperature,
+        top_p=0.95,
+    )
+
+
 def test_cumulative_prompt_reads_only_durable_predecessor_state(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -304,21 +304,6 @@ class ProductionBatchExecutor(BatchExecutor):
                 "production executor requires frozen physical batch size four",
                 "production_executor.config_batch_size",
             )
-        observed_generation = {
-            "max_new_tokens": infer_config.generation.max_new_tokens,
-            "repetition_penalty": infer_config.generation.repetition_penalty,
-            "top_p": infer_config.generation.top_p,
-        }
-        if observed_generation != {
-            "max_new_tokens": 512,
-            "repetition_penalty": 1.0,
-            "top_p": 0.95,
-        }:
-            _fail(
-                "inference config differs from frozen generation factors",
-                "production_executor.config_generation",
-                observed=observed_generation,
-            )
 
     def __call__(self, context: BatchExecutionContext) -> None:
         batch = context.dispatch.batch
