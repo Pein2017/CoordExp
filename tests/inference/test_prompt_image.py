@@ -56,23 +56,32 @@ class FakeProcessor:
         *,
         tokenize: bool,
         add_generation_prompt: bool,
+        continue_final_message: bool = False,
         **_: Any,
     ) -> str | list[int]:
-        assert messages[-1]["role"] == "user"
+        if continue_final_message:
+            assert messages[-1]["role"] == "assistant"
+            assert add_generation_prompt is False
+        else:
+            assert messages[-1]["role"] == "user"
         pieces: list[str] = []
-        for message in messages:
+        for index, message in enumerate(messages):
             pieces.append(f"<|im_start|>{message['role']}\n")
             for item in message["content"]:
                 if item["type"] == "image":
                     pieces.append("<|vision_start|><|image_pad|><|vision_end|>")
                 elif item["type"] == "text":
                     pieces.append(item["text"])
-            pieces.append("<|im_end|>\n")
+            is_open_final_message = (
+                continue_final_message and index == len(messages) - 1
+            )
+            if not is_open_final_message:
+                pieces.append("<|im_end|>\n")
         if add_generation_prompt:
             pieces.append("<|im_start|>assistant\n")
         text = "".join(pieces)
         if tokenize:
-            return [ord(char) for char in text]
+            return self.tokenizer(text, add_special_tokens=False)["input_ids"]
         return text
 
 
@@ -116,6 +125,60 @@ def test_inference_prompt_token_ids_match_backend_prompt_ids(tmp_path: Path) -> 
     )
     assert parity["prompt_token_parity"] == "verified"
     assert parity["prompt_token_count"] == len(record.prompt_token_ids)
+
+
+def test_prompt_tokenization_uses_explicit_visual_input_image(tmp_path: Path) -> None:
+    from src.inference.prompt import build_prompt_record
+
+    observed_sizes: list[tuple[int, int]] = []
+
+    class RecordingProcessor(FakeProcessor):
+        def apply_chat_template(
+            self,
+            messages: list[dict[str, Any]],
+            *,
+            tokenize: bool,
+            add_generation_prompt: bool,
+            **kwargs: Any,
+        ) -> str | list[int]:
+            image_items = [
+                item
+                for message in messages
+                for item in message["content"]
+                if item["type"] == "image"
+            ]
+            assert len(image_items) == 1
+            image = image_items[0]["image"]
+            assert isinstance(image, Image.Image)
+            observed_sizes.append(image.size)
+            return super().apply_chat_template(
+                messages,
+                tokenize=tokenize,
+                add_generation_prompt=add_generation_prompt,
+                **kwargs,
+            )
+
+    visual_input_image = Image.new("RGB", (32, 48), color=(1, 2, 3))
+    example = _raw_example(tmp_path, width=96, height=64)
+    try:
+        record = build_prompt_record(
+            example,
+            _template_config(),
+            processor=RecordingProcessor(),
+            row_index=0,
+            visual_input_image=visual_input_image,
+        )
+    finally:
+        visual_input_image.close()
+
+    assert observed_sizes == [(32, 48), (32, 48)]
+    retained_image_item = next(
+        item
+        for message in record.messages
+        for item in message["content"]
+        if item["type"] == "image"
+    )
+    assert retained_image_item["image"] == str(example.image.path)
 
 
 def test_prompt_token_ids_accept_real_qwen_single_batch_shape(tmp_path: Path) -> None:
@@ -441,7 +504,7 @@ def test_open_assistant_continuation_requires_exactly_one_image_placeholder(
     assert exc_info.value.context["image_placeholder_count"] == 0
 
 
-def test_open_assistant_continuation_rejects_context_overflow_and_truncation(
+def test_open_assistant_continuation_rejects_context_overflow(
     tmp_path: Path,
 ) -> None:
     from src.inference.prompt import AssistantContinuation, build_prompt_record
@@ -458,33 +521,111 @@ def test_open_assistant_continuation_rejects_context_overflow_and_truncation(
         )
     assert context_exc.value.code == "inference.continuation_context_limit"
 
-    class OverflowTokenizer(FakeTokenizer):
-        def __call__(
+
+def test_open_assistant_continuation_rejects_non_native_chat_text(
+    tmp_path: Path,
+) -> None:
+    from src.inference.prompt import AssistantContinuation, build_prompt_record
+
+    class ClosingContinuationProcessor(FakeProcessor):
+        def apply_chat_template(
             self,
-            text: str,
+            messages: list[dict[str, Any]],
             *,
-            add_special_tokens: bool = False,
+            tokenize: bool,
+            add_generation_prompt: bool,
+            continue_final_message: bool = False,
             **kwargs: Any,
-        ) -> dict[str, list[int]]:
-            encoded = super().__call__(
-                text,
-                add_special_tokens=add_special_tokens,
+        ) -> str | list[int]:
+            rendered = super().apply_chat_template(
+                messages,
+                tokenize=tokenize,
+                add_generation_prompt=add_generation_prompt,
+                continue_final_message=continue_final_message,
                 **kwargs,
             )
-            encoded["overflowing_tokens"] = [123]
-            return encoded
+            if not continue_final_message:
+                return rendered
+            suffix = "<|im_end|>\n"
+            if tokenize:
+                assert isinstance(rendered, list)
+                return [*rendered, *(ord(char) for char in suffix)]
+            assert isinstance(rendered, str)
+            return rendered + suffix
 
-    processor = FakeProcessor()
-    processor.tokenizer = OverflowTokenizer()
-    with pytest.raises(EncodingContractError) as truncation_exc:
+    with pytest.raises(EncodingContractError) as exc_info:
         build_prompt_record(
-            example,
+            _raw_example(tmp_path, width=96, height=64),
             _template_config(),
-            processor=processor,
+            processor=ClosingContinuationProcessor(),
             row_index=0,
             assistant_continuation=AssistantContinuation("accepted-row"),
         )
-    assert truncation_exc.value.code == "inference.continuation_tokenization_truncated"
+    assert exc_info.value.code == "inference.continuation_native_chat_text"
+
+
+def test_real_qwen_continuation_preserves_expanded_image_tokens(
+    tmp_path: Path,
+) -> None:
+    from src.inference.prompt import AssistantContinuation, build_prompt_record
+    from src.qwen.runtime_loading import (
+        QwenLoadOptions,
+        load_qwen_components_from_options,
+    )
+
+    base_model = Path(
+        "/data/Qwen3-VL/model_cache/models/Qwen/"
+        "Qwen3-VL-2B-Instruct-coordexp-natural-adjacent"
+    )
+    if not base_model.is_dir():
+        pytest.skip("local Qwen3-VL processor fixture is unavailable")
+    components = load_qwen_components_from_options(
+        QwenLoadOptions(
+            base_model=str(base_model),
+            dtype="bf16",
+            attn_implementation="sdpa",
+            load_model=False,
+        )
+    )
+    image_pad_token_id = components.tokenizer.convert_tokens_to_ids(
+        "<|image_pad|>"
+    )
+    example = _raw_example(tmp_path, width=96, height=64)
+    with Image.open(example.image.path) as source_image:
+        explicit_image = source_image.convert("RGB")
+    observed_counts: list[tuple[int, int]] = []
+    try:
+        for visual_input_image in (None, explicit_image):
+            prompt_kwargs = (
+                {}
+                if visual_input_image is None
+                else {"visual_input_image": visual_input_image}
+            )
+            ordinary = build_prompt_record(
+                example,
+                _template_config(),
+                processor=components.processor,
+                row_index=0,
+                **prompt_kwargs,
+            )
+            continued = build_prompt_record(
+                example,
+                _template_config(),
+                processor=components.processor,
+                row_index=0,
+                assistant_continuation=AssistantContinuation("accepted-row"),
+                **prompt_kwargs,
+            )
+            observed_counts.append(
+                (
+                    ordinary.prompt_token_ids.count(image_pad_token_id),
+                    continued.prompt_token_ids.count(image_pad_token_id),
+                )
+            )
+    finally:
+        explicit_image.close()
+
+    assert observed_counts == [(70, 70), (70, 70)]
 
 
 def test_open_assistant_continuation_rejects_non_integral_context_limit(

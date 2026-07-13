@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from src.analysis.spatial_scope_history.calibration import PrimaryScheduleArtifact
 from src.analysis.spatial_scope_history.cohort_ledger import (
     AttemptLedger,
     AttemptRecord,
@@ -16,6 +17,7 @@ from src.analysis.spatial_scope_history.cohort_ledger import (
     ExecutionIdentityBundle,
     canonical_json_text,
     dependency_skip_failure_code,
+    sha256_file,
     sha256_payload,
 )
 from src.analysis.spatial_scope_history.merge import (
@@ -348,67 +350,12 @@ def _digest(label: str) -> str:
     return sha256_payload({"label": label})
 
 
-def _metric_admission_fixture(tmp_path: Path):
-    records = tuple(
-        CohortImageRecord(
-            image_id=image_index,
-            frozen_order=image_index,
-            source_row_index=image_index,
-            image_path=f"/fixture/image-{image_index}.png",
-            image_sha256=_digest(f"image-{image_index}"),
-            source_width=512,
-            source_height=512,
-            raw_width=512,
-            raw_height=512,
-            source_row_sha256=_digest(f"row-{image_index}"),
-            source_dataset_sha256=_digest("dataset"),
-            raw_annotation_sha256=_digest("annotations"),
-            noncrowd_annotated_object_count=1,
-            annotated_person_count=1,
-            annotated_food_tableware_count=0,
-            source_crowd_annotation_count=0,
-            cohort_memberships=("val200",),
-            density_tags=(),
-        )
-        for image_index in range(4)
-    )
-    cohort = CohortLedger(
-        cohort_id="metric-admission-fixture",
-        full_name="Metric Admission Fixture",
-        operational_meaning="Four images make the sixty-five-call matrix batch-even.",
-        records=records,
-    )
-    grid_spec = SpatialGridSpec()
-    readiness_root = tmp_path / "readiness-v2"
-    readiness, reference_ledger_sha256 = _write_readiness_fixture(
-        root=readiness_root,
-        cohort=cohort,
-        grid_spec=grid_spec,
-    )
-    execution_identity = ExecutionIdentityBundle(
-        code_sha256=_digest("code"),
-        config_sha256=_digest("config"),
-        ledger_sha256=reference_ledger_sha256,
-        runtime_sha256=_digest("runtime"),
-    )
-    grid_provenance = GridProvenance(
-        canonical_spatial_spec_sha256=grid_spec.fingerprint,
-        canonical_spatial_receipt_contract_sha256=_digest("grid-receipt-contract"),
-    )
-    decode = DecodeProvenance(
-        temperature=0.4,
-        canonical_generation_policy_sha256=_digest("generation-policy"),
-        sampled_runtime_attestation_sha256=_digest("sampler-attestation"),
-    )
-    schedule = ResearchSchedule.build_primary(
-        unit_id="metric-admission-fixture",
-        run_id="metric-admission-run",
-        cohort=cohort,
-        root_seed=PRIMARY_ROOT_SEED,
-        decode=decode,
-        execution_identity=execution_identity,
-        grid=grid_provenance,
-    )
+def _write_failure_attempt_ledger(
+    *,
+    root: Path,
+    schedule: ResearchSchedule,
+) -> AttemptLedger:
+    schedule_sha256 = schedule.fingerprint
     dependencies = {
         dependency.request_id: dependency
         for dependency in schedule.attempt_dependencies
@@ -448,13 +395,13 @@ def _metric_admission_fixture(tmp_path: Path):
             failure_code=failure_code,
             cumulative_state_product=None,
         )
-        terminal_path = tmp_path / "terminal" / f"{request.schedule_index}.json"
-        terminal_path.parent.mkdir(exist_ok=True)
+        terminal_path = root / f"{request.schedule_index}.json"
+        terminal_path.parent.mkdir(parents=True, exist_ok=True)
         terminal_path.write_bytes(terminal_bundle.to_artifact_bytes())
         attempts.append(
             AttemptRecord(
                 run_id=schedule.identity.run_id,
-                schedule_sha256=schedule.fingerprint,
+                schedule_sha256=schedule_sha256,
                 request_id=request.request_id,
                 physical_batch_plan_sha256=(dependency.physical_batch_plan_sha256),
                 physical_batch_sha256=dependency.physical_batch_sha256,
@@ -462,7 +409,7 @@ def _metric_admission_fixture(tmp_path: Path):
                 attempt_status=status,  # type: ignore[arg-type]
                 started_at_utc="2026-07-13T00:00:00Z",
                 finished_at_utc="2026-07-13T00:00:01Z",
-                execution_identity=execution_identity,
+                execution_identity=schedule.identity.execution_identity,
                 output_artifact_sha256=terminal_bundle.bundle_sha256,
                 output_artifact_path=str(terminal_path),
                 failure_code=failure_code,
@@ -470,11 +417,78 @@ def _metric_admission_fixture(tmp_path: Path):
             )
         )
         status_by_request_id[request.request_id] = status
-    attempt_ledger = AttemptLedger(
+    return AttemptLedger(
         run_id=schedule.identity.run_id,
-        schedule_sha256=schedule.fingerprint,
-        execution_identity=execution_identity,
+        schedule_sha256=schedule_sha256,
+        execution_identity=schedule.identity.execution_identity,
         records=tuple(attempts),
+    )
+
+
+def _metric_admission_fixture(tmp_path: Path):
+    records = tuple(
+        CohortImageRecord(
+            image_id=image_index,
+            frozen_order=image_index,
+            source_row_index=image_index,
+            image_path=f"/fixture/image-{image_index}.png",
+            image_sha256=_digest(f"image-{image_index}"),
+            source_width=512,
+            source_height=512,
+            raw_width=512,
+            raw_height=512,
+            source_row_sha256=_digest(f"row-{image_index}"),
+            source_dataset_sha256=_digest("dataset"),
+            raw_annotation_sha256=_digest("annotations"),
+            noncrowd_annotated_object_count=1,
+            annotated_person_count=1,
+            annotated_food_tableware_count=0,
+            source_crowd_annotation_count=0,
+            cohort_memberships=("val200",),
+            density_tags=(),
+        )
+        for image_index in range(4)
+    )
+    cohort = CohortLedger(
+        cohort_id="metric-admission-fixture",
+        full_name="Metric Admission Fixture",
+        operational_meaning="Four images make the sixty-five-call matrix batch-even.",
+        records=records,
+    )
+    grid_spec = SpatialGridSpec()
+    readiness_root = tmp_path / "readiness-v2"
+    readiness, _ = _write_readiness_fixture(
+        root=readiness_root,
+        cohort=cohort,
+        grid_spec=grid_spec,
+    )
+    execution_identity = ExecutionIdentityBundle(
+        code_sha256=_digest("code"),
+        config_sha256=_digest("config"),
+        ledger_sha256=readiness.readiness_seal_sha256,
+        runtime_sha256=_digest("runtime"),
+    )
+    grid_provenance = GridProvenance(
+        canonical_spatial_spec_sha256=grid_spec.fingerprint,
+        canonical_spatial_receipt_contract_sha256=_digest("grid-receipt-contract"),
+    )
+    decode = DecodeProvenance(
+        temperature=0.4,
+        canonical_generation_policy_sha256=_digest("generation-policy"),
+        sampled_runtime_attestation_sha256=_digest("sampler-attestation"),
+    )
+    schedule = ResearchSchedule.build_primary(
+        unit_id="metric-admission-fixture",
+        run_id="metric-admission-run",
+        cohort=cohort,
+        root_seed=PRIMARY_ROOT_SEED,
+        decode=decode,
+        execution_identity=execution_identity,
+        grid=grid_provenance,
+    )
+    attempt_ledger = _write_failure_attempt_ledger(
+        root=tmp_path / "terminal",
+        schedule=schedule,
     )
     grids = {
         str(record.image_id): SpatialGrid.build(
@@ -522,6 +536,7 @@ def _write_readiness_fixture(
     root: Path,
     cohort: CohortLedger,
     grid_spec: SpatialGridSpec,
+    cohort_artifact_name: str = "cohort-manifest.jsonl",
 ) -> tuple[MetricReadinessIdentity, str]:
     root.mkdir(parents=True)
     category_source = (
@@ -563,8 +578,9 @@ def _write_readiness_fixture(
         "candidate_categories": [],
         "final_state": "accepted",
     }
+    cohort_artifact = cohort.to_jsonl_bytes()
     artifacts = {
-        "cohort-manifest.jsonl": cohort.to_jsonl_bytes(),
+        cohort_artifact_name: cohort_artifact,
         "coco-80-category-namespace.json": category_source.read_bytes(),
         "official-individual-ledger.jsonl": (
             canonical_json_text(official_individual) + "\n"
@@ -595,6 +611,14 @@ def _write_readiness_fixture(
             ).hexdigest()
         },
         "category_namespace_sha256": COCO_80_CATEGORY_NAMESPACE_SHA256,
+        "source_digests": {
+            "official_crowd_ledger_jsonl": annotation_digests[
+                "official-crowd-ignore-ledger.jsonl"
+            ],
+            "official_individual_ledger_jsonl": annotation_digests[
+                "official-individual-ledger.jsonl"
+            ],
+        },
     }
     (root / "annotation-derived-cohort-seal.json").write_text(
         canonical_json_text(annotation_seal) + "\n",
@@ -607,6 +631,8 @@ def _write_readiness_fixture(
     readiness = MetricReadinessIdentity.from_verified_artifacts(
         readiness_root=root,
         spatial_grid_spec=grid_spec,
+        cohort_artifact_name=cohort_artifact_name,
+        cohort_artifact_sha256=hashlib.sha256(cohort_artifact).hexdigest(),
     )
     return readiness, readiness.reference_ledger_sha256
 
@@ -627,6 +653,100 @@ def _failed_call_for_request(request, admitted_request) -> CallMetricRecord:
         ),
         terminal_attempt_output_artifact_path=admitted_request.output_artifact_path,
     )
+
+
+def test_readiness_uses_schedule_selected_alternate_sealed_cohort_for_references(
+    tmp_path: Path,
+) -> None:
+    _, _, cohort, _, _, _ = _metric_admission_fixture(tmp_path / "base")
+    readiness_root = tmp_path / "alternate-readiness"
+    readiness, _ = _write_readiness_fixture(
+        root=readiness_root,
+        cohort=cohort,
+        grid_spec=SpatialGridSpec(),
+        cohort_artifact_name="dense-union-51-manifest.jsonl",
+    )
+
+    assert readiness.cohort_artifact_name == "dense-union-51-manifest.jsonl"
+    assert readiness.cohort_artifact_sha256 == sha256_file(
+        readiness_root / "dense-union-51-manifest.jsonl"
+    )
+    references = readiness.reference_objects(
+        image_id=str(cohort.records[0].image_id),
+        ledger_scope="official_annotation",
+    )
+    assert tuple(reference.reference_id for reference in references) == ("coco-ann:1",)
+
+
+def test_readiness_rejects_unsealed_schedule_selected_cohort_name(
+    tmp_path: Path,
+) -> None:
+    _, _, cohort, _, _, _ = _metric_admission_fixture(tmp_path / "base")
+    readiness_root = tmp_path / "canonical-readiness"
+    _write_readiness_fixture(
+        root=readiness_root,
+        cohort=cohort,
+        grid_spec=SpatialGridSpec(),
+    )
+
+    with pytest.raises(DataContractError, match="omits required artifact"):
+        MetricReadinessIdentity.from_verified_artifacts(
+            readiness_root=readiness_root,
+            spatial_grid_spec=SpatialGridSpec(),
+            cohort_artifact_name="dense-union-51-manifest.jsonl",
+            cohort_artifact_sha256=_digest("unsealed-cohort"),
+        )
+
+
+def test_readiness_rejects_wrong_schedule_selected_cohort_digest(
+    tmp_path: Path,
+) -> None:
+    _, _, cohort, _, _, _ = _metric_admission_fixture(tmp_path / "base")
+    readiness_root = tmp_path / "canonical-readiness"
+    _write_readiness_fixture(
+        root=readiness_root,
+        cohort=cohort,
+        grid_spec=SpatialGridSpec(),
+    )
+
+    with pytest.raises(DataContractError, match="schedule-selected cohort digest"):
+        MetricReadinessIdentity.from_verified_artifacts(
+            readiness_root=readiness_root,
+            spatial_grid_spec=SpatialGridSpec(),
+            cohort_artifact_name="cohort-manifest.jsonl",
+            cohort_artifact_sha256=_digest("wrong-cohort-bytes"),
+        )
+
+
+def test_readiness_rejects_final_source_digest_detached_from_annotation_seal(
+    tmp_path: Path,
+) -> None:
+    _, _, cohort, _, _, _ = _metric_admission_fixture(tmp_path / "base")
+    readiness_root = tmp_path / "detached-readiness"
+    _write_readiness_fixture(
+        root=readiness_root,
+        cohort=cohort,
+        grid_spec=SpatialGridSpec(),
+    )
+    final_seal_path = readiness_root / "ledger-seal.json"
+    final_seal = json.loads(final_seal_path.read_text(encoding="utf-8"))
+    final_seal["source_digests"]["official_individual_ledger_jsonl"] = _digest(
+        "detached-official-individual-ledger"
+    )
+    final_seal_path.write_text(
+        canonical_json_text(final_seal) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(DataContractError, match="annotation-sealed official ledgers"):
+        MetricReadinessIdentity.from_verified_artifacts(
+            readiness_root=readiness_root,
+            spatial_grid_spec=SpatialGridSpec(),
+            cohort_artifact_name="cohort-manifest.jsonl",
+            cohort_artifact_sha256=sha256_file(
+                readiness_root / "cohort-manifest.jsonl"
+            ),
+        )
 
 
 def test_equal_cardinality_equal_iou_uses_exact_lexicographic_assignment() -> None:
@@ -899,6 +1019,8 @@ def test_actual_readiness_v2_reconstructs_all_official_and_audit_references() ->
     readiness = MetricReadinessIdentity.from_verified_artifacts(
         readiness_root=readiness_root,
         spatial_grid_spec=SpatialGridSpec(),
+        cohort_artifact_name="cohort-manifest.jsonl",
+        cohort_artifact_sha256=sha256_file(readiness_root / "cohort-manifest.jsonl"),
     )
     cohort = CohortLedger.from_jsonl_bytes(
         (readiness_root / "cohort-manifest.jsonl").read_bytes()
@@ -937,6 +1059,65 @@ def test_actual_readiness_v2_reconstructs_all_official_and_audit_references() ->
     assert tuple(reference.source_canvas_bbox_xyxy for reference in out_of_scope) == (
         (224.0, 384.0, 655.0, 843.0),
         (671.0, 402.0, 1000.0, 762.0),
+    )
+
+
+def test_actual_dense_union_51_schedule_admits_selected_sealed_cohort(
+    tmp_path: Path,
+) -> None:
+    experiment_root = Path(
+        "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/"
+        "2026-07-13-spatial-scope-history-disentanglement"
+    )
+    readiness_root = experiment_root / "readiness-v2"
+    schedule_path = (
+        experiment_root
+        / "schedules/dense-union-51-primary-after-contract-recovery.json"
+    )
+    if not readiness_root.is_dir() or not schedule_path.is_file():
+        pytest.skip("sealed Dense-Union-51 admission artifacts are unavailable")
+    schedule_artifact = PrimaryScheduleArtifact.from_artifact_dict(
+        json.loads(schedule_path.read_text(encoding="utf-8"))
+    )
+    assert schedule_artifact.cohort_artifact_name == (
+        "dense-union-51-manifest.jsonl"
+    )
+    cohort_path = readiness_root / schedule_artifact.cohort_artifact_name
+    assert sha256_file(cohort_path) == schedule_artifact.cohort_artifact_sha256
+    cohort = CohortLedger.from_jsonl_bytes(cohort_path.read_bytes())
+    readiness = MetricReadinessIdentity.from_verified_artifacts(
+        readiness_root=readiness_root,
+        spatial_grid_spec=SpatialGridSpec(),
+        cohort_artifact_name=schedule_artifact.cohort_artifact_name,
+        cohort_artifact_sha256=schedule_artifact.cohort_artifact_sha256,
+    )
+    attempt_ledger = _write_failure_attempt_ledger(
+        root=tmp_path / "dense-union-51-terminal",
+        schedule=schedule_artifact.schedule,
+    )
+    grids = {
+        str(record.image_id): SpatialGrid.build(
+            source_width=record.source_width,
+            source_height=record.source_height,
+        )
+        for record in cohort.records
+    }
+
+    admission = admit_metric_schedule(
+        schedule=schedule_artifact.schedule,
+        cohort=cohort,
+        readiness=readiness,
+        attempt_ledger=attempt_ledger,
+        spatial_grids_by_image_id=grids,
+    )
+
+    assert len(admission.images) == 51
+    assert len(admission.requests) == 3_315
+    assert admission.readiness.readiness_seal_sha256 == (
+        schedule_artifact.schedule.identity.execution_identity.ledger_sha256
+    )
+    assert admission.readiness.cohort_artifact_name == (
+        schedule_artifact.cohort_artifact_name
     )
 
 

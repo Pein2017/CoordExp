@@ -21,6 +21,8 @@ import time
 import traceback
 from typing import Any, cast, Literal, Protocol
 
+from PIL import Image
+
 from src.analysis.spatial_scope_history.cohort_ledger import (
     AttemptLedger,
     AttemptRecord,
@@ -142,6 +144,7 @@ def build_cumulative_prompt_record(
     row_index: int,
     accepted_global_coordinate_rows: str,
     max_prompt_tokens: int | None = None,
+    visual_input_image: Image.Image | None = None,
 ) -> PromptRecord:
     """Build cumulative history through the canonical open-assistant interface.
 
@@ -159,6 +162,7 @@ def build_cumulative_prompt_record(
             text=accepted_global_coordinate_rows
         ),
         max_prompt_tokens=max_prompt_tokens,
+        visual_input_image=visual_input_image,
     )
 
 

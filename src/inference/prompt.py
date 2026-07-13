@@ -9,6 +9,8 @@ import json
 import math
 from typing import Any
 
+from PIL import Image
+
 from src.common.errors import EncodingContractError
 from src.config.models import TemplateConfig
 from src.data import RawExample
@@ -118,22 +120,31 @@ def build_prompt_record(
     object_order_seed: int | None = None,
     assistant_continuation: AssistantContinuation | None = None,
     max_prompt_tokens: int | None = None,
+    visual_input_image: Image.Image | None = None,
 ) -> PromptRecord:
     rendered = render_example(
         raw_example,
         template_config,
         object_order_seed=object_order_seed,
     )
-    messages = tuple(message for message in rendered.messages if message.get("role") != "assistant")
+    messages = tuple(
+        message for message in rendered.messages if message.get("role") != "assistant"
+    )
+    processing_messages = messages
+    if visual_input_image is not None:
+        processing_messages = _messages_with_visual_input_image(
+            messages,
+            visual_input_image=visual_input_image,
+        )
     ordinary_chat_text = _apply_generation_chat_template(
         processor,
-        messages=messages,
+        messages=processing_messages,
         example_id=raw_example.example_id,
     )
     ordinary_prompt_token_ids = _tokenize_prompt(
         processor,
         chat_text=ordinary_chat_text,
-        messages=messages,
+        messages=processing_messages,
         example_id=raw_example.example_id,
     )
     chat_text = ordinary_chat_text
@@ -144,6 +155,7 @@ def build_prompt_record(
             processor,
             ordinary_chat_text=ordinary_chat_text,
             ordinary_prompt_token_ids=ordinary_prompt_token_ids,
+            messages=processing_messages,
             continuation=assistant_continuation,
             example_id=raw_example.example_id,
             max_prompt_tokens=max_prompt_tokens,
@@ -167,6 +179,29 @@ def build_prompt_record(
         ],
         full_prompt_fingerprint=_full_prompt_fingerprint(chat_text, prompt_token_ids),
         **continuation_fields,
+    )
+
+
+def _messages_with_visual_input_image(
+    messages: tuple[dict[str, Any], ...],
+    *,
+    visual_input_image: Image.Image,
+) -> tuple[dict[str, Any], ...]:
+    """Replace the rendered source path with the exact executed RGB image."""
+
+    return tuple(
+        {
+            **message,
+            "content": [
+                (
+                    {**item, "image": visual_input_image}
+                    if item.get("type") == "image"
+                    else item
+                )
+                for item in message["content"]
+            ],
+        }
+        for message in messages
     )
 
 
@@ -269,6 +304,7 @@ def _continue_open_assistant(
     *,
     ordinary_chat_text: str,
     ordinary_prompt_token_ids: list[int],
+    messages: tuple[dict[str, Any], ...],
     continuation: AssistantContinuation,
     example_id: str,
     max_prompt_tokens: int | None,
@@ -323,7 +359,19 @@ def _continue_open_assistant(
             },
         )
 
-    full_chat_text = ordinary_chat_text + text
+    expected_full_chat_text = ordinary_chat_text + text
+    full_chat_text, prompt_token_ids = _apply_continued_chat_template(
+        processor,
+        messages=messages,
+        continuation_text=text,
+        example_id=example_id,
+    )
+    if full_chat_text != expected_full_chat_text:
+        raise EncodingContractError(
+            "native continued chat template differs from the intended open assistant continuation",
+            code="inference.continuation_native_chat_text",
+            context={"example_id": example_id},
+        )
     image_placeholder_count = full_chat_text.count(IMAGE_PLACEHOLDER)
     if image_placeholder_count != 1:
         raise EncodingContractError(
@@ -334,11 +382,6 @@ def _continue_open_assistant(
                 "image_placeholder_count": image_placeholder_count,
             },
         )
-    prompt_token_ids = _tokenize_complete_text(
-        processor,
-        chat_text=full_chat_text,
-        example_id=example_id,
-    )
     prompt_token_limit = _prompt_token_limit(
         processor,
         explicit_limit=max_prompt_tokens,
@@ -378,6 +421,41 @@ def _continue_open_assistant(
         "image_placeholder_count": image_placeholder_count,
         "open_assistant_interval_verified": True,
     }
+
+
+def _apply_continued_chat_template(
+    processor: Any,
+    *,
+    messages: tuple[dict[str, Any], ...],
+    continuation_text: str,
+    example_id: str,
+) -> tuple[str, list[int]]:
+    continued_messages = [
+        *messages,
+        {
+            "role": "assistant",
+            "content": [{"type": "text", "text": continuation_text}],
+        },
+    ]
+    chat_text = processor.apply_chat_template(
+        continued_messages,
+        tokenize=False,
+        add_generation_prompt=False,
+        continue_final_message=True,
+    )
+    if not isinstance(chat_text, str):
+        raise EncodingContractError(
+            "Qwen processor continued chat template must return prompt text",
+            code="inference.continuation_chat_template_text",
+            context={"example_id": example_id, "value_type": type(chat_text).__name__},
+        )
+    tokenized = processor.apply_chat_template(
+        continued_messages,
+        tokenize=True,
+        add_generation_prompt=False,
+        continue_final_message=True,
+    )
+    return chat_text, _int_ids(tokenized, example_id=example_id)
 
 
 def _validate_continuation_controls(
@@ -440,41 +518,6 @@ def _end_of_sequence_tokens(processor: Any) -> tuple[str, ...]:
     if isinstance(authored, str) and authored:
         values.append(authored)
     return tuple(dict.fromkeys(values))
-
-
-def _tokenize_complete_text(
-    processor: Any,
-    *,
-    chat_text: str,
-    example_id: str,
-) -> list[int]:
-    tokenizer = getattr(processor, "tokenizer", None)
-    if tokenizer is None:
-        raise EncodingContractError(
-            "Qwen processor does not expose a tokenizer for full prompt retokenization",
-            code="inference.prompt_tokenizer_missing",
-            context={"example_id": example_id},
-        )
-    encoded = tokenizer(
-        chat_text,
-        add_special_tokens=False,
-        truncation=False,
-        return_overflowing_tokens=True,
-    )
-    if not isinstance(encoded, Mapping) or "input_ids" not in encoded:
-        raise EncodingContractError(
-            "Qwen tokenizer did not return input_ids for the complete prompt",
-            code="inference.prompt_tokenizer_output",
-            context={"example_id": example_id},
-        )
-    overflowing = encoded.get("overflowing_tokens")
-    if overflowing:
-        raise EncodingContractError(
-            "complete prompt tokenization reported truncated or overflowing tokens",
-            code="inference.continuation_tokenization_truncated",
-            context={"example_id": example_id},
-        )
-    return _int_ids(encoded["input_ids"], example_id=example_id)
 
 
 def _prompt_token_limit(

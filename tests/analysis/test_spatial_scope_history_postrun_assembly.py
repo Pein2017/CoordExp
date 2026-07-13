@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import json
 from pathlib import Path
 import subprocess
 from types import SimpleNamespace
@@ -32,16 +33,33 @@ from test_spatial_scope_history_metrics import (
 )
 
 
-def _write_input_artifacts(tmp_path: Path):
+def _write_input_artifacts(
+    tmp_path: Path,
+    *,
+    cohort_artifact_name: str = "cohort-manifest.jsonl",
+):
     _, schedule, cohort, _, attempt_ledger, _ = _metric_admission_fixture(tmp_path)
     schedule_path = tmp_path / "schedule.json"
     cohort_path = tmp_path / "cohort.jsonl"
     attempt_path = tmp_path / "attempts.jsonl"
     cohort_path.write_bytes(cohort.to_jsonl_bytes())
     cohort_sha256 = sha256_file(cohort_path)
+    readiness_root = tmp_path / "readiness-v2"
+    if cohort_artifact_name != "cohort-manifest.jsonl":
+        selected_readiness_cohort = readiness_root / cohort_artifact_name
+        selected_readiness_cohort.write_bytes(cohort.to_jsonl_bytes())
+        annotation_seal_path = readiness_root / "annotation-derived-cohort-seal.json"
+        annotation_seal = json.loads(annotation_seal_path.read_text(encoding="utf-8"))
+        annotation_seal["artifact_digests"][cohort_artifact_name] = sha256_file(
+            selected_readiness_cohort
+        )
+        annotation_seal_path.write_text(
+            canonical_json_text(annotation_seal) + "\n",
+            encoding="utf-8",
+        )
     artifact = PrimaryScheduleArtifact(
         schedule=schedule,
-        cohort_artifact_name="cohort-manifest.jsonl",
+        cohort_artifact_name=cohort_artifact_name,
         cohort_artifact_sha256=cohort_sha256,
         readiness_ledger_seal_sha256=sha256_file(
             tmp_path / "readiness-v2" / "ledger-seal.json"
@@ -58,14 +76,41 @@ def _write_input_artifacts(tmp_path: Path):
         source_runtime_identity_fingerprint=sha256_payload(
             {"fixture": "source-runtime-identity"}
         ),
-        source_hashes=(("cohort-manifest.jsonl", cohort_sha256),),
+        source_hashes=((cohort_artifact_name, cohort_sha256),),
     )
     schedule_path.write_text(
         canonical_json_text(artifact.to_artifact_dict()) + "\n",
         encoding="utf-8",
     )
     attempt_path.write_bytes(attempt_ledger.to_jsonl_bytes())
-    return schedule_path, cohort_path, attempt_path, tmp_path / "readiness-v2"
+    return schedule_path, cohort_path, attempt_path, readiness_root
+
+
+def test_loader_uses_schedule_selected_alternate_sealed_cohort_for_references(
+    tmp_path: Path,
+) -> None:
+    paths = _write_input_artifacts(
+        tmp_path,
+        cohort_artifact_name="dense-union-51-manifest.jsonl",
+    )
+
+    evidence = load_postrun_evidence(
+        schedule_path=paths[0],
+        cohort_path=paths[1],
+        attempt_ledger_path=paths[2],
+        readiness_root=paths[3],
+    )
+
+    assert evidence.readiness.cohort_artifact_name == ("dense-union-51-manifest.jsonl")
+    assert (
+        evidence.readiness.cohort_artifact_sha256
+        == evidence.primary_schedule_artifact.cohort_artifact_sha256
+    )
+    references = evidence.readiness.reference_objects(
+        image_id=str(evidence.cohort.records[0].image_id),
+        ledger_scope="official_annotation",
+    )
+    assert tuple(reference.reference_id for reference in references) == ("coco-ann:1",)
 
 
 def _committed_postrun_source_repo(tmp_path: Path) -> tuple[Path, str]:

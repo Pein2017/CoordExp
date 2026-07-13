@@ -77,6 +77,8 @@ class MetricReadinessIdentity:
     readiness_seal_sha256: str
     annotation_derived_cohort_seal_sha256: str
     readiness_root: str
+    cohort_artifact_name: str
+    cohort_artifact_sha256: str
     cohort_sha256: str
     reference_ledger_sha256: str
     spatial_grid_spec_sha256: str
@@ -88,15 +90,23 @@ class MetricReadinessIdentity:
         *,
         readiness_root: str | Path,
         spatial_grid_spec: SpatialGridSpec,
+        cohort_artifact_name: str,
+        cohort_artifact_sha256: str,
     ) -> MetricReadinessIdentity:
         root = Path(readiness_root).resolve()
-        derived = _derive_readiness_artifacts(root)
+        derived = _derive_readiness_artifacts(
+            root,
+            cohort_artifact_name=cohort_artifact_name,
+            cohort_artifact_sha256=cohort_artifact_sha256,
+        )
         return cls(
             readiness_seal_sha256=derived["readiness_seal_sha256"],
             annotation_derived_cohort_seal_sha256=derived[
                 "annotation_derived_cohort_seal_sha256"
             ],
             readiness_root=str(root),
+            cohort_artifact_name=derived["cohort_artifact_name"],
+            cohort_artifact_sha256=derived["cohort_artifact_sha256"],
             cohort_sha256=derived["cohort_sha256"],
             reference_ledger_sha256=derived["reference_ledger_sha256"],
             spatial_grid_spec_sha256=spatial_grid_spec.fingerprint,
@@ -107,6 +117,7 @@ class MetricReadinessIdentity:
         for field_name in (
             "readiness_seal_sha256",
             "annotation_derived_cohort_seal_sha256",
+            "cohort_artifact_sha256",
             "cohort_sha256",
             "reference_ledger_sha256",
             "spatial_grid_spec_sha256",
@@ -114,6 +125,16 @@ class MetricReadinessIdentity:
         ):
             _require_sha256(getattr(self, field_name), field=field_name)
         _require_nonempty(self.readiness_root, field="readiness_root")
+        if (
+            not isinstance(self.cohort_artifact_name, str)
+            or not self.cohort_artifact_name
+            or Path(self.cohort_artifact_name).name != self.cohort_artifact_name
+        ):
+            _fail(
+                "metric cohort artifact name must be root-local",
+                "analysis.metrics_readiness_cohort_artifact_name",
+                cohort_artifact_name=self.cohort_artifact_name,
+            )
         if self.category_namespace_sha256 != COCO_80_CATEGORY_NAMESPACE_SHA256:
             _fail(
                 "readiness identity uses a noncanonical category namespace",
@@ -123,12 +144,18 @@ class MetricReadinessIdentity:
 
     def verify_current_artifacts(self) -> None:
         root = Path(self.readiness_root)
-        derived = _derive_readiness_artifacts(root)
+        derived = _derive_readiness_artifacts(
+            root,
+            cohort_artifact_name=self.cohort_artifact_name,
+            cohort_artifact_sha256=self.cohort_artifact_sha256,
+        )
         if any(
             derived[field] != getattr(self, field)
             for field in (
                 "readiness_seal_sha256",
                 "annotation_derived_cohort_seal_sha256",
+                "cohort_artifact_name",
+                "cohort_artifact_sha256",
                 "cohort_sha256",
                 "reference_ledger_sha256",
                 "category_namespace_sha256",
@@ -164,6 +191,8 @@ class MetricReadinessIdentity:
                 self.annotation_derived_cohort_seal_sha256
             ),
             "category_namespace_sha256": self.category_namespace_sha256,
+            "cohort_artifact_name": self.cohort_artifact_name,
+            "cohort_artifact_sha256": self.cohort_artifact_sha256,
             "cohort_sha256": self.cohort_sha256,
             "readiness_seal_sha256": self.readiness_seal_sha256,
             "readiness_root": self.readiness_root,
@@ -487,7 +516,7 @@ def admit_metric_schedule(
             "analysis.metrics_admission_cohort_readiness",
         )
     if (
-        readiness.reference_ledger_sha256
+        readiness.readiness_seal_sha256
         != schedule.identity.execution_identity.ledger_sha256
     ):
         _fail(
@@ -4005,7 +4034,9 @@ def _reference_objects_from_readiness(
     ledger_scope: ReferenceLedgerScope,
 ) -> tuple[ReferenceObject, ...]:
     root = Path(readiness.readiness_root)
-    cohort = CohortLedger.from_jsonl_bytes((root / "cohort-manifest.jsonl").read_bytes())
+    cohort = CohortLedger.from_jsonl_bytes(
+        (root / readiness.cohort_artifact_name).read_bytes()
+    )
     try:
         cohort_image = next(
             record for record in cohort.records if str(record.image_id) == image_id
@@ -4288,14 +4319,30 @@ def _optional_reference_box(value: Any) -> PixelBox | None:
     return tuple(float(coordinate) for coordinate in value)  # type: ignore[return-value]
 
 
-def _derive_readiness_artifacts(root: Path) -> dict[str, str]:
+def _derive_readiness_artifacts(
+    root: Path,
+    *,
+    cohort_artifact_name: str,
+    cohort_artifact_sha256: str,
+) -> dict[str, str]:
+    if (
+        not isinstance(cohort_artifact_name, str)
+        or not cohort_artifact_name
+        or Path(cohort_artifact_name).name != cohort_artifact_name
+    ):
+        _fail(
+            "metric cohort artifact name must be root-local",
+            "analysis.metrics_readiness_cohort_artifact_name",
+            cohort_artifact_name=cohort_artifact_name,
+        )
+    _require_sha256(cohort_artifact_sha256, field="cohort_artifact_sha256")
     annotation_path = root / "annotation-derived-cohort-seal.json"
     final_path = root / "ledger-seal.json"
     annotation = _load_and_verify_readiness_seal(
         path=annotation_path,
         root=root,
         required_artifacts={
-            "cohort-manifest.jsonl",
+            cohort_artifact_name,
             "coco-80-category-namespace.json",
             "official-individual-ledger.jsonl",
             "official-crowd-ignore-ledger.jsonl",
@@ -4319,10 +4366,33 @@ def _derive_readiness_artifacts(root: Path) -> dict[str, str]:
             "readiness seals do not bind the canonical COCO-80 category namespace",
             "analysis.metrics_readiness_category",
         )
-    cohort = CohortLedger.from_jsonl_bytes((root / "cohort-manifest.jsonl").read_bytes())
+    final_source_digests = final.get("source_digests")
+    official_ledger_crosslinks = {
+        "official_individual_ledger_jsonl": "official-individual-ledger.jsonl",
+        "official_crowd_ledger_jsonl": "official-crowd-ignore-ledger.jsonl",
+    }
+    if not isinstance(final_source_digests, Mapping) or any(
+        final_source_digests.get(source_name)
+        != annotation["artifact_digests"][artifact_name]
+        for source_name, artifact_name in official_ledger_crosslinks.items()
+    ):
+        _fail(
+            "final readiness source digests differ from annotation-sealed official ledgers",
+            "analysis.metrics_readiness_official_ledger_source_crosslink",
+        )
+    sealed_cohort_artifact_sha256 = annotation["artifact_digests"][cohort_artifact_name]
+    if sealed_cohort_artifact_sha256 != cohort_artifact_sha256:
+        _fail(
+            "schedule-selected cohort digest differs from the annotation-derived seal",
+            "analysis.metrics_readiness_cohort_artifact_digest",
+            cohort_artifact_name=cohort_artifact_name,
+        )
+    cohort = CohortLedger.from_jsonl_bytes((root / cohort_artifact_name).read_bytes())
     return {
         "annotation_derived_cohort_seal_sha256": sha256_file(annotation_path),
         "category_namespace_sha256": category_digest,
+        "cohort_artifact_name": cohort_artifact_name,
+        "cohort_artifact_sha256": sealed_cohort_artifact_sha256,
         "cohort_sha256": cohort.fingerprint,
         "readiness_seal_sha256": sha256_file(final_path),
         "reference_ledger_sha256": final["artifact_digests"][

@@ -131,6 +131,8 @@ def load_postrun_evidence(
     readiness = MetricReadinessIdentity.from_verified_artifacts(
         readiness_root=resolved_readiness_root,
         spatial_grid_spec=SpatialGridSpec(),
+        cohort_artifact_name=primary_schedule_artifact.cohort_artifact_name,
+        cohort_artifact_sha256=primary_schedule_artifact.cohort_artifact_sha256,
     )
     grids = {
         str(record.image_id): SpatialGrid.build(

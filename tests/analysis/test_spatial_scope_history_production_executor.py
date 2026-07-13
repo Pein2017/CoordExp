@@ -347,11 +347,25 @@ def test_prepare_materializes_full_tile_and_mask_without_resize(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     schedule, _, _, processor, executor = _primary_fixture(tmp_path)
+    prompt_visual_inputs: list[tuple[int, int] | None] = []
+
+    def prompt_record(
+        example,
+        template,
+        *,
+        processor,
+        row_index,
+        visual_input_image=None,
+    ):
+        del template, processor
+        prompt_visual_inputs.append(
+            None if visual_input_image is None else visual_input_image.size
+        )
+        return _prompt_record(example, row_index=row_index)
+
     monkeypatch.setattr(
         "src.analysis.spatial_scope_history.production_executor.build_prompt_record",
-        lambda example, template, *, processor, row_index: _prompt_record(
-            example, row_index=row_index
-        ),
+        prompt_record,
     )
     ledger = _empty_attempt_ledger(schedule)
 
@@ -392,6 +406,21 @@ def test_prepare_materializes_full_tile_and_mask_without_resize(
     assert len(processor.image_processor.executed_sizes) == 4
     assert processor.image_processor.executed_sizes[0] == (128, 128)
     assert all(width <= 128 and height <= 128 for width, height in processor.image_processor.executed_sizes)
+    assert prompt_visual_inputs == [
+        None,
+        (
+            tile.visual_materialization.receipt.input_width,
+            tile.visual_materialization.receipt.input_height,
+        ),
+        (
+            masked.visual_materialization.receipt.input_width,
+            masked.visual_materialization.receipt.input_height,
+        ),
+        (
+            cumulative_first.visual_materialization.receipt.input_width,
+            cumulative_first.visual_materialization.receipt.input_height,
+        ),
+    ]
     assert all(
         request.decode_request.generation_policy
         == DecodeGenerationPolicy.sampled(
@@ -502,7 +531,17 @@ def test_cumulative_prompt_reads_only_durable_predecessor_state(
     )
     observed_continuations: list[str] = []
 
-    def cumulative_prompt(example, template, *, processor, row_index, accepted_global_coordinate_rows):
+    def cumulative_prompt(
+        example,
+        template,
+        *,
+        processor,
+        row_index,
+        accepted_global_coordinate_rows,
+        visual_input_image,
+    ):
+        del template, processor
+        assert visual_input_image.size == (128, 128)
         observed_continuations.append(accepted_global_coordinate_rows)
         return _prompt_record(
             example,
@@ -770,7 +809,7 @@ def test_completed_full_image_batch_persists_terminal_evidence_and_attempts(
     schedule, _, _, _, executor = _primary_fixture(tmp_path)
     monkeypatch.setattr(
         "src.analysis.spatial_scope_history.production_executor.build_prompt_record",
-        lambda example, template, *, processor, row_index: _prompt_record(
+        lambda example, template, *, processor, row_index, visual_input_image=None: _prompt_record(
             example, row_index=row_index
         ),
     )
@@ -829,13 +868,13 @@ def test_cumulative_successor_reloads_predecessor_state_across_executor_instance
     schedule, cohort, examples, _, first_executor = _primary_fixture(tmp_path)
     monkeypatch.setattr(
         "src.analysis.spatial_scope_history.production_executor.build_prompt_record",
-        lambda example, template, *, processor, row_index: _prompt_record(
+        lambda example, template, *, processor, row_index, visual_input_image=None: _prompt_record(
             example, row_index=row_index
         ),
     )
     monkeypatch.setattr(
         "src.analysis.spatial_scope_history.production_executor.build_cumulative_prompt_record",
-        lambda example, template, *, processor, row_index, accepted_global_coordinate_rows: _prompt_record(
+        lambda example, template, *, processor, row_index, accepted_global_coordinate_rows, visual_input_image: _prompt_record(
             example,
             row_index=row_index,
             continuation_text=accepted_global_coordinate_rows,

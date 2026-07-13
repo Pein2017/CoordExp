@@ -413,22 +413,8 @@ class ProductionBatchExecutor(BatchExecutor):
             request,
             attempt_ledger=attempt_ledger,
         )
-        if request.arm.cumulative_dependency and predecessor_rows:
-            prompt_record = build_cumulative_prompt_record(
-                raw_example,
-                _template_config(self._infer_config),
-                processor=self._processor,
-                row_index=request.schedule_index,
-                accepted_global_coordinate_rows="".join(predecessor_rows),
-            )
-        else:
-            prompt_record = build_prompt_record(
-                raw_example,
-                _template_config(self._infer_config),
-                processor=self._processor,
-                row_index=request.schedule_index,
-            )
         mode = spatial_variant_mode_for_arm(request.arm)
+        visual_input_image = None
         if mode is None:
             materialization = MaterializedVisualInput.from_full_image_path(
                 source_image_path=cohort_record.image_path,
@@ -467,6 +453,35 @@ class ProductionBatchExecutor(BatchExecutor):
                 ),
             )
             image_plan_row = None
+            spatial_image_encoding = materialization.spatial_image_encoding
+            assert spatial_image_encoding is not None
+            visual_input_image = spatial_image_encoding.to_pil_image()
+        prompt_visual_kwargs = (
+            {}
+            if visual_input_image is None
+            else {"visual_input_image": visual_input_image}
+        )
+        try:
+            if request.arm.cumulative_dependency and predecessor_rows:
+                prompt_record = build_cumulative_prompt_record(
+                    raw_example,
+                    _template_config(self._infer_config),
+                    processor=self._processor,
+                    row_index=request.schedule_index,
+                    accepted_global_coordinate_rows="".join(predecessor_rows),
+                    **prompt_visual_kwargs,
+                )
+            else:
+                prompt_record = build_prompt_record(
+                    raw_example,
+                    _template_config(self._infer_config),
+                    processor=self._processor,
+                    row_index=request.schedule_index,
+                    **prompt_visual_kwargs,
+                )
+        finally:
+            if visual_input_image is not None:
+                visual_input_image.close()
         model_inputs = {
             "pixel_values": materialization.pixel_values,
             "image_grid_thw": materialization.image_grid_thw,
