@@ -640,7 +640,8 @@ class PersistentWorkerPool:
     """Spawn-based persistent worker pool with one executor per physical GPU.
 
     ``GPU`` means graphics processing unit.  The pool constructs each injected
-    executor exactly once after setting ``CUDA_VISIBLE_DEVICES`` in that child.
+    executor exactly once after inheriting ``CUDA_VISIBLE_DEVICES`` before
+    spawn bootstrap imports, then reasserting it inside that child.
     ``execute_plan`` may be called repeatedly so a higher-level coordinator can
     rebuild dependency-safe ``ResumePlan`` frontiers without reloading models.
     """
@@ -674,24 +675,46 @@ class PersistentWorkerPool:
     def start(self) -> None:
         if self._started:
             return
-        for worker in self._workers:
-            task_queue = self._context.Queue()
-            process = self._context.Process(
-                target=_persistent_worker_main,
-                args=(
-                    worker,
-                    task_queue,
-                    self._result_queue,
-                    self._executor_factory,
-                    self._factory_config,
-                ),
-                name=f"spatial-scope-worker-{worker.worker_index}",
-            )
-            process.start()
-            self._task_queues[worker.worker_index] = task_queue
-            self._processes[worker.worker_index] = process
         startup_by_worker: dict[int, WorkerStartupReceipt] = {}
         try:
+            for worker in self._workers:
+                task_queue = self._context.Queue()
+                process = self._context.Process(
+                    target=_persistent_worker_main,
+                    args=(
+                        worker,
+                        task_queue,
+                        self._result_queue,
+                        self._executor_factory,
+                        self._factory_config,
+                    ),
+                    name=f"spatial-scope-worker-{worker.worker_index}",
+                )
+                worker_environment = worker.environment
+                missing_environment_value = object()
+                parent_environment = {
+                    key: os.environ.get(key, missing_environment_value)
+                    for key in worker_environment
+                }
+                try:
+                    try:
+                        os.environ.update(worker_environment)
+                        process.start()
+                    finally:
+                        for key, value in parent_environment.items():
+                            if value is missing_environment_value:
+                                os.environ.pop(key, None)
+                            else:
+                                os.environ[key] = cast(str, value)
+                except BaseException:
+                    if process.pid is not None:
+                        if process.is_alive():
+                            process.terminate()
+                        process.join(timeout=10.0)
+                    task_queue.close()
+                    raise
+                self._task_queues[worker.worker_index] = task_queue
+                self._processes[worker.worker_index] = process
             while len(startup_by_worker) != len(self._workers):
                 message = self._next_message()
                 if message["kind"] == "worker_error":

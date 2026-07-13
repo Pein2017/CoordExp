@@ -41,6 +41,37 @@ from src.analysis.spatial_scope_history.schedule import (
 from src.common.errors import ArtifactContractError
 
 
+_SPAWN_BOOTSTRAP_CAPTURE_ROOT_ENVIRONMENT_VARIABLE = (
+    "COORDEXP_TEST_SPAWN_BOOTSTRAP_CAPTURE_ROOT"
+)
+
+
+def _capture_spawn_bootstrap_cuda_visibility() -> None:
+    """Record the inherited device scope while spawn imports this module."""
+
+    capture_root = os.environ.get(
+        _SPAWN_BOOTSTRAP_CAPTURE_ROOT_ENVIRONMENT_VARIABLE
+    )
+    if capture_root is None:
+        return
+    root = Path(capture_root)
+    root.mkdir(parents=True, exist_ok=True)
+    capture_path = root / f"bootstrap-{os.getpid()}.json"
+    capture_path.write_text(
+        json.dumps(
+            {
+                "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+                "process_id": os.getpid(),
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+
+_capture_spawn_bootstrap_cuda_visibility()
+
+
 _FAKE_EXECUTION_IDENTITY = ExecutionIdentityBundle(
     code_sha256="1" * 64,
     config_sha256="2" * 64,
@@ -330,6 +361,120 @@ def test_worker_mapping_is_one_physical_token_to_logical_cuda_zero() -> None:
         {"CUDA_VISIBLE_DEVICES": "MIG-instance-one"},
     ]
     assert {worker.logical_device for worker in workers} == {"cuda:0"}
+
+
+@pytest.mark.parametrize("parent_visible_device", [None, "parent-visible-device"])
+def test_persistent_pool_binds_device_scope_before_spawn_bootstrap_and_restores_parent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    parent_visible_device: str | None,
+) -> None:
+    workers = build_worker_assignments(("physical-zero", "physical-one"))
+    bootstrap_root = tmp_path / "bootstrap"
+    monkeypatch.setenv(
+        _SPAWN_BOOTSTRAP_CAPTURE_ROOT_ENVIRONMENT_VARIABLE,
+        str(bootstrap_root),
+    )
+    if parent_visible_device is None:
+        monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    else:
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", parent_visible_device)
+
+    with PersistentWorkerPool(
+        workers=workers,
+        executor_factory=_process_fake_executor_factory,
+        factory_config={
+            "factory_root": str(tmp_path / "factory"),
+            "sleep_seconds": 0.0,
+        },
+        result_timeout_seconds=60.0,
+    ) as pool:
+        assert {
+            receipt.visible_device_environment for receipt in pool.startup_receipts
+        } == {"physical-zero", "physical-one"}
+
+    bootstrap_payloads = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in sorted(bootstrap_root.glob("bootstrap-*.json"))
+    ]
+    assert len(bootstrap_payloads) == 2
+    assert {
+        payload["cuda_visible_devices"] for payload in bootstrap_payloads
+    } == {"physical-zero", "physical-one"}
+    assert os.environ.get("CUDA_VISIBLE_DEVICES") == parent_visible_device
+
+
+def test_persistent_pool_unwinds_prior_workers_when_later_spawn_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workers = build_worker_assignments(("physical-zero", "physical-one"))
+    pool = PersistentWorkerPool(
+        workers=workers,
+        executor_factory=_process_fake_executor_factory,
+        factory_config={
+            "factory_root": str(tmp_path / "factory"),
+            "sleep_seconds": 0.0,
+        },
+        result_timeout_seconds=60.0,
+    )
+    real_context = pool._context
+    task_queues: list[Any] = []
+    failed_processes: list[Any] = []
+
+    class _SynchronousStartFailureProcess:
+        pid = None
+
+        def start(self) -> None:
+            raise RuntimeError("injected synchronous second-worker start failure")
+
+        def is_alive(self) -> bool:
+            return False
+
+        def join(self, timeout: float | None = None) -> None:
+            del timeout
+
+        def terminate(self) -> None:
+            raise AssertionError("an unstarted process must not be terminated")
+
+    def tracking_queue() -> Any:
+        task_queue = real_context.Queue()
+        task_queues.append(task_queue)
+        return task_queue
+
+    def fail_second_process(*args: Any, **kwargs: Any) -> Any:
+        if not failed_processes and len(pool._processes) == 1:
+            failed_process = _SynchronousStartFailureProcess()
+            failed_processes.append(failed_process)
+            return failed_process
+        return real_context.Process(*args, **kwargs)
+
+    pool._context = SimpleNamespace(  # type: ignore[assignment]
+        Process=fail_second_process,
+        Queue=tracking_queue,
+    )
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "parent-visible-device")
+
+    with pytest.raises(
+        RuntimeError,
+        match="injected synchronous second-worker start failure",
+    ):
+        pool.start()
+
+    try:
+        assert pool._closed
+        assert len(pool._processes) == 1
+        assert len(failed_processes) == 1
+        assert all(not process.is_alive() for process in pool._processes.values())
+        assert all(not process.is_alive() for process in failed_processes)
+        assert len(task_queues) == 2
+        assert all(task_queue._closed for task_queue in task_queues)
+        assert os.environ["CUDA_VISIBLE_DEVICES"] == "parent-visible-device"
+    finally:
+        pool.close()
+        for task_queue in task_queues:
+            if not task_queue._closed:
+                task_queue.close()
 
 
 def test_cumulative_batches_are_separated_by_cell_wave_barriers() -> None:
