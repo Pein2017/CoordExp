@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from helpers.inference_receipts import build_greedy_decode_result
 from src.common.errors import ArtifactContractError
 from src.inference.backend import DecodeResult, TokenTrace
 from src.inference.parsing import parse_compact_object_box_closed
@@ -56,21 +57,12 @@ def _repeated_trace() -> list[TokenTrace]:
 
 def _decode_result(row_id: str, *, token_trace: list[TokenTrace] | None = None) -> DecodeResult:
     trace = _trace() if token_trace is None else token_trace
-    return DecodeResult(
+    text = "".join(item.token_text for item in trace)
+    return build_greedy_decode_result(
         request_id=row_id,
-        backend="hf",
-        backend_mode="generate",
-        response_family="hf",
-        prompt_token_ids=[11, 12],
-        generated_token_ids=[item.token_id for item in trace],
-        raw_generated_text="".join(item.token_text for item in trace),
-        parser_text="".join(item.token_text for item in trace),
-        strip_policy="none",
-        stop_reason="length",
-        model_identity={"family": "unit"},
-        tokenizer_identity={"sha256": "tok"},
-        generation_config_fingerprint="gen-fp",
         token_trace=trace,
+        raw_generated_text=text,
+        parser_text=text,
     )
 
 
@@ -400,19 +392,21 @@ def test_artifact_writer_refuses_empty_image_plan_rows_before_status_claims(tmp_
 def test_artifact_writer_rejects_non_finite_generated_token_logprob_without_jsonl_output(tmp_path: Path) -> None:
     from src.inference.artifacts import write_inference_artifacts
 
-    bad_trace = _trace()
+    valid_result = _decode_result("row-1")
+    bad_trace = list(valid_result.token_trace)
     bad_trace[4] = TokenTrace(**{**bad_trace[4].__dict__, "logprob": float("nan")})
+    bad_result = DecodeResult(**{**valid_result.__dict__, "token_trace": bad_trace})
 
     with pytest.raises(ArtifactContractError) as exc_info:
         write_inference_artifacts(
             output_dir=tmp_path,
             rows=[_raw_row("row-1", 0)],
-            decode_results={"row-1": _decode_result("row-1", token_trace=bad_trace)},
+            decode_results={"row-1": bad_result},
             image_plan_rows=[_image_plan_row("row-1", 0)],
             metadata=_metadata(),
         )
 
-    assert exc_info.value.code == "artifacts.non_finite_trace_logprob"
+    assert exc_info.value.code == "artifacts.decode_result_invalid"
     assert not (tmp_path / "pred_token_trace.jsonl").exists()
     assert not (tmp_path / "gt_vs_pred_scored.jsonl").exists()
 
@@ -429,14 +423,16 @@ def test_artifact_writer_preserves_prior_final_artifacts_when_rerun_fails(tmp_pa
     )
     prior_scored = valid_paths.scored_jsonl.read_text(encoding="utf-8")
     prior_manifest = valid_paths.run_manifest_json.read_text(encoding="utf-8")
-    bad_trace = _trace()
+    valid_bad_result = _decode_result("row-1")
+    bad_trace = list(valid_bad_result.token_trace)
     bad_trace[4] = TokenTrace(**{**bad_trace[4].__dict__, "logprob": float("nan")})
+    bad_result = DecodeResult(**{**valid_bad_result.__dict__, "token_trace": bad_trace})
 
     with pytest.raises(ArtifactContractError):
         write_inference_artifacts(
             output_dir=tmp_path,
             rows=[_raw_row("row-1", 0)],
-            decode_results={"row-1": _decode_result("row-1", token_trace=bad_trace)},
+            decode_results={"row-1": bad_result},
             image_plan_rows=[_image_plan_row("row-1", 0)],
             metadata=_metadata(),
         )

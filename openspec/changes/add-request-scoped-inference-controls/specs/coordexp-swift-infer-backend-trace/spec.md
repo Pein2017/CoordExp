@@ -218,6 +218,46 @@ promotion with absolute and relative tolerance `1e-6`. Batch-size-one execution
 MAY be used only as a non-claiming pre-draw diagnostic fixture; it MUST NOT be a
 runtime fallback or metric-bearing arm.
 
+One production verifier invocation MUST load the model exactly once and execute
+the complete batch-size-four forward/reversed, batch-size-three
+forward/reversed, stock/custom processed-logit parity, capability mint, and
+capability-gated four-request sampled-production replay for each exact
+calibration temperature `0.2`, `0.4`, and `0.6`. The production command MUST
+NOT expose a single-temperature or incomplete-aggregate write mode.
+
+For each policy, the admitted sampled-production call MUST exactly replay
+request order, generated result artifacts, result-receipt bindings, and
+canonical `compact-object-selected-token-score-v1` evidence from that policy's
+attested four-request forward case. It MUST expose a pre-generation live-state
+seal with the frozen runtime's exact 589 adapter-plus-selected-token-embedding
+tensors, 80,248,832 payload bytes, non-negative payload-hash and total-seal
+timings, and explicit evidence that base-model tensor values were not hashed.
+
+Only after all three policies pass MAY the verifier perform one append-only
+write. The typed aggregate MUST contain exactly three independently
+fingerprinted policy entries in canonical temperature order. Every entry MUST
+preserve its sampled-runtime attestation bundle and fingerprint unchanged and
+MUST contain a separately fingerprinted admitted-production replay bound to
+that same bundle and exact decode-generation-policy fingerprint. The aggregate
+MUST reject missing, duplicate, or unexpected policies and bundle/replay swaps
+across policies, including swaps followed by recomputation of outer
+fingerprints. Missing, mis-scoped, or mismatched live-state diagnostics, a
+replay mismatch, or failure of any one policy MUST stop execution before any
+output is written.
+
+A persisted aggregate is evidence, not a serializable capability. A worker MAY
+obtain sampled-production admission only through the public verifier-owned
+rebind seam, selecting one exact attested policy fingerprint. Rebind MUST fully
+validate all three bundles, derive model, tokenizer, and generation identities
+from immutable backend-owned runtime bindings, validate the current execution
+device, installed runtime, custom sampler, model structure and configuration,
+active adapter state, behavior-changing tokenizer state, and exact bounded
+adapter-plus-selected-token-embedding values against the persisted portable
+live-state seal, and then mint a new non-serializable capability bound to that
+worker's exact backend, model, and tokenizer objects. A bare bundle, wildcard
+policy, caller-supplied stale identity, or capability used with another backend
+object MUST fail closed.
+
 #### Scenario: Score alignment drift
 - **WHEN** generated identifiers replay but score steps, selected-token log
   probabilities, or recomputed row-local scores exceed the frozen tolerance
@@ -228,3 +268,33 @@ runtime fallback or metric-bearing arm.
   score steps, or advances finished rows differently from declared sample-then-
   pad semantics
 - **THEN** sampled support remains unavailable
+
+#### Scenario: Serialized evidence without admitted production execution
+
+- **WHEN** the four attestation layouts pass but the capability-gated production
+  replay is absent, differs from the four-request forward case, or reports the
+  wrong live payload identity
+- **THEN** no canonical attestation output is written
+- **AND** serialized attestation evidence alone does not grant production
+  admission
+
+#### Scenario: Incomplete multi-policy verifier execution
+
+- **WHEN** any one of temperatures `0.2`, `0.4`, or `0.6` is absent, duplicated,
+  unexpected, or fails its complete attestation or admitted replay
+- **THEN** the verifier performs no canonical append-only write
+
+#### Scenario: Equivalent worker runtime rebind
+
+- **WHEN** a new worker loads the complete aggregate, selects one exact policy
+  fingerprint, and presents an equivalent backend-owned runtime and portable
+  live state
+- **THEN** the verifier mints a new process-local capability bound only to that
+  worker's backend, model, and tokenizer objects
+
+#### Scenario: Persisted or active runtime mismatch
+
+- **WHEN** aggregate, bundle, replay, policy, model, tokenizer, generation
+  configuration, device, installed runtime, adapter, selected-token embedding,
+  or backend-object identity differs from the attested contract
+- **THEN** rebind or sampled production fails before generation

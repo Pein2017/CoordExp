@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from helpers.inference_receipts import build_greedy_decode_result
 from src.common.errors import ArtifactContractError
 from src.eval.detection_consumer import evaluate_scored_detection_artifacts
 from src.inference.artifacts import (
@@ -614,21 +615,12 @@ def _decode_result(row_id: str) -> DecodeResult:
             ]
         )
     ]
-    return DecodeResult(
+    return build_greedy_decode_result(
         request_id=row_id,
-        backend="hf",
-        backend_mode="generate",
-        response_family="hf",
-        prompt_token_ids=[11, 12],
-        generated_token_ids=[trace.token_id for trace in traces],
+        token_trace=traces,
         raw_generated_text=OBJECT_TEXT,
         parser_text=OBJECT_TEXT,
-        strip_policy="none",
-        stop_reason="length",
-        model_identity={"family": "unit"},
         tokenizer_identity={"tokenizer_sha256": "tok-fp"},
-        generation_config_fingerprint="gen-fp",
-        token_trace=traces,
     )
 
 

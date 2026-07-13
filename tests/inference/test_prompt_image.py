@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -171,6 +172,361 @@ def test_prompt_record_preserves_template_identity_and_training_fingerprint(
         {"object_id": "object-1", "source_index": 0, "rendered_index": 0}
     ]
     assert record.to_artifact_dict()["template_fingerprint"] == rendered.template_fingerprint
+
+
+def test_open_assistant_continuation_appends_without_boundary_and_records_evidence(
+    tmp_path: Path,
+) -> None:
+    from src.inference.prompt import AssistantContinuation, build_prompt_record
+
+    processor = FakeProcessor()
+    ordinary = build_prompt_record(
+        _raw_example(tmp_path, width=96, height=64),
+        _template_config(),
+        processor=processor,
+        row_index=0,
+    )
+    continuation_text = (
+        "<|object_ref_start|>café<|object_ref_end|>"
+        "<|box_start|><|coord_100|><|coord_200|>"
+        "<|coord_300|><|coord_400|><|box_end|>"
+    )
+    continued = build_prompt_record(
+        _raw_example(tmp_path, width=96, height=64),
+        _template_config(),
+        processor=processor,
+        row_index=0,
+        assistant_continuation=AssistantContinuation(continuation_text),
+    )
+
+    assert continued.prompt_text == ordinary.prompt_text
+    assert continued.messages == ordinary.messages
+    assert continued.chat_text == ordinary.chat_text + continuation_text
+    assert continued.chat_text.endswith("assistant\n" + continuation_text)
+    assert "assistant\n\n" not in continued.chat_text
+    assert continued.prompt_token_ids == [ord(char) for char in continued.chat_text]
+    assert continued.image_placeholder_count == 1
+    assert continued.open_assistant_interval_verified is True
+
+    char_start, char_end = continued.continuation_character_span or (-1, -1)
+    byte_start, byte_end = continued.continuation_byte_span or (-1, -1)
+    assert continued.chat_text[char_start:char_end] == continuation_text
+    assert continued.chat_text.encode("utf-8")[byte_start:byte_end] == (
+        continuation_text.encode("utf-8")
+    )
+    assert continued.open_assistant_content_start_character == len(ordinary.chat_text)
+    assert continued.open_assistant_content_start_byte == len(
+        ordinary.chat_text.encode("utf-8")
+    )
+    assert continued.continuation_text_sha256 == hashlib.sha256(
+        continuation_text.encode("utf-8")
+    ).hexdigest()
+    assert continued.continuation_token_impact_span == (
+        len(ordinary.prompt_token_ids),
+        len(continued.prompt_token_ids),
+    )
+
+    artifact = continued.to_artifact_dict()
+    assert artifact["prompt_text"] == ordinary.prompt_text
+    assert artifact["full_chat_text"] == continued.chat_text
+    assert artifact["prompt_token_ids"] == continued.prompt_token_ids
+    assert artifact["continuation_character_span"] == [char_start, char_end]
+    assert artifact["continuation_byte_span"] == [byte_start, byte_end]
+    assert artifact["continuation_token_impact_span"] == list(
+        continued.continuation_token_impact_span
+    )
+    assert len(artifact["full_prompt_fingerprint"]) == 64
+
+
+def test_continuation_token_impact_span_includes_boundary_retokenization(
+    tmp_path: Path,
+) -> None:
+    from src.inference.prompt import AssistantContinuation, build_prompt_record
+
+    class BoundaryMergingTokenizer(FakeTokenizer):
+        def __call__(
+            self,
+            text: str,
+            *,
+            add_special_tokens: bool = False,
+            **kwargs: Any,
+        ) -> dict[str, list[int]]:
+            ids = super().__call__(
+                text,
+                add_special_tokens=add_special_tokens,
+                **kwargs,
+            )["input_ids"]
+            boundary = text.rfind("\nX")
+            if boundary >= 0:
+                ids = ids[:boundary] + [900_001] + ids[boundary + 2 :]
+            return {"input_ids": ids}
+
+    processor = FakeProcessor()
+    processor.tokenizer = BoundaryMergingTokenizer()
+    ordinary = build_prompt_record(
+        _raw_example(tmp_path, width=96, height=64),
+        _template_config(),
+        processor=processor,
+        row_index=0,
+    )
+    continued = build_prompt_record(
+        _raw_example(tmp_path, width=96, height=64),
+        _template_config(),
+        processor=processor,
+        row_index=0,
+        assistant_continuation=AssistantContinuation("X"),
+    )
+
+    assert continued.continuation_token_impact_span == (
+        len(ordinary.prompt_token_ids) - 1,
+        len(continued.prompt_token_ids),
+    )
+    assert continued.prompt_token_ids[-1] == 900_001
+
+
+@pytest.mark.parametrize(
+    ("text", "boundary_class"),
+    [
+        ("prefix<|image_pad|>", "image_placeholder"),
+        ("prefix<|im_end|>", "assistant_terminator"),
+        ("prefix<|endoftext|>", "end_of_sequence"),
+        ("prefix<|im_start|>user", "chat_turn_opener"),
+    ],
+)
+def test_open_assistant_continuation_rejects_forbidden_controls(
+    tmp_path: Path,
+    text: str,
+    boundary_class: str,
+) -> None:
+    from src.inference.prompt import AssistantContinuation, build_prompt_record
+
+    with pytest.raises(EncodingContractError) as exc_info:
+        build_prompt_record(
+            _raw_example(tmp_path, width=96, height=64),
+            _template_config(),
+            processor=FakeProcessor(),
+            row_index=0,
+            assistant_continuation=AssistantContinuation(text),
+        )
+
+    assert exc_info.value.code == "inference.assistant_continuation_forbidden_control"
+    assert exc_info.value.context["boundary_class"] == boundary_class
+
+
+def test_open_assistant_continuation_allows_earlier_completed_turn_terminators(
+    tmp_path: Path,
+) -> None:
+    from src.inference.prompt import AssistantContinuation, build_prompt_record
+
+    record = build_prompt_record(
+        _raw_example(tmp_path, width=96, height=64),
+        _template_config(),
+        processor=FakeProcessor(),
+        row_index=0,
+        assistant_continuation=AssistantContinuation("accepted-row"),
+    )
+
+    assistant_start = record.chat_text.rfind("<|im_start|>assistant\n")
+    assert "<|im_end|>" in record.chat_text[:assistant_start]
+    assert "<|im_end|>" not in record.chat_text[assistant_start:]
+
+
+def test_open_assistant_continuation_rejects_closed_or_prepopulated_assistant(
+    tmp_path: Path,
+) -> None:
+    from src.inference.prompt import AssistantContinuation, build_prompt_record
+
+    class ClosedAssistantProcessor(FakeProcessor):
+        def apply_chat_template(
+            self,
+            messages: list[dict[str, Any]],
+            *,
+            tokenize: bool,
+            add_generation_prompt: bool,
+            **kwargs: Any,
+        ) -> str | list[int]:
+            text = super().apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=add_generation_prompt,
+                **kwargs,
+            )
+            assert isinstance(text, str)
+            text += "existing<|im_end|>"
+            return [ord(char) for char in text] if tokenize else text
+
+    with pytest.raises(EncodingContractError) as exc_info:
+        build_prompt_record(
+            _raw_example(tmp_path, width=96, height=64),
+            _template_config(),
+            processor=ClosedAssistantProcessor(),
+            row_index=0,
+            assistant_continuation=AssistantContinuation("accepted-row"),
+        )
+
+    assert exc_info.value.code == "inference.open_assistant_forbidden_boundary"
+    assert exc_info.value.context["boundary_class"] == "assistant_terminator"
+
+
+def test_open_assistant_continuation_rejects_extra_chat_turn(
+    tmp_path: Path,
+) -> None:
+    from src.inference.prompt import AssistantContinuation, build_prompt_record
+
+    class ExtraTurnProcessor(FakeProcessor):
+        def apply_chat_template(
+            self,
+            messages: list[dict[str, Any]],
+            *,
+            tokenize: bool,
+            add_generation_prompt: bool,
+            **kwargs: Any,
+        ) -> str | list[int]:
+            text = super().apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=add_generation_prompt,
+                **kwargs,
+            )
+            assert isinstance(text, str)
+            text += "<|im_start|>assistant\n"
+            return [ord(char) for char in text] if tokenize else text
+
+    with pytest.raises(EncodingContractError) as exc_info:
+        build_prompt_record(
+            _raw_example(tmp_path, width=96, height=64),
+            _template_config(),
+            processor=ExtraTurnProcessor(),
+            row_index=0,
+            assistant_continuation=AssistantContinuation("accepted-row"),
+        )
+
+    assert exc_info.value.code == "inference.open_assistant_extra_turn"
+
+
+def test_open_assistant_continuation_requires_exactly_one_image_placeholder(
+    tmp_path: Path,
+) -> None:
+    from src.inference.prompt import AssistantContinuation, build_prompt_record
+
+    class MissingImagePlaceholderProcessor(FakeProcessor):
+        def apply_chat_template(
+            self,
+            messages: list[dict[str, Any]],
+            *,
+            tokenize: bool,
+            add_generation_prompt: bool,
+            **kwargs: Any,
+        ) -> str | list[int]:
+            text = super().apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=add_generation_prompt,
+                **kwargs,
+            )
+            assert isinstance(text, str)
+            text = text.replace("<|image_pad|>", "")
+            return [ord(char) for char in text] if tokenize else text
+
+    with pytest.raises(EncodingContractError) as exc_info:
+        build_prompt_record(
+            _raw_example(tmp_path, width=96, height=64),
+            _template_config(),
+            processor=MissingImagePlaceholderProcessor(),
+            row_index=0,
+            assistant_continuation=AssistantContinuation("accepted-row"),
+        )
+
+    assert exc_info.value.code == "inference.continuation_image_placeholder_count"
+    assert exc_info.value.context["image_placeholder_count"] == 0
+
+
+def test_open_assistant_continuation_rejects_context_overflow_and_truncation(
+    tmp_path: Path,
+) -> None:
+    from src.inference.prompt import AssistantContinuation, build_prompt_record
+
+    example = _raw_example(tmp_path, width=96, height=64)
+    with pytest.raises(EncodingContractError) as context_exc:
+        build_prompt_record(
+            example,
+            _template_config(),
+            processor=FakeProcessor(),
+            row_index=0,
+            assistant_continuation=AssistantContinuation("accepted-row"),
+            max_prompt_tokens=1,
+        )
+    assert context_exc.value.code == "inference.continuation_context_limit"
+
+    class OverflowTokenizer(FakeTokenizer):
+        def __call__(
+            self,
+            text: str,
+            *,
+            add_special_tokens: bool = False,
+            **kwargs: Any,
+        ) -> dict[str, list[int]]:
+            encoded = super().__call__(
+                text,
+                add_special_tokens=add_special_tokens,
+                **kwargs,
+            )
+            encoded["overflowing_tokens"] = [123]
+            return encoded
+
+    processor = FakeProcessor()
+    processor.tokenizer = OverflowTokenizer()
+    with pytest.raises(EncodingContractError) as truncation_exc:
+        build_prompt_record(
+            example,
+            _template_config(),
+            processor=processor,
+            row_index=0,
+            assistant_continuation=AssistantContinuation("accepted-row"),
+        )
+    assert truncation_exc.value.code == "inference.continuation_tokenization_truncated"
+
+
+def test_open_assistant_continuation_rejects_non_integral_context_limit(
+    tmp_path: Path,
+) -> None:
+    from src.inference.prompt import AssistantContinuation, build_prompt_record
+
+    with pytest.raises(EncodingContractError) as exc_info:
+        build_prompt_record(
+            _raw_example(tmp_path, width=96, height=64),
+            _template_config(),
+            processor=FakeProcessor(),
+            row_index=0,
+            assistant_continuation=AssistantContinuation("accepted-row"),
+            max_prompt_tokens=1.5,  # type: ignore[arg-type]
+        )
+
+    assert exc_info.value.code == "inference.continuation_context_limit_invalid"
+
+
+def test_no_continuation_argument_preserves_prompt_bytes_and_tokens(tmp_path: Path) -> None:
+    from src.inference.prompt import build_prompt_record
+
+    processor = FakeProcessor()
+    example = _raw_example(tmp_path, width=96, height=64)
+    omitted = build_prompt_record(
+        example,
+        _template_config(),
+        processor=processor,
+        row_index=0,
+    )
+    explicit_none = build_prompt_record(
+        example,
+        _template_config(),
+        processor=processor,
+        row_index=0,
+        assistant_continuation=None,
+    )
+
+    assert explicit_none.chat_text.encode("utf-8") == omitted.chat_text.encode("utf-8")
+    assert explicit_none.prompt_token_ids == omitted.prompt_token_ids
+    assert explicit_none.to_artifact_dict() == omitted.to_artifact_dict()
 
 
 def test_image_plan_jsonl_records_mandatory_no_resize_fields(tmp_path: Path) -> None:

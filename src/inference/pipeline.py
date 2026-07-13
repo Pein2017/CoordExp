@@ -28,7 +28,7 @@ from src.inference.artifacts import (
     write_inference_artifacts,
     write_terminal_status_artifacts,
 )
-from src.inference.backend import DecodeRequest, HFGenerateBackend
+from src.inference.backend import DecodeGenerationPolicy, DecodeRequest, HFGenerateBackend
 from src.inference.data_parallel import (
     DataParallelPlan,
     RankShardPlan,
@@ -363,13 +363,14 @@ def _execute_indexed_rows(
         )
         for row_index, raw_example in indexed_raw_examples
     ]
+    generation_policy = _public_greedy_generation_policy(resolved.config)
     requests = [
         DecodeRequest(
             request_id=record.row_id,
             prompt_token_ids=list(record.prompt_token_ids),
             model_inputs=image_plan_batch.model_inputs_by_row_id[record.row_id],
-            max_new_tokens=resolved.config.generation.max_new_tokens,
-            repetition_penalty=resolved.config.generation.repetition_penalty,
+            generation_policy=generation_policy,
+            sampling_seed=None,
         )
         for record in prompt_records
     ]
@@ -757,17 +758,22 @@ def _template_config(config: InferConfig) -> TemplateConfig:
 
 
 def _generation_policy(config: InferConfig) -> dict[str, Any]:
+    policy = _public_greedy_generation_policy(config)
     return {
         "batch_size": int(config.generation.batch_size),
-        "max_new_tokens": int(config.generation.max_new_tokens),
-        "temperature": float(config.generation.temperature),
-        "top_p": float(config.generation.top_p),
-        "repetition_penalty": float(config.generation.repetition_penalty),
+        **policy.to_artifact_dict(),
         "do_sample": False,
         "return_dict_in_generate": True,
         "output_scores": True,
         "stop_policy": "qwen_im_end",
     }
+
+
+def _public_greedy_generation_policy(config: InferConfig) -> DecodeGenerationPolicy:
+    return DecodeGenerationPolicy.greedy(
+        max_new_tokens=config.generation.max_new_tokens,
+        repetition_penalty=config.generation.repetition_penalty,
+    )
 
 
 def _prompt_record_by_id(records: Sequence[Any], row_id: str) -> Any:

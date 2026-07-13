@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import math
 import subprocess
 import sys
 from pathlib import Path
@@ -12,6 +11,7 @@ import pytest
 from src.common.errors import ArtifactContractError
 from src.inference.backend import DecodeResult, TokenTrace
 from src.inference.parsing import parse_compact_object_box_closed
+from helpers.inference_receipts import build_greedy_decode_result
 
 
 OBJECT_TEXT = (
@@ -669,7 +669,7 @@ def _decode_result(row_id: str, *, text: str = OBJECT_TEXT) -> DecodeResult:
             step_index=index,
             token_id=151646 + index,
             token_text=piece,
-            logprob=math.log(0.25),
+            logprob=-1.3862943611198906,
             is_stop=False,
             is_pad=False,
             backend="hf",
@@ -678,21 +678,10 @@ def _decode_result(row_id: str, *, text: str = OBJECT_TEXT) -> DecodeResult:
         )
         for index, piece in enumerate(pieces)
     ]
-    return DecodeResult(
+    return build_greedy_decode_result(
         request_id=row_id,
-        backend="hf",
-        backend_mode="generate",
-        response_family="hf",
-        prompt_token_ids=[11, 12],
-        generated_token_ids=[item.token_id for item in trace],
-        raw_generated_text=text,
-        parser_text=text,
-        strip_policy="none",
-        stop_reason="length",
-        model_identity={"family": "unit"},
-        tokenizer_identity={"sha256": "tok"},
-        generation_config_fingerprint="gen-fp",
         token_trace=trace,
+        raw_generated_text=text,
     )
 
 
