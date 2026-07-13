@@ -33,7 +33,6 @@ from src.analysis.spatial_scope_history.metrics import (
     CallMetricRecord,
     MetricAdmittedRequest,
     MetricReadinessIdentity,
-    ReferenceMatch,
     ReferenceObject,
     RowMetricRecord,
     _build_image_metric_primitive,
@@ -1398,19 +1397,138 @@ def test_owning_seed_evidence_binds_all_cells_requests_and_sampling_seeds() -> N
             paired_full_bag=(full_bag,),
         )
 
-    fabricated_raw_match = replace(
-        candidate.raw_owning_match,
-        matches=(ReferenceMatch("fabricated", "object", "person", 1.0),),
-        unmatched_prediction_ids=(),
-        unmatched_reference_ids=(),
+    fabricated_cell_match = replace(
+        candidate.cell_records[0],
+        raw_owning_call_matched_reference_ids=("object",),
     )
-    with pytest.raises(DataContractError, match="candidate_raw_owning_reconciliation"):
+    with pytest.raises(DataContractError, match="owning_seed_candidate_match"):
         aggregate_metric_report(
-            (replace(candidate, raw_owning_match=fabricated_raw_match),),
+            (
+                replace(
+                    candidate,
+                    cell_records=(fabricated_cell_match, *candidate.cell_records[1:]),
+                ),
+            ),
             (baseline,),
             scope="test",
             paired_full_bag=(full_bag,),
         )
+
+
+def test_owning_seed_evidence_keeps_per_call_and_joint_matching_distinct() -> None:
+    references = (
+        _reference("object-a", (0, 0, 10, 10), owner_cell_index=0),
+        _reference("object-b", (0, 0, 10, 10), owner_cell_index=1),
+    )
+    baseline = _primitive(arm="FULL_SINGLE", references=references)
+
+    def build_multi_call_primitive(*, arm: str, prefix: str):
+        predictions = tuple(
+            _prediction(
+                f"{prefix}-prediction-{cell_index}",
+                (0, 0, 10, 10),
+                arm=arm,
+                call_id=f"{prefix}-{cell_index:02d}",
+            )
+            for cell_index in range(2)
+        )
+        calls: list[CallMetricRecord] = []
+        rows: list[RowMetricRecord] = []
+        for cell_index in range(16):
+            call_id = f"{prefix}-{cell_index:02d}"
+            call_predictions = tuple(
+                prediction
+                for prediction in predictions
+                if prediction.canonical_call_id == call_id
+            )
+            matched = exact_reference_match(call_predictions, references)
+            calls.append(
+                replace(
+                    _empty_call(
+                        call_id,
+                        cell_index=cell_index,
+                        sampling_seed=cell_index,
+                        attempted_row_count=len(call_predictions),
+                    ),
+                    raw_any_call_matched_reference_ids=matched.matched_reference_ids,
+                    raw_owning_call_matched_reference_ids=matched.matched_reference_ids,
+                    valid_prediction_ids=tuple(
+                        prediction.prediction_id for prediction in call_predictions
+                    ),
+                )
+            )
+            rows.extend(
+                RowMetricRecord(
+                    call_id,
+                    prediction.generated_row_index,
+                    prediction.prediction_id,
+                    "parsed",
+                    "valid",
+                    prediction.ownership_status,
+                    tuple(
+                        match.reference_id
+                        for match in matched.matches
+                        if match.prediction_id == prediction.prediction_id
+                    ),
+                )
+                for prediction in call_predictions
+            )
+        return _primitive(
+            arm=arm,
+            predictions=predictions,
+            references=references,
+            call_records=tuple(calls),
+            row_records=tuple(rows),
+            configured_call_budget=16,
+        )
+
+    candidate = build_multi_call_primitive(arm="MASK_RESET", prefix="mask")
+    full_bag = build_multi_call_primitive(arm="FULL_BAG_K", prefix="bag")
+
+    assert candidate.call_records[0].raw_owning_call_matched_reference_ids == (
+        "object-a",
+    )
+    assert candidate.call_records[1].raw_owning_call_matched_reference_ids == (
+        "object-a",
+    )
+    assert candidate.raw_owning_match.matched_reference_ids == (
+        "object-a",
+        "object-b",
+    )
+    assert full_bag.raw_owning_match.matched_reference_ids == (
+        "object-a",
+        "object-b",
+    )
+
+    report = aggregate_metric_report(
+        (candidate,),
+        (baseline,),
+        scope="test",
+        paired_full_bag=(full_bag,),
+    )
+    assert len(report.owning_seed_pair_records) == 16
+    pair_by_cell = {
+        pair.canonical_cell_index: pair for pair in report.owning_seed_pair_records
+    }
+    assert pair_by_cell[0].candidate_raw_owning_matched_reference_ids == (
+        "object-a",
+    )
+    assert pair_by_cell[0].full_bag_raw_call_matched_reference_ids == (
+        "object-a",
+    )
+    assert pair_by_cell[1].candidate_raw_owning_matched_reference_ids == ()
+    assert pair_by_cell[1].full_bag_raw_call_matched_reference_ids == ()
+    assert all(
+        "object-b" not in pair.candidate_raw_owning_matched_reference_ids
+        and "object-b" not in pair.full_bag_raw_call_matched_reference_ids
+        for pair in report.owning_seed_pair_records
+    )
+    owning_seed_rescue = next(
+        metric
+        for metric in report.metrics
+        if metric.metric_name == "owning_seed_raw_rescue_rate"
+    )
+    assert (owning_seed_rescue.numerator, owning_seed_rescue.denominator) == (1, 2)
 
 
 def test_owning_seed_evidence_requires_exact_reference_owner_partition() -> None:

@@ -3439,8 +3439,6 @@ def _validated_owning_seed_pairs(
                 extra=sorted(observed - expected_cells),
             )
     owner_occurrences: dict[str, list[int]] = {}
-    candidate_raw_matches: set[str] = set()
-    bag_raw_matches: set[str] = set()
     pair_records: list[OwningSeedPairRecord] = []
     missed = set(baseline_missed_reference_ids)
     for cell_index in range(16):
@@ -3475,8 +3473,6 @@ def _validated_owning_seed_pairs(
             )
         for reference_id in cell.owned_reference_ids:
             owner_occurrences.setdefault(reference_id, []).append(cell_index)
-        candidate_raw_matches.update(cell.raw_owning_call_matched_reference_ids)
-        bag_raw_matches.update(bag_call.raw_any_call_matched_reference_ids)
         owned = set(cell.owned_reference_ids)
         pair_records.append(
             OwningSeedPairRecord(
@@ -3510,18 +3506,6 @@ def _validated_owning_seed_pairs(
                 for key, value in owner_occurrences.items()
                 if len(value) != 1
             },
-        )
-    if candidate_raw_matches != set(candidate.raw_owning_match.matched_reference_ids):
-        _fail(
-            "candidate cell matches do not reconcile to raw-owning matches",
-            "analysis.metrics_candidate_raw_owning_reconciliation",
-            image_id=candidate.image_id,
-        )
-    if bag_raw_matches != set(full_bag.raw_owning_match.matched_reference_ids):
-        _fail(
-            "FULL_BAG_K cell matches do not reconcile to raw-call union matches",
-            "analysis.metrics_full_bag_raw_reconciliation",
-            image_id=candidate.image_id,
         )
     if sum(len(record.baseline_missed_reference_ids) for record in pair_records) != len(
         missed
