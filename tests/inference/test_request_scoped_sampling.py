@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import copy
-from dataclasses import FrozenInstanceError
+import json
+from dataclasses import FrozenInstanceError, replace
 from types import SimpleNamespace
 from typing import Any
 
@@ -206,6 +207,129 @@ def _new_bound_rebind_backend() -> tuple[Any, dict[str, Any], dict[str, Any], st
         tokenizer_identity,
         generation_config_fingerprint,
     )
+
+
+def _case_with_mutated_result(
+    case: Any,
+    request_id: str,
+    mutate_result: Any,
+) -> Any:
+    """Re-seal one untrusted executed-case fixture after a controlled mutation."""
+
+    from src.inference.backend import (
+        DecodeResult,
+        ExecutedSampledRuntimeAttestationCase,
+        _sha256_json,
+    )
+
+    payload = case.to_artifact_dict()
+    mutated_results = []
+    for artifact in payload["result_artifacts"]:
+        result = DecodeResult.from_artifact_dict(artifact)
+        if result.request_id == request_id:
+            result = mutate_result(result)
+        mutated_results.append(result.to_artifact_dict())
+    payload["result_artifacts"] = mutated_results
+    payload.pop("case_payload_fingerprint")
+    payload["case_payload_fingerprint"] = _sha256_json(payload)
+    return ExecutedSampledRuntimeAttestationCase.from_artifact_dict(payload)
+
+
+def _first_cpu_attestation_bundle(fixture: dict[str, Any]) -> Any:
+    from src.inference.backend import SampledRuntimeAttestationBundle
+
+    return SampledRuntimeAttestationBundle.from_artifact_dict(
+        fixture["artifact"]["policy_attestations"][0]["attestation_bundle"]
+    )
+
+
+def test_within_cardinality_order_drift_is_rejected_before_bundle_construction(
+    cpu_three_policy_attestation_aggregate: dict[str, Any],
+) -> None:
+    from src.inference.backend import build_sampled_runtime_attestation_bundle
+
+    bundle = _first_cpu_attestation_bundle(cpu_three_policy_attestation_aggregate)
+    four_reversed = next(
+        case for case in bundle.executed_cases if case.case_name == "batch_size_four_reversed"
+    )
+
+    def mutate(result: Any) -> Any:
+        traces = list(result.token_trace)
+        index = next(index for index, trace in enumerate(traces) if not trace.is_pad)
+        traces[index] = replace(traces[index], token_id=traces[index].token_id + 1)
+        return replace(result, token_trace=traces)
+
+    mutated = _case_with_mutated_result(
+        four_reversed,
+        four_reversed.request_ids[0],
+        mutate,
+    )
+    cases = tuple(
+        mutated if case.case_name == mutated.case_name else case
+        for case in bundle.executed_cases
+    )
+    with pytest.raises(RuntimeContractError) as exc_info:
+        build_sampled_runtime_attestation_bundle(
+            lineage=dict(bundle.lineage),
+            executed_cases=cases,
+            processed_logit_parity=bundle.processed_logit_parity,
+        )
+    assert exc_info.value.code == "backend_sampling.attestation_request_order_failed"
+
+
+def test_cross_cardinality_shape_drift_is_diagnostic_and_json_safe(
+    cpu_three_policy_attestation_aggregate: dict[str, Any],
+) -> None:
+    from src.inference.backend import build_sampled_runtime_attestation_bundle
+
+    bundle = _first_cpu_attestation_bundle(cpu_three_policy_attestation_aggregate)
+    three_forward = next(
+        case for case in bundle.executed_cases if case.case_name == "batch_size_three_forward"
+    )
+
+    def drop_one_nonpad_trace(result: Any) -> Any:
+        traces = list(result.token_trace)
+        index = next(
+            index for index in range(len(traces) - 1, -1, -1) if not traces[index].is_pad
+        )
+        traces.pop(index)
+        return replace(result, token_trace=traces)
+
+    mutated = _case_with_mutated_result(
+        three_forward,
+        three_forward.request_ids[0],
+        drop_one_nonpad_trace,
+    )
+    three_reversed = next(
+        case
+        for case in bundle.executed_cases
+        if case.case_name == "batch_size_three_reversed"
+    )
+    mutated_reversed = _case_with_mutated_result(
+        three_reversed,
+        three_forward.request_ids[0],
+        drop_one_nonpad_trace,
+    )
+    cases = tuple(
+        mutated
+        if case.case_name == mutated.case_name
+        else mutated_reversed
+        if case.case_name == mutated_reversed.case_name
+        else case
+        for case in bundle.executed_cases
+    )
+    rebuilt = build_sampled_runtime_attestation_bundle(
+        lineage=dict(bundle.lineage),
+        executed_cases=cases,
+        processed_logit_parity=bundle.processed_logit_parity,
+    )
+    cross = rebuilt.cross_cardinality
+    assert cross.cross_cardinality_exact_generated_token_replay is False
+    assert cross.cross_cardinality_maximum_absolute_score_difference is None
+    assert cross.cross_cardinality_maximum_relative_score_difference is None
+    assert cross.cross_cardinality_comparison_status == "shape_mismatch"
+    assert "score_trace_shape_mismatch" in str(cross.cross_cardinality_mismatch_reason)
+    json.dumps(rebuilt.to_artifact_dict(), allow_nan=False)
 
 
 @pytest.fixture(scope="module")

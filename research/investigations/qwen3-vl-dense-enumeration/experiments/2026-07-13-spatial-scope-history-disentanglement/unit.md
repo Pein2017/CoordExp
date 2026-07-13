@@ -551,6 +551,18 @@ seed for a matched full-image/spatial call. The reserved baseline label must be
 disjoint from every canonical cell index. Each spatial call uses the seed bound
 to its canonical cell, including counterbalanced-order arms.
 
+Exactly one Compute Unified Device Architecture (`CUDA`) sampled-runtime
+attestation invocation loads the frozen runtime once and covers all three exact
+temperature policies (`0.2`, `0.4`, and `0.6`). For every policy it persists
+batch-size-four, batch-size-three, request-order, same-seed replay, and
+admitted-production-path evidence in one aggregate artifact. Once the
+predeclared calibration gates select the first
+passing policy, that aggregate evidence authorizes an exact-policy process-local
+capability rebind in each of the eight production workers. The rebind must match
+the live frozen runtime and selected policy exactly; no unattested temperature
+may execute. This mechanics arrangement removes attestation/admission
+circularity without changing candidate order, calibration estimands, or gates.
+
 The implementation must provide a per-request pseudo-random generator or run
 requests serially so that batching, worker count, and traversal order do not
 silently reassign random streams. A mechanics receipt must demonstrate stable
@@ -561,6 +573,34 @@ weak-diversity repeated-sampling control and cannot falsify a spatial policy. If
 the policy remains deterministic, it is
 only a repeated-invocation determinism control and cannot be called independent
 bagging.
+
+Physical batches are sealed inside dependency-wave partitions rather than over
+the flattened request stream. One independent partition contains every
+non-cumulative arm, and each of the 16 canonical `MASK_CUMULATIVE` cells owns a
+separate cumulative-cell partition. A batch cannot cross partitions. Batch size
+four (`B4`) is canonical; batch size three (`B3`) is allowed only as one natural
+final tail per partition and is covered by the same request-scoped runtime
+attestation. The 200-image primary schedule is exactly 3,250 B4 batches. The
+optional Dense-Union-51 replication is exactly 816 B4 batches plus 17 B3 tails,
+for 833 physical batches and the unchanged 3,315 calls. The 17 B3 tails consist
+of one independent-partition tail and one tail for each cumulative-cell
+partition. Resume consumes only dependency-safe whole batches from the sealed
+plan; it never dynamically repacks pending requests.
+
+The sampled-runtime admission gate requires exact forward/reverse request replay
+within B4 and independently within B3. Cross-cardinality B4-versus-B3 replay is
+recorded as a diagnostic rather than required to be identical, because the
+executed CUDA probe demonstrated that long sampled trajectories can diverge
+when only batch cardinality changes even though request-order replay remains
+exact. Every scheduled call therefore retains its sealed physical cardinality
+as execution evidence.
+
+The process barrier means that every request in a physical batch has exactly one
+legal terminal attempt, not that every attempt is `completed`. The legal statuses
+are `completed`, `failed`, `skipped`, `capped`, and `invalid`. Only infrastructure
+or artifact-protocol failure aborts the execution wave; dependency-aware resume
+handles legal non-completed scientific outcomes and remains responsible for any
+explicit continuation-plan requirement.
 
 The historical repetition-penalty value `1.10` may be evaluated only as a
 separately named sensitivity for `FULL_BAG_K`, `MASK_RESET`, and

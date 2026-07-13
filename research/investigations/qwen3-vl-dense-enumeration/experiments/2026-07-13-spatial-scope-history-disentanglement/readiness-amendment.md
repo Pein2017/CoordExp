@@ -108,6 +108,8 @@ this unit and its research implementation surfaces.
   semantics.
 - **Graphics Processing Unit (`GPU`)**: an accelerator used only after separate
   implementation and execution authorization.
+- **Compute Unified Device Architecture (`CUDA`)**: the device-runtime interface
+  used by sampled-runtime attestation and isolated production workers.
 
 All arm, metric, hypothesis, invariant, ownership, and accepted-row-prefix names
 retain the complete declarations in [the research unit](unit.md).
@@ -557,21 +559,77 @@ model runtime. Token scores, coordinate transforms, mask construction, matching,
 merging, and metric accumulation are promoted to at least float32 before
 research analysis.
 
-The 200-image primary schedule has a call count divisible by four and therefore
-uses only full four-request batches. The optional 51-image second-root schedule
-has 3,315 calls and therefore ends with one natural three-request tail batch.
-The sampled-runtime mechanics gate MUST attest both four-request execution and
-this three-request tail cardinality. A one-request loop is not a fallback or an
-experimental arm. Resume never silently changes batch cardinality: it may run
-only a pre-materialized pending schedule whose cardinalities were attested, or
-it starts a new immutable run identifier.
+Physical batching is sealed independently inside 17 execution-wave partitions:
+one independent partition containing `FULL_SINGLE`, `FULL_BAG_K`, `TILE_RESET`,
+and `MASK_RESET`, followed by one partition for each of the 16 canonical
+`MASK_CUMULATIVE` cells. A batch may never cross a partition boundary. Batch
+size four (`B4`) is canonical. Batch size three (`B3`) is permitted only as the
+single natural final tail inside one partition; it is not an adaptive fallback.
 
-The current backend hardcodes deterministic generation and has no per-request
-seed surface. Consequently, the factors above describe required future executed
-semantics, not current capability. Changing only the configuration file is
-insufficient and forbidden as an attestation.
+The 200-image primary schedule contains 13,000 calls and exactly 3,250 B4
+batches: 2,450 in the independent partition and 50 in each cumulative-cell
+partition. The optional Dense-Union-51 second-root schedule contains 3,315
+calls, 816 B4 batches, and 17 B3 tails: one B3 tail after 624 B4 batches in the
+independent partition, plus one B3 tail after 12 B4 batches in each of the 16
+cumulative-cell partitions. Therefore it has 833 physical batches in total.
+Seeds, request order, arm membership, call counts, and estimands are unchanged.
+
+The same request-scoped sampled-runtime mechanics attestation MUST cover B4 and
+B3 execution. A one-request loop is not a fallback or an experimental arm.
+Resume never silently changes batch cardinality: it may run only whole sealed
+batches admitted by the dependency-aware resume contract, or it starts a new
+immutable run identifier.
+
+Within one fixed batch cardinality, reversing request order MUST preserve each
+request's complete sampled trajectory and selected-token score replay. This is
+the admission gate for request-owned random streams and row routing. B4-versus-
+B3 trajectory equality is not an admission requirement: an exact CUDA probe at
+temperature `0.2` and `max_new_tokens = 512` preserved forward/reverse replay
+inside both cardinalities but produced a long-horizon trajectory change for one
+shared request when cardinality changed. Cross-cardinality agreement is
+therefore persisted as a finite-or-null diagnostic, while the executed
+cardinality remains part of every sealed physical-batch receipt.
+
+A physical-batch barrier requires exactly one terminal attempt for every member;
+it does not require every member to be successful. `completed`, `failed`,
+`skipped`, `capped`, and `invalid` are legal scientific terminal statuses.
+Infrastructure or artifact-protocol failure still fails closed, while a legal
+non-completed status remains available to the dependency-aware resume contract,
+which may require an explicit continuation plan for downstream cumulative work.
+
+The eight authorized Graphics Processing Units are non-exclusive: unrelated
+small-memory workloads may coexist. Every model-bearing launch records the
+visible-device process inventory plus free and used memory, never terminates or
+reconfigures another workload, and proceeds only when every planned worker has
+at least 24 gibibytes of free device memory immediately before launch. Here one
+gibibyte is 1,073,741,824 bytes. Insufficient headroom pauses the launch; it does
+not silently reduce per-device batch size, change active-rank count, or alter
+the parallel-layout receipt.
+
+The backend now exposes an explicit request-scoped sampled-generation surface
+with one pseudo-random generator per request. That code path is not admitted by
+configuration alone: the exact installed runtime, model lineage, generation
+policy, request-order gate, and executed batch cardinalities must pass the CUDA
+attestation described below before metric-bearing execution.
 
 ### Temperature mechanics calibration
+
+Exactly one sampled-runtime CUDA attestation invocation loads the complete
+frozen runtime once and covers all three exact calibration generation policies:
+temperature `0.2`, temperature `0.4`, and temperature `0.6`. For each policy,
+that invocation must persist exact B4 execution, exact B3 execution,
+request-order reversal within each fixed cardinality, cross-cardinality
+diagnostics, same-seed replay, and admitted-production-path evidence inside one
+aggregate attestation artifact. One policy cannot borrow another policy's
+capability, and an unattested temperature is forbidden.
+
+After the scientific calibration selects the first passing policy in the
+predeclared order, the persisted aggregate evidence authorizes each of the eight
+production workers to perform an exact-policy process-local capability rebind.
+Every rebind validates the live frozen runtime identity and the selected exact
+generation-policy identity before metric-bearing execution. It does not reload
+the three-policy attestation panel, alter candidate order, or change any
+scientific calibration gate.
 
 Candidate temperatures are tested in this fixed order:
 
@@ -837,8 +895,17 @@ addition to configured ceilings.
 The exact readiness-artifact root for this contract version is:
 
 ```text
-/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-13-spatial-scope-history-disentanglement/readiness-v1/
+/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-13-spatial-scope-history-disentanglement/readiness-v2/
 ```
+
+`readiness-v1` is preserved as immutable superseded provenance. Its first
+pre-seal materialization retained raw numeric annotation order within each
+image, while this contract requires frozen image order followed by
+lexicographic immutable record identifier. `readiness-v2` rematerializes the
+two official ledgers with the corrected deterministic ordering, preserves the
+two independent reviewer artifacts byte-for-byte, and binds the old/new
+artifact comparison in `pre-seal-ordering-correction-receipt.json`. Only
+`readiness-v2` may receive the final audit-augmented ledger and ledger seal.
 
 The root is append-only after `ledger-seal.json` is written. Metric-bearing run
 roots remain separate immutable `<run-id>` directories under the same unit

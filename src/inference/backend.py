@@ -1001,7 +1001,13 @@ class ExecutedSampledRuntimeAttestationCase:
 
 @dataclass(frozen=True)
 class CrossCardinalityRequestReplayAttestation:
-    """Persisted B3/B4 shared-request comparison recomputed by the verifier."""
+    """Persisted order gate and cross-cardinality diagnostic.
+
+    The legacy ``maximum_*`` and ``exact_generated_token_replay`` fields are
+    the within-cardinality forward/reverse gate.  Cross-cardinality trajectory
+    changes are recorded diagnostically because changing batch cardinality can
+    legitimately change a sampled trajectory.
+    """
 
     schema_version: str
     case_name: str
@@ -1010,6 +1016,11 @@ class CrossCardinalityRequestReplayAttestation:
     maximum_absolute_score_difference: float
     maximum_relative_score_difference: float
     exact_generated_token_replay: bool
+    cross_cardinality_exact_generated_token_replay: bool
+    cross_cardinality_maximum_absolute_score_difference: float | None
+    cross_cardinality_maximum_relative_score_difference: float | None
+    cross_cardinality_comparison_status: str
+    cross_cardinality_mismatch_reason: str | None
     comparison_payload_fingerprint: str
 
     def __post_init__(self) -> None:
@@ -1021,6 +1032,28 @@ class CrossCardinalityRequestReplayAttestation:
                 "cross-cardinality attestation schema is unsupported",
                 code="backend_sampling.attestation_cross_schema_invalid",
             )
+        if self.cross_cardinality_comparison_status not in {
+            "exact",
+            "value_mismatch",
+            "shape_mismatch",
+        }:
+            raise RuntimeContractError(
+                "cross-cardinality comparison status is unsupported",
+                code="backend_sampling.attestation_cross_status_invalid",
+            )
+        for field in (
+            "maximum_absolute_score_difference",
+            "maximum_relative_score_difference",
+            "cross_cardinality_maximum_absolute_score_difference",
+            "cross_cardinality_maximum_relative_score_difference",
+        ):
+            value = getattr(self, field)
+            if value is not None and not math.isfinite(float(value)):
+                raise RuntimeContractError(
+                    "attestation comparison metric must be finite or null",
+                    code="backend_sampling.attestation_cross_nonfinite_metric",
+                    context={"field": field},
+                )
         if self.comparison_payload_fingerprint != self.recompute_fingerprint():
             raise RuntimeContractError(
                 "cross-cardinality attestation fingerprint is invalid",
@@ -1036,6 +1069,17 @@ class CrossCardinalityRequestReplayAttestation:
             "maximum_absolute_score_difference": self.maximum_absolute_score_difference,
             "maximum_relative_score_difference": self.maximum_relative_score_difference,
             "exact_generated_token_replay": self.exact_generated_token_replay,
+            "cross_cardinality_exact_generated_token_replay": (
+                self.cross_cardinality_exact_generated_token_replay
+            ),
+            "cross_cardinality_maximum_absolute_score_difference": (
+                self.cross_cardinality_maximum_absolute_score_difference
+            ),
+            "cross_cardinality_maximum_relative_score_difference": (
+                self.cross_cardinality_maximum_relative_score_difference
+            ),
+            "cross_cardinality_comparison_status": self.cross_cardinality_comparison_status,
+            "cross_cardinality_mismatch_reason": self.cross_cardinality_mismatch_reason,
             "comparison_payload_fingerprint": self.comparison_payload_fingerprint,
         }
 
@@ -3852,12 +3896,19 @@ def _case_results_by_request(
 def _score_trace_differences(
     left: DecodeResult,
     right: DecodeResult,
-) -> tuple[bool, float, float]:
+) -> tuple[bool, float | None, float | None, str | None]:
     exact_tokens = left.generated_token_ids == right.generated_token_ids
     left_trace_values = [trace for trace in left.token_trace if not trace.is_pad]
     right_trace_values = [trace for trace in right.token_trace if not trace.is_pad]
     if len(left_trace_values) != len(right_trace_values):
-        return False, math.inf, math.inf
+        return (
+            False,
+            None,
+            None,
+            "score_trace_shape_mismatch:"
+            f"left_nonpad_tokens={len(left_trace_values)};"
+            f"right_nonpad_tokens={len(right_trace_values)}",
+        )
     maximum_absolute = 0.0
     maximum_relative = 0.0
     for left_trace, right_trace in zip(
@@ -3873,7 +3924,7 @@ def _score_trace_differences(
         right_score = right_trace.logprob
         if left_score is None or right_score is None:
             if left_score != right_score:
-                return False, math.inf, math.inf
+                return False, None, None, "score_trace_missing_logprob"
             continue
         left_value = canonical_float32_logprob(left_score)
         right_value = canonical_float32_logprob(right_score)
@@ -3881,14 +3932,14 @@ def _score_trace_differences(
         relative = absolute / max(abs(left_value), abs(right_value), 1e-12)
         maximum_absolute = max(maximum_absolute, absolute)
         maximum_relative = max(maximum_relative, relative)
-    return exact_tokens, maximum_absolute, maximum_relative
+    return exact_tokens, maximum_absolute, maximum_relative, None
 
 
 def _selected_token_replay_differences(
     left_case: ExecutedSampledRuntimeAttestationCase,
     right_case: ExecutedSampledRuntimeAttestationCase,
     request_id: str,
-) -> tuple[bool, float, float]:
+) -> tuple[bool, float | None, float | None, str | None]:
     left = _thaw_json(
         left_case.compact_object_selected_token_score_replays_by_request.get(
             request_id
@@ -3900,7 +3951,7 @@ def _selected_token_replay_differences(
         )
     )
     if not isinstance(left, Mapping) or not isinstance(right, Mapping):
-        return False, math.inf, math.inf
+        return False, None, None, "selected_replay_missing"
     metadata_fields = (
         "parser_id",
         "parser_policy",
@@ -3913,7 +3964,13 @@ def _selected_token_replay_differences(
     left_replays = list(left.get("prediction_replays", ()))
     right_replays = list(right.get("prediction_replays", ()))
     if len(left_replays) != len(right_replays):
-        return False, math.inf, math.inf
+        return (
+            False,
+            None,
+            None,
+            "selected_replay_shape_mismatch:"
+            f"left_rows={len(left_replays)};right_rows={len(right_replays)}",
+        )
     maximum_absolute = 0.0
     maximum_relative = 0.0
     for left_replay, right_replay in zip(left_replays, right_replays, strict=True):
@@ -3934,7 +3991,7 @@ def _selected_token_replay_differences(
         if len(left_values) != len(right_values) or any(
             value is None for value in left_values + right_values
         ):
-            return False, math.inf, math.inf
+            return False, None, None, "selected_replay_score_shape_mismatch"
         for left_value, right_value in zip(left_values, right_values, strict=True):
             left_float = canonical_float32_logprob(left_value)
             right_float = canonical_float32_logprob(right_value)
@@ -3942,50 +3999,134 @@ def _selected_token_replay_differences(
             relative = absolute / max(abs(left_float), abs(right_float), 1e-12)
             maximum_absolute = max(maximum_absolute, absolute)
             maximum_relative = max(maximum_relative, relative)
-    return exact, maximum_absolute, maximum_relative
+    return exact, maximum_absolute, maximum_relative, None
+
+
+def _compare_sampled_runtime_case_pair(
+    left_case: ExecutedSampledRuntimeAttestationCase,
+    right_case: ExecutedSampledRuntimeAttestationCase,
+    request_ids: Sequence[str],
+) -> tuple[bool, float | None, float | None, str, str | None]:
+    """Compare one request-aligned pair without encoding unavailable metrics."""
+
+    exact = True
+    maximum_absolute = 0.0
+    maximum_relative = 0.0
+    metrics_available = True
+    reasons: list[str] = []
+    left_results = _case_results_by_request(left_case)
+    right_results = _case_results_by_request(right_case)
+    for request_id in request_ids:
+        if request_id not in left_results or request_id not in right_results:
+            return (
+                False,
+                None,
+                None,
+                "missing_request",
+                f"request_missing:{request_id}",
+            )
+        replay, absolute, relative, reason = _score_trace_differences(
+            left_results[request_id], right_results[request_id]
+        )
+        selected_replay, selected_absolute, selected_relative, selected_reason = (
+            _selected_token_replay_differences(left_case, right_case, request_id)
+        )
+        exact = exact and replay and selected_replay
+        if absolute is None or relative is None:
+            metrics_available = False
+        else:
+            maximum_absolute = max(maximum_absolute, absolute)
+            maximum_relative = max(maximum_relative, relative)
+        if selected_absolute is None or selected_relative is None:
+            metrics_available = False
+        else:
+            maximum_absolute = max(maximum_absolute, selected_absolute)
+            maximum_relative = max(maximum_relative, selected_relative)
+        if reason is not None:
+            reasons.append(reason)
+        if selected_reason is not None:
+            reasons.append(selected_reason)
+    if reasons:
+        if any("missing" in reason for reason in reasons):
+            status = "shape_mismatch"
+        elif any("shape_mismatch" in reason for reason in reasons):
+            status = "shape_mismatch"
+        else:
+            status = "shape_mismatch"
+    else:
+        status = "exact" if exact else "value_mismatch"
+    return (
+        exact,
+        maximum_absolute if metrics_available else None,
+        maximum_relative if metrics_available else None,
+        status,
+        ";".join(dict.fromkeys(reasons)) if reasons else None,
+    )
 
 
 def _compute_cross_cardinality_comparison(
     cases_by_name: Mapping[str, ExecutedSampledRuntimeAttestationCase],
-) -> tuple[tuple[str, ...], bool, float, float]:
+) -> dict[str, Any]:
     four_forward = cases_by_name["batch_size_four_forward"]
     four_reversed = cases_by_name["batch_size_four_reversed"]
     three_forward = cases_by_name["batch_size_three_forward"]
     three_reversed = cases_by_name["batch_size_three_reversed"]
     shared_ids = four_forward.request_ids[:3]
-    exact = True
-    maximum_absolute = 0.0
-    maximum_relative = 0.0
-    comparisons = (
-        (four_forward, four_reversed, four_forward.request_ids),
-        (three_forward, three_reversed, three_forward.request_ids),
-        (four_forward, three_forward, shared_ids),
-        (four_reversed, three_reversed, shared_ids),
+    within_pairs = (
+        ("four_forward_vs_reversed", four_forward, four_reversed, four_forward.request_ids),
+        ("three_forward_vs_reversed", three_forward, three_reversed, three_forward.request_ids),
     )
-    for left_case, right_case, request_ids in comparisons:
-        left_results = _case_results_by_request(left_case)
-        right_results = _case_results_by_request(right_case)
-        for request_id in request_ids:
-            if request_id not in left_results or request_id not in right_results:
-                return shared_ids, False, math.inf, math.inf
-            replay, absolute, relative = _score_trace_differences(
-                left_results[request_id], right_results[request_id]
+    cross_pairs = (
+        ("four_vs_three_forward", four_forward, three_forward, shared_ids),
+        ("four_vs_three_reversed", four_reversed, three_reversed, shared_ids),
+    )
+
+    def aggregate(
+        pairs: Sequence[tuple[str, ExecutedSampledRuntimeAttestationCase, ExecutedSampledRuntimeAttestationCase, Sequence[str]]],
+    ) -> dict[str, Any]:
+        results = []
+        for label, left_case, right_case, request_ids in pairs:
+            result = _compare_sampled_runtime_case_pair(
+                left_case, right_case, request_ids
             )
-            selected_replay, selected_absolute, selected_relative = (
-                _selected_token_replay_differences(
-                    left_case,
-                    right_case,
-                    request_id,
-                )
-            )
-            exact = exact and replay and selected_replay
-            maximum_absolute = max(
-                maximum_absolute, absolute, selected_absolute
-            )
-            maximum_relative = max(
-                maximum_relative, relative, selected_relative
-            )
-    return shared_ids, exact, maximum_absolute, maximum_relative
+            results.append((label, result))
+        exact_values = [result[1][0] for result in results]
+        statuses = [result[1][3] for result in results]
+        reasons = [
+            f"{label}:{result[4]}"
+            for label, result in results
+            if result[4] is not None
+        ]
+        metrics_available = all(
+            result[1][1] is not None and result[1][2] is not None
+            for result in results
+        )
+        if any(status == "shape_mismatch" for status in statuses):
+            status = "shape_mismatch"
+        elif any(status == "value_mismatch" for status in statuses):
+            status = "value_mismatch"
+        else:
+            status = "exact"
+        exact_value = all(exact_values)
+        return {
+            "exact": exact_value,
+            "maximum_absolute": (
+                max(result[1][1] for result in results) if metrics_available else None
+            ),
+            "maximum_relative": (
+                max(result[1][2] for result in results) if metrics_available else None
+            ),
+            "status": status,
+            "reason": ";".join(reasons) if reasons else None,
+        }
+
+    within = aggregate(within_pairs)
+    cross = aggregate(cross_pairs)
+    return {
+        "shared_request_ids": shared_ids,
+        "within": within,
+        "cross": cross,
+    }
 
 
 def build_sampled_runtime_attestation_bundle(
@@ -4004,9 +4145,20 @@ def build_sampled_runtime_attestation_bundle(
             code="backend_sampling.attestation_case_set_mismatch",
             context={"case_names": sorted(cases_by_name)},
         )
-    shared_ids, exact, maximum_absolute, maximum_relative = (
-        _compute_cross_cardinality_comparison(cases_by_name)
-    )
+    comparison = _compute_cross_cardinality_comparison(cases_by_name)
+    shared_ids = comparison["shared_request_ids"]
+    within = comparison["within"]
+    cross = comparison["cross"]
+    if (
+        within["exact"] is not True
+        or within["maximum_absolute"] is None
+        or within["maximum_relative"] is None
+    ):
+        raise RuntimeContractError(
+            "within-cardinality forward/reverse replay failed",
+            code="backend_sampling.attestation_request_order_failed",
+            context={"status": within["status"], "reason": within["reason"]},
+        )
     cross_payload: dict[str, Any] = {
         "schema_version": SAMPLED_RUNTIME_ATTESTATION_CROSS_CARDINALITY_SCHEMA_VERSION,
         "case_name": "cross_cardinality_shared_three",
@@ -4017,9 +4169,18 @@ def build_sampled_runtime_attestation_bundle(
             "batch_size_four_forward",
             "batch_size_four_reversed",
         ),
-        "maximum_absolute_score_difference": maximum_absolute,
-        "maximum_relative_score_difference": maximum_relative,
-        "exact_generated_token_replay": exact,
+        "maximum_absolute_score_difference": within["maximum_absolute"],
+        "maximum_relative_score_difference": within["maximum_relative"],
+        "exact_generated_token_replay": within["exact"],
+        "cross_cardinality_exact_generated_token_replay": cross["exact"],
+        "cross_cardinality_maximum_absolute_score_difference": cross[
+            "maximum_absolute"
+        ],
+        "cross_cardinality_maximum_relative_score_difference": cross[
+            "maximum_relative"
+        ],
+        "cross_cardinality_comparison_status": cross["status"],
+        "cross_cardinality_mismatch_reason": cross["reason"],
     }
     cross_payload["comparison_payload_fingerprint"] = _sha256_json(cross_payload)
     cross = CrossCardinalityRequestReplayAttestation(**cross_payload)
@@ -4954,28 +5115,44 @@ def _validate_sampled_runtime_attestation_bundle(
             "attestation forward, reversed, and shared-cardinality identities disagree",
             code="backend_sampling.attestation_request_replay_layout_invalid",
         )
-    shared_ids, exact, maximum_absolute, maximum_relative = (
-        _compute_cross_cardinality_comparison(cases_by_name)
-    )
+    comparison = _compute_cross_cardinality_comparison(cases_by_name)
+    shared_ids = comparison["shared_request_ids"]
+    within = comparison["within"]
+    cross_diagnostic = comparison["cross"]
     cross = parsed.cross_cardinality
     if (
         cross.case_name != "cross_cardinality_shared_three"
         or cross.shared_request_ids != shared_ids
         or set(cross.compared_case_names)
         != _REQUIRED_EXECUTED_SAMPLED_RUNTIME_ATTESTATION_CASES
-        or cross.exact_generated_token_replay != exact
-        or cross.maximum_absolute_score_difference != maximum_absolute
-        or cross.maximum_relative_score_difference != maximum_relative
-        or not exact
-        or maximum_absolute > 1e-6
-        or maximum_relative > 1e-6
+        or cross.exact_generated_token_replay != within["exact"]
+        or cross.maximum_absolute_score_difference != within["maximum_absolute"]
+        or cross.maximum_relative_score_difference != within["maximum_relative"]
+        or cross.cross_cardinality_exact_generated_token_replay
+        != cross_diagnostic["exact"]
+        or cross.cross_cardinality_maximum_absolute_score_difference
+        != cross_diagnostic["maximum_absolute"]
+        or cross.cross_cardinality_maximum_relative_score_difference
+        != cross_diagnostic["maximum_relative"]
+        or cross.cross_cardinality_comparison_status
+        != cross_diagnostic["status"]
+        or cross.cross_cardinality_mismatch_reason
+        != cross_diagnostic["reason"]
+        or within["exact"] is not True
+        or within["maximum_absolute"] is None
+        or within["maximum_relative"] is None
+        or within["maximum_absolute"] > 1e-6
+        or within["maximum_relative"] > 1e-6
     ):
         raise RuntimeContractError(
             "attestation request replay or float32 score parity failed",
             code="backend_sampling.attestation_request_replay_failed",
             context={
-                "maximum_absolute_score_difference": maximum_absolute,
-                "maximum_relative_score_difference": maximum_relative,
+                "maximum_absolute_score_difference": within["maximum_absolute"],
+                "maximum_relative_score_difference": within["maximum_relative"],
+                "within_cardinality_status": within["status"],
+                "cross_cardinality_status": cross_diagnostic["status"],
+                "cross_cardinality_mismatch_reason": cross_diagnostic["reason"],
             },
         )
     parity = parsed.processed_logit_parity
