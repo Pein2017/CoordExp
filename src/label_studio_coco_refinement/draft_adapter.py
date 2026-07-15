@@ -222,7 +222,13 @@ def _canonicalize_region(
         if not isinstance(training_metadata, Mapping):
             raise DraftContractError("coordexp_training_metadata must be a JSON object")
         metadata = copy.deepcopy(dict(training_metadata))
-        reserved = {"inference_origin", "receipt_id", "request_id", "result_id"}
+        reserved = {
+            "inference_origin",
+            "receipt_id",
+            "request_id",
+            "result_id",
+            "draft_revision",
+        }
         if reserved & set(metadata):
             raise DraftContractError(
                 "coordexp_training_metadata cannot override inference linkage"
@@ -232,11 +238,13 @@ def _canonicalize_region(
         "receipt_id": meta_copy.get("coordexp_inference_receipt_id"),
         "request_id": meta_copy.get("coordexp_inference_request_id"),
         "result_id": meta_copy.get("coordexp_inference_result_id"),
+        "draft_revision": meta_copy.get("coordexp_inference_source_draft_revision"),
     }
     if any(value is not None for value in inference_values.values()):
         if any(value is None for value in inference_values.values()):
             raise DraftContractError(
-                "inference-origin region requires receipt, request, and result IDs"
+                "inference-origin region requires receipt, request, result, and "
+                "source Draft revision IDs"
             )
         for label, value in inference_values.items():
             _normalized_text(value, field=f"inference {label}")

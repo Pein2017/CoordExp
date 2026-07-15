@@ -21,6 +21,7 @@ def _rectangle(
     inference_receipt_id: str | None = None,
     inference_request_id: str = "roi-request-1",
     inference_result_id: str = "roi-result-1",
+    inference_source_draft_revision: str = "draft-rev-1",
 ) -> dict[str, object]:
     x, y, width, height = norm1000_bbox_to_label_studio_xywh(bbox)
     meta: dict[str, object] = {
@@ -35,6 +36,9 @@ def _rectangle(
         meta["coordexp_inference_receipt_id"] = inference_receipt_id
         meta["coordexp_inference_request_id"] = inference_request_id
         meta["coordexp_inference_result_id"] = inference_result_id
+        meta["coordexp_inference_source_draft_revision"] = (
+            inference_source_draft_revision
+        )
     return {
         "id": key,
         "type": "rectanglelabels",
@@ -122,6 +126,7 @@ def test_new_region_uses_label_studio_id_and_official_sparse_category() -> None:
         "receipt_id": "roi-receipt-1",
         "request_id": "roi-request-1",
         "result_id": "roi-result-1",
+        "draft_revision": "draft-rev-1",
     }
     assert draft.inference_receipts == ("roi-receipt-1",)
 
@@ -256,7 +261,7 @@ def test_inference_linkage_requires_exact_fields_and_cannot_be_training_overridd
         inference_receipt_id="receipt-1",
     )
     incomplete["meta"].pop("coordexp_inference_result_id")
-    with pytest.raises(DraftContractError, match="receipt, request, and result"):
+    with pytest.raises(DraftContractError, match="receipt, request, result"):
         canonicalize_label_studio_draft(
             [incomplete], split="train", image_id=42, image_width=640, image_height=480
         )
@@ -269,4 +274,32 @@ def test_inference_linkage_requires_exact_fields_and_cannot_be_training_overridd
     with pytest.raises(DraftContractError, match="cannot override inference"):
         canonicalize_label_studio_draft(
             [overridden], split="train", image_id=42, image_width=640, image_height=480
+        )
+
+    missing_revision = _rectangle(
+        key="drawn:missing-revision",
+        coco_ann_id=None,
+        inference_receipt_id="receipt-2",
+    )
+    missing_revision["meta"].pop("coordexp_inference_source_draft_revision")
+    with pytest.raises(DraftContractError, match="source Draft revision"):
+        canonicalize_label_studio_draft(
+            [missing_revision],
+            split="train",
+            image_id=42,
+            image_width=640,
+            image_height=480,
+        )
+
+    revision_override = _rectangle()
+    revision_override["meta"]["coordexp_training_metadata"] = {
+        "draft_revision": "browser-forged"
+    }
+    with pytest.raises(DraftContractError, match="cannot override inference"):
+        canonicalize_label_studio_draft(
+            [revision_override],
+            split="train",
+            image_id=42,
+            image_width=640,
+            image_height=480,
         )

@@ -12,9 +12,10 @@ import hashlib
 import json
 import math
 import os
+import time
 import uuid
 from collections.abc import Mapping
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -36,9 +37,12 @@ from src.label_studio_coco_refinement.inference_profiles import (
     fingerprint_json,
 )
 from src.label_studio_coco_refinement.inference_results import (
+    AuthoritativeAbandonmentProof,
+    AuthoritativeInsertionProof,
     ClassifiedInferenceResult,
     CurrentTarget,
     InferenceAttemptReceipt,
+    InferenceResultContractError,
     RequestLifecycle,
     RequestState,
     RequestTarget,
@@ -62,8 +66,9 @@ from src.label_studio_coco_refinement.store import InferenceReceiptLink
 from src.qwen.images import QWEN_IMAGE_PROCESSOR_KWARGS
 
 
-RECEIPT_STORE_SCHEMA = "coordexp-roi-receipt-chain-v1"
-RECEIPT_RECORD_SCHEMA = "coordexp-roi-attempt-record-v1"
+RECEIPT_STORE_SCHEMA = "coordexp-roi-receipt-chain-v2"
+RECEIPT_RECORD_SCHEMA = "coordexp-roi-attempt-record-v2"
+RECEIPT_DISPOSITION_RECORD_SCHEMA = "coordexp-roi-disposition-record-v1"
 EXECUTION_ENVELOPE_SCHEMA = "coordexp-resident-roi-execution-v1"
 RESIDENT_ADAPTER_ID = "coordexp-resident-roi-v1"
 _ZERO_HASH = "0" * 64
@@ -87,6 +92,18 @@ class CurrentTargetProvider(Protocol):
     """Re-read the mutable browser/annotation target immediately before insert."""
 
     def current_target(self, frozen: RequestTarget) -> CurrentTarget: ...
+
+
+@dataclass(frozen=True)
+class ResolvedInferenceReceiptLink(InferenceReceiptLink):
+    """Commit link plus the vendor-locked post-insertion Draft attestation."""
+
+    source_annotation_revision: str
+    observed_annotation_revision: str
+    inserted_draft_revision: str
+    inserted_draft_updated_at: str
+    saved_full_result_sha256: str
+    saved_semantic_result_sha256: str
 
 
 class ResidentEngine(Protocol):
@@ -238,10 +255,16 @@ def build_resident_profile_binding(profile: EngineProfile) -> ResidentProfileBin
 
 
 class InferenceReceiptStore:
-    """Append-only, flock-serialized, hash-chained terminal attempt authority."""
+    """Append-only two-phase ROI receipt authority.
 
-    def __init__(self, path: str | Path) -> None:
+    A model result with candidate boxes first appends one ``produced`` attempt.
+    A second authoritative append records either exact insertion or permanent
+    abandonment.  Only the former is resolvable by the working-data store.
+    """
+
+    def __init__(self, path: str | Path, *, clock: Any = time.time) -> None:
         self.path = Path(path)
+        self.clock = clock
         self.path.parent.mkdir(parents=True, exist_ok=True)
         if self.path.exists():
             self.replay()
@@ -258,15 +281,85 @@ class InferenceReceiptStore:
 
     def by_request(self, request_id: str) -> dict[str, Any] | None:
         for record in self.replay():
-            if record["request_id"] == request_id:
+            if (
+                record["record_kind"] == "attempt"
+                and record["request_id"] == request_id
+            ):
                 return _json_copy(record)
         return None
 
     def get(self, receipt_id: str) -> dict[str, Any] | None:
         for record in self.replay():
-            if record["receipt_id"] == receipt_id:
+            if (
+                record["record_kind"] == "attempt"
+                and record["receipt_id"] == receipt_id
+            ):
                 return _json_copy(record)
         return None
+
+    def disposition(self, receipt_id: str) -> dict[str, Any] | None:
+        for record in self.replay():
+            if (
+                record["record_kind"] == "disposition"
+                and record["receipt_id"] == receipt_id
+            ):
+                return _json_copy(record)
+        return None
+
+    def response(self, receipt_id: str) -> dict[str, Any] | None:
+        """Return an idempotent response reflecting the latest durable phase."""
+
+        attempt = self.get(receipt_id)
+        if attempt is None:
+            return None
+        disposition = self.disposition(receipt_id)
+        if disposition is None:
+            return _json_copy(attempt["response"])
+        response = _json_copy(attempt["response"])
+        response.update(
+            {
+                "request_state": disposition["terminal_status"],
+                "terminal_status": disposition["terminal_status"],
+                "clear_roi": disposition["disposition"] == "inserted",
+                "insertion_payload": None,
+            }
+        )
+        attempt_counts = response.get("counts")
+        if not isinstance(attempt_counts, dict):
+            raise _receipt_corrupt("produced response lacks canonical counts")
+        response["counts"] = {
+            "parsed": attempt_counts["parsed"],
+            "inserted": (
+                attempt_counts["produced"]
+                if disposition["disposition"] == "inserted"
+                else 0
+            ),
+            "rejected": attempt_counts["rejected"],
+        }
+        if disposition["disposition"] == "inserted":
+            response["failure"] = None
+            response["result_region_keys"] = dict(
+                disposition["proof"]["result_region_keys"]
+            )
+            response["insertion_attestation"] = {
+                field: disposition["proof"][field]
+                for field in (
+                    "source_annotation_revision",
+                    "observed_annotation_revision",
+                    "source_draft_revision",
+                    "inserted_draft_revision",
+                    "inserted_draft_updated_at",
+                    "saved_full_result_sha256",
+                    "saved_semantic_result_sha256",
+                )
+            }
+        else:
+            response["failure"] = {
+                "stage": "insertion",
+                "code": disposition["proof"]["reason"],
+            }
+        _reject_service_response_credentials(response)
+        return response
 
     def append(
         self,
@@ -274,12 +367,41 @@ class InferenceReceiptStore:
         attempt: InferenceAttemptReceipt,
         execution: Mapping[str, Any],
         response: Mapping[str, Any],
+        produced_ttl_seconds: float | None = None,
     ) -> str:
         receipt_id = _receipt_id(attempt.target.request_id)
+        recorded_at = _finite_timestamp(self.clock(), field="recorded_at_seconds")
+        if attempt.lifecycle.state is RequestState.PRODUCED:
+            if produced_ttl_seconds is None:
+                expires_at = None
+            else:
+                if (
+                    isinstance(produced_ttl_seconds, bool)
+                    or not isinstance(produced_ttl_seconds, (int, float))
+                    or not math.isfinite(produced_ttl_seconds)
+                    or produced_ttl_seconds <= 0
+                ):
+                    raise ReceiptStoreError(
+                        "produced receipt TTL must be finite and positive",
+                        code="receipt.produced_ttl",
+                        stage="receipt",
+                    )
+                expires_at = recorded_at + float(produced_ttl_seconds)
+        else:
+            if produced_ttl_seconds is not None:
+                raise ReceiptStoreError(
+                    "terminal non-produced receipt cannot carry a produced TTL",
+                    code="receipt.produced_ttl",
+                    stage="receipt",
+                )
+            expires_at = None
         record = {
             "schema_version": RECEIPT_RECORD_SCHEMA,
+            "record_kind": "attempt",
             "receipt_id": receipt_id,
             "request_id": attempt.target.request_id,
+            "recorded_at_seconds": recorded_at,
+            "expires_at_seconds": expires_at,
             "attempt": attempt.to_dict(),
             "execution": _validate_execution_envelope(execution),
             "response": _strict_service_response(
@@ -288,79 +410,139 @@ class InferenceReceiptStore:
                 attempt=attempt,
             ),
         }
-        # Prove replayability before publishing the terminal record.
-        _validate_attempt_record(record)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        created = not self.path.exists()
-        with self.path.open("a+b") as handle:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            try:
-                records = self._read_locked(handle)
-                for prior in records:
-                    if prior["request_id"] != record["request_id"]:
-                        continue
-                    if canonical_json(prior) == canonical_json(record):
-                        return receipt_id
-                    raise ReceiptStoreError(
-                        "request ID already has a different durable terminal receipt",
-                        code="receipt.request_conflict",
-                        stage="receipt",
-                    )
-                previous_hash = _ZERO_HASH
-                sequence = 0
-                if records:
-                    handle.seek(0)
-                    entries = _decode_entries(handle.read())
-                    sequence = len(entries)
-                    previous_hash = entries[-1]["entry_sha256"]
-                unsigned = {
-                    "schema_version": RECEIPT_STORE_SCHEMA,
-                    "sequence": sequence,
-                    "previous_entry_sha256": previous_hash,
-                    "record": record,
-                }
-                entry = {**unsigned, "entry_sha256": fingerprint_json(unsigned)}
-                handle.seek(0, os.SEEK_END)
-                handle.write((canonical_json(entry) + "\n").encode("utf-8"))
-                handle.flush()
-                os.fsync(handle.fileno())
-                _fsync_directory(self.path.parent)
-            finally:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-        if created:
-            _fsync_directory(self.path.parent)
+        record = _validate_attempt_record(record)
+        with self._exclusive_handle() as handle:
+            records = self._read_locked(handle)
+            for prior in records:
+                if (
+                    prior["record_kind"] != "attempt"
+                    or prior["request_id"] != record["request_id"]
+                ):
+                    continue
+                if canonical_json(_attempt_comparable(prior)) == canonical_json(
+                    _attempt_comparable(record)
+                ):
+                    return receipt_id
+                raise _receipt_conflict(
+                    "request ID already has a different durable attempt receipt"
+                )
+            self._append_locked(handle, records=records, record=record)
         return receipt_id
+
+    def finalize_inserted(self, proof: AuthoritativeInsertionProof) -> str:
+        """Acknowledge exact durable Draft insertion and enable resolution."""
+
+        if not isinstance(proof, AuthoritativeInsertionProof):
+            raise ReceiptStoreError(
+                "inserted finalization requires AuthoritativeInsertionProof",
+                code="receipt.proof_type",
+                stage="receipt",
+            )
+        return self._finalize_disposition(
+            receipt_id=proof.receipt_id,
+            request_id=proof.request_id,
+            disposition="inserted",
+            proof=proof.to_dict(),
+        )
+
+    def finalize_abandoned(self, proof: AuthoritativeAbandonmentProof) -> str:
+        """Permanently abandon one produced candidate; it can never resolve."""
+
+        if not isinstance(proof, AuthoritativeAbandonmentProof):
+            raise ReceiptStoreError(
+                "abandoned finalization requires AuthoritativeAbandonmentProof",
+                code="receipt.proof_type",
+                stage="receipt",
+            )
+        return self._finalize_disposition(
+            receipt_id=proof.receipt_id,
+            request_id=proof.request_id,
+            disposition="abandoned",
+            proof=proof.to_dict(),
+        )
+
+    def expire_produced(self, *, now: float | None = None) -> tuple[str, ...]:
+        """Append abandonment for every overdue produced attempt, without a thread."""
+
+        cutoff = _finite_timestamp(
+            self.clock() if now is None else now,
+            field="expiry cutoff",
+        )
+        expired: list[str] = []
+        with self._exclusive_handle() as handle:
+            records = self._read_locked(handle)
+            finalized = {
+                record["receipt_id"]
+                for record in records
+                if record["record_kind"] == "disposition"
+            }
+            for attempt_record in tuple(records):
+                if (
+                    attempt_record["record_kind"] != "attempt"
+                    or attempt_record["receipt_id"] in finalized
+                    or attempt_record["attempt"]["request_state"] != "produced"
+                    or attempt_record["expires_at_seconds"] is None
+                    or attempt_record["expires_at_seconds"] > cutoff
+                ):
+                    continue
+                attempt = _attempt_from_record(attempt_record)
+                target = attempt.target
+                proof = AuthoritativeAbandonmentProof(
+                    receipt_id=attempt_record["receipt_id"],
+                    request_id=target.request_id,
+                    project_id=target.project_id,
+                    task_id=target.task_id,
+                    task_epoch=target.task_epoch,
+                    image_id=target.image_id,
+                    annotation_id=target.annotation_id,
+                    current_user_id=target.current_user_id,
+                    draft_id=target.draft_id,
+                    source_draft_revision=target.draft_revision,
+                    reason="produced_expired",
+                )
+                disposition_record = _build_disposition_record(
+                    disposition="abandoned",
+                    proof=proof.to_dict(),
+                    attempt=attempt,
+                    recorded_at_seconds=_finite_timestamp(
+                        self.clock(),
+                        field="recorded_at_seconds",
+                    ),
+                )
+                self._append_locked(
+                    handle,
+                    records=records,
+                    record=disposition_record,
+                )
+                records.append(disposition_record)
+                finalized.add(attempt_record["receipt_id"])
+                expired.append(attempt_record["receipt_id"])
+        return tuple(expired)
 
     def resolve(self, receipt_id: str) -> InferenceReceiptLink | None:
         record = self.get(receipt_id)
-        if record is None:
+        disposition = self.disposition(receipt_id)
+        if (
+            record is None
+            or disposition is None
+            or disposition["disposition"] != "inserted"
+        ):
             return None
         attempt = _attempt_from_record(record)
-        status = attempt.lifecycle.state.value
-        if status not in _ACCEPTED_STATUSES or attempt.result is None:
-            return None
-        payload = attempt.result.insertion_payload
-        if payload is None:
-            return None
+        if (
+            attempt.lifecycle.state is not RequestState.PRODUCED
+            or attempt.result is None
+        ):
+            raise _receipt_corrupt("inserted disposition lacks a produced attempt")
         image_id = attempt.target.image_id
         if not image_id.isdecimal():
             raise ReceiptStoreError(
-                "accepted receipt image_id is not a decimal dataset identity",
+                "inserted receipt image_id is not a decimal dataset identity",
                 code="receipt.image_id",
                 stage="receipt",
             )
-        links = {
-            region.result_id: region.region_link
-            for region in payload.regions
-            if region.region_link is not None
-        }
-        if len(links) != len(payload.regions):
-            raise ReceiptStoreError(
-                "accepted receipt is missing finalized region links",
-                code="receipt.region_links",
-                stage="receipt",
-            )
-        return InferenceReceiptLink(
+        proof = disposition["proof"]
+        return ResolvedInferenceReceiptLink(
             receipt_id=receipt_id,
             request_id=attempt.target.request_id,
             project_id=attempt.target.project_id,
@@ -370,17 +552,90 @@ class InferenceReceiptStore:
             current_user_id=attempt.target.current_user_id,
             draft_id=attempt.target.draft_id,
             draft_revision=attempt.target.draft_revision,
-            terminal_status=status,
-            result_region_keys=links,
+            terminal_status=disposition["terminal_status"],
+            result_region_keys=dict(proof["result_region_keys"]),
+            source_annotation_revision=proof["source_annotation_revision"],
+            observed_annotation_revision=proof["observed_annotation_revision"],
+            inserted_draft_revision=proof["inserted_draft_revision"],
+            inserted_draft_updated_at=proof["inserted_draft_updated_at"],
+            saved_full_result_sha256=proof["saved_full_result_sha256"],
+            saved_semantic_result_sha256=proof["saved_semantic_result_sha256"],
         )
+
+    def _finalize_disposition(
+        self,
+        *,
+        receipt_id: str,
+        request_id: str,
+        disposition: str,
+        proof: Mapping[str, Any],
+    ) -> str:
+        recorded_at = _finite_timestamp(self.clock(), field="recorded_at_seconds")
+        with self._exclusive_handle() as handle:
+            records = self._read_locked(handle)
+            attempt_record = next(
+                (
+                    record
+                    for record in records
+                    if record["record_kind"] == "attempt"
+                    and record["receipt_id"] == receipt_id
+                ),
+                None,
+            )
+            if attempt_record is None:
+                raise ReceiptStoreError(
+                    "cannot finalize an unknown receipt",
+                    code="receipt.unknown",
+                    stage="receipt",
+                )
+            attempt = _attempt_from_record(attempt_record)
+            if request_id != attempt.target.request_id or receipt_id != _receipt_id(
+                request_id
+            ):
+                raise _receipt_conflict("finalization request/receipt identity differs")
+            if attempt.lifecycle.state is not RequestState.PRODUCED:
+                raise _receipt_conflict("only produced attempts accept a disposition")
+            record = _build_disposition_record(
+                disposition=disposition,
+                proof=proof,
+                attempt=attempt,
+                recorded_at_seconds=recorded_at,
+            )
+            prior = next(
+                (
+                    item
+                    for item in records
+                    if item["record_kind"] == "disposition"
+                    and item["receipt_id"] == receipt_id
+                ),
+                None,
+            )
+            if prior is not None:
+                comparable = {
+                    key: value
+                    for key, value in record.items()
+                    if key != "recorded_at_seconds"
+                }
+                prior_comparable = {
+                    key: value
+                    for key, value in prior.items()
+                    if key != "recorded_at_seconds"
+                }
+                if canonical_json(prior_comparable) == canonical_json(comparable):
+                    return receipt_id
+                raise _receipt_conflict(
+                    "receipt disposition or authoritative proof conflicts"
+                )
+            self._append_locked(handle, records=records, record=record)
+        return receipt_id
 
     def _read_locked(self, handle: Any) -> list[dict[str, Any]]:
         handle.seek(0)
         entries = _decode_entries(handle.read())
         previous = _ZERO_HASH
         records: list[dict[str, Any]] = []
-        requests: set[str] = set()
-        receipts: set[str] = set()
+        attempts: dict[str, InferenceAttemptReceipt] = {}
+        dispositions: set[str] = set()
         for sequence, entry in enumerate(entries):
             if set(entry) != {
                 "schema_version",
@@ -398,14 +653,56 @@ class InferenceReceiptStore:
                 or entry["entry_sha256"] != fingerprint_json(unsigned)
             ):
                 raise _receipt_corrupt("receipt hash chain does not replay")
-            record = _validate_attempt_record(entry["record"])
-            if record["request_id"] in requests or record["receipt_id"] in receipts:
-                raise _receipt_corrupt("receipt request and receipt IDs must be unique")
-            requests.add(record["request_id"])
-            receipts.add(record["receipt_id"])
+            raw_record = entry["record"]
+            if not isinstance(raw_record, Mapping):
+                raise _receipt_corrupt("receipt record must be a mapping")
+            if raw_record.get("record_kind") == "attempt":
+                record = _validate_attempt_record(raw_record)
+                if record["request_id"] in attempts:
+                    raise _receipt_corrupt(
+                        "attempt request and receipt IDs must be unique"
+                    )
+                attempts[record["request_id"]] = _attempt_from_record(record)
+            elif raw_record.get("record_kind") == "disposition":
+                request_id = raw_record.get("request_id")
+                attempt = attempts.get(request_id)
+                if attempt is None:
+                    raise _receipt_corrupt("disposition precedes its produced attempt")
+                record = _validate_disposition_record(raw_record, attempt=attempt)
+                if record["receipt_id"] in dispositions:
+                    raise _receipt_corrupt("receipt has more than one disposition")
+                dispositions.add(record["receipt_id"])
+            else:
+                raise _receipt_corrupt("receipt record kind is unsupported")
             records.append(record)
             previous = entry["entry_sha256"]
         return records
+
+    def _append_locked(
+        self,
+        handle: Any,
+        *,
+        records: list[dict[str, Any]],
+        record: Mapping[str, Any],
+    ) -> None:
+        handle.seek(0)
+        entries = _decode_entries(handle.read())
+        previous_hash = _ZERO_HASH if not entries else entries[-1]["entry_sha256"]
+        unsigned = {
+            "schema_version": RECEIPT_STORE_SCHEMA,
+            "sequence": len(records),
+            "previous_entry_sha256": previous_hash,
+            "record": record,
+        }
+        entry = {**unsigned, "entry_sha256": fingerprint_json(unsigned)}
+        handle.seek(0, os.SEEK_END)
+        handle.write((canonical_json(entry) + "\n").encode("utf-8"))
+        handle.flush()
+        os.fsync(handle.fileno())
+        _fsync_directory(self.path.parent)
+
+    def _exclusive_handle(self):
+        return _ExclusiveReceiptHandle(self.path)
 
 
 class RoiInferenceService:
@@ -418,11 +715,28 @@ class RoiInferenceService:
         receipts: InferenceReceiptStore,
         current_targets: CurrentTargetProvider,
         clock: Any,
+        insertion_ack_timeout_seconds: float | None,
     ) -> None:
+        if insertion_ack_timeout_seconds is not None and (
+            isinstance(insertion_ack_timeout_seconds, bool)
+            or not isinstance(insertion_ack_timeout_seconds, (int, float))
+            or not math.isfinite(insertion_ack_timeout_seconds)
+            or insertion_ack_timeout_seconds <= 0
+        ):
+            raise RoiRuntimeError(
+                "insertion acknowledgement timeout must be positive or explicitly None",
+                code="runtime.insertion_ack_timeout",
+                stage="runtime",
+            )
         self.profiles = profiles
         self.receipts = receipts
         self.current_targets = current_targets
         self.clock = clock
+        self.insertion_ack_timeout_seconds = (
+            None
+            if insertion_ack_timeout_seconds is None
+            else float(insertion_ack_timeout_seconds)
+        )
 
     def infer(
         self,
@@ -494,7 +808,9 @@ class RoiInferenceService:
         prior = self.receipts.by_request(target.request_id)
         if prior is not None:
             _validate_retry(prior, target=target, transform=transform, canvas=canvas)
-            return _json_copy(prior["response"])
+            response = self.receipts.response(prior["receipt_id"])
+            assert response is not None
+            return response
 
         started = float(self.clock())
         lifecycle = RequestLifecycle()
@@ -641,43 +957,42 @@ class RoiInferenceService:
 
         assert classified is not None
         assert execution is not None
-        try:
-            current = self.current_targets.current_target(target)
-            decision = bind_for_insertion(classified, current)
-        except Exception as exc:
-            code = _failure_code(exc, default="target.lookup_failed")
-            terminal = lifecycle.transition(
-                RequestState.RUNTIME_FAILURE,
-                at_seconds=_elapsed(self.clock, started),
-                reason=code,
-            )
-            return self._persist_failure(
-                target=target,
-                lifecycle=terminal,
-                profile_receipt=profile_receipt,
-                transform_receipt=transform_receipt,
-                execution=execution,
-                stage="target",
-                code=code,
-            )
-        if decision.status != "bound":
-            code = "target.mismatch:" + ",".join(decision.mismatches)
-            terminal = lifecycle.transition(
-                RequestState.ABANDONED_BEFORE_INSERTION,
-                at_seconds=_elapsed(self.clock, started),
-                reason=code,
-            )
-            return self._persist_failure(
-                target=target,
-                lifecycle=terminal,
-                profile_receipt=profile_receipt,
-                transform_receipt=transform_receipt,
-                execution=execution,
-                stage="target",
-                code="target.mismatch",
-            )
-
         if classified.insertion_payload is not None:
+            try:
+                current = self.current_targets.current_target(target)
+                decision = bind_for_insertion(classified, current)
+            except Exception as exc:
+                code = _failure_code(exc, default="target.lookup_failed")
+                terminal = lifecycle.transition(
+                    RequestState.RUNTIME_FAILURE,
+                    at_seconds=_elapsed(self.clock, started),
+                    reason=code,
+                )
+                return self._persist_failure(
+                    target=target,
+                    lifecycle=terminal,
+                    profile_receipt=profile_receipt,
+                    transform_receipt=transform_receipt,
+                    execution=execution,
+                    stage="target",
+                    code=code,
+                )
+            if decision.status != "bound":
+                code = "target.mismatch:" + ",".join(decision.mismatches)
+                terminal = lifecycle.transition(
+                    RequestState.ABANDONED_BEFORE_INSERTION,
+                    at_seconds=_elapsed(self.clock, started),
+                    reason=code,
+                )
+                return self._persist_failure(
+                    target=target,
+                    lifecycle=terminal,
+                    profile_receipt=profile_receipt,
+                    transform_receipt=transform_receipt,
+                    execution=execution,
+                    stage="target",
+                    code="target.mismatch",
+                )
             links = {
                 region.result_id: f"roi:{target.request_id}:{ordinal}"
                 for ordinal, region in enumerate(
@@ -709,6 +1024,11 @@ class RoiInferenceService:
             attempt=attempt,
             execution=execution,
             response=response,
+            produced_ttl_seconds=(
+                self.insertion_ack_timeout_seconds
+                if terminal.state is RequestState.PRODUCED
+                else None
+            ),
         )
         del resident_request, canvas
         return response
@@ -737,6 +1057,7 @@ class RoiInferenceService:
         response = {
             "receipt_id": receipt_id,
             "request_id": target.request_id,
+            "request_state": lifecycle.state.value,
             "terminal_status": lifecycle.state.value,
             "clear_roi": False,
             "insertion_payload": None,
@@ -974,8 +1295,11 @@ def _validate_attempt_record(value: Any) -> dict[str, Any]:
     record = _json_copy(value)
     if set(record) != {
         "schema_version",
+        "record_kind",
         "receipt_id",
         "request_id",
+        "recorded_at_seconds",
+        "expires_at_seconds",
         "attempt",
         "execution",
         "response",
@@ -983,6 +1307,9 @@ def _validate_attempt_record(value: Any) -> dict[str, Any]:
         raise _receipt_corrupt("attempt record fields are not allowlisted")
     if record["schema_version"] != RECEIPT_RECORD_SCHEMA:
         raise _receipt_corrupt("attempt record schema is unsupported")
+    if record["record_kind"] != "attempt":
+        raise _receipt_corrupt("attempt record kind is invalid")
+    _finite_timestamp(record["recorded_at_seconds"], field="recorded_at_seconds")
     if record["receipt_id"] != _receipt_id(record["request_id"]):
         raise _receipt_corrupt("receipt ID does not match request ID")
     attempt = _attempt_from_record(record)
@@ -991,6 +1318,16 @@ def _validate_attempt_record(value: Any) -> dict[str, Any]:
     execution = _validate_execution_envelope(record["execution"])
     if execution["canonical_profile_fingerprint"] != attempt.target.profile_fingerprint:
         raise _receipt_corrupt("execution and canonical profile fingerprints differ")
+    if attempt.lifecycle.state is RequestState.PRODUCED:
+        if record["expires_at_seconds"] is not None:
+            expires_at = _finite_timestamp(
+                record["expires_at_seconds"],
+                field="expires_at_seconds",
+            )
+            if expires_at <= record["recorded_at_seconds"]:
+                raise _receipt_corrupt("produced receipt expiry must follow production")
+    elif record["expires_at_seconds"] is not None:
+        raise _receipt_corrupt("non-produced attempt cannot carry an expiry")
     record["execution"] = execution
     record["response"] = _strict_service_response(
         record["response"],
@@ -998,6 +1335,154 @@ def _validate_attempt_record(value: Any) -> dict[str, Any]:
         attempt=attempt,
     )
     return record
+
+
+def _attempt_comparable(record: Mapping[str, Any]) -> dict[str, Any]:
+    comparable = {
+        key: value
+        for key, value in record.items()
+        if key not in {"recorded_at_seconds", "expires_at_seconds"}
+    }
+    expires_at = record.get("expires_at_seconds")
+    comparable["produced_ttl_seconds"] = (
+        None
+        if expires_at is None
+        else float(expires_at) - float(record["recorded_at_seconds"])
+    )
+    return comparable
+
+
+def _build_disposition_record(
+    *,
+    disposition: str,
+    proof: Mapping[str, Any],
+    attempt: InferenceAttemptReceipt,
+    recorded_at_seconds: float,
+) -> dict[str, Any]:
+    terminal_status = _validate_authoritative_proof(
+        disposition=disposition,
+        proof=proof,
+        attempt=attempt,
+    )
+    return _validate_disposition_record(
+        {
+            "schema_version": RECEIPT_DISPOSITION_RECORD_SCHEMA,
+            "record_kind": "disposition",
+            "receipt_id": _receipt_id(attempt.target.request_id),
+            "request_id": attempt.target.request_id,
+            "recorded_at_seconds": recorded_at_seconds,
+            "disposition": disposition,
+            "terminal_status": terminal_status,
+            "proof": proof,
+        },
+        attempt=attempt,
+    )
+
+
+def _validate_disposition_record(
+    value: Any,
+    *,
+    attempt: InferenceAttemptReceipt,
+) -> dict[str, Any]:
+    record = _json_copy(value)
+    if set(record) != {
+        "schema_version",
+        "record_kind",
+        "receipt_id",
+        "request_id",
+        "recorded_at_seconds",
+        "disposition",
+        "terminal_status",
+        "proof",
+    }:
+        raise _receipt_corrupt("disposition record fields are not allowlisted")
+    if (
+        record["schema_version"] != RECEIPT_DISPOSITION_RECORD_SCHEMA
+        or record["record_kind"] != "disposition"
+        or record["disposition"] not in {"inserted", "abandoned"}
+    ):
+        raise _receipt_corrupt("disposition record schema or kind is unsupported")
+    _finite_timestamp(record["recorded_at_seconds"], field="recorded_at_seconds")
+    if (
+        record["request_id"] != attempt.target.request_id
+        or record["receipt_id"] != _receipt_id(attempt.target.request_id)
+        or attempt.lifecycle.state is not RequestState.PRODUCED
+    ):
+        raise _receipt_corrupt("disposition is not bound to its produced attempt")
+    expected_status = _validate_authoritative_proof(
+        disposition=record["disposition"],
+        proof=record["proof"],
+        attempt=attempt,
+    )
+    if record["terminal_status"] != expected_status:
+        raise _receipt_corrupt("disposition terminal status is inconsistent")
+    return record
+
+
+def _validate_authoritative_proof(
+    *,
+    disposition: str,
+    proof: Mapping[str, Any],
+    attempt: InferenceAttemptReceipt,
+) -> str:
+    try:
+        if disposition == "inserted":
+            typed_proof: AuthoritativeInsertionProof | AuthoritativeAbandonmentProof = (
+                AuthoritativeInsertionProof(**dict(proof))
+            )
+        elif disposition == "abandoned":
+            typed_proof = AuthoritativeAbandonmentProof(**dict(proof))
+        else:
+            raise InferenceResultContractError("unsupported disposition")
+    except Exception as exc:
+        raise _receipt_corrupt("authoritative disposition proof is invalid") from exc
+    if canonical_json(typed_proof.to_dict()) != canonical_json(proof):
+        raise _receipt_corrupt("authoritative disposition proof is not canonical")
+    target = attempt.target
+    common_expected = {
+        "receipt_id": _receipt_id(target.request_id),
+        "request_id": target.request_id,
+        "project_id": target.project_id,
+        "task_id": target.task_id,
+        "task_epoch": target.task_epoch,
+        "image_id": target.image_id,
+        "annotation_id": target.annotation_id,
+        "current_user_id": target.current_user_id,
+        "draft_id": target.draft_id,
+        "source_draft_revision": target.draft_revision,
+    }
+    if disposition == "inserted":
+        common_expected.update(
+            {
+                "source_annotation_revision": target.annotation_revision,
+                "observed_annotation_revision": target.annotation_revision,
+            }
+        )
+    observed = typed_proof.to_dict()
+    mismatches = tuple(
+        field
+        for field, expected in common_expected.items()
+        if observed[field] != expected
+    )
+    if mismatches:
+        raise _receipt_conflict(
+            "authoritative proof target differs: " + ",".join(mismatches)
+        )
+    if disposition == "abandoned":
+        return RequestState.ABANDONED_BEFORE_INSERTION.value
+    if attempt.result is None or attempt.result.insertion_payload is None:
+        raise _receipt_corrupt("inserted proof lacks a candidate payload")
+    expected_mapping = {
+        region.result_id: region.region_key
+        for region in attempt.result.insertion_payload.regions
+    }
+    if any(value is None for value in expected_mapping.values()):
+        raise _receipt_corrupt("produced candidate lacks planned region keys")
+    if observed["result_region_keys"] != expected_mapping:
+        raise _receipt_conflict("authoritative result-to-region mapping differs")
+    if attempt.result.outcome.value not in _ACCEPTED_STATUSES:
+        raise _receipt_corrupt("inserted disposition has a non-accepted parser outcome")
+    return attempt.result.outcome.value
 
 
 def _attempt_from_record(record: Mapping[str, Any]) -> InferenceAttemptReceipt:
@@ -1058,7 +1543,7 @@ def _attempt_from_record(record: Mapping[str, Any]) -> InferenceAttemptReceipt:
             raw_insertion = raw["result"].get("insertion_payload")
             if raw_insertion is not None:
                 links = {
-                    item["result_id"]: item["region_link"]
+                    item["result_id"]: item["region_key"]
                     for item in raw_insertion["regions"]
                 }
                 result = finalize_region_links(
@@ -1095,16 +1580,18 @@ def _result_response(
     payload = None
     if result.insertion_payload is not None:
         payload = result.insertion_payload.to_dict()
+    state = terminal_state_for_result(result)
     return {
         "receipt_id": receipt_id,
         "request_id": result.target.request_id,
-        "terminal_status": terminal_state_for_result(result).value,
-        "clear_roi": result.clear_roi,
+        "request_state": state.value,
+        "terminal_status": state.value if state.terminal else None,
+        "clear_roi": result.clear_roi if state.terminal else False,
         "insertion_payload": payload,
         "failure": None,
         "counts": {
             "parsed": result.parsed_count,
-            "inserted": result.inserted_count,
+            "produced": result.produced_count,
             "rejected": result.rejected_count,
         },
     }
@@ -1144,6 +1631,7 @@ def _canonical_service_response(
     return {
         "receipt_id": receipt_id,
         "request_id": attempt.target.request_id,
+        "request_state": attempt.lifecycle.state.value,
         "terminal_status": attempt.lifecycle.state.value,
         "clear_roi": False,
         "insertion_payload": None,
@@ -1441,6 +1929,25 @@ def _failure_code(exc: Exception, *, default: str) -> str:
     return safe[:128] or default
 
 
+def _finite_timestamp(value: Any, *, field: str) -> float:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value < 0
+    ):
+        raise _receipt_corrupt(f"{field} must be finite and non-negative")
+    return float(value)
+
+
+def _receipt_conflict(message: str) -> ReceiptStoreError:
+    return ReceiptStoreError(
+        message,
+        code="receipt.request_conflict",
+        stage="receipt",
+    )
+
+
 def _sha256_text(value: str) -> str:
     if not isinstance(value, str):
         raise _receipt_corrupt("execution text must be text")
@@ -1470,6 +1977,22 @@ def _fsync_directory(path: Path) -> None:
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
+
+
+class _ExclusiveReceiptHandle:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.handle: Any = None
+
+    def __enter__(self) -> Any:
+        self.handle = self.path.open("a+b")
+        fcntl.flock(self.handle.fileno(), fcntl.LOCK_EX)
+        return self.handle
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+        del exc_type, exc, traceback
+        fcntl.flock(self.handle.fileno(), fcntl.LOCK_UN)
+        self.handle.close()
 
 
 __all__ = [

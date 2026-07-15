@@ -18,6 +18,9 @@ from src.label_studio_coco_refinement.categories import (
     COCO80_REGISTRY,
     Coco80Registry,
 )
+from src.label_studio_coco_refinement.geometry import (
+    norm1000_bbox_to_label_studio_xywh,
+)
 from src.label_studio_coco_refinement.roi_transform import (
     CROP_EDGE_CONVENTION,
     InverseMapping,
@@ -221,6 +224,195 @@ class CurrentTarget:
         }
 
 
+@dataclass(frozen=True)
+class AuthoritativeInsertionProof:
+    """Transport-neutral proof derived after the Draft append is durable.
+
+    The browser is not an authority for these fields.  A vendor integration is
+    expected to construct this value from its authenticated principal and
+    persisted project/task/annotation/Draft state only after verifying that the
+    exact planned result IDs were saved under the exact planned region keys.
+    """
+
+    receipt_id: str
+    request_id: str
+    project_id: str
+    task_id: str
+    task_epoch: str
+    image_id: str
+    annotation_id: str
+    source_annotation_revision: str
+    observed_annotation_revision: str
+    current_user_id: str
+    draft_id: str
+    source_draft_revision: str
+    inserted_draft_revision: str
+    inserted_draft_updated_at: str
+    result_region_keys: Mapping[str, str]
+    saved_full_result_sha256: str
+    saved_semantic_result_sha256: str
+    saved_full_result: tuple[Mapping[str, Any], ...]
+    saved_semantic_result: tuple[Mapping[str, Any], ...]
+
+    def __post_init__(self) -> None:
+        for field in (
+            "receipt_id",
+            "request_id",
+            "project_id",
+            "task_id",
+            "task_epoch",
+            "image_id",
+            "annotation_id",
+            "source_annotation_revision",
+            "observed_annotation_revision",
+            "current_user_id",
+            "draft_id",
+            "source_draft_revision",
+            "inserted_draft_revision",
+            "inserted_draft_updated_at",
+        ):
+            _require_nonempty_text(getattr(self, field), field=field)
+        if self.observed_annotation_revision != self.source_annotation_revision:
+            raise InferenceResultContractError(
+                "inserted proof observed annotation revision must match the "
+                "source annotation revision"
+            )
+        if self.inserted_draft_revision == self.source_draft_revision:
+            raise InferenceResultContractError(
+                "inserted proof must attest an advanced Draft revision"
+            )
+        _require_sha256(
+            self.saved_full_result_sha256,
+            field="saved_full_result_sha256",
+        )
+        _require_sha256(
+            self.saved_semantic_result_sha256,
+            field="saved_semantic_result_sha256",
+        )
+        if (
+            not isinstance(self.result_region_keys, Mapping)
+            or not self.result_region_keys
+        ):
+            raise InferenceResultContractError(
+                "inserted proof requires a non-empty exact result-to-region mapping"
+            )
+        normalized: dict[str, str] = {}
+        for result_id, region_key in self.result_region_keys.items():
+            _require_nonempty_text(result_id, field="result_id")
+            _validate_planned_region_key(region_key, request_id=self.request_id)
+            normalized[result_id] = region_key
+        if len(set(normalized.values())) != len(normalized):
+            raise InferenceResultContractError(
+                "inserted proof region keys must be unique"
+            )
+        object.__setattr__(
+            self,
+            "result_region_keys",
+            MappingProxyType(dict(sorted(normalized.items()))),
+        )
+        full_result = _strict_json_sequence(
+            self.saved_full_result,
+            field="saved_full_result",
+        )
+        semantic_result = _strict_json_sequence(
+            self.saved_semantic_result,
+            field="saved_semantic_result",
+        )
+        if _sha256_json(full_result) != self.saved_full_result_sha256:
+            raise InferenceResultContractError(
+                "saved full-result hash does not match its exact attested payload"
+            )
+        if _sha256_json(semantic_result) != self.saved_semantic_result_sha256:
+            raise InferenceResultContractError(
+                "saved semantic-result hash does not match its exact attested payload"
+            )
+        _validate_saved_result_attestation(
+            full_result=full_result,
+            semantic_result=semantic_result,
+            receipt_id=self.receipt_id,
+            request_id=self.request_id,
+            source_draft_revision=self.source_draft_revision,
+            result_region_keys=normalized,
+        )
+        object.__setattr__(self, "saved_full_result", _deep_freeze(full_result))
+        object.__setattr__(
+            self,
+            "saved_semantic_result",
+            _deep_freeze(semantic_result),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "receipt_id": self.receipt_id,
+            "request_id": self.request_id,
+            "project_id": self.project_id,
+            "task_id": self.task_id,
+            "task_epoch": self.task_epoch,
+            "image_id": self.image_id,
+            "annotation_id": self.annotation_id,
+            "source_annotation_revision": self.source_annotation_revision,
+            "observed_annotation_revision": self.observed_annotation_revision,
+            "current_user_id": self.current_user_id,
+            "draft_id": self.draft_id,
+            "source_draft_revision": self.source_draft_revision,
+            "inserted_draft_revision": self.inserted_draft_revision,
+            "inserted_draft_updated_at": self.inserted_draft_updated_at,
+            "result_region_keys": dict(self.result_region_keys),
+            "saved_full_result_sha256": self.saved_full_result_sha256,
+            "saved_semantic_result_sha256": self.saved_semantic_result_sha256,
+            "saved_full_result": _deep_thaw(self.saved_full_result),
+            "saved_semantic_result": _deep_thaw(self.saved_semantic_result),
+        }
+
+
+@dataclass(frozen=True)
+class AuthoritativeAbandonmentProof:
+    """Transport-neutral proof that a produced candidate must never insert."""
+
+    receipt_id: str
+    request_id: str
+    project_id: str
+    task_id: str
+    task_epoch: str
+    image_id: str
+    annotation_id: str
+    current_user_id: str
+    draft_id: str
+    source_draft_revision: str
+    reason: str
+
+    def __post_init__(self) -> None:
+        for field in (
+            "receipt_id",
+            "request_id",
+            "project_id",
+            "task_id",
+            "task_epoch",
+            "image_id",
+            "annotation_id",
+            "current_user_id",
+            "draft_id",
+            "source_draft_revision",
+        ):
+            _require_nonempty_text(getattr(self, field), field=field)
+        _safe_receipt_identifier(self.reason, field="reason")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "receipt_id": self.receipt_id,
+            "request_id": self.request_id,
+            "project_id": self.project_id,
+            "task_id": self.task_id,
+            "task_epoch": self.task_epoch,
+            "image_id": self.image_id,
+            "annotation_id": self.annotation_id,
+            "current_user_id": self.current_user_id,
+            "draft_id": self.draft_id,
+            "source_draft_revision": self.source_draft_revision,
+            "reason": self.reason,
+        }
+
+
 class Outcome(str, Enum):
     ACCEPTED = "accepted"
     ACCEPTED_WITH_DROPS = "accepted_with_drops"
@@ -251,18 +443,51 @@ class AcceptedInferenceRegion:
     norm1000_bbox: tuple[int, int, int, int]
     request_id: str
     parser_object_span_id: str
-    region_link: str | None = None
+    source_width: int
+    source_height: int
+    source_draft_revision: str
+    region_key: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "result_id": self.result_id,
             "category_name": self.category_name,
             "category_id": self.category_id,
             "bbox_2d": list(self.norm1000_bbox),
             "request_id": self.request_id,
             "parser_object_span_id": self.parser_object_span_id,
-            "region_link": self.region_link,
+            "source_draft_revision": self.source_draft_revision,
+            "region_key": self.region_key,
         }
+        if self.region_key is not None:
+            x, y, width, height = norm1000_bbox_to_label_studio_xywh(self.norm1000_bbox)
+            result["label_studio_result"] = {
+                "id": self.region_key,
+                "type": "rectanglelabels",
+                "from_name": "bbox",
+                "to_name": "image",
+                "original_width": self.source_width,
+                "original_height": self.source_height,
+                "image_rotation": 0,
+                "value": {
+                    "x": x,
+                    "y": y,
+                    "width": width,
+                    "height": height,
+                    "rotation": 0,
+                    "rectanglelabels": [self.category_name],
+                },
+                "meta": {
+                    "coordexp_region_key": self.region_key,
+                    "coordexp_inference_receipt_id": (f"roi-receipt:{self.request_id}"),
+                    "coordexp_inference_request_id": self.request_id,
+                    "coordexp_inference_result_id": self.result_id,
+                    "coordexp_inference_source_draft_revision": (
+                        self.source_draft_revision
+                    ),
+                },
+            }
+        return result
 
 
 @dataclass(frozen=True)
@@ -283,7 +508,7 @@ class ResultReplayRecord:
     reject_reason: str | None
     inverse_mapping: InverseMapping | None
     final_norm1000_bbox: tuple[int, int, int, int] | None
-    region_link: str | None = None
+    region_key: str | None = None
 
     def to_receipt_dict(self) -> dict[str, Any]:
         return {
@@ -315,7 +540,7 @@ class ResultReplayRecord:
                 if self.final_norm1000_bbox is None
                 else list(self.final_norm1000_bbox)
             ),
-            "region_link": self.region_link,
+            "region_key": self.region_key,
         }
 
 
@@ -343,7 +568,7 @@ class ClassifiedInferenceResult:
     raw_response_sha256: str
     parse_row_sha256: str
     parsed_count: int
-    inserted_count: int
+    produced_count: int
     rejected_count: int
     records: tuple[ResultReplayRecord, ...]
     insertion_payload: DirectInsertionPayload | None
@@ -362,7 +587,7 @@ class ClassifiedInferenceResult:
             "raw_response_sha256": self.raw_response_sha256,
             "parse_row_sha256": self.parse_row_sha256,
             "parsed_count": self.parsed_count,
-            "inserted_count": self.inserted_count,
+            "produced_count": self.produced_count,
             "rejected_count": self.rejected_count,
             "results": [record.to_receipt_dict() for record in self.records],
             "insertion_payload": (
@@ -516,6 +741,9 @@ def classify_parser_result(
                 norm1000_bbox=inverse.norm1000_bbox,
                 request_id=target.request_id,
                 parser_object_span_id=span_id,
+                source_width=transform.source_width,
+                source_height=transform.source_height,
+                source_draft_revision=target.draft_revision,
             )
         )
 
@@ -572,7 +800,7 @@ def classify_parser_result(
         raw_response_sha256=_sha256_text(raw_response_text),
         parse_row_sha256=parse_row_sha256,
         parsed_count=len(parse_row.predictions),
-        inserted_count=len(regions),
+        produced_count=len(regions),
         rejected_count=rejected_count,
         records=tuple(records),
         insertion_payload=insertion_payload,
@@ -613,37 +841,35 @@ def finalize_region_links(
     *,
     region_links: Mapping[str, str],
 ) -> ClassifiedInferenceResult:
-    """Attach exact post-insertion region links after a fresh target binding."""
+    """Attach exact planned region keys after a fresh target binding.
+
+    This prepares the candidate payload only.  It does not attest that Label
+    Studio mutated or durably saved an annotation; only an authoritative
+    insertion proof can make the durable receipt resolvable.
+    """
 
     decision = bind_for_insertion(result, current)
     if decision.status != "bound" or decision.payload is None:
         raise InferenceResultContractError(
-            "cannot finalize region links for an abandoned or empty insertion"
+            "cannot plan region keys for an abandoned or empty insertion"
         )
     expected_ids = {region.result_id for region in decision.payload.regions}
     if set(region_links) != expected_ids:
         raise InferenceResultContractError(
-            "region link keys must exactly match every inserted result"
+            "planned region key mapping must exactly match every produced result"
         )
     normalized: dict[str, str] = {}
     for result_id, link in region_links.items():
-        if (
-            not isinstance(link, str)
-            or not link
-            or any(character in link for character in ("?", "#", "@"))
-        ):
-            raise InferenceResultContractError(
-                "region links must be non-empty credential-free stable identifiers"
-            )
+        _validate_planned_region_key(link, request_id=result.target.request_id)
         normalized[result_id] = link
     if len(set(normalized.values())) != len(normalized):
-        raise InferenceResultContractError("inserted region links must be unique")
+        raise InferenceResultContractError("planned region keys must be unique")
     regions = tuple(
-        replace(region, region_link=normalized[region.result_id])
+        replace(region, region_key=normalized[region.result_id])
         for region in decision.payload.regions
     )
     records = tuple(
-        replace(record, region_link=normalized[record.result_id])
+        replace(record, region_key=normalized[record.result_id])
         if record.result_id in normalized
         else record
         for record in result.records
@@ -659,6 +885,7 @@ class RequestState(str, Enum):
     PENDING = "pending"
     RUNNING = "running"
     CANCELLING = "cancelling"
+    PRODUCED = "produced"
     CANCELLED = "cancelled"
     ACCEPTED = "accepted"
     ACCEPTED_WITH_DROPS = "accepted_with_drops"
@@ -677,6 +904,7 @@ class RequestState(str, Enum):
             RequestState.PENDING,
             RequestState.RUNNING,
             RequestState.CANCELLING,
+            RequestState.PRODUCED,
         }
 
 
@@ -737,8 +965,7 @@ class RequestLifecycle:
 
 
 _RESULT_STATES = {
-    RequestState.ACCEPTED,
-    RequestState.ACCEPTED_WITH_DROPS,
+    RequestState.PRODUCED,
     RequestState.EMPTY,
     RequestState.ALL_REJECTED,
     RequestState.RESPONSE_FAILURE,
@@ -771,6 +998,11 @@ _ALLOWED_TRANSITIONS = {
         RequestState.RUNTIME_FAILURE,
         RequestState.ABANDONED_BEFORE_INSERTION,
     },
+    RequestState.PRODUCED: {
+        RequestState.ACCEPTED,
+        RequestState.ACCEPTED_WITH_DROPS,
+        RequestState.ABANDONED_BEFORE_INSERTION,
+    },
     RequestState.CANCELLING: {
         RequestState.CANCELLED,
         RequestState.TIMEOUT_FAILURE,
@@ -781,10 +1013,8 @@ _ALLOWED_TRANSITIONS = {
 
 
 def terminal_state_for_result(result: ClassifiedInferenceResult) -> RequestState:
-    if result.outcome is Outcome.ACCEPTED:
-        return RequestState.ACCEPTED
-    if result.outcome is Outcome.ACCEPTED_WITH_DROPS:
-        return RequestState.ACCEPTED_WITH_DROPS
+    if result.outcome in {Outcome.ACCEPTED, Outcome.ACCEPTED_WITH_DROPS}:
+        return RequestState.PRODUCED
     if result.outcome is Outcome.EMPTY:
         return RequestState.EMPTY
     if result.outcome is Outcome.ALL_REJECTED:
@@ -804,9 +1034,20 @@ class InferenceAttemptReceipt:
     failure_message: str | None = None
 
     def __post_init__(self) -> None:
-        if not self.lifecycle.state.terminal:
+        if (
+            not self.lifecycle.state.terminal
+            and self.lifecycle.state is not RequestState.PRODUCED
+        ):
             raise InferenceResultContractError(
-                "completed inference receipt requires a terminal lifecycle"
+                "completed inference receipt requires produced or terminal lifecycle"
+            )
+        if self.lifecycle.state in {
+            RequestState.ACCEPTED,
+            RequestState.ACCEPTED_WITH_DROPS,
+        }:
+            raise InferenceResultContractError(
+                "inserted acceptance belongs to an authoritative disposition, "
+                "not an inference attempt receipt"
             )
         if self.result is not None and self.result.target != self.target:
             raise InferenceResultContractError(
@@ -866,7 +1107,10 @@ class InferenceAttemptReceipt:
     def to_dict(self) -> dict[str, Any]:
         return {
             "request": self.target.to_receipt_dict(),
-            "terminal_status": self.lifecycle.state.value,
+            "request_state": self.lifecycle.state.value,
+            "terminal_status": (
+                self.lifecycle.state.value if self.lifecycle.state.terminal else None
+            ),
             "state_transitions": [
                 transition.to_dict() for transition in self.lifecycle.transitions
             ],
@@ -1147,7 +1391,7 @@ def _validate_result_terminal_payload(
 ) -> None:
     if (
         result.parsed_count < 0
-        or result.inserted_count < 0
+        or result.produced_count < 0
         or result.rejected_count < 0
     ):
         raise InferenceResultContractError("result terminal counts cannot be negative")
@@ -1158,32 +1402,36 @@ def _validate_result_terminal_payload(
     _validate_result_parser_replay(result, transform_receipt=transform_receipt)
     if result.outcome in {Outcome.ACCEPTED, Outcome.ACCEPTED_WITH_DROPS}:
         payload = result.insertion_payload
-        if payload is None or result.inserted_count <= 0:
+        if payload is None or result.produced_count <= 0:
             raise InferenceResultContractError(
-                "accepted receipt requires a non-empty insertion payload"
+                "produced receipt requires a non-empty insertion payload"
             )
-        if len(payload.regions) != result.inserted_count:
+        if len(payload.regions) != result.produced_count:
             raise InferenceResultContractError(
-                "accepted receipt insertion count does not match regions"
+                "produced receipt candidate count does not match regions"
             )
         if payload.target != result.target:
             raise InferenceResultContractError(
-                "accepted receipt insertion target does not match result target"
+                "produced receipt insertion target does not match result target"
             )
         links: dict[str, str] = {}
         for region in payload.regions:
-            if not isinstance(region.region_link, str) or not region.region_link:
+            if not isinstance(region.region_key, str) or not region.region_key:
                 raise InferenceResultContractError(
-                    "accepted receipt requires finalized non-null region links"
+                    "produced receipt requires planned non-null region keys"
                 )
             if region.result_id in links:
                 raise InferenceResultContractError(
-                    "accepted receipt contains duplicate result IDs"
+                    "produced receipt contains duplicate result IDs"
                 )
-            links[region.result_id] = region.region_link
+            _validate_planned_region_key(
+                region.region_key,
+                request_id=result.target.request_id,
+            )
+            links[region.result_id] = region.region_key
         if len(set(links.values())) != len(links):
             raise InferenceResultContractError(
-                "accepted receipt contains duplicate region links"
+                "produced receipt contains duplicate region keys"
             )
         mapped_records = {
             record.result_id: record
@@ -1192,24 +1440,24 @@ def _validate_result_terminal_payload(
         }
         if set(mapped_records) != set(links):
             raise InferenceResultContractError(
-                "accepted receipt regions do not match mapped replay records"
+                "produced receipt regions do not match mapped replay records"
             )
         for record in result.records:
             if record.result_id in links:
-                if record.region_link != links[record.result_id]:
+                if record.region_key != links[record.result_id]:
                     raise InferenceResultContractError(
-                        "accepted receipt replay record has no matching finalized region link"
+                        "produced receipt replay record has no matching planned region key"
                     )
-            elif record.region_link is not None:
+            elif record.region_key is not None:
                 raise InferenceResultContractError(
-                    "rejected parser record cannot carry an inserted region link"
+                    "rejected parser record cannot carry a planned region key"
                 )
     else:
-        if result.insertion_payload is not None or result.inserted_count != 0:
+        if result.insertion_payload is not None or result.produced_count != 0:
             raise InferenceResultContractError(
                 "non-inserting result terminal cannot contain an insertion payload"
             )
-        if any(record.region_link is not None for record in result.records):
+        if any(record.region_key is not None for record in result.records):
             raise InferenceResultContractError(
                 "non-inserting result terminal cannot contain region links"
             )
@@ -1225,6 +1473,87 @@ def _strict_json_mapping(value: Any, *, field: str) -> dict[str, Any]:
     if not isinstance(copied, dict):
         raise InferenceResultContractError(f"{field} must be a mapping")
     return copied
+
+
+def _strict_json_sequence(value: Any, *, field: str) -> list[dict[str, Any]]:
+    if not isinstance(value, (list, tuple)):
+        raise InferenceResultContractError(f"{field} must be a JSON array")
+    try:
+        copied = json.loads(_canonical_json(_deep_thaw(value)))
+    except json.JSONDecodeError as exc:  # pragma: no cover - canonical output parses.
+        raise InferenceResultContractError(f"{field} is not strict JSON") from exc
+    if not isinstance(copied, list) or any(
+        not isinstance(item, dict) for item in copied
+    ):
+        raise InferenceResultContractError(
+            f"{field} must be a JSON array of result objects"
+        )
+    return copied
+
+
+def _validate_saved_result_attestation(
+    *,
+    full_result: list[dict[str, Any]],
+    semantic_result: list[dict[str, Any]],
+    receipt_id: str,
+    request_id: str,
+    source_draft_revision: str,
+    result_region_keys: Mapping[str, str],
+) -> None:
+    full_by_region: dict[str, dict[str, Any]] = {}
+    for item in full_result:
+        region_key = item.get("id")
+        if isinstance(region_key, str):
+            if region_key in full_by_region:
+                raise InferenceResultContractError(
+                    "saved full result contains duplicate region IDs"
+                )
+            full_by_region[region_key] = item
+    semantic_by_region: dict[str, dict[str, Any]] = {}
+    for item in semantic_result:
+        region_key = item.get("region_key")
+        if isinstance(region_key, str):
+            if region_key in semantic_by_region:
+                raise InferenceResultContractError(
+                    "saved semantic result contains duplicate region keys"
+                )
+            semantic_by_region[region_key] = item
+
+    for result_id, region_key in result_region_keys.items():
+        full = full_by_region.get(region_key)
+        semantic = semantic_by_region.get(region_key)
+        if full is None or semantic is None:
+            raise InferenceResultContractError(
+                "saved Draft attestation is missing a planned inserted region"
+            )
+        expected_linkage = {
+            "coordexp_region_key": region_key,
+            "coordexp_inference_receipt_id": receipt_id,
+            "coordexp_inference_request_id": request_id,
+            "coordexp_inference_result_id": result_id,
+            "coordexp_inference_source_draft_revision": source_draft_revision,
+        }
+        meta = full.get("meta")
+        if not isinstance(meta, Mapping) or any(
+            meta.get(field) != value for field, value in expected_linkage.items()
+        ):
+            raise InferenceResultContractError(
+                "saved full result does not preserve exact inference linkage"
+            )
+        metadata = semantic.get("metadata")
+        expected_semantic = {
+            "inference_origin": True,
+            "receipt_id": receipt_id,
+            "request_id": request_id,
+            "result_id": result_id,
+            "draft_revision": source_draft_revision,
+        }
+        if not isinstance(metadata, Mapping) or any(
+            metadata.get(field) != value for field, value in expected_semantic.items()
+        ):
+            raise InferenceResultContractError(
+                "saved semantic result does not preserve exact inference linkage"
+            )
 
 
 def _deep_freeze(value: Any) -> Any:
@@ -1264,6 +1593,27 @@ def _safe_receipt_identifier(value: str, *, field: str) -> str:
     ):
         raise InferenceResultContractError(
             f"{field} must be a short credential-free identifier"
+        )
+    return value
+
+
+def _require_nonempty_text(value: Any, *, field: str) -> str:
+    if not isinstance(value, str) or not value or value != value.strip():
+        raise InferenceResultContractError(f"{field} must be non-empty trimmed text")
+    return value
+
+
+def _validate_planned_region_key(value: Any, *, request_id: str) -> str:
+    _require_nonempty_text(value, field="region_key")
+    prefix = f"roi:{request_id}:"
+    if not value.startswith(prefix):
+        raise InferenceResultContractError(
+            "planned region key must be bound to the exact request UUID"
+        )
+    ordinal = value.removeprefix(prefix)
+    if not ordinal.isdecimal() or int(ordinal) <= 0 or str(int(ordinal)) != ordinal:
+        raise InferenceResultContractError(
+            "planned region key must use a canonical positive ordinal"
         )
     return value
 
@@ -1414,7 +1764,7 @@ def _without_row_index(value: Any) -> Any:
 def _without_finalized_region_links(
     result: ClassifiedInferenceResult,
 ) -> ClassifiedInferenceResult:
-    records = tuple(replace(record, region_link=None) for record in result.records)
+    records = tuple(replace(record, region_key=None) for record in result.records)
     payload = result.insertion_payload
     if payload is not None:
         if not isinstance(payload, DirectInsertionPayload) or any(
@@ -1427,7 +1777,7 @@ def _without_finalized_region_links(
         payload = replace(
             payload,
             regions=tuple(
-                replace(region, region_link=None) for region in payload.regions
+                replace(region, region_key=None) for region in payload.regions
             ),
         )
     return replace(result, records=records, insertion_payload=payload)

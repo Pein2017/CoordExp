@@ -139,7 +139,7 @@ def _finalized_accepted_result():
     return finalize_region_links(
         result,
         CurrentTarget(**result.target.binding_payload()),
-        region_links={"request-1:result-0": "region-1"},
+        region_links={"request-1:result-0": "roi:request-1:1"},
     )
 
 
@@ -161,7 +161,7 @@ def test_accepted_result_is_one_target_bound_append_payload_with_raw_replay() ->
 
     assert result.outcome is Outcome.ACCEPTED
     assert result.clear_roi is True
-    assert (result.parsed_count, result.inserted_count, result.rejected_count) == (
+    assert (result.parsed_count, result.produced_count, result.rejected_count) == (
         1,
         1,
         0,
@@ -214,7 +214,7 @@ def test_mixed_valid_and_class_rejected_is_accepted_with_drops() -> None:
     )
 
     assert result.outcome is Outcome.ACCEPTED_WITH_DROPS
-    assert result.inserted_count == 1
+    assert result.produced_count == 1
     assert result.rejected_count == 1
     assert result.insertion_payload is not None
     assert len(result.insertion_payload.regions) == 1
@@ -317,12 +317,12 @@ def test_region_links_finalize_only_after_exact_binding() -> None:
     finalized = finalize_region_links(
         result,
         current,
-        region_links={"request-1:result-0": "region-stable-17"},
+        region_links={"request-1:result-0": "roi:request-1:1"},
     )
 
     assert finalized.insertion_payload is not None
-    assert finalized.insertion_payload.regions[0].region_link == "region-stable-17"
-    assert finalized.records[0].region_link == "region-stable-17"
+    assert finalized.insertion_payload.regions[0].region_key == "roi:request-1:1"
+    assert finalized.records[0].region_key == "roi:request-1:1"
 
 
 def test_region_link_finalization_rejects_stale_target_or_missing_links() -> None:
@@ -335,7 +335,7 @@ def test_region_link_finalization_rejects_stale_target_or_missing_links() -> Non
         finalize_region_links(
             result,
             stale,
-            region_links={"request-1:result-0": "region-stable-17"},
+            region_links={"request-1:result-0": "roi:request-1:1"},
         )
     with pytest.raises(InferenceResultContractError, match="exactly match"):
         finalize_region_links(
@@ -397,16 +397,16 @@ def test_failure_receipt_records_stage_and_never_claims_annotation_mutation() ->
     assert "message" not in payload["failure"]
 
 
-def test_accepted_receipt_requires_and_retains_finalized_region_links() -> None:
+def test_produced_receipt_requires_and_retains_planned_region_keys() -> None:
     result = _classify(_object("stop sign", (100, 100, 500, 500)))
     current = CurrentTarget(**result.target.binding_payload())
     finalized = finalize_region_links(
         result,
         current,
-        region_links={"request-1:result-0": "region-13"},
+        region_links={"request-1:result-0": "roi:request-1:1"},
     )
     lifecycle = RequestLifecycle().transition(RequestState.RUNNING, at_seconds=1)
-    lifecycle = lifecycle.transition(RequestState.ACCEPTED, at_seconds=2)
+    lifecycle = lifecycle.transition(RequestState.PRODUCED, at_seconds=2)
 
     receipt = InferenceAttemptReceipt(
         target=result.target,
@@ -419,7 +419,31 @@ def test_accepted_receipt_requires_and_retains_finalized_region_links() -> None:
     payload = receipt.to_dict()
     region = payload["result"]["insertion_payload"]["regions"][0]
     assert region["category_id"] == 13
-    assert region["region_link"] == "region-13"
+    assert region["region_key"] == "roi:request-1:1"
+    assert region["source_draft_revision"] == "draft-rev-12"
+    assert region["label_studio_result"]["meta"] == {
+        "coordexp_region_key": "roi:request-1:1",
+        "coordexp_inference_receipt_id": "roi-receipt:request-1",
+        "coordexp_inference_request_id": "request-1",
+        "coordexp_inference_result_id": "request-1:result-0",
+        "coordexp_inference_source_draft_revision": "draft-rev-12",
+    }
+
+
+def test_inserted_acceptance_cannot_be_forged_as_an_attempt_receipt() -> None:
+    result = _finalized_accepted_result()
+    lifecycle = RequestLifecycle().transition(RequestState.RUNNING, at_seconds=1)
+    lifecycle = lifecycle.transition(RequestState.PRODUCED, at_seconds=2)
+    lifecycle = lifecycle.transition(RequestState.ACCEPTED, at_seconds=3)
+
+    with pytest.raises(InferenceResultContractError, match="authoritative disposition"):
+        InferenceAttemptReceipt(
+            target=result.target,
+            lifecycle=lifecycle,
+            profile_receipt=_profile_receipt(result.target),
+            transform_receipt=_transform().to_receipt_dict(),
+            result=result,
+        )
 
 
 def test_attempt_receipt_rejects_forged_class_and_insertion_category() -> None:
@@ -510,7 +534,7 @@ def test_attempt_receipt_rejects_result_rebound_to_different_raw_response() -> N
     finalized = finalize_region_links(
         result,
         CurrentTarget(**result.target.binding_payload()),
-        region_links={"request-1:result-0": "region-1"},
+        region_links={"request-1:result-0": "roi:request-1:1"},
     )
     replacement_raw = _object("bicycle", (100, 100, 500, 500))
     rebound = replace(
@@ -519,7 +543,7 @@ def test_attempt_receipt_rejects_result_rebound_to_different_raw_response() -> N
         raw_response_sha256=hashlib.sha256(replacement_raw.encode()).hexdigest(),
     )
     lifecycle = RequestLifecycle().transition(RequestState.RUNNING, at_seconds=1)
-    lifecycle = lifecycle.transition(RequestState.ACCEPTED, at_seconds=2)
+    lifecycle = lifecycle.transition(RequestState.PRODUCED, at_seconds=2)
 
     with pytest.raises(InferenceResultContractError, match="parse row hash"):
         InferenceAttemptReceipt(
@@ -549,12 +573,12 @@ def test_attempt_receipt_revalidates_each_record_against_raw_response(
     finalized = finalize_region_links(
         result,
         CurrentTarget(**result.target.binding_payload()),
-        region_links={"request-1:result-0": "region-1"},
+        region_links={"request-1:result-0": "roi:request-1:1"},
     )
     altered_record = replace(finalized.records[0], **record_changes)
     altered = replace(finalized, records=(altered_record,))
     lifecycle = RequestLifecycle().transition(RequestState.RUNNING, at_seconds=1)
-    lifecycle = lifecycle.transition(RequestState.ACCEPTED, at_seconds=2)
+    lifecycle = lifecycle.transition(RequestState.PRODUCED, at_seconds=2)
 
     with pytest.raises(InferenceResultContractError, match=error_match):
         InferenceAttemptReceipt(
@@ -571,11 +595,11 @@ def test_attempt_receipt_revalidates_parse_row_hash_against_raw_response() -> No
     finalized = finalize_region_links(
         result,
         CurrentTarget(**result.target.binding_payload()),
-        region_links={"request-1:result-0": "region-1"},
+        region_links={"request-1:result-0": "roi:request-1:1"},
     )
     altered = replace(finalized, parse_row_sha256="0" * 64)
     lifecycle = RequestLifecycle().transition(RequestState.RUNNING, at_seconds=1)
-    lifecycle = lifecycle.transition(RequestState.ACCEPTED, at_seconds=2)
+    lifecycle = lifecycle.transition(RequestState.PRODUCED, at_seconds=2)
 
     with pytest.raises(InferenceResultContractError, match="parse row hash"):
         InferenceAttemptReceipt(
@@ -587,12 +611,12 @@ def test_attempt_receipt_revalidates_parse_row_hash_against_raw_response() -> No
         )
 
 
-def test_accepted_receipt_rejects_missing_region_links() -> None:
+def test_produced_receipt_rejects_missing_region_keys() -> None:
     result = _classify(_object("person", (100, 100, 500, 500)))
     lifecycle = RequestLifecycle().transition(RequestState.RUNNING, at_seconds=1)
-    lifecycle = lifecycle.transition(RequestState.ACCEPTED, at_seconds=2)
+    lifecycle = lifecycle.transition(RequestState.PRODUCED, at_seconds=2)
 
-    with pytest.raises(InferenceResultContractError, match="finalized non-null"):
+    with pytest.raises(InferenceResultContractError, match="planned non-null"):
         InferenceAttemptReceipt(
             target=result.target,
             lifecycle=lifecycle,
@@ -714,7 +738,7 @@ def test_attempt_receipt_rejects_local_artifact_paths() -> None:
 def test_result_terminal_state_classification_is_explicit() -> None:
     accepted = _classify(_object("person", (100, 100, 500, 500)))
     response_failure = _classify("bad response")
-    assert terminal_state_for_result(accepted) is RequestState.ACCEPTED
+    assert terminal_state_for_result(accepted) is RequestState.PRODUCED
     assert terminal_state_for_result(response_failure) is RequestState.RESPONSE_FAILURE
 
 

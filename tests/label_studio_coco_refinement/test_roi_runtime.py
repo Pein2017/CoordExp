@@ -4,14 +4,18 @@ import gc
 import json
 import weakref
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
+from threading import Event, Thread
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 import transformers
 from PIL import Image
+
+import src.label_studio_coco_refinement.roi_runtime as roi_runtime_module
 
 from src.config.fingerprint import sha256_json
 from src.config.inference import (
@@ -27,8 +31,14 @@ from src.label_studio_coco_refinement.inference_profiles import (
     fingerprint_json,
 )
 from src.label_studio_coco_refinement.inference_results import (
+    AuthoritativeAbandonmentProof,
+    AuthoritativeInsertionProof,
     CurrentTarget,
+    InferenceResultContractError,
     RequestTarget,
+)
+from src.label_studio_coco_refinement.draft_adapter import (
+    canonicalize_label_studio_draft,
 )
 from src.label_studio_coco_refinement.resident_inference import (
     CancellationMetadata,
@@ -330,10 +340,79 @@ def _target(
     )
 
 
+def _insertion_proof(
+    response: dict[str, Any],
+    *,
+    result_region_keys: dict[str, str] | None = None,
+) -> AuthoritativeInsertionProof:
+    payload = response["insertion_payload"]
+    target = payload["target"]
+    expected_mapping = {
+        region["result_id"]: region["region_key"] for region in payload["regions"]
+    }
+    mapping = expected_mapping if result_region_keys is None else result_region_keys
+    saved_full_result = [
+        deepcopy(region["label_studio_result"]) for region in payload["regions"]
+    ]
+    for region, saved in zip(payload["regions"], saved_full_result, strict=True):
+        planned_key = mapping[region["result_id"]]
+        saved["id"] = planned_key
+        saved["meta"]["coordexp_region_key"] = planned_key
+    saved_semantic_result = canonicalize_label_studio_draft(
+        saved_full_result,
+        split="train",
+        image_id=int(target["image_id"]),
+        image_width=saved_full_result[0]["original_width"],
+        image_height=saved_full_result[0]["original_height"],
+    ).to_json_regions()
+    return AuthoritativeInsertionProof(
+        receipt_id=response["receipt_id"],
+        request_id=response["request_id"],
+        project_id=target["project_id"],
+        task_id=target["task_id"],
+        task_epoch=target["task_epoch"],
+        image_id=target["image_id"],
+        annotation_id=target["annotation_id"],
+        source_annotation_revision=target["annotation_revision"],
+        observed_annotation_revision=target["annotation_revision"],
+        current_user_id=target["current_user_id"],
+        draft_id=target["draft_id"],
+        source_draft_revision=target["draft_revision"],
+        inserted_draft_revision="2026-07-15T00:00:12Z",
+        inserted_draft_updated_at="2026-07-15T00:00:12.250Z",
+        result_region_keys=mapping,
+        saved_full_result_sha256=fingerprint_json(saved_full_result),
+        saved_semantic_result_sha256=fingerprint_json(saved_semantic_result),
+        saved_full_result=saved_full_result,
+        saved_semantic_result=saved_semantic_result,
+    )
+
+
+def _abandonment_proof(
+    response: dict[str, Any], *, reason: str = "forced_unload"
+) -> AuthoritativeAbandonmentProof:
+    target = response["insertion_payload"]["target"]
+    return AuthoritativeAbandonmentProof(
+        receipt_id=response["receipt_id"],
+        request_id=response["request_id"],
+        project_id=target["project_id"],
+        task_id=target["task_id"],
+        task_epoch=target["task_epoch"],
+        image_id=target["image_id"],
+        annotation_id=target["annotation_id"],
+        current_user_id=target["current_user_id"],
+        draft_id=target["draft_id"],
+        source_draft_revision=target["draft_revision"],
+        reason=reason,
+    )
+
+
 def _service(
     tmp_path: Path,
     profile: EngineProfile,
     provider: _TargetProvider | None = None,
+    *,
+    insertion_ack_timeout_seconds: float | None = 120.0,
 ) -> tuple[RoiInferenceService, InferenceReceiptStore, _TargetProvider]:
     profiles = EngineProfileStore(tmp_path / "profiles.json")
     profiles.save(profile)
@@ -347,6 +426,7 @@ def _service(
             receipts=receipts,
             current_targets=provider,
             clock=lambda: next(ticks),
+            insertion_ack_timeout_seconds=insertion_ack_timeout_seconds,
         ),
         receipts,
         provider,
@@ -358,10 +438,16 @@ def _run(
     *,
     text: str,
     provider: _TargetProvider | None = None,
+    insertion_ack_timeout_seconds: float | None = 120.0,
 ) -> tuple[dict[str, Any], InferenceReceiptStore, _FakeEngine, EngineProfile]:
     profile = _profile(tmp_path)
     transform = _transform()
-    service, receipts, _ = _service(tmp_path, profile, provider)
+    service, receipts, _ = _service(
+        tmp_path,
+        profile,
+        provider,
+        insertion_ack_timeout_seconds=insertion_ack_timeout_seconds,
+    )
     engine = _FakeEngine(
         build_resident_profile_binding(profile),
         canonical_profile=profile,
@@ -409,15 +495,30 @@ def test_bridge_rejects_sampling_policy_not_executed_by_resident_adapter(
     assert exc_info.value.code == "profile.unsupported_sampling_policy"
 
 
+@pytest.mark.parametrize("timeout", [0, -1.0, float("nan"), True])
+def test_insertion_ack_policy_requires_positive_or_explicit_nonexpiring(
+    tmp_path: Path,
+    timeout: Any,
+) -> None:
+    profile = _profile(tmp_path)
+
+    with pytest.raises(RoiRuntimeError, match="acknowledgement timeout"):
+        _service(
+            tmp_path,
+            profile,
+            insertion_ack_timeout_seconds=timeout,
+        )
+
+
 @pytest.mark.parametrize(
     ("text", "status", "clear", "inserted"),
     [
-        (_object("person", (100, 100, 700, 800)), "accepted", True, 1),
+        (_object("person", (100, 100, 700, 800)), "produced", False, 1),
         (
             _object("person", (100, 100, 400, 400))
             + _object("Person", (500, 500, 900, 900)),
-            "accepted_with_drops",
-            True,
+            "produced",
+            False,
             1,
         ),
         ("", "empty", True, 0),
@@ -435,9 +536,10 @@ def test_every_parser_outcome_is_durable_and_replayable(
 ) -> None:
     response, receipts, engine, _ = _run(tmp_path, text=text)
 
-    assert response["terminal_status"] == status
+    assert response["request_state"] == status
+    assert response["terminal_status"] == (None if status == "produced" else status)
     assert response["clear_roi"] is clear
-    assert response.get("counts", {}).get("inserted", 0) == inserted
+    assert response.get("counts", {}).get("produced", 0) == inserted
     replayed = receipts.replay()
     assert len(replayed) == 1
     assert replayed[0]["response"] == response
@@ -456,22 +558,55 @@ def test_every_parser_outcome_is_durable_and_replayable(
     assert engine.result_reference() is None
 
 
-def test_accepted_result_uses_stable_safe_keys_and_resolves_for_commit(
+def test_produced_result_uses_stable_keys_and_resolves_only_after_ack(
     tmp_path: Path,
 ) -> None:
-    response, receipts, _, profile = _run(
+    response, receipts, engine, profile = _run(
         tmp_path, text=_object("stop sign", (100, 100, 800, 900))
     )
 
     region = response["insertion_payload"]["regions"][0]
-    assert region["region_link"] == f"roi:{REQUEST_ID}:1"
+    assert region["region_key"] == f"roi:{REQUEST_ID}:1"
     assert region["category_id"] == 13
-    link = receipts.resolve(response["receipt_id"])
+    assert region["source_draft_revision"] == "2026-07-15T00:00:11Z"
+    assert region["label_studio_result"]["id"] == f"roi:{REQUEST_ID}:1"
+    assert (
+        region["label_studio_result"]["meta"][
+            "coordexp_inference_source_draft_revision"
+        ]
+        == "2026-07-15T00:00:11Z"
+    )
+    canonical_draft = canonicalize_label_studio_draft(
+        [region["label_studio_result"]],
+        split="train",
+        image_id=42,
+        image_width=96,
+        image_height=64,
+    )
+    assert canonical_draft.to_json_regions()[0]["metadata"] == {
+        "inference_origin": True,
+        "receipt_id": response["receipt_id"],
+        "request_id": REQUEST_ID,
+        "result_id": f"{REQUEST_ID}:result-0",
+        "draft_revision": "2026-07-15T00:00:11Z",
+    }
+    assert receipts.resolve(response["receipt_id"]) is None
+    restarted = InferenceReceiptStore(receipts.path)
+    assert restarted.resolve(response["receipt_id"]) is None
+    proof = _insertion_proof(response)
+    restarted.finalize_inserted(proof)
+    link = restarted.resolve(response["receipt_id"])
     assert link is not None
     assert link.image_id == 42
     assert link.current_user_id == "reviewer-1"
     assert link.draft_id == "draft-9"
     assert link.draft_revision == "2026-07-15T00:00:11Z"
+    assert link.source_annotation_revision == "revision-11"
+    assert link.observed_annotation_revision == "revision-11"
+    assert link.inserted_draft_revision == "2026-07-15T00:00:12Z"
+    assert link.inserted_draft_updated_at == "2026-07-15T00:00:12.250Z"
+    assert link.saved_full_result_sha256 == proof.saved_full_result_sha256
+    assert link.saved_semantic_result_sha256 == proof.saved_semantic_result_sha256
     assert link.result_region_keys == {f"{REQUEST_ID}:result-0": f"roi:{REQUEST_ID}:1"}
     record = receipts.get(response["receipt_id"])
     assert record is not None
@@ -480,6 +615,284 @@ def test_accepted_result_uses_stable_safe_keys_and_resolves_for_commit(
     assert (
         record["execution"]["resident_profile"]["profile_fingerprint"]
         != profile.fingerprint
+    )
+    retry_service = RoiInferenceService(
+        profiles=EngineProfileStore(tmp_path / "profiles.json"),
+        receipts=receipts,
+        current_targets=_TargetProvider(),
+        clock=lambda: 1.0,
+        insertion_ack_timeout_seconds=120.0,
+    )
+    image = Image.new("RGB", (96, 64), color=(3, 4, 5))
+    try:
+        retry = retry_service.infer(
+            image=image,
+            target=_target(profile, _transform()),
+            transform=_transform(),
+            engine=engine,
+        )
+    finally:
+        image.close()
+    assert retry["terminal_status"] == "accepted"
+    assert retry["insertion_payload"] is None
+    assert retry["result_region_keys"] == proof.result_region_keys
+    assert retry["counts"] == {"parsed": 1, "inserted": 1, "rejected": 0}
+    assert retry["insertion_attestation"]["inserted_draft_revision"] == (
+        "2026-07-15T00:00:12Z"
+    )
+    assert engine.calls == 1
+
+
+def test_response_only_or_wrong_saved_draft_attestation_cannot_finalize(
+    tmp_path: Path,
+) -> None:
+    provider = _TargetProvider()
+    response, receipts, _, _ = _run(
+        tmp_path,
+        text=_object("person", (100, 100, 700, 800)),
+        provider=provider,
+    )
+    provider.override = {"draft_revision": "2026-07-15T00:00:12Z"}
+    payload = response["insertion_payload"]
+    target = payload["target"]
+    response_only = {
+        "receipt_id": response["receipt_id"],
+        "request_id": response["request_id"],
+        "project_id": target["project_id"],
+        "task_id": target["task_id"],
+        "task_epoch": target["task_epoch"],
+        "image_id": target["image_id"],
+        "annotation_id": target["annotation_id"],
+        "current_user_id": target["current_user_id"],
+        "draft_id": target["draft_id"],
+        "source_draft_revision": target["draft_revision"],
+        "result_region_keys": {
+            region["result_id"]: region["region_key"] for region in payload["regions"]
+        },
+    }
+    with pytest.raises(TypeError):
+        AuthoritativeInsertionProof(**response_only)
+    assert receipts.resolve(response["receipt_id"]) is None
+
+    proof = _insertion_proof(response)
+    with pytest.raises(InferenceResultContractError, match="annotation revision"):
+        replace(
+            proof,
+            observed_annotation_revision="wrong-observed-revision",
+        )
+    with pytest.raises(InferenceResultContractError, match="Draft revision"):
+        replace(proof, inserted_draft_revision=proof.source_draft_revision)
+    with pytest.raises(InferenceResultContractError, match="full-result hash"):
+        replace(proof, saved_full_result_sha256="0" * 64)
+    with pytest.raises(InferenceResultContractError, match="semantic-result hash"):
+        replace(proof, saved_semantic_result_sha256="0" * 64)
+    with pytest.raises(ReceiptStoreError, match="source_annotation_revision"):
+        receipts.finalize_inserted(
+            replace(
+                proof,
+                source_annotation_revision="wrong-source-revision",
+                observed_annotation_revision="wrong-source-revision",
+            )
+        )
+
+    receipts.finalize_inserted(proof)
+    assert receipts.resolve(response["receipt_id"]) is not None
+
+
+def test_inserted_ack_is_exactly_idempotent_and_conflicts_fail_closed(
+    tmp_path: Path,
+) -> None:
+    response, receipts, _, _ = _run(
+        tmp_path, text=_object("person", (100, 100, 700, 800))
+    )
+    proof = _insertion_proof(response)
+
+    assert receipts.finalize_inserted(proof) == response["receipt_id"]
+    assert receipts.finalize_inserted(proof) == response["receipt_id"]
+    assert len(receipts.replay()) == 2
+
+    for changed_proof in (
+        replace(proof, current_user_id="reviewer-2"),
+        replace(proof, task_id="task-elsewhere"),
+    ):
+        with pytest.raises(ReceiptStoreError, match="target differs"):
+            receipts.finalize_inserted(changed_proof)
+    with pytest.raises(ReceiptStoreError, match="mapping differs"):
+        receipts.finalize_inserted(
+            _insertion_proof(
+                response,
+                result_region_keys={f"{REQUEST_ID}:result-0": f"roi:{REQUEST_ID}:2"},
+            )
+        )
+    with pytest.raises(ReceiptStoreError, match="conflicts"):
+        receipts.finalize_abandoned(_abandonment_proof(response))
+
+
+def test_inserted_partial_terminal_response_reports_actual_inserted_count(
+    tmp_path: Path,
+) -> None:
+    response, receipts, _, _ = _run(
+        tmp_path,
+        text=(
+            _object("person", (100, 100, 400, 400))
+            + _object("Person", (500, 500, 900, 900))
+        ),
+    )
+    receipts.finalize_inserted(_insertion_proof(response))
+
+    terminal = receipts.response(response["receipt_id"])
+
+    assert terminal is not None
+    assert terminal["terminal_status"] == "accepted_with_drops"
+    assert terminal["insertion_payload"] is None
+    assert terminal["counts"] == {"parsed": 2, "inserted": 1, "rejected": 1}
+
+
+def test_abandonment_and_expiry_are_durable_idempotent_and_never_resolve(
+    tmp_path: Path,
+) -> None:
+    response, receipts, _, _ = _run(
+        tmp_path / "abandon", text=_object("person", (100, 100, 700, 800))
+    )
+    proof = _abandonment_proof(response)
+    receipts.finalize_abandoned(proof)
+    receipts.finalize_abandoned(proof)
+    assert receipts.resolve(response["receipt_id"]) is None
+    retry = receipts.response(response["receipt_id"])
+    assert retry is not None
+    assert retry["terminal_status"] == "abandoned_before_insertion"
+    assert retry["insertion_payload"] is None
+    assert retry["counts"] == {"parsed": 1, "inserted": 0, "rejected": 0}
+    assert len(receipts.replay()) == 2
+    with pytest.raises(ReceiptStoreError, match="conflicts"):
+        receipts.finalize_abandoned(replace(proof, reason="target_changed"))
+    with pytest.raises(ReceiptStoreError, match="conflicts"):
+        receipts.finalize_inserted(_insertion_proof(response))
+
+    expiring, expiring_store, _, expiring_profile = _run(
+        tmp_path / "expiry", text=_object("cat", (100, 100, 700, 800))
+    )
+    attempt = expiring_store.get(expiring["receipt_id"])
+    assert attempt is not None
+    assert (
+        attempt["expires_at_seconds"] - attempt["recorded_at_seconds"]
+        == 120.0
+        != expiring_profile.deadline_seconds
+    )
+    assert (
+        expiring_store.expire_produced(now=attempt["expires_at_seconds"] - 0.001) == ()
+    )
+    assert expiring_store.expire_produced(now=attempt["expires_at_seconds"]) == (
+        expiring["receipt_id"],
+    )
+    assert expiring_store.expire_produced(now=attempt["expires_at_seconds"] + 1) == ()
+    assert expiring_store.resolve(expiring["receipt_id"]) is None
+    restarted = InferenceReceiptStore(expiring_store.path)
+    assert restarted.disposition(expiring["receipt_id"])["disposition"] == "abandoned"
+
+    nonexpiring, nonexpiring_store, _, _ = _run(
+        tmp_path / "nonexpiring",
+        text=_object("dog", (100, 100, 700, 800)),
+        insertion_ack_timeout_seconds=None,
+    )
+    nonexpiring_attempt = nonexpiring_store.get(nonexpiring["receipt_id"])
+    assert nonexpiring_attempt is not None
+    assert nonexpiring_attempt["expires_at_seconds"] is None
+    assert nonexpiring_store.expire_produced(now=10**20) == ()
+
+
+def test_inserted_wins_expiry_race_without_conflict_and_later_receipt_expires(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    profile = _profile(tmp_path)
+    transform = _transform()
+    service, receipts, _ = _service(tmp_path, profile)
+
+    def produce(request_id: str, text: str) -> dict[str, Any]:
+        engine = _FakeEngine(
+            build_resident_profile_binding(profile),
+            canonical_profile=profile,
+            parser_text=text,
+        )
+        image = Image.new("RGB", (96, 64), color=(3, 4, 5))
+        try:
+            return service.infer(
+                image=image,
+                target=_target(profile, transform, request_id=request_id),
+                transform=transform,
+                engine=engine,
+            )
+        finally:
+            image.close()
+
+    inserted_response = produce(
+        REQUEST_ID,
+        _object("person", (100, 100, 700, 800)),
+    )
+    later_response = produce(
+        "12345678-1234-5678-9234-567812345679",
+        _object("cat", (100, 100, 700, 800)),
+    )
+    inserted_proof = _insertion_proof(inserted_response)
+    cutoff = max(
+        receipts.get(inserted_response["receipt_id"])["expires_at_seconds"],
+        receipts.get(later_response["receipt_id"])["expires_at_seconds"],
+    )
+
+    entered_locked_insert = Event()
+    release_locked_insert = Event()
+    expiry_started = Event()
+    original_validate = roi_runtime_module._validate_authoritative_proof
+
+    def held_validate(*, disposition: str, proof: Any, attempt: Any) -> str:
+        if disposition == "inserted" and not entered_locked_insert.is_set():
+            entered_locked_insert.set()
+            assert release_locked_insert.wait(timeout=5)
+        return original_validate(
+            disposition=disposition,
+            proof=proof,
+            attempt=attempt,
+        )
+
+    monkeypatch.setattr(
+        roi_runtime_module,
+        "_validate_authoritative_proof",
+        held_validate,
+    )
+    errors: list[BaseException] = []
+    expired_receipts: list[tuple[str, ...]] = []
+
+    def finalize() -> None:
+        try:
+            receipts.finalize_inserted(inserted_proof)
+        except BaseException as exc:  # pragma: no cover - asserted below.
+            errors.append(exc)
+
+    def expire() -> None:
+        expiry_started.set()
+        try:
+            expired_receipts.append(receipts.expire_produced(now=cutoff))
+        except BaseException as exc:  # pragma: no cover - asserted below.
+            errors.append(exc)
+
+    finalize_thread = Thread(target=finalize)
+    expiry_thread = Thread(target=expire)
+    finalize_thread.start()
+    assert entered_locked_insert.wait(timeout=5)
+    expiry_thread.start()
+    assert expiry_started.wait(timeout=5)
+    release_locked_insert.set()
+    finalize_thread.join(timeout=5)
+    expiry_thread.join(timeout=5)
+
+    assert not finalize_thread.is_alive()
+    assert not expiry_thread.is_alive()
+    assert errors == []
+    assert expired_receipts == [(later_response["receipt_id"],)]
+    assert receipts.resolve(inserted_response["receipt_id"]) is not None
+    assert receipts.disposition(later_response["receipt_id"])["disposition"] == (
+        "abandoned"
     )
 
 
@@ -519,6 +932,30 @@ def test_target_is_reread_after_inference_and_mismatch_is_abandoned(
     assert record is not None
     assert record["execution"]["decode"]["parser_text"]
     assert record["attempt"]["result"] is None
+
+
+@pytest.mark.parametrize(
+    ("text", "terminal_status"),
+    [
+        ("", "empty"),
+        (_object("spaceship", (100, 100, 700, 800)), "all_rejected"),
+        ("malformed response", "response_failure"),
+    ],
+)
+def test_noninserting_outcomes_are_immediate_terminals_without_target_lookup(
+    tmp_path: Path,
+    text: str,
+    terminal_status: str,
+) -> None:
+    provider = _TargetProvider()
+    provider.override = {"annotation_revision": "detached"}
+
+    response, receipts, _, _ = _run(tmp_path, text=text, provider=provider)
+
+    assert response["request_state"] == terminal_status
+    assert response["terminal_status"] == terminal_status
+    assert provider.calls == 0
+    assert receipts.resolve(response["receipt_id"]) is None
 
 
 @pytest.mark.parametrize(
@@ -768,6 +1205,7 @@ def test_transform_prepares_once_and_idempotent_restart_does_not_reexecute(
             receipts=InferenceReceiptStore(receipts.path),
             current_targets=provider,
             clock=lambda: 1.0,
+            insertion_ack_timeout_seconds=120.0,
         )
         second = restarted_service.infer(
             image=image, target=target, transform=transform, engine=engine
@@ -785,12 +1223,14 @@ def test_request_id_conflict_on_different_canvas_fails_closed(tmp_path: Path) ->
     response, receipts, engine, profile = _run(
         tmp_path, text=_object("person", (100, 100, 700, 800))
     )
-    assert response["terminal_status"] == "accepted"
+    assert response["request_state"] == "produced"
+    assert response["terminal_status"] is None
     service = RoiInferenceService(
         profiles=EngineProfileStore(tmp_path / "profiles.json"),
         receipts=receipts,
         current_targets=_TargetProvider(),
         clock=lambda: 1.0,
+        insertion_ack_timeout_seconds=120.0,
     )
     image = Image.new("RGB", (96, 64), color=(200, 1, 1))
     try:
@@ -809,12 +1249,22 @@ def test_request_id_conflict_on_different_canvas_fails_closed(tmp_path: Path) ->
 def test_receipt_store_detects_tamper_and_torn_tail_on_restart(tmp_path: Path) -> None:
     _, receipts, _, _ = _run(tmp_path, text=_object("person", (100, 100, 700, 800)))
     original = receipts.path.read_bytes()
-    receipts.path.write_bytes(original.replace(b'"accepted"', b'"acceptXd"', 1))
+    receipts.path.write_bytes(original.replace(b'"produced"', b'"producXd"', 1))
     with pytest.raises(ReceiptStoreError, match="hash chain"):
         InferenceReceiptStore(receipts.path)
 
     receipts.path.write_bytes(original[:-1])
     with pytest.raises(ReceiptStoreError, match="torn"):
+        InferenceReceiptStore(receipts.path)
+
+
+def test_legacy_v1_receipt_chain_is_explicitly_rejected(tmp_path: Path) -> None:
+    _, receipts, _, _ = _run(tmp_path, text="")
+    entry = json.loads(receipts.path.read_text(encoding="utf-8"))
+    entry["schema_version"] = "coordexp-roi-receipt-chain-v1"
+    _resign_single_entry(receipts.path, entry)
+
+    with pytest.raises(ReceiptStoreError, match="hash chain"):
         InferenceReceiptStore(receipts.path)
 
 
@@ -850,9 +1300,9 @@ def test_resigned_service_response_cannot_diverge_from_reconstructed_attempt(
     elif mutation == "wrong_status":
         response["terminal_status"] = "empty"
     elif mutation == "wrong_count_type":
-        response["counts"]["inserted"] = "1"
+        response["counts"]["produced"] = "1"
     elif mutation == "wrong_count_value":
-        response["counts"]["inserted"] = 9
+        response["counts"]["produced"] = 9
     elif mutation == "negative_count":
         response["counts"]["rejected"] = -1
     elif mutation == "incomplete_counts":
@@ -936,6 +1386,7 @@ def test_two_store_instances_serialize_append_with_one_valid_hash_chain(
             receipts=InferenceReceiptStore(receipt_path),
             current_targets=_TargetProvider(),
             clock=iter(index / 1000 for index in range(10_000)).__next__,
+            insertion_ack_timeout_seconds=120.0,
         )
         engine = _FakeEngine(
             build_resident_profile_binding(profile),
