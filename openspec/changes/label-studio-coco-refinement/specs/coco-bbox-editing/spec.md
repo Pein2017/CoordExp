@@ -21,7 +21,9 @@ creation in this project.
 ### Requirement: Editable active annotations
 Every object in an opened task's one authoritative annotation SHALL remain
 directly selectable, movable, resizable, relabelable, and deletable until
-Commit, with no candidate/prediction-copy layer or alternate annotation target.
+and during background batch Commit, with no candidate/prediction-copy layer or
+alternate annotation target. Enqueue freezes an independent snapshot and SHALL
+not freeze or replace the live annotation.
 
 #### Scenario: Existing source object is corrected
 - **WHEN** the reviewer selects a source bbox
@@ -101,22 +103,32 @@ delete a box because of that cue.
 ### Requirement: Instance color is non-semantic and temporary
 Instance-local inference color SHALL NOT change class IDs, class names, geometry,
 object ordering, exported fields, or Commit behavior, and SHALL revert to the
-ordinary class-color presentation after successful sample Commit.
+ordinary class-color presentation only when the live Draft still equals the
+captured snapshot after terminal batch success. Newer uncommitted Draft content
+SHALL retain its applicable inference presentation state.
 
-#### Scenario: Colored inference boxes are committed
-- **WHEN** a sample containing locally colored inference regions commits successfully
+#### Scenario: Colored inference boxes are batch committed without later edits
+- **WHEN** a batch containing locally colored inference regions succeeds and the live Draft still equals its captured hash
 - **THEN** the working JSONL contains no presentation fields, journal links remain, and the editor returns those regions to normal class colors
+
+#### Scenario: Colored inference task changes after enqueue
+- **WHEN** a newer Draft differs from the captured hash before terminal success
+- **THEN** terminal handling does not replace its content or presentation metadata and the task remains Draft ahead of the committed batch
 
 ### Requirement: Dirty state is explicit
 The editor SHALL compare the canonical semantic projection of the authoritative
 annotation with that task's last committed row hash/time and SHALL visibly
-distinguish `Committed`, `Draft`, `Committing`, and `Reconciling outcome`.
-Validation/write errors SHALL be banners on the dirty Draft, while project
-generation is displayed separately.
+distinguish task semantic state (`Committed` or `Draft`) from batch overlay
+state (`Queued`, `Running`, `Reconciling`, terminal `Succeeded`, or terminal
+`Failed`). It SHALL explicitly show `Draft ahead of active batch` and `Draft
+ahead of committed batch` when the live semantic hash differs from the frozen
+member hash. Validation/write errors SHALL remain banners on the Draft, while
+project generation, active batch ID/member count, and pending-Draft count are
+displayed separately.
 
-#### Scenario: Region is edited after Commit
+#### Scenario: Region is edited after terminal Commit
 - **WHEN** geometry, class, membership, or inference insertion changes the active annotation
-- **THEN** the task immediately displays Draft/dirty state until a successful Commit restores parity
+- **THEN** the task immediately displays Draft/dirty state until a later terminal-success batch captures that exact semantic snapshot
 
 #### Scenario: Ordinary Draft save occurs
 - **WHEN** Label Studio saves the current annotation but the working JSONL is not updated
@@ -126,45 +138,65 @@ generation is displayed separately.
 - **WHEN** project generation advances because a different task commits
 - **THEN** the current task remains Committed or Draft according to its own semantic row hash
 
-#### Scenario: Commit outcome is unknown
-- **WHEN** the browser loses a response after the server may have durably replaced the row
-- **THEN** the task shows reconciliation state and resolves the idempotent commit ID before allowing another semantic Commit
+#### Scenario: Batch is durably queued
+- **WHEN** enqueue returns before background publication
+- **THEN** captured tasks show Queued without claiming that their working rows are committed and annotation/navigation remain enabled
+
+#### Scenario: Captured task is edited while running
+- **WHEN** the reviewer changes a queued or running task after its immutable snapshot was captured
+- **THEN** it shows Draft ahead of active batch and preserves the newer Draft through terminal processing
+
+#### Scenario: Batch outcome is unknown
+- **WHEN** the browser loses a response after the server may have queued or durably replaced the batch
+- **THEN** project/task overlays show reconciliation and resolve the idempotent batch ID without claiming failure or success prematurely
 
 ### Requirement: Dirty navigation guard
 The editor SHALL intercept in-app task navigation, Previous/Next, route changes,
-and editor-close controls while dirty and SHALL offer `Commit and continue`,
-`Continue with saved Draft`, and `Stay`, with persisted-Draft discard/reset only
-as an explicit secondary choice. Hard reload/tab/window close SHALL use only the
-browser-native unsaved-work warning and SHALL make no async save/Commit promise.
+and editor-close controls while the active task has unsaved in-memory semantic
+edits. It SHALL force/await the current durable Draft save and then continue
+without waiting for any queued/running batch or complete JSONL publication.
+Draft-save failure SHALL retain `Stay`; persisted-Draft discard/reset remains an
+explicit secondary choice. A persistent project-level pending-Draft count and
+reminder SHALL replace per-navigation Commit pressure. Hard reload/tab/window
+close SHALL use only the browser-native unsaved-work warning for unsaved local
+state and SHALL make no async save/Commit promise.
 
 #### Scenario: Reviewer clicks Next with uncommitted edits
 - **WHEN** the active task is dirty
-- **THEN** navigation pauses and the guard explains that the working JSONL has not been updated
+- **THEN** navigation waits only for durable Draft-save success, then continues while the project shows that working JSONL has pending Drafts
 
-#### Scenario: Commit and continue succeeds
-- **WHEN** the reviewer chooses Commit and the durable Commit succeeds
-- **THEN** navigation resumes to the requested destination
+#### Scenario: Batch is running during navigation
+- **WHEN** the reviewer moves among tasks while a dataset batch is queued, running, or reconciling
+- **THEN** navigation and annotation remain enabled after any required active-Draft save and do not enter a global loading lock
 
-#### Scenario: Commit and continue fails
-- **WHEN** the reviewer chooses Commit and the Commit fails
-- **THEN** the reviewer remains on the task with the Draft intact and an actionable error
+#### Scenario: Explicit batch enqueue fails
+- **WHEN** the reviewer invokes the project Commit action and durable enqueue fails
+- **THEN** no active batch is claimed, all Drafts remain intact, and an actionable batch-level error is visible without blocking later editing
 
-#### Scenario: Continue with saved Draft is chosen
-- **WHEN** the reviewer chooses Draft save
-- **THEN** navigation continues only after confirmed Draft-save success and the working JSONL remains at its prior generation
+#### Scenario: Background batch fails
+- **WHEN** a queued batch reaches terminal failure before publication
+- **THEN** the previous working generation remains authoritative, all current Drafts remain intact, and batch/member diagnostics are visible
 
 #### Scenario: Draft save before navigation fails
 - **WHEN** the selected Draft-save request fails
 - **THEN** the reviewer remains on the task with the unsaved/dirty state visible
 
 #### Scenario: Browser reload is requested while dirty
-- **WHEN** the reviewer reloads or closes the tab/window
+- **WHEN** the reviewer reloads or closes the tab/window with unsaved in-memory edits
 - **THEN** the browser-native Leave/Stay warning appears without offering or claiming asynchronous Commit
+
+#### Scenario: Browser reload has only durable Draft or queued work
+- **WHEN** no in-memory edits remain and all pending content is a saved Draft or durable batch payload
+- **THEN** queued/running work continues independently and the browser does not represent it as unsaved local data
 
 ### Requirement: Deletion is explicit and undoable before Commit
 The editor SHALL support deletion of any active bbox instance and SHALL retain
-native Draft undo/revision behavior before a successful sample Commit. A
-successful Commit SHALL rebase the undo history and tombstone deleted IDs.
+native Draft undo/revision behavior before, during, and after batch enqueue. A
+terminal-success member MAY rebase history only when the live Draft still
+matches the captured hash; otherwise it SHALL update external committed
+baseline and stable identity metadata without replacing newer Draft content or
+post-enqueue undo history. Captured deletions tombstone IDs in the committed
+generation.
 
 #### Scenario: Existing object is deleted
 - **WHEN** the reviewer deletes a selected object
@@ -177,6 +209,10 @@ successful Commit SHALL rebase the undo history and tombstone deleted IDs.
 #### Scenario: Undo is requested after a committed deletion
 - **WHEN** the reviewer invokes browser undo or reload after the deletion Commit succeeded
 - **THEN** the tombstoned object does not reappear and a redrawn replacement receives a new identity
+
+#### Scenario: Task changes after queued deletion
+- **WHEN** a captured deletion is followed by a newer Draft edit before terminal success
+- **THEN** the committed deletion/tombstone applies to the frozen batch while the newer Draft survives and is compared against that new baseline
 
 ### Requirement: Visualization state never changes dataset state
 Zoom, pan, selection, focus/hide mode, per-region visibility, and inference

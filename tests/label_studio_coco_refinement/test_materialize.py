@@ -5,13 +5,14 @@ import json
 from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
 
 import pytest
 
 import src.label_studio_coco_refinement.materialize as materialize_module
 from src.common.errors import DataContractError
 from src.data import load_raw_examples
+from src.label_studio_coco_refinement.categories import COCO80_REGISTRY
 from src.label_studio_coco_refinement.materialize import (
     CommittedGenerationReceipt,
     SourceTaskIdentityReceipt,
@@ -23,6 +24,17 @@ from src.label_studio_coco_refinement.models import (
     RefinementRuntimeLayout,
     WorkingObject,
     stable_top_left_order,
+)
+from src.label_studio_coco_refinement.store import (
+    BatchMember,
+    BatchRequest,
+    BootstrapSpec,
+    CommitRequest,
+    DraftSaveReceipt,
+    InjectedCrash,
+    RecoveryError,
+    WorkingDatasetStore,
+    semantic_hash,
 )
 
 
@@ -57,6 +69,25 @@ class FakeSourceIdentityResolver:
             raise LookupError(f"unknown source task: {split}:{image_id}") from exc
 
 
+class AcceptingAnnotationVerifier:
+    def verify(self, identity: Any) -> bool:
+        return True
+
+
+class EmptyInferenceReceiptResolver:
+    def resolve(self, receipt_id: str) -> None:
+        return None
+
+
+class CrashAt:
+    def __init__(self, boundary: str) -> None:
+        self.boundary = boundary
+
+    def __call__(self, boundary: str) -> None:
+        if boundary == self.boundary:
+            raise InjectedCrash(boundary)
+
+
 def test_materializer_is_layout_split_bound_atomic_and_loader_compatible(
     tmp_path: Path,
 ) -> None:
@@ -66,7 +97,7 @@ def test_materializer_is_layout_split_bound_atomic_and_loader_compatible(
     )
     source_before = source.read_bytes()
 
-    receipt = WorkingCoordMaterializer(
+    receipt = WorkingCoordMaterializer._for_test(
         layout,
         "train",
         exclusive_lock=lock,
@@ -124,7 +155,7 @@ def test_invalid_working_row_preserves_source_and_prior_output(
     output_before = output.read_bytes()
 
     with pytest.raises(DataContractError):
-        WorkingCoordMaterializer(
+        WorkingCoordMaterializer._for_test(
             layout,
             "train",
             exclusive_lock=lock,
@@ -159,7 +190,7 @@ def test_canonical_selected_source_cannot_be_input_or_output_target(
     canonical_before = canonical_source.read_bytes()
 
     with pytest.raises(DataContractError, match="canonical selected source|symlink"):
-        WorkingCoordMaterializer(
+        WorkingCoordMaterializer._for_test(
             layout,
             "train",
             exclusive_lock=lock,
@@ -187,7 +218,7 @@ def test_cross_split_working_locator_is_rejected_without_mutation(tmp_path: Path
     output_before = output.read_bytes()
 
     with pytest.raises(DataContractError, match="train2017"):
-        WorkingCoordMaterializer(
+        WorkingCoordMaterializer._for_test(
             layout,
             "train",
             exclusive_lock=lock,
@@ -224,7 +255,7 @@ def test_committed_manifest_mismatch_is_stale_and_atomic(
     output_before = output.read_bytes()
 
     with pytest.raises(DataContractError, match="committed generation receipt"):
-        WorkingCoordMaterializer(
+        WorkingCoordMaterializer._for_test(
             layout,
             "val",
             exclusive_lock=lock,
@@ -265,7 +296,7 @@ def test_manifest_is_reverified_before_replace_under_the_injected_lock(
     )
 
     with pytest.raises(DataContractError, match="committed generation receipt"):
-        WorkingCoordMaterializer(
+        WorkingCoordMaterializer._for_test(
             layout,
             "train",
             exclusive_lock=lock,
@@ -294,7 +325,7 @@ def test_managed_image_link_must_resolve_to_exact_allowlisted_root(
     output_before = output.read_bytes()
 
     with pytest.raises(DataContractError, match="allowlisted shared image root"):
-        WorkingCoordMaterializer(
+        WorkingCoordMaterializer._for_test(
             layout,
             "train",
             exclusive_lock=lock,
@@ -348,7 +379,7 @@ def test_row_identity_drift_is_rejected_against_source_task_receipt(
     output_before = output.read_bytes()
 
     with pytest.raises(DataContractError, match="source task identity|canonical"):
-        WorkingCoordMaterializer(
+        WorkingCoordMaterializer._for_test(
             layout,
             "train",
             exclusive_lock=lock,
@@ -371,7 +402,7 @@ def test_unknown_source_task_identity_is_rejected_without_replacement(
     output_before = output.read_bytes()
 
     with pytest.raises(DataContractError, match="source task identity resolver"):
-        WorkingCoordMaterializer(
+        WorkingCoordMaterializer._for_test(
             layout,
             "train",
             exclusive_lock=lock,
@@ -414,7 +445,7 @@ def test_coherent_same_split_task_substitution_is_rejected_by_committed_inventor
     output_before = output.read_bytes()
 
     with pytest.raises(DataContractError, match="source line|task manifest inventory"):
-        WorkingCoordMaterializer(
+        WorkingCoordMaterializer._for_test(
             layout,
             "train",
             exclusive_lock=lock,
@@ -439,7 +470,7 @@ def test_in_place_image_byte_drift_is_rejected_without_replacement(
     output_before = output.read_bytes()
 
     with pytest.raises(DataContractError, match="image content"):
-        WorkingCoordMaterializer(
+        WorkingCoordMaterializer._for_test(
             layout,
             "train",
             exclusive_lock=lock,
@@ -478,7 +509,7 @@ def test_image_bytes_are_reverified_immediately_before_replacement(
     )
 
     with pytest.raises(DataContractError, match="image content changed"):
-        WorkingCoordMaterializer(
+        WorkingCoordMaterializer._for_test(
             layout,
             "train",
             exclusive_lock=lock,
@@ -488,6 +519,97 @@ def test_image_bytes_are_reverified_immediately_before_replacement(
     assert calls == 2
     assert source.read_bytes() == source_before
     assert output.read_bytes() == output_before
+
+
+def test_public_constructor_rejects_raw_callable_lock(tmp_path: Path) -> None:
+    layout, _, _, _, lock, identities = _project(tmp_path, split="train")
+
+    with pytest.raises((TypeError, DataContractError)):
+        WorkingCoordMaterializer(
+            layout,
+            "train",
+            exclusive_lock=lock,  # type: ignore[call-arg]
+            source_identity_resolver=identities,
+        )
+
+
+def test_public_constructor_rejects_recording_and_private_store_locks(
+    tmp_path: Path,
+) -> None:
+    layout, store, _, _, identities = _store_project(tmp_path)
+
+    for invalid_store in (RecordingLock(), store._exclusive_lock):
+        with pytest.raises(DataContractError, match="WorkingDatasetStore"):
+            WorkingCoordMaterializer(
+                layout,
+                "train",
+                store=invalid_store,  # type: ignore[arg-type]
+                source_identity_resolver=identities,
+            )
+
+
+def test_public_constructor_rejects_replaced_generation_guard(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    layout, store, _, _, identities = _store_project(tmp_path)
+    monkeypatch.setattr(store, "committed_generation_guard", RecordingLock())
+
+    with pytest.raises(DataContractError, match="exact bound committed generation guard"):
+        WorkingCoordMaterializer(
+            layout,
+            "train",
+            store=store,
+            source_identity_resolver=identities,
+        )
+
+
+@pytest.mark.parametrize("transaction", ["legacy", "batch"])
+def test_public_store_guard_blocks_manifest_published_unfinished_transaction(
+    tmp_path: Path,
+    transaction: str,
+) -> None:
+    layout, worker, peer, output, identities = _store_project(tmp_path)
+    request = _store_commit_request(worker)
+    worker._fault_injector = CrashAt("manifest_replaced")
+
+    with pytest.raises(InjectedCrash):
+        if transaction == "legacy":
+            worker.commit(request)
+        else:
+            worker.enqueue_batch(
+                BatchRequest(
+                    batch_id="materialize-interrupted",
+                    split="train",
+                    base_generation=request.observed_generation,
+                    members=(BatchMember(source_row_index=0, request=request),),
+                )
+            )
+            worker.process_next_batch()
+
+    generation = _store_generation_receipt(peer)
+    assert generation.generation == 1
+    output_before = output.read_bytes()
+    materializer = WorkingCoordMaterializer(
+        layout,
+        "train",
+        store=peer,
+        source_identity_resolver=identities,
+    )
+
+    with pytest.raises(RecoveryError, match="requires recovery"):
+        materializer.materialize(generation)
+
+    assert output.read_bytes() == output_before
+    assert identities.calls == []
+
+    peer.recover()
+    receipt = materializer.materialize(generation)
+
+    assert receipt.generation == 1
+    assert receipt.destination_path == output
+    assert output.read_bytes() != output_before
+    assert identities.calls == [("train", 34)]
 
 
 def test_stable_top_left_order_preserves_prior_rank_and_creation_ties() -> None:
@@ -524,6 +646,133 @@ def test_runtime_layout_is_exact_dedicated_and_split_scoped(tmp_path: Path) -> N
     assert layout.images_link("train") == layout.root / "train" / "images"
     with pytest.raises(DataContractError):
         layout.working_norm("test")  # type: ignore[arg-type]
+
+
+def _store_project(
+    tmp_path: Path,
+) -> tuple[
+    RefinementRuntimeLayout,
+    WorkingDatasetStore,
+    WorkingDatasetStore,
+    Path,
+    FakeSourceIdentityResolver,
+]:
+    repository = (tmp_path / "repo").resolve()
+    layout = RefinementRuntimeLayout.under_repository(repository)
+    image = layout.image_root / "train2017" / "000000000034.jpg"
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b"store-fixture-image")
+    source_dir = (
+        repository
+        / "public_data"
+        / "coco"
+        / "rescale_32_1024_bbox_len12000"
+    )
+    source_dir.mkdir(parents=True)
+    source = source_dir / "train.norm.jsonl"
+    source_row = _row(split="train")
+    source_row["images"] = [
+        "../rescale_32_1024_bbox/images/train2017/000000000034.jpg"
+    ]
+    source_row["objects"][1]["coco_ann_id"] = 589230
+    source.write_text(_canonical_json(source_row) + "\n")
+    verifier = AcceptingAnnotationVerifier()
+    inference_resolver = EmptyInferenceReceiptResolver()
+    result = WorkingDatasetStore.bootstrap(
+        BootstrapSpec(
+            split="train",
+            source_path=source,
+            runtime_root=layout.root,
+            image_root=layout.image_root,
+            expected_source_sha256=_file_sha256(source),
+            project_id="project-train",
+            storage_id="storage-train",
+            adapter_version="adapter-v1",
+            vendor_revision="label-studio-rev",
+            registry_fingerprint=COCO80_REGISTRY.fingerprint,
+            label_config_fingerprint="label-config-v1",
+        ),
+        annotation_verifier=verifier,
+        inference_receipt_resolver=inference_resolver,
+    )
+    worker = result.store
+    peer = WorkingDatasetStore(
+        worker.split_dir,
+        annotation_verifier=verifier,
+        inference_receipt_resolver=inference_resolver,
+    )
+    output = layout.working_coord("train")
+    output.write_bytes(b'{"prior":"valid"}\n')
+    manifest = json.loads(worker.manifest_path.read_text())
+    working_row = json.loads(worker.working_path.read_text())
+    identities = FakeSourceIdentityResolver(
+        [
+            SourceTaskIdentityReceipt.capture(
+                split="train",
+                image_id=34,
+                file_name=working_row["file_name"],
+                width=working_row["width"],
+                height=working_row["height"],
+                metadata=working_row["metadata"],
+                source_line=1,
+                task_row_fingerprint=_json_fingerprint(working_row),
+                task_manifest_hash=manifest["task_manifest_hash"],
+                image_sha256=_file_sha256(image),
+            )
+        ]
+    )
+    return layout, worker, peer, output, identities
+
+
+def _store_commit_request(store: WorkingDatasetStore) -> CommitRequest:
+    restored = store.restore_draft(34)
+    identity_by_object_id = {
+        object_id: region_key
+        for region_key, object_id in restored.region_id_mapping.items()
+    }
+    regions = []
+    for obj in restored.row["objects"]:
+        region = deepcopy(obj)
+        region["region_key"] = identity_by_object_id[obj["coco_ann_id"]]
+        regions.append(region)
+    regions[0]["bbox_2d"] = [2, 46, 691, 941]
+    projection_hash = semantic_hash(regions)
+    draft_save = DraftSaveReceipt(
+        project_id="project-train",
+        task_id="train:34",
+        annotation_id="annotation-34",
+        draft_id="draft-34",
+        annotation_revision=7,
+        semantic_hash=projection_hash,
+    )
+    return CommitRequest(
+        commit_id="materialize-interrupted:member:34",
+        split="train",
+        image_id=34,
+        project_id="project-train",
+        task_id="train:34",
+        annotation_id="annotation-34",
+        draft_id="draft-34",
+        annotation_revision=7,
+        semantic_hash=projection_hash,
+        base_row_hash=restored.row_hash,
+        observed_generation=restored.generation,
+        regions=regions,
+        draft_save=draft_save,
+    )
+
+
+def _store_generation_receipt(
+    store: WorkingDatasetStore,
+) -> CommittedGenerationReceipt:
+    manifest = json.loads(store.manifest_path.read_text())
+    return CommittedGenerationReceipt(
+        split=manifest["split"],
+        generation=manifest["generation"],
+        working_sha256=manifest["working_sha256"],
+        task_count=manifest["task_count"],
+        task_manifest_hash=manifest["task_manifest_hash"],
+    )
 
 
 def _project(

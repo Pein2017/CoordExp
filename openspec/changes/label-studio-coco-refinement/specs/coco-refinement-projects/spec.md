@@ -79,39 +79,54 @@ source state for these projects.
 ### Requirement: Dedicated derived runtime state
 The system SHALL store mutable project state under a dedicated ignored output
 root with one Label Studio state subtree, separate split data subtrees, validated
-managed image links, and an ordinary `working.norm.jsonl` per split without
+managed image links, a hash-attested immutable task/source-row index, a durable
+batch queue/journal, and an ordinary `working.norm.jsonl` per split without
 symlinking it over the source.
 
 #### Scenario: Fresh split is initialized
 - **WHEN** bootstrap succeeds for a split
 - **THEN** its working JSONL has the same row identities and accepted row schema as the source while remaining a distinct mutable file
 
-### Requirement: Draft and Commit have distinct authority
+### Requirement: Draft and batch Commit have distinct authority
 The system SHALL treat Label Studio saves as mutable Draft state only and SHALL
-treat a successful sample-level Commit as the only operation that replaces that
-sample's `objects` in `working.norm.jsonl`. Commit SHALL freeze one canonical
-semantic snapshot, durably save that exact authoritative Draft revision, and
-submit its hash/identity to the working store before replacement.
+treat a terminal-success same-split batch Commit as the only operation that
+replaces captured samples' `objects` in `working.norm.jsonl`. The reviewer MAY
+accumulate durable Drafts across several tasks. One explicit Commit SHALL force
+save of the active task, capture each eligible authoritative Draft's full
+canonical payload/revision/hash into an immutable batch, durably enqueue it,
+and return a queue receipt without waiting for whole-file replacement.
 
 #### Scenario: Draft is saved
 - **WHEN** the reviewer edits a task and invokes ordinary Draft save
 - **THEN** Label Studio retains the edit but the working JSONL generation and row remain unchanged
 
-#### Scenario: Sample Commit succeeds
-- **WHEN** the exact saved Draft snapshot passes validation and its durable Commit completes
-- **THEN** exactly that sample's objects are current in the working JSONL and the browser reports the new generation
+#### Scenario: Reviewer navigates across edited tasks
+- **WHEN** the active task's Draft save succeeds
+- **THEN** navigation continues without waiting for any working-JSONL Commit and the project pending-Draft count includes that semantic change
+
+#### Scenario: Batch enqueue succeeds
+- **WHEN** the active Draft is durably saved and every eligible same-split Draft snapshot is captured and the queue record is fsynced
+- **THEN** the browser receives `Queued` with one batch ID while `working.norm.jsonl` remains at its prior terminal generation and annotation/navigation stay available
+
+#### Scenario: Background batch succeeds
+- **WHEN** the immutable queued snapshots pass validation and the worker publishes one terminal-success generation
+- **THEN** all captured rows become current together at the atomic working-file publication point and the repaired terminal projection reports that same outcome
+
+#### Scenario: Captured task is edited after enqueue
+- **WHEN** a later Label Studio Draft revision differs from the queued semantic hash
+- **THEN** the worker still uses the immutable queued payload, terminal handling preserves the newer Draft and its undo history, and the task remains Draft ahead of the committed batch
 
 #### Scenario: Draft save fails before Commit
 - **WHEN** the authoritative Draft snapshot cannot be durably saved
 - **THEN** the parent transaction does not begin, the task remains dirty, and navigation stays on the task
 
-#### Scenario: Commit definitely fails before replacement
-- **WHEN** validation, locking, or prepared-write checks fail before working-file replacement
-- **THEN** the system leaves the previous working generation authoritative, keeps the Draft open, and reports the failure stage
+#### Scenario: Enqueue fails before durable queue receipt
+- **WHEN** Draft capture, validation, or queue fsync fails
+- **THEN** no active batch is reported, every Draft remains intact, and the previous working generation remains authoritative
 
-#### Scenario: Commit response is lost after replacement
-- **WHEN** the client cannot prove whether a post-replacement transaction committed
-- **THEN** it enters outcome reconciliation and queries the idempotent commit ID instead of claiming the prior generation is authoritative
+#### Scenario: Enqueue or terminal response is lost
+- **WHEN** the client cannot prove whether a batch was durably queued or terminally published
+- **THEN** it queries the idempotent batch ID and never claims dataset success from enqueue acceptance alone
 
 ### Requirement: Validated working norm rows
 Every committed row SHALL preserve immutable semantic row/image fields and its
@@ -130,14 +145,18 @@ file directly accepted by the current coord-token loader.
 - **THEN** the system rejects Commit, retains the empty Draft, and explains that the current training contract requires at least one object
 
 #### Scenario: Invalid geometry or class is submitted
-- **WHEN** an object is degenerate, outside the `0..999` lattice after clipping, unknown to COCO-80, or inconsistent in name and ID
-- **THEN** the system rejects the entire sample Commit without partially changing the working row
+- **WHEN** any captured object is degenerate, outside the `0..999` lattice after clipping, unknown to COCO-80, or inconsistent in name and ID
+- **THEN** the system rejects the entire batch without partially changing any working row
 
 ### Requirement: Explicit current-coord materialization
 The system SHALL provide an operator-invoked atomic materializer that converts
 every committed norm integer into the exact current `<|coord_N|>` string while
 preserving row/object identity, classes, ordering, and working image locators,
-and SHALL validate the result through the actual Swift loader.
+and SHALL validate the result through the actual Swift loader. The supported
+materializer SHALL bind the exact split-matched `WorkingDatasetStore` and hold
+its reconciled committed-generation guard for the entire read and replacement;
+an arbitrary lock callable or private recovery lock SHALL NOT establish a
+committed generation.
 
 #### Scenario: Valid working split is materialized
 - **WHEN** the operator requests a coord export from a valid committed generation
@@ -147,19 +166,31 @@ and SHALL validate the result through the actual Swift loader.
 - **WHEN** any row violates the approved non-empty, geometry, class, ID, or image contract
 - **THEN** materialization fails without replacing a prior valid coord output or promoting a training config
 
+#### Scenario: Dataset publication is unresolved
+- **WHEN** a legacy or batch transaction has published bytes or a manifest but its authoritative terminal projections are not reconciled
+- **THEN** the committed-generation guard rejects materialization before source resolution or coord-output replacement, and export may proceed only after recovery
+
 ### Requirement: Stable hidden object identity
 The system SHALL preserve the `coco_ann_id` of an existing object across
 geometry/class edits and SHALL allocate a stable, unique, split-local negative
-integer ID for each newly committed human or inference object without exposing
-ID editing in the UI. The authoritative journal/index and Draft metadata SHALL
-map stable region keys to IDs idempotently across response loss and reload.
+integer ID for each newly batch-committed human or inference object without
+exposing ID editing in the UI. Allocation SHALL be deterministic across the
+batch's source-row order, SHALL be durably tied to batch/member identity before
+candidate creation through an explicit reservation record, and SHALL never
+overwrite newer Draft semantics when
+the returned mapping is merged by stable region key. The authoritative
+journal/index and Draft metadata SHALL map stable region keys to IDs
+idempotently across response loss and reload. A reservation SHALL remain bound
+to the same `(split, stable_region_key)` after failure or recovery, SHALL be
+reused by a corrected later batch for that key, and SHALL never be reassigned to
+another key; reserving an ID alone SHALL NOT make the region committed.
 
 #### Scenario: Existing box is moved and relabeled
 - **WHEN** a source object is edited and committed
 - **THEN** its original positive `coco_ann_id` remains attached to the updated object
 
-#### Scenario: New box is committed
-- **WHEN** a region with no committed identity is first committed
+#### Scenario: New box is batch committed
+- **WHEN** a region with no committed identity is first included in a terminal-success batch
 - **THEN** the system assigns an unused negative ID and retains it across later edits
 
 #### Scenario: Deleted identity is followed by another addition
@@ -170,6 +201,10 @@ map stable region keys to IDs idempotently across response loss and reload.
 - **WHEN** the task reloads and recommits the same stable region key
 - **THEN** reconciliation restores the originally allocated negative ID and never allocates a second one
 
+#### Scenario: Batch fails after reserving a new ID
+- **WHEN** an ID reservation is durable but candidate publication fails and a corrected batch later contains the same stable region key
+- **THEN** the corrected batch reuses that reservation, while a different region receives a different ID
+
 ### Requirement: Deterministic object materialization
 The system SHALL materialize committed objects with `desc` equal to canonical
 `category_name`, official category mapping, accepted fields only, and the
@@ -179,60 +214,141 @@ existing deterministic top-left geometric ordering.
 - **WHEN** the reviewer commits boxes selected or created in arbitrary order
 - **THEN** the row is written in stable top-left order while prior committed rank resolves equal-top-left ties and creation ordinal resolves new ties
 
-### Requirement: Atomic per-sample replacement
-The system SHALL serialize each split's commits and SHALL acknowledge success
-only after a validated complete working JSONL has atomically replaced the prior
-generation, its directory entry and manifest are durable, and a terminal
-receipt exists or can be finalized by recovery.
+### Requirement: Durable asynchronous same-split batch queue
+The system SHALL permit at most one active dataset batch per split while
+allowing train and validation workers to progress independently. A batch SHALL
+contain a deterministic source-row-ordered set of unique task snapshots from
+exactly one split plus `batch_id`, complete payload hash, capture identities,
+server-owned zero-based source-row indexes, per-row base hashes, and base
+generation. Every index SHALL be verified against the bootstrapped task
+manifest's `(split, image_id, source_line)` identity and included in the payload
+hash. The immutable payload SHALL be
+durable before enqueue returns, and later Draft changes SHALL not alter it.
 
-#### Scenario: Two commits overlap
-- **WHEN** a second Commit arrives while the split lock is held or with a stale generation
-- **THEN** the system rejects it for retry and never applies last-writer-wins
+#### Scenario: Several Drafts are committed once
+- **WHEN** the reviewer invokes Commit with several eligible durable Drafts
+- **THEN** one immutable same-split batch is queued and no member can be independently acknowledged or applied
+
+#### Scenario: Another Commit is requested while a batch is active
+- **WHEN** the split already has a queued, running, or reconciling batch
+- **THEN** annotation and Draft saves remain available but another dataset batch is not enqueued and the existing active-batch identity is returned
+
+#### Scenario: Same batch is retried
+- **WHEN** `batch_id` and the complete batch payload hash match an existing queue or terminal receipt
+- **THEN** the system returns that existing receipt without duplicating work, generation, or negative-ID allocation
+
+#### Scenario: Batch ID is reused with another payload
+- **WHEN** the same `batch_id` carries different members, order, snapshots, metadata, or hashes
+- **THEN** the system rejects it as an immutable identity conflict
+
+### Requirement: Atomic batch replacement
+The system SHALL serialize each split's background worker and SHALL publish all
+members of one validated batch in exactly one complete working-JSONL generation
+or publish none. Durable queue acceptance is not Commit success. The atomic
+replacement of the complete `working.norm.jsonl`, followed by directory fsync
+while the shared transaction/recovery barrier is held, SHALL be the single
+dataset publication authority. The manifest and terminal log records SHALL be
+verified projections, and supported readers/status/admission SHALL either use
+that barrier or fail closed until recovery reconciles them.
+
+#### Scenario: One captured row is invalid or stale
+- **WHEN** any member fails canonical validation or its captured base-row hash differs from current working authority
+- **THEN** the entire batch terminates failed before replacement and no captured row is applied
+
+#### Scenario: Unrelated project generation advanced before capture
+- **WHEN** another task changed the project generation but every captured row base hash still matches at durable enqueue
+- **THEN** the batch may be captured from current authority; execution freshness is per-row and does not reject an unrelated Draft only because its observed global generation is older
+
+#### Scenario: Process stops after durable enqueue
+- **WHEN** the queue receipt exists but no transaction candidate is authoritative
+- **THEN** startup reconstructs the same active batch and resumes it before admitting another batch for that split
 
 #### Scenario: Process stops before atomic replacement
-- **WHEN** a prepared journal entry exists but the previous working file is still authoritative
-- **THEN** startup recovery rolls back or completes exactly one deterministic generation before accepting new commits
+- **WHEN** a batch transaction record exists but the previous working file is still authoritative
+- **THEN** startup rolls back or resumes exactly one deterministic batch generation without partially applying members
 
 #### Scenario: Process stops after replacement
-- **WHEN** the candidate working file is authoritative but the terminal journal marker was not flushed
-- **THEN** startup recovery recognizes the candidate hash, finalizes the receipt, and does not apply the change twice
+- **WHEN** the candidate working file matches the prepared candidate attestation but a manifest or terminal projection was not flushed
+- **THEN** startup recovery recognizes the one published generation, repairs its projections, and does not apply the batch twice
 
 #### Scenario: Process stops after manifest replacement
 - **WHEN** working file and manifest match the prepared candidate but the terminal journal append is absent
 - **THEN** recovery appends exactly one terminal record and preserves the candidate generation
 
-### Requirement: Append-only commit journal
-The system SHALL append prepared and terminal journal records containing commit
-identity, canonical Draft hash/revision, task identity, generation, before/after
-hashes and object payloads, identity mappings/tombstones, timestamp, and
-referenced inference receipts sufficient for audit and recovery.
+#### Scenario: Supported reader reaches the publication boundary
+- **WHEN** the worker has replaced the candidate but has not completed directory fsync and projection repair
+- **THEN** the reader or status endpoint cannot pass the shared barrier and therefore never reports an independently observable intermediate generation
 
-#### Scenario: Human-only commit is inspected
-- **WHEN** an operator reads the journal entry for a completed sample
-- **THEN** the entry identifies the exact before/after row state and contains no invented model provenance
+#### Scenario: A later batch edits another row
+- **WHEN** batch one commits row A and batch two later commits row B
+- **THEN** batch two streams the exact attested generation from batch one and preserves row A byte-for-byte
+
+#### Scenario: An untouched input row drifts before a later batch
+- **WHEN** the hash or line count observed while streaming the current working input differs from the published attestation
+- **THEN** the candidate is rejected before replacement even when every captured member row itself is fresh
+
+### Requirement: Append-only batch queue and commit journal
+The system SHALL retain append-only durable queue and transaction records
+containing batch identity/payload hash/state, deterministic member order, every
+captured canonical Draft hash/revision and task identity, base/candidate
+generation, per-row before/after hashes and object payloads, identity
+mappings/tombstones, timestamps, and referenced inference receipts sufficient
+for audit and recovery. Queue, running, reconciling, terminal-success, and
+terminal-failure states SHALL be distinguishable.
+
+`queue.jsonl` SHALL own immutable enqueue identity and dispatch only.
+`journal.jsonl`, durable allocation records, and the hash-attested published
+working file SHALL own transaction recovery and terminal truth. Queue terminal
+state and the manifest SHALL be projections repaired from those authorities;
+any disagreement SHALL enter `Reconciling` and block both new batch admission
+and normal status claims until repaired.
+
+#### Scenario: Human-only batch is inspected
+- **WHEN** an operator reads the records for a completed batch
+- **THEN** they identify every exact captured and before/after row state and contain no invented model provenance
 
 #### Scenario: Inference-assisted commit is inspected
 - **WHEN** committed objects include ROI results
 - **THEN** the journal links the resolved profile and transform receipt that produced them
 
 ### Requirement: Immediate ordinary JSONL output
-After each successful Commit, `working.norm.jsonl` SHALL be a complete ordinary
-JSONL reflecting all committed samples through the acknowledged generation and
-SHALL not require replay of a delta log to read current state.
+`working.norm.jsonl` SHALL remain a complete ordinary JSONL representing the
+last published generation throughout enqueue and background candidate
+construction. It SHALL change at the single atomic replacement point only after
+a whole candidate is durable. Normal reads SHALL NOT require replay of queue or
+journal records, but supported consumers SHALL honor the transaction/recovery
+barrier and the published hash/line-count attestation. Queued Drafts MAY lag this
+file and SHALL be shown as pending rather than committed.
 
-#### Scenario: Editing-data consumer opens working output
-- **WHEN** a successful Commit has been acknowledged
-- **THEN** the consumer can stream the complete current JSONL without consulting Label Studio or the journal
+#### Scenario: Editing-data consumer opens working output during a batch
+- **WHEN** a batch is queued or constructing a candidate before publication
+- **THEN** the consumer can stream the complete prior terminal generation without consulting Label Studio or observing a partial candidate
 
-### Requirement: Whole-file Commit latency gate
-The implementation SHALL measure full-train Commit latency before deep UI work,
-SHALL target p95 at most two seconds on intended local storage, and SHALL stop
-for renewed design approval when a representative operation exceeds five
-seconds rather than silently changing output authority or projection timing.
+#### Scenario: Editing-data consumer reaches reconciliation
+- **WHEN** publication may have occurred but its durable projections are not yet reconciled
+- **THEN** the consumer waits or fails closed at the shared recovery barrier and then streams exactly the reconciled prior or new complete generation
 
-#### Scenario: Early benchmark exceeds the hard gate
-- **WHEN** a representative full-train Commit takes more than five seconds
-- **THEN** implementation pauses before deep vendor UI work and does not substitute a delta store or deferred JSONL projection
+#### Scenario: Terminal batch succeeds
+- **WHEN** the publication authority is durable and its terminal projection has been reconciled
+- **THEN** the consumer can stream one complete new generation containing every batch member
+
+### Requirement: Foreground enqueue and background batch performance gates
+The implementation SHALL measure durable enqueue latency separately from
+background full-train batch completion. Enqueue SHALL perform only bounded
+snapshot validation and durable queue publication and SHALL not wait for
+complete JSONL rewrite, manifest publication, or terminal receipt. A blocked
+worker probe SHALL prove the frontend can continue Draft save, edit, and
+navigation after enqueue. Background measurement SHALL record member count,
+whole-batch wall time, amortized time per changed row, RSS, file passes, and
+recovery behavior without weakening complete ordinary JSONL authority.
+
+#### Scenario: Prior synchronous benchmark exceeded the hard gate
+- **WHEN** the recorded one-row full-train synchronous rewrite took 12.145 seconds
+- **THEN** that result remains redesign evidence, while launch now gates on nonblocking durable enqueue plus measured background batch operability rather than synchronous completion
+
+#### Scenario: Enqueue waits for background publication
+- **WHEN** a test pauses the worker before candidate creation
+- **THEN** enqueue still returns its durable queue receipt and the implementation fails the gate if editing or navigation waits for worker completion
 
 ### Requirement: Source-safe recovery and rollback
 Recovery and rollback SHALL operate only inside the dedicated runtime subtree

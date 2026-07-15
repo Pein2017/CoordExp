@@ -159,8 +159,8 @@ captured task/annotation epoch immediately before mutation.
 - **THEN** valid boxes appear immediately in the active editable annotation and mark the task dirty
 
 #### Scenario: Inferred box is committed
-- **WHEN** the reviewer leaves, adjusts, or relabels an inserted box and successfully commits the sample
-- **THEN** it is materialized with the same working-row status and schema as a human-created box
+- **WHEN** the reviewer leaves, adjusts, or relabels an inserted box and its frozen Draft snapshot reaches terminal success in a dataset batch
+- **THEN** it is materialized with the same working-row status and schema as a human-created box; durable batch enqueue alone does not claim that status
 
 ### Requirement: ROI lifecycle follows request outcome
 The editor SHALL implement this exact outcome table while preserving any

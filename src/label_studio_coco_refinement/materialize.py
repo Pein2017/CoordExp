@@ -21,12 +21,14 @@ from src.label_studio_coco_refinement.models import (
     Split,
     WorkingRow,
 )
+from src.label_studio_coco_refinement.store import WorkingDatasetStore
 
 
 MATERIALIZER_VERSION = "label-studio-working-coord-v4"
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
-ExclusiveLock = Callable[[], AbstractContextManager[None]]
+_GenerationGuard = Callable[[], AbstractContextManager[None]]
+_EXACT_COMMITTED_GENERATION_GUARD = WorkingDatasetStore.committed_generation_guard
 
 
 @dataclass(frozen=True)
@@ -315,7 +317,82 @@ class WorkingCoordMaterializer:
         layout: RefinementRuntimeLayout,
         split: Split,
         *,
-        exclusive_lock: ExclusiveLock,
+        store: WorkingDatasetStore,
+        source_identity_resolver: SourceTaskIdentityResolver,
+    ) -> None:
+        self._initialize_common(layout, split, source_identity_resolver)
+        if type(store) is not WorkingDatasetStore:
+            raise DataContractError(
+                "materializer public construction requires WorkingDatasetStore",
+                code="label_studio.materialize_store",
+                context={"value_type": type(store).__name__},
+            )
+        expected_paths = {
+            "split_dir": self.layout.split_root(self.split),
+            "working_path": self.layout.working_norm(self.split),
+            "manifest_path": self.layout.project_manifest(self.split),
+            "lock_path": self.layout.commit_lock(self.split),
+        }
+        actual_paths = {
+            "split_dir": store.split_dir,
+            "working_path": store.working_path,
+            "manifest_path": store.manifest_path,
+            "lock_path": store.lock_path,
+        }
+        mismatches = [
+            field
+            for field, expected in expected_paths.items()
+            if actual_paths[field] != expected
+        ]
+        if mismatches:
+            raise DataContractError(
+                "WorkingDatasetStore is not bound to the exact materializer split",
+                code="label_studio.materialize_store_binding",
+                context={
+                    "split": self.split,
+                    "mismatches": mismatches,
+                    "expected": {key: str(value) for key, value in expected_paths.items()},
+                    "actual": {key: str(value) for key, value in actual_paths.items()},
+                },
+            )
+        generation_guard = getattr(store, "committed_generation_guard", None)
+        if (
+            getattr(generation_guard, "__self__", None) is not store
+            or getattr(generation_guard, "__func__", None)
+            is not _EXACT_COMMITTED_GENERATION_GUARD
+        ):
+            raise DataContractError(
+                "materializer requires the exact bound committed generation guard",
+                code="label_studio.materialize_generation_guard",
+                context={"store_type": type(store).__name__},
+            )
+        self._committed_generation_guard = generation_guard
+
+    @classmethod
+    def _for_test(
+        cls,
+        layout: RefinementRuntimeLayout,
+        split: Split,
+        *,
+        exclusive_lock: _GenerationGuard,
+        source_identity_resolver: SourceTaskIdentityResolver,
+    ) -> "WorkingCoordMaterializer":
+        """Private unit-test seam; production callers must bind a real store."""
+
+        if not callable(exclusive_lock):
+            raise DataContractError(
+                "test materializer requires an injected generation guard",
+                code="label_studio.materialize_test_guard",
+            )
+        materializer = cls.__new__(cls)
+        materializer._initialize_common(layout, split, source_identity_resolver)
+        materializer._committed_generation_guard = exclusive_lock
+        return materializer
+
+    def _initialize_common(
+        self,
+        layout: RefinementRuntimeLayout,
+        split: Split,
         source_identity_resolver: SourceTaskIdentityResolver,
     ) -> None:
         if not isinstance(layout, RefinementRuntimeLayout):
@@ -324,13 +401,8 @@ class WorkingCoordMaterializer:
                 code="label_studio.materialize_layout",
                 context={"value_type": type(layout).__name__},
             )
-        # Validate the split eagerly before accepting the injected lock.
+        # Validate the split eagerly before binding any generation guard.
         layout.split_root(split)
-        if not callable(exclusive_lock):
-            raise DataContractError(
-                "materializer requires an injected exclusive split lock",
-                code="label_studio.materialize_lock",
-            )
         if not callable(getattr(source_identity_resolver, "resolve", None)):
             raise DataContractError(
                 "materializer requires a source task identity resolver",
@@ -339,7 +411,6 @@ class WorkingCoordMaterializer:
             )
         self.layout = layout
         self.split = split
-        self._exclusive_lock = exclusive_lock
         self._source_identity_resolver = source_identity_resolver
 
     def materialize(
@@ -366,7 +437,7 @@ class WorkingCoordMaterializer:
         output = self.layout.working_coord(self.split)
         manifest = self.layout.project_manifest(self.split)
 
-        with self._exclusive_lock():
+        with self._committed_generation_guard():
             _validate_bound_paths(self.layout, self.split)
             before = _read_committed_generation(self.layout, self.split, manifest)
             _require_generation(before, committed_generation, stage="before_read")
@@ -385,7 +456,7 @@ class WorkingCoordMaterializer:
             candidate_path: Path | None = candidate._candidate_path
             try:
                 # Re-read both manifest authority and working bytes immediately before
-                # replacement while the injected store-equivalent lock remains held.
+                # replacement while the committed-generation guard remains held.
                 after = _read_committed_generation(self.layout, self.split, manifest)
                 _require_generation(after, committed_generation, stage="before_replace")
                 source_hash_after = _sha256_file(source)
@@ -1013,7 +1084,6 @@ def _fsync_directory(path: Path) -> None:
 
 __all__ = [
     "CommittedGenerationReceipt",
-    "ExclusiveLock",
     "MATERIALIZER_VERSION",
     "MaterializationReceipt",
     "SourceTaskIdentityReceipt",

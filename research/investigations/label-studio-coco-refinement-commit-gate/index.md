@@ -2,10 +2,11 @@
 
 ## Status
 
-**Hold as of 2026-07-15.** The approved whole-file Commit contract is not
-feasible with the first canonical implementation on the selected full train
-split. Do not continue into deeper Label Studio UI or service integration until
-the storage design is explicitly re-approved.
+**Hold lifted for the bounded redesign on 2026-07-15.** The original
+synchronous one-row whole-file Commit contract was not feasible on the selected
+full train split. The user subsequently approved accumulating durable Drafts
+across several images and asynchronously publishing one same-split batch in the
+background without blocking later annotation.
 
 This note records a negative feasibility result, not current product behavior
 or a replacement contract. The active authority remains
@@ -57,17 +58,63 @@ row:
 This makes latency approximately linear in split size and puts the full train
 split well beyond the approved threshold.
 
-## Decision Required
+## Approved Resolution
 
-Before implementation resumes, choose and record one authority shape:
+The active OpenSpec now owns the replacement contract:
 
-1. retain immediate monolithic `working.norm.jsonl` authority and approve a
-   bounded redesign/profiling attempt that removes redundant passes, accepting
-   that a 126 MiB rewrite plus fsync may still miss 2 seconds;
-2. make a small row-level journal or delta store the immediate authority and
-   project ordinary JSONL periodically or on export;
-3. use ordinary chunked/sharded JSONL as immediate authority with a manifest and
-   materialize a monolithic export when needed.
+1. retain one monolithic ordinary `working.norm.jsonl` as the complete
+   last-terminal-generation authority;
+2. collect several exact durable Draft snapshots into one immutable,
+   all-or-nothing same-split batch;
+3. durably enqueue and return without waiting for whole-file publication, while
+   one background worker rewrites and atomically publishes the complete next
+   generation;
+4. preserve any newer Draft made after enqueue and never report queue acceptance
+   as committed success;
+5. remove the redundant full-file parse/rehash passes and separately measure
+   foreground enqueue versus background total/amortized latency, RSS, and
+   recovery.
 
-Options 2 and 3 change the approved immediate-output contract and therefore
-require an OpenSpec revision plus user approval.
+Delta/database authority and sharded JSONL remain unapproved alternatives. The
+12.145-second result remains valid negative evidence for the superseded
+synchronous path, not a benchmark claim about the new batch implementation.
+
+## Async Batch Follow-up Evidence
+
+The replacement core was exercised under explicit code-state receipts in
+`outputs/label_studio_coco_refinement/async-batch-v1/`.
+
+Bounded measurements under intermediate store hash `578309999d73...` changed
+ten rows in one generation while preserving an untouched sentinel row byte for
+byte:
+
+| Rows | Bootstrap | Durable enqueue | Background worker | Amortized/member |
+| ---: | ---: | ---: | ---: | ---: |
+| 1,000 | 0.443 s | 2.749 ms | 0.155 s | 15.5 ms |
+| 10,000 | 3.545 s | 3.105 ms | 1.117 s | 111.7 ms |
+
+One full 117,266-row run was completed under earlier store hash `5cc77532703a...`:
+bootstrap took 39.579 seconds, durable enqueue took 2.538 milliseconds, and the
+ten-member background publication took 12.935 seconds. It produced one
+generation, changed all ten captured rows, preserved the sentinel row, used a
+116,112,684-byte working JSONL and 17,838-byte queue, and retained managed image
+links to the shared image root. This is pre-final background evidence, not a
+claim that the final source hash was run at full size. Later source changes were
+restricted to existing/active enqueue-receipt reconciliation and tests; the
+candidate/process/publication path was not rerun at full size.
+
+The exact final store hash
+`77ac5fa04dba619b10f783506d8e598e1ff62160932a98fa021b3f0179569d39`
+was independently exercised at the receipt boundary. While the transaction
+lock was held, exact and different-batch retries returned the existing
+`Queued`/`Running` identity in under one millisecond per pair without appending
+queue bytes. After a durable journal terminal with a missing queue-terminal
+projection and a released lock, both returned the same identity as
+`Reconciling` in 1.500 milliseconds. All 14 matrix assertions passed.
+
+The canonical `train.norm.jsonl` hash remained
+`d64edc553bdc4d725cb9c3a504f369a9799e8bdde20c8fef0787a09cec33c16a`;
+the image root and three sampled JPEG identities/hashes were unchanged. These
+receipts attest the pure store/locking boundary. Browser/HTTP Draft saving,
+navigation while a worker runs, an independently killed OS worker, and a final
+hash full-size rerun remain explicitly unattested.

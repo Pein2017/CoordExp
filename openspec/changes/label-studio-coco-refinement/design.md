@@ -46,9 +46,12 @@ change training input semantics.
 This design intentionally supersedes the generic candidate/snapshot review
 workflow described in `label-studio/AGENTS.md` only for this named change. The
 user has selected a dynamic working dataset: successful inference results enter
-the active editable annotation directly, and sample-level Commit immediately
-replaces that row's objects in a derived JSONL. Raw inputs remain immutable and
-the append-only journal preserves recovery and provenance.
+the active editable annotation directly, durable Drafts accumulate across
+images, and one explicit same-split batch Commit freezes those Draft snapshots
+for asynchronous atomic publication. Queue acceptance returns before the
+whole-file rewrite and never claims dataset success. Raw inputs remain
+immutable and append-only queue/journal records preserve recovery and
+provenance.
 
 ## Goals / Non-Goals
 
@@ -63,8 +66,9 @@ the append-only journal preserves recovery and provenance.
   COCO-80 instances with keyboard-friendly canonical-name search.
 - Make dense scenes legible with overlay-only focus/hide controls and visually
   distinct nearby inference-origin instances.
-- Keep Draft state freely editable inside Label Studio while making Commit the
-  explicit per-sample gate into `working.norm.jsonl`.
+- Keep Draft state freely editable across Label Studio tasks while making one
+  explicit same-split batch Commit the human gate into `working.norm.jsonl`,
+  with background publication that never blocks later annotation/navigation.
 - Run one ROI inference request at a time through a saved resident-model
   profile, invert an attested resize/letterbox transform, and insert valid
   results into the active annotation as ordinary editable boxes.
@@ -82,7 +86,8 @@ the append-only journal preserves recovery and provenance.
   classes outside the official COCO-80 set.
 - Chinese names, aliases, synonyms, or free-form object descriptions.
 - Multi-user adjudication, permissions, remote SaaS deployment, queued/batch
-  ROI requests, automatic active learning, or automatic dataset promotion.
+  ROI requests, multiple concurrent dataset batches for one split, automatic
+  active learning, or automatic dataset promotion.
 - Automatic non-maximum suppression, duplicate deletion, replacement, or merge
   of existing and inferred boxes.
 - Reviewed-empty Commit. V1 preserves an empty Draft but requires at least one
@@ -101,7 +106,8 @@ The parent repository owns five cohesive components:
 1. `Coco80Registry`: canonical English names and official sparse COCO IDs.
 2. `RefinementProjectAdapter`: idempotent project/task bootstrap, fixed Label
    Studio config, image references, task identity, and manifest checks.
-3. `WorkingDatasetStore`: validation, per-sample commits, journal/recovery, and
+3. `WorkingDatasetStore`: validation, durable same-split batch enqueue,
+   background all-or-nothing publication, queue/journal recovery, and
    generation receipts.
 4. `WorkingCoordMaterializer`: explicit norm-int to current coord-token export
    with image-reference and loader attestation.
@@ -115,11 +121,14 @@ colors, focus controls, and the dirty-navigation/Commit affordance.
 
 The browser calls the allowlisted parent service through a same-origin proxy
 mounted beneath the Label Studio origin; it never sends an arbitrary filesystem
-path. Label Studio's API/database owns Draft persistence, while
-`WorkingDatasetStore` owns committed dataset truth. A dedicated Commit
-coordinator freezes one semantic snapshot, durably saves that exact Draft, and
-then submits its identity/hash to the parent store so the two authorities never
-silently commit different payloads.
+path. Label Studio's API/database owns mutable Draft persistence, while
+`WorkingDatasetStore` owns frozen queue payloads and committed dataset truth. A
+narrow authenticated Django enqueue seam selects only the current user's
+authoritative project Drafts and copies their complete payloads, revisions, and
+semantic hashes into the parent durable queue before returning `202`; it never
+queues only mutable Draft IDs for later dereference. The batch worker consumes
+only that immutable payload and never treats current live annotation state as
+transaction input.
 
 Alternatives considered:
 
@@ -156,16 +165,26 @@ outputs/label_studio_coco_refinement/rescale_32_1024_bbox_len12000/
   train/
     project.json
     working.norm.jsonl
+    task_index.json
+    queue.jsonl
     journal.jsonl
     images -> /data/CoordExp/public_data/coco/rescale_32_1024_bbox/images
   val/
     project.json
     working.norm.jsonl
+    task_index.json
+    queue.jsonl
     journal.jsonl
     images -> /data/CoordExp/public_data/coco/rescale_32_1024_bbox/images
 ```
 
-`working.norm.jsonl` is an ordinary derived file, not a symlink. Immutable
+`working.norm.jsonl` is an ordinary derived file, not a symlink. Its atomic
+replacement under the split transaction lock is the single dataset publication
+authority; `project.json` and terminal log entries are verified projections of
+that published file, not independent commit points. `task_index.json` is a
+small immutable bootstrap sidecar mapping server-owned zero-based source-row
+indexes to task/image identity; its hash and entry count are bound by
+`project.json`. Immutable
 semantic row fields (`file_name`, `image_id`, `width`, `height`, and source
 metadata) are preserved. Because source `images[0]` values are relative to the
 source JSONL directory, bootstrap deliberately rebases the working locator to
@@ -218,12 +237,19 @@ name/ID mismatch. IDs are never editable in the browser.
 
 Every imported region has a hidden stable region key mapped to its positive
 `coco_ann_id`. Geometry and class edits preserve that mapping. A newly drawn or
-inferred region receives a stable split-local negative integer ID at its first
-Commit. The per-split allocator is serialized under the project lock and never
-reuses an issued ID. Region-key-to-ID mappings and tombstones are authoritative
-in the journal/rebuildable store index, returned by Commit, and rehydrated into
-Draft metadata on reopen; a lost response cannot cause a second allocation.
-IDs and mapping metadata are never editable in the browser.
+inferred region becomes semantically associated with a stable split-local
+negative integer ID at its first terminal-success batch. The worker may reserve
+that ID earlier without making the region committed. The per-split allocator is
+serialized under the worker lock, allocates deterministically across
+source-row-ordered members, appends/fsyncs a reservation record before candidate
+creation, and never reuses an issued ID. A reservation remains permanently bound
+to `(split, stable_region_key)` across failure, recovery, or a corrected later
+batch; another key can never receive it.
+Region-key-to-ID mappings and tombstones are authoritative in the
+journal/rebuildable store index and returned by the terminal receipt. They are
+merged into equal or newer Draft metadata by stable region key without replacing
+newer semantics; a lost response cannot cause a second allocation. IDs and
+mapping metadata are never editable in the browser.
 
 Committed objects contain only the current accepted object fields:
 `bbox_2d`, `desc`, `category_id`, `category_name`, `coco_ann_id`, and optional
@@ -240,73 +266,144 @@ described as directly loader-compatible. On explicit operator request,
 `WorkingCoordMaterializer` copies each committed row, replaces each norm integer
 with the exact `<|coord_N|>` token, preserves IDs/classes/rebased image locators,
 writes an atomic `working.coord.jsonl`, and proves it through the current Swift
-loader. It refuses empty or otherwise invalid working rows and does not promote
-the result automatically into a training config.
+loader. Its public constructor binds a real split-matched
+`WorkingDatasetStore` and holds that store's exact
+`committed_generation_guard` for the complete export; arbitrary callables and
+the store's private raw recovery lock are not supported authority. The guard
+fails closed on unresolved legacy or batch publication and projection drift,
+then allows export after recovery. It refuses empty or otherwise invalid
+working rows and does not promote the result automatically into a training
+config.
 
-### 5. Draft, Commit, journal, and recovery
+### 5. Durable Draft catalog, asynchronous batch Commit, and recovery
 
-Every task opened in the editor is mutable through exactly one authoritative
-annotation ID/revision. Ordinary Label Studio save behavior updates Draft state
-only. A sample Commit is coordinated across Draft and working-data authorities:
+Every task remains mutable through exactly one authoritative annotation.
+Ordinary Label Studio saves update Draft state only. The authenticated Django
+bridge records the durable server `draft_id`/`updated_at`, annotation identity,
+canonical semantic hash, and complete result/meta payload for the current user.
+There is no existing project-wide current-user Draft snapshot API, so the new
+batch endpoint performs that bounded authoritative selection; browser-side task
+enumeration and mutable Draft-ID-only queues are forbidden.
 
-1. Disable semantic editing, serialize one canonical projection `H` (stable
-   region key/identity, quantized geometry, canonical class, and membership;
-   excluding order noise and view metadata), and force/await durable Label
-   Studio Draft save of that exact annotation revision and hash. Draft-save
-   failure stops here.
-2. Submit an idempotent `commit_id` with project/task/annotation/Draft IDs,
-   annotation revision, `H`, base row hash, and observed project generation.
-   The store rejects stale or mismatched identities before allocation/writes.
-3. Validate and allocate any new negative IDs, then append/fsync a prepared
-   journal record containing before/after rows, identity mappings/tombstones,
-   provenance references, and the expected candidate file/manifest hashes.
-4. Stream and validate the complete split JSONL into a sibling temporary file,
-   fsync the file, rename over `working.norm.jsonl`, and fsync the parent
-   directory.
-5. Atomically replace and fsync the manifest/generation through its own sibling
-   temporary file and parent-directory fsync, then append/fsync a terminal
-   committed record. Rebuildable indexes are never the transaction authority.
-6. Return the committed row hash/generation and region-key-to-ID mapping. The UI
-   rehydrates the exact canonical committed snapshot as its new Draft/baseline
-   and clears the pre-Commit undo history.
+One explicit Commit coordinates a same-split batch:
 
-A per-project process/file lock rejects concurrent commits instead of allowing
-last-writer-wins. `commit_id + H` retries are idempotent. A definite failure
-before working-file replacement leaves the prior generation authoritative. A
-lost response or failure after replacement is `Commit outcome unknown`, not
-`Commit failed`; the browser queries commit status and startup recovery uses the
-prepared record plus working/manifest hashes to finalize committed or rolled
-back state exactly once before serving projects. Recovery is tested at every
-append/fsync/rename/manifest/response cut and source files are never targets.
+1. If the active task has unsaved semantic changes, force/await its durable
+   Draft save. Draft-save failure stops without creating a batch.
+2. Select every eligible authoritative Draft whose semantic hash differs from
+   its current committed baseline, attach the server-owned zero-based
+   `source_row_index` (`source_line - 1` from the task manifest), sort members by
+   that immutable order, require unique tasks and one split, and copy each full
+   snapshot/revision/hash into an immutable payload. Capture per-row base hashes
+   and the current base generation; global generation is provenance, while
+   execution freshness is decided by each captured row hash. Enqueue verifies
+   every index against the bootstrapped `(split, image_id)` task index and never
+   trusts a browser-supplied position.
+3. Derive `batch_payload_hash` over split, deterministic members, full retained
+   metadata, Draft-save receipts, inference links, and row bases. Append/fsync a
+   queue record keyed by `batch_id + batch_payload_hash`, then return `Queued`.
+   This is not dataset Commit success and does not wait for candidate creation.
+4. A single worker for that split claims the batch and acquires the dataset
+   transaction lock. It validates every frozen member without rereading live
+   Draft state. One invalid/stale row fails the whole batch before replacement.
+5. Materialize all member rows in source-row order. For every unseen stable
+   region key, append/fsync an explicit allocation-reservation journal record
+   before candidate creation; it binds the negative ID permanently even when
+   this batch later fails. Bind region mappings, tombstones, before/after rows,
+   and receipt links to the batch/member identities. A corrected later batch for
+   the same key reuses its reservation, while another key never can.
+6. Under the split transaction lock, stream the exact currently published
+   `working.norm.jsonl` once. Hash and count every input line while copying its
+   original bytes or substituting validated canonical member bytes, and hash the
+   candidate while writing. At end-of-stream, require the observed input hash,
+   generation, explicit `working_line_count`, and row index to match the
+   published manifest and bootstrapped task index. This
+   proves the candidate derives from the last published generation without a
+   separate pre-parse pass and preserves earlier committed rows. Fsync the
+   candidate, then append/fsync the prepared transaction with both input and
+   candidate attestations before replacement. A mismatch deletes/quarantines the
+   candidate and fails closed before publication.
+7. While still holding the transaction lock, atomically replace
+   `working.norm.jsonl` with the complete candidate and fsync its directory. This
+   replacement is the one dataset publication point: all members become
+   committed together. Supported readers and the status endpoint take the same
+   lock (or fail closed while recovery owns it), so they never observe the
+   rename-before-fsync interval. Replace/fsync the manifest and append/fsync the
+   authoritative transaction terminal projection before releasing the lock;
+   then append the queue terminal projection. A crash before replacement leaves
+   the prior generation authoritative. A crash after replacement is detected by
+   the prepared candidate hash and is reconciled as the same successful
+   generation before readers or another batch are admitted.
 
-The full train JSONL is rewritten on each Commit because the requested external
-contract is an immediately current, ordinary JSONL. The approved target is p95
-at most 2 seconds on the intended local storage, with a hard stop if any
-representative Commit exceeds 5 seconds. Failure of that early benchmark blocks
-deep UI implementation and requires renewed approval before substituting a
-delta store, deferred projection, or database authority.
+`queue.jsonl` is authoritative only for immutable enqueue identity and dispatch.
+`journal.jsonl` plus the hash-attested published working file own allocation,
+transaction, recovery, and terminal status. Queue running/terminal fields and
+`project.json` are projections repaired from those authorities. Any disagreement
+enters `Reconciling` and blocks another batch; no reader or admission decision is
+made from the queue projection alone.
 
-The approved V1 behavior rejects Commit when all boxes have been deleted while
-preserving that state as a Draft. Supporting reviewed-empty samples later
+At most one batch is active per split; train and validation may run
+independently. A second Commit while the split is active returns that batch
+identity or remains unavailable, but Draft save, annotation, inference, and
+navigation continue. No later Draft is auto-enqueued. Exact retries of
+`batch_id + batch_payload_hash` return the existing queue/terminal receipt;
+payload drift under the same ID conflicts. Startup reconstructs queued,
+claimed, prepared, and post-replacement states and finalizes at most one new
+generation. Queue and transaction locks are separate so a small durable enqueue
+does not wait behind the full-file worker lock.
+
+`working.norm.jsonl` remains an ordinary complete file at the last published
+generation while a batch runs. Candidate construction never changes it, and
+supported readers share the transaction/recovery barrier around publication.
+The prior one-row implementation took 12.145
+seconds because it parsed/validated the whole file, parsed it again during
+rewrite, then rehashed the temporary file. The canonical batch path removes the
+redundant passes but still measures full background wall time, amortized time per
+member, RSS, bytes, fsyncs, and recovery. The foreground gate is structural: a
+probe that blocks the worker before candidate creation must still observe a
+durable enqueue response and successful independent Draft save/navigation.
+
+V1 still rejects a batch containing a captured empty object list while
+preserving that task as a Draft. Supporting reviewed-empty samples later
 requires an explicit `verified_empty` working/training-projection change.
 
-### 6. Navigation guard and version cues
+### 6. Nonblocking navigation, status overlays, and safe terminal merge
 
-Dirty state compares the active canonical semantic projection with that task's
-last committed row hash/time; project generation is shown separately and a
-Commit on another task cannot make this task dirty. In-app task navigation,
-Previous/Next, routes, and editor-close controls present `Commit and continue`,
-`Continue with saved Draft`, and `Stay`; destructive discard is secondary and
-must reset the persisted Draft from the committed row. Navigation continues
-only after the chosen Commit or Draft save succeeds.
+Task semantic state remains `Committed` or `Draft`; batch state is a separate
+project/task overlay: `Queued`, `Running`, `Reconciling`, terminal `Succeeded`,
+or terminal `Failed`. The UI also distinguishes `Draft ahead of active batch`
+and `Draft ahead of committed batch`. Project generation, active batch ID,
+member count, and Drafts accumulated after capture are displayed separately.
+Queue acceptance never clears dirty state or changes the committed baseline.
 
-Hard reload/tab/window close cannot await custom asynchronous actions. It uses
-the browser-native unsaved-work Leave/Stay warning and makes no Commit claim.
-The visible semantic states are `Committed`, `Draft`, `Committing`, and
-`Reconciling outcome`; validation/write errors are banners on the still-dirty
-Draft, not a competing state. A new semantic edit clears stale validation
-errors. Successful Commit rebases the Draft and undo stack: a committed deletion
-cannot be resurrected by browser Undo, and redrawing creates a new negative ID.
+All task-switch paths—row click, keyboard focus, Previous/Next, Back,
+editor-close, route and popstate—pass through one navigation coordinator. It
+awaits only the active durable Draft save and continues immediately afterward;
+it never waits for queue processing or working-JSONL publication. A persistent
+project-level pending-Draft count and Commit action replace per-navigation
+Commit pressure. Polling through the existing query client is the initial
+status transport; SSE remains a later browser-spike alternative rather than a
+new dependency.
+
+Each captured member carries
+`batch_id + task_id + annotation_id + draft_id + draft_updated_at + queued_hash`.
+On terminal success, the parent committed baseline/generation and stable ID
+receipt update first. If the task is not loaded, the editor is untouched. If it
+is loaded, the client reacquires the live annotation and may rehydrate the
+committed snapshot plus reset history only when project/task/annotation,
+durable Draft token/hash, and in-memory semantic hash all still equal the
+captured token and no Draft save is running. Otherwise it merges only stable
+identity/provenance metadata by region key and preserves newer geometry, class,
+membership, Draft bytes, and post-enqueue undo history. Native Annotation save
+is not used for terminal rebase because it deletes attached Drafts; persisted
+mutation requires a transactional compare-and-swap endpoint or remains
+parent-owned baseline state.
+
+Hard reload/tab/window close uses the browser-native warning only for unsaved
+in-memory edits. Durable Drafts and queued/running batches survive reload and do
+not masquerade as unsaved local state. Enqueue failure creates no active batch;
+terminal failure leaves the prior JSONL generation and every current Draft
+intact with batch/member diagnostics. New semantic edits clear stale validation
+errors but never erase durable batch status.
 
 ### 7. Canonical class search and dense-scene presentation
 
@@ -442,8 +539,8 @@ history action only after matching the frozen task/annotation epoch.
 Inference appends to the active objects. It never removes, merges, relabels, or
 changes an existing region. `visual_policy_v1` highlights same-class IoU>=0.5
 potential duplicates and colors nearby instances for human inspection, with no
-automatic NMS/replacement and no blocking conflict state. Sample Commit is the
-sole human acceptance gate.
+automatic NMS/replacement and no blocking conflict state. Terminal-success
+dataset batch Commit is the sole human acceptance gate.
 
 ### 11. Local security and failure isolation
 
@@ -467,10 +564,16 @@ unsupported rotated rectangle.
 
 ## Risks / Trade-offs
 
-- **Whole-file Commit latency:** rewriting the 117,266-row train JSONL after
-  every sample is simple and satisfies immediate-output semantics, but may feel
-  slow. Mitigation: enforce the approved p95<=2s / hard-5s early gate, keep the
-  write streaming/atomic, and return for approval before changing semantics.
+- **Background whole-file latency:** the complete 117,266-row JSONL is still
+  rewritten for a batch, and image-count-independent wall time may remain
+  material. Mitigation: one rewrite amortizes several samples, enqueue returns
+  after only bounded durable queue publication, the worker uses one streaming
+  copy/substitute/hash pass, and full wall time/RSS/amortized cost remain a
+  measured operability gate rather than blocking the editor.
+- **Frozen-snapshot versus newer-Draft races:** a queued task may be edited
+  before terminal success. Mitigation: the queue stores full immutable payloads,
+  workers never reread live Drafts, and terminal rebase is CAS-gated with
+  identity-only merge for newer Drafts.
 - **Label Studio scale/build feasibility:** the train project exceeds approximate
   100k guidance and the checkout lacks a ready frontend/runtime. Mitigation: pin
   Node/Yarn/Python receipts and probe 1k, 10k, then full task import/open/Next/
@@ -483,9 +586,10 @@ unsupported rotated rectangle.
   the current inference parser use different scale conventions. Mitigation:
   preserve unchanged bins, use tolerance-aware quantization, record the full
   discrete affine/raster transform, and run exhaustive/browser golden tests.
-- **Draft/working divergence:** Label Studio state can be newer than the derived
-  JSONL. This is intentional. Mitigation: one authoritative annotation,
-  freeze-save-commit handshake, per-task semantic hash, idempotent commit status,
+- **Draft/working divergence:** Label Studio state can intentionally be newer
+  than the last terminal JSONL and newer than an active frozen batch.
+  Mitigation: one authoritative annotation, durable Draft catalog, explicit
+  pending counts, per-task semantic hashes, batch overlays, idempotent status,
   and explicit outcome reconciliation.
 - **Identity leakage/collision:** new boxes do not have official COCO annotation
   IDs. Mitigation: negative split-local allocator, tombstones, uniqueness checks,
@@ -505,21 +609,27 @@ unsupported rotated rectangle.
 
 1. Record source hashes, row/box counts, COCO-80 registry fingerprint, and the
    pinned Label Studio revision in fixtures; do not modify current data.
-2. Pin/build the Label Studio runtime and run early feasibility gates: exact
-   source-annotation seeding/direct insertion with a fake backend, 1k/10k/full
-   project scale, full-train atomic Commit latency, and cut-point recovery.
-3. Implement/test the parent registry/project/store/materializer boundary, then
+2. Implement/test durable multi-row enqueue, all-or-nothing batch publication,
+   one-pass full-file replacement, and every queue/transaction crash boundary;
+   separately measure foreground enqueue and background 1k/10k/full-train
+   completion while retaining the 12.145-second synchronous result as redesign
+   provenance.
+3. Pin/build the Label Studio runtime and run exact source-annotation seeding,
+   current-user Draft capture, nonblocking status/rebase, fake-backend direct
+   insertion, and 1k/10k/full project scale probes.
+4. Implement/test the remaining parent registry/project/store/materializer boundary, then
    bootstrap disposable train/val projects under the ignored runtime root with
    managed image links and storage records.
-4. Implement the minimal editing UI extensions, authoritative Commit handshake,
-   navigation guards, and fake-backend browser flow.
-5. Implement the resident ROI adapter/profile/discrete-transform boundary,
+5. Implement the minimal editing UI extensions, project batch action/status,
+   Draft-save navigation coordinator, CAS-safe terminal merge, and fake-backend
+   browser flow.
+6. Implement the resident ROI adapter/profile/discrete-transform boundary,
    deadline cancellation, and one real-profile smoke using the accepted
    CoordExp prompt/parser/no-resize path.
-6. Validate working norm JSONL, explicitly materialize a bounded coord sample,
+7. Validate working norm JSONL, explicitly materialize a bounded coord sample,
    load it with the current training loader, and attest source hashes are
    unchanged.
-7. Perform user acceptance on a small train/val slice before opening the full
+8. Perform user acceptance on a small train/val slice before opening the full
    projects. Rollback removes only the dedicated runtime root and vendor patch;
    immutable source artifacts need no restoration.
 
@@ -527,10 +637,18 @@ unsupported rotated rectangle.
 
 - V1 rejects empty Commit but preserves an empty Draft.
 - V1 is same-machine and loopback-only; no LAN browser access.
-- Whole-file Commit targets p95<=2 seconds and stops for redesign/approval on a
-  representative operation exceeding 5 seconds.
-- In-app navigation offers the rich asynchronous guard; hard reload/tab close
-  uses the browser-native unsaved-work warning.
+- V1 captures all eligible durable Drafts from one split into one immutable,
+  all-or-nothing batch; at most one dataset batch is active per split.
+- Durable enqueue returns before whole-file publication and is never presented
+  as committed success. Annotation, inference, Draft save, and navigation remain
+  available while the worker runs.
+- `working.norm.jsonl` remains a complete ordinary last-terminal-generation
+  file and changes only at atomic terminal batch success.
+- Later edits to captured tasks remain newer Drafts and cannot be overwritten
+  by terminal rebase; freshness is per-row base hash rather than unrelated
+  global-generation equality.
+- In-app navigation awaits only durable Draft save; hard reload/tab close uses
+  the browser-native warning only for unsaved in-memory edits.
 
 ## Open Questions
 

@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 
 from src.label_studio_coco_refinement.categories import COCO80_REGISTRY
+import src.label_studio_coco_refinement.store as store_module
 from src.label_studio_coco_refinement.store import (
     AuthoritativeDraftIdentity,
     BootstrapSpec,
@@ -214,6 +215,725 @@ def _reopen(store: WorkingDatasetStore) -> WorkingDatasetStore:
         annotation_verifier=store.annotation_verifier,
         inference_receipt_resolver=store.inference_receipt_resolver,
     )
+
+
+def _batch_request(
+    store: WorkingDatasetStore,
+    *,
+    batch_id: str = "batch-1",
+    image_ids: tuple[int, ...] = (1, 2),
+    reverse_members: bool = False,
+) -> Any:
+    members = []
+    for image_id in image_ids:
+        regions = _regions(store, image_id)
+        regions[-1]["region_key"] = f"drawn:batch-{image_id}"
+        request = _request(
+            store,
+            commit_id=f"{batch_id}:member:{image_id}",
+            image_id=image_id,
+            regions=regions,
+        )
+        members.append(
+            store_module.BatchMember(source_row_index=image_id - 1, request=request)
+        )
+    if reverse_members:
+        members.reverse()
+    return store_module.BatchRequest(
+        batch_id=batch_id,
+        split="train",
+        base_generation=store.restore_draft(1).generation,
+        members=tuple(members),
+    )
+
+
+def test_batch_enqueue_is_durable_immutable_and_does_not_publish(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    request = _batch_request(store, reverse_members=True)
+    working_before = store.working_path.read_bytes()
+    manifest_before = store.manifest_path.read_bytes()
+
+    receipt = store.enqueue_batch(request)
+
+    assert receipt.batch_id == "batch-1"
+    assert receipt.status is store_module.BatchStatus.QUEUED
+    assert receipt.member_count == 2
+    assert len(receipt.payload_hash) == 64
+    assert store.working_path.read_bytes() == working_before
+    assert store.manifest_path.read_bytes() == manifest_before
+    queue_before_mutation = store.queue_path.read_bytes()
+    assert queue_before_mutation.endswith(b"\n")
+    queued = json.loads(queue_before_mutation)
+    assert [member["source_row_index"] for member in queued["payload"]["members"]] == [0, 1]
+
+    request.members[0].request.regions[0]["bbox_2d"][0] = 777
+    assert store.queue_path.read_bytes() == queue_before_mutation
+
+
+def test_batch_enqueue_exact_retry_is_byte_stable_and_payload_drift_conflicts(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    request = _batch_request(store)
+    first = store.enqueue_batch(request)
+    queue_bytes = store.queue_path.read_bytes()
+
+    verifier = store.annotation_verifier
+    assert isinstance(verifier, AcceptingAnnotationVerifier)
+    verifier.accept = False
+    assert store.enqueue_batch(copy.deepcopy(request)) == first
+    assert store.queue_path.read_bytes() == queue_bytes
+
+    changed = _batch_request(store, batch_id="batch-1", image_ids=(1, 3))
+    with pytest.raises(CommitConflictError, match="batch id"):
+        store.enqueue_batch(changed)
+    assert store.queue_path.read_bytes() == queue_bytes
+
+
+def test_batch_enqueue_returns_existing_active_batch_identity(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    active = store.enqueue_batch(_batch_request(store, batch_id="batch-active"))
+
+    returned = store.enqueue_batch(
+        _batch_request(store, batch_id="batch-other", image_ids=(3,))
+    )
+
+    assert returned == active
+    assert store.get_batch_status("batch-other").status is store_module.BatchStatus.NOT_FOUND
+    assert store.queue_path.read_text(encoding="utf-8").count("\n") == 1
+
+
+@pytest.mark.parametrize(
+    "claimed,expected_status",
+    [
+        (False, store_module.BatchStatus.QUEUED),
+        (True, store_module.BatchStatus.RUNNING),
+    ],
+)
+def test_batch_enqueue_retries_return_queue_identity_while_worker_locked(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+    claimed: bool,
+    expected_status: Any,
+) -> None:
+    store, _, _ = project
+    peer = _reopen(store)
+    request = _batch_request(store, batch_id="batch-active", image_ids=(1,))
+    other = _batch_request(peer, batch_id="batch-other", image_ids=(2,))
+    accepted = store.enqueue_batch(request)
+    if claimed:
+        with store._exclusive_queue_lock():
+            store._append_queue_record(
+                {
+                    "kind": "claim",
+                    "batch_id": accepted.batch_id,
+                    "payload_hash": accepted.payload_hash,
+                },
+                "claim",
+            )
+    queue_bytes = store.queue_path.read_bytes()
+
+    with store._exclusive_lock():
+        exact = peer.enqueue_batch(copy.deepcopy(request))
+        active = peer.enqueue_batch(other)
+
+    assert exact.batch_id == accepted.batch_id
+    assert exact.payload_hash == accepted.payload_hash
+    assert exact.status is expected_status
+    assert active == exact
+    assert store.queue_path.read_bytes() == queue_bytes
+
+
+def test_batch_enqueue_terminal_retry_is_reconciling_while_worker_locked(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    request = _batch_request(store, batch_id="batch-finished", image_ids=(1,))
+    peer = _reopen(store)
+    accepted = store.enqueue_batch(request)
+    result = store.process_next_batch()
+    assert result is not None
+    assert result.status is store_module.BatchStatus.SUCCEEDED
+    queue_bytes = store.queue_path.read_bytes()
+
+    with store._exclusive_lock():
+        retry = peer.enqueue_batch(copy.deepcopy(request))
+
+    assert retry.batch_id == accepted.batch_id
+    assert retry.payload_hash == accepted.payload_hash
+    assert retry.status is store_module.BatchStatus.RECONCILING
+    assert store.queue_path.read_bytes() == queue_bytes
+
+
+def test_batch_enqueue_retries_reconcile_unlocked_journal_terminal_gap(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    worker, _, _ = project
+    peer = _reopen(worker)
+    request = _batch_request(worker, batch_id="batch-interrupted", image_ids=(1,))
+    other = _batch_request(peer, batch_id="batch-other", image_ids=(2,))
+    accepted = worker.enqueue_batch(request)
+    worker._fault_injector = CrashAt("batch_terminal_journal_fsynced")
+
+    with pytest.raises(InjectedCrash):
+        worker.process_next_batch()
+    queue_bytes = worker.queue_path.read_bytes()
+
+    exact = peer.enqueue_batch(copy.deepcopy(request))
+    active = peer.enqueue_batch(other)
+
+    assert exact.batch_id == accepted.batch_id
+    assert exact.payload_hash == accepted.payload_hash
+    assert exact.status is store_module.BatchStatus.RECONCILING
+    assert active == exact
+    assert worker.queue_path.read_bytes() == queue_bytes
+
+
+def test_legacy_commit_cannot_bypass_an_active_batch(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    store.enqueue_batch(_batch_request(store, image_ids=(1,)))
+    working_before = store.working_path.read_bytes()
+
+    with pytest.raises(StoreBusyError, match="active batch"):
+        store.commit(_request(store, commit_id="legacy-during-batch", image_id=2))
+
+    assert store.working_path.read_bytes() == working_before
+
+
+@pytest.mark.parametrize(
+    "members,error",
+    [
+        (((0, 2),), "source row index mismatch"),
+        (((3, 3),), "source row index out of range"),
+        (((0, 1), (0, 1)), "duplicate source row index"),
+    ],
+)
+def test_batch_enqueue_verifies_immutable_source_row_index(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+    members: tuple[tuple[int, int], ...],
+    error: str,
+) -> None:
+    store, _, _ = project
+    batch_members = []
+    for ordinal, (source_row_index, image_id) in enumerate(members):
+        batch_members.append(
+            store_module.BatchMember(
+                source_row_index=source_row_index,
+                request=_request(
+                    store,
+                    commit_id=f"invalid-index:{ordinal}",
+                    image_id=image_id,
+                ),
+            )
+        )
+    request = store_module.BatchRequest(
+        batch_id="invalid-index-batch",
+        split="train",
+        base_generation=0,
+        members=tuple(batch_members),
+    )
+
+    with pytest.raises(ValidationError, match=error):
+        store.enqueue_batch(request)
+    assert store.queue_path.read_bytes() == b""
+
+
+def test_process_batch_publishes_every_member_once_in_source_order(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    receipt = store.enqueue_batch(_batch_request(store, reverse_members=True))
+
+    result = store.process_next_batch()
+
+    assert result is not None
+    assert result.batch_id == receipt.batch_id
+    assert result.status is store_module.BatchStatus.SUCCEEDED
+    assert result.generation == 1
+    assert [member.image_id for member in result.members] == [1, 2]
+    assert [
+        member.region_id_mapping[f"drawn:batch-{member.image_id}"]
+        for member in result.members
+    ] == [-1, -2]
+    rows = [json.loads(line) for line in store.working_path.read_text().splitlines()]
+    assert [row["image_id"] for row in rows] == [1, 2, 3]
+    assert rows[0]["objects"][0]["bbox_2d"] == [11, 21, 31, 41]
+    assert rows[1]["objects"][0]["bbox_2d"] == [11, 21, 31, 41]
+    manifest = json.loads(store.manifest_path.read_text())
+    assert manifest["generation"] == 1
+    assert manifest["working_line_count"] == 3
+    assert manifest["working_sha256"] == result.working_sha256
+    assert store.get_batch_status(receipt.batch_id).status is store_module.BatchStatus.SUCCEEDED
+    assert store.get_batch_result(receipt.batch_id) == result
+    records = [json.loads(line) for line in store.journal_path.read_text().splitlines()]
+    assert [record["kind"] for record in records].count("batch_prepared") == 1
+    assert [record["kind"] for record in records].count("batch_terminal") == 1
+    assert [record["kind"] for record in records].count("reservation") == 2
+
+
+def test_batch_freshness_is_per_row_not_global_generation(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    worker_store = _reopen(store)
+    old_request = _request(
+        worker_store, commit_id="old-generation-member", image_id=1
+    )
+    store.commit(
+        _request(
+            store,
+            commit_id="unrelated-legacy",
+            image_id=3,
+            regions=_regions(store, 3, include_new=False),
+        )
+    )
+    batch = store_module.BatchRequest(
+        batch_id="old-generation-batch",
+        split="train",
+        base_generation=old_request.observed_generation,
+        members=(store_module.BatchMember(source_row_index=0, request=old_request),),
+    )
+
+    worker_store.enqueue_batch(batch)
+    result = worker_store.process_next_batch()
+
+    assert result is not None
+    assert result.status is store_module.BatchStatus.SUCCEEDED
+    assert result.generation == 2
+
+
+def test_stale_batch_member_fails_all_members_without_replacement(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    old_one = _request(store, commit_id="stale-one", image_id=1)
+    old_two = _request(store, commit_id="stale-two", image_id=2)
+    store.commit(_request(store, commit_id="advance-row-one", image_id=1))
+    batch = store_module.BatchRequest(
+        batch_id="stale-batch",
+        split="train",
+        base_generation=0,
+        members=(
+            store_module.BatchMember(source_row_index=0, request=old_one),
+            store_module.BatchMember(source_row_index=1, request=old_two),
+        ),
+    )
+    store.enqueue_batch(batch)
+    working_before = store.working_path.read_bytes()
+    manifest_before = store.manifest_path.read_bytes()
+
+    result = store.process_next_batch()
+
+    assert result is not None
+    assert result.status is store_module.BatchStatus.FAILED
+    assert "base row hash changed" in (result.error or "")
+    assert store.working_path.read_bytes() == working_before
+    assert store.manifest_path.read_bytes() == manifest_before
+    assert store.get_batch_status("stale-batch").status is store_module.BatchStatus.FAILED
+
+
+def test_sequential_batches_preserve_prior_rows_and_use_frozen_snapshot(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    first = _batch_request(store, batch_id="first", image_ids=(1,))
+    store.enqueue_batch(first)
+    first.members[0].request.regions[0]["bbox_2d"] = [200, 210, 220, 230]
+    first_result = store.process_next_batch()
+    assert first_result is not None and first_result.status is store_module.BatchStatus.SUCCEEDED
+    row_one_after_first = store.working_path.read_bytes().splitlines(keepends=True)[0]
+    assert json.loads(row_one_after_first)["objects"][0]["bbox_2d"] == [11, 21, 31, 41]
+
+    store.enqueue_batch(_batch_request(store, batch_id="second", image_ids=(2,)))
+    second_result = store.process_next_batch()
+
+    assert second_result is not None and second_result.status is store_module.BatchStatus.SUCCEEDED
+    assert store.working_path.read_bytes().splitlines(keepends=True)[0] == row_one_after_first
+
+
+def test_batch_worker_does_not_use_legacy_prescan_or_temp_rehash(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store, _, _ = project
+    store.enqueue_batch(_batch_request(store, image_ids=(1,)))
+
+    def forbidden(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("legacy whole-file helper was used")
+
+    monkeypatch.setattr(store, "_find_row", forbidden)
+    monkeypatch.setattr(store, "_candidate_working_hash", forbidden)
+    monkeypatch.setattr(store, "_rewrite_working", forbidden)
+    monkeypatch.setattr(store, "_iter_rows", forbidden)
+    monkeypatch.setattr(store_module, "sha256_file", forbidden)
+
+    result = store.process_next_batch()
+
+    assert result is not None
+    assert result.status is store_module.BatchStatus.SUCCEEDED
+
+
+def test_failed_batch_reservation_is_reused_but_never_given_to_another_key(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    store.enqueue_batch(_batch_request(store, batch_id="will-fail", image_ids=(1,)))
+
+    def fail_after_reservation(boundary: str) -> None:
+        if boundary == "reservation_journal_fsynced":
+            raise ValidationError("injected failure after durable reservation")
+
+    store._fault_injector = fail_after_reservation
+    failed = store.process_next_batch()
+    assert failed is not None and failed.status is store_module.BatchStatus.FAILED
+    store._fault_injector = None
+    reservations = [
+        json.loads(line)
+        for line in store.journal_path.read_text().splitlines()
+        if json.loads(line)["kind"] == "reservation"
+    ]
+    assert [(record["stable_region_key"], record["coco_ann_id"]) for record in reservations] == [
+        ("drawn:batch-1", -1)
+    ]
+
+    corrected = _batch_request(store, batch_id="corrected", image_ids=(1,))
+    store.enqueue_batch(corrected)
+    corrected_result = store.process_next_batch()
+    assert corrected_result is not None
+    assert corrected_result.members[0].region_id_mapping["drawn:batch-1"] == -1
+    assert sum(
+        json.loads(line)["kind"] == "reservation"
+        for line in store.journal_path.read_text().splitlines()
+    ) == 1
+
+    other = _batch_request(store, batch_id="other-key", image_ids=(2,))
+    other.members[0].request.regions[-1]["region_key"] = "drawn:other-key"
+    regions = other.members[0].request.regions
+    other_member = _request(
+        store,
+        commit_id="other-key:member:2",
+        image_id=2,
+        regions=regions,
+    )
+    other = replace(
+        other,
+        members=(store_module.BatchMember(source_row_index=1, request=other_member),),
+        base_generation=store.restore_draft(2).generation,
+    )
+    store.enqueue_batch(other)
+    other_result = store.process_next_batch()
+    assert other_result is not None
+    assert other_result.members[0].region_id_mapping["drawn:other-key"] == -2
+
+
+@pytest.mark.parametrize(
+    "boundary,expected_status,expected_generation",
+    [
+        ("batch_prepared_journal_fsynced", store_module.BatchStatus.FAILED, 0),
+        ("batch_working_replaced", store_module.BatchStatus.SUCCEEDED, 1),
+        ("batch_terminal_journal_fsynced", store_module.BatchStatus.SUCCEEDED, 1),
+    ],
+)
+def test_batch_reopen_reconciles_transaction_and_queue_projection(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+    boundary: str,
+    expected_status: Any,
+    expected_generation: int,
+) -> None:
+    store, _, _ = project
+    store.enqueue_batch(_batch_request(store, image_ids=(1,)))
+    crash = CrashAt(boundary)
+    store._fault_injector = crash
+
+    with pytest.raises(InjectedCrash):
+        store.process_next_batch()
+    with pytest.raises(RecoveryError, match="requires recovery"):
+        store.restore_draft(1)
+
+    reopened = _reopen(store)
+    status = reopened.get_batch_status("batch-1")
+    assert status.status is expected_status
+    assert status.generation == expected_generation
+    assert json.loads(reopened.manifest_path.read_text())["generation"] == expected_generation
+    assert any(
+        json.loads(line).get("kind") == "queue_terminal"
+        for line in reopened.queue_path.read_text().splitlines()
+    )
+
+
+@pytest.mark.parametrize(
+    "boundary,terminal_projection_complete",
+    [
+        ("batch_prepared_journal_fsynced", False),
+        ("batch_working_replaced", False),
+        ("batch_working_directory_fsynced", False),
+        ("manifest_temp_fsynced", False),
+        ("manifest_replaced", False),
+        ("batch_terminal_journal_fsynced", False),
+        ("queue_terminal_queue_fsynced", True),
+    ],
+)
+def test_preopened_peer_never_crosses_batch_publication_authorities(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+    boundary: str,
+    terminal_projection_complete: bool,
+) -> None:
+    worker, _, _ = project
+    peer = _reopen(worker)
+    next_request = _batch_request(peer, batch_id="batch-next", image_ids=(2,))
+    worker.enqueue_batch(_batch_request(worker, image_ids=(1,)))
+    worker._fault_injector = CrashAt(boundary)
+
+    with pytest.raises(InjectedCrash):
+        worker.process_next_batch()
+
+    if terminal_projection_complete:
+        restored = peer.restore_draft(1)
+        assert restored.generation == 1
+        assert restored.row["objects"][0]["bbox_2d"] == [11, 21, 31, 41]
+        assert list(peer.iter_task_seeds())[0].annotations[0]["regions"][0][
+            "bbox_2d"
+        ] == [11, 21, 31, 41]
+        assert peer.get_batch_status("batch-1").status is store_module.BatchStatus.SUCCEEDED
+        accepted = peer.enqueue_batch(next_request)
+        assert accepted.batch_id == "batch-next"
+        assert accepted.status is store_module.BatchStatus.QUEUED
+    else:
+        with pytest.raises(RecoveryError, match="requires recovery"):
+            peer.restore_draft(1)
+        with pytest.raises(RecoveryError, match="requires recovery"):
+            list(peer.iter_task_seeds())
+        assert peer.get_batch_status("batch-1").status is store_module.BatchStatus.RECONCILING
+        receipt = peer.enqueue_batch(next_request)
+        assert receipt.batch_id == "batch-1"
+        assert receipt.status is store_module.BatchStatus.RECONCILING
+        with pytest.raises(RecoveryError, match="requires recovery"):
+            peer.get_batch_status("batch-next")
+        assert not any(
+            json.loads(line).get("batch_id") == "batch-next"
+            for line in peer.queue_path.read_text().splitlines()
+        )
+
+
+@pytest.mark.parametrize(
+    "boundary,terminal_complete",
+    [
+        ("working_replaced", False),
+        ("manifest_replaced", False),
+        ("terminal_journal_fsynced", True),
+    ],
+)
+def test_preopened_peer_never_crosses_legacy_publication_authorities(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+    boundary: str,
+    terminal_complete: bool,
+) -> None:
+    worker, _, _ = project
+    peer = _reopen(worker)
+    interrupted = _request(worker, commit_id="legacy-interrupted", image_id=1)
+    later_legacy = _request(peer, commit_id="legacy-later", image_id=2)
+    later_batch = _batch_request(peer, batch_id="batch-after-legacy", image_ids=(2,))
+    worker._fault_injector = CrashAt(boundary)
+
+    with pytest.raises(InjectedCrash):
+        worker.commit(interrupted)
+
+    if terminal_complete:
+        restored = peer.restore_draft(1)
+        assert restored.generation == 1
+        assert restored.row["objects"][0]["bbox_2d"] == [11, 21, 31, 41]
+        assert list(peer.iter_task_seeds())[0].annotations[0]["regions"][0][
+            "bbox_2d"
+        ] == [11, 21, 31, 41]
+        assert peer.status("legacy-interrupted") is CommitStatus.COMMITTED
+        assert peer.result("legacy-interrupted").generation == 1
+        fresh_later_legacy = _request(
+            peer, commit_id="legacy-later-fresh", image_id=2
+        )
+        assert peer.commit(fresh_later_legacy).generation == 2
+    else:
+        with pytest.raises(RecoveryError, match="requires recovery"):
+            peer.restore_draft(1)
+        with pytest.raises(RecoveryError, match="requires recovery"):
+            list(peer.iter_task_seeds())
+        assert peer.status("legacy-interrupted") is CommitStatus.OUTCOME_UNKNOWN
+        with pytest.raises(CommitOutcomeUnknown):
+            peer.result("legacy-interrupted")
+        with pytest.raises(RecoveryError, match="requires recovery"):
+            peer.commit(later_legacy)
+        with pytest.raises(RecoveryError, match="requires recovery"):
+            peer.enqueue_batch(later_batch)
+        with pytest.raises(RecoveryError, match="requires recovery"):
+            peer.get_batch_status("batch-after-legacy")
+        assert peer.queue_path.read_bytes() == b""
+
+        peer.recover()
+        assert peer.restore_draft(1).generation == 1
+        assert peer.status("legacy-interrupted") is CommitStatus.COMMITTED
+
+
+@pytest.mark.parametrize(
+    "transaction,boundary",
+    [
+        ("legacy", "working_replaced"),
+        ("legacy", "manifest_replaced"),
+        ("batch", "batch_working_replaced"),
+        ("batch", "batch_terminal_journal_fsynced"),
+    ],
+)
+def test_committed_generation_guard_blocks_unreconciled_publication(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+    transaction: str,
+    boundary: str,
+) -> None:
+    worker, _, _ = project
+    peer = _reopen(worker)
+    worker._fault_injector = CrashAt(boundary)
+
+    with pytest.raises(InjectedCrash):
+        if transaction == "legacy":
+            worker.commit(
+                _request(worker, commit_id="guard-interrupted", image_id=1)
+            )
+        else:
+            worker.enqueue_batch(
+                _batch_request(worker, batch_id="guard-interrupted", image_ids=(1,))
+            )
+            worker.process_next_batch()
+
+    with pytest.raises(RecoveryError, match="requires recovery"):
+        with peer.committed_generation_guard():
+            pytest.fail("guard yielded an unreconciled generation")
+
+    peer.recover()
+    with peer.committed_generation_guard():
+        assert json.loads(peer.manifest_path.read_text())["generation"] == 1
+
+
+def test_committed_generation_guard_is_exclusive_without_hashing_working(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store, _, _ = project
+    peer = _reopen(store)
+
+    def forbidden(*args: Any, **kwargs: Any) -> str:
+        raise AssertionError("committed generation guard hashed the working file")
+
+    monkeypatch.setattr(store_module, "sha256_file", forbidden)
+    with store.committed_generation_guard():
+        assert json.loads(store.manifest_path.read_text())["generation"] == 0
+        with pytest.raises(StoreBusyError, match="reconciling"):
+            peer.restore_draft(1)
+
+
+def test_lost_enqueue_response_reopens_as_same_queued_batch(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    crash = CrashAt("enqueue_queue_fsynced")
+    store._fault_injector = crash
+
+    with pytest.raises(InjectedCrash):
+        store.enqueue_batch(_batch_request(store, image_ids=(1,)))
+
+    reopened = _reopen(store)
+    assert reopened.get_batch_status("batch-1").status is store_module.BatchStatus.QUEUED
+    result = reopened.process_next_batch()
+    assert result is not None and result.status is store_module.BatchStatus.SUCCEEDED
+
+
+def test_bootstrap_persists_verified_zero_based_task_index(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    assert [seed.source_row_index for seed in store.iter_task_seeds()] == [0, 1, 2]
+    manifest = json.loads(store.manifest_path.read_text())
+    assert manifest["schema_version"] == 2
+    assert manifest["working_line_count"] == 3
+    assert manifest["task_index_sha256"] == sha256_file(store.task_index_path)
+
+    task_index = json.loads(store.task_index_path.read_text())
+    task_index["entries"][1]["source_row_index"] = 0
+    store.task_index_path.write_text(canonical_json(task_index) + "\n", encoding="utf-8")
+    manifest["task_index_sha256"] = sha256_file(store.task_index_path)
+    store.manifest_path.write_text(canonical_json(manifest) + "\n", encoding="utf-8")
+    with pytest.raises(ManifestDriftError, match="task_index"):
+        _reopen(store)
+
+
+def test_reopen_truncates_only_an_unambiguous_torn_queue_tail(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    store.enqueue_batch(_batch_request(store, image_ids=(1,)))
+    durable = store.queue_path.read_bytes()
+    with store.queue_path.open("ab") as handle:
+        handle.write(b'{"kind":"claim"')
+        handle.flush()
+
+    reopened = _reopen(store)
+
+    assert reopened.queue_path.read_bytes() == durable
+    assert reopened.get_batch_status("batch-1").status is store_module.BatchStatus.QUEUED
+
+
+def test_reopen_removes_orphan_batch_candidate_and_keeps_queue_dispatchable(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    store.enqueue_batch(_batch_request(store, image_ids=(1,)))
+    orphan = store.split_dir / ".working.batch.orphan"
+    orphan.write_bytes(b"partial candidate")
+
+    reopened = _reopen(store)
+
+    assert not orphan.exists()
+    result = reopened.process_next_batch()
+    assert result is not None and result.status is store_module.BatchStatus.SUCCEEDED
+
+
+def test_batch_candidate_rejects_untouched_input_drift_before_replacement(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    store.enqueue_batch(_batch_request(store, image_ids=(1,)))
+    lines = store.working_path.read_bytes().splitlines(keepends=True)
+    lines[2] = lines[2].rstrip(b"\n") + b" \n"
+    drifted = b"".join(lines)
+    store.working_path.write_bytes(drifted)
+
+    with pytest.raises(RecoveryError, match="input hash attestation"):
+        store.process_next_batch()
+
+    assert store.working_path.read_bytes() == drifted
+    assert not any(
+        json.loads(line)["kind"] in {"batch_prepared", "batch_terminal"}
+        for line in store.journal_path.read_text().splitlines()
+    )
+    with pytest.raises(RecoveryError, match="published manifest"):
+        _reopen(store)
+
+
+def test_supported_reads_and_new_admission_fail_closed_behind_transaction_barrier(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    request = _batch_request(store, image_ids=(1,))
+    with store.lock_path.open("a+b") as lock_handle:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with pytest.raises(StoreBusyError, match="reconciling"):
+            store.restore_draft(1)
+        with pytest.raises(StoreBusyError, match="reconciling"):
+            store.get_batch_status("missing")
+        with pytest.raises(StoreBusyError, match="reconciling"):
+            store.enqueue_batch(request)
+    assert store.queue_path.read_bytes() == b""
 
 
 def test_bootstrap_is_idempotent_source_safe_and_yields_stable_single_annotations(
