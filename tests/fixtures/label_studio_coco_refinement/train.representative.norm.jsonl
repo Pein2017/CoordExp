@@ -1,0 +1,1 @@
+{"images": ["../rescale_32_1024_bbox/images/train2017/000000000034.jpg"], "objects": [{"bbox_2d": [1, 46, 691, 941], "desc": "zebra", "category_id": 24, "category_name": "zebra", "coco_ann_id": 589229}], "width": 1248, "height": 832, "image_id": 34, "file_name": "images/train2017/000000000034.jpg", "metadata": {"source": "coco2017", "split": "train"}}

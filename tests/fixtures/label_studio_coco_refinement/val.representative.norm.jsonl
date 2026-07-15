@@ -1,0 +1,1 @@
+{"images": ["../rescale_32_1024_bbox/images/val2017/000000000285.jpg"], "objects": [{"bbox_2d": [2, 107, 999, 989], "desc": "bear", "category_id": 23, "category_name": "bear", "coco_ann_id": 587562}], "width": 960, "height": 1056, "image_id": 285, "file_name": "images/val2017/000000000285.jpg", "metadata": {"source": "coco2017", "split": "val"}}

@@ -1,10 +1,11 @@
 ## 1. Contract Decisions and Feasibility Gate
 
 - [x] 1.1 Record the approved V1 decisions: reject empty Commit while retaining Draft, same-machine loopback only, p95<=2s/hard-5s whole-file Commit gate, and rich navigation choices only for in-app transitions.
-- [ ] 1.2 Add immutable fixtures for both selected source paths, row/box counts, representative row schema, source hashes, image root, official COCO-80 sparse ID registry, and the pinned Label Studio revision.
-- [ ] 1.3 Add failing exhaustive/golden/property tests for unchanged-bin Label Studio float round trips, edited outward quantization, parser canvas semantics, discrete crop/letterbox inversion, clipping, and strict non-degenerate final geometry.
+- [x] 1.2 Add immutable fixtures for both selected source paths, row/box counts, representative row schema, source hashes, image root, official COCO-80 sparse ID registry, and the pinned Label Studio revision.
+- [x] 1.3 Add failing exhaustive/golden/property tests for unchanged-bin Label Studio float round trips, edited outward quantization, parser canvas semantics, discrete crop/letterbox inversion, clipping, and strict non-degenerate final geometry.
 - [ ] 1.4 Pin and bootstrap accepted Node/Yarn/Python Label Studio frontend/backend runtimes, record build receipts, and execute a fake-backend spike proving source seeding and direct ROI append into the authoritative editable annotation as one undo action with result-meta save/reload.
 - [ ] 1.5 Execute progressive 1k/10k/full-train Label Studio import/open/Next/Draft/restart latency/RSS probes plus the full-train streaming Commit benchmark and every durability-cut recovery probe without modifying sources; enforce p95<=2s and the hard 5-second stop.
+  - 2026-07-15 gate receipt: one full-train whole-file Commit took 12.145s, exceeding the 5s hard stop. Deeper UI/service implementation is on hold; see `research/investigations/label-studio-coco-refinement-commit-gate/`.
 - [ ] 1.6 Gate Wave 1 on strict OpenSpec validation and separate standards/intent audits with no unresolved P0/P1 findings; return to the user if either spike fails or requires a contract change.
 
 ## 2. Project, Category, and Working-Data Core

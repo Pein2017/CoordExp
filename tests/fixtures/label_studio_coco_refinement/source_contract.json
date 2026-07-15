@@ -1,0 +1,52 @@
+{
+  "contract_version": "label-studio-coco-refinement-source-v1",
+  "coordinate_chart": "norm1000_xyxy_inclusive_0_999",
+  "image_root": "public_data/coco/rescale_32_1024_bbox/images",
+  "label_studio": {
+    "git_revision": "acbe4550f6ed81d1a0342913bb309f63cbe1452e",
+    "version": "1.24.0.dev0"
+  },
+  "object_fields": [
+    "bbox_2d",
+    "category_id",
+    "category_name",
+    "coco_ann_id",
+    "desc"
+  ],
+  "registry": {
+    "fingerprint": "8f77d563aaf6579a09d534641befbfdd12cb163b13d3e7d65cb576e49bf7c7a7",
+    "source": "public_data/coco/raw/categories.json",
+    "source_sha256": "cfd019047d8954a0e8e17bfd69720e5cfe0242cc3126224df7b8bb6c9984640a"
+  },
+  "row_fields": [
+    "file_name",
+    "height",
+    "image_id",
+    "images",
+    "metadata",
+    "objects",
+    "width"
+  ],
+  "sources": {
+    "train": {
+      "box_count": 849947,
+      "path": "public_data/coco/rescale_32_1024_bbox_len12000/train.norm.jsonl",
+      "representative_fixture": "train.representative.norm.jsonl",
+      "representative_image_id": 34,
+      "representative_row_number": 4,
+      "representative_row_sha256": "4416bcbc3fe67f8eec286c38580954e2c63d0670ac3f26380852f6f3010c575d",
+      "row_count": 117266,
+      "sha256": "d64edc553bdc4d725cb9c3a504f369a9799e8bdde20c8fef0787a09cec33c16a"
+    },
+    "val": {
+      "box_count": 36335,
+      "path": "public_data/coco/rescale_32_1024_bbox_len12000/val.norm.jsonl",
+      "representative_fixture": "val.representative.norm.jsonl",
+      "representative_image_id": 285,
+      "representative_row_number": 2,
+      "representative_row_sha256": "4762942421a73a97b6d2fafa895201199ba8640765e757936dad162d0fbb028a",
+      "row_count": 4952,
+      "sha256": "a34afb33c567690f56fa3704e213cfc00dc3c000f018d2bb89a7f60139efd795"
+    }
+  }
+}
