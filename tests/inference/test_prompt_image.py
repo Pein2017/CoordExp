@@ -36,6 +36,7 @@ class FakeProcessor:
         pixel_values: torch.Tensor | None = None,
     ) -> None:
         self.tokenizer = FakeTokenizer()
+        self.chat_calls: list[dict[str, Any]] = []
         self.image_processor = FakeImageProcessor(
             image_grid_thw=(
                 torch.tensor([[1, 4, 6]], dtype=torch.long)
@@ -55,8 +56,16 @@ class FakeProcessor:
         *,
         tokenize: bool,
         add_generation_prompt: bool,
-        **_: Any,
+        **kwargs: Any,
     ) -> str | list[int]:
+        self.chat_calls.append(
+            {
+                "messages": messages,
+                "tokenize": tokenize,
+                "add_generation_prompt": add_generation_prompt,
+                **kwargs,
+            }
+        )
         assert messages[-1]["role"] == "user"
         pieces: list[str] = []
         for message in messages:
@@ -76,14 +85,19 @@ class FakeProcessor:
 
 
 class FakeImageProcessor:
-    def __init__(self, *, image_grid_thw: torch.Tensor, pixel_values: torch.Tensor) -> None:
+    def __init__(
+        self, *, image_grid_thw: torch.Tensor, pixel_values: torch.Tensor
+    ) -> None:
         self.image_grid_thw = image_grid_thw
         self.pixel_values = pixel_values
         self.calls: list[dict[str, Any]] = []
 
     def __call__(self, **kwargs: Any) -> dict[str, torch.Tensor]:
         self.calls.append(dict(kwargs))
-        return {"image_grid_thw": self.image_grid_thw, "pixel_values": self.pixel_values}
+        return {
+            "image_grid_thw": self.image_grid_thw,
+            "pixel_values": self.pixel_values,
+        }
 
 
 @dataclass(frozen=True)
@@ -159,7 +173,9 @@ def test_prompt_record_preserves_template_identity_and_training_fingerprint(
     example = _raw_example(tmp_path, width=96, height=64)
     template = _template_config()
 
-    record = build_prompt_record(example, template, processor=FakeProcessor(), row_index=3)
+    record = build_prompt_record(
+        example, template, processor=FakeProcessor(), row_index=3
+    )
     rendered = render_example(example, template)
 
     assert record.row_index == 3
@@ -170,7 +186,45 @@ def test_prompt_record_preserves_template_identity_and_training_fingerprint(
     assert record.realized_object_order == [
         {"object_id": "object-1", "source_index": 0, "rendered_index": 0}
     ]
-    assert record.to_artifact_dict()["template_fingerprint"] == rendered.template_fingerprint
+    assert (
+        record.to_artifact_dict()["template_fingerprint"]
+        == rendered.template_fingerprint
+    )
+
+
+def test_image_only_prompt_uses_current_policy_without_fake_objects() -> None:
+    from src.config.fingerprint import sha256_json
+    from src.inference.prompt import (
+        TEMPLATE_ID,
+        build_image_prompt_record,
+    )
+
+    canvas = Image.new("RGB", (96, 64), color=(3, 4, 5))
+    processor = FakeProcessor()
+    template = _template_config()
+
+    record = build_image_prompt_record(
+        example_id="roi-request-1",
+        image=canvas,
+        template_config=template,
+        processor=processor,
+    )
+
+    assert record.message_roles == ("system", "user")
+    tokenizing_call = next(call for call in processor.chat_calls if call["tokenize"])
+    assert tokenizing_call["messages"][-1]["content"][0] == {
+        "type": "image",
+        "image": canvas,
+    }
+    assert record.prompt_token_ids
+    assert record.prompt_policy_fingerprint == sha256_json(
+        {
+            "template": template.model_dump(mode="json"),
+            "template_id": TEMPLATE_ID,
+        }
+    )
+    assert tokenizing_call["do_resize"] is False
+    assert "objects" not in record.to_artifact_dict()
 
 
 def test_image_plan_jsonl_records_mandatory_no_resize_fields(tmp_path: Path) -> None:
@@ -270,7 +324,9 @@ def test_processor_model_vision_mismatch_fails_before_generation() -> None:
     assert exc_info.value.context["field"] == "patch_size"
 
 
-def test_valid_no_resize_image_materializes_with_do_resize_false(tmp_path: Path) -> None:
+def test_valid_no_resize_image_materializes_with_do_resize_false(
+    tmp_path: Path,
+) -> None:
     from src.inference.image_plan import materialize_image_plan_rows
 
     processor = FakeProcessor()
@@ -287,7 +343,47 @@ def test_valid_no_resize_image_materializes_with_do_resize_false(tmp_path: Path)
     assert processor.image_processor.calls[0]["do_resize"] is False
 
 
-def test_invalid_no_resize_dimensions_are_terminal_input_failure(tmp_path: Path) -> None:
+def test_in_memory_canvas_reuses_no_resize_plan_and_processor_validation() -> None:
+    from src.qwen.images import encode_qwen_image_canvas
+
+    canvas = Image.new("RGB", (96, 64), color=(9, 8, 7))
+    processor = FakeProcessor()
+
+    encoding = encode_qwen_image_canvas(
+        example_id="roi-request-1",
+        image=canvas,
+        components=FakeComponents(_processor_identity(), processor),
+        processor_config=_processor_config(),
+    )
+
+    assert encoding.image_path is None
+    assert encoding.image_grid_thw == (1, 4, 6)
+    assert encoding.to_artifact_dict()["image_path"] is None
+    call = processor.image_processor.calls[0]
+    assert call["images"] == [canvas]
+    assert call["return_tensors"] == "pt"
+    assert call["do_resize"] is False
+
+
+def test_in_memory_canvas_rejects_misalignment_before_processor_call() -> None:
+    from src.qwen.images import encode_qwen_image_canvas
+
+    processor = FakeProcessor()
+    with pytest.raises(EncodingContractError) as exc_info:
+        encode_qwen_image_canvas(
+            example_id="roi-request-1",
+            image=Image.new("RGB", (100, 64)),
+            components=FakeComponents(_processor_identity(), processor),
+            processor_config=_processor_config(),
+        )
+
+    assert exc_info.value.code == "qwen.image_no_resize_dimensions"
+    assert processor.image_processor.calls == []
+
+
+def test_invalid_no_resize_dimensions_are_terminal_input_failure(
+    tmp_path: Path,
+) -> None:
     from src.inference.image_plan import materialize_image_plan_rows
 
     processor = FakeProcessor()

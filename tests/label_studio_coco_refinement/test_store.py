@@ -2620,6 +2620,7 @@ def _inference_regions(store: WorkingDatasetStore) -> list[dict[str, Any]]:
                 "receipt_id": "receipt-1",
                 "request_id": "request-1",
                 "result_id": "result-1",
+                "draft_revision": "2026-07-15T00:00:06Z",
             },
         }
     )
@@ -2634,6 +2635,9 @@ def _valid_inference_link(**changes: Any) -> InferenceReceiptLink:
         "task_id": "train:1",
         "image_id": 1,
         "annotation_id": "annotation-1",
+        "current_user_id": "reviewer",
+        "draft_id": "draft-1",
+        "draft_revision": "2026-07-15T00:00:06Z",
         "terminal_status": "accepted",
         "result_region_keys": {"result-1": "inferred:region-1"},
     }
@@ -2657,7 +2661,8 @@ def test_inference_origin_requires_authoritative_exact_receipt_linkage(
             replace(
                 _request(store, commit_id="unknown", regions=regions),
                 inference_receipts=("receipt-1",),
-            )
+            ),
+            current_user_id="reviewer",
         )
 
     for commit_id, link, error in (
@@ -2667,6 +2672,21 @@ def test_inference_origin_requires_authoritative_exact_receipt_linkage(
             "cross-annotation",
             _valid_inference_link(annotation_id="annotation-2"),
             "target mismatch",
+        ),
+        (
+            "cross-user",
+            _valid_inference_link(current_user_id="other-reviewer"),
+            "target mismatch",
+        ),
+        (
+            "replaced-draft",
+            _valid_inference_link(draft_id="draft-replacement"),
+            "target mismatch",
+        ),
+        (
+            "draft-revision-drift",
+            _valid_inference_link(draft_revision="2026-07-15T00:00:08Z"),
+            "source Draft revision mismatch",
         ),
         (
             "wrong-region",
@@ -2680,7 +2700,8 @@ def test_inference_origin_requires_authoritative_exact_receipt_linkage(
                 replace(
                     _request(store, commit_id=commit_id, regions=regions),
                     inference_receipts=("receipt-1",),
-                )
+                ),
+                current_user_id="reviewer",
             )
 
     incomplete = [dict(region) for region in regions]
@@ -2692,12 +2713,23 @@ def test_inference_origin_requires_authoritative_exact_receipt_linkage(
         store.commit(_request(store, commit_id="incomplete", regions=incomplete))
 
     resolver.links["receipt-1"] = _valid_inference_link()
+    with pytest.raises(ValidationError, match="authenticated current_user_id"):
+        store.commit(
+            replace(
+                _request(store, commit_id="missing-user", regions=regions),
+                inference_receipts=("receipt-1",),
+            )
+        )
+
     request = replace(
         _request(store, commit_id="valid-inference", regions=regions),
         inference_receipts=("receipt-1",),
     )
-    result = store.commit(request)
+    assert request.draft_updated_at != resolver.links["receipt-1"].draft_revision
+    result = store.commit(request, current_user_id="reviewer")
     assert result.region_id_mapping["inferred:region-1"] == -1
+    with pytest.raises(ValidationError, match="target mismatch"):
+        store.commit(request, current_user_id="other-reviewer")
     prepared = json.loads(store.journal_path.read_text().splitlines()[0])
     assert prepared["inference_receipts"] == ["receipt-1"]
 

@@ -64,6 +64,9 @@ def _target(transform: RoiLetterboxTransform) -> RequestTarget:
         image_id="image-42",
         annotation_id="annotation-9",
         annotation_revision="rev-11",
+        current_user_id="reviewer-1",
+        draft_id="draft-9",
+        draft_revision="draft-rev-12",
         profile_fingerprint="a" * 64,
         project_generation=8,
         transform_fingerprint=transform.fingerprint,
@@ -80,7 +83,6 @@ def _profile_receipt(target: RequestTarget) -> dict[str, object]:
         "artifacts": [
             {
                 "role": role,
-                "path": f"/test/{role}",
                 "kind": "file",
                 "sha256": chr(ord("b") + index) * 64,
                 "file_count": 1,
@@ -159,7 +161,11 @@ def test_accepted_result_is_one_target_bound_append_payload_with_raw_replay() ->
 
     assert result.outcome is Outcome.ACCEPTED
     assert result.clear_roi is True
-    assert (result.parsed_count, result.inserted_count, result.rejected_count) == (1, 1, 0)
+    assert (result.parsed_count, result.inserted_count, result.rejected_count) == (
+        1,
+        1,
+        0,
+    )
     assert result.insertion_payload is not None
     payload = result.insertion_payload.to_dict()
     assert payload["mode"] == "append_one_undo_action"
@@ -219,7 +225,9 @@ def test_parser_drops_are_retained_alongside_valid_result() -> None:
 
     assert result.parser_status == "accepted_with_drops"
     assert result.outcome is Outcome.ACCEPTED_WITH_DROPS
-    assert any(record.reject_reason == "parser:unmatched_text" for record in result.records)
+    assert any(
+        record.reject_reason == "parser:unmatched_text" for record in result.records
+    )
 
 
 @pytest.mark.parametrize(
@@ -277,6 +285,9 @@ def test_stale_annotation_binding_abandons_without_returning_mutation_payload() 
         image_id=target.image_id,
         annotation_id=target.annotation_id,
         annotation_revision="new-revision",
+        current_user_id=target.current_user_id,
+        draft_id=target.draft_id,
+        draft_revision=target.draft_revision,
         profile_fingerprint=target.profile_fingerprint,
         project_generation=target.project_generation,
     )
@@ -354,7 +365,9 @@ def test_lifecycle_requires_explicit_cooperative_cancellation_terminal() -> None
 
 def test_lifecycle_rejects_skipped_or_reasonless_cancellation() -> None:
     lifecycle = RequestLifecycle().transition(RequestState.RUNNING, at_seconds=1)
-    with pytest.raises(InferenceResultContractError, match="invalid request transition"):
+    with pytest.raises(
+        InferenceResultContractError, match="invalid request transition"
+    ):
         lifecycle.transition(RequestState.CANCELLED, at_seconds=2, reason="stop")
     with pytest.raises(InferenceResultContractError, match="explicit reason"):
         lifecycle.transition(RequestState.CANCELLING, at_seconds=2)
@@ -597,7 +610,9 @@ def test_failure_cancel_and_abandon_receipts_forbid_results() -> None:
     ):
         lifecycle = RequestLifecycle().transition(RequestState.RUNNING, at_seconds=1)
         lifecycle = lifecycle.transition(state, at_seconds=2, reason="terminal")
-        with pytest.raises(InferenceResultContractError, match="cannot contain a result"):
+        with pytest.raises(
+            InferenceResultContractError, match="cannot contain a result"
+        ):
             InferenceAttemptReceipt(
                 target=result.target,
                 lifecycle=lifecycle,
@@ -666,6 +681,29 @@ def test_attempt_receipt_rejects_non_allowlisted_profile_credentials(
             target=target,
             lifecycle=lifecycle,
             profile_receipt={**_profile_receipt(target), **extra},
+            transform_receipt=transform.to_receipt_dict(),
+            result=None,
+            failure_stage="profile",
+            failure_code="profile_invalid",
+        )
+
+
+def test_attempt_receipt_rejects_local_artifact_paths() -> None:
+    transform = _transform()
+    target = _target(transform)
+    profile = _profile_receipt(target)
+    profile["artifacts"][0]["path"] = "/protected/model/path"
+    lifecycle = RequestLifecycle().transition(
+        RequestState.PROFILE_FAILURE,
+        at_seconds=1,
+        reason="profile_invalid",
+    )
+
+    with pytest.raises(InferenceResultContractError, match="artifacts"):
+        InferenceAttemptReceipt(
+            target=target,
+            lifecycle=lifecycle,
+            profile_receipt=profile,
             transform_receipt=transform.to_receipt_dict(),
             result=None,
             failure_stage="profile",

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 import torch
@@ -17,10 +18,18 @@ from src.data import RawExample
 from src.qwen.runtime_loading import QwenProcessorIdentity
 
 
+QWEN_IMAGE_PROCESSOR_KWARGS: Mapping[str, Any] = MappingProxyType(
+    {
+        "return_tensors": "pt",
+        "do_resize": False,
+    }
+)
+
+
 @dataclass(frozen=True)
 class QwenNoResizeImagePlan:
     example_id: str
-    image_path: Path
+    image_path: Path | None
     width: int
     height: int
     patch_size: int
@@ -35,14 +44,14 @@ class QwenNoResizeImagePlan:
     max_raw_pixels: int
     max_merged_visual_tokens: int
     logical_transform_id: str = "identity"
-    logical_transform_matrix: tuple[tuple[int, int, int], ...] = (
-        COORD_AFFINE_MATRICES["identity"]
-    )
+    logical_transform_matrix: tuple[tuple[int, int, int], ...] = COORD_AFFINE_MATRICES[
+        "identity"
+    ]
 
     def to_artifact_dict(self) -> dict[str, Any]:
         return {
             "example_id": self.example_id,
-            "image_path": str(self.image_path),
+            "image_path": None if self.image_path is None else str(self.image_path),
             "width": self.width,
             "height": self.height,
             "patch_size": self.patch_size,
@@ -83,7 +92,7 @@ class QwenImageEncoding:
         return self.plan.example_id
 
     @property
-    def image_path(self) -> Path:
+    def image_path(self) -> Path | None:
         return self.plan.image_path
 
     @property
@@ -119,7 +128,9 @@ class QwenImageEncoding:
             **self.plan.to_artifact_dict(),
             "do_resize": False,
             "pixel_values_shape": (
-                None if self.pixel_values is None else list(_shape_tuple(self.pixel_values))
+                None
+                if self.pixel_values is None
+                else list(_shape_tuple(self.pixel_values))
             ),
             "image_grid_thw_tensor_shape": (
                 None
@@ -142,26 +153,90 @@ def build_no_resize_image_plan(
             code="qwen.image_raw_example_type",
             context={"value_type": type(raw_example).__name__},
         )
+    logical_transform_id, logical_transform_matrix = _logical_transform_from_example(
+        raw_example
+    )
+    return _build_no_resize_plan(
+        example_id=raw_example.example_id,
+        image_path=raw_example.image.path,
+        width=raw_example.image.width,
+        height=raw_example.image.height,
+        processor_identity=processor_identity,
+        processor_config=processor_config,
+        logical_transform_id=logical_transform_id,
+        logical_transform_matrix=logical_transform_matrix,
+    )
+
+
+def build_no_resize_canvas_plan(
+    *,
+    example_id: str,
+    width: int,
+    height: int,
+    processor_identity: QwenProcessorIdentity,
+    processor_config: ProcessorConfig,
+) -> QwenNoResizeImagePlan:
+    """Plan an already-prepared in-memory RGB canvas without a fake file row."""
+
+    if not isinstance(example_id, str) or not example_id.strip():
+        raise EncodingContractError(
+            "Qwen in-memory canvas example_id must be non-empty text",
+            code="qwen.image_canvas_example_id",
+        )
+    if (
+        isinstance(width, bool)
+        or not isinstance(width, int)
+        or width <= 0
+        or isinstance(height, bool)
+        or not isinstance(height, int)
+        or height <= 0
+    ):
+        raise EncodingContractError(
+            "Qwen in-memory canvas dimensions must be positive integers",
+            code="qwen.image_canvas_dimensions",
+            context={"width": width, "height": height},
+        )
+    return _build_no_resize_plan(
+        example_id=example_id,
+        image_path=None,
+        width=width,
+        height=height,
+        processor_identity=processor_identity,
+        processor_config=processor_config,
+        logical_transform_id="identity",
+        logical_transform_matrix=COORD_AFFINE_MATRICES["identity"],
+    )
+
+
+def _build_no_resize_plan(
+    *,
+    example_id: str,
+    image_path: Path | None,
+    width: int,
+    height: int,
+    processor_identity: QwenProcessorIdentity,
+    processor_config: ProcessorConfig,
+    logical_transform_id: str,
+    logical_transform_matrix: tuple[tuple[int, int, int], ...],
+) -> QwenNoResizeImagePlan:
     if processor_config.do_resize:
         raise EncodingContractError(
             "Qwen no-resize image encoding requires processor.do_resize=false",
             code="qwen.image_resize_enabled",
-            context={"example_id": raw_example.example_id},
+            context={"example_id": example_id},
         )
 
     patch_size = processor_identity.patch_size
     merge_size = processor_identity.merge_size
     temporal_patch_size = processor_identity.temporal_patch_size
     required_factor = patch_size * merge_size
-    width = raw_example.image.width
-    height = raw_example.image.height
     if height % required_factor != 0 or width % required_factor != 0:
         raise EncodingContractError(
             "no-resize image dimensions must be divisible by patch_size * merge_size",
             code="qwen.image_no_resize_dimensions",
             context={
-                "example_id": raw_example.example_id,
-                "image_path": str(raw_example.image.path),
+                "example_id": example_id,
+                "image_path": _image_path_receipt(image_path),
                 "width": width,
                 "height": height,
                 "patch_size": patch_size,
@@ -176,8 +251,8 @@ def build_no_resize_image_plan(
             "no-resize raw-pixel count exceeds configured budget",
             code="qwen.image_raw_pixel_budget",
             context={
-                "example_id": raw_example.example_id,
-                "image_path": str(raw_example.image.path),
+                "example_id": example_id,
+                "image_path": _image_path_receipt(image_path),
                 "raw_pixels": raw_pixels,
                 "max_raw_pixels": processor_config.max_raw_pixels,
                 "width": width,
@@ -193,7 +268,7 @@ def build_no_resize_image_plan(
             "raw patch rows must divide evenly by merge_size**2",
             code="qwen.image_merge_divisibility",
             context={
-                "example_id": raw_example.example_id,
+                "example_id": example_id,
                 "raw_patch_rows": raw_patch_rows,
                 "merge_size": merge_size,
             },
@@ -204,20 +279,17 @@ def build_no_resize_image_plan(
             "no-resize merged visual token count exceeds configured budget",
             code="qwen.image_visual_token_budget",
             context={
-                "example_id": raw_example.example_id,
-                "image_path": str(raw_example.image.path),
+                "example_id": example_id,
+                "image_path": _image_path_receipt(image_path),
                 "merged_visual_tokens": merged_visual_tokens,
                 "max_merged_visual_tokens": processor_config.max_merged_visual_tokens,
                 "image_grid_thw": list(image_grid_thw),
             },
         )
 
-    logical_transform_id, logical_transform_matrix = _logical_transform_from_example(
-        raw_example
-    )
     return QwenNoResizeImagePlan(
-        example_id=raw_example.example_id,
-        image_path=raw_example.image.path,
+        example_id=example_id,
+        image_path=image_path,
         width=width,
         height=height,
         patch_size=patch_size,
@@ -250,6 +322,48 @@ def encode_qwen_image(
     return materialize_qwen_image_encoding(encoding)
 
 
+def encode_qwen_image_canvas(
+    *,
+    example_id: str,
+    image: Image.Image,
+    components: Any,
+    processor_config: ProcessorConfig,
+) -> QwenImageEncoding:
+    """Materialize one resident in-memory canvas through the no-resize owner."""
+
+    if not isinstance(image, Image.Image):
+        raise EncodingContractError(
+            "Qwen in-memory canvas must be a Pillow image",
+            code="qwen.image_canvas_type",
+            context={"value_type": type(image).__name__},
+        )
+    if image.mode != "RGB":
+        raise EncodingContractError(
+            "Qwen in-memory canvas must already be RGB",
+            code="qwen.image_canvas_mode",
+            context={"mode": image.mode},
+        )
+    plan = build_no_resize_canvas_plan(
+        example_id=example_id,
+        width=image.width,
+        height=image.height,
+        processor_identity=components.processor_identity,
+        processor_config=processor_config,
+    )
+    image_processor = getattr(components.processor, "image_processor", None)
+    if image_processor is None:
+        raise EncodingContractError(
+            "Qwen processor does not expose image_processor",
+            code="qwen.image_processor_missing",
+            context={"example_id": example_id},
+        )
+    return _materialize_image(
+        plan=plan,
+        image=image,
+        image_processor=image_processor,
+    )
+
+
 def plan_qwen_image(
     raw_example: RawExample,
     *,
@@ -279,10 +393,7 @@ def plan_qwen_image(
 def materialize_qwen_image_encoding(
     encoding: QwenImageEncoding,
 ) -> QwenImageEncoding:
-    if (
-        encoding.pixel_values is not None
-        and encoding.image_grid_thw_tensor is not None
-    ):
+    if encoding.pixel_values is not None and encoding.image_grid_thw_tensor is not None:
         return encoding
     if encoding.image_processor is None:
         raise EncodingContractError(
@@ -294,23 +405,35 @@ def materialize_qwen_image_encoding(
             },
         )
     image = _load_rgb_image_from_plan(encoding.plan)
-    encoded = encoding.image_processor(
-        images=[image],
-        return_tensors="pt",
-        do_resize=False,
-    )
+    try:
+        return _materialize_image(
+            plan=encoding.plan,
+            image=image,
+            image_processor=encoding.image_processor,
+        )
+    finally:
+        image.close()
+
+
+def _materialize_image(
+    *,
+    plan: QwenNoResizeImagePlan,
+    image: Image.Image,
+    image_processor: Any,
+) -> QwenImageEncoding:
+    encoded = image_processor(images=[image], **QWEN_IMAGE_PROCESSOR_KWARGS)
     pixel_values = encoded.get("pixel_values")
     image_grid_thw_tensor = encoded.get("image_grid_thw")
     _validate_processor_output(
-        encoding.plan,
+        plan,
         pixel_values=pixel_values,
         image_grid_thw_tensor=image_grid_thw_tensor,
     )
     return QwenImageEncoding(
-        plan=encoding.plan,
+        plan=plan,
         pixel_values=pixel_values,
         image_grid_thw_tensor=image_grid_thw_tensor,
-        image_processor=encoding.image_processor,
+        image_processor=image_processor,
     )
 
 
@@ -331,17 +454,17 @@ def materialize_qwen_image_encoding_batch(
                 context={"value_type": type(encoding).__name__},
             )
     if all(
-        encoding.pixel_values is not None
-        and encoding.image_grid_thw_tensor is not None
+        encoding.pixel_values is not None and encoding.image_grid_thw_tensor is not None
         for encoding in checked
     ):
         return _cat_materialized_image_encodings(checked)
     if not all(
-        encoding.pixel_values is None
-        and encoding.image_grid_thw_tensor is None
+        encoding.pixel_values is None and encoding.image_grid_thw_tensor is None
         for encoding in checked
     ):
-        materialized = tuple(materialize_qwen_image_encoding(encoding) for encoding in checked)
+        materialized = tuple(
+            materialize_qwen_image_encoding(encoding) for encoding in checked
+        )
         return _cat_materialized_image_encodings(materialized)
 
     image_processor = checked[0].image_processor
@@ -501,6 +624,12 @@ def _load_rgb_image(raw_example: RawExample) -> Image.Image:
 
 
 def _load_rgb_image_from_plan(plan: QwenNoResizeImagePlan) -> Image.Image:
+    if plan.image_path is None:
+        raise EncodingContractError(
+            "in-memory Qwen canvas plans cannot be reopened from a file path",
+            code="qwen.image_canvas_path_missing",
+            context={"example_id": plan.example_id},
+        )
     with Image.open(plan.image_path) as image:
         decoded_width, decoded_height = image.size
         if (decoded_width, decoded_height) != (plan.width, plan.height):
@@ -517,6 +646,10 @@ def _load_rgb_image_from_plan(plan: QwenNoResizeImagePlan) -> Image.Image:
                 },
             )
         return _apply_logical_transform(image.convert("RGB"), plan)
+
+
+def _image_path_receipt(path: Path | None) -> str | None:
+    return None if path is None else str(path)
 
 
 def _logical_transform_from_example(
@@ -597,7 +730,9 @@ def _validate_processor_output(
                 "observed_shape": list(image_grid_shape),
             },
         )
-    observed_grid = tuple(int(value) for value in image_grid_thw_tensor[0].detach().cpu().tolist())
+    observed_grid = tuple(
+        int(value) for value in image_grid_thw_tensor[0].detach().cpu().tolist()
+    )
     if observed_grid != plan.image_grid_thw:
         raise EncodingContractError(
             "Qwen image_grid_thw does not match no-resize plan",
@@ -637,10 +772,13 @@ def _shape_tuple(value: Any) -> tuple[int, ...]:
 
 
 __all__ = [
+    "QWEN_IMAGE_PROCESSOR_KWARGS",
     "QwenImageEncoding",
     "QwenNoResizeImagePlan",
+    "build_no_resize_canvas_plan",
     "build_no_resize_image_plan",
     "encode_qwen_image",
+    "encode_qwen_image_canvas",
     "attach_qwen_image_processor",
     "materialize_qwen_image_encoding",
     "materialize_qwen_image_encoding_batch",

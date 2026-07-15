@@ -7,6 +7,12 @@ from typing import Any
 
 import pytest
 
+from src.config.fingerprint import sha256_json
+from src.config.inference import (
+    INFER_CONFIG_LOADER_VERSION,
+    InferConfig,
+    ResolvedInferConfig,
+)
 from src.label_studio_coco_refinement.inference_profiles import (
     ALLOWED_ARTIFACT_ROLES,
     EngineProfile,
@@ -48,38 +54,82 @@ def _capture_inputs(
         "tokenizer": tokenizer,
         "processor": processor,
     }
-    resolved_config: dict[str, Any] = {
+    strict_payload: dict[str, Any] = {
+        "schema_version": 1,
+        "run": {
+            "name": "profile-test",
+            "artifact_root": str(tmp_path / "outputs"),
+            "collision_policy": "fail",
+        },
         "model": {
             "base_model": str(base),
+            "dtype": "bf16",
+            "attn_implementation": "eager",
             "processor": {"do_resize": False},
+            "runtime_patches": {"patch_embed_linearization": "enabled"},
         },
-        "generation": {"max_new_tokens": 2048},
+        "data": {"input_jsonl": str(tmp_path / "source.jsonl")},
+        "template": {
+            "object_field_order": "desc_first",
+            "object_ordering": "source_order",
+            "assistant_format": "object_box_closed",
+            "prompt": {"system": "detect", "user": "find all objects"},
+        },
+        "backend": {"type": "hf"},
+        "generation": {
+            "batch_size": 1,
+            "max_new_tokens": 2048,
+            "temperature": 0.0,
+            "top_p": 1.0,
+            "repetition_penalty": 1.0,
+        },
+        "scoring": {"enabled": True},
+        "artifacts": {
+            "write_token_trace": True,
+            "write_parse_diagnostics": True,
+        },
+        "debug": {"smoke": True, "dry_run": False},
         "adapter": None,
-        "checkpoint": None,
         "embedding_delta": None,
-        "roi_inference": {
-            "processor_factor": 32,
-            "default_width": 1024,
-            "default_height": 1024,
-            "min_axis_pixels": 32,
-            "max_axis_pixels": 2048,
-            "max_total_pixels": 2_097_152,
-            "deadline_seconds": 20.0,
-        },
+    }
+    roi_inference = {
+        "processor_factor": 32,
+        "default_width": 1024,
+        "default_height": 1024,
+        "min_axis_pixels": 32,
+        "max_axis_pixels": 2048,
+        "max_total_pixels": 2_097_152,
+        "deadline_seconds": 20.0,
     }
     if with_conditionals:
-        for role in ("adapter", "checkpoint", "embedding_delta"):
+        for role in ("adapter", "embedding_delta"):
             path = tmp_path / role
             path.mkdir(exist_ok=True)
             (path / f"{role}.bin").write_bytes(f"{role}-v1".encode())
             artifact_paths[role] = path
-            resolved_config[role] = {"path": str(path)}
+            strict_payload[role] = (
+                {"type": "dora", "path": str(path), "name": "default"}
+                if role == "adapter"
+                else {"path": str(path)}
+            )
+    config = InferConfig.model_validate(strict_payload)
+    config_dict = config.model_dump(mode="json")
+    resolved_config = ResolvedInferConfig(
+        config=config,
+        config_dict=config_dict,
+        fingerprint=sha256_json(config_dict),
+        schema_version=1,
+        loader_version=INFER_CONFIG_LOADER_VERSION,
+        entry_config_path=tmp_path / "infer.yaml",
+        sources=(),
+        path_origins={},
+    )
     return {
         "name": name,
         "endpoint": "http://127.0.0.1:8123/infer",
         "artifact_paths": artifact_paths,
         "resolved_config": resolved_config,
-        "prompt_policy": {"system": "detect", "user": "find all objects"},
+        "roi_inference": roi_inference,
         "parser_identity": {"id": "compact-object-box-closed-v1"},
         "adapter_identity": {"id": "resident-roi-v1"},
         "transform_identity": {"id": "coordexp-roi-letterbox-half-up-v1"},
@@ -93,13 +143,13 @@ def _profile(
     tmp_path: Path, *, name: str = "accepted", with_conditionals: bool = False
 ) -> EngineProfile:
     return EngineProfile.capture(
-        **_capture_inputs(
-            tmp_path, name=name, with_conditionals=with_conditionals
-        )
+        **_capture_inputs(tmp_path, name=name, with_conditionals=with_conditionals)
     )
 
 
-def test_profile_persists_complete_identity_and_one_active_binding(tmp_path: Path) -> None:
+def test_profile_persists_complete_identity_and_one_active_binding(
+    tmp_path: Path,
+) -> None:
     profile = _profile(tmp_path)
     store = EngineProfileStore(tmp_path / "profiles.json")
 
@@ -142,7 +192,7 @@ def test_each_unconditional_artifact_role_is_required(
         EngineProfile.capture(**inputs)
 
 
-@pytest.mark.parametrize("missing_role", ["adapter", "checkpoint", "embedding_delta"])
+@pytest.mark.parametrize("missing_role", ["adapter", "embedding_delta"])
 def test_each_configured_conditional_artifact_role_is_required(
     tmp_path: Path, missing_role: str
 ) -> None:
@@ -153,7 +203,9 @@ def test_each_configured_conditional_artifact_role_is_required(
         EngineProfile.capture(**inputs)
 
 
-def test_unknown_and_unconfigured_conditional_roles_are_rejected(tmp_path: Path) -> None:
+def test_unknown_and_unconfigured_conditional_roles_are_rejected(
+    tmp_path: Path,
+) -> None:
     inputs = _capture_inputs(tmp_path)
     inputs["artifact_paths"]["processor_artifacts"] = inputs["artifact_paths"][
         "processor"
@@ -167,6 +219,14 @@ def test_unknown_and_unconfigured_conditional_roles_are_rejected(tmp_path: Path)
     (extra / "adapter.bin").write_bytes(b"adapter")
     inputs["artifact_paths"]["adapter"] = extra
     with pytest.raises(ProfileContractError, match="without matching resolved config"):
+        EngineProfile.capture(**inputs)
+
+    inputs = _capture_inputs(tmp_path / "checkpoint")
+    checkpoint = tmp_path / "checkpoint" / "checkpoint-extra"
+    checkpoint.mkdir()
+    (checkpoint / "weights.bin").write_bytes(b"checkpoint")
+    inputs["artifact_paths"]["checkpoint"] = checkpoint
+    with pytest.raises(ProfileContractError, match="unknown or mislabeled"):
         EngineProfile.capture(**inputs)
 
 
@@ -214,16 +274,14 @@ def test_processor_factor_is_derived_and_cross_checked_with_model_and_config(
     tmp_path: Path,
 ) -> None:
     inputs = _capture_inputs(tmp_path)
-    inputs["resolved_config"]["roi_inference"]["processor_factor"] = 64
+    inputs["roi_inference"]["processor_factor"] = 64
     with pytest.raises(ProfileContractError, match="processor_factor"):
         EngineProfile.capture(**inputs)
 
     inputs = _capture_inputs(tmp_path / "model-mismatch")
     model_path = inputs["artifact_paths"]["model_config"]
     model_path.write_text(
-        json.dumps(
-            {"vision_config": {"patch_size": 14, "spatial_merge_size": 2}}
-        ),
+        json.dumps({"vision_config": {"patch_size": 14, "spatial_merge_size": 2}}),
         encoding="utf-8",
     )
     with pytest.raises(ProfileContractError, match="patch/merge"):
@@ -242,7 +300,7 @@ def test_invalid_config_derived_bounds_and_defaults_are_rejected(
     tmp_path: Path, field: str, value: int, message: str
 ) -> None:
     inputs = _capture_inputs(tmp_path)
-    inputs["resolved_config"]["roi_inference"][field] = value
+    inputs["roi_inference"][field] = value
 
     with pytest.raises(ProfileContractError, match=message):
         EngineProfile.capture(**inputs)
@@ -259,7 +317,9 @@ def test_recorded_constraints_cannot_be_replaced_with_caller_assertions(
         replace(profile, default_width=1280)
 
 
-def test_canvas_bounds_alignment_and_total_pixels_are_fail_closed(tmp_path: Path) -> None:
+def test_canvas_bounds_alignment_and_total_pixels_are_fail_closed(
+    tmp_path: Path,
+) -> None:
     profile = _profile(tmp_path)
 
     assert profile.validate_canvas(1280, 768) == (1280, 768)
@@ -291,7 +351,9 @@ def test_nested_credential_fields_are_rejected_before_persistence_or_receipt(
         EngineProfile.capture(**inputs)
 
 
-def test_receipt_is_allowlisted_and_never_emits_identity_payloads(tmp_path: Path) -> None:
+def test_receipt_is_allowlisted_and_never_emits_identity_payloads(
+    tmp_path: Path,
+) -> None:
     profile = _profile(tmp_path)
     receipt_text = json.dumps(profile.to_receipt_dict(), sort_keys=True)
 
@@ -308,6 +370,43 @@ def test_receipt_is_allowlisted_and_never_emits_identity_payloads(tmp_path: Path
     assert "find all objects" not in receipt_text
     assert "cuda:0" not in receipt_text
     assert "max_new_tokens" not in receipt_text
+    assert str(tmp_path.resolve()) not in receipt_text
+    assert all(
+        "path" not in artifact for artifact in profile.to_receipt_dict()["artifacts"]
+    )
+
+
+def test_capture_requires_canonical_resolved_config_and_executed_prompt_policy(
+    tmp_path: Path,
+) -> None:
+    inputs = _capture_inputs(tmp_path)
+    resolved = inputs["resolved_config"]
+    inputs["resolved_config"] = replace(resolved, fingerprint="0" * 64)
+    with pytest.raises(ProfileContractError, match="inconsistent"):
+        EngineProfile.capture(**inputs)
+
+    inputs = _capture_inputs(tmp_path / "defaults")
+    resolved = inputs["resolved_config"]
+    incomplete = dict(resolved.config_dict)
+    incomplete["generation"] = dict(incomplete["generation"])
+    incomplete["generation"].pop("repetition_penalty")
+    inputs["resolved_config"] = replace(resolved, config_dict=incomplete)
+    with pytest.raises(ProfileContractError, match="inconsistent"):
+        EngineProfile.capture(**inputs)
+
+    profile = _profile(tmp_path / "prompt")
+    with pytest.raises(ProfileContractError, match="normalized executed"):
+        replace(profile, prompt_policy_json='{"template_id":"caller-authored"}')
+
+    resolved_payload = json.loads(profile.resolved_config_json)
+    resolved_payload["checkpoint"] = {"path": "/tmp/unsupported-checkpoint"}
+    with pytest.raises(ProfileContractError, match="strict InferConfig"):
+        replace(
+            profile,
+            resolved_config_json=json.dumps(
+                resolved_payload, sort_keys=True, separators=(",", ":")
+            ),
+        )
 
 
 def test_processor_resize_and_credential_bearing_endpoint_are_forbidden(
@@ -343,4 +442,4 @@ def test_saved_profile_name_cannot_silently_change_identity(tmp_path: Path) -> N
     store.save(profile)
 
     with pytest.raises(ProfileContractError, match="immutable profile"):
-        store.save(replace(profile, prompt_policy_json='{"system":"different"}'))
+        store.save(replace(profile, endpoint="http://127.0.0.1:8123/other"))

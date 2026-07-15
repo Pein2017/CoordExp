@@ -107,6 +107,9 @@ class RequestTarget:
     image_id: str
     annotation_id: str
     annotation_revision: str
+    current_user_id: str
+    draft_id: str
+    draft_revision: str
     profile_fingerprint: str
     project_generation: int
     transform_fingerprint: str
@@ -121,6 +124,9 @@ class RequestTarget:
             "image_id",
             "annotation_id",
             "annotation_revision",
+            "current_user_id",
+            "draft_id",
+            "draft_revision",
             "profile_fingerprint",
             "transform_fingerprint",
         ):
@@ -144,6 +150,9 @@ class RequestTarget:
             "image_id": self.image_id,
             "annotation_id": self.annotation_id,
             "annotation_revision": self.annotation_revision,
+            "current_user_id": self.current_user_id,
+            "draft_id": self.draft_id,
+            "draft_revision": self.draft_revision,
             "profile_fingerprint": self.profile_fingerprint,
             "project_generation": self.project_generation,
         }
@@ -165,6 +174,9 @@ class CurrentTarget:
     image_id: str
     annotation_id: str
     annotation_revision: str
+    current_user_id: str
+    draft_id: str
+    draft_revision: str
     profile_fingerprint: str
     project_generation: int
 
@@ -176,6 +188,9 @@ class CurrentTarget:
             "image_id",
             "annotation_id",
             "annotation_revision",
+            "current_user_id",
+            "draft_id",
+            "draft_revision",
             "profile_fingerprint",
         ):
             value = getattr(self, field)
@@ -198,6 +213,9 @@ class CurrentTarget:
             "image_id": self.image_id,
             "annotation_id": self.annotation_id,
             "annotation_revision": self.annotation_revision,
+            "current_user_id": self.current_user_id,
+            "draft_id": self.draft_id,
+            "draft_revision": self.draft_revision,
             "profile_fingerprint": self.profile_fingerprint,
             "project_generation": self.project_generation,
         }
@@ -278,7 +296,9 @@ class ResultReplayRecord:
             "char_end": self.char_end,
             "coord_bins": list(self.coord_bins),
             "parser_canvas_bbox": (
-                None if self.parser_canvas_bbox is None else list(self.parser_canvas_bbox)
+                None
+                if self.parser_canvas_bbox is None
+                else list(self.parser_canvas_bbox)
             ),
             "parsed_description": self.parsed_description,
             "canonical_category_name": self.canonical_category_name,
@@ -346,7 +366,9 @@ class ClassifiedInferenceResult:
             "rejected_count": self.rejected_count,
             "results": [record.to_receipt_dict() for record in self.records],
             "insertion_payload": (
-                None if self.insertion_payload is None else self.insertion_payload.to_dict()
+                None
+                if self.insertion_payload is None
+                else self.insertion_payload.to_dict()
             ),
         }
 
@@ -415,7 +437,9 @@ def classify_parser_result(
                 ResultReplayRecord(
                     result_id=result_id,
                     parser_object_span_id=span_id,
-                    parser_generated_order=_optional_int(prediction.get("generated_order")),
+                    parser_generated_order=_optional_int(
+                        prediction.get("generated_order")
+                    ),
                     raw_span_text=raw_span,
                     raw_span_sha256=raw_span_sha,
                     char_start=int(prediction["char_start"]),
@@ -424,7 +448,9 @@ def classify_parser_result(
                     parser_canvas_bbox=parser_bbox,
                     parsed_description=description,
                     canonical_category_name=None if category is None else category.name,
-                    official_category_id=None if category is None else category.category_id,
+                    official_category_id=None
+                    if category is None
+                    else category.category_id,
                     class_decision="rejected",
                     reject_reason="unsupported_or_noncanonical_coco80_class",
                     inverse_mapping=None,
@@ -443,7 +469,9 @@ def classify_parser_result(
                 ResultReplayRecord(
                     result_id=result_id,
                     parser_object_span_id=span_id,
-                    parser_generated_order=_optional_int(prediction.get("generated_order")),
+                    parser_generated_order=_optional_int(
+                        prediction.get("generated_order")
+                    ),
                     raw_span_text=raw_span,
                     raw_span_sha256=raw_span_sha,
                     char_start=int(prediction["char_start"]),
@@ -532,7 +560,9 @@ def classify_parser_result(
     else:
         outcome = Outcome.ACCEPTED
     insertion_payload = (
-        DirectInsertionPayload(target=target, regions=tuple(regions)) if regions else None
+        DirectInsertionPayload(target=target, regions=tuple(regions))
+        if regions
+        else None
     )
     return ClassifiedInferenceResult(
         target=target,
@@ -683,7 +713,9 @@ class RequestLifecycle:
                 "transition timestamp must be finite and non-negative"
             )
         if self.state.terminal:
-            raise InferenceResultContractError("terminal request state cannot transition")
+            raise InferenceResultContractError(
+                "terminal request state cannot transition"
+            )
         allowed = _ALLOWED_TRANSITIONS[self.state]
         if to_state not in allowed:
             raise InferenceResultContractError(
@@ -694,7 +726,9 @@ class RequestLifecycle:
                 f"{to_state.value} transition requires an explicit reason"
             )
         if self.transitions and at_seconds < self.transitions[-1].at_seconds:
-            raise InferenceResultContractError("transition timestamps must be monotonic")
+            raise InferenceResultContractError(
+                "transition timestamps must be monotonic"
+            )
         event = StateTransition(self.state, to_state, at_seconds, reason)
         return RequestLifecycle(
             state=to_state,
@@ -863,7 +897,6 @@ _PROFILE_RECEIPT_KEYS = {
 }
 _ARTIFACT_RECEIPT_KEYS = {
     "role",
-    "path",
     "kind",
     "sha256",
     "file_count",
@@ -875,7 +908,6 @@ _ALLOWED_PROFILE_ARTIFACT_ROLES = {
     "tokenizer",
     "processor",
     "adapter",
-    "checkpoint",
     "embedding_delta",
 }
 _REQUIRED_PROFILE_ARTIFACT_ROLES = {
@@ -957,7 +989,9 @@ def _validate_profile_receipt(value: Mapping[str, Any]) -> dict[str, Any]:
     roles: set[str] = set()
     for artifact in artifacts:
         if not isinstance(artifact, dict) or set(artifact) != _ARTIFACT_RECEIPT_KEYS:
-            raise InferenceResultContractError("profile receipt artifacts must be a list")
+            raise InferenceResultContractError(
+                "profile receipt artifacts must be a list"
+            )
         role = artifact["role"]
         if (
             not isinstance(role, str)
@@ -969,24 +1003,30 @@ def _validate_profile_receipt(value: Mapping[str, Any]) -> dict[str, Any]:
             )
         roles.add(role)
         _require_sha256(artifact["sha256"], field="artifact.sha256")
-        path = artifact["path"]
-        if not isinstance(path, str) or not path.startswith("/"):
+        if artifact["kind"] not in {"file", "directory"}:
             raise InferenceResultContractError(
-                "profile receipt artifact path must be an absolute local path"
+                "profile receipt artifact kind is invalid"
             )
+        for field in ("file_count", "total_bytes"):
+            value = artifact[field]
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise InferenceResultContractError(
+                    f"profile receipt artifact {field} must be non-negative"
+                )
     if not _REQUIRED_PROFILE_ARTIFACT_ROLES <= roles:
         raise InferenceResultContractError(
             "profile receipt is missing required artifact identities"
         )
     identities = payload["identity_fingerprints"]
-    if not isinstance(identities, dict) or set(identities) != _IDENTITY_FINGERPRINT_KEYS:
+    if (
+        not isinstance(identities, dict)
+        or set(identities) != _IDENTITY_FINGERPRINT_KEYS
+    ):
         raise InferenceResultContractError(
             "profile receipt identity fingerprints are incomplete or unknown"
         )
     for field, identity_fingerprint in identities.items():
-        _require_sha256(
-            identity_fingerprint, field=f"identity_fingerprints.{field}"
-        )
+        _require_sha256(identity_fingerprint, field=f"identity_fingerprints.{field}")
     processor = payload["processor"]
     if not isinstance(processor, dict) or set(processor) != _PROCESSOR_RECEIPT_KEYS:
         raise InferenceResultContractError(
@@ -1105,7 +1145,11 @@ def _validate_result_terminal_payload(
     *,
     transform_receipt: Mapping[str, Any],
 ) -> None:
-    if result.parsed_count < 0 or result.inserted_count < 0 or result.rejected_count < 0:
+    if (
+        result.parsed_count < 0
+        or result.inserted_count < 0
+        or result.rejected_count < 0
+    ):
         raise InferenceResultContractError("result terminal counts cannot be negative")
     if result.raw_response_sha256 != _sha256_text(result.raw_response_text):
         raise InferenceResultContractError(
@@ -1185,7 +1229,9 @@ def _strict_json_mapping(value: Any, *, field: str) -> dict[str, Any]:
 
 def _deep_freeze(value: Any) -> Any:
     if isinstance(value, dict):
-        return MappingProxyType({key: _deep_freeze(item) for key, item in value.items()})
+        return MappingProxyType(
+            {key: _deep_freeze(item) for key, item in value.items()}
+        )
     if isinstance(value, list):
         return tuple(_deep_freeze(item) for item in value)
     return value
@@ -1372,7 +1418,8 @@ def _without_finalized_region_links(
     payload = result.insertion_payload
     if payload is not None:
         if not isinstance(payload, DirectInsertionPayload) or any(
-            not isinstance(region, AcceptedInferenceRegion) for region in payload.regions
+            not isinstance(region, AcceptedInferenceRegion)
+            for region in payload.regions
         ):
             raise InferenceResultContractError(
                 "result terminal insertion payload must use canonical region records"
@@ -1430,9 +1477,13 @@ def _bbox_tuple(value: Any) -> tuple[float, float, float, float]:
     try:
         result = tuple(float(item) for item in value)
     except (TypeError, ValueError) as exc:
-        raise InferenceResultContractError("parser bbox must contain four numbers") from exc
+        raise InferenceResultContractError(
+            "parser bbox must contain four numbers"
+        ) from exc
     if len(result) != 4 or any(not math.isfinite(item) for item in result):
-        raise InferenceResultContractError("parser bbox must contain four finite numbers")
+        raise InferenceResultContractError(
+            "parser bbox must contain four finite numbers"
+        )
     return result
 
 
@@ -1456,7 +1507,9 @@ def _validated_span_sha(payload: Mapping[str, Any], *, raw_span: str) -> str:
     observed = _sha256_text(raw_span)
     expected = payload.get("raw_span_sha256")
     if expected is not None and expected != observed:
-        raise InferenceResultContractError("parser raw span hash does not match raw span")
+        raise InferenceResultContractError(
+            "parser raw span hash does not match raw span"
+        )
     return observed
 
 

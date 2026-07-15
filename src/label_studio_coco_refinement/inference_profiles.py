@@ -15,6 +15,16 @@ from pathlib import Path
 from typing import Any, Mapping
 from urllib.parse import urlsplit, urlunsplit
 
+from src.config.fingerprint import sha256_json
+from src.config.inference import (
+    INFER_CONFIG_LOADER_VERSION,
+    InferConfig,
+    ResolvedInferConfig,
+)
+from src.config.models import TemplateConfig, TemplatePromptConfig
+from src.inference.prompt import normalized_prompt_policy
+from src.qwen.images import QWEN_IMAGE_PROCESSOR_KWARGS
+
 
 PROFILE_SCHEMA_VERSION = "coordexp-roi-engine-profile-v1"
 PROFILE_STORE_SCHEMA_VERSION = "coordexp-roi-engine-profile-store-v1"
@@ -24,12 +34,9 @@ REQUIRED_ARTIFACT_ROLES = frozenset(
 )
 CONDITIONAL_ARTIFACT_PATHS = {
     "adapter": ("adapter", "path"),
-    "checkpoint": ("checkpoint", "path"),
     "embedding_delta": ("embedding_delta", "path"),
 }
-ALLOWED_ARTIFACT_ROLES = REQUIRED_ARTIFACT_ROLES | frozenset(
-    CONDITIONAL_ARTIFACT_PATHS
-)
+ALLOWED_ARTIFACT_ROLES = REQUIRED_ARTIFACT_ROLES | frozenset(CONDITIONAL_ARTIFACT_PATHS)
 
 
 class ProfileContractError(ValueError):
@@ -44,8 +51,7 @@ class ProfileDriftError(ProfileContractError):
             str(role): dict(detail) for role, detail in sorted(mismatches.items())
         }
         super().__init__(
-            "inference profile content drift: "
-            + ", ".join(sorted(self.mismatches))
+            "inference profile content drift: " + ", ".join(sorted(self.mismatches))
         )
 
 
@@ -137,6 +143,17 @@ class ArtifactFingerprint:
             "total_bytes": self.total_bytes,
         }
 
+    def to_receipt_dict(self) -> dict[str, Any]:
+        """Project the protected artifact identity without a local path."""
+
+        return {
+            "role": self.role,
+            "kind": self.kind,
+            "sha256": self.sha256,
+            "file_count": self.file_count,
+            "total_bytes": self.total_bytes,
+        }
+
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> "ArtifactFingerprint":
         artifact = cls(
@@ -154,7 +171,9 @@ class ArtifactFingerprint:
         if len(artifact.sha256) != 64 or any(
             char not in "0123456789abcdef" for char in artifact.sha256
         ):
-            raise ProfileContractError("artifact sha256 must contain 64 hexadecimal digits")
+            raise ProfileContractError(
+                "artifact sha256 must contain 64 hexadecimal digits"
+            )
         return artifact
 
 
@@ -166,6 +185,7 @@ class EngineProfile:
     endpoint: str
     artifacts: tuple[ArtifactFingerprint, ...]
     resolved_config_json: str
+    resolved_infer_config_fingerprint: str
     prompt_policy_json: str
     parser_identity_json: str
     adapter_identity_json: str
@@ -191,7 +211,9 @@ class EngineProfile:
             )
         roles = [artifact.role for artifact in self.artifacts]
         if not roles:
-            raise ProfileContractError("an engine profile must fingerprint its artifacts")
+            raise ProfileContractError(
+                "an engine profile must fingerprint its artifacts"
+            )
         if len(roles) != len(set(roles)):
             raise ProfileContractError("artifact roles must be unique")
         if tuple(sorted(roles)) != tuple(roles):
@@ -215,6 +237,10 @@ class EngineProfile:
         ):
             raise ProfileContractError("deadline_seconds must be finite and positive")
         _required_text(self.transformers_version, field="transformers_version")
+        _require_sha256(
+            self.resolved_infer_config_fingerprint,
+            field="resolved_infer_config_fingerprint",
+        )
         for serialized, field in (
             (self.resolved_config_json, "resolved_config"),
             (self.prompt_policy_json, "prompt_policy"),
@@ -240,15 +266,26 @@ class EngineProfile:
             "runtime_identity": json.loads(self.runtime_identity_json),
         }
         kwargs = identity_payloads["processor_kwargs"]
-        if not isinstance(kwargs, dict) or kwargs.get("do_resize") is not False:
+        if kwargs != dict(QWEN_IMAGE_PROCESSOR_KWARGS):
             raise ProfileContractError(
-                "forced processor kwargs must explicitly set do_resize=false"
+                "forced processor kwargs must exactly match the executed Qwen image processor"
             )
         for field, value in identity_payloads.items():
             _reject_credentials(value, field=field)
         resolved_config = _mapping(
             identity_payloads["resolved_config"], field="resolved_config"
         )
+        strict_config = _validate_resolved_config_identity(
+            resolved_config,
+            expected_fingerprint=self.resolved_infer_config_fingerprint,
+        )
+        expected_prompt_policy = normalized_prompt_policy(
+            _template_config(strict_config)
+        )
+        if identity_payloads["prompt_policy"] != expected_prompt_policy:
+            raise ProfileContractError(
+                "prompt policy does not match the normalized executed InferConfig template"
+            )
         _validate_artifact_role_schema(self.artifacts, resolved_config=resolved_config)
         derived = _derive_profile_settings(
             self.artifacts,
@@ -277,8 +314,8 @@ class EngineProfile:
         name: str,
         endpoint: str,
         artifact_paths: Mapping[str, str | Path],
-        resolved_config: Any,
-        prompt_policy: Any,
+        resolved_config: ResolvedInferConfig,
+        roi_inference: Mapping[str, Any],
         parser_identity: Any,
         adapter_identity: Any,
         transform_identity: Any,
@@ -286,10 +323,12 @@ class EngineProfile:
         processor_kwargs: Mapping[str, Any],
         runtime_identity: Any | None = None,
     ) -> "EngineProfile":
-        resolved_config = _mapping(resolved_config, field="resolved_config")
+        strict_config = _strict_resolved_config_payload(resolved_config)
+        roi_inference = _mapping(roi_inference, field=ROI_CONFIG_KEY)
+        captured_config = {**strict_config, ROI_CONFIG_KEY: dict(roi_inference)}
         _validate_declared_artifact_roles(
             artifact_paths,
-            resolved_config=resolved_config,
+            resolved_config=captured_config,
         )
         artifacts = tuple(
             ArtifactFingerprint.capture(role, path)
@@ -297,15 +336,18 @@ class EngineProfile:
         )
         derived = _derive_profile_settings(
             artifacts,
-            resolved_config=resolved_config,
+            resolved_config=captured_config,
             processor_kwargs=processor_kwargs,
         )
         return cls(
             name=name,
             endpoint=endpoint,
             artifacts=artifacts,
-            resolved_config_json=canonical_json(resolved_config),
-            prompt_policy_json=canonical_json(prompt_policy),
+            resolved_config_json=canonical_json(captured_config),
+            resolved_infer_config_fingerprint=resolved_config.fingerprint,
+            prompt_policy_json=canonical_json(
+                normalized_prompt_policy(_template_config(resolved_config.config))
+            ),
             parser_identity_json=canonical_json(parser_identity),
             adapter_identity_json=canonical_json(adapter_identity),
             transform_identity_json=canonical_json(transform_identity),
@@ -349,6 +391,7 @@ class EngineProfile:
             "endpoint": self.endpoint,
             "artifacts": [artifact.to_dict() for artifact in self.artifacts],
             "resolved_config": json.loads(self.resolved_config_json),
+            "resolved_infer_config_fingerprint": self.resolved_infer_config_fingerprint,
             "prompt_policy": json.loads(self.prompt_policy_json),
             "parser_identity": json.loads(self.parser_identity_json),
             "adapter_identity": json.loads(self.adapter_identity_json),
@@ -417,7 +460,7 @@ class EngineProfile:
             "profile_name": self.name,
             "profile_fingerprint": self.fingerprint,
             "endpoint": _receipt_endpoint(self.endpoint),
-            "artifacts": [artifact.to_dict() for artifact in self.artifacts],
+            "artifacts": [artifact.to_receipt_dict() for artifact in self.artifacts],
             "identity_fingerprints": self.identity_fingerprints,
             "processor": {
                 "factor": self.processor_factor,
@@ -444,6 +487,9 @@ class EngineProfile:
                 ArtifactFingerprint.from_dict(item) for item in payload["artifacts"]
             ),
             resolved_config_json=canonical_json(payload["resolved_config"]),
+            resolved_infer_config_fingerprint=str(
+                payload["resolved_infer_config_fingerprint"]
+            ),
             prompt_policy_json=canonical_json(payload["prompt_policy"]),
             parser_identity_json=canonical_json(payload["parser_identity"]),
             adapter_identity_json=canonical_json(payload["adapter_identity"]),
@@ -461,7 +507,9 @@ class EngineProfile:
         )
         recorded = payload.get("profile_fingerprint")
         if recorded is not None and recorded != profile.fingerprint:
-            raise ProfileContractError("persisted profile fingerprint does not match payload")
+            raise ProfileContractError(
+                "persisted profile fingerprint does not match payload"
+            )
         identity_fingerprints = payload.get("identity_fingerprints")
         if (
             identity_fingerprints is not None
@@ -532,7 +580,9 @@ class EngineProfileStore:
         try:
             payload = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            raise ProfileContractError(f"cannot read profile store: {self.path}") from exc
+            raise ProfileContractError(
+                f"cannot read profile store: {self.path}"
+            ) from exc
         if payload.get("schema_version") != PROFILE_STORE_SCHEMA_VERSION:
             raise ProfileContractError("unsupported profile-store schema version")
         if not isinstance(payload.get("profiles"), dict) or not isinstance(
@@ -573,6 +623,67 @@ def _verify_persisted_artifacts(payload: Mapping[str, Any]) -> None:
         raise ProfileDriftError(mismatches)
 
 
+def _strict_resolved_config_payload(resolved: ResolvedInferConfig) -> dict[str, Any]:
+    if not isinstance(resolved, ResolvedInferConfig) or not isinstance(
+        resolved.config, InferConfig
+    ):
+        raise ProfileContractError(
+            "resolved_config must be a real ResolvedInferConfig with strict InferConfig"
+        )
+    strict_payload = resolved.config.model_dump(mode="json")
+    if (
+        resolved.config_dict != strict_payload
+        or resolved.fingerprint != sha256_json(strict_payload)
+        or resolved.schema_version != resolved.config.schema_version
+        or resolved.loader_version != INFER_CONFIG_LOADER_VERSION
+    ):
+        raise ProfileContractError(
+            "ResolvedInferConfig payload, defaults, loader, or fingerprint are inconsistent"
+        )
+    return strict_payload
+
+
+def _validate_resolved_config_identity(
+    resolved_config: Mapping[str, Any],
+    *,
+    expected_fingerprint: str,
+) -> InferConfig:
+    combined = dict(resolved_config)
+    roi = combined.pop(ROI_CONFIG_KEY, None)
+    if not isinstance(roi, dict):
+        raise ProfileContractError(
+            "captured resolved config is missing the explicit roi_inference sidecar"
+        )
+    try:
+        strict_config = InferConfig.model_validate(combined)
+    except Exception as exc:
+        raise ProfileContractError(
+            "captured resolved config is not a strict InferConfig"
+        ) from exc
+    canonical_payload = strict_config.model_dump(mode="json")
+    if canonical_payload != combined:
+        raise ProfileContractError(
+            "captured resolved config omitted defaults or is not canonical"
+        )
+    if sha256_json(canonical_payload) != expected_fingerprint:
+        raise ProfileContractError(
+            "captured resolved config fingerprint does not match its strict payload"
+        )
+    return strict_config
+
+
+def _template_config(config: InferConfig) -> TemplateConfig:
+    return TemplateConfig(
+        object_field_order=config.template.object_field_order,
+        object_ordering=config.template.object_ordering,
+        assistant_format=config.template.assistant_format,
+        prompt=TemplatePromptConfig(
+            system=config.template.prompt.system,
+            user=config.template.prompt.user,
+        ),
+    )
+
+
 def _validate_declared_artifact_roles(
     artifact_paths: Mapping[str, str | Path],
     *,
@@ -595,7 +706,9 @@ def _validate_declared_artifact_roles(
             expected.add(role)
     missing = expected - declared_roles
     if missing:
-        raise ProfileContractError(f"missing required artifact roles: {sorted(missing)}")
+        raise ProfileContractError(
+            f"missing required artifact roles: {sorted(missing)}"
+        )
     unexpected = declared_roles - expected
     if unexpected:
         raise ProfileContractError(
@@ -645,11 +758,15 @@ def _derive_profile_settings(
         by_role["processor"], filename="preprocessor_config.json"
     )
     model_config = _load_json_artifact(by_role["model_config"], filename="config.json")
-    patch_size = _positive_int(processor.get("patch_size"), field="processor.patch_size")
+    patch_size = _positive_int(
+        processor.get("patch_size"), field="processor.patch_size"
+    )
     merge_size = _positive_int(
         processor.get("merge_size"), field="processor.merge_size"
     )
-    vision = _mapping(model_config.get("vision_config"), field="model_config.vision_config")
+    vision = _mapping(
+        model_config.get("vision_config"), field="model_config.vision_config"
+    )
     model_patch = _positive_int(
         vision.get("patch_size"), field="model_config.vision_config.patch_size"
     )
@@ -672,10 +789,9 @@ def _derive_profile_settings(
         "max_total_pixels",
         "deadline_seconds",
     }
-    missing = required_roi_fields - set(roi)
-    if missing:
+    if set(roi) != required_roi_fields:
         raise ProfileContractError(
-            f"resolved {ROI_CONFIG_KEY} is missing fields: {sorted(missing)}"
+            f"resolved {ROI_CONFIG_KEY} fields must be exact: {sorted(required_roi_fields)}"
         )
     configured_factor = _positive_int(
         roi["processor_factor"], field=f"{ROI_CONFIG_KEY}.processor_factor"
@@ -717,9 +833,10 @@ def _derive_profile_settings(
             raise ProfileContractError(
                 f"resolved {field} is not divisible by the processor-derived factor"
             )
-    if settings["default_width"] * settings["default_height"] > settings[
-        "max_total_pixels"
-    ]:
+    if (
+        settings["default_width"] * settings["default_height"]
+        > settings["max_total_pixels"]
+    ):
         raise ProfileContractError("resolved default canvas exceeds total-pixel bound")
     if processor_kwargs.get("do_resize") is not False:
         raise ProfileContractError("processor kwargs must force do_resize=false")
@@ -728,7 +845,9 @@ def _derive_profile_settings(
         model.get("processor"), field="resolved_config.model.processor"
     )
     if processor_config.get("do_resize") is not False:
-        raise ProfileContractError("resolved infer config must set model.processor.do_resize=false")
+        raise ProfileContractError(
+            "resolved infer config must set model.processor.do_resize=false"
+        )
     return settings
 
 
@@ -778,9 +897,11 @@ def _validate_tokenizer_artifact(artifact: ArtifactFingerprint) -> None:
         "merges.txt",
         "spiece.model",
     }
-    candidates = {path.name} if artifact.kind == "file" else {
-        item.name for item in path.rglob("*") if item.is_file()
-    }
+    candidates = (
+        {path.name}
+        if artifact.kind == "file"
+        else {item.name for item in path.rglob("*") if item.is_file()}
+    )
     if not candidates & recognized:
         raise ProfileContractError(
             "tokenizer artifact contains no recognized tokenizer payload"
@@ -802,9 +923,7 @@ def _optional_configured_path(
     return value
 
 
-def _required_nested_path(
-    payload: Mapping[str, Any], fields: tuple[str, str]
-) -> str:
+def _required_nested_path(payload: Mapping[str, Any], fields: tuple[str, str]) -> str:
     section = _mapping(payload.get(fields[0]), field=f"resolved_config.{fields[0]}")
     value = section.get(fields[1])
     if not isinstance(value, str) or not value:
@@ -842,7 +961,9 @@ def _sha256_directory(path: Path) -> tuple[str, int, int]:
     digest = hashlib.sha256()
     file_count = 0
     total_bytes = 0
-    entries = sorted(path.rglob("*"), key=lambda item: item.relative_to(path).as_posix())
+    entries = sorted(
+        path.rglob("*"), key=lambda item: item.relative_to(path).as_posix()
+    )
     for entry in entries:
         relative = entry.relative_to(path).as_posix()
         if entry.is_symlink() and entry.is_dir():
@@ -872,6 +993,16 @@ def _sha256_directory(path: Path) -> tuple[str, int, int]:
 def _required_text(value: str, *, field: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ProfileContractError(f"{field} must be non-empty text")
+    return value
+
+
+def _require_sha256(value: Any, *, field: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise ProfileContractError(f"{field} must be a lowercase SHA-256 digest")
     return value
 
 
@@ -912,7 +1043,9 @@ def _validate_safe_endpoint(endpoint: str) -> None:
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise ProfileContractError("endpoint must be an absolute HTTP(S) URL")
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
-        raise ProfileContractError("endpoint must not contain credentials, query, or fragment")
+        raise ProfileContractError(
+            "endpoint must not contain credentials, query, or fragment"
+        )
 
 
 def _receipt_endpoint(endpoint: str) -> str:

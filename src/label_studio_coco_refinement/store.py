@@ -243,6 +243,9 @@ class InferenceReceiptLink:
     task_id: str
     image_id: int
     annotation_id: str
+    current_user_id: str
+    draft_id: str
+    draft_revision: str
     terminal_status: str
     result_region_keys: Mapping[str, str]
 
@@ -1433,7 +1436,10 @@ class WorkingDatasetStore:
                 request.split, request_member.image_id
             ):
                 raise StaleCommitError("task identity mismatch")
-            self._validate_batch_frozen_request(request_member)
+            self._validate_batch_frozen_request(
+                request_member,
+                current_user_id=request.current_user_id,
+            )
 
     def _attest_batch_authority(self, request: BatchRequest) -> None:
         verify_batch = getattr(self.annotation_verifier, "verify_batch", None)
@@ -1840,7 +1846,10 @@ class WorkingDatasetStore:
         ):
             raise RecoveryError("row freshness cache is not publication-attested")
         for source_row_index, request in members:
-            self._validate_batch_frozen_request(request)
+            self._validate_batch_frozen_request(
+                request,
+                current_user_id=frozen_request.current_user_id,
+            )
             if self._row_image_cache.get(source_row_index) != request.image_id:
                 raise StaleCommitError("source row image identity changed")
             if self._row_hash_cache.get(source_row_index) != request.base_row_hash:
@@ -2031,13 +2040,21 @@ class WorkingDatasetStore:
         finally:
             temp_path.unlink(missing_ok=True)
 
-    def _validate_batch_frozen_request(self, request: CommitRequest) -> None:
+    def _validate_batch_frozen_request(
+        self,
+        request: CommitRequest,
+        *,
+        current_user_id: str,
+    ) -> None:
         self._validate_draft_handshake(request)
         if not request.regions:
             raise ValidationError(
                 "empty Draft is preserved, but V1 Commit requires an object"
             )
-        self._validate_inference_linkage(request)
+        self._validate_inference_linkage(
+            request,
+            current_user_id=current_user_id,
+        )
         keys: set[str] = set()
         for region in request.regions:
             key = _region_key(region)
@@ -2320,7 +2337,12 @@ class WorkingDatasetStore:
                 "queue_terminal",
             )
 
-    def commit(self, request: CommitRequest) -> CommitResult:
+    def commit(
+        self,
+        request: CommitRequest,
+        *,
+        current_user_id: str | None = None,
+    ) -> CommitResult:
         """Commit the exact durably-saved Draft or return its prior outcome."""
 
         self._validate_draft_handshake(request)
@@ -2328,7 +2350,12 @@ class WorkingDatasetStore:
             self._reload_journal_index()
             prior = self._records_for_commit(request.commit_id)
             if prior:
-                return self._resolve_idempotent_request(request, prior)
+                result = self._resolve_idempotent_request(request, prior)
+                self._validate_inference_linkage(
+                    request,
+                    current_user_id=current_user_id,
+                )
+                return result
             manifest = self._read_manifest()
             if request.split != manifest["split"]:
                 raise StaleCommitError("split mismatch")
@@ -2356,7 +2383,10 @@ class WorkingDatasetStore:
                     "empty Draft is preserved, but V1 Commit requires an object"
                 )
 
-            self._validate_inference_linkage(request)
+            self._validate_inference_linkage(
+                request,
+                current_user_id=current_user_id,
+            )
             after_objects, mapping, allocations, materialized_projection = (
                 self._materialize_objects(
                     before_row,
@@ -2698,7 +2728,12 @@ class WorkingDatasetStore:
                 "submitted regions do not match the saved Draft hash"
             )
 
-    def _validate_inference_linkage(self, request: CommitRequest) -> None:
+    def _validate_inference_linkage(
+        self,
+        request: CommitRequest,
+        *,
+        current_user_id: str | None,
+    ) -> None:
         declared = tuple(request.inference_receipts)
         if any(not isinstance(value, str) or not value for value in declared):
             raise ValidationError(
@@ -2709,7 +2744,12 @@ class WorkingDatasetStore:
 
         used: set[str] = set()
         resolved: dict[str, InferenceReceiptLink] = {}
-        provenance_fields = {"receipt_id", "request_id", "result_id"}
+        provenance_fields = {
+            "receipt_id",
+            "request_id",
+            "result_id",
+            "draft_revision",
+        }
         for region in request.regions:
             metadata = region.get("metadata")
             if metadata is None:
@@ -2727,9 +2767,15 @@ class WorkingDatasetStore:
             receipt_id = metadata["receipt_id"]
             request_id = metadata["request_id"]
             result_id = metadata["result_id"]
+            draft_revision = metadata["draft_revision"]
             if any(
                 not isinstance(value, str) or not value
-                for value in (receipt_id, request_id, result_id)
+                for value in (
+                    receipt_id,
+                    request_id,
+                    result_id,
+                    draft_revision,
+                )
             ):
                 raise ValidationError(
                     "inference-origin objects require complete inference linkage metadata"
@@ -2740,6 +2786,14 @@ class WorkingDatasetStore:
                 )
             link = resolved.get(receipt_id)
             if link is None:
+                if (
+                    not isinstance(current_user_id, str)
+                    or not current_user_id
+                    or current_user_id != current_user_id.strip()
+                ):
+                    raise ValidationError(
+                        "inference-origin objects require an authenticated current_user_id"
+                    )
                 link = self.inference_receipt_resolver.resolve(receipt_id)
                 if link is None:
                     raise ValidationError(f"unknown inference receipt: {receipt_id}")
@@ -2751,10 +2805,16 @@ class WorkingDatasetStore:
                 or link.task_id != request.task_id
                 or link.image_id != request.image_id
                 or link.annotation_id != request.annotation_id
+                or link.current_user_id != current_user_id
+                or link.draft_id != request.draft_id
                 or link.terminal_status not in {"accepted", "accepted_with_drops"}
             ):
                 raise ValidationError(
                     f"inference receipt target mismatch: {receipt_id}"
+                )
+            if link.draft_revision != draft_revision:
+                raise ValidationError(
+                    f"inference receipt source Draft revision mismatch: {receipt_id}"
                 )
             key = _region_key(region)
             if link.result_region_keys.get(result_id) != key:
