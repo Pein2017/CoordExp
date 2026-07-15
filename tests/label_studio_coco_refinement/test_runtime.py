@@ -267,6 +267,7 @@ def test_enqueue_precedes_blocked_worker_and_queued_payload_is_immutable(
         queued_request = queued[0]["payload"]["members"][0]["request"]
         bbox = queued_request["regions"][0]["bbox_2d"]
         assert bbox == [11, 20, 30, 40]
+        assert queued[0]["payload"]["current_user_id"] == "reviewer"
         assert queued_request["annotation_revision"] == "annotation-v1"
         assert queued_request["draft_updated_at"] == "2026-07-15T00:00:01Z"
         assert queued_request["result_hash"] == captured.result_hash
@@ -547,4 +548,34 @@ def test_snapshot_rejects_nonfinite_nested_json_before_catalog_capture() -> None
                     "label_studio_result": {"score": float("nan")},
                 },
             ),
+        )
+
+
+@pytest.mark.parametrize("inference_receipts", [(123,), "receipt-1", None])
+def test_snapshot_rejects_non_string_or_non_sequence_inference_receipts(
+    inference_receipts: Any,
+) -> None:
+    with pytest.raises(DraftCatalogError, match="inference receipt"):
+        AuthoritativeDraftSnapshot(
+            split="train",
+            project_id="project-train",
+            image_id=1,
+            task_id="train:1",
+            annotation_id="annotation-train-1",
+            draft_id="draft-train-1",
+            annotation_revision="annotation-v1",
+            draft_updated_at="2026-07-15T00:00:01Z",
+            semantic_hash="0" * 64,
+            result_hash="1" * 64,
+            base_row_hash="2" * 64,
+            observed_generation=0,
+            regions=(
+                {
+                    "region_key": "drawn:1",
+                    "bbox_2d": [1, 2, 3, 4],
+                    "category_name": "cat",
+                    "category_id": 17,
+                },
+            ),
+            inference_receipts=inference_receipts,
         )

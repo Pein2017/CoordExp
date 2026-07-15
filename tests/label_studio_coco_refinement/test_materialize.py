@@ -589,6 +589,7 @@ def test_public_store_guard_blocks_manifest_published_unfinished_transaction(
                 BatchRequest(
                     batch_id="materialize-interrupted",
                     split="train",
+                    current_user_id="reviewer",
                     base_generation=request.observed_generation,
                     members=(BatchMember(source_row_index=0, request=request),),
                 )

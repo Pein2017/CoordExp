@@ -102,8 +102,20 @@ class AuthoritativeDraftSnapshot:
             isinstance(region, Mapping) for region in frozen_regions
         ):
             raise DraftCatalogError("Draft regions must be a JSON array of objects")
+        receipts = self.inference_receipts
+        if isinstance(receipts, (str, bytes, bytearray)) or not isinstance(
+            receipts, Sequence
+        ):
+            raise DraftCatalogError(
+                "Draft inference receipts must be a sequence of non-empty strings"
+            )
+        frozen_receipts = tuple(receipts)
+        if any(type(value) is not str or not value for value in frozen_receipts):
+            raise DraftCatalogError(
+                "Draft inference receipt IDs must be non-empty strings"
+            )
         object.__setattr__(self, "regions", frozen_regions)
-        object.__setattr__(self, "inference_receipts", tuple(self.inference_receipts))
+        object.__setattr__(self, "inference_receipts", frozen_receipts)
 
 
 @dataclass(frozen=True)
@@ -571,6 +583,7 @@ class RefinementRuntime:
         return BatchRequest(
             batch_id=batch_id,
             split=split,
+            current_user_id=capture.current_user_id,
             base_generation=capture.base_generation,
             members=tuple(members),
         )

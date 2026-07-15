@@ -5,6 +5,8 @@ import fcntl
 import hashlib
 import json
 import shutil
+import threading
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -45,6 +47,38 @@ class AcceptingAnnotationVerifier:
     def verify(self, identity: AuthoritativeDraftIdentity) -> bool:
         self.calls.append(identity)
         return self.accept
+
+
+class BatchReadingAnnotationVerifier:
+    def __init__(self, *, barrier: threading.Barrier | None = None) -> None:
+        self.store: WorkingDatasetStore | None = None
+        self.barrier = barrier
+        self.batch_calls: list[store_module.BatchRequest] = []
+        self.fallback_calls: list[AuthoritativeDraftIdentity] = []
+
+    def verify(self, identity: AuthoritativeDraftIdentity) -> bool:
+        self.fallback_calls.append(identity)
+        return True
+
+    def verify_batch(self, request: store_module.BatchRequest) -> bool:
+        self.batch_calls.append(request)
+        if self.store is not None:
+            image_ids = tuple(member.request.image_id for member in request.members)
+            restored = self.store.restore_drafts(image_ids)
+            assert [item.image_id for item in restored] == list(image_ids)
+            for member in request.members:
+                assert (
+                    self.store.resolve_source_row_index(
+                        split=request.split,
+                        project_id=member.request.project_id,
+                        task_id=member.request.task_id,
+                        image_id=member.request.image_id,
+                    )
+                    == member.source_row_index
+                )
+        if self.barrier is not None:
+            self.barrier.wait(timeout=3)
+        return True
 
 
 class DictInferenceReceiptResolver:
@@ -126,6 +160,45 @@ def project(tmp_path: Path) -> tuple[WorkingDatasetStore, BootstrapSpec, Path]:
         inference_receipt_resolver=inference_resolver,
     )
     return result.store, spec, source
+
+
+def _bootstrap_store_with_images(
+    tmp_path: Path,
+    image_ids: tuple[int, ...],
+    annotation_verifier: Any,
+) -> WorkingDatasetStore:
+    source_dir = tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox_len12000"
+    image_root = tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox" / "images"
+    image_split = image_root / "train2017"
+    source_dir.mkdir(parents=True)
+    image_split.mkdir(parents=True)
+    for image_id in image_ids:
+        (image_split / f"{image_id:012d}.jpg").write_bytes(f"image-{image_id}".encode())
+    source = source_dir / "train.norm.jsonl"
+    source.write_text(
+        "".join(
+            canonical_json(_row("train", image_id)) + "\n" for image_id in image_ids
+        ),
+        encoding="utf-8",
+    )
+    result = WorkingDatasetStore.bootstrap(
+        BootstrapSpec(
+            split="train",
+            source_path=source,
+            runtime_root=tmp_path / "runtime",
+            image_root=image_root,
+            expected_source_sha256=sha256_file(source),
+            project_id="project-train",
+            storage_id="storage-train",
+            adapter_version="adapter-v1",
+            vendor_revision="label-studio-rev",
+            registry_fingerprint=COCO80_REGISTRY.fingerprint,
+            label_config_fingerprint="label-config-v1",
+        ),
+        annotation_verifier=annotation_verifier,
+        inference_receipt_resolver=DictInferenceReceiptResolver(),
+    )
+    return result.store
 
 
 def _regions(
@@ -221,12 +294,66 @@ def _reopen(store: WorkingDatasetStore) -> WorkingDatasetStore:
     )
 
 
+def _rewrite_queue_chain_after_envelope_tamper(
+    store: WorkingDatasetStore,
+    *,
+    kind: str,
+    operation: str,
+) -> None:
+    records = [json.loads(line) for line in store.queue_path.read_text().splitlines()]
+    target = next(record for record in records if record["kind"] == kind)
+    if operation == "add":
+        target["unknown_envelope_field"] = "must-not-be-ignored"
+    elif operation == "remove":
+        target.pop("timestamp")
+    else:  # pragma: no cover - test helper contract
+        raise AssertionError(operation)
+    previous_hash: str | None = None
+    for record in records:
+        record.pop("record_hash")
+        record["prev_record_hash"] = previous_hash
+        record["record_hash"] = sha256_json(record)
+        previous_hash = record["record_hash"]
+    store.queue_path.write_text(
+        "".join(canonical_json(record) + "\n" for record in records),
+        encoding="utf-8",
+    )
+
+
+def _seed_queue_record_kind(store: WorkingDatasetStore, kind: str) -> str:
+    batch_id = f"exact-envelope-{kind}"
+    receipt = store.enqueue_batch(
+        _batch_request(store, batch_id=batch_id, image_ids=(1,))
+    )
+    if kind == "enqueue":
+        return batch_id
+    if kind == "claim":
+        with store._exclusive_queue_lock():
+            store._append_queue_record(
+                {
+                    "kind": "claim",
+                    "batch_id": receipt.batch_id,
+                    "payload_hash": receipt.payload_hash,
+                },
+                "claim",
+            )
+        return batch_id
+    if kind == "queue_terminal":
+        result = store.process_next_batch()
+        assert (
+            result is not None and result.status is store_module.BatchStatus.SUCCEEDED
+        )
+        return batch_id
+    raise AssertionError(kind)  # pragma: no cover - test helper contract
+
+
 def _batch_request(
     store: WorkingDatasetStore,
     *,
     batch_id: str = "batch-1",
     image_ids: tuple[int, ...] = (1, 2),
     reverse_members: bool = False,
+    current_user_id: str = "reviewer",
 ) -> Any:
     members = []
     for image_id in image_ids:
@@ -246,8 +373,32 @@ def _batch_request(
     return store_module.BatchRequest(
         batch_id=batch_id,
         split="train",
+        current_user_id=current_user_id,
         base_generation=store.restore_draft(1).generation,
         members=tuple(members),
+    )
+
+
+def _replace_only_batch_member_request(
+    batch: store_module.BatchRequest,
+    request: CommitRequest,
+    *,
+    source_row_index: Any | None = None,
+) -> store_module.BatchRequest:
+    member = batch.members[0]
+    return replace(
+        batch,
+        members=(
+            replace(
+                member,
+                source_row_index=(
+                    member.source_row_index
+                    if source_row_index is None
+                    else source_row_index
+                ),
+                request=request,
+            ),
+        ),
     )
 
 
@@ -279,6 +430,25 @@ def test_batch_enqueue_is_durable_immutable_and_does_not_publish(
     assert store.queue_path.read_bytes() == queue_before_mutation
 
 
+def test_hashed_batch_payload_rehydrates_without_type_or_value_changes(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    store.enqueue_batch(
+        _batch_request(
+            store,
+            batch_id="identity-preserving-rehydration",
+            image_ids=(1, 2),
+            reverse_members=True,
+        )
+    )
+    payload = json.loads(store.queue_path.read_text(encoding="utf-8"))["payload"]
+
+    rehydrated = store_module._batch_request_from_payload(payload)
+
+    assert store._canonical_batch_payload(rehydrated) == payload
+
+
 def test_batch_enqueue_exact_retry_is_byte_stable_and_payload_drift_conflicts(
     project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
 ) -> None:
@@ -289,14 +459,103 @@ def test_batch_enqueue_exact_retry_is_byte_stable_and_payload_drift_conflicts(
 
     verifier = store.annotation_verifier
     assert isinstance(verifier, AcceptingAnnotationVerifier)
+    calls_after_first = len(verifier.calls)
     verifier.accept = False
     assert store.enqueue_batch(copy.deepcopy(request)) == first
+    assert len(verifier.calls) == calls_after_first
     assert store.queue_path.read_bytes() == queue_bytes
 
     changed = _batch_request(store, batch_id="batch-1", image_ids=(1, 3))
     with pytest.raises(CommitConflictError, match="batch id"):
         store.enqueue_batch(changed)
     assert store.queue_path.read_bytes() == queue_bytes
+
+
+def test_batch_verifier_runs_once_outside_locks_and_can_read_store(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    original, _, _ = project
+    verifier = BatchReadingAnnotationVerifier()
+    store = WorkingDatasetStore(
+        original.split_dir,
+        annotation_verifier=verifier,
+        inference_receipt_resolver=original.inference_receipt_resolver,
+    )
+    verifier.store = store
+    request = _batch_request(store, batch_id="batch-verified", image_ids=(1, 2, 3))
+
+    receipt = store.enqueue_batch(request)
+
+    assert receipt.status is store_module.BatchStatus.QUEUED
+    assert len(verifier.batch_calls) == 1
+    assert verifier.batch_calls[0].current_user_id == "reviewer"
+    assert verifier.fallback_calls == []
+
+
+def test_batch_verifier_fallback_calls_each_identity_once(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    verifier = store.annotation_verifier
+    assert isinstance(verifier, AcceptingAnnotationVerifier)
+
+    store.enqueue_batch(_batch_request(store, batch_id="fallback", image_ids=(1, 2)))
+
+    assert [identity.image_id for identity in verifier.calls] == [1, 2]
+
+
+def test_ten_member_batch_uses_one_batch_verifier_call(tmp_path: Path) -> None:
+    verifier = BatchReadingAnnotationVerifier()
+    store = _bootstrap_store_with_images(
+        tmp_path,
+        tuple(range(1, 11)),
+        verifier,
+    )
+    verifier.store = store
+
+    store.enqueue_batch(
+        _batch_request(
+            store,
+            batch_id="ten-member",
+            image_ids=tuple(range(1, 11)),
+        )
+    )
+
+    assert len(verifier.batch_calls) == 1
+    assert len(verifier.batch_calls[0].members) == 10
+    assert verifier.fallback_calls == []
+
+
+def test_current_user_is_payload_identity_and_must_be_trimmed(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    original = _batch_request(
+        store,
+        batch_id="current-user",
+        image_ids=(1,),
+        current_user_id="reviewer",
+    )
+    store.enqueue_batch(original)
+    queue_before = store.queue_path.read_bytes()
+    queued = json.loads(queue_before)
+    assert queued["payload"]["current_user_id"] == "reviewer"
+
+    changed = replace(original, current_user_id="another-reviewer")
+    with pytest.raises(CommitConflictError, match="batch id"):
+        store.enqueue_batch(changed)
+    assert store.queue_path.read_bytes() == queue_before
+
+    for invalid in ("", " reviewer "):
+        with pytest.raises(ValidationError, match="current_user_id"):
+            store.enqueue_batch(
+                _batch_request(
+                    store,
+                    batch_id=f"invalid-user-{invalid!r}",
+                    image_ids=(2,),
+                    current_user_id=invalid,
+                )
+            )
 
 
 @pytest.mark.parametrize(
@@ -355,6 +614,281 @@ def test_nonfinite_batch_payload_is_rejected_before_queue_growth(
         canonical_json({"value": float("inf")})
 
 
+@pytest.mark.parametrize(
+    ("target", "value"),
+    [
+        ("image_id", True),
+        ("image_id", 1.0),
+        ("image_id", "1"),
+        ("source_row_index", True),
+        ("source_row_index", "0"),
+        ("source_row_index", 0.0),
+        ("base_generation", True),
+        ("base_generation", 0.0),
+        ("observed_generation", False),
+        ("observed_generation", 0.0),
+        ("durable", "false"),
+        ("durable", 1),
+        ("commit_id", 7),
+        ("annotation_id", 7),
+        ("inference_receipts", (123,)),
+        ("inference_receipts", "receipt-1"),
+    ],
+)
+def test_batch_payload_rejects_scalar_type_confusion_before_verifier_or_queue(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+    target: str,
+    value: Any,
+) -> None:
+    store, _, _ = project
+    batch = _batch_request(store, batch_id=f"invalid-scalar-{target}", image_ids=(1,))
+    request = batch.members[0].request
+    source_row_index: Any | None = None
+    if target == "source_row_index":
+        source_row_index = value
+    elif target == "base_generation":
+        batch = replace(batch, base_generation=value)
+    elif target == "durable":
+        request = replace(
+            request,
+            draft_save=replace(request.draft_save, durable=value),
+        )
+    elif target == "inference_receipts":
+        request = replace(request, inference_receipts=value)
+    else:
+        request = replace(request, **{target: value})
+        if target == "annotation_id":
+            request = replace(
+                request,
+                draft_save=replace(request.draft_save, annotation_id=value),
+            )
+    batch = _replace_only_batch_member_request(
+        batch,
+        request,
+        source_row_index=source_row_index,
+    )
+    queue_before = store.queue_path.read_bytes()
+    working_before = store.working_path.read_bytes()
+    journal_before = store.journal_path.read_bytes()
+    verifier = store.annotation_verifier
+    assert isinstance(verifier, AcceptingAnnotationVerifier)
+
+    with pytest.raises(ValidationError, match="payload"):
+        store.enqueue_batch(batch)
+
+    assert verifier.calls == []
+    assert store.queue_path.read_bytes() == queue_before
+    assert store.working_path.read_bytes() == working_before
+    assert store.journal_path.read_bytes() == journal_before
+
+
+def test_batch_payload_rejects_non_string_json_object_key_before_verifier(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    batch = _batch_request(store, batch_id="invalid-metadata-key", image_ids=(1,))
+    request = batch.members[0].request
+    regions = copy.deepcopy(list(request.regions))
+    regions[-1]["metadata"] = {1: "not-an-ordinary-json-key"}
+    changed = replace(
+        request,
+        regions=regions,
+        result_hash=sha256_json(regions),
+    )
+    changed = replace(changed, draft_save=_matching_draft_receipt(changed))
+    verifier = store.annotation_verifier
+    assert isinstance(verifier, AcceptingAnnotationVerifier)
+
+    with pytest.raises(ValidationError, match="JSON object keys must be strings"):
+        store.enqueue_batch(_replace_only_batch_member_request(batch, changed))
+
+    assert verifier.calls == []
+    assert store.queue_path.read_bytes() == b""
+    assert store.journal_path.read_bytes() == b""
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("category_id", True),
+        ("creation_ordinal", "4"),
+        ("coco_ann_id", True),
+    ],
+)
+def test_batch_payload_rejects_region_scalar_type_confusion_before_verifier(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+    field: str,
+    value: Any,
+) -> None:
+    store, _, _ = project
+    batch = _batch_request(store, batch_id=f"invalid-region-{field}", image_ids=(1,))
+    request = batch.members[0].request
+    regions = copy.deepcopy(list(request.regions))
+    regions[-1][field] = value
+    changed = replace(
+        request,
+        regions=regions,
+        semantic_hash=semantic_hash(regions),
+        result_hash=sha256_json(regions),
+    )
+    changed = replace(changed, draft_save=_matching_draft_receipt(changed))
+    batch = _replace_only_batch_member_request(batch, changed)
+    verifier = store.annotation_verifier
+    assert isinstance(verifier, AcceptingAnnotationVerifier)
+
+    with pytest.raises(ValidationError):
+        store.enqueue_batch(batch)
+
+    assert verifier.calls == []
+    assert store.queue_path.read_bytes() == b""
+    assert store.journal_path.read_bytes() == b""
+
+
+@pytest.mark.parametrize(
+    ("target", "value"),
+    [
+        ("image_id", True),
+        ("source_row_index", "0"),
+        ("durable", "false"),
+        ("annotation_id", 7),
+    ],
+)
+def test_tampered_hashed_queue_payload_fails_recovery_without_file_mutation(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+    target: str,
+    value: Any,
+) -> None:
+    store, _, _ = project
+    store.enqueue_batch(
+        _batch_request(store, batch_id=f"tampered-{target}", image_ids=(1,))
+    )
+    record = json.loads(store.queue_path.read_text(encoding="utf-8"))
+    member = record["payload"]["members"][0]
+    request = member["request"]
+    if target == "source_row_index":
+        member["source_row_index"] = value
+    elif target == "durable":
+        request["draft_save"]["durable"] = value
+    else:
+        request[target] = value
+        if target == "annotation_id":
+            request["draft_save"][target] = value
+    record["payload_hash"] = sha256_json(record["payload"])
+    record.pop("record_hash")
+    record["record_hash"] = sha256_json(record)
+    store.queue_path.write_text(canonical_json(record) + "\n", encoding="utf-8")
+    queue_before = store.queue_path.read_bytes()
+    working_before = store.working_path.read_bytes()
+    journal_before = store.journal_path.read_bytes()
+
+    with pytest.raises(RecoveryError, match="payload"):
+        store.process_next_batch()
+    with pytest.raises(RecoveryError, match="payload"):
+        _reopen(store)
+
+    assert store.queue_path.read_bytes() == queue_before
+    assert store.working_path.read_bytes() == working_before
+    assert store.journal_path.read_bytes() == journal_before
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("member_count", True),
+        ("base_generation", 0.0),
+    ],
+)
+def test_tampered_queue_envelope_rejects_equal_but_different_scalar_type(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+    field: str,
+    value: Any,
+) -> None:
+    store, _, _ = project
+    store.enqueue_batch(
+        _batch_request(store, batch_id=f"tampered-envelope-{field}", image_ids=(1,))
+    )
+    record = json.loads(store.queue_path.read_text(encoding="utf-8"))
+    record[field] = value
+    record.pop("record_hash")
+    record["record_hash"] = sha256_json(record)
+    store.queue_path.write_text(canonical_json(record) + "\n", encoding="utf-8")
+    queue_before = store.queue_path.read_bytes()
+    working_before = store.working_path.read_bytes()
+
+    with pytest.raises(RecoveryError, match="payload attestation"):
+        _reopen(store)
+
+    assert store.queue_path.read_bytes() == queue_before
+    assert store.working_path.read_bytes() == working_before
+
+
+@pytest.mark.parametrize(
+    ("kind", "operation"),
+    [
+        ("enqueue", "add"),
+        ("enqueue", "remove"),
+        ("claim", "add"),
+        ("claim", "remove"),
+        ("queue_terminal", "add"),
+        ("queue_terminal", "remove"),
+    ],
+)
+def test_queue_record_exact_schema_rejects_one_field_add_or_remove(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+    kind: str,
+    operation: str,
+) -> None:
+    store, _, _ = project
+    _seed_queue_record_kind(store, kind)
+    _rewrite_queue_chain_after_envelope_tamper(
+        store,
+        kind=kind,
+        operation=operation,
+    )
+    queue_before = store.queue_path.read_bytes()
+    journal_before = store.journal_path.read_bytes()
+    working_before = store.working_path.read_bytes()
+    manifest_before = store.manifest_path.read_bytes()
+
+    with pytest.raises(RecoveryError, match="canonical schema"):
+        store.process_next_batch()
+    with pytest.raises(RecoveryError, match="canonical schema"):
+        _reopen(store)
+
+    assert store.queue_path.read_bytes() == queue_before
+    assert store.journal_path.read_bytes() == journal_before
+    assert store.working_path.read_bytes() == working_before
+    assert store.manifest_path.read_bytes() == manifest_before
+
+
+def test_success_queue_terminal_allows_legacy_omitted_error_field(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    batch_id = _seed_queue_record_kind(store, "queue_terminal")
+    records = [json.loads(line) for line in store.queue_path.read_text().splitlines()]
+    terminal = next(record for record in records if record["kind"] == "queue_terminal")
+    assert terminal.pop("error") is None
+    previous_hash: str | None = None
+    for record in records:
+        record.pop("record_hash")
+        record["prev_record_hash"] = previous_hash
+        record["record_hash"] = sha256_json(record)
+        previous_hash = record["record_hash"]
+    store.queue_path.write_text(
+        "".join(canonical_json(record) + "\n" for record in records),
+        encoding="utf-8",
+    )
+    queue_before = store.queue_path.read_bytes()
+
+    reopened = _reopen(store)
+
+    assert (
+        reopened.get_batch_status(batch_id).status is store_module.BatchStatus.SUCCEEDED
+    )
+    assert store.queue_path.read_bytes() == queue_before
+
+
 def test_queue_parser_rejects_nonstandard_json_constants(
     project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
 ) -> None:
@@ -381,6 +915,49 @@ def test_batch_enqueue_returns_existing_active_batch_identity(
         is store_module.BatchStatus.NOT_FOUND
     )
     assert store.queue_path.read_text(encoding="utf-8").count("\n") == 1
+
+
+def test_concurrent_post_attestation_admission_enqueues_only_one_batch(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    original, _, _ = project
+    barrier = threading.Barrier(2)
+    verifier = BatchReadingAnnotationVerifier(barrier=barrier)
+    store = WorkingDatasetStore(
+        original.split_dir,
+        annotation_verifier=verifier,
+        inference_receipt_resolver=original.inference_receipt_resolver,
+    )
+    request_a = _batch_request(store, batch_id="racing-a", image_ids=(1,))
+    request_b = _batch_request(store, batch_id="racing-b", image_ids=(2,))
+    receipts: list[store_module.BatchEnqueueReceipt] = []
+    errors: list[BaseException] = []
+
+    def enqueue(request: store_module.BatchRequest) -> None:
+        try:
+            receipts.append(store.enqueue_batch(request))
+        except BaseException as exc:  # capture thread failures for the assertion
+            errors.append(exc)
+
+    threads = [
+        threading.Thread(target=enqueue, args=(request_a,)),
+        threading.Thread(target=enqueue, args=(request_b,)),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert not any(thread.is_alive() for thread in threads)
+    assert errors == []
+    assert len(receipts) == 2
+    assert len({receipt.batch_id for receipt in receipts}) == 1
+    queue_records = [
+        json.loads(line) for line in store.queue_path.read_text().splitlines()
+    ]
+    assert [record["kind"] for record in queue_records] == ["enqueue"]
+    assert queue_records[0]["batch_id"] in {"racing-a", "racing-b"}
+    assert len(verifier.batch_calls) == 2
 
 
 @pytest.mark.parametrize(
@@ -510,6 +1087,7 @@ def test_batch_enqueue_verifies_immutable_source_row_index(
     request = store_module.BatchRequest(
         batch_id="invalid-index-batch",
         split="train",
+        current_user_id="reviewer",
         base_generation=0,
         members=tuple(batch_members),
     )
@@ -545,6 +1123,144 @@ def test_resolve_source_row_index_rejects_every_identity_mismatch(
 
     with pytest.raises(StaleCommitError, match=error):
         store.resolve_source_row_index(**values)
+
+
+def test_restore_drafts_uses_one_barrier_and_preserves_requested_order(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store, _, _ = project
+    store.commit(_request(store, commit_id="baseline-generation", image_id=2))
+    original_lock = store._supported_reader_lock
+    original_manifest = store._read_manifest
+    original_scan = store._scan_attested_restore_rows
+    state = {"active": False, "entries": 0, "scans": 0}
+
+    @contextmanager
+    def tracked_reader_lock():
+        assert state["active"] is False
+        state["active"] = True
+        state["entries"] += 1
+        try:
+            with original_lock():
+                yield
+        finally:
+            state["active"] = False
+
+    def checked_manifest() -> dict[str, Any]:
+        assert state["active"] is True
+        return original_manifest()
+
+    def checked_scan(
+        requested_image_ids: set[int], manifest: dict[str, Any]
+    ) -> dict[int, dict[str, Any]]:
+        assert state["active"] is True
+        state["scans"] += 1
+        return original_scan(requested_image_ids, manifest)
+
+    monkeypatch.setattr(store, "_supported_reader_lock", tracked_reader_lock)
+    monkeypatch.setattr(store, "_read_manifest", checked_manifest)
+    monkeypatch.setattr(store, "_scan_attested_restore_rows", checked_scan)
+
+    restored = store.restore_drafts((3, 1, 2))
+
+    assert state == {"active": False, "entries": 1, "scans": 1}
+    assert [item.image_id for item in restored] == [3, 1, 2]
+    assert {item.generation for item in restored} == {1}
+    assert store.restore_draft(2).image_id == 2
+    assert state == {"active": False, "entries": 2, "scans": 2}
+
+
+@pytest.mark.parametrize(
+    ("image_ids", "error_type", "message"),
+    [
+        ((True,), ValidationError, "non-negative integer"),
+        ((1.0,), ValidationError, "non-negative integer"),
+        (("1",), ValidationError, "non-negative integer"),
+        ((-1,), ValidationError, "non-negative integer"),
+        ((1, 1), ValidationError, "duplicate image_id"),
+        ((999,), StaleCommitError, "unknown image_id"),
+    ],
+)
+def test_restore_drafts_rejects_invalid_duplicate_and_unknown_image_ids(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+    image_ids: Any,
+    error_type: type[Exception],
+    message: str,
+) -> None:
+    store, _, _ = project
+
+    with pytest.raises(error_type, match=message):
+        store.restore_drafts(image_ids)
+
+
+def test_restore_drafts_returns_mutation_isolated_ordinary_json(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    first, second = store.restore_drafts((1, 2))
+    second_before = copy.deepcopy(second.row)
+    first.row["objects"][0]["bbox_2d"][0] = 999
+    first.row["metadata"]["caller_mutation"] = True
+    first.region_id_mapping["caller:key"] = -999
+
+    assert second.row == second_before
+    assert "caller:key" not in second.region_id_mapping
+    json.dumps(first.row, allow_nan=False)
+    fresh_first, fresh_second = store.restore_drafts((1, 2))
+    assert fresh_first.row["objects"][0]["bbox_2d"] == [10, 20, 30, 40]
+    assert "caller_mutation" not in fresh_first.row["metadata"]
+    assert "caller:key" not in fresh_first.region_id_mapping
+    assert fresh_second.row == second_before
+
+
+def test_restore_drafts_rejects_drift_in_an_unrequested_row(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    lines = store.working_path.read_bytes().splitlines(keepends=True)
+    unrequested = json.loads(lines[1])
+    unrequested["objects"][0]["bbox_2d"] = [11, 20, 30, 40]
+    lines[1] = (canonical_json(unrequested) + "\n").encode("utf-8")
+    store.working_path.write_bytes(b"".join(lines))
+
+    with pytest.raises(RecoveryError, match="hash/line-count attestation"):
+        store.restore_drafts((1,))
+
+
+def test_restore_drafts_rejects_truncated_tail_after_requested_row(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    working = store.working_path.read_bytes()
+    store.working_path.write_bytes(working[:-7])
+
+    with pytest.raises(RecoveryError, match="hash/line-count attestation"):
+        store.restore_drafts((1,))
+
+
+def test_empty_restore_drafts_still_attests_the_complete_working_file(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    assert store.restore_drafts(()) == ()
+    store.working_path.write_bytes(store.working_path.read_bytes() + b"drift")
+
+    with pytest.raises(RecoveryError, match="hash/line-count attestation"):
+        store.restore_drafts(())
+
+
+def test_restore_drafts_fails_closed_during_batch_reconciliation(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    store.enqueue_batch(_batch_request(store, image_ids=(1,)))
+    store._fault_injector = CrashAt("batch_working_replaced")
+    with pytest.raises(InjectedCrash):
+        store.process_next_batch()
+
+    with pytest.raises(RecoveryError, match="requires recovery"):
+        store.restore_drafts((1, 2))
 
 
 def test_process_batch_publishes_every_member_once_in_source_order(
@@ -600,6 +1316,7 @@ def test_batch_freshness_is_per_row_not_global_generation(
     batch = store_module.BatchRequest(
         batch_id="old-generation-batch",
         split="train",
+        current_user_id="reviewer",
         base_generation=old_request.observed_generation,
         members=(store_module.BatchMember(source_row_index=0, request=old_request),),
     )
@@ -622,6 +1339,7 @@ def test_stale_batch_member_fails_all_members_without_replacement(
     batch = store_module.BatchRequest(
         batch_id="stale-batch",
         split="train",
+        current_user_id="reviewer",
         base_generation=0,
         members=(
             store_module.BatchMember(source_row_index=0, request=old_one),

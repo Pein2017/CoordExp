@@ -14,6 +14,7 @@ import copy
 import fcntl
 import hashlib
 import json
+import math
 import os
 import tempfile
 from contextlib import contextmanager
@@ -89,7 +90,7 @@ class CategoryRegistry(Protocol):
 
 
 class AuthoritativeAnnotationVerifier(Protocol):
-    """Durable Label Studio lookup required before a Commit can begin."""
+    """Legacy per-Draft lookup; adapters may additionally expose verify_batch."""
 
     def verify(self, identity: "AuthoritativeDraftIdentity") -> bool: ...
 
@@ -166,6 +167,7 @@ class BatchMember:
 class BatchRequest:
     batch_id: str
     split: str
+    current_user_id: str
     base_generation: int
     members: Sequence[BatchMember]
 
@@ -363,8 +365,412 @@ def semantic_hash(regions: Sequence[Mapping[str, Any]]) -> str:
     return sha256_json(canonical_semantic_projection(regions))
 
 
+_BATCH_PAYLOAD_FIELDS = frozenset(
+    {"batch_id", "split", "current_user_id", "base_generation", "members"}
+)
+_BATCH_MEMBER_PAYLOAD_FIELDS = frozenset({"source_row_index", "request"})
+_COMMIT_REQUEST_PAYLOAD_FIELDS = frozenset(
+    {
+        "commit_id",
+        "split",
+        "image_id",
+        "project_id",
+        "task_id",
+        "annotation_id",
+        "draft_id",
+        "annotation_revision",
+        "draft_updated_at",
+        "semantic_hash",
+        "result_hash",
+        "base_row_hash",
+        "observed_generation",
+        "regions",
+        "draft_save",
+        "inference_receipts",
+    }
+)
+_DRAFT_SAVE_PAYLOAD_FIELDS = frozenset(
+    {
+        "project_id",
+        "task_id",
+        "annotation_id",
+        "draft_id",
+        "annotation_revision",
+        "draft_updated_at",
+        "semantic_hash",
+        "result_hash",
+        "durable",
+    }
+)
+_QUEUE_ENQUEUE_RECORD_FIELDS = frozenset(
+    {
+        "kind",
+        "batch_id",
+        "payload_hash",
+        "split",
+        "base_generation",
+        "member_count",
+        "payload",
+        "timestamp",
+        "prev_record_hash",
+        "record_hash",
+    }
+)
+_QUEUE_CLAIM_RECORD_FIELDS = frozenset(
+    {
+        "kind",
+        "batch_id",
+        "payload_hash",
+        "timestamp",
+        "prev_record_hash",
+        "record_hash",
+    }
+)
+_QUEUE_TERMINAL_REQUIRED_RECORD_FIELDS = frozenset(
+    {
+        "kind",
+        "batch_id",
+        "payload_hash",
+        "status",
+        "generation",
+        "working_sha256",
+        "timestamp",
+        "prev_record_hash",
+        "record_hash",
+    }
+)
+_QUEUE_TERMINAL_OPTIONAL_RECORD_FIELDS = frozenset({"error"})
+
+
+def _payload_error(error_type: type[StoreError], path: str, message: str) -> None:
+    raise error_type(f"{path}: {message}")
+
+
+def _validate_queue_record_envelope(record: dict[str, Any]) -> None:
+    """Validate the exact durable queue envelope before interpreting a record."""
+
+    kind = record.get("kind")
+    if kind == "enqueue":
+        required = allowed = _QUEUE_ENQUEUE_RECORD_FIELDS
+    elif kind == "claim":
+        required = allowed = _QUEUE_CLAIM_RECORD_FIELDS
+    elif kind == "queue_terminal":
+        required = _QUEUE_TERMINAL_REQUIRED_RECORD_FIELDS
+        allowed = required | _QUEUE_TERMINAL_OPTIONAL_RECORD_FIELDS
+    else:
+        raise RecoveryError(
+            f"queue record kind is not supported by the canonical schema: {kind!r}"
+        )
+
+    actual = frozenset(record)
+    missing = sorted(required - actual)
+    unknown = sorted(actual - allowed, key=repr)
+    if missing or unknown:
+        raise RecoveryError(
+            f"queue {kind} record fields do not match the canonical schema "
+            f"(missing={missing}, unknown={unknown})"
+        )
+    if type(record["batch_id"]) is not str or not record["batch_id"].strip():
+        raise RecoveryError("queue record has invalid batch identity")
+    if not _is_sha256(record["payload_hash"]):
+        raise RecoveryError("queue record has invalid payload hash")
+    if type(record["timestamp"]) is not str or not record["timestamp"].strip():
+        raise RecoveryError("queue record has invalid timestamp")
+    previous_hash = record["prev_record_hash"]
+    if previous_hash is not None and not _is_sha256(previous_hash):
+        raise RecoveryError("queue record has invalid previous hash")
+    if not _is_sha256(record["record_hash"]):
+        raise RecoveryError("queue record has invalid record hash")
+
+
+def _validate_ordinary_json(
+    value: Any,
+    *,
+    path: str,
+    error_type: type[StoreError],
+) -> None:
+    """Require values whose type and value survive a JSON round trip exactly."""
+
+    if value is None or type(value) in {str, bool, int}:
+        return
+    if type(value) is float:
+        if not math.isfinite(value):
+            _payload_error(error_type, path, "number must be finite ordinary JSON")
+        return
+    if type(value) is list:
+        for index, item in enumerate(value):
+            _validate_ordinary_json(
+                item,
+                path=f"{path}[{index}]",
+                error_type=error_type,
+            )
+        return
+    if type(value) is dict:
+        for key, item in value.items():
+            if type(key) is not str:
+                _payload_error(error_type, path, "JSON object keys must be strings")
+            _validate_ordinary_json(
+                item,
+                path=f"{path}.{key}",
+                error_type=error_type,
+            )
+        return
+    _payload_error(
+        error_type,
+        path,
+        f"value is not canonical ordinary JSON: {type(value).__name__}",
+    )
+
+
+def _require_payload_object(
+    value: Any,
+    *,
+    fields: frozenset[str],
+    path: str,
+    error_type: type[StoreError],
+) -> dict[str, Any]:
+    if type(value) is not dict:
+        _payload_error(error_type, path, "must be a JSON object")
+    actual = frozenset(value)
+    if actual != fields:
+        _payload_error(
+            error_type,
+            path,
+            "fields do not match the canonical schema "
+            f"(missing={sorted(fields - actual)}, unknown={sorted(actual - fields)})",
+        )
+    return value
+
+
+def _require_payload_string(
+    value: Any,
+    *,
+    path: str,
+    error_type: type[StoreError],
+    sha256: bool = False,
+    trimmed: bool = False,
+) -> str:
+    if type(value) is not str or not value.strip():
+        _payload_error(error_type, path, "must be non-empty text")
+    if trimmed and value != value.strip():
+        _payload_error(error_type, path, "must be trimmed text")
+    if sha256 and not _is_sha256(value):
+        _payload_error(error_type, path, "must be a lowercase SHA-256 digest")
+    return value
+
+
+def _require_payload_integer(
+    value: Any,
+    *,
+    path: str,
+    error_type: type[StoreError],
+) -> int:
+    if type(value) is not int or value < 0:
+        _payload_error(error_type, path, "must be a non-negative integer")
+    return value
+
+
+def _validate_commit_request_payload(
+    payload: Any,
+    *,
+    path: str,
+    error_type: type[StoreError],
+) -> dict[str, Any]:
+    request = _require_payload_object(
+        payload,
+        fields=_COMMIT_REQUEST_PAYLOAD_FIELDS,
+        path=path,
+        error_type=error_type,
+    )
+    for field_name in (
+        "commit_id",
+        "project_id",
+        "task_id",
+        "annotation_id",
+        "draft_id",
+    ):
+        _require_payload_string(
+            request[field_name],
+            path=f"{path}.{field_name}",
+            error_type=error_type,
+        )
+    split = _require_payload_string(
+        request["split"], path=f"{path}.split", error_type=error_type
+    )
+    if split not in {"train", "val"}:
+        _payload_error(error_type, f"{path}.split", "must be 'train' or 'val'")
+    _require_payload_integer(
+        request["image_id"], path=f"{path}.image_id", error_type=error_type
+    )
+    _require_payload_integer(
+        request["observed_generation"],
+        path=f"{path}.observed_generation",
+        error_type=error_type,
+    )
+    for field_name in ("annotation_revision", "draft_updated_at"):
+        _require_payload_string(
+            request[field_name],
+            path=f"{path}.{field_name}",
+            error_type=error_type,
+        )
+    for field_name in ("semantic_hash", "result_hash", "base_row_hash"):
+        _require_payload_string(
+            request[field_name],
+            path=f"{path}.{field_name}",
+            error_type=error_type,
+            sha256=True,
+        )
+    regions = request["regions"]
+    if type(regions) is not list:
+        _payload_error(error_type, f"{path}.regions", "must be a JSON array")
+    for index, region in enumerate(regions):
+        if type(region) is not dict:
+            _payload_error(
+                error_type,
+                f"{path}.regions[{index}]",
+                "must be a JSON object",
+            )
+
+    receipt_path = f"{path}.draft_save"
+    receipt = _require_payload_object(
+        request["draft_save"],
+        fields=_DRAFT_SAVE_PAYLOAD_FIELDS,
+        path=receipt_path,
+        error_type=error_type,
+    )
+    for field_name in (
+        "project_id",
+        "task_id",
+        "annotation_id",
+        "draft_id",
+        "annotation_revision",
+        "draft_updated_at",
+    ):
+        _require_payload_string(
+            receipt[field_name],
+            path=f"{receipt_path}.{field_name}",
+            error_type=error_type,
+        )
+    for field_name in ("semantic_hash", "result_hash"):
+        _require_payload_string(
+            receipt[field_name],
+            path=f"{receipt_path}.{field_name}",
+            error_type=error_type,
+            sha256=True,
+        )
+    if type(receipt["durable"]) is not bool:
+        _payload_error(
+            error_type,
+            f"{receipt_path}.durable",
+            "must be a boolean",
+        )
+
+    inference_receipts = request["inference_receipts"]
+    if type(inference_receipts) is not list:
+        _payload_error(
+            error_type,
+            f"{path}.inference_receipts",
+            "must be a JSON array",
+        )
+    for index, receipt_id in enumerate(inference_receipts):
+        _require_payload_string(
+            receipt_id,
+            path=f"{path}.inference_receipts[{index}]",
+            error_type=error_type,
+        )
+    return request
+
+
+def _validate_batch_payload(
+    payload: Any,
+    *,
+    error_type: type[StoreError],
+) -> dict[str, Any]:
+    _validate_ordinary_json(payload, path="batch payload", error_type=error_type)
+    batch = _require_payload_object(
+        payload,
+        fields=_BATCH_PAYLOAD_FIELDS,
+        path="batch payload",
+        error_type=error_type,
+    )
+    _require_payload_string(
+        batch["batch_id"], path="batch payload.batch_id", error_type=error_type
+    )
+    split = _require_payload_string(
+        batch["split"], path="batch payload.split", error_type=error_type
+    )
+    if split not in {"train", "val"}:
+        _payload_error(error_type, "batch payload.split", "must be 'train' or 'val'")
+    _require_payload_string(
+        batch["current_user_id"],
+        path="batch payload.current_user_id",
+        error_type=error_type,
+        trimmed=True,
+    )
+    _require_payload_integer(
+        batch["base_generation"],
+        path="batch payload.base_generation",
+        error_type=error_type,
+    )
+    members = batch["members"]
+    if type(members) is not list or not members:
+        _payload_error(
+            error_type, "batch payload.members", "must be a non-empty JSON array"
+        )
+    source_row_indices: list[int] = []
+    for index, value in enumerate(members):
+        member_path = f"batch payload.members[{index}]"
+        member = _require_payload_object(
+            value,
+            fields=_BATCH_MEMBER_PAYLOAD_FIELDS,
+            path=member_path,
+            error_type=error_type,
+        )
+        source_row_indices.append(
+            _require_payload_integer(
+                member["source_row_index"],
+                path=f"{member_path}.source_row_index",
+                error_type=error_type,
+            )
+        )
+        _validate_commit_request_payload(
+            member["request"],
+            path=f"{member_path}.request",
+            error_type=error_type,
+        )
+    if len(set(source_row_indices)) != len(source_row_indices):
+        _payload_error(
+            error_type,
+            "batch payload.members",
+            "duplicate source row index",
+        )
+    if source_row_indices != sorted(source_row_indices):
+        _payload_error(
+            error_type,
+            "batch payload.members",
+            "source row indices must be ascending",
+        )
+    return batch
+
+
 def _commit_request_payload(request: CommitRequest) -> dict[str, Any]:
+    if not isinstance(request, CommitRequest):
+        raise ValidationError("batch payload member request has an invalid type")
     receipt = request.draft_save
+    if not isinstance(receipt, DraftSaveReceipt):
+        raise ValidationError("batch payload Draft-save receipt has an invalid type")
+    if isinstance(request.regions, (str, bytes, bytearray)) or not isinstance(
+        request.regions, Sequence
+    ):
+        raise ValidationError("batch payload regions must be a sequence of objects")
+    if any(type(region) is not dict for region in request.regions):
+        raise ValidationError("batch payload regions must contain JSON objects")
+    if isinstance(
+        request.inference_receipts, (str, bytes, bytearray)
+    ) or not isinstance(request.inference_receipts, Sequence):
+        raise ValidationError(
+            "batch payload inference receipts must be a sequence of strings"
+        )
     return {
         "commit_id": request.commit_id,
         "split": request.split,
@@ -395,35 +801,67 @@ def _commit_request_payload(request: CommitRequest) -> dict[str, Any]:
     }
 
 
-def _commit_request_from_payload(payload: Mapping[str, Any]) -> CommitRequest:
-    receipt = payload["draft_save"]
+def _commit_request_from_payload(
+    payload: Any,
+    *,
+    error_type: type[StoreError] = ValidationError,
+) -> CommitRequest:
+    request = _validate_commit_request_payload(
+        payload,
+        path="commit request payload",
+        error_type=error_type,
+    )
+    receipt = request["draft_save"]
     return CommitRequest(
-        commit_id=str(payload["commit_id"]),
-        split=str(payload["split"]),
-        image_id=int(payload["image_id"]),
-        project_id=str(payload["project_id"]),
-        task_id=str(payload["task_id"]),
-        annotation_id=str(payload["annotation_id"]),
-        draft_id=str(payload["draft_id"]),
-        annotation_revision=payload["annotation_revision"],
-        draft_updated_at=payload["draft_updated_at"],
-        semantic_hash=str(payload["semantic_hash"]),
-        result_hash=payload["result_hash"],
-        base_row_hash=str(payload["base_row_hash"]),
-        observed_generation=int(payload["observed_generation"]),
-        regions=copy.deepcopy(payload["regions"]),
+        commit_id=request["commit_id"],
+        split=request["split"],
+        image_id=request["image_id"],
+        project_id=request["project_id"],
+        task_id=request["task_id"],
+        annotation_id=request["annotation_id"],
+        draft_id=request["draft_id"],
+        annotation_revision=request["annotation_revision"],
+        draft_updated_at=request["draft_updated_at"],
+        semantic_hash=request["semantic_hash"],
+        result_hash=request["result_hash"],
+        base_row_hash=request["base_row_hash"],
+        observed_generation=request["observed_generation"],
+        regions=copy.deepcopy(request["regions"]),
         draft_save=DraftSaveReceipt(
-            project_id=str(receipt["project_id"]),
-            task_id=str(receipt["task_id"]),
-            annotation_id=str(receipt["annotation_id"]),
-            draft_id=str(receipt["draft_id"]),
+            project_id=receipt["project_id"],
+            task_id=receipt["task_id"],
+            annotation_id=receipt["annotation_id"],
+            draft_id=receipt["draft_id"],
             annotation_revision=receipt["annotation_revision"],
             draft_updated_at=receipt["draft_updated_at"],
-            semantic_hash=str(receipt["semantic_hash"]),
+            semantic_hash=receipt["semantic_hash"],
             result_hash=receipt["result_hash"],
-            durable=bool(receipt["durable"]),
+            durable=receipt["durable"],
         ),
-        inference_receipts=tuple(str(value) for value in payload["inference_receipts"]),
+        inference_receipts=tuple(request["inference_receipts"]),
+    )
+
+
+def _batch_request_from_payload(
+    payload: Any,
+    *,
+    error_type: type[StoreError] = ValidationError,
+) -> BatchRequest:
+    batch = _validate_batch_payload(payload, error_type=error_type)
+    return BatchRequest(
+        batch_id=batch["batch_id"],
+        split=batch["split"],
+        current_user_id=batch["current_user_id"],
+        base_generation=batch["base_generation"],
+        members=tuple(
+            BatchMember(
+                source_row_index=member["source_row_index"],
+                request=_commit_request_from_payload(
+                    member["request"], error_type=error_type
+                ),
+            )
+            for member in batch["members"]
+        ),
     )
 
 
@@ -792,50 +1230,87 @@ class WorkingDatasetStore:
         if not isinstance(request.batch_id, str) or not request.batch_id.strip():
             raise ValidationError("batch id must be non-empty text")
         split = _validate_split(request.split)
-        with self._exclusive_queue_lock():
+        payload = self._canonical_batch_payload(request)
+        payload_hash = sha256_json(payload)
+
+        fast_enqueue: Mapping[str, Any] | None = None
+        fast_records: list[dict[str, Any]] | None = None
+        with self._serialized_queue_admission_lock():
             queue_records = self._read_queue_records()
             existing = self._queue_enqueue_for_batch(queue_records, request.batch_id)
             if existing is not None:
                 # Retry identity is derived without consulting mutable live
                 # Draft state; later edits cannot invalidate an exact receipt.
-                payload = self._canonical_batch_payload(request)
-                payload_hash = sha256_json(payload)
                 if existing["payload_hash"] != payload_hash:
                     raise CommitConflictError(
                         "batch id reused with a different immutable payload"
                     )
-                return self._enqueue_receipt_under_barrier(existing, queue_records)
+                fast_enqueue = existing
+                fast_records = queue_records
+            else:
+                active = self._active_queue_enqueue(queue_records)
+                if active is not None:
+                    fast_enqueue = active
+                    fast_records = queue_records
+        if fast_enqueue is not None and fast_records is not None:
+            return self._enqueue_receipt_under_barrier(fast_enqueue, fast_records)
 
-            active = self._active_queue_enqueue(queue_records)
-            if active is not None:
-                return self._enqueue_receipt_under_barrier(active, queue_records)
+        # Freeze the exact payload before any external authority lookup.  The
+        # verifier may safely call supported store readers because neither an
+        # exclusive queue lock nor the transaction lock is held here.
+        attested_request = _batch_request_from_payload(payload)
+        with self._batch_admission_reader_lock():
+            manifest = self._read_manifest()
+            self._validate_batch_store_contract(attested_request, manifest)
+        self._attest_batch_authority(attested_request)
 
-            payload = self._validated_batch_payload(request)
-            payload_hash = sha256_json(payload)
-            # Admission observes a reconciled transaction projection but never
-            # waits behind the long-running worker lock.
-            with self._shared_lock():
-                reconciliation_reason = self._batch_reconciliation_reason(queue_records)
-                if reconciliation_reason is not None:
-                    raise RecoveryError(
-                        f"store requires recovery: {reconciliation_reason}"
+        final_enqueue: Mapping[str, Any] | None = None
+        final_records: list[dict[str, Any]] | None = None
+        with self._serialized_queue_admission_lock():
+            queue_records = self._read_queue_records()
+            existing = self._queue_enqueue_for_batch(queue_records, request.batch_id)
+            if existing is not None:
+                if existing["payload_hash"] != payload_hash:
+                    raise CommitConflictError(
+                        "batch id reused with a different immutable payload"
                     )
-                manifest = self._read_manifest()
-                if split != manifest.get("split"):
-                    raise StaleCommitError("split mismatch")
-                if request.base_generation > int(manifest["generation"]):
-                    raise StaleCommitError("batch base generation is from the future")
-                record = {
-                    "kind": "enqueue",
-                    "batch_id": request.batch_id,
-                    "payload_hash": payload_hash,
-                    "split": split,
-                    "base_generation": request.base_generation,
-                    "member_count": len(payload["members"]),
-                    "payload": payload,
-                }
-                queued = self._append_queue_record(record, "enqueue")
-            return self._enqueue_receipt(queued, queue_records + [queued])
+                final_enqueue = existing
+                final_records = queue_records
+            else:
+                active = self._active_queue_enqueue(queue_records)
+                if active is not None:
+                    final_enqueue = active
+                    final_records = queue_records
+            if final_enqueue is None:
+                # Admission observes a reconciled transaction projection but
+                # never waits behind the long-running worker exclusive lock.
+                with self._shared_lock():
+                    final_request = _batch_request_from_payload(payload)
+                    self._validate_batch_store_contract(
+                        final_request, self._read_manifest()
+                    )
+                    reconciliation_reason = self._batch_reconciliation_reason(
+                        queue_records
+                    )
+                    if reconciliation_reason is not None:
+                        raise RecoveryError(
+                            f"store requires recovery: {reconciliation_reason}"
+                        )
+                    record = {
+                        "kind": "enqueue",
+                        "batch_id": final_request.batch_id,
+                        "payload_hash": payload_hash,
+                        "split": split,
+                        "base_generation": final_request.base_generation,
+                        "member_count": len(payload["members"]),
+                        "payload": payload,
+                    }
+                    queued = self._append_queue_record(record, "enqueue")
+                    final_enqueue = queued
+                    final_records = queue_records + [queued]
+        if final_enqueue is None or final_records is None:  # pragma: no cover
+            raise StoreError("batch admission produced no durable identity")
+        return self._enqueue_receipt_under_barrier(final_enqueue, final_records)
 
     def get_batch_status(self, batch_id: str) -> BatchStatusView:
         with self._shared_lock():
@@ -887,8 +1362,8 @@ class WorkingDatasetStore:
                     for record in queue_terminals
                 )
                 if projection_matches:
-                    status = BatchStatus(str(terminal["status"]))
-                    generation = int(terminal["generation"])
+                    status = BatchStatus(terminal["status"])
+                    generation = terminal["generation"]
                     error = terminal.get("error")
                 else:
                     status = BatchStatus.RECONCILING
@@ -907,25 +1382,29 @@ class WorkingDatasetStore:
                 error = reconciliation_reason
             return BatchStatusView(
                 batch_id=batch_id,
-                payload_hash=str(enqueue["payload_hash"]),
+                payload_hash=enqueue["payload_hash"],
                 status=status,
-                split=str(enqueue["split"]),
-                member_count=int(enqueue["member_count"]),
-                base_generation=int(enqueue["base_generation"]),
+                split=enqueue["split"],
+                member_count=enqueue["member_count"],
+                base_generation=enqueue["base_generation"],
                 generation=generation,
                 error=error,
             )
 
-    def _validated_batch_payload(self, request: BatchRequest) -> dict[str, Any]:
-        payload = self._canonical_batch_payload(request)
+    def _validate_batch_store_contract(
+        self,
+        request: BatchRequest,
+        manifest: Mapping[str, Any],
+    ) -> None:
         members = sorted(request.members, key=lambda member: member.source_row_index)
         seen_indices: set[int] = set()
         seen_images: set[int] = set()
         seen_tasks: set[str] = set()
         seen_commits: set[str] = set()
-        manifest = self._read_manifest()
         if request.split != manifest.get("split"):
             raise StaleCommitError("split mismatch")
+        if request.base_generation > int(manifest["generation"]):
+            raise StaleCommitError("batch base generation is from the future")
         for member in members:
             index = member.source_row_index
             if index >= int(manifest["task_count"]):
@@ -954,45 +1433,62 @@ class WorkingDatasetStore:
                 request.split, request_member.image_id
             ):
                 raise StaleCommitError("task identity mismatch")
-            self._validate_draft_handshake(request_member)
-            if not request_member.regions:
-                raise ValidationError(
-                    "empty Draft is preserved, but V1 Commit requires an object"
-                )
+            self._validate_batch_frozen_request(request_member)
+
+    def _attest_batch_authority(self, request: BatchRequest) -> None:
+        verify_batch = getattr(self.annotation_verifier, "verify_batch", None)
+        if verify_batch is not None:
+            if not callable(verify_batch) or not verify_batch(request):
+                raise StaleCommitError("authoritative batch snapshot was not attested")
+            return
+        for member in request.members:
             if not self.annotation_verifier.verify(
-                AuthoritativeDraftIdentity.from_request(request_member)
+                AuthoritativeDraftIdentity.from_request(member.request)
             ):
                 raise StaleCommitError(
                     "authoritative annotation snapshot was not attested"
                 )
-            self._validate_inference_linkage(request_member)
-        return payload
 
     def _canonical_batch_payload(self, request: BatchRequest) -> dict[str, Any]:
         if request.split not in {"train", "val"}:
-            raise ValidationError("split must be 'train' or 'val'")
+            raise ValidationError("batch payload split must be 'train' or 'val'")
         if (
             isinstance(request.base_generation, bool)
             or not isinstance(request.base_generation, int)
             or request.base_generation < 0
         ):
             raise ValidationError(
-                "batch base generation must be a non-negative integer"
+                "batch payload base generation must be a non-negative integer"
             )
+        if (
+            not isinstance(request.current_user_id, str)
+            or not request.current_user_id
+            or request.current_user_id != request.current_user_id.strip()
+        ):
+            raise ValidationError(
+                "batch payload current_user_id must be non-empty trimmed text"
+            )
+        if isinstance(request.members, (str, bytes, bytearray)) or not isinstance(
+            request.members, Sequence
+        ):
+            raise ValidationError("batch payload members must be a sequence")
         members = list(request.members)
         if not members:
-            raise ValidationError("batch must contain at least one member")
+            raise ValidationError("batch payload must contain at least one member")
+        if any(not isinstance(member, BatchMember) for member in members):
+            raise ValidationError("batch payload members have an invalid type")
         if any(
             isinstance(member.source_row_index, bool)
             or not isinstance(member.source_row_index, int)
             or member.source_row_index < 0
             for member in members
         ):
-            raise ValidationError("source row index out of range")
+            raise ValidationError("batch payload source row index out of range")
         members.sort(key=lambda member: member.source_row_index)
         payload = {
             "batch_id": request.batch_id,
             "split": request.split,
+            "current_user_id": request.current_user_id,
             "base_generation": request.base_generation,
             "members": [
                 {
@@ -1002,6 +1498,7 @@ class WorkingDatasetStore:
                 for member in members
             ],
         }
+        _validate_batch_payload(payload, error_type=ValidationError)
         try:
             canonical_json(payload)
         except (TypeError, ValueError) as exc:
@@ -1017,12 +1514,12 @@ class WorkingDatasetStore:
     ) -> BatchEnqueueReceipt:
         status, _, _ = self._queue_batch_state(enqueue, records)
         return BatchEnqueueReceipt(
-            batch_id=str(enqueue["batch_id"]),
-            payload_hash=str(enqueue["payload_hash"]),
+            batch_id=enqueue["batch_id"],
+            payload_hash=enqueue["payload_hash"],
             status=status if status_override is None else status_override,
-            split=str(enqueue["split"]),
-            member_count=int(enqueue["member_count"]),
-            base_generation=int(enqueue["base_generation"]),
+            split=enqueue["split"],
+            member_count=enqueue["member_count"],
+            base_generation=enqueue["base_generation"],
         )
 
     def _enqueue_receipt_under_barrier(
@@ -1068,8 +1565,8 @@ class WorkingDatasetStore:
         )
         if terminal is not None:
             return (
-                BatchStatus(str(terminal["status"])),
-                int(terminal["generation"]),
+                BatchStatus(terminal["status"]),
+                terminal["generation"],
                 terminal.get("error"),
             )
         if any(record.get("kind") == "claim" for record in matching):
@@ -1328,12 +1825,10 @@ class WorkingDatasetStore:
         payload = copy.deepcopy(enqueue["payload"])
         if sha256_json(payload) != enqueue.get("payload_hash"):
             raise RecoveryError("queued batch payload hash disagreement")
+        frozen_request = _batch_request_from_payload(payload, error_type=RecoveryError)
         members = [
-            (
-                int(member["source_row_index"]),
-                _commit_request_from_payload(member["request"]),
-            )
-            for member in payload["members"]
+            (member.source_row_index, member.request)
+            for member in frozen_request.members
         ]
         if [index for index, _ in members] != sorted(index for index, _ in members):
             raise RecoveryError("queued batch members are not source-row ordered")
@@ -1550,14 +2045,25 @@ class WorkingDatasetStore:
                 raise ValidationError(f"duplicate region key: {key}")
             keys.add(key)
             _source_id_from_region_key(key, request.split)
+            supplied_id = region.get("coco_ann_id")
+            if supplied_id is not None and (
+                type(supplied_id) is not int or supplied_id == 0
+            ):
+                raise ValidationError("coco_ann_id must be null or a nonzero integer")
             name = region.get("category_name", region.get("desc"))
             category_id = region.get("category_id")
-            if not isinstance(name, str) or not isinstance(category_id, int):
+            if not isinstance(name, str) or type(category_id) is not int:
                 raise ValidationError(
                     "category_name and integer category_id are required"
                 )
             self.registry.validate(name, category_id)
             _validate_bbox(region.get("bbox_2d"))
+            if "creation_ordinal" in region:
+                creation_ordinal = region["creation_ordinal"]
+                if type(creation_ordinal) is not int or creation_ordinal < 0:
+                    raise ValidationError(
+                        "creation_ordinal must be a non-negative integer"
+                    )
             _training_metadata(region.get("metadata"))
 
     def _validate_request_against_cached_identity(
@@ -1673,8 +2179,8 @@ class WorkingDatasetStore:
         return self._append_batch_terminal(
             None,
             BatchStatus.FAILED,
-            batch_id=str(enqueue["batch_id"]),
-            payload_hash=str(enqueue["payload_hash"]),
+            batch_id=enqueue["batch_id"],
+            payload_hash=enqueue["payload_hash"],
             generation=int(manifest["generation"]),
             working_sha256=str(manifest["working_sha256"]),
             error=error,
@@ -1980,22 +2486,60 @@ class WorkingDatasetStore:
     def restore_draft(self, image_id: int) -> DraftRestore:
         """Return the committed row used by persisted-Draft reset/reload hooks."""
 
+        return self.restore_drafts((image_id,))[0]
+
+    def restore_drafts(self, image_ids: Sequence[int]) -> tuple[DraftRestore, ...]:
+        """Atomically return committed baselines in the exact requested order.
+
+        Duplicate identities are rejected rather than collapsed.  Every row
+        and the one manifest generation are read while holding a single
+        supported-reader barrier, so callers cannot assemble a cross-generation
+        batch from repeated single-row reads.
+        """
+
+        if isinstance(image_ids, (str, bytes, bytearray)) or not isinstance(
+            image_ids, Sequence
+        ):
+            raise ValidationError("image_ids must be a sequence of integers")
+        requested = tuple(image_ids)
+        seen: set[int] = set()
+        for image_id in requested:
+            if (
+                isinstance(image_id, bool)
+                or not isinstance(image_id, int)
+                or image_id < 0
+            ):
+                raise ValidationError("image_id must be a non-negative integer")
+            if image_id in seen:
+                raise ValidationError(f"duplicate image_id: {image_id}")
+            seen.add(image_id)
+
         with self._supported_reader_lock():
             manifest = self._read_manifest()
-            _, row, _ = self._find_row(image_id)
             split = str(manifest["split"])
-            mapping = {
-                self._key_for_object(obj, image_id, split): int(obj["coco_ann_id"])
-                for obj in row["objects"]
-            }
-            return DraftRestore(
-                split=split,
-                image_id=image_id,
-                generation=int(manifest["generation"]),
-                row_hash=sha256_json(row),
-                row=row,
-                region_id_mapping=mapping,
-            )
+            generation = int(manifest["generation"])
+            rows = self._scan_attested_restore_rows(seen, manifest)
+
+            restores: list[DraftRestore] = []
+            for image_id in requested:
+                row = rows.get(image_id)
+                if row is None:
+                    raise StaleCommitError(f"unknown image_id: {image_id}")
+                mapping = {
+                    self._key_for_object(obj, image_id, split): int(obj["coco_ann_id"])
+                    for obj in row["objects"]
+                }
+                restores.append(
+                    DraftRestore(
+                        split=split,
+                        image_id=image_id,
+                        generation=generation,
+                        row_hash=sha256_json(row),
+                        row=copy.deepcopy(row),
+                        region_id_mapping=copy.deepcopy(mapping),
+                    )
+                )
+            return tuple(restores)
 
     def recover(self) -> None:
         """Reconcile an interrupted transaction exactly once before serving."""
@@ -2368,7 +2912,7 @@ class WorkingDatasetStore:
 
             name = region.get("category_name", region.get("desc"))
             category_id = region.get("category_id")
-            if not isinstance(name, str) or not isinstance(category_id, int):
+            if not isinstance(name, str) or type(category_id) is not int:
                 raise ValidationError(
                     "category_name and integer category_id are required"
                 )
@@ -2385,11 +2929,13 @@ class WorkingDatasetStore:
             if metadata:
                 obj["metadata"] = metadata
             prior_rank = before_rank.get(object_id)
-            creation_ordinal = (
-                None
-                if prior_rank is not None
-                else int(region.get("creation_ordinal", ordinal))
-            )
+            creation_ordinal = None
+            if prior_rank is None:
+                creation_ordinal = region.get("creation_ordinal", ordinal)
+                if type(creation_ordinal) is not int or creation_ordinal < 0:
+                    raise ValidationError(
+                        "creation_ordinal must be a non-negative integer"
+                    )
             materialized.append((obj, key, prior_rank, creation_ordinal))
 
         objects = _stable_order(materialized)
@@ -2756,7 +3302,7 @@ class WorkingDatasetStore:
         for record in records:
             kind = record.get("kind")
             batch_id = record.get("batch_id")
-            if not isinstance(batch_id, str) or not batch_id:
+            if type(batch_id) is not str or not batch_id.strip():
                 raise RecoveryError("queue record has invalid batch identity")
             if kind == "enqueue":
                 if batch_id in enqueues:
@@ -2764,14 +3310,26 @@ class WorkingDatasetStore:
                         f"duplicate enqueue record for batch {batch_id}"
                     )
                 payload = record.get("payload")
+                payload_hash = record.get("payload_hash")
+                split = record.get("split")
+                base_generation = record.get("base_generation")
+                member_count = record.get("member_count")
                 if (
-                    not isinstance(payload, Mapping)
-                    or sha256_json(payload) != record.get("payload_hash")
-                    or payload.get("batch_id") != batch_id
-                    or payload.get("split") != record.get("split")
-                    or payload.get("base_generation") != record.get("base_generation")
-                    or not isinstance(payload.get("members"), list)
-                    or len(payload["members"]) != record.get("member_count")
+                    not _is_sha256(payload_hash)
+                    or type(split) is not str
+                    or type(base_generation) is not int
+                    or base_generation < 0
+                    or type(member_count) is not int
+                    or member_count < 1
+                ):
+                    raise RecoveryError("queue enqueue payload attestation failed")
+                batch = _validate_batch_payload(payload, error_type=RecoveryError)
+                if (
+                    sha256_json(batch) != payload_hash
+                    or batch["batch_id"] != batch_id
+                    or batch["split"] != split
+                    or batch["base_generation"] != base_generation
+                    or len(batch["members"]) != member_count
                 ):
                     raise RecoveryError("queue enqueue payload attestation failed")
                 enqueues[batch_id] = record
@@ -2793,9 +3351,13 @@ class WorkingDatasetStore:
                 }:
                     raise RecoveryError("queue terminal status is invalid")
                 if (
-                    isinstance(record.get("generation"), bool)
-                    or not isinstance(record.get("generation"), int)
-                    or not isinstance(record.get("working_sha256"), str)
+                    type(record.get("generation")) is not int
+                    or record["generation"] < 0
+                    or not _is_sha256(record.get("working_sha256"))
+                    or (
+                        record.get("error") is not None
+                        and type(record.get("error")) is not str
+                    )
                 ):
                     raise RecoveryError("queue terminal attestation is invalid")
                 continue
@@ -3051,6 +3613,7 @@ class WorkingDatasetStore:
         payload.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
         payload["prev_record_hash"] = records[-1]["record_hash"] if records else None
         payload["record_hash"] = sha256_json(payload)
+        _validate_queue_record_envelope(payload)
         encoded = (canonical_json(payload) + "\n").encode("utf-8")
         with self.queue_path.open("ab") as handle:
             handle.write(encoded)
@@ -3079,6 +3642,9 @@ class WorkingDatasetStore:
                 record = _strict_json_loads(raw)
             except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
                 raise RecoveryError(f"invalid queue record at line {line_no}") from exc
+            if type(record) is not dict:
+                raise RecoveryError(f"invalid queue record at line {line_no}")
+            _validate_queue_record_envelope(record)
             if record.get("prev_record_hash") != previous_hash:
                 raise RecoveryError(f"broken queue chain at line {line_no}")
             recorded_hash = record.get("record_hash")
@@ -3086,7 +3652,7 @@ class WorkingDatasetStore:
             check.pop("record_hash", None)
             if recorded_hash != sha256_json(check):
                 raise RecoveryError(f"queue hash disagreement at line {line_no}")
-            previous_hash = str(recorded_hash)
+            previous_hash = recorded_hash
             records.append(record)
         if tail:
             if not repair_torn_tail:
@@ -3106,17 +3672,50 @@ class WorkingDatasetStore:
     def _iter_rows(self) -> Iterator[tuple[int, dict[str, Any], bytes]]:
         with self.working_path.open("rb") as handle:
             for index, raw in enumerate(handle):
-                if not raw.endswith(b"\n"):
-                    raise ValidationError(
-                        "working JSONL must end every row with a newline"
-                    )
-                try:
-                    row = _strict_json_loads(raw)
-                except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
-                    raise ValidationError(
-                        f"invalid working JSONL row {index + 1}"
-                    ) from exc
+                row = _parse_working_jsonl_row(raw, index)
                 yield index, row, raw
+
+    def _scan_attested_restore_rows(
+        self,
+        requested_image_ids: set[int],
+        manifest: Mapping[str, Any],
+    ) -> dict[int, dict[str, Any]]:
+        """Scan once, attest the complete file, then expose requested rows."""
+
+        digest = hashlib.sha256()
+        line_count = 0
+        rows: dict[int, dict[str, Any]] = {}
+        validation_error: ValidationError | None = None
+        with self.working_path.open("rb") as handle:
+            for index, raw in enumerate(handle):
+                digest.update(raw)
+                line_count += 1
+                try:
+                    row = _parse_working_jsonl_row(raw, index)
+                except ValidationError as exc:
+                    if validation_error is None:
+                        validation_error = exc
+                    continue
+                row_image_id = row.get("image_id")
+                if row_image_id not in requested_image_ids:
+                    continue
+                if row_image_id in rows:
+                    if validation_error is None:
+                        validation_error = ValidationError(
+                            f"duplicate image_id: {row_image_id}"
+                        )
+                    continue
+                rows[row_image_id] = row
+
+        if digest.hexdigest() != manifest.get("working_sha256") or line_count != int(
+            manifest.get("working_line_count", -1)
+        ):
+            raise RecoveryError(
+                "working file does not match published hash/line-count attestation"
+            )
+        if validation_error is not None:
+            raise validation_error
+        return rows
 
     def _find_row(self, image_id: int) -> tuple[int, dict[str, Any], bytes]:
         found: tuple[int, dict[str, Any], bytes] | None = None
@@ -3193,6 +3792,35 @@ class WorkingDatasetStore:
                 ) from exc
             try:
                 yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+    @contextmanager
+    def _serialized_queue_admission_lock(self) -> Iterator[None]:
+        """Serialize only the short queue admission/recheck critical sections."""
+
+        self.split_dir.mkdir(parents=True, exist_ok=True)
+        with self.queue_lock_path.open("a+b") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+    @contextmanager
+    def _batch_admission_reader_lock(self) -> Iterator[None]:
+        """Hold reconciled shared queue/file authority without exclusive locks."""
+
+        self.split_dir.mkdir(parents=True, exist_ok=True)
+        with self.queue_lock_path.open("a+b") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_SH)
+            try:
+                with self._shared_lock():
+                    queue_records = self._read_queue_records()
+                    reason = self._batch_reconciliation_reason(queue_records)
+                    if reason is not None:
+                        raise RecoveryError(f"store requires recovery: {reason}")
+                    yield
             finally:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
@@ -3356,8 +3984,13 @@ def _training_metadata(value: Any) -> dict[str, Any] | None:
         return None
     if not isinstance(value, Mapping):
         raise ValidationError("metadata must be a mapping")
+    _validate_ordinary_json(
+        value,
+        path="metadata",
+        error_type=ValidationError,
+    )
     return {
-        str(key): copy.deepcopy(item)
+        key: copy.deepcopy(item)
         for key, item in value.items()
         if key not in _PRESENTATION_METADATA_FIELDS
     }
@@ -3397,6 +4030,18 @@ def _default_registry() -> CategoryRegistry:
 
 def _task_id(split: str, image_id: int) -> str:
     return f"{split}:{image_id}"
+
+
+def _parse_working_jsonl_row(raw: bytes, index: int) -> dict[str, Any]:
+    if not raw.endswith(b"\n"):
+        raise ValidationError("working JSONL must end every row with a newline")
+    try:
+        row = _strict_json_loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        raise ValidationError(f"invalid working JSONL row {index + 1}") from exc
+    if not isinstance(row, dict):
+        raise ValidationError(f"working JSONL row {index + 1} is not an object")
+    return row
 
 
 def _parse_jsonl_line(line: str, source: Path, line_no: int) -> dict[str, Any]:
