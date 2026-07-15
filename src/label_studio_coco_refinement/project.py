@@ -1,21 +1,26 @@
 """Pure contracts and bootstrap planning for COCO Label Studio refinement.
 
-This module deliberately does not import Label Studio or perform project, file, or
-symlink mutations.  It validates the two approved source splits and produces a
-deterministic plan for a separate adapter to apply.
+This module deliberately does not import Label Studio or mutate vendor state.  It
+validates the two approved source splits, atomically publishes immutable task-index
+sidecars below the ignored runtime root, and produces a deterministic plan for a
+separate adapter to apply.
 """
 
 from __future__ import annotations
 
 import hashlib
+import heapq
 import json
 import math
 import os
+import shutil
+import stat
+import tempfile
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
-from typing import Any, Callable, Mapping, Protocol, Sequence
+from typing import Any, BinaryIO, Callable, Iterator, Mapping, Protocol, Sequence
 from urllib.parse import quote, unquote
 
 
@@ -34,6 +39,23 @@ SOURCE_OBJECT_FIELDS = frozenset(
     {"bbox_2d", "desc", "category_id", "category_name", "coco_ann_id"}
 )
 IMMUTABLE_ROW_FIELDS = ("file_name", "image_id", "width", "height", "metadata")
+TASK_INDEX_SCHEMA_VERSION = 2
+TASK_INDEX_DIRECTORY_NAME = "bootstrap-task-index"
+TASK_INDEX_IDENTITY_SORT_CHUNK_SIZE = 2_048
+TASK_INDEX_SORT_FAN_IN = 8
+TASK_INDEX_MAX_SORT_LEVELS = 64
+CANONICAL_BBOX_CONVERTER_SEMANTICS = (
+    '{"contract":"coordexp.norm1000_xyxy_int_to_label_studio_percent_xywh",'
+    '"version":1}'
+)
+# SHA-256 of the canonical JSON semantic contract.  This is intentionally a
+# stable data-contract marker, never a Python function name, repr, or identity.
+CANONICAL_BBOX_CONVERTER_FINGERPRINT = (
+    "def0701da8ff3e6a22ef6dc230424b58ed35ed56c4a91f53529f4e9624dabef9"
+)
+UNFINGERPRINTED_CUSTOM_BBOX_CONVERTER_FINGERPRINT = (
+    "0d9372be053631d6cb31438cfdcc5d1ad58b80b29d9c68a8c26cb5dba90e573d"
+)
 
 
 class ProjectContractError(ValueError):
@@ -112,6 +134,14 @@ class Coco80RegistryProtocol(Protocol):
 BboxToLabelStudio = Callable[[Sequence[int]], tuple[float, float, float, float]]
 
 
+@dataclass(frozen=True)
+class _BboxConverterContract:
+    converter: BboxToLabelStudio
+    fingerprint: str
+    reuse_anchor: bool
+    publish_anchor: bool
+
+
 class RefinementProjectAdapter(Protocol):
     """Read-only seam for a Label Studio-specific live-state attestor.
 
@@ -120,7 +150,9 @@ class RefinementProjectAdapter(Protocol):
     planning remains pure and does not prescribe an HTTP framework.
     """
 
-    def attest_project(self, split: Split) -> "LiveProjectAttestation | None": ...
+    def attest_project(
+        self, desired: "SplitProjectPlan"
+    ) -> "LiveProjectAttestation | None": ...
 
     def attest_bootstrap_manifest(self) -> Mapping[str, Any] | None:
         """Return the parent-owned one-instance manifest, never vendor guesses."""
@@ -142,6 +174,54 @@ def default_bbox_converter() -> BboxToLabelStudio:
     from .geometry import norm1000_bbox_to_label_studio_xywh
 
     return norm1000_bbox_to_label_studio_xywh
+
+
+def _resolve_bbox_converter_contract(
+    bbox_converter: BboxToLabelStudio | None,
+    converter_fingerprint: str | None,
+) -> _BboxConverterContract:
+    canonical = default_bbox_converter()
+    converter = canonical if bbox_converter is None else bbox_converter
+    if not callable(converter):
+        raise ProjectContractError("bbox_converter must be callable")
+    if converter is canonical:
+        if converter_fingerprint is not None:
+            observed = _require_sha256(
+                converter_fingerprint,
+                "converter_fingerprint",
+            )
+            if observed != CANONICAL_BBOX_CONVERTER_FINGERPRINT:
+                raise ProjectContractError(
+                    "default bbox converter fingerprint does not match its "
+                    "canonical semantics"
+                )
+        return _BboxConverterContract(
+            converter=converter,
+            fingerprint=CANONICAL_BBOX_CONVERTER_FINGERPRINT,
+            reuse_anchor=True,
+            publish_anchor=True,
+        )
+    if converter_fingerprint is None:
+        return _BboxConverterContract(
+            converter=converter,
+            fingerprint=UNFINGERPRINTED_CUSTOM_BBOX_CONVERTER_FINGERPRINT,
+            reuse_anchor=False,
+            publish_anchor=False,
+        )
+    observed = _require_sha256(converter_fingerprint, "converter_fingerprint")
+    if observed in {
+        CANONICAL_BBOX_CONVERTER_FINGERPRINT,
+        UNFINGERPRINTED_CUSTOM_BBOX_CONVERTER_FINGERPRINT,
+    }:
+        raise ProjectContractError(
+            "custom bbox converter fingerprint uses a reserved semantics marker"
+        )
+    return _BboxConverterContract(
+        converter=converter,
+        fingerprint=observed,
+        reuse_anchor=False,
+        publish_anchor=True,
+    )
 
 
 @dataclass(frozen=True, order=True)
@@ -498,10 +578,159 @@ def inspect_source(
         repo_root=repo_root,
         split=split,
         registry=registry,
-    )
+    ).inspection
 
 
 SourceRowConsumer = Callable[[int, Mapping[str, Any], TaskIdentity], None]
+
+
+@dataclass(frozen=True)
+class _SourceStreamResult:
+    inspection: SourceInspection
+    sorted_identity_fingerprint: str
+
+
+class _IdentityFingerprintBuilder:
+    """Bounded-memory external sorter for the legacy sorted identity digest."""
+
+    def __init__(self, directory: Path) -> None:
+        self._directory = directory
+        self._chunk: list[str] = []
+        self._levels: dict[int, list[Path]] = {}
+        self._count = 0
+
+    def add(self, key: str) -> None:
+        self._chunk.append(key)
+        self._count += 1
+        if len(self._chunk) >= TASK_INDEX_IDENTITY_SORT_CHUNK_SIZE:
+            self._flush_run()
+
+    def finish(self) -> tuple[int, str]:
+        self._flush_run()
+        runs = [path for paths in self._levels.values() for path in paths]
+        self._levels.clear()
+        while len(runs) > TASK_INDEX_SORT_FAN_IN:
+            compacted: list[Path] = []
+            for offset in range(0, len(runs), TASK_INDEX_SORT_FAN_IN):
+                group = runs[offset : offset + TASK_INDEX_SORT_FAN_IN]
+                if len(group) == 1:
+                    compacted.extend(group)
+                    continue
+                merged = self._merge_runs(group)
+                self._unlink_runs(group)
+                compacted.append(merged)
+            runs = compacted
+        digest = hashlib.sha256()
+        digest.update(b"[")
+        previous: str | None = None
+        first = True
+        handles: list[BinaryIO] = []
+        try:
+            handles = [path.open("rb") for path in runs]
+            streams = (
+                (encoded.rstrip(b"\n").decode("utf-8") for encoded in handle)
+                for handle in handles
+            )
+            for key in heapq.merge(*streams):
+                if key == previous:
+                    raise ProjectContractError(f"duplicate task identity {key}")
+                previous = key
+                if not first:
+                    digest.update(b",")
+                digest.update(_canonical_json_bytes(key))
+                first = False
+        finally:
+            for handle in handles:
+                handle.close()
+            self._unlink_runs(runs)
+        digest.update(b"]")
+        return self._count, digest.hexdigest()
+
+    def _flush_run(self) -> None:
+        if not self._chunk:
+            return
+        self._chunk.sort()
+        fd, temporary = tempfile.mkstemp(
+            dir=self._directory,
+            prefix="identity-run-",
+            suffix=".txt",
+        )
+        path = Path(temporary)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                for key in self._chunk:
+                    handle.write(key.encode("utf-8") + b"\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+        except BaseException:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+            raise
+        self._chunk.clear()
+        self._add_run(path, level=0)
+
+    def _add_run(self, path: Path, *, level: int) -> None:
+        if level >= TASK_INDEX_MAX_SORT_LEVELS:
+            raise ProjectContractError("task identity external sort exceeds its bound")
+        bucket = self._levels.setdefault(level, [])
+        bucket.append(path)
+        if len(bucket) < TASK_INDEX_SORT_FAN_IN:
+            return
+        inputs = tuple(bucket)
+        del self._levels[level]
+        merged = self._merge_runs(inputs)
+        self._unlink_runs(inputs)
+        self._add_run(merged, level=level + 1)
+
+    def _merge_runs(self, paths: Sequence[Path]) -> Path:
+        if not paths or len(paths) > TASK_INDEX_SORT_FAN_IN:
+            raise ProjectContractError("invalid task identity merge fan-in")
+        fd, temporary = tempfile.mkstemp(
+            dir=self._directory,
+            prefix="identity-merge-",
+            suffix=".txt",
+        )
+        output = Path(temporary)
+        handles: list[BinaryIO] = []
+        try:
+            handles = [path.open("rb") for path in paths]
+            streams = (
+                (encoded.rstrip(b"\n").decode("utf-8") for encoded in handle)
+                for handle in handles
+            )
+            previous: str | None = None
+            with os.fdopen(fd, "wb") as destination:
+                for key in heapq.merge(*streams):
+                    if key == previous:
+                        raise ProjectContractError(f"duplicate task identity {key}")
+                    previous = key
+                    destination.write(key.encode("utf-8") + b"\n")
+                destination.flush()
+                os.fsync(destination.fileno())
+        except BaseException:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            try:
+                output.unlink()
+            except FileNotFoundError:
+                pass
+            raise
+        finally:
+            for handle in handles:
+                handle.close()
+        return output
+
+    @staticmethod
+    def _unlink_runs(paths: Sequence[Path]) -> None:
+        for path in paths:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
 
 
 def _inspect_source_stream(
@@ -511,7 +740,7 @@ def _inspect_source_stream(
     split: Split | str,
     registry: Coco80RegistryProtocol | None,
     consume_row: SourceRowConsumer | None = None,
-) -> SourceInspection:
+) -> _SourceStreamResult:
     """Consume, hash, and validate the exact bytes used to derive a plan."""
 
     contract, observed_path = _assert_exact_source_location(
@@ -520,57 +749,80 @@ def _inspect_source_stream(
         split=split,
     )
     digest = hashlib.sha256()
-    identities: list[str] = []
+    source_identity_digest = hashlib.sha256()
+    source_identity_digest.update(b"[")
     box_count = 0
-    seen: set[TaskIdentity] = set()
-    with observed_path.open("rb") as handle:
-        for line_number, encoded_line in enumerate(handle, start=1):
-            digest.update(encoded_line)
-            try:
-                row = json.loads(encoded_line.decode("utf-8"))
-            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                raise ProjectContractError(
-                    f"invalid JSON at source line {line_number}"
-                ) from exc
-            if not isinstance(row, Mapping):
-                raise ProjectContractError(
-                    f"source line {line_number} is not an object"
+    row_count = 0
+    sort_parent = (
+        RuntimeLayout.for_repo(repo_root).for_split(contract.split).root
+        / TASK_INDEX_DIRECTORY_NAME
+    )
+    sort_parent.mkdir(parents=True, exist_ok=True)
+    temporary_sort_root = Path(
+        tempfile.mkdtemp(dir=sort_parent, prefix=".identity-sort-")
+    )
+    identity_builder = _IdentityFingerprintBuilder(temporary_sort_root)
+    try:
+        with observed_path.open("rb") as handle:
+            for line_number, encoded_line in enumerate(handle, start=1):
+                digest.update(encoded_line)
+                try:
+                    row = json.loads(encoded_line.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise ProjectContractError(
+                        f"invalid JSON at source line {line_number}"
+                    ) from exc
+                if not isinstance(row, Mapping):
+                    raise ProjectContractError(
+                        f"source line {line_number} is not an object"
+                    )
+                identity = validate_source_row(
+                    row, split=contract.split, registry=registry
                 )
-            identity = validate_source_row(row, split=contract.split, registry=registry)
-            if identity in seen:
-                raise ProjectContractError(f"duplicate task identity {identity.key}")
-            _assert_source_image_exists(
-                row,
-                repo_root=repo_root,
-                split=contract.split,
-                line_number=line_number,
-            )
-            seen.add(identity)
-            identities.append(identity.key)
-            box_count += len(row["objects"])
-            if consume_row is not None:
-                consume_row(line_number, row, identity)
+                _assert_source_image_exists(
+                    row,
+                    repo_root=repo_root,
+                    split=contract.split,
+                    line_number=line_number,
+                )
+                identity_builder.add(identity.key)
+                if row_count:
+                    source_identity_digest.update(b",")
+                source_identity_digest.update(_canonical_json_bytes(identity.key))
+                row_count += 1
+                box_count += len(row["objects"])
+                if consume_row is not None:
+                    consume_row(line_number, row, identity)
+        identity_count, identity_fingerprint = identity_builder.finish()
+    finally:
+        shutil.rmtree(temporary_sort_root, ignore_errors=True)
     observed_hash = digest.hexdigest()
+    source_identity_digest.update(b"]")
     if observed_hash != contract.sha256:
         raise ProjectContractError(
             f"source hash drift for {contract.split.value}: expected {contract.sha256}, "
             f"got {observed_hash}"
         )
-    if len(identities) != contract.row_count:
+    if row_count != contract.row_count:
         raise ProjectContractError(
-            f"source row-count drift: expected {contract.row_count}, got {len(identities)}"
+            f"source row-count drift: expected {contract.row_count}, got {row_count}"
         )
+    if identity_count != row_count:
+        raise ProjectContractError("source identity count drift")
     if box_count != contract.box_count:
         raise ProjectContractError(
             f"source box-count drift: expected {contract.box_count}, got {box_count}"
         )
-    return SourceInspection(
-        contract=contract,
-        source_path=str(_lexical_absolute(path)),
-        sha256=observed_hash,
-        row_count=len(identities),
-        box_count=box_count,
-        task_identity_fingerprint=fingerprint_json(identities),
+    return _SourceStreamResult(
+        inspection=SourceInspection(
+            contract=contract,
+            source_path=str(_lexical_absolute(path)),
+            sha256=observed_hash,
+            row_count=row_count,
+            box_count=box_count,
+            task_identity_fingerprint=source_identity_digest.hexdigest(),
+        ),
+        sorted_identity_fingerprint=identity_fingerprint,
     )
 
 
@@ -624,29 +876,125 @@ class TaskManifestEntry:
             "authoritative_annotation_fingerprint": self.authoritative_annotation_fingerprint,
         }
 
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, Any]) -> "TaskManifestEntry":
+        required = {
+            "identity",
+            "source_line",
+            "source_image_locator",
+            "working_image_locator",
+            "label_studio_image_locator",
+            "task_data_fingerprint",
+            "authoritative_annotation_fingerprint",
+        }
+        if not isinstance(payload, Mapping) or set(payload) != required:
+            raise ProjectContractError("task-index entry shape drift")
+        identity_payload = payload["identity"]
+        if not isinstance(identity_payload, Mapping) or set(identity_payload) != {
+            "split",
+            "image_id",
+            "key",
+        }:
+            raise ProjectContractError("task-index identity shape drift")
+        identity = TaskIdentity(
+            _split(identity_payload["split"]),
+            _require_int(identity_payload["image_id"], "image_id", minimum=0),
+        )
+        if identity_payload["key"] != identity.key:
+            raise ProjectContractError("task-index identity key drift")
+        return cls(
+            identity=identity,
+            source_line=_require_int(
+                payload["source_line"], "source_line", minimum=1
+            ),
+            source_image_locator=_require_string(
+                payload["source_image_locator"], "source_image_locator"
+            ),
+            working_image_locator=_require_string(
+                payload["working_image_locator"], "working_image_locator"
+            ),
+            label_studio_image_locator=_require_string(
+                payload["label_studio_image_locator"],
+                "label_studio_image_locator",
+            ),
+            task_data_fingerprint=_require_sha256(
+                payload["task_data_fingerprint"], "task_data_fingerprint"
+            ),
+            authoritative_annotation_fingerprint=_require_sha256(
+                payload["authoritative_annotation_fingerprint"],
+                "authoritative_annotation_fingerprint",
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class TaskIndexReceipt:
+    split: Split
+    path: str
+    sha256: str
+    task_count: int
+    source_sha256: str
+    source_row_count: int
+    source_box_count: int
+    task_manifest_fingerprint: str
+    identity_fingerprint: str
+    converter_fingerprint: str
+    build_key: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": TASK_INDEX_SCHEMA_VERSION,
+            "split": self.split.value,
+            "path": self.path,
+            "sha256": self.sha256,
+            "task_count": self.task_count,
+            "source_sha256": self.source_sha256,
+            "source_row_count": self.source_row_count,
+            "source_box_count": self.source_box_count,
+            "task_manifest_fingerprint": self.task_manifest_fingerprint,
+            "identity_fingerprint": self.identity_fingerprint,
+            "converter_fingerprint": self.converter_fingerprint,
+            "build_key": self.build_key,
+        }
+
+    def validate(self) -> None:
+        _validate_task_index_receipt(self)
+
+    def validate_for_repo(self, repo_root: Path) -> str:
+        """Validate the receipt and all referenced images, returning source-order ID hash."""
+
+        return _validate_task_index_receipt(self, repo_root=repo_root)
+
+    def iter_records(self) -> Iterator[tuple[TaskManifestEntry, dict[str, Any]]]:
+        """Validate the entire immutable index, then stream fresh decoded records."""
+
+        self.validate()
+        yield from _iter_task_index_records(self)
+
 
 @dataclass(frozen=True)
 class TaskManifest:
     split: Split
-    entries: tuple[TaskManifestEntry, ...]
+    task_count: int
+    fingerprint: str
+    identity_fingerprint: str
+    task_index: TaskIndexReceipt
 
     def body(self) -> dict[str, Any]:
         return {
             "split": self.split.value,
-            "task_count": len(self.entries),
-            "entries": [entry.to_dict() for entry in self.entries],
+            "task_count": self.task_count,
+            "fingerprint": self.fingerprint,
+            "identity_fingerprint": self.identity_fingerprint,
+            "task_index": self.task_index.to_dict(),
         }
 
-    @property
-    def fingerprint(self) -> str:
-        return fingerprint_json(self.body())
-
-    @property
-    def identity_fingerprint(self) -> str:
-        return fingerprint_json(sorted(entry.identity.key for entry in self.entries))
-
     def to_dict(self) -> dict[str, Any]:
-        return {**self.body(), "fingerprint": self.fingerprint}
+        return self.body()
+
+    def iter_entries(self) -> Iterator[TaskManifestEntry]:
+        for entry, _payload in self.task_index.iter_records():
+            yield entry
 
 
 @dataclass(frozen=True)
@@ -756,7 +1104,21 @@ class SplitProjectPlan:
     storage_manifest: StorageManifest
     controls: ProjectControls
     label_config: str
-    task_imports: tuple[FrozenTaskImport, ...]
+
+    def iter_task_import_chunks(
+        self, chunk_size: int
+    ) -> Iterator[tuple[dict[str, Any], ...]]:
+        """Stream detached canonical payloads from the fully validated sidecar."""
+
+        _require_chunk_size(chunk_size)
+        chunk: list[dict[str, Any]] = []
+        for _entry, payload in self.task_manifest.task_index.iter_records():
+            chunk.append(payload)
+            if len(chunk) == chunk_size:
+                yield tuple(chunk)
+                chunk = []
+        if chunk:
+            yield tuple(chunk)
 
 
 class BootstrapAction(str, Enum):
@@ -769,14 +1131,25 @@ class BootstrapAction(str, Enum):
 class PlannedProjectBootstrap:
     action: BootstrapAction
     project: SplitProjectPlan
-    missing_task_imports: tuple[FrozenTaskImport, ...]
-    reused_task_identities: tuple[TaskIdentity, ...]
+    observed_task_count: int
+    missing_task_count: int
     live_attestation_fingerprint: str | None = None
 
-    def task_imports_for_adapter_send(self) -> tuple[dict[str, Any], ...]:
-        """Return detached ordinary JSON only after revalidating the action payloads."""
+    @property
+    def task_import_count(self) -> int:
+        if self.action is BootstrapAction.REUSE:
+            return 0
+        return self.project.task_manifest.task_count
 
-        return _task_imports_for_adapter_send(self)
+    def iter_task_import_chunks(
+        self, chunk_size: int
+    ) -> Iterator[tuple[dict[str, Any], ...]]:
+        """CREATE/RECONCILE stream all desired rows; chunk import is idempotent."""
+
+        _validate_planned_action(self)
+        if self.action is BootstrapAction.REUSE:
+            return
+        yield from self.project.iter_task_import_chunks(chunk_size)
 
 
 @dataclass(frozen=True)
@@ -822,6 +1195,31 @@ class InstanceBootstrapManifest:
 LiveIdentifier = int | str
 
 
+class CanonicalJsonArrayFingerprint:
+    """Incrementally hash a canonical JSON array without retaining its members."""
+
+    def __init__(self) -> None:
+        self._digest = hashlib.sha256()
+        self._digest.update(b"[")
+        self._count = 0
+
+    @property
+    def count(self) -> int:
+        return self._count
+
+    def add(self, payload: Any) -> None:
+        if self._count:
+            self._digest.update(b",")
+        self._digest.update(_canonical_json_bytes(payload))
+        self._count += 1
+
+    @property
+    def fingerprint(self) -> str:
+        digest = self._digest.copy()
+        digest.update(b"]")
+        return digest.hexdigest()
+
+
 @dataclass(frozen=True)
 class LiveTaskAttestation:
     """Current Label Studio task/annotation counts and stable identities."""
@@ -861,6 +1259,35 @@ class LiveTaskAttestation:
 
 
 @dataclass(frozen=True)
+class LiveTaskSetAttestation:
+    """Bounded aggregate proving the live rows are an exact desired subset."""
+
+    expected_task_manifest_fingerprint: str
+    observed_task_count: int
+    missing_task_count: int
+    content_fingerprint: str
+
+    def __post_init__(self) -> None:
+        _require_sha256(
+            self.expected_task_manifest_fingerprint,
+            "expected_task_manifest_fingerprint",
+        )
+        _require_sha256(self.content_fingerprint, "content_fingerprint")
+        _require_int(self.observed_task_count, "observed_task_count", minimum=0)
+        _require_int(self.missing_task_count, "missing_task_count", minimum=0)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "expected_task_manifest_fingerprint": (
+                self.expected_task_manifest_fingerprint
+            ),
+            "observed_task_count": self.observed_task_count,
+            "missing_task_count": self.missing_task_count,
+            "content_fingerprint": self.content_fingerprint,
+        }
+
+
+@dataclass(frozen=True)
 class LiveProjectAttestation:
     """Read-only receipt derived from current Label Studio and managed storage."""
 
@@ -874,7 +1301,7 @@ class LiveProjectAttestation:
     storage_manifest: StorageManifest
     managed_link_is_symlink: bool
     managed_link_resolved_target: str
-    tasks: tuple[LiveTaskAttestation, ...]
+    task_set: LiveTaskSetAttestation
 
     def body(self) -> dict[str, Any]:
         return {
@@ -890,7 +1317,7 @@ class LiveProjectAttestation:
             "storage_manifest": self.storage_manifest.to_dict(),
             "managed_link_is_symlink": self.managed_link_is_symlink,
             "managed_link_resolved_target": self.managed_link_resolved_target,
-            "tasks": [task.to_dict() for task in self.tasks],
+            "task_set": self.task_set.to_dict(),
         }
 
     @property
@@ -1105,33 +1532,415 @@ def validate_authoritative_task_payload(
             raise ProjectContractError("last_committed_bbox must have positive area")
 
 
-def build_split_project_plan(
+class _TaskIndexWriter:
+    """Write one deterministic payload-bearing sidecar in bounded memory."""
+
+    def __init__(
+        self,
+        path: Path,
+        *,
+        split: Split,
+        contract: SourceContract,
+        converter_fingerprint: str,
+        build_key: str,
+    ) -> None:
+        self.path = path
+        self.split = split
+        self.contract = contract
+        self.converter_fingerprint = converter_fingerprint
+        self.build_key = build_key
+        self._handle = path.open("xb")
+        self._file_digest = hashlib.sha256()
+        self._manifest_digest = hashlib.sha256()
+        self._manifest_digest.update(b'{"entries":[')
+        self._count = 0
+        header_body = {
+            "kind": "header",
+            "schema_version": TASK_INDEX_SCHEMA_VERSION,
+            "split": split.value,
+            "source_sha256": contract.sha256,
+            "source_row_count": contract.row_count,
+            "source_box_count": contract.box_count,
+            "converter_fingerprint": converter_fingerprint,
+            "build_key": build_key,
+        }
+        self._previous_record_hash = fingerprint_json(header_body)
+        self._write_line({**header_body, "record_hash": self._previous_record_hash})
+
+    def add(self, entry: TaskManifestEntry, payload: Mapping[str, Any]) -> None:
+        if entry.source_line != self._count + 1:
+            raise ProjectContractError("task-index source sequence drift")
+        detached = _decode_task_import(_canonical_json_bytes(payload))
+        _validate_task_payload_against_entry(
+            detached,
+            entry=entry,
+            split=self.split,
+        )
+        entry_payload = entry.to_dict()
+        if self._count:
+            self._manifest_digest.update(b",")
+        self._manifest_digest.update(_canonical_json_bytes(entry_payload))
+        body = {
+            "kind": "task",
+            "sequence": entry.source_line,
+            "previous_record_hash": self._previous_record_hash,
+            "entry": entry_payload,
+            "payload": detached,
+        }
+        record_hash = fingerprint_json(body)
+        self._write_line({**body, "record_hash": record_hash})
+        self._previous_record_hash = record_hash
+        self._count += 1
+
+    def finish(
+        self,
+        source_inspection: SourceInspection,
+        *,
+        sorted_identity_fingerprint: str,
+    ) -> tuple[str, str]:
+        if source_inspection.row_count != self._count:
+            raise ProjectContractError("task-index count does not match source inspection")
+        self._manifest_digest.update(b'],"split":')
+        self._manifest_digest.update(_canonical_json_bytes(self.split.value))
+        self._manifest_digest.update(b',"task_count":')
+        self._manifest_digest.update(str(self._count).encode("ascii"))
+        self._manifest_digest.update(b"}")
+        task_manifest_fingerprint = self._manifest_digest.hexdigest()
+        trailer_body = {
+            "kind": "trailer",
+            "schema_version": TASK_INDEX_SCHEMA_VERSION,
+            "split": self.split.value,
+            "source_sha256": source_inspection.sha256,
+            "source_row_count": source_inspection.row_count,
+            "source_box_count": source_inspection.box_count,
+            "task_count": self._count,
+            "task_manifest_fingerprint": task_manifest_fingerprint,
+            "identity_fingerprint": sorted_identity_fingerprint,
+            "converter_fingerprint": self.converter_fingerprint,
+            "build_key": self.build_key,
+            "previous_record_hash": self._previous_record_hash,
+        }
+        trailer_hash = fingerprint_json(trailer_body)
+        self._write_line({**trailer_body, "record_hash": trailer_hash})
+        self._handle.flush()
+        os.fsync(self._handle.fileno())
+        self._handle.close()
+        os.chmod(self.path, 0o444)
+        return task_manifest_fingerprint, self._file_digest.hexdigest()
+
+    def abort(self) -> None:
+        if not self._handle.closed:
+            self._handle.close()
+
+    def _write_line(self, payload: Mapping[str, Any]) -> None:
+        encoded = _canonical_json_bytes(payload) + b"\n"
+        self._handle.write(encoded)
+        self._file_digest.update(encoded)
+
+
+def _task_index_build_key(
+    *,
+    contract: SourceContract,
+    registry_fingerprint: str,
+    label_config_fingerprint: str,
+    converter_fingerprint: str,
+) -> str:
+    return fingerprint_json(
+        {
+            "schema_version": TASK_INDEX_SCHEMA_VERSION,
+            "adapter_version": ADAPTER_VERSION,
+            "split": contract.split.value,
+            "source_relative_path": contract.relative_path.as_posix(),
+            "source_sha256": contract.sha256,
+            "source_row_count": contract.row_count,
+            "source_box_count": contract.box_count,
+            "registry_fingerprint": registry_fingerprint,
+            "label_config_fingerprint": label_config_fingerprint,
+            "converter_fingerprint": converter_fingerprint,
+        }
+    )
+
+
+def _task_index_sidecar_name(
+    *, converter_fingerprint: str, content_sha256: str
+) -> str:
+    return (
+        f"task-index-v{TASK_INDEX_SCHEMA_VERSION}-{converter_fingerprint}-"
+        f"{content_sha256}.jsonl"
+    )
+
+
+def _task_index_anchor_path(
+    directory: Path, *, converter_fingerprint: str, build_key: str
+) -> Path:
+    return directory / (
+        f"build-v{TASK_INDEX_SCHEMA_VERSION}-{converter_fingerprint}-{build_key}.json"
+    )
+
+
+def _publish_task_index(
+    temporary_path: Path,
+    *,
+    split: Split,
+    content_sha256: str,
+    task_count: int,
+    source_inspection: SourceInspection,
+    task_manifest_fingerprint: str,
+    identity_fingerprint: str,
+    converter_fingerprint: str,
+    build_key: str,
+    publish_anchor: bool,
+) -> TaskIndexReceipt:
+    directory = temporary_path.parent.parent
+    destination = directory / _task_index_sidecar_name(
+        converter_fingerprint=converter_fingerprint,
+        content_sha256=content_sha256,
+    )
+    try:
+        os.link(temporary_path, destination)
+        _fsync_directory(directory)
+    except FileExistsError:
+        pass
+    receipt = TaskIndexReceipt(
+        split=split,
+        path=str(destination),
+        sha256=content_sha256,
+        task_count=task_count,
+        source_sha256=source_inspection.sha256,
+        source_row_count=source_inspection.row_count,
+        source_box_count=source_inspection.box_count,
+        task_manifest_fingerprint=task_manifest_fingerprint,
+        identity_fingerprint=identity_fingerprint,
+        converter_fingerprint=converter_fingerprint,
+        build_key=build_key,
+    )
+    receipt.validate()
+    if not publish_anchor:
+        return receipt
+    anchor_payload = {
+        "schema_version": TASK_INDEX_SCHEMA_VERSION,
+        "build_key": build_key,
+        "sidecar_name": destination.name,
+        "sidecar_sha256": content_sha256,
+        "split": split.value,
+        "task_count": task_count,
+        "task_manifest_fingerprint": task_manifest_fingerprint,
+        "identity_fingerprint": identity_fingerprint,
+        "converter_fingerprint": converter_fingerprint,
+    }
+    _publish_small_immutable_file(
+        _task_index_anchor_path(
+            directory,
+            converter_fingerprint=converter_fingerprint,
+            build_key=build_key,
+        ),
+        _canonical_json_bytes(anchor_payload) + b"\n",
+    )
+    return receipt
+
+
+def _publish_small_immutable_file(path: Path, content: bytes) -> None:
+    fd, temporary_name = tempfile.mkstemp(
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary, 0o444)
+        try:
+            os.link(temporary, path)
+        except FileExistsError:
+            metadata = path.lstat()
+            if (
+                path.is_symlink()
+                or not stat.S_ISREG(metadata.st_mode)
+                or metadata.st_mode & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH)
+                or path.read_bytes() != content
+            ):
+                raise ProjectContractError(
+                    f"task-index build receipt conflict for {path.name}"
+                ) from None
+        _fsync_directory(path.parent)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _task_manifest_from_sidecar(
+    receipt: TaskIndexReceipt,
+) -> TaskManifest:
+    return TaskManifest(
+        split=receipt.split,
+        task_count=receipt.task_count,
+        fingerprint=receipt.task_manifest_fingerprint,
+        identity_fingerprint=receipt.identity_fingerprint,
+        task_index=receipt,
+    )
+
+
+def _load_published_task_index(
+    *,
+    directory: Path,
+    contract: SourceContract,
+    converter_fingerprint: str,
+    build_key: str,
+) -> TaskIndexReceipt | None:
+    anchor = _task_index_anchor_path(
+        directory,
+        converter_fingerprint=converter_fingerprint,
+        build_key=build_key,
+    )
+    if not os.path.lexists(anchor):
+        return None
+    try:
+        metadata = anchor.lstat()
+    except OSError as exc:
+        raise ProjectContractError("task-index build receipt is unavailable") from exc
+    if not stat.S_ISREG(metadata.st_mode) or anchor.is_symlink():
+        raise ProjectContractError("task-index build receipt must be a regular file")
+    if metadata.st_mode & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH):
+        raise ProjectContractError("task-index build receipt must be immutable/read-only")
+    raw = anchor.read_bytes()
+    if not raw.endswith(b"\n") or raw.count(b"\n") != 1:
+        raise ProjectContractError("task-index build receipt has trailing data")
+    try:
+        payload = json.loads(raw.decode("utf-8"), parse_constant=_reject_json_constant)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        raise ProjectContractError("task-index build receipt is invalid JSON") from exc
+    if not isinstance(payload, dict) or raw != _canonical_json_bytes(payload) + b"\n":
+        raise ProjectContractError("task-index build receipt is not canonical JSON")
+    fields = {
+        "schema_version",
+        "build_key",
+        "sidecar_name",
+        "sidecar_sha256",
+        "split",
+        "task_count",
+        "task_manifest_fingerprint",
+        "identity_fingerprint",
+        "converter_fingerprint",
+    }
+    if set(payload) != fields:
+        raise ProjectContractError("task-index build receipt shape drift")
+    _require_int(
+        payload["schema_version"],
+        "task_index.build_receipt.schema_version",
+        minimum=TASK_INDEX_SCHEMA_VERSION,
+        maximum=TASK_INDEX_SCHEMA_VERSION,
+    )
+    _require_int(
+        payload["task_count"],
+        "task_index.build_receipt.task_count",
+        minimum=1,
+    )
+    for field in (
+        "build_key",
+        "sidecar_sha256",
+        "task_manifest_fingerprint",
+        "identity_fingerprint",
+        "converter_fingerprint",
+    ):
+        _require_sha256(payload[field], f"task_index.build_receipt.{field}")
+    sidecar_name = _require_string(
+        payload["sidecar_name"], "task_index.build_receipt.sidecar_name"
+    )
+    expected_sidecar_name = _task_index_sidecar_name(
+        converter_fingerprint=converter_fingerprint,
+        content_sha256=payload["sidecar_sha256"],
+    )
+    if (
+        payload["build_key"] != build_key
+        or payload["converter_fingerprint"] != converter_fingerprint
+        or payload["split"] != contract.split.value
+        or payload["task_count"] != contract.row_count
+        or sidecar_name != expected_sidecar_name
+        or Path(sidecar_name).name != sidecar_name
+    ):
+        raise ProjectContractError("task-index build receipt contract drift")
+    return TaskIndexReceipt(
+        split=contract.split,
+        path=str(directory / sidecar_name),
+        sha256=payload["sidecar_sha256"],
+        task_count=payload["task_count"],
+        source_sha256=contract.sha256,
+        source_row_count=contract.row_count,
+        source_box_count=contract.box_count,
+        task_manifest_fingerprint=payload["task_manifest_fingerprint"],
+        identity_fingerprint=payload["identity_fingerprint"],
+        converter_fingerprint=payload["converter_fingerprint"],
+        build_key=build_key,
+    )
+
+
+def _reuse_published_task_index(
+    *,
+    source_path: Path,
+    observed_source: Path,
+    repo_root: Path,
+    contract: SourceContract,
+    directory: Path,
+    converter_fingerprint: str,
+    build_key: str,
+) -> tuple[SourceInspection, TaskIndexReceipt] | None:
+    receipt = _load_published_task_index(
+        directory=directory,
+        contract=contract,
+        converter_fingerprint=converter_fingerprint,
+        build_key=build_key,
+    )
+    if receipt is None:
+        return None
+    observed_hash = sha256_file(observed_source)
+    if observed_hash != contract.sha256:
+        raise ProjectContractError(
+            f"source hash drift for {contract.split.value}: expected {contract.sha256}, "
+            f"got {observed_hash}"
+        )
+    source_identity_fingerprint = receipt.validate_for_repo(repo_root)
+    return (
+        SourceInspection(
+            contract=contract,
+            source_path=str(_lexical_absolute(source_path)),
+            sha256=observed_hash,
+            row_count=contract.row_count,
+            box_count=contract.box_count,
+            task_identity_fingerprint=source_identity_fingerprint,
+        ),
+        receipt,
+    )
+
+
+def _build_task_index_from_source(
     source_path: Path,
     *,
     repo_root: Path,
-    split: Split | str,
-    vendor_revision: str,
-    label_config: str,
-    label_config_fingerprint: str,
-    registry: Coco80RegistryProtocol | None = None,
-    bbox_converter: BboxToLabelStudio | None = None,
-) -> SplitProjectPlan:
-    """Build a plan from the exact pinned source bytes consumed in this call."""
-
-    split_value = _split(split)
-    registry = registry or default_registry()
-    bbox_converter = bbox_converter or default_bbox_converter()
-    from .label_config import validate_label_config
-
-    validate_label_config(label_config, expected_names=registry.names)
-    if label_config_fingerprint != fingerprint_json({"label_config_xml": label_config}):
-        raise ProjectContractError(
-            "label_config_fingerprint does not match label_config"
-        )
-    layout = RuntimeLayout.for_repo(repo_root)
-    project_identity = f"coco-refinement:{DATASET_NAME}:{split_value.value}"
-    imports: list[FrozenTaskImport] = []
-    entries: list[TaskManifestEntry] = []
+    split: Split,
+    contract: SourceContract,
+    registry: Coco80RegistryProtocol,
+    bbox_converter: BboxToLabelStudio,
+    converter_fingerprint: str,
+    build_key: str,
+    index_directory: Path,
+    publish_anchor: bool,
+) -> tuple[SourceInspection, TaskIndexReceipt]:
+    temporary_root = Path(
+        tempfile.mkdtemp(dir=index_directory, prefix=".builder-")
+    )
+    temporary_index = temporary_root / "task-index.jsonl"
+    writer = _TaskIndexWriter(
+        temporary_index,
+        split=split,
+        contract=contract,
+        converter_fingerprint=converter_fingerprint,
+        build_key=build_key,
+    )
 
     def consume_row(
         line_number: int,
@@ -1140,13 +1949,12 @@ def build_split_project_plan(
     ) -> None:
         task = make_task_import_payload(
             row,
-            split=split_value,
+            split=split,
             source_line=line_number,
             registry=registry,
             bbox_converter=bbox_converter,
         )
-        imports.append(FrozenTaskImport.freeze(task))
-        entries.append(
+        writer.add(
             TaskManifestEntry(
                 identity=identity,
                 source_line=line_number,
@@ -1157,18 +1965,114 @@ def build_split_project_plan(
                 authoritative_annotation_fingerprint=fingerprint_json(
                     task["annotations"][0]
                 ),
-            )
+            ),
+            task,
         )
 
-    source_inspection = _inspect_source_stream(
+    try:
+        source_result = _inspect_source_stream(
+            source_path,
+            repo_root=repo_root,
+            split=split,
+            registry=registry,
+            consume_row=consume_row,
+        )
+        source_inspection = source_result.inspection
+        task_manifest_fingerprint, content_sha256 = writer.finish(
+            source_inspection,
+            sorted_identity_fingerprint=source_result.sorted_identity_fingerprint,
+        )
+        task_index = _publish_task_index(
+            temporary_index,
+            split=split,
+            content_sha256=content_sha256,
+            task_count=source_inspection.row_count,
+            source_inspection=source_inspection,
+            task_manifest_fingerprint=task_manifest_fingerprint,
+            identity_fingerprint=source_result.sorted_identity_fingerprint,
+            converter_fingerprint=converter_fingerprint,
+            build_key=build_key,
+            publish_anchor=publish_anchor,
+        )
+        return source_inspection, task_index
+    except BaseException:
+        writer.abort()
+        raise
+    finally:
+        shutil.rmtree(temporary_root, ignore_errors=True)
+
+
+def build_split_project_plan(
+    source_path: Path,
+    *,
+    repo_root: Path,
+    split: Split | str,
+    vendor_revision: str,
+    label_config: str,
+    label_config_fingerprint: str,
+    registry: Coco80RegistryProtocol | None = None,
+    bbox_converter: BboxToLabelStudio | None = None,
+    converter_fingerprint: str | None = None,
+) -> SplitProjectPlan:
+    """Build from exact pinned bytes or a fully re-attested immutable receipt."""
+
+    split_value = _split(split)
+    registry = registry or default_registry()
+    converter_contract = _resolve_bbox_converter_contract(
+        bbox_converter,
+        converter_fingerprint,
+    )
+    from .label_config import validate_label_config
+
+    validate_label_config(label_config, expected_names=registry.names)
+    if label_config_fingerprint != fingerprint_json({"label_config_xml": label_config}):
+        raise ProjectContractError(
+            "label_config_fingerprint does not match label_config"
+        )
+    layout = RuntimeLayout.for_repo(repo_root)
+    project_identity = f"coco-refinement:{DATASET_NAME}:{split_value.value}"
+    contract, observed_source = _assert_exact_source_location(
         source_path,
         repo_root=repo_root,
         split=split_value,
-        registry=registry,
-        consume_row=consume_row,
     )
-    contract = source_inspection.contract
-    task_manifest = TaskManifest(split_value, tuple(entries))
+    index_directory = (
+        layout.for_split(split_value).root / TASK_INDEX_DIRECTORY_NAME
+    )
+    index_directory.mkdir(parents=True, exist_ok=True)
+    build_key = _task_index_build_key(
+        contract=contract,
+        registry_fingerprint=registry.fingerprint,
+        label_config_fingerprint=label_config_fingerprint,
+        converter_fingerprint=converter_contract.fingerprint,
+    )
+    existing = None
+    if converter_contract.reuse_anchor:
+        existing = _reuse_published_task_index(
+            source_path=source_path,
+            observed_source=observed_source,
+            repo_root=repo_root,
+            contract=contract,
+            directory=index_directory,
+            converter_fingerprint=converter_contract.fingerprint,
+            build_key=build_key,
+        )
+    if existing is None:
+        source_inspection, task_index = _build_task_index_from_source(
+            source_path,
+            repo_root=repo_root,
+            split=split_value,
+            contract=contract,
+            registry=registry,
+            bbox_converter=converter_contract.converter,
+            converter_fingerprint=converter_contract.fingerprint,
+            build_key=build_key,
+            index_directory=index_directory,
+            publish_anchor=converter_contract.publish_anchor,
+        )
+    else:
+        source_inspection, task_index = existing
+    task_manifest = _task_manifest_from_sidecar(task_index)
     split_layout = layout.for_split(split_value)
     storage_manifest = StorageManifest(
         split=split_value,
@@ -1207,8 +2111,329 @@ def build_split_project_plan(
         storage_manifest=storage_manifest,
         controls=controls,
         label_config=label_config,
-        task_imports=tuple(imports),
     )
+
+
+def _validate_task_index_receipt(
+    receipt: TaskIndexReceipt,
+    *,
+    repo_root: Path | None = None,
+) -> str:
+    if not isinstance(receipt, TaskIndexReceipt):
+        raise ProjectContractError("task index receipt has the wrong type")
+    _require_sha256(receipt.sha256, "task_index.sha256")
+    _require_sha256(
+        receipt.task_manifest_fingerprint,
+        "task_index.task_manifest_fingerprint",
+    )
+    _require_sha256(
+        receipt.identity_fingerprint,
+        "task_index.identity_fingerprint",
+    )
+    _require_sha256(receipt.source_sha256, "task_index.source_sha256")
+    _require_sha256(
+        receipt.converter_fingerprint,
+        "task_index.converter_fingerprint",
+    )
+    _require_sha256(receipt.build_key, "task_index.build_key")
+    _require_int(receipt.task_count, "task_index.task_count", minimum=1)
+    _require_int(
+        receipt.source_row_count,
+        "task_index.source_row_count",
+        minimum=1,
+    )
+    _require_int(
+        receipt.source_box_count,
+        "task_index.source_box_count",
+        minimum=1,
+    )
+    path = Path(receipt.path)
+    expected_name = _task_index_sidecar_name(
+        converter_fingerprint=receipt.converter_fingerprint,
+        content_sha256=receipt.sha256,
+    )
+    if path.name != expected_name:
+        raise ProjectContractError("task index path is not content addressed")
+    try:
+        metadata = path.lstat()
+    except OSError as exc:
+        raise ProjectContractError(f"task index is unavailable: {path}") from exc
+    if not stat.S_ISREG(metadata.st_mode) or path.is_symlink():
+        raise ProjectContractError("task index must be a regular non-symlink file")
+    if metadata.st_mode & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH):
+        raise ProjectContractError("task index must be immutable/read-only")
+    identity_digest = hashlib.sha256()
+    identity_digest.update(b"[")
+    count = 0
+    for entry, _payload in _iter_task_index_records(receipt):
+        if count:
+            identity_digest.update(b",")
+        identity_digest.update(_canonical_json_bytes(entry.identity.key))
+        count += 1
+        if repo_root is not None:
+            _assert_task_index_image_exists(entry, repo_root=repo_root)
+    identity_digest.update(b"]")
+    return identity_digest.hexdigest()
+
+
+def _iter_task_index_records(
+    receipt: TaskIndexReceipt,
+) -> Iterator[tuple[TaskManifestEntry, dict[str, Any]]]:
+    path = Path(receipt.path)
+    file_digest = hashlib.sha256()
+    manifest_digest = hashlib.sha256()
+    manifest_digest.update(b'{"entries":[')
+    task_count = 0
+    with path.open("rb") as handle:
+        encoded_header = handle.readline()
+        header = _decode_task_index_line(encoded_header, file_digest=file_digest)
+        header_fields = {
+            "kind",
+            "schema_version",
+            "split",
+            "source_sha256",
+            "source_row_count",
+            "source_box_count",
+            "converter_fingerprint",
+            "build_key",
+            "record_hash",
+        }
+        if set(header) != header_fields or header.get("kind") != "header":
+            raise ProjectContractError("task index header shape drift")
+        _require_int(
+            header["schema_version"],
+            "task_index.header.schema_version",
+            minimum=TASK_INDEX_SCHEMA_VERSION,
+            maximum=TASK_INDEX_SCHEMA_VERSION,
+        )
+        _require_int(
+            header["source_row_count"],
+            "task_index.header.source_row_count",
+            minimum=1,
+        )
+        _require_int(
+            header["source_box_count"],
+            "task_index.header.source_box_count",
+            minimum=1,
+        )
+        _require_sha256(header["source_sha256"], "task_index.header.source_sha256")
+        _require_sha256(
+            header["converter_fingerprint"],
+            "task_index.header.converter_fingerprint",
+        )
+        _require_sha256(header["build_key"], "task_index.header.build_key")
+        _require_sha256(header["record_hash"], "task_index.header.record_hash")
+        header_body = {key: header[key] for key in header_fields if key != "record_hash"}
+        if header["record_hash"] != fingerprint_json(header_body):
+            raise ProjectContractError("task index header hash drift")
+        if (
+            header["schema_version"] != TASK_INDEX_SCHEMA_VERSION
+            or header["split"] != receipt.split.value
+            or header["source_sha256"] != receipt.source_sha256
+            or header["source_row_count"] != receipt.source_row_count
+            or header["source_box_count"] != receipt.source_box_count
+            or header["converter_fingerprint"] != receipt.converter_fingerprint
+            or header["build_key"] != receipt.build_key
+        ):
+            raise ProjectContractError("task index header contract drift")
+        previous_record_hash = header["record_hash"]
+
+        while True:
+            encoded = handle.readline()
+            if encoded == b"":
+                raise ProjectContractError("task index is missing its trailer")
+            record = _decode_task_index_line(encoded, file_digest=file_digest)
+            kind = record.get("kind")
+            if kind == "task":
+                fields = {
+                    "kind",
+                    "sequence",
+                    "previous_record_hash",
+                    "entry",
+                    "payload",
+                    "record_hash",
+                }
+                if set(record) != fields:
+                    raise ProjectContractError("task index record shape drift")
+                _require_int(
+                    record["sequence"],
+                    "task_index.task.sequence",
+                    minimum=1,
+                )
+                _require_sha256(
+                    record["previous_record_hash"],
+                    "task_index.task.previous_record_hash",
+                )
+                _require_sha256(
+                    record["record_hash"],
+                    "task_index.task.record_hash",
+                )
+                body = {key: record[key] for key in fields if key != "record_hash"}
+                if record["previous_record_hash"] != previous_record_hash:
+                    raise ProjectContractError("task index hash-chain drift")
+                if record["record_hash"] != fingerprint_json(body):
+                    raise ProjectContractError("task index record hash drift")
+                task_count += 1
+                if record["sequence"] != task_count:
+                    raise ProjectContractError("task index sequence drift")
+                entry = TaskManifestEntry.from_dict(record["entry"])
+                if entry.identity.split is not receipt.split:
+                    raise ProjectContractError("task index entry split drift")
+                if entry.source_line != task_count:
+                    raise ProjectContractError("task index entry sequence drift")
+                payload = record["payload"]
+                if not isinstance(payload, dict):
+                    raise ProjectContractError("task index payload is not an object")
+                _validate_task_payload_against_entry(
+                    payload,
+                    entry=entry,
+                    split=receipt.split,
+                )
+                if task_count > 1:
+                    manifest_digest.update(b",")
+                manifest_digest.update(_canonical_json_bytes(entry.to_dict()))
+                previous_record_hash = record["record_hash"]
+                yield entry, payload
+                continue
+            if kind != "trailer":
+                raise ProjectContractError("task index record kind drift")
+            fields = {
+                "kind",
+                "schema_version",
+                "split",
+                "source_sha256",
+                "source_row_count",
+                "source_box_count",
+                "task_count",
+                "task_manifest_fingerprint",
+                "identity_fingerprint",
+                "converter_fingerprint",
+                "build_key",
+                "previous_record_hash",
+                "record_hash",
+            }
+            if set(record) != fields:
+                raise ProjectContractError("task index trailer shape drift")
+            _require_int(
+                record["schema_version"],
+                "task_index.trailer.schema_version",
+                minimum=TASK_INDEX_SCHEMA_VERSION,
+                maximum=TASK_INDEX_SCHEMA_VERSION,
+            )
+            for field in ("source_row_count", "source_box_count", "task_count"):
+                _require_int(
+                    record[field],
+                    f"task_index.trailer.{field}",
+                    minimum=1,
+                )
+            for field in (
+                "source_sha256",
+                "task_manifest_fingerprint",
+                "identity_fingerprint",
+                "converter_fingerprint",
+                "build_key",
+                "previous_record_hash",
+                "record_hash",
+            ):
+                _require_sha256(record[field], f"task_index.trailer.{field}")
+            trailer_body = {
+                key: record[key] for key in fields if key != "record_hash"
+            }
+            if record["previous_record_hash"] != previous_record_hash:
+                raise ProjectContractError("task index trailer hash-chain drift")
+            if record["record_hash"] != fingerprint_json(trailer_body):
+                raise ProjectContractError("task index trailer hash drift")
+            if handle.read(1) != b"":
+                raise ProjectContractError("task index has data after its trailer")
+            break
+
+    manifest_digest.update(b'],"split":')
+    manifest_digest.update(_canonical_json_bytes(receipt.split.value))
+    manifest_digest.update(b',"task_count":')
+    manifest_digest.update(str(task_count).encode("ascii"))
+    manifest_digest.update(b"}")
+    manifest_fingerprint = manifest_digest.hexdigest()
+    if file_digest.hexdigest() != receipt.sha256:
+        raise ProjectContractError("task index content hash drift")
+    if task_count != receipt.task_count or task_count != receipt.source_row_count:
+        raise ProjectContractError("task index task-count drift")
+    if (
+        manifest_fingerprint != receipt.task_manifest_fingerprint
+        or record["task_manifest_fingerprint"] != receipt.task_manifest_fingerprint
+    ):
+        raise ProjectContractError("task index manifest fingerprint drift")
+    if (
+        record["schema_version"] != TASK_INDEX_SCHEMA_VERSION
+        or record["split"] != receipt.split.value
+        or record["source_sha256"] != receipt.source_sha256
+        or record["source_row_count"] != receipt.source_row_count
+        or record["source_box_count"] != receipt.source_box_count
+        or record["task_count"] != receipt.task_count
+        or record["identity_fingerprint"] != receipt.identity_fingerprint
+        or record["converter_fingerprint"] != receipt.converter_fingerprint
+        or record["build_key"] != receipt.build_key
+    ):
+        raise ProjectContractError("task index trailer contract drift")
+
+
+def _decode_task_index_line(
+    encoded: bytes,
+    *,
+    file_digest: "hashlib._Hash",
+) -> dict[str, Any]:
+    if not encoded or not encoded.endswith(b"\n"):
+        raise ProjectContractError("task index contains a torn JSONL record")
+    file_digest.update(encoded)
+    try:
+        payload = json.loads(
+            encoded.decode("utf-8"),
+            parse_constant=_reject_json_constant,
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        raise ProjectContractError("task index contains invalid JSON") from exc
+    if not isinstance(payload, dict):
+        raise ProjectContractError("task index record is not an object")
+    if encoded != _canonical_json_bytes(payload) + b"\n":
+        raise ProjectContractError("task index record is not canonical JSON")
+    return payload
+
+
+def _validate_task_payload_against_entry(
+    payload: Mapping[str, Any],
+    *,
+    entry: TaskManifestEntry,
+    split: Split,
+) -> None:
+    validate_authoritative_task_payload(payload)
+    expected_source_locator = (
+        PurePosixPath("..")
+        / "rescale_32_1024_bbox"
+        / PurePosixPath(entry.working_image_locator)
+    ).as_posix()
+    if entry.source_image_locator != expected_source_locator:
+        raise ProjectContractError("task manifest source image locator drift")
+    if (
+        local_files_image_locator(entry.working_image_locator, split=split)
+        != entry.label_studio_image_locator
+    ):
+        raise ProjectContractError("task manifest working image locator drift")
+    data = payload["data"]
+    identity = TaskIdentity(_split(data["split"]), data["image_id"])
+    if identity != entry.identity or identity.split is not split:
+        raise ProjectContractError("task import identity does not match task manifest")
+    if data["source_line"] != entry.source_line:
+        raise ProjectContractError("task import source line does not match task manifest")
+    if data["image"] != entry.label_studio_image_locator:
+        raise ProjectContractError("task import image locator does not match task manifest")
+    if fingerprint_json(data) != entry.task_data_fingerprint:
+        raise ProjectContractError("task data fingerprint does not match task manifest")
+    if (
+        fingerprint_json(payload["annotations"][0])
+        != entry.authoritative_annotation_fingerprint
+    ):
+        raise ProjectContractError(
+            "authoritative annotation fingerprint does not match task manifest"
+        )
 
 
 def compare_manifests(
@@ -1270,7 +2495,10 @@ def plan_instance_bootstrap(
         raise ProjectContractError(
             "train and val require distinct project and storage namespaces"
         )
-    manifest = build_instance_bootstrap_manifest(desired_normalized)
+    manifest = _build_instance_bootstrap_manifest(
+        desired_normalized,
+        layout=RuntimeLayout.for_repo(repo_root),
+    )
     attest_manifest = getattr(adapter, "attest_bootstrap_manifest", None)
     if not callable(attest_manifest):
         raise ProjectContractError(
@@ -1278,7 +2506,7 @@ def plan_instance_bootstrap(
         )
     observed_manifest = attest_manifest()
     live_projects = {
-        split_value: adapter.attest_project(split_value)
+        split_value: adapter.attest_project(desired_normalized[split_value])
         for split_value in (Split.TRAIN, Split.VAL)
     }
     any_live_project = any(project is not None for project in live_projects.values())
@@ -1303,8 +2531,8 @@ def plan_instance_bootstrap(
         if live_attestation is None:
             action = BootstrapAction.CREATE
             attestation_fingerprint = None
-            missing_task_imports = project.task_imports
-            reused_task_identities: tuple[TaskIdentity, ...] = ()
+            observed_task_count = 0
+            missing_task_count = project.task_manifest.task_count
         else:
             if not isinstance(live_attestation, LiveProjectAttestation):
                 raise ProjectContractError(
@@ -1317,33 +2545,23 @@ def plan_instance_bootstrap(
             if project_id_key in live_project_ids:
                 raise ManifestDriftError(("live.project_id (cross-split duplicate)",))
             live_project_ids.add(project_id_key)
-            reused_task_identities = _assert_live_project_matches(
+            observed_task_count, missing_task_count = _assert_live_project_matches(
                 project, live_attestation
-            )
-            reused_set = set(reused_task_identities)
-            missing_task_imports = tuple(
-                task_import
-                for entry, task_import in zip(
-                    project.task_manifest.entries,
-                    project.task_imports,
-                    strict=True,
-                )
-                if entry.identity not in reused_set
             )
             action = (
                 BootstrapAction.REUSE
-                if not missing_task_imports
+                if missing_task_count == 0
                 else BootstrapAction.RECONCILE
             )
             attestation_fingerprint = live_attestation.fingerprint
         planned = PlannedProjectBootstrap(
             action=action,
             project=project,
-            missing_task_imports=missing_task_imports,
-            reused_task_identities=reused_task_identities,
+            observed_task_count=observed_task_count,
+            missing_task_count=missing_task_count,
             live_attestation_fingerprint=attestation_fingerprint,
         )
-        _validate_planned_action_imports(planned)
+        _validate_planned_action(planned)
         actions.append(planned)
     return InstanceBootstrapPlan(
         runtime_layout=RuntimeLayout.for_repo(repo_root),
@@ -1355,8 +2573,8 @@ def plan_instance_bootstrap(
 def _assert_live_project_matches(
     desired: SplitProjectPlan,
     observed: LiveProjectAttestation,
-) -> tuple[TaskIdentity, ...]:
-    """Validate all observed tasks and return reusable identities in source order."""
+) -> tuple[int, int]:
+    """Validate an adapter's bounded exact-subset receipt."""
 
     if observed.split is not desired.split:
         raise ManifestDriftError(("live.split",))
@@ -1392,67 +2610,23 @@ def _assert_live_project_matches(
     if observed_link_target != expected_link_target:
         mismatches.append("live.managed_link_resolved_target")
 
-    expected_entries = {
-        entry.identity: entry for entry in desired.task_manifest.entries
-    }
-
-    seen_identities: set[TaskIdentity] = set()
-    seen_task_ids: set[tuple[type[Any], Any]] = set()
-    seen_annotation_ids: set[tuple[type[Any], Any]] = set()
-    for task in observed.tasks:
-        prefix = f"live.tasks[{task.identity.key}]"
-        if task.identity in seen_identities:
-            mismatches.append(prefix + ".identity (duplicate)")
-        seen_identities.add(task.identity)
-        expected_entry = expected_entries.get(task.identity)
-        if expected_entry is None:
-            mismatches.append(prefix + ".identity (unexpected)")
-        task_id = _live_identifier_key(task.task_id, prefix + ".task_id", mismatches)
-        if task_id is not None:
-            if task_id in seen_task_ids:
-                mismatches.append(prefix + ".task_id (duplicate)")
-            seen_task_ids.add(task_id)
-        if task.annotation_count != 1:
-            mismatches.append(prefix + ".annotation_count")
-        if task.alternate_annotation_count != 0:
-            mismatches.append(prefix + ".alternate_annotation_count")
-        if task.prediction_count != 0:
-            mismatches.append(prefix + ".prediction_count")
-        if task.authoritative_annotation_ground_truth is not False:
-            mismatches.append(prefix + ".authoritative_annotation_ground_truth")
-        annotation_id = _live_identifier_key(
-            task.authoritative_annotation_id,
-            prefix + ".authoritative_annotation_id",
-            mismatches,
-        )
-        if annotation_id is not None:
-            if annotation_id in seen_annotation_ids:
-                mismatches.append(prefix + ".authoritative_annotation_id (duplicate)")
-            seen_annotation_ids.add(annotation_id)
-        _live_identifier_key(
-            task.authoritative_annotation_revision,
-            prefix + ".authoritative_annotation_revision",
-            mismatches,
-        )
-        if expected_entry is not None:
-            if task.source_line != expected_entry.source_line:
-                mismatches.append(prefix + ".source_line")
-            if task.image_locator != expected_entry.label_studio_image_locator:
-                mismatches.append(prefix + ".image_locator")
-            if task.task_data_fingerprint != expected_entry.task_data_fingerprint:
-                mismatches.append(prefix + ".task_data_fingerprint")
-            if (
-                task.authoritative_annotation_fingerprint
-                != expected_entry.authoritative_annotation_fingerprint
-            ):
-                mismatches.append(prefix + ".authoritative_annotation_fingerprint")
+    task_set = observed.task_set
+    if not isinstance(task_set, LiveTaskSetAttestation):
+        mismatches.append("live.task_set")
+    else:
+        if (
+            task_set.expected_task_manifest_fingerprint
+            != desired.task_manifest.fingerprint
+        ):
+            mismatches.append("live.task_set.expected_task_manifest_fingerprint")
+        if (
+            task_set.observed_task_count + task_set.missing_task_count
+            != desired.task_manifest.task_count
+        ):
+            mismatches.append("live.task_set.task_count")
     if mismatches:
         raise ManifestDriftError(tuple(dict.fromkeys(mismatches)))
-    return tuple(
-        entry.identity
-        for entry in desired.task_manifest.entries
-        if entry.identity in seen_identities
-    )
+    return task_set.observed_task_count, task_set.missing_task_count
 
 
 def _build_instance_bootstrap_manifest(
@@ -1517,10 +2691,10 @@ def build_instance_bootstrap_manifest(
 
 
 def _validate_split_project_plan(project: SplitProjectPlan) -> None:
-    """Fail before live adapter calls if a stored pure plan is internally inconsistent."""
+    """Fail before live adapter calls if a bounded plan is inconsistent."""
 
-    if not isinstance(project.task_imports, tuple):
-        raise ProjectContractError("task imports must be an immutable tuple")
+    if not isinstance(project, SplitProjectPlan):
+        raise ProjectContractError("desired project has the wrong plan type")
     if project.task_manifest.split is not project.split:
         raise ProjectContractError("task manifest split does not match project split")
     if project.storage_manifest.split is not project.split:
@@ -1535,9 +2709,7 @@ def _validate_split_project_plan(project: SplitProjectPlan) -> None:
         raise ProjectContractError(
             "source inspection split does not match project split"
         )
-    if len(project.task_imports) != len(project.task_manifest.entries):
-        raise ProjectContractError("task import count does not match task manifest")
-    if len(project.task_manifest.entries) != project.source_inspection.row_count:
+    if project.task_manifest.task_count != project.source_inspection.row_count:
         raise ProjectContractError(
             "task manifest count does not match source inspection"
         )
@@ -1560,6 +2732,35 @@ def _validate_split_project_plan(project: SplitProjectPlan) -> None:
         raise ProjectContractError("source inspection fingerprint drift")
     if project.manifest.task_manifest_fingerprint != project.task_manifest.fingerprint:
         raise ProjectContractError("task manifest fingerprint drift")
+    task_index = project.task_manifest.task_index
+    if task_index.split is not project.split:
+        raise ProjectContractError("task index split does not match project split")
+    if (
+        task_index.task_count != project.task_manifest.task_count
+        or task_index.task_manifest_fingerprint != project.task_manifest.fingerprint
+        or task_index.identity_fingerprint
+        != project.task_manifest.identity_fingerprint
+        or task_index.source_sha256 != project.source_inspection.sha256
+        or task_index.source_row_count != project.source_inspection.row_count
+        or task_index.source_box_count != project.source_inspection.box_count
+    ):
+        raise ProjectContractError("task index receipt does not match project plan")
+    expected_build_key = _task_index_build_key(
+        contract=project.source_inspection.contract,
+        registry_fingerprint=project.manifest.category_registry_fingerprint,
+        label_config_fingerprint=project.manifest.label_config_fingerprint,
+        converter_fingerprint=task_index.converter_fingerprint,
+    )
+    if task_index.build_key != expected_build_key:
+        raise ProjectContractError("task index build key semantics drift")
+    repo_root = Path(project.manifest.source_path).parents[3]
+    expected_index_directory = (
+        RuntimeLayout.for_repo(repo_root).for_split(project.split).root
+        / TASK_INDEX_DIRECTORY_NAME
+    ).resolve(strict=False)
+    observed_index_path = Path(task_index.path).resolve(strict=False)
+    if observed_index_path.parent != expected_index_directory:
+        raise ProjectContractError("task index is outside the ignored split runtime")
     if (
         project.manifest.storage_manifest_fingerprint
         != project.storage_manifest.fingerprint
@@ -1577,148 +2778,28 @@ def _validate_split_project_plan(project: SplitProjectPlan) -> None:
         project.controls.to_dict()
     ):
         raise ProjectContractError("authoritative annotation policy fingerprint drift")
+    task_index.validate_for_repo(repo_root)
 
-    seen_identities: set[TaskIdentity] = set()
-    seen_lines: set[int] = set()
-    for task_import, entry in zip(
-        project.task_imports,
-        project.task_manifest.entries,
-        strict=True,
+
+def _validate_planned_action(action: PlannedProjectBootstrap) -> None:
+    if not isinstance(action, PlannedProjectBootstrap):
+        raise ProjectContractError("planned action has the wrong type")
+    total = action.project.task_manifest.task_count
+    _require_int(action.observed_task_count, "observed_task_count", minimum=0)
+    _require_int(action.missing_task_count, "missing_task_count", minimum=0)
+    if action.observed_task_count + action.missing_task_count != total:
+        raise ProjectContractError("planned task counts do not partition the source")
+    if action.action is BootstrapAction.CREATE and (
+        action.observed_task_count != 0 or action.missing_task_count != total
     ):
-        if entry.identity in seen_identities:
-            raise ProjectContractError(f"duplicate task identity {entry.identity.key}")
-        if entry.source_line in seen_lines:
-            raise ProjectContractError(f"duplicate source line {entry.source_line}")
-        seen_identities.add(entry.identity)
-        seen_lines.add(entry.source_line)
-        _validated_frozen_task_import(
-            task_import,
-            entry=entry,
-            split=project.split,
-        )
-    expected_lines = set(range(1, len(project.task_manifest.entries) + 1))
-    if seen_lines != expected_lines:
-        raise ProjectContractError(
-            "task manifest source lines are not complete and ordered"
-        )
-
-
-def _validated_frozen_task_import(
-    task_import: FrozenTaskImport,
-    *,
-    entry: TaskManifestEntry,
-    split: Split,
-) -> dict[str, Any]:
-    if not isinstance(task_import, FrozenTaskImport):
-        raise ProjectContractError("task import is not a frozen canonical payload")
-    payload = task_import._thaw()
-    validate_authoritative_task_payload(payload)
-    data = payload["data"]
-    identity = TaskIdentity(_split(data["split"]), data["image_id"])
-    if identity != entry.identity or identity.split is not split:
-        raise ProjectContractError("task import identity does not match task manifest")
-    if data["source_line"] != entry.source_line:
-        raise ProjectContractError(
-            "task import source line does not match task manifest"
-        )
-    if data["image"] != entry.label_studio_image_locator:
-        raise ProjectContractError(
-            "task import image locator does not match task manifest"
-        )
-    if fingerprint_json(data) != entry.task_data_fingerprint:
-        raise ProjectContractError("task data fingerprint does not match task manifest")
-    if (
-        fingerprint_json(payload["annotations"][0])
-        != entry.authoritative_annotation_fingerprint
-    ):
-        raise ProjectContractError(
-            "authoritative annotation fingerprint does not match task manifest"
-        )
-    return payload
-
-
-def _validate_planned_action_imports(action: PlannedProjectBootstrap) -> None:
-    if not isinstance(action.missing_task_imports, tuple):
-        raise ProjectContractError("planned task imports must be an immutable tuple")
-    if not isinstance(action.reused_task_identities, tuple):
-        raise ProjectContractError("reused task identities must be an immutable tuple")
-    entries = {entry.identity: entry for entry in action.project.task_manifest.entries}
-    stored_imports = {
-        entry.identity: task_import
-        for entry, task_import in zip(
-            action.project.task_manifest.entries,
-            action.project.task_imports,
-            strict=True,
-        )
-    }
-    missing_identities: list[TaskIdentity] = []
-    for task_import in action.missing_task_imports:
-        if not isinstance(task_import, FrozenTaskImport):
-            raise ProjectContractError("planned task import is not frozen")
-        payload = task_import._thaw()
-        data = payload.get("data")
-        if not isinstance(data, Mapping):
-            raise ProjectContractError("planned task import data is invalid")
-        identity = TaskIdentity(_split(data.get("split")), data.get("image_id"))
-        entry = entries.get(identity)
-        if entry is None:
-            raise ProjectContractError(
-                "planned task import is absent from task manifest"
-            )
-        _validated_frozen_task_import(
-            task_import, entry=entry, split=action.project.split
-        )
-        if task_import != stored_imports[identity]:
-            raise ProjectContractError(
-                "planned task import differs from stored project plan"
-            )
-        missing_identities.append(identity)
-    if len(set(missing_identities)) != len(missing_identities):
-        raise ProjectContractError("planned task imports contain duplicate identities")
-
-    reused = action.reused_task_identities
-    if len(set(reused)) != len(reused) or any(
-        identity not in entries for identity in reused
-    ):
-        raise ProjectContractError("reused task identities do not match task manifest")
-    missing_set = set(missing_identities)
-    reused_set = set(reused)
-    if missing_set & reused_set or missing_set | reused_set != set(entries):
-        raise ProjectContractError(
-            "planned create/reuse identities do not partition tasks"
-        )
-    if action.action is BootstrapAction.CREATE and reused:
-        raise ProjectContractError("create action cannot reuse existing tasks")
-    if action.action is BootstrapAction.REUSE and action.missing_task_imports:
-        raise ProjectContractError("reuse action cannot emit task imports")
+        raise ProjectContractError("create action task counts are inconsistent")
+    if action.action is BootstrapAction.REUSE and action.missing_task_count != 0:
+        raise ProjectContractError("reuse action cannot have missing tasks")
     if (
         action.action is BootstrapAction.RECONCILE
         and action.live_attestation_fingerprint is None
     ):
         raise ProjectContractError("reconcile action requires an observed live project")
-
-
-def _task_imports_for_adapter_send(
-    action: PlannedProjectBootstrap,
-) -> tuple[dict[str, Any], ...]:
-    """Explicit mutable-JSON boundary for a future authenticated live adapter."""
-
-    _validate_split_project_plan(action.project)
-    _validate_planned_action_imports(action)
-    entries = {entry.identity: entry for entry in action.project.task_manifest.entries}
-    payloads: list[dict[str, Any]] = []
-    for task_import in action.missing_task_imports:
-        preview = task_import._thaw()
-        data = preview["data"]
-        identity = TaskIdentity(_split(data["split"]), data["image_id"])
-        payloads.append(
-            _validated_frozen_task_import(
-                task_import,
-                entry=entries[identity],
-                split=action.project.split,
-            )
-        )
-    return tuple(payloads)
 
 
 def _require_live_identifier(value: LiveIdentifier, field: str) -> None:
@@ -1839,6 +2920,23 @@ def _assert_source_image_exists(
         )
 
 
+def _assert_task_index_image_exists(
+    entry: TaskManifestEntry,
+    *,
+    repo_root: Path,
+) -> None:
+    image_path = resolve_working_image(
+        entry.working_image_locator,
+        layout=RuntimeLayout.for_repo(repo_root),
+        split=entry.identity.split,
+    )
+    if not image_path.is_file():
+        raise ProjectContractError(
+            "task-index image missing at source line "
+            f"{entry.source_line}: {entry.working_image_locator}"
+        )
+
+
 def _require_exact_keys(
     value: Mapping[str, Any], expected: frozenset[str], *, context: str
 ) -> None:
@@ -1865,6 +2963,28 @@ def _require_int(
     if maximum is not None and value > maximum:
         raise ProjectContractError(f"{field} must be at most {maximum}")
     return value
+
+
+def _require_sha256(value: Any, field: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise ProjectContractError(f"{field} must be a lowercase SHA-256 digest")
+    return value
+
+
+def _require_chunk_size(value: Any) -> int:
+    return _require_int(value, "chunk_size", minimum=1)
+
+
+def _fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def _require_finite_number(

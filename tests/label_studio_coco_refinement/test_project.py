@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import replace
 import hashlib
@@ -19,9 +20,10 @@ from src.label_studio_coco_refinement.label_config import (
 )
 from src.label_studio_coco_refinement.project import (
     BootstrapAction,
+    CanonicalJsonArrayFingerprint,
     FrozenTaskImport,
     LiveProjectAttestation,
-    LiveTaskAttestation,
+    LiveTaskSetAttestation,
     ManifestDriftError,
     ProjectContractError,
     RUNTIME_ROOT,
@@ -84,9 +86,9 @@ class _AttestingAdapter:
         self.bootstrap_manifest = bootstrap_manifest
         self.calls: list[Split] = []
 
-    def attest_project(self, split: Split) -> LiveProjectAttestation | None:
-        self.calls.append(split)
-        return self.states.get(split)
+    def attest_project(self, desired) -> LiveProjectAttestation | None:
+        self.calls.append(desired.split)
+        return self.states.get(desired.split)
 
     def attest_bootstrap_manifest(self) -> dict[str, Any] | None:
         return self.bootstrap_manifest
@@ -101,8 +103,8 @@ class _SavedManifestOnlyAdapter:
         self.manifests = manifests
         self.bootstrap_manifest = bootstrap_manifest
 
-    def attest_project(self, split: Split) -> dict[str, Any] | None:
-        return self.manifests.get(split)
+    def attest_project(self, desired) -> dict[str, Any] | None:
+        return self.manifests.get(desired.split)
 
     def attest_bootstrap_manifest(self) -> dict[str, Any]:
         return self.bootstrap_manifest
@@ -171,25 +173,24 @@ def _build_plan(tmp_path: Path, split: Split, source_path: Path):
     )
 
 
-def _live_attestation(plan, *, project_id: int) -> LiveProjectAttestation:
-    tasks = tuple(
-        LiveTaskAttestation(
-            identity=entry.identity,
-            source_line=entry.source_line,
-            image_locator=entry.label_studio_image_locator,
-            task_data_fingerprint=entry.task_data_fingerprint,
-            task_id=10_000 + index,
-            annotation_count=1,
-            authoritative_annotation_id=20_000 + index,
-            authoritative_annotation_revision=1,
-            authoritative_annotation_fingerprint=(
-                entry.authoritative_annotation_fingerprint
-            ),
-            authoritative_annotation_ground_truth=False,
-            alternate_annotation_count=0,
-            prediction_count=0,
-        )
-        for index, entry in enumerate(plan.task_manifest.entries)
+def _live_attestation(
+    plan,
+    *,
+    project_id: int,
+    observed_task_count: int | None = None,
+) -> LiveProjectAttestation:
+    observed = (
+        plan.task_manifest.task_count
+        if observed_task_count is None
+        else observed_task_count
+    )
+    task_set = LiveTaskSetAttestation(
+        expected_task_manifest_fingerprint=plan.task_manifest.fingerprint,
+        observed_task_count=observed,
+        missing_task_count=plan.task_manifest.task_count - observed,
+        content_fingerprint=fingerprint_json(
+            {"project_id": project_id, "observed_task_count": observed}
+        ),
     )
     return LiveProjectAttestation(
         split=plan.split,
@@ -202,7 +203,7 @@ def _live_attestation(plan, *, project_id: int) -> LiveProjectAttestation:
         storage_manifest=plan.storage_manifest,
         managed_link_is_symlink=True,
         managed_link_resolved_target=plan.storage_manifest.managed_link_target,
-        tasks=tasks,
+        task_set=task_set,
     )
 
 
@@ -213,6 +214,37 @@ def _adapter_for(
 ) -> _AttestingAdapter:
     manifest = build_instance_bootstrap_manifest({Split.TRAIN: train, Split.VAL: val})
     return _AttestingAdapter(states, bootstrap_manifest=manifest.to_dict())
+
+
+def _resign_task_index_with_mutation(receipt, record_index: int, field: str):
+    records = [
+        json.loads(line)
+        for line in Path(receipt.path).read_bytes().splitlines()
+    ]
+    records[record_index][field] = True
+    previous_hash = None
+    encoded_records = []
+    for index, record in enumerate(records):
+        body = {key: value for key, value in record.items() if key != "record_hash"}
+        if index:
+            body["previous_record_hash"] = previous_hash
+        record_hash = fingerprint_json(body)
+        previous_hash = record_hash
+        encoded_records.append(
+            project_module._canonical_json_bytes({**body, "record_hash": record_hash})
+            + b"\n"
+        )
+    encoded = b"".join(encoded_records)
+    digest = hashlib.sha256(encoded).hexdigest()
+    path = Path(receipt.path).with_name(
+        project_module._task_index_sidecar_name(
+            converter_fingerprint=receipt.converter_fingerprint,
+            content_sha256=digest,
+        )
+    )
+    path.write_bytes(encoded)
+    path.chmod(0o444)
+    return replace(receipt, path=str(path), sha256=digest)
 
 
 def test_exact_source_and_runtime_contracts() -> None:
@@ -442,16 +474,15 @@ def test_adapter_send_payloads_are_defensive_copies_of_immutable_plan(
         _AttestingAdapter({Split.TRAIN: None, Split.VAL: None}),
     )
     action = plan.projects[0]
-    stable_task_bytes = train.task_imports[0].canonical_json
+    stable_sidecar = Path(train.task_manifest.task_index.path).read_bytes()
     stable_manifest = train.manifest.to_dict()
 
-    with pytest.raises(TypeError):
-        train.task_imports[0].canonical_json[0] = 0  # type: ignore[index]
-
-    first_send = action.task_imports_for_adapter_send()
+    first_send = next(action.iter_task_import_chunks(1))
     first_send[0]["annotations"][0]["ground_truth"] = True
-    first_send[0]["annotations"][0]["result"][0]["meta"]["last_committed_bbox"][0] = 333
-    second_send = action.task_imports_for_adapter_send()
+    first_send[0]["annotations"][0]["result"][0]["meta"][
+        "last_committed_bbox"
+    ][0] = 333
+    second_send = next(action.iter_task_import_chunks(1))
 
     assert second_send[0]["annotations"][0]["ground_truth"] is False
     assert second_send[0]["annotations"][0]["result"][0]["meta"][
@@ -459,49 +490,66 @@ def test_adapter_send_payloads_are_defensive_copies_of_immutable_plan(
     ] == [0, 10, 500, 999]
     assert first_send is not second_send
     assert first_send[0] is not second_send[0]
-    assert train.task_imports[0].canonical_json == stable_task_bytes
+    assert Path(train.task_manifest.task_index.path).read_bytes() == stable_sidecar
     assert train.manifest.to_dict() == stable_manifest
+    assert not hasattr(train, "task_imports")
+    assert not hasattr(action, "missing_task_imports")
 
 
-@pytest.mark.parametrize(
-    ("fingerprint_field", "message"),
-    [
-        ("task_data_fingerprint", "task data fingerprint"),
-        (
-            "authoritative_annotation_fingerprint",
-            "authoritative annotation fingerprint",
-        ),
-    ],
-)
-def test_altered_task_fingerprint_fails_before_live_adapter_action(
+def test_task_index_tamper_fails_before_live_adapter_action(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    fingerprint_field: str,
-    message: str,
 ) -> None:
     train = _small_plan(tmp_path, Split.TRAIN, monkeypatch)
     val = _small_plan(tmp_path, Split.VAL, monkeypatch)
-    entry = replace(
-        train.task_manifest.entries[0],
-        **{fingerprint_field: "0" * 64},
-    )
-    task_manifest = replace(train.task_manifest, entries=(entry,))
-    tampered_train = replace(
-        train,
-        task_manifest=task_manifest,
-        manifest=replace(
-            train.manifest,
-            task_manifest_fingerprint=task_manifest.fingerprint,
-        ),
-    )
+    sidecar = Path(train.task_manifest.task_index.path)
+    lines = sidecar.read_bytes().splitlines(keepends=True)
+    record = json.loads(lines[1])
+    record["entry"]["task_data_fingerprint"] = "0" * 64
+    lines[1] = (
+        json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n"
+    ).encode()
+    sidecar.chmod(0o644)
+    sidecar.write_bytes(b"".join(lines))
+    sidecar.chmod(0o444)
     adapter = _AttestingAdapter({Split.TRAIN: None, Split.VAL: None})
 
-    with pytest.raises(ProjectContractError, match=message):
+    with pytest.raises(ProjectContractError, match="record hash drift"):
         plan_instance_bootstrap(
-            {Split.TRAIN: tampered_train, Split.VAL: val},
+            {Split.TRAIN: train, Split.VAL: val},
             adapter,
         )
     assert adapter.calls == []
+
+
+def test_streamed_task_fingerprints_exactly_match_legacy_materialization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _install_source_rows(
+        tmp_path,
+        Split.TRAIN,
+        monkeypatch,
+        [_row(Split.TRAIN, image_id=9), _row(Split.TRAIN, image_id=25)],
+    )
+    plan = _build_plan(tmp_path, Split.TRAIN, source)
+    entries = list(plan.task_manifest.iter_entries())
+    legacy_body = {
+        "split": Split.TRAIN.value,
+        "task_count": len(entries),
+        "entries": [entry.to_dict() for entry in entries],
+    }
+    assert plan.task_manifest.fingerprint == fingerprint_json(legacy_body)
+    assert plan.task_manifest.identity_fingerprint == fingerprint_json(
+        sorted(entry.identity.key for entry in entries)
+    )
+    assert plan.source_inspection.task_identity_fingerprint == fingerprint_json(
+        [entry.identity.key for entry in entries]
+    )
+    assert (
+        plan.source_inspection.task_identity_fingerprint
+        != plan.task_manifest.identity_fingerprint
+    )
 
 
 def test_project_task_storage_fingerprints_and_bootstrap_are_deterministic(
@@ -513,6 +561,8 @@ def test_project_task_storage_fingerprints_and_bootstrap_are_deterministic(
     repeated = _small_plan(tmp_path, Split.TRAIN, monkeypatch)
 
     assert train.task_manifest.fingerprint == repeated.task_manifest.fingerprint
+    assert train.task_manifest.task_index == repeated.task_manifest.task_index
+    assert Path(train.task_manifest.task_index.path).is_file()
     assert train.storage_manifest.fingerprint == repeated.storage_manifest.fingerprint
     assert train.manifest.fingerprint == repeated.manifest.fingerprint
     assert train.source_inspection.fingerprint == repeated.source_inspection.fingerprint
@@ -538,7 +588,7 @@ def test_project_task_storage_fingerprints_and_bootstrap_are_deterministic(
         BootstrapAction.CREATE,
         BootstrapAction.CREATE,
     ]
-    assert [len(item.missing_task_imports) for item in create.projects] == [1, 1]
+    assert [item.missing_task_count for item in create.projects] == [1, 1]
     assert create.manifest == build_instance_bootstrap_manifest(
         {Split.TRAIN: train, Split.VAL: val}
     )
@@ -568,12 +618,66 @@ def test_project_task_storage_fingerprints_and_bootstrap_are_deterministic(
         BootstrapAction.REUSE,
         BootstrapAction.REUSE,
     ]
-    assert [item.missing_task_imports for item in reuse.projects] == [(), ()]
+    assert [item.missing_task_count for item in reuse.projects] == [0, 0]
     assert adapter.calls == [Split.TRAIN, Split.VAL]
     assert [item.live_attestation_fingerprint for item in reuse.projects] == [
         live_train.fingerprint,
         live_val.fingerprint,
     ]
+
+
+def test_warm_build_reuses_attested_sidecar_without_rewriting_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _install_small_source(tmp_path, Split.TRAIN, monkeypatch)
+    first = _build_plan(tmp_path, Split.TRAIN, source)
+    sidecar = Path(first.task_manifest.task_index.path)
+    anchor = project_module._task_index_anchor_path(
+        sidecar.parent,
+        converter_fingerprint=first.task_manifest.task_index.converter_fingerprint,
+        build_key=first.task_manifest.task_index.build_key,
+    )
+    before = (
+        sidecar.stat().st_ino,
+        sidecar.stat().st_mtime_ns,
+        anchor.stat().st_ino,
+        anchor.stat().st_mtime_ns,
+    )
+
+    monkeypatch.setattr(
+        project_module,
+        "_build_task_index_from_source",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("warm build attempted to reconstruct the sidecar")
+        ),
+    )
+    repeated = _build_plan(tmp_path, Split.TRAIN, source)
+
+    assert repeated.task_manifest.task_index == first.task_manifest.task_index
+    assert before == (
+        sidecar.stat().st_ino,
+        sidecar.stat().st_mtime_ns,
+        anchor.stat().st_ino,
+        anchor.stat().st_mtime_ns,
+    )
+
+
+def test_warm_build_rechecks_every_indexed_image(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _install_small_source(tmp_path, Split.TRAIN, monkeypatch)
+    _build_plan(tmp_path, Split.TRAIN, source)
+    image = (
+        tmp_path
+        / "public_data/coco/rescale_32_1024_bbox"
+        / _row(Split.TRAIN)["file_name"]
+    )
+    image.unlink()
+
+    with pytest.raises(ProjectContractError, match="task-index image missing"):
+        _build_plan(tmp_path, Split.TRAIN, source)
 
 
 def test_lost_task_create_response_reconciles_by_stable_source_identity(
@@ -590,7 +694,11 @@ def test_lost_task_create_response_reconciles_by_stable_source_identity(
     train = _build_plan(tmp_path, Split.TRAIN, train_source)
     val = _build_plan(tmp_path, Split.VAL, val_source)
     full_train = _live_attestation(train, project_id=1)
-    partial_train = replace(full_train, tasks=(full_train.tasks[0],))
+    partial_train = _live_attestation(
+        train,
+        project_id=1,
+        observed_task_count=1,
+    )
     live_val = _live_attestation(val, project_id=2)
 
     retry = plan_instance_bootstrap(
@@ -603,11 +711,13 @@ def test_lost_task_create_response_reconciles_by_stable_source_identity(
     )
     train_retry = retry.projects[0]
     assert train_retry.action is BootstrapAction.RECONCILE
-    assert train_retry.reused_task_identities == (TaskIdentity(Split.TRAIN, 9),)
+    assert train_retry.observed_task_count == 1
+    assert train_retry.missing_task_count == 1
     assert [
         task["data"]["coordexp_task_key"]
-        for task in train_retry.task_imports_for_adapter_send()
-    ] == ["train:25"]
+        for chunk in train_retry.iter_task_import_chunks(1)
+        for task in chunk
+    ] == ["train:9", "train:25"]
 
     reconciled = plan_instance_bootstrap(
         {Split.TRAIN: train, Split.VAL: val},
@@ -618,7 +728,7 @@ def test_lost_task_create_response_reconciles_by_stable_source_identity(
         ),
     )
     assert reconciled.projects[0].action is BootstrapAction.REUSE
-    assert reconciled.projects[0].missing_task_imports == ()
+    assert reconciled.projects[0].missing_task_count == 0
 
 
 def test_bootstrap_rejects_instance_manifest_and_cross_split_project_drift(
@@ -707,6 +817,12 @@ def test_project_plan_rejects_source_mutation_that_preserves_counts(
             label_config_fingerprint=label_config_fingerprint(config),
         )
     assert sha256_file(source_path) != original_hash
+    index_root = (
+        RuntimeLayout.for_repo(tmp_path).for_split(Split.TRAIN).root
+        / project_module.TASK_INDEX_DIRECTORY_NAME
+    )
+    assert list(index_root.glob(".builder-*")) == []
+    assert list(index_root.glob(".identity-sort-*")) == []
 
 
 def test_saved_manifest_without_live_attestation_can_never_reuse(
@@ -729,18 +845,18 @@ def test_saved_manifest_without_live_attestation_can_never_reuse(
         plan_instance_bootstrap({Split.TRAIN: train, Split.VAL: val}, adapter)
 
 
-def test_reuse_rejects_mutated_live_task_identity(
+def test_reuse_rejects_task_set_manifest_and_count_drift(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     train = _small_plan(tmp_path, Split.TRAIN, monkeypatch)
     val = _small_plan(tmp_path, Split.VAL, monkeypatch)
     live_train = _live_attestation(train, project_id=1)
-    wrong_task = replace(
-        live_train.tasks[0],
-        identity=TaskIdentity(Split.TRAIN, 999),
+    wrong_manifest = replace(
+        live_train.task_set,
+        expected_task_manifest_fingerprint="0" * 64,
     )
-    drifted = replace(live_train, tasks=(wrong_task,))
+    drifted = replace(live_train, task_set=wrong_manifest)
 
     with pytest.raises(ManifestDriftError) as error:
         plan_instance_bootstrap(
@@ -754,18 +870,16 @@ def test_reuse_rejects_mutated_live_task_identity(
                 },
             ),
         )
-    assert "live.tasks[train:999].identity (unexpected)" in error.value.mismatches
+    assert (
+        "live.task_set.expected_task_manifest_fingerprint"
+        in error.value.mismatches
+    )
 
-
-def test_reconcile_rejects_duplicate_live_task_identity(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    train = _small_plan(tmp_path, Split.TRAIN, monkeypatch)
-    val = _small_plan(tmp_path, Split.VAL, monkeypatch)
-    live_train = _live_attestation(train, project_id=1)
-    duplicate = replace(live_train, tasks=(live_train.tasks[0], live_train.tasks[0]))
-
+    wrong_count = replace(
+        live_train.task_set,
+        observed_task_count=0,
+        missing_task_count=0,
+    )
     with pytest.raises(ManifestDriftError) as error:
         plan_instance_bootstrap(
             {Split.TRAIN: train, Split.VAL: val},
@@ -773,62 +887,319 @@ def test_reconcile_rejects_duplicate_live_task_identity(
                 train,
                 val,
                 {
-                    Split.TRAIN: duplicate,
+                    Split.TRAIN: replace(live_train, task_set=wrong_count),
                     Split.VAL: _live_attestation(val, project_id=2),
                 },
             ),
         )
-    assert any("identity (duplicate)" in item for item in error.value.mismatches)
+    assert "live.task_set.task_count" in error.value.mismatches
+
+
+def test_task_import_iteration_is_restartable_and_chunk_bounded(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rows = [_row(Split.TRAIN, image_id=100 + index) for index in range(7)]
+    source = _install_source_rows(tmp_path, Split.TRAIN, monkeypatch, rows)
+    project = _build_plan(tmp_path, Split.TRAIN, source)
+    first = list(project.iter_task_import_chunks(3))
+    second = list(project.iter_task_import_chunks(3))
+    assert [len(chunk) for chunk in first] == [3, 3, 1]
+    assert [
+        payload["data"]["coordexp_task_key"]
+        for chunk in first
+        for payload in chunk
+    ] == [
+        payload["data"]["coordexp_task_key"]
+        for chunk in second
+        for payload in chunk
+    ]
+    assert not hasattr(project.task_manifest, "entries")
+
+
+def test_published_task_index_is_the_only_post_plan_import_authority(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _install_source_rows(
+        tmp_path,
+        Split.TRAIN,
+        monkeypatch,
+        [_row(Split.TRAIN, image_id=9), _row(Split.TRAIN, image_id=25)],
+    )
+    project = _build_plan(tmp_path, Split.TRAIN, source)
+    source.unlink()
+
+    keys = [
+        payload["data"]["coordexp_task_key"]
+        for chunk in project.iter_task_import_chunks(1)
+        for payload in chunk
+    ]
+    assert keys == ["train:9", "train:25"]
+
+
+def test_custom_first_cannot_seed_default_converter_anchor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _install_small_source(tmp_path, Split.TRAIN, monkeypatch)
+    config = build_label_config()
+    custom = build_split_project_plan(
+        source,
+        repo_root=tmp_path,
+        split=Split.TRAIN,
+        vendor_revision="pinned-vendor-revision",
+        label_config=config,
+        label_config_fingerprint=label_config_fingerprint(config),
+        registry=COCO80_REGISTRY,
+        bbox_converter=lambda _bbox: (1.0, 1.0, 50.0, 50.0),
+    )
+    index_root = Path(custom.task_manifest.task_index.path).parent
+    assert custom.task_manifest.task_index.converter_fingerprint == (
+        project_module.UNFINGERPRINTED_CUSTOM_BBOX_CONVERTER_FINGERPRINT
+    )
+    assert list(index_root.glob("build-v*.json")) == []
+
+    default = _build_plan(tmp_path, Split.TRAIN, source)
+    assert default.task_manifest.task_index.converter_fingerprint == (
+        project_module.CANONICAL_BBOX_CONVERTER_FINGERPRINT
+    )
+    assert default.task_manifest.task_index != custom.task_manifest.task_index
+    custom_payload = next(custom.iter_task_import_chunks(1))[0]
+    default_payload = next(default.iter_task_import_chunks(1))[0]
+    assert custom_payload["annotations"][0]["result"][0]["value"]["x"] == 1.0
+    assert default_payload["annotations"][0]["result"][0]["value"]["x"] == 0.0
+    assert len(list(index_root.glob("build-v*.json"))) == 1
+
+
+def test_default_first_custom_converter_never_reuses_default_anchor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _install_small_source(tmp_path, Split.TRAIN, monkeypatch)
+    default = _build_plan(tmp_path, Split.TRAIN, source)
+    config = build_label_config()
+    custom = build_split_project_plan(
+        source,
+        repo_root=tmp_path,
+        split=Split.TRAIN,
+        vendor_revision="pinned-vendor-revision",
+        label_config=config,
+        label_config_fingerprint=label_config_fingerprint(config),
+        registry=COCO80_REGISTRY,
+        bbox_converter=lambda _bbox: (1.0, 1.0, 50.0, 50.0),
+    )
+
+    assert custom.task_manifest.task_index != default.task_manifest.task_index
+    assert custom.task_manifest.task_index.converter_fingerprint == (
+        project_module.UNFINGERPRINTED_CUSTOM_BBOX_CONVERTER_FINGERPRINT
+    )
+    assert next(custom.iter_task_import_chunks(1))[0]["annotations"][0]["result"][
+        0
+    ]["value"]["x"] == 1.0
+    assert _build_plan(tmp_path, Split.TRAIN, source).task_manifest.task_index == (
+        default.task_manifest.task_index
+    )
+
+
+def test_same_explicit_custom_converter_fingerprint_and_output_is_idempotent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _install_small_source(tmp_path, Split.TRAIN, monkeypatch)
+    config = build_label_config()
+    converter_fingerprint = fingerprint_json(
+        {"bbox_converter_semantics": "test-fixed-geometry-v1"}
+    )
+
+    def custom_converter(_bbox):
+        return (1.0, 1.0, 50.0, 50.0)
+
+    def build_custom():
+        return build_split_project_plan(
+            source,
+            repo_root=tmp_path,
+            split=Split.TRAIN,
+            vendor_revision="pinned-vendor-revision",
+            label_config=config,
+            label_config_fingerprint=label_config_fingerprint(config),
+            registry=COCO80_REGISTRY,
+            bbox_converter=custom_converter,
+            converter_fingerprint=converter_fingerprint,
+        )
+
+    first = build_custom()
+    first_inode = Path(first.task_manifest.task_index.path).stat().st_ino
+    repeated = build_custom()
+
+    assert repeated.task_manifest.task_index == first.task_manifest.task_index
+    assert Path(repeated.task_manifest.task_index.path).stat().st_ino == first_inode
+    assert repeated.task_manifest.task_index.converter_fingerprint == (
+        converter_fingerprint
+    )
+    assert converter_fingerprint in Path(first.task_manifest.task_index.path).name
+    index_root = Path(first.task_manifest.task_index.path).parent
+    assert len(list(index_root.glob("build-v*.json"))) == 1
+
+
+def test_same_explicit_custom_fingerprint_with_different_output_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _install_small_source(tmp_path, Split.TRAIN, monkeypatch)
+    config = build_label_config()
+    converter_fingerprint = fingerprint_json(
+        {"bbox_converter_semantics": "test-fixed-geometry-v1"}
+    )
+
+    def build_custom(value: float):
+        return build_split_project_plan(
+            source,
+            repo_root=tmp_path,
+            split=Split.TRAIN,
+            vendor_revision="pinned-vendor-revision",
+            label_config=config,
+            label_config_fingerprint=label_config_fingerprint(config),
+            registry=COCO80_REGISTRY,
+            bbox_converter=lambda _bbox: (value, value, 50.0, 50.0),
+            converter_fingerprint=converter_fingerprint,
+        )
+
+    build_custom(1.0)
+
+    with pytest.raises(ProjectContractError, match="build receipt conflict"):
+        build_custom(2.0)
+
+
+def test_converter_fingerprint_reserved_markers_fail_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _install_small_source(tmp_path, Split.TRAIN, monkeypatch)
+    config = build_label_config()
+    common = {
+        "repo_root": tmp_path,
+        "split": Split.TRAIN,
+        "vendor_revision": "pinned-vendor-revision",
+        "label_config": config,
+        "label_config_fingerprint": label_config_fingerprint(config),
+        "registry": COCO80_REGISTRY,
+    }
+
+    with pytest.raises(ProjectContractError, match="canonical semantics"):
+        build_split_project_plan(
+            source,
+            bbox_converter=norm1000_bbox_to_label_studio_xywh,
+            converter_fingerprint=fingerprint_json({"wrong": "default"}),
+            **common,
+        )
+    with pytest.raises(ProjectContractError, match="reserved semantics marker"):
+        build_split_project_plan(
+            source,
+            bbox_converter=lambda _bbox: (1.0, 1.0, 50.0, 50.0),
+            converter_fingerprint=(
+                project_module.CANONICAL_BBOX_CONVERTER_FINGERPRINT
+            ),
+            **common,
+        )
+
+
+def test_concurrent_same_content_builders_converge_on_one_sidecar(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _install_source_rows(
+        tmp_path,
+        Split.TRAIN,
+        monkeypatch,
+        [_row(Split.TRAIN, image_id=9), _row(Split.TRAIN, image_id=25)],
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        plans = list(
+            executor.map(
+                lambda _index: _build_plan(tmp_path, Split.TRAIN, source),
+                range(2),
+            )
+        )
+
+    receipts = [plan.task_manifest.task_index for plan in plans]
+    assert receipts[0] == receipts[1]
+    index_root = Path(receipts[0].path).parent
+    assert len(list(index_root.glob("task-index-v*.jsonl"))) == 1
+    assert len(list(index_root.glob("build-v*.json"))) == 1
+    assert list(index_root.glob(".builder-*")) == []
+    assert list(index_root.glob(".identity-sort-*")) == []
+
+
+def test_task_index_rejects_bytes_after_trailer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = _small_plan(tmp_path, Split.TRAIN, monkeypatch)
+    sidecar = Path(project.task_manifest.task_index.path)
+    sidecar.chmod(0o644)
+    with sidecar.open("ab") as handle:
+        handle.write(b"{}\n")
+    sidecar.chmod(0o444)
+
+    with pytest.raises(ProjectContractError, match="after its trailer"):
+        project.task_manifest.task_index.validate()
 
 
 @pytest.mark.parametrize(
-    ("field", "value", "expected_mismatch"),
-    [
-        ("annotation_count", 2, ".annotation_count"),
-        ("alternate_annotation_count", 1, ".alternate_annotation_count"),
-        ("prediction_count", 1, ".prediction_count"),
-        ("authoritative_annotation_id", "", ".authoritative_annotation_id"),
-        ("authoritative_annotation_revision", "", ".authoritative_annotation_revision"),
-        (
-            "authoritative_annotation_ground_truth",
-            True,
-            ".authoritative_annotation_ground_truth",
-        ),
-        ("source_line", 2, ".source_line"),
-        ("image_locator", "/data/local-files/?d=train2017/wrong.jpg", ".image_locator"),
-        ("task_data_fingerprint", "0" * 64, ".task_data_fingerprint"),
-        (
-            "authoritative_annotation_fingerprint",
-            "0" * 64,
-            ".authoritative_annotation_fingerprint",
-        ),
-    ],
+    ("record_index", "field"),
+    [(0, "schema_version"), (1, "sequence"), (-1, "task_count")],
 )
-def test_reuse_rejects_mutated_live_annotation_state(
+def test_task_index_rejects_resigned_boolean_numeric_fields(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    record_index: int,
     field: str,
-    value: Any,
-    expected_mismatch: str,
 ) -> None:
-    train = _small_plan(tmp_path, Split.TRAIN, monkeypatch)
-    val = _small_plan(tmp_path, Split.VAL, monkeypatch)
-    live_train = _live_attestation(train, project_id=1)
-    task = replace(live_train.tasks[0], **{field: value})
+    project = _small_plan(tmp_path, Split.TRAIN, monkeypatch)
+    forged = _resign_task_index_with_mutation(
+        project.task_manifest.task_index,
+        record_index,
+        field,
+    )
 
-    with pytest.raises(ManifestDriftError) as error:
-        plan_instance_bootstrap(
-            {Split.TRAIN: train, Split.VAL: val},
-            _adapter_for(
-                train,
-                val,
-                {
-                    Split.TRAIN: replace(live_train, tasks=(task,)),
-                    Split.VAL: _live_attestation(val, project_id=2),
-                },
-            ),
+    with pytest.raises(ProjectContractError, match="must be an integer"):
+        forged.validate()
+
+
+def test_incremental_json_array_fingerprint_matches_materialized_reference() -> None:
+    payloads = [{"b": 2, "a": 1}, [3, 4], "done"]
+    streamed = CanonicalJsonArrayFingerprint()
+    for payload in payloads:
+        streamed.add(payload)
+    assert streamed.count == len(payloads)
+    assert streamed.fingerprint == fingerprint_json(payloads)
+
+
+def test_identity_external_sort_caps_retained_runs_and_fan_in(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(project_module, "TASK_INDEX_IDENTITY_SORT_CHUNK_SIZE", 1)
+    builder = project_module._IdentityFingerprintBuilder(tmp_path)
+    keys = [f"train:{index}" for index in range(5_000, 0, -1)]
+    maximum_retained_runs = 0
+    for key in keys:
+        builder.add(key)
+        maximum_retained_runs = max(
+            maximum_retained_runs,
+            sum(len(paths) for paths in builder._levels.values()),
         )
-    assert any(expected_mismatch in mismatch for mismatch in error.value.mismatches)
+    count, observed = builder.finish()
+
+    assert count == len(keys)
+    assert observed == fingerprint_json(sorted(keys))
+    assert maximum_retained_runs <= (
+        project_module.TASK_INDEX_SORT_FAN_IN
+        * project_module.TASK_INDEX_MAX_SORT_LEVELS
+    )
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_reuse_rejects_mutated_live_storage_and_link(
