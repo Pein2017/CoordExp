@@ -13,9 +13,12 @@ import heapq
 import json
 import math
 import os
+from collections import OrderedDict
+from contextlib import nullcontext
 import shutil
 import stat
 import tempfile
+import threading
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path, PurePosixPath
@@ -44,6 +47,9 @@ TASK_INDEX_DIRECTORY_NAME = "bootstrap-task-index"
 TASK_INDEX_IDENTITY_SORT_CHUNK_SIZE = 2_048
 TASK_INDEX_SORT_FAN_IN = 8
 TASK_INDEX_MAX_SORT_LEVELS = 64
+TASK_INDEX_ANCHOR_MAX_BYTES = 4 * 1024
+STABLE_HASH_CHUNK_SIZE = 8 * 1024 * 1024
+BYTE_ATTESTATION_CACHE_MAX_ENTRIES = 16
 CANONICAL_BBOX_CONVERTER_SEMANTICS = (
     '{"contract":"coordexp.norm1000_xyxy_int_to_label_studio_percent_xywh",'
     '"version":1}'
@@ -426,24 +432,316 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+@dataclass(frozen=True)
+class _StableFileIdentity:
+    resolved_path: str
+    device: int
+    inode: int
+    size: int
+    mtime_ns: int
+    ctime_ns: int
+    mode: int
+    owner_uid: int
+
+
+@dataclass(frozen=True)
+class _ByteAttestationKey:
+    file: _StableFileIdentity
+    expected_sha256: str
+    schema_contract: str
+
+
+class _ByteAttestationMemo:
+    """Bounded process-local memo for bytes already hashed under one file identity."""
+
+    def __init__(self, max_entries: int = BYTE_ATTESTATION_CACHE_MAX_ENTRIES) -> None:
+        if isinstance(max_entries, bool) or not isinstance(max_entries, int):
+            raise ProjectContractError("byte attestation cache bound must be an integer")
+        if max_entries < 1:
+            raise ProjectContractError("byte attestation cache bound must be positive")
+        self.max_entries = max_entries
+        self._entries: OrderedDict[_ByteAttestationKey, None] = OrderedDict()
+        self._lock = threading.RLock()
+
+    def contains(self, key: _ByteAttestationKey) -> bool:
+        with self._lock:
+            if key not in self._entries:
+                return False
+            self._entries.move_to_end(key)
+            return True
+
+    def remember(self, key: _ByteAttestationKey) -> None:
+        with self._lock:
+            self._entries[key] = None
+            self._entries.move_to_end(key)
+            while len(self._entries) > self.max_entries:
+                self._entries.popitem(last=False)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._entries.clear()
+
+    @property
+    def size(self) -> int:
+        with self._lock:
+            return len(self._entries)
+
+
+_BYTE_ATTESTATION_MEMO = _ByteAttestationMemo()
+_STABLE_FILE_TEST_HOOK: Callable[[Path, str, int], None] | None = None
+
+
+def _clear_byte_attestation_cache() -> None:
+    """Clear process-local validation evidence for tests and isolated benchmarks."""
+
+    _BYTE_ATTESTATION_MEMO.clear()
+
+
+def _run_stable_file_test_hook(path: Path, stage: str, byte_count: int) -> None:
+    hook = _STABLE_FILE_TEST_HOOK
+    if hook is not None:
+        hook(path, stage, byte_count)
+
+
+def _stat_signature(metadata: os.stat_result) -> tuple[int, ...]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+        metadata.st_mode,
+        metadata.st_uid,
+    )
+
+
+def _open_stable_regular_file(
+    path: Path,
+    *,
+    purpose: str,
+    required_mode: int | None = None,
+    required_owner_uid: int | None = None,
+    maximum_size: int | None = None,
+) -> tuple[int, os.stat_result, _StableFileIdentity]:
+    lexical = _lexical_absolute(path)
+    try:
+        path_metadata = lexical.lstat()
+    except OSError as exc:
+        raise ProjectContractError(f"{purpose} is unavailable: {lexical}") from exc
+    if not stat.S_ISREG(path_metadata.st_mode):
+        raise ProjectContractError(f"{purpose} must be a regular non-symlink file")
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(lexical, flags)
+    except OSError as exc:
+        raise ProjectContractError(f"{purpose} cannot be opened safely") from exc
+    try:
+        opened_metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(opened_metadata.st_mode)
+            or _stat_signature(opened_metadata) != _stat_signature(path_metadata)
+        ):
+            raise ProjectContractError(f"{purpose} changed while opening")
+        observed_mode = stat.S_IMODE(opened_metadata.st_mode)
+        if required_mode is not None and observed_mode != required_mode:
+            raise ProjectContractError(
+                f"{purpose} mode drift: expected {oct(required_mode)}, "
+                f"got {oct(observed_mode)}"
+            )
+        if (
+            required_owner_uid is not None
+            and opened_metadata.st_uid != required_owner_uid
+        ):
+            raise ProjectContractError(f"{purpose} owner drift")
+        if opened_metadata.st_size < 1:
+            raise ProjectContractError(f"{purpose} must not be empty")
+        if maximum_size is not None and opened_metadata.st_size > maximum_size:
+            raise ProjectContractError(f"{purpose} exceeds its size bound")
+        resolved = lexical.resolve(strict=True)
+        identity = _StableFileIdentity(
+            resolved_path=str(resolved),
+            device=opened_metadata.st_dev,
+            inode=opened_metadata.st_ino,
+            size=opened_metadata.st_size,
+            mtime_ns=opened_metadata.st_mtime_ns,
+            ctime_ns=opened_metadata.st_ctime_ns,
+            mode=observed_mode,
+            owner_uid=opened_metadata.st_uid,
+        )
+        return descriptor, opened_metadata, identity
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def _assert_stable_file_unchanged(
+    path: Path,
+    *,
+    descriptor: int,
+    before: os.stat_result,
+    purpose: str,
+) -> None:
+    try:
+        after = os.fstat(descriptor)
+        path_after = _lexical_absolute(path).lstat()
+    except OSError as exc:
+        raise ProjectContractError(f"{purpose} changed during attestation") from exc
+    expected = _stat_signature(before)
+    if (
+        _stat_signature(after) != expected
+        or _stat_signature(path_after) != expected
+        or not stat.S_ISREG(path_after.st_mode)
+    ):
+        raise ProjectContractError(f"{purpose} changed during attestation")
+
+
+def _attest_stable_file_sha256(
+    path: Path,
+    *,
+    expected_sha256: str,
+    schema_contract: str,
+    purpose: str,
+    force_hash: bool,
+    required_mode: int | None = None,
+    required_owner_uid: int | None = None,
+) -> _StableFileIdentity:
+    _require_sha256(expected_sha256, f"{purpose} expected sha256")
+    descriptor, before, identity = _open_stable_regular_file(
+        path,
+        purpose=purpose,
+        required_mode=required_mode,
+        required_owner_uid=required_owner_uid,
+    )
+    key = _ByteAttestationKey(
+        file=identity,
+        expected_sha256=expected_sha256,
+        schema_contract=schema_contract,
+    )
+    try:
+        if not force_hash and _BYTE_ATTESTATION_MEMO.contains(key):
+            _run_stable_file_test_hook(path, "memo_hit", 0)
+            _assert_stable_file_unchanged(
+                path,
+                descriptor=descriptor,
+                before=before,
+                purpose=purpose,
+            )
+            return identity
+        digest = hashlib.sha256()
+        byte_count = 0
+        while True:
+            chunk = os.read(descriptor, STABLE_HASH_CHUNK_SIZE)
+            if not chunk:
+                break
+            digest.update(chunk)
+            byte_count += len(chunk)
+            _run_stable_file_test_hook(path, "hash_chunk", byte_count)
+        _run_stable_file_test_hook(path, "hash_complete", byte_count)
+        _assert_stable_file_unchanged(
+            path,
+            descriptor=descriptor,
+            before=before,
+            purpose=purpose,
+        )
+        observed_sha256 = digest.hexdigest()
+        if observed_sha256 != expected_sha256:
+            raise ProjectContractError(
+                f"{purpose} hash drift: expected {expected_sha256}, "
+                f"got {observed_sha256}"
+            )
+        _BYTE_ATTESTATION_MEMO.remember(key)
+        return identity
+    finally:
+        os.close(descriptor)
+
+
+def _read_stable_small_file(
+    path: Path,
+    *,
+    purpose: str,
+    maximum_size: int,
+    required_mode: int,
+    required_owner_uid: int,
+) -> bytes:
+    descriptor, before, _identity = _open_stable_regular_file(
+        path,
+        purpose=purpose,
+        required_mode=required_mode,
+        required_owner_uid=required_owner_uid,
+        maximum_size=maximum_size,
+    )
+    try:
+        content = bytearray()
+        while True:
+            chunk = os.read(descriptor, min(STABLE_HASH_CHUNK_SIZE, maximum_size + 1))
+            if not chunk:
+                break
+            content.extend(chunk)
+            if len(content) > maximum_size:
+                raise ProjectContractError(f"{purpose} exceeds its size bound")
+        _run_stable_file_test_hook(path, "read_complete", len(content))
+        _assert_stable_file_unchanged(
+            path,
+            descriptor=descriptor,
+            before=before,
+            purpose=purpose,
+        )
+        return bytes(content)
+    finally:
+        os.close(descriptor)
+
+
+def _binary_handle_from_descriptor(descriptor: int) -> BinaryIO:
+    try:
+        return os.fdopen(descriptor, "rb")
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
 def assert_exact_source_path(
     path: Path,
     *,
     repo_root: Path,
     split: Split | str,
 ) -> SourceContract:
-    contract, observed = _assert_exact_source_location(
+    contract, _resolved_source = _assert_exact_source_location(
         path,
         repo_root=repo_root,
         split=split,
     )
-    observed_hash = sha256_file(observed)
-    if observed_hash != contract.sha256:
-        raise ProjectContractError(
-            f"source hash drift for {contract.split.value}: expected {contract.sha256}, "
-            f"got {observed_hash}"
-        )
+    observed = _lexical_absolute(path)
+    _attest_stable_file_sha256(
+        observed,
+        expected_sha256=contract.sha256,
+        schema_contract=f"exact-source-v1:{contract.split.value}",
+        purpose=f"exact {contract.split.value} source",
+        force_hash=True,
+    )
     return contract
+
+
+def _attest_exact_source_bytes(
+    source_path: Path,
+    *,
+    repo_root: Path,
+    split: Split,
+    force_hash: bool,
+) -> tuple[SourceContract, Path]:
+    contract, _resolved_source = _assert_exact_source_location(
+        source_path,
+        repo_root=repo_root,
+        split=split,
+    )
+    observed = _lexical_absolute(source_path)
+    _attest_stable_file_sha256(
+        observed,
+        expected_sha256=contract.sha256,
+        schema_contract=f"exact-source-v1:{contract.split.value}",
+        purpose=f"exact {contract.split.value} source",
+        force_hash=force_hash,
+    )
+    return contract, observed
 
 
 def _assert_exact_source_location(
@@ -743,11 +1041,12 @@ def _inspect_source_stream(
 ) -> _SourceStreamResult:
     """Consume, hash, and validate the exact bytes used to derive a plan."""
 
-    contract, observed_path = _assert_exact_source_location(
+    contract, _resolved_source = _assert_exact_source_location(
         path,
         repo_root=repo_root,
         split=split,
     )
+    observed_path = _lexical_absolute(path)
     digest = hashlib.sha256()
     source_identity_digest = hashlib.sha256()
     source_identity_digest.update(b"[")
@@ -763,7 +1062,11 @@ def _inspect_source_stream(
     )
     identity_builder = _IdentityFingerprintBuilder(temporary_sort_root)
     try:
-        with observed_path.open("rb") as handle:
+        descriptor, source_before, _source_identity = _open_stable_regular_file(
+            observed_path,
+            purpose=f"exact {contract.split.value} source cold stream",
+        )
+        with _binary_handle_from_descriptor(descriptor) as handle:
             for line_number, encoded_line in enumerate(handle, start=1):
                 digest.update(encoded_line)
                 try:
@@ -793,7 +1096,23 @@ def _inspect_source_stream(
                 box_count += len(row["objects"])
                 if consume_row is not None:
                     consume_row(line_number, row, identity)
-        identity_count, identity_fingerprint = identity_builder.finish()
+                _run_stable_file_test_hook(
+                    observed_path,
+                    "source_record_complete",
+                    line_number,
+                )
+            identity_count, identity_fingerprint = identity_builder.finish()
+            _run_stable_file_test_hook(
+                observed_path,
+                "source_stream_complete",
+                row_count,
+            )
+            _assert_stable_file_unchanged(
+                observed_path,
+                descriptor=handle.fileno(),
+                before=source_before,
+                purpose=f"exact {contract.split.value} source cold stream",
+            )
     finally:
         shutil.rmtree(temporary_sort_root, ignore_errors=True)
     observed_hash = digest.hexdigest()
@@ -938,6 +1257,7 @@ class TaskIndexReceipt:
     source_box_count: int
     task_manifest_fingerprint: str
     identity_fingerprint: str
+    source_identity_fingerprint: str
     converter_fingerprint: str
     build_key: str
 
@@ -953,6 +1273,7 @@ class TaskIndexReceipt:
             "source_box_count": self.source_box_count,
             "task_manifest_fingerprint": self.task_manifest_fingerprint,
             "identity_fingerprint": self.identity_fingerprint,
+            "source_identity_fingerprint": self.source_identity_fingerprint,
             "converter_fingerprint": self.converter_fingerprint,
             "build_key": self.build_key,
         }
@@ -965,11 +1286,15 @@ class TaskIndexReceipt:
 
         return _validate_task_index_receipt(self, repo_root=repo_root)
 
-    def iter_records(self) -> Iterator[tuple[TaskManifestEntry, dict[str, Any]]]:
-        """Validate the entire immutable index, then stream fresh decoded records."""
+    def attest_bytes_for_repo(self, repo_root: Path) -> str:
+        """Attest immutable content-addressed bytes without weakening full validation."""
 
-        self.validate()
-        yield from _iter_task_index_records(self)
+        return _attest_task_index_receipt_bytes(self, repo_root=repo_root)
+
+    def iter_records(self) -> Iterator[tuple[TaskManifestEntry, dict[str, Any]]]:
+        """Validate, rewind, and stream twice from one stable open descriptor."""
+
+        yield from _iter_validated_task_index_records(self)
 
 
 @dataclass(frozen=True)
@@ -1616,6 +1941,9 @@ class _TaskIndexWriter:
             "task_count": self._count,
             "task_manifest_fingerprint": task_manifest_fingerprint,
             "identity_fingerprint": sorted_identity_fingerprint,
+            "source_identity_fingerprint": (
+                source_inspection.task_identity_fingerprint
+            ),
             "converter_fingerprint": self.converter_fingerprint,
             "build_key": self.build_key,
             "previous_record_hash": self._previous_record_hash,
@@ -1623,9 +1951,9 @@ class _TaskIndexWriter:
         trailer_hash = fingerprint_json(trailer_body)
         self._write_line({**trailer_body, "record_hash": trailer_hash})
         self._handle.flush()
+        os.fchmod(self._handle.fileno(), 0o444)
         os.fsync(self._handle.fileno())
         self._handle.close()
-        os.chmod(self.path, 0o444)
         return task_manifest_fingerprint, self._file_digest.hexdigest()
 
     def abort(self) -> None:
@@ -1711,6 +2039,9 @@ def _publish_task_index(
         source_box_count=source_inspection.box_count,
         task_manifest_fingerprint=task_manifest_fingerprint,
         identity_fingerprint=identity_fingerprint,
+        source_identity_fingerprint=(
+            source_inspection.task_identity_fingerprint
+        ),
         converter_fingerprint=converter_fingerprint,
         build_key=build_key,
     )
@@ -1726,6 +2057,9 @@ def _publish_task_index(
         "task_count": task_count,
         "task_manifest_fingerprint": task_manifest_fingerprint,
         "identity_fingerprint": identity_fingerprint,
+        "source_identity_fingerprint": (
+            source_inspection.task_identity_fingerprint
+        ),
         "converter_fingerprint": converter_fingerprint,
     }
     _publish_small_immutable_file(
@@ -1750,18 +2084,19 @@ def _publish_small_immutable_file(path: Path, content: bytes) -> None:
         with os.fdopen(fd, "wb") as handle:
             handle.write(content)
             handle.flush()
+            os.fchmod(handle.fileno(), 0o444)
             os.fsync(handle.fileno())
-        os.chmod(temporary, 0o444)
         try:
             os.link(temporary, path)
         except FileExistsError:
-            metadata = path.lstat()
-            if (
-                path.is_symlink()
-                or not stat.S_ISREG(metadata.st_mode)
-                or metadata.st_mode & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH)
-                or path.read_bytes() != content
-            ):
+            existing = _read_stable_small_file(
+                path,
+                purpose="task-index build receipt",
+                maximum_size=TASK_INDEX_ANCHOR_MAX_BYTES,
+                required_mode=0o444,
+                required_owner_uid=os.geteuid(),
+            )
+            if existing != content:
                 raise ProjectContractError(
                     f"task-index build receipt conflict for {path.name}"
                 ) from None
@@ -1799,15 +2134,13 @@ def _load_published_task_index(
     )
     if not os.path.lexists(anchor):
         return None
-    try:
-        metadata = anchor.lstat()
-    except OSError as exc:
-        raise ProjectContractError("task-index build receipt is unavailable") from exc
-    if not stat.S_ISREG(metadata.st_mode) or anchor.is_symlink():
-        raise ProjectContractError("task-index build receipt must be a regular file")
-    if metadata.st_mode & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH):
-        raise ProjectContractError("task-index build receipt must be immutable/read-only")
-    raw = anchor.read_bytes()
+    raw = _read_stable_small_file(
+        anchor,
+        purpose="task-index build receipt",
+        maximum_size=TASK_INDEX_ANCHOR_MAX_BYTES,
+        required_mode=0o444,
+        required_owner_uid=os.geteuid(),
+    )
     if not raw.endswith(b"\n") or raw.count(b"\n") != 1:
         raise ProjectContractError("task-index build receipt has trailing data")
     try:
@@ -1825,6 +2158,7 @@ def _load_published_task_index(
         "task_count",
         "task_manifest_fingerprint",
         "identity_fingerprint",
+        "source_identity_fingerprint",
         "converter_fingerprint",
     }
     if set(payload) != fields:
@@ -1845,6 +2179,7 @@ def _load_published_task_index(
         "sidecar_sha256",
         "task_manifest_fingerprint",
         "identity_fingerprint",
+        "source_identity_fingerprint",
         "converter_fingerprint",
     ):
         _require_sha256(payload[field], f"task_index.build_receipt.{field}")
@@ -1874,6 +2209,7 @@ def _load_published_task_index(
         source_box_count=contract.box_count,
         task_manifest_fingerprint=payload["task_manifest_fingerprint"],
         identity_fingerprint=payload["identity_fingerprint"],
+        source_identity_fingerprint=payload["source_identity_fingerprint"],
         converter_fingerprint=payload["converter_fingerprint"],
         build_key=build_key,
     )
@@ -1882,7 +2218,6 @@ def _load_published_task_index(
 def _reuse_published_task_index(
     *,
     source_path: Path,
-    observed_source: Path,
     repo_root: Path,
     contract: SourceContract,
     directory: Path,
@@ -1897,18 +2232,12 @@ def _reuse_published_task_index(
     )
     if receipt is None:
         return None
-    observed_hash = sha256_file(observed_source)
-    if observed_hash != contract.sha256:
-        raise ProjectContractError(
-            f"source hash drift for {contract.split.value}: expected {contract.sha256}, "
-            f"got {observed_hash}"
-        )
-    source_identity_fingerprint = receipt.validate_for_repo(repo_root)
+    source_identity_fingerprint = receipt.attest_bytes_for_repo(repo_root)
     return (
         SourceInspection(
             contract=contract,
             source_path=str(_lexical_absolute(source_path)),
-            sha256=observed_hash,
+            sha256=contract.sha256,
             row_count=contract.row_count,
             box_count=contract.box_count,
             task_identity_fingerprint=source_identity_fingerprint,
@@ -2031,10 +2360,11 @@ def build_split_project_plan(
         )
     layout = RuntimeLayout.for_repo(repo_root)
     project_identity = f"coco-refinement:{DATASET_NAME}:{split_value.value}"
-    contract, observed_source = _assert_exact_source_location(
+    contract, _observed_source = _attest_exact_source_bytes(
         source_path,
         repo_root=repo_root,
         split=split_value,
+        force_hash=True,
     )
     index_directory = (
         layout.for_split(split_value).root / TASK_INDEX_DIRECTORY_NAME
@@ -2050,7 +2380,6 @@ def build_split_project_plan(
     if converter_contract.reuse_anchor:
         existing = _reuse_published_task_index(
             source_path=source_path,
-            observed_source=observed_source,
             repo_root=repo_root,
             contract=contract,
             directory=index_directory,
@@ -2119,8 +2448,103 @@ def _validate_task_index_receipt(
     *,
     repo_root: Path | None = None,
 ) -> str:
+    path, descriptor, before = _open_full_task_index(receipt)
+    with _binary_handle_from_descriptor(descriptor) as handle:
+        source_identity_fingerprint = _validate_task_index_receipt_from_handle(
+            receipt,
+            handle=handle,
+            repo_root=repo_root,
+        )
+        _assert_stable_file_unchanged(
+            path,
+            descriptor=handle.fileno(),
+            before=before,
+            purpose="task index",
+        )
+        return source_identity_fingerprint
+
+
+def _open_full_task_index(
+    receipt: TaskIndexReceipt,
+) -> tuple[Path, int, os.stat_result]:
+    path = _validate_task_index_receipt_shape(receipt)
+    descriptor, before, _identity = _open_stable_regular_file(
+        path,
+        purpose="task index",
+    )
+    if before.st_mode & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH):
+        os.close(descriptor)
+        raise ProjectContractError("task index must be immutable/read-only")
+    return path, descriptor, before
+
+
+def _validate_task_index_receipt_from_handle(
+    receipt: TaskIndexReceipt,
+    *,
+    handle: BinaryIO,
+    repo_root: Path | None,
+) -> str:
+    identity_digest = hashlib.sha256()
+    identity_digest.update(b"[")
+    count = 0
+    for entry, _payload in _iter_task_index_records(receipt, handle=handle):
+        if count:
+            identity_digest.update(b",")
+        identity_digest.update(_canonical_json_bytes(entry.identity.key))
+        count += 1
+        if repo_root is not None:
+            _assert_task_index_image_exists(entry, repo_root=repo_root)
+    identity_digest.update(b"]")
+    source_identity_fingerprint = identity_digest.hexdigest()
+    if source_identity_fingerprint != receipt.source_identity_fingerprint:
+        raise ProjectContractError("task index source-order identity drift")
+    return source_identity_fingerprint
+
+
+def _iter_validated_task_index_records(
+    receipt: TaskIndexReceipt,
+) -> Iterator[tuple[TaskManifestEntry, dict[str, Any]]]:
+    """Run both full passes on one descriptor and reject path replacement."""
+
+    path, descriptor, before = _open_full_task_index(receipt)
+    with _binary_handle_from_descriptor(descriptor) as handle:
+        _validate_task_index_receipt_from_handle(
+            receipt,
+            handle=handle,
+            repo_root=None,
+        )
+        _run_stable_file_test_hook(
+            path,
+            "task_index_validation_complete",
+            before.st_size,
+        )
+        _assert_stable_file_unchanged(
+            path,
+            descriptor=handle.fileno(),
+            before=before,
+            purpose="task index",
+        )
+        try:
+            yield from _iter_task_index_records(receipt, handle=handle)
+        finally:
+            _run_stable_file_test_hook(
+                path,
+                "task_index_import_complete",
+                before.st_size,
+            )
+            _assert_stable_file_unchanged(
+                path,
+                descriptor=handle.fileno(),
+                before=before,
+                purpose="task index",
+            )
+
+
+def _validate_task_index_receipt_shape(receipt: TaskIndexReceipt) -> Path:
     if not isinstance(receipt, TaskIndexReceipt):
         raise ProjectContractError("task index receipt has the wrong type")
+    if not isinstance(receipt.split, Split):
+        raise ProjectContractError("task index receipt split has the wrong type")
     _require_sha256(receipt.sha256, "task_index.sha256")
     _require_sha256(
         receipt.task_manifest_fingerprint,
@@ -2129,6 +2553,10 @@ def _validate_task_index_receipt(
     _require_sha256(
         receipt.identity_fingerprint,
         "task_index.identity_fingerprint",
+    )
+    _require_sha256(
+        receipt.source_identity_fingerprint,
+        "task_index.source_identity_fingerprint",
     )
     _require_sha256(receipt.source_sha256, "task_index.source_sha256")
     _require_sha256(
@@ -2154,37 +2582,61 @@ def _validate_task_index_receipt(
     )
     if path.name != expected_name:
         raise ProjectContractError("task index path is not content addressed")
+    return path
+
+
+def _attest_task_index_receipt_bytes(
+    receipt: TaskIndexReceipt,
+    *,
+    repo_root: Path,
+) -> str:
+    """Validate immutable byte identity proven by the schema-v2 cold build."""
+
+    path = _validate_task_index_receipt_shape(receipt)
+    expected_directory = _lexical_absolute(
+        RuntimeLayout.for_repo(repo_root).for_split(receipt.split).root
+        / TASK_INDEX_DIRECTORY_NAME
+    )
+    observed_directory = _lexical_absolute(path.parent)
+    if observed_directory != expected_directory:
+        raise ProjectContractError("task index is outside the ignored split runtime")
     try:
-        metadata = path.lstat()
+        if observed_directory.resolve(strict=True) != expected_directory.resolve(
+            strict=True
+        ):
+            raise ProjectContractError(
+                "task index resolved directory is outside the split runtime"
+            )
     except OSError as exc:
-        raise ProjectContractError(f"task index is unavailable: {path}") from exc
-    if not stat.S_ISREG(metadata.st_mode) or path.is_symlink():
-        raise ProjectContractError("task index must be a regular non-symlink file")
-    if metadata.st_mode & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH):
-        raise ProjectContractError("task index must be immutable/read-only")
-    identity_digest = hashlib.sha256()
-    identity_digest.update(b"[")
-    count = 0
-    for entry, _payload in _iter_task_index_records(receipt):
-        if count:
-            identity_digest.update(b",")
-        identity_digest.update(_canonical_json_bytes(entry.identity.key))
-        count += 1
-        if repo_root is not None:
-            _assert_task_index_image_exists(entry, repo_root=repo_root)
-    identity_digest.update(b"]")
-    return identity_digest.hexdigest()
+        raise ProjectContractError("task index directory is unavailable") from exc
+    _attest_stable_file_sha256(
+        path,
+        expected_sha256=receipt.sha256,
+        schema_contract=(
+            f"task-index-v{TASK_INDEX_SCHEMA_VERSION}:{receipt.build_key}"
+        ),
+        purpose="task index sidecar",
+        force_hash=False,
+        required_mode=0o444,
+        required_owner_uid=os.geteuid(),
+    )
+    return receipt.source_identity_fingerprint
 
 
 def _iter_task_index_records(
     receipt: TaskIndexReceipt,
+    *,
+    handle: BinaryIO,
 ) -> Iterator[tuple[TaskManifestEntry, dict[str, Any]]]:
-    path = Path(receipt.path)
     file_digest = hashlib.sha256()
     manifest_digest = hashlib.sha256()
     manifest_digest.update(b'{"entries":[')
     task_count = 0
-    with path.open("rb") as handle:
+    try:
+        handle.seek(0)
+    except (OSError, ValueError) as exc:
+        raise ProjectContractError("task index descriptor cannot be rewound") from exc
+    with nullcontext(handle) as handle:
         encoded_header = handle.readline()
         header = _decode_task_index_line(encoded_header, file_digest=file_digest)
         header_fields = {
@@ -2307,6 +2759,7 @@ def _iter_task_index_records(
                 "task_count",
                 "task_manifest_fingerprint",
                 "identity_fingerprint",
+                "source_identity_fingerprint",
                 "converter_fingerprint",
                 "build_key",
                 "previous_record_hash",
@@ -2330,6 +2783,7 @@ def _iter_task_index_records(
                 "source_sha256",
                 "task_manifest_fingerprint",
                 "identity_fingerprint",
+                "source_identity_fingerprint",
                 "converter_fingerprint",
                 "build_key",
                 "previous_record_hash",
@@ -2370,6 +2824,8 @@ def _iter_task_index_records(
         or record["source_box_count"] != receipt.source_box_count
         or record["task_count"] != receipt.task_count
         or record["identity_fingerprint"] != receipt.identity_fingerprint
+        or record["source_identity_fingerprint"]
+        != receipt.source_identity_fingerprint
         or record["converter_fingerprint"] != receipt.converter_fingerprint
         or record["build_key"] != receipt.build_key
     ):
@@ -2778,7 +3234,20 @@ def _validate_split_project_plan(project: SplitProjectPlan) -> None:
         project.controls.to_dict()
     ):
         raise ProjectContractError("authoritative annotation policy fingerprint drift")
-    task_index.validate_for_repo(repo_root)
+    observed_contract, _source_path = _attest_exact_source_bytes(
+        Path(project.manifest.source_path),
+        repo_root=repo_root,
+        split=project.split,
+        force_hash=False,
+    )
+    if observed_contract != project.source_inspection.contract:
+        raise ProjectContractError("project source contract drift")
+    source_identity_fingerprint = task_index.attest_bytes_for_repo(repo_root)
+    if (
+        source_identity_fingerprint
+        != project.source_inspection.task_identity_fingerprint
+    ):
+        raise ProjectContractError("project source-order identity drift")
 
 
 def _validate_planned_action(action: PlannedProjectBootstrap) -> None:

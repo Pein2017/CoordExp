@@ -5,6 +5,7 @@ from copy import deepcopy
 from dataclasses import replace
 import hashlib
 import json
+import os
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -514,7 +515,7 @@ def test_task_index_tamper_fails_before_live_adapter_action(
     sidecar.chmod(0o444)
     adapter = _AttestingAdapter({Split.TRAIN: None, Split.VAL: None})
 
-    with pytest.raises(ProjectContractError, match="record hash drift"):
+    with pytest.raises(ProjectContractError, match="sidecar hash drift"):
         plan_instance_bootstrap(
             {Split.TRAIN: train, Split.VAL: val},
             adapter,
@@ -663,12 +664,361 @@ def test_warm_build_reuses_attested_sidecar_without_rewriting_it(
     )
 
 
-def test_warm_build_rechecks_every_indexed_image(
+def test_warm_build_manifest_and_reuse_plan_hash_each_file_once_without_parsing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    train_source = _install_small_source(tmp_path, Split.TRAIN, monkeypatch)
+    val_source = _install_small_source(tmp_path, Split.VAL, monkeypatch)
+    cold_train = _build_plan(tmp_path, Split.TRAIN, train_source)
+    cold_val = _build_plan(tmp_path, Split.VAL, val_source)
+    sidecars = {
+        Path(cold_train.task_manifest.task_index.path),
+        Path(cold_val.task_manifest.task_index.path),
+    }
+    sources = {train_source, val_source}
+    before = {
+        path: (path.stat().st_ino, path.stat().st_mtime_ns, path.stat().st_size)
+        for path in sidecars
+    }
+    hash_completions: dict[Path, int] = {}
+
+    def hook(path: Path, stage: str, _byte_count: int) -> None:
+        if stage == "hash_complete":
+            resolved = path.resolve()
+            hash_completions[resolved] = hash_completions.get(resolved, 0) + 1
+
+    project_module._clear_byte_attestation_cache()
+    monkeypatch.setattr(project_module, "_STABLE_FILE_TEST_HOOK", hook)
+    monkeypatch.setattr(
+        project_module,
+        "_iter_task_index_records",
+        lambda _receipt: (_ for _ in ()).throw(
+            AssertionError("warm REUSE parsed task-index records")
+        ),
+    )
+
+    train = _build_plan(tmp_path, Split.TRAIN, train_source)
+    val = _build_plan(tmp_path, Split.VAL, val_source)
+    adapter = _adapter_for(
+        train,
+        val,
+        {
+            Split.TRAIN: _live_attestation(train, project_id=1),
+            Split.VAL: _live_attestation(val, project_id=2),
+        },
+    )
+    planned = plan_instance_bootstrap(
+        {Split.TRAIN: train, Split.VAL: val},
+        adapter,
+    )
+
+    assert [item.action for item in planned.projects] == [
+        BootstrapAction.REUSE,
+        BootstrapAction.REUSE,
+    ]
+    assert {path: hash_completions[path.resolve()] for path in sidecars} == {
+        path: 1 for path in sidecars
+    }
+    assert {path: hash_completions[path.resolve()] for path in sources} == {
+        path: 1 for path in sources
+    }
+    assert before == {
+        path: (path.stat().st_ino, path.stat().st_mtime_ns, path.stat().st_size)
+        for path in sidecars
+    }
+
+
+def test_every_build_force_hashes_exact_source_even_when_memoized(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source = _install_small_source(tmp_path, Split.TRAIN, monkeypatch)
     _build_plan(tmp_path, Split.TRAIN, source)
+    source_hashes = 0
+
+    def hook(path: Path, stage: str, _byte_count: int) -> None:
+        nonlocal source_hashes
+        if path == source and stage == "hash_complete":
+            source_hashes += 1
+
+    project_module._clear_byte_attestation_cache()
+    monkeypatch.setattr(project_module, "_STABLE_FILE_TEST_HOOK", hook)
+    _build_plan(tmp_path, Split.TRAIN, source)
+    _build_plan(tmp_path, Split.TRAIN, source)
+
+    assert source_hashes == 2
+
+
+def test_source_symlink_is_rejected_even_when_target_bytes_match(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _install_small_source(tmp_path, Split.TRAIN, monkeypatch)
+    backing = source.with_suffix(".backing")
+    source.rename(backing)
+    source.symlink_to(backing)
+
+    with pytest.raises(ProjectContractError, match="regular non-symlink"):
+        _build_plan(tmp_path, Split.TRAIN, source)
+
+
+def test_source_stat_race_during_hash_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _install_small_source(tmp_path, Split.TRAIN, monkeypatch)
+    changed = False
+
+    def hook(path: Path, stage: str, _byte_count: int) -> None:
+        nonlocal changed
+        if path == source and stage == "hash_chunk" and not changed:
+            changed = True
+            metadata = path.stat()
+            os.utime(
+                path,
+                ns=(metadata.st_atime_ns, metadata.st_mtime_ns + 1),
+            )
+
+    monkeypatch.setattr(project_module, "_STABLE_FILE_TEST_HOOK", hook)
+    with pytest.raises(ProjectContractError, match="changed during attestation"):
+        _build_plan(tmp_path, Split.TRAIN, source)
+
+
+def test_cold_source_stream_rejects_inode_swap_before_index_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _install_source_rows(
+        tmp_path,
+        Split.TRAIN,
+        monkeypatch,
+        [_row(Split.TRAIN, image_id=9), _row(Split.TRAIN, image_id=25)],
+    )
+    replacement = source.with_suffix(".replacement")
+    replacement.write_bytes(source.read_bytes())
+    original = source.with_suffix(".opened")
+    changed = False
+
+    def hook(path: Path, stage: str, record_count: int) -> None:
+        nonlocal changed
+        if (
+            path == source
+            and stage == "source_record_complete"
+            and record_count == 1
+            and not changed
+        ):
+            changed = True
+            source.rename(original)
+            replacement.rename(source)
+
+    monkeypatch.setattr(project_module, "_STABLE_FILE_TEST_HOOK", hook)
+    with pytest.raises(ProjectContractError, match="changed during attestation"):
+        _build_plan(tmp_path, Split.TRAIN, source)
+
+    index_root = (
+        RuntimeLayout.for_repo(tmp_path).for_split(Split.TRAIN).root
+        / project_module.TASK_INDEX_DIRECTORY_NAME
+    )
+    assert changed
+    assert list(index_root.glob("task-index-v*.jsonl")) == []
+    assert list(index_root.glob("build-v*.json")) == []
+    assert list(index_root.glob(".builder-*")) == []
+    assert list(index_root.glob(".identity-sort-*")) == []
+
+
+def test_sidecar_stat_race_during_hash_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _install_small_source(tmp_path, Split.TRAIN, monkeypatch)
+    project = _build_plan(tmp_path, Split.TRAIN, source)
+    sidecar = Path(project.task_manifest.task_index.path)
+    changed = False
+
+    def hook(path: Path, stage: str, _byte_count: int) -> None:
+        nonlocal changed
+        if path == sidecar and stage == "hash_chunk" and not changed:
+            changed = True
+            metadata = path.stat()
+            os.utime(
+                path,
+                ns=(metadata.st_atime_ns, metadata.st_mtime_ns + 1),
+            )
+
+    project_module._clear_byte_attestation_cache()
+    monkeypatch.setattr(project_module, "_STABLE_FILE_TEST_HOOK", hook)
+    with pytest.raises(ProjectContractError, match="changed during attestation"):
+        _build_plan(tmp_path, Split.TRAIN, source)
+
+
+def test_sidecar_same_size_tamper_with_restored_mtime_fails_hash(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _install_small_source(tmp_path, Split.TRAIN, monkeypatch)
+    project = _build_plan(tmp_path, Split.TRAIN, source)
+    sidecar = Path(project.task_manifest.task_index.path)
+    metadata = sidecar.stat()
+    tampered = bytearray(sidecar.read_bytes())
+    offset = next(
+        index for index, value in enumerate(tampered) if value not in {10, 13}
+    )
+    tampered[offset] = ord("X") if tampered[offset] != ord("X") else ord("Y")
+    sidecar.chmod(0o644)
+    sidecar.write_bytes(tampered)
+    os.utime(sidecar, ns=(metadata.st_atime_ns, metadata.st_mtime_ns))
+    sidecar.chmod(0o444)
+
+    project_module._clear_byte_attestation_cache()
+    with pytest.raises(ProjectContractError, match="sidecar hash drift"):
+        _build_plan(tmp_path, Split.TRAIN, source)
+
+
+def test_sidecar_same_bytes_stat_change_forces_rehash_and_is_accepted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _install_small_source(tmp_path, Split.TRAIN, monkeypatch)
+    project = _build_plan(tmp_path, Split.TRAIN, source)
+    sidecar = Path(project.task_manifest.task_index.path)
+    sidecar_hashes = 0
+
+    def hook(path: Path, stage: str, _byte_count: int) -> None:
+        nonlocal sidecar_hashes
+        if path == sidecar and stage == "hash_complete":
+            sidecar_hashes += 1
+
+    project_module._clear_byte_attestation_cache()
+    monkeypatch.setattr(project_module, "_STABLE_FILE_TEST_HOOK", hook)
+    _build_plan(tmp_path, Split.TRAIN, source)
+    metadata = sidecar.stat()
+    os.utime(
+        sidecar,
+        ns=(metadata.st_atime_ns, metadata.st_mtime_ns + 1),
+    )
+    _build_plan(tmp_path, Split.TRAIN, source)
+
+    assert sidecar_hashes == 2
+
+
+def test_sidecar_memo_hit_restats_and_rejects_race(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _install_small_source(tmp_path, Split.TRAIN, monkeypatch)
+    project = _build_plan(tmp_path, Split.TRAIN, source)
+    sidecar = Path(project.task_manifest.task_index.path)
+    project_module._clear_byte_attestation_cache()
+    _build_plan(tmp_path, Split.TRAIN, source)
+    changed = False
+
+    def hook(path: Path, stage: str, _byte_count: int) -> None:
+        nonlocal changed
+        if path == sidecar and stage == "memo_hit" and not changed:
+            changed = True
+            metadata = path.stat()
+            os.utime(
+                path,
+                ns=(metadata.st_atime_ns, metadata.st_mtime_ns + 1),
+            )
+
+    monkeypatch.setattr(project_module, "_STABLE_FILE_TEST_HOOK", hook)
+    with pytest.raises(ProjectContractError, match="changed during attestation"):
+        _build_plan(tmp_path, Split.TRAIN, source)
+
+
+def test_warm_anchor_requires_exact_read_only_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _install_small_source(tmp_path, Split.TRAIN, monkeypatch)
+    project = _build_plan(tmp_path, Split.TRAIN, source)
+    receipt = project.task_manifest.task_index
+    anchor = project_module._task_index_anchor_path(
+        Path(receipt.path).parent,
+        converter_fingerprint=receipt.converter_fingerprint,
+        build_key=receipt.build_key,
+    )
+    anchor.chmod(0o644)
+
+    with pytest.raises(ProjectContractError, match="mode drift"):
+        _build_plan(tmp_path, Split.TRAIN, source)
+
+
+def test_warm_anchor_schema_and_hash_read_are_stable_and_strict(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _install_small_source(tmp_path, Split.TRAIN, monkeypatch)
+    project = _build_plan(tmp_path, Split.TRAIN, source)
+    receipt = project.task_manifest.task_index
+    anchor = project_module._task_index_anchor_path(
+        Path(receipt.path).parent,
+        converter_fingerprint=receipt.converter_fingerprint,
+        build_key=receipt.build_key,
+    )
+    payload = json.loads(anchor.read_bytes())
+    payload["schema_version"] = 1
+    anchor.chmod(0o644)
+    anchor.write_bytes(project_module._canonical_json_bytes(payload) + b"\n")
+    anchor.chmod(0o444)
+
+    with pytest.raises(ProjectContractError, match="must be at least 2"):
+        _build_plan(tmp_path, Split.TRAIN, source)
+
+
+def test_warm_anchor_read_race_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _install_small_source(tmp_path, Split.TRAIN, monkeypatch)
+    project = _build_plan(tmp_path, Split.TRAIN, source)
+    receipt = project.task_manifest.task_index
+    anchor = project_module._task_index_anchor_path(
+        Path(receipt.path).parent,
+        converter_fingerprint=receipt.converter_fingerprint,
+        build_key=receipt.build_key,
+    )
+    changed = False
+
+    def hook(path: Path, stage: str, _byte_count: int) -> None:
+        nonlocal changed
+        if path == anchor and stage == "read_complete" and not changed:
+            changed = True
+            metadata = path.stat()
+            os.utime(
+                path,
+                ns=(metadata.st_atime_ns, metadata.st_mtime_ns + 1),
+            )
+
+    monkeypatch.setattr(project_module, "_STABLE_FILE_TEST_HOOK", hook)
+    with pytest.raises(ProjectContractError, match="changed during attestation"):
+        _build_plan(tmp_path, Split.TRAIN, source)
+
+
+def test_warm_sidecar_symlink_is_rejected_even_when_target_bytes_match(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _install_small_source(tmp_path, Split.TRAIN, monkeypatch)
+    project = _build_plan(tmp_path, Split.TRAIN, source)
+    sidecar = Path(project.task_manifest.task_index.path)
+    backing = sidecar.with_suffix(".backing")
+    sidecar.rename(backing)
+    sidecar.symlink_to(backing.name)
+
+    project_module._clear_byte_attestation_cache()
+    with pytest.raises(ProjectContractError, match="regular non-symlink"):
+        _build_plan(tmp_path, Split.TRAIN, source)
+
+
+def test_explicit_full_validation_rechecks_every_indexed_image(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _install_small_source(tmp_path, Split.TRAIN, monkeypatch)
+    project = _build_plan(tmp_path, Split.TRAIN, source)
     image = (
         tmp_path
         / "public_data/coco/rescale_32_1024_bbox"
@@ -677,7 +1027,7 @@ def test_warm_build_rechecks_every_indexed_image(
     image.unlink()
 
     with pytest.raises(ProjectContractError, match="task-index image missing"):
-        _build_plan(tmp_path, Split.TRAIN, source)
+        project.task_manifest.task_index.validate_for_repo(tmp_path)
 
 
 def test_lost_task_create_response_reconciles_by_stable_source_identity(
@@ -917,6 +1267,85 @@ def test_task_import_iteration_is_restartable_and_chunk_bounded(
     assert not hasattr(project.task_manifest, "entries")
 
 
+def test_task_import_iteration_keeps_explicit_full_record_validation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = _small_plan(tmp_path, Split.TRAIN, monkeypatch)
+    original = project_module._iter_task_index_records
+    opened_descriptors: list[tuple[int, int]] = []
+
+    def counted(receipt, *, handle):
+        opened_descriptors.append(
+            (handle.fileno(), os.fstat(handle.fileno()).st_ino)
+        )
+        yield from original(receipt, handle=handle)
+
+    monkeypatch.setattr(project_module, "_iter_task_index_records", counted)
+    chunks = list(project.iter_task_import_chunks(1))
+
+    assert len(chunks) == 1
+    assert len(opened_descriptors) == 2
+    assert opened_descriptors[0] == opened_descriptors[1]
+
+
+def test_task_import_rejects_path_replacement_between_full_passes_before_yield(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = _small_plan(tmp_path, Split.TRAIN, monkeypatch)
+    receipt = project.task_manifest.task_index
+    sidecar = Path(receipt.path)
+    replacement = sidecar.with_name("replacement.jsonl")
+    replacement.write_bytes(sidecar.read_bytes())
+    replacement.chmod(0o444)
+    validated_inode = sidecar.stat().st_ino
+    opened = sidecar.with_name("validated-open.jsonl")
+    changed = False
+
+    def hook(path: Path, stage: str, _byte_count: int) -> None:
+        nonlocal changed
+        if path == sidecar and stage == "task_index_validation_complete":
+            changed = True
+            sidecar.rename(opened)
+            replacement.rename(sidecar)
+
+    monkeypatch.setattr(project_module, "_STABLE_FILE_TEST_HOOK", hook)
+    records = receipt.iter_records()
+    with pytest.raises(ProjectContractError, match="changed during attestation"):
+        next(records)
+
+    assert changed
+    assert opened.stat().st_ino == validated_inode
+    assert sidecar.stat().st_ino != validated_inode
+
+
+def test_task_import_final_recheck_rejects_metadata_race(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = _small_plan(tmp_path, Split.TRAIN, monkeypatch)
+    receipt = project.task_manifest.task_index
+    sidecar = Path(receipt.path)
+    changed = False
+
+    def hook(path: Path, stage: str, _byte_count: int) -> None:
+        nonlocal changed
+        if path == sidecar and stage == "task_index_import_complete":
+            changed = True
+            metadata = sidecar.stat()
+            os.utime(
+                sidecar,
+                ns=(metadata.st_atime_ns, metadata.st_mtime_ns + 1),
+            )
+
+    monkeypatch.setattr(project_module, "_STABLE_FILE_TEST_HOOK", hook)
+    with pytest.raises(ProjectContractError, match="changed during attestation"):
+        list(receipt.iter_records())
+
+    assert changed
+
+
 def test_published_task_index_is_the_only_post_plan_import_authority(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1132,6 +1561,49 @@ def test_concurrent_same_content_builders_converge_on_one_sidecar(
     assert list(index_root.glob(".identity-sort-*")) == []
 
 
+def test_immutable_index_and_anchor_fsync_after_read_only_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_fchmod = os.fchmod
+    original_fsync = os.fsync
+    events: list[tuple[str, int, int]] = []
+
+    def tracked_fchmod(descriptor: int, mode: int) -> None:
+        original_fchmod(descriptor, mode)
+        metadata = os.fstat(descriptor)
+        events.append(("fchmod", metadata.st_ino, metadata.st_mode & 0o777))
+
+    def tracked_fsync(descriptor: int) -> None:
+        metadata = os.fstat(descriptor)
+        events.append(("fsync", metadata.st_ino, metadata.st_mode & 0o777))
+        original_fsync(descriptor)
+
+    monkeypatch.setattr(os, "fchmod", tracked_fchmod)
+    monkeypatch.setattr(os, "fsync", tracked_fsync)
+    project = _small_plan(tmp_path, Split.TRAIN, monkeypatch)
+    receipt = project.task_manifest.task_index
+    sidecar = Path(receipt.path)
+    anchor = project_module._task_index_anchor_path(
+        sidecar.parent,
+        converter_fingerprint=receipt.converter_fingerprint,
+        build_key=receipt.build_key,
+    )
+
+    for published in (sidecar, anchor):
+        inode = published.stat().st_ino
+        inode_events = [event for event in events if event[1] == inode]
+        fchmod_index = next(
+            index
+            for index, event in enumerate(inode_events)
+            if event == ("fchmod", inode, 0o444)
+        )
+        assert any(
+            index > fchmod_index and event == ("fsync", inode, 0o444)
+            for index, event in enumerate(inode_events)
+        )
+
+
 def test_task_index_rejects_bytes_after_trailer(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1175,6 +1647,36 @@ def test_incremental_json_array_fingerprint_matches_materialized_reference() -> 
         streamed.add(payload)
     assert streamed.count == len(payloads)
     assert streamed.fingerprint == fingerprint_json(payloads)
+
+
+def test_byte_attestation_memo_is_bounded_and_thread_safe() -> None:
+    memo = project_module._ByteAttestationMemo(max_entries=4)
+
+    def remember(index: int):
+        identity = project_module._StableFileIdentity(
+            resolved_path=f"/tmp/task-index-{index}",
+            device=1,
+            inode=index + 1,
+            size=100 + index,
+            mtime_ns=index,
+            ctime_ns=index,
+            mode=0o444,
+            owner_uid=os.geteuid(),
+        )
+        key = project_module._ByteAttestationKey(
+            file=identity,
+            expected_sha256=f"{index:064x}",
+            schema_contract="task-index-v2:test",
+        )
+        memo.remember(key)
+        return key
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        keys = list(executor.map(remember, range(64)))
+
+    assert memo.size == memo.max_entries == 4
+    assert not memo.contains(keys[0])
+    assert memo.contains(keys[-1])
 
 
 def test_identity_external_sort_caps_retained_runs_and_fan_in(
