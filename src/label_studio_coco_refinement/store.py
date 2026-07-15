@@ -127,8 +127,10 @@ class DraftSaveReceipt:
     task_id: str
     annotation_id: str
     draft_id: str
-    annotation_revision: int
+    annotation_revision: str
+    draft_updated_at: str
     semantic_hash: str
+    result_hash: str
     durable: bool = True
 
 
@@ -141,8 +143,10 @@ class CommitRequest:
     task_id: str
     annotation_id: str
     draft_id: str
-    annotation_revision: int
+    annotation_revision: str
+    draft_updated_at: str
     semantic_hash: str
+    result_hash: str
     base_row_hash: str
     observed_generation: int
     regions: Sequence[Mapping[str, Any]]
@@ -208,8 +212,10 @@ class AuthoritativeDraftIdentity:
     task_id: str
     annotation_id: str
     draft_id: str
-    annotation_revision: int
+    annotation_revision: str
+    draft_updated_at: str
     semantic_hash: str
+    result_hash: str
 
     @classmethod
     def from_request(cls, request: CommitRequest) -> "AuthoritativeDraftIdentity":
@@ -221,7 +227,9 @@ class AuthoritativeDraftIdentity:
             annotation_id=request.annotation_id,
             draft_id=request.draft_id,
             annotation_revision=request.annotation_revision,
+            draft_updated_at=request.draft_updated_at,
             semantic_hash=request.semantic_hash,
+            result_hash=request.result_hash,
         )
 
 
@@ -301,7 +309,21 @@ class BootstrapResult:
 
 
 def canonical_json(value: Any) -> str:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    )
+
+
+def _reject_nonfinite_json_constant(value: str) -> None:
+    raise ValueError(f"non-finite JSON constant is forbidden: {value}")
+
+
+def _strict_json_loads(value: str | bytes) -> Any:
+    return json.loads(value, parse_constant=_reject_nonfinite_json_constant)
 
 
 def sha256_json(value: Any) -> str:
@@ -316,7 +338,9 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def canonical_semantic_projection(regions: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+def canonical_semantic_projection(
+    regions: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
     """Project Draft semantics while excluding UI order and view metadata."""
 
     projected: list[dict[str, Any]] = []
@@ -350,7 +374,9 @@ def _commit_request_payload(request: CommitRequest) -> dict[str, Any]:
         "annotation_id": request.annotation_id,
         "draft_id": request.draft_id,
         "annotation_revision": request.annotation_revision,
+        "draft_updated_at": request.draft_updated_at,
         "semantic_hash": request.semantic_hash,
+        "result_hash": request.result_hash,
         "base_row_hash": request.base_row_hash,
         "observed_generation": request.observed_generation,
         "regions": copy.deepcopy(list(request.regions)),
@@ -360,7 +386,9 @@ def _commit_request_payload(request: CommitRequest) -> dict[str, Any]:
             "annotation_id": receipt.annotation_id,
             "draft_id": receipt.draft_id,
             "annotation_revision": receipt.annotation_revision,
+            "draft_updated_at": receipt.draft_updated_at,
             "semantic_hash": receipt.semantic_hash,
+            "result_hash": receipt.result_hash,
             "durable": receipt.durable,
         },
         "inference_receipts": list(request.inference_receipts),
@@ -377,8 +405,10 @@ def _commit_request_from_payload(payload: Mapping[str, Any]) -> CommitRequest:
         task_id=str(payload["task_id"]),
         annotation_id=str(payload["annotation_id"]),
         draft_id=str(payload["draft_id"]),
-        annotation_revision=int(payload["annotation_revision"]),
+        annotation_revision=payload["annotation_revision"],
+        draft_updated_at=payload["draft_updated_at"],
         semantic_hash=str(payload["semantic_hash"]),
+        result_hash=payload["result_hash"],
         base_row_hash=str(payload["base_row_hash"]),
         observed_generation=int(payload["observed_generation"]),
         regions=copy.deepcopy(payload["regions"]),
@@ -387,8 +417,10 @@ def _commit_request_from_payload(payload: Mapping[str, Any]) -> CommitRequest:
             task_id=str(receipt["task_id"]),
             annotation_id=str(receipt["annotation_id"]),
             draft_id=str(receipt["draft_id"]),
-            annotation_revision=int(receipt["annotation_revision"]),
+            annotation_revision=receipt["annotation_revision"],
+            draft_updated_at=receipt["draft_updated_at"],
             semantic_hash=str(receipt["semantic_hash"]),
+            result_hash=receipt["result_hash"],
             durable=bool(receipt["durable"]),
         ),
         inference_receipts=tuple(str(value) for value in payload["inference_receipts"]),
@@ -408,7 +440,9 @@ def _request_identity_payload(
         "annotation_id": request.annotation_id,
         "draft_id": request.draft_id,
         "annotation_revision": request.annotation_revision,
+        "draft_updated_at": request.draft_updated_at,
         "semantic_hash": request.semantic_hash,
+        "result_hash": request.result_hash,
         "base_row_hash": request.base_row_hash,
         "observed_generation": request.observed_generation,
         "draft_save": {
@@ -417,12 +451,16 @@ def _request_identity_payload(
             "annotation_id": receipt.annotation_id,
             "draft_id": receipt.draft_id,
             "annotation_revision": receipt.annotation_revision,
+            "draft_updated_at": receipt.draft_updated_at,
             "semantic_hash": receipt.semantic_hash,
+            "result_hash": receipt.result_hash,
             "durable": receipt.durable,
         },
         "inference_receipts": list(request.inference_receipts),
         "materialized_region_projection": copy.deepcopy(materialized_region_projection),
-        "materialized_region_projection_hash": sha256_json(materialized_region_projection),
+        "materialized_region_projection_hash": sha256_json(
+            materialized_region_projection
+        ),
     }
 
 
@@ -495,7 +533,9 @@ class WorkingDatasetStore:
         _validate_selected_source(source, split)
         image_root = spec.image_root.resolve(strict=True)
         if not source.is_file() or not image_root.is_dir():
-            raise ValidationError("source_path must be a file and image_root a directory")
+            raise ValidationError(
+                "source_path must be a file and image_root a directory"
+            )
         actual_source_hash = sha256_file(source)
         if actual_source_hash != spec.expected_source_sha256:
             raise ManifestDriftError("source_sha256")
@@ -572,17 +612,22 @@ class WorkingDatasetStore:
         task_index_entries: list[dict[str, Any]] = []
         working_tmp: Path | None = None
         try:
-            fd, tmp_name = tempfile.mkstemp(prefix=".working.norm.jsonl.", dir=split_dir)
+            fd, tmp_name = tempfile.mkstemp(
+                prefix=".working.norm.jsonl.", dir=split_dir
+            )
             working_tmp = Path(tmp_name)
-            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as output, source.open(
-                "r", encoding="utf-8"
-            ) as input_handle:
+            with (
+                os.fdopen(fd, "w", encoding="utf-8", newline="\n") as output,
+                source.open("r", encoding="utf-8") as input_handle,
+            ):
                 for line_no, line in enumerate(input_handle, start=1):
                     row = _parse_jsonl_line(line, source, line_no)
                     _validate_source_row(row, split, registry)
                     image_id = int(row["image_id"])
                     if image_id in split_image_ids:
-                        raise ValidationError(f"split-wide duplicate image_id: {image_id}")
+                        raise ValidationError(
+                            f"split-wide duplicate image_id: {image_id}"
+                        )
                     split_image_ids.add(image_id)
                     for obj in row["objects"]:
                         object_id = int(obj["coco_ann_id"])
@@ -592,7 +637,9 @@ class WorkingDatasetStore:
                                 f"split-wide duplicate coco_ann_id: {object_id}"
                             )
                     row = copy.deepcopy(row)
-                    row["images"] = [_working_image_locator(row, split, source, image_root)]
+                    row["images"] = [
+                        _working_image_locator(row, split, source, image_root)
+                    ]
                     encoded = canonical_json(row) + "\n"
                     output.write(encoded)
                     seed_identity = {
@@ -601,7 +648,9 @@ class WorkingDatasetStore:
                         "row_hash": sha256_json(row),
                         "source_line": line_no,
                     }
-                    task_digest.update((canonical_json(seed_identity) + "\n").encode("utf-8"))
+                    task_digest.update(
+                        (canonical_json(seed_identity) + "\n").encode("utf-8")
+                    )
                     task_index_entries.append(
                         {
                             "source_row_index": task_count,
@@ -685,10 +734,43 @@ class WorkingDatasetStore:
                     source_row_index=source_row_index,
                     image_locator=str(row["images"][0]),
                     authoritative_annotation_id=f"{task_id}:annotation",
-                    annotations=(
-                        {"id": f"{task_id}:annotation", "regions": regions},
-                    ),
+                    annotations=({"id": f"{task_id}:annotation", "regions": regions},),
                 )
+
+    def resolve_source_row_index(
+        self,
+        *,
+        split: str,
+        project_id: str,
+        task_id: str,
+        image_id: int,
+    ) -> int:
+        """Resolve one server-owned task identity to its immutable row index.
+
+        Batch adapters use this instead of accepting a browser-provided row
+        position.  The supported-reader barrier also makes manifest/task-index
+        reconciliation part of the lookup authority.
+        """
+
+        with self._supported_reader_lock():
+            manifest = self._read_manifest()
+            if (
+                isinstance(image_id, bool)
+                or not isinstance(image_id, int)
+                or image_id < 0
+            ):
+                raise StaleCommitError("invalid task image identity")
+            if split != manifest.get("split"):
+                raise StaleCommitError("split mismatch")
+            if project_id != manifest.get("project_id"):
+                raise StaleCommitError("project mismatch")
+            expected_task_id = _task_id(split, image_id)
+            if task_id != expected_task_id:
+                raise StaleCommitError("task identity mismatch")
+            source_row_index = self._source_row_by_image.get(image_id)
+            if source_row_index is None:
+                raise StaleCommitError("unknown task image identity")
+            return source_row_index
 
     @contextmanager
     def committed_generation_guard(self) -> Iterator[None]:
@@ -800,8 +882,7 @@ class WorkingDatasetStore:
                     record.get("payload_hash") == terminal.get("payload_hash")
                     and record.get("status") == terminal.get("status")
                     and record.get("generation") == terminal.get("generation")
-                    and record.get("working_sha256")
-                    == terminal.get("working_sha256")
+                    and record.get("working_sha256") == terminal.get("working_sha256")
                     and record.get("error") == terminal.get("error")
                     for record in queue_terminals
                 )
@@ -869,7 +950,9 @@ class WorkingDatasetStore:
                 raise ValidationError("batch member split mismatch")
             if request_member.project_id != manifest.get("project_id"):
                 raise StaleCommitError("project mismatch")
-            if request_member.task_id != _task_id(request.split, request_member.image_id):
+            if request_member.task_id != _task_id(
+                request.split, request_member.image_id
+            ):
                 raise StaleCommitError("task identity mismatch")
             self._validate_draft_handshake(request_member)
             if not request_member.regions:
@@ -879,7 +962,9 @@ class WorkingDatasetStore:
             if not self.annotation_verifier.verify(
                 AuthoritativeDraftIdentity.from_request(request_member)
             ):
-                raise StaleCommitError("authoritative annotation snapshot was not attested")
+                raise StaleCommitError(
+                    "authoritative annotation snapshot was not attested"
+                )
             self._validate_inference_linkage(request_member)
         return payload
 
@@ -891,7 +976,9 @@ class WorkingDatasetStore:
             or not isinstance(request.base_generation, int)
             or request.base_generation < 0
         ):
-            raise ValidationError("batch base generation must be a non-negative integer")
+            raise ValidationError(
+                "batch base generation must be a non-negative integer"
+            )
         members = list(request.members)
         if not members:
             raise ValidationError("batch must contain at least one member")
@@ -903,7 +990,7 @@ class WorkingDatasetStore:
         ):
             raise ValidationError("source row index out of range")
         members.sort(key=lambda member: member.source_row_index)
-        return {
+        payload = {
             "batch_id": request.batch_id,
             "split": request.split,
             "base_generation": request.base_generation,
@@ -915,6 +1002,11 @@ class WorkingDatasetStore:
                 for member in members
             ],
         }
+        try:
+            canonical_json(payload)
+        except (TypeError, ValueError) as exc:
+            raise ValidationError("batch payload must be finite ordinary JSON") from exc
+        return payload
 
     def _enqueue_receipt(
         self,
@@ -952,9 +1044,7 @@ class WorkingDatasetStore:
             enqueue,
             records,
             status_override=(
-                BatchStatus.RECONCILING
-                if reconciliation_reason is not None
-                else None
+                BatchStatus.RECONCILING if reconciliation_reason is not None else None
             ),
         )
 
@@ -969,7 +1059,11 @@ class WorkingDatasetStore:
             if record.get("batch_id") == enqueue.get("batch_id")
         ]
         terminal = next(
-            (record for record in reversed(matching) if record.get("kind") == "queue_terminal"),
+            (
+                record
+                for record in reversed(matching)
+                if record.get("kind") == "queue_terminal"
+            ),
             None,
         )
         if terminal is not None:
@@ -1033,8 +1127,7 @@ class WorkingDatasetStore:
             record for record in self._records if record.get("kind") == "terminal"
         ]
         legacy_terminal_by_prepared = {
-            str(record["prepared_record_hash"]): record
-            for record in legacy_terminals
+            str(record["prepared_record_hash"]): record for record in legacy_terminals
         }
         for prepared_hash, prepared in legacy_prepared_by_hash.items():
             if prepared_hash not in legacy_terminal_by_prepared:
@@ -1049,9 +1142,7 @@ class WorkingDatasetStore:
             if record.get("kind") == "batch_prepared"
         }
         terminals = [
-            record
-            for record in self._records
-            if record.get("kind") == "batch_terminal"
+            record for record in self._records if record.get("kind") == "batch_terminal"
         ]
         terminal_by_prepared = {
             str(record["prepared_record_hash"]): record
@@ -1068,9 +1159,7 @@ class WorkingDatasetStore:
             if record.get("kind") == "enqueue"
         }
         queue_terminals = [
-            record
-            for record in queue_records
-            if record.get("kind") == "queue_terminal"
+            record for record in queue_records if record.get("kind") == "queue_terminal"
         ]
         journal_terminal_by_batch = {
             str(record["batch_id"]): record for record in terminals
@@ -1085,7 +1174,9 @@ class WorkingDatasetStore:
                     for candidate in queue_terminals
                     if candidate.get("batch_id") == terminal.get("batch_id")
                 ):
-                    return f"batch {terminal['batch_id']} queue terminal requires repair"
+                    return (
+                        f"batch {terminal['batch_id']} queue terminal requires repair"
+                    )
 
         latest_success: tuple[int, str, Mapping[str, Any]] | None = None
         for terminal in legacy_terminals:
@@ -1283,7 +1374,10 @@ class WorkingDatasetStore:
             candidate_row_images: dict[int, int] = {}
             candidate_row_object_ids: dict[int, set[int]] = {}
             candidate_row_hashes: dict[int, str] = {}
-            with os.fdopen(fd, "wb") as output, self.working_path.open("rb") as input_handle:
+            with (
+                os.fdopen(fd, "wb") as output,
+                self.working_path.open("rb") as input_handle,
+            ):
                 for source_row_index, raw in enumerate(input_handle):
                     if not raw.endswith(b"\n"):
                         raise ValidationError(
@@ -1292,14 +1386,20 @@ class WorkingDatasetStore:
                     input_digest.update(raw)
                     input_line_count += 1
                     try:
-                        before_row = json.loads(raw)
-                    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                        before_row = _strict_json_loads(raw)
+                    except (
+                        UnicodeDecodeError,
+                        json.JSONDecodeError,
+                        ValueError,
+                    ) as exc:
                         raise ValidationError(
                             f"invalid working JSONL row {source_row_index + 1}"
                         ) from exc
                     image_id = int(before_row.get("image_id", -1))
                     if self._source_row_by_image.get(image_id) != source_row_index:
-                        raise RecoveryError("working source row index attestation failed")
+                        raise RecoveryError(
+                            "working source row index attestation failed"
+                        )
                     request = member_by_index.get(source_row_index)
                     if request is None:
                         after_row = before_row
@@ -1310,11 +1410,13 @@ class WorkingDatasetStore:
                         before_hash = sha256_json(before_row)
                         if before_hash != request.base_row_hash:
                             raise StaleCommitError("base row hash changed")
-                        after_objects, mapping, _, projection = self._materialize_objects(
-                            before_row,
-                            request.regions,
-                            split=request.split,
-                            image_id=request.image_id,
+                        after_objects, mapping, _, projection = (
+                            self._materialize_objects(
+                                before_row,
+                                request.regions,
+                                split=request.split,
+                                image_id=request.image_id,
+                            )
                         )
                         after_row = copy.deepcopy(before_row)
                         after_row["objects"] = after_objects
@@ -1339,9 +1441,7 @@ class WorkingDatasetStore:
                                 "after_row_hash": after_hash,
                                 "region_id_mapping": mapping,
                                 "tombstones": tombstones,
-                                "inference_receipts": list(
-                                    request.inference_receipts
-                                ),
+                                "inference_receipts": list(request.inference_receipts),
                             }
                         )
                         seen_member_indices.add(source_row_index)
@@ -1514,9 +1614,7 @@ class WorkingDatasetStore:
                 {
                     _region_key(region)
                     for region in request.regions
-                    if _source_id_from_region_key(
-                        _region_key(region), request.split
-                    )
+                    if _source_id_from_region_key(_region_key(region), request.split)
                     is None
                 }
             )
@@ -1531,10 +1629,15 @@ class WorkingDatasetStore:
                     continue
                 prior_owners = {
                     (mapped_image_id, mapped_id)
-                    for (mapped_image_id, mapped_key), mapped_id in self._region_to_id.items()
+                    for (
+                        mapped_image_id,
+                        mapped_key,
+                    ), mapped_id in self._region_to_id.items()
                     if mapped_key == key
                 }
-                if any(owner_image != request.image_id for owner_image, _ in prior_owners):
+                if any(
+                    owner_image != request.image_id for owner_image, _ in prior_owners
+                ):
                     raise ValidationError(
                         f"stable region key is already bound to another task: {key!r}"
                     )
@@ -1727,8 +1830,12 @@ class WorkingDatasetStore:
                 raise StaleCommitError("project mismatch")
             if request.task_id != _task_id(request.split, request.image_id):
                 raise StaleCommitError("task identity mismatch")
-            if not self.annotation_verifier.verify(AuthoritativeDraftIdentity.from_request(request)):
-                raise StaleCommitError("authoritative annotation snapshot was not attested")
+            if not self.annotation_verifier.verify(
+                AuthoritativeDraftIdentity.from_request(request)
+            ):
+                raise StaleCommitError(
+                    "authoritative annotation snapshot was not attested"
+                )
             if request.observed_generation != int(manifest["generation"]):
                 raise StaleCommitError("project generation changed")
             if sha256_file(self.working_path) != manifest["working_sha256"]:
@@ -1739,14 +1846,18 @@ class WorkingDatasetStore:
             if before_hash != request.base_row_hash:
                 raise StaleCommitError("base row hash changed")
             if not request.regions:
-                raise ValidationError("empty Draft is preserved, but V1 Commit requires an object")
+                raise ValidationError(
+                    "empty Draft is preserved, but V1 Commit requires an object"
+                )
 
             self._validate_inference_linkage(request)
-            after_objects, mapping, allocations, materialized_projection = self._materialize_objects(
-                before_row,
-                request.regions,
-                split=request.split,
-                image_id=request.image_id,
+            after_objects, mapping, allocations, materialized_projection = (
+                self._materialize_objects(
+                    before_row,
+                    request.regions,
+                    split=request.split,
+                    image_id=request.image_id,
+                )
             )
             after_row = copy.deepcopy(before_row)
             after_row["objects"] = after_objects
@@ -1768,7 +1879,9 @@ class WorkingDatasetStore:
                 }
             )
             candidate_manifest_hash = sha256_json(candidate_manifest)
-            request_identity = _request_identity_payload(request, materialized_projection)
+            request_identity = _request_identity_payload(
+                request, materialized_projection
+            )
             prepared = {
                 "kind": "prepared",
                 "commit_id": request.commit_id,
@@ -1779,7 +1892,9 @@ class WorkingDatasetStore:
                 "annotation_id": request.annotation_id,
                 "draft_id": request.draft_id,
                 "annotation_revision": request.annotation_revision,
+                "draft_updated_at": request.draft_updated_at,
                 "semantic_hash": request.semantic_hash,
+                "result_hash": request.result_hash,
                 "request_identity": request_identity,
                 "request_identity_hash": sha256_json(request_identity),
                 "base_generation": int(manifest["generation"]),
@@ -1816,7 +1931,9 @@ class WorkingDatasetStore:
                     raise CommitOutcomeUnknown(
                         f"commit {request.commit_id} outcome requires reconciliation"
                     ) from exc
-                self._append_terminal(prepared, CommitStatus.ROLLED_BACK, error=str(exc))
+                self._append_terminal(
+                    prepared, CommitStatus.ROLLED_BACK, error=str(exc)
+                )
                 raise
 
             self._reload_journal_index()
@@ -1842,9 +1959,15 @@ class WorkingDatasetStore:
             records = self._records_for_commit(commit_id)
             if not records:
                 raise StoreError(f"unknown commit id: {commit_id}")
-            prepared = next(record for record in records if record["kind"] == "prepared")
+            prepared = next(
+                record for record in records if record["kind"] == "prepared"
+            )
             terminal = next(
-                (record for record in reversed(records) if record["kind"] == "terminal"),
+                (
+                    record
+                    for record in reversed(records)
+                    if record["kind"] == "terminal"
+                ),
                 None,
             )
             if terminal is None:
@@ -1884,15 +2007,14 @@ class WorkingDatasetStore:
             self._reload_journal_index(repair_torn_tail=True)
             for prepared in [r for r in self._records if r["kind"] == "prepared"]:
                 if any(
-                    r["kind"] == "terminal" and r.get("prepared_record_hash") == prepared["record_hash"]
+                    r["kind"] == "terminal"
+                    and r.get("prepared_record_hash") == prepared["record_hash"]
                     for r in self._records
                 ):
                     continue
                 self._recover_prepared(prepared)
                 self._reload_journal_index()
-            for prepared in [
-                r for r in self._records if r["kind"] == "batch_prepared"
-            ]:
+            for prepared in [r for r in self._records if r["kind"] == "batch_prepared"]:
                 if self._batch_terminal_record(str(prepared["batch_id"])) is not None:
                     continue
                 self._recover_batch_prepared(prepared)
@@ -1979,7 +2101,10 @@ class WorkingDatasetStore:
                 recovery=True,
             )
             return
-        if working_hash == candidate_working and manifest_hash == candidate_manifest_hash:
+        if (
+            working_hash == candidate_working
+            and manifest_hash == candidate_manifest_hash
+        ):
             self._append_batch_terminal(
                 prepared,
                 BatchStatus.SUCCEEDED,
@@ -1997,24 +2122,44 @@ class WorkingDatasetStore:
         receipt = request.draft_save
         if not receipt.durable:
             raise ValidationError("Commit requires a durable Draft-save receipt")
+        for value, label in (
+            (request.annotation_revision, "annotation revision"),
+            (request.draft_updated_at, "Draft updated_at"),
+        ):
+            if not isinstance(value, str) or not value.strip():
+                raise ValidationError(f"{label} must be an opaque non-empty string")
+        for value, label in (
+            (request.semantic_hash, "semantic hash"),
+            (request.result_hash, "result hash"),
+        ):
+            if not _is_sha256(value):
+                raise ValidationError(f"{label} must be a lowercase SHA-256 digest")
         matched = (
             receipt.project_id == request.project_id
             and receipt.task_id == request.task_id
             and receipt.annotation_id == request.annotation_id
             and receipt.draft_id == request.draft_id
             and receipt.annotation_revision == request.annotation_revision
+            and receipt.draft_updated_at == request.draft_updated_at
             and receipt.semantic_hash == request.semantic_hash
+            and receipt.result_hash == request.result_hash
         )
         if not matched:
-            raise StaleCommitError("Draft-save receipt does not match the Commit snapshot")
+            raise StaleCommitError(
+                "Draft-save receipt does not match the Commit snapshot"
+            )
         actual_semantic_hash = semantic_hash(request.regions)
         if actual_semantic_hash != request.semantic_hash:
-            raise StaleCommitError("submitted regions do not match the saved Draft hash")
+            raise StaleCommitError(
+                "submitted regions do not match the saved Draft hash"
+            )
 
     def _validate_inference_linkage(self, request: CommitRequest) -> None:
         declared = tuple(request.inference_receipts)
         if any(not isinstance(value, str) or not value for value in declared):
-            raise ValidationError("declared inference receipt IDs must be non-empty text")
+            raise ValidationError(
+                "declared inference receipt IDs must be non-empty text"
+            )
         if len(set(declared)) != len(declared):
             raise ValidationError("declared inference receipt IDs must be unique")
 
@@ -2064,7 +2209,9 @@ class WorkingDatasetStore:
                 or link.annotation_id != request.annotation_id
                 or link.terminal_status not in {"accepted", "accepted_with_drops"}
             ):
-                raise ValidationError(f"inference receipt target mismatch: {receipt_id}")
+                raise ValidationError(
+                    f"inference receipt target mismatch: {receipt_id}"
+                )
             key = _region_key(region)
             if link.result_region_keys.get(result_id) != key:
                 raise ValidationError(
@@ -2095,10 +2242,9 @@ class WorkingDatasetStore:
             raise CommitConflictError(
                 "commit id reused with a different immutable request identity"
             ) from exc
-        if (
-            prepared.get("request_identity") != identity
-            or prepared.get("request_identity_hash") != sha256_json(identity)
-        ):
+        if prepared.get("request_identity") != identity or prepared.get(
+            "request_identity_hash"
+        ) != sha256_json(identity):
             raise CommitConflictError(
                 "commit id reused with a different immutable request identity"
             )
@@ -2122,7 +2268,8 @@ class WorkingDatasetStore:
             row_hash=str(prepared["after_row_hash"]),
             semantic_hash=str(prepared["semantic_hash"]),
             region_id_mapping={
-                str(key): int(value) for key, value in prepared["region_id_mapping"].items()
+                str(key): int(value)
+                for key, value in prepared["region_id_mapping"].items()
             },
             committed_row=copy.deepcopy(prepared["after_row"]),
         )
@@ -2143,7 +2290,8 @@ class WorkingDatasetStore:
     ]:
         before_ids = {int(obj["coco_ann_id"]): obj for obj in before_row["objects"]}
         before_rank = {
-            int(obj["coco_ann_id"]): rank for rank, obj in enumerate(before_row["objects"])
+            int(obj["coco_ann_id"]): rank
+            for rank, obj in enumerate(before_row["objects"])
         }
         used_ids: set[int] = set()
         mapping: dict[str, int] = {}
@@ -2198,9 +2346,13 @@ class WorkingDatasetStore:
             if known_id is not None:
                 object_id = known_id
             elif supplied_id is not None:
-                raise ValidationError("unmapped coco_ann_id values are not accepted from the Draft")
+                raise ValidationError(
+                    "unmapped coco_ann_id values are not accepted from the Draft"
+                )
             else:
-                while next_negative in reserved_negative_ids or next_negative in used_ids:
+                while (
+                    next_negative in reserved_negative_ids or next_negative in used_ids
+                ):
                     next_negative -= 1
                 object_id = next_negative
                 next_negative -= 1
@@ -2208,14 +2360,18 @@ class WorkingDatasetStore:
             if object_id in used_ids:
                 raise ValidationError(f"duplicate coco_ann_id: {object_id}")
             if object_id in tombstones and before_ids.get(object_id) is None:
-                raise ValidationError(f"tombstoned coco_ann_id cannot be restored: {object_id}")
+                raise ValidationError(
+                    f"tombstoned coco_ann_id cannot be restored: {object_id}"
+                )
             used_ids.add(object_id)
             mapping[key] = object_id
 
             name = region.get("category_name", region.get("desc"))
             category_id = region.get("category_id")
             if not isinstance(name, str) or not isinstance(category_id, int):
-                raise ValidationError("category_name and integer category_id are required")
+                raise ValidationError(
+                    "category_name and integer category_id are required"
+                )
             self.registry.validate(name, category_id)
             bbox = _validate_bbox(region.get("bbox_2d"))
             obj: dict[str, Any] = {
@@ -2230,7 +2386,9 @@ class WorkingDatasetStore:
                 obj["metadata"] = metadata
             prior_rank = before_rank.get(object_id)
             creation_ordinal = (
-                None if prior_rank is not None else int(region.get("creation_ordinal", ordinal))
+                None
+                if prior_rank is not None
+                else int(region.get("creation_ordinal", ordinal))
             )
             materialized.append((obj, key, prior_rank, creation_ordinal))
 
@@ -2284,14 +2442,18 @@ class WorkingDatasetStore:
                 raise ValidationError("coco_ann_id must be a unique nonzero integer")
             ids.add(object_id)
 
-    def _candidate_working_hash(self, row_index: int, after_row: Mapping[str, Any]) -> str:
+    def _candidate_working_hash(
+        self, row_index: int, after_row: Mapping[str, Any]
+    ) -> str:
         digest = hashlib.sha256()
         object_owners: dict[int, int] = {}
         image_ids: set[int] = set()
         for index, current_row, raw in self._iter_rows():
             row = after_row if index == row_index else current_row
             self._validate_row(row)
-            _register_split_wide_ids(row, object_owners, image_ids, error_type=ValidationError)
+            _register_split_wide_ids(
+                row, object_owners, image_ids, error_type=ValidationError
+            )
             encoded = (
                 (canonical_json(after_row) + "\n").encode("utf-8")
                 if index == row_index
@@ -2303,7 +2465,9 @@ class WorkingDatasetStore:
     def _rewrite_working(
         self, row_index: int, after_row: Mapping[str, Any], expected_hash: str
     ) -> None:
-        fd, temp_name = tempfile.mkstemp(prefix=".working.norm.jsonl.", dir=self.split_dir)
+        fd, temp_name = tempfile.mkstemp(
+            prefix=".working.norm.jsonl.", dir=self.split_dir
+        )
         temp_path = Path(temp_name)
         replaced = False
         try:
@@ -2319,7 +2483,9 @@ class WorkingDatasetStore:
                 os.fsync(output.fileno())
                 self._fault("working_temp_fsynced")
             if sha256_file(temp_path) != expected_hash:
-                raise RecoveryError("candidate working hash disagrees with prepared record")
+                raise RecoveryError(
+                    "candidate working hash disagrees with prepared record"
+                )
             os.replace(temp_path, self.working_path)
             replaced = True
             self._fault("working_replaced")
@@ -2353,7 +2519,9 @@ class WorkingDatasetStore:
                 os.fsync(output.fileno())
                 self._fault("manifest_temp_fsynced", recovery=recovery)
             if sha256_json(manifest) != expected_hash:
-                raise RecoveryError("candidate manifest hash disagrees with prepared record")
+                raise RecoveryError(
+                    "candidate manifest hash disagrees with prepared record"
+                )
             os.replace(temp_path, self.manifest_path)
             self._fault("manifest_replaced", recovery=recovery)
             _fsync_directory(self.split_dir)
@@ -2364,7 +2532,9 @@ class WorkingDatasetStore:
     def _append_record(self, record: Mapping[str, Any], stage: str) -> dict[str, Any]:
         payload = copy.deepcopy(dict(record))
         payload.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
-        payload["prev_record_hash"] = self._records[-1]["record_hash"] if self._records else None
+        payload["prev_record_hash"] = (
+            self._records[-1]["record_hash"] if self._records else None
+        )
         payload["record_hash"] = sha256_json(payload)
         encoded = (canonical_json(payload) + "\n").encode("utf-8")
         with self.journal_path.open("ab") as handle:
@@ -2464,7 +2634,9 @@ class WorkingDatasetStore:
             if kind == "batch_terminal":
                 batch_id = str(record.get("batch_id"))
                 if batch_id in batch_terminals:
-                    raise RecoveryError(f"batch {batch_id} has multiple terminal outcomes")
+                    raise RecoveryError(
+                        f"batch {batch_id} has multiple terminal outcomes"
+                    )
                 status = record.get("status")
                 if status not in {
                     BatchStatus.SUCCEEDED.value,
@@ -2478,15 +2650,16 @@ class WorkingDatasetStore:
                         raise RecoveryError(
                             "batch terminal has no preceding prepared record"
                         )
-                    if (
-                        record.get("batch_id") != prepared.get("batch_id")
-                        or record.get("payload_hash") != prepared.get("payload_hash")
-                    ):
+                    if record.get("batch_id") != prepared.get("batch_id") or record.get(
+                        "payload_hash"
+                    ) != prepared.get("payload_hash"):
                         raise RecoveryError(
                             "batch terminal identity disagrees with prepared record"
                         )
                 elif status == BatchStatus.SUCCEEDED.value:
-                    raise RecoveryError("successful batch terminal requires a prepared record")
+                    raise RecoveryError(
+                        "successful batch terminal requires a prepared record"
+                    )
                 batch_terminals[batch_id] = record
                 continue
             raise RecoveryError(f"unsupported journal record kind: {kind!r}")
@@ -2512,7 +2685,9 @@ class WorkingDatasetStore:
             if record["record_hash"] in committed_legacy:
                 for key, value in record.get("region_id_mapping", {}).items():
                     self._register_region_mapping(image_id, str(key), int(value))
-                self._tombstones.update(int(value) for value in record.get("tombstones", ()))
+                self._tombstones.update(
+                    int(value) for value in record.get("tombstones", ())
+                )
 
         for terminal in batch_terminals.values():
             if terminal["status"] != BatchStatus.SUCCEEDED.value:
@@ -2544,9 +2719,11 @@ class WorkingDatasetStore:
         for line_no, raw in enumerate(complete.splitlines(keepends=True), start=1):
             try:
                 line = raw.decode("utf-8")
-                record = json.loads(line)
-            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                raise RecoveryError(f"invalid journal record at line {line_no}") from exc
+                record = _strict_json_loads(line)
+            except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+                raise RecoveryError(
+                    f"invalid journal record at line {line_no}"
+                ) from exc
             if record.get("prev_record_hash") != previous_hash:
                 raise RecoveryError(f"broken journal chain at line {line_no}")
             recorded_hash = record.get("record_hash")
@@ -2559,9 +2736,13 @@ class WorkingDatasetStore:
 
         if tail:
             if not repair_torn_tail:
-                raise RecoveryError(f"incomplete journal record at line {len(records) + 1}")
+                raise RecoveryError(
+                    f"incomplete journal record at line {len(records) + 1}"
+                )
             if not tail.startswith(b"{") or b"\n" in tail:
-                raise RecoveryError("final journal bytes are not an unambiguous torn frame")
+                raise RecoveryError(
+                    "final journal bytes are not an unambiguous torn frame"
+                )
             with self.journal_path.open("r+b") as handle:
                 handle.truncate(len(complete))
                 handle.flush()
@@ -2569,9 +2750,7 @@ class WorkingDatasetStore:
             _fsync_directory(self.split_dir)
         return records
 
-    def _validate_queue_records(
-        self, records: Sequence[Mapping[str, Any]]
-    ) -> None:
+    def _validate_queue_records(self, records: Sequence[Mapping[str, Any]]) -> None:
         enqueues: dict[str, Mapping[str, Any]] = {}
         claims: set[str] = set()
         for record in records:
@@ -2581,7 +2760,9 @@ class WorkingDatasetStore:
                 raise RecoveryError("queue record has invalid batch identity")
             if kind == "enqueue":
                 if batch_id in enqueues:
-                    raise RecoveryError(f"duplicate enqueue record for batch {batch_id}")
+                    raise RecoveryError(
+                        f"duplicate enqueue record for batch {batch_id}"
+                    )
                 payload = record.get("payload")
                 if (
                     not isinstance(payload, Mapping)
@@ -2649,9 +2830,7 @@ class WorkingDatasetStore:
             raise RecoveryError("invalid batch allocation reservation")
         prior = self._batch_reservations.setdefault(key, (image_id, object_id))
         if prior != (image_id, object_id):
-            raise RecoveryError(
-                f"stable region key reservation disagreement: {key!r}"
-            )
+            raise RecoveryError(f"stable region key reservation disagreement: {key!r}")
         self._register_region_mapping(image_id, key, object_id)
         self._reserved_negative_ids.add(object_id)
 
@@ -2666,7 +2845,9 @@ class WorkingDatasetStore:
         for _, row, _ in self._iter_rows():
             line_count += 1
             self._validate_row(row)
-            _register_split_wide_ids(row, object_owners, image_ids, error_type=RecoveryError)
+            _register_split_wide_ids(
+                row, object_owners, image_ids, error_type=RecoveryError
+            )
             image_id = int(row["image_id"])
             for obj in row["objects"]:
                 object_id = int(obj["coco_ann_id"])
@@ -2677,16 +2858,20 @@ class WorkingDatasetStore:
                             f"negative coco_ann_id {object_id} has no authoritative journal mapping"
                         )
         if line_count != int(manifest.get("working_line_count", -1)):
-            raise RecoveryError("working JSONL line count does not match published manifest")
+            raise RecoveryError(
+                "working JSONL line count does not match published manifest"
+            )
 
     def _records_for_commit(self, commit_id: str) -> list[dict[str, Any]]:
-        return [record for record in self._records if record.get("commit_id") == commit_id]
+        return [
+            record for record in self._records if record.get("commit_id") == commit_id
+        ]
 
     def _read_manifest(self) -> dict[str, Any]:
         try:
             with self.manifest_path.open("r", encoding="utf-8") as handle:
-                manifest = json.load(handle)
-        except (OSError, json.JSONDecodeError) as exc:
+                manifest = _strict_json_loads(handle.read())
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
             raise RecoveryError(f"cannot read manifest: {self.manifest_path}") from exc
         return manifest
 
@@ -2700,8 +2885,10 @@ class WorkingDatasetStore:
         if sha256_file(self.task_index_path) != expected_hash:
             raise ManifestDriftError("task_index_sha256")
         try:
-            payload = json.loads(self.task_index_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
+            payload = _strict_json_loads(
+                self.task_index_path.read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
             raise ManifestDriftError("task_index") from exc
         if (
             payload.get("schema_version") != SCHEMA_VERSION
@@ -2759,10 +2946,11 @@ class WorkingDatasetStore:
         if target_generation == self._cache_generation:
             if (
                 manifest.get("working_sha256") != self._cache_working_sha256
-                or int(manifest.get("working_line_count", -1))
-                != self._cache_line_count
+                or int(manifest.get("working_line_count", -1)) != self._cache_line_count
             ):
-                raise RecoveryError("row freshness cache publication attestation drifted")
+                raise RecoveryError(
+                    "row freshness cache publication attestation drifted"
+                )
             return
 
         updates: dict[int, tuple[str, int, Sequence[Mapping[str, Any]]]] = {}
@@ -2813,19 +3001,27 @@ class WorkingDatasetStore:
             else:
                 continue
             if generation in updates:
-                raise RecoveryError(f"multiple committed transactions at generation {generation}")
+                raise RecoveryError(
+                    f"multiple committed transactions at generation {generation}"
+                )
             updates[generation] = (candidate_hash, line_count, rows)
 
         current_generation = self._cache_generation
-        for generation in sorted(value for value in updates if value > current_generation):
+        for generation in sorted(
+            value for value in updates if value > current_generation
+        ):
             if generation != current_generation + 1:
-                raise RecoveryError("journal cannot advance the row freshness cache contiguously")
+                raise RecoveryError(
+                    "journal cannot advance the row freshness cache contiguously"
+                )
             candidate_hash, line_count, rows = updates[generation]
             for row_update in rows:
                 image_id = int(row_update["image_id"])
                 source_row_index = self._source_row_by_image.get(image_id)
                 if source_row_index is None:
-                    raise RecoveryError("journal row is absent from the immutable task index")
+                    raise RecoveryError(
+                        "journal row is absent from the immutable task index"
+                    )
                 after_row = row_update["after_row"]
                 if sha256_json(after_row) != row_update["after_row_hash"]:
                     raise RecoveryError("journal row hash attestation failed")
@@ -2880,8 +3076,8 @@ class WorkingDatasetStore:
         records: list[dict[str, Any]] = []
         for line_no, raw in enumerate(complete.splitlines(), start=1):
             try:
-                record = json.loads(raw)
-            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                record = _strict_json_loads(raw)
+            except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
                 raise RecoveryError(f"invalid queue record at line {line_no}") from exc
             if record.get("prev_record_hash") != previous_hash:
                 raise RecoveryError(f"broken queue chain at line {line_no}")
@@ -2896,7 +3092,9 @@ class WorkingDatasetStore:
             if not repair_torn_tail:
                 raise RecoveryError("incomplete queue record")
             if not tail.startswith(b"{") or b"\n" in tail:
-                raise RecoveryError("final queue bytes are not an unambiguous torn frame")
+                raise RecoveryError(
+                    "final queue bytes are not an unambiguous torn frame"
+                )
             with self.queue_path.open("r+b") as handle:
                 handle.truncate(len(complete))
                 handle.flush()
@@ -2909,11 +3107,15 @@ class WorkingDatasetStore:
         with self.working_path.open("rb") as handle:
             for index, raw in enumerate(handle):
                 if not raw.endswith(b"\n"):
-                    raise ValidationError("working JSONL must end every row with a newline")
+                    raise ValidationError(
+                        "working JSONL must end every row with a newline"
+                    )
                 try:
-                    row = json.loads(raw)
-                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                    raise ValidationError(f"invalid working JSONL row {index + 1}") from exc
+                    row = _strict_json_loads(raw)
+                except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+                    raise ValidationError(
+                        f"invalid working JSONL row {index + 1}"
+                    ) from exc
                 yield index, row, raw
 
     def _find_row(self, image_id: int) -> tuple[int, dict[str, Any], bytes]:
@@ -2947,7 +3149,9 @@ class WorkingDatasetStore:
             try:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError as exc:
-                raise StoreBusyError(f"split is already locked: {self.split_dir}") from exc
+                raise StoreBusyError(
+                    f"split is already locked: {self.split_dir}"
+                ) from exc
             try:
                 yield
             finally:
@@ -2984,7 +3188,9 @@ class WorkingDatasetStore:
             try:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError as exc:
-                raise StoreBusyError(f"split queue is already locked: {self.split_dir}") from exc
+                raise StoreBusyError(
+                    f"split queue is already locked: {self.split_dir}"
+                ) from exc
             try:
                 yield
             finally:
@@ -3031,7 +3237,9 @@ class WorkingDatasetStore:
 
     def _assert_serving_ready(self) -> None:
         if self._recovery_required:
-            raise RecoveryError("store requires recovery after an interrupted transaction")
+            raise RecoveryError(
+                "store requires recovery after an interrupted transaction"
+            )
 
 
 def _region_key(region: Mapping[str, Any]) -> str:
@@ -3056,7 +3264,9 @@ def _source_id_from_region_key(region_key: str, split: str) -> int | None:
     try:
         object_id = int(region_key[len(prefix) :])
     except ValueError as exc:
-        raise ValidationError("coco region keys must end in a positive integer") from exc
+        raise ValidationError(
+            "coco region keys must end in a positive integer"
+        ) from exc
     if object_id <= 0:
         raise ValidationError("coco region keys must end in a positive integer")
     return object_id
@@ -3106,7 +3316,12 @@ def _stable_order(
     values: Sequence[tuple[dict[str, Any], str, int | None, int | None]],
 ) -> list[dict[str, Any]]:
     try:
-        from .models import ObjectIdentity, OrderedWorkingObject, WorkingObject, stable_top_left_order
+        from .models import (
+            ObjectIdentity,
+            OrderedWorkingObject,
+            WorkingObject,
+            stable_top_left_order,
+        )
     except ImportError:  # pragma: no cover - partial sibling landing fallback
         seeded = sorted(
             values,
@@ -3154,10 +3369,18 @@ def _validate_split(split: str) -> str:
     return split
 
 
+def _is_sha256(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
 def _validate_selected_source(source: Path, split: str) -> None:
-    expected_suffix = Path(
-        "public_data/coco/rescale_32_1024_bbox_len12000"
-    ) / f"{split}.norm.jsonl"
+    expected_suffix = (
+        Path("public_data/coco/rescale_32_1024_bbox_len12000") / f"{split}.norm.jsonl"
+    )
     if source.parts[-len(expected_suffix.parts) :] != expected_suffix.parts:
         raise ManifestDriftError("source_path")
 
@@ -3166,7 +3389,9 @@ def _default_registry() -> CategoryRegistry:
     try:
         from .categories import COCO80_REGISTRY
     except ImportError as exc:  # pragma: no cover - only during partial sibling landing
-        raise StoreError("Coco80Registry is not available; pass registry explicitly") from exc
+        raise StoreError(
+            "Coco80Registry is not available; pass registry explicitly"
+        ) from exc
     return COCO80_REGISTRY
 
 
@@ -3176,10 +3401,12 @@ def _task_id(split: str, image_id: int) -> str:
 
 def _parse_jsonl_line(line: str, source: Path, line_no: int) -> dict[str, Any]:
     if not line.endswith("\n"):
-        raise ValidationError(f"source row {line_no} in {source} has no trailing newline")
+        raise ValidationError(
+            f"source row {line_no} in {source} has no trailing newline"
+        )
     try:
-        row = json.loads(line)
-    except json.JSONDecodeError as exc:
+        row = _strict_json_loads(line)
+    except (json.JSONDecodeError, ValueError) as exc:
         raise ValidationError(f"invalid source JSONL row {line_no}") from exc
     if not isinstance(row, dict):
         raise ValidationError(f"source row {line_no} is not an object")
@@ -3191,7 +3418,9 @@ def _validate_source_row(
 ) -> None:
     required = {"images", "objects", "width", "height", "image_id", "file_name"}
     if not required.issubset(row):
-        raise ValidationError(f"source row missing fields: {sorted(required - set(row))}")
+        raise ValidationError(
+            f"source row missing fields: {sorted(required - set(row))}"
+        )
     if not isinstance(row["images"], list) or len(row["images"]) != 1:
         raise ValidationError("source row must contain exactly one image locator")
     if not isinstance(row["objects"], list) or not row["objects"]:
@@ -3201,7 +3430,11 @@ def _validate_source_row(
         _validate_bbox(obj.get("bbox_2d"))
         name = obj.get("category_name")
         category_id = obj.get("category_id")
-        if obj.get("desc") != name or not isinstance(name, str) or not isinstance(category_id, int):
+        if (
+            obj.get("desc") != name
+            or not isinstance(name, str)
+            or not isinstance(category_id, int)
+        ):
             raise ValidationError("source class fields are inconsistent")
         registry.validate(name, category_id)
         object_id = obj.get("coco_ann_id")
@@ -3223,7 +3456,9 @@ def _working_image_locator(
     try:
         relative = resolved.relative_to(image_root)
     except ValueError as exc:
-        raise ValidationError("source image escapes the allowlisted image root") from exc
+        raise ValidationError(
+            "source image escapes the allowlisted image root"
+        ) from exc
     expected_dir = f"{split}2017"
     if not relative.parts or relative.parts[0] != expected_dir:
         raise ValidationError("source image does not belong to its split storage")

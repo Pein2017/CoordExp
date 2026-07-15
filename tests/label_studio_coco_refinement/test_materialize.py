@@ -35,6 +35,7 @@ from src.label_studio_coco_refinement.store import (
     RecoveryError,
     WorkingDatasetStore,
     semantic_hash,
+    sha256_json,
 )
 
 
@@ -128,7 +129,10 @@ def test_materializer_is_layout_split_bound_atomic_and_loader_compatible(
 
     (loaded,) = load_raw_examples(output)
     assert [obj.object_id for obj in loaded.objects] == ["589229", "-1"]
-    assert [obj.bbox for obj in loaded.objects] == [(1, 46, 691, 941), (20, 50, 700, 950)]
+    assert [obj.bbox for obj in loaded.objects] == [
+        (1, 46, 691, 941),
+        (20, 50, 700, 950),
+    ]
 
 
 @pytest.mark.parametrize(
@@ -202,7 +206,9 @@ def test_canonical_selected_source_cannot_be_input_or_output_target(
     assert canonical_source.read_bytes() == canonical_before
 
 
-def test_cross_split_working_locator_is_rejected_without_mutation(tmp_path: Path) -> None:
+def test_cross_split_working_locator_is_rejected_without_mutation(
+    tmp_path: Path,
+) -> None:
     row = _row(split="train")
     row["images"] = ["images/val2017/000000000034.jpg"]
     row["file_name"] = "images/val2017/000000000034.jpg"
@@ -555,7 +561,9 @@ def test_public_constructor_rejects_replaced_generation_guard(
     layout, store, _, _, identities = _store_project(tmp_path)
     monkeypatch.setattr(store, "committed_generation_guard", RecordingLock())
 
-    with pytest.raises(DataContractError, match="exact bound committed generation guard"):
+    with pytest.raises(
+        DataContractError, match="exact bound committed generation guard"
+    ):
         WorkingCoordMaterializer(
             layout,
             "train",
@@ -638,7 +646,9 @@ def test_runtime_layout_is_exact_dedicated_and_split_scoped(tmp_path: Path) -> N
     assert layout.root == repository / "outputs" / "label_studio_coco_refinement" / (
         "rescale_32_1024_bbox_len12000"
     )
-    assert layout.image_root == repository / "public_data/coco/rescale_32_1024_bbox/images"
+    assert (
+        layout.image_root == repository / "public_data/coco/rescale_32_1024_bbox/images"
+    )
     assert layout.label_studio_state == layout.root / "label-studio" / "state"
     assert layout.working_norm("train") == layout.root / "train" / "working.norm.jsonl"
     assert layout.working_coord("val") == layout.root / "val" / "working.coord.jsonl"
@@ -662,18 +672,11 @@ def _store_project(
     image = layout.image_root / "train2017" / "000000000034.jpg"
     image.parent.mkdir(parents=True)
     image.write_bytes(b"store-fixture-image")
-    source_dir = (
-        repository
-        / "public_data"
-        / "coco"
-        / "rescale_32_1024_bbox_len12000"
-    )
+    source_dir = repository / "public_data" / "coco" / "rescale_32_1024_bbox_len12000"
     source_dir.mkdir(parents=True)
     source = source_dir / "train.norm.jsonl"
     source_row = _row(split="train")
-    source_row["images"] = [
-        "../rescale_32_1024_bbox/images/train2017/000000000034.jpg"
-    ]
+    source_row["images"] = ["../rescale_32_1024_bbox/images/train2017/000000000034.jpg"]
     source_row["objects"][1]["coco_ann_id"] = 589230
     source.write_text(_canonical_json(source_row) + "\n")
     verifier = AcceptingAnnotationVerifier()
@@ -742,8 +745,10 @@ def _store_commit_request(store: WorkingDatasetStore) -> CommitRequest:
         task_id="train:34",
         annotation_id="annotation-34",
         draft_id="draft-34",
-        annotation_revision=7,
+        annotation_revision="annotation-v7",
+        draft_updated_at="2026-07-15T00:00:07Z",
         semantic_hash=projection_hash,
+        result_hash=sha256_json(regions),
     )
     return CommitRequest(
         commit_id="materialize-interrupted:member:34",
@@ -753,8 +758,10 @@ def _store_commit_request(store: WorkingDatasetStore) -> CommitRequest:
         task_id="train:34",
         annotation_id="annotation-34",
         draft_id="draft-34",
-        annotation_revision=7,
+        annotation_revision="annotation-v7",
+        draft_updated_at="2026-07-15T00:00:07Z",
         semantic_hash=projection_hash,
+        result_hash=sha256_json(regions),
         base_row_hash=restored.row_hash,
         observed_generation=restored.generation,
         regions=regions,
@@ -802,7 +809,9 @@ def _project(
     _write_jsonl(source, rows if rows is not None else [_row(split=split)])
     output.write_bytes(b'{"prior":"valid"}\n')
     source_hash = hashlib.sha256(source.read_bytes()).hexdigest()
-    authoritative_rows = identity_rows if identity_rows is not None else [_row(split=split)]
+    authoritative_rows = (
+        identity_rows if identity_rows is not None else [_row(split=split)]
+    )
     task_manifest_hash = _task_manifest_hash(split, authoritative_rows)
     generation = CommittedGenerationReceipt(
         split=split,  # type: ignore[arg-type]
@@ -838,9 +847,7 @@ def _project(
                 task_row_fingerprint=_json_fingerprint(row),
                 task_manifest_hash=task_manifest_hash,
                 image_sha256=_file_sha256(
-                    layout.image_root
-                    / f"{split}2017"
-                    / f"{row['image_id']:012d}.jpg"
+                    layout.image_root / f"{split}2017" / f"{row['image_id']:012d}.jpg"
                 ),
             )
             for source_line, row in enumerate(authoritative_rows, start=1)

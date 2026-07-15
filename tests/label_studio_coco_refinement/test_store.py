@@ -90,9 +90,7 @@ def _row(split: str, image_id: int, *, second_object: bool = False) -> dict[str,
 
 @pytest.fixture
 def project(tmp_path: Path) -> tuple[WorkingDatasetStore, BootstrapSpec, Path]:
-    source_dir = (
-        tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox_len12000"
-    )
+    source_dir = tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox_len12000"
     image_root = tmp_path / "public_data" / "coco" / "rescale_32_1024_bbox" / "images"
     image_split = image_root / "train2017"
     source_dir.mkdir(parents=True)
@@ -170,15 +168,19 @@ def _request(
     image_id: int = 1,
 ) -> CommitRequest:
     restored = store.restore_draft(image_id)
-    regions = _regions(store, image_id, include_new=True) if regions is None else regions
+    regions = (
+        _regions(store, image_id, include_new=True) if regions is None else regions
+    )
     projection_hash = semantic_hash(regions)
     receipt = DraftSaveReceipt(
         project_id="project-train",
         task_id=f"train:{image_id}",
         annotation_id=f"annotation-{image_id}",
         draft_id=f"draft-{image_id}",
-        annotation_revision=7,
+        annotation_revision="annotation-v7",
+        draft_updated_at="2026-07-15T00:00:07Z",
         semantic_hash=projection_hash,
+        result_hash=sha256_json(regions),
     )
     return CommitRequest(
         commit_id=commit_id,
@@ -188,8 +190,10 @@ def _request(
         task_id=f"train:{image_id}",
         annotation_id=f"annotation-{image_id}",
         draft_id=f"draft-{image_id}",
-        annotation_revision=7,
+        annotation_revision="annotation-v7",
+        draft_updated_at="2026-07-15T00:00:07Z",
         semantic_hash=projection_hash,
+        result_hash=sha256_json(regions),
         base_row_hash=restored.row_hash,
         observed_generation=restored.generation,
         regions=regions,
@@ -266,7 +270,10 @@ def test_batch_enqueue_is_durable_immutable_and_does_not_publish(
     queue_before_mutation = store.queue_path.read_bytes()
     assert queue_before_mutation.endswith(b"\n")
     queued = json.loads(queue_before_mutation)
-    assert [member["source_row_index"] for member in queued["payload"]["members"]] == [0, 1]
+    assert [member["source_row_index"] for member in queued["payload"]["members"]] == [
+        0,
+        1,
+    ]
 
     request.members[0].request.regions[0]["bbox_2d"][0] = 777
     assert store.queue_path.read_bytes() == queue_before_mutation
@@ -292,6 +299,72 @@ def test_batch_enqueue_exact_retry_is_byte_stable_and_payload_drift_conflicts(
     assert store.queue_path.read_bytes() == queue_bytes
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("annotation_revision", "annotation-v8"),
+        ("draft_updated_at", "2026-07-15T00:00:08Z"),
+        ("result_hash", "f" * 64),
+    ],
+)
+def test_batch_retry_identity_binds_exact_draft_tokens_and_result_hash(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+    field: str,
+    value: str,
+) -> None:
+    store, _, _ = project
+    original = _batch_request(store, batch_id="draft-token-batch", image_ids=(1,))
+    store.enqueue_batch(original)
+    queue_bytes = store.queue_path.read_bytes()
+    member = original.members[0]
+    changed_request = replace(member.request, **{field: value})
+    changed_request = replace(
+        changed_request,
+        draft_save=_matching_draft_receipt(changed_request),
+    )
+    changed = replace(
+        original,
+        members=(replace(member, request=changed_request),),
+    )
+
+    with pytest.raises(CommitConflictError, match="batch id"):
+        store.enqueue_batch(changed)
+    assert store.queue_path.read_bytes() == queue_bytes
+
+
+def test_nonfinite_batch_payload_is_rejected_before_queue_growth(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    original = _batch_request(store, batch_id="nonfinite", image_ids=(1,))
+    member = original.members[0]
+    regions = copy.deepcopy(list(member.request.regions))
+    regions[0]["label_studio_result"] = {"score": float("nan")}
+    changed_request = replace(member.request, regions=regions, result_hash="f" * 64)
+    changed_request = replace(
+        changed_request,
+        draft_save=_matching_draft_receipt(changed_request),
+    )
+    changed = replace(original, members=(replace(member, request=changed_request),))
+    queue_before = store.queue_path.read_bytes()
+
+    with pytest.raises(ValidationError, match="finite ordinary JSON"):
+        store.enqueue_batch(changed)
+    assert store.queue_path.read_bytes() == queue_before
+    with pytest.raises(ValueError, match="Out of range float values"):
+        canonical_json({"value": float("inf")})
+
+
+def test_queue_parser_rejects_nonstandard_json_constants(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    store.queue_path.write_text('{"kind":"enqueue","value":NaN}\n', encoding="utf-8")
+
+    with pytest.raises(RecoveryError, match="invalid queue record"):
+        store.get_batch_status("missing")
+
+
 def test_batch_enqueue_returns_existing_active_batch_identity(
     project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
 ) -> None:
@@ -303,7 +376,10 @@ def test_batch_enqueue_returns_existing_active_batch_identity(
     )
 
     assert returned == active
-    assert store.get_batch_status("batch-other").status is store_module.BatchStatus.NOT_FOUND
+    assert (
+        store.get_batch_status("batch-other").status
+        is store_module.BatchStatus.NOT_FOUND
+    )
     assert store.queue_path.read_text(encoding="utf-8").count("\n") == 1
 
 
@@ -443,6 +519,34 @@ def test_batch_enqueue_verifies_immutable_source_row_index(
     assert store.queue_path.read_bytes() == b""
 
 
+@pytest.mark.parametrize(
+    "identity,error",
+    [
+        ({"split": "val"}, "split mismatch"),
+        ({"project_id": "project-other"}, "project mismatch"),
+        ({"task_id": "train:2"}, "task identity mismatch"),
+        ({"image_id": 999, "task_id": "train:999"}, "unknown task image identity"),
+        ({"image_id": True}, "invalid task image identity"),
+    ],
+)
+def test_resolve_source_row_index_rejects_every_identity_mismatch(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+    identity: dict[str, Any],
+    error: str,
+) -> None:
+    store, _, _ = project
+    values: dict[str, Any] = {
+        "split": "train",
+        "project_id": "project-train",
+        "task_id": "train:1",
+        "image_id": 1,
+    }
+    values.update(identity)
+
+    with pytest.raises(StaleCommitError, match=error):
+        store.resolve_source_row_index(**values)
+
+
 def test_process_batch_publishes_every_member_once_in_source_order(
     project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
 ) -> None:
@@ -468,7 +572,10 @@ def test_process_batch_publishes_every_member_once_in_source_order(
     assert manifest["generation"] == 1
     assert manifest["working_line_count"] == 3
     assert manifest["working_sha256"] == result.working_sha256
-    assert store.get_batch_status(receipt.batch_id).status is store_module.BatchStatus.SUCCEEDED
+    assert (
+        store.get_batch_status(receipt.batch_id).status
+        is store_module.BatchStatus.SUCCEEDED
+    )
     assert store.get_batch_result(receipt.batch_id) == result
     records = [json.loads(line) for line in store.journal_path.read_text().splitlines()]
     assert [record["kind"] for record in records].count("batch_prepared") == 1
@@ -481,9 +588,7 @@ def test_batch_freshness_is_per_row_not_global_generation(
 ) -> None:
     store, _, _ = project
     worker_store = _reopen(store)
-    old_request = _request(
-        worker_store, commit_id="old-generation-member", image_id=1
-    )
+    old_request = _request(worker_store, commit_id="old-generation-member", image_id=1)
     store.commit(
         _request(
             store,
@@ -534,7 +639,9 @@ def test_stale_batch_member_fails_all_members_without_replacement(
     assert "base row hash changed" in (result.error or "")
     assert store.working_path.read_bytes() == working_before
     assert store.manifest_path.read_bytes() == manifest_before
-    assert store.get_batch_status("stale-batch").status is store_module.BatchStatus.FAILED
+    assert (
+        store.get_batch_status("stale-batch").status is store_module.BatchStatus.FAILED
+    )
 
 
 def test_sequential_batches_preserve_prior_rows_and_use_frozen_snapshot(
@@ -545,15 +652,24 @@ def test_sequential_batches_preserve_prior_rows_and_use_frozen_snapshot(
     store.enqueue_batch(first)
     first.members[0].request.regions[0]["bbox_2d"] = [200, 210, 220, 230]
     first_result = store.process_next_batch()
-    assert first_result is not None and first_result.status is store_module.BatchStatus.SUCCEEDED
+    assert (
+        first_result is not None
+        and first_result.status is store_module.BatchStatus.SUCCEEDED
+    )
     row_one_after_first = store.working_path.read_bytes().splitlines(keepends=True)[0]
     assert json.loads(row_one_after_first)["objects"][0]["bbox_2d"] == [11, 21, 31, 41]
 
     store.enqueue_batch(_batch_request(store, batch_id="second", image_ids=(2,)))
     second_result = store.process_next_batch()
 
-    assert second_result is not None and second_result.status is store_module.BatchStatus.SUCCEEDED
-    assert store.working_path.read_bytes().splitlines(keepends=True)[0] == row_one_after_first
+    assert (
+        second_result is not None
+        and second_result.status is store_module.BatchStatus.SUCCEEDED
+    )
+    assert (
+        store.working_path.read_bytes().splitlines(keepends=True)[0]
+        == row_one_after_first
+    )
 
 
 def test_batch_worker_does_not_use_legacy_prescan_or_temp_rehash(
@@ -597,19 +713,22 @@ def test_failed_batch_reservation_is_reused_but_never_given_to_another_key(
         for line in store.journal_path.read_text().splitlines()
         if json.loads(line)["kind"] == "reservation"
     ]
-    assert [(record["stable_region_key"], record["coco_ann_id"]) for record in reservations] == [
-        ("drawn:batch-1", -1)
-    ]
+    assert [
+        (record["stable_region_key"], record["coco_ann_id"]) for record in reservations
+    ] == [("drawn:batch-1", -1)]
 
     corrected = _batch_request(store, batch_id="corrected", image_ids=(1,))
     store.enqueue_batch(corrected)
     corrected_result = store.process_next_batch()
     assert corrected_result is not None
     assert corrected_result.members[0].region_id_mapping["drawn:batch-1"] == -1
-    assert sum(
-        json.loads(line)["kind"] == "reservation"
-        for line in store.journal_path.read_text().splitlines()
-    ) == 1
+    assert (
+        sum(
+            json.loads(line)["kind"] == "reservation"
+            for line in store.journal_path.read_text().splitlines()
+        )
+        == 1
+    )
 
     other = _batch_request(store, batch_id="other-key", image_ids=(2,))
     other.members[0].request.regions[-1]["region_key"] = "drawn:other-key"
@@ -659,7 +778,10 @@ def test_batch_reopen_reconciles_transaction_and_queue_projection(
     status = reopened.get_batch_status("batch-1")
     assert status.status is expected_status
     assert status.generation == expected_generation
-    assert json.loads(reopened.manifest_path.read_text())["generation"] == expected_generation
+    assert (
+        json.loads(reopened.manifest_path.read_text())["generation"]
+        == expected_generation
+    )
     assert any(
         json.loads(line).get("kind") == "queue_terminal"
         for line in reopened.queue_path.read_text().splitlines()
@@ -699,7 +821,10 @@ def test_preopened_peer_never_crosses_batch_publication_authorities(
         assert list(peer.iter_task_seeds())[0].annotations[0]["regions"][0][
             "bbox_2d"
         ] == [11, 21, 31, 41]
-        assert peer.get_batch_status("batch-1").status is store_module.BatchStatus.SUCCEEDED
+        assert (
+            peer.get_batch_status("batch-1").status
+            is store_module.BatchStatus.SUCCEEDED
+        )
         accepted = peer.enqueue_batch(next_request)
         assert accepted.batch_id == "batch-next"
         assert accepted.status is store_module.BatchStatus.QUEUED
@@ -708,7 +833,10 @@ def test_preopened_peer_never_crosses_batch_publication_authorities(
             peer.restore_draft(1)
         with pytest.raises(RecoveryError, match="requires recovery"):
             list(peer.iter_task_seeds())
-        assert peer.get_batch_status("batch-1").status is store_module.BatchStatus.RECONCILING
+        assert (
+            peer.get_batch_status("batch-1").status
+            is store_module.BatchStatus.RECONCILING
+        )
         receipt = peer.enqueue_batch(next_request)
         assert receipt.batch_id == "batch-1"
         assert receipt.status is store_module.BatchStatus.RECONCILING
@@ -752,9 +880,7 @@ def test_preopened_peer_never_crosses_legacy_publication_authorities(
         ] == [11, 21, 31, 41]
         assert peer.status("legacy-interrupted") is CommitStatus.COMMITTED
         assert peer.result("legacy-interrupted").generation == 1
-        fresh_later_legacy = _request(
-            peer, commit_id="legacy-later-fresh", image_id=2
-        )
+        fresh_later_legacy = _request(peer, commit_id="legacy-later-fresh", image_id=2)
         assert peer.commit(fresh_later_legacy).generation == 2
     else:
         with pytest.raises(RecoveryError, match="requires recovery"):
@@ -797,9 +923,7 @@ def test_committed_generation_guard_blocks_unreconciled_publication(
 
     with pytest.raises(InjectedCrash):
         if transaction == "legacy":
-            worker.commit(
-                _request(worker, commit_id="guard-interrupted", image_id=1)
-            )
+            worker.commit(_request(worker, commit_id="guard-interrupted", image_id=1))
         else:
             worker.enqueue_batch(
                 _batch_request(worker, batch_id="guard-interrupted", image_ids=(1,))
@@ -843,7 +967,9 @@ def test_lost_enqueue_response_reopens_as_same_queued_batch(
         store.enqueue_batch(_batch_request(store, image_ids=(1,)))
 
     reopened = _reopen(store)
-    assert reopened.get_batch_status("batch-1").status is store_module.BatchStatus.QUEUED
+    assert (
+        reopened.get_batch_status("batch-1").status is store_module.BatchStatus.QUEUED
+    )
     result = reopened.process_next_batch()
     assert result is not None and result.status is store_module.BatchStatus.SUCCEEDED
 
@@ -860,7 +986,9 @@ def test_bootstrap_persists_verified_zero_based_task_index(
 
     task_index = json.loads(store.task_index_path.read_text())
     task_index["entries"][1]["source_row_index"] = 0
-    store.task_index_path.write_text(canonical_json(task_index) + "\n", encoding="utf-8")
+    store.task_index_path.write_text(
+        canonical_json(task_index) + "\n", encoding="utf-8"
+    )
     manifest["task_index_sha256"] = sha256_file(store.task_index_path)
     store.manifest_path.write_text(canonical_json(manifest) + "\n", encoding="utf-8")
     with pytest.raises(ManifestDriftError, match="task_index"):
@@ -880,7 +1008,9 @@ def test_reopen_truncates_only_an_unambiguous_torn_queue_tail(
     reopened = _reopen(store)
 
     assert reopened.queue_path.read_bytes() == durable
-    assert reopened.get_batch_status("batch-1").status is store_module.BatchStatus.QUEUED
+    assert (
+        reopened.get_batch_status("batch-1").status is store_module.BatchStatus.QUEUED
+    )
 
 
 def test_reopen_removes_orphan_batch_candidate_and_keeps_queue_dispatchable(
@@ -983,7 +1113,9 @@ def test_bootstrap_is_idempotent_source_safe_and_yields_stable_single_annotation
     ],
 )
 def test_bootstrap_fails_closed_on_manifest_drift(
-    project: tuple[WorkingDatasetStore, BootstrapSpec, Path], field: str, replacement: str
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+    field: str,
+    replacement: str,
 ) -> None:
     store, spec, _ = project
     manifest = json.loads(store.manifest_path.read_text())
@@ -1033,7 +1165,11 @@ def test_commit_preserves_positive_ids_allocates_negative_once_and_rehydrates(
     assert result.region_id_mapping["train:coco:101"] == 101
     assert result.region_id_mapping["train:coco:102"] == 102
     assert result.region_id_mapping["drawn:new-1"] == -1
-    assert [obj["coco_ann_id"] for obj in result.committed_row["objects"]] == [101, 102, -1]
+    assert [obj["coco_ann_id"] for obj in result.committed_row["objects"]] == [
+        101,
+        102,
+        -1,
+    ]
     assert result.committed_row["objects"][-1]["metadata"] == {"human_note": "new box"}
     restored = _reopen(store).restore_draft(1)
     assert restored.region_id_mapping["drawn:new-1"] == -1
@@ -1137,7 +1273,10 @@ def test_retry_rejects_changed_order_seed_with_same_semantic_hash(
     )
     request = _request(store, regions=regions)
     first = store.commit(request)
-    assert [obj["coco_ann_id"] for obj in first.committed_row["objects"]][-2:] == [-1, -2]
+    assert [obj["coco_ann_id"] for obj in first.committed_row["objects"]][-2:] == [
+        -1,
+        -2,
+    ]
 
     reordered = copy.deepcopy(regions)
     reordered[-2]["creation_ordinal"] = 2
@@ -1159,8 +1298,10 @@ def test_draft_save_is_not_commit_and_empty_commit_is_rejected_without_mutation(
         task_id="train:1",
         annotation_id="annotation-1",
         draft_id="draft-1",
-        annotation_revision=8,
+        annotation_revision="annotation-v8",
+        draft_updated_at="2026-07-15T00:00:08Z",
         semantic_hash=empty_hash,
+        result_hash=sha256_json([]),
     )
     # Holding a durable empty Draft receipt has no working-data side effect.
     assert store.working_path.read_bytes() == before
@@ -1173,8 +1314,10 @@ def test_draft_save_is_not_commit_and_empty_commit_is_rejected_without_mutation(
         task_id="train:1",
         annotation_id="annotation-1",
         draft_id="draft-1",
-        annotation_revision=8,
+        annotation_revision="annotation-v8",
+        draft_updated_at="2026-07-15T00:00:08Z",
         semantic_hash=empty_hash,
+        result_hash=sha256_json([]),
         base_row_hash=restored.row_hash,
         observed_generation=restored.generation,
         regions=[],
@@ -1195,7 +1338,10 @@ def test_commit_requires_exact_durable_draft_save_receipt(
         **{
             **request.__dict__,
             "draft_save": DraftSaveReceipt(
-                **{**request.draft_save.__dict__, "annotation_revision": 6}
+                **{
+                    **request.draft_save.__dict__,
+                    "annotation_revision": "annotation-v6",
+                }
             ),
         }
     )
@@ -1212,6 +1358,17 @@ def test_commit_requires_exact_durable_draft_save_receipt(
     )
     with pytest.raises(ValidationError, match="durable Draft-save"):
         store.commit(not_durable)
+
+    integer_revision = replace(
+        request,
+        annotation_revision=7,  # type: ignore[arg-type]
+        draft_save=replace(
+            request.draft_save,
+            annotation_revision=7,  # type: ignore[arg-type]
+        ),
+    )
+    with pytest.raises(ValidationError, match="opaque non-empty string"):
+        store.commit(integer_revision)
 
 
 def test_commit_rewrites_once_preserves_row_order_and_untouched_bytes(
@@ -1239,7 +1396,9 @@ def test_manifest_is_published_after_working_directory_durability(
     store._fault_injector = events.append
     store.commit(_request(store))
     assert events.index("working_replaced") < events.index("working_directory_fsynced")
-    assert events.index("working_directory_fsynced") < events.index("manifest_temp_flushed")
+    assert events.index("working_directory_fsynced") < events.index(
+        "manifest_temp_flushed"
+    )
     assert events.index("manifest_directory_fsynced") < events.index(
         "terminal_journal_flushed"
     )
@@ -1285,10 +1444,13 @@ def test_startup_recovery_rolls_back_every_pre_replacement_cut(
         for line in recovered.journal_path.read_text().splitlines()
     )
     recovered.recover()
-    assert sum(
-        json.loads(line)["kind"] == "terminal"
-        for line in recovered.journal_path.read_text().splitlines()
-    ) == terminal_count
+    assert (
+        sum(
+            json.loads(line)["kind"] == "terminal"
+            for line in recovered.journal_path.read_text().splitlines()
+        )
+        == terminal_count
+    )
 
 
 @pytest.mark.parametrize("boundary", POST_REPLACEMENT_CUTS)
@@ -1307,7 +1469,11 @@ def test_startup_recovery_commits_every_post_replacement_cut_exactly_once(
         inference_receipt_resolver=store.inference_receipt_resolver,
         recover=False,
     )
-    if boundary not in {"terminal_journal_flushed", "terminal_journal_fsynced", "before_response"}:
+    if boundary not in {
+        "terminal_journal_flushed",
+        "terminal_journal_fsynced",
+        "before_response",
+    }:
         assert unresolved.status(request.commit_id) is CommitStatus.OUTCOME_UNKNOWN
         with pytest.raises(CommitOutcomeUnknown):
             unresolved.result(request.commit_id)
@@ -1322,10 +1488,14 @@ def test_startup_recovery_commits_every_post_replacement_cut_exactly_once(
         for line in recovered.journal_path.read_text().splitlines()
     )
     recovered.recover()
-    assert sum(
-        json.loads(line)["kind"] == "terminal"
-        for line in recovered.journal_path.read_text().splitlines()
-    ) == terminal_count == 1
+    assert (
+        sum(
+            json.loads(line)["kind"] == "terminal"
+            for line in recovered.journal_path.read_text().splitlines()
+        )
+        == terminal_count
+        == 1
+    )
 
 
 def test_prepared_allocation_is_never_reused_after_rollback(
@@ -1405,7 +1575,10 @@ def test_equal_top_left_ties_preserve_prior_rank_then_creation_ordinal(
     result = store.commit(_request(store, regions=regions))
     ids = [obj["coco_ann_id"] for obj in result.committed_row["objects"]]
     assert ids[:2] == [101, 102]
-    assert [result.region_id_mapping[key] for key in ("new-earlier", "new-later")] == [-2, -1]
+    assert [result.region_id_mapping[key] for key in ("new-earlier", "new-later")] == [
+        -2,
+        -1,
+    ]
     assert ids[2:] == [-2, -1]
 
 
@@ -1472,7 +1645,8 @@ def test_recovery_fails_closed_on_unknown_working_hash(
 
 
 def test_post_replacement_runtime_error_requires_outcome_reconciliation(
-    project: tuple[WorkingDatasetStore, BootstrapSpec, Path], monkeypatch: pytest.MonkeyPatch
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     store, _, _ = project
     request = _request(store)
@@ -1495,7 +1669,10 @@ def test_manifest_and_working_hashes_are_stable_canonical_receipts(
     result = store.commit(_request(store))
     manifest = json.loads(store.manifest_path.read_text())
     prepared = json.loads(store.journal_path.read_text().splitlines()[0])
-    assert manifest["working_sha256"] == hashlib.sha256(store.working_path.read_bytes()).hexdigest()
+    assert (
+        manifest["working_sha256"]
+        == hashlib.sha256(store.working_path.read_bytes()).hexdigest()
+    )
     assert prepared["candidate_manifest_hash"] == sha256_json(manifest)
     assert prepared["after_row_hash"] == result.row_hash
 
@@ -1558,7 +1735,9 @@ def test_recovery_fails_closed_on_corruption_before_a_torn_tail(
 ) -> None:
     store, _, _ = project
     store.commit(_request(store))
-    prepared_raw, terminal_raw = store.journal_path.read_bytes().splitlines(keepends=True)
+    prepared_raw, terminal_raw = store.journal_path.read_bytes().splitlines(
+        keepends=True
+    )
     prepared = json.loads(prepared_raw)
     prepared["semantic_hash"] = "0" * 64
     corrupted = (canonical_json(prepared) + "\n").encode() + terminal_raw[:9]
@@ -1611,7 +1790,9 @@ def test_positive_source_identity_cannot_be_forged_or_hijacked(
         forged["coco_ann_id"] = supplied_id
     regions.append(forged)
     with pytest.raises(ValidationError, match="source identity|positive source"):
-        store.commit(_request(store, commit_id="forged", image_id=image_id, regions=regions))
+        store.commit(
+            _request(store, commit_id="forged", image_id=image_id, regions=regions)
+        )
 
 
 def test_bootstrap_and_recovery_reject_split_wide_duplicate_coco_ann_id(
@@ -1620,7 +1801,9 @@ def test_bootstrap_and_recovery_reject_split_wide_duplicate_coco_ann_id(
     store, spec, source = project
     rows = [json.loads(line) for line in source.read_text().splitlines()]
     rows[1]["objects"][0]["coco_ann_id"] = rows[0]["objects"][0]["coco_ann_id"]
-    source.write_text("".join(canonical_json(row) + "\n" for row in rows), encoding="utf-8")
+    source.write_text(
+        "".join(canonical_json(row) + "\n" for row in rows), encoding="utf-8"
+    )
     duplicate_spec = replace(
         spec,
         runtime_root=tmp_path / "duplicate-bootstrap",
@@ -1633,7 +1816,9 @@ def test_bootstrap_and_recovery_reject_split_wide_duplicate_coco_ann_id(
             inference_receipt_resolver=store.inference_receipt_resolver,
         )
 
-    working_rows = [json.loads(line) for line in store.working_path.read_text().splitlines()]
+    working_rows = [
+        json.loads(line) for line in store.working_path.read_text().splitlines()
+    ]
     working_rows[1]["objects"][0]["coco_ann_id"] = working_rows[0]["objects"][0][
         "coco_ann_id"
     ]
@@ -1654,7 +1839,9 @@ def _matching_draft_receipt(request: CommitRequest) -> DraftSaveReceipt:
         annotation_id=request.annotation_id,
         draft_id=request.draft_id,
         annotation_revision=request.annotation_revision,
+        draft_updated_at=request.draft_updated_at,
         semantic_hash=request.semantic_hash,
+        result_hash=request.result_hash,
     )
 
 
@@ -1674,7 +1861,9 @@ def test_commit_id_retry_binds_every_immutable_request_identity_field(
         replace(original, task_id="train:2"),
         replace(original, annotation_id="annotation-other"),
         replace(original, draft_id="draft-other"),
-        replace(original, annotation_revision=8),
+        replace(original, annotation_revision="annotation-v8"),
+        replace(original, draft_updated_at="2026-07-15T00:00:08Z"),
+        replace(original, result_hash="f" * 64),
         replace(original, base_row_hash="0" * 64),
         replace(original, observed_generation=99),
         replace(original, inference_receipts=("receipt-forged",)),

@@ -5,9 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from fractions import Fraction
-from typing import Any, Sequence
+from typing import Any
 
 from PIL import Image
 
@@ -50,11 +51,14 @@ class LabelStudioRoi:
             raise RoiTransformError(
                 "ROI percentage values must be finite", code="roi_non_finite"
             )
-        if self.width <= 0 or self.height <= 0:
+        normalized = tuple(float(value) for value in values)
+        if normalized[2] <= 0 or normalized[3] <= 0:
             raise RoiTransformError(
                 "ROI percentage width and height must be positive",
                 code="roi_non_positive",
             )
+        for field, value in zip(("x", "y", "width", "height"), normalized, strict=True):
+            object.__setattr__(self, field, value)
 
     @property
     def edges(self) -> tuple[float, float, float, float]:
@@ -121,13 +125,7 @@ class RoiLetterboxTransform:
         canvas_width = _positive_int(canvas_width, field="canvas_width")
         canvas_height = _positive_int(canvas_height, field="canvas_height")
         if not isinstance(roi, LabelStudioRoi):
-            try:
-                roi = LabelStudioRoi(*(float(value) for value in roi))
-            except (TypeError, ValueError) as exc:
-                raise RoiTransformError(
-                    "ROI must contain x, y, width, height percentages",
-                    code="roi_shape",
-                ) from exc
+            roi = _coerce_label_studio_roi(roi)
 
         x1, y1, x2, y2 = roi.edges
         float_edges = (
@@ -155,7 +153,9 @@ class RoiLetterboxTransform:
                 "ROI is degenerate after clipping", code="roi_degenerate_after_clipping"
             )
 
-        fit = min(Fraction(canvas_width, crop_width), Fraction(canvas_height, crop_height))
+        fit = min(
+            Fraction(canvas_width, crop_width), Fraction(canvas_height, crop_height)
+        )
         realized_width = min(canvas_width, max(1, _round_half_up(fit * crop_width)))
         realized_height = min(canvas_height, max(1, _round_half_up(fit * crop_height)))
         scale_x = realized_width / crop_width
@@ -185,6 +185,49 @@ class RoiLetterboxTransform:
             pad_right=pad_right,
             pad_bottom=pad_bottom,
         )
+
+    @classmethod
+    def from_receipt_dict(cls, receipt: Mapping[str, Any]) -> "RoiLetterboxTransform":
+        """Replay and strictly attest a complete serialized transform receipt."""
+
+        if not isinstance(receipt, Mapping):
+            raise RoiTransformError(
+                "transform receipt must be a mapping", code="receipt_invalid"
+            )
+        try:
+            source_size = _receipt_sequence(
+                receipt.get("source_size"), length=2, field="source_size"
+            )
+            canvas_size = _receipt_sequence(
+                receipt.get("canvas_size"), length=2, field="canvas_size"
+            )
+            roi_percent = _receipt_sequence(
+                receipt.get("roi_percent_xywh"),
+                length=4,
+                field="roi_percent_xywh",
+            )
+            transform = cls.from_label_studio_roi(
+                source_width=source_size[0],
+                source_height=source_size[1],
+                roi=roi_percent,
+                canvas_width=canvas_size[0],
+                canvas_height=canvas_size[1],
+            )
+            supplied = json.dumps(receipt, sort_keys=True, separators=(",", ":"))
+            replayed = json.dumps(
+                transform.to_receipt_dict(), sort_keys=True, separators=(",", ":")
+            )
+        except (KeyError, TypeError, ValueError, RoiTransformError) as exc:
+            raise RoiTransformError(
+                "transform receipt cannot replay the immutable transform",
+                code="receipt_invalid",
+            ) from exc
+        if supplied != replayed:
+            raise RoiTransformError(
+                "transform receipt does not match the replayed transform",
+                code="receipt_mismatch",
+            )
+        return transform
 
     @property
     def crop_width(self) -> int:
@@ -379,23 +422,60 @@ def _round_half_up(value: Fraction) -> int:
     return (2 * value.numerator + value.denominator) // (2 * value.denominator)
 
 
-def _strict_bbox(bbox: Sequence[float], *, field: str) -> tuple[float, float, float, float]:
+def _coerce_label_studio_roi(roi: Sequence[float]) -> LabelStudioRoi:
+    if not isinstance(roi, Sequence) or isinstance(roi, (str, bytes)) or len(roi) != 4:
+        raise RoiTransformError(
+            "ROI must contain x, y, width, height percentages", code="roi_shape"
+        )
+    return LabelStudioRoi(roi[0], roi[1], roi[2], roi[3])
+
+
+def _receipt_sequence(value: Any, *, length: int, field: str) -> tuple[Any, ...]:
+    if (
+        not isinstance(value, Sequence)
+        or isinstance(value, (str, bytes))
+        or len(value) != length
+    ):
+        raise RoiTransformError(
+            f"transform receipt {field} must contain {length} values",
+            code="receipt_invalid",
+        )
+    return tuple(value)
+
+
+def _strict_bbox(
+    bbox: Sequence[float], *, field: str
+) -> tuple[float, float, float, float]:
     try:
-        values = tuple(float(value) for value in bbox)
-    except (TypeError, ValueError) as exc:
-        raise RoiTransformError(f"{field} must contain four numbers", code="bbox_shape") from exc
-    if len(values) != 4:
+        raw_values = tuple(bbox)
+    except TypeError as exc:
+        raise RoiTransformError(
+            f"{field} must contain four numbers", code="bbox_shape"
+        ) from exc
+    if len(raw_values) != 4:
         raise RoiTransformError(f"{field} must contain four numbers", code="bbox_shape")
+    if any(
+        isinstance(value, bool) or not isinstance(value, (int, float))
+        for value in raw_values
+    ):
+        raise RoiTransformError(
+            f"{field} values must be int or float", code="bbox_type"
+        )
+    values = tuple(float(value) for value in raw_values)
     if any(not math.isfinite(value) for value in values):
         raise RoiTransformError(f"{field} must be finite", code="bbox_non_finite")
     if values[0] >= values[2] or values[1] >= values[3]:
-        raise RoiTransformError(f"{field} must be strictly non-degenerate", code="bbox_degenerate")
+        raise RoiTransformError(
+            f"{field} must be strictly non-degenerate", code="bbox_degenerate"
+        )
     return values
 
 
 def _positive_int(value: int, *, field: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise RoiTransformError(f"{field} must be a positive integer", code="dimension_invalid")
+        raise RoiTransformError(
+            f"{field} must be a positive integer", code="dimension_invalid"
+        )
     return value
 
 
