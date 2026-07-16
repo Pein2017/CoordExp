@@ -5,16 +5,27 @@ import json
 from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Iterator
 
 import pytest
 
 import src.label_studio_coco_refinement.materialize as materialize_module
+import src.training.pipeline as training_pipeline
 from src.common.errors import DataContractError
+from src.config.models import (
+    DataAugmentationConfig,
+    DataConfig,
+    DatasetSplitConfig,
+    RuntimeConfig,
+    TemplateConfig,
+    TemplatePromptConfig,
+)
 from src.data import load_raw_examples
 from src.label_studio_coco_refinement.categories import COCO80_REGISTRY
 from src.label_studio_coco_refinement.materialize import (
     CommittedGenerationReceipt,
+    MATERIALIZER_VERSION,
     SourceTaskIdentityReceipt,
     WorkingCoordMaterializer,
 )
@@ -36,6 +47,16 @@ from src.label_studio_coco_refinement.store import (
     WorkingDatasetStore,
     semantic_hash,
     sha256_json,
+)
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "label_studio_coco_refinement"
+REPRESENTATIVE_TRAIN_FIXTURE_SHA256 = (
+    "729da4aa8ecdeb92ca07ac0520f97d8bed3fbaccd1262e820c96567b9f265fd9"
+)
+REPRESENTATIVE_TRAIN_IMAGE_SHA256 = (
+    "0e262d0416db73ac1fc3179b72e8a008a90c98bce69c51994f36de363714f1cd"
 )
 
 
@@ -132,6 +153,200 @@ def test_materializer_is_layout_split_bound_atomic_and_loader_compatible(
     assert [obj.bbox for obj in loaded.objects] == [
         (1, 46, 691, 941),
         (20, 50, 700, 950),
+    ]
+
+
+def test_current_v4_real_fixture_materializes_into_training_raw_example_seam(
+    tmp_path: Path,
+) -> None:
+    fixture = FIXTURE_ROOT / "train.representative.norm.jsonl"
+    image = (
+        REPO_ROOT
+        / "public_data/coco/rescale_32_1024_bbox/images/train2017/000000000034.jpg"
+    )
+    fixture_before = fixture.read_bytes()
+    assert (
+        hashlib.sha256(fixture_before).hexdigest()
+        == REPRESENTATIVE_TRAIN_FIXTURE_SHA256
+    )
+    assert _file_sha256(image) == REPRESENTATIVE_TRAIN_IMAGE_SHA256
+
+    repository = (tmp_path / "repo").resolve()
+    layout = RefinementRuntimeLayout.under_repository(repository)
+    selected_source = layout.selected_source("train")
+    selected_source.parent.mkdir(parents=True)
+    selected_source.write_bytes(fixture_before)
+    layout.image_root.parent.mkdir(parents=True)
+    layout.image_root.symlink_to(image.parents[1], target_is_directory=True)
+
+    verifier = AcceptingAnnotationVerifier()
+    inference_resolver = EmptyInferenceReceiptResolver()
+    bootstrap = WorkingDatasetStore.bootstrap(
+        BootstrapSpec(
+            split="train",
+            source_path=selected_source,
+            runtime_root=layout.root,
+            image_root=layout.image_root,
+            expected_source_sha256=REPRESENTATIVE_TRAIN_FIXTURE_SHA256,
+            project_id="project-train",
+            storage_id="storage-train",
+            adapter_version="adapter-v1",
+            vendor_revision="label-studio-rev",
+            registry_fingerprint=COCO80_REGISTRY.fingerprint,
+            label_config_fingerprint="label-config-v1",
+        ),
+        annotation_verifier=verifier,
+        inference_receipt_resolver=inference_resolver,
+    )
+    store = bootstrap.store
+    initial_manifest = json.loads(store.manifest_path.read_text())
+    initial_working_row = json.loads(store.working_path.read_text())
+    restored = store.restore_draft(34)
+    identity_by_object_id = {
+        object_id: region_key
+        for region_key, object_id in restored.region_id_mapping.items()
+    }
+    regions = []
+    for obj in restored.row["objects"]:
+        region = deepcopy(obj)
+        region["region_key"] = identity_by_object_id[obj["coco_ann_id"]]
+        regions.append(region)
+    regions.append(
+        {
+            "region_key": "drawn:current-v4-integration",
+            "bbox_2d": [20, 50, 700, 950],
+            "desc": "person",
+            "category_name": "person",
+            "category_id": 1,
+            "creation_ordinal": 1,
+            "metadata": {"human_note": "current-v4-integration"},
+        }
+    )
+    projection_hash = semantic_hash(regions)
+    draft_save = DraftSaveReceipt(
+        project_id="project-train",
+        task_id="train:34",
+        annotation_id="annotation-34",
+        draft_id="draft-34",
+        annotation_revision="annotation-v4-integration",
+        draft_updated_at="2026-07-16T00:00:00Z",
+        semantic_hash=projection_hash,
+        result_hash=sha256_json(regions),
+    )
+    commit = store.commit(
+        CommitRequest(
+            commit_id="current-v4-integration:member:34",
+            split="train",
+            image_id=34,
+            project_id="project-train",
+            task_id="train:34",
+            annotation_id="annotation-34",
+            draft_id="draft-34",
+            annotation_revision="annotation-v4-integration",
+            draft_updated_at="2026-07-16T00:00:00Z",
+            semantic_hash=projection_hash,
+            result_hash=sha256_json(regions),
+            base_row_hash=restored.row_hash,
+            observed_generation=restored.generation,
+            regions=regions,
+            draft_save=draft_save,
+        )
+    )
+    assert commit.region_id_mapping["drawn:current-v4-integration"] == -1
+    assert [obj["coco_ann_id"] for obj in commit.committed_row["objects"]] == [
+        589229,
+        -1,
+    ]
+
+    generation = _store_generation_receipt(store)
+    assert type(generation) is CommittedGenerationReceipt
+    assert generation == CommittedGenerationReceipt(
+        split="train",
+        generation=1,
+        working_sha256=_file_sha256(store.working_path),
+        task_count=1,
+        task_manifest_hash=initial_manifest["task_manifest_hash"],
+    )
+    resolver = FakeSourceIdentityResolver(
+        [
+            SourceTaskIdentityReceipt.capture(
+                split="train",
+                image_id=34,
+                file_name=initial_working_row["file_name"],
+                width=initial_working_row["width"],
+                height=initial_working_row["height"],
+                metadata=initial_working_row["metadata"],
+                source_line=1,
+                task_row_fingerprint=_json_fingerprint(initial_working_row),
+                task_manifest_hash=generation.task_manifest_hash,
+                image_sha256=REPRESENTATIVE_TRAIN_IMAGE_SHA256,
+            )
+        ]
+    )
+    working_before = store.working_path.read_bytes()
+
+    receipt = WorkingCoordMaterializer(
+        layout,
+        "train",
+        store=store,
+        source_identity_resolver=resolver,
+    ).materialize(generation)
+
+    output = layout.working_coord("train")
+    (materialized_row,) = [json.loads(line) for line in output.read_text().splitlines()]
+    assert MATERIALIZER_VERSION == "label-studio-working-coord-v4"
+    assert receipt.materializer_version == MATERIALIZER_VERSION
+    assert receipt.source_sha256 == hashlib.sha256(working_before).hexdigest()
+    assert receipt.destination_sha256 == _file_sha256(output)
+    assert receipt.row_count == 1
+    assert receipt.object_count == 2
+    assert materialized_row["objects"][1]["coco_ann_id"] == -1
+    assert materialized_row["objects"][1]["metadata"] == {
+        "human_note": "current-v4-integration"
+    }
+    assert store.working_path.read_bytes() == working_before
+    assert selected_source.read_bytes() == fixture_before
+    assert fixture.read_bytes() == fixture_before
+    assert _file_sha256(selected_source) == REPRESENTATIVE_TRAIN_FIXTURE_SHA256
+    assert _file_sha256(fixture) == REPRESENTATIVE_TRAIN_FIXTURE_SHA256
+    assert _file_sha256(image) == REPRESENTATIVE_TRAIN_IMAGE_SHA256
+
+    dataset = DatasetSplitConfig(path=str(output), sample_limit=1)
+    augmentation = DataAugmentationConfig()
+    config = SimpleNamespace(
+        data=DataConfig(train=dataset, augmentation=augmentation),
+        runtime=RuntimeConfig(seed=17),
+        template=TemplateConfig(
+            object_field_order="desc_first",
+            object_ordering="source_order",
+            assistant_format="object_box_closed",
+            prompt=TemplatePromptConfig(
+                system=None,
+                user="Describe each requested object with its bounding box.",
+            ),
+        ),
+    )
+    training_result = training_pipeline._materialize_raw_examples_for_dataset(
+        config,
+        dataset,
+        split="train",
+    )
+
+    assert training_result.receipt == {
+        "split": "train",
+        "mode": "disabled",
+        "policy": "geometry_flips",
+        "enabled": False,
+        "seed": 17,
+        "input_example_count": 1,
+        "output_example_count": 1,
+        "presentation_count": 1,
+        "object_ordering": "source_order",
+    }
+    assert len(training_result.examples) == 1
+    assert [obj.object_id for obj in training_result.examples[0].objects] == [
+        "589229",
+        "-1",
     ]
 
 
