@@ -31,6 +31,7 @@ from src.label_studio_coco_refinement.store import (  # noqa: E402
     BatchStatus,
     BootstrapSpec,
     CommitRequest,
+    DraftRestore,
     DraftSaveReceipt,
     InferenceReceiptLink,
     WorkingDatasetStore,
@@ -318,12 +319,11 @@ def _bootstrap_spec(
 
 
 def _regions_with_new_box(
-    store: WorkingDatasetStore,
-    image_id: int,
+    restored: DraftRestore,
     *,
     ordinal: int,
-) -> tuple[list[dict[str, Any]], Any, str]:
-    restored = store.restore_draft(image_id)
+) -> tuple[list[dict[str, Any]], str]:
+    image_id = restored.image_id
     object_to_key = {
         object_id: region_key
         for region_key, object_id in restored.region_id_mapping.items()
@@ -346,7 +346,7 @@ def _regions_with_new_box(
             "metadata": {"human_note": "current async batch probe"},
         }
     )
-    return regions, restored, region_key
+    return regions, region_key
 
 
 def _freeze_batch(
@@ -358,14 +358,21 @@ def _freeze_batch(
     seeds = list(itertools.islice(store.iter_task_seeds(), member_count + 1))
     if len(seeds) != member_count + 1:
         raise ValueError("rows must exceed members so one untouched sentinel exists")
+    member_seeds = seeds[:member_count]
+    restores = store.restore_drafts(tuple(seed.image_id for seed in member_seeds))
+    base_generation = restores[0].generation
+    if any(restored.generation != base_generation for restored in restores):
+        raise AssertionError("batched draft restores did not share one generation")
     manifest = json.loads(store.manifest_path.read_text(encoding="utf-8"))
     members: list[BatchMember] = []
     region_keys: dict[int, str] = {}
     frozen_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    for ordinal, seed in enumerate(seeds[:member_count]):
-        regions, restored, region_key = _regions_with_new_box(
-            store, seed.image_id, ordinal=ordinal
-        )
+    for ordinal, (seed, restored) in enumerate(
+        zip(member_seeds, restores, strict=True)
+    ):
+        if restored.image_id != seed.image_id:
+            raise AssertionError("batched draft restores did not preserve seed order")
+        regions, region_key = _regions_with_new_box(restored, ordinal=ordinal)
         projection_hash = semantic_hash(regions)
         result_hash = sha256_json(regions)
         revision = f"probe-revision-{ordinal + 1}"
@@ -406,7 +413,7 @@ def _freeze_batch(
             batch_id=batch_id,
             split="train",
             current_user_id=CURRENT_USER_ID,
-            base_generation=int(manifest["generation"]),
+            base_generation=base_generation,
             members=tuple(members),
         ),
         seeds,

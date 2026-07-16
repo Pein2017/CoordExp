@@ -5,6 +5,7 @@ import json
 import stat
 import subprocess
 import tempfile
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -173,8 +174,25 @@ def tiny_source(tmp_path: Path) -> tuple[Path, Path, dict[Path, bytes]]:
 def test_probe_receipt_replays_current_contract_and_exact_publication(
     tiny_source: tuple[Path, Path, dict[Path, bytes]],
     rows: int | None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source, image_root, image_bytes = tiny_source
+    restore_drafts_calls: list[tuple[int, ...]] = []
+    restore_draft_calls: list[int] = []
+    original_restore_drafts = probe.WorkingDatasetStore.restore_drafts
+    original_restore_draft = probe.WorkingDatasetStore.restore_draft
+
+    def restore_drafts_spy(store: probe.WorkingDatasetStore, image_ids: Any) -> Any:
+        requested = tuple(image_ids)
+        restore_drafts_calls.append(requested)
+        return original_restore_drafts(store, requested)
+
+    def restore_draft_spy(store: probe.WorkingDatasetStore, image_id: int) -> Any:
+        restore_draft_calls.append(image_id)
+        return original_restore_draft(store, image_id)
+
+    monkeypatch.setattr(probe.WorkingDatasetStore, "restore_drafts", restore_drafts_spy)
+    monkeypatch.setattr(probe.WorkingDatasetStore, "restore_draft", restore_draft_spy)
     source_before = _file_identity(source.resolve())
     images_before = {
         str(path.resolve()): _file_identity(path.resolve()) for path in image_bytes
@@ -250,6 +268,22 @@ def test_probe_receipt_replays_current_contract_and_exact_publication(
         payload = enqueue["payload"]
         assert payload["current_user_id"] == "async-batch-probe"
         assert persisted["batch"]["current_user_id"] == payload["current_user_id"]
+        assert all(
+            member["request"]["observed_generation"] == payload["base_generation"]
+            for member in payload["members"]
+        )
+        assert [
+            member["source_row_index"] for member in payload["members"]
+        ] == member_indices
+        assert [member["request"]["image_id"] for member in payload["members"]] == [
+            1,
+            2,
+        ]
+        assert [
+            member["request"]["base_row_hash"] for member in payload["members"]
+        ] == [
+            _sha256_json(json.loads(initial_lines[index])) for index in member_indices
+        ]
         queue_members = {
             member["source_row_index"]: member["request"]
             for member in payload["members"]
@@ -328,6 +362,63 @@ def test_probe_receipt_replays_current_contract_and_exact_publication(
             "fallback_verify_calls": 0,
             "inference_resolver_calls": [],
         }
+        assert restore_drafts_calls == [(1, 2)]
+        assert restore_draft_calls == []
+
+
+@pytest.mark.parametrize(
+    ("failure", "message"),
+    [
+        ("reversed", "batched draft restores did not preserve seed order"),
+        ("mixed_generation", "batched draft restores did not share one generation"),
+        ("restore_error", "injected batched restore failure"),
+    ],
+)
+def test_probe_rejects_invalid_batched_restore_before_enqueue_or_receipt(
+    tiny_source: tuple[Path, Path, dict[Path, bytes]],
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+    message: str,
+) -> None:
+    source, image_root, _ = tiny_source
+    original_restore_drafts = probe.WorkingDatasetStore.restore_drafts
+    enqueue_calls: list[str] = []
+
+    def invalid_restore_drafts(store: probe.WorkingDatasetStore, image_ids: Any) -> Any:
+        if failure == "restore_error":
+            raise RuntimeError(message)
+        restores = original_restore_drafts(store, tuple(image_ids))
+        if failure == "reversed":
+            return tuple(reversed(restores))
+        return (
+            restores[0],
+            replace(restores[1], generation=restores[1].generation + 1),
+        )
+
+    def forbidden_enqueue(*args: Any, **kwargs: Any) -> Any:
+        enqueue_calls.append("called")
+        raise AssertionError("enqueue must not run after invalid batched restore")
+
+    monkeypatch.setattr(
+        probe.WorkingDatasetStore, "restore_drafts", invalid_restore_drafts
+    )
+    monkeypatch.setattr(probe.WorkingDatasetStore, "enqueue_batch", forbidden_enqueue)
+    outputs = probe.REPO_ROOT / "outputs"
+    outputs.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="async-batch-failure-", dir=outputs) as run:
+        output_root = Path(run) / failure
+
+        with pytest.raises((AssertionError, RuntimeError), match=message):
+            probe.run_probe(
+                output_root=output_root,
+                members=2,
+                rows=5,
+                source=source,
+                image_root=image_root,
+            )
+
+        assert enqueue_calls == []
+        assert not (output_root / "receipt.json").exists()
 
 
 def test_atomic_receipt_writer_replaces_and_fsyncs_file_and_directory(
