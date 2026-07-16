@@ -8,11 +8,14 @@ investigations, mechanism notes, experiment interpretation, negative results,
 source-linked interpretation, and provenance handles. Raw worktree intake
 remains under `docs/history/worktree-union/` and is linked from `research/`,
 not copied into it. Current coding, architecture, infrastructure, and operator
+
 behavior remain in `docs/`. Stable compatibility-sensitive contracts remain in
 `openspec/`.
 
 ## Entry Points
 
+- [Qwen3-VL Dense Enumeration Weekly Research Report, 2026-07-13 through 2026-07-16](investigations/qwen3-vl-dense-enumeration/2026-07-13-to-2026-07-16-weekly-research-report.md) - integrated executed evidence, mechanism synthesis, implementation retrospective, and GPT-Pro handoff
+- [Qwen3-VL Autoregressive Detection Research Compass](investigations/qwen3-vl-dense-enumeration/compass.md) - program-level north star, current belief register, discriminator queue, and paper-thesis boundary
 - [Decisions](decisions/) - current research belief updates, constraints, and route gates linked to their evidence
 - [Ideas](ideas/) - synthesized research directions that may become CoordExp capabilities
 - [Investigations](investigations/) - bounded analysis, ablation, diagnosis, checkpoint surgery, and post-analysis
@@ -99,7 +102,8 @@ promotion when a result hardens into a stable compatibility-sensitive contract.
 | Question | Current belief | Decision |
 |---|---|---|
 | Can Qwen3 Vision-Language (`Qwen3-VL`) consume an object-specific visual control signal? | Yes, under bounded painted/post-scatter interventions; this is a privileged causal handle, not a final interface. | [Use visual designation as a causal teacher](decisions/use-visual-designation-as-a-causal-teacher.md) |
-| Does pure cross-entropy (`CE`) serialization learn an order-free object ledger? | No evidence yet. It learns a strong order-conditioned, mostly coordinate-level transition. | [Separate selection, transcription, commit, and stop](decisions/separate-selection-transcription-commit-and-stop.md) |
+| Does pure cross-entropy (`CE`) serialization learn an order-free object ledger? | No stable order-free ledger is established. At one exact state, a coherent phrase-geometry row controls the successor, but this may still be a textual geometry-sorted serialization transition rather than visual commit. | [Separate selection, transcription, commit, and stop](decisions/separate-selection-transcription-commit-and-stop.md) |
 | Is a decodable proposal representation sufficient? | No. The tested bridge produced non-specific continuation and unsafe rollout behavior. | [Require target-specific causal consumption](decisions/require-target-specific-causal-consumption.md) |
 | May a row-specialized checkpoint replace the detector baseline? | No. Cursor-row specialization can preserve designation while collapsing enumeration. | [Protect native capability during specialization](decisions/protect-native-capability-during-specialization.md) |
 | Should slots, a ledger, or a final architecture be built now? | Not from current evidence. Promote only the smallest mechanism that passes its discriminator. | [Let architecture emerge from hypothesis gates](decisions/let-architecture-emerge-from-hypothesis-gates.md) |
+| Where should the dense-enumeration program look next? | Privileged hard routing can compile tight instance-owned geometry, and one decoder-block-`23` pre-`x1` state switches a same-description spatial owner where the block-`13` control does not. The effect is almost entirely a first-coordinate basin switch. This unit is closed; `x1` causal mediation is the smallest later discriminator, while training and architecture remain unauthorized. | [Dense-enumeration research compass](investigations/qwen3-vl-dense-enumeration/compass.md) |

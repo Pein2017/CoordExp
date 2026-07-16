@@ -11,6 +11,12 @@ updated: 2026-07-13
 
 # Review Synthesis and Protocol Revision Gate
 
+This file preserves the pre-execution review verdict. The later
+[completed research unit](unit.md) and [executed results](results.md) own the
+current lifecycle, evidence status, and bounded scientific verdict; the
+pre-execution `planned` and `not_authorized` wording below is historical and is
+not the current unit status.
+
 ## Terminology and Name Registry
 
 - **Common Objects in Context 80-category ontology (`COCO-80`)**: the closed
