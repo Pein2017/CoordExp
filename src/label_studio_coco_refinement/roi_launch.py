@@ -187,6 +187,26 @@ class RoiLaunchConfig:
         )
 
 
+@dataclass(frozen=True)
+class InternalRoiProfileBinding:
+    """Credential-free profile contract for trusted in-process adapters.
+
+    This is deliberately richer than the browser projection and deliberately
+    narrower than :class:`EngineProfile`: no endpoint, filesystem path,
+    artifact identity, runtime payload, or saved profile name crosses the
+    Django integration boundary.
+    """
+
+    fingerprint: str
+    processor_factor: int
+    default_width: int
+    default_height: int
+    min_axis_pixels: int
+    max_axis_pixels: int
+    max_total_pixels: int
+    deadline_seconds: float
+
+
 def load_roi_launch_config(path: str | Path) -> RoiLaunchConfig:
     """Load one strict operator JSON document with config-relative paths."""
 
@@ -397,6 +417,26 @@ class RoiLaunchManager:
     def activate_profile(self, *, project_id: str, selector: str) -> dict[str, Any]:
         """Atomically load, verify, and persist one project-scoped selection."""
 
+        self.resolve_selected_profile(project_id=project_id, selector=selector)
+        profile_name = self._profile_name_for_selector(selector)
+        return _safe_profile_projection(
+            selector=selector,
+            profile=self._profile_snapshots[profile_name],
+        )
+
+    def resolve_selected_profile(
+        self,
+        *,
+        project_id: str,
+        selector: str,
+    ) -> InternalRoiProfileBinding:
+        """Load, verify, and activate one selected project profile.
+
+        Callers must invoke this before acquiring application database locks;
+        engine loading and artifact verification are intentionally part of the
+        activation boundary.
+        """
+
         self._profile_name_for_selector(selector)
         project_id = self._validate_project_id(project_id)
         with self._activation_lock:
@@ -405,7 +445,32 @@ class RoiLaunchManager:
                 project_id=project_id,
                 selector=selector,
             )
-            return _safe_profile_projection(selector=selector, profile=profile)
+            return _internal_profile_binding(profile)
+
+    def current_profile(self, *, project_id: str) -> InternalRoiProfileBinding:
+        """Return the verified active profile for one available project."""
+
+        project_id = self._validate_project_id(project_id)
+        with self._activation_lock:
+            self._require_project_available(project_id)
+            with self._state_lock:
+                self._require_open()
+            try:
+                profile = self.profile_store.active(project_id, verify=True)
+            except BaseException:
+                raise RoiLaunchError(
+                    "project active profile could not be verified"
+                ) from None
+            if not self._activation_matches_expected(profile):
+                raise RoiLaunchError(
+                    "project active profile could not be verified"
+                ) from None
+            verified = self._verified_profile(profile.name)
+            if not self._same_profile(profile, verified):
+                raise RoiLaunchError(
+                    "project active profile could not be verified"
+                ) from None
+            return _internal_profile_binding(verified)
 
     def infer(self, *, selector: str, **kwargs: Any) -> dict[str, Any]:
         """Execute through the sole service without accepting any request path."""
@@ -962,6 +1027,19 @@ def _safe_profile_projection(
         },
         "generation_deadline_seconds": profile.deadline_seconds,
     }
+
+
+def _internal_profile_binding(profile: EngineProfile) -> InternalRoiProfileBinding:
+    return InternalRoiProfileBinding(
+        fingerprint=profile.fingerprint,
+        processor_factor=profile.processor_factor,
+        default_width=profile.default_width,
+        default_height=profile.default_height,
+        min_axis_pixels=profile.min_axis_pixels,
+        max_axis_pixels=profile.max_axis_pixels,
+        max_total_pixels=profile.max_total_pixels,
+        deadline_seconds=float(profile.deadline_seconds),
+    )
 
 
 def _validate_loaded_engine(engine: Any, *, profile: EngineProfile) -> None:

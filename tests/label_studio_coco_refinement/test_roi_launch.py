@@ -26,6 +26,7 @@ from src.label_studio_coco_refinement.inference_profiles import (
 )
 from src.label_studio_coco_refinement.roi_launch import (
     DEFAULT_ENGINE_FACTORY_TARGET,
+    InternalRoiProfileBinding,
     ROI_LAUNCH_SCHEMA_VERSION,
     RoiLaunchConfigError,
     RoiLaunchError,
@@ -944,6 +945,47 @@ def test_project_scoped_selector_switch_changes_later_receipts_without_cross_pro
         for receipt in manager.inference_service.profile_receipts
     ] == ["alpha", "alpha", "beta"]
     assert factory_calls == ["alpha", "beta"]
+    manager.close()
+
+
+def test_internal_profile_contract_is_credential_free_and_current_is_verified(
+    tmp_path: Path,
+) -> None:
+    profile = _profile(tmp_path / "profile", name="accepted")
+    config_path = _configured_store(tmp_path, [profile])
+    manager = RoiLaunchManager(
+        config_path,
+        current_targets=_CurrentTargets(),
+        engine_factory_loader=lambda _target: (
+            lambda *, profile, config: _FakeEngine(profile)
+        ),
+    )
+
+    selected = manager.resolve_selected_profile(
+        project_id="project-a",
+        selector="accepted-selector",
+    )
+    current = manager.current_profile(project_id="project-a")
+
+    assert (
+        selected
+        == current
+        == InternalRoiProfileBinding(
+            fingerprint=profile.fingerprint,
+            processor_factor=32,
+            default_width=1024,
+            default_height=1024,
+            min_axis_pixels=32,
+            max_axis_pixels=2048,
+            max_total_pixels=2_097_152,
+            deadline_seconds=20.0,
+        )
+    )
+    encoded = json.dumps(selected.__dict__)
+    assert "endpoint" not in encoded
+    assert "artifact" not in encoded
+    assert "path" not in encoded
+    assert str(tmp_path.resolve()) not in encoded
     manager.close()
 
 
