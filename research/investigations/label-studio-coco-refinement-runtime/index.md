@@ -215,3 +215,38 @@ tests, and 114 managed frontend tests, with Ruff/Biome and diff checks clean.
 Two independent audits closed both discovered P1s.  These source changes are
 not deployed into the active UAT process: it deliberately remains on revision
 `eb40d7d000b8110d0a853b402bcd1c48e98a3c9c` until an explicit restart window.
+
+## ROI cancellation and orphan-receipt closure
+
+On 2026-07-16, nested revision
+`ff0d82ecd272d7fc4ba938015da4b68fdef7fd84` and parent revision
+`a89ce02ee9441110abd42156ceba02b0c953c50d` closed the production cancellation and receipt-expiry gaps without
+restarting the active UAT process.  The fixed point now:
+
+- registers the authenticated project/split/principal request before target
+  capture and atomically binds the server-frozen target;
+- preserves bounded abandon-first intents for 60 seconds, never evicts an
+  accepted intent, and fail-closes unknown inference during capacity
+  saturation;
+- propagates cancellation through the managed resident single-flight path,
+  records backend-observed/CUDA-synchronized terminal evidence, reuses a safe
+  backend, and poisons a backend after synchronization failure;
+- accepts exact existing no-insertion terminals without annotation mutation,
+  while enforcing same-reason idempotence for both early and produced-result
+  abandonment receipts;
+- removes the raw receipt-layer expiry mutator and routes overdue candidates
+  through the finalizer's transition fence and locked Draft authority, including
+  a disposition-winner recheck.
+
+Verification at this fixed point is 197 parent resident/launch/runtime tests,
+71 targeted Django tests, the 26-test service slice under the ordinary Label
+Studio venv, and 98 managed frontend tests.  Independent execution additionally
+attested the capacity/TTL fence, exact reasons, zero-linkage expiry, disposition
+winner, real synchronization-failure poisoning, deterministic pre/post-backend
+cancellation, and a Django setup that does not import Torch before the lazy ROI
+runtime boundary.  Engineering and intent/contract audits both report no
+remaining P0/P1 and approve OpenSpec tasks 4.3 and 4.6.
+
+This is source evidence only.  The current localhost UAT process remains on
+`eb40d7d000b8110d0a853b402bcd1c48e98a3c9c`; browser E2E and one accepted
+real-profile smoke remain tasks 5.5 and 5.6.
