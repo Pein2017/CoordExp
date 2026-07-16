@@ -4,6 +4,7 @@ import hashlib
 import json
 from copy import deepcopy
 from itertools import combinations
+from pathlib import Path
 
 import pytest
 
@@ -276,6 +277,30 @@ def test_visual_policy_matches_independent_golden_boundaries_palette_and_iou() -
     assert by_name["duplicate_exact_iou_half"]["expected"]["duplicate_pairs"] == [
         ["base", "half"]
     ]
+
+
+def test_browser_visual_policy_fixture_is_an_exact_parent_golden_projection() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    browser_fixture = json.loads(
+        (
+            repo_root
+            / "label-studio/web/libs/editor/src/components/CoordExpAIRegion/visual-policy.golden.json"
+        ).read_text(encoding="utf-8")
+    )
+    parent_fixture = editor_policy_golden_vectors()
+
+    assert browser_fixture["schema_version"] == parent_fixture["schema_version"]
+    parent_by_name = {
+        vector["name"]: vector for vector in parent_fixture["visual_policy"]
+    }
+    assert {vector["name"] for vector in browser_fixture["visual_policy"]} == set(
+        parent_by_name
+    )
+    for browser_vector in browser_fixture["visual_policy"]:
+        parent_vector = parent_by_name[browser_vector["name"]]
+        assert browser_vector["input"] == parent_vector["input"]
+        for field, expected in browser_vector["expected"].items():
+            assert parent_vector["expected"][field] == expected
 
 
 def test_neighbor_pairs_are_unique_and_stably_ordered() -> None:

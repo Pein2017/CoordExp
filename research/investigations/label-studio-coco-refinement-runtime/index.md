@@ -94,3 +94,46 @@ launcher) rather than relying on the wrapper's `--host` flag.
   runtime dependencies are verified.
 - Task 1.4 remains open until the specified fake-backend Draft/status/direct-
   insertion spikes execute; the production build portion is now attested.
+
+## Full-project production preview execution
+
+On 2026-07-16, the explicit `serve_coordexp_refinement` command started the
+full ignored runtime on `127.0.0.1:8080` with the deployed Label Studio revision
+`eb40d7d000b8110d0a853b402bcd1c48e98a3c9c`.  Construction completed in about
+710 seconds on the first successful run.  The dominant cost was repeated
+full-train bootstrap/task attestation; model weights were not loaded during
+server startup.
+
+The executed runtime, not a synthetic adapter, attested:
+
+| Split | Tasks | Authoritative annotations | Drafts | Predictions |
+| --- | ---: | ---: | ---: | ---: |
+| train | 117,266 | 117,266 | 0 | 0 |
+| val | 4,952 | 4,952 | 0 | 0 |
+
+Both split-local `images` entries are symlinks resolving to the same immutable
+`public_data/coco/rescale_32_1024_bbox/images` root.  Their project-bound local
+storage records remain restricted to `train2017` and `val2017`.  The source
+hashes remained:
+
+- train: `d64edc553bdc4d725cb9c3a504f369a9799e8bdde20c8fef0787a09cec33c16a`;
+- val: `a34afb33c567690f56fa3704e213cfc00dc3c000f018d2bb89a7f60139efd795`.
+
+Generation-zero working files are ordinary derived JSONL with 117,266 and
+4,952 rows.  Their manifest-attested hashes are respectively
+`5cbd91b6e7e45a2ba211e3f3a77c72bc6f847b8c6548a1d6b3feb0bf74c35ac5`
+and `8b8a79d4e465b09418a3c6b4ae4963817491fa7bbbebb6d374b65608ee595cfb`.
+Authenticated smoke checks returned HTTP 200 for both projects, task 1, its
+authoritative annotation, the shared JPEG, managed project state, and the safe
+`step917` profile projection.
+
+Warm request samples on the full train project were approximately 104 ms for
+the project page, 92 ms for task 1, and 12 ms for its JPEG.  The managed
+`project-state` request took 1.7--2.3 seconds for train but about 124--128 ms for
+val.  The size-proportional cause was isolated: the read-only Draft catalog
+called `restore_drafts(())` even with zero Drafts, forcing a complete
+hash-attested working-file scan, and the UI polls this endpoint every 1.5
+seconds.  This is a runtime-performance defect, not a source-data or inference
+failure.  The correction must preserve full attestation for explicit Commit
+capture and invalidate any read-only baseline cache when the published
+generation or working hash changes.
