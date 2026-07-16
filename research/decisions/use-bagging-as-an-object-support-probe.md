@@ -2,7 +2,7 @@
 id: decision.use-bagging-as-an-object-support-probe
 type: decision
 status: active
-updated: 2026-07-14
+updated: 2026-07-16
 topic: qwen3-vl-dense-enumeration
 evidence:
   - research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-13-spatial-scope-history-disentanglement/results.md
@@ -50,8 +50,10 @@ a human-audited data candidate source.
 
 ## Next Discriminator
 
-Use the bounded Prefix-State Phrase-Geometry Factorial named by the completed
-causal-replay unit. Independently vary complete-row description and geometry at
-the same exact prefix and equal token length, with no-row, covered-duplicate,
-and irrelevant controls. Training remains unauthorized until this identifies a
-nontrivial endogenous state target and a safe labeled cohort exists.
+Use the bounded [Human-Audited Rare-Object Trajectory Genealogy and Causal
+Branch Replay](../investigations/qwen3-vl-dense-enumeration/experiments/2026-07-16-human-audited-rare-object-trajectory-genealogy/unit.md)
+unit. Freeze a candidate-conditioned physical-entity ledger, distinguish
+fixed-state stochastic selection from earlier natural-row unlocking or
+killing, and measure future unique-object utility on fresh suffix seeds.
+Training remains unauthorized until a natural branch has a source-specific
+causal effect and a preservation-safe target can be stated.

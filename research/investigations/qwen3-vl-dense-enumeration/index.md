@@ -59,6 +59,7 @@ durable program reading path below.
 37. [Image-7818 geometry-state portability results and one-way `x1` basin verdict](experiments/2026-07-16-fixed-encoding-persistent-hard-routing-geometry-state-portability-image7818/results.md)
 38. [Pre-execution readiness amendment](experiments/2026-07-13-spatial-scope-history-disentanglement/readiness-amendment.md)
 39. [Pre-execution independent-review synthesis and revision gate](experiments/2026-07-13-spatial-scope-history-disentanglement/review.md)
+40. [Human-audited rare-object trajectory genealogy and causal branch replay](experiments/2026-07-16-human-audited-rare-object-trajectory-genealogy/unit.md)
 
 The review and readiness amendment preserve the pre-execution gate. The
 completed unit and results record own current lifecycle and evidence status.
