@@ -5,7 +5,7 @@ doc_type: agent-guide
 status: canonical
 domain: repo
 summary: Lightweight engineering principles for agents working in CoordExp.
-updated: 2026-05-04
+updated: 2026-07-14
 ---
 
 # Agent Engineering Constitution
@@ -245,6 +245,20 @@ Avoid abstraction theater:
   debugging harder.
 - Do not turn research branches into frameworks before their contracts stabilize.
 
+### Exploratory research implementation
+
+- Begin from an implementation outline and the shortest path to a real model
+  observation, not a speculative stable interface.
+- Expand code only to obtain the primary observation or protect its scientific
+  interpretation. Defer future reuse, exhaustive manifests, and production
+  hardening.
+- Prefer one representative behavior smoke and a compact run receipt over
+  adversarial in-process attestation. Add a stronger guard only for an observed
+  failure that could change the conclusion.
+- Keep the first consumer local. Reuse canonical loading, batching, workers,
+  parsing, scoring, and artifact owners; extract a new shared seam only when
+  repeated use demonstrates the same semantics.
+
 ## 8. Duplication Policy
 
 Some duplication is cheaper than premature abstraction. Contract duplication is
@@ -325,6 +339,9 @@ Training principles:
 - Keep labels, sidecars, model inputs, and logging metadata distinct.
 - Fail fast on unsupported packing, cache, sidecar, or parser combinations.
 - Update manifests and docs when behavior becomes stable or operator-facing.
+- Maximize physical batch size, packing efficiency, and accelerator occupancy
+  while preserving matched effective batch or token count, loss normalization,
+  optimizer schedule, and packing isolation across compared research arms.
 
 Runtime decision rule:
 

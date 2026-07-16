@@ -1,6 +1,6 @@
 ---
 name: model-innovation-risk-audit
-description: "Use when a planned or newly wired CoordExp mechanism, objective, loss, or eval path needs a pre-launch or pre-interpretation trust gate before training/eval claims, especially for silent train/eval/config/artifact mismatch risk."
+description: "Use when a decision-grade or demonstrably high-risk CoordExp mechanism, objective, loss, or evaluation path needs a pre-launch or pre-interpretation trust gate, especially for silent train/eval/config/artifact mismatch risk."
 ---
 
 # Model Innovation Risk Audit
@@ -19,9 +19,31 @@ Do **not** use this skill as the main tool when the user already has a concrete 
 
 Hand off to `model-diagnosis` when the contract appears wired correctly but behavior remains unproven or abnormal.
 
+## Exploratory Pilot Boundary
+
+Do not invoke the full contract-triangulation gate merely because a mechanism
+is new. For a first exploratory pilot, use `audit-review` to protect the
+scientific contrast and run the smallest real behavior smoke. Escalate to this
+skill when there is concrete risk that a silent mismatch can reverse the
+primary observation, or before a result is used as decision-grade
+training/evaluation evidence or a launch-facing claim.
+
+The minimum pilot gate checks only:
+
+- exact checkpoint, config, input/case, prompt, and experimental condition;
+- the declared changed factor and meaning-bearing geometry/order invariants;
+- actual model-path execution rather than a no-op or legacy fallback;
+- differentiable objective wiring when the pilot trains a new loss; and
+- raw output, parser/failure status, and request attribution.
+
+Defer exhaustive manifests, distributed-runtime assurance, broad resume and
+compatibility support, adversarial mutation testing, and full artifact
+triangulation until observed risk or evidence promotion justifies them.
+
 ## Minimal Contract Diff
 
-For every innovation, produce a compact contract diff:
+For every decision-grade or demonstrably high-risk innovation in this skill's
+scope, produce a compact contract diff:
 
 - intended contract: design, spec, or plan;
 - authored config: YAML keys and inheritance chain;

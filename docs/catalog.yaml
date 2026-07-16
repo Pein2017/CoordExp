@@ -198,6 +198,10 @@ docs:
       type: architecture-router
       status: canonical-router
   standards:
+    - path: docs/AGENT_ENGINEERING_CONSTITUTION.md
+      title: Agent Engineering Constitution
+      type: agent-guide
+      status: canonical
     - path: docs/standards/README.md
       title: Standards
       type: router

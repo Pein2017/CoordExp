@@ -79,7 +79,11 @@ Use current repo/docs/artifacts as authority.
 
 Use subagents only when the user explicitly requested subagents or the active workflow already permits them.
 
-Use 2 lanes by default. Use 3-4 only for genuinely independent surfaces. Use 5-6 only for high-stakes launch, merge, architecture, or expensive-run gates where each lane has a different evidence axis. Keep lanes independent. Prefer project custom-agent roles when they fit:
+Dispatch according to independent decision surfaces, not available agent slots
+or a mechanical lane count. Give each surface one current owner. A second agent
+on the same surface must replace or audit the first, not create a duplicate
+implementation or general-review lane. Prefer project custom-agent roles when
+they fit:
 
 - `repo_scout`: unknown surface map before other lanes spend tokens.
 - `upstream_relation_tracer`: upstream/library or cross-root dependency claims.
@@ -120,11 +124,18 @@ Do not wait idly. While agents run, continue local non-overlapping work.
 
 ### 4. Triage Findings
 
+Use `audit-review` as the owner of severity vocabulary and exploratory blocking
+criteria. Review findings are advisory evidence: the lead owns acceptance,
+deduplication, synthesis, and final disposition. This loop owns orchestration
+and convergence.
+
 Classify every returned issue:
 
-- `P0`: invalidates correctness, research meaning, reproducibility, or launch safety
-- `P1`: substantial risk to supported workflow, contract, metrics, artifacts, or maintainability
-- `P2`: clarity, coverage, or future-maintenance issue
+- Priority zero (`P0`): invalidates correctness, research meaning,
+  reproducibility, or launch safety
+- Priority one (`P1`): substantial risk to supported workflow, contract,
+  metrics, artifacts, or maintainability
+- Priority two (`P2`): clarity, coverage, or future-maintenance issue
 - `non-blocking`: useful but not required now
 - `wrong`: reject with technical reason and evidence
 - `duplicate`: merge into existing finding
@@ -161,6 +172,12 @@ Converged only when all required conditions are true:
 - approval gates are explicit
 - stable docs/specs/launch claims do not exceed the evidence scope
 - final artifact states what is approved, what is not approved, and what remains gated
+
+For an exploratory research pilot, convergence does not mean every finding is
+fixed. It means every conclusion-threatening finding has a disposition and the
+remaining items are explicitly recorded as limitations, deferred debt, or
+promotion blockers. Let the first representative model observation precede
+production-style completeness.
 
 Default max rounds:
 

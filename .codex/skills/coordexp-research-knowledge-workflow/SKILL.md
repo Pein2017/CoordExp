@@ -1,6 +1,6 @@
 ---
 name: coordexp-research-knowledge-workflow
-description: Use when CoordExp research knowledge must be collected, preserved, migrated, or synthesized across worktrees, legacy progress notes, research notes, diagnostics, supervisor packets, or OKF-style research hubs without confusing historical evidence with current docs/spec authority.
+description: Use when CoordExp research knowledge must be collected, preserved, migrated, or synthesized across worktrees, legacy progress notes, research notes, diagnostics, supervisor packets, or Open Knowledge Format (OKF)-style research hubs without confusing historical evidence with current docs/spec authority.
 ---
 
 # CoordExp Research Knowledge Workflow
@@ -13,7 +13,8 @@ Use for:
 
 - cross-worktree Markdown union collection;
 - migrating or reorganizing legacy `progress/` evidence into `research/`;
-- OKF-style research hubs, idea/investigation/mechanism notes, and continuation context;
+- Open Knowledge Format (`OKF`)-style research hubs,
+  idea/investigation/mechanism notes, and continuation context;
 - compressing many diagnostic notes into supervisor-facing packets;
 - preserving provenance before cleanup, merge, or archive decisions.
 
@@ -25,7 +26,11 @@ Do not use this as the first skill for:
 - isolated feature branches or cleanup lifecycle: use `worktree-feature-loop` and `git-hygiene`;
 - infer/eval launch or artifact repair: use `coordexp-infer-eval-workflow`.
 
-Use the `research_synthesizer` custom agent for large note clustering, cross-worktree Markdown collection, supervisor packets, or OKF-style hub drafts. Keep the agent on research/provenance surfaces; use `contract_auditor` before promoting any synthesized claim into current docs or stable specs.
+Use the `research_synthesizer` custom agent for large note clustering,
+cross-worktree Markdown collection, supervisor packets, or Open Knowledge
+Format (`OKF`)-style hub drafts. Keep the agent on research/provenance surfaces;
+use `contract_auditor` before promoting any synthesized claim into current docs
+or stable specs.
 
 ## Authority Rules
 
@@ -47,8 +52,18 @@ authority without an explicit docs/spec update.
 3. **Preserve raw provenance first.** For union collection, classify by content hash plus path, then snapshot new or divergent Markdown under a dated `docs/history/worktree-union/<date>/` bundle with a manifest.
 4. **Separate phases.** Keep raw intake, migration design, synthesized research hubs, and supervisor packets in distinct files or commits.
 5. **Synthesize intentionally.** Build reading paths under `research/` rather than mirrors of raw legacy `progress/` files. Prefer `index.md`, `overview.md`, `draft.md`, `discussion.md`, `implementation.md`, `experiments/`, and `archive/` when they fit.
-6. **Route discoveries.** Promote only stable current behavior into `docs/`; use OpenSpec only for stable compatibility-sensitive contracts.
-7. **Verify the boundary.** Check source counts, manifest rows, tracked file set, local links, YAML/frontmatter where used, and ignored-file behavior before reporting.
+6. **Close units explicitly.** Separate planned protocol, executed evidence,
+   interpretation, decision update, mechanism promotion, and implementation
+   authorization. Read
+   [Research Graph and Unit Contract](references/research-graph-contract.md)
+   when creating or closing a unit.
+7. **Match the evidence tier.** Keep exploratory units as compact executable
+   outlines. Add frozen protocols, broad manifests, replication, and hardened
+   runtime contracts only after a pilot survives its discriminating control.
+8. **Route discoveries.** Promote only stable current behavior into `docs/`; use OpenSpec only for stable compatibility-sensitive contracts.
+9. **Verify the boundary.** Check source counts, manifest rows, tracked file set,
+   local links, YAML Ain't Markup Language (`YAML`) frontmatter where used, and
+   ignored-file behavior before reporting.
 
 ## Union Collection Pattern
 
@@ -57,16 +72,18 @@ Use when the user wants all scattered Markdown gathered before cleanup or migrat
 - Start from the exact checkout and worktree set.
 - Include tracked branch-head Markdown plus dirty or untracked Markdown when the user asks for the union of knowledge.
 - Classify at least:
-  - `content_present_elsewhere`;
-  - `new_content_new_path`;
-  - `same_path_divergent_new_content`;
-  - `same_path_identical`.
+  - `content_present_elsewhere`: identical content already exists at another
+    preserved path;
+  - `new_content_new_path`: both content and destination path are new;
+  - `same_path_divergent_new_content`: the path already exists but the incoming
+    content differs and must be preserved separately;
+  - `same_path_identical`: both path and content match an existing record.
 - Preserve raw snapshots as provenance, including trailing whitespace if it belongs to the original source.
 - Write a manifest that records source worktree, branch, path, content hash, classification, and snapshot path.
 
 Do not validate curated style against raw intake snapshots. Validate only that the manifest and snapshot boundary are accurate.
 
-## OKF-Style Research Migration
+## Open Knowledge Format (`OKF`)-Style Research Migration
 
 Use a repo-native structure rather than depending on app-specific wiki syntax. Durable value comes from typed reading paths, clear authority boundaries, and linked evidence.
 
@@ -79,13 +96,22 @@ research/investigations/index.md
 research/mechanisms/index.md
 research/archive/index.md
 research/ideas/<slug>/
+research/investigations/<slug>/experiments/<unit-id>/unit.md
 ```
 
 Conventions:
 
 - router `index.md` files may be plain;
 - non-router notes may use light frontmatter such as `type: idea`, `type: investigation`, or `type: mechanism`;
+- expand and define every abbreviation, shortened arm/hypothesis name, metric
+  symbol, dataset/model alias, and coined mechanism name at first use or in a
+  terminology registry;
+- replace an acronym with a behavior-level plain-language name when expansion
+  alone still leaves the mechanism or objective unclear;
 - avoid premature `conclusion.md` unless the research direction is actually closed;
+- use `outputs/research/<investigation>/<unit-id>/<run-id>/` for executed
+  artifacts; record the resolved absolute root and receipts in the unit;
+- treat a path as a provenance handle, not proof of execution or metric validity;
 - update `docs/AGENT_INDEX.md` and `docs/catalog.yaml` only when `research/` discoverability or authority boundaries change.
 
 If `/research/` is ignored, stage only the intended tracked set with explicit paths or `git add -f` after review. Do not sweep unrelated ignored local research artifacts into validation or commits.
@@ -136,6 +162,12 @@ git diff --check -- <touched-files>
 
 For supervisor packets, also check headings, placeholder tokens, trailing whitespace, and balanced code fences.
 
+For new research units, also check frontmatter lifecycle fields, outline-or-
+protocol/result separation, evidence-tier-appropriate artifact attribution,
+and that the bounded verdict does not exceed its evidence scope. Require an
+immutable run identifier once execution artifacts need stable comparison; do
+not turn a pre-execution exploratory outline into a manifest exercise.
+
 ## Output Contract
 
 Report:
@@ -147,3 +179,6 @@ Report:
 - authority caveats and current-behavior docs/specs touched or intentionally untouched;
 - verification commands and scope;
 - unresolved evidence gaps and next continuation seeds.
+- for executed units, logical/resolved `outputs/research/` roots, receipt state,
+  evidence status, architecture-promotion status, and any explicitly
+  unauthorized implementation work.

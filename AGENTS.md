@@ -13,19 +13,70 @@
 - Ask only when the choice changes research meaning, is costly/destructive, publishes externally, touches secrets, or risks irreversible compatibility.
 - In this checkout, Python checks normally run in the conda environment `ms`; use it explicitly if the shell is not already there.
 - When subagents are allowed or requested, dispatch independent lanes instead of stacking broad raw context in one thread. Give each lane scope, permissions, and a stop condition; the parent agent must synthesize, remove duplication, and decide.
+- Give one current owner to each independent decision surface. Do not create
+  duplicate implementation lanes or repeated general reviews merely because
+  agent slots are available.
+- Preserve source reviews and audits as provenance, but record later changes as
+  evidence or deltas instead of creating duplicate current authorities.
+
+## Communication and Language
+
+- The user may communicate in Chinese, English, or a mixture of both. Treat all
+  languages as equally authoritative; do not interpret English as more formal
+  or Chinese as less precise.
+- Chinese is permitted for interactive user-facing discussion only. Follow the
+  language of the latest user request there, while preserving technical terms
+  in English. When precision, implementation semantics, or scientific meaning
+  could benefit from English, prefer English or add an explicit English
+  operational restatement.
+- Keep code, paths, commands, configuration keys, schemas, formulas, experiment
+  identifiers, plans, specifications, reviews, handoffs, and all other durable
+  repository artifacts in English unless the user explicitly requests a
+  file-specific exception.
+- Translate Chinese research intuition into an explicit English implementation
+  or experiment contract when needed. If translation could change scientific
+  meaning, state the interpretation rather than silently choosing one.
+- All agent and subagent instructions, briefs, intermediate reports, review
+  findings, and handoffs must be written in English. Parent discussion with the
+  user may remain Chinese, and the parent may return a Chinese synthesis after
+  reconciling the English agent outputs.
+- When Chinese discussion and an English operational contract appear to differ,
+  do not silently choose either interpretation. Surface the discrepancy and
+  resolve it before implementation; once resolved, record the executable
+  contract in English.
+- Every abbreviation, shorthand name, experimental-arm identifier, hypothesis
+  identifier, and coined term in durable artifacts must include its complete
+  name and operational meaning.
 
 ## Execution Harness
 
 - Before changing files, identify the task type, success criterion, and smallest evidence that would prove the work is done. For tiny edits this can stay implicit, but it must still guide the change.
 - Create or refine a persistent/self-driven goal only for explicit long-running or multi-turn work, and only after bounding the lane; the goal must include a concrete stop condition.
+- For research implementation, outline the question, minimal execution path,
+  expected owner surfaces, reused infrastructure, non-goals, first real smoke,
+  and rough cost. Do not pretend that a speculative code interface can be
+  frozen before runtime evidence exists.
+- Once a research goal is authorized, let the lead adapt implementation,
+  controls, sample scope, and promising recursive probes within the same broad
+  objective. Escalate major direction changes or material critical-path cost
+  using the task-local budget as a flexible judgment, not a universal cap.
 - State assumptions only when they affect implementation, research meaning, cost, compatibility, or the verification path. If an assumption is cheap to verify locally, verify it instead of asking.
 - If multiple meaningful interpretations exist, present the tradeoff and ask or pause only when the wrong choice would be costly; otherwise choose the conservative repo-local default and continue.
 - For multi-step work, use a brief plan with a verification handle for each step. For simple work, proceed directly and keep the verification path explicit.
 - Every changed line should trace to the user request, concrete evidence, a failing check, a documented contract, or cleanup caused by the current change.
 - If a finding implies `fix`, `narrow`, `drop`, `probe`, or `needs user decision`, make that decision before patching through it.
+- During an exploratory research slice, expand implementation only when needed
+  to obtain the primary observation or protect its interpretation. Defer
+  elegance, future consumers, exhaustive manifests, and speculative edge cases
+  until the pilot justifies promotion.
 
 ## Judgment Taste
 
+- Search for the narrowest existing repository owner first, then a standard
+  library or native platform mechanism, then an installed dependency, and only
+  then add the minimum new implementation. This is a search order, not an
+  automatic preference: preserve research semantics, validation, ordering,
+  compatibility, and provenance.
 - Prefer concise, scalable, readable designs over broad new surfaces. Add knobs, abstractions, workflows, or interfaces only when they protect correctness or remove real complexity.
 - For research mechanisms, make semantics explicit, monitorable, numerically stable, and compatible with the existing flow before expanding scope.
 - Give direct verdicts when asked to compare, rank, approve, or decide. Tie the verdict to the requested axis and the concrete evidence.
@@ -53,6 +104,9 @@
 - For experiments and model behavior, record the evidence scope: config, checkpoint or version, artifact root, counters, metric files, representative samples, and known limitations.
 - Every code, config, data, docs-contract, or workflow change needs a verification path: test, smoke, parse, artifact/manifest check, metric check, replay, residue grep, or explicit skipped reason.
 - Narrow checks first; broaden only when shared contracts or user-facing workflows changed. Label partial evidence honestly and never present it as full validation.
+- Prefer a representative real smoke and compact run receipt over exhaustive
+  pre-run assurance. Add stronger runtime guards only for a demonstrated
+  failure mode that could change the scientific conclusion.
 - Put new investigations, interpretations, negative results, and durable
   research context in `research/`. Use `docs/history/` for raw provenance
   snapshots. Treat `progress/` as a legacy/deprecated archive only: read it only

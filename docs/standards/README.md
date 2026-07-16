@@ -15,6 +15,8 @@ Use this folder for stable repo policy and engineering conventions.
 
 ## Pages
 
+- [../AGENT_ENGINEERING_CONSTITUTION.md](../AGENT_ENGINEERING_CONSTITUTION.md)
+  - lightweight agent engineering and exploratory implementation posture
 - [REPO_HYGIENE.md](REPO_HYGIENE.md)
   - where things live and how work is promoted
 - [CODE_STYLE.md](CODE_STYLE.md)

@@ -56,6 +56,20 @@ or `boundary` when discussing this architecture model.
 Read [DEEPENING.md](DEEPENING.md) when restructuring an existing cluster. Read
 [DESIGN-IT-TWICE.md](DESIGN-IT-TWICE.md) when comparing alternative interfaces.
 
+## Exploratory Research Boundary
+
+Do not apply the full interface-first procedure to the first exploratory
+consumer of a research mechanism. Before the first real model observation,
+name only the concept owner, reused infrastructure, meaning-bearing invariants,
+smallest implementation path, primary observation, and stop rule. Keep the
+implementation experiment-local and let runtime evidence reveal whether a
+stable seam exists.
+
+Use the full design procedure when a second real consumer demonstrates the same
+semantic variation, when the first implementation already crosses a stable
+compatibility boundary, or when changing the seam later would be materially
+costly. An outline is not a frozen application programming interface.
+
 ## Human And Agent Control
 
 The goal is not to make the user learn implementation detail. The agent should
@@ -76,6 +90,8 @@ ordinary code structure and reversible implementation details without making
 the user act as a programmer.
 
 ## Design Procedure
+
+For a stable or repeated seam:
 
 1. **Name the concept and owner.** State what behavior or contract the module
    owns in one sentence.

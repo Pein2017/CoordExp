@@ -50,6 +50,37 @@ For each P0/P1, classify the decision implication:
 
 Prefer `probe` over speculative fixes when runtime semantics, artifact identity, matched baselines, or installed upstream behavior are unverified. Prefer `needs user decision` over quietly converting research-meaning forks into engineering tasks.
 
+## Exploratory Research Triage
+
+For an exploratory research pilot, review for conclusion validity rather than
+production completeness. A finding blocks the first real run only when it can:
+
+- select the wrong checkpoint, config, case, image, prompt, or condition;
+- corrupt geometry, ordering, token/image alignment, labels, or another
+  meaning-bearing invariant;
+- make the primary contrast change more than its declared factor;
+- lose request/output/failure attribution; or
+- fabricate, reverse, or make the primary observation uninterpretable.
+
+Treat application programming interface polish, speculative edge cases, broad
+resume support, exhaustive manifests, future consumers, publication
+statistics, and adversarial mutation defenses as non-blocking unless the
+current evidence shows that they can change the conclusion. Record them as
+`known limitation`, `deferred debt`, or `promotion blocker`; do not require them
+to close before the pilot moves.
+
+Use this sequence for experiment-oriented work:
+
+1. pre-implementation scientific-design review of the contrast and controls;
+2. minimal implementation and representative real smoke;
+3. targeted implementation/result audit based on observed runtime risks;
+4. stop, narrow, revise, or promote.
+
+After two review rounds, prefer narrowing the surface or running a concrete
+probe over adding another general guard. A new runtime guard must name the
+demonstrated failure it prevents and why a compact behavioral smoke cannot
+protect the conclusion instead.
+
 ## Diff And Code Review
 
 Use this mode when the user says `review this branch`, `review since <ref>`,
@@ -157,9 +188,12 @@ For stable contracts or OpenSpec work:
 
 Lead with findings, ordered by severity:
 
-- `P0`: likely invalidates correctness, reproducibility, or evaluation claims.
-- `P1`: substantial risk to supported workflows, artifacts, metrics, or config contracts.
-- `P2`: maintainability, clarity, or missing-coverage risks that could become failures.
+- Priority zero (`P0`): likely invalidates correctness, reproducibility, or
+  evaluation claims.
+- Priority one (`P1`): substantial risk to supported workflows, artifacts,
+  metrics, or config contracts.
+- Priority two (`P2`): maintainability, clarity, or missing-coverage risks that
+  could become failures.
 
 Each finding needs:
 

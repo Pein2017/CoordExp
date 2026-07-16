@@ -56,6 +56,17 @@ Choose the smallest form:
 - docs or agent metadata: when the durable lesson is an authority boundary, delegation rule, or agent role tweak;
 - skip: one-off, sensitive, ambiguous, poorly evidenced, or overlapping.
 
+Prefer extending the narrowest existing owner over creating a new policy layer.
+Do not promote sample counts, time triggers, agent counts, or other
+session-specific defaults into global guidance when a domain skill or active
+research unit can own them. Treat a reusable software interface as provisional
+until another real consumer demonstrates the same semantic seam.
+
+When evaluating an external implementation workflow, use a benchmark only if
+it can change a durable routing or process decision. Include representative
+expansion-prone work and a lean negative control, require independent contract
+and quality adjudication, and never treat raw lines of code as adoption proof.
+
 ## Output First
 
 Before creating assets, produce a compact shortlist with:
