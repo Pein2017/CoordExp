@@ -8,7 +8,7 @@ from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
 from threading import Event, Thread
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 from typing import Any
 
 import pytest
@@ -27,6 +27,7 @@ from src.inference.parsing import parse_compact_object_box_closed
 from src.label_studio_coco_refinement.inference_profiles import (
     EngineProfile,
     EngineProfileStore,
+    ProfileDriftError,
     canonical_json,
     fingerprint_json,
 )
@@ -186,7 +187,12 @@ class _FakeResult:
     pass
 
 
-def _profile(tmp_path: Path, *, temperature: float = 0.0) -> EngineProfile:
+def _profile(
+    tmp_path: Path,
+    *,
+    temperature: float = 0.0,
+    runtime_identity: dict[str, Any] | None = None,
+) -> EngineProfile:
     artifacts = tmp_path / "profile-artifacts"
     artifacts.mkdir(parents=True, exist_ok=True)
     base = artifacts / "base"
@@ -278,7 +284,9 @@ def _profile(tmp_path: Path, *, temperature: float = 0.0) -> EngineProfile:
         transform_identity={"id": ROI_TRANSFORM_ID},
         transformers_version=str(transformers.__version__),
         processor_kwargs={"do_resize": False, "return_tensors": "pt"},
-        runtime_identity={
+        runtime_identity=runtime_identity
+        if runtime_identity is not None
+        else {
             "model": {"family": "fake"},
             "processor": {
                 "class": "FakeProcessor",
@@ -482,6 +490,153 @@ def test_bridge_preserves_canonical_profile_and_attests_resident_components(
     )
     assert binding.processor_factor == profile.processor_factor == 32
     assert binding.default_width == profile.default_width == 64
+
+
+def _nested_runtime_identity() -> dict[str, Any]:
+    return {
+        "model": {
+            "family": "fake",
+            "architecture": {
+                "layers": ["vision", "language"],
+                "quantized": False,
+            },
+        },
+        "processor": {
+            "class": "FakeProcessor",
+            "patch_size": 16,
+            "merge_size": 2,
+            "image_policy": {"sizes": [32, 64], "do_resize": False},
+        },
+        "tokenizer": {
+            "sha256": "tokenizer",
+            "special_tokens": {"ids": [1, 2, 3]},
+        },
+    }
+
+
+def _freeze_runtime_identity(value: Any) -> Any:
+    if isinstance(value, dict):
+        return MappingProxyType(
+            {key: _freeze_runtime_identity(item) for key, item in value.items()}
+        )
+    if isinstance(value, list):
+        return tuple(_freeze_runtime_identity(item) for item in value)
+    return value
+
+
+def _engine_with_runtime_identity(
+    profile: EngineProfile,
+    runtime_identity: dict[str, Any],
+) -> _FakeEngine:
+    engine = _FakeEngine(
+        build_resident_profile_binding(profile),
+        canonical_profile=profile,
+        parser_text="",
+    )
+    frozen = _freeze_runtime_identity(runtime_identity)
+    engine.runtime = SimpleNamespace(
+        model_identity=frozen["model"],
+        qwen=SimpleNamespace(
+            processor_identity=_ReceiptPart(frozen["processor"]),
+            token_identity=_ReceiptPart(frozen["tokenizer"]),
+        ),
+    )
+    return engine
+
+
+def test_loaded_runtime_attestation_recursively_thaws_managed_snapshot(
+    tmp_path: Path,
+) -> None:
+    runtime_identity = _nested_runtime_identity()
+    profile = _profile(tmp_path, runtime_identity=runtime_identity)
+    binding = build_resident_profile_binding(profile)
+    engine = _engine_with_runtime_identity(profile, runtime_identity)
+
+    roi_runtime_module._attest_loaded_engine(
+        engine=engine,
+        profile=profile,
+        binding=binding,
+    )
+
+
+def test_loaded_runtime_attestation_rejects_nested_managed_snapshot_drift(
+    tmp_path: Path,
+) -> None:
+    runtime_identity = _nested_runtime_identity()
+    profile = _profile(tmp_path, runtime_identity=runtime_identity)
+    binding = build_resident_profile_binding(profile)
+    drifted = deepcopy(runtime_identity)
+    drifted["model"]["architecture"]["layers"][1] = "changed"
+    engine = _engine_with_runtime_identity(profile, drifted)
+
+    with pytest.raises(ProfileDriftError):
+        roi_runtime_module._attest_loaded_engine(
+            engine=engine,
+            profile=profile,
+            binding=binding,
+        )
+
+
+@pytest.mark.parametrize(
+    "invalid_value",
+    [object(), bytes((0, 1)), float("nan"), float("inf"), float("-inf")],
+    ids=["unknown-object", "bytes", "nan", "positive-inf", "negative-inf"],
+)
+def test_loaded_runtime_attestation_rejects_invalid_nested_json_value(
+    tmp_path: Path,
+    invalid_value: Any,
+) -> None:
+    runtime_identity = _nested_runtime_identity()
+    profile = _profile(tmp_path, runtime_identity=runtime_identity)
+    binding = build_resident_profile_binding(profile)
+    invalid = deepcopy(runtime_identity)
+    invalid["processor"]["image_policy"]["unknown"] = invalid_value
+    engine = _engine_with_runtime_identity(profile, invalid)
+
+    with pytest.raises(RoiRuntimeError) as exc_info:
+        roi_runtime_module._attest_loaded_engine(
+            engine=engine,
+            profile=profile,
+            binding=binding,
+        )
+
+    assert exc_info.value.code == "profile.loaded_identity_invalid"
+
+
+def _identity_with_non_string_key() -> Any:
+    return {1: "invalid"}
+
+
+def _cyclic_identity_mapping() -> Any:
+    value: dict[str, Any] = {}
+    value["self"] = value
+    return value
+
+
+def _cyclic_identity_list() -> Any:
+    value: list[Any] = []
+    value.append(value)
+    return {"cycle": value}
+
+
+@pytest.mark.parametrize(
+    "factory",
+    [
+        _identity_with_non_string_key,
+        _cyclic_identity_mapping,
+        _cyclic_identity_list,
+        lambda: ["identity-root-must-be-a-mapping"],
+    ],
+    ids=["non-string-key", "mapping-cycle", "list-cycle", "root-list"],
+)
+def test_runtime_identity_thaw_rejects_non_json_container_shapes(factory: Any) -> None:
+    with pytest.raises(RoiRuntimeError) as exc_info:
+        roi_runtime_module._thaw_runtime_identity_mapping(
+            factory(),
+            field="model identity",
+        )
+
+    assert exc_info.value.code == "profile.loaded_identity_invalid"
 
 
 def test_bridge_rejects_sampling_policy_not_executed_by_resident_adapter(

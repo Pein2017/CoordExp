@@ -1775,9 +1775,18 @@ def _attest_loaded_engine(
             stage="profile",
         )
     observed = {
-        "model": dict(model_identity),
-        "processor": processor_identity.to_artifact_dict(),
-        "tokenizer": token_identity.to_artifact_dict(),
+        "model": _thaw_runtime_identity_mapping(
+            model_identity,
+            field="model_identity",
+        ),
+        "processor": _thaw_runtime_identity_mapping(
+            processor_identity.to_artifact_dict(),
+            field="processor_identity",
+        ),
+        "tokenizer": _thaw_runtime_identity_mapping(
+            token_identity.to_artifact_dict(),
+            field="tokenizer_identity",
+        ),
     }
     profile.verify_runtime_identity(observed)
     component_checks = {
@@ -1803,6 +1812,60 @@ def _validate_executed_generation_policy(generation: Mapping[str, Any]) -> None:
             code="profile.unsupported_sampling_policy",
             stage="profile",
         )
+
+
+def _thaw_runtime_identity_mapping(value: Any, *, field: str) -> dict[str, Any]:
+    """Copy one frozen runtime identity into finite ordinary JSON containers."""
+
+    try:
+        thawed = _thaw_strict_json(value, active_containers=set())
+        if not isinstance(thawed, dict):
+            raise TypeError("identity root is not a mapping")
+        canonical_json(thawed)
+    except Exception as exc:
+        raise RoiRuntimeError(
+            f"loaded {field} is not a finite strict-JSON mapping",
+            code="profile.loaded_identity_invalid",
+            stage="profile",
+        ) from exc
+    return thawed
+
+
+def _thaw_strict_json(value: Any, *, active_containers: set[int]) -> Any:
+    if isinstance(value, Mapping):
+        container_id = id(value)
+        if container_id in active_containers:
+            raise ValueError("cyclic identity mapping")
+        active_containers.add(container_id)
+        try:
+            thawed: dict[str, Any] = {}
+            for key, item in value.items():
+                if not isinstance(key, str):
+                    raise TypeError("identity mapping keys must be strings")
+                thawed[key] = _thaw_strict_json(
+                    item,
+                    active_containers=active_containers,
+                )
+            return thawed
+        finally:
+            active_containers.remove(container_id)
+    if isinstance(value, (list, tuple)):
+        container_id = id(value)
+        if container_id in active_containers:
+            raise ValueError("cyclic identity sequence")
+        active_containers.add(container_id)
+        try:
+            return [
+                _thaw_strict_json(item, active_containers=active_containers)
+                for item in value
+            ]
+        finally:
+            active_containers.remove(container_id)
+    if value is None or isinstance(value, (bool, str, int)):
+        return value
+    if isinstance(value, float) and math.isfinite(value):
+        return value
+    raise TypeError("identity value is not finite strict JSON")
 
 
 def _template_config(config: InferConfig) -> TemplateConfig:
