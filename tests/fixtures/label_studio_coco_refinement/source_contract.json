@@ -3,7 +3,7 @@
   "coordinate_chart": "norm1000_xyxy_inclusive_0_999",
   "image_root": "public_data/coco/rescale_32_1024_bbox/images",
   "label_studio": {
-    "git_revision": "acbe4550f6ed81d1a0342913bb309f63cbe1452e",
+    "git_revision": "eb40d7d000b8110d0a853b402bcd1c48e98a3c9c",
     "version": "1.24.0.dev0"
   },
   "object_fields": [
