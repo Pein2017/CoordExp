@@ -219,7 +219,8 @@ not deployed into the active UAT process: it deliberately remains on revision
 ## ROI cancellation and orphan-receipt closure
 
 On 2026-07-16, nested revision
-`ff0d82ecd272d7fc4ba938015da4b68fdef7fd84` and parent revision
+`4fd750eafae199711de99ef9c0f04c66fefa8fb7` (including the forced-unload
+keepalive assertion) and parent revision
 `a89ce02ee9441110abd42156ceba02b0c953c50d` closed the production cancellation and receipt-expiry gaps without
 restarting the active UAT process.  The fixed point now:
 
