@@ -7,6 +7,7 @@ import pytest
 from src.label_studio_coco_refinement.draft_adapter import (
     DraftContractError,
     canonicalize_label_studio_draft,
+    merge_stable_identity_metadata,
 )
 from src.label_studio_coco_refinement.geometry import norm1000_bbox_to_label_studio_xywh
 
@@ -195,6 +196,73 @@ def test_canonical_payload_is_deeply_immutable_and_thaws_defensively() -> None:
 
     assert draft.to_json_regions()[0]["bbox_2d"] == [101, 202, 303, 404]
     assert (draft.semantic_hash, draft.result_hash) == original_hashes
+
+
+def test_identity_merge_preserves_newer_draft_semantics_and_membership() -> None:
+    captured = _rectangle(
+        key="drawn:stable-1",
+        label="cat",
+        coco_ann_id=None,
+        bbox=(100, 100, 200, 200),
+    )
+    captured["meta"].pop("last_committed_bbox")
+    newer = copy.deepcopy(captured)
+    newer["value"]["x"] = 35.0
+    newer["value"]["rectanglelabels"] = ["dog"]
+    newer["meta"].update(
+        {
+            "coordexp_visual_color": "#abcdef",
+            "coordexp_inference_receipt_id": "newer-receipt",
+        }
+    )
+    newer["newer_top_level_state"] = {"undo_generation": 9}
+    uncommitted = _rectangle(
+        key="drawn:after-enqueue",
+        label="person",
+        coco_ann_id=None,
+        bbox=(300, 300, 400, 400),
+    )
+    uncommitted["meta"].pop("last_committed_bbox")
+    live = [newer, uncommitted]
+    live_before = copy.deepcopy(live)
+
+    merged = merge_stable_identity_metadata(
+        live,
+        region_id_mapping={"train:coco:10": 10, "drawn:stable-1": -1},
+        committed_row={
+            "objects": [
+                {"coco_ann_id": 10, "bbox_2d": [1, 2, 3, 4]},
+                {"coco_ann_id": -1, "bbox_2d": [100, 100, 200, 200]},
+            ]
+        },
+    )
+
+    assert live == live_before
+    assert [result["id"] for result in merged] == [
+        "drawn:stable-1",
+        "drawn:after-enqueue",
+    ]
+    assert merged[0]["value"] == live_before[0]["value"]
+    assert merged[0]["newer_top_level_state"] == {"undo_generation": 9}
+    assert merged[0]["meta"] == {
+        **live_before[0]["meta"],
+        "coco_ann_id": -1,
+        "last_committed_bbox": [100, 100, 200, 200],
+    }
+    assert merged[1] == live_before[1]
+
+
+def test_identity_merge_rejects_conflicts_instead_of_overwriting_them() -> None:
+    live = _rectangle(key="drawn:stable-1", coco_ann_id=-2)
+
+    with pytest.raises(DraftContractError, match="different coco_ann_id"):
+        merge_stable_identity_metadata(
+            [live],
+            region_id_mapping={"drawn:stable-1": -1},
+            committed_row={
+                "objects": [{"coco_ann_id": -1, "bbox_2d": [1, 2, 3, 4]}]
+            },
+        )
 
 
 @pytest.mark.parametrize(

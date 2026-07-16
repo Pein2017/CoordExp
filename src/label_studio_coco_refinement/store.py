@@ -2270,6 +2270,7 @@ class WorkingDatasetStore:
         members: Sequence[tuple[int, CommitRequest]],
     ) -> None:
         pending: list[tuple[int, str]] = []
+        pending_owner_by_key: dict[str, int] = {}
         for _, request in members:
             new_keys = sorted(
                 {
@@ -2304,6 +2305,15 @@ class WorkingDatasetStore:
                     )
                 known = self._region_to_id.get((request.image_id, key))
                 if known is not None:
+                    continue
+                pending_owner = pending_owner_by_key.setdefault(
+                    key, request.image_id
+                )
+                if pending_owner != request.image_id:
+                    raise ValidationError(
+                        f"stable region key is already bound to another task: {key!r}"
+                    )
+                if (request.image_id, key) in pending:
                     continue
                 pending.append((request.image_id, key))
 

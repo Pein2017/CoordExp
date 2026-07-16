@@ -40,6 +40,112 @@ class CanonicalDraftPayload:
         return [_thaw_json(region) for region in self.regions]
 
 
+def merge_stable_identity_metadata(
+    results: Sequence[Mapping[str, Any]],
+    *,
+    region_id_mapping: Mapping[str, int],
+    committed_row: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    """Merge terminal identity baselines into a possibly newer Draft.
+
+    Stable region keys are the only join key.  Matching live results receive
+    only the hidden committed ID and bbox baseline; geometry, class, result
+    membership, inference/presentation metadata, ordering, and all other live
+    payload bytes survive unchanged.  Committed regions absent from the live
+    Draft are not recreated.
+    """
+
+    if not isinstance(region_id_mapping, Mapping):
+        raise DraftContractError("region ID mapping must be a JSON object")
+    if not isinstance(committed_row, Mapping):
+        raise DraftContractError("committed row must be a JSON object")
+    committed_objects = committed_row.get("objects")
+    if not isinstance(committed_objects, list):
+        raise DraftContractError("committed row objects must be a JSON array")
+
+    normalized_mapping: dict[str, int] = {}
+    mapped_ids: set[int] = set()
+    for raw_key, raw_id in region_id_mapping.items():
+        key = _normalized_text(raw_key, field="stable region key")
+        if isinstance(raw_id, bool) or not isinstance(raw_id, int) or raw_id == 0:
+            raise DraftContractError("mapped coco_ann_id must be a nonzero integer")
+        if raw_id in mapped_ids:
+            raise DraftContractError("region ID mapping must contain unique IDs")
+        normalized_mapping[key] = raw_id
+        mapped_ids.add(raw_id)
+
+    committed_bbox_by_id: dict[int, list[int]] = {}
+    for ordinal, raw_object in enumerate(committed_objects):
+        if not isinstance(raw_object, Mapping):
+            raise DraftContractError(
+                f"committed row object[{ordinal}] must be a JSON object"
+            )
+        object_id = raw_object.get("coco_ann_id")
+        if (
+            isinstance(object_id, bool)
+            or not isinstance(object_id, int)
+            or object_id == 0
+        ):
+            raise DraftContractError(
+                "committed object coco_ann_id must be a nonzero integer"
+            )
+        bbox = raw_object.get("bbox_2d")
+        if (
+            not isinstance(bbox, list)
+            or len(bbox) != 4
+            or any(
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or value < 0
+                or value > 999
+                for value in bbox
+            )
+            or bbox[0] >= bbox[2]
+            or bbox[1] >= bbox[3]
+        ):
+            raise DraftContractError(
+                "committed object bbox_2d must be strict norm1000 integers"
+            )
+        if object_id in committed_bbox_by_id:
+            raise DraftContractError("committed row contains duplicate coco_ann_id")
+        committed_bbox_by_id[object_id] = list(bbox)
+    missing_ids = mapped_ids - set(committed_bbox_by_id)
+    if missing_ids:
+        raise DraftContractError(
+            "region ID mapping references an object outside the committed row"
+        )
+
+    merged = _json_copy(list(results), field="Draft result")
+    seen_keys: set[str] = set()
+    for ordinal, result in enumerate(merged):
+        if not isinstance(result, dict):
+            raise DraftContractError(f"Draft result[{ordinal}] must be a JSON object")
+        key = _normalized_text(result.get("id"), field="region id")
+        if key in seen_keys:
+            raise DraftContractError(f"duplicate region key: {key}")
+        seen_keys.add(key)
+        object_id = normalized_mapping.get(key)
+        if object_id is None:
+            continue
+        meta = result.get("meta")
+        if not isinstance(meta, dict):
+            raise DraftContractError("rectangle meta must be a JSON object")
+        prior_key = meta.get("coordexp_region_key")
+        if prior_key not in (None, key):
+            raise DraftContractError(
+                "hidden region key does not match the Label Studio result id"
+            )
+        prior_id = meta.get("coco_ann_id")
+        if prior_id not in (None, object_id):
+            raise DraftContractError(
+                "stable region key already carries a different coco_ann_id"
+            )
+        meta["coordexp_region_key"] = key
+        meta["coco_ann_id"] = object_id
+        meta["last_committed_bbox"] = list(committed_bbox_by_id[object_id])
+    return merged
+
+
 def canonicalize_label_studio_draft(
     results: Sequence[Mapping[str, Any]],
     *,
@@ -308,4 +414,5 @@ __all__ = [
     "CanonicalDraftPayload",
     "DraftContractError",
     "canonicalize_label_studio_draft",
+    "merge_stable_identity_metadata",
 ]

@@ -1468,6 +1468,132 @@ def test_failed_batch_reservation_is_reused_but_never_given_to_another_key(
     assert other_result.members[0].region_id_mapping["drawn:other-key"] == -2
 
 
+def test_batch_rejects_cross_task_stable_key_collision_before_reservation(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    batch = _batch_request(store, batch_id="colliding-keys", image_ids=(1, 2))
+    first, second = batch.members
+    second_regions = copy.deepcopy(list(second.request.regions))
+    second_regions[-1]["region_key"] = "drawn:batch-1"
+    second_request = _request(
+        store,
+        commit_id=second.request.commit_id,
+        image_id=second.request.image_id,
+        regions=second_regions,
+    )
+    batch = replace(
+        batch,
+        members=(first, replace(second, request=second_request)),
+    )
+    working_before = store.working_path.read_bytes()
+    manifest_before = store.manifest_path.read_bytes()
+    store.enqueue_batch(batch)
+
+    result = store.process_next_batch()
+
+    assert result is not None and result.status is store_module.BatchStatus.FAILED
+    assert "stable region key is already bound to another task" in (result.error or "")
+    assert store.working_path.read_bytes() == working_before
+    assert store.manifest_path.read_bytes() == manifest_before
+    records = [json.loads(line) for line in store.journal_path.read_text().splitlines()]
+    assert [record["kind"] for record in records] == ["batch_terminal"]
+    reopened = _reopen(store)
+    assert reopened.get_batch_result(batch.batch_id).status is store_module.BatchStatus.FAILED
+
+
+def test_terminal_batch_retry_does_not_republish_or_allocate_again(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    batch = _batch_request(store, batch_id="terminal-retry", image_ids=(1,))
+    first_receipt = store.enqueue_batch(batch)
+    first_result = store.process_next_batch()
+    assert first_result is not None
+    artifacts_before = {
+        path: path.read_bytes()
+        for path in (
+            store.working_path,
+            store.manifest_path,
+            store.journal_path,
+            store.queue_path,
+        )
+    }
+
+    retry_receipt = store.enqueue_batch(copy.deepcopy(batch))
+
+    assert retry_receipt.batch_id == first_receipt.batch_id
+    assert retry_receipt.payload_hash == first_receipt.payload_hash
+    assert retry_receipt.status is store_module.BatchStatus.SUCCEEDED
+    assert store.get_batch_result(batch.batch_id) == first_result
+    assert store.process_next_batch() is None
+    assert {
+        path: path.read_bytes()
+        for path in artifacts_before
+    } == artifacts_before
+
+
+def test_batch_deletion_tombstones_identity_against_later_redraw(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    store.enqueue_batch(_batch_request(store, batch_id="add", image_ids=(1,)))
+    added = store.process_next_batch()
+    assert added is not None and added.status is store_module.BatchStatus.SUCCEEDED
+    assert added.members[0].region_id_mapping["drawn:batch-1"] == -1
+
+    delete_regions = [
+        region
+        for region in _regions(store, image_id=1, include_new=False)
+        if region["region_key"] != "drawn:batch-1"
+    ]
+    delete_request = _request(
+        store,
+        commit_id="delete:member:1",
+        image_id=1,
+        regions=delete_regions,
+    )
+    delete_batch = store_module.BatchRequest(
+        batch_id="delete",
+        split="train",
+        current_user_id="reviewer",
+        base_generation=delete_request.observed_generation,
+        members=(store_module.BatchMember(0, delete_request),),
+    )
+    store.enqueue_batch(delete_batch)
+    deleted = store.process_next_batch()
+    assert deleted is not None and deleted.status is store_module.BatchStatus.SUCCEEDED
+
+    redraw_regions = _regions(store, image_id=1, include_new=False)
+    redraw_regions.append(
+        {
+            "region_key": "drawn:batch-1",
+            "bbox_2d": [300, 310, 320, 330],
+            "category_name": "dog",
+            "category_id": 18,
+        }
+    )
+    redraw_request = _request(
+        store,
+        commit_id="redraw:member:1",
+        image_id=1,
+        regions=redraw_regions,
+    )
+    redraw_batch = store_module.BatchRequest(
+        batch_id="redraw",
+        split="train",
+        current_user_id="reviewer",
+        base_generation=redraw_request.observed_generation,
+        members=(store_module.BatchMember(0, redraw_request),),
+    )
+    store.enqueue_batch(redraw_batch)
+
+    redrawn = store.process_next_batch()
+
+    assert redrawn is not None and redrawn.status is store_module.BatchStatus.FAILED
+    assert "tombstoned" in (redrawn.error or "")
+
+
 @pytest.mark.parametrize(
     "boundary,expected_status,expected_generation",
     [

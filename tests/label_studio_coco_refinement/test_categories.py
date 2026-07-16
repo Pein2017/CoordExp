@@ -42,6 +42,7 @@ def test_frozen_registry_exhaustively_matches_official_sparse_fixture() -> None:
     [
         ("traffic light", 10, None),
         ("traffic light", 9, "label_studio.category_mismatch"),
+        ("stop sign", 12, "label_studio.category_mismatch"),
         ("Traffic Light", 10, "label_studio.category_name"),
         (" traffic light ", 10, "label_studio.category_name"),
         ("motorbike", 4, "label_studio.category_name"),
