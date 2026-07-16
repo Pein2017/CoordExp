@@ -6,13 +6,15 @@ not load a model, contact an endpoint, or make endpoint runtime claims.
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import math
 import os
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Iterator, Mapping
 from urllib.parse import urlsplit, urlunsplit
 
 from src.config.fingerprint import sha256_json
@@ -526,6 +528,7 @@ class EngineProfileStore:
 
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
+        self.lock_path = self.path.with_name(f".{self.path.name}.lock")
 
     def profiles(self) -> dict[str, EngineProfile]:
         payload = self._read()
@@ -535,29 +538,32 @@ class EngineProfileStore:
         }
 
     def save(self, profile: EngineProfile) -> None:
-        payload = self._read()
-        existing = payload["profiles"].get(profile.name)
-        if existing is not None:
-            persisted = EngineProfile.from_dict(existing)
-            if persisted.fingerprint != profile.fingerprint:
-                raise ProfileContractError(
-                    "a different immutable profile already uses this name"
-                )
-            return
-        payload["profiles"][profile.name] = profile.to_dict()
-        self._write(payload)
+        with self._exclusive_lock():
+            payload = self._read()
+            existing = payload["profiles"].get(profile.name)
+            if existing is not None:
+                persisted = EngineProfile.from_dict(existing)
+                if persisted.fingerprint != profile.fingerprint:
+                    raise ProfileContractError(
+                        "a different immutable profile already uses this name"
+                    )
+                _fsync_directory(self.path.parent)
+                return
+            payload["profiles"][profile.name] = profile.to_dict()
+            self._write(payload)
 
     def activate(self, project_id: str, profile_name: str) -> EngineProfile:
         project_id = _required_text(project_id, field="project_id")
-        payload = self._read()
-        raw_profile = payload["profiles"].get(profile_name)
-        if raw_profile is None:
-            raise ProfileContractError(f"unknown inference profile: {profile_name}")
-        _verify_persisted_artifacts(raw_profile)
-        profile = EngineProfile.from_dict(raw_profile)
-        payload["active_by_project"][project_id] = profile.name
-        self._write(payload)
-        return profile
+        with self._exclusive_lock():
+            payload = self._read()
+            raw_profile = payload["profiles"].get(profile_name)
+            if raw_profile is None:
+                raise ProfileContractError(f"unknown inference profile: {profile_name}")
+            _verify_persisted_artifacts(raw_profile)
+            profile = EngineProfile.from_dict(raw_profile)
+            payload["active_by_project"][project_id] = profile.name
+            self._write(payload)
+            return profile
 
     def active(self, project_id: str, *, verify: bool = True) -> EngineProfile:
         payload = self._read()
@@ -601,9 +607,38 @@ class EngineProfileStore:
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temporary, self.path)
+            _fsync_directory(self.path.parent)
         finally:
             if temporary.exists():
                 temporary.unlink()
+
+    @contextmanager
+    def _exclusive_lock(self) -> Iterator[None]:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            handle = self.lock_path.open("a+b")
+        except OSError:
+            raise ProfileContractError("profile store lock is unavailable") from None
+        with handle:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            except OSError:
+                raise ProfileContractError(
+                    "profile store lock is unavailable"
+                ) from None
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _fsync_directory(directory: Path) -> None:
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    descriptor = os.open(directory, flags)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def _verify_persisted_artifacts(payload: Mapping[str, Any]) -> None:

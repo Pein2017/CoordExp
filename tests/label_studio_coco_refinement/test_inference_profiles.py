@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import fcntl
 import json
+import os
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -13,6 +15,7 @@ from src.config.inference import (
     InferConfig,
     ResolvedInferConfig,
 )
+import src.label_studio_coco_refinement.inference_profiles as profiles_module
 from src.label_studio_coco_refinement.inference_profiles import (
     ALLOWED_ARTIFACT_ROLES,
     EngineProfile,
@@ -177,6 +180,70 @@ def test_profile_persists_complete_identity_and_one_active_binding(
     assert "resolved_config" not in receipt
     assert "prompt_policy" not in receipt
     assert "runtime_identity" not in receipt
+
+
+def test_profile_store_mutations_share_one_lock_and_fsync_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    profile = _profile(tmp_path)
+    store = EngineProfileStore(tmp_path / "profiles.json")
+    lock_acquisitions: list[Path] = []
+    fsynced_directories: list[Path] = []
+    real_flock = fcntl.flock
+    real_fsync_directory = profiles_module._fsync_directory
+
+    def tracking_flock(descriptor: int, operation: int) -> None:
+        if operation == fcntl.LOCK_EX:
+            lock_acquisitions.append(
+                Path(os.readlink(f"/proc/self/fd/{descriptor}")).resolve()
+            )
+        real_flock(descriptor, operation)
+
+    def tracking_fsync_directory(directory: Path) -> None:
+        fsynced_directories.append(directory)
+        real_fsync_directory(directory)
+
+    monkeypatch.setattr(profiles_module.fcntl, "flock", tracking_flock)
+    monkeypatch.setattr(profiles_module, "_fsync_directory", tracking_fsync_directory)
+
+    store.save(profile)
+    store.activate("train-project", profile.name)
+    store.save(profile)
+
+    assert lock_acquisitions == [store.lock_path.resolve()] * 3
+    assert fsynced_directories == [store.path.parent] * 3
+
+
+def test_profile_store_parent_fsync_failure_is_repaired_by_idempotent_save(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    profile = _profile(tmp_path)
+    store = EngineProfileStore(tmp_path / "profiles.json")
+    real_fsync_directory = profiles_module._fsync_directory
+    fail_once = True
+
+    def fail_parent_once(directory: Path) -> None:
+        nonlocal fail_once
+        if fail_once:
+            fail_once = False
+            raise OSError("injected profile directory fsync failure")
+        real_fsync_directory(directory)
+
+    monkeypatch.setattr(profiles_module, "_fsync_directory", fail_parent_once)
+    with pytest.raises(OSError, match="injected profile directory fsync failure"):
+        store.save(profile)
+
+    persisted = store.path.read_bytes()
+    fsynced: list[Path] = []
+
+    def tracking_fsync_directory(directory: Path) -> None:
+        fsynced.append(directory)
+        real_fsync_directory(directory)
+
+    monkeypatch.setattr(profiles_module, "_fsync_directory", tracking_fsync_directory)
+    store.save(profile)
+    assert store.path.read_bytes() == persisted
+    assert fsynced == [store.path.parent]
 
 
 @pytest.mark.parametrize(
