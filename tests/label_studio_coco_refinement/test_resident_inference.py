@@ -136,6 +136,7 @@ class _FakeBackend:
         self.calls += 1
         request = requests[0]
         if self.mode == "wait_for_cancellation":
+            self.entered.set()
             while not cancellation_control.backend_should_stop():
                 time.sleep(0.001)
         elif self.mode == "ignore_cancellation":
@@ -278,14 +279,16 @@ def test_transformers_version_and_full_processor_kwargs_are_profile_bound() -> N
     assert exc_info.value.code == "resident.profile_processor_kwargs"
 
 
-def test_deadline_cancellation_synchronizes_then_reuses_same_backend() -> None:
+def test_post_backend_caller_cancellation_synchronizes_then_reuses_same_backend() -> None:
     resolved = _resolved_config()
     runtime = _runtime()
-    profile = _profile(resolved, runtime, deadline_seconds=0.02)
+    profile = _profile(resolved, runtime, deadline_seconds=1.0)
     backend = _FakeBackend()
     backend.mode = "wait_for_cancellation"
     synchronizations: list[str] = []
     loads = 0
+    token = CancellationToken()
+    errors: list[BaseException] = []
 
     def runtime_factory(_: InferConfig) -> InferenceRuntime:
         nonlocal loads
@@ -301,18 +304,68 @@ def test_deadline_cancellation_synchronizes_then_reuses_same_backend() -> None:
         cuda_synchronize=lambda: synchronizations.append("sync"),
     )
 
-    with pytest.raises(ResidentInferenceCancelled) as exc_info:
-        engine.infer_one(_request(profile, request_id="cancelled"))
+    def run() -> None:
+        try:
+            engine.infer_one(
+                _request(profile, request_id="cancelled"),
+                cancellation_token=token,
+            )
+        except BaseException as exc:  # pragma: no cover - asserted below.
+            errors.append(exc)
 
-    assert exc_info.value.metadata.reason == "deadline_exceeded"
-    assert exc_info.value.metadata.observed_by_backend is True
-    assert exc_info.value.metadata.cuda_synchronized is True
+    thread = threading.Thread(target=run)
+    thread.start()
+    assert backend.entered.wait(timeout=1.0)
+    token.cancel("user_cancelled")
+    thread.join(timeout=1.0)
+
+    assert not thread.is_alive()
+    assert len(errors) == 1
+    assert isinstance(errors[0], ResidentInferenceCancelled)
+    assert errors[0].metadata.reason == "user_cancelled"
+    assert errors[0].metadata.observed_by_backend is True
+    assert errors[0].metadata.backend_started is True
+    assert errors[0].metadata.cuda_synchronized is True
     assert synchronizations == ["sync"]
     backend.mode = "success"
     result = engine.infer_one(_request(profile, request_id="after-cancel"))
     assert result.parse.parse_status == "accepted"
     assert loads == 1
     assert backend.calls == 2
+
+
+def test_pre_backend_deadline_cancellation_is_deterministic_and_does_not_sync() -> None:
+    resolved = _resolved_config()
+    runtime = _runtime()
+    profile = _profile(resolved, runtime, deadline_seconds=1.0)
+    backend = _FakeBackend()
+    synchronizations: list[str] = []
+    clock_calls = 0
+
+    def clock() -> float:
+        nonlocal clock_calls
+        clock_calls += 1
+        return 0.0 if clock_calls <= 2 else 2.0
+
+    engine = ResidentRoiInferenceEngine.load(
+        resolved=resolved,
+        profile=profile,
+        runtime_factory=lambda _: runtime,
+        backend_factory=lambda _: backend,
+        cuda_probe=_one_cuda,
+        cuda_synchronize=lambda: synchronizations.append("sync"),
+        clock=clock,
+    )
+
+    with pytest.raises(ResidentInferenceCancelled) as exc_info:
+        engine.infer_one(_request(profile, request_id="deadline-before-backend"))
+
+    assert exc_info.value.metadata.reason == "deadline_exceeded"
+    assert exc_info.value.metadata.backend_started is False
+    assert exc_info.value.metadata.observed_by_backend is False
+    assert exc_info.value.metadata.cuda_synchronized is False
+    assert backend.calls == 0
+    assert synchronizations == []
 
 
 def test_backend_that_ignores_cancellation_cannot_claim_safe_cancel() -> None:

@@ -23,6 +23,7 @@ from types import MappingProxyType
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
+from src.common.errors import RuntimeContractError
 from src.config.fingerprint import sha256_json
 from src.config.inference import (
     INFER_CONFIG_LOADER_VERSION,
@@ -405,6 +406,14 @@ class RoiLaunchManager:
             )
             for selector, profile_name in self.config.profile_selectors.items()
         )
+
+    @staticmethod
+    def new_cancellation_token() -> Any:
+        """Construct the runtime-owned token without importing it from Django."""
+
+        from src.label_studio_coco_refinement.resident_inference import CancellationToken
+
+        return CancellationToken()
 
     def engine_for(self, selector: str) -> Any:
         """Resolve one allowlisted selector and load its engine at most once."""
@@ -800,6 +809,14 @@ class _ManagedResidentEngine:
                 if metadata is None:
                     raise RoiLaunchError("resident engine inference failed") from None
                 raise ResidentInferenceCancelled(metadata) from None
+            except RuntimeContractError as error:
+                if error.code == "resident.cancel_synchronize_failed":
+                    self._poison_locked()
+                    raise RuntimeContractError(
+                        "resident cancellation synchronization failed",
+                        code="resident.cancel_synchronize_failed",
+                    ) from None
+                raise RoiLaunchError("resident engine inference failed") from None
             except BaseException:
                 raise RoiLaunchError("resident engine inference failed") from None
 
@@ -825,6 +842,15 @@ class _ManagedResidentEngine:
         self._engine = None
         if engine is not None:
             _close_engine(engine)
+
+    def _poison_locked(self) -> None:
+        engine = self._engine
+        self._engine = None
+        if engine is not None:
+            try:
+                _close_engine(engine)
+            except BaseException:
+                pass
 
 
 @dataclass(frozen=True)
@@ -939,8 +965,14 @@ def _sanitized_cancellation_metadata(
         ):
             return None
         reason = (
-            "deadline_exceeded"
-            if metadata.reason == "deadline_exceeded"
+            metadata.reason
+            if metadata.reason
+            in {
+                "deadline_exceeded",
+                "user_cancelled",
+                "user_discarded",
+                "superseded",
+            }
             else "client_cancelled"
         )
         return CancellationMetadata(

@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 
+from src.common.errors import RuntimeContractError
 from src.config.fingerprint import sha256_json
 from src.config.inference import (
     INFER_CONFIG_LOADER_VERSION,
@@ -1718,6 +1719,176 @@ def test_managed_engine_cancellation_reason_is_canonicalized(
     assert error.value.metadata.reason == "client_cancelled"
     assert error.value.__cause__ is None
     assert private_reason not in _traceback_text(error.value)
+    manager.close()
+
+
+@pytest.mark.parametrize("reason", ["user_cancelled", "user_discarded", "superseded"])
+def test_managed_engine_preserves_allowlisted_abandonment_reason(
+    tmp_path: Path,
+    reason: str,
+) -> None:
+    profile = _profile(tmp_path / "profile", name="accepted")
+    config_path = _configured_store(tmp_path, [profile])
+    cancellation = ResidentInferenceCancelled(
+        CancellationMetadata(
+            requested=True,
+            reason=reason,
+            observed_by_backend=True,
+            backend_started=True,
+            cuda_synchronized=True,
+            deadline_seconds=20.0,
+        )
+    )
+
+    def factory(*, profile: EngineProfile, config: dict[str, Any]) -> _FakeEngine:
+        del config
+
+        def cancel(*_args: Any, **_kwargs: Any) -> Any:
+            raise cancellation
+
+        return _FakeEngine(profile, infer=cancel)
+
+    manager = RoiLaunchManager(
+        config_path,
+        current_targets=_CurrentTargets(),
+        engine_factory_loader=lambda _target: factory,
+    )
+
+    with pytest.raises(ResidentInferenceCancelled) as error:
+        manager.engine_for("accepted-selector").infer_one()
+
+    assert error.value.metadata.reason == reason
+    manager.close()
+
+
+def test_managed_cancellation_reaches_safe_terminal_and_reuses_same_backend(
+    tmp_path: Path,
+) -> None:
+    profile = _profile(tmp_path / "profile", name="accepted")
+    config_path = _configured_store(tmp_path, [profile])
+    started = threading.Event()
+    calls: list[str] = []
+
+    def infer(_name: str, marker: str, *, cancellation_token: Any) -> str:
+        calls.append(marker)
+        if marker == "blocked":
+            started.set()
+            while not cancellation_token.requested:
+                time.sleep(0.001)
+            raise ResidentInferenceCancelled(
+                CancellationMetadata(
+                    requested=True,
+                    reason=cancellation_token.reason,
+                    observed_by_backend=True,
+                    backend_started=True,
+                    cuda_synchronized=True,
+                    deadline_seconds=20.0,
+                )
+            )
+        return "reused"
+
+    class CancellationService:
+        def __init__(self, *, receipts: Any, **_kwargs: Any) -> None:
+            self.receipts = receipts
+
+        def infer(self, *, engine: Any, marker: str, target: Any, cancellation_token: Any):
+            del target
+            try:
+                return {"value": engine.infer_one(marker, cancellation_token=cancellation_token)}
+            except ResidentInferenceCancelled as error:
+                return {
+                    "terminal_status": "abandoned_before_insertion",
+                    "reason": error.metadata.reason,
+                    "cuda_synchronized": error.metadata.cuda_synchronized,
+                }
+
+    manager = RoiLaunchManager(
+        config_path,
+        current_targets=_CurrentTargets(),
+        engine_factory_loader=lambda _target: (
+            lambda *, profile, config: _FakeEngine(profile, infer=infer)
+        ),
+        service_factory=CancellationService,
+    )
+    target = SimpleNamespace(
+        project_id="project-a",
+        profile_fingerprint=profile.fingerprint,
+    )
+    token = manager.new_cancellation_token()
+    result: list[dict[str, Any]] = []
+    thread = threading.Thread(
+        target=lambda: result.append(
+            manager.infer(
+                selector="accepted-selector",
+                marker="blocked",
+                target=target,
+                cancellation_token=token,
+            )
+        )
+    )
+    thread.start()
+    assert started.wait(timeout=5)
+    token.cancel("user_discarded")
+    thread.join(timeout=5)
+
+    assert not thread.is_alive()
+    assert result == [
+        {
+            "terminal_status": "abandoned_before_insertion",
+            "reason": "user_discarded",
+            "cuda_synchronized": True,
+        }
+    ]
+    later = manager.infer(
+        selector="accepted-selector",
+        marker="later",
+        target=target,
+        cancellation_token=manager.new_cancellation_token(),
+    )
+    assert later == {"value": "reused"}
+    assert calls == ["blocked", "later"]
+    manager.close()
+
+
+def test_real_cancel_synchronize_failure_poison_closes_engine_before_slot_reuse(
+    tmp_path: Path,
+) -> None:
+    profile = _profile(tmp_path / "profile", name="accepted")
+    config_path = _configured_store(tmp_path, [profile])
+    closed: list[str] = []
+    calls = 0
+    cancellation = RuntimeContractError(
+        "private CUDA synchronization failure",
+        code="resident.cancel_synchronize_failed",
+        context={"reason": "token=private"},
+    )
+
+    def factory(*, profile: EngineProfile, config: dict[str, Any]) -> _FakeEngine:
+        del config
+
+        def cancel(*_args: Any, **_kwargs: Any) -> Any:
+            nonlocal calls
+            calls += 1
+            raise cancellation
+
+        return _FakeEngine(profile, infer=cancel, closed=closed)
+
+    manager = RoiLaunchManager(
+        config_path,
+        current_targets=_CurrentTargets(),
+        engine_factory_loader=lambda _target: factory,
+    )
+    engine = manager.engine_for("accepted-selector")
+
+    with pytest.raises(RuntimeContractError) as error:
+        engine.infer_one()
+    with pytest.raises(RoiLaunchError, match="closed"):
+        engine.infer_one()
+
+    assert calls == 1
+    assert closed == ["accepted"]
+    assert error.value.code == "resident.cancel_synchronize_failed"
+    assert "private" not in _traceback_text(error.value)
     manager.close()
 
 

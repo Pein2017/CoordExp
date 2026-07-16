@@ -7,7 +7,6 @@ from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
-from threading import Event, Thread
 from types import MappingProxyType, SimpleNamespace
 from typing import Any
 
@@ -17,6 +16,7 @@ from PIL import Image
 
 import src.label_studio_coco_refinement.roi_runtime as roi_runtime_module
 
+from src.common.errors import RuntimeContractError
 from src.config.fingerprint import sha256_json
 from src.config.inference import (
     INFER_CONFIG_LOADER_VERSION,
@@ -903,7 +903,7 @@ def test_inserted_partial_terminal_response_reports_actual_inserted_count(
     assert terminal["counts"] == {"parsed": 2, "inserted": 1, "rejected": 1}
 
 
-def test_abandonment_and_expiry_are_durable_idempotent_and_never_resolve(
+def test_abandonment_and_overdue_query_are_durable_idempotent_and_never_resolve(
     tmp_path: Path,
 ) -> None:
     response, receipts, _, _ = _run(
@@ -934,13 +934,14 @@ def test_abandonment_and_expiry_are_durable_idempotent_and_never_resolve(
         == 120.0
         != expiring_profile.deadline_seconds
     )
-    assert (
-        expiring_store.expire_produced(now=attempt["expires_at_seconds"] - 0.001) == ()
-    )
-    assert expiring_store.expire_produced(now=attempt["expires_at_seconds"]) == (
+    assert expiring_store.overdue_produced(now=attempt["expires_at_seconds"] - 0.001) == ()
+    assert expiring_store.overdue_produced(now=attempt["expires_at_seconds"]) == (
         expiring["receipt_id"],
     )
-    assert expiring_store.expire_produced(now=attempt["expires_at_seconds"] + 1) == ()
+    expiring_store.finalize_abandoned(
+        _abandonment_proof(expiring, reason="produced_expired")
+    )
+    assert expiring_store.overdue_produced(now=attempt["expires_at_seconds"] + 1) == ()
     assert expiring_store.resolve(expiring["receipt_id"]) is None
     restarted = InferenceReceiptStore(expiring_store.path)
     assert restarted.disposition(expiring["receipt_id"])["disposition"] == "abandoned"
@@ -953,102 +954,7 @@ def test_abandonment_and_expiry_are_durable_idempotent_and_never_resolve(
     nonexpiring_attempt = nonexpiring_store.get(nonexpiring["receipt_id"])
     assert nonexpiring_attempt is not None
     assert nonexpiring_attempt["expires_at_seconds"] is None
-    assert nonexpiring_store.expire_produced(now=10**20) == ()
-
-
-def test_inserted_wins_expiry_race_without_conflict_and_later_receipt_expires(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    profile = _profile(tmp_path)
-    transform = _transform()
-    service, receipts, _ = _service(tmp_path, profile)
-
-    def produce(request_id: str, text: str) -> dict[str, Any]:
-        engine = _FakeEngine(
-            build_resident_profile_binding(profile),
-            canonical_profile=profile,
-            parser_text=text,
-        )
-        image = Image.new("RGB", (96, 64), color=(3, 4, 5))
-        try:
-            return service.infer(
-                image=image,
-                target=_target(profile, transform, request_id=request_id),
-                transform=transform,
-                engine=engine,
-            )
-        finally:
-            image.close()
-
-    inserted_response = produce(
-        REQUEST_ID,
-        _object("person", (100, 100, 700, 800)),
-    )
-    later_response = produce(
-        "12345678-1234-5678-9234-567812345679",
-        _object("cat", (100, 100, 700, 800)),
-    )
-    inserted_proof = _insertion_proof(inserted_response)
-    cutoff = max(
-        receipts.get(inserted_response["receipt_id"])["expires_at_seconds"],
-        receipts.get(later_response["receipt_id"])["expires_at_seconds"],
-    )
-
-    entered_locked_insert = Event()
-    release_locked_insert = Event()
-    expiry_started = Event()
-    original_validate = roi_runtime_module._validate_authoritative_proof
-
-    def held_validate(*, disposition: str, proof: Any, attempt: Any) -> str:
-        if disposition == "inserted" and not entered_locked_insert.is_set():
-            entered_locked_insert.set()
-            assert release_locked_insert.wait(timeout=5)
-        return original_validate(
-            disposition=disposition,
-            proof=proof,
-            attempt=attempt,
-        )
-
-    monkeypatch.setattr(
-        roi_runtime_module,
-        "_validate_authoritative_proof",
-        held_validate,
-    )
-    errors: list[BaseException] = []
-    expired_receipts: list[tuple[str, ...]] = []
-
-    def finalize() -> None:
-        try:
-            receipts.finalize_inserted(inserted_proof)
-        except BaseException as exc:  # pragma: no cover - asserted below.
-            errors.append(exc)
-
-    def expire() -> None:
-        expiry_started.set()
-        try:
-            expired_receipts.append(receipts.expire_produced(now=cutoff))
-        except BaseException as exc:  # pragma: no cover - asserted below.
-            errors.append(exc)
-
-    finalize_thread = Thread(target=finalize)
-    expiry_thread = Thread(target=expire)
-    finalize_thread.start()
-    assert entered_locked_insert.wait(timeout=5)
-    expiry_thread.start()
-    assert expiry_started.wait(timeout=5)
-    release_locked_insert.set()
-    finalize_thread.join(timeout=5)
-    expiry_thread.join(timeout=5)
-
-    assert not finalize_thread.is_alive()
-    assert not expiry_thread.is_alive()
-    assert errors == []
-    assert expired_receipts == [(later_response["receipt_id"],)]
-    assert receipts.resolve(inserted_response["receipt_id"]) is not None
-    assert receipts.disposition(later_response["receipt_id"])["disposition"] == (
-        "abandoned"
-    )
+    assert nonexpiring_store.overdue_produced(now=10**20) == ()
 
 
 def test_parser_text_not_raw_generated_text_is_the_strict_replay_authority(
@@ -1193,6 +1099,83 @@ def test_runtime_failure_and_deadline_cancellation_are_durable(tmp_path: Path) -
         image.close()
     assert timed_out["terminal_status"] == "timeout_failure"
     assert len(deadline_receipts.replay()) == 1
+
+    abandon_root = tmp_path / "abandon"
+    abandon_profile = _profile(abandon_root)
+    abandon_transform = _transform()
+    abandon_service, abandon_receipts, _ = _service(abandon_root, abandon_profile)
+    abandon_engine = _FakeEngine(
+        build_resident_profile_binding(abandon_profile),
+        canonical_profile=abandon_profile,
+        parser_text="",
+    )
+    abandon_engine.failure = ResidentInferenceCancelled(
+        CancellationMetadata(
+            requested=True,
+            reason="user_discarded",
+            observed_by_backend=True,
+            backend_started=True,
+            cuda_synchronized=True,
+            deadline_seconds=20.0,
+        )
+    )
+    image = Image.new("RGB", (96, 64))
+    try:
+        abandoned = abandon_service.infer(
+            image=image,
+            target=_target(abandon_profile, abandon_transform),
+            transform=abandon_transform,
+            engine=abandon_engine,
+        )
+    finally:
+        image.close()
+    assert abandoned["terminal_status"] == "abandoned_before_insertion"
+    assert abandoned["failure"] == {
+        "stage": "cancel",
+        "code": "user_discarded",
+    }
+    assert len(abandon_receipts.replay()) == 1
+    abandon_record = abandon_receipts.get(abandoned["receipt_id"])
+    assert abandon_record["execution"]["failure"] == abandoned["failure"]
+    assert abandon_record["execution"]["cancellation"] == {
+        "requested": True,
+        "reason": "user_discarded",
+        "observed_by_backend": True,
+        "backend_started": True,
+        "cuda_synchronized": True,
+        "deadline_seconds": 20.0,
+    }
+
+    unsafe_root = tmp_path / "unsafe-sync"
+    unsafe_profile = _profile(unsafe_root)
+    unsafe_transform = _transform()
+    unsafe_service, unsafe_receipts, _ = _service(unsafe_root, unsafe_profile)
+    unsafe_engine = _FakeEngine(
+        build_resident_profile_binding(unsafe_profile),
+        canonical_profile=unsafe_profile,
+        parser_text="",
+    )
+    unsafe_engine.failure = RuntimeContractError(
+        "CUDA synchronization failed after resident cancellation",
+        code="resident.cancel_synchronize_failed",
+    )
+    image = Image.new("RGB", (96, 64))
+    try:
+        unsafe = unsafe_service.infer(
+            image=image,
+            target=_target(unsafe_profile, unsafe_transform),
+            transform=unsafe_transform,
+            engine=unsafe_engine,
+        )
+    finally:
+        image.close()
+    assert unsafe["terminal_status"] == "runtime_failure"
+    assert unsafe["failure"] == {
+        "stage": "runtime",
+        "code": "resident.cancel_synchronize_failed",
+    }
+    unsafe_record = unsafe_receipts.get(unsafe["receipt_id"])
+    assert unsafe_record["execution"]["failure"] == unsafe["failure"]
 
 
 def test_profile_and_request_fingerprint_mismatches_fail_closed(tmp_path: Path) -> None:

@@ -52,6 +52,7 @@ from src.label_studio_coco_refinement.inference_results import (
     terminal_state_for_result,
 )
 from src.label_studio_coco_refinement.resident_inference import (
+    CancellationMetadata,
     CancellationToken,
     ImmutableRgbCanvas,
     ResidentInferenceCancelled,
@@ -461,63 +462,28 @@ class InferenceReceiptStore:
             proof=proof.to_dict(),
         )
 
-    def expire_produced(self, *, now: float | None = None) -> tuple[str, ...]:
-        """Append abandonment for every overdue produced attempt, without a thread."""
+    def overdue_produced(self, *, now: float | None = None) -> tuple[str, ...]:
+        """List overdue produced attempts without choosing their disposition."""
 
         cutoff = _finite_timestamp(
             self.clock() if now is None else now,
             field="expiry cutoff",
         )
-        expired: list[str] = []
-        with self._exclusive_handle() as handle:
-            records = self._read_locked(handle)
-            finalized = {
-                record["receipt_id"]
-                for record in records
-                if record["record_kind"] == "disposition"
-            }
-            for attempt_record in tuple(records):
-                if (
-                    attempt_record["record_kind"] != "attempt"
-                    or attempt_record["receipt_id"] in finalized
-                    or attempt_record["attempt"]["request_state"] != "produced"
-                    or attempt_record["expires_at_seconds"] is None
-                    or attempt_record["expires_at_seconds"] > cutoff
-                ):
-                    continue
-                attempt = _attempt_from_record(attempt_record)
-                target = attempt.target
-                proof = AuthoritativeAbandonmentProof(
-                    receipt_id=attempt_record["receipt_id"],
-                    request_id=target.request_id,
-                    project_id=target.project_id,
-                    task_id=target.task_id,
-                    task_epoch=target.task_epoch,
-                    image_id=target.image_id,
-                    annotation_id=target.annotation_id,
-                    current_user_id=target.current_user_id,
-                    draft_id=target.draft_id,
-                    source_draft_revision=target.draft_revision,
-                    reason="produced_expired",
-                )
-                disposition_record = _build_disposition_record(
-                    disposition="abandoned",
-                    proof=proof.to_dict(),
-                    attempt=attempt,
-                    recorded_at_seconds=_finite_timestamp(
-                        self.clock(),
-                        field="recorded_at_seconds",
-                    ),
-                )
-                self._append_locked(
-                    handle,
-                    records=records,
-                    record=disposition_record,
-                )
-                records.append(disposition_record)
-                finalized.add(attempt_record["receipt_id"])
-                expired.append(attempt_record["receipt_id"])
-        return tuple(expired)
+        records = self.replay()
+        finalized = {
+            record["receipt_id"]
+            for record in records
+            if record["record_kind"] == "disposition"
+        }
+        return tuple(
+            record["receipt_id"]
+            for record in records
+            if record["record_kind"] == "attempt"
+            and record["receipt_id"] not in finalized
+            and record["attempt"]["request_state"] == "produced"
+            and record["expires_at_seconds"] is not None
+            and record["expires_at_seconds"] <= cutoff
+        )
 
     def resolve(self, receipt_id: str) -> InferenceReceiptLink | None:
         record = self.get(receipt_id)
@@ -895,17 +861,24 @@ class RoiInferenceService:
                 # Drop the sole result reference holding Qwen tensor encodings.
                 del resident_result
         except ResidentInferenceCancelled as exc:
-            reason = exc.metadata.reason or "cancelled"
+            cancellation = exc.metadata
+            reason = cancellation.reason or "cancelled"
             cancelling = lifecycle.transition(
                 RequestState.CANCELLING,
                 at_seconds=_elapsed(self.clock, started),
                 reason=reason,
             )
-            state = (
-                RequestState.TIMEOUT_FAILURE
-                if reason == "deadline_exceeded"
-                else RequestState.CANCELLED
-            )
+            if reason == "deadline_exceeded":
+                state = RequestState.TIMEOUT_FAILURE
+            elif reason in {
+                "client_cancelled",
+                "user_cancelled",
+                "user_discarded",
+                "superseded",
+            }:
+                state = RequestState.ABANDONED_BEFORE_INSERTION
+            else:
+                state = RequestState.CANCELLED
             terminal = cancelling.transition(
                 state,
                 at_seconds=_elapsed(self.clock, started),
@@ -924,8 +897,13 @@ class RoiInferenceService:
                     if state is RequestState.TIMEOUT_FAILURE
                     else "cancel",
                     code=reason,
+                    cancellation=cancellation,
                 ),
-                stage="deadline" if state is RequestState.TIMEOUT_FAILURE else "cancel",
+                stage=(
+                    "deadline"
+                    if state is RequestState.TIMEOUT_FAILURE
+                    else "cancel"
+                ),
                 code=reason,
             )
         except Exception as exc:
@@ -1115,6 +1093,7 @@ def _failure_execution(
     stage: str,
     code: str,
     binding: ResidentProfileBinding | None = None,
+    cancellation: CancellationMetadata | None = None,
 ) -> dict[str, Any]:
     return _validate_execution_envelope(
         {
@@ -1126,7 +1105,9 @@ def _failure_execution(
             "canvas": canvas.to_receipt_dict(),
             "decode": None,
             "parse": None,
-            "cancellation": None,
+            "cancellation": (
+                None if cancellation is None else cancellation.to_receipt_dict()
+            ),
             "cuda": None,
             "failure": {"stage": stage, "code": code},
         }
@@ -1203,6 +1184,55 @@ def _validate_execution_envelope(value: Mapping[str, Any]) -> dict[str, Any]:
             "tokenizer_identity_sha256",
         ):
             _require_sha256(decode[field], field=field)
+    cancellation = payload["cancellation"]
+    if cancellation is not None:
+        expected = {
+            "requested",
+            "reason",
+            "observed_by_backend",
+            "backend_started",
+            "cuda_synchronized",
+            "deadline_seconds",
+        }
+        if not isinstance(cancellation, dict) or set(cancellation) != expected:
+            raise _receipt_corrupt("execution cancellation fields are not allowlisted")
+        if any(
+            not isinstance(cancellation[field], bool)
+            for field in (
+                "requested",
+                "observed_by_backend",
+                "backend_started",
+                "cuda_synchronized",
+            )
+        ):
+            raise _receipt_corrupt("execution cancellation flags are invalid")
+        reason = cancellation["reason"]
+        if reason is not None and (
+            not isinstance(reason, str)
+            or not reason
+            or len(reason) > 128
+            or any(
+                not (character.isalnum() or character in "_.:-")
+                for character in reason
+            )
+        ):
+            raise _receipt_corrupt("execution cancellation reason is unsafe")
+        if cancellation["requested"] and reason is None:
+            raise _receipt_corrupt("requested cancellation lacks a reason")
+        deadline = cancellation["deadline_seconds"]
+        if (
+            isinstance(deadline, bool)
+            or not isinstance(deadline, (int, float))
+            or not math.isfinite(deadline)
+            or deadline < 0
+        ):
+            raise _receipt_corrupt("execution cancellation deadline is invalid")
+        try:
+            metadata = CancellationMetadata(**cancellation)
+        except Exception as exc:
+            raise _receipt_corrupt("execution cancellation metadata is invalid") from exc
+        if metadata.to_receipt_dict() != cancellation:
+            raise _receipt_corrupt("execution cancellation metadata is not canonical")
     failure = payload.get("failure")
     if failure is not None:
         if not isinstance(failure, dict) or set(failure) != {"stage", "code"}:
