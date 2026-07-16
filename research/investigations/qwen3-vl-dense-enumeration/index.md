@@ -70,6 +70,7 @@ completed unit and results record own current lifecycle and evidence status.
 - [Separate selection, transcription, commit, and stop](../../decisions/separate-selection-transcription-commit-and-stop.md)
 - [Require target-specific causal consumption](../../decisions/require-target-specific-causal-consumption.md)
 - [Let architecture emerge from hypothesis gates](../../decisions/let-architecture-emerge-from-hypothesis-gates.md)
+- [Use bagging as an object-support probe](../../decisions/use-bagging-as-an-object-support-probe.md)
 
 ## Authority
 

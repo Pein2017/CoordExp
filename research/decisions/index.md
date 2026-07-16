@@ -12,6 +12,7 @@ or final architecture.
 - [Require target-specific causal consumption](require-target-specific-causal-consumption.md)
 - [Protect native capability during specialization](protect-native-capability-during-specialization.md)
 - [Let architecture emerge from hypothesis gates](let-architecture-emerge-from-hypothesis-gates.md)
+- [Use bagging as an object-support probe](use-bagging-as-an-object-support-probe.md)
 
 ## Lifecycle
 
