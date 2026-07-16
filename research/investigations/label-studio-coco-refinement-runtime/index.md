@@ -137,3 +137,81 @@ seconds.  This is a runtime-performance defect, not a source-data or inference
 failure.  The correction must preserve full attestation for explicit Commit
 capture and invalidate any read-only baseline cache when the published
 generation or working hash changes.
+
+## Exact-current recovery and materializer execution
+
+On 2026-07-16, a disposable three-row store executed seven real subprocess
+publication cuts using `SIGSTOP` followed by `SIGKILL`.  The durable receipt is
+`outputs/label_studio_coco_refinement/recovery-concurrency/20260716T1500Z/receipt.json`.
+It binds store SHA-256
+`10acc1744679bd75f5a9004418e9b53459b7f14ee530660246ba321e6e4935a2`
+and records:
+
+- pre-rename recovery retaining generation 0 with terminal failure;
+- six post-rename/fsync/manifest/journal/queue cuts reconciling exactly once to
+  generation 1 success;
+- supported readers and status queries failing closed while publication was
+  paused;
+- second admission returning the active batch or blocking while the queue
+  terminal lock was held;
+- byte-identical repeated recovery, no orphan candidates, no partial rows, and
+  unchanged synthetic source/image hashes.
+
+The current full train materializer then ran against a shared-lock snapshot,
+not the live split.  Receipt
+`outputs/label_studio_coco_refinement/materializer-probes/full-train-current-20260716-a/probe.json`
+binds the executed materializer/store/loader source hashes and reports:
+
+| Measure | Result |
+| --- | ---: |
+| Working rows | 117,266 |
+| Objects | 849,947 |
+| Wall time | 325.83085 s |
+| Peak RSS | 245,284,864 bytes |
+| Coord output size | 156,908,539 bytes |
+| Coord output SHA-256 | `24bda9a1f360253d8d7e26ad403622e1e1c1bdfeebc7675b6871cfb9195d08ab` |
+
+`src.data.iter_raw_examples` accepted all 117,266 derived rows.  The selected
+source remained
+`d64edc553bdc4d725cb9c3a504f369a9799e8bdde20c8fef0787a09cec33c16a`
+and live `working.norm.jsonl` remained
+`5cbd91b6e7e45a2ba211e3f3a77c72bc6f847b8c6548a1d6b3feb0bf74c35ac5`
+before and after.  Separate standards and intent audits found no remaining
+P0/P1 for the materializer or recovery tasks.
+
+The filesystem did not support reflinks, so each executed snapshot copied
+about 1.6 GiB, mostly the canonical bootstrap task index.  AgentGuard denied
+deleting these already-created disposable roots and explicitly prohibited a
+retry or workaround:
+
+- `outputs/label_studio_coco_refinement/full-materializer-probes/20260716T1438Z/repo`;
+- `outputs/label_studio_coco_refinement/materializer-probes/full-train-current-20260716-a/repository`.
+
+They are probe residue, not project/source authority, and require an operator
+to remove them.  The tracked `materialize_full.py` probe is now schema v2: it
+embeds the full compact receipt and cleans its copied repository by default;
+`--retain-snapshot` is the explicit opt-in.  This cleanup-only harness change
+does not alter the executed production materializer/store hashes above.
+
+## Managed Draft lifecycle fixed point
+
+The current source adds one authenticated, CSRF-protected per-task lifecycle
+endpoint.  Task, annotation, current-user Draft, source-row, working generation,
+and committed result authority are resolved server-side.  Exact terminal
+rebase requires the persisted Draft ID, canonical UTC `Z` revision, server
+semantic hash, and exact browser serialization to remain unchanged.  A newer
+Draft receives only stable region key, committed ID, and committed-bbox
+baseline metadata; newer geometry, class, membership, creation order, training
+metadata, inference provenance, presentation, and undo history remain intact.
+
+Responses that cross into an active Draft save or editor history freeze defer
+without mutating metadata or consuming their retry key.  Explicit persisted
+Draft discard/reset uses the same exact-token and store-generation checks.
+The real DRF serializer's `Z` timestamp was probed directly and the catalog was
+corrected from the non-identical `+00:00` representation.
+
+Current fixed-point verification is 699 parent tests, 164 Django refinement
+tests, and 114 managed frontend tests, with Ruff/Biome and diff checks clean.
+Two independent audits closed both discovered P1s.  These source changes are
+not deployed into the active UAT process: it deliberately remains on revision
+`eb40d7d000b8110d0a853b402bcd1c48e98a3c9c` until an explicit restart window.
