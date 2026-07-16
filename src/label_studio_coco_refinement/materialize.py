@@ -6,12 +6,13 @@ import hashlib
 import json
 import os
 import re
+import stat
 import tempfile
 from collections.abc import Callable, Mapping
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, BinaryIO, Iterator, Protocol
 
 from src.common.errors import DataContractError
 from src.data import iter_raw_examples
@@ -21,14 +22,26 @@ from src.label_studio_coco_refinement.models import (
     Split,
     WorkingRow,
 )
-from src.label_studio_coco_refinement.store import WorkingDatasetStore
+from src.label_studio_coco_refinement.store import (
+    BOOTSTRAP_TASK_INDEX_BUILD_KEY,
+    BOOTSTRAP_TASK_INDEX_SCHEMA_KEY,
+    BOOTSTRAP_TASK_INDEX_SHA256_KEY,
+    BOOTSTRAP_TASK_MANIFEST_KEY,
+    TASK_INDEX_IDENTITY_SCHEMA_VERSION,
+    WorkingDatasetStore,
+    sha256_json,
+)
 
 
 MATERIALIZER_VERSION = "label-studio-working-coord-v4"
+OPERATOR_RECEIPT_SCHEMA_VERSION = 1
+OPERATOR_RECEIPT_CODE = "label_studio.working_coord_materialized"
+OPERATOR_RECEIPT_NAME = "working.coord.receipt.json"
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 _GenerationGuard = Callable[[], AbstractContextManager[None]]
 _EXACT_COMMITTED_GENERATION_GUARD = WorkingDatasetStore.committed_generation_guard
+_OPERATOR_RECEIPT_TEST_HOOK: Callable[[str], None] | None = None
 
 
 @dataclass(frozen=True)
@@ -58,9 +71,10 @@ class CommittedGenerationReceipt:
                 code="label_studio.materialize_generation",
                 context={"generation": self.generation},
             )
-        if not isinstance(self.working_sha256, str) or _SHA256_PATTERN.fullmatch(
-            self.working_sha256
-        ) is None:
+        if (
+            not isinstance(self.working_sha256, str)
+            or _SHA256_PATTERN.fullmatch(self.working_sha256) is None
+        ):
             raise DataContractError(
                 "committed working hash must be a lowercase SHA-256 digest",
                 code="label_studio.materialize_working_hash",
@@ -283,6 +297,421 @@ class SourceTaskIdentityResolver(Protocol):
     ) -> SourceTaskIdentityReceipt: ...
 
 
+class ProjectTaskIndexSourceIdentityResolver:
+    """Production resolver over the frozen schema-v3 project task index."""
+
+    def __init__(
+        self,
+        layout: RefinementRuntimeLayout,
+        split: Split,
+        *,
+        store: WorkingDatasetStore,
+    ) -> None:
+        self._initialize(layout, split, store, allow_store_fixture=False)
+
+    @classmethod
+    def _for_bounded_probe(
+        cls,
+        layout: RefinementRuntimeLayout,
+        split: Split,
+        *,
+        store: WorkingDatasetStore,
+    ) -> "ProjectTaskIndexSourceIdentityResolver":
+        """Use the store's frozen bootstrap identity only for a bounded probe."""
+
+        resolver = cls.__new__(cls)
+        resolver._initialize(layout, split, store, allow_store_fixture=True)
+        return resolver
+
+    def _initialize(
+        self,
+        layout: RefinementRuntimeLayout,
+        split: Split,
+        store: WorkingDatasetStore,
+        *,
+        allow_store_fixture: bool,
+    ) -> None:
+        if not isinstance(layout, RefinementRuntimeLayout):
+            raise DataContractError(
+                "source resolver requires RefinementRuntimeLayout",
+                code="label_studio.source_task_layout",
+            )
+        layout.split_root(split)
+        if type(store) is not WorkingDatasetStore:
+            raise DataContractError(
+                "source resolver requires the exact WorkingDatasetStore",
+                code="label_studio.source_task_store",
+            )
+        if store.split_dir != layout.split_root(split):
+            raise DataContractError(
+                "source resolver store belongs to another split root",
+                code="label_studio.source_task_store_binding",
+            )
+        self.layout = layout
+        self.split = split
+        self.store = store
+        self._allow_store_fixture = allow_store_fixture
+        self._active_session: (
+            _CanonicalIdentitySession | _StoreIdentitySession | None
+        ) = None
+
+    @contextmanager
+    def committed_generation_session(
+        self,
+        committed_generation: CommittedGenerationReceipt,
+    ) -> Iterator["ProjectTaskIndexSourceIdentityResolver"]:
+        """Bind one resolver cursor to the caller-held committed generation."""
+
+        if self._active_session is not None:
+            raise DataContractError(
+                "source resolver generation session is already active",
+                code="label_studio.source_task_session",
+            )
+        manifest = _read_strict_mapping(
+            self.store.manifest_path,
+            code="label_studio.source_task_manifest_decode",
+        )
+        observed_generation = _read_committed_generation(
+            self.layout,
+            self.split,
+            self.store.manifest_path,
+        )
+        _require_generation(
+            observed_generation,
+            committed_generation,
+            stage="source_resolver",
+        )
+        extras = manifest.get("extra_fingerprints")
+        if not isinstance(extras, Mapping):
+            raise DataContractError(
+                "project manifest has no bootstrap fingerprint mapping",
+                code="label_studio.source_task_bootstrap_binding",
+            )
+        binding_fields = {
+            BOOTSTRAP_TASK_INDEX_SCHEMA_KEY,
+            BOOTSTRAP_TASK_INDEX_BUILD_KEY,
+            BOOTSTRAP_TASK_INDEX_SHA256_KEY,
+            BOOTSTRAP_TASK_MANIFEST_KEY,
+        }
+        if binding_fields.issubset(extras):
+            session: _CanonicalIdentitySession | _StoreIdentitySession = (
+                _CanonicalIdentitySession(
+                    layout=self.layout,
+                    split=self.split,
+                    committed_generation=committed_generation,
+                    manifest=manifest,
+                )
+            )
+        elif self._allow_store_fixture:
+            session = _StoreIdentitySession(
+                layout=self.layout,
+                split=self.split,
+                committed_generation=committed_generation,
+                manifest=manifest,
+                task_index_path=self.store.task_index_path,
+            )
+        else:
+            raise DataContractError(
+                "project manifest is not bound to the canonical bootstrap task index",
+                code="label_studio.source_task_bootstrap_binding",
+                context={"missing": sorted(binding_fields - set(extras))},
+            )
+        self._active_session = session
+        try:
+            yield self
+            session.complete()
+        finally:
+            session.close()
+            self._active_session = None
+
+    def resolve(
+        self,
+        *,
+        split: Split,
+        image_id: int,
+    ) -> SourceTaskIdentityReceipt:
+        session = self._active_session
+        if session is None:
+            raise DataContractError(
+                "source task resolution requires the committed-generation session",
+                code="label_studio.source_task_session",
+            )
+        return session.resolve(split=split, image_id=image_id)
+
+
+class _CanonicalIdentitySession:
+    def __init__(
+        self,
+        *,
+        layout: RefinementRuntimeLayout,
+        split: Split,
+        committed_generation: CommittedGenerationReceipt,
+        manifest: Mapping[str, Any],
+    ) -> None:
+        from src.label_studio_coco_refinement.project import (
+            SOURCE_CONTRACTS,
+            TASK_INDEX_SCHEMA_VERSION,
+            ProjectContractError,
+            Split as ProjectSplit,
+            load_canonical_task_index_receipt,
+        )
+
+        self.layout = layout
+        self.split = split
+        self.committed_generation = committed_generation
+        self._count = 0
+        self._task_manifest_digest = hashlib.sha256()
+        extras = manifest["extra_fingerprints"]
+        expected_schema = str(TASK_INDEX_SCHEMA_VERSION)
+        if extras.get(BOOTSTRAP_TASK_INDEX_SCHEMA_KEY) != expected_schema:
+            raise DataContractError(
+                "bootstrap task-index schema binding is stale",
+                code="label_studio.source_task_bootstrap_schema",
+            )
+        try:
+            receipt = load_canonical_task_index_receipt(
+                layout.repository_root,
+                ProjectSplit(split),
+                expected_task_manifest_fingerprint=extras.get(
+                    BOOTSTRAP_TASK_MANIFEST_KEY
+                ),
+            )
+        except ProjectContractError as exc:
+            raise DataContractError(
+                "canonical bootstrap task index cannot be attested",
+                code="label_studio.source_task_bootstrap_receipt",
+                cause=exc,
+            ) from exc
+        if receipt.build_key != extras.get(
+            BOOTSTRAP_TASK_INDEX_BUILD_KEY
+        ) or receipt.sha256 != extras.get(BOOTSTRAP_TASK_INDEX_SHA256_KEY):
+            raise DataContractError(
+                "canonical bootstrap task-index binding drift",
+                code="label_studio.source_task_bootstrap_binding",
+            )
+        contract = SOURCE_CONTRACTS[ProjectSplit(split)]
+        if (
+            manifest.get("source_path") != str(layout.selected_source(split).resolve())
+            or manifest.get("source_sha256") != contract.sha256
+        ):
+            raise DataContractError(
+                "mutable store is not bound to the canonical selected source",
+                code="label_studio.source_task_selected_source",
+            )
+        self._receipt = receipt
+        self._records = iter(receipt.iter_records())
+        self._source_path = layout.selected_source(split)
+        self._source_handle, self._source_before = _open_stable_binary_source(
+            self._source_path
+        )
+        self._source_digest = hashlib.sha256()
+
+    def resolve(self, *, split: Split, image_id: int) -> SourceTaskIdentityReceipt:
+        if split != self.split:
+            raise LookupError(f"source task split drift: {split}")
+        raw_line = self._source_handle.readline()
+        if not raw_line:
+            raise LookupError(f"source task is absent: {split}:{image_id}")
+        self._source_digest.update(raw_line)
+        source_line = self._count + 1
+        source_row = _parse_jsonl_row(self._source_path, source_line, raw_line)
+        if not isinstance(source_row, Mapping):
+            raise DataContractError(
+                "canonical source row is not an object",
+                code="label_studio.source_task_source_row",
+                context={"source_line": source_line},
+            )
+        from src.label_studio_coco_refinement.project import (
+            ProjectContractError,
+            validate_source_row,
+        )
+
+        try:
+            identity = validate_source_row(source_row, split=split)
+            entry, _payload = next(self._records)
+        except (ProjectContractError, StopIteration) as exc:
+            raise DataContractError(
+                "canonical source and bootstrap task index are not aligned",
+                code="label_studio.source_task_inventory",
+                context={"source_line": source_line},
+                cause=exc,
+            ) from exc
+        if (
+            identity.image_id != image_id
+            or entry.identity.image_id != image_id
+            or entry.source_line != source_line
+            or entry.working_image_locator != source_row.get("file_name")
+            or entry.source_image_locator != source_row.get("images", [None])[0]
+        ):
+            raise DataContractError(
+                "canonical source row does not match its bootstrap task-index entry",
+                code="label_studio.source_task_inventory",
+                context={"source_line": source_line, "image_id": image_id},
+            )
+        working_row = dict(source_row)
+        working_row["images"] = [source_row["file_name"]]
+        receipt = SourceTaskIdentityReceipt.capture(
+            split=split,
+            image_id=image_id,
+            file_name=str(source_row["file_name"]),
+            width=int(source_row["width"]),
+            height=int(source_row["height"]),
+            metadata=source_row["metadata"],
+            source_line=source_line,
+            task_row_fingerprint=sha256_json(working_row),
+            task_manifest_hash=self.committed_generation.task_manifest_hash,
+            image_sha256=entry.image_sha256,
+        )
+        self._task_manifest_digest.update(_task_manifest_frame(receipt))
+        self._count += 1
+        return receipt
+
+    def complete(self) -> None:
+        if self._source_handle.read(1) != b"":
+            raise DataContractError(
+                "canonical source has rows missing from the working inventory",
+                code="label_studio.source_task_inventory",
+            )
+        try:
+            next(self._records)
+        except StopIteration:
+            pass
+        else:
+            raise DataContractError(
+                "bootstrap task index has rows missing from the working inventory",
+                code="label_studio.source_task_inventory",
+            )
+        source_after = os.fstat(self._source_handle.fileno())
+        try:
+            path_after = self._source_path.lstat()
+        except OSError as exc:
+            raise DataContractError(
+                "canonical source changed during identity resolution",
+                code="label_studio.source_task_source_changed",
+                cause=exc,
+            ) from exc
+
+        def signature(value: os.stat_result) -> tuple[int, int, int, int, int]:
+            return (
+                value.st_dev,
+                value.st_ino,
+                value.st_size,
+                value.st_mtime_ns,
+                value.st_ctime_ns,
+            )
+
+        if (
+            signature(self._source_before) != signature(source_after)
+            or signature(self._source_before) != signature(path_after)
+            or not stat.S_ISREG(path_after.st_mode)
+            or self._source_digest.hexdigest() != self._receipt.source_sha256
+            or self._count != self.committed_generation.task_count
+            or self._task_manifest_digest.hexdigest()
+            != self.committed_generation.task_manifest_hash
+        ):
+            raise DataContractError(
+                "canonical source identity inventory changed or is incomplete",
+                code="label_studio.source_task_inventory",
+            )
+
+    def close(self) -> None:
+        self._source_handle.close()
+
+
+class _StoreIdentitySession:
+    """Bounded-probe resolver over the store's immutable bootstrap task index."""
+
+    def __init__(
+        self,
+        *,
+        layout: RefinementRuntimeLayout,
+        split: Split,
+        committed_generation: CommittedGenerationReceipt,
+        manifest: Mapping[str, Any],
+        task_index_path: Path,
+    ) -> None:
+        self.layout = layout
+        self.split = split
+        self.committed_generation = committed_generation
+        if _sha256_file(task_index_path) != manifest.get("task_index_sha256"):
+            raise DataContractError(
+                "bounded task-index bytes do not match the store manifest",
+                code="label_studio.source_task_fixture_index",
+            )
+        payload = _read_strict_mapping(
+            task_index_path,
+            code="label_studio.source_task_fixture_index",
+        )
+        if (
+            payload.get("identity_schema_version") != TASK_INDEX_IDENTITY_SCHEMA_VERSION
+            or payload.get("split") != split
+            or not isinstance(payload.get("entries"), list)
+        ):
+            raise DataContractError(
+                "bounded task index lacks the frozen identity schema",
+                code="label_studio.source_task_fixture_index",
+            )
+        self._entries = iter(payload["entries"])
+        self._count = 0
+        self._task_manifest_digest = hashlib.sha256()
+
+    def resolve(self, *, split: Split, image_id: int) -> SourceTaskIdentityReceipt:
+        try:
+            entry = next(self._entries)
+        except StopIteration as exc:
+            raise LookupError(f"source task is absent: {split}:{image_id}") from exc
+        source_line = self._count + 1
+        if (
+            split != self.split
+            or not isinstance(entry, Mapping)
+            or entry.get("source_line") != source_line
+            or entry.get("source_row_index") != self._count
+            or entry.get("image_id") != image_id
+        ):
+            raise DataContractError(
+                "bounded task-index inventory is out of order",
+                code="label_studio.source_task_fixture_index",
+            )
+        receipt = SourceTaskIdentityReceipt.capture(
+            split=split,
+            image_id=image_id,
+            file_name=entry.get("file_name"),
+            width=entry.get("width"),
+            height=entry.get("height"),
+            metadata=entry.get("metadata"),
+            source_line=source_line,
+            task_row_fingerprint=entry.get("task_row_fingerprint"),
+            task_manifest_hash=self.committed_generation.task_manifest_hash,
+            image_sha256=entry.get("image_sha256"),
+        )
+        self._task_manifest_digest.update(_task_manifest_frame(receipt))
+        self._count += 1
+        return receipt
+
+    def complete(self) -> None:
+        try:
+            next(self._entries)
+        except StopIteration:
+            pass
+        else:
+            raise DataContractError(
+                "bounded task index has rows missing from the working inventory",
+                code="label_studio.source_task_fixture_index",
+            )
+        if (
+            self._count != self.committed_generation.task_count
+            or self._task_manifest_digest.hexdigest()
+            != self.committed_generation.task_manifest_hash
+        ):
+            raise DataContractError(
+                "bounded task-index manifest inventory drift",
+                code="label_studio.source_task_fixture_index",
+            )
+
+    def close(self) -> None:
+        return None
+
+
 @dataclass(frozen=True)
 class MaterializationReceipt:
     split: Split
@@ -293,9 +722,11 @@ class MaterializationReceipt:
     destination_sha256: str
     row_count: int
     object_count: int
+    loader_row_count: int
+    summary_fingerprints: Mapping[str, str]
     materializer_version: str = MATERIALIZER_VERSION
 
-    def to_artifact_dict(self) -> dict[str, str | int]:
+    def to_artifact_dict(self) -> dict[str, Any]:
         return {
             "split": self.split,
             "generation": self.generation,
@@ -305,7 +736,45 @@ class MaterializationReceipt:
             "destination_sha256": self.destination_sha256,
             "row_count": self.row_count,
             "object_count": self.object_count,
+            "loader_row_count": self.loader_row_count,
+            "summary_fingerprints": dict(self.summary_fingerprints),
             "materializer_version": self.materializer_version,
+        }
+
+
+@dataclass(frozen=True)
+class OperatorMaterializationReceipt:
+    """Durable operator-facing proof for one fixed split output."""
+
+    materialization: MaterializationReceipt
+    store_manifest_sha256: str
+    task_index_sha256: str
+    bootstrap_task_index_binding: Mapping[str, str]
+
+    def to_artifact_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": OPERATOR_RECEIPT_SCHEMA_VERSION,
+            "code": OPERATOR_RECEIPT_CODE,
+            "materialization": self.materialization.to_artifact_dict(),
+            "store": {
+                "manifest_sha256": self.store_manifest_sha256,
+                "task_index_sha256": self.task_index_sha256,
+                "generation": self.materialization.generation,
+            },
+            "bootstrap_task_index_binding": dict(self.bootstrap_task_index_binding),
+            "loader_attestation": {
+                "seam": "src.data.iter_raw_examples",
+                "row_count": self.materialization.loader_row_count,
+                "status": "passed",
+            },
+            "contract_summary": {
+                "task_identity": "source-order (split,image_id) inventory",
+                "category": "canonical COCO-80 id/name pairs",
+                "object_order": "working object order preserved",
+                "geometry": "positive-area norm1000 boxes emitted as coord tokens",
+                "image_content": "bootstrap-frozen per-image SHA-256",
+                "metadata": "row and object metadata preserved",
+            },
         }
 
 
@@ -351,7 +820,9 @@ class WorkingCoordMaterializer:
                 context={
                     "split": self.split,
                     "mismatches": mismatches,
-                    "expected": {key: str(value) for key, value in expected_paths.items()},
+                    "expected": {
+                        key: str(value) for key, value in expected_paths.items()
+                    },
                     "actual": {key: str(value) for key, value in actual_paths.items()},
                 },
             )
@@ -417,6 +888,18 @@ class WorkingCoordMaterializer:
         self,
         committed_generation: CommittedGenerationReceipt,
     ) -> MaterializationReceipt:
+        materialization, _operator_receipt = self._materialize_generation(
+            committed_generation,
+            publish_operator_receipt=False,
+        )
+        return materialization
+
+    def _materialize_generation(
+        self,
+        committed_generation: CommittedGenerationReceipt,
+        *,
+        publish_operator_receipt: bool,
+    ) -> tuple[MaterializationReceipt, OperatorMaterializationReceipt | None]:
         if not isinstance(committed_generation, CommittedGenerationReceipt):
             raise DataContractError(
                 "materialization requires a committed generation receipt",
@@ -436,6 +919,9 @@ class WorkingCoordMaterializer:
         source = self.layout.working_norm(self.split)
         output = self.layout.working_coord(self.split)
         manifest = self.layout.project_manifest(self.split)
+        receipt_path = self.layout.split_root(self.split) / OPERATOR_RECEIPT_NAME
+        materialization: MaterializationReceipt | None = None
+        operator_receipt: OperatorMaterializationReceipt | None = None
 
         with self._committed_generation_guard():
             _validate_bound_paths(self.layout, self.split)
@@ -448,11 +934,30 @@ class WorkingCoordMaterializer:
                 stage="before_read",
             )
 
-            candidate = self._materialize_candidate(
-                source=source,
-                output=output,
-                committed_generation=committed_generation,
+            session_factory = getattr(
+                self._source_identity_resolver,
+                "committed_generation_session",
+                None,
             )
+            resolver_context = (
+                session_factory(committed_generation)
+                if callable(session_factory)
+                else nullcontext(self._source_identity_resolver)
+            )
+            candidate: _CandidateReceipt | None = None
+            try:
+                with resolver_context as active_resolver:
+                    candidate = self._materialize_candidate(
+                        source=source,
+                        output=output,
+                        committed_generation=committed_generation,
+                        source_identity_resolver=active_resolver,
+                    )
+            except BaseException:
+                if candidate is not None:
+                    candidate._candidate_path.unlink(missing_ok=True)
+                raise
+            assert candidate is not None
             candidate_path: Path | None = candidate._candidate_path
             try:
                 # Re-read both manifest authority and working bytes immediately before
@@ -480,23 +985,78 @@ class WorkingCoordMaterializer:
                     self.split,
                     candidate.image_attestations,
                 )
+                _invalidate_operator_receipt(receipt_path)
+                _run_operator_receipt_test_hook("after_receipt_invalidation")
                 os.replace(candidate._candidate_path, output)
                 candidate_path = None
                 _fsync_directory(output.parent)
+                _run_operator_receipt_test_hook("after_output_replace")
+                materialization = MaterializationReceipt(
+                    split=self.split,
+                    generation=committed_generation.generation,
+                    source_path=source,
+                    destination_path=output,
+                    source_sha256=candidate.source_sha256,
+                    destination_sha256=candidate.destination_sha256,
+                    row_count=candidate.row_count,
+                    object_count=candidate.object_count,
+                    loader_row_count=candidate.loader_row_count,
+                    summary_fingerprints=candidate.summary_fingerprints,
+                )
+                if publish_operator_receipt:
+                    manifest_payload = _read_strict_mapping(
+                        manifest,
+                        code="label_studio.materialize_manifest_decode",
+                    )
+                    task_index_sha256 = _require_sha256_digest(
+                        manifest_payload.get("task_index_sha256"),
+                        field="task_index_sha256",
+                        code="label_studio.materialize_task_index_hash",
+                    )
+                    extras = manifest_payload.get("extra_fingerprints")
+                    binding = {
+                        key: str(extras[key])
+                        for key in (
+                            BOOTSTRAP_TASK_INDEX_SCHEMA_KEY,
+                            BOOTSTRAP_TASK_INDEX_BUILD_KEY,
+                            BOOTSTRAP_TASK_INDEX_SHA256_KEY,
+                            BOOTSTRAP_TASK_MANIFEST_KEY,
+                        )
+                        if isinstance(extras, Mapping) and key in extras
+                    }
+                    operator_receipt = OperatorMaterializationReceipt(
+                        materialization=materialization,
+                        store_manifest_sha256=_sha256_file(manifest),
+                        task_index_sha256=task_index_sha256,
+                        bootstrap_task_index_binding=binding,
+                    )
+                    _run_operator_receipt_test_hook("before_receipt_publish")
+                    _atomic_replace_json(
+                        receipt_path,
+                        operator_receipt.to_artifact_dict(),
+                    )
             finally:
                 if candidate_path is not None:
                     candidate_path.unlink(missing_ok=True)
 
-        return MaterializationReceipt(
-            split=self.split,
-            generation=committed_generation.generation,
-            source_path=source,
-            destination_path=output,
-            source_sha256=candidate.source_sha256,
-            destination_sha256=candidate.destination_sha256,
-            row_count=candidate.row_count,
-            object_count=candidate.object_count,
+        assert materialization is not None
+        return materialization, operator_receipt
+
+    def materialize_current_generation(self) -> OperatorMaterializationReceipt:
+        """Materialize current authority and atomically publish its fixed receipt."""
+
+        manifest_path = self.layout.project_manifest(self.split)
+        generation = _read_committed_generation(
+            self.layout,
+            self.split,
+            manifest_path,
         )
+        _materialization, receipt = self._materialize_generation(
+            generation,
+            publish_operator_receipt=True,
+        )
+        assert receipt is not None
+        return receipt
 
     def _materialize_candidate(
         self,
@@ -504,6 +1064,7 @@ class WorkingCoordMaterializer:
         source: Path,
         output: Path,
         committed_generation: CommittedGenerationReceipt,
+        source_identity_resolver: SourceTaskIdentityResolver,
     ) -> "_CandidateReceipt":
         source_digest = hashlib.sha256()
         output_digest = hashlib.sha256()
@@ -512,6 +1073,17 @@ class WorkingCoordMaterializer:
         seen_image_ids: set[int] = set()
         task_manifest_digest = hashlib.sha256()
         image_attestations: list[_ImageContentAttestation] = []
+        summary_digests = {
+            name: _CanonicalArrayDigest()
+            for name in (
+                "task_identity",
+                "category",
+                "object_order",
+                "geometry",
+                "image_content",
+                "metadata",
+            )
+        }
         descriptor, temp_name = tempfile.mkstemp(
             prefix=f".{output.name}.",
             suffix=".tmp",
@@ -520,10 +1092,13 @@ class WorkingCoordMaterializer:
         temp_path = Path(temp_name)
         keep_candidate = False
         try:
-            with source.open("rb") as source_handle, os.fdopen(
-                descriptor,
-                "wb",
-            ) as output_handle:
+            with (
+                source.open("rb") as source_handle,
+                os.fdopen(
+                    descriptor,
+                    "wb",
+                ) as output_handle,
+            ):
                 for row_number, raw_line in enumerate(source_handle, start=1):
                     source_digest.update(raw_line)
                     payload = _parse_jsonl_row(source, row_number, raw_line)
@@ -532,7 +1107,7 @@ class WorkingCoordMaterializer:
                         field=f"row[{row_number}]",
                     ).validate_for_split(self.split)
                     try:
-                        source_identity = self._source_identity_resolver.resolve(
+                        source_identity = source_identity_resolver.resolve(
                             split=self.split,
                             image_id=row.image_id,
                         )
@@ -557,7 +1132,10 @@ class WorkingCoordMaterializer:
                                 "value_type": type(source_identity).__name__,
                             },
                         )
-                    if source_identity.task_manifest_hash != committed_generation.task_manifest_hash:
+                    if (
+                        source_identity.task_manifest_hash
+                        != committed_generation.task_manifest_hash
+                    ):
                         raise DataContractError(
                             "source task receipt belongs to another committed task manifest",
                             code="label_studio.materialize_source_task_manifest",
@@ -578,7 +1156,9 @@ class WorkingCoordMaterializer:
                             },
                         )
                     source_identity.validate_row(row)
-                    resolved_image = _validate_resolved_image(self.layout, self.split, row)
+                    resolved_image = _validate_resolved_image(
+                        self.layout, self.split, row
+                    )
                     image_sha256 = _sha256_file(resolved_image)
                     if image_sha256 != source_identity.image_sha256:
                         raise DataContractError(
@@ -595,10 +1175,42 @@ class WorkingCoordMaterializer:
                         raise DataContractError(
                             "image_id must be unique within a working split",
                             code="label_studio.image_id_duplicate",
-                            context={"image_id": row.image_id, "row_number": row_number},
+                            context={
+                                "image_id": row.image_id,
+                                "row_number": row_number,
+                            },
                         )
                     seen_image_ids.add(row.image_id)
                     task_manifest_digest.update(_task_manifest_frame(source_identity))
+                    summary_digests["task_identity"].add(
+                        {
+                            "image_id": row.image_id,
+                            "source_fingerprint": source_identity.source_fingerprint,
+                        }
+                    )
+                    summary_digests["category"].add(
+                        [[item.category_id, item.category_name] for item in row.objects]
+                    )
+                    summary_digests["object_order"].add(
+                        [item.coco_ann_id for item in row.objects]
+                    )
+                    summary_digests["geometry"].add(
+                        [list(item.bbox_2d) for item in row.objects]
+                    )
+                    summary_digests["image_content"].add(
+                        [row.image_id, source_identity.image_sha256]
+                    )
+                    summary_digests["metadata"].add(
+                        {
+                            "row": thaw_json(row.metadata),
+                            "objects": [
+                                None
+                                if item.metadata is None
+                                else thaw_json(item.metadata)
+                                for item in row.objects
+                            ],
+                        }
+                    )
                     image_attestations.append(
                         _ImageContentAttestation(
                             image_id=row.image_id,
@@ -664,6 +1276,10 @@ class WorkingCoordMaterializer:
                 destination_sha256=output_digest.hexdigest(),
                 row_count=row_count,
                 object_count=object_count,
+                loader_row_count=loader_rows,
+                summary_fingerprints={
+                    name: digest.fingerprint for name, digest in summary_digests.items()
+                },
                 image_attestations=tuple(image_attestations),
             )
         finally:
@@ -682,7 +1298,36 @@ class _CandidateReceipt:
     destination_sha256: str
     row_count: int
     object_count: int
+    loader_row_count: int
+    summary_fingerprints: Mapping[str, str]
     image_attestations: tuple["_ImageContentAttestation", ...]
+
+
+class _CanonicalArrayDigest:
+    def __init__(self) -> None:
+        self._digest = hashlib.sha256()
+        self._digest.update(b"[")
+        self._count = 0
+
+    def add(self, value: Any) -> None:
+        if self._count:
+            self._digest.update(b",")
+        self._digest.update(
+            json.dumps(
+                value,
+                allow_nan=False,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        )
+        self._count += 1
+
+    @property
+    def fingerprint(self) -> str:
+        digest = self._digest.copy()
+        digest.update(b"]")
+        return digest.hexdigest()
 
 
 @dataclass(frozen=True)
@@ -873,14 +1518,23 @@ def _read_committed_generation(
             raise DataContractError(
                 "project manifest image root is not the exact allowlisted root",
                 code="label_studio.materialize_manifest_image_root",
-                context={"field": field, "expected": str(expected_image_root), "actual": str(actual)},
+                context={
+                    "field": field,
+                    "expected": str(expected_image_root),
+                    "actual": str(actual),
+                },
             )
     managed_link = payload.get("managed_image_link")
-    if not isinstance(managed_link, str) or Path(managed_link) != layout.images_link(split):
+    if not isinstance(managed_link, str) or Path(managed_link) != layout.images_link(
+        split
+    ):
         raise DataContractError(
             "project manifest managed image link does not match the split runtime",
             code="label_studio.materialize_manifest_images_link",
-            context={"expected": str(layout.images_link(split)), "actual": managed_link},
+            context={
+                "expected": str(layout.images_link(split)),
+                "actual": managed_link,
+            },
         )
     return receipt
 
@@ -967,7 +1621,11 @@ def _resolve_image(
             context={"image_id": image_id, "resolved": str(resolved)},
             cause=exc,
         ) from exc
-    if not resolved.is_file() or not relative.parts or relative.parts[0] != f"{split}2017":
+    if (
+        not resolved.is_file()
+        or not relative.parts
+        or relative.parts[0] != f"{split}2017"
+    ):
         raise DataContractError(
             "working row image does not resolve inside its split-specific image directory",
             code="label_studio.materialize_image_split",
@@ -1022,6 +1680,78 @@ def _parse_jsonl_row(source: Path, row_number: int, raw_line: bytes) -> Any:
             context={"path": str(source), "row_number": row_number},
             cause=exc,
         ) from exc
+
+
+def _read_strict_mapping(path: Path, *, code: str) -> Mapping[str, Any]:
+    try:
+        payload = json.loads(path.read_bytes(), parse_constant=_reject_json_constant)
+    except DataContractError:
+        raise
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise DataContractError(
+            "authority artifact is not readable strict JSON",
+            code=code,
+            context={"path": str(path)},
+            cause=exc,
+        ) from exc
+    if not isinstance(payload, Mapping):
+        raise DataContractError(
+            "authority artifact must be a JSON object",
+            code=code,
+            context={"path": str(path)},
+        )
+    return payload
+
+
+def _open_stable_binary_source(path: Path) -> tuple[BinaryIO, os.stat_result]:
+    try:
+        path_before = path.lstat()
+    except OSError as exc:
+        raise DataContractError(
+            "canonical source is unavailable",
+            code="label_studio.source_task_source_changed",
+            context={"path": str(path)},
+            cause=exc,
+        ) from exc
+    if not stat.S_ISREG(path_before.st_mode):
+        raise DataContractError(
+            "canonical source must be a regular non-symlink file",
+            code="label_studio.source_task_source_changed",
+            context={"path": str(path)},
+        )
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(path, flags)
+        opened = os.fstat(descriptor)
+    except OSError as exc:
+        if descriptor is not None:
+            os.close(descriptor)
+        raise DataContractError(
+            "canonical source cannot be opened safely",
+            code="label_studio.source_task_source_changed",
+            context={"path": str(path)},
+            cause=exc,
+        ) from exc
+
+    def signature(value: os.stat_result) -> tuple[int, int, int, int, int, int]:
+        return (
+            value.st_dev,
+            value.st_ino,
+            value.st_size,
+            value.st_mtime_ns,
+            value.st_ctime_ns,
+            value.st_mode,
+        )
+
+    if signature(path_before) != signature(opened) or not stat.S_ISREG(opened.st_mode):
+        os.close(descriptor)
+        raise DataContractError(
+            "canonical source changed while opening",
+            code="label_studio.source_task_source_changed",
+            context={"path": str(path)},
+        )
+    return os.fdopen(descriptor, "rb"), opened
 
 
 def _resolved_directory(value: Any, *, field: str) -> Path:
@@ -1082,10 +1812,61 @@ def _fsync_directory(path: Path) -> None:
         os.close(descriptor)
 
 
+def _atomic_replace_json(path: Path, payload: Mapping[str, Any]) -> None:
+    encoded = (
+        json.dumps(
+            payload,
+            allow_nan=False,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        + b"\n"
+    )
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        dir=path.parent,
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        _fsync_directory(path.parent)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _invalidate_operator_receipt(path: Path) -> None:
+    if not os.path.lexists(path):
+        return
+    if path.is_symlink() or not path.is_file():
+        raise DataContractError(
+            "operator receipt path must be an ordinary fixed split child",
+            code="label_studio.materialize_receipt_path",
+            context={"path": str(path)},
+        )
+    path.unlink()
+    _fsync_directory(path.parent)
+
+
+def _run_operator_receipt_test_hook(stage: str) -> None:
+    hook = _OPERATOR_RECEIPT_TEST_HOOK
+    if hook is not None:
+        hook(stage)
+
+
 __all__ = [
     "CommittedGenerationReceipt",
     "MATERIALIZER_VERSION",
     "MaterializationReceipt",
+    "OPERATOR_RECEIPT_CODE",
+    "OPERATOR_RECEIPT_NAME",
+    "OperatorMaterializationReceipt",
+    "ProjectTaskIndexSourceIdentityResolver",
     "SourceTaskIdentityReceipt",
     "SourceTaskIdentityResolver",
     "WorkingCoordMaterializer",

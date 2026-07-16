@@ -19,6 +19,11 @@ from src.label_studio_coco_refinement.label_config import (
     build_label_config,
     label_config_fingerprint,
 )
+from src.label_studio_coco_refinement.materialize import (
+    ProjectTaskIndexSourceIdentityResolver,
+    WorkingCoordMaterializer,
+)
+from src.label_studio_coco_refinement.models import RefinementRuntimeLayout
 from src.label_studio_coco_refinement.project import (
     BootstrapAction,
     CanonicalJsonArrayFingerprint,
@@ -49,9 +54,25 @@ from src.label_studio_coco_refinement.project import (
     validate_immutable_row_fields,
     validate_source_row,
 )
+from src.label_studio_coco_refinement.store import (
+    BOOTSTRAP_TASK_INDEX_BUILD_KEY,
+    BOOTSTRAP_TASK_INDEX_SCHEMA_KEY,
+    BOOTSTRAP_TASK_INDEX_SHA256_KEY,
+    BOOTSTRAP_TASK_MANIFEST_KEY,
+    BootstrapSpec,
+    WorkingDatasetStore,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+class _UnusedStoreDependency:
+    def verify(self, identity: Any) -> bool:
+        raise AssertionError("bootstrap must not verify live annotations")
+
+    def resolve(self, receipt_id: str) -> None:
+        raise AssertionError("bootstrap must not resolve inference receipts")
 
 
 def _row(split: Split, *, image_id: int = 9) -> dict:
@@ -219,8 +240,7 @@ def _adapter_for(
 
 def _resign_task_index_with_mutation(receipt, record_index: int, field: str):
     records = [
-        json.loads(line)
-        for line in Path(receipt.path).read_bytes().splitlines()
+        json.loads(line) for line in Path(receipt.path).read_bytes().splitlines()
     ]
     records[record_index][field] = True
     previous_hash = None
@@ -480,9 +500,7 @@ def test_adapter_send_payloads_are_defensive_copies_of_immutable_plan(
 
     first_send = next(action.iter_task_import_chunks(1))
     first_send[0]["annotations"][0]["ground_truth"] = True
-    first_send[0]["annotations"][0]["result"][0]["meta"][
-        "last_committed_bbox"
-    ][0] = 333
+    first_send[0]["annotations"][0]["result"][0]["meta"]["last_committed_bbox"][0] = 333
     second_send = next(action.iter_task_import_chunks(1))
 
     assert second_send[0]["annotations"][0]["ground_truth"] is False
@@ -964,8 +982,30 @@ def test_warm_anchor_schema_and_hash_read_are_stable_and_strict(
     anchor.write_bytes(project_module._canonical_json_bytes(payload) + b"\n")
     anchor.chmod(0o444)
 
-    with pytest.raises(ProjectContractError, match="must be at least 2"):
+    with pytest.raises(ProjectContractError, match="must be at least 3"):
         _build_plan(tmp_path, Split.TRAIN, source)
+
+
+def test_canonical_loader_rejects_obsolete_v2_anchor_instead_of_reusing_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _install_small_source(tmp_path, Split.TRAIN, monkeypatch)
+    plan = _build_plan(tmp_path, Split.TRAIN, source)
+    receipt = plan.task_manifest.task_index
+    anchor = project_module._task_index_anchor_path(
+        Path(receipt.path).parent,
+        converter_fingerprint=receipt.converter_fingerprint,
+        build_key=receipt.build_key,
+    )
+    legacy = anchor.with_name(anchor.name.replace("build-v3-", "build-v2-", 1))
+    anchor.rename(legacy)
+
+    with pytest.raises(ProjectContractError, match="obsolete schema.*rebuild"):
+        project_module.load_canonical_task_index_receipt(
+            tmp_path,
+            Split.TRAIN,
+        )
 
 
 def test_warm_anchor_read_race_fails_closed(
@@ -1026,8 +1066,136 @@ def test_explicit_full_validation_rechecks_every_indexed_image(
     )
     image.unlink()
 
-    with pytest.raises(ProjectContractError, match="task-index image missing"):
+    with pytest.raises(ProjectContractError, match="source image missing"):
         project.task_manifest.task_index.validate_for_repo(tmp_path)
+
+
+def test_schema_v3_task_index_freezes_and_rechecks_image_content(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _install_small_source(tmp_path, Split.TRAIN, monkeypatch)
+    plan = _build_plan(tmp_path, Split.TRAIN, source)
+    (entry,) = tuple(plan.task_manifest.iter_entries())
+    image = (
+        tmp_path / "public_data/coco/rescale_32_1024_bbox" / entry.working_image_locator
+    )
+
+    assert project_module.TASK_INDEX_SCHEMA_VERSION == 3
+    assert entry.image_sha256 == hashlib.sha256(image.read_bytes()).hexdigest()
+
+    image.write_bytes(b"same locator, different image bytes")
+    with pytest.raises(ProjectContractError, match="task-index image hash drift"):
+        plan.task_manifest.task_index.validate_for_repo(tmp_path)
+
+
+def test_store_manifest_derives_exact_schema_v3_bootstrap_binding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _install_small_source(tmp_path, Split.TRAIN, monkeypatch)
+    plan = _build_plan(tmp_path, Split.TRAIN, source)
+    dependency = _UnusedStoreDependency()
+    bootstrap = WorkingDatasetStore.bootstrap(
+        BootstrapSpec(
+            split="train",
+            source_path=source,
+            runtime_root=RuntimeLayout.for_repo(tmp_path).root,
+            image_root=RuntimeLayout.for_repo(tmp_path).image_root,
+            expected_source_sha256=plan.source_inspection.sha256,
+            project_id="project-train",
+            storage_id="storage-train",
+            adapter_version="adapter-v1",
+            vendor_revision="pinned-vendor-revision",
+            registry_fingerprint=COCO80_REGISTRY.fingerprint,
+            label_config_fingerprint=plan.manifest.label_config_fingerprint,
+            extra_fingerprints={
+                "task_manifest": plan.task_manifest.fingerprint,
+            },
+        ),
+        annotation_verifier=dependency,
+        inference_receipt_resolver=dependency,
+    )
+    manifest = json.loads(bootstrap.store.manifest_path.read_text())
+    binding = manifest["extra_fingerprints"]
+
+    assert binding == {
+        "task_manifest": plan.task_manifest.fingerprint,
+        BOOTSTRAP_TASK_INDEX_SCHEMA_KEY: "3",
+        BOOTSTRAP_TASK_INDEX_BUILD_KEY: plan.task_manifest.task_index.build_key,
+        BOOTSTRAP_TASK_INDEX_SHA256_KEY: plan.task_manifest.task_index.sha256,
+        BOOTSTRAP_TASK_MANIFEST_KEY: plan.task_manifest.fingerprint,
+    }
+    materializer_layout = RefinementRuntimeLayout.under_repository(tmp_path)
+    operator_receipt = WorkingCoordMaterializer(
+        materializer_layout,
+        "train",
+        store=bootstrap.store,
+        source_identity_resolver=ProjectTaskIndexSourceIdentityResolver(
+            materializer_layout,
+            "train",
+            store=bootstrap.store,
+        ),
+    ).materialize_current_generation()
+    assert operator_receipt.materialization.row_count == 1
+    assert operator_receipt.bootstrap_task_index_binding == {
+        BOOTSTRAP_TASK_INDEX_SCHEMA_KEY: "3",
+        BOOTSTRAP_TASK_INDEX_BUILD_KEY: plan.task_manifest.task_index.build_key,
+        BOOTSTRAP_TASK_INDEX_SHA256_KEY: plan.task_manifest.task_index.sha256,
+        BOOTSTRAP_TASK_MANIFEST_KEY: plan.task_manifest.fingerprint,
+    }
+
+
+def test_schema_v3_image_hashing_streams_bounded_chunks_without_read_bytes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _install_small_source(tmp_path, Split.TRAIN, monkeypatch)
+    image = (
+        tmp_path
+        / "public_data/coco/rescale_32_1024_bbox"
+        / _row(Split.TRAIN)["file_name"]
+    )
+    image.write_bytes(b"0123456789" * 13)
+    events: list[int] = []
+    original_read_bytes = Path.read_bytes
+
+    def reject_image_read_bytes(path: Path) -> bytes:
+        if path == image:
+            raise AssertionError("image bytes must never be materialized at once")
+        return original_read_bytes(path)
+
+    def hook(path: Path, stage: str, byte_count: int) -> None:
+        if path == image and stage == "source_image_hash_chunk":
+            events.append(byte_count)
+
+    monkeypatch.setattr(project_module, "STABLE_HASH_CHUNK_SIZE", 17)
+    monkeypatch.setattr(Path, "read_bytes", reject_image_read_bytes)
+    monkeypatch.setattr(project_module, "_STABLE_FILE_TEST_HOOK", hook)
+    plan = _build_plan(tmp_path, Split.TRAIN, source)
+    (entry,) = tuple(plan.task_manifest.iter_entries())
+
+    assert entry.image_sha256 == hashlib.sha256(b"0123456789" * 13).hexdigest()
+    assert len(events) > 1
+    assert max(right - left for left, right in zip((0, *events), events)) <= 17
+
+
+def test_schema_v3_cold_build_rejects_symlink_image_leaf(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _install_small_source(tmp_path, Split.TRAIN, monkeypatch)
+    image = (
+        tmp_path
+        / "public_data/coco/rescale_32_1024_bbox"
+        / _row(Split.TRAIN)["file_name"]
+    )
+    backing = image.with_suffix(".backing.jpg")
+    image.rename(backing)
+    image.symlink_to(backing.name)
+
+    with pytest.raises(ProjectContractError, match="regular non-symlink"):
+        _build_plan(tmp_path, Split.TRAIN, source)
 
 
 def test_lost_task_create_response_reconciles_by_stable_source_identity(
@@ -1220,10 +1388,7 @@ def test_reuse_rejects_task_set_manifest_and_count_drift(
                 },
             ),
         )
-    assert (
-        "live.task_set.expected_task_manifest_fingerprint"
-        in error.value.mismatches
-    )
+    assert "live.task_set.expected_task_manifest_fingerprint" in error.value.mismatches
 
     wrong_count = replace(
         live_train.task_set,
@@ -1256,14 +1421,8 @@ def test_task_import_iteration_is_restartable_and_chunk_bounded(
     second = list(project.iter_task_import_chunks(3))
     assert [len(chunk) for chunk in first] == [3, 3, 1]
     assert [
-        payload["data"]["coordexp_task_key"]
-        for chunk in first
-        for payload in chunk
-    ] == [
-        payload["data"]["coordexp_task_key"]
-        for chunk in second
-        for payload in chunk
-    ]
+        payload["data"]["coordexp_task_key"] for chunk in first for payload in chunk
+    ] == [payload["data"]["coordexp_task_key"] for chunk in second for payload in chunk]
     assert not hasattr(project.task_manifest, "entries")
 
 
@@ -1276,9 +1435,7 @@ def test_task_import_iteration_keeps_explicit_full_record_validation(
     opened_descriptors: list[tuple[int, int]] = []
 
     def counted(receipt, *, handle):
-        opened_descriptors.append(
-            (handle.fileno(), os.fstat(handle.fileno()).st_ino)
-        )
+        opened_descriptors.append((handle.fileno(), os.fstat(handle.fileno()).st_ino))
         yield from original(receipt, handle=handle)
 
     monkeypatch.setattr(project_module, "_iter_task_index_records", counted)
@@ -1423,9 +1580,12 @@ def test_default_first_custom_converter_never_reuses_default_anchor(
     assert custom.task_manifest.task_index.converter_fingerprint == (
         project_module.UNFINGERPRINTED_CUSTOM_BBOX_CONVERTER_FINGERPRINT
     )
-    assert next(custom.iter_task_import_chunks(1))[0]["annotations"][0]["result"][
-        0
-    ]["value"]["x"] == 1.0
+    assert (
+        next(custom.iter_task_import_chunks(1))[0]["annotations"][0]["result"][0][
+            "value"
+        ]["x"]
+        == 1.0
+    )
     assert _build_plan(tmp_path, Split.TRAIN, source).task_manifest.task_index == (
         default.task_manifest.task_index
     )
@@ -1526,9 +1686,7 @@ def test_converter_fingerprint_reserved_markers_fail_closed(
         build_split_project_plan(
             source,
             bbox_converter=lambda _bbox: (1.0, 1.0, 50.0, 50.0),
-            converter_fingerprint=(
-                project_module.CANONICAL_BBOX_CONVERTER_FINGERPRINT
-            ),
+            converter_fingerprint=(project_module.CANONICAL_BBOX_CONVERTER_FINGERPRINT),
             **common,
         )
 

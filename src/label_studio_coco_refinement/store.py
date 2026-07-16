@@ -26,6 +26,20 @@ from typing import Any, Callable, Iterator, Mapping, Protocol, Sequence
 
 
 SCHEMA_VERSION = 2
+TASK_INDEX_IDENTITY_SCHEMA_VERSION = 1
+BOOTSTRAP_TASK_INDEX_DIRECTORY_NAME = "bootstrap-task-index"
+BOOTSTRAP_TASK_INDEX_SCHEMA_KEY = "bootstrap_task_index_schema_version"
+BOOTSTRAP_TASK_INDEX_BUILD_KEY = "bootstrap_task_index_build_key"
+BOOTSTRAP_TASK_INDEX_SHA256_KEY = "bootstrap_task_index_sha256"
+BOOTSTRAP_TASK_MANIFEST_KEY = "bootstrap_task_manifest_fingerprint"
+_BOOTSTRAP_TASK_INDEX_BINDING_KEYS = frozenset(
+    {
+        BOOTSTRAP_TASK_INDEX_SCHEMA_KEY,
+        BOOTSTRAP_TASK_INDEX_BUILD_KEY,
+        BOOTSTRAP_TASK_INDEX_SHA256_KEY,
+        BOOTSTRAP_TASK_MANIFEST_KEY,
+    }
+)
 _ACCEPTED_OBJECT_FIELDS = {
     "bbox_2d",
     "desc",
@@ -341,6 +355,97 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _bind_bootstrap_task_index_fingerprints(
+    *,
+    source: Path,
+    split: str,
+    extra_fingerprints: Mapping[str, str],
+) -> dict[str, str]:
+    """Bind a canonical project task-index receipt when the adapter supplies one."""
+
+    extras = dict(extra_fingerprints)
+    supplied_reserved = sorted(_BOOTSTRAP_TASK_INDEX_BINDING_KEYS.intersection(extras))
+    if supplied_reserved:
+        raise ValidationError(
+            "bootstrap task-index bindings are derived, not caller supplied: "
+            + ", ".join(supplied_reserved)
+        )
+    expected_manifest = extras.get("task_manifest")
+    if expected_manifest is None:
+        return extras
+    if not _is_sha256(expected_manifest):
+        raise ValidationError(
+            "extra_fingerprints.task_manifest must be a lowercase SHA-256 digest"
+        )
+
+    from .project import (
+        SOURCE_CONTRACTS,
+        TASK_INDEX_SCHEMA_VERSION,
+        ProjectContractError,
+        Split,
+        load_canonical_task_index_receipt,
+    )
+
+    project_split = Split(split)
+    contract = SOURCE_CONTRACTS[project_split]
+    repo_root: Path | None = None
+    for candidate in source.parents:
+        expected = candidate / Path(contract.relative_path)
+        try:
+            if expected.resolve(strict=True) == source:
+                repo_root = candidate
+                break
+        except OSError:
+            continue
+    if repo_root is None:
+        raise ValidationError(
+            "task-manifest binding requires the exact selected-source repository path"
+        )
+    try:
+        receipt = load_canonical_task_index_receipt(
+            repo_root,
+            project_split,
+            expected_task_manifest_fingerprint=expected_manifest,
+        )
+    except ProjectContractError as exc:
+        raise ManifestDriftError(f"bootstrap_task_index: {exc}") from exc
+    extras.update(
+        {
+            BOOTSTRAP_TASK_INDEX_SCHEMA_KEY: str(TASK_INDEX_SCHEMA_VERSION),
+            BOOTSTRAP_TASK_INDEX_BUILD_KEY: receipt.build_key,
+            BOOTSTRAP_TASK_INDEX_SHA256_KEY: receipt.sha256,
+            BOOTSTRAP_TASK_MANIFEST_KEY: receipt.task_manifest_fingerprint,
+        }
+    )
+    return extras
+
+
+def _bootstrap_image_sha256(
+    row: Mapping[str, Any],
+    *,
+    split: str,
+    image_root: Path,
+) -> str:
+    """Capture one bootstrap image digest in bounded memory for fixture authority."""
+
+    locator = Path(str(row["file_name"]))
+    expected_parent = f"{split}2017"
+    if locator.parts[:2] != ("images", expected_parent) or len(locator.parts) != 3:
+        raise ValidationError("working image locator is outside its split root")
+    declared = image_root / expected_parent / locator.name
+    try:
+        lexical = declared.absolute()
+        if lexical.is_symlink():
+            raise ValidationError("bootstrap image must not be a symlink")
+        resolved_root = image_root.resolve(strict=True)
+        resolved = lexical.resolve(strict=True)
+    except OSError as exc:
+        raise ValidationError(f"bootstrap image is unavailable: {declared}") from exc
+    if not resolved.is_relative_to(resolved_root) or not resolved.is_file():
+        raise ValidationError("bootstrap image is outside the allowlisted image root")
+    return sha256_file(lexical)
 
 
 def canonical_semantic_projection(
@@ -984,6 +1089,14 @@ class WorkingDatasetStore:
         split_dir = (spec.runtime_root / split).resolve()
         split_dir.mkdir(parents=True, exist_ok=True)
         images_link = split_dir / "images"
+        bound_extra_fingerprints = _bind_bootstrap_task_index_fingerprints(
+            source=source,
+            split=split,
+            extra_fingerprints=spec.extra_fingerprints,
+        )
+        capture_store_identity = (
+            BOOTSTRAP_TASK_INDEX_BUILD_KEY not in bound_extra_fingerprints
+        )
         static_contract = {
             "schema_version": SCHEMA_VERSION,
             "instance_id": spec.instance_id,
@@ -1003,7 +1116,7 @@ class WorkingDatasetStore:
             "vendor_revision": spec.vendor_revision,
             "registry_fingerprint": spec.registry_fingerprint,
             "label_config_fingerprint": spec.label_config_fingerprint,
-            "extra_fingerprints": dict(spec.extra_fingerprints),
+            "extra_fingerprints": bound_extra_fingerprints,
             "task_policy": {
                 "identity": "(split,image_id)",
                 "authoritative_annotations": 1,
@@ -1036,10 +1149,13 @@ class WorkingDatasetStore:
                 task_manifest_hash=str(manifest["task_manifest_hash"]),
             )
 
+        allowed_preexisting = {".commit.lock", ".queue.lock"}
+        if BOOTSTRAP_TASK_INDEX_BUILD_KEY in bound_extra_fingerprints:
+            allowed_preexisting.add(BOOTSTRAP_TASK_INDEX_DIRECTORY_NAME)
         unexpected = [
             path.name
             for path in split_dir.iterdir()
-            if path.name not in {".commit.lock", ".queue.lock"}
+            if path.name not in allowed_preexisting
         ]
         if unexpected:
             raise ManifestDriftError(f"partial bootstrap state: {sorted(unexpected)}")
@@ -1092,14 +1208,28 @@ class WorkingDatasetStore:
                     task_digest.update(
                         (canonical_json(seed_identity) + "\n").encode("utf-8")
                     )
-                    task_index_entries.append(
-                        {
-                            "source_row_index": task_count,
-                            "source_line": line_no,
-                            "image_id": image_id,
-                            "task_id": _task_id(split, image_id),
-                        }
-                    )
+                    task_index_entry = {
+                        "source_row_index": task_count,
+                        "source_line": line_no,
+                        "image_id": image_id,
+                        "task_id": _task_id(split, image_id),
+                    }
+                    if capture_store_identity:
+                        task_index_entry.update(
+                            {
+                                "file_name": row["file_name"],
+                                "width": row["width"],
+                                "height": row["height"],
+                                "metadata": copy.deepcopy(row["metadata"]),
+                                "task_row_fingerprint": seed_identity["row_hash"],
+                                "image_sha256": _bootstrap_image_sha256(
+                                    row,
+                                    split=split,
+                                    image_root=image_root,
+                                ),
+                            }
+                        )
+                    task_index_entries.append(task_index_entry)
                     task_count += 1
                 output.flush()
                 os.fsync(output.fileno())
@@ -1114,6 +1244,10 @@ class WorkingDatasetStore:
                 "split": split,
                 "entries": task_index_entries,
             }
+            if capture_store_identity:
+                task_index["identity_schema_version"] = (
+                    TASK_INDEX_IDENTITY_SCHEMA_VERSION
+                )
             _atomic_replace_json(split_dir / "task_index.json", task_index)
             (split_dir / "journal.jsonl").touch(exist_ok=False)
             with (split_dir / "journal.jsonl").open("ab") as journal:
@@ -3518,6 +3652,9 @@ class WorkingDatasetStore:
             or not isinstance(payload.get("entries"), list)
         ):
             raise ManifestDriftError("task_index")
+        identity_schema = payload.get("identity_schema_version")
+        if identity_schema not in {None, TASK_INDEX_IDENTITY_SCHEMA_VERSION}:
+            raise ManifestDriftError("task_index.identity_schema_version")
         entries = payload["entries"]
         if len(entries) != int(manifest.get("task_count", -1)):
             raise ManifestDriftError("task_index")
@@ -3535,6 +3672,34 @@ class WorkingDatasetStore:
                 or image_id in image_to_index
             ):
                 raise ManifestDriftError("task_index")
+            if identity_schema == TASK_INDEX_IDENTITY_SCHEMA_VERSION:
+                expected_fields = {
+                    "source_row_index",
+                    "source_line",
+                    "image_id",
+                    "task_id",
+                    "file_name",
+                    "width",
+                    "height",
+                    "metadata",
+                    "task_row_fingerprint",
+                    "image_sha256",
+                }
+                if set(entry) != expected_fields:
+                    raise ManifestDriftError("task_index.identity")
+                if (
+                    not isinstance(entry.get("file_name"), str)
+                    or isinstance(entry.get("width"), bool)
+                    or not isinstance(entry.get("width"), int)
+                    or entry["width"] <= 0
+                    or isinstance(entry.get("height"), bool)
+                    or not isinstance(entry.get("height"), int)
+                    or entry["height"] <= 0
+                    or not isinstance(entry.get("metadata"), Mapping)
+                    or not _is_sha256(entry.get("task_row_fingerprint"))
+                    or not _is_sha256(entry.get("image_sha256"))
+                ):
+                    raise ManifestDriftError("task_index.identity")
             image_to_index[image_id] = expected_index
         self._source_row_by_image = image_to_index
 

@@ -42,7 +42,7 @@ SOURCE_OBJECT_FIELDS = frozenset(
     {"bbox_2d", "desc", "category_id", "category_name", "coco_ann_id"}
 )
 IMMUTABLE_ROW_FIELDS = ("file_name", "image_id", "width", "height", "metadata")
-TASK_INDEX_SCHEMA_VERSION = 2
+TASK_INDEX_SCHEMA_VERSION = 3
 TASK_INDEX_DIRECTORY_NAME = "bootstrap-task-index"
 TASK_INDEX_IDENTITY_SORT_CHUNK_SIZE = 2_048
 TASK_INDEX_SORT_FAN_IN = 8
@@ -51,8 +51,7 @@ TASK_INDEX_ANCHOR_MAX_BYTES = 4 * 1024
 STABLE_HASH_CHUNK_SIZE = 8 * 1024 * 1024
 BYTE_ATTESTATION_CACHE_MAX_ENTRIES = 16
 CANONICAL_BBOX_CONVERTER_SEMANTICS = (
-    '{"contract":"coordexp.norm1000_xyxy_int_to_label_studio_percent_xywh",'
-    '"version":1}'
+    '{"contract":"coordexp.norm1000_xyxy_int_to_label_studio_percent_xywh","version":1}'
 )
 # SHA-256 of the canonical JSON semantic contract.  This is intentionally a
 # stable data-contract marker, never a Python function name, repr, or identity.
@@ -456,7 +455,9 @@ class _ByteAttestationMemo:
 
     def __init__(self, max_entries: int = BYTE_ATTESTATION_CACHE_MAX_ENTRIES) -> None:
         if isinstance(max_entries, bool) or not isinstance(max_entries, int):
-            raise ProjectContractError("byte attestation cache bound must be an integer")
+            raise ProjectContractError(
+                "byte attestation cache bound must be an integer"
+            )
         if max_entries < 1:
             raise ProjectContractError("byte attestation cache bound must be positive")
         self.max_entries = max_entries
@@ -537,10 +538,9 @@ def _open_stable_regular_file(
         raise ProjectContractError(f"{purpose} cannot be opened safely") from exc
     try:
         opened_metadata = os.fstat(descriptor)
-        if (
-            not stat.S_ISREG(opened_metadata.st_mode)
-            or _stat_signature(opened_metadata) != _stat_signature(path_metadata)
-        ):
+        if not stat.S_ISREG(opened_metadata.st_mode) or _stat_signature(
+            opened_metadata
+        ) != _stat_signature(path_metadata):
             raise ProjectContractError(f"{purpose} changed while opening")
         observed_mode = stat.S_IMODE(opened_metadata.st_mode)
         if required_mode is not None and observed_mode != required_mode:
@@ -879,7 +879,10 @@ def inspect_source(
     ).inspection
 
 
-SourceRowConsumer = Callable[[int, Mapping[str, Any], TaskIdentity], None]
+SourceRowConsumer = Callable[
+    [int, Mapping[str, Any], TaskIdentity, str],
+    None,
+]
 
 
 @dataclass(frozen=True)
@@ -1082,7 +1085,7 @@ def _inspect_source_stream(
                 identity = validate_source_row(
                     row, split=contract.split, registry=registry
                 )
-                _assert_source_image_exists(
+                image_sha256 = _attest_source_image_sha256(
                     row,
                     repo_root=repo_root,
                     split=contract.split,
@@ -1095,7 +1098,7 @@ def _inspect_source_stream(
                 row_count += 1
                 box_count += len(row["objects"])
                 if consume_row is not None:
-                    consume_row(line_number, row, identity)
+                    consume_row(line_number, row, identity, image_sha256)
                 _run_stable_file_test_hook(
                     observed_path,
                     "source_record_complete",
@@ -1183,6 +1186,7 @@ class TaskManifestEntry:
     label_studio_image_locator: str
     task_data_fingerprint: str
     authoritative_annotation_fingerprint: str
+    image_sha256: str
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -1193,6 +1197,7 @@ class TaskManifestEntry:
             "label_studio_image_locator": self.label_studio_image_locator,
             "task_data_fingerprint": self.task_data_fingerprint,
             "authoritative_annotation_fingerprint": self.authoritative_annotation_fingerprint,
+            "image_sha256": self.image_sha256,
         }
 
     @classmethod
@@ -1205,6 +1210,7 @@ class TaskManifestEntry:
             "label_studio_image_locator",
             "task_data_fingerprint",
             "authoritative_annotation_fingerprint",
+            "image_sha256",
         }
         if not isinstance(payload, Mapping) or set(payload) != required:
             raise ProjectContractError("task-index entry shape drift")
@@ -1223,9 +1229,7 @@ class TaskManifestEntry:
             raise ProjectContractError("task-index identity key drift")
         return cls(
             identity=identity,
-            source_line=_require_int(
-                payload["source_line"], "source_line", minimum=1
-            ),
+            source_line=_require_int(payload["source_line"], "source_line", minimum=1),
             source_image_locator=_require_string(
                 payload["source_image_locator"], "source_image_locator"
             ),
@@ -1242,6 +1246,10 @@ class TaskManifestEntry:
             authoritative_annotation_fingerprint=_require_sha256(
                 payload["authoritative_annotation_fingerprint"],
                 "authoritative_annotation_fingerprint",
+            ),
+            image_sha256=_require_sha256(
+                payload["image_sha256"],
+                "image_sha256",
             ),
         )
 
@@ -1924,7 +1932,9 @@ class _TaskIndexWriter:
         sorted_identity_fingerprint: str,
     ) -> tuple[str, str]:
         if source_inspection.row_count != self._count:
-            raise ProjectContractError("task-index count does not match source inspection")
+            raise ProjectContractError(
+                "task-index count does not match source inspection"
+            )
         self._manifest_digest.update(b'],"split":')
         self._manifest_digest.update(_canonical_json_bytes(self.split.value))
         self._manifest_digest.update(b',"task_count":')
@@ -1989,9 +1999,7 @@ def _task_index_build_key(
     )
 
 
-def _task_index_sidecar_name(
-    *, converter_fingerprint: str, content_sha256: str
-) -> str:
+def _task_index_sidecar_name(*, converter_fingerprint: str, content_sha256: str) -> str:
     return (
         f"task-index-v{TASK_INDEX_SCHEMA_VERSION}-{converter_fingerprint}-"
         f"{content_sha256}.jsonl"
@@ -2039,9 +2047,7 @@ def _publish_task_index(
         source_box_count=source_inspection.box_count,
         task_manifest_fingerprint=task_manifest_fingerprint,
         identity_fingerprint=identity_fingerprint,
-        source_identity_fingerprint=(
-            source_inspection.task_identity_fingerprint
-        ),
+        source_identity_fingerprint=(source_inspection.task_identity_fingerprint),
         converter_fingerprint=converter_fingerprint,
         build_key=build_key,
     )
@@ -2057,9 +2063,7 @@ def _publish_task_index(
         "task_count": task_count,
         "task_manifest_fingerprint": task_manifest_fingerprint,
         "identity_fingerprint": identity_fingerprint,
-        "source_identity_fingerprint": (
-            source_inspection.task_identity_fingerprint
-        ),
+        "source_identity_fingerprint": (source_inspection.task_identity_fingerprint),
         "converter_fingerprint": converter_fingerprint,
     }
     _publish_small_immutable_file(
@@ -2215,6 +2219,76 @@ def _load_published_task_index(
     )
 
 
+def load_canonical_task_index_receipt(
+    repo_root: Path,
+    split: Split | str,
+    *,
+    expected_task_manifest_fingerprint: str | None = None,
+) -> TaskIndexReceipt:
+    """Load the exact immutable schema-v3 bootstrap authority for one split.
+
+    This is the production bridge for downstream consumers.  It never derives
+    identity from mutable working bytes and never treats an older task-index
+    schema as current authority.
+    """
+
+    split_value = _split(split)
+    root = _absolute(repo_root)
+    contract = SOURCE_CONTRACTS[split_value]
+    assert_exact_source_path(
+        contract.path(root),
+        repo_root=root,
+        split=split_value,
+    )
+    registry = default_registry()
+    from .label_config import build_label_config, label_config_fingerprint
+
+    label_config = build_label_config(registry)
+    config_fingerprint = label_config_fingerprint(label_config)
+    build_key = _task_index_build_key(
+        contract=contract,
+        registry_fingerprint=registry.fingerprint,
+        label_config_fingerprint=config_fingerprint,
+        converter_fingerprint=CANONICAL_BBOX_CONVERTER_FINGERPRINT,
+    )
+    directory = (
+        RuntimeLayout.for_repo(root).for_split(split_value).root
+        / TASK_INDEX_DIRECTORY_NAME
+    )
+    receipt = _load_published_task_index(
+        directory=directory,
+        contract=contract,
+        converter_fingerprint=CANONICAL_BBOX_CONVERTER_FINGERPRINT,
+        build_key=build_key,
+    )
+    if receipt is None:
+        legacy = sorted(
+            path.name
+            for path in directory.glob("build-v*.json")
+            if not path.name.startswith(f"build-v{TASK_INDEX_SCHEMA_VERSION}-")
+        )
+        if legacy:
+            raise ProjectContractError(
+                "bootstrap task index uses an obsolete schema; rebuild the "
+                f"schema-v{TASK_INDEX_SCHEMA_VERSION} authority"
+            )
+        raise ProjectContractError(
+            "canonical bootstrap task index is missing; run the project "
+            f"bootstrap to build schema v{TASK_INDEX_SCHEMA_VERSION}"
+        )
+    receipt.attest_bytes_for_repo(root)
+    if expected_task_manifest_fingerprint is not None:
+        expected = _require_sha256(
+            expected_task_manifest_fingerprint,
+            "expected_task_manifest_fingerprint",
+        )
+        if receipt.task_manifest_fingerprint != expected:
+            raise ProjectContractError(
+                "canonical bootstrap task manifest fingerprint drift"
+            )
+    return receipt
+
+
 def _reuse_published_task_index(
     *,
     source_path: Path,
@@ -2259,9 +2333,7 @@ def _build_task_index_from_source(
     index_directory: Path,
     publish_anchor: bool,
 ) -> tuple[SourceInspection, TaskIndexReceipt]:
-    temporary_root = Path(
-        tempfile.mkdtemp(dir=index_directory, prefix=".builder-")
-    )
+    temporary_root = Path(tempfile.mkdtemp(dir=index_directory, prefix=".builder-"))
     temporary_index = temporary_root / "task-index.jsonl"
     writer = _TaskIndexWriter(
         temporary_index,
@@ -2275,6 +2347,7 @@ def _build_task_index_from_source(
         line_number: int,
         row: Mapping[str, Any],
         identity: TaskIdentity,
+        image_sha256: str,
     ) -> None:
         task = make_task_import_payload(
             row,
@@ -2294,6 +2367,7 @@ def _build_task_index_from_source(
                 authoritative_annotation_fingerprint=fingerprint_json(
                     task["annotations"][0]
                 ),
+                image_sha256=image_sha256,
             ),
             task,
         )
@@ -2366,9 +2440,7 @@ def build_split_project_plan(
         split=split_value,
         force_hash=True,
     )
-    index_directory = (
-        layout.for_split(split_value).root / TASK_INDEX_DIRECTORY_NAME
-    )
+    index_directory = layout.for_split(split_value).root / TASK_INDEX_DIRECTORY_NAME
     index_directory.mkdir(parents=True, exist_ok=True)
     build_key = _task_index_build_key(
         contract=contract,
@@ -2590,7 +2662,7 @@ def _attest_task_index_receipt_bytes(
     *,
     repo_root: Path,
 ) -> str:
-    """Validate immutable byte identity proven by the schema-v2 cold build."""
+    """Validate immutable byte identity proven by the schema-v3 cold build."""
 
     path = _validate_task_index_receipt_shape(receipt)
     expected_directory = _lexical_absolute(
@@ -2675,7 +2747,9 @@ def _iter_task_index_records(
         )
         _require_sha256(header["build_key"], "task_index.header.build_key")
         _require_sha256(header["record_hash"], "task_index.header.record_hash")
-        header_body = {key: header[key] for key in header_fields if key != "record_hash"}
+        header_body = {
+            key: header[key] for key in header_fields if key != "record_hash"
+        }
         if header["record_hash"] != fingerprint_json(header_body):
             raise ProjectContractError("task index header hash drift")
         if (
@@ -2790,9 +2864,7 @@ def _iter_task_index_records(
                 "record_hash",
             ):
                 _require_sha256(record[field], f"task_index.trailer.{field}")
-            trailer_body = {
-                key: record[key] for key in fields if key != "record_hash"
-            }
+            trailer_body = {key: record[key] for key in fields if key != "record_hash"}
             if record["previous_record_hash"] != previous_record_hash:
                 raise ProjectContractError("task index trailer hash-chain drift")
             if record["record_hash"] != fingerprint_json(trailer_body):
@@ -2824,8 +2896,7 @@ def _iter_task_index_records(
         or record["source_box_count"] != receipt.source_box_count
         or record["task_count"] != receipt.task_count
         or record["identity_fingerprint"] != receipt.identity_fingerprint
-        or record["source_identity_fingerprint"]
-        != receipt.source_identity_fingerprint
+        or record["source_identity_fingerprint"] != receipt.source_identity_fingerprint
         or record["converter_fingerprint"] != receipt.converter_fingerprint
         or record["build_key"] != receipt.build_key
     ):
@@ -2878,9 +2949,13 @@ def _validate_task_payload_against_entry(
     if identity != entry.identity or identity.split is not split:
         raise ProjectContractError("task import identity does not match task manifest")
     if data["source_line"] != entry.source_line:
-        raise ProjectContractError("task import source line does not match task manifest")
+        raise ProjectContractError(
+            "task import source line does not match task manifest"
+        )
     if data["image"] != entry.label_studio_image_locator:
-        raise ProjectContractError("task import image locator does not match task manifest")
+        raise ProjectContractError(
+            "task import image locator does not match task manifest"
+        )
     if fingerprint_json(data) != entry.task_data_fingerprint:
         raise ProjectContractError("task data fingerprint does not match task manifest")
     if (
@@ -3194,8 +3269,7 @@ def _validate_split_project_plan(project: SplitProjectPlan) -> None:
     if (
         task_index.task_count != project.task_manifest.task_count
         or task_index.task_manifest_fingerprint != project.task_manifest.fingerprint
-        or task_index.identity_fingerprint
-        != project.task_manifest.identity_fingerprint
+        or task_index.identity_fingerprint != project.task_manifest.identity_fingerprint
         or task_index.source_sha256 != project.source_inspection.sha256
         or task_index.source_row_count != project.source_inspection.row_count
         or task_index.source_box_count != project.source_inspection.box_count
@@ -3368,25 +3442,76 @@ def _validate_source_object(
             ) from exc
 
 
-def _assert_source_image_exists(
+def _attest_source_image_sha256(
     row: Mapping[str, Any],
     *,
     repo_root: Path,
     split: Split,
     line_number: int,
-) -> None:
-    """Attest the shared source image without opening or copying its bytes."""
+) -> str:
+    """Hash one exact ordinary source image without retaining its bytes."""
 
     layout = RuntimeLayout.for_repo(repo_root)
-    image_path = resolve_working_image(
-        str(row["file_name"]),
-        layout=layout,
-        split=split,
+    contract = SOURCE_CONTRACTS[split]
+    file_name = _safe_relative(str(row["file_name"]), field="file_name")
+    expected_prefix = PurePosixPath("images") / contract.image_subdirectory
+    try:
+        image_leaf = file_name.relative_to(expected_prefix)
+    except ValueError as exc:
+        raise ProjectContractError(
+            f"source image locator drift at line {line_number}: {row['file_name']}"
+        ) from exc
+    if len(image_leaf.parts) != 1:
+        raise ProjectContractError(
+            f"source image locator must name one file at line {line_number}"
+        )
+    image_root = _lexical_absolute(layout.image_root)
+    declared = _lexical_absolute(
+        image_root / contract.image_subdirectory / image_leaf.name
     )
-    if not image_path.is_file():
+    try:
+        resolved_root = image_root.resolve(strict=True)
+        resolved_declared = declared.resolve(strict=True)
+    except OSError as exc:
         raise ProjectContractError(
             f"source image missing at line {line_number}: {row['file_name']}"
+        ) from exc
+    if not resolved_declared.is_relative_to(resolved_root):
+        raise ProjectContractError(
+            f"source image escapes the shared image root at line {line_number}"
         )
+    descriptor, before, _identity = _open_stable_regular_file(
+        declared,
+        purpose=f"source image at line {line_number}",
+    )
+    digest = hashlib.sha256()
+    byte_count = 0
+    try:
+        while True:
+            chunk = os.read(descriptor, STABLE_HASH_CHUNK_SIZE)
+            if not chunk:
+                break
+            digest.update(chunk)
+            byte_count += len(chunk)
+            _run_stable_file_test_hook(
+                declared,
+                "source_image_hash_chunk",
+                byte_count,
+            )
+        _assert_stable_file_unchanged(
+            declared,
+            descriptor=descriptor,
+            before=before,
+            purpose=f"source image at line {line_number}",
+        )
+    finally:
+        os.close(descriptor)
+    _run_stable_file_test_hook(
+        declared,
+        "source_image_hash_complete",
+        byte_count,
+    )
+    return digest.hexdigest()
 
 
 def _assert_task_index_image_exists(
@@ -3394,14 +3519,15 @@ def _assert_task_index_image_exists(
     *,
     repo_root: Path,
 ) -> None:
-    image_path = resolve_working_image(
-        entry.working_image_locator,
-        layout=RuntimeLayout.for_repo(repo_root),
+    observed = _attest_source_image_sha256(
+        {"file_name": entry.working_image_locator},
+        repo_root=repo_root,
         split=entry.identity.split,
+        line_number=entry.source_line,
     )
-    if not image_path.is_file():
+    if observed != entry.image_sha256:
         raise ProjectContractError(
-            "task-index image missing at source line "
+            "task-index image hash drift at source line "
             f"{entry.source_line}: {entry.working_image_locator}"
         )
 

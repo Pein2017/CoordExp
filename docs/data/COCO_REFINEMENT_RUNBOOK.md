@@ -272,6 +272,7 @@ $RUNTIME_ROOT/{train,val}/project.json
 $RUNTIME_ROOT/{train,val}/task_index.json
 $RUNTIME_ROOT/{train,val}/working.norm.jsonl
 $RUNTIME_ROOT/{train,val}/working.coord.jsonl   # explicit derived export only
+$RUNTIME_ROOT/{train,val}/working.coord.receipt.json
 $RUNTIME_ROOT/{train,val}/queue.jsonl
 $RUNTIME_ROOT/{train,val}/journal.jsonl
 $RUNTIME_ROOT/{train,val}/images                # symlink to $IMAGE_ROOT
@@ -280,10 +281,33 @@ $RUNTIME_ROOT/label-studio/state/               # SQLite and Label Studio state
 
 `working.norm.jsonl` is always the last terminal complete editing generation,
 so it intentionally lags saved and queued Drafts. `working.coord.jsonl` is not
-automatic and may be absent or older; only a successful explicit
-`WorkingCoordMaterializer` call bound to the exact reconciled split store makes
-it a loader-ready derivative. There is currently no standalone materializer
-CLI, so do not substitute a generic converter or a private lock.
+automatic and may be absent or older; only the explicit command below, bound
+to the exact reconciled split store and schema-v3 bootstrap receipt, makes it a
+loader-ready derivative.
+
+```bash
+cd "$REPO_ROOT"
+for SPLIT in train val; do
+  PYTHONPATH="$REPO_ROOT" "$MS_PY" \
+    scripts/materialize_label_studio_coco_refinement.py \
+    --repo-root "$REPO_ROOT" \
+    --split "$SPLIT"
+  RECEIPT="$RUNTIME_ROOT/$SPLIT/working.coord.receipt.json"
+  OUTPUT="$RUNTIME_ROOT/$SPLIT/working.coord.jsonl"
+  MANIFEST="$RUNTIME_ROOT/$SPLIT/project.json"
+  OUTPUT_SHA256="$(sha256sum "$OUTPUT" | cut -d' ' -f1)"
+  GENERATION="$(jq -r '.generation' "$MANIFEST")"
+  jq -e \
+    --arg output_sha256 "$OUTPUT_SHA256" \
+    --argjson generation "$GENERATION" \
+    '.code == "label_studio.working_coord_materialized"
+      and .loader_attestation.status == "passed"
+      and .materialization.destination_sha256 == $output_sha256
+      and .materialization.generation == $generation
+      and .store.generation == $generation' \
+    "$RECEIPT"
+done
+```
 
 ## Validation
 
@@ -303,6 +327,20 @@ test "$(wc -l < "$REPO_ROOT/public_data/coco/rescale_32_1024_bbox_len12000/train
 test "$(wc -l < "$RUNTIME_ROOT/train/working.norm.jsonl")" -eq 117266
 test "$(wc -l < "$REPO_ROOT/public_data/coco/rescale_32_1024_bbox_len12000/val.norm.jsonl")" -eq 4952
 test "$(wc -l < "$RUNTIME_ROOT/val/working.norm.jsonl")" -eq 4952
+```
+
+Run the bounded real-fixture materializer/training-path probe into a new ignored
+receipt root:
+
+```bash
+cd "$REPO_ROOT"
+export MATERIALIZER_PROBE_ROOT="outputs/label_studio_coco_refinement/materializer-probes/$(date -u +%Y%m%dT%H%M%SZ)"
+PYTHONPATH="$REPO_ROOT" "$MS_PY" \
+  scripts/probes/label_studio_coco_refinement/materialize.py \
+  --output-root "$MATERIALIZER_PROBE_ROOT"
+jq -e \
+  '.code == "label_studio.materializer_probe_passed" and .output.object_ids == ["589229", "-1", "-2"]' \
+  "$REPO_ROOT/$MATERIALIZER_PROBE_ROOT/probe.json"
 ```
 
 Before the first apply, record the two source JSONL hashes outside the source

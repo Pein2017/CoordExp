@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
@@ -26,6 +27,9 @@ from src.label_studio_coco_refinement.categories import COCO80_REGISTRY
 from src.label_studio_coco_refinement.materialize import (
     CommittedGenerationReceipt,
     MATERIALIZER_VERSION,
+    OPERATOR_RECEIPT_CODE,
+    OPERATOR_RECEIPT_NAME,
+    ProjectTaskIndexSourceIdentityResolver,
     SourceTaskIdentityReceipt,
     WorkingCoordMaterializer,
 )
@@ -200,7 +204,6 @@ def test_current_v4_real_fixture_materializes_into_training_raw_example_seam(
     )
     store = bootstrap.store
     initial_manifest = json.loads(store.manifest_path.read_text())
-    initial_working_row = json.loads(store.working_path.read_text())
     restored = store.restore_draft(34)
     identity_by_object_id = {
         object_id: region_key
@@ -267,30 +270,20 @@ def test_current_v4_real_fixture_materializes_into_training_raw_example_seam(
         task_count=1,
         task_manifest_hash=initial_manifest["task_manifest_hash"],
     )
-    resolver = FakeSourceIdentityResolver(
-        [
-            SourceTaskIdentityReceipt.capture(
-                split="train",
-                image_id=34,
-                file_name=initial_working_row["file_name"],
-                width=initial_working_row["width"],
-                height=initial_working_row["height"],
-                metadata=initial_working_row["metadata"],
-                source_line=1,
-                task_row_fingerprint=_json_fingerprint(initial_working_row),
-                task_manifest_hash=generation.task_manifest_hash,
-                image_sha256=REPRESENTATIVE_TRAIN_IMAGE_SHA256,
-            )
-        ]
+    resolver = ProjectTaskIndexSourceIdentityResolver._for_bounded_probe(
+        layout,
+        "train",
+        store=store,
     )
     working_before = store.working_path.read_bytes()
 
-    receipt = WorkingCoordMaterializer(
+    operator_receipt = WorkingCoordMaterializer(
         layout,
         "train",
         store=store,
         source_identity_resolver=resolver,
-    ).materialize(generation)
+    ).materialize_current_generation()
+    receipt = operator_receipt.materialization
 
     output = layout.working_coord("train")
     (materialized_row,) = [json.loads(line) for line in output.read_text().splitlines()]
@@ -300,6 +293,24 @@ def test_current_v4_real_fixture_materializes_into_training_raw_example_seam(
     assert receipt.destination_sha256 == _file_sha256(output)
     assert receipt.row_count == 1
     assert receipt.object_count == 2
+    durable_receipt = json.loads(
+        (layout.split_root("train") / OPERATOR_RECEIPT_NAME).read_text()
+    )
+    assert durable_receipt["code"] == OPERATOR_RECEIPT_CODE
+    assert durable_receipt["loader_attestation"] == {
+        "row_count": 1,
+        "seam": "src.data.iter_raw_examples",
+        "status": "passed",
+    }
+    assert set(durable_receipt["materialization"]["summary_fingerprints"]) == {
+        "task_identity",
+        "category",
+        "object_order",
+        "geometry",
+        "image_content",
+        "metadata",
+    }
+    assert durable_receipt["store"]["generation"] == 1
     assert materialized_row["objects"][1]["coco_ann_id"] == -1
     assert materialized_row["objects"][1]["metadata"] == {
         "human_note": "current-v4-integration"
@@ -852,6 +863,109 @@ def test_stable_top_left_order_preserves_prior_rank_and_creation_ties() -> None:
         "known-late",
         "new-first",
     ]
+
+
+def test_production_source_resolver_requires_canonical_bootstrap_binding(
+    tmp_path: Path,
+) -> None:
+    layout, store, _peer, output, _fake = _store_project(tmp_path)
+    output_before = output.read_bytes()
+    resolver = ProjectTaskIndexSourceIdentityResolver(
+        layout,
+        "train",
+        store=store,
+    )
+
+    with pytest.raises(DataContractError, match="not bound to the canonical"):
+        WorkingCoordMaterializer(
+            layout,
+            "train",
+            store=store,
+            source_identity_resolver=resolver,
+        ).materialize(_store_generation_receipt(store))
+
+    assert output.read_bytes() == output_before
+
+
+@pytest.mark.parametrize("mutation", ["missing", "image_hash"])
+def test_bounded_real_resolver_rejects_frozen_identity_inventory_drift(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    layout, store, _peer, output, _fake = _store_project(tmp_path)
+    output_before = output.read_bytes()
+    task_index = json.loads(store.task_index_path.read_text())
+    if mutation == "missing":
+        task_index["entries"] = []
+    else:
+        task_index["entries"][0]["image_sha256"] = "0" * 64
+    store.task_index_path.write_text(_canonical_json(task_index) + "\n")
+    manifest = json.loads(store.manifest_path.read_text())
+    manifest["task_index_sha256"] = _file_sha256(store.task_index_path)
+    store.manifest_path.write_text(_canonical_json(manifest) + "\n")
+    resolver = ProjectTaskIndexSourceIdentityResolver._for_bounded_probe(
+        layout,
+        "train",
+        store=store,
+    )
+
+    with pytest.raises(DataContractError):
+        WorkingCoordMaterializer(
+            layout,
+            "train",
+            store=store,
+            source_identity_resolver=resolver,
+        ).materialize(_store_generation_receipt(store))
+
+    assert output.read_bytes() == output_before
+
+
+def test_operator_receipt_is_invalidated_before_durable_output_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    layout, store, _peer, output, _fake = _store_project(tmp_path)
+    resolver = ProjectTaskIndexSourceIdentityResolver._for_bounded_probe(
+        layout,
+        "train",
+        store=store,
+    )
+    materializer = WorkingCoordMaterializer(
+        layout,
+        "train",
+        store=store,
+        source_identity_resolver=resolver,
+    )
+    first = materializer.materialize_current_generation()
+    receipt_path = layout.split_root("train") / OPERATOR_RECEIPT_NAME
+    first_output = output.read_bytes()
+    assert receipt_path.is_file()
+
+    store.commit(_store_commit_request(store))
+
+    def fail_after_output_replace(stage: str) -> None:
+        if stage == "after_output_replace":
+            raise RuntimeError("simulated crash after durable output replacement")
+
+    monkeypatch.setattr(
+        materialize_module,
+        "_OPERATOR_RECEIPT_TEST_HOOK",
+        fail_after_output_replace,
+    )
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        materializer.materialize_current_generation()
+
+    assert output.read_bytes() != first_output
+    assert not os.path.lexists(receipt_path)
+    assert first.materialization.generation == 0
+
+    monkeypatch.setattr(materialize_module, "_OPERATOR_RECEIPT_TEST_HOOK", None)
+    final = materializer.materialize_current_generation()
+    durable = json.loads(receipt_path.read_text())
+    manifest = json.loads(store.manifest_path.read_text())
+    assert final.materialization.generation == manifest["generation"] == 1
+    assert durable["materialization"]["destination_sha256"] == _file_sha256(output)
+    assert durable["store"]["generation"] == manifest["generation"]
 
 
 def test_runtime_layout_is_exact_dedicated_and_split_scoped(tmp_path: Path) -> None:
