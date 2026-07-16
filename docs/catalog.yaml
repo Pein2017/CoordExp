@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-07-11
+updated: 2026-07-16
 
 entrypoints:
   human:
@@ -140,6 +140,10 @@ docs:
     - path: docs/data/PACKING.md
       title: Packing Policy
       type: reference
+      status: canonical
+    - path: docs/data/COCO_REFINEMENT_RUNBOOK.md
+      title: COCO Refinement Runbook
+      type: runbook
       status: canonical
     - path: docs/data/VISUAL_GENOME.md
       title: Visual Genome (VG) -> CoordExp JSONL

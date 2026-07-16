@@ -6,7 +6,7 @@ status: canonical
 domain: data
 summary: Router for dataset contracts, offline preparation, packing, and dataset-specific notes.
 tags: [data, datasets, jsonl]
-updated: 2026-07-11
+updated: 2026-07-16
 ---
 
 # Data & Datasets
@@ -19,7 +19,8 @@ workflow, packing policy, or dataset-specific intake caveats.
 1. [CONTRACT.md](CONTRACT.md)
 2. [PREPARATION.md](PREPARATION.md)
 3. [PACKING.md](PACKING.md)
-4. [VISUAL_GENOME.md](VISUAL_GENOME.md) only for VG-specific split, naming, and region-phrase notes
+4. [COCO_REFINEMENT_RUNBOOK.md](COCO_REFINEMENT_RUNBOOK.md) when operating the localhost COCO-80 bbox correction workflow
+5. [VISUAL_GENOME.md](VISUAL_GENOME.md) only for VG-specific split, naming, and region-phrase notes
 
 ## Page Roles
 
@@ -29,6 +30,8 @@ workflow, packing policy, or dataset-specific intake caveats.
   - offline conversion, resizing, validation, tiny splits, coord-token conversion, and handoff to training
 - [PACKING.md](PACKING.md)
   - surface-specific packing support, hard-cap behavior, cache policy, and runtime tradeoffs
+- [COCO_REFINEMENT_RUNBOOK.md](COCO_REFINEMENT_RUNBOOK.md)
+  - loopback Label Studio setup, exact max_len12000 train/val bootstrap, Draft/batch operation, ROI profiles, recovery, validation, and runtime-only rollback
 - [VISUAL_GENOME.md](VISUAL_GENOME.md)
   - Visual Genome object / region-phrase intake notes that are not already covered by the shared preparation workflow
 
@@ -47,6 +50,7 @@ workflow, packing policy, or dataset-specific intake caveats.
 - "What are the current packing defaults for this training surface?"
 - "What happens if a raw JSONL sample exceeds `global_max_length`?"
 - "How should I handle multi-dataset mixing after runtime fusion removal?"
+- "How do I launch, operate, recover, or roll back COCO refinement?"
 
 ## Primary current code handles
 
