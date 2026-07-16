@@ -1152,6 +1152,9 @@ class WorkingDatasetStore:
         allowed_preexisting = {".commit.lock", ".queue.lock"}
         if BOOTSTRAP_TASK_INDEX_BUILD_KEY in bound_extra_fingerprints:
             allowed_preexisting.add(BOOTSTRAP_TASK_INDEX_DIRECTORY_NAME)
+        if images_link.is_symlink():
+            _validate_managed_link(images_link, image_root)
+            allowed_preexisting.add(images_link.name)
         unexpected = [
             path.name
             for path in split_dir.iterdir()
@@ -1159,7 +1162,8 @@ class WorkingDatasetStore:
         ]
         if unexpected:
             raise ManifestDriftError(f"partial bootstrap state: {sorted(unexpected)}")
-        os.symlink(image_root, images_link, target_is_directory=True)
+        if not images_link.is_symlink():
+            os.symlink(image_root, images_link, target_is_directory=True)
         _validate_managed_link(images_link, image_root)
 
         task_digest = hashlib.sha256()
@@ -4336,7 +4340,13 @@ def _working_image_locator(
 
 
 def _validate_managed_link(link: Path, expected_target: Path) -> None:
-    if not link.is_symlink() or link.resolve(strict=True) != expected_target:
+    if not link.is_symlink():
+        raise ManifestDriftError("managed_image_link")
+    try:
+        resolved_target = link.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise ManifestDriftError("managed_image_link") from exc
+    if resolved_target != expected_target:
         raise ManifestDriftError("managed_image_link")
 
 

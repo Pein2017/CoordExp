@@ -1821,6 +1821,74 @@ def test_bootstrap_is_idempotent_source_safe_and_yields_stable_single_annotation
     assert manifest["task_policy"]["alternate_annotations_enabled"] is False
 
 
+def test_bootstrap_reuses_exact_preexisting_managed_image_link(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+    tmp_path: Path,
+) -> None:
+    store, spec, _ = project
+    adapter_spec = replace(spec, runtime_root=tmp_path / "adapter-runtime")
+    split_dir = adapter_spec.runtime_root / adapter_spec.split
+    split_dir.mkdir(parents=True)
+    images_link = split_dir / "images"
+    images_link.symlink_to(adapter_spec.image_root.resolve(), target_is_directory=True)
+    link_inode = images_link.lstat().st_ino
+
+    result = WorkingDatasetStore.bootstrap(
+        adapter_spec,
+        annotation_verifier=store.annotation_verifier,
+        inference_receipt_resolver=store.inference_receipt_resolver,
+    )
+
+    assert result.created is True
+    assert images_link.is_symlink()
+    assert images_link.resolve(strict=True) == adapter_spec.image_root.resolve()
+    assert images_link.lstat().st_ino == link_inode
+
+
+@pytest.mark.parametrize(
+    "preexisting_kind",
+    ["wrong_symlink", "broken_symlink", "file", "directory", "other_residue"],
+)
+def test_bootstrap_rejects_and_preserves_non_exact_preexisting_state(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+    tmp_path: Path,
+    preexisting_kind: str,
+) -> None:
+    store, spec, _ = project
+    adapter_spec = replace(
+        spec,
+        runtime_root=tmp_path / f"adapter-runtime-{preexisting_kind}",
+    )
+    split_dir = adapter_spec.runtime_root / adapter_spec.split
+    split_dir.mkdir(parents=True)
+    images_link = split_dir / "images"
+    residue = images_link
+    if preexisting_kind == "wrong_symlink":
+        wrong_target = tmp_path / "wrong-images"
+        wrong_target.mkdir()
+        images_link.symlink_to(wrong_target, target_is_directory=True)
+    elif preexisting_kind == "broken_symlink":
+        images_link.symlink_to(tmp_path / "missing-images", target_is_directory=True)
+    elif preexisting_kind == "file":
+        images_link.write_text("not a managed link", encoding="utf-8")
+    elif preexisting_kind == "directory":
+        images_link.mkdir()
+    else:
+        residue = split_dir / "unexpected"
+        residue.write_text("partial bootstrap state", encoding="utf-8")
+    residue_inode = residue.lstat().st_ino
+
+    with pytest.raises(ManifestDriftError):
+        WorkingDatasetStore.bootstrap(
+            adapter_spec,
+            annotation_verifier=store.annotation_verifier,
+            inference_receipt_resolver=store.inference_receipt_resolver,
+        )
+
+    assert residue.lstat().st_ino == residue_inode
+    assert not (split_dir / "project.json").exists()
+
+
 @pytest.mark.parametrize(
     "field,replacement",
     [
