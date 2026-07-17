@@ -9,10 +9,12 @@ The target remains diagnosis, not a final architecture. The completed program
 has progressed from input-level spatial-policy controls through fixed-prefix
 mode fragmentation, phrase-geometry transition state, fixed-encoding
 post-vision routing, query-phase decomposition, and one bounded late pre-`x1`
-geometry-owner basin switch. The newest unit adds strong case-level
-`x1`-to-`x2` geometry transport, a fork-part late-extent shortcut, and
-cross-row transition sensitivity without proving a physical owner or correct
-covered-set update. It has not established autonomous selection, order-free
+geometry-owner basin switch. The newest native sibling-row unit finds no safe
+greedy branch-value mismatch and one numerically robust, state-local reciprocal
+bowl-carrot successor switch. Because the positive owners are spatially nested,
+two other states reject reciprocity, and one dense-person state is unresolved,
+it establishes executable cross-row state rather than a general physical-object
+covered set. The program has not established autonomous selection, order-free
 commit or coverage, clean-state synthesis, or a stable training intervention.
 The weekly report and research compass own the current synthesis and next-
 discriminator boundary.
@@ -68,6 +70,8 @@ durable program reading path below.
 43. [Fixed-prefix complete-box results and bounded coordinate-transport verdict](experiments/2026-07-16-fixed-prefix-complete-box-coherence-and-coordinate-release-factorial/results.md)
 44. [Object-specific geometry transport, decision-phase, and cross-row influence-horizon unit](experiments/2026-07-17-object-specific-geometry-transport-and-cross-row-influence-horizon/unit.md)
 45. [Wave-One common-support and off-support grammar results](experiments/2026-07-17-object-specific-geometry-transport-and-cross-row-influence-horizon/results.md)
+46. [Native sibling-row branch value and commit crossover](experiments/2026-07-17-native-sibling-row-branch-value-and-commit-crossover/unit.md)
+47. [Native sibling-row branch-value and commit-crossover results](experiments/2026-07-17-native-sibling-row-branch-value-and-commit-crossover/results.md)
 
 The review and readiness amendment preserve the pre-execution gate. The
 completed unit and results record own current lifecycle and evidence status.

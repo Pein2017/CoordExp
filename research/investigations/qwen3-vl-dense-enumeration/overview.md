@@ -442,6 +442,18 @@ support floor. This is descriptive off-support translation-grammar
 compatibility, not an admitted donor, grammar, owner, phase, or coverage
 handle. Later waves, training, and architecture promotion do not run.
 
+The completed [Native Sibling-Row Branch Value and Commit Crossover
+results](experiments/2026-07-17-native-sibling-row-branch-value-and-commit-crossover/results.md)
+replace forced coordinates with complete rows naturally emitted from exact
+shared parent prefixes. No released state produces a positive,
+safety-preserving Greedy Branch-Value Gap at Horizon Four. One row-zero
+bowl-carrot state has a strict reciprocal immediate-successor effect across all
+231 exact-row pairs and reproduces under full-model 32-bit floating point. The
+two owners occupy nearly identical spatial support, two other states reject
+reciprocity, and one dense-person state is refused. The bounded conclusion is
+executable native row-conditioned successor state, not a general
+physical-object covered set.
+
 ## Completed Evidence Units
 
 | Unit | Status | Purpose |
@@ -468,3 +480,4 @@ handle. Later waves, training, and architecture promotion do not run.
 | [Human-Audited Rare-Object Trajectory Genealogy and Causal Branch Replay](experiments/2026-07-16-human-audited-rare-object-trajectory-genealogy/unit.md) | redirected after partial verified evidence; manual review complete; [results](experiments/2026-07-16-human-audited-rare-object-trajectory-genealogy/results.md) | Finds real Common Objects in Context 80-category support for all 119 purposive unmatched candidates, but no frozen unique-entity ledger; semantic descriptions are usually sound while geometry frequently covers parts, multiple instances, or axis-wise mixtures. |
 | [Fixed-Prefix Complete-Box Coherence and Progressive Coordinate-Release Factorial](experiments/2026-07-16-fixed-prefix-complete-box-coherence-and-coordinate-release-factorial/unit.md) | complete; evidence verified; [results](experiments/2026-07-16-fixed-prefix-complete-box-coherence-and-coordinate-release-factorial/results.md); architecture and training not promoted | Establishes strong `x1`-to-`x2` geometry transport in one dense-chair state, a strong case-level fork part-sized or late-extent basin without isolating its cause, and cross-row transition sensitivity; physical owner state and correct uncovered redistribution remain unproved. |
 | [Object-Specific Geometry Transport, Decision Phase, and Cross-Row Influence Horizon](experiments/2026-07-17-object-specific-geometry-transport-and-cross-row-influence-horizon/unit.md) | complete; evidence verified; stopped after Wave One common-support failure; [results](experiments/2026-07-17-object-specific-geometry-transport-and-cross-row-influence-horizon/results.md); architecture and training not promoted | Finds sharp donor-specific early-coordinate basins and coherent off-support coordinate-translation behavior, but no admitted common-support contrast; later phase and cross-row waves do not run. |
+| [Native Sibling-Row Branch Value and Commit Crossover](experiments/2026-07-17-native-sibling-row-branch-value-and-commit-crossover/unit.md) | complete; evidence verified; [results](experiments/2026-07-17-native-sibling-row-branch-value-and-commit-crossover/results.md); architecture and training not promoted | Finds no safe greedy branch-value handle and one numerically robust reciprocal successor switch between spatially nested bowl and carrot owners; establishes native cross-row state but not a general physical-instance ledger. |

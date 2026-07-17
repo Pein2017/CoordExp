@@ -123,6 +123,17 @@ Markdown links, rather than this diagram, are the durable graph edges.
   continuation pulse rather than source-specific object control.
 - Native prefix state produces a content-sensitive short-term transition, but
   no stable order-free object ledger has been demonstrated.
+- Native complete sibling rows from exact shared parent prefixes causally alter
+  the immediate successor distribution. One row-zero bowl-carrot state passes
+  strict reciprocal crossover across all 231 exact-row pairs and reproduces
+  under full-model 32-bit floating point, while image `12576` and image `7574`
+  reject reciprocity and one dense-person state is refused. The positive boxes
+  are nearly nested, so this establishes executable row-conditioned successor
+  state, not a general physical-object covered set.
+- No non-greedy sibling provides a positive, safety-preserving Greedy
+  Branch-Value Gap at Horizon Four across the three released states. Native
+  sibling selection changes trajectories, but this panel supplies no
+  branch-value training target.
 - At exact prefix state 56 on image `12576`, repeated one-row sampling exposes
   two valid object modes: the target pizza and a competing left cup. The same
   target disappears at the greedy-terminal state; an independent chair case
@@ -244,6 +255,9 @@ Markdown links, rather than this diagram, are the durable graph edges.
   numerics, padding or attention-mask semantics, multimodal position handling,
   request collation, or unintended cross-request interaction.
 - An explicit slot, ledger, cursor, or new forward architecture is necessary.
+- Whether reciprocal switching survives three spatially non-overlapping,
+  same-category owners and can redistribute mass backward as well as forward
+  in geometry-sorted rank.
 
 ## Historical Late-Middle Language-Layer Evidence
 
@@ -284,11 +298,11 @@ cross-row coverage.
 | Input-level spatial restriction changes one object opportunity | Bounded support under hard eligibility; the count-balanced all-keys-readable soft cross operator is now closed because both matched-owner controls fail, so its crossed arms cannot adjudicate the hard asymmetry | Hard exclusion and its abrupt phase switch may manufacture the asymmetry; the historical uniform-dose operator and current query-phase-restricted operator cannot be pooled into one trajectory | No immediate successor is active. A historical-uniform-operator `3.9060049` endpoint would require a fresh separately authorized execution; artifact-only cross-operator pooling is rejected. |
 | Safe final masked policy improves enumeration | Ruled out under the executed protocol | Equal-call full-image sampling is at least as useful after aggregation | Revisit only after a new masking mechanism avoids retention and output-expansion failures. |
 | Fixed-prefix next-object probability is fragmented across several real objects | Supported at one exact state; not population-estimated | Some other bagging rescues may still arise only from earlier trajectory divergence | Replicate only when a future route decision requires prevalence, not as the immediate discriminator. |
-| Prefix state is an executable but fragile traversal state | Phrase-geometry coherence controls bounded repair behavior, but the dramatic same-class successor is confounded by one broad `bfloat16` execution branch; the three recurrent micro-splits are now classified as low-amplitude same-object coordinate rank changes | The isolated predecessor remains a real broad numerical counterexample, while the underlying semantic commit question remains unresolved | No active successor. The later fixed-encoding and residual-portability chain supersedes the earlier instruction to return to same-encoding visual eligibility; if separately authorized, use the `x1` causal-mediation discriminator below. |
+| Prefix state is an executable but fragile traversal state | Supported locally: complete natural rows change the immediate successor, and one nested bowl-carrot state has a strict reciprocal effect stable in full-model `float32`; two other states reject reciprocity and a dense-person state is refused | Geometry-sorted frontier explains the one-way pizza-to-cup state; semantic or binary complementation explains the nested bowl-carrot state | If separately authorized, estimate a three-owner, same-category, non-overlapping immediate transition matrix with fully resolved physical ownership. |
 | Late-middle residual states implement phase-specific decisions | Bounded one-sided support: an eligible clock-description path is conditionally portable, and one same-description paired-object state after decoder block `23` switches the unrestricted geometry owner through an `x1` basin change where the trusted block-`13` control does not | The portable state may select only the first coordinate, with the emitted `x1` and native autoregressive computation recovering the rest of the box; one image and one direction do not establish a general object state | No successor is active. If separately authorized, mediate `x1` by forcing paired `x1` without replacement and forcing baseline `x1` under paired-state replacement, then compare later coordinates and final owner. |
 | Early coordinate choice establishes a stable complete-object owner | Mixed and unresolved: the prior dense-chair result has `63/64` released `x2` edges follow real `x1` cues; the new full-`float32` four-arm sweep is monotonically translation-grammar-compatible, but only one arm passes its frozen history-support floor. The image-`7818` donor pair likewise has no branch-supported common `x1,y1` history. | The coherent forced suffix may be off-manifold extrapolation; native box grammar, visual boundaries, geometry-sorted route state, and physical-object state remain unseparated. | [Wave-One results](experiments/2026-07-17-object-specific-geometry-transport-and-cross-row-influence-horizon/results.md) close the current hard-clamp route without phase or cross-row escalation. Any future unit must establish intervention overlap before opening downstream outcomes; do not repair this unit post hoc. |
 | Incomplete dense annotations teach conservative omission and premature termination | Plausible | Sequence-mode concentration or weak visual evidence is the dominant cause | Compare exhaustive labels with original labels and controlled thinning on the same images. |
-| Bagging support can be concentrated into deterministic greedy traversal | Speculative; a fixed-prefix signature exists but no endogenous training target is identified | Bagging may expose modes that remain trajectory-specific and cannot be safely concentrated by the current supervision | Resolve the cross-row prefix factor before proposing any 256-image training screen. |
+| Bagging support can be concentrated into deterministic greedy traversal | Speculative; natural sibling rows expose executable successor state, but no safe positive greedy branch-value gap appears in the released panel | Bagging may expose valid modes whose first-row choice does not improve finite-horizon unique-object value, or whose useful transition is state-specific | Resolve physical commit versus frontier and semantic complement with a three-owner same-category transition matrix before proposing any 256-image training screen. |
 | A persistent ledger, object slot, or external detector is necessary | Unsupported and not authorized | Native prefix state plus better data and transition training may suffice | Consider only after transition shaping fails despite reliable object support and complete labels. |
 
 The completed [Fixed-Prefix Complete-Box Coherence and Progressive Coordinate-
@@ -303,7 +317,23 @@ failing to establish correct uncovered-object redistribution.
 
 ## Current Discriminator Queue
 
-No active successor is promoted. The completed [Object-Specific Geometry
+The completed [Native Sibling-Row Branch Value and Commit Crossover
+results](experiments/2026-07-17-native-sibling-row-branch-value-and-commit-crossover/results.md)
+replace off-support coordinate surgery with recurrent complete rows from exact
+native parent prefixes. They find no safe positive greedy branch-value handle.
+One nested bowl-carrot row-zero state has a strict reciprocal successor effect
+that survives full-model `float32`, but two other states reject reciprocity and
+one is refused. No training, architecture, hidden-state, or influence-horizon
+successor is active inside that closed unit.
+
+The highest-information candidate for separate authorization is a one-step
+three-owner transition matrix using spatially non-overlapping instances of the
+same category and fully resolved physical ownership. It distinguishes
+instance-specific commit from geometry-sorted frontier, category
+anti-repetition, and trivial binary complementation without requiring a long
+suffix horizon.
+
+The completed [Object-Specific Geometry
 Transport, Decision Phase, and Cross-Row Influence Horizon
 results](experiments/2026-07-17-object-specific-geometry-transport-and-cross-row-influence-horizon/results.md)
 stop after Wave One. Image `7818` has no donor-compatible common `x1,y1`
@@ -448,11 +478,12 @@ promote test for learnability, not a final model, broad hyperparameter search,
 or paper result.
 
 Current gate decision: **not authorized**. Controlled object support and tight
-persistent-hard geometry donors pass the first gate, and one late residual
-state causally switches a same-description spatial owner. The positive state is
-still privileged, one-way, and almost entirely mediated at `x1`; no clean-
-feature synthesis target or preservation-safe training arm is frozen. A safe
-label cohort also remains absent.
+persistent-hard geometry donors pass the first gate, and one natural nested
+bowl-carrot state proves a numerically stable cross-row successor effect. No
+released state provides a safety-preserving positive greedy branch-value gap,
+the successor effect is not yet separated from frontier or semantic
+complementation, no clean-feature synthesis target or preservation-safe
+training arm is frozen, and a safe label cohort remains absent.
 
 ## Demoted or Rejected Claims
 
@@ -467,6 +498,8 @@ label cohort also remains absent.
 - One owner-specific `x1` basin switch is not a portable four-coordinate object
   representation or a general instance-binding mechanism.
 - A stable native order-free coverage ledger has not been established.
+- One reciprocal transition between two nearly nested, cross-category owners
+  is not evidence for a spatially indexed physical-object covered set.
 - A null under raw committed-object pixel erasure is not proof of visual
   independence, a purely textual transducer, or a native commit ledger.
 - A physical batch-four successor is not an intrinsic native commit capability
