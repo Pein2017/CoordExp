@@ -1349,6 +1349,81 @@ def test_restore_drafts_uses_one_barrier_and_preserves_requested_order(
     assert state == {"active": False, "entries": 2, "scans": 2}
 
 
+def test_task_navigation_random_reads_only_the_requested_row(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store, _, _ = project
+    baseline = store.restore_draft(2)
+    original_parse = store_module._parse_working_jsonl_row
+    parsed_indexes: list[int] = []
+
+    def tracked_parse(raw: bytes, source_row_index: int) -> dict[str, Any]:
+        parsed_indexes.append(source_row_index)
+        return original_parse(raw, source_row_index)
+
+    def forbidden_scan(*_args: Any, **_kwargs: Any) -> dict[int, dict[str, Any]]:
+        raise AssertionError("task navigation must not scan the complete working file")
+
+    monkeypatch.setattr(store_module, "_parse_working_jsonl_row", tracked_parse)
+    monkeypatch.setattr(store, "_scan_attested_restore_rows", forbidden_scan)
+
+    restored = store.restore_task_navigation(
+        2,
+        projected_generation=baseline.generation,
+        projected_row_hash=baseline.row_hash,
+    )
+
+    assert restored == baseline
+    assert parsed_indexes == [1]
+
+
+def test_task_navigation_rejects_same_generation_file_drift(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    baseline = store.restore_draft(1)
+    store.working_path.write_bytes(store.working_path.read_bytes() + b"drift")
+
+    with pytest.raises(RecoveryError, match="navigation index attestation"):
+        store.restore_task_navigation(
+            1,
+            projected_generation=baseline.generation,
+            projected_row_hash=baseline.row_hash,
+        )
+
+
+def test_preopened_navigation_index_rebuilds_after_generation_advance(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    worker, _, _ = project
+    peer = _reopen(worker)
+    prior = peer.restore_draft(1)
+    peer.restore_task_navigation(
+        1,
+        projected_generation=prior.generation,
+        projected_row_hash=prior.row_hash,
+    )
+
+    worker.commit(_request(worker, commit_id="navigation-generation", image_id=1))
+    later = worker.restore_draft(3)
+    restored_later = peer.restore_task_navigation(
+        3,
+        projected_generation=later.generation,
+        projected_row_hash=later.row_hash,
+    )
+    current = worker.restore_draft(1)
+    restored = peer.restore_task_navigation(
+        1,
+        projected_generation=current.generation,
+        projected_row_hash=current.row_hash,
+    )
+
+    assert restored_later == later
+    assert restored == current
+    assert restored.generation == 1
+
+
 @pytest.mark.parametrize(
     ("image_ids", "error_type", "message"),
     [

@@ -306,6 +306,11 @@ source and image identities.
 - **[Risk] Browser and server disagree after a lost save response.** → Make PUT
   idempotent by client mutation ID, expose authoritative GET, and use monotonic
   CAS revisions; never guess success.
+- **[Risk] Per-task authority checks rescan the full working JSONL.** → Build an
+  ephemeral byte-span index during the existing full startup/generation
+  attestation, bind it to generation, working hash, line count, and file stat,
+  and random-read only task-navigation rows. Keep generic restore and Commit
+  paths fully attested and fail closed on same-generation file drift.
 - **[Risk] Server-side ROI insertion changes the legacy browser-first proof
   sequence.** → Preserve target/revision/receipt linkage and validate the final
   saved semantic hash in the same transaction; test response loss and restart.

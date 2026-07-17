@@ -1049,6 +1049,7 @@ class WorkingDatasetStore:
         self.inference_receipt_resolver = inference_receipt_resolver
         self._fault_injector = fault_injector
         self._journal_index_lock = threading.RLock()
+        self._navigation_index_lock = threading.RLock()
         self._records: list[dict[str, Any]] = []
         self._region_to_id: dict[tuple[int, str], int] = {}
         self._id_to_region: dict[int, tuple[int, str]] = {}
@@ -1059,6 +1060,11 @@ class WorkingDatasetStore:
         self._row_image_cache: dict[int, int] = {}
         self._row_object_ids_cache: dict[int, set[int]] = {}
         self._row_hash_cache: dict[int, str] = {}
+        self._navigation_row_spans: dict[int, tuple[int, int]] = {}
+        self._navigation_file_signature: tuple[int, int, int, int, int] | None = None
+        self._navigation_generation = -1
+        self._navigation_working_sha256 = ""
+        self._navigation_line_count = 0
         self._cache_generation = -1
         self._cache_working_sha256 = ""
         self._cache_line_count = 0
@@ -1068,7 +1074,7 @@ class WorkingDatasetStore:
         else:
             self._reload_journal_index()
         self._load_task_index()
-        self._load_row_cache()
+        self._load_row_cache(require_publication_attestation=recover)
 
     @classmethod
     def bootstrap(
@@ -3173,7 +3179,7 @@ class WorkingDatasetStore:
                 )
 
             requested = {image_id, *expected_after_rows}
-            current_rows = self._scan_attested_restore_rows(requested, manifest)
+            current_rows = self._read_indexed_navigation_rows(requested, manifest)
             for member_image_id, expected_after in expected_after_rows.items():
                 current = current_rows.get(member_image_id)
                 if current != expected_after:
@@ -4323,28 +4329,135 @@ class WorkingDatasetStore:
             image_to_index[image_id] = expected_index
         self._source_row_by_image = image_to_index
 
-    def _load_row_cache(self) -> None:
+    def _load_row_cache(
+        self, *, require_publication_attestation: bool = True
+    ) -> None:
         images: dict[int, int] = {}
         object_ids: dict[int, set[int]] = {}
         hashes: dict[int, str] = {}
-        for source_row_index, row, _ in self._iter_rows():
-            image_id = int(row.get("image_id", -1))
-            if self._source_row_by_image.get(image_id) != source_row_index:
-                raise RecoveryError("working source row index attestation failed")
-            images[source_row_index] = image_id
-            object_ids[source_row_index] = {
-                int(obj["coco_ann_id"]) for obj in row["objects"]
-            }
-            hashes[source_row_index] = sha256_json(row)
+        spans: dict[int, tuple[int, int]] = {}
+        digest = hashlib.sha256()
+        offset = 0
+        with self.working_path.open("rb") as handle:
+            before_signature = _stat_signature(os.fstat(handle.fileno()))
+            for source_row_index, raw in enumerate(handle):
+                digest.update(raw)
+                spans[source_row_index] = (offset, len(raw))
+                offset += len(raw)
+                row = _parse_working_jsonl_row(raw, source_row_index)
+                image_id = int(row.get("image_id", -1))
+                if self._source_row_by_image.get(image_id) != source_row_index:
+                    raise RecoveryError("working source row index attestation failed")
+                images[source_row_index] = image_id
+                object_ids[source_row_index] = {
+                    int(obj["coco_ann_id"]) for obj in row["objects"]
+                }
+                hashes[source_row_index] = sha256_json(row)
+            after_signature = _stat_signature(os.fstat(handle.fileno()))
         manifest = self._read_manifest()
-        if len(images) != int(manifest.get("working_line_count", -1)):
-            raise RecoveryError("working input line-count attestation failed")
+        path_signature = _stat_signature(self.working_path.stat())
+        if before_signature != after_signature or after_signature != path_signature:
+            raise RecoveryError("working file changed while building row cache")
+        publication_attested = (
+            len(images) == int(manifest.get("working_line_count", -1))
+            and digest.hexdigest() == manifest.get("working_sha256")
+        )
+        if require_publication_attestation and not publication_attested:
+            raise RecoveryError("working input hash/line-count attestation failed")
         self._row_image_cache = images
         self._row_object_ids_cache = object_ids
         self._row_hash_cache = hashes
+        if publication_attested:
+            self._navigation_row_spans = spans
+            self._navigation_file_signature = path_signature
+            self._navigation_generation = int(manifest["generation"])
+            self._navigation_working_sha256 = str(manifest["working_sha256"])
+            self._navigation_line_count = len(images)
         self._cache_generation = int(manifest["generation"])
         self._cache_working_sha256 = str(manifest["working_sha256"])
         self._cache_line_count = len(images)
+
+    def _ensure_navigation_row_spans(self, manifest: Mapping[str, Any]) -> None:
+        """Keep one fully attested random-access index per published generation."""
+
+        with self._navigation_index_lock:
+            self._ensure_navigation_row_spans_locked(manifest)
+
+    def _ensure_navigation_row_spans_locked(
+        self, manifest: Mapping[str, Any]
+    ) -> None:
+        """Validate or rebuild the navigation index under the process lock."""
+
+        published = (
+            int(manifest["generation"]),
+            str(manifest["working_sha256"]),
+            int(manifest["working_line_count"]),
+        )
+        cached = (
+            self._navigation_generation,
+            self._navigation_working_sha256,
+            self._navigation_line_count,
+        )
+        if published == cached:
+            if self._navigation_file_signature != _stat_signature(
+                self.working_path.stat()
+            ):
+                raise RecoveryError(
+                    "working file changed after navigation index attestation"
+                )
+            return
+        if published[0] <= self._navigation_generation:
+            raise RecoveryError("navigation index publication attestation drifted")
+
+        self._load_row_cache()
+        refreshed = self._read_manifest()
+        if (
+            int(refreshed["generation"]),
+            str(refreshed["working_sha256"]),
+            int(refreshed["working_line_count"]),
+        ) != published:
+            raise RecoveryError("working publication changed while rebuilding index")
+
+    def _read_indexed_navigation_rows(
+        self,
+        requested_image_ids: set[int],
+        manifest: Mapping[str, Any],
+    ) -> dict[int, dict[str, Any]]:
+        """Random-read rows from the fully attested current-generation index."""
+
+        self._ensure_navigation_row_spans(manifest)
+        expected_signature = self._navigation_file_signature
+        if expected_signature is None:
+            raise RecoveryError("navigation index is unavailable")
+        rows: dict[int, dict[str, Any]] = {}
+        with self.working_path.open("rb") as handle:
+            if _stat_signature(os.fstat(handle.fileno())) != expected_signature:
+                raise RecoveryError("working file changed before navigation read")
+            for image_id in requested_image_ids:
+                source_row_index = self._source_row_by_image.get(image_id)
+                if source_row_index is None:
+                    raise StaleCommitError(f"unknown image_id: {image_id}")
+                span = self._navigation_row_spans.get(source_row_index)
+                if span is None:
+                    raise RecoveryError("navigation row is absent from attested index")
+                offset, length = span
+                handle.seek(offset)
+                raw = handle.read(length)
+                if len(raw) != length or not raw.endswith(b"\n"):
+                    raise RecoveryError("navigation row span is invalid")
+                row = _parse_working_jsonl_row(raw, source_row_index)
+                if (
+                    row.get("image_id") != image_id
+                    or self._row_image_cache.get(source_row_index) != image_id
+                    or sha256_json(row) != self._row_hash_cache.get(source_row_index)
+                ):
+                    raise RecoveryError("navigation row attestation failed")
+                rows[image_id] = row
+            if _stat_signature(os.fstat(handle.fileno())) != expected_signature:
+                raise RecoveryError("working file changed during navigation read")
+        if _stat_signature(self.working_path.stat()) != expected_signature:
+            raise RecoveryError("working file changed during navigation read")
+        return rows
 
     def _refresh_row_cache_from_journal(self, manifest: Mapping[str, Any]) -> None:
         target_generation = int(manifest["generation"])
@@ -4895,6 +5008,16 @@ def _validate_split(split: str) -> str:
     if split not in {"train", "val"}:
         raise ValidationError("split must be 'train' or 'val'")
     return split
+
+
+def _stat_signature(value: os.stat_result) -> tuple[int, int, int, int, int]:
+    return (
+        value.st_dev,
+        value.st_ino,
+        value.st_size,
+        value.st_mtime_ns,
+        value.st_ctime_ns,
+    )
 
 
 def _is_sha256(value: Any) -> bool:

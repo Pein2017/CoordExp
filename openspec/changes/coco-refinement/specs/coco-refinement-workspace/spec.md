@@ -55,6 +55,14 @@ process restart.
 - **WHEN** a same-split batch is queued, running, or reconciling
 - **THEN** valid Draft saves, task reads, and navigation remain available without waiting for the batch to publish
 
+#### Scenario: Repeated interaction within one working generation
+- **WHEN** the operator repeatedly reads or saves tasks after the working JSONL has been fully attested for the current generation
+- **THEN** task navigation reads only the indexed target row, retains generation and row-hash checks, and does not rescan the complete working JSONL for each gesture
+
+#### Scenario: Working JSONL changes behind the navigation index
+- **WHEN** the working file signature changes without a matching published generation
+- **THEN** navigation fails closed instead of silently rebuilding against uncommitted or externally modified bytes
+
 #### Scenario: Service restarts after Draft response loss
 - **WHEN** SQLite committed a mutation but the browser did not receive its response
 - **THEN** retry or authoritative reload resolves the mutation by its idempotency identity and does not duplicate or discard objects
