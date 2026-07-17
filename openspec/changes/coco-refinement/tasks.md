@@ -1,9 +1,9 @@
 ## 1. Native Workspace Foundation
 
 - [x] 1.1 Record the approved replacement decisions: native norm1000 Drafts with no Label Studio Draft migration, complete train/val indexes plus sparse Draft rows, simple asynchronous Commit, human-loop-first UAT, real ROI second, and legacy fallback isolation.
-- [ ] 1.2 Record the parent/nested legacy commit identities and archive branch in a durable research receipt; prove the tracked Cypress config is restored and keep the AgentGuard-blocked untracked harness outside every commit.
-- [ ] 1.3 Add interface-level failing tests for native object canonicalization: strict norm1000 geometry, official sparse COCO-80 IDs, source/new/ROI stable keys, positive-ID preservation, metadata allowlist, deterministic semantic hash, duplicate rejection, and presentation exclusion.
-- [ ] 1.4 Implement `src/coco_refinement` native object/Draft/task models and canonicalizer without Django or Label Studio imports; adapt canonical regions into the existing `AuthoritativeDraftSnapshot`/store boundary.
+- [x] 1.2 Record the parent/nested legacy commit identities and archive branch in a durable research receipt; prove the tracked Cypress config is restored and keep the AgentGuard-blocked untracked harness outside every commit.
+- [x] 1.3 Add interface-level failing tests for native object canonicalization: strict norm1000 geometry, official sparse COCO-80 IDs, source/new/ROI stable keys, positive-ID preservation, metadata allowlist, deterministic semantic hash, duplicate rejection, and presentation exclusion.
+- [x] 1.4 Implement `src/coco_refinement` native object/Draft/task models and canonicalizer without Django or Label Studio imports; adapt canonical regions into the existing `AuthoritativeDraftSnapshot`/store boundary.
 - [ ] 1.5 Add failing transaction tests and implement the SQLite schema/repository for projects, complete compact task identities, sparse Drafts, monotonic CAS revisions, idempotent mutation IDs, current-generation/base-row bindings, and restart durability.
 - [ ] 1.6 Add failing bootstrap/image-boundary tests and implement exact max_len12000 train/val indexing, working-store bootstrap, validated shared-image links, allowlisted image resolution, traversal/symlink rejection, idempotent restart, and source/manifest drift failure.
 - [ ] 1.7 Execute a bounded then full-index bootstrap/open/restart probe; record task counts, source/image identities, runtime-root bytes, SQLite row counts, and representative task latency without imposing a throughput optimization gate.
