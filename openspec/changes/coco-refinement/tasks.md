@@ -18,7 +18,7 @@
 - [x] 2.4 Add idempotent full-Draft PUT/GET APIs with strict shape/CAS validation, response-loss retry, committed-baseline retirement, conflict payloads, and source/working authority rechecks.
 - [x] 2.5 Add Commit/status/project-state APIs that flush/capture all pending same-split Drafts, return only after durable enqueue, expose queued/running/reconciling/terminal states, and never block Draft reads/writes/navigation on publication.
 - [x] 2.6 Execute multi-task human-only batch probes with a deliberately paused worker, later edits to captured/unrelated tasks, lost enqueue/status responses, invalid all-or-nothing members, terminal exact/newer Drafts, restart reconciliation, and unchanged source/images.
-- [ ] 2.7 Gate Wave 2 with targeted unit/API/recovery tests, one full-size small-member Commit, strict OpenSpec validation, vendor-import residue checks, and separate engineering plus intent-contract audits.
+- [x] 2.7 Gate Wave 2 with targeted unit/API/recovery tests, one full-size small-member Commit, strict OpenSpec validation, vendor-import residue checks, and separate engineering plus intent-contract audits.
 
 ## 3. Lightweight Human Annotation Gate
 
