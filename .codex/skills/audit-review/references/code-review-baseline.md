@@ -46,6 +46,23 @@ skip formatting or lint issues already enforced by tooling.
 - **Artifact amnesia**: behavior changes without enough resolved config,
   manifest, metric, or provenance evidence to reproduce and interpret it.
 
+## Complexity And Proportionality
+
+- Search the current repository owner, native platform or standard library,
+  and installed dependencies before approving a new abstraction. A shorter
+  replacement is acceptable only when it preserves research semantics,
+  validation, ordering, compatibility, and provenance.
+- Lines of code are evidence of review surface, not an optimization objective.
+  Accept complexity that protects a real contract; classify unsupported
+  complexity as `narrow`, `drop`, or `probe` rather than demanding cosmetic
+  compression.
+- Before declaring a definition unused, inspect direct callers, imports,
+  re-exports, configuration, reflection, and dynamic loading where plausible.
+  Use a narrow runtime probe when static evidence cannot decide the question.
+- Distinguish duplicated current authority from preserved provenance. Remove or
+  consolidate the former; retain source reviews, audits, and immutable receipts
+  while assigning one current semantic owner.
+
 ## Axis Discipline
 
 Place each finding on the axis it actually supports:

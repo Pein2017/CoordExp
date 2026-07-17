@@ -48,6 +48,11 @@ Choose the smallest form:
 - docs or agent metadata: authority, delegation, communication, or role guidance;
 - skip: one-off, sensitive, ambiguous, poorly evidenced, or overlapping.
 
+When evaluating an external implementation workflow, use a benchmark only if
+it can change a durable routing or process decision. Include representative
+expansion-prone work and a lean negative control, require independent contract
+and quality adjudication, and never treat raw lines of code as adoption proof.
+
 ## Output First
 
 Before creating assets, give a compact shortlist: workflow, dated evidence,

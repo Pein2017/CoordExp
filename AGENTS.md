@@ -13,16 +13,28 @@
 - Ask only when the choice changes research meaning, is costly/destructive, publishes externally, touches secrets, or risks irreversible compatibility.
 - In this checkout, Python checks normally run in the conda environment `ms`; use it explicitly if the shell is not already there.
 - When subagents are allowed or requested, dispatch independent lanes instead of stacking broad raw context in one thread. Give each lane scope, permissions, and a stop condition; the parent agent must synthesize, remove duplication, and decide.
+- Give one current semantic owner to each independent decision surface. Preserve
+  source reviews and audits as provenance, but record later changes as evidence
+  or deltas instead of creating duplicate current authorities.
 
 ## Execution Harness
 
 - Identify the success criterion and smallest proof before editing. Use a brief, verification-linked plan only for multi-step work.
+- Before confirmation-scale infrastructure, training, or a larger panel, run
+  the cheapest probe that can distinguish the competing explanations. Passing
+  tests or building infrastructure is not itself a reduction in scientific
+  uncertainty.
 - Create a persistent/self-driven goal only for explicitly long-running or multi-turn work; bound it and give it a concrete stop condition.
 - Verify cheap assumptions locally. Ask only when a wrong interpretation would be costly; otherwise use the conservative repo-local default.
 - Trace every changed line to the request, evidence, a failing check, a contract, or cleanup caused by the change. Classify material findings as `fix`, `narrow`, `drop`, `probe`, or `needs user decision`; the user owns choices that change research meaning, compatibility, cost, destructive scope, or publication.
 
 ## Judgment Taste
 
+- Search for the narrowest existing repository owner first, then a standard
+  library or native platform mechanism, then an installed dependency, and only
+  then add the minimum new implementation. This is a search order, not an
+  automatic preference: preserve research semantics, validation, ordering,
+  compatibility, and provenance.
 - Prefer concise, scalable, readable designs over broad new surfaces. Add knobs, abstractions, workflows, or interfaces only when they protect correctness or remove real complexity.
 - For research mechanisms, make semantics explicit, monitorable, numerically stable, and compatible with the existing flow before expanding scope.
 - Give direct verdicts when asked to compare, rank, approve, or decide. Tie the verdict to the requested axis and the concrete evidence.
