@@ -136,6 +136,7 @@ def bootstrap_workspace(
     repository: SqliteDraftRepository | None = None,
     annotation_verifier: object | None = None,
     inference_receipt_resolver: object | None = None,
+    attest_repository: bool = True,
 ) -> WorkspaceBootstrapResult:
     """Bootstrap stores and a complete compact index without baseline arrays.
 
@@ -144,6 +145,11 @@ def bootstrap_workspace(
     never from a legacy Label Studio task-index sidecar.
     """
 
+    if not isinstance(attest_repository, bool):
+        raise BootstrapContractError(
+            "attest_repository must be a boolean",
+            code="coco_refinement.bootstrap_attestation",
+        )
     root = Path(repo_root).resolve(strict=True)
     selected_runtime = (
         (root / DEFAULT_RUNTIME_RELATIVE)
@@ -182,6 +188,7 @@ def bootstrap_workspace(
             repository=selected_repository,
             annotation_verifier=verifier,
             inference_receipt_resolver=resolver,
+            attest_repository=attest_repository,
         )
         results[contract.split] = result
     return WorkspaceBootstrapResult(
@@ -198,6 +205,7 @@ def _bootstrap_split(
     repository: SqliteDraftRepository,
     annotation_verifier: object,
     inference_receipt_resolver: object,
+    attest_repository: bool,
 ) -> SplitBootstrapResult:
     project_id = f"coco-refinement:{contract.split}"
     bootstrap = WorkingDatasetStore.bootstrap(
@@ -243,7 +251,8 @@ def _bootstrap_split(
         source_fingerprint=contract.expected_source_sha256,
         task_count=contract.expected_row_count,
     )
-    repository.bootstrap_project(project, tasks)
+    if attest_repository:
+        repository.bootstrap_project(project, tasks)
     return SplitBootstrapResult(
         project=project,
         tasks=tasks,

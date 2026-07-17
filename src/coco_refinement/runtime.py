@@ -816,11 +816,17 @@ def create_standalone_runtime(
             repository=repository,
             annotation_verifier=verifier,
             inference_receipt_resolver=receipt_resolver,
+            attest_repository=False,
         )
         if set(workspace.splits) != set(_SPLITS):
             raise RuntimeAssemblyError(
                 "workspace bootstrap did not return both train and val",
                 code="coco_refinement.runtime_splits",
+            )
+        if workspace.repository is not repository:
+            raise RuntimeAssemblyError(
+                "workspace bootstrap replaced the locked SQLite authority",
+                code="coco_refinement.runtime_repository",
             )
         stores = {split: workspace.splits[split].store for split in _SPLITS}
         project_ids = {
@@ -845,6 +851,14 @@ def create_standalone_runtime(
                 split=split, store=stores[split]
             )
             reconcile_existing(pairs)
+        # Store recovery is the generation authority.  A durable terminal may
+        # have published generation N+1 immediately before the process died,
+        # while SQLite still projects N.  Replay those exact terminal pairs
+        # before comparing the recovered compact rows with SQLite; the strict
+        # bootstrap attestation below then rejects every unexplained drift.
+        for split in _SPLITS:
+            projection = workspace.splits[split]
+            repository.bootstrap_project(projection.project, projection.tasks)
 
         def on_batch_result(
             *,

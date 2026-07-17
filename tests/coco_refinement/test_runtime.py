@@ -11,6 +11,7 @@ import pytest
 from PIL import Image
 
 from src.coco_refinement.bootstrap import BootstrapSourceContract
+from src.coco_refinement.canonical import canonicalize_objects
 from src.coco_refinement.preflight import (
     LaunchPreflight,
     RuntimeRootBusyError,
@@ -18,6 +19,7 @@ from src.coco_refinement.preflight import (
     RuntimeRootLock,
     run_launch_preflight,
 )
+from src.coco_refinement.repository import SaveDraftRequest
 from src.coco_refinement.runtime import (
     AdapterFactories,
     RuntimeAssemblyError,
@@ -38,6 +40,7 @@ from src.label_studio_coco_refinement.store import (
     canonical_json,
     sha256_file,
 )
+from src.label_studio_coco_refinement.runtime import AuthenticatedPrincipal
 
 
 def _supported_version(distribution: str) -> str:
@@ -91,6 +94,44 @@ def _dual_contracts(tmp_path: Path) -> tuple[BootstrapSourceContract, ...]:
     return tuple(contracts)
 
 
+def _dual_contracts_with_two_train_tasks(
+    tmp_path: Path,
+) -> tuple[BootstrapSourceContract, ...]:
+    contracts = list(_dual_contracts(tmp_path))
+    train = contracts[0]
+    second_image_id = 3
+    Image.new("RGB", (32, 24), color="green").save(
+        train.image_root / f"train2017/{second_image_id:012d}.jpg",
+        format="JPEG",
+    )
+    train.source_path.write_text(
+        "".join(
+            canonical_json(_row("train", image_id)) + "\n"
+            for image_id in (1, second_image_id)
+        ),
+        encoding="utf-8",
+    )
+    contracts[0] = replace(
+        train,
+        expected_source_sha256=sha256_file(train.source_path),
+        expected_row_count=2,
+    )
+    return tuple(contracts)
+
+
+def _local_region(
+    region_key: str,
+    *,
+    bbox: tuple[int, int, int, int],
+) -> dict[str, object]:
+    return {
+        "region_key": region_key,
+        "bbox_2d": list(bbox),
+        "category_name": "person",
+        "category_id": 1,
+    }
+
+
 class _Verifier:
     def verify(self, _identity: object) -> bool:
         return False
@@ -142,6 +183,16 @@ class _Store:
 
     def recover(self) -> None:
         self.events.append(f"recover:{self.split}")
+
+
+class _Repository:
+    def __init__(self, path: Path, events: list[str]) -> None:
+        self.path = path
+        self.events = events
+
+    def bootstrap_project(self, project: object, tasks: object) -> None:
+        del tasks
+        self.events.append(f"attest:{project.split}")
 
 
 class _FakeRuntime:
@@ -217,14 +268,21 @@ class _RecordingPreflight:
         self.inner.release()
 
 
-def _fake_workspace(runtime_root: Path, stores: Mapping[str, _Store]) -> Any:
+def _fake_workspace(
+    runtime_root: Path,
+    stores: Mapping[str, _Store],
+    repository: _Repository,
+) -> Any:
     return SimpleNamespace(
         runtime_root=runtime_root,
-        repository=object(),
+        repository=repository,
         splits={
             split: SimpleNamespace(
                 store=store,
-                project=SimpleNamespace(project_id=f"coco-refinement:{split}"),
+                project=SimpleNamespace(
+                    project_id=f"coco-refinement:{split}", split=split
+                ),
+                tasks=(),
             )
             for split, store in stores.items()
         },
@@ -256,7 +314,7 @@ def _assemble_fake(
     def repository_factory(path: Path) -> object:
         assert observed[:3] == ["preflight", "inspect:train", "inspect:val"]
         observed.append("repository")
-        return SimpleNamespace(path=path)
+        return _Repository(path, observed)
 
     adapters = AdapterFactories(
         verifier=lambda _repo: observed.append("adapter:verifier") or _Verifier(),
@@ -270,9 +328,12 @@ def _assemble_fake(
         or terminal,
     )
 
-    def bootstrapper(*_args: object, **_kwargs: object) -> Any:
+    def bootstrapper(*_args: object, **kwargs: object) -> Any:
         observed.append("bootstrap")
-        return _fake_workspace(runtime_root, stores)
+        assert kwargs["attest_repository"] is False
+        repository = kwargs["repository"]
+        assert isinstance(repository, _Repository)
+        return _fake_workspace(runtime_root, stores, repository)
 
     def coordinator_factory(
         _stores: object, *, on_batch_result: Callable[..., None]
@@ -310,7 +371,7 @@ def test_factory_orders_dual_inspection_recovery_reconciliation_and_callback(
 ) -> None:
     runtime, _, events = _assemble_fake(tmp_path)
 
-    assert events[:21] == [
+    assert events[:23] == [
         "preflight",
         "inspect:train",
         "inspect:val",
@@ -326,6 +387,8 @@ def test_factory_orders_dual_inspection_recovery_reconciliation_and_callback(
         "recover:val",
         "pairs:val",
         "reconcile:existing",
+        "attest:train",
+        "attest:val",
         "coordinator",
         "request:train",
         "terminal:train",
@@ -643,3 +706,140 @@ def test_bounded_real_bootstrap_worker_lifecycle_and_restart_reconciliation(
         tuple(contract.source_path.read_bytes() for contract in contracts)
         == source_bytes
     )
+
+
+def test_startup_replays_published_terminal_before_strict_sqlite_attestation(
+    tmp_path: Path,
+) -> None:
+    contracts = _dual_contracts_with_two_train_tasks(tmp_path)
+    runtime_root = tmp_path / "runtime-terminal-replay"
+
+    def adapter_factories() -> AdapterFactories:
+        return production_adapter_factories(
+            inference_receipt_store=_ReceiptResolver(),
+            current_user_id="local-operator",
+        )
+
+    first = create_standalone_runtime(
+        tmp_path,
+        runtime_root=runtime_root,
+        source_contracts=contracts,
+        adapter_factories=adapter_factories(),
+        environment={},
+        version_resolver=_supported_version,
+    )
+    repository = first.workspace.repository
+    exact_task, newer_task = first.workspace.splits["train"].tasks
+    exact_key = "local:3f5dd17d-46ee-43dd-9fc0-51a5fd603938"
+    newer_key = "local:3f5dd17d-46ee-43dd-9fc0-51a5fd603939"
+
+    exact_save = repository.save_draft(
+        SaveDraftRequest(
+            project_id=exact_task.project_id,
+            task_id=exact_task.task_id,
+            mutation_id="startup-replay-exact",
+            expected_revision=0,
+            expected_generation=exact_task.current_generation,
+            expected_base_row_hash=exact_task.base_row_hash,
+            draft=canonicalize_objects(
+                [_local_region(exact_key, bbox=(20, 30, 320, 430))],
+                split="train",
+            ),
+        )
+    )
+    newer_save = repository.save_draft(
+        SaveDraftRequest(
+            project_id=newer_task.project_id,
+            task_id=newer_task.task_id,
+            mutation_id="startup-replay-captured",
+            expected_revision=0,
+            expected_generation=newer_task.current_generation,
+            expected_base_row_hash=newer_task.base_row_hash,
+            draft=canonicalize_objects(
+                [_local_region(newer_key, bbox=(40, 50, 340, 450))],
+                split="train",
+            ),
+        )
+    )
+    first.runtime.capture_and_enqueue(  # type: ignore[attr-defined]
+        split="train",
+        batch_id="startup-replay-batch",
+        principal=AuthenticatedPrincipal(
+            user_id="local-operator", authenticated=True
+        ),
+    )
+    later_bbox = (60, 70, 360, 470)
+    repository.save_draft(
+        SaveDraftRequest(
+            project_id=newer_task.project_id,
+            task_id=newer_task.task_id,
+            mutation_id="startup-replay-newer",
+            expected_revision=newer_save.state.revision,
+            expected_generation=newer_task.current_generation,
+            expected_base_row_hash=newer_task.base_row_hash,
+            draft=canonicalize_objects(
+                [_local_region(newer_key, bbox=later_bbox)], split="train"
+            ),
+        )
+    )
+
+    # Process directly through the store to model publication followed by a
+    # process crash before BatchCoordinator can invoke its SQLite callback.
+    terminal = first.stores["train"].process_next_batch()
+    assert terminal is not None
+    assert terminal.status is BatchStatus.SUCCEEDED
+    assert terminal.generation == 1
+    assert repository.get_task_state(
+        exact_task.project_id, exact_task.task_id
+    ).current_generation == 0
+    assert repository.get_task_state(
+        newer_task.project_id, newer_task.task_id
+    ).current_generation == 0
+    assert exact_save.state.draft is not None
+    first.shutdown()
+
+    restarted = create_standalone_runtime(
+        tmp_path,
+        runtime_root=runtime_root,
+        source_contracts=contracts,
+        adapter_factories=adapter_factories(),
+        environment={},
+        version_resolver=_supported_version,
+    )
+    exact = restarted.workspace.repository.get_task_state(
+        exact_task.project_id, exact_task.task_id
+    )
+    newer = restarted.workspace.repository.get_task_state(
+        newer_task.project_id, newer_task.task_id
+    )
+    assert exact.current_generation == 1
+    assert exact.draft is None
+    assert newer.current_generation == 1
+    assert newer.draft is not None
+    assert len(newer.draft.objects) == 1
+    assert newer.draft.objects[0].region_key == newer_key
+    assert newer.draft.objects[0].bbox_2d == later_bbox
+    assert newer.draft.objects[0].coco_ann_id is not None
+    assert newer.draft.objects[0].coco_ann_id < 0
+    mutation_count = restarted.workspace.repository.count_mutations()
+    restarted.shutdown()
+
+    repeated = create_standalone_runtime(
+        tmp_path,
+        runtime_root=runtime_root,
+        source_contracts=contracts,
+        adapter_factories=adapter_factories(),
+        environment={},
+        version_resolver=_supported_version,
+    )
+    assert repeated.workspace.repository.get_task_state(
+        exact_task.project_id, exact_task.task_id
+    ) == exact
+    assert repeated.workspace.repository.get_task_state(
+        newer_task.project_id, newer_task.task_id
+    ) == newer
+    assert repeated.workspace.repository.count_mutations() == mutation_count
+    assert repeated.stores["train"].get_batch_result(
+        "startup-replay-batch"
+    ).generation == 1
+    repeated.shutdown()
