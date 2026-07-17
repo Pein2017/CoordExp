@@ -52,6 +52,7 @@ _STATIC_ASSETS = {
     "app.css": "text/css",
     "app.js": "text/javascript",
     "class-search.js": "text/javascript",
+    "commit-controller.js": "text/javascript",
     "draft-controller.js": "text/javascript",
     "editor-geometry.js": "text/javascript",
     "svg-editor.js": "text/javascript",
@@ -420,6 +421,12 @@ def create_service_app(
     async def get_draft_controller_module() -> Response:
         return _static_file(
             "draft-controller.js", media_type=_STATIC_ASSETS["draft-controller.js"]
+        )
+
+    @app.get("/commit-controller.js", include_in_schema=False)
+    async def get_commit_controller_module() -> Response:
+        return _static_file(
+            "commit-controller.js", media_type=_STATIC_ASSETS["commit-controller.js"]
         )
 
     @app.get("/editor-geometry.js", include_in_schema=False)

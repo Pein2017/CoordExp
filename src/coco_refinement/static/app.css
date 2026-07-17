@@ -27,6 +27,7 @@ h2 { font-size: 1rem; }
 .editor-toolbar, .tool-group { display: flex; align-items: center; gap: .4rem; }
 .editor-toolbar { flex-wrap: wrap; justify-content: space-between; margin-bottom: .65rem; }
 .tool-group button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: #edf3ff; box-shadow: inset 0 0 0 1px var(--accent); }
+.compact-control { color: var(--muted); font-size: .78rem; }
 .tool-group button:focus-visible, #bbox-overlay:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 35%, transparent); outline-offset: 2px; }
 .task-list { list-style: none; margin: 0; padding: 0; max-height: 68vh; overflow: auto; }
 .task-list button { width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: .5rem .25rem; }
@@ -42,6 +43,8 @@ h2 { font-size: 1rem; }
 .editor-box { fill-opacity: .1; stroke-width: 2; vector-effect: non-scaling-stroke; pointer-events: none; }
 .editor-box-hit { fill: transparent; stroke: transparent; stroke-width: 12; vector-effect: non-scaling-stroke; cursor: move; pointer-events: all; }
 .editor-region.is-selected .editor-box, .editor-region:focus .editor-box { fill-opacity: .18; stroke-width: 3; filter: drop-shadow(0 0 2px white); }
+.editor-region.is-dimmed { opacity: .18; }
+.editor-region.is-presentation-hidden { display: none; }
 .editor-label { font-weight: 700; paint-order: stroke; stroke: white; stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }
 .editor-handle { fill: white; stroke: #172033; stroke-width: 1.5; vector-effect: non-scaling-stroke; pointer-events: all; }
 .editor-handle[data-handle="n"], .editor-handle[data-handle="s"] { cursor: ns-resize; }

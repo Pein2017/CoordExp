@@ -48,6 +48,7 @@ def app(tmp_path, monkeypatch):
     (static_root / "app.js").write_text("import './class-search.js';")
     (static_root / "api-client.js").write_text("export const ready = true;")
     (static_root / "class-search.js").write_text("export const ready = true;")
+    (static_root / "commit-controller.js").write_text("export const ready = true;")
     (static_root / "draft-controller.js").write_text("export const ready = true;")
     (static_root / "editor-geometry.js").write_text("export const ready = true;")
     (static_root / "svg-editor.js").write_text("export const ready = true;")
@@ -88,6 +89,7 @@ def test_categories_project_the_authoritative_sparse_registry(app) -> None:
         ("/app.js", "text/javascript"),
         ("/api-client.js", "text/javascript"),
         ("/class-search.js", "text/javascript"),
+        ("/commit-controller.js", "text/javascript"),
         ("/draft-controller.js", "text/javascript"),
         ("/editor-geometry.js", "text/javascript"),
         ("/svg-editor.js", "text/javascript"),
@@ -146,6 +148,7 @@ def test_packaged_static_assets_match_the_exact_route_allowlist() -> None:
         "app.js",
         "api-client.js",
         "class-search.js",
+        "commit-controller.js",
         "draft-controller.js",
         "editor-geometry.js",
         "svg-editor.js",

@@ -1,5 +1,6 @@
 import { createApiClient } from '/api-client.js';
 import { installCategorySearch } from '/class-search.js';
+import { createCommitController } from '/commit-controller.js';
 import { createDraftController } from '/draft-controller.js';
 import { norm1000ToNaturalRect } from '/editor-geometry.js';
 import { createSvgEditor } from '/svg-editor.js';
@@ -9,6 +10,8 @@ const state = {
   taskOpen: false, categories: [], category: null, selectedRegion: null,
   pageRequest: 0, taskRequest: 0, interactionBusy: false,
   interactionPromise: null, navigationReminder: false,
+  commitActionPromise: null,
+  commitRebindTarget: null, commitRebindPromise: null, commitRebindError: null,
 };
 const $ = id => document.getElementById(id);
 const api = createApiClient();
@@ -18,16 +21,22 @@ const editorButtons = [
   $('mode-select'), $('mode-draw'), $('mode-pan'),
   $('zoom-out'), $('zoom-in'), $('zoom-reset'),
 ];
+const visibilityControls = [
+  $('visibility-mode'), $('hide-selected'), $('restore-visibility'),
+];
 let categoryPicker = null;
 const setNotice = (message, tone = '') => { notice.textContent = message; notice.dataset.tone = tone; };
 const setStatus = (message, tone = 'pending') => { status.textContent = message; status.dataset.tone = tone; };
 
 let controller;
+let commitController;
 const editor = createSvgEditor({
   svg: $('bbox-overlay'),
   onGesture: detail => { void applyEditorGesture(detail); },
   onSelection: ({ regionKey, object }) => {
     state.selectedRegion = regionKey;
+    $('visibility-mode').value = editor.getPresentationState().visibilityMode;
+    $('hide-selected').disabled = !regionKey || !state.taskOpen;
     if (object) {
       state.category = { id: object.category_id, name: object.category_name };
       editor.setCategory(state.category);
@@ -37,6 +46,23 @@ const editor = createSvgEditor({
   onMessage: ({ message, tone }) => setNotice(message, tone),
 });
 controller = createDraftController({ api, onChange: snapshot => renderDraftState(snapshot) });
+commitController = createCommitController({
+  api,
+  onChange: snapshot => {
+    renderCommitState(snapshot);
+    scheduleCommitRebind(snapshot);
+  },
+});
+
+function commitRebindRequired() {
+  const currentGeneration = controller.getState().binding?.generation;
+  return state.taskOpen && Number.isInteger(state.commitRebindTarget)
+    && Number.isInteger(currentGeneration) && currentGeneration < state.commitRebindTarget;
+}
+
+const navigationBusy = () => Boolean(
+  state.interactionBusy || state.commitActionPromise || state.commitRebindPromise,
+);
 
 function renderPage() {
   const page = state.page;
@@ -44,16 +70,16 @@ function renderPage() {
   $('task-list').replaceChildren(...(page?.tasks || []).map((task, index) => {
     const li = document.createElement('li');
     const button = document.createElement('button');
-    button.type = 'button'; button.disabled = state.interactionBusy; button.setAttribute('aria-current', String(index === state.selected));
+    button.type = 'button'; button.disabled = navigationBusy(); button.setAttribute('aria-current', String(index === state.selected));
     button.textContent = `#${page.cursor + index + 1} · ${task.image_id}`;
     const meta = document.createElement('span'); meta.className = 'task-meta'; meta.textContent = `${task.image_width} × ${task.image_height}`;
     button.append(meta); button.addEventListener('click', () => navigate(() => selectIndex(index))); li.append(button); return li;
   }));
-  $('previous-button').disabled = state.interactionBusy || !page || page.cursor + state.selected <= 0;
-  $('next-button').disabled = state.interactionBusy || !page || page.cursor + state.selected + 1 >= page.total;
-  $('split-select').disabled = state.interactionBusy;
-  $('sample-number').disabled = state.interactionBusy;
-  $('jump-button').disabled = state.interactionBusy;
+  $('previous-button').disabled = navigationBusy() || !page || page.cursor + state.selected <= 0;
+  $('next-button').disabled = navigationBusy() || !page || page.cursor + state.selected + 1 >= page.total;
+  $('split-select').disabled = navigationBusy();
+  $('sample-number').disabled = navigationBusy();
+  $('jump-button').disabled = navigationBusy();
   $('sample-number').value = page && state.selected >= 0 ? String(page.cursor + state.selected + 1) : '';
 }
 
@@ -73,22 +99,27 @@ function renderTaskShell() {
 
 function renderDraftState(snapshot) {
   if (state.taskOpen) editor.updateObjects(snapshot.objects);
-  const visiblePhase = state.interactionBusy ? 'Saving' : snapshot.phase;
+  const visiblePhase = state.interactionBusy ? 'Saving'
+    : commitRebindRequired() ? 'Refreshing authority' : snapshot.phase;
   const tone = { Committed: 'ok', Draft: 'pending', Saving: 'pending', Conflict: 'error', Error: 'error' }[visiblePhase] || 'pending';
   $('save-status').textContent = visiblePhase === 'Draft' ? 'Draft saved · Commit pending' : visiblePhase;
   $('save-status').dataset.tone = tone;
   $('save-retry').hidden = snapshot.phase !== 'Error';
-  $('task-reload').hidden = !['Error', 'Conflict'].includes(snapshot.phase);
-  const locked = state.interactionBusy || ['Saving', 'Error', 'Conflict'].includes(snapshot.phase);
+  $('task-reload').hidden = !['Error', 'Conflict'].includes(snapshot.phase) && !state.commitRebindError;
+  const locked = state.interactionBusy || commitRebindRequired()
+    || ['Saving', 'Error', 'Conflict'].includes(snapshot.phase);
   editor.setDisabled(locked);
   $('category-search').disabled = locked || !state.taskOpen;
   for (const button of editorButtons) button.disabled = locked || !state.taskOpen;
-  for (const button of $('task-list').querySelectorAll('button')) button.disabled = state.interactionBusy;
-  $('split-select').disabled = state.interactionBusy;
-  $('sample-number').disabled = state.interactionBusy;
-  $('jump-button').disabled = state.interactionBusy;
-  $('previous-button').disabled = state.interactionBusy || !state.page || pagePosition() <= 1;
-  $('next-button').disabled = state.interactionBusy || !state.page || pagePosition() >= state.page.total;
+  $('undo-button').disabled = locked || !snapshot.canUndo;
+  for (const control of visibilityControls) control.disabled = !state.taskOpen;
+  $('hide-selected').disabled = !state.taskOpen || !state.selectedRegion;
+  for (const button of $('task-list').querySelectorAll('button')) button.disabled = navigationBusy();
+  $('split-select').disabled = navigationBusy();
+  $('sample-number').disabled = navigationBusy();
+  $('jump-button').disabled = navigationBusy();
+  $('previous-button').disabled = navigationBusy() || !state.page || pagePosition() <= 1;
+  $('next-button').disabled = navigationBusy() || !state.page || pagePosition() >= state.page.total;
   const details = $('task-details').querySelectorAll('dd');
   details[0].textContent = snapshot.authority || '—';
   details[1].textContent = snapshot.phase;
@@ -97,22 +128,96 @@ function renderDraftState(snapshot) {
   details[4].textContent = state.task ? `${state.task.image_width} × ${state.task.image_height}` : '—';
 }
 
+function renderCommitState(snapshot) {
+  const pending = snapshot.projectState?.pending_draft_count;
+  const active = ['queued', 'running', 'reconciling'].includes(snapshot.status);
+  const tone = snapshot.projectError || snapshot.status === 'failed' ? 'error'
+    : snapshot.status === 'succeeded' ? 'ok' : 'pending';
+  let text = snapshot.projectError || 'Commit unavailable';
+  if (snapshot.batch) {
+    const members = snapshot.batch.member_count ? ` · ${snapshot.batch.member_count} task${snapshot.batch.member_count === 1 ? '' : 's'}` : '';
+    const generation = Number.isInteger(snapshot.batch.generation) ? ` · generation ${snapshot.batch.generation}` : '';
+    text = `${snapshot.status} · ${snapshot.batch.batch_id}${members}${generation}`;
+  } else if (Number.isInteger(pending)) {
+    text = `${pending} pending Draft${pending === 1 ? '' : 's'}`;
+  }
+  if (snapshot.projectError || snapshot.detail) {
+    text += ` · ${snapshot.projectError || snapshot.detail}`;
+  }
+  $('commit-status').textContent = text;
+  $('commit-status').dataset.tone = tone;
+  $('commit-button').textContent = snapshot.canRetry ? 'Retry Commit' : 'Commit Drafts';
+  $('commit-button').disabled = Boolean(state.commitActionPromise) || snapshot.busy || active || (!snapshot.canRetry && (
+    !snapshot.projectState || !snapshot.projectState.accepting_writes || pending === 0
+  ));
+}
+
+function scheduleCommitRebind(snapshot) {
+  const generation = snapshot.batch?.generation;
+  if (snapshot.split !== state.split || state.task?.split !== snapshot.split
+      || !state.taskOpen || !Number.isInteger(generation)) return;
+  if (!['reconciling', 'succeeded'].includes(snapshot.status)) return;
+  const current = controller.getState().binding?.generation;
+  if (!Number.isInteger(current) || generation <= current) return;
+  state.commitRebindTarget = Math.max(state.commitRebindTarget ?? 0, generation);
+  void ensureCurrentCommitBinding().catch(error => {
+    setNotice(error.message || 'Commit succeeded, but task authority refresh failed.', 'error');
+  });
+}
+
+function ensureCurrentCommitBinding() {
+  if (!commitRebindRequired()) return Promise.resolve(controller.getState());
+  if (state.commitRebindPromise) return state.commitRebindPromise;
+  const split = state.split;
+  const taskId = state.task.task_id;
+  state.commitRebindError = null;
+  state.commitRebindPromise = (async () => {
+    if (state.interactionPromise) await state.interactionPromise;
+    await controller.flush();
+    if (!state.taskOpen || state.split !== split || state.task.task_id !== taskId) return;
+    renderDraftState(controller.getState());
+    const task = await api.getJson(`/api/splits/${split}/tasks/${encodeURIComponent(taskId)}`);
+    if (!state.taskOpen || state.split !== split || state.task.task_id !== taskId) return;
+    controller.rebind(task);
+    state.task = task;
+    state.commitRebindTarget = null;
+    state.commitRebindError = null;
+    setNotice('Commit advanced the dataset; this task was rebound without interrupting the batch.', 'ok');
+  })().catch(error => {
+    state.commitRebindError = error;
+    throw error;
+  }).finally(() => {
+    state.commitRebindPromise = null;
+    renderDraftState(controller.getState());
+  });
+  renderDraftState(controller.getState());
+  return state.commitRebindPromise;
+}
+
 function setEditorControls(enabled) {
   for (const button of editorButtons) button.disabled = !enabled || state.interactionBusy;
   $('category-search').disabled = !enabled || state.interactionBusy;
+  $('undo-button').disabled = !enabled || !controller.getState().canUndo;
+  for (const control of visibilityControls) control.disabled = !enabled;
+  $('hide-selected').disabled = !enabled || !state.selectedRegion;
 }
 
 function clearVisibleTask() {
   state.task = null;
   state.taskOpen = false;
   state.selectedRegion = null;
+  state.commitRebindTarget = null;
+  state.commitRebindError = null;
   editor.setTask(null);
+  $('visibility-mode').value = 'all';
   renderTaskShell();
 }
 const pagePosition = () => state.page ? state.page.cursor + state.selected + 1 : 0;
 
 async function beforeNavigation() {
   if (state.interactionPromise) await state.interactionPromise;
+  if (state.commitActionPromise) await state.commitActionPromise;
+  await ensureCurrentCommitBinding();
   if (!state.taskOpen) return;
   await controller.flush();
   if (controller.getState().authority === 'draft') state.navigationReminder = true;
@@ -147,7 +252,10 @@ async function loadTask(taskId, { flush = true, selectedIndex = null } = {}) {
   state.task = task;
   state.taskOpen = true;
   state.selectedRegion = null;
+  state.commitRebindTarget = null;
+  state.commitRebindError = null;
   editor.setTask(task);
+  $('visibility-mode').value = 'all';
   editor.setCategory(state.category);
   renderPage();
   renderTaskShell();
@@ -221,10 +329,19 @@ async function chooseCategory(category) {
 
 async function runEditorMutation(action) {
   if (state.interactionPromise) return state.interactionPromise;
+  try { await ensureCurrentCommitBinding(); }
+  catch (error) {
+    setNotice(error.message || 'Refresh task authority before editing.', 'error');
+    return undefined;
+  }
+  if (state.interactionPromise) return state.interactionPromise;
   state.interactionBusy = true;
   renderDraftState(controller.getState());
   state.interactionPromise = (async () => {
-    try { await action(); }
+    try {
+      await action();
+      void commitController.refreshProjectState().catch(() => undefined);
+    }
     catch (error) { setNotice(error.message || 'Edit could not be saved.', 'error'); }
     finally {
       state.interactionBusy = false;
@@ -235,6 +352,46 @@ async function runEditorMutation(action) {
   return state.interactionPromise;
 }
 
+async function undoLastEdit() {
+  if (!state.taskOpen || !controller.getState().canUndo) return;
+  await runEditorMutation(async () => {
+    await controller.undo();
+    setNotice('Last semantic edit undone; the restored Draft is saved.', 'ok');
+  });
+}
+
+function startCommit() {
+  if (state.commitActionPromise) return state.commitActionPromise;
+  const selectedSplit = state.split;
+  state.commitActionPromise = (async () => {
+    if (state.interactionPromise) await state.interactionPromise;
+    await ensureCurrentCommitBinding();
+    if (state.taskOpen) await controller.flush();
+    await commitController.refreshProjectState();
+    const snapshot = commitController.getState();
+    if (state.split !== selectedSplit || snapshot.split !== selectedSplit) {
+      throw new Error('Commit action was cancelled because the split changed.');
+    }
+    if (snapshot.canRetry) {
+      const retried = await commitController.retry();
+      setNotice(retried.status === 'failed'
+        ? 'The new Commit attempt failed; Drafts remain available.'
+        : 'A new Commit attempt was accepted; annotation remains available while it runs.',
+      retried.status === 'failed' ? 'error' : 'ok');
+    } else {
+      await commitController.commit();
+      setNotice('Commit queued in the background. You can keep annotating.', 'ok');
+    }
+  })().finally(() => {
+    state.commitActionPromise = null;
+    renderPage();
+    renderCommitState(commitController.getState());
+  });
+  renderPage();
+  renderCommitState(commitController.getState());
+  return state.commitActionPromise;
+}
+
 async function retrySave() {
   await controller.retry();
   setNotice('Draft retry succeeded.', 'ok');
@@ -242,14 +399,20 @@ async function retrySave() {
 
 async function reloadCurrentTask() {
   if (!state.taskOpen) return;
-  if (!window.confirm('Discard unresolved local edits and reload the authoritative task?')) return;
+  const discard = controller.hasUnsavedLocal();
+  if (discard && !window.confirm('Discard unresolved local edits and reload the authoritative task?')) return;
   const task = await api.getJson(`/api/splits/${state.split}/tasks/${encodeURIComponent(state.task.task_id)}`);
-  controller.open(task, { discardUnsaved: true });
+  controller.open(task, { discardUnsaved: discard });
   state.task = task;
   state.selectedRegion = null;
+  state.commitRebindTarget = null;
+  state.commitRebindError = null;
   editor.setTask(task);
+  $('visibility-mode').value = 'all';
   editor.setCategory(state.category);
-  setNotice('Authoritative task reloaded; unresolved local edits were discarded.', 'warning');
+  setNotice(discard
+    ? 'Authoritative task reloaded; unresolved local edits were discarded.'
+    : 'Authoritative task refreshed.', discard ? 'warning' : 'ok');
 }
 
 async function navigate(action) {
@@ -262,10 +425,12 @@ async function switchSplit(nextSplit) {
   try {
     await beforeNavigation();
     state.split = nextSplit;
+    await commitController.setSplit(nextSplit).catch(() => undefined);
     await loadPage(0, 0, { flush: false });
   } catch (error) {
     state.split = prior;
     $('split-select').value = prior;
+    await commitController.setSplit(prior).catch(() => undefined);
     throw error;
   }
 }
@@ -275,6 +440,23 @@ function setMode(mode) {
   for (const name of ['select', 'draw', 'pan']) {
     $(`mode-${name}`).setAttribute('aria-pressed', String(name === mode));
   }
+}
+
+function setVisibilityMode(mode) {
+  const presentation = editor.setVisibilityMode(mode);
+  $('visibility-mode').value = presentation.visibilityMode;
+}
+
+function hideSelectedRegion() {
+  if (!state.selectedRegion) return;
+  const presentation = editor.toggleRegionHidden(state.selectedRegion);
+  $('visibility-mode').value = presentation.visibilityMode;
+}
+
+function restoreVisibility() {
+  const presentation = editor.restoreVisibility();
+  $('visibility-mode').value = presentation.visibilityMode;
+  setNotice('All boxes are visible. Visibility changes never alter the Draft.', 'ok');
 }
 
 async function start() {
@@ -298,6 +480,7 @@ async function start() {
       },
     });
     setMode('select');
+    await commitController.setSplit(state.split).catch(() => undefined);
     await loadPage(0, 0, { flush: false });
   } catch (error) {
     setStatus('Unavailable', 'error');
@@ -316,8 +499,21 @@ for (const mode of ['select', 'draw', 'pan']) {
 $('zoom-in').addEventListener('click', () => editor.zoomIn());
 $('zoom-out').addEventListener('click', () => editor.zoomOut());
 $('zoom-reset').addEventListener('click', () => editor.reset());
+$('undo-button').addEventListener('click', () => { void undoLastEdit(); });
+$('visibility-mode').addEventListener('change', event => setVisibilityMode(event.target.value));
+$('hide-selected').addEventListener('click', hideSelectedRegion);
+$('restore-visibility').addEventListener('click', restoreVisibility);
+$('commit-button').addEventListener('click', () => navigate(startCommit));
 $('save-retry').addEventListener('click', () => navigate(retrySave));
 $('task-reload').addEventListener('click', () => navigate(reloadCurrentTask));
+document.addEventListener('keydown', event => {
+  const tag = event.target instanceof Element ? event.target.tagName : '';
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z'
+      && !['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) && controller.getState().canUndo) {
+    event.preventDefault();
+    void undoLastEdit();
+  }
+});
 window.addEventListener('beforeunload', event => {
   if (!controller.hasUnsavedLocal() && !state.interactionPromise && !editor.hasActiveGesture()) return;
   event.preventDefault();

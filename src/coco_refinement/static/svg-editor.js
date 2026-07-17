@@ -10,6 +10,7 @@ import {
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const MODES = new Set(['select', 'draw', 'pan']);
+const VISIBILITY_MODES = new Set(['all', 'dim-nonselected', 'hide-nonselected']);
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 const MINIMUM_BOX_SIZE = 1;
 
@@ -101,6 +102,8 @@ export function createSvgEditor({
     selected: null,
     category: null,
     mode: 'select',
+    visibilityMode: 'all',
+    hiddenRegionKeys: new Set(),
     disabled: false,
     viewBox: null,
     gesture: null,
@@ -152,14 +155,24 @@ export function createSvgEditor({
       const rect = state.rectangles.get(regionKey);
       if (!rect) continue;
       const selected = regionKey === state.selected;
+      const focusHidden = state.visibilityMode === 'hide-nonselected' && !selected;
+      const hidden = state.hiddenRegionKeys.has(regionKey) || focusHidden;
+      const dimmed = state.visibilityMode === 'dim-nonselected' && !selected;
       const color = colorFor(regionKey);
       const group = element('g', {
-        class: `editor-region${selected ? ' is-selected' : ''}`,
+        class: [
+          'editor-region',
+          selected ? 'is-selected' : '',
+          dimmed ? 'is-dimmed' : '',
+          hidden ? 'is-presentation-hidden' : '',
+        ].filter(Boolean).join(' '),
         'data-region-key': regionKey,
         role: 'button',
         tabindex: '0',
         'aria-label': `${object.category_name || object.category_id}, bbox ${object.bbox_2d.join(', ')}`,
+        'aria-hidden': String(hidden),
       });
+      if (hidden) group.setAttribute('hidden', '');
       const title = element('title');
       title.textContent = `${object.category_name || object.category_id} · ${regionKey}`;
       const visual = element('rect', {
@@ -211,7 +224,11 @@ export function createSvgEditor({
   function select(regionKey, notify = true) {
     const next = state.rectangles.has(regionKey) ? regionKey : null;
     if (next === state.selected) return;
+    if (next) state.hiddenRegionKeys.delete(next);
     state.selected = next;
+    if (next === null && state.visibilityMode === 'hide-nonselected') {
+      state.visibilityMode = 'all';
+    }
     renderRegions();
     if (notify) {
       const object = state.objects.find(candidate => candidate.region_key === next) || null;
@@ -239,10 +256,33 @@ export function createSvgEditor({
         message('invalid_region_geometry', `Skipped invalid bbox ${regionKey}.`, 'warning');
       }
     }
+    const selectedWasRemoved = state.selected !== null && !rectangles.has(state.selected);
     state.objects = accepted;
     state.rectangles = rectangles;
-    if (!rectangles.has(state.selected)) state.selected = null;
+    state.hiddenRegionKeys = new Set(
+      [...state.hiddenRegionKeys].filter(regionKey => rectangles.has(regionKey)),
+    );
+    if (selectedWasRemoved) {
+      state.selected = null;
+      if (state.visibilityMode === 'hide-nonselected') state.visibilityMode = 'all';
+    }
     renderRegions();
+    if (selectedWasRemoved) onSelection({ regionKey: null, object: null });
+  }
+
+  function restoreVisibility() {
+    state.visibilityMode = 'all';
+    state.hiddenRegionKeys.clear();
+    renderRegions();
+    return getPresentationState();
+  }
+
+  function getPresentationState() {
+    return {
+      visibilityMode: state.visibilityMode,
+      hiddenRegionKeys: [...state.hiddenRegionKeys].sort(),
+      selectedRegionKey: state.selected,
+    };
   }
 
   function clientToNatural(event) {
@@ -418,6 +458,8 @@ export function createSvgEditor({
   return {
     setTask(task) {
       cancelGesture();
+      state.visibilityMode = 'all';
+      state.hiddenRegionKeys.clear();
       if (!task) {
         state.width = 0;
         state.height = 0;
@@ -476,6 +518,47 @@ export function createSvgEditor({
       select(regionKey, false);
     },
 
+    setVisibilityMode(mode) {
+      if (!VISIBILITY_MODES.has(mode)) {
+        throw new RangeError('visibility mode must be all, dim-nonselected, or hide-nonselected');
+      }
+      if (mode === 'hide-nonselected' && state.selected === null) {
+        message(
+          'visibility_selection_required',
+          'Select one bbox before hiding non-selected objects.',
+          'warning',
+        );
+        return getPresentationState();
+      }
+      state.visibilityMode = mode;
+      renderRegions();
+      return getPresentationState();
+    },
+
+    toggleRegionHidden(regionKey) {
+      if (typeof regionKey !== 'string' || !state.rectangles.has(regionKey)) {
+        throw new RangeError('regionKey must identify a current bbox');
+      }
+      let selectionCleared = false;
+      if (state.hiddenRegionKeys.has(regionKey)) {
+        state.hiddenRegionKeys.delete(regionKey);
+      } else {
+        state.hiddenRegionKeys.add(regionKey);
+        if (state.selected === regionKey) {
+          state.selected = null;
+          state.visibilityMode = 'all';
+          selectionCleared = true;
+        }
+      }
+      renderRegions();
+      if (selectionCleared) onSelection({ regionKey: null, object: null });
+      return getPresentationState();
+    },
+
+    restoreVisibility,
+
+    getPresentationState,
+
     hasActiveGesture() {
       return Boolean(state.gesture);
     },
@@ -503,6 +586,7 @@ export function createSvgEditor({
     reset() {
       if (!hasTask()) return;
       cancelGesture();
+      restoreVisibility();
       state.viewBox = resetViewBox(state.width, state.height);
       applyViewBox();
     },

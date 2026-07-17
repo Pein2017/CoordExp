@@ -240,3 +240,232 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 }}
 """
     )
+
+
+def test_draft_controller_bounded_undo_state_machine() -> None:
+    api_uri = json.dumps((STATIC / "api-client.js").as_uri())
+    controller_uri = json.dumps((STATIC / "draft-controller.js").as_uri())
+    _run_node(
+        f"""
+import assert from 'node:assert/strict';
+import {{ ApiError }} from {api_uri};
+import {{ createDraftController }} from {controller_uri};
+
+const hash = 'b'.repeat(64);
+const first = {{
+  region_key: 'train:coco:101', bbox_2d: [10, 20, 300, 400],
+  category_name: 'person', category_id: 1, coco_ann_id: 101,
+  metadata: {{ source: {{ row: 7 }}, note: 'preserve me' }},
+}};
+const second = {{
+  region_key: 'train:coco:202', bbox_2d: [30, 40, 500, 600],
+  category_name: 'dog', category_id: 18, coco_ann_id: 202,
+  metadata: {{ nested: {{ values: [1, 2, 3] }} }},
+}};
+const baseline = [first, second];
+const task = (objects = baseline, revision = 0) => ({{
+  split: 'train', task_id: 'train:undo', authority: revision ? 'draft' : 'committed',
+  revision, generation: 0, base_row_hash: hash, objects: structuredClone(objects),
+}});
+const applied = (body, revision) => ({{
+  status: 'applied', mutation_id: body.mutation_id, authority: 'draft',
+  revision, generation: 0, base_row_hash: hash, objects: structuredClone(body.objects),
+}});
+const ids = () => {{
+  let index = 0;
+  return () => `undo-uuid-${{++index}}`;
+}};
+const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+
+// A successful canonical projection records exactly one pre-action snapshot.
+// Lost PUT responses replay the same request without duplicating Undo history.
+{{
+  const putBodies = [];
+  let revision = 0;
+  const api = {{
+    async postJson(_path, body) {{
+      return {{
+        object: {{
+          region_key: 'local:created', bbox_2d: [1, 2, 30, 40],
+          category_name: body.category_name, category_id: 2,
+          metadata: {{ origin: 'human' }},
+        }},
+        binding: {{ revision, generation: 0, base_row_hash: hash }},
+      }};
+    }},
+    async putJson(_path, body) {{
+      putBodies.push(structuredClone(body));
+      if (putBodies.length === 1) throw new ApiError('response lost', {{ status: 0 }});
+      revision += 1;
+      return applied(body, revision);
+    }},
+  }};
+  const controller = createDraftController({{ api, randomUUID: ids() }});
+  controller.open(task());
+  assert.equal(controller.getState().canUndo, false);
+  await controller.projectAndApply({{
+    operation: 'create', pixel_xyxy: [1, 2, 30, 40], category_name: 'bicycle',
+  }});
+  assert.deepEqual(putBodies[0], putBodies[1]);
+  assert.equal(controller.getState().canUndo, true);
+  assert.deepEqual(
+    controller.getState().objects.map(object => object.region_key),
+    ['train:coco:101', 'train:coco:202', 'local:created'],
+  );
+
+  await controller.undo();
+  assert.deepEqual(controller.getState().objects, baseline);
+  assert.deepEqual(putBodies.at(-1).objects, baseline);
+  assert.equal(controller.getState().canUndo, false);
+  assert.equal(controller.hasUnsavedLocal(), false);
+
+  controller.replaceRegion('train:coco:101', {{ ...first, bbox_2d: [11, 20, 300, 400] }});
+  await controller.flush();
+  assert.equal(controller.getState().canUndo, true);
+  controller.open(task([], revision));
+  assert.equal(controller.getState().canUndo, false);
+}}
+
+// A same-task Commit authority rebind preserves Undo and rebases allocated negative IDs.
+{{
+  let revision = 0;
+  const bodies = [];
+  const api = {{
+    async postJson() {{ throw new Error('unused'); }},
+    async putJson(_path, body) {{
+      bodies.push(structuredClone(body));
+      revision += 1;
+      return bodies.length === 1 ? applied(body, revision) : {{
+        ...applied(body, revision), generation: 1, base_row_hash: 'c'.repeat(64),
+      }};
+    }},
+  }};
+  const controller = createDraftController({{ api, randomUUID: ids() }});
+  const local = {{
+    region_key: 'local:new', bbox_2d: [50, 60, 200, 240],
+    category_name: 'cat', category_id: 17, metadata: {{ origin: 'human' }},
+  }};
+  controller.open(task([...baseline, local]));
+  controller.replaceRegion('local:new', {{ ...local, bbox_2d: [55, 60, 200, 240] }});
+  await controller.flush();
+  const rebasedCurrent = controller.getState().objects.map(object => (
+    object.region_key === 'local:new' ? {{ ...object, coco_ann_id: -9101 }} : object
+  ));
+  controller.rebind({{
+    ...task(rebasedCurrent, revision), generation: 1, base_row_hash: 'c'.repeat(64),
+  }});
+  assert.equal(controller.getState().canUndo, true);
+  assert.equal(controller.getState().objects[2].coco_ann_id, -9101);
+  await controller.undo();
+  assert.deepEqual(controller.getState().objects[2].bbox_2d, local.bbox_2d);
+  assert.equal(controller.getState().objects[2].coco_ann_id, -9101);
+  assert.equal(bodies.at(-1).expected_generation, 1);
+  assert.equal(bodies.at(-1).expected_base_row_hash, 'c'.repeat(64));
+  const changedNegativeId = controller.getState().objects.map(object => (
+    object.region_key === 'local:new' ? {{ ...object, coco_ann_id: -9102 }} : object
+  ));
+  assert.throws(() => controller.rebind({{
+    ...task(changedNegativeId, revision), generation: 1, base_row_hash: 'c'.repeat(64),
+  }}), /changed task semantics/);
+  const changedPositiveId = controller.getState().objects.map(object => (
+    object.region_key === 'train:coco:101' ? {{ ...object, coco_ann_id: 102 }} : object
+  ));
+  assert.throws(() => controller.rebind({{
+    ...task(changedPositiveId, revision), generation: 1, base_row_hash: 'c'.repeat(64),
+  }}), /changed task semantics/);
+}}
+
+// A failed projection never creates an Undo step.
+{{
+  const api = {{
+    async postJson() {{ throw new ApiError('projection failed', {{ status: 503 }}); }},
+    async putJson() {{ throw new Error('unused'); }},
+  }};
+  const controller = createDraftController({{ api, randomUUID: ids() }});
+  controller.open(task());
+  await assert.rejects(controller.projectAndApply({{
+    operation: 'create', pixel_xyxy: [1, 2, 30, 40], category_name: 'person',
+  }}));
+  assert.equal(controller.getState().canUndo, false);
+}}
+
+// Only the newest 50 complete snapshots are retained, and Undo does not add
+// redo/history entries of its own.
+{{
+  let revision = 0;
+  const api = {{
+    async postJson() {{ throw new Error('unused'); }},
+    async putJson(_path, body) {{ revision += 1; return applied(body, revision); }},
+  }};
+  const controller = createDraftController({{ api, randomUUID: ids() }});
+  controller.open(task());
+  for (let value = 1; value <= 51; value += 1) {{
+    controller.replaceRegion('train:coco:101', {{ ...first, bbox_2d: [10 + value, 20, 300, 400] }});
+    await controller.flush();
+  }}
+  for (let count = 0; count < 50; count += 1) await controller.undo();
+  assert.deepEqual(controller.getState().objects[0].bbox_2d, [11, 20, 300, 400]);
+  assert.deepEqual(controller.getState().objects[1], second);
+  assert.equal(controller.getState().canUndo, false);
+}}
+
+// Saving, Error, Conflict, and projection-in-flight states reject Undo.
+{{
+  let releaseSave;
+  const save = new Promise(resolve => {{ releaseSave = resolve; }});
+  let revision = 0;
+  const api = {{
+    async postJson() {{ throw new Error('unused'); }},
+    async putJson(_path, body) {{ await save; revision += 1; return applied(body, revision); }},
+  }};
+  const controller = createDraftController({{ api, randomUUID: ids() }});
+  controller.open(task());
+  controller.replaceRegion('train:coco:101', {{ ...first, bbox_2d: [12, 20, 300, 400] }});
+  assert.equal(controller.getState().canUndo, false);
+  await assert.rejects(controller.undo(), /Undo is unavailable/);
+  releaseSave();
+  await controller.flush();
+  assert.equal(controller.getState().canUndo, true);
+}}
+
+for (const status of [422, 409]) {{
+  const api = {{
+    async postJson() {{ throw new Error('unused'); }},
+    async putJson() {{ throw new ApiError('save rejected', {{ status, body: {{ status }} }}); }},
+  }};
+  const controller = createDraftController({{ api, randomUUID: ids() }});
+  controller.open(task());
+  controller.replaceRegion('train:coco:101', {{ ...first, bbox_2d: [13, 20, 300, 400] }});
+  await assert.rejects(controller.flush());
+  assert.equal(controller.getState().canUndo, false);
+  await assert.rejects(controller.undo(), /Undo is unavailable/);
+}}
+
+{{
+  let revision = 0;
+  let releaseProjection;
+  const projection = new Promise(resolve => {{ releaseProjection = resolve; }});
+  const api = {{
+    async postJson() {{ return projection; }},
+    async putJson(_path, body) {{ revision += 1; return applied(body, revision); }},
+  }};
+  const controller = createDraftController({{ api, randomUUID: ids() }});
+  controller.open(task());
+  controller.replaceRegion('train:coco:101', {{ ...first, bbox_2d: [14, 20, 300, 400] }});
+  await controller.flush();
+  const pending = controller.projectAndApply({{
+    operation: 'update', region_key: 'train:coco:101',
+    pixel_xyxy: [15, 20, 300, 400], category_name: 'person',
+  }});
+  await tick();
+  assert.equal(controller.getState().canUndo, false);
+  await assert.rejects(controller.undo(), /Undo is unavailable/);
+  releaseProjection({{
+    object: {{ ...first, bbox_2d: [15, 20, 300, 400] }},
+    binding: {{ revision, generation: 0, base_row_hash: hash }},
+  }});
+  await pending;
+  assert.equal(controller.getState().canUndo, true);
+}}
+"""
+    )

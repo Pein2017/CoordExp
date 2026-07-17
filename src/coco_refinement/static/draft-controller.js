@@ -1,5 +1,7 @@
 import { ApiError } from './api-client.js';
 
+const MAX_UNDO_SNAPSHOTS = 50;
+
 export function createDraftController({ api, onChange, randomUUID } = {}) {
   if (!api || typeof api.postJson !== 'function' || typeof api.putJson !== 'function') {
     throw new TypeError('api must provide postJson and putJson');
@@ -21,6 +23,7 @@ export function createDraftController({ api, onChange, randomUUID } = {}) {
   let error = null;
   let conflict = null;
   let phase = 'Closed';
+  let undoHistory = [];
 
   const emit = () => {
     const snapshot = getState();
@@ -36,7 +39,18 @@ export function createDraftController({ api, onChange, randomUUID } = {}) {
     dirty: version > durableVersion,
     error,
     conflict: conflict ? clone(conflict) : null,
+    canUndo: canUndo(),
   });
+
+  const canUndo = () => Boolean(
+    undoHistory.length > 0
+    && !pendingAttempt
+    && !pumpPromise
+    && !projectionPromise
+    && !error
+    && !conflict
+    && version <= durableVersion,
+  );
 
   const hasUnsavedLocal = () => Boolean(
     version > durableVersion || pendingAttempt || pumpPromise || projectionPromise || error || conflict,
@@ -59,20 +73,65 @@ export function createDraftController({ api, onChange, randomUUID } = {}) {
     pendingAttempt = null;
     error = null;
     conflict = null;
+    undoHistory = [];
     phase = authority === 'draft' ? 'Draft' : 'Committed';
     emit();
     return getState();
   };
 
-  const replaceObjects = (nextObjects) => {
+  const rebind = (authoritative) => {
+    requireOpen();
+    if (pumpPromise || projectionPromise || hasUnsavedLocal()) {
+      throw new Error('cannot rebind a task while local state is unresolved');
+    }
+    const normalized = normalizeTask(authoritative);
+    if (normalized.task.split !== task.split || normalized.task.task_id !== task.task_id) {
+      throw new Error('authority rebind must preserve task identity');
+    }
+    if (!sameSemanticsWithAuthorityIdentityEnrichment(objects, normalized.objects)) {
+      throw new Error('authority rebind changed task semantics');
+    }
+    const authoritativeIds = new Map(normalized.objects
+      .filter(object => Number.isInteger(object.coco_ann_id) && object.coco_ann_id !== 0)
+      .map(object => [object.region_key, object.coco_ann_id]));
+    undoHistory = undoHistory.map(snapshot => snapshot.map(object => {
+      const cocoAnnId = authoritativeIds.get(object.region_key);
+      return cocoAnnId === undefined ? clone(object) : { ...clone(object), coco_ann_id: cocoAnnId };
+    }));
+    task = normalized.task;
+    objects = normalized.objects;
+    binding = normalized.binding;
+    authority = normalized.authority;
+    version = 0;
+    durableVersion = 0;
+    pendingAttempt = null;
+    error = null;
+    conflict = null;
+    phase = authority === 'draft' ? 'Draft' : 'Committed';
+    emit();
+    return getState();
+  };
+
+  const replaceObjects = (nextObjects, { recordUndo = true } = {}) => {
     requireOpen();
     if (conflict) throw new Error('resolve the authoritative conflict before editing');
     if (!Array.isArray(nextObjects)) throw new TypeError('objects must be an array');
-    objects = clone(nextObjects);
+    const next = clone(nextObjects);
+    if (recordUndo) pushUndoSnapshot(objects);
+    objects = next;
     version += 1;
     phase = error ? 'Error' : 'Saving';
     emit();
     schedulePump();
+    return getState();
+  };
+
+  const undo = async () => {
+    requireOpen();
+    if (!canUndo()) throw new Error('Undo is unavailable while local state is unresolved');
+    const previous = undoHistory.pop();
+    replaceObjects(previous, { recordUndo: false });
+    await flush();
     return getState();
   };
 
@@ -242,8 +301,14 @@ export function createDraftController({ api, onChange, randomUUID } = {}) {
     if (!task || !binding) throw new Error('no authoritative task is open');
   };
 
+  const pushUndoSnapshot = (snapshot) => {
+    undoHistory.push(clone(snapshot));
+    if (undoHistory.length > MAX_UNDO_SNAPSHOTS) undoHistory.shift();
+  };
+
   return Object.freeze({
     open,
+    rebind,
     getState,
     onChange(listener) {
       listeners.add(requireListener(listener));
@@ -252,6 +317,7 @@ export function createDraftController({ api, onChange, randomUUID } = {}) {
     replaceObjects,
     replaceRegion,
     projectAndApply,
+    undo,
     flush,
     retry,
     hasUnsavedLocal,
@@ -313,4 +379,20 @@ function requireListener(value) {
 
 function clone(value) {
   return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+}
+
+function sameSemanticsWithAuthorityIdentityEnrichment(left, right) {
+  if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
+  return left.every((value, index) => {
+    const current = clone(value);
+    const authoritative = clone(right[index]);
+    const currentId = Number.isInteger(current.coco_ann_id) && current.coco_ann_id !== 0
+      ? current.coco_ann_id : null;
+    const authoritativeId = Number.isInteger(authoritative.coco_ann_id)
+      && authoritative.coco_ann_id !== 0 ? authoritative.coco_ann_id : null;
+    delete current.coco_ann_id;
+    delete authoritative.coco_ann_id;
+    return JSON.stringify(current) === JSON.stringify(authoritative)
+      && (currentId === null || currentId === authoritativeId);
+  });
 }

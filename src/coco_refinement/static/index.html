@@ -29,6 +29,8 @@
         <button id="jump-button" type="button">Go</button>
         <button id="previous-button" type="button" title="Previous sample">← Previous</button>
         <button id="next-button" type="button" title="Next sample">Next →</button>
+        <button id="commit-button" type="button" disabled>Commit Drafts</button>
+        <span id="commit-status" class="status-badge" data-tone="pending" role="status">Commit unavailable</span>
       </section>
 
       <p id="notice" class="notice" role="status">Loading local session…</p>
@@ -54,6 +56,17 @@
               <button id="zoom-in" type="button" aria-label="Zoom in" disabled>+</button>
               <button id="zoom-reset" type="button" disabled>Reset view</button>
             </div>
+            <div class="tool-group" role="group" aria-label="Undo and visibility">
+              <button id="undo-button" type="button" disabled>Undo</button>
+              <label class="compact-control" for="visibility-mode">Boxes</label>
+              <select id="visibility-mode" disabled>
+                <option value="all">Show all</option>
+                <option value="dim-nonselected">Dim others</option>
+                <option value="hide-nonselected">Hide others</option>
+              </select>
+              <button id="hide-selected" type="button" disabled>Hide selected</button>
+              <button id="restore-visibility" type="button" disabled>Restore</button>
+            </div>
             <div class="tool-group" aria-label="Draft status and recovery">
               <span id="save-status" class="status-badge" data-tone="pending" role="status">Save state unavailable</span>
               <button id="save-retry" type="button" hidden>Retry save</button>
@@ -64,7 +77,7 @@
             <svg id="bbox-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid meet" aria-label="COCO bounding box editor" tabindex="0"></svg>
             <p id="image-placeholder">Choose a sample to preview its image and boxes.</p>
           </div>
-          <p class="readonly-note">Geometry gestures use the natural image coordinate system. An edit is not durable until the save status confirms it; delete, Commit, and ROI inference are not enabled in this slice.</p>
+          <p class="readonly-note">Geometry edits and Undo autosave as Drafts. Visibility controls are local presentation only. Commit runs in the background; delete and ROI inference are not enabled in this slice.</p>
         </section>
         <aside class="details-panel" aria-label="Task details">
           <h2>Task state</h2>
