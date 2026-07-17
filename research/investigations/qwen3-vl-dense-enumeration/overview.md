@@ -431,6 +431,17 @@ unisolated from trajectory, edge, and width priors. This rejects a universal
 early complete-owner account. The chair's forced current geometry also changes the next-row category,
 showing executable cross-row state without proving a correct covered set.
 
+The completed [Object-Specific Geometry Transport, Decision Phase, and
+Cross-Row Influence Horizon](experiments/2026-07-17-object-specific-geometry-transport-and-cross-row-influence-horizon/results.md)
+stops the next hard-clamp route at Wave One. On image `7818`, neither frozen
+`x1,y1` history is supported under both donor states. On image `19432`, forced
+real and synthetic `x1` histories produce monotonic, valid, naturally closing
+`x2` behavior with much more stable translated-width than absolute-coordinate
+distributions, but only the target arm passes the frozen 10-percent history-
+support floor. This is descriptive off-support translation-grammar
+compatibility, not an admitted donor, grammar, owner, phase, or coverage
+handle. Later waves, training, and architecture promotion do not run.
+
 ## Completed Evidence Units
 
 | Unit | Status | Purpose |
@@ -456,3 +467,4 @@ showing executable cross-row state without proving a correct covered set.
 | [Fixed-Encoding Persistent Hard-Routing Geometry-State Portability on Image 7818](experiments/2026-07-16-fixed-encoding-persistent-hard-routing-geometry-state-portability-image7818/unit.md) | complete; evidence verified; [results](experiments/2026-07-16-fixed-encoding-persistent-hard-routing-geometry-state-portability-image7818/results.md); architecture and training not promoted | Establishes a bounded one-way block-`23` pre-`x1` geometry-owner basin switch with a valid block-`13` negative control; the effect is concentrated at the first coordinate and does not establish a complete object state. |
 | [Human-Audited Rare-Object Trajectory Genealogy and Causal Branch Replay](experiments/2026-07-16-human-audited-rare-object-trajectory-genealogy/unit.md) | redirected after partial verified evidence; manual review complete; [results](experiments/2026-07-16-human-audited-rare-object-trajectory-genealogy/results.md) | Finds real Common Objects in Context 80-category support for all 119 purposive unmatched candidates, but no frozen unique-entity ledger; semantic descriptions are usually sound while geometry frequently covers parts, multiple instances, or axis-wise mixtures. |
 | [Fixed-Prefix Complete-Box Coherence and Progressive Coordinate-Release Factorial](experiments/2026-07-16-fixed-prefix-complete-box-coherence-and-coordinate-release-factorial/unit.md) | complete; evidence verified; [results](experiments/2026-07-16-fixed-prefix-complete-box-coherence-and-coordinate-release-factorial/results.md); architecture and training not promoted | Establishes strong `x1`-to-`x2` geometry transport in one dense-chair state, a strong case-level fork part-sized or late-extent basin without isolating its cause, and cross-row transition sensitivity; physical owner state and correct uncovered redistribution remain unproved. |
+| [Object-Specific Geometry Transport, Decision Phase, and Cross-Row Influence Horizon](experiments/2026-07-17-object-specific-geometry-transport-and-cross-row-influence-horizon/unit.md) | complete; evidence verified; stopped after Wave One common-support failure; [results](experiments/2026-07-17-object-specific-geometry-transport-and-cross-row-influence-horizon/results.md); architecture and training not promoted | Finds sharp donor-specific early-coordinate basins and coherent off-support coordinate-translation behavior, but no admitted common-support contrast; later phase and cross-row waves do not run. |

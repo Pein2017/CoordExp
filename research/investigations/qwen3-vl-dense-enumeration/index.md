@@ -66,6 +66,8 @@ durable program reading path below.
 41. [Human-audited rare-object manual-review results and coordinate-coherence redirection](experiments/2026-07-16-human-audited-rare-object-trajectory-genealogy/results.md)
 42. [Fixed-prefix complete-box coherence and progressive coordinate-release factorial](experiments/2026-07-16-fixed-prefix-complete-box-coherence-and-coordinate-release-factorial/unit.md)
 43. [Fixed-prefix complete-box results and bounded coordinate-transport verdict](experiments/2026-07-16-fixed-prefix-complete-box-coherence-and-coordinate-release-factorial/results.md)
+44. [Object-specific geometry transport, decision-phase, and cross-row influence-horizon unit](experiments/2026-07-17-object-specific-geometry-transport-and-cross-row-influence-horizon/unit.md)
+45. [Wave-One common-support and off-support grammar results](experiments/2026-07-17-object-specific-geometry-transport-and-cross-row-influence-horizon/results.md)
 
 The review and readiness amendment preserve the pre-execution gate. The
 completed unit and results record own current lifecycle and evidence status.
