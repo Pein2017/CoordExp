@@ -20,6 +20,7 @@ from src.label_studio_coco_refinement.store import (
     BatchEnqueueReceipt,
     BatchMember,
     BatchRequest,
+    BatchResult,
     BatchStatus,
     BatchStatusView,
     CommitRequest,
@@ -145,6 +146,23 @@ class DraftCatalog(Protocol):
     ) -> DraftCatalogCapture: ...
 
 
+class BatchResultObserver(Protocol):
+    """Synchronously project one durable terminal store result.
+
+    The callback runs after the store has released its publication locks.  An
+    exception is a fail-closed worker failure: the terminal store result stays
+    authoritative, while later batches wait for startup reconciliation.
+    """
+
+    def __call__(
+        self,
+        *,
+        split: str,
+        store: WorkingDatasetStore,
+        result: BatchResult,
+    ) -> None: ...
+
+
 @dataclass(frozen=True)
 class BatchStatusReceipt:
     """Deterministic ordinary-JSON receipt for enqueue and status responses."""
@@ -249,6 +267,7 @@ class _SplitWorker:
     split: str
     store: WorkingDatasetStore
     poll_interval: float
+    on_batch_result: BatchResultObserver | None = None
     lock: threading.Lock = field(default_factory=threading.Lock)
     wake: threading.Event = field(default_factory=threading.Event)
     stop_requested: threading.Event = field(default_factory=threading.Event)
@@ -354,8 +373,15 @@ class _SplitWorker:
                         self._set_state(WorkerState.IDLE)
                         break
                     with self.lock:
-                        self.processed_batches += 1
                         self.last_batch_id = result.batch_id
+                    if self.on_batch_result is not None:
+                        self.on_batch_result(
+                            split=self.split,
+                            store=self.store,
+                            result=result,
+                        )
+                    with self.lock:
+                        self.processed_batches += 1
             self._set_state(WorkerState.STOPPED)
         except BaseException as exc:  # fail closed at the thread boundary
             self._fail(exc)
@@ -369,6 +395,7 @@ class BatchCoordinator:
         stores: Mapping[str, WorkingDatasetStore],
         *,
         poll_interval: float = 0.25,
+        on_batch_result: BatchResultObserver | None = None,
     ) -> None:
         if poll_interval <= 0:
             raise ValueError("poll_interval must be positive")
@@ -378,7 +405,12 @@ class BatchCoordinator:
         if any(split not in {"train", "val"} for split in self._stores):
             raise ValueError("split stores must be named 'train' or 'val'")
         self._workers = {
-            split: _SplitWorker(split, store, poll_interval)
+            split: _SplitWorker(
+                split,
+                store,
+                poll_interval,
+                on_batch_result=on_batch_result,
+            )
             for split, store in self._stores.items()
         }
 
@@ -675,6 +707,7 @@ __all__ = [
     "AuthenticatedPrincipal",
     "AuthoritativeDraftSnapshot",
     "BatchCoordinator",
+    "BatchResultObserver",
     "BatchStatusReceipt",
     "DraftCatalog",
     "DraftCatalogCapture",

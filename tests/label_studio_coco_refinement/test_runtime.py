@@ -22,6 +22,7 @@ from src.label_studio_coco_refinement.runtime import (
 )
 from src.label_studio_coco_refinement.store import (
     AuthoritativeDraftIdentity,
+    BatchResult,
     BatchStatus,
     BootstrapSpec,
     InferenceReceiptLink,
@@ -458,6 +459,104 @@ def test_clean_stop_then_restart_recovers_queued_batch(
         assert health.processed_batches == 1
     finally:
         restarted.stop()
+
+
+def test_terminal_observer_runs_after_publication_before_processed_count(
+    stores: tuple[
+        dict[str, WorkingDatasetStore],
+        AcceptingAnnotationVerifier,
+        EmptyInferenceResolver,
+    ],
+) -> None:
+    split_stores, _, _ = stores
+    store = split_stores["train"]
+    catalog = MutableCatalog()
+    _set_capture(catalog, store, "train", (1,))
+    observed: list[tuple[str, WorkingDatasetStore, BatchResult, int]] = []
+    coordinator: BatchCoordinator
+
+    def observe(
+        *, split: str, store: WorkingDatasetStore, result: BatchResult
+    ) -> None:
+        observed.append(
+            (split, store, result, coordinator.health("train").processed_batches)
+        )
+
+    coordinator = BatchCoordinator(
+        {"train": store}, poll_interval=0.01, on_batch_result=observe
+    )
+    runtime = RefinementRuntime(
+        catalog=catalog,
+        stores={"train": store},
+        project_ids={"train": "project-train"},
+        coordinator=coordinator,
+    )
+    runtime.start_workers()
+    try:
+        _wait_until(lambda: runtime.worker_health("train").state is WorkerState.IDLE)
+        runtime.capture_and_enqueue(
+            split="train",
+            batch_id="observed-terminal",
+            principal=AuthenticatedPrincipal("reviewer", authenticated=True),
+        )
+        _wait_until(lambda: len(observed) == 1)
+        split, observed_store, result, count_during_callback = observed[0]
+        assert split == "train"
+        assert observed_store is store
+        assert result.batch_id == "observed-terminal"
+        assert result.status is BatchStatus.SUCCEEDED
+        assert count_during_callback == 0
+        _wait_until(
+            lambda: runtime.worker_health("train").processed_batches == 1
+        )
+    finally:
+        runtime.stop_workers()
+
+
+def test_terminal_observer_failure_stops_worker_after_durable_terminal(
+    stores: tuple[
+        dict[str, WorkingDatasetStore],
+        AcceptingAnnotationVerifier,
+        EmptyInferenceResolver,
+    ],
+) -> None:
+    split_stores, _, _ = stores
+    store = split_stores["train"]
+    catalog = MutableCatalog()
+    _set_capture(catalog, store, "train", (1,))
+
+    def reject_projection(
+        *, split: str, store: WorkingDatasetStore, result: BatchResult
+    ) -> None:
+        del split, store, result
+        raise ValueError("terminal projection failed")
+
+    coordinator = BatchCoordinator(
+        {"train": store},
+        poll_interval=0.01,
+        on_batch_result=reject_projection,
+    )
+    runtime = RefinementRuntime(
+        catalog=catalog,
+        stores={"train": store},
+        project_ids={"train": "project-train"},
+        coordinator=coordinator,
+    )
+    runtime.start_workers()
+    _wait_until(lambda: runtime.worker_health("train").state is WorkerState.IDLE)
+    runtime.capture_and_enqueue(
+        split="train",
+        batch_id="projection-failure",
+        principal=AuthenticatedPrincipal("reviewer", authenticated=True),
+    )
+
+    _wait_until(lambda: runtime.worker_health("train").state is WorkerState.FAILED)
+    health = runtime.worker_health("train")
+    assert store.get_batch_status("projection-failure").status is BatchStatus.SUCCEEDED
+    assert health.thread_alive is False
+    assert health.last_batch_id == "projection-failure"
+    assert health.processed_batches == 0
+    assert health.error == "ValueError: terminal projection failed"
 
 
 def test_worker_busy_is_queryable_and_retries_fail_closed(
