@@ -11,7 +11,7 @@
       <header class="app-header">
         <div>
           <h1>COCO Refinement</h1>
-          <p class="subtitle">Local browser · read-only navigation slice</p>
+          <p class="subtitle">Local browser · natural-coordinate SVG bbox workspace</p>
         </div>
         <span id="connection-status" class="status-badge" data-tone="pending">Starting…</span>
       </header>
@@ -43,12 +43,28 @@
             <h2 id="task-heading">No sample selected</h2>
             <span id="task-counter">—</span>
           </div>
+          <div class="editor-toolbar" aria-label="Bounding box tools">
+            <div class="tool-group" role="group" aria-label="Editor mode">
+              <button id="mode-select" type="button" aria-pressed="true" disabled>Select / move</button>
+              <button id="mode-draw" type="button" aria-pressed="false" disabled>Draw bbox</button>
+              <button id="mode-pan" type="button" aria-pressed="false" disabled>Pan</button>
+            </div>
+            <div class="tool-group" role="group" aria-label="Viewport zoom">
+              <button id="zoom-out" type="button" aria-label="Zoom out" disabled>−</button>
+              <button id="zoom-in" type="button" aria-label="Zoom in" disabled>+</button>
+              <button id="zoom-reset" type="button" disabled>Reset view</button>
+            </div>
+            <div class="tool-group" aria-label="Draft status and recovery">
+              <span id="save-status" class="status-badge" data-tone="pending" role="status">Save state unavailable</span>
+              <button id="save-retry" type="button" hidden>Retry save</button>
+              <button id="task-reload" type="button" hidden>Reload task</button>
+            </div>
+          </div>
           <div class="image-frame">
-            <img id="task-image" alt="Current COCO sample" hidden>
-            <svg id="bbox-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid meet" aria-label="Existing bounding boxes"></svg>
+            <svg id="bbox-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid meet" aria-label="COCO bounding box editor" tabindex="0"></svg>
             <p id="image-placeholder">Choose a sample to preview its image and boxes.</p>
           </div>
-          <p class="readonly-note">This first slice is for browsing and canonical category selection only. Bbox edits, delete, save, Commit, and ROI inference are not enabled yet.</p>
+          <p class="readonly-note">Geometry gestures use the natural image coordinate system. An edit is not durable until the save status confirms it; delete, Commit, and ROI inference are not enabled in this slice.</p>
         </section>
         <aside class="details-panel" aria-label="Task details">
           <h2>Task state</h2>

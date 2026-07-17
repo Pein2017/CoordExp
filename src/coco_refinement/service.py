@@ -48,10 +48,13 @@ _STATIC_RESPONSE_HEADERS = {
     "Referrer-Policy": "no-referrer",
 }
 _STATIC_ASSETS = {
+    "api-client.js": "text/javascript",
     "app.css": "text/css",
     "app.js": "text/javascript",
     "class-search.js": "text/javascript",
+    "draft-controller.js": "text/javascript",
     "editor-geometry.js": "text/javascript",
+    "svg-editor.js": "text/javascript",
 }
 
 
@@ -407,10 +410,28 @@ def create_service_app(
             "class-search.js", media_type=_STATIC_ASSETS["class-search.js"]
         )
 
+    @app.get("/api-client.js", include_in_schema=False)
+    async def get_api_client_module() -> Response:
+        return _static_file(
+            "api-client.js", media_type=_STATIC_ASSETS["api-client.js"]
+        )
+
+    @app.get("/draft-controller.js", include_in_schema=False)
+    async def get_draft_controller_module() -> Response:
+        return _static_file(
+            "draft-controller.js", media_type=_STATIC_ASSETS["draft-controller.js"]
+        )
+
     @app.get("/editor-geometry.js", include_in_schema=False)
     async def get_editor_geometry_module() -> Response:
         return _static_file(
             "editor-geometry.js", media_type=_STATIC_ASSETS["editor-geometry.js"]
+        )
+
+    @app.get("/svg-editor.js", include_in_schema=False)
+    async def get_svg_editor_module() -> Response:
+        return _static_file(
+            "svg-editor.js", media_type=_STATIC_ASSETS["svg-editor.js"]
         )
 
     return app

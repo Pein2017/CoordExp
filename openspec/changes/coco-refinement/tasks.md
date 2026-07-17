@@ -25,7 +25,7 @@
 - [x] 3.1 Add the build-free HTML/CSS/ES-module application shell with train/val project selector, full task cursor/list, image viewport, compact status panel, and no Label Studio/Node runtime dependency.
 - [ ] 3.2 Add SVG image/overlay coordinate mapping and pointer-tested bbox select/create/move/resize/delete with server-returned canonical norm1000 geometry, stable keys, zero rotation, zoom/pan, and natural-aspect preservation.
 - [x] 3.3 Add keyboard COCO-80 exact/prefix/substring/spelling-tolerant search, canonical sparse-ID selection, cancellation, and rejection of aliases/free-form persistence.
-- [ ] 3.4 Add one client Draft controller for discrete autosave, idempotent mutation IDs, save/conflict/error state, Next/Previous/row navigation flush, pending-Draft reminder, unload warning only for unsaved local state, and batch-independent navigation.
+- [x] 3.4 Add one client Draft controller for discrete autosave, idempotent mutation IDs, save/conflict/error state, Next/Previous/row navigation flush, pending-Draft reminder, unload warning only for unsaved local state, and batch-independent navigation.
 - [ ] 3.5 Add local Undo grouping plus show-all, dim-non-selected, hide-non-selected, per-region visibility, restore, focused deletion recovery, and tests proving presentation never changes semantic hash or save count.
 - [ ] 3.6 Add Commit controls and exact per-task/batch status cues for Committed/Saving/Draft/Conflict plus Queued/Running/Reconciling/Succeeded/Failed and newer-Draft preservation.
 - [ ] 3.7 Run focused browser E2E against the real local service for CRUD, invalid geometry, class search, autosave/reload, navigation/save failure, visibility/Undo, multi-task Commit during later editing, restart recovery, and full-index task opening.

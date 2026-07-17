@@ -68,17 +68,29 @@ export function rankCategories(categories, query) {
     .map(item => item.category);
 }
 
-export function installCategorySearch({ input, results, selection, categories }) {
+export function installCategorySearch({
+  input,
+  results,
+  selection,
+  categories,
+  onChoose = () => {},
+  onClear = () => {},
+}) {
+  if (typeof onChoose !== 'function' || typeof onClear !== 'function') {
+    throw new TypeError('category callbacks must be functions');
+  }
   let active = -1;
   let current = [];
   let selected = null;
-  const clearSelection = () => {
+  const clearSelection = ({ notify = true } = {}) => {
+    const prior = selected;
     selected = null;
     delete selection.dataset.categoryId;
     delete selection.dataset.categoryName;
     selection.textContent = 'No category selected.';
+    if (notify && prior) onClear(prior);
   };
-  const choose = (category) => {
+  const choose = (category, { notify = true } = {}) => {
     selected = category;
     selection.textContent = `Selected: ${category.name} (COCO id ${category.id})`;
     selection.dataset.categoryId = String(category.id);
@@ -86,6 +98,7 @@ export function installCategorySearch({ input, results, selection, categories })
     input.value = category.name;
     results.hidden = true;
     input.setAttribute('aria-expanded', 'false');
+    if (notify) onChoose({ id: category.id, name: category.name });
   };
   const render = () => {
     current = rankCategories(categories, input.value).slice(0, 12);
