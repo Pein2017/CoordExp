@@ -185,6 +185,37 @@ def test_semantic_hash_is_order_independent_but_exact_hash_preserves_order() -> 
     assert forward.to_json_regions()[0]["bbox_2d"] == [101, 202, 303, 404]
 
 
+def test_exact_hash_preserves_approved_inference_provenance() -> None:
+    metadata = {
+        "inference_origin": True,
+        "receipt_id": "receipt-1",
+        "request_id": "request-1",
+        "result_id": "result-0",
+        "draft_revision": "6",
+    }
+    original = canonicalize_objects(
+        [
+            _local_object(
+                region_key="roi:receipt-1:result-0",
+                metadata=metadata,
+            )
+        ],
+        split="train",
+    )
+    changed = canonicalize_objects(
+        [
+            _local_object(
+                region_key="roi:receipt-1:result-0",
+                metadata={**metadata, "draft_revision": "7"},
+            )
+        ],
+        split="train",
+    )
+
+    assert original.semantic_hash == changed.semantic_hash
+    assert original.result_hash != changed.result_hash
+
+
 def test_native_task_identity_is_compact_and_strict() -> None:
     task = NativeTaskIdentity(split="val", image_id=139, source_row_index=0)
     assert task.task_key == "val:139"
