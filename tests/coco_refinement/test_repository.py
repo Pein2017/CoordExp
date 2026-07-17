@@ -95,6 +95,7 @@ def _request(
     draft: object,
     *,
     mutation_id: str,
+    committed: object | None = None,
     expected_revision: int = 0,
     expected_generation: int = 3,
     expected_base_row_hash: str | None = None,
@@ -106,6 +107,22 @@ def _request(
         expected_revision=expected_revision,
         expected_generation=expected_generation,
         expected_base_row_hash=expected_base_row_hash or _digest("b"),
+        committed=(
+            canonicalize_objects(
+                [
+                    {
+                        "region_key": "train:coco:7",
+                        "bbox_2d": [1, 2, 3, 4],
+                        "category_name": "person",
+                        "category_id": 1,
+                        "coco_ann_id": 7,
+                    }
+                ],
+                split="train",
+            )
+            if committed is None
+            else committed
+        ),  # type: ignore[arg-type]
         draft=draft,  # type: ignore[arg-type]
     )
 
@@ -176,6 +193,61 @@ def test_same_mutation_replays_authoritative_response_across_restart(
     assert restarted.count_mutations() == 1
 
 
+def test_replay_uses_caller_fingerprint_after_committed_generation_changes(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "state.sqlite3"
+    repository = _repository(path)
+    request = _request(
+        canonicalize_objects([_object()], split="train"),
+        mutation_id="replay-after-generation",
+    )
+    applied = repository.save_draft(request)
+    newer_committed = canonicalize_objects([], split="train")
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """
+            UPDATE tasks
+            SET current_generation = 4, base_row_hash = ?, committed_result_hash = ?
+            WHERE task_id = 'train:7'
+            """,
+            (_digest("e"), newer_committed.result_hash),
+        )
+
+    replayed = repository.save_draft(
+        replace(request, committed=newer_committed)
+    )
+
+    assert replayed == applied
+    assert repository.count_mutations() == 1
+
+
+def test_replay_rejects_response_with_wrong_mutation_identity(tmp_path: Path) -> None:
+    path = tmp_path / "state.sqlite3"
+    repository = _repository(path)
+    request = _request(
+        canonicalize_objects([_object()], split="train"),
+        mutation_id="ledger-key",
+    )
+    repository.save_draft(request)
+    with sqlite3.connect(path) as connection:
+        response = json.loads(
+            connection.execute(
+                "SELECT response_json FROM mutations WHERE mutation_id = ?",
+                (request.mutation_id,),
+            ).fetchone()[0]
+        )
+        response["mutation_id"] = "different-response-id"
+        connection.execute(
+            "UPDATE mutations SET response_json = ? WHERE mutation_id = ?",
+            (json.dumps(response), request.mutation_id),
+        )
+
+    with pytest.raises(RepositoryCorruptionError) as exc_info:
+        repository.save_draft(request)
+    assert exc_info.value.code == "coco_refinement.mutation_response_identity"
+
+
 def test_reusing_mutation_id_for_different_request_fails_closed(
     tmp_path: Path,
 ) -> None:
@@ -207,7 +279,9 @@ def test_baseline_retirement_is_replayable_and_next_write_is_n_plus_one(
         tasks=(_task(committed_result_hash=baseline.result_hash),),
     )
     changed = canonicalize_objects([_object()], split="train")
-    first = repository.save_draft(_request(changed, mutation_id="draft"))
+    first = repository.save_draft(
+        _request(changed, mutation_id="draft", committed=baseline)
+    )
     assert isinstance(first, DraftSaveApplied)
     assert first.state.revision == 1
 
@@ -215,6 +289,7 @@ def test_baseline_retirement_is_replayable_and_next_write_is_n_plus_one(
         baseline,
         mutation_id="retire-response-lost",
         expected_revision=1,
+        committed=baseline,
     )
     retired = repository.save_draft(retire_request)
     assert isinstance(retired, DraftSaveApplied)
@@ -226,11 +301,113 @@ def test_baseline_retirement_is_replayable_and_next_write_is_n_plus_one(
     restarted = SqliteDraftRepository(path)
     assert restarted.save_draft(retire_request) == retired
     next_response = restarted.save_draft(
-        _request(changed, mutation_id="after-retire", expected_revision=2)
+        _request(
+            changed,
+            mutation_id="after-retire",
+            expected_revision=2,
+            committed=baseline,
+        )
     )
     assert isinstance(next_response, DraftSaveApplied)
     assert next_response.state.revision == 3
     assert restarted.count_mutations() == 3
+
+
+def test_semantically_equal_reordered_baseline_retires_sparse_draft(
+    tmp_path: Path,
+) -> None:
+    values = [
+        {
+            "region_key": f"train:coco:{object_id}",
+            "bbox_2d": [object_id, 20, 300, 400],
+            "category_name": "person",
+            "category_id": 1,
+            "coco_ann_id": object_id,
+        }
+        for object_id in (7, 8)
+    ]
+    baseline = canonicalize_objects(values, split="train")
+    reordered = canonicalize_objects(list(reversed(values)), split="train")
+    assert reordered.semantic_hash == baseline.semantic_hash
+    assert reordered.result_hash != baseline.result_hash
+    repository = _repository(
+        tmp_path / "state.sqlite3",
+        tasks=(_task(committed_result_hash=baseline.result_hash),),
+    )
+
+    response = repository.save_draft(
+        _request(
+            reordered,
+            mutation_id="semantic-retirement",
+            committed=baseline,
+        )
+    )
+
+    assert isinstance(response, DraftSaveApplied)
+    assert response.retired is True
+    assert response.state.draft is None
+    assert repository.count_drafts(project_id="coco:train") == 0
+
+
+def test_untrusted_committed_baseline_and_preallocated_new_ids_fail_before_ledger(
+    tmp_path: Path,
+) -> None:
+    repository = _repository(tmp_path / "state.sqlite3")
+    wrong_committed = canonicalize_objects([], split="train")
+    with pytest.raises(RepositoryInvariantError) as baseline_error:
+        repository.save_draft(
+            _request(
+                canonicalize_objects([_object()], split="train"),
+                mutation_id="wrong-baseline",
+                committed=wrong_committed,
+            )
+        )
+    assert baseline_error.value.code == "coco_refinement.committed_baseline"
+
+    invented = canonicalize_objects(
+        [{**_object(), "coco_ann_id": -99}], split="train"
+    )
+    with pytest.raises(RepositoryInvariantError) as identity_error:
+        repository.save_draft(
+            _request(invented, mutation_id="invented-negative")
+        )
+    assert identity_error.value.code == "coco_refinement.task_bound_identity"
+    assert repository.get_task_state("coco:train", "train:7").revision == 0
+    assert repository.count_mutations() == 0
+
+
+def test_stale_save_returns_cas_conflict_before_baseline_and_identity_validation(
+    tmp_path: Path,
+) -> None:
+    repository = _repository(tmp_path / "state.sqlite3")
+    stale_foreign_object = canonicalize_objects(
+        [
+            {
+                "region_key": "train:coco:999",
+                "bbox_2d": [1, 2, 3, 4],
+                "category_name": "person",
+                "category_id": 1,
+                "coco_ann_id": 999,
+            }
+        ],
+        split="train",
+    )
+
+    response = repository.save_draft(
+        _request(
+            stale_foreign_object,
+            mutation_id="stale-foreign-identity",
+            committed=canonicalize_objects([], split="train"),
+            expected_revision=1,
+        )
+    )
+
+    assert isinstance(response, DraftSaveConflict)
+    assert response.reason == "revision"
+    assert response.expected == 1
+    assert response.actual == 0
+    assert response.state.draft is None
+    assert repository.count_mutations() == 1
 
 
 @pytest.mark.parametrize(

@@ -132,6 +132,17 @@ def _local_region(
     }
 
 
+def _committed_region(split: str, image_id: int) -> dict[str, object]:
+    object_id = image_id * 100
+    return {
+        "region_key": f"{split}:coco:{object_id}",
+        "bbox_2d": [10, 20, 300, 400],
+        "category_name": "person",
+        "category_id": 1,
+        "coco_ann_id": object_id,
+    }
+
+
 class _Verifier:
     def verify(self, _identity: object) -> bool:
         return False
@@ -741,6 +752,10 @@ def test_startup_replays_published_terminal_before_strict_sqlite_attestation(
             expected_revision=0,
             expected_generation=exact_task.current_generation,
             expected_base_row_hash=exact_task.base_row_hash,
+            committed=canonicalize_objects(
+                [_committed_region("train", exact_task.identity.image_id)],
+                split="train",
+            ),
             draft=canonicalize_objects(
                 [_local_region(exact_key, bbox=(20, 30, 320, 430))],
                 split="train",
@@ -755,6 +770,10 @@ def test_startup_replays_published_terminal_before_strict_sqlite_attestation(
             expected_revision=0,
             expected_generation=newer_task.current_generation,
             expected_base_row_hash=newer_task.base_row_hash,
+            committed=canonicalize_objects(
+                [_committed_region("train", newer_task.identity.image_id)],
+                split="train",
+            ),
             draft=canonicalize_objects(
                 [_local_region(newer_key, bbox=(40, 50, 340, 450))],
                 split="train",
@@ -777,6 +796,10 @@ def test_startup_replays_published_terminal_before_strict_sqlite_attestation(
             expected_revision=newer_save.state.revision,
             expected_generation=newer_task.current_generation,
             expected_base_row_hash=newer_task.base_row_hash,
+            committed=canonicalize_objects(
+                [_committed_region("train", newer_task.identity.image_id)],
+                split="train",
+            ),
             draft=canonicalize_objects(
                 [_local_region(newer_key, bbox=later_bbox)], split="train"
             ),

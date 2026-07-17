@@ -222,6 +222,7 @@ class SaveDraftRequest:
     expected_revision: int
     expected_generation: int
     expected_base_row_hash: str
+    committed: CanonicalDraft
     draft: CanonicalDraft
 
     def __post_init__(self) -> None:
@@ -231,11 +232,31 @@ class SaveDraftRequest:
         _integer(self.expected_revision, field="expected_revision", minimum=0)
         _integer(self.expected_generation, field="expected_generation", minimum=0)
         _digest(self.expected_base_row_hash, field="expected_base_row_hash")
+        if not isinstance(self.committed, CanonicalDraft):
+            raise RepositoryInvariantError(
+                "committed must be a canonical native Draft",
+                code="coco_refinement.committed_type",
+            )
         if not isinstance(self.draft, CanonicalDraft):
             raise RepositoryInvariantError(
                 "draft must already be a canonical native Draft",
                 code="coco_refinement.draft_type",
             )
+        if self.committed.split != self.draft.split:
+            raise RepositoryInvariantError(
+                "committed baseline and requested Draft splits differ",
+                code="coco_refinement.draft_split",
+            )
+        for field, value in (("committed", self.committed), ("draft", self.draft)):
+            reproduced = canonicalize_objects(
+                value.to_json_regions(), split=value.split
+            )
+            if reproduced != value:
+                raise RepositoryInvariantError(
+                    f"{field} canonical hashes do not reproduce",
+                    code="coco_refinement.draft_integrity",
+                    context={"field": field},
+                )
 
 
 @dataclass(frozen=True)
@@ -580,7 +601,13 @@ class SqliteDraftRepository:
                         code="coco_refinement.mutation_collision",
                         context={"mutation_id": request.mutation_id},
                     )
-                return _decode_response(str(mutation["response_json"]))
+                response = _decode_response(str(mutation["response_json"]))
+                if response.mutation_id != request.mutation_id:
+                    raise RepositoryCorruptionError(
+                        "stored mutation response identity differs from its ledger key",
+                        code="coco_refinement.mutation_response_identity",
+                    )
+                return response
 
             task_row = connection.execute(
                 "SELECT * FROM tasks WHERE project_id = ? AND task_id = ?",
@@ -611,7 +638,6 @@ class SqliteDraftRepository:
                     code="coco_refinement.draft_split",
                     context={"task_id": request.task_id},
                 )
-
             # CAS is intentionally checked before generation/base bindings.
             conflict: tuple[ConflictReason, int | str, int | str] | None = None
             if request.expected_revision != int(task_row["revision"]):
@@ -655,11 +681,11 @@ class SqliteDraftRepository:
                 )
                 return response
 
+            self._verify_committed_baseline(task_row, request)
+            self._verify_task_bound_identities(request)
             next_revision = int(task_row["revision"]) + 1
             now = _now()
-            retired = request.draft.result_hash == str(
-                task_row["committed_result_hash"]
-            )
+            retired = request.draft.semantic_hash == request.committed.semantic_hash
             if retired:
                 connection.execute(
                     "DELETE FROM drafts WHERE task_id = ?",
@@ -707,6 +733,48 @@ class SqliteDraftRepository:
             )
             return response
 
+    @staticmethod
+    def _verify_committed_baseline(
+        task_row: sqlite3.Row, request: SaveDraftRequest
+    ) -> None:
+        if (
+            str(task_row["split"]) != request.committed.split
+            or request.committed.result_hash
+            != str(task_row["committed_result_hash"])
+        ):
+            raise RepositoryInvariantError(
+                "supplied committed baseline differs from task authority",
+                code="coco_refinement.committed_baseline",
+                context={"task_id": request.task_id},
+            )
+
+    @staticmethod
+    def _verify_task_bound_identities(request: SaveDraftRequest) -> None:
+        committed_ids = {
+            value.region_key: value.coco_ann_id
+            for value in request.committed.objects
+        }
+        if any(value is None for value in committed_ids.values()):
+            raise RepositoryInvariantError(
+                "committed baseline contains an unallocated object identity",
+                code="coco_refinement.committed_identity",
+                context={"task_id": request.task_id},
+            )
+        for value in request.draft.objects:
+            if value.region_key in committed_ids:
+                if value.coco_ann_id != committed_ids[value.region_key]:
+                    raise RepositoryInvariantError(
+                        "committed region identity cannot change",
+                        code="coco_refinement.task_bound_identity",
+                        context={"region_key": value.region_key},
+                    )
+            elif value.coco_ann_id is not None:
+                raise RepositoryInvariantError(
+                    "new regions cannot supply a preallocated object identity",
+                    code="coco_refinement.task_bound_identity",
+                    context={"region_key": value.region_key},
+                )
+
     def get_task_state(self, project_id: str, task_id: str) -> TaskDraftState:
         _nonempty(project_id, field="project_id")
         _nonempty(task_id, field="task_id")
@@ -726,6 +794,70 @@ class SqliteDraftRepository:
                 (task_id,),
             ).fetchone()
             return self._state_from_rows(task_row, draft_row)
+
+    def get_task_authority(
+        self, project_id: str, task_id: str
+    ) -> tuple[CompactTaskRecord, TaskDraftState]:
+        """Read immutable task metadata and mutable Draft state in one snapshot."""
+
+        _nonempty(project_id, field="project_id")
+        _nonempty(task_id, field="task_id")
+        with self._transaction(immediate=False) as connection:
+            task_row = connection.execute(
+                "SELECT * FROM tasks WHERE project_id = ? AND task_id = ?",
+                (project_id, task_id),
+            ).fetchone()
+            if task_row is None:
+                raise TaskNotFoundError(
+                    "task does not exist in the complete project index",
+                    code="coco_refinement.task_not_found",
+                    context={"project_id": project_id, "task_id": task_id},
+                )
+            draft_row = connection.execute(
+                "SELECT * FROM drafts WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
+            return (
+                _compact_task_from_row(task_row),
+                self._state_from_rows(task_row, draft_row),
+            )
+
+    def list_compact_tasks(
+        self, *, project_id: str, cursor: int, limit: int
+    ) -> tuple[ProjectRecord, tuple[CompactTaskRecord, ...]]:
+        """Return one bounded source-order task page without baseline objects."""
+
+        _nonempty(project_id, field="project_id")
+        _integer(cursor, field="cursor", minimum=0)
+        _integer(limit, field="limit", minimum=1)
+        with self._transaction(immediate=False) as connection:
+            project_row = connection.execute(
+                "SELECT * FROM projects WHERE project_id = ?",
+                (project_id,),
+            ).fetchone()
+            if project_row is None:
+                raise ProjectNotFoundError(
+                    "project does not exist",
+                    code="coco_refinement.project_not_found",
+                    context={"project_id": project_id},
+                )
+            project = _project_from_row(project_row)
+            if cursor > project.task_count:
+                raise RepositoryInvariantError(
+                    "task cursor exceeds the project task count",
+                    code="coco_refinement.task_cursor",
+                    context={"cursor": cursor, "task_count": project.task_count},
+                )
+            rows = connection.execute(
+                """
+                SELECT * FROM tasks
+                WHERE project_id = ? AND source_row_index >= ?
+                ORDER BY source_row_index
+                LIMIT ?
+                """,
+                (project_id, cursor, limit),
+            ).fetchall()
+            return project, tuple(_compact_task_from_row(row) for row in rows)
 
     def capture_pending_draft_states(
         self, *, project_id: str, split: Split
@@ -951,9 +1083,12 @@ class SqliteDraftRepository:
                             context={"batch_id": batch_id, "task_id": value.task_id},
                         )
                     response = _decode_response(str(row["response_json"]))
-                    if not isinstance(response, DraftSaveApplied):
+                    if (
+                        not isinstance(response, DraftSaveApplied)
+                        or response.mutation_id != event_ids[value.task_id]
+                    ):
                         raise RepositoryCorruptionError(
-                            "terminal reconciliation response has the wrong kind",
+                            "terminal reconciliation response has the wrong kind or identity",
                             code="coco_refinement.terminal_response",
                         )
                     replayed.append(
@@ -1043,7 +1178,10 @@ class SqliteDraftRepository:
                     next_draft = _merge_terminal_identities(
                         live_draft, value.region_id_mapping
                     )
-                    retired = next_draft.result_hash == value.committed_draft.result_hash
+                    retired = (
+                        next_draft.semantic_hash
+                        == value.committed_draft.semantic_hash
+                    )
                     if retired:
                         next_draft = None
                 prepared.append((value, task_row, next_draft, retired))

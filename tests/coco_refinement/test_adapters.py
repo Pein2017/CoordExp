@@ -155,6 +155,7 @@ def _save(
     objects: list[dict[str, object]],
     revision: int,
     mutation_id: str,
+    committed_objects: list[dict[str, object]] | None = None,
 ) -> None:
     repository.save_draft(
         SaveDraftRequest(
@@ -164,6 +165,14 @@ def _save(
             expected_revision=revision,
             expected_generation=task.current_generation,
             expected_base_row_hash=task.base_row_hash,
+            committed=canonicalize_objects(
+                (
+                    [_source_object(task.identity.image_id)]
+                    if committed_objects is None
+                    else committed_objects
+                ),
+                split="train",
+            ),
             draft=canonicalize_objects(objects, split="train"),
         )
     )
@@ -873,6 +882,15 @@ def test_runtime_store_terminal_round_trip_uses_exact_payload_and_reconciles(
         objects=[_local_object()],
         revision=0,
         mutation_id="real-store-draft",
+        committed_objects=[
+            {
+                "region_key": "train:coco:701",
+                "bbox_2d": [10, 20, 300, 400],
+                "category_name": "person",
+                "category_id": 1,
+                "coco_ann_id": 701,
+            }
+        ],
     )
     catalog = SqliteDraftCatalog(repository, current_user_id=PRINCIPAL)
     verifier = SqliteDraftVerifier(repository, current_user_id=PRINCIPAL)
