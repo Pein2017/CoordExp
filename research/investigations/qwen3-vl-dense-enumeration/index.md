@@ -9,10 +9,13 @@ The target remains diagnosis, not a final architecture. The completed program
 has progressed from input-level spatial-policy controls through fixed-prefix
 mode fragmentation, phrase-geometry transition state, fixed-encoding
 post-vision routing, query-phase decomposition, and one bounded late pre-`x1`
-geometry-owner basin switch. It has not established autonomous selection,
-order-free commit or coverage, clean-state synthesis, or a stable training
-intervention. The weekly report and research compass own the current synthesis
-and next-discriminator boundary.
+geometry-owner basin switch. The newest unit adds strong case-level
+`x1`-to-`x2` geometry transport, a fork-part late-extent shortcut, and
+cross-row transition sensitivity without proving a physical owner or correct
+covered-set update. It has not established autonomous selection, order-free
+commit or coverage, clean-state synthesis, or a stable training intervention.
+The weekly report and research compass own the current synthesis and next-
+discriminator boundary.
 
 ## Reading Path
 
@@ -60,6 +63,9 @@ durable program reading path below.
 38. [Pre-execution readiness amendment](experiments/2026-07-13-spatial-scope-history-disentanglement/readiness-amendment.md)
 39. [Pre-execution independent-review synthesis and revision gate](experiments/2026-07-13-spatial-scope-history-disentanglement/review.md)
 40. [Human-audited rare-object trajectory genealogy and causal branch replay](experiments/2026-07-16-human-audited-rare-object-trajectory-genealogy/unit.md)
+41. [Human-audited rare-object manual-review results and coordinate-coherence redirection](experiments/2026-07-16-human-audited-rare-object-trajectory-genealogy/results.md)
+42. [Fixed-prefix complete-box coherence and progressive coordinate-release factorial](experiments/2026-07-16-fixed-prefix-complete-box-coherence-and-coordinate-release-factorial/unit.md)
+43. [Fixed-prefix complete-box results and bounded coordinate-transport verdict](experiments/2026-07-16-fixed-prefix-complete-box-coherence-and-coordinate-release-factorial/results.md)
 
 The review and readiness amendment preserve the pre-execution gate. The
 completed unit and results record own current lifecycle and evidence status.

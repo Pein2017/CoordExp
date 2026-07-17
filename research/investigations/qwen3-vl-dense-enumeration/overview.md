@@ -4,7 +4,7 @@ description: Detailed hypothesis and evidence atlas for object-mode fragmentatio
 type: investigation
 status: active
 topic: qwen3-vl-dense-enumeration
-updated: 2026-07-16
+updated: 2026-07-17
 ---
 
 # Qwen3 Vision-Language Dense Enumeration Bottleneck
@@ -416,6 +416,21 @@ is at `x1`, so the supported mechanism is a late first-coordinate and spatial-
 owner basin switch followed by native autoregressive box completion, not a
 portable four-coordinate object file.
 
+The completed [Fixed-Prefix Complete-Box Coherence and Progressive Coordinate-
+Release Factorial](experiments/2026-07-16-fixed-prefix-complete-box-coherence-and-coordinate-release-factorial/results.md)
+then directly tests whether early coordinates organize the rest of a box. In
+one dense-chair state, target-versus-adjacent `x1` forcing moves released `x2`
+to the cued endpoint on `63/64` paired suffixes. This is strong coordinate-
+conditioned geometry transport, but it remains confounded with width, box-
+validity, and geometry-sorted continuation. In a visible fork state, the
+part-sized row outranks the reportable whole by `2.443562` natural-log units,
+and part-versus-whole `x1,y1` forcing yields identical released `x2` on `14/16`
+paired seeds. The fork therefore supplies strong case-level evidence for a
+part-sized or late-extent basin, while a discriminative-part cause remains
+unisolated from trajectory, edge, and width priors. This rejects a universal
+early complete-owner account. The chair's forced current geometry also changes the next-row category,
+showing executable cross-row state without proving a correct covered set.
+
 ## Completed Evidence Units
 
 | Unit | Status | Purpose |
@@ -439,3 +454,5 @@ portable four-coordinate object file.
 | [Fixed-Encoding Conditional Downstream Layer-Output Residual-State Portability Gate](experiments/2026-07-15-fixed-encoding-downstream-residual-state-portability-gate/unit.md) | complete; evidence verified; [results](experiments/2026-07-15-fixed-encoding-downstream-residual-state-portability-gate/results.md); architecture and training not promoted | Supports bounded layer-`23` clock-description confidence portability; image `632` yields strong coordinate actuation but no eligible donor-owned box, so geometry and combined phase-specific portability are not established. |
 | [Fixed-Encoding Persistent Hard-Routing Geometry-Donor Eligibility Screen](experiments/2026-07-15-fixed-encoding-persistent-hard-routing-geometry-donor-eligibility-screen/unit.md) | complete; evidence verified; [results](experiments/2026-07-15-fixed-encoding-persistent-hard-routing-geometry-donor-eligibility-screen/results.md); architecture and training not promoted | Finds two eligible same-description tight geometry paths on each of three clean resolution-qualified images and opens only the frozen image-`7818` portability test. |
 | [Fixed-Encoding Persistent Hard-Routing Geometry-State Portability on Image 7818](experiments/2026-07-16-fixed-encoding-persistent-hard-routing-geometry-state-portability-image7818/unit.md) | complete; evidence verified; [results](experiments/2026-07-16-fixed-encoding-persistent-hard-routing-geometry-state-portability-image7818/results.md); architecture and training not promoted | Establishes a bounded one-way block-`23` pre-`x1` geometry-owner basin switch with a valid block-`13` negative control; the effect is concentrated at the first coordinate and does not establish a complete object state. |
+| [Human-Audited Rare-Object Trajectory Genealogy and Causal Branch Replay](experiments/2026-07-16-human-audited-rare-object-trajectory-genealogy/unit.md) | redirected after partial verified evidence; manual review complete; [results](experiments/2026-07-16-human-audited-rare-object-trajectory-genealogy/results.md) | Finds real Common Objects in Context 80-category support for all 119 purposive unmatched candidates, but no frozen unique-entity ledger; semantic descriptions are usually sound while geometry frequently covers parts, multiple instances, or axis-wise mixtures. |
+| [Fixed-Prefix Complete-Box Coherence and Progressive Coordinate-Release Factorial](experiments/2026-07-16-fixed-prefix-complete-box-coherence-and-coordinate-release-factorial/unit.md) | complete; evidence verified; [results](experiments/2026-07-16-fixed-prefix-complete-box-coherence-and-coordinate-release-factorial/results.md); architecture and training not promoted | Establishes strong `x1`-to-`x2` geometry transport in one dense-chair state, a strong case-level fork part-sized or late-extent basin without isolating its cause, and cross-row transition sensitivity; physical owner state and correct uncovered redistribution remain unproved. |

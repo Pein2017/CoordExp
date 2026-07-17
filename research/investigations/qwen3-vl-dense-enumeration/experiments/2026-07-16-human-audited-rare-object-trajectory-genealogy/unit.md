@@ -5,15 +5,20 @@ type: investigation
 role: research-unit
 authority: non_normative_research
 architecture_promotion_status: not_promoted
-implementation_status: authorized_separately
+implementation_status: complete_for_manual_review_only
 unit_id: 2026-07-16-human-audited-rare-object-trajectory-genealogy
 topic: qwen3-vl-dense-enumeration
-status: ready
-evidence_status: none
+status: redirected
+evidence_status: partial_verified
 updated: 2026-07-16
 ---
 
 # Human-Audited Rare-Object Trajectory Genealogy and Causal Branch Replay
+
+The human-review phase is complete, but the physical-entity consolidation gate
+did not close. The review exposed a more immediate coordinate-composition
+question, so the trajectory-genealogy waves are held rather than silently
+continued. See [the bounded results and redirection verdict](results.md).
 
 ## Terminology
 

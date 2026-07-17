@@ -7,7 +7,7 @@ authority: non_normative_research
 architecture_promotion_status: not_promoted
 topic: qwen3-vl-dense-enumeration
 status: active
-updated: 2026-07-16
+updated: 2026-07-17
 ---
 
 # Qwen3 Vision-Language Autoregressive Detection Research Compass
@@ -286,9 +286,20 @@ cross-row coverage.
 | Fixed-prefix next-object probability is fragmented across several real objects | Supported at one exact state; not population-estimated | Some other bagging rescues may still arise only from earlier trajectory divergence | Replicate only when a future route decision requires prevalence, not as the immediate discriminator. |
 | Prefix state is an executable but fragile traversal state | Phrase-geometry coherence controls bounded repair behavior, but the dramatic same-class successor is confounded by one broad `bfloat16` execution branch; the three recurrent micro-splits are now classified as low-amplitude same-object coordinate rank changes | The isolated predecessor remains a real broad numerical counterexample, while the underlying semantic commit question remains unresolved | No active successor. The later fixed-encoding and residual-portability chain supersedes the earlier instruction to return to same-encoding visual eligibility; if separately authorized, use the `x1` causal-mediation discriminator below. |
 | Late-middle residual states implement phase-specific decisions | Bounded one-sided support: an eligible clock-description path is conditionally portable, and one same-description paired-object state after decoder block `23` switches the unrestricted geometry owner through an `x1` basin change where the trusted block-`13` control does not | The portable state may select only the first coordinate, with the emitted `x1` and native autoregressive computation recovering the rest of the box; one image and one direction do not establish a general object state | No successor is active. If separately authorized, mediate `x1` by forcing paired `x1` without replacement and forcing baseline `x1` under paired-state replacement, then compare later coordinates and final owner. |
+| Early coordinate choice establishes a stable complete-object owner | Mixed and target-dependent: one dense-chair state shows `63/64` released `x2` edges follow target-versus-adjacent `x1` cues, while one visible fork remains part-like on `27/32` suffixes after part-versus-whole `x1,y1` forcing | The chair effect may be autoregressive width, box-validity, or geometry-sorted rank rather than physical owner state; the fork may reflect prefix-local extent bias rather than universal part recognition | If resumed, compare a real-object `x1` cue with a matched synthetic or object-free `x1` cue, then adjudicate the next row against a frozen unique-entity ledger. Do not increase same-arm sample count. |
 | Incomplete dense annotations teach conservative omission and premature termination | Plausible | Sequence-mode concentration or weak visual evidence is the dominant cause | Compare exhaustive labels with original labels and controlled thinning on the same images. |
 | Bagging support can be concentrated into deterministic greedy traversal | Speculative; a fixed-prefix signature exists but no endogenous training target is identified | Bagging may expose modes that remain trajectory-specific and cannot be safely concentrated by the current supervision | Resolve the cross-row prefix factor before proposing any 256-image training screen. |
 | A persistent ledger, object slot, or external detector is necessary | Unsupported and not authorized | Native prefix state plus better data and transition training may suffice | Consider only after transition shaping fails despite reliable object support and complete labels. |
+
+The completed [Fixed-Prefix Complete-Box Coherence and Progressive Coordinate-
+Release Factorial](experiments/2026-07-16-fixed-prefix-complete-box-coherence-and-coordinate-release-factorial/results.md)
+adds two durable constraints. First, coordinate generation is not literally
+independent: a dense-chair `x1` cue strongly transports to released `x2`.
+Second, that transport is not sufficient evidence for a complete-object file:
+the visible fork remains in a part-sized extent basin even after its whole-
+object left and top boundaries are forced. The emitted chair geometry also
+changes the next-row category, proving cross-row state sensitivity while
+failing to establish correct uncovered-object redistribution.
 
 ## Current Discriminator Queue
 
