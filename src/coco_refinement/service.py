@@ -17,6 +17,7 @@ from src.coco_refinement.http_security import (
     LOCAL_OPERATOR,
     LocalHttpSecurity,
     OpaqueSessionStore,
+    validate_browser_origin,
     validate_loopback_authority,
 )
 from src.coco_refinement.repository import (
@@ -119,6 +120,7 @@ def create_service_app(
     *,
     bind_host: str,
     port: int,
+    browser_origin: str | None = None,
     sessions: OpaqueSessionStore | None = None,
     commit_service: CommitService | None = None,
 ) -> FastAPI:
@@ -127,7 +129,14 @@ def create_service_app(
     if not isinstance(task_service, TaskService):
         raise TypeError("task_service must be a TaskService")
     authority = validate_loopback_authority(bind_host, port)
-    security = LocalHttpSecurity(authority, sessions=sessions)
+    browser_authority = (
+        None if browser_origin is None else validate_browser_origin(browser_origin)
+    )
+    security = LocalHttpSecurity(
+        authority,
+        browser_authority=browser_authority,
+        sessions=sessions,
+    )
     app = FastAPI(
         title="COCO Refinement",
         docs_url=None,
@@ -138,6 +147,7 @@ def create_service_app(
     app.state.commit_service = commit_service
     app.state.local_principal = LOCAL_OPERATOR
     app.state.bound_authority = authority
+    app.state.browser_authority = browser_authority
 
     @app.middleware("http")
     async def local_security(request: Request, call_next: object) -> Response:
@@ -449,6 +459,7 @@ def create_runtime_service_app(
     *,
     bind_host: str,
     port: int,
+    browser_origin: str | None = None,
     sessions: OpaqueSessionStore | None = None,
 ) -> FastAPI:
     """Adapt an assembled runtime to HTTP while leaving bind/start to the launcher."""
@@ -457,6 +468,7 @@ def create_runtime_service_app(
         TaskService.from_runtime(runtime),
         bind_host=bind_host,
         port=port,
+        browser_origin=browser_origin,
         sessions=sessions,
         commit_service=CommitService.from_runtime(runtime),
     )

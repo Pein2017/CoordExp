@@ -9,6 +9,7 @@ from src.coco_refinement.http_security import (
     CSRF_HEADER,
     HttpSecurityError,
     SESSION_COOKIE,
+    validate_browser_origin,
     validate_loopback_authority,
 )
 from src.coco_refinement.service import create_service_app
@@ -17,6 +18,8 @@ from src.coco_refinement.task_service import TaskService
 
 HOST = "127.0.0.1:9123"
 ORIGIN = f"http://{HOST}"
+BROWSER_HOST = "localhost:53662"
+BROWSER_ORIGIN = f"http://{BROWSER_HOST}"
 
 
 def _app():
@@ -24,11 +27,14 @@ def _app():
     return _app_with_service(uncalled_service)
 
 
-def _app_with_service(task_service: TaskService):
+def _app_with_service(
+    task_service: TaskService, *, browser_origin: str | None = None
+):
     return create_service_app(
         task_service,
         bind_host="127.0.0.1",
         port=9123,
+        browser_origin=browser_origin,
     )
 
 
@@ -46,6 +52,11 @@ def test_ipv4_and_ipv6_numeric_loopback_authorities_are_canonical() -> None:
     assert validate_loopback_authority("::1", 9123).host_header == "[::1]:9123"
 
 
+def test_browser_origin_rejects_default_http_port() -> None:
+    with pytest.raises(HttpSecurityError, match="default HTTP port is unsupported"):
+        validate_browser_origin("http://localhost:80")
+
+
 def test_exact_host_is_required_and_forwarded_authority_is_forbidden() -> None:
     with TestClient(_app(), base_url=ORIGIN) as client:
         wrong = client.get("/api/session", headers={"Host": "127.0.0.1:9124"})
@@ -55,6 +66,71 @@ def test_exact_host_is_required_and_forwarded_authority_is_forbidden() -> None:
         forwarded = client.get("/api/session", headers={"X-Forwarded-Host": HOST})
         assert forwarded.status_code == 400
         assert "forwarded" in forwarded.json()["error"]["message"]
+
+
+def test_browser_proxy_host_requires_one_explicit_origin() -> None:
+    with TestClient(_app(), base_url=BROWSER_ORIGIN) as client:
+        response = client.get("/api/session")
+
+    assert response.status_code == 400
+    assert "Host" in response.json()["error"]["message"]
+
+
+class _MutationBoundaryTaskService(TaskService):
+    mutation_calls: int
+
+    def save_draft(self, **_kwargs: object):
+        self.mutation_calls += 1
+        raise RuntimeError("route boundary reached")
+
+
+def test_explicit_browser_origin_allows_static_session_and_same_origin_mutation() -> None:
+    service = object.__new__(_MutationBoundaryTaskService)
+    service.mutation_calls = 0
+    app = _app_with_service(service, browser_origin=BROWSER_ORIGIN)
+    body = {
+        "mutation_id": "browser-proxy",
+        "expected_revision": 0,
+        "expected_generation": 0,
+        "expected_base_row_hash": "a" * 64,
+        "objects": [],
+    }
+    path = "/api/splits/train/tasks/train:1/draft"
+
+    with TestClient(
+        app,
+        base_url=BROWSER_ORIGIN,
+        raise_server_exceptions=False,
+    ) as client:
+        assert client.get("/").status_code == 200
+        csrf = client.get("/api/session").json()["csrf_token"]
+
+        cross_authority = client.put(
+            path,
+            json=body,
+            headers={CSRF_HEADER: csrf, "Origin": ORIGIN},
+        )
+        assert cross_authority.status_code == 403
+        assert service.mutation_calls == 0
+
+        same_authority = client.put(
+            path,
+            json=body,
+            headers={CSRF_HEADER: csrf, "Origin": BROWSER_ORIGIN},
+        )
+
+    assert same_authority.status_code == 500
+    assert service.mutation_calls == 1
+
+
+def test_explicit_browser_origin_does_not_allow_other_localhost_ports() -> None:
+    app = _app_with_service(
+        object.__new__(TaskService), browser_origin=BROWSER_ORIGIN
+    )
+    with TestClient(app, base_url="http://localhost:53663") as client:
+        response = client.get("/api/session")
+
+    assert response.status_code == 400
 
 
 def test_session_cookie_is_opaque_httponly_strict_and_csrf_is_separate() -> None:

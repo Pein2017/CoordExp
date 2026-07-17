@@ -19,6 +19,7 @@ import uvicorn  # noqa: E402
 from src.coco_refinement.bootstrap import DEFAULT_RUNTIME_RELATIVE  # noqa: E402
 from src.coco_refinement.http_security import (  # noqa: E402
     HttpSecurityError,
+    validate_browser_origin,
     validate_loopback_authority,
 )
 from src.coco_refinement.runtime import create_standalone_runtime  # noqa: E402
@@ -69,6 +70,13 @@ def _tcp_port(value: str) -> int:
     if validated == RESERVED_LEGACY_PORT:
         raise argparse.ArgumentTypeError("port 8080 is reserved for the legacy workspace")
     return validated
+
+
+def _browser_origin(value: str) -> str:
+    try:
+        return validate_browser_origin(value).origin
+    except HttpSecurityError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
 def _positive_timeout(value: str) -> int:
@@ -140,6 +148,15 @@ def _parser() -> argparse.ArgumentParser:
         help=f"TCP port from 1 through 65535 (default: {DEFAULT_PORT}).",
     )
     parser.add_argument(
+        "--browser-origin",
+        type=_browser_origin,
+        default=None,
+        help=(
+            "Exact local in-app browser proxy origin, for example "
+            "http://localhost:53662 (default: disabled)."
+        ),
+    )
+    parser.add_argument(
         "--startup-timeout",
         type=_positive_startup_timeout,
         default=DEFAULT_STARTUP_TIMEOUT,
@@ -181,6 +198,7 @@ def run_server(
     port: int,
     startup_timeout: int,
     shutdown_timeout: int,
+    browser_origin: str | None = None,
     receipt_store_factory: Callable[[Path], object] = InferenceReceiptStore,
     runtime_factory: Callable[..., Any] = create_standalone_runtime,
     app_factory: Callable[..., Any] = create_runtime_service_app,
@@ -201,6 +219,11 @@ def run_server(
     shutdown_timeout = _validate_programmatic_timeout(
         "shutdown_timeout", shutdown_timeout
     )
+    validated_browser_origin = (
+        None
+        if browser_origin is None
+        else validate_browser_origin(browser_origin).origin
+    )
 
     selected_runtime = _resolve_runtime_root(repo_root.resolve(strict=True), runtime_root)
     runtime = runtime_factory(
@@ -216,11 +239,13 @@ def run_server(
     )
     try:
         runtime.start()
-        app = app_factory(
-            runtime,
-            bind_host=authority.host,
-            port=authority.port,
-        )
+        app_kwargs: dict[str, object] = {
+            "bind_host": authority.host,
+            "port": authority.port,
+        }
+        if validated_browser_origin is not None:
+            app_kwargs["browser_origin"] = validated_browser_origin
+        app = app_factory(runtime, **app_kwargs)
         config = config_factory(
             app,
             host=authority.host,
@@ -250,6 +275,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         port=args.port,
         startup_timeout=args.startup_timeout,
         shutdown_timeout=args.shutdown_timeout,
+        browser_origin=args.browser_origin,
     )
     return 0
 

@@ -58,9 +58,17 @@ conda run --no-capture-output -n ms python -u scripts/run_coco_refinement.py \
   --runtime-root outputs/coco_refinement/gate-a-20260717 \
   --host 127.0.0.1 \
   --port 19172 \
+  --browser-origin http://localhost:53662 \
   --startup-timeout 300 \
   --shutdown-timeout 10
 ```
+
+`--browser-origin` is only for a local in-app browser proxy whose visible URL
+uses a different `localhost:<port>` authority. Set it to the exact origin shown
+by that browser tab, or omit it for direct `127.0.0.1:19172` access. It does not
+change the listening socket, permits only one explicit local authority, and
+does not trust forwarded headers. If the in-app proxy assigns a new port, stop
+the standalone process cleanly and relaunch with that new exact origin.
 
 Only one process may own this runtime root. A second launcher fails before
 binding the port. Stop the owning foreground process with `Ctrl-C` and wait

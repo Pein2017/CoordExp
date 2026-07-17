@@ -9,6 +9,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from hmac import compare_digest
 from typing import Final
+from urllib.parse import urlsplit
 
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
@@ -26,6 +27,14 @@ class HttpSecurityError(ValueError):
 
 @dataclass(frozen=True)
 class LoopbackAuthority:
+    host: str
+    port: int
+    host_header: str
+    origin: str
+
+
+@dataclass(frozen=True)
+class BrowserAuthority:
     host: str
     port: int
     host_header: str
@@ -60,6 +69,69 @@ def validate_loopback_authority(
         port=port,
         host_header=host_header,
         origin=f"{scheme}://{host_header}",
+    )
+
+
+def validate_browser_origin(origin: object) -> BrowserAuthority:
+    """Validate one explicit canonical origin exposed by a local browser proxy."""
+
+    if not isinstance(origin, str):
+        raise HttpSecurityError("browser origin must be a canonical http URL")
+    try:
+        parsed = urlsplit(origin)
+        hostname = parsed.hostname
+        port = parsed.port
+    except ValueError as exc:
+        raise HttpSecurityError("browser origin must be a canonical http URL") from exc
+    if parsed.scheme != "http":
+        raise HttpSecurityError("browser origin must use http")
+    if parsed.username is not None or parsed.password is not None:
+        raise HttpSecurityError("browser origin must not contain userinfo")
+    if parsed.path or parsed.query or parsed.fragment:
+        raise HttpSecurityError(
+            "browser origin must not contain a path, query, or fragment"
+        )
+    if hostname is None or port is None:
+        raise HttpSecurityError("browser origin must include an explicit port")
+    if not 1 <= port <= 65535:
+        raise HttpSecurityError("browser origin port must be from 1 through 65535")
+    if port == 80:
+        raise HttpSecurityError(
+            "browser origin default HTTP port is unsupported for exact authority matching"
+        )
+    if hostname == "localhost":
+        canonical_host = hostname
+        is_ipv6 = False
+    else:
+        if "%" in hostname:
+            raise HttpSecurityError(
+                "browser origin host must be localhost or an unscoped numeric loopback"
+            )
+        try:
+            address = ipaddress.ip_address(hostname)
+        except ValueError as exc:
+            raise HttpSecurityError(
+                "browser origin host must be localhost or a numeric loopback"
+            ) from exc
+        if not address.is_loopback:
+            raise HttpSecurityError(
+                "browser origin host must be localhost or a numeric loopback"
+            )
+        canonical_host = address.compressed
+        is_ipv6 = address.version == 6
+    host_header = (
+        f"[{canonical_host}]:{port}" if is_ipv6 else f"{canonical_host}:{port}"
+    )
+    canonical_origin = f"http://{host_header}"
+    if origin != canonical_origin:
+        raise HttpSecurityError(
+            f"browser origin must use the canonical form {canonical_origin}"
+        )
+    return BrowserAuthority(
+        host=canonical_host,
+        port=port,
+        host_header=host_header,
+        origin=canonical_origin,
     )
 
 
@@ -101,11 +173,19 @@ class LocalHttpSecurity:
         self,
         authority: LoopbackAuthority,
         *,
+        browser_authority: BrowserAuthority | None = None,
         sessions: OpaqueSessionStore | None = None,
     ) -> None:
         if not isinstance(authority, LoopbackAuthority):
             raise HttpSecurityError("authority must be a validated loopback authority")
+        if browser_authority is not None and not isinstance(
+            browser_authority, BrowserAuthority
+        ):
+            raise HttpSecurityError(
+                "browser authority must be a validated browser authority"
+            )
         self.authority = authority
+        self.browser_authority = browser_authority
         self.sessions = sessions or OpaqueSessionStore()
 
     async def enforce(self, request: Request, call_next: object) -> Response:
@@ -114,7 +194,12 @@ class LocalHttpSecurity:
         if b"forwarded" in names or any(name.startswith(b"x-forwarded-") for name in names):
             return self._error(400, "forwarded authority headers are forbidden")
         host_values = [value.decode("latin-1") for name, value in raw_headers if name.lower() == b"host"]
-        if host_values != [self.authority.host_header]:
+        request_authority: LoopbackAuthority | BrowserAuthority | None = None
+        for candidate in (self.authority, self.browser_authority):
+            if candidate is not None and host_values == [candidate.host_header]:
+                request_authority = candidate
+                break
+        if request_authority is None:
             return self._error(400, "request Host does not match the bound authority")
 
         is_api = request.url.path == "/api" or request.url.path.startswith("/api/")
@@ -140,8 +225,10 @@ class LocalHttpSecurity:
                     for name, value in raw_headers
                     if name.lower() == CSRF_HEADER.encode("ascii")
                 ]
-                if origins != [self.authority.origin]:
-                    return self._error(403, "mutation Origin is not the bound origin")
+                if origins != [request_authority.origin]:
+                    return self._error(
+                        403, "mutation Origin does not match the request authority"
+                    )
                 if len(csrf_values) != 1 or not compare_digest(csrf_values[0], csrf):
                     return self._error(403, "mutation CSRF token is invalid")
                 content_type = (
@@ -233,6 +320,7 @@ def _strict_json_loads(raw: bytes) -> object:
 
 
 __all__ = [
+    "BrowserAuthority",
     "CSRF_HEADER",
     "HttpSecurityError",
     "LOCAL_OPERATOR",
@@ -240,5 +328,6 @@ __all__ = [
     "LoopbackAuthority",
     "OpaqueSessionStore",
     "SESSION_COOKIE",
+    "validate_browser_origin",
     "validate_loopback_authority",
 ]

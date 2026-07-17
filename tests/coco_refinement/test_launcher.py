@@ -108,6 +108,42 @@ def test_launcher_orders_runtime_lifecycle_and_pins_server_shape(
     assert events[5:] == [("server", config), "serve", ("shutdown", 7)]
 
 
+def test_launcher_passes_explicit_browser_origin_only_to_app_factory(
+    tmp_path: Path,
+) -> None:
+    app_calls: list[dict[str, object]] = []
+
+    class Runtime:
+        def start(self) -> None:
+            pass
+
+        def shutdown(self, *, timeout: float) -> None:
+            assert timeout == 7
+
+    def make_app(_runtime: object, **kwargs: object) -> object:
+        app_calls.append(kwargs)
+        return object()
+
+    kwargs = _launch_kwargs(tmp_path)
+    kwargs["browser_origin"] = "http://localhost:53662"
+    launcher.run_server(
+        **kwargs,
+        receipt_store_factory=lambda _path: object(),
+        runtime_factory=lambda _repo_root, **_kwargs: Runtime(),
+        app_factory=make_app,
+        config_factory=lambda _app, **_kwargs: object(),
+        server_factory=lambda _config: type("Server", (), {"run": lambda self: None})(),
+    )
+
+    assert app_calls == [
+        {
+            "bind_host": "127.0.0.1",
+            "port": 19172,
+            "browser_origin": "http://localhost:53662",
+        }
+    ]
+
+
 @pytest.mark.parametrize("failure_at", ["app", "serve"])
 def test_app_or_serve_failure_still_shuts_down_runtime(
     tmp_path: Path, failure_at: str
@@ -211,6 +247,35 @@ def test_cli_rejects_non_numeric_or_non_loopback_hosts(host: str) -> None:
         launcher._parser().parse_args(["--host", host])
 
 
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "https://localhost:53662",
+        "http://example.com:53662",
+        "http://localhost",
+        "http://localhost:0",
+        "http://localhost:80",
+        "http://localhost:65536",
+        "http://user@localhost:53662",
+        "http://localhost:53662/",
+        "http://localhost:53662/path",
+        "http://localhost:53662?query=yes",
+        "http://localhost:53662#fragment",
+    ],
+)
+def test_cli_rejects_invalid_browser_origins(origin: str) -> None:
+    with pytest.raises(SystemExit, match="2"):
+        launcher._parser().parse_args(["--browser-origin", origin])
+
+
+def test_cli_accepts_one_explicit_localhost_browser_origin() -> None:
+    args = launcher._parser().parse_args(
+        ["--browser-origin", "http://localhost:53662"]
+    )
+
+    assert args.browser_origin == "http://localhost:53662"
+
+
 @pytest.mark.parametrize("port", ["0", "8080", "65536", "not-a-port"])
 def test_cli_rejects_invalid_ports(port: str) -> None:
     with pytest.raises(SystemExit, match="2"):
@@ -287,6 +352,46 @@ def test_programmatic_legacy_port_rejection_precedes_every_factory(
     kwargs = _launch_kwargs(tmp_path)
     kwargs["port"] = 8080
     with pytest.raises(ValueError, match="reserved"):
+        launcher.run_server(
+            **kwargs,
+            receipt_store_factory=unexpected,
+            runtime_factory=unexpected,
+            app_factory=unexpected,
+            config_factory=unexpected,
+            server_factory=unexpected,
+        )
+
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "https://localhost:53662",
+        "http://example.com:53662",
+        "http://localhost",
+        "http://localhost:0",
+        "http://localhost:80",
+        "http://localhost:65536",
+        "http://user@localhost:53662",
+        "http://localhost:53662/path",
+        "http://localhost:53662?query=yes",
+        "http://localhost:53662#fragment",
+        53662,
+    ],
+)
+def test_programmatic_browser_origin_rejection_precedes_every_factory(
+    tmp_path: Path, origin: object
+) -> None:
+    calls: list[str] = []
+
+    def unexpected(*_args: object, **_kwargs: object) -> object:
+        calls.append("called")
+        raise AssertionError("no factory may run for an invalid browser origin")
+
+    kwargs = _launch_kwargs(tmp_path)
+    kwargs["browser_origin"] = origin
+    with pytest.raises(ValueError, match="browser origin"):
         launcher.run_server(
             **kwargs,
             receipt_store_factory=unexpected,

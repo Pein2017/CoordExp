@@ -267,6 +267,16 @@ fixed `local-operator` principal server-side, and rejects caller-provided paths.
 Image APIs resolve only manifest-bound locators beneath the approved shared
 root and prevent traversal/symlink escape.
 
+The default request authority remains the exact numeric bind host and port.
+When a local in-app browser proxy rewrites the browser-visible authority, the
+launcher may accept one explicit canonical `http://localhost:<port>` or numeric
+loopback browser origin with a non-default HTTP port. This option does not
+change the numeric loopback bind, does not trust `Forwarded` or
+`X-Forwarded-*`, and is disabled by default. Each
+request `Host` must exactly match either the bind authority or that one explicit
+browser authority; a mutation `Origin` must match the authority selected by its
+own `Host`, so the two authorities cannot be mixed.
+
 Source JSONL and source images are opened read-only and fingerprinted. All
 mutable files live under the new ignored runtime root. Working JSONL advances
 only through the existing atomic store publication. Tests bind before/after

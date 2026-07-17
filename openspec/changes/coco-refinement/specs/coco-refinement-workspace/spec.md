@@ -140,3 +140,22 @@ supported dependency or process shape is unavailable.
 #### Scenario: Service environment is unsupported
 - **WHEN** a required dependency is absent/unsupported or another writer owns the runtime root
 - **THEN** startup fails before binding the port or starting any batch worker
+
+### Requirement: Explicit local browser-proxy authority
+The service SHALL use the exact numeric loopback bind authority by default. A
+launcher MAY declare one canonical HTTP browser origin whose host is exactly
+`localhost` or a numeric loopback and whose port is explicit and non-default.
+This browser authority SHALL NOT change the listening socket or authorize
+forwarded authority headers.
+
+#### Scenario: No browser proxy origin is configured
+- **WHEN** a request Host differs from the exact numeric bind authority
+- **THEN** the service rejects the request before route dispatch
+
+#### Scenario: One local browser proxy origin is configured
+- **WHEN** request Host exactly matches that configured authority and a mutation Origin matches the same authority with a valid session and CSRF token
+- **THEN** the request follows the ordinary route and mutation validation path
+
+#### Scenario: Browser and mutation authorities are mixed
+- **WHEN** request Host matches one accepted authority but mutation Origin names the other authority, an unconfigured port, or any non-loopback origin
+- **THEN** the service rejects the mutation before route dispatch and performs no semantic write
