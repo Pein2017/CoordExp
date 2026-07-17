@@ -1,4 +1,4 @@
 interface:
   display_name: "Grill Me"
-  short_description: "Stress-test one crucial decision at a time"
-  default_prompt: "Use $grill-me to pressure-test this plan one question at a time, recommend an answer, and do not implement until I confirm."
+  short_description: "Stress-test crucial decisions in rounds"
+  default_prompt: "Use $grill-me to pressure-test this plan in concise frontier rounds, recommend an answer for each question, and do not act until I confirm."
