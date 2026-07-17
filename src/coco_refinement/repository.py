@@ -1644,6 +1644,49 @@ def _schema_statements() -> tuple[str, ...]:
     )
 
 
+def _normalized_create_table_sql(sql: str) -> str:
+    """Return a whitespace/case-stable identity for canonical SQLite table DDL."""
+    value = sql.strip()
+    if value.endswith(";"):
+        value = value[:-1]
+    normalized: list[str] = []
+    quote_end: str | None = None
+    index = 0
+    while index < len(value):
+        character = value[index]
+        if quote_end is None:
+            if character.isspace():
+                index += 1
+                continue
+            normalized.append(character.casefold())
+            if character in {"'", '"', "`", "["}:
+                quote_end = "]" if character == "[" else character
+            index += 1
+            continue
+        normalized.append(character)
+        if character == quote_end:
+            if index + 1 < len(value) and value[index + 1] == quote_end:
+                normalized.append(value[index + 1])
+                index += 2
+                continue
+            quote_end = None
+        index += 1
+    return "".join(normalized)
+
+
+def _required_create_table_sql() -> dict[str, str]:
+    required: dict[str, str] = {}
+    for statement in _schema_statements():
+        normalized = _normalized_create_table_sql(statement)
+        for table in _REQUIRED_COLUMNS:
+            if normalized.startswith(f"createtable{table}("):
+                required[table] = normalized
+                break
+    if set(required) != set(_REQUIRED_COLUMNS):
+        raise RuntimeError("canonical SQLite table definitions are incomplete")
+    return required
+
+
 def _validate_schema_v1(connection: sqlite3.Connection) -> None:
     try:
         tables = {
@@ -1691,6 +1734,22 @@ def _validate_schema_v1(connection: sqlite3.Connection) -> None:
                 raise RepositoryInvariantError(
                     "versioned SQLite foreign keys are incompatible",
                     code="coco_refinement.schema_foreign_keys",
+                    context={"table": table},
+                )
+        for table, expected in _required_create_table_sql().items():
+            table_row = connection.execute(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+                (table,),
+            ).fetchone()
+            actual = (
+                _normalized_create_table_sql(str(table_row["sql"]))
+                if table_row is not None and table_row["sql"] is not None
+                else None
+            )
+            if actual != expected:
+                raise RepositoryInvariantError(
+                    "versioned SQLite table constraints are incompatible",
+                    code="coco_refinement.schema_constraints",
                     context={"table": table},
                 )
         for index, (table, expected_columns) in _REQUIRED_INDEXES.items():

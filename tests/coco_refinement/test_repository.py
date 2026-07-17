@@ -636,6 +636,120 @@ def test_version_one_missing_tables_is_rejected_without_self_healing(
     assert after_schema == before_schema
 
 
+def test_version_one_missing_table_constraints_is_rejected_without_self_healing(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "unconstrained-v1.sqlite3"
+    with sqlite3.connect(path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE projects (
+                project_id TEXT PRIMARY KEY,
+                split TEXT NOT NULL,
+                source_fingerprint TEXT NOT NULL,
+                task_count INTEGER NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE tasks (
+                task_id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL REFERENCES projects(project_id)
+                    ON UPDATE RESTRICT ON DELETE RESTRICT,
+                split TEXT NOT NULL,
+                image_id INTEGER NOT NULL,
+                source_row_index INTEGER NOT NULL,
+                image_locator TEXT NOT NULL,
+                image_width INTEGER NOT NULL,
+                image_height INTEGER NOT NULL,
+                image_fingerprint TEXT NOT NULL,
+                revision INTEGER NOT NULL,
+                epoch INTEGER NOT NULL,
+                current_generation INTEGER NOT NULL,
+                base_row_hash TEXT NOT NULL,
+                committed_result_hash TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX tasks_project_order
+                ON tasks(project_id, source_row_index);
+            CREATE TABLE drafts (
+                task_id TEXT PRIMARY KEY REFERENCES tasks(task_id)
+                    ON UPDATE RESTRICT ON DELETE RESTRICT,
+                objects_json TEXT NOT NULL,
+                semantic_hash TEXT NOT NULL,
+                result_hash TEXT NOT NULL
+            );
+            CREATE TABLE mutations (
+                mutation_id TEXT PRIMARY KEY,
+                task_id TEXT NOT NULL REFERENCES tasks(task_id)
+                    ON UPDATE RESTRICT ON DELETE RESTRICT,
+                request_fingerprint TEXT NOT NULL,
+                response_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX mutations_task ON mutations(task_id, created_at);
+            PRAGMA user_version = 1;
+            """
+        )
+        connection.executemany(
+            "INSERT INTO projects VALUES (?, ?, ?, ?, ?)",
+            (
+                ("project-1", "invalid", "fingerprint-1", -1, "created-1"),
+                ("project-2", "invalid", "fingerprint-2", -2, "created-2"),
+            ),
+        )
+        task_values = (
+            "invalid",
+            0,
+            -1,
+            "image.jpg",
+            0,
+            -1,
+            "image-fingerprint",
+            -1,
+            -1,
+            -1,
+            "base-row-hash",
+            "committed-result-hash",
+            "updated-at",
+        )
+        connection.executemany(
+            "INSERT INTO tasks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                ("task-1", "project-1", *task_values),
+                ("task-2", "project-1", *task_values),
+            ),
+        )
+        before_schema = connection.execute(
+            "SELECT type, name, tbl_name, sql FROM sqlite_master "
+            "ORDER BY type, name"
+        ).fetchall()
+        before_projects = connection.execute(
+            "SELECT * FROM projects ORDER BY project_id"
+        ).fetchall()
+        before_tasks = connection.execute(
+            "SELECT * FROM tasks ORDER BY task_id"
+        ).fetchall()
+
+    with pytest.raises(RepositoryInvariantError) as exc_info:
+        SqliteDraftRepository(path)
+    assert exc_info.value.code == "coco_refinement.schema_constraints"
+
+    with sqlite3.connect(path) as connection:
+        after_schema = connection.execute(
+            "SELECT type, name, tbl_name, sql FROM sqlite_master "
+            "ORDER BY type, name"
+        ).fetchall()
+        after_projects = connection.execute(
+            "SELECT * FROM projects ORDER BY project_id"
+        ).fetchall()
+        after_tasks = connection.execute(
+            "SELECT * FROM tasks ORDER BY task_id"
+        ).fetchall()
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 1
+    assert after_schema == before_schema
+    assert after_projects == before_projects
+    assert after_tasks == before_tasks
+
+
 def test_empty_object_list_is_repository_data_not_a_commit_policy(
     tmp_path: Path,
 ) -> None:
