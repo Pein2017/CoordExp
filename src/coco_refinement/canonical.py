@@ -37,9 +37,7 @@ _INFERENCE_METADATA_FIELDS = frozenset(
     }
 )
 _SOURCE_KEY = re.compile(r"^(train|val):coco:([1-9][0-9]*)$")
-_ROI_KEY = re.compile(
-    r"^roi:([A-Za-z0-9][A-Za-z0-9_.-]*):([A-Za-z0-9][A-Za-z0-9_.:-]*)$"
-)
+_ROI_KEY = re.compile(r"^roi:[A-Za-z0-9][A-Za-z0-9_.:-]*$")
 
 
 def canonicalize_objects(
@@ -144,7 +142,7 @@ def _canonical_object(
             context={"index": index},
         )
     source_match = _SOURCE_KEY.fullmatch(region_key)
-    roi_match = _ROI_KEY.fullmatch(region_key)
+    is_roi_key = _ROI_KEY.fullmatch(region_key) is not None
     if source_match is not None:
         key_split, raw_id = source_match.groups()
         source_id = int(raw_id)
@@ -190,20 +188,24 @@ def _canonical_object(
                 code="coco_refinement.metadata_key",
                 context={"index": index},
             )
-    elif roi_match is not None:
+    elif is_roi_key:
         _validate_new_identity(coco_ann_id, index=index)
-        key_receipt, key_result = roi_match.groups()
         if not metadata or receipt_id is None:
             raise DataContractError(
                 "ROI regions require complete inference provenance",
                 code="coco_refinement.roi_metadata",
                 context={"index": index},
             )
-        if receipt_id != key_receipt or metadata["result_id"] != key_result:
+        expected_region_key = f"roi:{receipt_id}:{metadata['result_id']}"
+        if region_key != expected_region_key:
             raise DataContractError(
                 "ROI region key must match receipt_id and result_id",
                 code="coco_refinement.roi_identity",
-                context={"index": index, "region_key": region_key},
+                context={
+                    "index": index,
+                    "region_key": region_key,
+                    "expected_region_key": expected_region_key,
+                },
             )
     else:
         raise DataContractError(

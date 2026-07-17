@@ -133,6 +133,31 @@ def test_preserves_allocated_negative_identity_for_local_and_roi_objects() -> No
     assert draft.inference_receipts == ("receipt-1",)
 
 
+def test_roi_key_supports_opaque_receipt_and_result_ids_with_colons() -> None:
+    receipt_id = "roi-receipt:request-1"
+    result_id = "request-1:result-0"
+    draft = canonicalize_objects(
+        [
+            _local_object(
+                region_key=f"roi:{receipt_id}:{result_id}",
+                metadata={
+                    "inference_origin": True,
+                    "receipt_id": receipt_id,
+                    "request_id": "request-1",
+                    "result_id": result_id,
+                    "draft_revision": "6",
+                },
+            )
+        ],
+        split="train",
+    )
+
+    assert draft.to_json_regions()[0]["region_key"] == (
+        "roi:roi-receipt:request-1:request-1:result-0"
+    )
+    assert draft.inference_receipts == (receipt_id,)
+
+
 def test_metadata_is_allowlisted_and_presentation_is_not_persisted_or_hashed() -> None:
     base = _local_object()
     with_presentation = copy.deepcopy(base)
