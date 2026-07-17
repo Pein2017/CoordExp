@@ -58,6 +58,7 @@
             </div>
             <div class="tool-group" role="group" aria-label="Undo and visibility">
               <button id="undo-button" type="button" disabled>Undo</button>
+              <button id="delete-button" type="button" disabled>Delete bbox</button>
               <label class="compact-control" for="visibility-mode">Boxes</label>
               <select id="visibility-mode" disabled>
                 <option value="all">Show all</option>
@@ -77,7 +78,7 @@
             <svg id="bbox-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid meet" aria-label="COCO bounding box editor" tabindex="0"></svg>
             <p id="image-placeholder">Choose a sample to preview its image and boxes.</p>
           </div>
-          <p class="readonly-note">Geometry edits and Undo autosave as Drafts. Visibility controls are local presentation only. Commit runs in the background; delete and ROI inference are not enabled in this slice.</p>
+          <p class="readonly-note">Geometry edits, deletion, and Undo autosave as Drafts. Visibility controls are local presentation only. Commit runs in the background; final-bbox deletion policy and ROI inference remain gated.</p>
         </section>
         <aside class="details-panel" aria-label="Task details">
           <h2>Task state</h2>

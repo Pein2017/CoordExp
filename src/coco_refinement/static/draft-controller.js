@@ -2,6 +2,13 @@ import { ApiError } from './api-client.js';
 
 const MAX_UNDO_SNAPSHOTS = 50;
 
+export class FinalBboxPolicyError extends Error {
+  constructor() {
+    super('final bbox policy requires operator confirmation');
+    this.name = 'FinalBboxPolicyError';
+  }
+}
+
 export function createDraftController({ api, onChange, randomUUID } = {}) {
   if (!api || typeof api.postJson !== 'function' || typeof api.putJson !== 'function') {
     throw new TypeError('api must provide postJson and putJson');
@@ -131,6 +138,22 @@ export function createDraftController({ api, onChange, randomUUID } = {}) {
     if (!canUndo()) throw new Error('Undo is unavailable while local state is unresolved');
     const previous = undoHistory.pop();
     replaceObjects(previous, { recordUndo: false });
+    await flush();
+    return getState();
+  };
+
+  const deleteRegion = async (regionKey) => {
+    requireOpen();
+    if (version > durableVersion || pendingAttempt || pumpPromise || projectionPromise
+        || error || conflict) {
+      throw new Error('Delete is unavailable while local state is unresolved');
+    }
+    const index = objects.findIndex((item) => item.region_key === regionKey);
+    if (index < 0) throw new Error('region key is not present in local objects');
+    if (objects.length <= 1) throw new FinalBboxPolicyError();
+    const next = clone(objects);
+    next.splice(index, 1);
+    replaceObjects(next);
     await flush();
     return getState();
   };
@@ -316,6 +339,7 @@ export function createDraftController({ api, onChange, randomUUID } = {}) {
     },
     replaceObjects,
     replaceRegion,
+    deleteRegion,
     projectAndApply,
     undo,
     flush,

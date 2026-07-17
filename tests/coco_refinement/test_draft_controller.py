@@ -469,3 +469,203 @@ for (const status of [422, 409]) {{
 }}
 """
     )
+
+
+def test_draft_controller_delete_region_policy_and_undo() -> None:
+    api_uri = json.dumps((STATIC / "api-client.js").as_uri())
+    controller_uri = json.dumps((STATIC / "draft-controller.js").as_uri())
+    _run_node(
+        f"""
+import assert from 'node:assert/strict';
+import {{ ApiError }} from {api_uri};
+import {{ createDraftController, FinalBboxPolicyError }} from {controller_uri};
+
+const hash = 'd'.repeat(64);
+const objects = [
+  {{
+    region_key: 'train:coco:101', bbox_2d: [10, 20, 300, 400],
+    category_name: 'person', category_id: 1, coco_ann_id: 101,
+    metadata: {{ source: {{ row: 7 }}, note: 'first' }},
+  }},
+  {{
+    region_key: 'train:coco:202', bbox_2d: [30, 40, 500, 600],
+    category_name: 'dog', category_id: 18, coco_ann_id: 202,
+    metadata: {{ nested: {{ values: [1, 2, 3] }}, note: 'middle' }},
+  }},
+  {{
+    region_key: 'local:new', bbox_2d: [50, 60, 700, 800],
+    category_name: 'cat', category_id: 17, coco_ann_id: -9101,
+    metadata: {{ origin: 'human', note: 'last' }},
+  }},
+];
+const task = (taskObjects = objects, revision = 0) => ({{
+  split: 'train', task_id: 'train:delete', authority: revision ? 'draft' : 'committed',
+  revision, generation: 0, base_row_hash: hash, objects: structuredClone(taskObjects),
+}});
+const applied = (body, revision) => ({{
+  status: 'applied', mutation_id: body.mutation_id, authority: 'draft',
+  revision, generation: 0, base_row_hash: hash, objects: structuredClone(body.objects),
+}});
+const ids = () => {{
+  let index = 0;
+  return () => `delete-uuid-${{++index}}`;
+}};
+const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+
+// Deleting the middle object is one full-Draft PUT and Undo restores the exact
+// original order, metadata, stable keys, and COCO identities with one more PUT.
+{{
+  const calls = [];
+  let revision = 0;
+  const api = {{
+    async postJson(path, body) {{ calls.push(['POST', path, structuredClone(body)]); }},
+    async putJson(path, body) {{
+      calls.push(['PUT', path, structuredClone(body)]);
+      revision += 1;
+      return applied(body, revision);
+    }},
+  }};
+  const controller = createDraftController({{ api, randomUUID: ids() }});
+  controller.open(task());
+  await controller.deleteRegion('train:coco:202');
+  assert.deepEqual(calls.map(call => call[0]), ['PUT']);
+  assert.deepEqual(
+    calls[0][2].objects.map(object => object.region_key),
+    ['train:coco:101', 'local:new'],
+  );
+  assert.equal(controller.getState().canUndo, true);
+  await controller.undo();
+  assert.deepEqual(calls.map(call => call[0]), ['PUT', 'PUT']);
+  assert.deepEqual(calls[1][2].objects, objects);
+  assert.deepEqual(controller.getState().objects, objects);
+  assert.equal(controller.getState().canUndo, false);
+}}
+
+// Refusing the final bbox and an unknown key performs no request and changes
+// neither the authoritative binding nor local Undo/semantic state.
+{{
+  const calls = [];
+  const api = {{
+    async postJson(...args) {{ calls.push(['POST', ...args]); }},
+    async putJson(...args) {{ calls.push(['PUT', ...args]); }},
+  }};
+  const controller = createDraftController({{ api, randomUUID: ids() }});
+  controller.open(task([objects[0]], 3));
+  const before = controller.getState();
+  await assert.rejects(
+    controller.deleteRegion('train:coco:101'),
+    error => error instanceof FinalBboxPolicyError
+      && error.message === 'final bbox policy requires operator confirmation',
+  );
+  assert.deepEqual(controller.getState(), before);
+  assert.equal(calls.length, 0);
+  await assert.rejects(
+    controller.deleteRegion('missing:key'),
+    /region key is not present in local objects/,
+  );
+  assert.deepEqual(controller.getState(), before);
+  assert.equal(calls.length, 0);
+}}
+
+// A response-loss replay reuses the same delete body and does not duplicate
+// its Undo snapshot.
+{{
+  const bodies = [];
+  let revision = 0;
+  const api = {{
+    async postJson() {{ throw new Error('unused'); }},
+    async putJson(_path, body) {{
+      bodies.push(structuredClone(body));
+      if (bodies.length === 1) throw new ApiError('response lost', {{ status: 0 }});
+      revision += 1;
+      return applied(body, revision);
+    }},
+  }};
+  const controller = createDraftController({{ api, randomUUID: ids() }});
+  controller.open(task());
+  await controller.deleteRegion('train:coco:202');
+  assert.equal(bodies.length, 2);
+  assert.deepEqual(bodies[0], bodies[1]);
+  assert.equal(controller.getState().canUndo, true);
+  await controller.undo();
+  assert.equal(bodies.length, 3);
+  assert.deepEqual(controller.getState().objects, objects);
+  assert.equal(controller.getState().canUndo, false);
+}}
+
+// Delete follows the controller's existing unresolved-operation boundary.
+{{
+  let releaseSave;
+  const delayedSave = new Promise(resolve => {{ releaseSave = resolve; }});
+  let revision = 0;
+  const api = {{
+    async postJson() {{ throw new Error('unused'); }},
+    async putJson(_path, body) {{
+      await delayedSave;
+      revision += 1;
+      return applied(body, revision);
+    }},
+  }};
+  const controller = createDraftController({{ api, randomUUID: ids() }});
+  controller.open(task());
+  controller.replaceRegion('train:coco:101', {{
+    ...objects[0], bbox_2d: [11, 20, 300, 400],
+  }});
+  await tick();
+  await assert.rejects(
+    controller.deleteRegion('train:coco:202'),
+    /Delete is unavailable while local state is unresolved/,
+  );
+  releaseSave();
+  await controller.flush();
+}}
+
+for (const status of [422, 409]) {{
+  const api = {{
+    async postJson() {{ throw new Error('unused'); }},
+    async putJson() {{
+      throw new ApiError('save rejected', {{ status, body: {{ status }} }});
+    }},
+  }};
+  const controller = createDraftController({{ api, randomUUID: ids() }});
+  controller.open(task());
+  controller.replaceRegion('train:coco:101', {{
+    ...objects[0], bbox_2d: [12, 20, 300, 400],
+  }});
+  await assert.rejects(controller.flush());
+  await assert.rejects(
+    controller.deleteRegion('train:coco:202'),
+    /Delete is unavailable while local state is unresolved/,
+  );
+}}
+
+{{
+  let releaseProjection;
+  const projection = new Promise(resolve => {{ releaseProjection = resolve; }});
+  let revision = 0;
+  const api = {{
+    async postJson() {{ return projection; }},
+    async putJson(_path, body) {{
+      revision += 1;
+      return applied(body, revision);
+    }},
+  }};
+  const controller = createDraftController({{ api, randomUUID: ids() }});
+  controller.open(task());
+  const pending = controller.projectAndApply({{
+    operation: 'update', region_key: 'train:coco:101',
+    pixel_xyxy: [11, 20, 300, 400], category_name: 'person',
+  }});
+  await tick();
+  await assert.rejects(
+    controller.deleteRegion('train:coco:202'),
+    /Delete is unavailable while local state is unresolved/,
+  );
+  releaseProjection({{
+    object: {{ ...objects[0], bbox_2d: [11, 20, 300, 400] }},
+    binding: {{ revision, generation: 0, base_row_hash: hash }},
+  }});
+  await pending;
+}}
+"""
+    )

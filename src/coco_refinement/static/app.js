@@ -37,6 +37,7 @@ const editor = createSvgEditor({
     state.selectedRegion = regionKey;
     $('visibility-mode').value = editor.getPresentationState().visibilityMode;
     $('hide-selected').disabled = !regionKey || !state.taskOpen;
+    $('delete-button').disabled = !regionKey || !state.taskOpen;
     if (object) {
       state.category = { id: object.category_id, name: object.category_name };
       editor.setCategory(state.category);
@@ -63,6 +64,11 @@ function commitRebindRequired() {
 const navigationBusy = () => Boolean(
   state.interactionBusy || state.commitActionPromise || state.commitRebindPromise,
 );
+
+function semanticActionLocked(snapshot = controller.getState()) {
+  return state.interactionBusy || commitRebindRequired()
+    || ['Saving', 'Error', 'Conflict'].includes(snapshot.phase);
+}
 
 function renderPage() {
   const page = state.page;
@@ -106,12 +112,12 @@ function renderDraftState(snapshot) {
   $('save-status').dataset.tone = tone;
   $('save-retry').hidden = snapshot.phase !== 'Error';
   $('task-reload').hidden = !['Error', 'Conflict'].includes(snapshot.phase) && !state.commitRebindError;
-  const locked = state.interactionBusy || commitRebindRequired()
-    || ['Saving', 'Error', 'Conflict'].includes(snapshot.phase);
+  const locked = semanticActionLocked(snapshot);
   editor.setDisabled(locked);
   $('category-search').disabled = locked || !state.taskOpen;
   for (const button of editorButtons) button.disabled = locked || !state.taskOpen;
   $('undo-button').disabled = locked || !snapshot.canUndo;
+  $('delete-button').disabled = locked || !state.selectedRegion;
   for (const control of visibilityControls) control.disabled = !state.taskOpen;
   $('hide-selected').disabled = !state.taskOpen || !state.selectedRegion;
   for (const button of $('task-list').querySelectorAll('button')) button.disabled = navigationBusy();
@@ -198,6 +204,7 @@ function setEditorControls(enabled) {
   for (const button of editorButtons) button.disabled = !enabled || state.interactionBusy;
   $('category-search').disabled = !enabled || state.interactionBusy;
   $('undo-button').disabled = !enabled || !controller.getState().canUndo;
+  $('delete-button').disabled = !enabled || !state.selectedRegion;
   for (const control of visibilityControls) control.disabled = !enabled;
   $('hide-selected').disabled = !enabled || !state.selectedRegion;
 }
@@ -278,7 +285,7 @@ async function goTo(position) {
 }
 
 async function applyEditorGesture(detail) {
-  if (!state.taskOpen || state.interactionBusy) return;
+  if (!state.taskOpen || semanticActionLocked()) return;
   const snapshot = controller.getState();
   const existing = detail.regionKey
     ? snapshot.objects.find(object => object.region_key === detail.regionKey)
@@ -304,7 +311,7 @@ async function applyEditorGesture(detail) {
 }
 
 async function chooseCategory(category) {
-  if (state.interactionBusy) {
+  if (semanticActionLocked()) {
     if (state.category) categoryPicker?.choose(state.category, { notify: false });
     else categoryPicker?.clearSelection({ notify: false });
     return;
@@ -328,6 +335,7 @@ async function chooseCategory(category) {
 }
 
 async function runEditorMutation(action) {
+  if (semanticActionLocked()) return undefined;
   if (state.interactionPromise) return state.interactionPromise;
   try { await ensureCurrentCommitBinding(); }
   catch (error) {
@@ -353,10 +361,23 @@ async function runEditorMutation(action) {
 }
 
 async function undoLastEdit() {
-  if (!state.taskOpen || !controller.getState().canUndo) return;
+  if (!state.taskOpen || semanticActionLocked() || !controller.getState().canUndo) return;
   await runEditorMutation(async () => {
     await controller.undo();
     setNotice('Last semantic edit undone; the restored Draft is saved.', 'ok');
+  });
+}
+
+async function deleteSelectedRegion() {
+  if (!state.taskOpen || semanticActionLocked() || !state.selectedRegion) return;
+  if (controller.getState().objects.length <= 1) {
+    setNotice('The last bbox was not deleted: final-bbox policy still requires operator confirmation.', 'warning');
+    return;
+  }
+  const regionKey = state.selectedRegion;
+  await runEditorMutation(async () => {
+    await controller.deleteRegion(regionKey);
+    setNotice('BBox deleted; Undo can restore it.', 'ok');
   });
 }
 
@@ -500,6 +521,7 @@ $('zoom-in').addEventListener('click', () => editor.zoomIn());
 $('zoom-out').addEventListener('click', () => editor.zoomOut());
 $('zoom-reset').addEventListener('click', () => editor.reset());
 $('undo-button').addEventListener('click', () => { void undoLastEdit(); });
+$('delete-button').addEventListener('click', () => { void deleteSelectedRegion(); });
 $('visibility-mode').addEventListener('change', event => setVisibilityMode(event.target.value));
 $('hide-selected').addEventListener('click', hideSelectedRegion);
 $('restore-visibility').addEventListener('click', restoreVisibility);
@@ -509,9 +531,16 @@ $('task-reload').addEventListener('click', () => navigate(reloadCurrentTask));
 document.addEventListener('keydown', event => {
   const tag = event.target instanceof Element ? event.target.tagName : '';
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z'
-      && !['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) && controller.getState().canUndo) {
+      && !['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)
+      && !semanticActionLocked() && controller.getState().canUndo) {
     event.preventDefault();
     void undoLastEdit();
+  }
+  if ((event.key === 'Delete' || event.key === 'Backspace')
+      && $('bbox-overlay').contains(event.target)
+      && !semanticActionLocked() && state.selectedRegion) {
+    event.preventDefault();
+    void deleteSelectedRegion();
   }
 });
 window.addEventListener('beforeunload', event => {
