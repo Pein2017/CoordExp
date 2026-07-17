@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import stat
 import tempfile
@@ -13,6 +14,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
+from numbers import Real
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -73,6 +75,28 @@ class RuntimeStartupError(StandaloneRuntimeError):
 
 class RuntimeShutdownError(StandaloneRuntimeError):
     """Workers did not stop cleanly, so the root lock remains held."""
+
+
+def _validate_positive_finite_timing(name: str, value: object) -> float:
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise RuntimeAssemblyError(
+            f"{name.replace('_', ' ')} must be a positive finite real number",
+            code="coco_refinement.runtime_timing",
+        )
+    try:
+        normalized = float(value)
+    except (OverflowError, TypeError, ValueError) as exc:
+        raise RuntimeAssemblyError(
+            f"{name.replace('_', ' ')} must be a positive finite real number",
+            code="coco_refinement.runtime_timing",
+            cause=exc,
+        ) from exc
+    if normalized <= 0 or not math.isfinite(normalized):
+        raise RuntimeAssemblyError(
+            f"{name.replace('_', ' ')} must be a positive finite real number",
+            code="coco_refinement.runtime_timing",
+        )
+    return normalized
 
 
 class RuntimeState(str, Enum):
@@ -268,14 +292,19 @@ class StandaloneRefinementRuntime:
         runtime: _RuntimeFacade,
         startup_timeout: float,
         poll_interval: float,
+        startup_cleanup_timeout: float = 5.0,
         monotonic: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
-        if startup_timeout <= 0 or poll_interval <= 0:
-            raise RuntimeAssemblyError(
-                "startup timeout and poll interval must be positive",
-                code="coco_refinement.runtime_timing",
-            )
+        startup_timeout = _validate_positive_finite_timing(
+            "startup_timeout", startup_timeout
+        )
+        startup_cleanup_timeout = _validate_positive_finite_timing(
+            "startup_cleanup_timeout", startup_cleanup_timeout
+        )
+        poll_interval = _validate_positive_finite_timing(
+            "poll_interval", poll_interval
+        )
         if set(workspace.splits) != set(_SPLITS):
             raise RuntimeAssemblyError(
                 "standalone runtime requires both train and val stores",
@@ -287,6 +316,7 @@ class StandaloneRefinementRuntime:
         self.adapters = adapters
         self.runtime = runtime
         self.startup_timeout = startup_timeout
+        self.startup_cleanup_timeout = startup_cleanup_timeout
         self.poll_interval = poll_interval
         self._monotonic = monotonic
         self._sleep = sleep
@@ -361,7 +391,9 @@ class StandaloneRefinementRuntime:
                     self._sleep(self.poll_interval)
             except BaseException as exc:
                 self._accepting_writes = False
-                cleanup_error = self._stop_workers_and_verify(self.startup_timeout)
+                cleanup_error = self._stop_workers_and_verify(
+                    self.startup_cleanup_timeout
+                )
                 if cleanup_error is None:
                     self._state = RuntimeState.STOPPED
                     self._write_health_snapshot(lock_held=False)
@@ -761,9 +793,18 @@ def create_standalone_runtime(
     environment: Mapping[str, str] | None = None,
     version_resolver: VersionResolver | None = None,
     startup_timeout: float = 5.0,
+    startup_cleanup_timeout: float = 5.0,
     poll_interval: float = 0.01,
 ) -> StandaloneRefinementRuntime:
     """Assemble a locked dual-split runtime without binding an HTTP port."""
+
+    startup_timeout = _validate_positive_finite_timing(
+        "startup_timeout", startup_timeout
+    )
+    startup_cleanup_timeout = _validate_positive_finite_timing(
+        "startup_cleanup_timeout", startup_cleanup_timeout
+    )
+    poll_interval = _validate_positive_finite_timing("poll_interval", poll_interval)
 
     root = Path(repo_root).resolve(strict=True)
     selected_runtime = (
@@ -909,6 +950,7 @@ def create_standalone_runtime(
             adapters=bindings,
             runtime=runtime,  # type: ignore[arg-type]
             startup_timeout=startup_timeout,
+            startup_cleanup_timeout=startup_cleanup_timeout,
             poll_interval=poll_interval,
         )
     except BaseException:

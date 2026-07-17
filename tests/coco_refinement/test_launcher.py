@@ -16,6 +16,7 @@ def _launch_kwargs(tmp_path: Path) -> dict[str, Any]:
         "runtime_root": repo_root / "outputs/coco_refinement/gate-a",
         "host": "127.0.0.1",
         "port": 19172,
+        "startup_timeout": 11,
         "shutdown_timeout": 7,
     }
 
@@ -80,6 +81,8 @@ def test_launcher_orders_runtime_lifecycle_and_pins_server_shape(
         {
             "runtime_root": runtime_root,
             "reload": False,
+            "startup_cleanup_timeout": 7,
+            "startup_timeout": 11,
             "workers": 1,
         },
     )
@@ -215,6 +218,18 @@ def test_cli_rejects_invalid_ports(port: str) -> None:
 
 
 @pytest.mark.parametrize("timeout", ["0", "-1", "1.5"])
+def test_cli_rejects_invalid_startup_timeout(timeout: str) -> None:
+    with pytest.raises(SystemExit, match="2"):
+        launcher._parser().parse_args(["--startup-timeout", timeout])
+
+
+def test_cli_defaults_to_production_startup_timeout() -> None:
+    args = launcher._parser().parse_args([])
+
+    assert args.startup_timeout == 300
+
+
+@pytest.mark.parametrize("timeout", ["0", "-1", "1.5"])
 def test_cli_rejects_invalid_shutdown_timeout(timeout: str) -> None:
     with pytest.raises(SystemExit, match="2"):
         launcher._parser().parse_args(["--shutdown-timeout", timeout])
@@ -272,6 +287,35 @@ def test_programmatic_legacy_port_rejection_precedes_every_factory(
     kwargs = _launch_kwargs(tmp_path)
     kwargs["port"] = 8080
     with pytest.raises(ValueError, match="reserved"):
+        launcher.run_server(
+            **kwargs,
+            receipt_store_factory=unexpected,
+            runtime_factory=unexpected,
+            app_factory=unexpected,
+            config_factory=unexpected,
+            server_factory=unexpected,
+        )
+
+    assert calls == []
+
+
+@pytest.mark.parametrize("field", ["startup_timeout", "shutdown_timeout"])
+@pytest.mark.parametrize(
+    "value",
+    [0, -1, False, True, 1.0, float("nan"), float("inf"), -float("inf")],
+)
+def test_programmatic_timeout_requires_positive_int_before_every_factory(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    calls: list[str] = []
+
+    def unexpected(*_args: object, **_kwargs: object) -> object:
+        calls.append("called")
+        raise AssertionError("no factory may run for an invalid timeout")
+
+    kwargs = _launch_kwargs(tmp_path)
+    kwargs[field] = value
+    with pytest.raises(ValueError, match=rf"{field} must be a positive integer"):
         launcher.run_server(
             **kwargs,
             receipt_store_factory=unexpected,

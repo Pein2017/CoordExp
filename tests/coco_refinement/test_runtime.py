@@ -216,6 +216,7 @@ class _FakeRuntime:
         self.health_fails = False
         self.val_ready_after = 0
         self.started_health_calls = 0
+        self.stop_timeouts: list[float] = []
 
     def start_workers(self, split: str | None = None) -> None:
         del split
@@ -223,8 +224,9 @@ class _FakeRuntime:
         self.started = True
 
     def stop_workers(self, split: str | None = None, *, timeout: float = 5.0) -> None:
-        del split, timeout
+        del split
         self.events.append("workers:stop")
+        self.stop_timeouts.append(timeout)
         if self.stop_fails:
             raise RuntimeError("injected stop failure")
         if self.stop_leaves_alive:
@@ -305,6 +307,9 @@ def _assemble_fake(
     *,
     events: list[str] | None = None,
     source_inspector: Callable[..., Any] = inspect_source_contracts_read_only,
+    startup_timeout: float = 0.2,
+    startup_cleanup_timeout: float = 5.0,
+    poll_interval: float = 0.001,
 ) -> tuple[Any, _FakeRuntime, list[str]]:
     observed = [] if events is None else events
     contracts = _dual_contracts(tmp_path)
@@ -376,8 +381,9 @@ def _assemble_fake(
         preflight_runner=preflight_runner,  # type: ignore[arg-type]
         environment={},
         version_resolver=_supported_version,
-        startup_timeout=0.2,
-        poll_interval=0.001,
+        startup_timeout=startup_timeout,
+        startup_cleanup_timeout=startup_cleanup_timeout,
+        poll_interval=poll_interval,
     )
     return runtime, fake_runtime, observed
 
@@ -482,15 +488,74 @@ def test_stop_returning_with_a_live_worker_retains_lock(tmp_path: Path) -> None:
 
 
 def test_worker_start_failure_stops_before_releasing_root_lock(tmp_path: Path) -> None:
-    runtime, fake, events = _assemble_fake(tmp_path)
+    runtime, fake, events = _assemble_fake(
+        tmp_path,
+        startup_timeout=300,
+        startup_cleanup_timeout=5,
+    )
     fake.start_fails = True
 
     with pytest.raises(RuntimeStartupError, match="failed before becoming ready"):
         runtime.start()
 
     assert events.index("workers:stop") < events.index("lock:release")
+    assert fake.stop_timeouts == [5]
     assert runtime.lock_held is False
     assert runtime.accepting_writes is False
+
+
+def test_worker_start_cleanup_failure_retains_root_lock(tmp_path: Path) -> None:
+    runtime, fake, events = _assemble_fake(
+        tmp_path,
+        startup_timeout=300,
+        startup_cleanup_timeout=5,
+    )
+    fake.start_fails = True
+    fake.stop_fails = True
+
+    with pytest.raises(RuntimeStartupError, match="failed before becoming ready"):
+        runtime.start()
+
+    assert fake.stop_timeouts == [5]
+    assert runtime.state is RuntimeState.STOP_FAILED
+    assert runtime.lock_held is True
+    assert "lock:release" not in events
+    with pytest.raises(RuntimeRootBusyError):
+        RuntimeRootLock(runtime.workspace.runtime_root).acquire()
+
+    fake.stop_fails = False
+    runtime.shutdown()
+    assert runtime.lock_held is False
+
+
+@pytest.mark.parametrize("field", ["startup_timeout", "startup_cleanup_timeout", "poll_interval"])
+@pytest.mark.parametrize(
+    "value",
+    [0, -1, False, True, float("nan"), float("inf"), -float("inf"), "1"],
+)
+def test_factory_rejects_invalid_timing_before_preflight_or_mutation(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    calls: list[str] = []
+    runtime_root = tmp_path / "runtime-invalid-timing"
+
+    def unexpected(*_args: object, **_kwargs: object) -> object:
+        calls.append("called")
+        raise AssertionError("timing validation must precede every factory")
+
+    kwargs = {field: value}
+    with pytest.raises(RuntimeAssemblyError, match=field.replace("_", " ")):
+        create_standalone_runtime(
+            tmp_path,
+            runtime_root=runtime_root,
+            preflight_runner=unexpected,  # type: ignore[arg-type]
+            source_inspector=unexpected,  # type: ignore[arg-type]
+            workspace_bootstrapper=unexpected,  # type: ignore[arg-type]
+            **kwargs,  # type: ignore[arg-type]
+        )
+
+    assert calls == []
+    assert not runtime_root.exists()
 
 
 def test_duplicate_runtime_root_is_rejected_before_second_source_inspection(

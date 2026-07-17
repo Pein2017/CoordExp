@@ -30,6 +30,7 @@ from src.label_studio_coco_refinement.roi_runtime import (  # noqa: E402
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 19172
+DEFAULT_STARTUP_TIMEOUT = 300
 DEFAULT_SHUTDOWN_TIMEOUT = 5
 RESERVED_LEGACY_PORT = 8080
 RECEIPT_STORE_NAME = "roi-receipts.jsonl"
@@ -84,6 +85,26 @@ def _positive_timeout(value: str) -> int:
     return timeout
 
 
+def _positive_startup_timeout(value: str) -> int:
+    try:
+        timeout = int(value, 10)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "startup timeout must be a positive integer number of seconds"
+        ) from exc
+    if timeout <= 0 or not math.isfinite(timeout):
+        raise argparse.ArgumentTypeError(
+            "startup timeout must be a positive integer number of seconds"
+        )
+    return timeout
+
+
+def _validate_programmatic_timeout(name: str, value: object) -> int:
+    if type(value) is not int or value <= 0:
+        raise ValueError(f"{name} must be a positive integer")
+    return value
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -119,6 +140,15 @@ def _parser() -> argparse.ArgumentParser:
         help=f"TCP port from 1 through 65535 (default: {DEFAULT_PORT}).",
     )
     parser.add_argument(
+        "--startup-timeout",
+        type=_positive_startup_timeout,
+        default=DEFAULT_STARTUP_TIMEOUT,
+        help=(
+            "Positive seconds allowed for both train and val workers to become "
+            f"healthy before binding (default: {DEFAULT_STARTUP_TIMEOUT})."
+        ),
+    )
+    parser.add_argument(
         "--shutdown-timeout",
         type=_positive_timeout,
         default=DEFAULT_SHUTDOWN_TIMEOUT,
@@ -149,6 +179,7 @@ def run_server(
     runtime_root: Path,
     host: str,
     port: int,
+    startup_timeout: int,
     shutdown_timeout: int,
     receipt_store_factory: Callable[[Path], object] = InferenceReceiptStore,
     runtime_factory: Callable[..., Any] = create_standalone_runtime,
@@ -164,8 +195,12 @@ def run_server(
     authority = validate_loopback_authority(host, port)
     if authority.port == RESERVED_LEGACY_PORT:
         raise ValueError("port 8080 is reserved for the legacy workspace")
-    if shutdown_timeout <= 0:
-        raise ValueError("shutdown_timeout must be positive")
+    startup_timeout = _validate_programmatic_timeout(
+        "startup_timeout", startup_timeout
+    )
+    shutdown_timeout = _validate_programmatic_timeout(
+        "shutdown_timeout", shutdown_timeout
+    )
 
     selected_runtime = _resolve_runtime_root(repo_root.resolve(strict=True), runtime_root)
     runtime = runtime_factory(
@@ -175,6 +210,8 @@ def run_server(
             selected_runtime / RECEIPT_STORE_NAME
         ),
         reload=False,
+        startup_cleanup_timeout=shutdown_timeout,
+        startup_timeout=startup_timeout,
         workers=1,
     )
     try:
@@ -211,6 +248,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         runtime_root=runtime_root,
         host=args.host,
         port=args.port,
+        startup_timeout=args.startup_timeout,
         shutdown_timeout=args.shutdown_timeout,
     )
     return 0
