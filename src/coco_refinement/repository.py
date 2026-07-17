@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -316,6 +316,92 @@ class SqliteConnectionSettings:
     journal_mode: str
     foreign_keys: bool
     busy_timeout_ms: int
+
+
+@dataclass(frozen=True)
+class PendingDraftCapture:
+    """One read-transaction projection of every pending Draft in a project."""
+
+    project_id: str
+    split: Split
+    current_generation: int
+    states: tuple[TaskDraftState, ...]
+
+
+@dataclass(frozen=True)
+class TerminalTaskCommit:
+    """Validated store terminal data needed for one SQLite task projection."""
+
+    project_id: str
+    task_id: str
+    split: Split
+    image_id: int
+    captured_revision: int
+    captured_generation: int
+    captured_base_row_hash: str
+    captured_result_hash: str
+    committed_generation: int
+    committed_base_row_hash: str
+    committed_draft: CanonicalDraft
+    region_id_mapping: Mapping[str, int]
+
+    def __post_init__(self) -> None:
+        _nonempty(self.project_id, field="project_id")
+        _nonempty(self.task_id, field="task_id")
+        _split(self.split)
+        _integer(self.image_id, field="image_id", minimum=1)
+        _integer(self.captured_revision, field="captured_revision", minimum=0)
+        _integer(self.captured_generation, field="captured_generation", minimum=0)
+        _digest(self.captured_base_row_hash, field="captured_base_row_hash")
+        _digest(self.captured_result_hash, field="captured_result_hash")
+        _integer(self.committed_generation, field="committed_generation", minimum=0)
+        _digest(self.committed_base_row_hash, field="committed_base_row_hash")
+        if not isinstance(self.committed_draft, CanonicalDraft):
+            raise RepositoryInvariantError(
+                "committed_draft must be canonical",
+                code="coco_refinement.terminal_draft",
+            )
+        if self.committed_draft.split != self.split:
+            raise RepositoryInvariantError(
+                "terminal committed Draft split differs from task",
+                code="coco_refinement.terminal_split",
+            )
+        if not isinstance(self.region_id_mapping, Mapping):
+            raise RepositoryInvariantError(
+                "region_id_mapping must be a mapping",
+                code="coco_refinement.terminal_mapping",
+            )
+        normalized: dict[str, int] = {}
+        ids: set[int] = set()
+        for key, object_id in self.region_id_mapping.items():
+            _nonempty(key, field="region_key")
+            _integer(object_id, field="coco_ann_id", nonzero=True)
+            if object_id in ids:
+                raise RepositoryInvariantError(
+                    "terminal region mapping contains duplicate IDs",
+                    code="coco_refinement.terminal_mapping",
+                )
+            normalized[str(key)] = object_id
+            ids.add(object_id)
+        object.__setattr__(self, "region_id_mapping", normalized)
+
+
+@dataclass(frozen=True)
+class TerminalTaskReconciliation:
+    """Durable per-task result of one terminal success reconciliation."""
+
+    task_id: str
+    state: TaskDraftState
+    retired: bool
+    newer_draft_preserved: bool
+
+
+@dataclass(frozen=True)
+class TerminalSuccessReconciliation:
+    """Atomic, idempotent SQLite projection of one successful store batch."""
+
+    batch_id: str
+    tasks: tuple[TerminalTaskReconciliation, ...]
 
 
 class SqliteDraftRepository:
@@ -641,6 +727,414 @@ class SqliteDraftRepository:
             ).fetchone()
             return self._state_from_rows(task_row, draft_row)
 
+    def capture_pending_draft_states(
+        self, *, project_id: str, split: Split
+    ) -> PendingDraftCapture:
+        """Capture all eligible sparse Drafts in source order in one read txn."""
+
+        _nonempty(project_id, field="project_id")
+        _split(split)
+        with self._transaction(immediate=False) as connection:
+            project_row = connection.execute(
+                "SELECT * FROM projects WHERE project_id = ? AND split = ?",
+                (project_id, split),
+            ).fetchone()
+            if project_row is None:
+                raise ProjectNotFoundError(
+                    "project does not exist for the requested split",
+                    code="coco_refinement.project_not_found",
+                    context={"project_id": project_id, "split": split},
+                )
+            generation_rows = connection.execute(
+                "SELECT DISTINCT current_generation FROM tasks WHERE project_id = ?",
+                (project_id,),
+            ).fetchall()
+            if len(generation_rows) != 1:
+                raise RepositoryInvariantError(
+                    "project tasks do not share one current generation",
+                    code="coco_refinement.capture_generation",
+                    context={"project_id": project_id},
+                )
+            current_generation = int(generation_rows[0]["current_generation"])
+            rows = connection.execute(
+                """
+                SELECT t.*, d.objects_json, d.semantic_hash, d.result_hash
+                FROM tasks AS t
+                JOIN drafts AS d ON d.task_id = t.task_id
+                WHERE t.project_id = ? AND t.split = ?
+                ORDER BY t.source_row_index
+                """,
+                (project_id, split),
+            ).fetchall()
+            states: list[TaskDraftState] = []
+            for row in rows:
+                state = self._state_from_rows(row, row)
+                if state.current_generation != current_generation:
+                    raise RepositoryInvariantError(
+                        "captured Draft differs from the project generation",
+                        code="coco_refinement.capture_generation",
+                        context={"task_id": state.task_id},
+                    )
+                if state.draft is None:
+                    raise RepositoryCorruptionError(
+                        "joined sparse Draft unexpectedly decoded as absent",
+                        code="coco_refinement.draft_corrupt",
+                        context={"task_id": state.task_id},
+                    )
+                if state.draft.result_hash == state.committed_result_hash:
+                    raise RepositoryCorruptionError(
+                        "sparse Draft duplicates its committed baseline",
+                        code="coco_refinement.draft_not_sparse",
+                        context={"task_id": state.task_id},
+                    )
+                states.append(state)
+            return PendingDraftCapture(
+                project_id=project_id,
+                split=split,
+                current_generation=current_generation,
+                states=tuple(states),
+            )
+
+    def attest_historical_draft(
+        self,
+        *,
+        project_id: str,
+        task_id: str,
+        split: Split,
+        image_id: int,
+        source_row_index: int,
+        revision: int,
+        updated_at: str,
+        observed_generation: int,
+        base_row_hash: str,
+        draft: CanonicalDraft,
+    ) -> bool:
+        """Prove exact frozen payload authority without consulting the live Draft."""
+
+        try:
+            _nonempty(project_id, field="project_id")
+            _nonempty(task_id, field="task_id")
+            _split(split)
+            _integer(image_id, field="image_id", minimum=1)
+            _integer(source_row_index, field="source_row_index", minimum=0)
+            _integer(revision, field="revision", minimum=1)
+            _timestamp(updated_at, field="updated_at")
+            _integer(observed_generation, field="observed_generation", minimum=0)
+            _digest(base_row_hash, field="base_row_hash")
+            if not isinstance(draft, CanonicalDraft) or draft.split != split:
+                return False
+            with self._transaction(immediate=False) as connection:
+                task_row = connection.execute(
+                    "SELECT * FROM tasks WHERE project_id = ? AND task_id = ?",
+                    (project_id, task_id),
+                ).fetchone()
+                if task_row is None:
+                    return False
+                if (
+                    str(task_row["split"]) != split
+                    or int(task_row["image_id"]) != image_id
+                    or int(task_row["source_row_index"]) != source_row_index
+                    or int(task_row["revision"]) < revision
+                ):
+                    return False
+                authority = self._requested_draft_for_revision(
+                    connection,
+                    project_id=project_id,
+                    task_id=task_id,
+                    revision=revision,
+                    expected_updated_at=updated_at,
+                    expected_generation=observed_generation,
+                    expected_base_row_hash=base_row_hash,
+                    required=False,
+                    allow_prior_generation=False,
+                )
+                if authority == draft:
+                    return True
+                if (
+                    int(task_row["current_generation"]) != observed_generation
+                    or str(task_row["base_row_hash"]) != base_row_hash
+                ):
+                    return False
+                prior_authority = self._requested_draft_for_revision(
+                    connection,
+                    project_id=project_id,
+                    task_id=task_id,
+                    revision=revision,
+                    expected_updated_at=updated_at,
+                    expected_generation=observed_generation,
+                    expected_base_row_hash=base_row_hash,
+                    required=False,
+                    allow_prior_generation=True,
+                )
+                return prior_authority == draft
+        except RepositoryError:
+            return False
+
+    def reconcile_terminal_success(
+        self,
+        *,
+        batch_id: str,
+        current_user_id: str,
+        commits: Sequence[TerminalTaskCommit],
+    ) -> TerminalSuccessReconciliation:
+        """Atomically project a successful immutable batch into SQLite."""
+
+        _nonempty(batch_id, field="batch_id")
+        _nonempty(current_user_id, field="current_user_id")
+        selected = tuple(commits)
+        if not selected or any(
+            not isinstance(value, TerminalTaskCommit) for value in selected
+        ):
+            raise RepositoryInvariantError(
+                "terminal success requires typed member commits",
+                code="coco_refinement.terminal_members",
+            )
+        project_ids = {value.project_id for value in selected}
+        splits = {value.split for value in selected}
+        captured_generations = {value.captured_generation for value in selected}
+        committed_generations = {value.committed_generation for value in selected}
+        task_ids = [value.task_id for value in selected]
+        if (
+            len(project_ids) != 1
+            or len(splits) != 1
+            or len(captured_generations) != 1
+            or len(committed_generations) != 1
+            or len(set(task_ids)) != len(task_ids)
+        ):
+            raise RepositoryInvariantError(
+                "terminal members do not describe one unique project generation",
+                code="coco_refinement.terminal_members",
+            )
+        captured_generation = next(iter(captured_generations))
+        committed_generation = next(iter(committed_generations))
+        if committed_generation != captured_generation + 1:
+            raise RepositoryInvariantError(
+                "terminal success must advance exactly one generation",
+                code="coco_refinement.terminal_generation",
+            )
+        event_ids = {
+            value.task_id: _terminal_mutation_id(batch_id, value.task_id)
+            for value in selected
+        }
+        fingerprints = {
+            value.task_id: _terminal_fingerprint(
+                batch_id=batch_id,
+                current_user_id=current_user_id,
+                value=value,
+            )
+            for value in selected
+        }
+
+        with self._transaction(immediate=True) as connection:
+            existing: dict[str, sqlite3.Row] = {}
+            for value in selected:
+                row = connection.execute(
+                    "SELECT * FROM mutations WHERE mutation_id = ?",
+                    (event_ids[value.task_id],),
+                ).fetchone()
+                if row is not None:
+                    existing[value.task_id] = row
+            if existing:
+                if len(existing) != len(selected):
+                    raise RepositoryCorruptionError(
+                        "terminal reconciliation ledger is only partially present",
+                        code="coco_refinement.terminal_partial",
+                        context={"batch_id": batch_id},
+                    )
+                replayed: list[TerminalTaskReconciliation] = []
+                for value in selected:
+                    row = existing[value.task_id]
+                    if str(row["request_fingerprint"]) != fingerprints[value.task_id]:
+                        raise MutationCollisionError(
+                            "terminal reconciliation identity conflicts",
+                            code="coco_refinement.terminal_collision",
+                            context={"batch_id": batch_id, "task_id": value.task_id},
+                        )
+                    response = _decode_response(str(row["response_json"]))
+                    if not isinstance(response, DraftSaveApplied):
+                        raise RepositoryCorruptionError(
+                            "terminal reconciliation response has the wrong kind",
+                            code="coco_refinement.terminal_response",
+                        )
+                    replayed.append(
+                        TerminalTaskReconciliation(
+                            task_id=value.task_id,
+                            state=response.state,
+                            retired=response.retired,
+                            newer_draft_preserved=not response.retired,
+                        )
+                    )
+                return TerminalSuccessReconciliation(batch_id, tuple(replayed))
+
+            project_id = next(iter(project_ids))
+            project_generations = connection.execute(
+                "SELECT DISTINCT current_generation FROM tasks WHERE project_id = ?",
+                (project_id,),
+            ).fetchall()
+            if (
+                len(project_generations) != 1
+                or int(project_generations[0]["current_generation"])
+                != captured_generation
+            ):
+                raise RepositoryInvariantError(
+                    "SQLite project generation differs from the terminal base",
+                    code="coco_refinement.terminal_generation",
+                    context={"project_id": project_id},
+                )
+
+            prepared: list[
+                tuple[TerminalTaskCommit, sqlite3.Row, CanonicalDraft | None, bool]
+            ] = []
+            for value in selected:
+                task_row = connection.execute(
+                    "SELECT * FROM tasks WHERE project_id = ? AND task_id = ?",
+                    (value.project_id, value.task_id),
+                ).fetchone()
+                if task_row is None:
+                    raise TaskNotFoundError(
+                        "terminal task is absent from the compact index",
+                        code="coco_refinement.task_not_found",
+                        context={"task_id": value.task_id},
+                    )
+                if (
+                    str(task_row["split"]) != value.split
+                    or int(task_row["image_id"]) != value.image_id
+                    or int(task_row["current_generation"])
+                    != value.captured_generation
+                    or str(task_row["base_row_hash"]) != value.captured_base_row_hash
+                    or int(task_row["revision"]) < value.captured_revision
+                ):
+                    raise RepositoryInvariantError(
+                        "terminal member differs from SQLite captured authority",
+                        code="coco_refinement.terminal_authority",
+                        context={"task_id": value.task_id},
+                    )
+                draft_row = connection.execute(
+                    "SELECT * FROM drafts WHERE task_id = ?",
+                    (value.task_id,),
+                ).fetchone()
+                state = self._state_from_rows(task_row, draft_row)
+                if state.revision == value.captured_revision:
+                    if (
+                        state.draft is None
+                        or state.draft.result_hash != value.captured_result_hash
+                    ):
+                        raise RepositoryInvariantError(
+                            "exact terminal Draft no longer matches its capture",
+                            code="coco_refinement.terminal_authority",
+                            context={"task_id": value.task_id},
+                        )
+                    next_draft = None
+                    retired = True
+                else:
+                    live_draft = state.draft
+                    if live_draft is None:
+                        live_draft = self._requested_draft_for_revision(
+                            connection,
+                            project_id=value.project_id,
+                            task_id=value.task_id,
+                            revision=state.revision,
+                            expected_updated_at=state.updated_at,
+                            expected_generation=state.current_generation,
+                            expected_base_row_hash=state.base_row_hash,
+                            required=True,
+                            allow_prior_generation=False,
+                        )
+                    next_draft = _merge_terminal_identities(
+                        live_draft, value.region_id_mapping
+                    )
+                    retired = next_draft.result_hash == value.committed_draft.result_hash
+                    if retired:
+                        next_draft = None
+                prepared.append((value, task_row, next_draft, retired))
+
+            now = _now()
+            connection.execute(
+                "UPDATE tasks SET current_generation = ? WHERE project_id = ?",
+                (committed_generation, project_id),
+            )
+            reconciled: list[TerminalTaskReconciliation] = []
+            for value, task_row, next_draft, retired in prepared:
+                if next_draft is None:
+                    connection.execute(
+                        "DELETE FROM drafts WHERE task_id = ?", (value.task_id,)
+                    )
+                else:
+                    connection.execute(
+                        """
+                        INSERT INTO drafts(task_id, objects_json, semantic_hash, result_hash)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(task_id) DO UPDATE SET
+                            objects_json = excluded.objects_json,
+                            semantic_hash = excluded.semantic_hash,
+                            result_hash = excluded.result_hash
+                        """,
+                        (
+                            value.task_id,
+                            _json(next_draft.to_json_regions()),
+                            next_draft.semantic_hash,
+                            next_draft.result_hash,
+                        ),
+                    )
+                next_revision = int(task_row["revision"]) + 1
+                connection.execute(
+                    """
+                    UPDATE tasks
+                    SET revision = ?, epoch = epoch + 1, current_generation = ?,
+                        base_row_hash = ?, committed_result_hash = ?, updated_at = ?
+                    WHERE task_id = ?
+                    """,
+                    (
+                        next_revision,
+                        value.committed_generation,
+                        value.committed_base_row_hash,
+                        value.committed_draft.result_hash,
+                        now,
+                        value.task_id,
+                    ),
+                )
+                updated_task = connection.execute(
+                    "SELECT * FROM tasks WHERE task_id = ?", (value.task_id,)
+                ).fetchone()
+                updated_draft = connection.execute(
+                    "SELECT * FROM drafts WHERE task_id = ?", (value.task_id,)
+                ).fetchone()
+                state = self._state_from_rows(updated_task, updated_draft)
+                response = DraftSaveApplied(
+                    mutation_id=event_ids[value.task_id],
+                    state=state,
+                    retired=retired,
+                )
+                connection.execute(
+                    """
+                    INSERT INTO mutations(
+                        mutation_id, task_id, request_fingerprint,
+                        response_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        event_ids[value.task_id],
+                        value.task_id,
+                        fingerprints[value.task_id],
+                        _json(
+                            _response_to_json(
+                                response,
+                                requested_draft=next_draft,
+                            )
+                        ),
+                        now,
+                    ),
+                )
+                reconciled.append(
+                    TerminalTaskReconciliation(
+                        task_id=value.task_id,
+                        state=state,
+                        retired=retired,
+                        newer_draft_preserved=not retired,
+                    )
+                )
+            return TerminalSuccessReconciliation(batch_id, tuple(reconciled))
+
     def count_tasks(self, *, project_id: str) -> int:
         with closing(self._connect()) as connection:
             return int(
@@ -839,10 +1333,95 @@ class SqliteDraftRepository:
                 request.mutation_id,
                 request.task_id,
                 request_fingerprint,
-                _json(_response_to_json(response)),
+                _json(
+                    _response_to_json(
+                        response,
+                        requested_draft=(
+                            request.draft
+                            if isinstance(response, DraftSaveApplied)
+                            else None
+                        ),
+                    )
+                ),
                 _now(),
             ),
         )
+
+    def _requested_draft_for_revision(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        project_id: str,
+        task_id: str,
+        revision: int,
+        expected_updated_at: str,
+        expected_generation: int,
+        expected_base_row_hash: str,
+        required: bool,
+        allow_prior_generation: bool,
+    ) -> CanonicalDraft | None:
+        rows = connection.execute(
+            """
+            SELECT response_json FROM mutations
+            WHERE task_id = ? ORDER BY created_at, mutation_id
+            """,
+            (task_id,),
+        ).fetchall()
+        matches: list[CanonicalDraft] = []
+        missing_payload = False
+        for row in rows:
+            try:
+                value = json.loads(str(row["response_json"]))
+                state = value["state"]
+            except (json.JSONDecodeError, KeyError, TypeError) as exc:
+                raise RepositoryCorruptionError(
+                    "mutation history response is invalid",
+                    code="coco_refinement.mutation_response_corrupt",
+                    cause=exc,
+                ) from exc
+            recorded_generation = state.get("current_generation")
+            if (
+                value.get("kind") != "applied"
+                or state.get("project_id") != project_id
+                or state.get("revision") != revision
+                or state.get("updated_at") != expected_updated_at
+                or state.get("base_row_hash") != expected_base_row_hash
+                or isinstance(recorded_generation, bool)
+                or not isinstance(recorded_generation, int)
+                or (
+                    recorded_generation > expected_generation
+                    if allow_prior_generation
+                    else recorded_generation != expected_generation
+                )
+            ):
+                continue
+            requested = value.get("requested_draft")
+            if requested is None:
+                missing_payload = True
+                continue
+            matches.append(_decode_requested_draft(requested))
+        if not matches:
+            if required and missing_payload:
+                raise RepositoryInvariantError(
+                    "historical applied mutation lacks its requested Draft payload",
+                    code="coco_refinement.requested_draft_missing",
+                    context={"task_id": task_id, "revision": revision},
+                )
+            if required:
+                raise RepositoryInvariantError(
+                    "historical Draft revision is not in the permanent mutation ledger",
+                    code="coco_refinement.draft_history_missing",
+                    context={"task_id": task_id, "revision": revision},
+                )
+            return None
+        first = matches[0]
+        if any(value != first for value in matches[1:]):
+            raise RepositoryCorruptionError(
+                "one Draft revision has conflicting mutation payloads",
+                code="coco_refinement.draft_history_conflict",
+                context={"task_id": task_id, "revision": revision},
+            )
+        return first
 
 
 class _Transaction:
@@ -1066,13 +1645,19 @@ def _request_fingerprint(request: SaveDraftRequest) -> str:
     )
 
 
-def _response_to_json(response: DraftSaveResponse) -> dict[str, Any]:
+def _response_to_json(
+    response: DraftSaveResponse,
+    *,
+    requested_draft: CanonicalDraft | None = None,
+) -> dict[str, Any]:
     value: dict[str, Any] = {
         "mutation_id": response.mutation_id,
         "state": _state_to_json(response.state),
     }
     if isinstance(response, DraftSaveApplied):
         value.update({"kind": "applied", "retired": response.retired})
+        if requested_draft is not None:
+            value["requested_draft"] = _draft_to_history_json(requested_draft)
     else:
         value.update(
             {
@@ -1141,6 +1726,9 @@ def _decode_response(encoded: str) -> DraftSaveResponse:
             draft=draft,
         )
         if value["kind"] == "applied":
+            requested_draft = value.get("requested_draft")
+            if requested_draft is not None:
+                _decode_requested_draft(requested_draft)
             return DraftSaveApplied(
                 mutation_id=value["mutation_id"],
                 state=state,
@@ -1165,6 +1753,89 @@ def _decode_response(encoded: str) -> DraftSaveResponse:
             code="coco_refinement.mutation_response_corrupt",
             cause=exc,
         ) from exc
+
+
+def _draft_to_history_json(draft: CanonicalDraft) -> dict[str, Any]:
+    return {
+        "split": draft.split,
+        "objects": draft.to_json_regions(),
+        "semantic_hash": draft.semantic_hash,
+        "result_hash": draft.result_hash,
+    }
+
+
+def _decode_requested_draft(value: object) -> CanonicalDraft:
+    try:
+        if not isinstance(value, Mapping):
+            raise TypeError("requested Draft history must be an object")
+        draft = canonicalize_objects(value["objects"], split=value["split"])
+        if (
+            draft.semantic_hash != value["semantic_hash"]
+            or draft.result_hash != value["result_hash"]
+        ):
+            raise ValueError("requested Draft hashes do not reproduce")
+        return draft
+    except Exception as exc:
+        if isinstance(exc, RepositoryCorruptionError):
+            raise
+        raise RepositoryCorruptionError(
+            "stored requested Draft history is invalid",
+            code="coco_refinement.requested_draft_corrupt",
+            cause=exc,
+        ) from exc
+
+
+def _merge_terminal_identities(
+    draft: CanonicalDraft,
+    region_id_mapping: Mapping[str, int],
+) -> CanonicalDraft:
+    values = draft.to_json_regions()
+    for value in values:
+        key = str(value["region_key"])
+        object_id = region_id_mapping.get(key)
+        if object_id is None:
+            continue
+        prior = value.get("coco_ann_id")
+        if prior not in (None, object_id):
+            raise RepositoryInvariantError(
+                "newer Draft carries a conflicting hidden identity",
+                code="coco_refinement.terminal_identity_conflict",
+                context={"region_key": key},
+            )
+        value["coco_ann_id"] = object_id
+    return canonicalize_objects(values, split=draft.split)
+
+
+def _terminal_mutation_id(batch_id: str, task_id: str) -> str:
+    token = _sha256_json({"batch_id": batch_id, "task_id": task_id})
+    return f"internal:terminal:{token}"
+
+
+def _terminal_fingerprint(
+    *,
+    batch_id: str,
+    current_user_id: str,
+    value: TerminalTaskCommit,
+) -> str:
+    return _sha256_json(
+        {
+            "kind": "terminal_success",
+            "batch_id": batch_id,
+            "current_user_id": current_user_id,
+            "project_id": value.project_id,
+            "task_id": value.task_id,
+            "split": value.split,
+            "image_id": value.image_id,
+            "captured_revision": value.captured_revision,
+            "captured_generation": value.captured_generation,
+            "captured_base_row_hash": value.captured_base_row_hash,
+            "captured_result_hash": value.captured_result_hash,
+            "committed_generation": value.committed_generation,
+            "committed_base_row_hash": value.committed_base_row_hash,
+            "committed_draft": _draft_to_history_json(value.committed_draft),
+            "region_id_mapping": dict(value.region_id_mapping),
+        }
+    )
 
 
 def _sha256_json(value: object) -> str:
@@ -1261,10 +1932,21 @@ def _digest(value: object, *, field: str) -> str:
     return value
 
 
-def _integer(value: object, *, field: str, minimum: int) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+def _integer(
+    value: object,
+    *,
+    field: str,
+    minimum: int | None = None,
+    nonzero: bool = False,
+) -> int:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or (minimum is not None and value < minimum)
+        or (nonzero and value == 0)
+    ):
         raise RepositoryInvariantError(
-            f"{field} must be an integer >= {minimum}",
+            f"{field} must be an integer in the accepted range",
             code="coco_refinement.repository_integer",
             context={"field": field, "value": value},
         )
@@ -1277,6 +1959,7 @@ __all__ = [
     "DraftSaveConflict",
     "DraftSaveResponse",
     "MutationCollisionError",
+    "PendingDraftCapture",
     "ProjectNotFoundError",
     "ProjectRecord",
     "RepositoryCorruptionError",
@@ -1287,4 +1970,7 @@ __all__ = [
     "SqliteDraftRepository",
     "TaskDraftState",
     "TaskNotFoundError",
+    "TerminalSuccessReconciliation",
+    "TerminalTaskCommit",
+    "TerminalTaskReconciliation",
 ]
