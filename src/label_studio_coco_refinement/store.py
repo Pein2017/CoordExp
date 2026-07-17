@@ -1965,6 +1965,68 @@ class WorkingDatasetStore:
                 raise RecoveryError(f"batch {batch_id} has multiple terminal outcomes")
             return self._batch_result_from_terminal(terminals[0], records=records)
 
+    def get_batch_request(self, batch_id: str) -> BatchRequest:
+        """Return the exact immutable payload admitted for one durable batch ID."""
+
+        with self._supported_reader_lock():
+            with self._shared_queue_lock():
+                queue_records = self._read_queue_records()
+            enqueue = self._queue_enqueue_for_batch(queue_records, batch_id)
+            if enqueue is None:
+                raise StoreError(f"unknown batch id: {batch_id}")
+            payload = copy.deepcopy(enqueue.get("payload"))
+            if (
+                not isinstance(payload, Mapping)
+                or sha256_json(payload) != enqueue.get("payload_hash")
+            ):
+                raise RecoveryError("queued batch payload hash disagreement")
+            request = _batch_request_from_payload(payload, error_type=RecoveryError)
+            if request.batch_id != batch_id:
+                raise RecoveryError("queued batch identity disagreement")
+            return request
+
+    def terminal_batch_pairs(self) -> tuple[tuple[BatchRequest, BatchResult], ...]:
+        """Return every reconciled terminal request/result pair in journal order."""
+
+        with self._supported_reader_lock():
+            records = list(self._records)
+            with self._shared_queue_lock():
+                queue_records = self._read_queue_records()
+            enqueues = {
+                str(record["batch_id"]): record
+                for record in queue_records
+                if record.get("kind") == "enqueue"
+            }
+            pairs: list[tuple[BatchRequest, BatchResult]] = []
+            seen: set[str] = set()
+            for terminal in records:
+                if terminal.get("kind") != "batch_terminal":
+                    continue
+                batch_id = str(terminal.get("batch_id", ""))
+                if not batch_id or batch_id in seen:
+                    raise RecoveryError("terminal batch identity is missing or duplicated")
+                seen.add(batch_id)
+                enqueue = enqueues.get(batch_id)
+                if enqueue is None:
+                    raise RecoveryError(
+                        f"terminal batch {batch_id} has no durable enqueue"
+                    )
+                payload = copy.deepcopy(enqueue.get("payload"))
+                if (
+                    not isinstance(payload, Mapping)
+                    or sha256_json(payload) != enqueue.get("payload_hash")
+                    or terminal.get("payload_hash") != enqueue.get("payload_hash")
+                ):
+                    raise RecoveryError("terminal batch payload hash disagreement")
+                request = _batch_request_from_payload(
+                    payload, error_type=RecoveryError
+                )
+                result = self._batch_result_from_terminal(terminal, records=records)
+                if request.batch_id != result.batch_id:
+                    raise RecoveryError("terminal request/result identity disagreement")
+                pairs.append((request, result))
+            return tuple(pairs)
+
     def _execute_batch(self, enqueue: Mapping[str, Any]) -> BatchResult:
         payload = copy.deepcopy(enqueue["payload"])
         if sha256_json(payload) != enqueue.get("payload_hash"):

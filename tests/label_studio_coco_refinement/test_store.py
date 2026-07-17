@@ -1299,6 +1299,26 @@ def test_process_batch_publishes_every_member_once_in_source_order(
     assert [record["kind"] for record in records].count("reservation") == 2
 
 
+def test_durable_batch_request_and_terminal_pairs_reopen_exactly(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    request = _batch_request(store, image_ids=(1, 2))
+
+    store.enqueue_batch(request)
+    assert store.get_batch_request(request.batch_id) == request
+    assert store.terminal_batch_pairs() == ()
+
+    result = store.process_next_batch()
+    assert result is not None
+    assert store.get_batch_request(request.batch_id) == request
+    assert store.terminal_batch_pairs() == ((request, result),)
+
+    reopened = _reopen(store)
+    assert reopened.get_batch_request(request.batch_id) == request
+    assert reopened.terminal_batch_pairs() == ((request, result),)
+
+
 def test_batch_freshness_is_per_row_not_global_generation(
     project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
 ) -> None:
