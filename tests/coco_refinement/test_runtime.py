@@ -601,6 +601,65 @@ def test_source_inspection_failure_releases_lock_before_sqlite_creation(
         pass
 
 
+def test_receipt_store_factory_runs_only_after_writer_lock(
+    tmp_path: Path,
+) -> None:
+    contracts = _dual_contracts(tmp_path)
+    runtime_root = tmp_path / "runtime-receipt-order"
+    events: list[str] = []
+
+    def receipt_factory() -> object:
+        with pytest.raises(RuntimeRootBusyError):
+            with RuntimeRootLock(runtime_root):
+                pass
+        events.append("receipt")
+        return _ReceiptResolver()
+
+    def fail_inspection(_contracts: object) -> object:
+        events.append("inspect")
+        raise SourceInspectionError(
+            "stop after receipt ordering proof",
+            code="coco_refinement.test_source_failure",
+        )
+
+    with pytest.raises(SourceInspectionError, match="ordering proof"):
+        create_standalone_runtime(
+            tmp_path,
+            runtime_root=runtime_root,
+            source_contracts=contracts,
+            inference_receipt_store_factory=receipt_factory,
+            source_inspector=fail_inspection,  # type: ignore[arg-type]
+            environment={},
+            version_resolver=_supported_version,
+        )
+
+    assert events == ["receipt", "inspect"]
+    with RuntimeRootLock(runtime_root):
+        pass
+
+
+def test_second_writer_rejection_never_constructs_receipt_store(
+    tmp_path: Path,
+) -> None:
+    contracts = _dual_contracts(tmp_path)
+    runtime_root = tmp_path / "runtime-receipt-busy"
+    events: list[str] = []
+
+    with RuntimeRootLock(runtime_root):
+        with pytest.raises(RuntimeRootBusyError):
+            create_standalone_runtime(
+                tmp_path,
+                runtime_root=runtime_root,
+                source_contracts=contracts,
+                inference_receipt_store_factory=lambda: events.append("receipt")
+                or _ReceiptResolver(),
+                environment={},
+                version_resolver=_supported_version,
+            )
+
+    assert events == []
+
+
 @pytest.mark.parametrize("failure", ["bbox", "missing", "symlink", "dimensions"])
 def test_val_semantic_or_image_drift_creates_no_sqlite_or_split_state(
     tmp_path: Path, failure: str

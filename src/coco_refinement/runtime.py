@@ -743,6 +743,7 @@ def create_standalone_runtime(
     source_contracts: Sequence[BootstrapSourceContract] | None = None,
     adapter_factories: AdapterFactories | None = None,
     inference_receipt_store: object | None = None,
+    inference_receipt_store_factory: Callable[[], object] | None = None,
     current_user_id: str = "local-operator",
     terminal_pair_provider: TerminalPairProvider | None = None,
     source_inspector: Callable[
@@ -773,18 +774,20 @@ def create_standalone_runtime(
         if source_contracts is None
         else source_contracts
     )
-    if adapter_factories is None:
-        if inference_receipt_store is None:
+    factories = adapter_factories
+    if factories is None:
+        if (inference_receipt_store is None) == (
+            inference_receipt_store_factory is None
+        ):
             raise RuntimeAssemblyError(
-                "production adapters require an inference receipt store",
+                "production adapters require exactly one inference receipt store source",
                 code="coco_refinement.receipt_store",
             )
-        factories = production_adapter_factories(
-            inference_receipt_store=inference_receipt_store,
-            current_user_id=current_user_id,
+    elif inference_receipt_store is not None or inference_receipt_store_factory is not None:
+        raise RuntimeAssemblyError(
+            "explicit adapter factories cannot also receive an inference receipt store",
+            code="coco_refinement.receipt_store",
         )
-    else:
-        factories = adapter_factories
     selected_pair_provider = terminal_pair_provider or StoreTerminalPairProvider()
     if not callable(
         getattr(selected_pair_provider, "existing_pairs", None)
@@ -803,6 +806,16 @@ def create_standalone_runtime(
         version_resolver=version_resolver,
     )
     try:
+        if factories is None:
+            receipt_store = (
+                inference_receipt_store
+                if inference_receipt_store_factory is None
+                else inference_receipt_store_factory()
+            )
+            factories = production_adapter_factories(
+                inference_receipt_store=receipt_store,
+                current_user_id=current_user_id,
+            )
         inspections = tuple(source_inspector(selected_contracts))
         _validate_inspection_receipts(inspections, selected_contracts)
 

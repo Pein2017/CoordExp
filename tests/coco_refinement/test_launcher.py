@@ -1,0 +1,284 @@
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from scripts import run_coco_refinement as launcher
+
+
+def _launch_kwargs(tmp_path: Path) -> dict[str, Any]:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir(exist_ok=True)
+    return {
+        "repo_root": repo_root,
+        "runtime_root": repo_root / "outputs/coco_refinement/gate-a",
+        "host": "127.0.0.1",
+        "port": 19172,
+        "shutdown_timeout": 7,
+    }
+
+
+def test_launcher_orders_runtime_lifecycle_and_pins_server_shape(
+    tmp_path: Path,
+) -> None:
+    events: list[object] = []
+    repo_root = tmp_path / "repo"
+    runtime_root = repo_root / "outputs/coco_refinement/gate-a"
+    receipt_store = object()
+    app = object()
+    config = object()
+
+    class Runtime:
+        def start(self) -> None:
+            events.append("start")
+
+        def shutdown(self, *, timeout: float) -> None:
+            events.append(("shutdown", timeout))
+
+    runtime = Runtime()
+
+    def make_receipts(path: Path) -> object:
+        events.append(("receipts", path))
+        return receipt_store
+
+    def make_runtime(repo_root: Path, **kwargs: object) -> Runtime:
+        receipt_factory = kwargs.pop("inference_receipt_store_factory")
+        events.append(("create", repo_root, kwargs))
+        assert callable(receipt_factory)
+        assert receipt_factory() is receipt_store
+        return runtime
+
+    def make_app(selected_runtime: object, **kwargs: object) -> object:
+        events.append(("app", selected_runtime, kwargs))
+        return app
+
+    def make_config(selected_app: object, **kwargs: object) -> object:
+        events.append(("config", selected_app, kwargs))
+        return config
+
+    class Server:
+        def __init__(self, selected_config: object) -> None:
+            events.append(("server", selected_config))
+
+        def run(self) -> None:
+            events.append("serve")
+
+    launcher.run_server(
+        **_launch_kwargs(tmp_path),
+        receipt_store_factory=make_receipts,
+        runtime_factory=make_runtime,
+        app_factory=make_app,
+        config_factory=make_config,
+        server_factory=Server,
+    )
+
+    assert events[0] == (
+        "create",
+        repo_root,
+        {
+            "runtime_root": runtime_root,
+            "reload": False,
+            "workers": 1,
+        },
+    )
+    assert events[1] == ("receipts", runtime_root / "roi-receipts.jsonl")
+    assert events[2] == "start"
+    assert events[3] == (
+        "app",
+        runtime,
+        {"bind_host": "127.0.0.1", "port": 19172},
+    )
+    assert events[4] == (
+        "config",
+        app,
+        {
+            "host": "127.0.0.1",
+            "port": 19172,
+            "reload": False,
+            "workers": 1,
+            "access_log": False,
+            "timeout_graceful_shutdown": 7,
+        },
+    )
+    assert events[5:] == [("server", config), "serve", ("shutdown", 7)]
+
+
+@pytest.mark.parametrize("failure_at", ["app", "serve"])
+def test_app_or_serve_failure_still_shuts_down_runtime(
+    tmp_path: Path, failure_at: str
+) -> None:
+    events: list[object] = []
+
+    class Runtime:
+        def start(self) -> None:
+            events.append("start")
+
+        def shutdown(self, *, timeout: float) -> None:
+            events.append(("shutdown", timeout))
+
+    runtime = Runtime()
+
+    def make_app(_runtime: object, **_kwargs: object) -> object:
+        events.append("app")
+        if failure_at == "app":
+            raise RuntimeError("app failed")
+        return object()
+
+    class Server:
+        def __init__(self, _config: object) -> None:
+            pass
+
+        def run(self) -> None:
+            events.append("serve")
+            raise RuntimeError("serve failed")
+
+    with pytest.raises(RuntimeError, match=f"{failure_at} failed"):
+        launcher.run_server(
+            **_launch_kwargs(tmp_path),
+            receipt_store_factory=lambda _path: object(),
+            runtime_factory=lambda _repo_root, **_kwargs: runtime,
+            app_factory=make_app,
+            config_factory=lambda _app, **_kwargs: object(),
+            server_factory=Server,
+        )
+
+    assert events[-1] == ("shutdown", 7)
+    assert events.count(("shutdown", 7)) == 1
+
+
+def test_runtime_assembly_failure_never_builds_bind_capable_objects(
+    tmp_path: Path,
+) -> None:
+    events: list[str] = []
+
+    def fail_runtime(_repo_root: Path, **_kwargs: object) -> object:
+        events.append("create")
+        raise RuntimeError("preflight failed")
+
+    def unexpected(*_args: object, **_kwargs: object) -> object:
+        events.append("bind")
+        raise AssertionError("bind-capable factory must not be called")
+
+    with pytest.raises(RuntimeError, match="preflight failed"):
+        launcher.run_server(
+            **_launch_kwargs(tmp_path),
+            receipt_store_factory=lambda _path: object(),
+            runtime_factory=fail_runtime,
+            app_factory=unexpected,
+            config_factory=unexpected,
+            server_factory=unexpected,
+        )
+
+    assert events == ["create"]
+
+
+def test_start_failure_is_propagated_and_runtime_is_released(tmp_path: Path) -> None:
+    events: list[object] = []
+
+    class Runtime:
+        def start(self) -> None:
+            events.append("start")
+            raise RuntimeError("start failed")
+
+        def shutdown(self, *, timeout: float) -> None:
+            events.append(("shutdown", timeout))
+
+    with pytest.raises(RuntimeError, match="start failed"):
+        launcher.run_server(
+            **_launch_kwargs(tmp_path),
+            receipt_store_factory=lambda _path: object(),
+            runtime_factory=lambda _repo_root, **_kwargs: Runtime(),
+            app_factory=lambda *_args, **_kwargs: pytest.fail("app must not build"),
+            config_factory=lambda *_args, **_kwargs: pytest.fail(
+                "config must not build"
+            ),
+            server_factory=lambda *_args, **_kwargs: pytest.fail(
+                "server must not build"
+            ),
+        )
+
+    assert events == ["start", ("shutdown", 7)]
+
+
+@pytest.mark.parametrize("host", ["localhost", "0.0.0.0", "192.168.1.3"])
+def test_cli_rejects_non_numeric_or_non_loopback_hosts(host: str) -> None:
+    with pytest.raises(SystemExit, match="2"):
+        launcher._parser().parse_args(["--host", host])
+
+
+@pytest.mark.parametrize("port", ["0", "8080", "65536", "not-a-port"])
+def test_cli_rejects_invalid_ports(port: str) -> None:
+    with pytest.raises(SystemExit, match="2"):
+        launcher._parser().parse_args(["--port", port])
+
+
+@pytest.mark.parametrize("timeout", ["0", "-1", "1.5"])
+def test_cli_rejects_invalid_shutdown_timeout(timeout: str) -> None:
+    with pytest.raises(SystemExit, match="2"):
+        launcher._parser().parse_args(["--shutdown-timeout", timeout])
+
+
+def test_default_paths_do_not_depend_on_the_callers_working_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    args = launcher._parser().parse_args([])
+
+    assert args.repo_root == launcher.REPO_ROOT
+    assert launcher._resolve_runtime_root(args.repo_root, args.runtime_root) == (
+        launcher.REPO_ROOT / launcher.DEFAULT_RUNTIME_RELATIVE
+    ).resolve()
+
+
+def test_relative_runtime_root_is_anchored_below_repo_root(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    assert launcher._resolve_runtime_root(
+        repo_root, Path("outputs/coco_refinement/gate-a")
+    ) == (
+        repo_root / "outputs/coco_refinement/gate-a"
+    ).resolve()
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        Path("."),
+        Path("public_data/coco/rescale_32_1024_bbox_len12000"),
+        Path("public_data/coco/rescale_32_1024_bbox/images"),
+        Path("outputs/coco_refinement"),
+        Path("outputs/label_studio_coco_refinement/state"),
+        Path("../outside"),
+    ],
+)
+def test_runtime_root_must_stay_in_standalone_output_namespace(
+    tmp_path: Path, value: Path
+) -> None:
+    repo_root = tmp_path / "repo"
+    with pytest.raises(ValueError, match="outputs/coco_refinement"):
+        launcher._resolve_runtime_root(repo_root, value)
+
+
+def test_programmatic_legacy_port_rejection_precedes_every_factory(
+    tmp_path: Path,
+) -> None:
+    calls: list[str] = []
+
+    def unexpected(*_args: object, **_kwargs: object) -> object:
+        calls.append("called")
+        raise AssertionError("no factory may run for the reserved legacy port")
+
+    kwargs = _launch_kwargs(tmp_path)
+    kwargs["port"] = 8080
+    with pytest.raises(ValueError, match="reserved"):
+        launcher.run_server(
+            **kwargs,
+            receipt_store_factory=unexpected,
+            runtime_factory=unexpected,
+            app_factory=unexpected,
+            config_factory=unexpected,
+            server_factory=unexpected,
+        )
+
+    assert calls == []
