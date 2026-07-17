@@ -1,0 +1,49 @@
+## 1. Native Workspace Foundation
+
+- [x] 1.1 Record the approved replacement decisions: native norm1000 Drafts with no Label Studio Draft migration, complete train/val indexes plus sparse Draft rows, simple asynchronous Commit, human-loop-first UAT, real ROI second, and legacy fallback isolation.
+- [ ] 1.2 Record the parent/nested legacy commit identities and archive branch in a durable research receipt; prove the tracked Cypress config is restored and keep the AgentGuard-blocked untracked harness outside every commit.
+- [ ] 1.3 Add interface-level failing tests for native object canonicalization: strict norm1000 geometry, official sparse COCO-80 IDs, source/new/ROI stable keys, positive-ID preservation, metadata allowlist, deterministic semantic hash, duplicate rejection, and presentation exclusion.
+- [ ] 1.4 Implement `src/coco_refinement` native object/Draft/task models and canonicalizer without Django or Label Studio imports; adapt canonical regions into the existing `AuthoritativeDraftSnapshot`/store boundary.
+- [ ] 1.5 Add failing transaction tests and implement the SQLite schema/repository for projects, complete compact task identities, sparse Drafts, monotonic CAS revisions, idempotent mutation IDs, current-generation/base-row bindings, and restart durability.
+- [ ] 1.6 Add failing bootstrap/image-boundary tests and implement exact max_len12000 train/val indexing, working-store bootstrap, validated shared-image links, allowlisted image resolution, traversal/symlink rejection, idempotent restart, and source/manifest drift failure.
+- [ ] 1.7 Execute a bounded then full-index bootstrap/open/restart probe; record task counts, source/image identities, runtime-root bytes, SQLite row counts, and representative task latency without imposing a throughput optimization gate.
+- [ ] 1.8 Add launch-preflight tests and a dependency receipt for FastAPI 0.136.3, Uvicorn 0.37.0, and Starlette 0.52.1; reject missing/unsupported versions, reload/multi-worker process shapes, and duplicate runtime-root writers before port bind.
+- [ ] 1.9 Gate Wave 1 with targeted tests, `openspec validate --strict`, Django/Label Studio import residue checks, and separate engineering plus intent-contract audits with no unresolved P0/P1 findings.
+
+## 2. Local Service, Draft, and Commit Loop
+
+- [ ] 2.1 Add failing adapter tests and implement `SqliteDraftCatalog`, exact Draft verifier, inference-receipt resolver, terminal exact-Draft retirement, and CAS-safe stable-key identity-only merge into newer Drafts over the existing `RefinementRuntime` and `WorkingDatasetStore`.
+- [ ] 2.2 Add the single-process runtime factory and root lock: one store/worker per split, startup reconciliation before writes, reload/multi-worker refusal, graceful shutdown, and worker-health receipts.
+- [ ] 2.3 Add FastAPI session/security and task/image endpoints with numeric-loopback bind, Host/Origin/CSRF enforcement, server-derived local principal, no caller paths, no-store mutable responses, task cursor navigation, and authoritative committed-or-Draft reads.
+- [ ] 2.4 Add idempotent full-Draft PUT/GET APIs with strict shape/CAS validation, response-loss retry, committed-baseline retirement, conflict payloads, and source/working authority rechecks.
+- [ ] 2.5 Add Commit/status/project-state APIs that flush/capture all pending same-split Drafts, return only after durable enqueue, expose queued/running/reconciling/terminal states, and never block Draft reads/writes/navigation on publication.
+- [ ] 2.6 Execute multi-task human-only batch probes with a deliberately paused worker, later edits to captured/unrelated tasks, lost enqueue/status responses, invalid all-or-nothing members, terminal exact/newer Drafts, restart reconciliation, and unchanged source/images.
+- [ ] 2.7 Gate Wave 2 with targeted unit/API/recovery tests, one full-size small-member Commit, strict OpenSpec validation, vendor-import residue checks, and separate engineering plus intent-contract audits.
+
+## 3. Lightweight Human Annotation Gate
+
+- [ ] 3.1 Add the build-free HTML/CSS/ES-module application shell with train/val project selector, full task cursor/list, image viewport, compact status panel, and no Label Studio/Node runtime dependency.
+- [ ] 3.2 Add SVG image/overlay coordinate mapping and pointer-tested bbox select/create/move/resize/delete with server-returned canonical norm1000 geometry, stable keys, zero rotation, zoom/pan, and natural-aspect preservation.
+- [ ] 3.3 Add keyboard COCO-80 exact/prefix/substring/spelling-tolerant search, canonical sparse-ID selection, cancellation, and rejection of aliases/free-form persistence.
+- [ ] 3.4 Add one client Draft controller for discrete autosave, idempotent mutation IDs, save/conflict/error state, Next/Previous/row navigation flush, pending-Draft reminder, unload warning only for unsaved local state, and batch-independent navigation.
+- [ ] 3.5 Add local Undo grouping plus show-all, dim-non-selected, hide-non-selected, per-region visibility, restore, focused deletion recovery, and tests proving presentation never changes semantic hash or save count.
+- [ ] 3.6 Add Commit controls and exact per-task/batch status cues for Committed/Saving/Draft/Conflict plus Queued/Running/Reconciling/Succeeded/Failed and newer-Draft preservation.
+- [ ] 3.7 Run focused browser E2E against the real local service for CRUD, invalid geometry, class search, autosave/reload, navigation/save failure, visibility/Undo, multi-task Commit during later editing, restart recovery, and full-index task opening.
+- [ ] 3.8 Launch an isolated Gate A experience instance on a non-8080 port and runtime root, hand the train/val URLs to the user, and wait for explicit human-loop approval before beginning real ROI implementation.
+
+## 4. Real ROI Assistance Gate
+
+- [ ] 4.1 Add failing native target/finalization tests and implement SQLite current-target capture, target/revision CAS recheck, inference receipt resolution, and all-valid-results atomic Draft append with idempotent response-loss recovery.
+- [ ] 4.2 Add profile-list/infer/status APIs over the existing allowlisted launch manager, resident engine, parser, ROI transform, cancellation/deadline, and credential-safe receipt store without importing the offline inference pipeline entrypoint.
+- [ ] 4.3 Add one temporary AI Region SVG mode, replace-on-redraw behavior, independent factor-valid width/height controls defaulting to 1024 x 1024, single-flight task lock, and explicit terminal outcome messages.
+- [ ] 4.4 Apply successful authoritative ROI responses as one local Undo action; preserve/edit/delete/reload inference provenance and reuse deterministic nearby-region colors, palette-exhaustion badges, and same-class overlap advisories as presentation-only state.
+- [ ] 4.5 Run fake-engine browser/API tests for rectangular transforms, sequential ROI, every parser/runtime/target outcome, response loss, restart, atomic no-partial insertion, direct edit/delete, Undo, reload provenance, colors, overlaps, and later batch Commit.
+- [ ] 4.6 Execute one accepted real-profile ROI smoke through current model/prompt/parser components and attest canvas/profile/transform/raw/mapped/Draft/batch/working/materialized links plus unchanged source/images.
+- [ ] 4.7 Gate Wave 4 with targeted tests, strict OpenSpec validation, inference-entrypoint/source-residue checks, and separate engineering plus intent-contract audits with no unresolved P0/P1 findings.
+
+## 5. Operator Handoff and Replacement Acceptance
+
+- [ ] 5.1 Run representative train/val human-only and inference-assisted sessions, materialize the terminal generation, load it through the current CoordExp-Swift data path, and verify positive/negative IDs, sparse category mapping, geometry, ordering, metadata, and shared images.
+- [ ] 5.2 Add concise operator docs for dependencies, launch/shutdown, runtime roots, Draft versus Commit, recovery/status, output/materialization, ROI profiles, known exclusions, fallback, and protected source data.
+- [ ] 5.3 Record final legacy boundaries: archived vendor branch, old OpenSpec status, retained 8080/state disposition, new runtime identity, and the manual cleanup command for AgentGuard-blocked untracked harness files.
+- [ ] 5.4 Conduct final user acceptance on train and validation, require explicit approval before deactivating legacy 8080 or treating the standalone workspace as active, then sync stable specs/docs and archive `coco-refinement` only after every requirement has executed evidence.
