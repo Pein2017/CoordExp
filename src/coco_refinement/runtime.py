@@ -864,13 +864,14 @@ def create_standalone_runtime(
             *,
             split: str,
             store: WorkingDatasetStore,
+            request: BatchRequest,
             result: BatchResult,
         ) -> None:
-            request = selected_pair_provider.request_for_result(
-                split=split,
-                store=store,
-                result=result,
-            )
+            if request.split != split:
+                raise RuntimeAssemblyError(
+                    "terminal observer request split mismatch",
+                    code="coco_refinement.terminal_reconcile",
+                )
             reconcile_batch(request, result)
 
         coordinator = selected_coordinator_factory(

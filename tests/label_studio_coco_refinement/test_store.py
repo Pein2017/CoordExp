@@ -201,6 +201,20 @@ def _bootstrap_store_with_images(
     return result.store
 
 
+def test_public_state_snapshot_uses_manifest_authority_without_row_payloads(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, spec, _source = project
+
+    snapshot = store.state_snapshot()
+
+    assert snapshot.split == "train"
+    assert snapshot.project_id == spec.project_id
+    assert snapshot.generation == 0
+    assert snapshot.task_count == 3
+    assert not hasattr(snapshot, "working_path")
+
+
 def _regions(
     store: WorkingDatasetStore,
     image_id: int = 1,
@@ -284,6 +298,18 @@ class CrashAt:
         self.seen.append(boundary)
         if boundary == self.boundary:
             raise InjectedCrash(boundary)
+
+
+class PauseAt:
+    def __init__(self, boundary: str) -> None:
+        self.boundary = boundary
+        self.entered = threading.Event()
+        self.release = threading.Event()
+
+    def __call__(self, boundary: str) -> None:
+        if boundary == self.boundary:
+            self.entered.set()
+            assert self.release.wait(3.0)
 
 
 def _reopen(store: WorkingDatasetStore) -> WorkingDatasetStore:
@@ -1021,6 +1047,158 @@ def test_batch_enqueue_terminal_retry_is_reconciling_while_worker_locked(
     assert store.queue_path.read_bytes() == queue_bytes
 
 
+def test_batch_candidate_build_keeps_old_generation_readable(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    request = _batch_request(store, batch_id="batch-paused-build", image_ids=(1,))
+    store.enqueue_batch(request)
+    pause = PauseAt("batch_working_temp_fsynced")
+    store._fault_injector = pause
+    outcome: list[store_module.BatchResult] = []
+    errors: list[BaseException] = []
+
+    def process() -> None:
+        try:
+            result = store.process_next_batch()
+            assert result is not None
+            outcome.append(result)
+        except BaseException as exc:  # pragma: no cover - assertion receipt
+            errors.append(exc)
+
+    worker = threading.Thread(target=process)
+    worker.start()
+    assert pause.entered.wait(1.0)
+    try:
+        status = store.get_batch_status("batch-paused-build")
+        restored = store.restore_draft(1)
+        state = store.state_snapshot()
+        assert status.status is store_module.BatchStatus.RUNNING
+        assert restored.generation == 0
+        assert restored.row_hash == request.members[0].request.base_row_hash
+        assert state.generation == 0
+        with pytest.raises(StoreBusyError, match="processor is already active"):
+            store.process_next_batch()
+    finally:
+        pause.release.set()
+        worker.join(3.0)
+
+    assert not worker.is_alive()
+    assert errors == []
+    assert len(outcome) == 1
+    assert outcome[0].status is store_module.BatchStatus.SUCCEEDED
+    assert (
+        store.get_batch_status("batch-paused-build").status
+        is store_module.BatchStatus.SUCCEEDED
+    )
+    assert store.restore_draft(1).generation == 1
+
+
+def test_batch_materialization_uses_frozen_identity_while_readers_reload(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store, _, _ = project
+    peer = _reopen(store)
+    request = _batch_request(store, batch_id="batch-frozen-maps", image_ids=(1,))
+    store.enqueue_batch(request)
+    entered = threading.Event()
+    release = threading.Event()
+    original = store._materialize_objects
+    first_call = True
+
+    def blocked_materialize(*args: Any, **kwargs: Any):
+        nonlocal first_call
+        if first_call:
+            first_call = False
+            entered.set()
+            assert release.wait(3.0)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(store, "_materialize_objects", blocked_materialize)
+    outcome: list[store_module.BatchResult] = []
+    errors: list[BaseException] = []
+
+    def process() -> None:
+        try:
+            result = store.process_next_batch()
+            assert result is not None
+            outcome.append(result)
+        except BaseException as exc:  # pragma: no cover - assertion receipt
+            errors.append(exc)
+
+    worker = threading.Thread(target=process)
+    worker.start()
+    assert entered.wait(1.0)
+    candidates = tuple(store.split_dir.glob(".working.batch.*"))
+    try:
+        assert store.restore_draft(1).generation == 0
+        assert (
+            store.get_batch_status("batch-frozen-maps").status
+            is store_module.BatchStatus.RUNNING
+        )
+        with pytest.raises(StoreBusyError, match="processor is already active"):
+            peer.recover()
+        assert tuple(store.split_dir.glob(".working.batch.*")) == candidates
+    finally:
+        release.set()
+        worker.join(3.0)
+
+    assert not worker.is_alive()
+    assert errors == []
+    assert len(outcome) == 1
+    assert outcome[0].members[0].region_id_mapping["drawn:batch-1"] == -1
+    records = [json.loads(line) for line in store.journal_path.read_text().splitlines()]
+    assert all(
+        record.get("prev_record_hash")
+        == (records[index - 1]["record_hash"] if index else None)
+        for index, record in enumerate(records)
+    )
+
+
+def test_batch_phase_c_rejects_changed_cache_before_publication(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    store.enqueue_batch(
+        _batch_request(store, batch_id="batch-cache-reattest", image_ids=(1,))
+    )
+    working_before = store.working_path.read_bytes()
+    pause = PauseAt("batch_working_temp_fsynced")
+    store._fault_injector = pause
+    errors: list[BaseException] = []
+
+    def process() -> None:
+        try:
+            store.process_next_batch()
+        except BaseException as exc:  # pragma: no cover - assertion receipt
+            errors.append(exc)
+
+    worker = threading.Thread(target=process)
+    worker.start()
+    assert pause.entered.wait(1.0)
+    store._row_hash_cache[0] = "0" * 64
+    pause.release.set()
+    worker.join(3.0)
+
+    assert not worker.is_alive()
+    assert len(errors) == 1
+    assert isinstance(errors[0], RecoveryError)
+    assert "authority changed before publication" in str(errors[0])
+    assert store.working_path.read_bytes() == working_before
+    assert not any(
+        json.loads(line).get("kind") == "batch_prepared"
+        for line in store.journal_path.read_text().splitlines()
+    )
+
+    with store._exclusive_lock():
+        store._load_row_cache()
+    store._fault_injector = None
+    retried = store.process_next_batch()
+    assert retried is not None
+    assert retried.status is store_module.BatchStatus.SUCCEEDED
+
+
 def test_batch_enqueue_retries_reconcile_unlocked_journal_terminal_gap(
     project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
 ) -> None:
@@ -1652,6 +1830,52 @@ def test_batch_reopen_reconciles_transaction_and_queue_projection(
     )
 
 
+def test_prepublication_recovery_observer_exposes_exact_prior_navigation_row(
+    project: tuple[WorkingDatasetStore, BootstrapSpec, Path],
+) -> None:
+    store, _, _ = project
+    prior = store.restore_draft(1)
+    store.enqueue_batch(_batch_request(store, image_ids=(1,)))
+    store._fault_injector = CrashAt("batch_prepared_journal_fsynced")
+    with pytest.raises(InjectedCrash):
+        store.process_next_batch()
+    store._fault_injector = None
+
+    observer_entered = threading.Event()
+    observer_release = threading.Event()
+    errors: list[BaseException] = []
+
+    def observe(_request: Any, result: Any) -> None:
+        assert result.status is store_module.BatchStatus.FAILED
+        assert result.error == "recovered before batch publication"
+        observer_entered.set()
+        assert observer_release.wait(3.0)
+
+    def recover() -> None:
+        try:
+            store.recover(terminal_observer=observe)
+        except BaseException as exc:  # pragma: no cover - assertion receipt
+            errors.append(exc)
+
+    recovery = threading.Thread(target=recover)
+    recovery.start()
+    assert observer_entered.wait(1.0)
+    with pytest.raises(RecoveryError, match="requires recovery"):
+        store.restore_draft(1)
+    projected = store.restore_task_navigation(
+        1,
+        projected_generation=prior.generation,
+        projected_row_hash=prior.row_hash,
+    )
+    assert projected == prior
+
+    observer_release.set()
+    recovery.join(3.0)
+    assert not recovery.is_alive()
+    assert errors == []
+    assert store.get_batch_status("batch-1").status is store_module.BatchStatus.FAILED
+
+
 @pytest.mark.parametrize(
     "boundary,terminal_projection_complete",
     [
@@ -1692,11 +1916,14 @@ def test_preopened_peer_never_crosses_batch_publication_authorities(
         accepted = peer.enqueue_batch(next_request)
         assert accepted.batch_id == "batch-next"
         assert accepted.status is store_module.BatchStatus.QUEUED
+        assert peer.state_snapshot().generation == 1
     else:
         with pytest.raises(RecoveryError, match="requires recovery"):
             peer.restore_draft(1)
         with pytest.raises(RecoveryError, match="requires recovery"):
             list(peer.iter_task_seeds())
+        with pytest.raises(RecoveryError, match="requires recovery"):
+            peer.state_snapshot()
         assert (
             peer.get_batch_status("batch-1").status
             is store_module.BatchStatus.RECONCILING

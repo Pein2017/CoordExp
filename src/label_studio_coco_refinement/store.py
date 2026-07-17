@@ -17,6 +17,8 @@ import json
 import math
 import os
 import tempfile
+import threading
+from collections.abc import Set as AbstractSet
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -206,6 +208,16 @@ class BatchStatusView:
     base_generation: int | None
     generation: int | None = None
     error: str | None = None
+
+
+@dataclass(frozen=True)
+class StoreStateSnapshot:
+    """Small public store authority for status APIs; never scans working rows."""
+
+    split: str
+    project_id: str
+    generation: int
+    task_count: int
 
 
 @dataclass(frozen=True)
@@ -1031,10 +1043,12 @@ class WorkingDatasetStore:
         self.task_index_path = self.split_dir / "task_index.json"
         self.lock_path = self.split_dir / ".commit.lock"
         self.queue_lock_path = self.split_dir / ".queue.lock"
+        self.process_lock_path = self.split_dir / ".batch-process.lock"
         self.registry = registry if registry is not None else _default_registry()
         self.annotation_verifier = annotation_verifier
         self.inference_receipt_resolver = inference_receipt_resolver
         self._fault_injector = fault_injector
+        self._journal_index_lock = threading.RLock()
         self._records: list[dict[str, Any]] = []
         self._region_to_id: dict[tuple[int, str], int] = {}
         self._id_to_region: dict[int, tuple[int, str]] = {}
@@ -1351,6 +1365,42 @@ class WorkingDatasetStore:
                 raise StaleCommitError("unknown task image identity")
             return source_row_index
 
+    def resolve_task_navigation_row_index(
+        self,
+        *,
+        split: str,
+        project_id: str,
+        task_id: str,
+        image_id: int,
+    ) -> int:
+        """Resolve immutable task identity without requiring terminal projection.
+
+        Task-index identity does not change across working generations.  This
+        narrow reader remains available while a published batch terminal waits
+        for its SQLite/queue observer, but it does not expose working-row data.
+        Callers must use :meth:`restore_task_navigation` for the generation-
+        bound row projection.
+        """
+
+        with self._task_navigation_shared_lock():
+            manifest = self._read_manifest()
+            if (
+                isinstance(image_id, bool)
+                or not isinstance(image_id, int)
+                or image_id < 0
+            ):
+                raise StaleCommitError("invalid task image identity")
+            if split != manifest.get("split"):
+                raise StaleCommitError("split mismatch")
+            if project_id != manifest.get("project_id"):
+                raise StaleCommitError("project mismatch")
+            if task_id != _task_id(split, image_id):
+                raise StaleCommitError("task identity mismatch")
+            source_row_index = self._source_row_by_image.get(image_id)
+            if source_row_index is None:
+                raise StaleCommitError("unknown task image identity")
+            return source_row_index
+
     @contextmanager
     def committed_generation_guard(self) -> Iterator[None]:
         """Hold one fully reconciled generation for a complete-output consumer."""
@@ -1472,7 +1522,8 @@ class WorkingDatasetStore:
                     member_count=0,
                     base_generation=None,
                 )
-            journal_records = list(self._records)
+            with self._journal_index_lock:
+                journal_records = list(self._records)
             terminals = [
                 record
                 for record in journal_records
@@ -1530,6 +1581,19 @@ class WorkingDatasetStore:
                 base_generation=enqueue["base_generation"],
                 generation=generation,
                 error=error,
+            )
+
+    def state_snapshot(self) -> StoreStateSnapshot:
+        """Return one stable manifest projection under the supported reader lock."""
+
+        self._assert_serving_ready()
+        with self._supported_reader_lock():
+            manifest = self._read_manifest()
+            return StoreStateSnapshot(
+                split=str(manifest["split"]),
+                project_id=str(manifest["project_id"]),
+                generation=int(manifest["generation"]),
+                task_count=int(manifest["task_count"]),
             )
 
     def _validate_batch_store_contract(
@@ -1751,6 +1815,12 @@ class WorkingDatasetStore:
     def _batch_reconciliation_reason(
         self, queue_records: Sequence[Mapping[str, Any]]
     ) -> str | None:
+        with self._journal_index_lock:
+            return self._batch_reconciliation_reason_locked(queue_records)
+
+    def _batch_reconciliation_reason_locked(
+        self, queue_records: Sequence[Mapping[str, Any]]
+    ) -> str | None:
         """Return durable cross-process projection disagreement, if any.
 
         The caller holds the transaction lock. Journal replay refreshes the
@@ -1872,6 +1942,185 @@ class WorkingDatasetStore:
                 return f"{label} manifest projection requires repair"
         return None
 
+    def _terminal_observer_navigation_projection(
+        self,
+        *,
+        queue_records: Sequence[Mapping[str, Any]],
+        manifest: Mapping[str, Any],
+        reconciliation_reason: str,
+        projected_generation: int,
+    ) -> tuple[int, dict[int, dict[str, Any]], dict[int, dict[str, Any]]]:
+        """Return the only recovery gap safe for interactive task navigation.
+
+        The accepted gap has one exact enqueue/claim/journal terminal and no
+        queue terminal for that batch.  A successful terminal exposes either
+        the prepared base generation or the published candidate generation,
+        matching SQLite's observed side of the observer transaction.  A failed
+        terminal exposes only the unchanged current generation.  Any other
+        recovery shape remains unavailable.
+        """
+
+        journal_terminals = [
+            record for record in self._records if record.get("kind") == "batch_terminal"
+        ]
+        queue_terminals = [
+            record for record in queue_records if record.get("kind") == "queue_terminal"
+        ]
+        unprojected = [
+            terminal
+            for terminal in journal_terminals
+            if not any(
+                self._queue_terminal_matches_journal(projection, terminal)
+                for projection in queue_terminals
+            )
+        ]
+        if len(unprojected) != 1:
+            raise RecoveryError(
+                "recovery state is not a single terminal-observer projection gap"
+            )
+        terminal = unprojected[0]
+        batch_id = str(terminal.get("batch_id", ""))
+        if (
+            not batch_id
+            or reconciliation_reason
+            != f"batch {batch_id} queue terminal requires repair"
+            or self._records[-1].get("record_hash") != terminal.get("record_hash")
+            or any(record.get("batch_id") == batch_id for record in queue_terminals)
+        ):
+            raise RecoveryError(
+                "recovery state is not an exact terminal-observer projection gap"
+            )
+        enqueues = [
+            record
+            for record in queue_records
+            if record.get("kind") == "enqueue" and record.get("batch_id") == batch_id
+        ]
+        claims = [
+            record
+            for record in queue_records
+            if record.get("kind") == "claim" and record.get("batch_id") == batch_id
+        ]
+        if (
+            len(enqueues) != 1
+            or len(claims) != 1
+            or terminal.get("payload_hash") != enqueues[0].get("payload_hash")
+            or claims[0].get("payload_hash") != enqueues[0].get("payload_hash")
+        ):
+            raise RecoveryError("terminal-observer queue identity disagreement")
+
+        status = terminal.get("status")
+        manifest_generation = int(manifest["generation"])
+        manifest_working_sha256 = str(manifest["working_sha256"])
+        if status == BatchStatus.FAILED.value:
+            if (
+                terminal.get("generation") != manifest_generation
+                or terminal.get("working_sha256") != manifest_working_sha256
+                or not isinstance(terminal.get("error"), str)
+                or not terminal.get("error")
+            ):
+                raise RecoveryError("failed terminal observer authority disagrees")
+            prepared_hash = terminal.get("prepared_record_hash")
+            prepared_records = [
+                record
+                for record in self._records
+                if record.get("kind") == "batch_prepared"
+                and record.get("batch_id") == batch_id
+            ]
+            if prepared_hash is None:
+                if prepared_records:
+                    raise RecoveryError(
+                        "failed terminal unexpectedly has prepared authority"
+                    )
+            elif (
+                len(prepared_records) != 1
+                or prepared_records[0].get("record_hash") != prepared_hash
+                or terminal.get("error") != "recovered before batch publication"
+                or terminal.get("recovery") is not True
+                or prepared_records[0].get("base_generation")
+                != manifest_generation
+                or prepared_records[0].get("before_working_sha256")
+                != manifest_working_sha256
+                or prepared_records[0].get("before_working_line_count")
+                != manifest.get("working_line_count")
+                or prepared_records[0].get("before_manifest_hash")
+                != sha256_json(manifest)
+            ):
+                raise RecoveryError(
+                    "failed prepared terminal is not a rollback-attested authority"
+                )
+            if projected_generation != manifest_generation:
+                raise RecoveryError(
+                    "failed terminal has no alternate navigation generation"
+                )
+            return manifest_generation, {}, {}
+
+        if status != BatchStatus.SUCCEEDED.value or terminal.get("error") is not None:
+            raise RecoveryError("terminal observer status is not navigation-safe")
+        prepared_hash = terminal.get("prepared_record_hash")
+        prepared_records = [
+            record
+            for record in self._records
+            if record.get("kind") == "batch_prepared"
+            and record.get("record_hash") == prepared_hash
+            and record.get("batch_id") == batch_id
+        ]
+        if len(prepared_records) != 1:
+            raise RecoveryError("successful terminal lacks one prepared authority")
+        prepared = prepared_records[0]
+        candidate_manifest = prepared.get("candidate_manifest")
+        if (
+            not isinstance(candidate_manifest, Mapping)
+            or dict(candidate_manifest) != dict(manifest)
+            or prepared.get("candidate_manifest_hash") != sha256_json(manifest)
+            or prepared.get("candidate_generation") != manifest_generation
+            or terminal.get("generation") != manifest_generation
+            or prepared.get("candidate_working_sha256") != manifest_working_sha256
+            or terminal.get("working_sha256") != manifest_working_sha256
+            or prepared.get("candidate_working_line_count")
+            != manifest.get("working_line_count")
+            or manifest.get("last_batch_id") != batch_id
+        ):
+            raise RecoveryError("published terminal manifest authority disagrees")
+        base_generation = prepared.get("base_generation")
+        if (
+            isinstance(base_generation, bool)
+            or not isinstance(base_generation, int)
+            or base_generation + 1 != manifest_generation
+        ):
+            raise RecoveryError("published terminal generation authority disagrees")
+
+        before_rows: dict[int, dict[str, Any]] = {}
+        after_rows: dict[int, dict[str, Any]] = {}
+        for member in prepared.get("members", ()):
+            if not isinstance(member, Mapping):
+                raise RecoveryError("published terminal member authority is invalid")
+            image_id = member.get("image_id")
+            before_row = member.get("before_row")
+            after_row = member.get("after_row")
+            if (
+                isinstance(image_id, bool)
+                or not isinstance(image_id, int)
+                or image_id in before_rows
+                or not isinstance(before_row, Mapping)
+                or not isinstance(after_row, Mapping)
+                or before_row.get("image_id") != image_id
+                or after_row.get("image_id") != image_id
+                or sha256_json(before_row) != member.get("before_row_hash")
+                or sha256_json(after_row) != member.get("after_row_hash")
+            ):
+                raise RecoveryError("published terminal member authority disagrees")
+            before_rows[image_id] = copy.deepcopy(dict(before_row))
+            after_rows[image_id] = copy.deepcopy(dict(after_row))
+        if not before_rows:
+            raise RecoveryError("published terminal has no member authority")
+        if projected_generation == base_generation:
+            return base_generation, before_rows, after_rows
+        if projected_generation == manifest_generation:
+            return manifest_generation, {}, after_rows
+        raise RecoveryError(
+            "SQLite generation is not a terminal-observer navigation projection"
+        )
+
     @staticmethod
     def _queue_terminal_matches_journal(
         projection: Mapping[str, Any], terminal: Mapping[str, Any]
@@ -1888,10 +2137,27 @@ class WorkingDatasetStore:
             )
         )
 
-    def process_next_batch(self) -> BatchResult | None:
+    def process_next_batch(
+        self,
+        *,
+        terminal_observer: Callable[[BatchRequest, BatchResult], None] | None = None,
+    ) -> BatchResult | None:
         """Claim and publish one queued batch for this split."""
 
         self._assert_serving_ready()
+        with self._exclusive_process_lock():
+            processed = self._process_next_batch_serialized()
+            if processed is None:
+                return None
+            request, result = processed
+            if terminal_observer is not None:
+                terminal_observer(request, result)
+            self._repair_one_queue_terminal(result)
+            return result
+
+    def _process_next_batch_serialized(
+        self,
+    ) -> tuple[BatchRequest, BatchResult] | None:
         with self._exclusive_queue_lock():
             queue_records = self._read_queue_records()
             enqueue = self._active_queue_enqueue(queue_records)
@@ -1911,6 +2177,7 @@ class WorkingDatasetStore:
                     "claim",
                 )
 
+        execute = False
         with self._exclusive_lock():
             self._reload_journal_index()
             self._refresh_row_cache_from_journal(self._read_manifest())
@@ -1932,23 +2199,31 @@ class WorkingDatasetStore:
             if prior_terminal is not None:
                 result = self._batch_result_from_terminal(prior_terminal)
             else:
-                try:
-                    result = self._execute_batch(enqueue)
-                except InjectedCrash:
-                    raise
-                except (StaleCommitError, ValidationError) as exc:
-                    # A failure may be injected immediately after a durable
-                    # reservation append, before the in-memory chain advances.
+                execute = True
+
+        if execute:
+            try:
+                result = self._execute_batch(enqueue)
+            except InjectedCrash:
+                raise
+            except (StaleCommitError, ValidationError) as exc:
+                # A failure may be injected immediately after a durable
+                # reservation append, before the in-memory chain advances.
+                with self._exclusive_lock():
                     self._reload_journal_index()
                     terminal = self._append_batch_failure(enqueue, str(exc))
                     result = self._batch_result_from_terminal(terminal)
 
-        self._repair_one_queue_terminal(result)
-        return result
+        payload = copy.deepcopy(enqueue["payload"])
+        if sha256_json(payload) != enqueue.get("payload_hash"):
+            raise RecoveryError("queued batch payload hash disagreement")
+        request = _batch_request_from_payload(payload, error_type=RecoveryError)
+        return request, result
 
     def get_batch_result(self, batch_id: str) -> BatchResult:
         with self._supported_reader_lock():
-            records = list(self._records)
+            with self._journal_index_lock:
+                records = list(self._records)
             terminals = [
                 record
                 for record in records
@@ -1975,9 +2250,8 @@ class WorkingDatasetStore:
             if enqueue is None:
                 raise StoreError(f"unknown batch id: {batch_id}")
             payload = copy.deepcopy(enqueue.get("payload"))
-            if (
-                not isinstance(payload, Mapping)
-                or sha256_json(payload) != enqueue.get("payload_hash")
+            if not isinstance(payload, Mapping) or sha256_json(payload) != enqueue.get(
+                "payload_hash"
             ):
                 raise RecoveryError("queued batch payload hash disagreement")
             request = _batch_request_from_payload(payload, error_type=RecoveryError)
@@ -1989,7 +2263,8 @@ class WorkingDatasetStore:
         """Return every reconciled terminal request/result pair in journal order."""
 
         with self._supported_reader_lock():
-            records = list(self._records)
+            with self._journal_index_lock:
+                records = list(self._records)
             with self._shared_queue_lock():
                 queue_records = self._read_queue_records()
             enqueues = {
@@ -2004,7 +2279,9 @@ class WorkingDatasetStore:
                     continue
                 batch_id = str(terminal.get("batch_id", ""))
                 if not batch_id or batch_id in seen:
-                    raise RecoveryError("terminal batch identity is missing or duplicated")
+                    raise RecoveryError(
+                        "terminal batch identity is missing or duplicated"
+                    )
                 seen.add(batch_id)
                 enqueue = enqueues.get(batch_id)
                 if enqueue is None:
@@ -2018,16 +2295,22 @@ class WorkingDatasetStore:
                     or terminal.get("payload_hash") != enqueue.get("payload_hash")
                 ):
                     raise RecoveryError("terminal batch payload hash disagreement")
-                request = _batch_request_from_payload(
-                    payload, error_type=RecoveryError
-                )
+                request = _batch_request_from_payload(payload, error_type=RecoveryError)
                 result = self._batch_result_from_terminal(terminal, records=records)
                 if request.batch_id != result.batch_id:
                     raise RecoveryError("terminal request/result identity disagreement")
                 pairs.append((request, result))
             return tuple(pairs)
 
-    def _execute_batch(self, enqueue: Mapping[str, Any]) -> BatchResult:
+    def _prepare_batch_build(
+        self, enqueue: Mapping[str, Any]
+    ) -> tuple[
+        dict[str, Any],
+        BatchRequest,
+        list[tuple[int, CommitRequest]],
+        dict[str, Any],
+        dict[str, Any],
+    ]:
         payload = copy.deepcopy(enqueue["payload"])
         if sha256_json(payload) != enqueue.get("payload_hash"):
             raise RecoveryError("queued batch payload hash disagreement")
@@ -2038,35 +2321,43 @@ class WorkingDatasetStore:
         ]
         if [index for index, _ in members] != sorted(index for index, _ in members):
             raise RecoveryError("queued batch members are not source-row ordered")
-        manifest = self._read_manifest()
-        if (
-            self._cache_generation != int(manifest["generation"])
-            or self._cache_working_sha256 != manifest["working_sha256"]
-            or self._cache_line_count != int(manifest["working_line_count"])
-        ):
-            raise RecoveryError("row freshness cache is not publication-attested")
-        for source_row_index, request in members:
-            self._validate_batch_frozen_request(
-                request,
-                current_user_id=frozen_request.current_user_id,
-            )
-            if self._row_image_cache.get(source_row_index) != request.image_id:
-                raise StaleCommitError("source row image identity changed")
-            if self._row_hash_cache.get(source_row_index) != request.base_row_hash:
-                raise StaleCommitError("base row hash changed")
-            self._validate_request_against_cached_identity(
-                request,
-                self._row_object_ids_cache[source_row_index],
-            )
-        self._reserve_batch_ids(enqueue, members)
+        with self._exclusive_lock():
+            self._reload_journal_index()
+            manifest = self._read_manifest()
+            self._refresh_row_cache_from_journal(manifest)
+            if (
+                self._cache_generation != int(manifest["generation"])
+                or self._cache_working_sha256 != manifest["working_sha256"]
+                or self._cache_line_count != int(manifest["working_line_count"])
+            ):
+                raise RecoveryError("row freshness cache is not publication-attested")
+            for source_row_index, request in members:
+                self._validate_batch_frozen_request(
+                    request,
+                    current_user_id=frozen_request.current_user_id,
+                )
+                if self._row_image_cache.get(source_row_index) != request.image_id:
+                    raise StaleCommitError("source row image identity changed")
+                if self._row_hash_cache.get(source_row_index) != request.base_row_hash:
+                    raise StaleCommitError("base row hash changed")
+                self._validate_request_against_cached_identity(
+                    request,
+                    self._row_object_ids_cache[source_row_index],
+                )
+            self._reserve_batch_ids(enqueue, members)
+            authority = self._capture_batch_build_authority(manifest)
+        return payload, frozen_request, members, copy.deepcopy(manifest), authority
+
+    def _execute_batch(self, enqueue: Mapping[str, Any]) -> BatchResult:
+        payload, _frozen_request, members, manifest, authority = (
+            self._prepare_batch_build(enqueue)
+        )
 
         if payload.get("split") != manifest.get("split"):
             raise RecoveryError("queued batch split disagrees with the manifest")
         member_by_index = {index: request for index, request in members}
         fd, temp_name = tempfile.mkstemp(prefix=".working.batch.", dir=self.split_dir)
         temp_path = Path(temp_name)
-        replaced = False
-        prepared: dict[str, Any] | None = None
         try:
             input_digest = hashlib.sha256()
             candidate_digest = hashlib.sha256()
@@ -2100,7 +2391,10 @@ class WorkingDatasetStore:
                             f"invalid working JSONL row {source_row_index + 1}"
                         ) from exc
                     image_id = int(before_row.get("image_id", -1))
-                    if self._source_row_by_image.get(image_id) != source_row_index:
+                    if (
+                        authority["source_row_by_image"].get(image_id)
+                        != source_row_index
+                    ):
                         raise RecoveryError(
                             "working source row index attestation failed"
                         )
@@ -2120,6 +2414,11 @@ class WorkingDatasetStore:
                                 request.regions,
                                 split=request.split,
                                 image_id=request.image_id,
+                                frozen_region_to_id=authority["region_to_id"],
+                                frozen_reserved_negative_ids=authority[
+                                    "reserved_negative_ids"
+                                ],
+                                frozen_tombstones=authority["tombstones"],
                             )
                         )
                         after_row = copy.deepcopy(before_row)
@@ -2188,6 +2487,94 @@ class WorkingDatasetStore:
                     "last_batch_id": enqueue["batch_id"],
                 }
             )
+            return self._publish_batch_candidate(
+                enqueue=enqueue,
+                manifest=manifest,
+                authority=authority,
+                temp_path=temp_path,
+                input_hash=input_hash,
+                input_line_count=input_line_count,
+                candidate_generation=candidate_generation,
+                candidate_working_hash=candidate_working_hash,
+                candidate_manifest=candidate_manifest,
+                prepared_members=prepared_members,
+                candidate_row_images=candidate_row_images,
+                candidate_row_object_ids=candidate_row_object_ids,
+                candidate_row_hashes=candidate_row_hashes,
+            )
+        except InjectedCrash:
+            raise
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+    def _capture_batch_build_authority(
+        self, manifest: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        return {
+            "manifest": copy.deepcopy(dict(manifest)),
+            "journal_tail_hash": (
+                self._records[-1]["record_hash"] if self._records else None
+            ),
+            "source_row_by_image": copy.deepcopy(self._source_row_by_image),
+            "region_to_id": copy.deepcopy(self._region_to_id),
+            "id_to_region": copy.deepcopy(self._id_to_region),
+            "tombstones": frozenset(self._tombstones),
+            "reserved_negative_ids": frozenset(self._reserved_negative_ids),
+            "batch_reservations": copy.deepcopy(self._batch_reservations),
+            "row_image_cache": copy.deepcopy(self._row_image_cache),
+            "row_object_ids_cache": copy.deepcopy(self._row_object_ids_cache),
+            "row_hash_cache": copy.deepcopy(self._row_hash_cache),
+            "cache_generation": self._cache_generation,
+            "cache_working_sha256": self._cache_working_sha256,
+            "cache_line_count": self._cache_line_count,
+        }
+
+    def _reattest_batch_build_authority(
+        self, manifest: Mapping[str, Any], authority: Mapping[str, Any]
+    ) -> None:
+        self._reload_journal_index()
+        current_manifest = self._read_manifest()
+        self._refresh_row_cache_from_journal(current_manifest)
+        if (
+            current_manifest != manifest
+            or self._capture_batch_build_authority(current_manifest) != authority
+        ):
+            raise RecoveryError("batch build authority changed before publication")
+
+    def _reattest_batch_queue(self, enqueue: Mapping[str, Any]) -> None:
+        with self._shared_queue_lock():
+            records = self._read_queue_records()
+        current = self._queue_enqueue_for_batch(records, str(enqueue["batch_id"]))
+        claimed = any(
+            record.get("kind") == "claim"
+            and record.get("batch_id") == enqueue["batch_id"]
+            and record.get("payload_hash") == enqueue["payload_hash"]
+            for record in records
+        )
+        if current != dict(enqueue) or not claimed:
+            raise RecoveryError("batch queue authority changed before publication")
+
+    def _publish_batch_candidate(
+        self,
+        *,
+        enqueue: Mapping[str, Any],
+        manifest: Mapping[str, Any],
+        authority: Mapping[str, Any],
+        temp_path: Path,
+        input_hash: str,
+        input_line_count: int,
+        candidate_generation: int,
+        candidate_working_hash: str,
+        candidate_manifest: Mapping[str, Any],
+        prepared_members: Sequence[Mapping[str, Any]],
+        candidate_row_images: dict[int, int],
+        candidate_row_object_ids: dict[int, set[int]],
+        candidate_row_hashes: dict[int, str],
+    ) -> BatchResult:
+        self._reattest_batch_queue(enqueue)
+        replaced = False
+        with self._exclusive_lock():
+            self._reattest_batch_build_authority(manifest, authority)
             prepared = self._append_record(
                 {
                     "kind": "batch_prepared",
@@ -2202,43 +2589,42 @@ class WorkingDatasetStore:
                     "candidate_working_sha256": candidate_working_hash,
                     "candidate_working_line_count": input_line_count,
                     "before_manifest_hash": sha256_json(manifest),
-                    "candidate_manifest": candidate_manifest,
+                    "candidate_manifest": copy.deepcopy(dict(candidate_manifest)),
                     "candidate_manifest_hash": sha256_json(candidate_manifest),
-                    "members": prepared_members,
+                    "members": copy.deepcopy(list(prepared_members)),
                 },
                 "batch_prepared",
             )
-            os.replace(temp_path, self.working_path)
-            replaced = True
-            self._fault("batch_working_replaced")
-            _fsync_directory(self.split_dir)
-            self._fault("batch_working_directory_fsynced")
-            self._publish_manifest(
-                candidate_manifest, str(prepared["candidate_manifest_hash"])
-            )
-            terminal = self._append_batch_terminal(
-                prepared,
-                BatchStatus.SUCCEEDED,
-                generation=candidate_generation,
-                working_sha256=candidate_working_hash,
-            )
-            self._row_image_cache = candidate_row_images
-            self._row_object_ids_cache = candidate_row_object_ids
-            self._row_hash_cache = candidate_row_hashes
-            self._cache_generation = candidate_generation
-            self._cache_working_sha256 = candidate_working_hash
-            self._cache_line_count = input_line_count
-            return self._batch_result_from_terminal(terminal)
-        except InjectedCrash:
-            raise
-        except Exception:
-            if replaced:
-                raise CommitOutcomeUnknown(
-                    f"batch {enqueue['batch_id']} outcome requires reconciliation"
+            try:
+                os.replace(temp_path, self.working_path)
+                replaced = True
+                self._fault("batch_working_replaced")
+                _fsync_directory(self.split_dir)
+                self._fault("batch_working_directory_fsynced")
+                self._publish_manifest(
+                    candidate_manifest, str(prepared["candidate_manifest_hash"])
                 )
-            raise
-        finally:
-            temp_path.unlink(missing_ok=True)
+                terminal = self._append_batch_terminal(
+                    prepared,
+                    BatchStatus.SUCCEEDED,
+                    generation=candidate_generation,
+                    working_sha256=candidate_working_hash,
+                )
+                self._row_image_cache = candidate_row_images
+                self._row_object_ids_cache = candidate_row_object_ids
+                self._row_hash_cache = candidate_row_hashes
+                self._cache_generation = candidate_generation
+                self._cache_working_sha256 = candidate_working_hash
+                self._cache_line_count = input_line_count
+                return self._batch_result_from_terminal(terminal)
+            except InjectedCrash:
+                raise
+            except Exception as exc:
+                if replaced:
+                    raise CommitOutcomeUnknown(
+                        f"batch {enqueue['batch_id']} outcome requires reconciliation"
+                    ) from exc
+                raise
 
     def _validate_batch_frozen_request(
         self,
@@ -2368,9 +2754,7 @@ class WorkingDatasetStore:
                 known = self._region_to_id.get((request.image_id, key))
                 if known is not None:
                     continue
-                pending_owner = pending_owner_by_key.setdefault(
-                    key, request.image_id
-                )
+                pending_owner = pending_owner_by_key.setdefault(key, request.image_id)
                 if pending_owner != request.image_id:
                     raise ValidationError(
                         f"stable region key is already bound to another task: {key!r}"
@@ -2688,8 +3072,9 @@ class WorkingDatasetStore:
 
     def status(self, commit_id: str) -> CommitStatus:
         with self._shared_lock():
-            self._reload_journal_index()
-            records = self._records_for_commit(commit_id)
+            with self._journal_index_lock:
+                self._reload_journal_index()
+                records = self._records_for_commit(commit_id)
             if not records:
                 return CommitStatus.NOT_FOUND
             terminal = next(
@@ -2701,8 +3086,9 @@ class WorkingDatasetStore:
 
     def result(self, commit_id: str) -> CommitResult:
         with self._shared_lock():
-            self._reload_journal_index()
-            records = self._records_for_commit(commit_id)
+            with self._journal_index_lock:
+                self._reload_journal_index()
+                records = self._records_for_commit(commit_id)
             if not records:
                 raise StoreError(f"unknown commit id: {commit_id}")
             prepared = next(
@@ -2727,6 +3113,99 @@ class WorkingDatasetStore:
         """Return the committed row used by persisted-Draft reset/reload hooks."""
 
         return self.restore_drafts((image_id,))[0]
+
+    def restore_task_navigation(
+        self,
+        image_id: int,
+        *,
+        projected_generation: int,
+        projected_row_hash: str,
+    ) -> DraftRestore:
+        """Restore the exact row generation currently projected by SQLite.
+
+        Generic store readers remain fail-closed while any durable publication
+        requires recovery.  The standalone task editor has one narrower safe
+        exception: after a complete batch is published and journaled, but
+        before its synchronous terminal observer and queue projection finish,
+        SQLite may expose either the prior or newly projected complete
+        generation.  In that exact single-terminal window, attested member
+        ``before_row``/``after_row`` records plus unchanged non-member rows
+        reproduce the corresponding navigation view.
+        """
+
+        if isinstance(image_id, bool) or not isinstance(image_id, int) or image_id < 0:
+            raise ValidationError("image_id must be a non-negative integer")
+        if (
+            isinstance(projected_generation, bool)
+            or not isinstance(projected_generation, int)
+            or projected_generation < 0
+        ):
+            raise ValidationError("projected_generation must be a non-negative integer")
+        if not _is_sha256(projected_row_hash):
+            raise ValidationError("projected_row_hash must be a lowercase sha256")
+
+        with self._task_navigation_shared_lock():
+            manifest = self._read_manifest()
+            with self._shared_queue_lock():
+                queue_records = self._read_queue_records()
+            replacement_rows: dict[int, dict[str, Any]] = {}
+            expected_after_rows: dict[int, dict[str, Any]] = {}
+            visible_generation = int(manifest["generation"])
+            with self._journal_index_lock:
+                reconciliation_reason = self._batch_reconciliation_reason(
+                    queue_records
+                )
+                if reconciliation_reason is not None:
+                    (
+                        visible_generation,
+                        replacement_rows,
+                        expected_after_rows,
+                    ) = self._terminal_observer_navigation_projection(
+                        queue_records=queue_records,
+                        manifest=manifest,
+                        reconciliation_reason=reconciliation_reason,
+                        projected_generation=projected_generation,
+                    )
+                frozen_region_to_id = copy.deepcopy(self._region_to_id)
+            if projected_generation != visible_generation:
+                raise RecoveryError(
+                    "SQLite generation is not the safe task-navigation projection"
+                )
+
+            requested = {image_id, *expected_after_rows}
+            current_rows = self._scan_attested_restore_rows(requested, manifest)
+            for member_image_id, expected_after in expected_after_rows.items():
+                current = current_rows.get(member_image_id)
+                if current != expected_after:
+                    raise RecoveryError(
+                        "published member row differs from terminal journal authority"
+                    )
+            row = replacement_rows.get(image_id, current_rows.get(image_id))
+            if row is None:
+                raise StaleCommitError(f"unknown image_id: {image_id}")
+            row_hash = sha256_json(row)
+            if row_hash != projected_row_hash:
+                raise RecoveryError(
+                    "SQLite row hash is not the safe task-navigation projection"
+                )
+            split = str(manifest["split"])
+            mapping = {
+                self._key_for_object(
+                    obj,
+                    image_id,
+                    split,
+                    frozen_region_to_id=frozen_region_to_id,
+                ): int(obj["coco_ann_id"])
+                for obj in row["objects"]
+            }
+            return DraftRestore(
+                split=split,
+                image_id=image_id,
+                generation=visible_generation,
+                row_hash=row_hash,
+                row=copy.deepcopy(row),
+                region_id_mapping=copy.deepcopy(mapping),
+            )
 
     def restore_drafts(self, image_ids: Sequence[int]) -> tuple[DraftRestore, ...]:
         """Atomically return committed baselines in the exact requested order.
@@ -2781,11 +3260,23 @@ class WorkingDatasetStore:
                 )
             return tuple(restores)
 
-    def recover(self) -> None:
+    def recover(
+        self,
+        *,
+        terminal_observer: Callable[[BatchRequest, BatchResult], None] | None = None,
+    ) -> None:
         """Reconcile an interrupted transaction exactly once before serving."""
 
         if not self.split_dir.exists():
             raise RecoveryError(f"missing split directory: {self.split_dir}")
+        with self._exclusive_process_lock():
+            self._recover_serialized(terminal_observer=terminal_observer)
+
+    def _recover_serialized(
+        self,
+        *,
+        terminal_observer: Callable[[BatchRequest, BatchResult], None] | None,
+    ) -> None:
         terminal_results: list[BatchResult] = []
         with self._exclusive_lock():
             self._reload_journal_index(repair_torn_tail=True)
@@ -2811,10 +3302,43 @@ class WorkingDatasetStore:
                 if record["kind"] == "batch_terminal"
             ]
         with self._exclusive_queue_lock():
-            self._read_queue_records(repair_torn_tail=True)
+            queue_records = self._read_queue_records(repair_torn_tail=True)
         for result in terminal_results:
+            if self._queue_projects_batch_result(queue_records, result):
+                continue
+            if terminal_observer is not None:
+                enqueue = self._queue_enqueue_for_batch(queue_records, result.batch_id)
+                if enqueue is None:
+                    raise RecoveryError(
+                        f"terminal batch {result.batch_id} has no durable enqueue"
+                    )
+                payload = copy.deepcopy(enqueue.get("payload"))
+                if not isinstance(payload, Mapping) or sha256_json(
+                    payload
+                ) != enqueue.get("payload_hash"):
+                    raise RecoveryError("queued batch payload hash disagreement")
+                request = _batch_request_from_payload(payload, error_type=RecoveryError)
+                terminal_observer(request, result)
             self._repair_one_queue_terminal(result)
         self._recovery_required = False
+
+    @staticmethod
+    def _queue_projects_batch_result(
+        records: Sequence[Mapping[str, Any]], result: BatchResult
+    ) -> bool:
+        expected = {
+            "payload_hash": result.payload_hash,
+            "status": result.status.value,
+            "generation": result.generation,
+            "working_sha256": result.working_sha256,
+            "error": result.error,
+        }
+        return any(
+            record.get("kind") == "queue_terminal"
+            and record.get("batch_id") == result.batch_id
+            and all(record.get(key) == value for key, value in expected.items())
+            for record in records
+        )
 
     def _cleanup_orphan_batch_candidates(self) -> None:
         removed = False
@@ -3096,6 +3620,9 @@ class WorkingDatasetStore:
         split: str,
         image_id: int,
         identity_region_id_mapping: Mapping[str, Any] | None = None,
+        frozen_region_to_id: Mapping[tuple[int, str], int] | None = None,
+        frozen_reserved_negative_ids: AbstractSet[int] | None = None,
+        frozen_tombstones: AbstractSet[int] | None = None,
     ) -> tuple[
         list[dict[str, Any]],
         dict[str, int],
@@ -3112,11 +3639,9 @@ class WorkingDatasetStore:
         allocations: dict[str, int] = {}
         materialized: list[tuple[dict[str, Any], str, int | None, int | None]] = []
 
-        if identity_region_id_mapping is None:
-            region_to_id = self._region_to_id
-            reserved_negative_ids = self._reserved_negative_ids
-            tombstones = self._tombstones
-        else:
+        if identity_region_id_mapping is not None and frozen_region_to_id is not None:
+            raise ValidationError("materialization identity authority is ambiguous")
+        if identity_region_id_mapping is not None:
             # Retry identity is reconstructed from the original prepared record,
             # never from mappings or tombstones introduced by later commits.
             region_to_id = {
@@ -3126,7 +3651,17 @@ class WorkingDatasetStore:
             reserved_negative_ids = {
                 object_id for object_id in region_to_id.values() if object_id < 0
             }
-            tombstones = set()
+            tombstones: AbstractSet[int] = set()
+        elif frozen_region_to_id is not None:
+            if frozen_reserved_negative_ids is None or frozen_tombstones is None:
+                raise ValidationError("frozen materialization authority is incomplete")
+            region_to_id = frozen_region_to_id
+            reserved_negative_ids = frozen_reserved_negative_ids
+            tombstones = frozen_tombstones
+        else:
+            region_to_id = self._region_to_id
+            reserved_negative_ids = self._reserved_negative_ids
+            tombstones = self._tombstones
 
         next_negative = min(reserved_negative_ids | {0}) - 1
         for ordinal, region in enumerate(regions):
@@ -3392,6 +3927,12 @@ class WorkingDatasetStore:
         self._append_record(terminal, "terminal")
 
     def _reload_journal_index(self, *, repair_torn_tail: bool = False) -> None:
+        with self._journal_index_lock:
+            self._reload_journal_index_locked(repair_torn_tail=repair_torn_tail)
+
+    def _reload_journal_index_locked(
+        self, *, repair_torn_tail: bool = False
+    ) -> None:
         self._records = []
         self._region_to_id = {}
         self._id_to_region = {}
@@ -3695,9 +4236,12 @@ class WorkingDatasetStore:
             )
 
     def _records_for_commit(self, commit_id: str) -> list[dict[str, Any]]:
-        return [
-            record for record in self._records if record.get("commit_id") == commit_id
-        ]
+        with self._journal_index_lock:
+            return [
+                record
+                for record in self._records
+                if record.get("commit_id") == commit_id
+            ]
 
     def _read_manifest(self) -> dict[str, Any]:
         try:
@@ -4029,15 +4573,30 @@ class WorkingDatasetStore:
             raise StaleCommitError(f"unknown image_id: {image_id}")
         return found
 
-    def _key_for_object(self, obj: Mapping[str, Any], image_id: int, split: str) -> str:
+    def _key_for_object(
+        self,
+        obj: Mapping[str, Any],
+        image_id: int,
+        split: str,
+        *,
+        frozen_region_to_id: Mapping[tuple[int, str], int] | None = None,
+    ) -> str:
         object_id = int(obj["coco_ann_id"])
         if object_id > 0:
             return _source_region_key(split, object_id)
-        keys = [
-            key
-            for (mapped_image_id, key), value in self._region_to_id.items()
-            if mapped_image_id == image_id and value == object_id
-        ]
+        if frozen_region_to_id is None:
+            with self._journal_index_lock:
+                keys = [
+                    key
+                    for (mapped_image_id, key), value in self._region_to_id.items()
+                    if mapped_image_id == image_id and value == object_id
+                ]
+        else:
+            keys = [
+                key
+                for (mapped_image_id, key), value in frozen_region_to_id.items()
+                if mapped_image_id == image_id and value == object_id
+            ]
         if len(keys) != 1:
             raise RecoveryError(f"cannot rehydrate region key for {object_id}")
         return keys[0]
@@ -4058,6 +4617,23 @@ class WorkingDatasetStore:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
     @contextmanager
+    def _exclusive_process_lock(self) -> Iterator[None]:
+        """Serialize publishers and recovery without blocking supported readers."""
+
+        self.split_dir.mkdir(parents=True, exist_ok=True)
+        with self.process_lock_path.open("a+b") as handle:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                raise StoreBusyError(
+                    f"split batch processor is already active: {self.split_dir}"
+                ) from exc
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+    @contextmanager
     def _shared_lock(self) -> Iterator[None]:
         self._assert_serving_ready()
         self.split_dir.mkdir(parents=True, exist_ok=True)
@@ -4066,6 +4642,23 @@ class WorkingDatasetStore:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_SH | fcntl.LOCK_NB)
             except BlockingIOError as exc:
                 raise StoreBusyError(f"split is reconciling: {self.split_dir}") from exc
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+    @contextmanager
+    def _task_navigation_shared_lock(self) -> Iterator[None]:
+        """Read only a projection later proven safe by task-navigation checks."""
+
+        self.split_dir.mkdir(parents=True, exist_ok=True)
+        with self.lock_path.open("a+b") as handle:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_SH | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                raise StoreBusyError(
+                    f"split task navigation is reconciling: {self.split_dir}"
+                ) from exc
             try:
                 yield
             finally:
@@ -4128,18 +4721,19 @@ class WorkingDatasetStore:
     @contextmanager
     def _legacy_commit_lock(self) -> Iterator[None]:
         self._assert_serving_ready()
-        with self._exclusive_queue_lock():
-            records = self._read_queue_records()
-            active = self._active_queue_enqueue(records)
-            if active is not None:
-                raise StoreBusyError(
-                    f"split has active batch {active['batch_id']}: {self.split_dir}"
-                )
-            with self._exclusive_lock():
-                reason = self._batch_reconciliation_reason(records)
-                if reason is not None:
-                    raise RecoveryError(f"store requires recovery: {reason}")
-                yield
+        with self._exclusive_process_lock():
+            with self._exclusive_queue_lock():
+                records = self._read_queue_records()
+                active = self._active_queue_enqueue(records)
+                if active is not None:
+                    raise StoreBusyError(
+                        f"split has active batch {active['batch_id']}: {self.split_dir}"
+                    )
+                with self._exclusive_lock():
+                    reason = self._batch_reconciliation_reason(records)
+                    if reason is not None:
+                        raise RecoveryError(f"store requires recovery: {reason}")
+                    yield
 
     @contextmanager
     def _shared_queue_lock(self) -> Iterator[None]:

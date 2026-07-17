@@ -55,6 +55,21 @@ class FakeStore:
         assert task_id == f"{split}:{image_id}"
         return 0
 
+    def resolve_task_navigation_row_index(
+        self,
+        *,
+        split: str,
+        project_id: str,
+        task_id: str,
+        image_id: int,
+    ) -> int:
+        return self.resolve_source_row_index(
+            split=split,
+            project_id=project_id,
+            task_id=task_id,
+            image_id=image_id,
+        )
+
     def restore_draft(self, image_id: int) -> DraftRestore:
         assert image_id == self.restore.image_id
         self.restore_calls += 1
@@ -75,6 +90,17 @@ class FakeStore:
                 region_id_mapping=self.restore.region_id_mapping,
             )
         return self.restore
+
+    def restore_task_navigation(
+        self,
+        image_id: int,
+        *,
+        projected_generation: int,
+        projected_row_hash: str,
+    ) -> DraftRestore:
+        assert projected_generation >= 0
+        assert len(projected_row_hash) == 64
+        return self.restore_draft(image_id)
 
 
 def _source_object(split: str, object_id: int) -> dict[str, Any]:

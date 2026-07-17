@@ -248,8 +248,14 @@ class TaskService:
             task, state = first
             try:
                 self._validate_task_binding(selected, task, state, store)
-                restore = store.restore_draft(task.identity.image_id)
+                restore = store.restore_task_navigation(
+                    task.identity.image_id,
+                    projected_generation=state.current_generation,
+                    projected_row_hash=state.base_row_hash,
+                )
             except StoreError as exc:
+                if first != self.repository.get_task_authority(project_id, task_id):
+                    continue
                 raise CrossAuthorityConflict(
                     "working task authority is unavailable",
                     code="coco_refinement.working_authority",
@@ -399,7 +405,7 @@ class TaskService:
                 "task bindings disagree within SQLite",
                 code="coco_refinement.task_binding",
             )
-        row_index = store.resolve_source_row_index(
+        row_index = store.resolve_task_navigation_row_index(
             split=split,
             project_id=task.project_id,
             task_id=task.task_id,

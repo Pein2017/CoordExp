@@ -49,6 +49,10 @@ class DraftCatalogError(RuntimeError):
     """The authoritative Draft catalog returned an invalid capture."""
 
 
+class NoEligibleDraftsError(DraftCatalogError):
+    """A valid capture contained no durable Drafts eligible for Commit."""
+
+
 class WorkerStopError(RuntimeError):
     """A split worker did not reach a clean stopped state."""
 
@@ -149,9 +153,9 @@ class DraftCatalog(Protocol):
 class BatchResultObserver(Protocol):
     """Synchronously project one durable terminal store result.
 
-    The callback runs after the store has released its publication locks.  An
-    exception is a fail-closed worker failure: the terminal store result stays
-    authoritative, while later batches wait for startup reconciliation.
+    The callback runs after publication but before the queue terminal makes the
+    result externally successful. An exception leaves the result reconciling,
+    so later batches wait for startup reconciliation.
     """
 
     def __call__(
@@ -159,6 +163,7 @@ class BatchResultObserver(Protocol):
         *,
         split: str,
         store: WorkingDatasetStore,
+        request: BatchRequest,
         result: BatchResult,
     ) -> None: ...
 
@@ -336,6 +341,19 @@ class _SplitWorker:
             self.state = WorkerState.BUSY
             self.error = f"{type(exc).__name__}: {exc}"
 
+    def _observe_terminal(
+        self, request: BatchRequest, terminal: BatchResult
+    ) -> None:
+        with self.lock:
+            self.last_batch_id = terminal.batch_id
+        if self.on_batch_result is not None:
+            self.on_batch_result(
+                split=self.split,
+                store=self.store,
+                request=request,
+                result=terminal,
+            )
+
     def _fail(self, exc: BaseException) -> None:
         with self.lock:
             self.state = WorkerState.FAILED
@@ -345,7 +363,12 @@ class _SplitWorker:
         try:
             while not self.stop_requested.is_set():
                 try:
-                    self.store.recover()
+                    if self.on_batch_result is None:
+                        self.store.recover()
+                    else:
+                        self.store.recover(
+                            terminal_observer=self._observe_terminal
+                        )
                     break
                 except StoreBusyError as exc:
                     self._set_busy(exc)
@@ -362,7 +385,12 @@ class _SplitWorker:
                 while not self.stop_requested.is_set():
                     self._set_state(WorkerState.RUNNING)
                     try:
-                        result = self.store.process_next_batch()
+                        if self.on_batch_result is None:
+                            result = self.store.process_next_batch()
+                        else:
+                            result = self.store.process_next_batch(
+                                terminal_observer=self._observe_terminal
+                            )
                     except StoreBusyError as exc:
                         # Shared status/read barriers are intentionally
                         # non-blocking.  Observe Busy and retry later without
@@ -374,12 +402,6 @@ class _SplitWorker:
                         break
                     with self.lock:
                         self.last_batch_id = result.batch_id
-                    if self.on_batch_result is not None:
-                        self.on_batch_result(
-                            split=self.split,
-                            store=self.store,
-                            result=result,
-                        )
                     with self.lock:
                         self.processed_batches += 1
             self._set_state(WorkerState.STOPPED)
@@ -559,7 +581,7 @@ class RefinementRuntime:
         ):
             raise DraftCatalogError("catalog base generation is invalid")
         if not capture.snapshots:
-            raise DraftCatalogError("catalog capture contains no eligible Drafts")
+            raise NoEligibleDraftsError("catalog capture contains no eligible Drafts")
 
         members: list[BatchMember] = []
         seen_tasks: set[str] = set()

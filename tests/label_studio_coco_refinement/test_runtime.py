@@ -22,6 +22,7 @@ from src.label_studio_coco_refinement.runtime import (
 )
 from src.label_studio_coco_refinement.store import (
     AuthoritativeDraftIdentity,
+    BatchRequest,
     BatchResult,
     BatchStatus,
     BootstrapSpec,
@@ -476,8 +477,13 @@ def test_terminal_observer_runs_after_publication_before_processed_count(
     coordinator: BatchCoordinator
 
     def observe(
-        *, split: str, store: WorkingDatasetStore, result: BatchResult
+        *,
+        split: str,
+        store: WorkingDatasetStore,
+        request: BatchRequest,
+        result: BatchResult,
     ) -> None:
+        assert request.batch_id == result.batch_id
         observed.append(
             (split, store, result, coordinator.health("train").processed_batches)
         )
@@ -524,12 +530,20 @@ def test_terminal_observer_failure_stops_worker_after_durable_terminal(
     store = split_stores["train"]
     catalog = MutableCatalog()
     _set_capture(catalog, store, "train", (1,))
+    fail_projection = {"value": True}
+    reconciled: list[str] = []
 
     def reject_projection(
-        *, split: str, store: WorkingDatasetStore, result: BatchResult
+        *,
+        split: str,
+        store: WorkingDatasetStore,
+        request: BatchRequest,
+        result: BatchResult,
     ) -> None:
-        del split, store, result
-        raise ValueError("terminal projection failed")
+        del split, store, request
+        if fail_projection["value"]:
+            raise ValueError("terminal projection failed")
+        reconciled.append(result.batch_id)
 
     coordinator = BatchCoordinator(
         {"train": store},
@@ -552,11 +566,21 @@ def test_terminal_observer_failure_stops_worker_after_durable_terminal(
 
     _wait_until(lambda: runtime.worker_health("train").state is WorkerState.FAILED)
     health = runtime.worker_health("train")
-    assert store.get_batch_status("projection-failure").status is BatchStatus.SUCCEEDED
+    assert (
+        store.get_batch_status("projection-failure").status
+        is BatchStatus.RECONCILING
+    )
     assert health.thread_alive is False
     assert health.last_batch_id == "projection-failure"
     assert health.processed_batches == 0
     assert health.error == "ValueError: terminal projection failed"
+
+    fail_projection["value"] = False
+    runtime.start_workers()
+    _wait_until(lambda: runtime.worker_health("train").state is WorkerState.IDLE)
+    assert reconciled == ["projection-failure"]
+    assert store.get_batch_status("projection-failure").status is BatchStatus.SUCCEEDED
+    runtime.stop_workers()
 
 
 def test_worker_busy_is_queryable_and_retries_fail_closed(

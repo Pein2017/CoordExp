@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.common.errors import DataContractError, RuntimeContractError
+from src.coco_refinement.commit_service import CommitService, CommitServiceError
 from src.coco_refinement.http_security import (
     LOCAL_OPERATOR,
     LocalHttpSecurity,
@@ -47,12 +48,22 @@ class DraftPutBody(BaseModel):
     objects: list[dict[str, Any]]
 
 
+class CommitPostBody(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    batch_id: Annotated[
+        str,
+        Field(min_length=1, max_length=200, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$"),
+    ]
+
+
 def create_service_app(
     task_service: TaskService,
     *,
     bind_host: str,
     port: int,
     sessions: OpaqueSessionStore | None = None,
+    commit_service: CommitService | None = None,
 ) -> FastAPI:
     """Build the HTTP app without binding a port or changing runtime lifecycle."""
 
@@ -67,6 +78,7 @@ def create_service_app(
         openapi_url=None,
     )
     app.state.task_service = task_service
+    app.state.commit_service = commit_service
     app.state.local_principal = LOCAL_OPERATOR
     app.state.bound_authority = authority
 
@@ -133,6 +145,29 @@ def create_service_app(
             else 503
         )
         return _error_response(status, exc.code, "task request could not be completed")
+
+    @app.exception_handler(CommitServiceError)
+    async def commit_service_error(
+        _request: Request, exc: CommitServiceError
+    ) -> JSONResponse:
+        if exc.code == "coco_refinement.commit_not_found":
+            status = 404
+        elif exc.code in {
+            "coco_refinement.commit_busy",
+            "coco_refinement.commit_conflict",
+            "coco_refinement.no_pending_drafts",
+        }:
+            status = 409
+        elif exc.code in {
+            "coco_refinement.split",
+            "coco_refinement.commit_invalid_draft",
+        }:
+            status = 422
+        else:
+            status = 503
+        return _error_response(
+            status, exc.code, "Commit request could not be completed"
+        )
 
     @app.exception_handler(DataContractError)
     async def data_contract_error(
@@ -230,6 +265,39 @@ def create_service_app(
             headers={"ETag": image.etag, "X-Content-Type-Options": "nosniff"},
         )
 
+    if commit_service is not None:
+
+        @app.post("/api/splits/{split}/commits")
+        async def enqueue_commit(
+            split: Annotated[str, Path(pattern=r"^(train|val)$")],
+            body: CommitPostBody,
+        ) -> JSONResponse:
+            status = commit_service.enqueue(split=split, batch_id=body.batch_id)
+            return JSONResponse(
+                status.to_dict(),
+                status_code=202 if status.status == "queued" else 200,
+            )
+
+        @app.get("/api/splits/{split}/commits/{batch_id}")
+        async def get_commit_status(
+            split: Annotated[str, Path(pattern=r"^(train|val)$")],
+            batch_id: Annotated[
+                str,
+                Path(
+                    min_length=1,
+                    max_length=200,
+                    pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+                ),
+            ],
+        ) -> dict[str, Any]:
+            return commit_service.status(split=split, batch_id=batch_id).to_dict()
+
+        @app.get("/api/splits/{split}/state")
+        async def get_project_state(
+            split: Annotated[str, Path(pattern=r"^(train|val)$")],
+        ) -> dict[str, Any]:
+            return commit_service.project_state(split=split).to_dict()
+
     return app
 
 
@@ -247,6 +315,7 @@ def create_runtime_service_app(
         bind_host=bind_host,
         port=port,
         sessions=sessions,
+        commit_service=CommitService.from_runtime(runtime),
     )
 
 
@@ -258,4 +327,9 @@ def _error_response(status_code: int, code: str, message: str) -> JSONResponse:
     )
 
 
-__all__ = ["DraftPutBody", "create_runtime_service_app", "create_service_app"]
+__all__ = [
+    "CommitPostBody",
+    "DraftPutBody",
+    "create_runtime_service_app",
+    "create_service_app",
+]

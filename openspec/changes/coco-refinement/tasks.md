@@ -16,7 +16,7 @@
 - [x] 2.2 Add the single-process runtime factory and root lock: one store/worker per split, startup reconciliation before writes, reload/multi-worker refusal, graceful shutdown, and worker-health receipts.
 - [x] 2.3 Add FastAPI session/security and task/image endpoints with numeric-loopback bind, Host/Origin/CSRF enforcement, server-derived local principal, no caller paths, no-store mutable responses, task cursor navigation, and authoritative committed-or-Draft reads.
 - [x] 2.4 Add idempotent full-Draft PUT/GET APIs with strict shape/CAS validation, response-loss retry, committed-baseline retirement, conflict payloads, and source/working authority rechecks.
-- [ ] 2.5 Add Commit/status/project-state APIs that flush/capture all pending same-split Drafts, return only after durable enqueue, expose queued/running/reconciling/terminal states, and never block Draft reads/writes/navigation on publication.
+- [x] 2.5 Add Commit/status/project-state APIs that flush/capture all pending same-split Drafts, return only after durable enqueue, expose queued/running/reconciling/terminal states, and never block Draft reads/writes/navigation on publication.
 - [ ] 2.6 Execute multi-task human-only batch probes with a deliberately paused worker, later edits to captured/unrelated tasks, lost enqueue/status responses, invalid all-or-nothing members, terminal exact/newer Drafts, restart reconciliation, and unchanged source/images.
 - [ ] 2.7 Gate Wave 2 with targeted unit/API/recovery tests, one full-size small-member Commit, strict OpenSpec validation, vendor-import residue checks, and separate engineering plus intent-contract audits.
 

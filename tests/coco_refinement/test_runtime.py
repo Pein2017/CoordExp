@@ -350,7 +350,12 @@ def _assemble_fake(
         _stores: object, *, on_batch_result: Callable[..., None]
     ) -> _FakeRuntime:
         observed.append("coordinator")
-        on_batch_result(split="train", store=stores["train"], result=object())
+        on_batch_result(
+            split="train",
+            store=stores["train"],
+            request=SimpleNamespace(split="train"),
+            result=object(),
+        )
         return fake_runtime
 
     def runtime_factory(**kwargs: object) -> _FakeRuntime:
@@ -382,7 +387,7 @@ def test_factory_orders_dual_inspection_recovery_reconciliation_and_callback(
 ) -> None:
     runtime, _, events = _assemble_fake(tmp_path)
 
-    assert events[:23] == [
+    assert events[:20] == [
         "preflight",
         "inspect:train",
         "inspect:val",
@@ -401,7 +406,6 @@ def test_factory_orders_dual_inspection_recovery_reconciliation_and_callback(
         "attest:train",
         "attest:val",
         "coordinator",
-        "request:train",
         "terminal:train",
         "runtime",
     ]
