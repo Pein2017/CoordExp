@@ -6,7 +6,7 @@
 - [x] 1.4 Implement `src/coco_refinement` native object/Draft/task models and canonicalizer without Django or Label Studio imports; adapt canonical regions into the existing `AuthoritativeDraftSnapshot`/store boundary.
 - [x] 1.5 Add failing transaction tests and implement the SQLite schema/repository for projects, complete compact task identities, sparse Drafts, monotonic CAS revisions, idempotent mutation IDs, current-generation/base-row bindings, and restart durability.
 - [x] 1.6 Add failing bootstrap/image-boundary tests and implement exact max_len12000 train/val indexing, working-store bootstrap, validated shared-image links, allowlisted image resolution, traversal/symlink rejection, idempotent restart, and source/manifest drift failure.
-- [ ] 1.7 Execute a bounded then full-index bootstrap/open/restart probe; record task counts, source/image identities, runtime-root bytes, SQLite row counts, and representative task latency without imposing a throughput optimization gate.
+- [x] 1.7 Execute a bounded then full-index bootstrap/open/restart probe; record task counts, source/image identities, runtime-root bytes, SQLite row counts, and representative task latency without imposing a throughput optimization gate.
 - [x] 1.8 Add launch-preflight tests and a dependency receipt for FastAPI 0.136.3, Uvicorn 0.37.0, and Starlette 0.52.1; reject missing/unsupported versions, reload/multi-worker process shapes, and duplicate runtime-root writers before port bind.
 - [ ] 1.9 Gate Wave 1 with targeted tests, `openspec validate --strict`, Django/Label Studio import residue checks, and separate engineering plus intent-contract audits with no unresolved P0/P1 findings.
 
