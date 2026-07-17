@@ -137,6 +137,18 @@ COCO-80, geometry, stable-key uniqueness, positive source identity, provenance,
 and CAS; then it increments a per-Draft integer revision and commits. A stale
 revision returns the current authoritative Draft and does not merge silently.
 
+Before a human create, move, resize, or relabel is saved, the browser sends the
+natural-image pixel rectangle, canonical English class name, and current task
+binding to a non-persistent object-projection endpoint. The service rechecks
+that binding, reuses the approved pixel-to-norm1000 quantizer, derives the sparse
+category ID, and either returns a deterministic server-generated `local:<uuid>`
+for a create request or copies the existing stable identity and provenance for
+an update. Projection never writes SQLite. The browser replaces or appends that
+returned object in its in-memory full list and then uses the existing idempotent
+Draft PUT; that PUT remains the only durable mutation and CAS owner. A binding
+change between projection and PUT therefore fails as an ordinary Draft conflict
+instead of silently overwriting newer task state.
+
 If the saved semantic hash equals the committed row, the sparse Draft may be
 removed and the task returns to its baseline-derived state. This keeps the
 database proportional to edited work.

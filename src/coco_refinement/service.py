@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path as FileSystemPath
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import FastAPI, Path, Query, Request
 from fastapi.exceptions import RequestValidationError
@@ -28,6 +28,7 @@ from src.coco_refinement.repository import (
 from src.coco_refinement.task_service import (
     MAX_TASK_PAGE,
     CrossAuthorityConflict,
+    ObjectProjectionConflict,
     TaskService,
     TaskServiceError,
 )
@@ -50,6 +51,7 @@ _STATIC_ASSETS = {
     "app.css": "text/css",
     "app.js": "text/javascript",
     "class-search.js": "text/javascript",
+    "editor-geometry.js": "text/javascript",
 }
 
 
@@ -76,6 +78,36 @@ class CommitPostBody(BaseModel):
         str,
         Field(min_length=1, max_length=200, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$"),
     ]
+
+
+class _ObjectProjectionBody(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    pixel_xyxy: Annotated[list[float], Field(min_length=4, max_length=4)]
+    category_name: Annotated[str, Field(min_length=1, max_length=100)]
+    expected_revision: Annotated[int, Field(ge=0)]
+    expected_generation: Annotated[int, Field(ge=0)]
+    expected_base_row_hash: Annotated[
+        str, Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    ]
+
+
+class CreateObjectProjectionBody(_ObjectProjectionBody):
+    operation: Literal["create"]
+    request_id: Annotated[
+        str, Field(min_length=1, max_length=200, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
+    ]
+
+
+class UpdateObjectProjectionBody(_ObjectProjectionBody):
+    operation: Literal["update"]
+    region_key: Annotated[str, Field(min_length=1, max_length=500)]
+
+
+ObjectProjectionBody = Annotated[
+    CreateObjectProjectionBody | UpdateObjectProjectionBody,
+    Field(discriminator="operation"),
+]
 
 
 def create_service_app(
@@ -151,6 +183,12 @@ def create_service_app(
             "task authority is reconciling; retry the same request",
         )
 
+    @app.exception_handler(ObjectProjectionConflict)
+    async def object_projection_conflict(
+        _request: Request, exc: ObjectProjectionConflict
+    ) -> JSONResponse:
+        return JSONResponse(exc.to_dict(), status_code=409)
+
     @app.exception_handler(TaskServiceError)
     async def task_service_error(
         _request: Request, exc: TaskServiceError
@@ -162,6 +200,7 @@ def create_service_app(
                 "coco_refinement.split",
                 "coco_refinement.task_cursor",
                 "coco_refinement.task_limit",
+                "coco_refinement.object_projection_operation",
             }
             else 503
         )
@@ -286,6 +325,25 @@ def create_service_app(
             outcome.to_dict(), status_code=409 if outcome.status == "conflict" else 200
         )
 
+    @app.post("/api/splits/{split}/tasks/{task_id}/objects/canonicalize")
+    async def canonicalize_object(
+        split: Annotated[str, Path(pattern=r"^(train|val)$")],
+        task_id: Annotated[str, Path(min_length=1, max_length=200)],
+        body: ObjectProjectionBody,
+    ) -> dict[str, Any]:
+        return task_service.canonicalize_object_projection(
+            split=split,
+            task_id=task_id,
+            operation=body.operation,
+            request_id=body.request_id if isinstance(body, CreateObjectProjectionBody) else None,
+            region_key=body.region_key if isinstance(body, UpdateObjectProjectionBody) else None,
+            pixel_xyxy=body.pixel_xyxy,
+            category_name=body.category_name,
+            expected_revision=body.expected_revision,
+            expected_generation=body.expected_generation,
+            expected_base_row_hash=body.expected_base_row_hash,
+        ).to_dict()
+
     @app.get("/api/splits/{split}/tasks/{task_id}/image")
     async def get_image(
         split: Annotated[str, Path(pattern=r"^(train|val)$")],
@@ -349,6 +407,12 @@ def create_service_app(
             "class-search.js", media_type=_STATIC_ASSETS["class-search.js"]
         )
 
+    @app.get("/editor-geometry.js", include_in_schema=False)
+    async def get_editor_geometry_module() -> Response:
+        return _static_file(
+            "editor-geometry.js", media_type=_STATIC_ASSETS["editor-geometry.js"]
+        )
+
     return app
 
 
@@ -399,7 +463,9 @@ def _static_file(filename: str, *, media_type: str) -> Response:
 
 __all__ = [
     "CommitPostBody",
+    "CreateObjectProjectionBody",
     "DraftPutBody",
+    "UpdateObjectProjectionBody",
     "create_runtime_service_app",
     "create_service_app",
 ]

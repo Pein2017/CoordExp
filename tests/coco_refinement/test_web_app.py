@@ -47,6 +47,7 @@ def app(tmp_path, monkeypatch):
     (static_root / "app.css").write_text("body { color: black; }")
     (static_root / "app.js").write_text("import './class-search.js';")
     (static_root / "class-search.js").write_text("export const ready = true;")
+    (static_root / "editor-geometry.js").write_text("export const ready = true;")
     monkeypatch.setattr(service_module, "_STATIC_ROOT", static_root)
 
     task_service = object.__new__(_TaskService)
@@ -83,6 +84,7 @@ def test_categories_project_the_authoritative_sparse_registry(app) -> None:
         ("/app.css", "text/css"),
         ("/app.js", "text/javascript"),
         ("/class-search.js", "text/javascript"),
+        ("/editor-geometry.js", "text/javascript"),
     ],
 )
 def test_exact_static_allowlist_has_safe_no_store_headers(
@@ -137,6 +139,7 @@ def test_packaged_static_assets_match_the_exact_route_allowlist() -> None:
         "app.css",
         "app.js",
         "class-search.js",
+        "editor-geometry.js",
     }
     index = (static_root / "index.html").read_text()
     assert 'href="/app.css"' in index

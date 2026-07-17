@@ -10,13 +10,14 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal
+from uuid import NAMESPACE_URL, uuid5
 
 from PIL import Image, UnidentifiedImageError
 
 from src.common.errors import RuntimeContractError
 from src.coco_refinement.bootstrap import resolve_indexed_image
 from src.coco_refinement.canonical import canonicalize_objects
-from src.coco_refinement.models import CanonicalDraft, Split
+from src.coco_refinement.models import CanonicalDraft, NativeObject, Split
 from src.coco_refinement.repository import (
     CompactTaskRecord,
     DraftSaveApplied,
@@ -31,6 +32,8 @@ from src.label_studio_coco_refinement.store import (
     StoreError,
     WorkingDatasetStore,
 )
+from src.label_studio_coco_refinement.categories import COCO80_REGISTRY
+from src.label_studio_coco_refinement.geometry import pixel_xyxy_to_norm1000
 
 
 MAX_TASK_PAGE = 200
@@ -42,6 +45,41 @@ class TaskServiceError(RuntimeContractError):
 
 class CrossAuthorityConflict(TaskServiceError):
     """SQLite and the working store did not converge within the bounded read."""
+
+
+class ObjectProjectionConflict(TaskServiceError):
+    """A canonical object request does not match current task authority."""
+
+    def __init__(
+        self,
+        *,
+        authoritative: AuthoritativeTask,
+        reason: str,
+        expected: int | str,
+        actual: int | str | None,
+    ) -> None:
+        super().__init__(
+            "object projection binding does not match current task authority",
+            code="coco_refinement.object_projection_conflict",
+        )
+        self.authoritative = authoritative
+        self.reason = reason
+        self.expected = expected
+        self.actual = actual
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "error": {
+                "code": self.code,
+                "message": "object projection target is not current",
+            },
+            "conflict": {
+                "reason": self.reason,
+                "expected": self.expected,
+                "actual": self.actual,
+            },
+            "binding": _task_binding(self.authoritative),
+        }
 
 
 @dataclass(frozen=True)
@@ -139,6 +177,20 @@ class ImagePayload:
     body: bytes
     media_type: str
     etag: str
+
+
+@dataclass(frozen=True)
+class CanonicalObjectProjection:
+    operation: Literal["create", "update"]
+    obj: NativeObject
+    authoritative: AuthoritativeTask
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "operation": self.operation,
+            "object": self.obj.to_json_dict(),
+            "binding": _task_binding(self.authoritative),
+        }
 
 
 class TaskService:
@@ -333,6 +385,109 @@ class TaskService:
             actual=_current_conflict_actual(response.reason, current.state),
         )
 
+    def canonicalize_object_projection(
+        self,
+        *,
+        split: str,
+        task_id: str,
+        operation: Literal["create", "update"],
+        pixel_xyxy: Sequence[object],
+        category_name: str,
+        expected_revision: int,
+        expected_generation: int,
+        expected_base_row_hash: str,
+        request_id: str | None = None,
+        region_key: str | None = None,
+    ) -> CanonicalObjectProjection:
+        """Project natural-image geometry into one canonical object without saving."""
+
+        selected = _split(split)
+        current = self.read_task(split=selected, task_id=task_id)
+        _validate_projection_binding(
+            current,
+            expected_revision=expected_revision,
+            expected_generation=expected_generation,
+            expected_base_row_hash=expected_base_row_hash,
+        )
+        category = COCO80_REGISTRY.by_name(category_name)
+        bbox = pixel_xyxy_to_norm1000(
+            pixel_xyxy,
+            image_width=current.task.image_width,
+            image_height=current.task.image_height,
+        )
+        objects = current.objects.to_json_regions()
+        if operation == "create":
+            if request_id is None or region_key is not None:
+                raise TaskServiceError(
+                    "create projection requires request_id and no region_key",
+                    code="coco_refinement.object_projection_operation",
+                )
+            projected_key = _local_region_key(current, request_id)
+            value = {
+                "region_key": projected_key,
+                "bbox_2d": list(bbox),
+                "category_name": category.name,
+                "category_id": category.id,
+            }
+            existing = next(
+                (item for item in objects if item["region_key"] == projected_key), None
+            )
+            if existing is None:
+                objects.append(value)
+            elif existing != value:
+                raise ObjectProjectionConflict(
+                    authoritative=current,
+                    reason="request_id",
+                    expected=request_id,
+                    actual=projected_key,
+                )
+        elif operation == "update":
+            if region_key is None or request_id is not None:
+                raise TaskServiceError(
+                    "update projection requires region_key and no request_id",
+                    code="coco_refinement.object_projection_operation",
+                )
+            index = next(
+                (
+                    index
+                    for index, item in enumerate(objects)
+                    if item["region_key"] == region_key
+                ),
+                None,
+            )
+            if index is None:
+                raise ObjectProjectionConflict(
+                    authoritative=current,
+                    reason="region_key",
+                    expected=region_key,
+                    actual=None,
+                )
+            value = dict(objects[index])
+            value.update(
+                {
+                    "bbox_2d": list(bbox),
+                    "category_name": category.name,
+                    "category_id": category.id,
+                }
+            )
+            objects[index] = value
+            projected_key = region_key
+        else:
+            raise TaskServiceError(
+                "object projection operation is unsupported",
+                code="coco_refinement.object_projection_operation",
+            )
+
+        canonical = canonicalize_objects(objects, split=selected)
+        projected = next(
+            item for item in canonical.objects if item.region_key == projected_key
+        )
+        return CanonicalObjectProjection(
+            operation=operation,
+            obj=projected,
+            authoritative=current,
+        )
+
     def read_image(self, *, split: str, task_id: str) -> ImagePayload:
         selected = _split(split)
         project_id = self.project_ids[selected]
@@ -511,6 +666,51 @@ def _current_conflict_actual(reason: str, state: TaskDraftState) -> int | str:
     )
 
 
+def _validate_projection_binding(
+    current: AuthoritativeTask,
+    *,
+    expected_revision: int,
+    expected_generation: int,
+    expected_base_row_hash: str,
+) -> None:
+    checks: tuple[tuple[str, int | str, int | str], ...] = (
+        ("revision", expected_revision, current.state.revision),
+        ("generation", expected_generation, current.state.current_generation),
+        ("base_row_hash", expected_base_row_hash, current.state.base_row_hash),
+    )
+    for reason, expected, actual in checks:
+        if expected != actual:
+            raise ObjectProjectionConflict(
+                authoritative=current,
+                reason=reason,
+                expected=expected,
+                actual=actual,
+            )
+
+
+def _local_region_key(current: AuthoritativeTask, request_id: str) -> str:
+    identity = current.task.identity
+    seed = (
+        "coordexp:coco-refinement:local-object:"
+        f"{identity.split}:{current.task.task_id}:{identity.image_id}:"
+        f"{identity.source_row_index}:{request_id}"
+    )
+    return f"local:{uuid5(NAMESPACE_URL, seed)}"
+
+
+def _task_binding(current: AuthoritativeTask) -> dict[str, Any]:
+    return {
+        "split": current.task.identity.split,
+        "task_id": current.task.task_id,
+        "revision": current.state.revision,
+        "epoch": current.state.epoch,
+        "generation": current.state.current_generation,
+        "base_row_hash": current.state.base_row_hash,
+        "semantic_hash": current.objects.semantic_hash,
+        "result_hash": current.objects.result_hash,
+    }
+
+
 def _read_image_without_symlinks(
     *, root: Path, locator: str, expected_path: Path
 ) -> bytes:
@@ -587,10 +787,12 @@ def _split(value: str) -> Split:
 
 __all__ = [
     "AuthoritativeTask",
+    "CanonicalObjectProjection",
     "CrossAuthorityConflict",
     "DraftMutationOutcome",
     "ImagePayload",
     "MAX_TASK_PAGE",
+    "ObjectProjectionConflict",
     "TaskPage",
     "TaskService",
     "TaskServiceError",
