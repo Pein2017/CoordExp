@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path as FileSystemPath
 from typing import Annotated, Any
 
 from fastapi import FastAPI, Path, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.common.errors import DataContractError, RuntimeContractError
@@ -30,6 +31,26 @@ from src.coco_refinement.task_service import (
     TaskService,
     TaskServiceError,
 )
+from src.label_studio_coco_refinement.categories import COCO80_REGISTRY
+
+
+_STATIC_ROOT = FileSystemPath(__file__).with_name("static")
+_STATIC_RESPONSE_HEADERS = {
+    "Cache-Control": "no-store",
+    "Pragma": "no-cache",
+    "X-Content-Type-Options": "nosniff",
+    "Content-Security-Policy": (
+        "default-src 'self'; script-src 'self'; style-src 'self'; "
+        "img-src 'self'; connect-src 'self'; object-src 'none'; "
+        "base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+    ),
+    "Referrer-Policy": "no-referrer",
+}
+_STATIC_ASSETS = {
+    "app.css": "text/css",
+    "app.js": "text/javascript",
+    "class-search.js": "text/javascript",
+}
 
 
 class DraftPutBody(BaseModel):
@@ -210,6 +231,18 @@ def create_service_app(
     async def issue_session() -> JSONResponse:
         return security.issue_response()
 
+    @app.get("/api/categories")
+    async def get_categories() -> dict[str, Any]:
+        """Expose the frozen official registry without duplicating it in the client."""
+
+        return {
+            "fingerprint": COCO80_REGISTRY.fingerprint,
+            "categories": [
+                {"id": category.id, "name": category.name}
+                for category in COCO80_REGISTRY.categories
+            ],
+        }
+
     @app.get("/api/splits/{split}/tasks")
     async def list_tasks(
         split: Annotated[str, Path(pattern=r"^(train|val)$")],
@@ -298,6 +331,24 @@ def create_service_app(
         ) -> dict[str, Any]:
             return commit_service.project_state(split=split).to_dict()
 
+    @app.get("/", include_in_schema=False)
+    async def get_application_shell() -> Response:
+        return _static_file("index.html", media_type="text/html")
+
+    @app.get("/app.css", include_in_schema=False)
+    async def get_application_styles() -> Response:
+        return _static_file("app.css", media_type=_STATIC_ASSETS["app.css"])
+
+    @app.get("/app.js", include_in_schema=False)
+    async def get_application_module() -> Response:
+        return _static_file("app.js", media_type=_STATIC_ASSETS["app.js"])
+
+    @app.get("/class-search.js", include_in_schema=False)
+    async def get_class_search_module() -> Response:
+        return _static_file(
+            "class-search.js", media_type=_STATIC_ASSETS["class-search.js"]
+        )
+
     return app
 
 
@@ -324,6 +375,25 @@ def _error_response(status_code: int, code: str, message: str) -> JSONResponse:
         {"error": {"code": code, "message": message}},
         status_code=status_code,
         headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
+    )
+
+
+def _static_file(filename: str, *, media_type: str) -> Response:
+    """Serve one packaged asset from the fixed application allowlist."""
+
+    if filename != "index.html" and filename not in _STATIC_ASSETS:
+        return _error_response(
+            404, "coco_refinement.static_not_found", "static asset was not found"
+        )
+    path = _STATIC_ROOT / filename
+    if not path.is_file():
+        return _error_response(
+            404, "coco_refinement.static_not_found", "static asset was not found"
+        )
+    return FileResponse(
+        path,
+        media_type=media_type,
+        headers=dict(_STATIC_RESPONSE_HEADERS),
     )
 
 
