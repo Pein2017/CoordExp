@@ -10,6 +10,7 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import stat
 import tempfile
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -36,6 +37,10 @@ class LaunchPreflightError(RuntimeError):
 
 class RuntimeRootBusyError(LaunchPreflightError):
     """Another process already owns the runtime-root writer lock."""
+
+
+class UnsafeRuntimeRootLockError(LaunchPreflightError):
+    """The writer-lock path is not one safe, private regular-file inode."""
 
 
 @dataclass(frozen=True)
@@ -97,7 +102,7 @@ class RuntimeRootLock:
         if self._handle is not None:
             return self
         self.runtime_root.mkdir(parents=True, exist_ok=True)
-        handle = self.path.open("a+", encoding="utf-8")
+        handle = _open_writer_lock(self.path)
         try:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
@@ -110,6 +115,7 @@ class RuntimeRootLock:
             raise
 
         try:
+            _validate_writer_lock_inode(handle.fileno(), self.path)
             handle.seek(0)
             handle.truncate()
             json.dump(
@@ -298,6 +304,44 @@ def _atomic_write_json(path: Path, value: Mapping[str, Any]) -> None:
             temporary_path.unlink(missing_ok=True)
 
 
+def _open_writer_lock(path: Path) -> TextIO:
+    flags = os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(path, flags, 0o600)
+        _validate_writer_lock_inode(descriptor, path)
+        handle = os.fdopen(descriptor, "r+", encoding="utf-8")
+        descriptor = None
+        return handle
+    except UnsafeRuntimeRootLockError:
+        raise
+    except OSError as exc:
+        raise UnsafeRuntimeRootLockError(
+            f"unsafe writer lock path: {path}"
+        ) from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def _validate_writer_lock_inode(descriptor: int, path: Path) -> None:
+    try:
+        descriptor_stat = os.fstat(descriptor)
+        path_stat = os.lstat(path)
+    except OSError as exc:
+        raise UnsafeRuntimeRootLockError(
+            f"unsafe writer lock path: {path}"
+        ) from exc
+    safe = (
+        stat.S_ISREG(descriptor_stat.st_mode)
+        and descriptor_stat.st_nlink == 1
+        and path_stat.st_dev == descriptor_stat.st_dev
+        and path_stat.st_ino == descriptor_stat.st_ino
+    )
+    if not safe:
+        raise UnsafeRuntimeRootLockError(f"unsafe writer lock inode: {path}")
+
+
 __all__ = [
     "LaunchPreflight",
     "LaunchPreflightError",
@@ -306,6 +350,7 @@ __all__ = [
     "RuntimeRootBusyError",
     "RuntimeRootLock",
     "SUPPORTED_DEPENDENCIES",
+    "UnsafeRuntimeRootLockError",
     "WRITER_LOCK_NAME",
     "resolve_dependency_versions",
     "run_launch_preflight",

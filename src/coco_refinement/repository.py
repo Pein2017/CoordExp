@@ -19,6 +19,55 @@ from src.coco_refinement.models import CanonicalDraft, NativeTaskIdentity, Split
 
 _SCHEMA_VERSION = 1
 _DEFAULT_BUSY_TIMEOUT_MS = 5_000
+_REQUIRED_COLUMNS: dict[str, tuple[tuple[str, str, int, int], ...]] = {
+    "projects": (
+        ("project_id", "TEXT", 0, 1),
+        ("split", "TEXT", 1, 0),
+        ("source_fingerprint", "TEXT", 1, 0),
+        ("task_count", "INTEGER", 1, 0),
+        ("created_at", "TEXT", 1, 0),
+    ),
+    "tasks": (
+        ("task_id", "TEXT", 0, 1),
+        ("project_id", "TEXT", 1, 0),
+        ("split", "TEXT", 1, 0),
+        ("image_id", "INTEGER", 1, 0),
+        ("source_row_index", "INTEGER", 1, 0),
+        ("image_locator", "TEXT", 1, 0),
+        ("image_width", "INTEGER", 1, 0),
+        ("image_height", "INTEGER", 1, 0),
+        ("image_fingerprint", "TEXT", 1, 0),
+        ("revision", "INTEGER", 1, 0),
+        ("epoch", "INTEGER", 1, 0),
+        ("current_generation", "INTEGER", 1, 0),
+        ("base_row_hash", "TEXT", 1, 0),
+        ("committed_result_hash", "TEXT", 1, 0),
+        ("updated_at", "TEXT", 1, 0),
+    ),
+    "drafts": (
+        ("task_id", "TEXT", 0, 1),
+        ("objects_json", "TEXT", 1, 0),
+        ("semantic_hash", "TEXT", 1, 0),
+        ("result_hash", "TEXT", 1, 0),
+    ),
+    "mutations": (
+        ("mutation_id", "TEXT", 0, 1),
+        ("task_id", "TEXT", 1, 0),
+        ("request_fingerprint", "TEXT", 1, 0),
+        ("response_json", "TEXT", 1, 0),
+        ("created_at", "TEXT", 1, 0),
+    ),
+}
+_REQUIRED_FOREIGN_KEYS = {
+    "projects": (),
+    "tasks": (("projects", "project_id", "project_id", "RESTRICT", "RESTRICT"),),
+    "drafts": (("tasks", "task_id", "task_id", "RESTRICT", "RESTRICT"),),
+    "mutations": (("tasks", "task_id", "task_id", "RESTRICT", "RESTRICT"),),
+}
+_REQUIRED_INDEXES = {
+    "tasks_project_order": ("tasks", ("project_id", "source_row_index")),
+    "mutations_task": ("mutations", ("task_id", "created_at")),
+}
 
 
 class RepositoryError(RuntimeContractError):
@@ -654,71 +703,52 @@ class SqliteDraftRepository:
 
     def _initialize(self) -> None:
         with closing(self._connect()) as connection:
-            version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+            try:
+                version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+            except sqlite3.DatabaseError as exc:
+                raise RepositoryInvariantError(
+                    "SQLite metadata cannot be read",
+                    code="coco_refinement.database_integrity",
+                    cause=exc,
+                ) from exc
             if version not in (0, _SCHEMA_VERSION):
                 raise RepositoryInvariantError(
                     "SQLite schema version is unsupported",
                     code="coco_refinement.schema_version",
                     context={"expected": _SCHEMA_VERSION, "actual": version},
                 )
-            connection.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS projects (
-                    project_id TEXT PRIMARY KEY,
-                    split TEXT NOT NULL CHECK(split IN ('train', 'val')),
-                    source_fingerprint TEXT NOT NULL,
-                    task_count INTEGER NOT NULL CHECK(task_count >= 0),
-                    created_at TEXT NOT NULL,
-                    UNIQUE(split)
-                );
-
-                CREATE TABLE IF NOT EXISTS tasks (
-                    task_id TEXT PRIMARY KEY,
-                    project_id TEXT NOT NULL REFERENCES projects(project_id)
-                        ON UPDATE RESTRICT ON DELETE RESTRICT,
-                    split TEXT NOT NULL CHECK(split IN ('train', 'val')),
-                    image_id INTEGER NOT NULL CHECK(image_id > 0),
-                    source_row_index INTEGER NOT NULL CHECK(source_row_index >= 0),
-                    image_locator TEXT NOT NULL,
-                    image_width INTEGER NOT NULL CHECK(image_width > 0),
-                    image_height INTEGER NOT NULL CHECK(image_height > 0),
-                    image_fingerprint TEXT NOT NULL,
-                    revision INTEGER NOT NULL CHECK(revision >= 0),
-                    epoch INTEGER NOT NULL CHECK(epoch >= 0),
-                    current_generation INTEGER NOT NULL CHECK(current_generation >= 0),
-                    base_row_hash TEXT NOT NULL,
-                    committed_result_hash TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    UNIQUE(project_id, source_row_index),
-                    UNIQUE(project_id, image_id)
-                );
-
-                CREATE INDEX IF NOT EXISTS tasks_project_order
-                    ON tasks(project_id, source_row_index);
-
-                CREATE TABLE IF NOT EXISTS drafts (
-                    task_id TEXT PRIMARY KEY REFERENCES tasks(task_id)
-                        ON UPDATE RESTRICT ON DELETE RESTRICT,
-                    objects_json TEXT NOT NULL,
-                    semantic_hash TEXT NOT NULL,
-                    result_hash TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS mutations (
-                    mutation_id TEXT PRIMARY KEY,
-                    task_id TEXT NOT NULL REFERENCES tasks(task_id)
-                        ON UPDATE RESTRICT ON DELETE RESTRICT,
-                    request_fingerprint TEXT NOT NULL,
-                    response_json TEXT NOT NULL,
-                    created_at TEXT NOT NULL
-                );
-
-                CREATE INDEX IF NOT EXISTS mutations_task
-                    ON mutations(task_id, created_at);
-                """
-            )
             if version == 0:
-                connection.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
+                user_objects = connection.execute(
+                    """
+                    SELECT type, name
+                    FROM sqlite_master
+                    WHERE name NOT LIKE 'sqlite_%'
+                    ORDER BY type, name
+                    """
+                ).fetchall()
+                if user_objects:
+                    raise RepositoryInvariantError(
+                        "unversioned SQLite database is not genuinely empty",
+                        code="coco_refinement.unversioned_database",
+                        context={
+                            "objects": [
+                                {"type": str(row["type"]), "name": str(row["name"])}
+                                for row in user_objects
+                            ]
+                        },
+                    )
+                try:
+                    connection.execute("BEGIN IMMEDIATE")
+                    for statement in _schema_statements():
+                        connection.execute(statement)
+                    connection.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
+                    _validate_schema_v1(connection)
+                    connection.commit()
+                except Exception:
+                    connection.rollback()
+                    raise
+                return
+            _validate_schema_v1(connection)
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(
@@ -837,6 +867,160 @@ class _Transaction:
                 self.connection.rollback()
         finally:
             self.connection.close()
+
+
+def _schema_statements() -> tuple[str, ...]:
+    return (
+        """
+        CREATE TABLE projects (
+            project_id TEXT PRIMARY KEY,
+            split TEXT NOT NULL CHECK(split IN ('train', 'val')),
+            source_fingerprint TEXT NOT NULL,
+            task_count INTEGER NOT NULL CHECK(task_count >= 0),
+            created_at TEXT NOT NULL,
+            UNIQUE(split)
+        )
+        """,
+        """
+        CREATE TABLE tasks (
+            task_id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(project_id)
+                ON UPDATE RESTRICT ON DELETE RESTRICT,
+            split TEXT NOT NULL CHECK(split IN ('train', 'val')),
+            image_id INTEGER NOT NULL CHECK(image_id > 0),
+            source_row_index INTEGER NOT NULL CHECK(source_row_index >= 0),
+            image_locator TEXT NOT NULL,
+            image_width INTEGER NOT NULL CHECK(image_width > 0),
+            image_height INTEGER NOT NULL CHECK(image_height > 0),
+            image_fingerprint TEXT NOT NULL,
+            revision INTEGER NOT NULL CHECK(revision >= 0),
+            epoch INTEGER NOT NULL CHECK(epoch >= 0),
+            current_generation INTEGER NOT NULL CHECK(current_generation >= 0),
+            base_row_hash TEXT NOT NULL,
+            committed_result_hash TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(project_id, source_row_index),
+            UNIQUE(project_id, image_id)
+        )
+        """,
+        "CREATE INDEX tasks_project_order ON tasks(project_id, source_row_index)",
+        """
+        CREATE TABLE drafts (
+            task_id TEXT PRIMARY KEY REFERENCES tasks(task_id)
+                ON UPDATE RESTRICT ON DELETE RESTRICT,
+            objects_json TEXT NOT NULL,
+            semantic_hash TEXT NOT NULL,
+            result_hash TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE mutations (
+            mutation_id TEXT PRIMARY KEY,
+            task_id TEXT NOT NULL REFERENCES tasks(task_id)
+                ON UPDATE RESTRICT ON DELETE RESTRICT,
+            request_fingerprint TEXT NOT NULL,
+            response_json TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """,
+        "CREATE INDEX mutations_task ON mutations(task_id, created_at)",
+    )
+
+
+def _validate_schema_v1(connection: sqlite3.Connection) -> None:
+    try:
+        tables = {
+            str(row["name"])
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+            if not str(row["name"]).startswith("sqlite_")
+        }
+        missing = set(_REQUIRED_COLUMNS) - tables
+        if missing:
+            raise RepositoryInvariantError(
+                "versioned SQLite database is missing required tables",
+                code="coco_refinement.schema_missing",
+                context={"missing": sorted(missing)},
+            )
+        for table, expected in _REQUIRED_COLUMNS.items():
+            actual = tuple(
+                (
+                    str(row["name"]),
+                    str(row["type"]).upper(),
+                    int(row["notnull"]),
+                    int(row["pk"]),
+                )
+                for row in connection.execute(f"PRAGMA table_info({table})")
+            )
+            if actual != expected:
+                raise RepositoryInvariantError(
+                    "versioned SQLite table columns are incompatible",
+                    code="coco_refinement.schema_columns",
+                    context={"table": table},
+                )
+        for table, expected in _REQUIRED_FOREIGN_KEYS.items():
+            actual = tuple(
+                (
+                    str(row["table"]),
+                    str(row["from"]),
+                    str(row["to"]),
+                    str(row["on_update"]),
+                    str(row["on_delete"]),
+                )
+                for row in connection.execute(f"PRAGMA foreign_key_list({table})")
+            )
+            if actual != expected:
+                raise RepositoryInvariantError(
+                    "versioned SQLite foreign keys are incompatible",
+                    code="coco_refinement.schema_foreign_keys",
+                    context={"table": table},
+                )
+        for index, (table, expected_columns) in _REQUIRED_INDEXES.items():
+            index_row = connection.execute(
+                "SELECT tbl_name FROM sqlite_master WHERE type = 'index' AND name = ?",
+                (index,),
+            ).fetchone()
+            actual_columns = tuple(
+                str(row["name"])
+                for row in connection.execute(f"PRAGMA index_info({index})")
+            )
+            if (
+                index_row is None
+                or str(index_row["tbl_name"]) != table
+                or actual_columns != expected_columns
+            ):
+                raise RepositoryInvariantError(
+                    "versioned SQLite index is missing or incompatible",
+                    code="coco_refinement.schema_indexes",
+                    context={"index": index},
+                )
+        integrity = tuple(
+            str(row[0]) for row in connection.execute("PRAGMA integrity_check")
+        )
+        if integrity != ("ok",):
+            raise RepositoryInvariantError(
+                "SQLite integrity_check failed",
+                code="coco_refinement.database_integrity",
+                context={"results": integrity},
+            )
+        foreign_key_violations = connection.execute(
+            "PRAGMA foreign_key_check"
+        ).fetchall()
+        if foreign_key_violations:
+            raise RepositoryInvariantError(
+                "SQLite foreign_key_check failed",
+                code="coco_refinement.database_foreign_keys",
+                context={"count": len(foreign_key_violations)},
+            )
+    except RepositoryError:
+        raise
+    except sqlite3.DatabaseError as exc:
+        raise RepositoryInvariantError(
+            "SQLite schema cannot be validated",
+            code="coco_refinement.database_integrity",
+            cause=exc,
+        ) from exc
 
 
 def _project_from_row(row: sqlite3.Row) -> ProjectRecord:

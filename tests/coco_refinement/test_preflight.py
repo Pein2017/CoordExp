@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ from src.coco_refinement.preflight import (
     RuntimeRootBusyError,
     RuntimeRootLock,
     SUPPORTED_DEPENDENCIES,
+    UnsafeRuntimeRootLockError,
     resolve_dependency_versions,
     run_launch_preflight,
     validate_process_shape,
@@ -135,6 +137,36 @@ def test_second_runtime_root_writer_is_rejected(tmp_path: Path) -> None:
             RuntimeRootLock(runtime_root).acquire()
     finally:
         first.release()
+
+
+def test_writer_lock_rejects_symlink_without_mutating_target(tmp_path: Path) -> None:
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    sentinel = tmp_path / "outside-sentinel"
+    original = b"must-not-change\n"
+    sentinel.write_bytes(original)
+    (runtime_root / ".writer.lock").symlink_to(sentinel)
+
+    with pytest.raises(UnsafeRuntimeRootLockError, match="unsafe writer lock"):
+        RuntimeRootLock(runtime_root).acquire()
+
+    assert sentinel.read_bytes() == original
+
+
+def test_writer_lock_rejects_preexisting_hardlink_without_mutation(
+    tmp_path: Path,
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    sentinel = tmp_path / "outside-sentinel"
+    original = b"must-not-change\n"
+    sentinel.write_bytes(original)
+    os.link(sentinel, runtime_root / ".writer.lock")
+
+    with pytest.raises(UnsafeRuntimeRootLockError, match="unsafe writer lock"):
+        RuntimeRootLock(runtime_root).acquire()
+
+    assert sentinel.read_bytes() == original
 
 
 def test_release_is_idempotent_and_allows_reacquire(tmp_path: Path) -> None:

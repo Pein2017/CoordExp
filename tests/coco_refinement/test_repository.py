@@ -394,6 +394,71 @@ def test_unsupported_schema_version_is_rejected_before_creating_tables(
     assert tables == {"future_owner"}
 
 
+def test_unversioned_nonempty_database_is_rejected_without_schema_blessing(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "foreign-v0.sqlite3"
+    with sqlite3.connect(path) as connection:
+        connection.execute("CREATE TABLE projects(foo TEXT)")
+        before_schema = connection.execute(
+            "SELECT type, name, sql FROM sqlite_master ORDER BY type, name"
+        ).fetchall()
+        before_version = connection.execute("PRAGMA user_version").fetchone()[0]
+    assert before_version == 0
+
+    with pytest.raises(RepositoryInvariantError) as exc_info:
+        SqliteDraftRepository(path)
+    assert exc_info.value.code == "coco_refinement.unversioned_database"
+
+    with sqlite3.connect(path) as connection:
+        after_schema = connection.execute(
+            "SELECT type, name, sql FROM sqlite_master ORDER BY type, name"
+        ).fetchall()
+        after_version = connection.execute("PRAGMA user_version").fetchone()[0]
+    assert after_schema == before_schema
+    assert after_version == before_version
+
+
+def test_empty_unversioned_database_is_initialized_atomically(tmp_path: Path) -> None:
+    path = tmp_path / "empty-v0.sqlite3"
+    path.touch()
+
+    SqliteDraftRepository(path)
+
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 1
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+    assert tables == {"projects", "tasks", "drafts", "mutations"}
+
+
+def test_version_one_missing_tables_is_rejected_without_self_healing(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "incomplete-v1.sqlite3"
+    with sqlite3.connect(path) as connection:
+        connection.execute("CREATE TABLE projects(foo TEXT)")
+        connection.execute("PRAGMA user_version = 1")
+        before_schema = connection.execute(
+            "SELECT type, name, sql FROM sqlite_master ORDER BY type, name"
+        ).fetchall()
+
+    with pytest.raises(RepositoryInvariantError) as exc_info:
+        SqliteDraftRepository(path)
+    assert exc_info.value.code == "coco_refinement.schema_missing"
+
+    with sqlite3.connect(path) as connection:
+        after_schema = connection.execute(
+            "SELECT type, name, sql FROM sqlite_master ORDER BY type, name"
+        ).fetchall()
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 1
+    assert after_schema == before_schema
+
+
 def test_empty_object_list_is_repository_data_not_a_commit_policy(
     tmp_path: Path,
 ) -> None:
