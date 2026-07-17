@@ -180,6 +180,42 @@ def test_hf_generate_requests_scored_deterministic_qwen_stop() -> None:
     assert model.transition_scores_seen_normalized is True
 
 
+def test_hf_generate_forwards_explicit_sampling_parameters() -> None:
+    from src.inference.backend import DecodeRequest, HFGenerateBackend
+
+    tokenizer = FakeTokenizer()
+    model = FakeHFModel(
+        sequences=[[11, 12, 21, tokenizer.eos_token_id]],
+        score_steps=[
+            _logits_for_tokens([21]),
+            _logits_for_tokens([tokenizer.eos_token_id]),
+        ],
+    )
+
+    HFGenerateBackend(model=model, tokenizer=tokenizer).generate_batch(
+        [
+            DecodeRequest(
+                request_id="row-1",
+                prompt_token_ids=[11, 12],
+                model_inputs={"input_ids": torch.tensor([11, 12])},
+                max_new_tokens=2,
+                repetition_penalty=1.05,
+                temperature=0.01,
+                top_p=1.0,
+            )
+        ],
+        model_identity={"family": "base-only"},
+        tokenizer_identity={"sha256": "tok-sha"},
+        generation_config_fingerprint="gen-fp",
+    )
+
+    assert model.generate_kwargs is not None
+    assert model.generate_kwargs["do_sample"] is True
+    assert model.generate_kwargs["temperature"] == pytest.approx(0.01)
+    assert model.generate_kwargs["top_p"] == pytest.approx(1.0)
+    assert model.generate_kwargs["repetition_penalty"] == pytest.approx(1.05)
+
+
 def test_hf_backend_prefers_model_device_over_cpu_request_tensors() -> None:
     from src.inference.backend import DecodeRequest, HFGenerateBackend
 

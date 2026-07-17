@@ -23,6 +23,8 @@ class DecodeRequest:
     model_inputs: Mapping[str, Any]
     max_new_tokens: int
     repetition_penalty: float = 1.0
+    temperature: float = 0.0
+    top_p: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -144,15 +146,19 @@ class HFGenerateBackend:
         generate_inputs = self._collate_generate_inputs(requests, device=target_device)
         generate_inputs["input_ids"] = input_ids
         generate_inputs["attention_mask"] = attention_mask
+        temperature, top_p = self._batch_sampling_parameters(requests)
+        sampling_kwargs: dict[str, Any] = {"do_sample": temperature > 0.0}
+        if temperature > 0.0:
+            sampling_kwargs.update(temperature=temperature, top_p=top_p)
         outputs = self.model.generate(
             **generate_inputs,
             max_new_tokens=max_new_tokens,
-            do_sample=False,
             repetition_penalty=self._batch_repetition_penalty(requests),
             eos_token_id=self._im_end_token_id(),
             pad_token_id=self._pad_token_id(),
             return_dict_in_generate=True,
             output_scores=True,
+            **sampling_kwargs,
         )
         scores = getattr(outputs, "scores", None)
         if scores is None:
@@ -247,6 +253,30 @@ class HFGenerateBackend:
                 context={"repetition_penalty": sorted(values)},
             )
         return values.pop()
+
+    def _batch_sampling_parameters(
+        self, requests: Sequence[DecodeRequest]
+    ) -> tuple[float, float]:
+        temperatures = {float(request.temperature) for request in requests}
+        top_ps = {float(request.top_p) for request in requests}
+        if len(temperatures) != 1 or len(top_ps) != 1:
+            raise RuntimeContractError(
+                "all decode requests in a V1 HF batch must use the same sampling parameters",
+                code="backend_trace.sampling_parameter_mismatch",
+                context={
+                    "temperature": sorted(temperatures),
+                    "top_p": sorted(top_ps),
+                },
+            )
+        temperature = temperatures.pop()
+        top_p = top_ps.pop()
+        if temperature < 0.0 or not 0.0 < top_p <= 1.0:
+            raise RuntimeContractError(
+                "HF sampling parameters are outside their supported ranges",
+                code="backend_trace.sampling_parameter_invalid",
+                context={"temperature": temperature, "top_p": top_p},
+            )
+        return temperature, top_p
 
     def _target_device(self, requests: Sequence[DecodeRequest]) -> torch.device:
         devices = {
