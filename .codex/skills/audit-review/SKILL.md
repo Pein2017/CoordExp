@@ -71,10 +71,19 @@ to close before the pilot moves.
 
 Use this sequence for experiment-oriented work:
 
-1. pre-implementation scientific-design review of the contrast and controls;
-2. minimal implementation and representative real smoke;
-3. targeted implementation/result audit based on observed runtime risks;
-4. stop, narrow, revise, or promote.
+1. write the contrast, strongest alternative, and the observation that would
+   change the decision;
+2. run a minimal implementation and representative real smoke;
+3. audit only the conclusion-changing risks exposed by that smoke;
+4. perform one claim review when the canonical result is ready to close;
+5. stop, narrow, revise, or promote.
+
+For an exploratory unit with four or fewer cases, use a real smoke and simple
+no-op or paired controls as the default pre-launch check. Add a general
+pre-launch audit only when the planned contrast itself has an unresolved risk
+that can change the conclusion. Repeat an audit after changed code or evidence
+touches an open Priority 0 or Priority 1 finding; otherwise close the unchanged
+decision surface with the existing review.
 
 After two review rounds, prefer narrowing the surface or running a concrete
 probe over adding another general guard. A new runtime guard must name the

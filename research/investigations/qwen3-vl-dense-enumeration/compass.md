@@ -542,3 +542,7 @@ After each closed research unit:
    pass;
 6. keep implementation and architecture authorization separate from the belief
    update.
+7. after at most three consecutive units with four or fewer cases on one
+   mechanism thread, require the next unit to estimate how common the effect is,
+   compare a standing checkpoint or ordering control, or test a concrete
+   training change.

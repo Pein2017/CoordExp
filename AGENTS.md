@@ -47,6 +47,9 @@
 - Every abbreviation, shorthand name, experimental-arm identifier, hypothesis
   identifier, and coined term in durable artifacts must include its complete
   name and operational meaning.
+- Use ordinary, concrete language. Introduce an acronym, metaphor, or method
+  name only when it is clearer than a short description of the actual
+  comparison or behavior, and explain it in plain language at first use.
 
 ## Execution Harness
 

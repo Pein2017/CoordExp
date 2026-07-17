@@ -36,7 +36,7 @@ Their names may remain in immutable traces and historical provenance.
 | Bounded mechanical implementation after a local failure | `gpt-5.6-luna`, maximum reasoning | Explicit acceptance criterion; no unresolved scientific judgment |
 | Research synthesis and contract audit | `gpt-5.6-sol`, medium reasoning | Evidence-linked verdict and claim boundary |
 | Novel hook, cache, row-state, precision, or cross-layer implementation | `gpt-5.6-sol`, high reasoning | Real runtime smoke and conclusion-owning verification |
-| Model-behavior diagnosis or cross-root causal tracing | `gpt-5.6-sol`, extra-high reasoning | Competing explanations and discriminating evidence |
+| Model-behavior diagnosis or cross-root causal tracing | `gpt-5.6-sol`, high reasoning | Competing explanations and discriminating evidence |
 
 `gpt-5.6-luna` with maximum reasoning remains a bounded implementation worker,
 not a scientific or architecture judge. Current evidence supports this role
@@ -44,19 +44,30 @@ qualitatively; it does not constitute a controlled cost-quality benchmark.
 
 ## Escalation And Ownership
 
-1. Assign one implementation owner to one semantic surface. Do not run parallel
+1. Inspect an exact known artifact, file, symbol, or canonical routing document
+   directly. Spawn a scout when the owner surface still needs discovery.
+2. Before spawning, classify the task by the cost of an undetected error and by
+   how strong its mechanical acceptance check is. Use Luna when a path, command,
+   test, or receipt can decide success; use Sol when judgment can change the
+   scientific meaning or conclusion.
+3. Assign one implementation owner to one semantic surface. Do not run parallel
    implementations of the same mechanism merely to create a model race.
-2. Run the smallest real smoke as soon as the skeleton can exercise the
+4. Run the smallest real smoke as soon as the skeleton can exercise the
    conclusion-critical seam. Do not wait for a broad framework to be complete.
-3. Give a local defect one focused follow-up using the existing agent context.
-4. Escalate to `gpt-5.6-sol`, high reasoning, when the failure indicates a
+5. Give a local defect one focused follow-up using the existing agent context.
+6. Escalate to `gpt-5.6-sol`, high reasoning, when the failure indicates a
    semantic misunderstanding, repeated stall, cache or hook ambiguity, runtime
    composition mismatch, or absence of an executable receipt. Do not issue
    duplicate blind retries to `gpt-5.6-luna`.
-5. Reserve `gpt-5.6-sol`, extra-high reasoning, for unresolved Priority 0 or
+7. Reserve `gpt-5.6-sol`, extra-high reasoning, for unresolved Priority 0 or
    Priority 1 causal contradictions, not routine review.
-6. Adjudicate disagreements from executed evidence, not model prestige,
+8. Adjudicate disagreements from executed evidence, not model prestige,
    majority vote, prose length, or raw token expenditure.
+
+Before adding another Sol review lane, check the current goal's child-agent
+count, elapsed time, open findings, and whether the proposed lane owns a new
+decision. Use `audit-review` as the single source for review count, blocking
+criteria, and repeat-review rules.
 
 Use minimal context inheritance: `none` or one recent turn for self-contained
 discovery, one or two recent turns for bounded implementation and review, and
@@ -68,7 +79,8 @@ full history only for a task that genuinely requires complete-thread synthesis.
 - `contract_auditor` and `research_synthesizer`: `gpt-5.6-sol`, medium reasoning.
 - `implementation_worker`: `gpt-5.6-sol`, high reasoning.
 - `model_diagnostician` and `upstream_relation_tracer`: `gpt-5.6-sol`,
-  extra-high reasoning.
+  high reasoning. Escalate to extra-high only for an unresolved Priority 0 or
+  Priority 1 causal contradiction.
 
 Change these executable assignments only after repeated task evidence shows a
 stable routing improvement; one anecdotal success or failure is insufficient.

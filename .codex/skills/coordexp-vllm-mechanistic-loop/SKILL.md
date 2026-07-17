@@ -58,12 +58,18 @@ This skill complements `model-diagnosis`. Use `model-diagnosis` for immediate sy
 Use this default order:
 
 1. compact research outline;
-2. one scientific-design review of the contrast and strongest confounds;
-3. minimal implementation on experiment-local surfaces;
-4. representative real graphics-processing-unit smoke;
-5. sample-level visualization or behavior anatomy;
-6. targeted audit of risks exposed by the smoke;
-7. stop, revise, or promote.
+2. minimal implementation on experiment-local surfaces;
+3. representative real graphics-processing-unit smoke;
+4. sample-level visualization or behavior anatomy;
+5. targeted audit only for a risk exposed by the smoke that could change the
+   conclusion;
+6. stop, revise, or promote.
+
+Balance depth with breadth. After at most three consecutive units with four or
+fewer cases on one mechanism thread, make the next unit do at least one of the
+following: estimate how common the effect is, compare a standing control such
+as another checkpoint or ordering policy, or test a concrete training change.
+The owning research compass may set a stricter rule.
 
 Do not require every review finding to close before the first model observation.
 Block an exploratory run only when a finding could change the scientific
@@ -71,6 +77,9 @@ conclusion by running the wrong input/model/prompt, corrupting semantic or
 geometry alignment, changing more than the declared factor, losing request
 attribution, or invalidating the primary observation. Record other findings as
 known limitations or promotion blockers.
+
+Use the exploratory review budget in `audit-review`; that skill owns which
+findings block a pilot and when another review is justified.
 
 For inference-led case studies and mechanism probes, start with four to eight
 carefully selected cases and normally stay at or below sixteen. Use metrics to
