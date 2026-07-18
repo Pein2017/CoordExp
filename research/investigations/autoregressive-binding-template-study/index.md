@@ -7,6 +7,7 @@ This investigation synthesizes Codex experiment records about autoregressive coo
 - [Overview](overview.md) - compressed arc and source boundary
 - [Findings](findings.md) - durable conclusions and evidence limits
 - [Evidence Atlas](evidence_atlas.md) - exhaustive mapping from raw records to synthesized destinations
+- [Historical Experiment Handoff](../coordexp-experiment-knowledge-handoff/) - cross-branch selected evidence, negative results, and provenance that complement this 223-record study
 - [Experiments](experiments/) - phase summaries
 - [Mechanisms](mechanisms/) - local reusable explanations extracted from the investigation
 
