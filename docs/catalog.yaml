@@ -49,7 +49,7 @@ config_surfaces:
       implementation: src/inference/
       evaluator: src/eval/detection_consumer.py
       accepted_validation_config: configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_step917_val200.yaml
-      notes: "Fixed val200 inference/eval is the accepted V1 validation gate; full validation-dataset evaluation is optional."
+      notes: "Dynamic HF and offline vLLM share prompt, trace, artifact, and evaluator contracts. FP32 is strict parity mode; BF16 vLLM is throughput-only evidence. Fixed val200 is the accepted validation gate; full validation-dataset evaluation is optional."
   historical_ms_swift:
     - id: unified_training_pipeline_stage2_rollout_correction
       status: historical-archive

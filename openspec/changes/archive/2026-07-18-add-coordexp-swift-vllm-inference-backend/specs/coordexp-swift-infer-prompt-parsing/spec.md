@@ -57,24 +57,24 @@ described as the tensors executed by vLLM.
 - **THEN** the backend fails before native projection or generation
 
 ### Requirement: Exact backend prompt-token parity
-Both initial generation and raw replay MUST submit the unexpanded input prompt
-form plus the same image and `do_resize: false`. Every backend MUST return the
+Both initial generation and forced raw decode replay MUST submit the unexpanded
+input prompt form plus the same image and `do_resize: false`. Every backend MUST return the
 exact prompt token ids it executed. For vLLM, this evidence MUST come from
 `RequestOutput.prompt_token_ids`, not a backend echo or self-attestation. Those
 ids MUST equal `expected_executed_prompt_token_ids`, including the expanded
-image placeholders and assistant generation transition. Raw replay MUST submit
-`input_prompt_token_ids + generated_token_ids` and its returned executed ids
-MUST equal `expected_executed_prompt_token_ids + generated_token_ids`.
-Mismatch MUST be fatal even when generation otherwise succeeds.
+image placeholders and assistant generation transition. Raw replay MUST return
+that same executed prompt prefix and then reproduce the authoritative generated
+ids through incremental decode. Mismatch MUST be fatal even when generation
+otherwise succeeds.
 
 #### Scenario: vLLM retokenizes differently
 - **WHEN** vLLM reports prompt ids different from the shared prompt record
 - **THEN** the row fails before parsing and no score is published
 
 #### Scenario: Replay submits already-expanded image ids
-- **WHEN** raw replay submits executed visual-placeholder ids plus the image and
-  would expand the image a second time
-- **THEN** request validation fails before replay
+- **WHEN** raw replay submits executed visual-placeholder ids plus the image
+- **THEN** request validation fails before replay because the raw pass must
+  start from the shared unexpanded prompt form
 
 ## MODIFIED Requirements
 
@@ -91,7 +91,7 @@ prompt ids, exact multimodal placeholder range/count, processor identity, and
 effective `do_resize: false` kwargs; the observed placeholder count MUST equal
 the expected merged visual-token count.
 
-#### Scenario: Valid HF no-resize image
+#### Scenario: Valid no-resize image
 - **WHEN** HF executes an image satisfying no-resize constraints
 - **THEN** expected and executed tensor grid evidence match
 

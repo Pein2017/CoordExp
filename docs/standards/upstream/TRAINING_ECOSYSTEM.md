@@ -85,6 +85,24 @@ lorap_lr_ratio
   state; inspect wrapper status before re-wrapping.
 - DoRA has extra overhead and should be merged for inference when applicable.
 
+## CoordExp-Swift HF And vLLM Inference
+
+- Dynamic HF remains a first-class inference backend and directly loads the
+  base model, DoRA adapter, and selected-token embedding delta.
+- Installed vLLM `0.14.1` does not load CoordExp DoRA composition directly.
+  CoordExp therefore materializes base, safe PEFT DoRA merge, and one additive
+  selected-token delta fold into a content-addressed immutable HF snapshot
+  before vLLM starts.
+- Materialized HF is the composition oracle used to separate execution-model
+  fidelity from backend behavior. It does not replace dynamic HF.
+- vLLM FP32 is the strict parity mode. vLLM BF16 is supported for throughput,
+  but observed BF16 likelihood and val200 drift means it is non-parity evidence.
+- vLLM runs one offline engine per rank-local worker with TP=1 and DP=1; the
+  existing CoordExp controller owns outer data parallelism and ordered merge.
+- Policy likelihood after active decode processors remains score-authoritative.
+  Optional raw LM-head likelihood is diagnostic and uses a separate exact
+  forced-decode replay in vLLM.
+
 ## TRL And RLHF
 
 - ms-swift uses TRL as an algorithm base layer but heavily subclasses it.

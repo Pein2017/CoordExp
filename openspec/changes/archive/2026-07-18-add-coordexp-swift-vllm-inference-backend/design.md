@@ -83,7 +83,20 @@ session receipt. No other missing native stop reason is inferred.
 `execution_model.py` owns derived model identity and publication; and
 `runtime.py` owns processor-only frontend and session construction. The old
 `InferenceRuntime`, model-input request field, backend factories, and pipeline
-batch loop are deleted after HF parity is proven.
+batch loop are deleted after the backend-session HF implementation proves
+canonical artifact equivalence. HF remains a supported first-class backend.
+The backend session accepts semantic multimodal decode requests and has no
+dependency on evaluator or inference-artifact orchestration. Future GRPO or
+other post-training rollout owners are expected to reuse this session,
+execution-model, likelihood, and worker-lifecycle boundary rather than create a
+second vLLM wrapper. Building a GRPO trainer is outside this change.
+
+The accepted support matrix has four explicit roles. Dynamic HF is the
+first-class compatibility backend and loads the configured base, DoRA adapter,
+and selected-token embedding delta directly. Materialized HF is the execution-
+model composition oracle. vLLM FP32 is the strict cross-backend parity mode.
+vLLM BF16 is a supported throughput mode, but observed BF16 token/likelihood
+and val200 metric drift means it MUST NOT claim strict HF parity.
 
 ### Semantic image planning stays shared; native projection is private
 
@@ -112,12 +125,18 @@ score-owned channel explicitly.
 HF gathers policy likelihood from generation scores and raw likelihood from
 `output_logits=True`, with FP32 `log_softmax` in both cases. A source probe
 compares HF raw generation logits against a teacher-forced forward reference.
-vLLM runs with `logprobs_mode="processed_logprobs"`; when raw tracing is
-enabled it submits `input_prompt_token_ids + generated_ids` with the same image
-using prompt logprobs, verifies the returned executed prefix equals
-`expected_executed_prompt_token_ids + generated_ids`, and extracts continuation
-positions. It MUST NOT replay the already-expanded visual-placeholder prefix.
-Replay-generated throwaway tokens are never included in artifacts.
+vLLM first runs with `logprobs_mode="processed_logprobs"` and treats that
+completion as the only generation and policy-score authority. When raw tracing
+is enabled, it closes that engine and opens a fresh rank-local engine over the
+same execution snapshot with `logprobs_mode="raw_logprobs"`. A version-pinned
+CoordExp logits processor forces the authoritative generated token at every
+incremental decode step. vLLM computes raw FP32 log-softmax before applying
+that processor, so the forced choice does not alter the reported raw
+distribution; it only guarantees that the second decode follows the same
+conditioning prefix. Returned prompt ids, generated ids, stop semantics, and
+length MUST match before the two channels are combined. Prompt-logprob replay
+is retained only as superseded qualification evidence because multimodal
+prefill is not the same executed continuation state after token zero.
 
 ### Current checkpoint composition is materialized once
 
@@ -136,7 +155,8 @@ NOT be conflated.
 
 Materialization loads the base directly in the target dtype on CPU, validates
 the DoRA payload through the adapter owner, constructs
-`PeftModel.from_pretrained(..., is_trainable=False)`, and calls
+`PeftModel.from_pretrained(..., is_trainable=False,
+autocast_adapter_dtype=False)`, and calls
 `merge_and_unload(safe_merge=True, adapter_names=["default"])`. It then folds
 the FP32 selected-token delta exactly once into target-dtype rows of the tied
 embedding/lm-head weight without a later whole-model cast, removes adapter and
@@ -177,7 +197,8 @@ live in a required `backend.hf` block; vLLM requires only its strict
 `backend.vllm` block with `gpu_memory_utilization`. The opposite backend block
 is rejected, and arbitrary engine kwargs are not exposed. The initial
 candidate is 0.14.1. The accepted version set is derived only from passed
-qualification receipts committed under this change. Version changes require
+runtime-qualification receipts committed under the stable
+`src/inference/qualification_receipts/` runtime surface. Version changes require
 updating the source-study receipt and rerunning real probes.
 
 A runtime qualification receipt binds the probe implementation hash, exhaustive
@@ -193,7 +214,9 @@ output checkpoint fingerprint. A base run must match the exact qualified base
 snapshot. A composed execution model may differ only when its receipt points
 to that qualified source base, preserves the qualified architecture,
 tokenizer, processor, and template identities, and carries a passed
-dynamic-HF/materialized-HF parity receipt. An unrelated model or source drift
+composition-fidelity receipt. The receipt proves exact merged target weights,
+selected-token rows, and tied storage while retaining dynamic-HF behavioral
+diagnostics. An unrelated model or source drift
 fails before engine construction.
 
 The receipt distinguishes semantic invariants from run-varying engine values.
@@ -212,8 +235,9 @@ uniprocess mode it explicitly calls the 0.14.1 in-process engine-core shutdown
 surface, releases references, clears CUDA caches, and verifies that no child
 process appeared or survived. vLLM 0.14.1 may retain compiled model tensors
 until interpreter exit, so the fresh rank worker remains the final resource
-boundary: its parent requires worker exit, no surviving descendants, and GPU
-memory returned to the pre-worker baseline. Multiprocess mode, if later
+boundary: its parent requires worker exit and no surviving owned process group.
+Parent-observed GPU memory remains receipt diagnostics rather than a publication
+gate because shared-device occupancy can change independently. Multiprocess mode, if later
 qualified, requires the corresponding explicit core-client shutdown plus the
 same post-worker proof. Garbage collection alone is never the cleanup contract.
 
@@ -227,14 +251,19 @@ new optional behavior.
 - **Materialized models consume disk and CPU build time** -> content-addressed
   reuse, one controller-side build, explicit hashes, and no rebuild on a valid
   hit.
-- **DoRA or tied-delta folding can subtly change weights** -> compare dynamic
-  HF and materialized HF logits, selected-token logits, generated ids, and tied
-  storage before vLLM is accepted.
+- **DoRA or tied-delta folding can subtly change weights** -> require exact
+  merged-target identities, selected-token rows, and tied storage after reload;
+  record dynamic-HF/materialized-HF logits and generated ids as BF16 behavioral
+  diagnostics. Materialized HF is the vLLM oracle and canonical dynamic HF
+  remains the val200 behavioral baseline. Use FP32 for strict cross-backend
+  parity; label BF16 vLLM as throughput-only evidence.
 - **vLLM processor behavior can drift from HF** -> require exact prompt ids,
   no-resize receipts, one-image limits, fixed-fixture token parity, and matched
   val200 metrics.
-- **Raw prompt-logprob behavior is upstream-version-sensitive** -> pin one
-  version, record source handles, use repeated-token probes, and fail closed.
+- **Dual vLLM likelihood requires a second engine/decode when enabled** -> keep
+  raw tracing opt-in, close the processed engine before opening the raw engine,
+  bind the forced-replay processor source, require exact token/stop replay, and
+  fail closed. Policy-only vLLM retains one engine and one generation pass.
 - **One engine per rank adds lifecycle complexity** -> distinguish the offline
   API caller from engine-owned child processes, pin the process mode,
   context-manage close, bound worker waits, inspect child processes, preserve
@@ -257,8 +286,8 @@ new optional behavior.
 
 ## Open Questions
 
-No user-owned decisions remain. Wave 0 has executed the real upstream probe;
-its corrected exhaustive-identity and executed-media receipt must pass the
-second independent review gate before Wave 1 begins. Any later probe failure
-stops at its wave gate and revises the change before another version or engine
-argument envelope is qualified.
+No user-owned decisions remain. The real upstream, composition, concurrency,
+forced-replay, distributed, and matched-val200 probes have executed. Final
+promotion remains gated on exact-source receipt revalidation, independent
+review convergence, stable-spec sync, and archival. Any future version or
+engine-argument envelope requires its own executed qualification before use.

@@ -124,11 +124,16 @@ backend: one process per rank with replicated DDP. There are no separate
 single-process or DeepSpeed training modes. Rank zero owns the shared run
 files, while every rank participates in checkpoint synchronization.
 
-Inference has an implemented HF generation backend; vLLM fields are reserved
-and validated as unavailable in the current implementation. Checkpoint handoff
-is through explicit adapter and optional selected-token embedding-delta paths;
-the training artifacts do not provide exact optimizer, scheduler, scaler,
-dataloader, iterator, or RNG training-state resume.
+Inference supports two explicit backends through the same semantic request,
+prompt, parser, scoring, artifact, and evaluator contracts. Dynamic HF loads
+the configured base, DoRA adapter, and optional selected-token embedding delta
+directly. Offline vLLM loads a content-addressed execution model in which DoRA
+and the embedding delta have been deterministically materialized. FP32 is the
+cross-backend parity mode; BF16 vLLM is a throughput mode and must not claim
+strict HF parity. Checkpoint handoff remains through explicit adapter and
+optional selected-token embedding-delta paths; the training artifacts do not
+provide exact optimizer, scheduler, scaler, dataloader, iterator, or RNG
+training-state resume.
 
 The accepted two-rank BF16 production-mimic smoke completed one finite applied
 step and emitted one train plus one eval logging row in one shared ten-file run

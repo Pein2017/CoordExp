@@ -112,14 +112,26 @@ Stable semantics are owned by these specs:
 - [adapter and selected-token payloads](../openspec/specs/coordexp-swift-adapters-embeddings-optim/spec.md)
 - [inference pipeline](../openspec/specs/coordexp-swift-infer-pipeline/spec.md)
 - [inference backend trace](../openspec/specs/coordexp-swift-infer-backend-trace/spec.md)
+- [inference execution model](../openspec/specs/coordexp-swift-infer-execution-model/spec.md)
 - [inference scoring artifacts](../openspec/specs/coordexp-swift-infer-scoring-artifacts/spec.md)
 - [detection evaluator](../openspec/specs/coordexp-swift-detection-evaluator/spec.md)
 
 ## Current evaluation boundary
 
-The implemented inference backend is HF generation through
-`src/inference/backend.py`. vLLM fields are reserved and validated as
-unimplemented in this source route. The direct evaluator consumes
+Inference supports both dynamic HF and offline vLLM through one backend-neutral
+session contract. HF remains the direct compatibility path for base plus DoRA
+plus selected-token embedding delta. vLLM uses a content-addressed materialized
+execution model because upstream vLLM does not load this DoRA composition
+directly. Materialized HF is the composition oracle used to isolate
+materialization from backend differences. FP32 is the strict cross-backend
+parity mode; BF16 vLLM is supported for throughput but is not strict parity
+evidence. The backend session consumes semantic multimodal decode requests and
+does not depend on evaluator or inference-artifact orchestration. Future GRPO
+or other post-training rollout code should reuse that session, execution-model,
+likelihood, and worker-lifecycle boundary rather than introduce a second vLLM
+engine wrapper. No GRPO trainer is implemented by this inference change.
+
+The direct evaluator consumes
 `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, and the scored provenance sidecar
 from the same artifact directory, then writes COCO artifacts and metrics.
 

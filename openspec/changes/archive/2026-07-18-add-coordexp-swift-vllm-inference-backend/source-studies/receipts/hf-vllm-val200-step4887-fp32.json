@@ -1,0 +1,144 @@
+{
+  "cleanup": {
+    "owned_processes_after": [],
+    "publication_gate": "all_owned_workers_exited_and_no_runtime_cache_residue",
+    "worker_runtime_cache_residue": []
+  },
+  "counters": {
+    "hf": {
+      "decode_success": 200,
+      "dropped_predictions": 0,
+      "invalid_pred_bbox": 0,
+      "parser_failures": 0,
+      "rows": 200,
+      "score_failures": 0,
+      "stop_reasons": {
+        "im_end": 200
+      },
+      "truncated_decodes": 0,
+      "unknown_category_predictions": 0
+    },
+    "vllm": {
+      "decode_success": 200,
+      "dropped_predictions": 0,
+      "invalid_pred_bbox": 0,
+      "parser_failures": 0,
+      "rows": 200,
+      "score_failures": 0,
+      "stop_reasons": {
+        "im_end": 200
+      },
+      "truncated_decodes": 0,
+      "unknown_category_predictions": 0
+    }
+  },
+  "gates": {
+    "benchmark_eligible": true,
+    "benchmark_metric": true,
+    "dynamic_hf_preserved": true,
+    "generation_policy_identity": true,
+    "map_abs_delta_le_0p005": true,
+    "mrecall_abs_delta_le_0p005": true,
+    "ordered_input_image_gt_identity": true,
+    "row_count_200": true,
+    "terminal_cleanup": true,
+    "vllm_materialized_execution_model": true
+  },
+  "identity": {
+    "current_application_qualification": {
+      "path": "src/inference/qualification_receipts/vllm-0.14.1-application-sources.json",
+      "sha256": "40f20f71f8bea2f1d8f550faf012fea170c0b624bcd84767dbde012ebf3ccd2a",
+      "source_count": 23
+    },
+    "durable_vllm_composition_fidelity": {
+      "composition_key": "39df6dd7a41edb1b2d94db8772b487a21781998dd84d637bd16c81986cb1743a",
+      "digest": "778b5358dc9857c4024dc7f13c817bbe3e324c425844f46d87670b340ee4b0bc",
+      "path": "src/inference/qualification_receipts/execution-model-composition-39df6dd7a41edb1b2d94db8772b487a21781998dd84d637bd16c81986cb1743a.json",
+      "sha256": "e07af19db8aa8f42d4861023192392052669f941799e0904c7695d26d785ab21",
+      "target_dtype": "fp32"
+    },
+    "evaluator_source_sha256": "cd7ee9ced7e5f4e6940afe487d35b7cd91be61df98941288473bc76e206594ea",
+    "generation_config_fingerprint": "2b08401a5638c7b76abe84e45c6a6786c3cb3fd9d7ce713d2a629cd907baa0fe",
+    "ordered_row_ids_sha256": "217d90415e9ba6f471b16803bc3ca066382949a8feceb00f34b733ae3a45e2e9",
+    "prompt_policy_fingerprint": "609b96ccb7022de0e35d0b3434483e62e8ce13a6c3f83b3dc68ebe1da928c157",
+    "score_policy_fingerprint": "0dbff18710078e8bc7d3484f1e1b04e83de2d6c087dc7e631a2882ded50ffa7e"
+  },
+  "metrics": {
+    "absolute_delta": {
+      "mAP": 0.0011065226287719776,
+      "mRecall": 0.0003795564820910924
+    },
+    "hf": {
+      "AP50": 0.5841631431589152,
+      "AP75": 0.4452713650825738,
+      "mAP": 0.4253271187757268,
+      "mRecall": 0.5087078247640996,
+      "predictions": 1274
+    },
+    "threshold": 0.005,
+    "vllm": {
+      "AP50": 0.5857104485581892,
+      "AP75": 0.44605871368042915,
+      "mAP": 0.4264336414044988,
+      "mRecall": 0.5090873812461907,
+      "predictions": 1275
+    }
+  },
+  "mode": {
+    "bf16_vllm": "supported_throughput_non_parity",
+    "hf": "dynamic_hf_fp32_first_class",
+    "materialized_hf": "composition_fidelity_oracle_only",
+    "vllm": "materialized_vllm_fp32_strict_parity"
+  },
+  "performance": {
+    "hf": {
+      "generated_tokens_per_second": 100.07016951627543,
+      "peak_cuda_memory_allocated_bytes_per_rank_max": 14425999872,
+      "peak_cuda_memory_reserved_bytes_per_rank_max": 17777557504,
+      "requests_per_second": 1.6417056765856028
+    },
+    "vllm": {
+      "generated_tokens_per_second": 564.5005268418145,
+      "peak_cuda_memory_allocated_bytes_per_rank_max": 56498340352,
+      "peak_cuda_memory_reserved_bytes_per_rank_max": 57141100544,
+      "requests_per_second": 9.2548655929472
+    },
+    "vllm_over_hf_generated_tokens_per_second": 5.64104697304429
+  },
+  "receipt_version": "coordexp-swift-hf-vllm-val200-acceptance-v2",
+  "schema_version": 1,
+  "sources": {
+    "hf": {
+      "evaluation_receipt_path": "evaluation/detection/evaluation_receipt.json",
+      "evaluation_receipt_sha256": "b2db5b685407409fe9f85a4331a395d762c980f5635d05a4a33f360351c68e10",
+      "manifest_path": "run_manifest.json",
+      "manifest_sha256": "4b5c65be3421c97196b78b2162681f2ddb31010da6f2311d087b8eca72740d93",
+      "metrics_path": "evaluation/detection/metrics.json",
+      "metrics_sha256": "1d9ff8b74199f9569b7d4d901c599a79e0f53735cb9bc46740d3177deafd499a",
+      "resolved_config_path": "configs/resolved.yaml",
+      "resolved_config_sha256": "1397b0ddf337acbf4fd37e9bd5b63c859c2b2937f100de6a167458ae2bce27b0",
+      "run_dir": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-pure-ce-typegate-dora-r16a32-step4887-val200-dynamic-hf-fp32-20260718T125250Z",
+      "scored_path": "gt_vs_pred_scored.jsonl",
+      "scored_sha256": "4eeeb12e7fdb0fc3eb9d9b4c5e293bb90cd2b621a6180eb008609e9c21e64fd6",
+      "summary_path": "summary.json",
+      "summary_sha256": "9ebcba996841b5f56af9dd0c1378c352f86cfcd76dcd9ea7dc0b2bf04ec8e77e"
+    },
+    "vllm": {
+      "application_qualification_receipt_sha256": "3fb96412c7037a909abb82d01dab5f9d38a45c5b294b39cc46a964d86767b0c1",
+      "evaluation_receipt_path": "evaluation/detection/evaluation_receipt.json",
+      "evaluation_receipt_sha256": "3712845c1334de5ea2091d2fc5100ea5e8027a664d16e46085921c51b8b8a9a6",
+      "manifest_path": "run_manifest.json",
+      "manifest_sha256": "122c2a733890d84acab5b64f81cd6b8b2f10987a26df9f2034758d50e3e47a80",
+      "metrics_path": "evaluation/detection/metrics.json",
+      "metrics_sha256": "27a027c0ed7f74cba3d8fd5c239d36559fd60f1b55f86477466cfa3b68a82e83",
+      "resolved_config_path": "configs/resolved.yaml",
+      "resolved_config_sha256": "faa399950a01f958ddeb816451484358dc28e34e6f318edd8885fc5dc3a6af67",
+      "run_dir": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-pure-ce-typegate-dora-r16a32-step4887-val200-vllm-fp32-20260718T124400Z",
+      "scored_path": "gt_vs_pred_scored.jsonl",
+      "scored_sha256": "89ac96ef2f8382a40bcce2ba74bc819649cecfbd0773365a1e9ccded834b4faa",
+      "summary_path": "summary.json",
+      "summary_sha256": "1505f60061f5e62cfa9c1573a04ad598a7abeed73add4c0ea9f97a498068445a"
+    }
+  },
+  "status": "passed"
+}

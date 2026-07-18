@@ -52,25 +52,27 @@ Delta identity hashes metadata and tensor files plus tensor key/shape/dtype,
 selected token ids/strings, base-config identity, and tokenizer identity. A
 checkpoint-handoff manifest is an optional path source, not a prerequisite.
 
-## Qualification
+## Composition Fidelity
 
-Reload dynamic and materialized HF compositions independently. Compare tied
-weights, selected-token weight rows, fixed-prefix raw logits, selected-token
-logits, and exact greedy token ids on a real multimodal fixture. Selected rows
-must be bitwise equal after target-dtype casting. FP32 full-vocabulary logits
-use `rtol=1e-4`, `atol=5e-3`; FP32 selected-token logits use `rtol=1e-4`,
-`atol=2e-3`. Tied storage and greedy token ids are exact checks. Only then may
-vLLM consume the derived snapshot.
+Reload the materialized HF composition and require exact owner-recorded merged
+target weights, selected-token rows after target-dtype casting, and tied
+storage. Run dynamic and materialized HF independently on the same real
+multimodal fixture and retain fixed-prefix raw logits, selected-token logits,
+and greedy ids as BF16 behavioral diagnostics. FP32 full-vocabulary diagnostics
+use reference `rtol=1e-4`, `atol=5e-3`; selected-token diagnostics use
+`rtol=1e-4`, `atol=2e-3`. Exceeding those references does not invalidate exact
+state composition. Materialized HF is the vLLM execution oracle; canonical
+dynamic HF remains supported and is the val200 behavioral baseline.
 
 ## Executed BF16 Finding
 
 The real step-4887 base-plus-DoRA-plus-delta probe established two separate
 facts:
 
-- After disabling PEFT adapter autocast, the Transformers-mixin and PeftModel
-  loaders produce bitwise-equal BF16 base, LoRA-A, LoRA-B, magnitude, and
-  safely merged weights. A safely merged language-layer weight also remains
-  bitwise equal after standard snapshot save/reload.
+- After disabling PEFT adapter autocast, all 196 owner-recorded safely merged
+  DoRA target weights remain bitwise equal after standard snapshot save/reload.
+  The effective dynamic-HF selected-token rows, materializer-folded rows, and
+  reloaded materialized-HF rows also share one exact content hash.
 - The existing unmerged DoRA forward and the equivalent merged BF16 linear
   layer are not execution-identical because they evaluate the same algebra
   through different BF16 operation orderings. On the accepted row-0 fixture,
@@ -79,11 +81,11 @@ facts:
   difference `0.75390625`, and the first greedy-token mismatch at generated
   index `4`. A layer-level FP32 merge did not remove the discrepancy.
 
-Therefore the owner-defined state composition is exact, while the current
-dynamic-forward behavioral parity gate is unresolved. No composed vLLM support
-is qualified by this finding. The active design requires a user-owned decision
-between preserving canonical dynamic HF behavior with an explicitly diagnostic
-dynamic/materialized comparison, or changing canonical HF execution semantics.
+Therefore the owner-defined state composition is exact while dynamic-forward
+behavior is not execution-identical. The user approved preserving canonical
+dynamic HF, treating this dynamic/materialized comparison as diagnostic, using
+materialized HF as the vLLM oracle, and retaining matched val200 metrics as the
+behavioral compatibility gate.
 
 ## Failure Policy
 

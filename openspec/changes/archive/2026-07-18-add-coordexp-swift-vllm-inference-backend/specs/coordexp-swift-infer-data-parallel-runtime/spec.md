@@ -29,10 +29,12 @@ complete owned process tree before returning terminal failure. It MUST NOT
 allocate another parent-visible GPU.
 
 The fresh worker process MUST be the final vLLM resource boundary. The
-controller MUST observe successful worker exit, no surviving descendants, and
-GPU memory returned to the recorded pre-worker baseline before publishing
-canonical top-level completion artifacts. HF MAY retain direct one-rank
-execution.
+controller MUST observe successful worker exit and no surviving owned process
+group before publishing canonical top-level completion artifacts. Real smoke
+receipts SHOULD record parent-observed pre/post GPU memory as diagnostic
+evidence, but global device-memory equality MUST NOT gate publication because
+unrelated processes may change occupancy on shared GPUs. HF MAY retain direct
+one-rank execution.
 
 #### Scenario: Worker engine escapes CUDA binding
 - **WHEN** a vLLM engine reports or allocates a device other than logical
@@ -48,8 +50,8 @@ execution.
 #### Scenario: Session closes but GPU memory remains in the worker
 - **WHEN** in-process vLLM shutdown completes while compiled model tensors are
   still allocated
-- **THEN** canonical publication waits for worker exit and parent-observed GPU
-  memory return
+- **THEN** canonical publication waits for worker and owned process-group exit,
+  after which the operating system releases that process-owned CUDA context
 
 ### Requirement: Backend-neutral HF and vLLM shard contract
 The data-parallel worker input and output contract SHALL support HF and offline
@@ -71,6 +73,20 @@ artifact contract.
 ## REMOVED Requirements
 
 ### Requirement: Backend-neutral shard contract with HF-only V1 execution
+The data-parallel worker input and output contract SHALL be backend-neutral, but V1 execution SHALL remain HF-only.
+The shard plan and merge layer MUST NOT assume HF-specific raw objects outside
+the backend module. However, `backend.type: vllm` remains not implemented until
+a later approved change.
+
+#### Scenario: HF worker execution
+- **WHEN** `backend.type: hf` is configured and multiple ranks are active
+- **THEN** each worker executes the existing HF decode path over its assigned
+  rows
+
+#### Scenario: vLLM remains reserved
+- **WHEN** `backend.type: vllm` is configured
+- **THEN** config/runtime validation fails with a not-implemented contract error
+- **AND** data-parallel shard planning does not treat vLLM as accepted evidence
 
 **Reason**: This change makes the previously reserved vLLM worker path
 executable while retaining the backend-neutral shard boundary.

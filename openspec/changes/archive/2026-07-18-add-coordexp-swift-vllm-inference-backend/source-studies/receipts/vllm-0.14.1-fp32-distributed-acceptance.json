@@ -1,0 +1,155 @@
+{
+  "cleanup": {
+    "owned_processes_after": [],
+    "publication_gate": "all_owned_workers_exited_and_no_runtime_cache_residue",
+    "worker_runtime_cache_residue": []
+  },
+  "evaluator_source_sha256": "cd7ee9ced7e5f4e6940afe487d35b7cd91be61df98941288473bc76e206594ea",
+  "execution_model": {
+    "composition": "base_plus_dora_plus_selected_token_embedding_delta",
+    "current_application_qualification": {
+      "path": "src/inference/qualification_receipts/vllm-0.14.1-application-sources.json",
+      "sha256": "40f20f71f8bea2f1d8f550faf012fea170c0b624bcd84767dbde012ebf3ccd2a",
+      "source_count": 23
+    },
+    "durable_composition_fidelity": {
+      "composition_key": "39df6dd7a41edb1b2d94db8772b487a21781998dd84d637bd16c81986cb1743a",
+      "digest": "778b5358dc9857c4024dc7f13c817bbe3e324c425844f46d87670b340ee4b0bc",
+      "path": "src/inference/qualification_receipts/execution-model-composition-39df6dd7a41edb1b2d94db8772b487a21781998dd84d637bd16c81986cb1743a.json",
+      "sha256": "e07af19db8aa8f42d4861023192392052669f941799e0904c7695d26d785ab21",
+      "target_dtype": "fp32"
+    },
+    "mode": "materialized_vllm_fp32",
+    "runtime_application_source_count": 23,
+    "runtime_application_source_receipt_sha256": "40f20f71f8bea2f1d8f550faf012fea170c0b624bcd84767dbde012ebf3ccd2a"
+  },
+  "gates": {
+    "all_workers_completed": true,
+    "eight_rank_has_at_least_eight_nonempty_decode_blocks": true,
+    "evaluator_consumed_all_runs": true,
+    "exact_row_coverage_and_order": true,
+    "one_rank_completed": true,
+    "terminal_cleanup": true,
+    "two_rank_completed": true
+  },
+  "qualification_receipts": {
+    "application_sources": {
+      "path": "src/inference/qualification_receipts/vllm-0.14.1-application-sources.json",
+      "sha256": "40f20f71f8bea2f1d8f550faf012fea170c0b624bcd84767dbde012ebf3ccd2a"
+    },
+    "fp32_concurrency4": {
+      "path": "src/inference/qualification_receipts/vllm-0.14.1-fp32-concurrency4.json",
+      "sha256": "00e04e24e5d7517e456316d463a5d41ef3a07660e419c115b149dfb922731986"
+    },
+    "fp32_forced_replay1": {
+      "path": "src/inference/qualification_receipts/vllm-0.14.1-fp32-forced-replay1.json",
+      "sha256": "a71f75e1c1a9c7625c92c93bc93362265c7e74aee9b32d7d78625bcfe6b00553"
+    },
+    "fp32_runtime": {
+      "path": "src/inference/qualification_receipts/vllm-0.14.1-fp32-qualification.json",
+      "sha256": "0be9514061d4b25149ca353a5cf70eb6ef2e9cfd8febefe0b71bfbbd310d6373"
+    }
+  },
+  "receipt_version": "coordexp-swift-vllm-fp32-distributed-acceptance-v1",
+  "runs": {
+    "eight_rank_val200": {
+      "active_ranks": 8,
+      "benchmark_eligible": true,
+      "benchmark_metric": true,
+      "decode_batch_count": 50,
+      "decode_success": 200,
+      "dropped_predictions": 0,
+      "evaluation_receipt_path": "evaluation/detection/evaluation_receipt.json",
+      "evaluation_receipt_sha256": "3712845c1334de5ea2091d2fc5100ea5e8027a664d16e46085921c51b8b8a9a6",
+      "generated_tokens_per_second": 564.5005268418145,
+      "manifest_path": "run_manifest.json",
+      "manifest_sha256": "122c2a733890d84acab5b64f81cd6b8b2f10987a26df9f2034758d50e3e47a80",
+      "ordered_row_ids_sha256": "217d90415e9ba6f471b16803bc3ca066382949a8feceb00f34b733ae3a45e2e9",
+      "parser_failures": 0,
+      "per_device_batch_size": 4,
+      "raw_model_logprob_status": "disabled",
+      "resolved_config_path": "configs/resolved.yaml",
+      "resolved_config_sha256": "faa399950a01f958ddeb816451484358dc28e34e6f318edd8885fc5dc3a6af67",
+      "rows": 200,
+      "run_dir": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-pure-ce-typegate-dora-r16a32-step4887-val200-vllm-fp32-20260718T124400Z",
+      "score_failures": 0,
+      "stop_reasons": {
+        "im_end": 200
+      },
+      "summary_path": "summary.json",
+      "summary_sha256": "1505f60061f5e62cfa9c1573a04ad598a7abeed73add4c0ea9f97a498068445a",
+      "truncated_decodes": 0,
+      "worker_exit_statuses": {
+        "0": "completed",
+        "1": "completed",
+        "2": "completed",
+        "3": "completed",
+        "4": "completed",
+        "5": "completed",
+        "6": "completed",
+        "7": "completed"
+      }
+    },
+    "one_rank_dual_likelihood": {
+      "active_ranks": 1,
+      "benchmark_eligible": false,
+      "benchmark_metric": false,
+      "decode_batch_count": 2,
+      "decode_success": 2,
+      "dropped_predictions": 0,
+      "evaluation_receipt_path": "evaluation/detection/evaluation_receipt.json",
+      "evaluation_receipt_sha256": "84f61bc8d283119918583a4c96032b5cc77d2ffcde150ac385735f3bd1bcde20",
+      "manifest_path": "run_manifest.json",
+      "manifest_sha256": "9a2d52e0879811a988442c091e375b0bc14cbfdb5cc0376ed27c1f7521d3422c",
+      "parser_failures": 0,
+      "per_device_batch_size": 1,
+      "raw_model_logprob_status": "available",
+      "resolved_config_path": "configs/resolved.yaml",
+      "resolved_config_sha256": "a72c74e8918c8fdaffdb3aa085e6cd7ce6211dc0fd31360410076bdf2e59e4bb",
+      "rows": 2,
+      "run_dir": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/smoke/qwen3-vl-2b-step4887-vllm-fp32-parity-smoke-20260718T152112Z",
+      "score_failures": 0,
+      "stop_reasons": {
+        "im_end": 2
+      },
+      "summary_path": "summary.json",
+      "summary_sha256": "289678776604e146dfc764e84193120bf69b021e9812c716ae3c8ad5e4da539e",
+      "truncated_decodes": 0,
+      "worker_exit_statuses": {
+        "0": "completed"
+      }
+    },
+    "two_rank_dual_likelihood": {
+      "active_ranks": 2,
+      "benchmark_eligible": false,
+      "benchmark_metric": false,
+      "decode_batch_count": 2,
+      "decode_success": 2,
+      "dropped_predictions": 0,
+      "evaluation_receipt_path": "evaluation/detection/evaluation_receipt.json",
+      "evaluation_receipt_sha256": "c1a16150535c64893f08c97dac2436a3ddfae937d622558aa42147644e2c0ac7",
+      "manifest_path": "run_manifest.json",
+      "manifest_sha256": "8b42e19a1fc69f6913929d2dd751b6333c3553d2bb1febec73d4ae476079160a",
+      "parser_failures": 0,
+      "per_device_batch_size": 1,
+      "raw_model_logprob_status": "available",
+      "resolved_config_path": "configs/resolved.yaml",
+      "resolved_config_sha256": "a72c74e8918c8fdaffdb3aa085e6cd7ce6211dc0fd31360410076bdf2e59e4bb",
+      "rows": 2,
+      "run_dir": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/smoke/qwen3-vl-2b-step4887-vllm-fp32-parity-smoke-20260718T151658Z",
+      "score_failures": 0,
+      "stop_reasons": {
+        "im_end": 2
+      },
+      "summary_path": "summary.json",
+      "summary_sha256": "97fd2adf6d4f701d0d495ccfece03d897ac12ea324f12a505845ebec8acbde56",
+      "truncated_decodes": 0,
+      "worker_exit_statuses": {
+        "0": "completed",
+        "1": "completed"
+      }
+    }
+  },
+  "schema_version": 1,
+  "status": "passed"
+}

@@ -64,13 +64,13 @@ fail the scored run before canonical scored artifacts are published.
 - **WHEN** selected token logprobs are `[log(0.2), log(0.2), log(0.2)]`
 - **THEN** the prediction score equals `0.2` within numeric tolerance
 
-#### Scenario: Parser-salvaged object has no complete selected span
+#### Scenario: Empty selected set
 - **WHEN** malformed generated object text yields no complete eight-token score
   span while another object remains valid
 - **THEN** only the unscoreable prediction is excluded and parser diagnostics
   record the drop
 
-#### Scenario: Backend trace contains NaN
+#### Scenario: Non-finite logprob
 - **WHEN** a generated non-pad token in the backend-claimed trace has NaN or
   infinite policy likelihood
 - **THEN** the scored run fails before canonical scored artifacts are published
@@ -84,7 +84,7 @@ evidence. Rows with no parser-salvaged scoreable predictions SHALL remain
 present with `pred: []`. Backend likelihood-integrity failure is terminal and
 MUST NOT be converted into a successful empty scored row.
 
-#### Scenario: Parser-level unscoreable row
+#### Scenario: Trace-missing row
 - **WHEN** a raw row contains only malformed or incomplete object spans while
   the backend trace itself is valid
 - **THEN** the scored row remains present with the same GT and image metadata

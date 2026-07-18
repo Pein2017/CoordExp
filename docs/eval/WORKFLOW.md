@@ -42,8 +42,22 @@ Implementation ownership note:
 - thin inference entry lives in `src/infer.py`
 - pipeline orchestration lives in `src/inference/pipeline.py`
 - shared decode requests and backend selection live in `src/inference/runtime.py` and `src/inference/backend.py`
+- dynamic HF execution lives in `src/inference/hf_backend.py`
+- immutable execution-model materialization and offline vLLM execution live in
+  `src/inference/execution_model.py` and `src/inference/vllm_backend.py`
 - infer artifact writing lives in `src/inference/artifacts.py`
 - standardized Swift mAP/mRecall reduction lives in `src/eval/detection_consumer.py`
+
+Backend roles:
+
+- `backend.type: hf` is a first-class dynamic path that loads the configured
+  base, DoRA adapter, and selected-token embedding delta directly.
+- `backend.type: vllm` is a first-class offline path that resolves the same
+  composition into a content-addressed immutable execution model first.
+- FP32 is the strict HF/vLLM parity mode. BF16 vLLM is supported for throughput
+  but must be reported as non-parity evidence.
+- Materialized HF is an acceptance oracle for execution-model composition, not
+  a replacement for dynamic HF.
 
 ## Default Flow
 
@@ -75,6 +89,8 @@ Official metric guardrail:
 Validation-scope rule:
 
 - tiny single-row and two-row runs are implementation smokes only;
+- `benchmark_eligible` requires `debug.smoke: false` and at least 200 input
+  rows; naming a tiny run as non-smoke does not promote it;
 - the fixed 200-row validation subset is sufficient for V1 local
   benchmark-style regression evidence when it writes scored artifacts and the
   Swift evaluator writes bbox mAP/mRecall;
