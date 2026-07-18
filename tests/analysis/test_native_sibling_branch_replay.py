@@ -19,6 +19,7 @@ from scripts.research.run_native_sibling_branch_replay import (
     merge_shard_receipts,
     reconstruct_branch_prompt,
     reconstruct_donor_prefix,
+    select_runtime_prompt_token_ids,
     validate_donor_lineage,
     validate_cli_args,
 )
@@ -130,6 +131,8 @@ def _args(**overrides: object) -> argparse.Namespace:
         "repetition_penalty": 1.0,
         "runtime_dtype": "config",
         "no_greedy_control": False,
+        "exact_donor_token_prompt": False,
+        "use_local_sampling_context": False,
         "shard_receipt": None,
         "merged_output": None,
     }
@@ -198,6 +201,24 @@ def test_row_zero_prompt_uses_ordinary_prompt_without_empty_continuation(monkeyp
     )
     assert result == "ordinary-prompt"
     assert captured == {"processor": "processor", "row_index": 0}
+
+
+def test_exact_donor_token_prompt_extends_active_base_without_retokenizing() -> None:
+    row = _row(100, 1)
+    selected, mode = select_runtime_prompt_token_ids(
+        built_prompt_token_ids=[11, 12, 13],
+        expected_prompt_token_ids=[11, 12, 13, *row],
+        exact_donor_token_prompt=True,
+    )
+    assert selected == [11, 12, 13, *row]
+    assert mode == "exact_donor_token_ids"
+
+    with pytest.raises(RuntimeError, match="does not extend the active base prompt"):
+        select_runtime_prompt_token_ids(
+            built_prompt_token_ids=[11, 99, 13],
+            expected_prompt_token_ids=[11, 12, 13, *row],
+            exact_donor_token_prompt=True,
+        )
 
 
 def test_distinct_native_child_bundle_uses_relative_generated_row_coordinates() -> None:

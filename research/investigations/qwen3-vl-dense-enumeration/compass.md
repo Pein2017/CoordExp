@@ -7,7 +7,7 @@ authority: non_normative_research
 architecture_promotion_status: not_promoted
 topic: qwen3-vl-dense-enumeration
 status: active
-updated: 2026-07-17
+updated: 2026-07-18
 ---
 
 # Qwen3 Vision-Language Autoregressive Detection Research Compass
@@ -90,9 +90,13 @@ Markdown links, rather than this diagram, are the durable graph edges.
 3. Use same-prefix controls before attributing a result to next-object
    competition, and same-feature controls before attributing a result to the
    language-model side of the visual-language boundary.
-4. Treat unmatched predictions under incomplete annotations as unresolved
-   until classified as an unlabeled real object, duplicate, localization or
-   category mismatch, unsupported hallucination, or uncertain.
+4. Treat unmatched predictions under incomplete annotations as unresolved and
+   classify them on two separate axes. The entity and category axis is:
+   unlabeled true positive, duplicate, semantic error, entity hallucination, or
+   uncertain. The geometry axis is: acceptable geometry, localization error,
+   instance-binding or neighbor-contamination error, or uncertain. Never infer
+   hallucination from official mismatch alone. Cross-category overlap requires
+   crop-enlarged inspection rather than automatic rejection.
 5. A training improvement must preserve native one-shot capability and cannot
    be promoted solely because it produces more rows or slightly more recall.
 6. Architecture follows passed causal gates. Slots, a persistent ledger, a
@@ -130,10 +134,45 @@ Markdown links, rather than this diagram, are the durable graph edges.
   reject reciprocity and one dense-person state is refused. The positive boxes
   are nearly nested, so this establishes executable row-conditioned successor
   state, not a general physical-object covered set.
+- Exact full-row scoring on a fresh image-`2299` native chain adds a cleaner
+  same-category result. Appending person B after person A lowers B's own frozen
+  row by `-6.2517` summed natural-log units and raises four frozen rows owned by
+  two other people by `+1.3919` to `+2.4343` in full-model `float32`. The change
+  is concentrated at `x1`; descriptions are all `person`, and continuation
+  margins stay above `11.0`. This establishes a local geometry-structured
+  successor transition, not probability conservation or an object ledger.
+- Repeated one-row sampling from the same image-`2299` boundary remains highly
+  concentrated: person B appears in 153 of 160 independent samples. Two rare
+  alternative owners appear twice each and three rows are unmatched, but no
+  alternative owner passes the predeclared three-distinct-variant gate. The
+  reciprocal equal-depth test is therefore unidentified, and layer tracing and
+  training remain closed.
 - No non-greedy sibling provides a positive, safety-preserving Greedy
   Branch-Value Gap at Horizon Four across the three released states. Native
   sibling selection changes trajectories, but this panel supplies no
   branch-value training target.
+- A human-resolved extension on image `2299` reaches the same decision under a
+  stronger natural-prefix test. Across four natural third-row people and eight
+  paired seeds per arm, the greedy branch yields `3.500` uniquely matched new
+  people over the next four rows. The three sampled-only branches yield
+  `2.875`, `2.250`, and `3.125`; none has a positive paired value gain. The
+  alternative branches remain real and non-repetitive, but they more often
+  enter weakly localized `tie` output. This closes sampled-row novelty as a
+  direct preference-training target without closing all loss-only calibration.
+- The missing random-order person-25 treatment is now closed on image `2299`.
+  Appending three distinct raw person-25 rows moves sampled output into the
+  overlapping person-18 corridor, and a natural control trajectory reproduces
+  the same immediate transition after it emits person 25. This is not an
+  atomic object switch: the clean and merged continuations share description
+  and their first three coordinates and separate mainly at `y2`. At the exact
+  greedy prefix, single-token `coord_999` has the highest logit, while the
+  person-18 boundary band `514..576` owns `49.54%` of full-vocabulary
+  probability after temperature `0.4`. Putting person 18 in an earlier row
+  reduces but does not prevent its return (`55/96`) and introduces 12
+  full-canvas boxes. This supports a geometry-conditioned transition with
+  strong dependence on the most recent row in this case, plus fragmented valid
+  coordinate mass, not a stable covered-object ledger. See
+  [Person 25 Dominant-Owner Commit and Persistence Closeout](experiments/2026-07-18-person25-dominant-owner-commit-and-persistence-closeout/results.md).
 - At exact prefix state 56 on image `12576`, repeated one-row sampling exposes
   two valid object modes: the target pizza and a competing left cup. The same
   target disappears at the greedy-terminal state; an independent chair case
@@ -298,11 +337,11 @@ cross-row coverage.
 | Input-level spatial restriction changes one object opportunity | Bounded support under hard eligibility; the count-balanced all-keys-readable soft cross operator is now closed because both matched-owner controls fail, so its crossed arms cannot adjudicate the hard asymmetry | Hard exclusion and its abrupt phase switch may manufacture the asymmetry; the historical uniform-dose operator and current query-phase-restricted operator cannot be pooled into one trajectory | No immediate successor is active. A historical-uniform-operator `3.9060049` endpoint would require a fresh separately authorized execution; artifact-only cross-operator pooling is rejected. |
 | Safe final masked policy improves enumeration | Ruled out under the executed protocol | Equal-call full-image sampling is at least as useful after aggregation | Revisit only after a new masking mechanism avoids retention and output-expansion failures. |
 | Fixed-prefix next-object probability is fragmented across several real objects | Supported at one exact state; not population-estimated | Some other bagging rescues may still arise only from earlier trajectory divergence | Replicate only when a future route decision requires prevalence, not as the immediate discriminator. |
-| Prefix state is an executable but fragile traversal state | Supported locally: complete natural rows change the immediate successor, and one nested bowl-carrot state has a strict reciprocal effect stable in full-model `float32`; two other states reject reciprocity and a dense-person state is refused | Geometry-sorted frontier explains the one-way pizza-to-cup state; semantic or binary complementation explains the nested bowl-carrot state | If separately authorized, estimate a three-owner, same-category, non-overlapping immediate transition matrix with fully resolved physical ownership. |
+| Prefix state is an executable but fragile traversal state | Supported locally. Complete rows change future-row likelihoods, and the random-order person-25 closeout reproduces a strong immediate transition both with raw donors and in a generated three-row continuation after the forced canonical prefix. The effect is not atomic: overlapping same-class paths can remain shared until `y2`, and an earlier committed person remains active but repeats in `55/96` samples. | Strong dependence on the latest row, weaker earlier-row influence, and coordinate-extent competition explain more of the current evidence than a persistent covered-object ledger; the nested bowl-carrot reciprocal state may still reflect binary complementation. | Replicate the sampled-clean versus greedy-merged coordinate-mass comparison on 4 to 8 crop-reviewed dense cases before choosing a loss-only extent calibration or a new state carrier. |
 | Late-middle residual states implement phase-specific decisions | Bounded one-sided support: an eligible clock-description path is conditionally portable, and one same-description paired-object state after decoder block `23` switches the unrestricted geometry owner through an `x1` basin change where the trusted block-`13` control does not | The portable state may select only the first coordinate, with the emitted `x1` and native autoregressive computation recovering the rest of the box; one image and one direction do not establish a general object state | No successor is active. If separately authorized, mediate `x1` by forcing paired `x1` without replacement and forcing baseline `x1` under paired-state replacement, then compare later coordinates and final owner. |
 | Early coordinate choice establishes a stable complete-object owner | Mixed and unresolved: the prior dense-chair result has `63/64` released `x2` edges follow real `x1` cues; the new full-`float32` four-arm sweep is monotonically translation-grammar-compatible, but only one arm passes its frozen history-support floor. The image-`7818` donor pair likewise has no branch-supported common `x1,y1` history. | The coherent forced suffix may be off-manifold extrapolation; native box grammar, visual boundaries, geometry-sorted route state, and physical-object state remain unseparated. | [Wave-One results](experiments/2026-07-17-object-specific-geometry-transport-and-cross-row-influence-horizon/results.md) close the current hard-clamp route without phase or cross-row escalation. Any future unit must establish intervention overlap before opening downstream outcomes; do not repair this unit post hoc. |
 | Incomplete dense annotations teach conservative omission and premature termination | Plausible | Sequence-mode concentration or weak visual evidence is the dominant cause | Compare exhaustive labels with original labels and controlled thinning on the same images. |
-| Bagging support can be concentrated into deterministic greedy traversal | Speculative; natural sibling rows expose executable successor state, but no safe positive greedy branch-value gap appears in the released panel | Bagging may expose valid modes whose first-row choice does not improve finite-horizon unique-object value, or whose useful transition is state-specific | Resolve physical commit versus frontier and semantic complement with a three-owner same-category transition matrix before proposing any 256-image training screen. |
+| Bagging support can be concentrated into deterministic greedy traversal | Speculative; natural sibling rows expose executable successor state, but neither the released panel nor the human-resolved image-`2299` four-row extension finds a safe positive sampled-branch value gap | Bagging may expose useful diversity rather than a single superior first branch; alternative routes can also reveal plausible semantics while degrading physical extent | On natural alternative routes, separate recoverable correct-box support from semantic-only or part-sized output before selecting a phrase-and-geometry or short-horizon set-value training target. |
 | A persistent ledger, object slot, or external detector is necessary | Unsupported and not authorized | Native prefix state plus better data and transition training may suffice | Consider only after transition shaping fails despite reliable object support and complete labels. |
 
 The completed [Fixed-Prefix Complete-Box Coherence and Progressive Coordinate-
@@ -316,6 +355,26 @@ changes the next-row category, proving cross-row state sensitivity while
 failing to establish correct uncovered-object redistribution.
 
 ## Current Discriminator Queue
+
+The completed [Person 25 Dominant-Owner Commit and Persistence Closeout
+results](experiments/2026-07-18-person25-dominant-owner-commit-and-persistence-closeout/results.md)
+repair the missing dominant-owner treatment after the prior human-resolved
+branch-value screen. The result supplies one positive same-prefix
+geometry-support case: sampling repeatedly closes person 18 correctly while
+greedy expands the same partial row into a two-person extent at `y2=999`.
+It also rejects a clean persistent-ledger interpretation because earlier
+person 18 still returns in most samples and the intervention expands
+full-canvas failures.
+
+No expensive successor is active. Do not continue sampling image `2299` or
+introduce a covered-set architecture from this case. The smallest
+treatment-linked next seed is a 4-to-8-case, crop-reviewed replication of the
+same discriminator: locate the first coordinate at which sampled clean and
+greedy contaminated rows diverge, then compare aggregate physically valid
+coordinate mass with the greedy single-token spike. Repeated positive cases
+would authorize a bounded own-prefix coordinate-neighborhood or complete-row
+calibration screen; absent native valid mass would instead raise the priority
+of a visual bridge or explicit state carrier.
 
 The completed [Native Sibling-Row Branch Value and Commit Crossover
 results](experiments/2026-07-17-native-sibling-row-branch-value-and-commit-crossover/results.md)
@@ -477,13 +536,13 @@ The screen compares a few matched-budget arms on 256 images. It is a stop-or-
 promote test for learnability, not a final model, broad hyperparameter search,
 or paper result.
 
-Current gate decision: **not authorized**. Controlled object support and tight
-persistent-hard geometry donors pass the first gate, and one natural nested
-bowl-carrot state proves a numerically stable cross-row successor effect. No
-released state provides a safety-preserving positive greedy branch-value gap,
-the successor effect is not yet separated from frontier or semantic
-complementation, no clean-feature synthesis target or preservation-safe
-training arm is frozen, and a safe label cohort remains absent.
+Current gate decision: **not authorized**. Controlled object support, tight
+persistent-hard geometry donors, and immediate owner-sensitive redistribution
+are established in bounded states. However, the human-resolved image-`2299`
+extension finds no safety-preserving positive sampled-branch value gap. Its
+sampled routes more often enter weakly localized `tie` output. No
+preservation-safe binding or short-horizon set-value objective is frozen, and a
+safe multi-image label cohort remains absent.
 
 ## Demoted or Rejected Claims
 

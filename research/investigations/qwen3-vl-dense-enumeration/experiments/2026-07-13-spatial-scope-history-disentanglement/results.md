@@ -10,7 +10,7 @@ unit_id: 2026-07-13-spatial-scope-history-disentanglement
 topic: qwen3-vl-dense-enumeration
 status: complete
 evidence_status: verified
-updated: 2026-07-13
+updated: 2026-07-18
 ---
 
 # Masked Spatial Policy and Accepted-Row Prefix Policy Results
@@ -18,6 +18,18 @@ updated: 2026-07-13
 This record closes the frozen protocol in [the research unit](unit.md). The
 [readiness amendment](readiness-amendment.md) remains the immutable pre-output
 contract; this file owns the executed facts and bounded interpretation.
+
+## Post-Closeout Annotation Provenance Correction
+
+The later [annotation review provenance and interpretation
+correction](annotation-review-provenance-correction.md) establishes that
+Independent Reviewer One was `gpt-5.6-sol` with `xhigh` reasoning effort, not a
+human annotator using the planned local annotation tool. Its image-only labels
+are high-recall model proposals that require human confirmation. Existing
+metrics remain reproducible relative to the sealed audit ledger, but their
+absolute precision and annotation-gap interpretation is reference-quality
+sensitive. The legacy artifact key `manual_precision` is called
+**audit-ledger precision** in current discussion.
 
 ## Terminology and Evidence Scope
 
@@ -49,8 +61,9 @@ contract; this file owns the executed facts and bounded interpretation.
 - **Policy-Utility Rescue Difference**: the difference between two arms'
   post-merge Local Rescue Rates, conditioned on `FULL_SINGLE` missing the
   object.
-- **Audit-augmented ledger**: the sealed official annotations plus accepted
-  image-only review additions. It owns the scientific headline.
+- **Audit-augmented ledger**: the sealed official annotations plus accepted,
+  model-proposed and adjudicated image-only additions. It owns the executed
+  scientific headline but is not human-confirmed ground truth.
 - **95-percent image-clustered bootstrap confidence interval**: the uncertainty
   interval from 10,000 resamples of whole images.
 
@@ -175,13 +188,15 @@ The local rescue signal did not pass the final-policy safety contract.
 |---|---:|---:|---:|
 | Overall-retention lower confidence bound | at least `0.85` | `0.791841` | `0.785288` |
 | Mask-harm-retention lower confidence bound | at least `0.80` | `0.740000` | `0.746662` |
-| Manual-precision point estimate | at least `0.70` | `0.466503` | `0.459459` |
+| Audit-ledger precision point estimate (legacy artifact key: `manual_precision`) | at least `0.70` | `0.466503` | `0.459459` |
 | Prediction-count-inflation upper confidence bound | at most `2.0` | `2.253747` | `2.348620` |
 
-`FULL_BAG_K` also failed the absolute manual-precision and prediction-count-
-inflation rules in both roots. Post-merge strict duplicates, invalid rows, and
-natural closure did not bind the decision. The observed pattern is therefore
-unsafe output expansion and retention harm, not improved enumeration.
+`FULL_BAG_K` also failed the absolute audit-ledger-precision and
+prediction-count-inflation rules in both roots. Post-merge strict duplicates,
+invalid rows, and natural closure did not bind the decision. Relative to the
+sealed audit ledger, the observed pattern is unsafe output expansion and
+retention harm, not improved enumeration. The absolute precision and
+annotation-gap interpretation remains conditional on reference quality.
 
 The primary root's `FULL_BAG_K` Prediction-Set Diversity was `0.179404`, above
 the frozen `0.15` weak-diversity floor. Its [derived diversity artifact](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-13-spatial-scope-history-disentanglement/postrun/dense-union-51-primary-after-wave-local-tail-contract-derived/primary-full-bag-prediction-set-diversity.json)
@@ -249,6 +264,9 @@ rule out every spatial intervention.
 - Whether a compact ledger, commit state, or other architectural mechanism is
   necessary.
 - Whether a language-only mechanism explains dense-scene degradation.
+- Whether entity-level and geometry-level human confirmation of the model-
+  proposed review additions changes the absolute safety estimates or headline
+  effect sizes.
 
 ### Not Claimed
 

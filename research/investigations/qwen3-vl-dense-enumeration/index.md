@@ -8,16 +8,18 @@ unstable when it must enumerate dense scenes in one autoregressive rollout.
 The target remains diagnosis, not a final architecture. The completed program
 has progressed from input-level spatial-policy controls through fixed-prefix
 mode fragmentation, phrase-geometry transition state, fixed-encoding
-post-vision routing, query-phase decomposition, and one bounded late pre-`x1`
-geometry-owner basin switch. The newest native sibling-row unit finds no safe
-greedy branch-value mismatch and one numerically robust, state-local reciprocal
-bowl-carrot successor switch. Because the positive owners are spatially nested,
-two other states reject reciprocity, and one dense-person state is unresolved,
-it establishes executable cross-row state rather than a general physical-object
-covered set. The program has not established autonomous selection, order-free
-commit or coverage, clean-state synthesis, or a stable training intervention.
-The weekly report and research compass own the current synthesis and next-
-discriminator boundary.
+post-vision routing, query-phase decomposition, exact-row successor effects,
+and dense-scene human-resolved branch analysis. The latest random-order
+person-25 closeout shows that a complete row can redirect the next spatial
+trajectory, but overlapping same-class instances can remain unresolved until
+the final `y2` coordinate. At one fixed partial row, greedy selects an isolated
+full-height token while sampling can access a much larger physically coherent
+boundary cluster. Earlier rows remain causally active but do not provide
+reliable covered-object exclusion. The program has not established autonomous
+selection, order-free commit or coverage, clean-state synthesis, or a stable
+training intervention.
+The weekly report and research compass own the current synthesis and
+next-discriminator boundary.
 
 ## Reading Path
 
@@ -72,6 +74,17 @@ durable program reading path below.
 45. [Wave-One common-support and off-support grammar results](experiments/2026-07-17-object-specific-geometry-transport-and-cross-row-influence-horizon/results.md)
 46. [Native sibling-row branch value and commit crossover](experiments/2026-07-17-native-sibling-row-branch-value-and-commit-crossover/unit.md)
 47. [Native sibling-row branch-value and commit-crossover results](experiments/2026-07-17-native-sibling-row-branch-value-and-commit-crossover/results.md)
+48. [Superseded random-versus-geometry-sorted common-prompt comparison draft](experiments/2026-07-17-random-versus-geometry-sorted-common-prompt-prefix-comparison/unit.md)
+49. [Next-row likelihood change and causal source trace](experiments/2026-07-17-next-row-probability-transition-and-causal-source-trace/unit.md)
+50. [Next-row likelihood change results and natural-sibling admission verdict](experiments/2026-07-17-next-row-probability-transition-and-causal-source-trace/results.md)
+51. [Image 2299 near-complete human-relabel successor transition](experiments/2026-07-18-image2299-near-complete-human-relabel-successor-transition/unit.md)
+52. [Image 2299 successor-transition results](experiments/2026-07-18-image2299-near-complete-human-relabel-successor-transition/results.md)
+53. [Historical random versus geometry-sorted image 2299 screen](experiments/2026-07-18-historical-random-versus-geometry-sorted-image2299-screen/unit.md)
+54. [Historical ordering-screen results](experiments/2026-07-18-historical-random-versus-geometry-sorted-image2299-screen/results.md)
+55. [Human-resolved dense branch-value and calibration screen](experiments/2026-07-18-human-resolved-dense-branch-value-and-calibration-screen/unit.md)
+56. [Human-resolved branch-value results](experiments/2026-07-18-human-resolved-dense-branch-value-and-calibration-screen/results.md)
+57. [Person 25 dominant-owner commit and persistence closeout](experiments/2026-07-18-person25-dominant-owner-commit-and-persistence-closeout/unit.md)
+58. [Person 25 closeout results and final-coordinate probability diagnosis](experiments/2026-07-18-person25-dominant-owner-commit-and-persistence-closeout/results.md)
 
 The review and readiness amendment preserve the pre-execution gate. The
 completed unit and results record own current lifecycle and evidence status.

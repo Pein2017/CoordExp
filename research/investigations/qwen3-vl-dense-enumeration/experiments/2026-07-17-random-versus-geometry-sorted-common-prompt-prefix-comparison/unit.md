@@ -8,12 +8,20 @@ architecture_promotion_status: not_promoted
 implementation_status: not_authorized
 unit_id: 2026-07-17-random-versus-geometry-sorted-common-prompt-prefix-comparison
 topic: qwen3-vl-dense-enumeration
-status: planned
+status: superseded
 evidence_status: none
 updated: 2026-07-17
 ---
 
 # Random versus Geometry-Sorted Historical Checkpoints under Common Prompts and Prefixes
+
+## Supersession
+
+This discussion draft is superseded by [Next-Row Probability Transition and
+Causal Source Trace](../2026-07-17-next-row-probability-transition-and-causal-source-trace/unit.md).
+The common-prompt checkpoint comparison remains a control in that unit, but it
+is no longer the owning scientific question. No execution occurred under this
+draft.
 
 ## Status and authority
 
@@ -56,11 +64,10 @@ Geometry-sorted checkpoint:
 
 The pair is suitable for a historical comparison because its resolved run
 settings differ mainly in the configured object ordering and objective name.
-However, the old runtime used that ordering setting for two coupled changes:
-it changed both the order of target rows and the ordering instruction in the
-system and user prompts. The pair can therefore compare two historical
-training regimes, but it cannot by itself attribute a difference to target
-order alone.
+The compact no-separator prompt builder returns the same system and user text
+for random and sorted ordering, so the known controlled training difference is
+the realized target-row ordering policy. This still remains a one-seed
+historical comparison rather than a replicated causal estimate.
 
 It is also not a matched replacement for the current step-4887
 Weight-Decomposed Low-Rank Adaptation (`DoRA`) route: these are older Low-Rank
@@ -78,7 +85,8 @@ support a clean behavioral conclusion.
 
 That smoke covers one corner of the proposed comparison. It did not:
 
-1. test both checkpoints under both ordering instructions;
+1. test both checkpoints on image `2299` under one byte-identical compact
+   prompt and prefix;
 2. hold the emitted object set fixed while changing only the order of its rows;
 3. separate one-next-row behavior from later rollout drift;
 4. establish that any difference is stable enough to justify retraining.
@@ -135,16 +143,10 @@ Run two separate panels because they answer different questions.
 
 ### Panel A: same prompt, natural rollout
 
-For each image, compare both checkpoints under the same:
-
-1. geometry-sorted instruction;
-2. unrestricted-order instruction.
-
-The prompt token identifiers must be byte-for-byte identical between
-checkpoints within each comparison. Do not add an order-neutral prompt in the
-first smoke: it would be new wording for both checkpoints and could introduce a
-third prompt effect. Add it only if the two existing instructions leave an
-unresolved prompt interaction.
+For each image, compare both checkpoints under the same compact no-separator
+prompt. The prompt token identifiers must be byte-for-byte identical between
+checkpoints. The historical compact prompt does not contain an ordering
+instruction, so there is no prompt-ordering factorial in this surface.
 
 Keep the raw greedy rollout. This panel asks whether the two checkpoints retain
 different natural behavior after prompt wording is controlled.
@@ -211,22 +213,21 @@ enough to be numerically uncertain.
 
 ## First smoke
 
-Run one image, both checkpoints, both existing ordering instructions, and one
+Run one image, both checkpoints, one byte-identical compact prompt, and one
 shared prefix. The smoke passes only if the effective checkpoint, exact prompt
 tokens, image, prefix tokens, decoding settings, and output attribution are
 recorded correctly.
 
 ## Stop and promotion rules
 
-- If each checkpoint is better only under the instruction matching its
-  training, classify the main effect as prompt specialization.
-- If the checkpoints behave similarly under both common instructions and under
-  shared prefixes, stop and do not claim a stable training-order effect.
+- If the checkpoints behave similarly under the shared compact prompt and
+  prefixes, stop and do not claim a stable training-order effect.
 - If only each adapter's own loss differs while next-row behavior under common
   conditions does not, stop and classify the result as a target-difficulty
   difference.
-- If the same checkpoint difference appears under both prompt wordings and in
-  Panel B, expand to a held-out comparison before proposing new training.
+- If the same checkpoint difference appears across the selected prefix states
+  and in Panel B, expand to a held-out comparison before proposing new
+  training.
 - If the difference appears only after several generated rows but not in the
   first next row, treat it as rollout drift or accumulated prefix sensitivity,
   not as evidence of a different immediate object-selection rule.

@@ -7,9 +7,18 @@ authority: non_normative_research
 reviewed_unit: 2026-07-13-spatial-scope-history-disentanglement
 status: complete
 updated: 2026-07-13
+correction_notice_added: 2026-07-18
 ---
 
 # Independent Audit of Spatial Scope and History Disentanglement
+
+> **Historical-review correction:** this review is preserved as written. A
+> later provenance reconstruction established that Independent Reviewer One
+> was an image-viewing `gpt-5.6-sol` model rather than a human annotator using
+> the planned local tool. See [Annotation Review Provenance and Interpretation
+> Correction](annotation-review-provenance-correction.md). References below to
+> human additions or manual precision describe the historical assumption and
+> the legacy metric name, not current evidence status.
 
 ## Terminology and Name Registry
 

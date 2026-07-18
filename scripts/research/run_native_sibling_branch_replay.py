@@ -162,6 +162,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Do not execute the paired greedy control call.",
     )
     parser.add_argument(
+        "--exact-donor-token-prompt",
+        action="store_true",
+        help=(
+            "Use the donor bundle's already-tokenized prompt plus natural row tokens "
+            "directly. This is required for nested natural prefixes that cannot be "
+            "losslessly reconstructed by decoding and re-tokenizing the continuation."
+        ),
+    )
+    parser.add_argument(
+        "--use-local-sampling-context",
+        action="store_true",
+        help=(
+            "Execute sampled requests through the backend's local sampling context "
+            "instead of rebinding a persisted runtime attestation. The receipt records "
+            "this weaker lineage explicitly."
+        ),
+    )
+    parser.add_argument(
         "--shard-receipt",
         action="append",
         type=Path,
@@ -515,6 +533,52 @@ def _build_reconstructed_prompt_record(
         row_index=row_index,
         **kwargs,
     )
+
+
+def select_runtime_prompt_token_ids(
+    *,
+    built_prompt_token_ids: Sequence[int],
+    expected_prompt_token_ids: Sequence[int],
+    exact_donor_token_prompt: bool,
+) -> tuple[list[int], str]:
+    """Choose the executed prompt while preserving the ordinary image plan.
+
+    The standard path requires a byte-for-byte token round trip through the
+    prompt builder. Nested natural prefixes can contain an already-tokenized
+    assistant continuation whose decode/re-tokenize form is not identical.
+    The explicit exact-donor path therefore trusts the attested donor token IDs
+    after proving that its base prompt is exactly the prompt built from the
+    active image and template.
+    """
+
+    built = [int(token) for token in built_prompt_token_ids]
+    expected = [int(token) for token in expected_prompt_token_ids]
+    if exact_donor_token_prompt:
+        if expected[: len(built)] != built:
+            raise RuntimeError(
+                "exact donor prompt does not extend the active base prompt: "
+                f"base_len={len(built)} expected_len={len(expected)}"
+            )
+        return expected, "exact_donor_token_ids"
+    if built != expected:
+        mismatch_index = next(
+            (
+                index
+                for index, (actual, target) in enumerate(
+                    zip(built, expected, strict=False)
+                )
+                if actual != target
+            ),
+            min(len(built), len(expected)),
+        )
+        raise RuntimeError(
+            "reconstructed donor prompt does not round-trip through tokenizer: "
+            f"actual_len={len(built)} expected_len={len(expected)} "
+            f"first_mismatch={mismatch_index} "
+            f"actual_window={built[max(0, mismatch_index - 4):mismatch_index + 5]} "
+            f"expected_window={expected[max(0, mismatch_index - 4):mismatch_index + 5]}"
+        )
+    return built, "decoded_and_retokenized_continuation"
 
 
 def _default_seed(
@@ -894,9 +958,10 @@ def _run_one_request(
             verified_runtime_attestation=capability,
         )[0]
     if request.generation_policy.mode == "sampled":
-        # Used only by the optional full-model fp32 robustness mode.  The
-        # shared production guard remains unchanged; this explicit local
-        # sampling context records that no persisted bf16 capability was used.
+        # Used by the optional full-model fp32 robustness mode and by an
+        # explicitly requested exploratory local-sampling run. The shared
+        # production guard remains unchanged; receipts record that no
+        # persisted capability was used.
         return backend._generate_batch(  # noqa: SLF001 - experiment-local seam
             [request],
             model_identity=model_identity,
@@ -988,11 +1053,14 @@ def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
         processor=qwen.processor,
         row_index=0,
         tokenizer=qwen.tokenizer,
-        continuation_token_ids=continuation_ids,
+        continuation_token_ids=([] if args.exact_donor_token_prompt else continuation_ids),
     )
-    if list(prompt_record.prompt_token_ids) != reconstruction["expected_prompt_token_ids"]:
-        raise RuntimeError("reconstructed donor prompt does not round-trip through tokenizer")
-    if _sha256_json(prompt_record.prompt_token_ids) != reconstruction["expected_prompt_token_ids_sha256"]:
+    prompt_token_ids, prompt_construction_mode = select_runtime_prompt_token_ids(
+        built_prompt_token_ids=prompt_record.prompt_token_ids,
+        expected_prompt_token_ids=reconstruction["expected_prompt_token_ids"],
+        exact_donor_token_prompt=bool(args.exact_donor_token_prompt),
+    )
+    if _sha256_json(prompt_token_ids) != reconstruction["expected_prompt_token_ids_sha256"]:
         raise RuntimeError("reconstructed prompt hash mismatch")
     image_plan = materialize_image_plan_batch(
         [raw],
@@ -1060,14 +1128,14 @@ def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
         )
     sampling_attestation_mode = "local-direct-sampling-context"
     capability = None
-    if args.runtime_dtype == "config":
+    if args.runtime_dtype == "config" and not args.use_local_sampling_context:
         capability = load_and_rebind_sampled_runtime_attestation_aggregate(
             args.sampled_runtime_attestation.expanduser().resolve(strict=True),
             decode_generation_policy_fingerprint=sampled_policy.fingerprint,
             backend=backend,
         )
         sampling_attestation_mode = "persisted-bf16-capability"
-    prompt_hash = _sha256_json(prompt_record.prompt_token_ids)
+    prompt_hash = _sha256_json(prompt_token_ids)
     parent_prompt_hash = reconstruction["reconstructed_prompt_token_ids_sha256"]
     parent_prefix_hash = reconstruction["donor_prefix_token_ids_sha256"]
     seeds = _seed_schedule(
@@ -1117,11 +1185,12 @@ def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
     }
     prompt_evidence = {
         "donor_prompt_token_count": len(reconstruction["donor_prompt_token_ids"]),
-        "prompt_token_count": len(prompt_record.prompt_token_ids),
+        "prompt_token_count": len(prompt_token_ids),
         "prompt_token_ids_sha256": prompt_hash,
         "assistant_continuation_token_count": len(continuation_ids),
         "assistant_continuation_token_ids_sha256": reconstruction["assistant_continuation_token_ids_sha256"],
         "exact_donor_prompt_plus_continuation": True,
+        "prompt_construction_mode": prompt_construction_mode,
     }
     output_root = args.output_root.expanduser().resolve()
     output_root.mkdir(parents=True, exist_ok=True)
@@ -1136,7 +1205,7 @@ def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
                 index=0,
                 seed=None,
             ),
-            prompt_token_ids=list(prompt_record.prompt_token_ids),
+            prompt_token_ids=list(prompt_token_ids),
             model_inputs=model_inputs,
             generation_policy=greedy_policy,
         )
@@ -1177,7 +1246,7 @@ def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
                 index=index,
                 seed=seed,
             ),
-            prompt_token_ids=list(prompt_record.prompt_token_ids),
+            prompt_token_ids=list(prompt_token_ids),
             model_inputs=model_inputs,
             generation_policy=sampled_policy,
             sampling_seed=int(seed),
