@@ -1,7 +1,7 @@
 {
   "artifact_type": "processed_directory",
   "checksums": {
-    "aggregate_sha256": "6a0f771ae6d9fe5558c7180ae4f5a60f5adeffdde976ac3da84cc918c54f278a",
+    "aggregate_sha256": "3a488249693f6d3db68fc928fca36da9162f74b589bd94163e8b6b0e95da41c6",
     "aggregate_source": "sorted path sha256 size_bytes records lines",
     "algorithm": "sha256",
     "files": [
@@ -38,18 +38,18 @@
       {
         "path": "public_data/coco/rescale_32_1024_bbox_len12000/val.norm.jsonl",
         "records": 4952,
-        "sha256": "f963c223a8dffda46ebba5fdde4c9776770e90f729f240b4035d44e575fbab97",
+        "sha256": "ab4f667dc83414cae1eb37ef5a6fe4a5367b6064f27a262f8de0cba62d37c605",
         "size_bytes": 5042989
       }
     ],
     "scope": "jsonl_training_samples_only"
   },
   "code_ref": {
-    "git_commit": "82eb100ae186ee084339e4e9cd4b821623581f50",
+    "git_commit": "70f9272082823406996bc5432bf0769f2e07e8b0",
     "git_dirty_allowed": true
   },
   "command": "PYTHONPATH=. conda run -n ms python public_data/scripts/build_coco_length_budget_artifacts.py --config configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml --model-path model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp --source-preset public_data/coco/rescale_32_1024_bbox --coco-output public_data/coco/rescale_32_1024_bbox_len12000 --proxy-output public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000 --projection-root temp/coco_lvis_projection_length_budget --mapping-csv openspec/changes/add-lvis-coco-proxy-supervision/artifacts/determined_proxy_mappings_val2017.csv --max-total-tokens 12000 --splits train val --force",
-  "generated_at_utc": "2026-07-18T07:27:57Z",
+  "generated_at_utc": "2026-07-18T08:52:26Z",
   "inputs": [
     {
       "kind": "processed_base",
@@ -81,7 +81,7 @@
     "tokenizer": "model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp",
     "training_config": "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml"
   },
-  "notes": "COCO 1024 compact-full dataset filtered by total 12k token budget; val norm/coord were promoted from committed coco-refinement generation 1.",
+  "notes": "COCO 1024 compact-full dataset filtered by total 12k token budget; val norm/coord were formally promoted from committed coco-refinement generation 1 with outputs/coco_refinement/gate-a-20260717/val/training.publish.receipt.json.",
   "producer_script": "public_data/scripts/build_coco_length_budget_artifacts.py",
   "relative_path": "public_data/coco/rescale_32_1024_bbox_len12000",
   "schema_version": 1,

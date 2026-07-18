@@ -8,7 +8,7 @@ change: coco-refinement
 domain: data
 summary: Operate the standalone human-only COCO refinement Gate A instance.
 tags: [data, coco, annotation, standalone, gate-a, runbook]
-updated: 2026-07-17
+updated: 2026-07-18
 ---
 
 # Standalone COCO Refinement Gate A Runbook
@@ -43,7 +43,7 @@ conda run -n ms python -m pip show fastapi uvicorn starlette
 The isolated Gate A identity is:
 
 ```text
-URL:          http://127.0.0.1:19172/
+URL:          http://localhost:53662/
 runtime root: outputs/coco_refinement/gate-a-20260717
 ```
 
@@ -51,24 +51,26 @@ The UI opens on train and provides a train/val split selector. Numeric
 loopback is mandatory; port 8080 is reserved for the untouched legacy
 fallback.
 
-Launch one foreground process from the repository root:
+Gate A now has one fixed direct browser endpoint and does not require a
+separate browser relay:
 
-```bash
-conda run --no-capture-output -n ms python -u scripts/run_coco_refinement.py \
-  --runtime-root outputs/coco_refinement/gate-a-20260717 \
-  --host 127.0.0.1 \
-  --port 19172 \
-  --browser-origin http://localhost:53662 \
-  --startup-timeout 300 \
-  --shutdown-timeout 10
+```text
+browser URL: http://localhost:53662/
+bind URL:    http://127.0.0.1:53662/
 ```
 
-`--browser-origin` is only for a local in-app browser proxy whose visible URL
-uses a different `localhost:<port>` authority. Set it to the exact origin shown
-by that browser tab, or omit it for direct `127.0.0.1:19172` access. It does not
-change the listening socket, permits only one explicit local authority, and
-does not trust forwarded headers. If the in-app proxy assigns a new port, stop
-the standalone process cleanly and relaunch with that new exact origin.
+Launch one foreground process from any working directory:
+
+```bash
+bash /data/CoordExp/scripts/launch_coco_refinement_gate_a.sh
+```
+
+The wrapper fixes the numeric bind and accepted browser authority to port
+`53662`, fixes the runtime root above, enters the repository root, and uses the
+`ms` conda environment. `--print-config` reports those values without starting
+the runtime. Port overrides are intentionally rejected so bookmarks remain
+stable. Both `localhost:53662` and `127.0.0.1:53662` are accepted authorities;
+forwarded headers remain forbidden.
 
 Only one process may own this runtime root. A second launcher fails before
 binding the port. Stop the owning foreground process with `Ctrl-C` and wait
@@ -104,9 +106,9 @@ conda run -n ms python -m json.tool \
   outputs/coco_refinement/gate-a-20260717/runtime.json
 conda run -n ms python -m json.tool \
   outputs/coco_refinement/gate-a-20260717/runtime-health.json
-curl --noproxy '*' -fsS http://127.0.0.1:19172/api/splits/train/state | \
+curl --noproxy '*' -fsS http://127.0.0.1:53662/api/splits/train/state | \
   conda run -n ms python -m json.tool
-curl --noproxy '*' -fsS http://127.0.0.1:19172/api/splits/val/state | \
+curl --noproxy '*' -fsS http://127.0.0.1:53662/api/splits/val/state | \
   conda run -n ms python -m json.tool
 ```
 
@@ -178,7 +180,7 @@ The runtime validates their identities and fails closed on drift. It must not
 rewrite or copy source JSONL or images; each split's `images` entry is a
 managed symlink to the shared image root.
 
-Before standalone acceptance, rollback means stopping port 19172 and returning
+Before standalone acceptance, rollback means stopping port 53662 and returning
 to the unchanged legacy port-8080 workflow documented in
 [COCO_REFINEMENT_RUNBOOK.md](COCO_REFINEMENT_RUNBOOK.md). Do not deactivate,
 rewrite, migrate, or clean up that legacy runtime from this Gate A procedure.

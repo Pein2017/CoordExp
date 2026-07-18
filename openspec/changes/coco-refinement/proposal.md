@@ -30,6 +30,9 @@ change, and easier to reason about.
 - Deliver in two user-visible gates: first the complete human annotation loop,
   then real-profile ROI inference with server-side atomic Draft insertion and
   editable returned boxes.
+- Add one foreground launcher with a fixed direct `localhost:53662` endpoint
+  and fixed Gate A runtime root so operator bookmarks and restart commands do
+  not depend on an ephemeral relay.
 - **BREAKING for the legacy prototype only:** do not migrate or remain wire
   compatible with uncommitted Label Studio Drafts. Source/working JSONL, shared
   images, committed object identity, materialized coord output, and inference

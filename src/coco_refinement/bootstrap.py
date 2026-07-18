@@ -198,6 +198,122 @@ def bootstrap_workspace(
     )
 
 
+def resume_workspace(
+    repo_root: str | Path,
+    *,
+    runtime_root: str | Path,
+    source_contracts: Sequence[BootstrapSourceContract],
+    repository: SqliteDraftRepository,
+    annotation_verifier: object,
+    inference_receipt_resolver: object,
+    attest_repository: bool = True,
+) -> WorkspaceBootstrapResult:
+    """Open an existing store without re-importing the mutable training view.
+
+    The original bootstrap fingerprint remains immutable in each store and in
+    SQLite.  A caller must separately attest any published iteration before
+    selecting this resume path.
+    """
+
+    if not isinstance(attest_repository, bool):
+        raise BootstrapContractError(
+            "attest_repository must be a boolean",
+            code="coco_refinement.bootstrap_attestation",
+        )
+    root = Path(repo_root).resolve(strict=True)
+    selected_runtime = Path(runtime_root).resolve(strict=True)
+    selected_contracts = tuple(source_contracts)
+    if not selected_contracts or len(
+        {contract.split for contract in selected_contracts}
+    ) != len(selected_contracts):
+        raise BootstrapContractError(
+            "resume source contracts are empty or duplicated",
+            code="coco_refinement.resume_contracts",
+        )
+
+    results: dict[Split, SplitBootstrapResult] = {}
+    for contract in selected_contracts:
+        split_root = selected_runtime / contract.split
+        manifest_path = split_root / "project.json"
+        if not manifest_path.is_file():
+            raise BootstrapContractError(
+                "existing runtime is missing one split manifest",
+                code="coco_refinement.resume_manifest",
+                context={"split": contract.split},
+            )
+        manifest = _load_json_object(manifest_path, field="project manifest")
+        expected = {
+            "split": contract.split,
+            "source_path": str(contract.source_path.resolve(strict=True)),
+            "source_sha256": contract.expected_source_sha256,
+            "image_root": str(contract.image_root.resolve(strict=True)),
+            "document_root": str(contract.image_root.resolve(strict=True)),
+            "project_id": f"coco-refinement:{contract.split}",
+            "adapter_version": _ADAPTER_VERSION,
+            "vendor_revision": _NO_VENDOR_REVISION,
+            "registry_fingerprint": COCO80_REGISTRY.fingerprint,
+            "label_config_fingerprint": _NATIVE_LABEL_CONTRACT,
+            "instance_id": "coco-refinement",
+            "task_count": contract.expected_row_count,
+        }
+        for key, value in expected.items():
+            if manifest.get(key) != value:
+                raise BootstrapContractError(
+                    "existing runtime differs from its immutable bootstrap identity",
+                    code="coco_refinement.resume_manifest",
+                    context={"split": contract.split, "field": key},
+                )
+        images_link = split_root / "images"
+        if manifest.get("managed_image_link") != str(images_link):
+            raise BootstrapContractError(
+                "existing runtime managed image binding drifted",
+                code="coco_refinement.resume_images",
+                context={"split": contract.split},
+            )
+        if (
+            not images_link.is_symlink()
+            or images_link.resolve(strict=True)
+            != contract.image_root.resolve(strict=True)
+        ):
+            raise BootstrapContractError(
+                "existing runtime managed image target drifted",
+                code="coco_refinement.resume_images",
+                context={"split": contract.split},
+            )
+
+        store = WorkingDatasetStore(
+            split_root,
+            annotation_verifier=annotation_verifier,  # type: ignore[arg-type]
+            inference_receipt_resolver=inference_receipt_resolver,  # type: ignore[arg-type]
+        )
+        project_id = f"coco-refinement:{contract.split}"
+        tasks = _project_compact_tasks(
+            store,
+            project_id=project_id,
+            split=contract.split,
+            expected_count=contract.expected_row_count,
+        )
+        project = ProjectRecord(
+            project_id=project_id,
+            split=contract.split,
+            source_fingerprint=contract.expected_source_sha256,
+            task_count=contract.expected_row_count,
+        )
+        if attest_repository:
+            repository.bootstrap_project(project, tasks)
+        results[contract.split] = SplitBootstrapResult(
+            project=project,
+            tasks=tasks,
+            store=store,
+            store_created=False,
+        )
+    return WorkspaceBootstrapResult(
+        runtime_root=selected_runtime,
+        repository=repository,
+        splits=results,
+    )
+
+
 def _bootstrap_split(
     contract: BootstrapSourceContract,
     *,

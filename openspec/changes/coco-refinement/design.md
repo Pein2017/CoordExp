@@ -74,6 +74,14 @@ resolved versions rather than relying on an ambient import. The human-only
 gate uses browser-native ES modules, HTML, CSS, and SVG; it has no Node build
 step and no vendor editor dependency.
 
+The operator entrypoint is one foreground shell wrapper that directly binds
+`127.0.0.1:53662`, accepts `http://localhost:53662` as the one explicit browser
+authority, and always reopens
+`outputs/coco_refinement/gate-a-20260717`. It rejects port overrides. This
+removes the transient relay that made browser bookmarks expire while retaining
+the numeric-loopback and exact-authority security boundary. `Ctrl-C` remains
+the normal graceful shutdown path.
+
 SVG renders the natural image with an overlay in the same view box. Client
 pointer geometry is mapped to natural-image edges, while the server validates
 and stores only canonical integer norm1000 `xyxy`. The client never becomes
@@ -314,6 +322,22 @@ locators to the shared store, validates exact row/object equivalence and the
 current CoordExp-Swift loader, rejects the whole publish if any row exceeds
 12000 encoded tokens, and preserves the prior pair on failure. No image bytes
 or original COCO annotation file are copied or changed.
+
+The original max_len12000 hashes recorded at first bootstrap remain the
+immutable identity baseline; the overwritten norm/coord pair is the mutable
+active training target. Restarting that same runtime after publication is
+authorized only by the exact terminal schema-v2 publication receipt plus the
+manifest-bound working store and journal. The service verifies the current
+published pair, terminal generation, object counts, loader result, token
+ceiling, working hash, and journal hash before opening SQLite. It then resumes
+the existing workspaces rather than reimporting the mutable target, preserving
+Drafts and stable local negative IDs.
+
+The current training JSONL does not persist `region_key`, so it is insufficient
+to reconstruct stable negative IDs in a brand-new runtime after iteration.
+Fresh recovery from an iterated target therefore remains fail-closed until an
+explicit identity-sidecar contract is designed; this is not part of the fixed
+launcher slice.
 
 ## Risks / Trade-offs
 

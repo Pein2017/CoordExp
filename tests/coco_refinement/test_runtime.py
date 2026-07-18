@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from PIL import Image
 
-from src.coco_refinement.bootstrap import BootstrapSourceContract
+from src.coco_refinement.bootstrap import BootstrapSourceContract, bootstrap_workspace
 from src.coco_refinement.canonical import canonicalize_objects
 from src.coco_refinement.preflight import (
     LaunchPreflight,
@@ -30,7 +30,12 @@ from src.coco_refinement.runtime import (
     StoreTerminalPairProvider,
     create_standalone_runtime,
     inspect_source_contracts_read_only,
+    inspect_source_contracts_for_resume,
     production_adapter_factories,
+)
+from src.coco_refinement.dataset_publisher import (
+    CommittedGenerationPublisher,
+    TokenBudgetValidation,
 )
 from src.label_studio_coco_refinement.store import (
     BatchRequest,
@@ -130,6 +135,22 @@ def _local_region(
         "category_name": "person",
         "category_id": 1,
     }
+
+
+class _PublisherTokenValidator:
+    def validate(
+        self, coord_jsonl: Path, *, expected_row_count: int
+    ) -> TokenBudgetValidation:
+        assert coord_jsonl.is_file()
+        return TokenBudgetValidation(
+            row_count=expected_row_count,
+            max_total_tokens=12000,
+            max_total_tokens_seen=100,
+            training_config_path=Path("/test/config.yaml"),
+            training_config_sha256="a" * 64,
+            training_config_fingerprint="b" * 64,
+            tokenizer_sha256="c" * 64,
+        )
 
 
 def _committed_region(split: str, image_id: int) -> dict[str, object]:
@@ -664,6 +685,41 @@ def test_source_inspection_failure_releases_lock_before_sqlite_creation(
 
     with RuntimeRootLock(tmp_path / "runtime"):
         pass
+
+
+def test_resume_source_requires_exact_terminal_publication_receipt(
+    tmp_path: Path,
+) -> None:
+    contracts = _dual_contracts(tmp_path)
+    runtime_root = tmp_path / "outputs/coco_refinement/gate-a"
+    bootstrap_workspace(
+        tmp_path,
+        runtime_root=runtime_root,
+        source_contracts=contracts,
+    )
+    receipt = CommittedGenerationPublisher(
+        repository_root=tmp_path,
+        runtime_root=runtime_root,
+        split="val",
+        token_budget_validator=_PublisherTokenValidator(),
+    ).publish()
+
+    inspected = inspect_source_contracts_for_resume(contracts, runtime_root)
+
+    assert [item.authority for item in inspected] == [
+        "bootstrap_source",
+        "published_iteration",
+    ]
+    assert inspected[1].source_sha256 == receipt.target_norm_sha256
+    assert inspected[1].bootstrap_source_sha256 == contracts[1].expected_source_sha256
+
+    receipt_path = runtime_root / "val/training.publish.receipt.json"
+    payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+    payload["outputs"]["norm"]["sha256"] = "0" * 64
+    receipt_path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+    with pytest.raises(SourceInspectionError, match="does not match"):
+        inspect_source_contracts_for_resume(contracts, runtime_root)
 
 
 def test_receipt_store_factory_runs_only_after_writer_lock(

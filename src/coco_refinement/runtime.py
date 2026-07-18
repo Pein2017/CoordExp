@@ -20,14 +20,16 @@ from typing import Any, Protocol
 
 from PIL import Image, UnidentifiedImageError
 
-from src.common.errors import RuntimeContractError
+from src.common.errors import DataContractError, RuntimeContractError
 from src.coco_refinement.bootstrap import (
     DEFAULT_RUNTIME_RELATIVE,
     BootstrapSourceContract,
     WorkspaceBootstrapResult,
     bootstrap_workspace,
     production_source_contracts,
+    resume_workspace,
 )
+from src.coco_refinement.dataset_publisher import PUBLISHER_VERSION, RECEIPT_NAME
 from src.coco_refinement.preflight import (
     LaunchPreflight,
     VersionResolver,
@@ -50,7 +52,10 @@ from src.label_studio_coco_refinement.store import (
     _validate_selected_source,
     _validate_source_row,
     _working_image_locator,
+    canonical_json,
+    sha256_file,
 )
+from src.label_studio_coco_refinement.models import WorkingRow
 
 
 HEALTH_RECEIPT_NAME = "runtime-health.json"
@@ -115,15 +120,31 @@ class SourceInspectionReceipt:
     source_sha256: str
     row_count: int
     image_root: Path
+    authority: str = "bootstrap_source"
+    bootstrap_source_sha256: str | None = None
+    publication_receipt_path: Path | None = None
+    publication_receipt_sha256: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
+            "authority": self.authority,
             "image_root": str(self.image_root),
             "row_count": self.row_count,
             "source_path": str(self.source_path),
             "source_sha256": self.source_sha256,
             "split": self.split,
         }
+        if self.bootstrap_source_sha256 is not None:
+            payload["bootstrap_source_sha256"] = self.bootstrap_source_sha256
+        if self.publication_receipt_path is not None:
+            payload["publication_receipt_path"] = str(
+                self.publication_receipt_path
+            )
+        if self.publication_receipt_sha256 is not None:
+            payload["publication_receipt_sha256"] = (
+                self.publication_receipt_sha256
+            )
+        return payload
 
 
 @dataclass(frozen=True)
@@ -700,6 +721,271 @@ def inspect_source_contracts_read_only(
     return tuple(receipts)
 
 
+def inspect_source_contracts_for_resume(
+    contracts: Sequence[BootstrapSourceContract],
+    runtime_root: str | Path,
+) -> tuple[SourceInspectionReceipt, ...]:
+    """Attest an existing runtime against bootstrap or published source bytes.
+
+    Published training files are never used to rebuild the store.  Their only
+    accepted drift is an exact terminal-generation publisher receipt whose
+    working and journal authorities still match the existing runtime.
+    """
+
+    selected = _validate_dual_contracts(contracts)
+    selected_runtime = Path(runtime_root).resolve(strict=True)
+    actual_hashes = {
+        contract.split: sha256_file(contract.source_path.resolve(strict=True))
+        for contract in selected
+    }
+    if all(
+        actual_hashes[contract.split] == contract.expected_source_sha256
+        for contract in selected
+    ):
+        return inspect_source_contracts_read_only(selected)
+
+    receipts: list[SourceInspectionReceipt] = []
+    for contract in selected:
+        source = contract.source_path.resolve(strict=True)
+        image_root = contract.image_root.resolve(strict=True)
+        actual_hash = actual_hashes[contract.split]
+        if actual_hash == contract.expected_source_sha256:
+            row_count = _validate_resume_rows(
+                source,
+                split=contract.split,
+                image_root=image_root,
+                allow_negative=False,
+            )[0]
+            if row_count != contract.expected_row_count:
+                raise SourceInspectionError(
+                    "bootstrap source row count differs during resume",
+                    code="coco_refinement.resume_source_count",
+                    context={"split": contract.split},
+                )
+            receipts.append(
+                SourceInspectionReceipt(
+                    split=contract.split,
+                    source_path=source,
+                    source_sha256=actual_hash,
+                    row_count=row_count,
+                    image_root=image_root,
+                )
+            )
+            continue
+        receipts.append(
+            _inspect_published_iteration(
+                contract,
+                runtime_root=selected_runtime,
+                source=source,
+                source_sha256=actual_hash,
+                image_root=image_root,
+            )
+        )
+    return tuple(receipts)
+
+
+def _inspect_published_iteration(
+    contract: BootstrapSourceContract,
+    *,
+    runtime_root: Path,
+    source: Path,
+    source_sha256: str,
+    image_root: Path,
+) -> SourceInspectionReceipt:
+    split_root = runtime_root / contract.split
+    transaction_path = split_root / ".training.publish.transaction.json"
+    if transaction_path.exists():
+        raise SourceInspectionError(
+            "training publication transaction requires recovery before resume",
+            code="coco_refinement.resume_publication_transaction",
+            context={"split": contract.split},
+        )
+    receipt_path = split_root / RECEIPT_NAME
+    manifest_path = split_root / "project.json"
+    working_path = split_root / "working.norm.jsonl"
+    journal_path = split_root / "journal.jsonl"
+    coord_path = source.with_name(f"{contract.split}.coord.jsonl")
+    receipt = _read_json_artifact(receipt_path, field="training publication receipt")
+    manifest = _read_json_artifact(manifest_path, field="runtime project manifest")
+    outputs = receipt.get("outputs")
+    norm_output = outputs.get("norm") if isinstance(outputs, Mapping) else None
+    coord_output = outputs.get("coord") if isinstance(outputs, Mapping) else None
+    working = receipt.get("working")
+    identity = receipt.get("identity_authority")
+    token_budget = receipt.get("token_budget")
+    loader = receipt.get("loader_attestation")
+    norm_schema = receipt.get("norm_schema_attestation")
+    images = receipt.get("images")
+    expected = (
+        receipt.get("schema_version") == 2
+        and receipt.get("code")
+        == "coco_refinement.committed_generation_published"
+        and receipt.get("publisher_version") == PUBLISHER_VERSION
+        and receipt.get("split") == contract.split
+        and receipt.get("runtime_root") == str(runtime_root)
+        and receipt.get("generation") == manifest.get("generation")
+        and receipt.get("row_count") == contract.expected_row_count
+        and isinstance(norm_output, Mapping)
+        and norm_output.get("path") == str(source)
+        and norm_output.get("sha256") == source_sha256
+        and isinstance(coord_output, Mapping)
+        and coord_output.get("path") == str(coord_path)
+        and coord_output.get("sha256") == sha256_file(coord_path)
+        and isinstance(working, Mapping)
+        and working.get("path") == str(working_path)
+        and working.get("sha256") == manifest.get("working_sha256")
+        and working.get("sha256") == sha256_file(working_path)
+        and isinstance(identity, Mapping)
+        and identity.get("journal_path") == str(journal_path)
+        and identity.get("journal_sha256") == sha256_file(journal_path)
+        and identity.get("status") == "passed"
+        and isinstance(token_budget, Mapping)
+        and token_budget.get("status") == "passed"
+        and token_budget.get("max_total_tokens") == 12000
+        and isinstance(loader, Mapping)
+        and loader.get("status") == "passed"
+        and isinstance(norm_schema, Mapping)
+        and norm_schema.get("status") == "passed"
+        and isinstance(images, Mapping)
+        and images.get("copied") is False
+    )
+    if not expected:
+        raise SourceInspectionError(
+            "published iteration receipt does not match runtime and target authority",
+            code="coco_refinement.resume_publication_receipt",
+            context={"split": contract.split},
+        )
+    row_count, object_count, negative_count, normalized_sha256 = _validate_resume_rows(
+        source,
+        split=contract.split,
+        image_root=image_root,
+        allow_negative=True,
+    )
+    if (
+        row_count != contract.expected_row_count
+        or receipt.get("object_count") != object_count
+        or identity.get("negative_object_count") != negative_count
+        or normalized_sha256 != manifest.get("working_sha256")
+    ):
+        raise SourceInspectionError(
+            "published iteration inventory differs from its receipt",
+            code="coco_refinement.resume_publication_inventory",
+            context={"split": contract.split},
+        )
+    return SourceInspectionReceipt(
+        split=contract.split,
+        source_path=source,
+        source_sha256=source_sha256,
+        row_count=row_count,
+        image_root=image_root,
+        authority="published_iteration",
+        bootstrap_source_sha256=contract.expected_source_sha256,
+        publication_receipt_path=receipt_path,
+        publication_receipt_sha256=sha256_file(receipt_path),
+    )
+
+
+def _validate_resume_rows(
+    source: Path,
+    *,
+    split: str,
+    image_root: Path,
+    allow_negative: bool,
+) -> tuple[int, int, int, str]:
+    row_count = 0
+    object_count = 0
+    negative_count = 0
+    seen_image_ids: set[int] = set()
+    normalized_digest = hashlib.sha256()
+    with source.open("r", encoding="utf-8", newline="") as handle:
+        for line_no, line in enumerate(handle, start=1):
+            row = _parse_jsonl_line(line, source, line_no)
+            if allow_negative:
+                try:
+                    normalized_row = dict(row)
+                    normalized_row["images"] = [
+                        _working_image_locator(row, split, source, image_root)
+                    ]
+                    working = WorkingRow.from_mapping(
+                        normalized_row, field=f"published[{line_no}]"
+                    ).validate_for_split(split)  # type: ignore[arg-type]
+                except (DataContractError, RuntimeContractError, ValidationError) as exc:
+                    raise SourceInspectionError(
+                        "published iteration row is not a valid working row",
+                        code="coco_refinement.resume_publication_semantics",
+                        context={"split": split, "line": line_no},
+                        cause=exc,
+                    ) from exc
+                objects = working.objects
+                image_id = working.image_id
+                locator = str(row["images"][0])
+                normalized_payload = working.to_json_dict(coord_tokens=False)
+            else:
+                try:
+                    _validate_source_row(row, split, COCO80_REGISTRY)
+                except ValidationError as exc:
+                    raise SourceInspectionError(
+                        "bootstrap source semantics drifted during resume",
+                        code="coco_refinement.resume_source_semantics",
+                        context={"split": split, "line": line_no},
+                        cause=exc,
+                    ) from exc
+                objects = row["objects"]
+                image_id = int(row["image_id"])
+                locator = str(row["images"][0])
+                normalized_payload = row
+            if image_id in seen_image_ids:
+                raise SourceInspectionError(
+                    "resume source contains duplicate image identity",
+                    code="coco_refinement.resume_source_identity",
+                    context={"split": split, "image_id": image_id},
+                )
+            seen_image_ids.add(image_id)
+            resolved_image = (source.parent / locator).resolve(strict=True)
+            try:
+                resolved_image.relative_to(image_root)
+            except ValueError as exc:
+                raise SourceInspectionError(
+                    "resume source image locator escapes the shared root",
+                    code="coco_refinement.resume_source_image",
+                    context={"split": split, "line": line_no},
+                    cause=exc,
+                ) from exc
+            object_count += len(objects)
+            negative_count += sum(
+                1
+                for obj in objects
+                if int(
+                    obj.coco_ann_id if hasattr(obj, "coco_ann_id") else obj["coco_ann_id"]
+                )
+                < 0
+            )
+            normalized_digest.update(
+                (canonical_json(normalized_payload) + "\n").encode("utf-8")
+            )
+            row_count += 1
+    return row_count, object_count, negative_count, normalized_digest.hexdigest()
+
+
+def _read_json_artifact(path: Path, *, field: str) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise SourceInspectionError(
+            f"{field} is unavailable or invalid",
+            code="coco_refinement.resume_publication_receipt",
+            context={"path": str(path)},
+            cause=exc,
+        ) from exc
+    if not isinstance(value, dict):
+        raise SourceInspectionError(
+            f"{field} must be a JSON object",
+            code="coco_refinement.resume_publication_receipt",
+            context={"path": str(path)},
+        )
+    return value
+
+
 def _strict_source_image_path(
     row: Mapping[str, Any], *, split: str, image_root: Path
 ) -> Path:
@@ -781,10 +1067,15 @@ def create_standalone_runtime(
     source_inspector: Callable[
         [Sequence[BootstrapSourceContract]], Sequence[SourceInspectionReceipt]
     ] = inspect_source_contracts_read_only,
+    resume_source_inspector: Callable[
+        [Sequence[BootstrapSourceContract], str | Path],
+        Sequence[SourceInspectionReceipt],
+    ] = inspect_source_contracts_for_resume,
     repository_factory: Callable[[Path], SqliteDraftRepository] = SqliteDraftRepository,
     workspace_bootstrapper: Callable[
         ..., WorkspaceBootstrapResult
     ] = bootstrap_workspace,
+    workspace_resumer: Callable[..., WorkspaceBootstrapResult] = resume_workspace,
     coordinator_factory: CoordinatorFactory | None = None,
     refinement_runtime_factory: RefinementRuntimeFactory = RefinementRuntime,
     preflight_runner: Callable[..., LaunchPreflight] = run_launch_preflight,
@@ -857,13 +1148,28 @@ def create_standalone_runtime(
                 inference_receipt_store=receipt_store,
                 current_user_id=current_user_id,
             )
-        inspections = tuple(source_inspector(selected_contracts))
+        split_manifests = tuple(
+            selected_runtime / split / "project.json" for split in _SPLITS
+        )
+        existing_count = sum(path.is_file() for path in split_manifests)
+        if existing_count not in (0, len(_SPLITS)):
+            raise RuntimeAssemblyError(
+                "runtime root contains only one split manifest",
+                code="coco_refinement.resume_partial_runtime",
+            )
+        resuming = existing_count == len(_SPLITS)
+        inspections = tuple(
+            resume_source_inspector(selected_contracts, selected_runtime)
+            if resuming
+            else source_inspector(selected_contracts)
+        )
         _validate_inspection_receipts(inspections, selected_contracts)
 
         repository = repository_factory(selected_runtime / "state.sqlite3")
         verifier = factories.verifier(repository)
         receipt_resolver = factories.inference_receipt_resolver(repository)
-        workspace = workspace_bootstrapper(
+        workspace_factory = workspace_resumer if resuming else workspace_bootstrapper
+        workspace = workspace_factory(
             root,
             runtime_root=selected_runtime,
             source_contracts=selected_contracts,
@@ -1001,8 +1307,18 @@ def _validate_inspection_receipts(
     by_split = {receipt.split: receipt for receipt in receipts}
     for contract in contracts:
         receipt = by_split[contract.split]
+        authority_matches = (
+            receipt.authority == "bootstrap_source"
+            and receipt.source_sha256 == contract.expected_source_sha256
+        ) or (
+            receipt.authority == "published_iteration"
+            and receipt.bootstrap_source_sha256
+            == contract.expected_source_sha256
+            and receipt.publication_receipt_path is not None
+            and receipt.publication_receipt_sha256 is not None
+        )
         if (
-            receipt.source_sha256 != contract.expected_source_sha256
+            not authority_matches
             or receipt.row_count != contract.expected_row_count
             or receipt.source_path != contract.source_path.resolve(strict=True)
             or receipt.image_root != contract.image_root.resolve(strict=True)
@@ -1094,5 +1410,6 @@ __all__ = [
     "TerminalPairProvider",
     "create_standalone_runtime",
     "inspect_source_contracts_read_only",
+    "inspect_source_contracts_for_resume",
     "production_adapter_factories",
 ]

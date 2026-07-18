@@ -178,13 +178,16 @@ class DatasetPublicationReceipt:
     target_coord_sha256: str
     row_count: int
     object_count: int
+    negative_object_count: int
+    journal_path: Path
+    journal_sha256: str
     token_budget: TokenBudgetValidation
     transaction_id: str
     published_at_utc: str
 
     def to_artifact_dict(self) -> dict[str, Any]:
         return {
-            "schema_version": 1,
+            "schema_version": 2,
             "code": "coco_refinement.committed_generation_published",
             "publisher_version": PUBLISHER_VERSION,
             "split": self.split,
@@ -208,6 +211,12 @@ class DatasetPublicationReceipt:
             },
             "row_count": self.row_count,
             "object_count": self.object_count,
+            "identity_authority": {
+                "journal_path": str(self.journal_path),
+                "journal_sha256": self.journal_sha256,
+                "negative_object_count": self.negative_object_count,
+                "status": "passed",
+            },
             "loader_attestation": {
                 "seam": "src.data.iter_raw_examples",
                 "coord_row_count": self.row_count,
@@ -238,6 +247,7 @@ class _CandidatePair:
     coord_sha256: str
     row_count: int
     object_count: int
+    negative_object_count: int
 
 
 class CommittedGenerationPublisher:
@@ -271,6 +281,7 @@ class CommittedGenerationPublisher:
         self.split_root = self.runtime_root / split
         self.working_path = self.split_root / "working.norm.jsonl"
         self.manifest_path = self.split_root / "project.json"
+        self.journal_path = self.split_root / "journal.jsonl"
         self.lock_path = self.split_root / ".commit.lock"
         self.target_root = self.repository_root / TARGET_RELATIVE_ROOT
         self.image_root = self.repository_root / IMAGE_RELATIVE_ROOT
@@ -323,7 +334,12 @@ class CommittedGenerationPublisher:
                     code="coco_refinement.publish_root",
                     context={"path": str(path)},
                 )
-        for path in (self.working_path, self.manifest_path, self.lock_path):
+        for path in (
+            self.working_path,
+            self.manifest_path,
+            self.journal_path,
+            self.lock_path,
+        ):
             if not path.is_file():
                 raise DatasetPublishError(
                     "runtime generation authority is incomplete",
@@ -383,6 +399,7 @@ class CommittedGenerationPublisher:
             "task_count": task_count,
             "working_sha256": working_sha256,
             "manifest_sha256": _sha256_file(self.manifest_path),
+            "journal_sha256": _sha256_file(self.journal_path),
         }
 
     def _recheck_generation_authority(
@@ -415,6 +432,7 @@ class CommittedGenerationPublisher:
         coord_digest = hashlib.sha256()
         row_count = 0
         object_count = 0
+        negative_object_count = 0
         keep = False
         try:
             with (
@@ -459,6 +477,9 @@ class CommittedGenerationPublisher:
                     coord_digest.update(coord_encoded)
                     row_count += 1
                     object_count += len(row.objects)
+                    negative_object_count += sum(
+                        1 for obj in row.objects if obj.coco_ann_id < 0
+                    )
                 norm_out.flush()
                 coord_out.flush()
                 os.fsync(norm_out.fileno())
@@ -484,6 +505,7 @@ class CommittedGenerationPublisher:
                 coord_sha256=coord_digest.hexdigest(),
                 row_count=row_count,
                 object_count=object_count,
+                negative_object_count=negative_object_count,
             )
         finally:
             if not keep:
@@ -545,6 +567,9 @@ class CommittedGenerationPublisher:
                 target_coord_sha256=candidates.coord_sha256,
                 row_count=candidates.row_count,
                 object_count=candidates.object_count,
+                negative_object_count=candidates.negative_object_count,
+                journal_path=self.journal_path,
+                journal_sha256=str(authority["journal_sha256"]),
                 token_budget=token_budget,
                 transaction_id=transaction_id,
                 published_at_utc=datetime.now(timezone.utc)

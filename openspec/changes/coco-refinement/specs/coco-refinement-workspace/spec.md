@@ -2,9 +2,12 @@
 
 ### Requirement: Exact full-source workspace
 The system SHALL expose every task from the exact max_len12000 train and
-validation source contracts in separate split workspaces while preserving
+validation bootstrap contracts in separate split workspaces while preserving
 source row identity, image identity, dimensions, metadata, object identity, and
-split ordering. It SHALL NOT modify or copy source JSONL or source images.
+split ordering. The recorded bootstrap fingerprints SHALL remain the immutable
+identity baseline. The derived max_len12000 norm/coord pair MAY later advance
+only through the receipt-bound training publisher; source images and original
+COCO data SHALL NOT be modified or copied.
 
 #### Scenario: Full workspace is bootstrapped
 - **WHEN** the operator starts a fresh runtime
@@ -17,6 +20,18 @@ split ordering. It SHALL NOT modify or copy source JSONL or source images.
 #### Scenario: Source drifts
 - **WHEN** a source hash, task identity, image binding, or row count differs from the recorded contract
 - **THEN** startup fails closed before serving or mutating a workspace
+
+#### Scenario: Existing runtime restarts after a formal training publish
+- **WHEN** both split workspaces already exist and the derived max_len12000 pair differs from its bootstrap hash
+- **THEN** startup requires an exact terminal publication receipt, verifies its current norm/coord and working/journal identities, and resumes the manifest-bound working store without replacing bootstrap identity or Drafts
+
+#### Scenario: Iterated source lacks valid restart authority
+- **WHEN** a derived max_len12000 pair drifted but its terminal publication receipt is missing, pending, stale, or tampered
+- **THEN** startup fails closed before binding the browser port
+
+#### Scenario: Fresh runtime is requested from an iterated target
+- **WHEN** no existing manifest-bound workspace can recover local object identity from the working journal
+- **THEN** startup does not infer stable negative IDs from the training JSONL and fails until a separately specified identity sidecar contract exists
 
 ### Requirement: Sparse native Draft authority
 The system SHALL store a Draft only for a task whose native object semantics
@@ -186,3 +201,17 @@ forwarded authority headers.
 #### Scenario: Browser and mutation authorities are mixed
 - **WHEN** request Host matches one accepted authority but mutation Origin names the other authority, an unconfigured port, or any non-loopback origin
 - **THEN** the service rejects the mutation before route dispatch and performs no semantic write
+
+### Requirement: Fixed direct Gate A launcher
+The operator launcher SHALL run the standalone service in the foreground on
+numeric loopback port `53662`, accept `http://localhost:53662` as the one
+browser authority, reuse the approved Gate A runtime root, and reject port
+overrides. It SHALL NOT require a separate forwarding process.
+
+#### Scenario: Operator starts Gate A
+- **WHEN** the operator invokes the launcher from any working directory
+- **THEN** the service directly listens on `127.0.0.1:53662`, prints the stable browser URL, and reuses `outputs/coco_refinement/gate-a-20260717`
+
+#### Scenario: Operator requests another port
+- **WHEN** the operator passes an unsupported argument or attempts to override the port
+- **THEN** the launcher exits before starting the runtime and reports that Gate A is fixed at port `53662`

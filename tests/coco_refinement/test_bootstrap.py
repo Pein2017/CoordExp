@@ -13,6 +13,7 @@ from src.coco_refinement.bootstrap import (
     BootstrapSourceContract,
     _native_region,
     bootstrap_workspace,
+    resume_workspace,
     resolve_indexed_image,
 )
 from src.coco_refinement.canonical import canonicalize_objects
@@ -155,6 +156,46 @@ def test_source_or_store_manifest_drift_fails_closed(tmp_path: Path) -> None:
         bootstrap_workspace(
             tmp_path, runtime_root=runtime_root, source_contracts=(contract,)
         )
+
+
+def test_existing_workspace_resume_preserves_bootstrap_identity_after_export_drift(
+    tmp_path: Path,
+) -> None:
+    contract, _ = _fixture_contract(tmp_path)
+    runtime_root = tmp_path / "runtime"
+    created = bootstrap_workspace(
+        tmp_path, runtime_root=runtime_root, source_contracts=(contract,)
+    )
+    with sqlite3.connect(runtime_root / "state.sqlite3") as connection:
+        project_before = connection.execute(
+            "SELECT * FROM projects WHERE project_id = 'coco-refinement:train'"
+        ).fetchone()
+        tasks_before = connection.execute(
+            "SELECT * FROM tasks WHERE project_id = 'coco-refinement:train' "
+            "ORDER BY source_row_index"
+        ).fetchall()
+    contract.source_path.write_bytes(contract.source_path.read_bytes() + b"\n")
+
+    resumed = resume_workspace(
+        tmp_path,
+        runtime_root=runtime_root,
+        source_contracts=(contract,),
+        repository=created.repository,
+        annotation_verifier=type("Verifier", (), {"verify": lambda self, _identity: False})(),
+        inference_receipt_resolver=type(
+            "Resolver", (), {"resolve": lambda self, _receipt_id: None}
+        )(),
+    )
+
+    assert resumed.splits["train"].store_created is False
+    with sqlite3.connect(runtime_root / "state.sqlite3") as connection:
+        assert connection.execute(
+            "SELECT * FROM projects WHERE project_id = 'coco-refinement:train'"
+        ).fetchone() == project_before
+        assert connection.execute(
+            "SELECT * FROM tasks WHERE project_id = 'coco-refinement:train' "
+            "ORDER BY source_row_index"
+        ).fetchall() == tasks_before
 
 
 def test_indexed_image_rejects_traversal_descendant_symlink_hash_and_dimension_drift(

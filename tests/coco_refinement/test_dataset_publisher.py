@@ -105,6 +105,7 @@ def _prepare_repository(tmp_path: Path) -> tuple[Path, Path]:
         split_root = runtime_root / split
         split_root.mkdir()
         (split_root / ".commit.lock").touch()
+        (split_root / "journal.jsonl").write_text("", encoding="utf-8")
         working = split_root / "working.norm.jsonl"
         working.write_text(
             json.dumps(_working_row(split=split), separators=(",", ":")) + "\n",
@@ -172,6 +173,7 @@ def test_publish_replaces_only_selected_split_and_reuses_shared_images(
     assert receipt.generation == 3
     assert receipt.row_count == 1
     assert receipt.object_count == 2
+    assert receipt.negative_object_count == 1
     assert receipt.target_norm_sha256 == _sha256(norm_path)
     assert receipt.target_coord_sha256 == _sha256(coord_path)
     receipt_payload = json.loads(
@@ -179,6 +181,13 @@ def test_publish_replaces_only_selected_split_and_reuses_shared_images(
     )
     assert receipt_payload["images"]["copied"] is False
     assert receipt_payload["token_budget"]["max_total_tokens"] == 12000
+    assert receipt_payload["schema_version"] == 2
+    assert receipt_payload["identity_authority"] == {
+        "journal_path": str(runtime_root / "val/journal.jsonl"),
+        "journal_sha256": _sha256(runtime_root / "val/journal.jsonl"),
+        "negative_object_count": 1,
+        "status": "passed",
+    }
     assert not (target_root / "images").exists()
     for suffix in ("norm", "coord"):
         assert (target_root / f"train.{suffix}.jsonl").read_bytes() == train_before[suffix]
