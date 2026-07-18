@@ -86,3 +86,31 @@ Two independent final revalidation lanes recomputed the 853-file manifest,
 verified every required owner and snapshot identity, matched the current probe
 hash, and approved with no unresolved P0/P1. Wave 0 is converged. The
 branch-durability P2 is handled by the scoped Wave 0 commit before Wave 1.
+
+## Wave 1 Implementation Triage
+
+Wave 1 moved the existing HF implementation behind the semantic backend-session
+contract and then used the old path only as an artifact-parity oracle. Four
+review/fix rounds covered runtime correctness and executable evidence. The
+protected temporary oracle files were excluded from approval because their
+deletion requires a separate manual gate.
+
+| Severity | Finding | Decision | Resolution |
+| --- | --- | --- | --- |
+| P1 | Raw-model likelihood could be partially present or malformed across writer and merge boundaries. | fix | Enabled runs now require one finite, non-positive raw value for every non-pad generated token; disabled runs forbid it. Strict merge rejects missing, positive, non-finite, or status-inconsistent evidence. |
+| P1 | Executed media identity could describe source bytes instead of transformed RGB pixels. | fix and probe | HF and shared Qwen image materialization now hash canonical transformed RGB8 pixels. A real asymmetric hflip receipt proves the executed hash equals mirrored pixels and differs from the original. |
+| P1 | The initial parity policy allowed unknown descendants under broad additive roots. | fix | The executable verifier now enumerates exact object keys, scalar leaves, repeated rows, and fixed sequence lengths. The final mutation matrix rejected all 332 injected schema drifts across 19 roots. |
+| P1 | Empty parity rows did not prove policy-owned prediction scoring or evaluator compatibility. | probe | A real raw-enabled DoRA-plus-delta run produced 14 scored predictions. Every stored score equals the policy channel, all 14 differ from raw counterfactual scores, and the unchanged evaluator consumed the artifacts successfully. |
+| P1 | The raw-likelihood receipt named adapter and embedding-delta paths without binding their bytes. | fix and probe | The rerun receipt hashes adapter config/tensor and delta metadata/tensor before and after execution, records sizes plus component/combined fingerprints, and chains those identities into the policy-score verifier. Altered payload hashes fail closed. |
+| P1 | Equally incomplete shards could merge because identity equality did not require semantic evidence to be nonempty. | fix | Shard ingestion now requires nonempty model, processor, tokenizer, session, likelihood, frontend, generation, template, dataset, and scalar identities; nullable composition fields must be explicit. HF may use a null execution identity, while vLLM requires a nonempty execution-model object. |
+| P2 | The raw-likelihood receipt recorded authored config identity but not one reconstructable post-override configuration. | fix | The receipt now embeds the complete effective config, a recomputable fingerprint, and argv. The real rerun used a nondefault `max_new_tokens: 160` and reproduced the fingerprint exactly. |
+
+## Wave 1 Status
+
+The final evidence lane and strict-merge lane both returned GO with no unresolved
+P0/P1. The complete targeted inference, evaluator, and Qwen slice passes with
+286 tests; strict OpenSpec validation, receipt/catalog hash checks, executable
+receipt replay, and `git diff --check` pass. Wave 1 remains administratively
+open only for deletion of `src/inference/legacy_hf_backend.py` and
+`tests/inference/test_backend_trace.py`; Wave 2 must not start until that
+protected deletion gate is completed and the residue checks are rerun.

@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 import yaml
-from pydantic import Field, ValidationError, field_validator, model_validator
+from pydantic import Field, ValidationError, model_validator
 
 from src.common.errors import ConfigContractError
 from src.config.fingerprint import sha256_file, sha256_json
@@ -17,6 +17,7 @@ from src.config.paths import get_nested, set_nested
 
 
 INFER_CONFIG_LOADER_VERSION = "coordexp-swift-infer-config-v1"
+QUALIFIED_VLLM_VERSIONS = ("0.14.1",)
 INFER_PATH_FIELDS = (
     "run.artifact_root",
     "model.base_model",
@@ -37,18 +38,10 @@ class InferProcessorConfig(StrictConfigModel):
     do_resize: Literal[False] = False
 
 
-class InferRuntimePatchesConfig(StrictConfigModel):
-    patch_embed_linearization: Literal["enabled", "disabled"] = "enabled"
-
-
 class InferModelConfig(StrictConfigModel):
     base_model: str
     dtype: Literal["bf16", "fp16", "fp32"] = "bf16"
-    attn_implementation: Literal["flash_attention_2", "sdpa", "eager"]
     processor: InferProcessorConfig = Field(default_factory=InferProcessorConfig)
-    runtime_patches: InferRuntimePatchesConfig = Field(
-        default_factory=InferRuntimePatchesConfig
-    )
 
 
 class InferAdapterConfig(StrictConfigModel):
@@ -77,19 +70,33 @@ class InferTemplateConfig(StrictConfigModel):
     prompt: InferTemplatePromptConfig
 
 
-class InferBackendConfig(StrictConfigModel):
-    type: Literal["hf", "vllm"]
+class InferHfBackendOptions(StrictConfigModel):
+    attn_implementation: Literal["flash_attention_2", "sdpa", "eager"]
+    patch_embed_linearization: Literal["enabled", "disabled"]
 
-    @field_validator("type")
-    @classmethod
-    def _vllm_is_reserved_not_implemented(cls, value: str) -> str:
-        if value == "vllm":
-            raise ConfigContractError(
-                "vLLM backend is schema-reserved but not implemented for CoordExp-swift V1",
-                code="config.backend_not_implemented",
-                context={"backend": value},
-            )
-        return value
+
+class InferVllmBackendOptions(StrictConfigModel):
+    gpu_memory_utilization: float = Field(
+        gt=0.0,
+        le=1.0,
+        allow_inf_nan=False,
+    )
+
+
+class InferHfBackendConfig(StrictConfigModel):
+    type: Literal["hf"]
+    hf: InferHfBackendOptions
+
+
+class InferVllmBackendConfig(StrictConfigModel):
+    type: Literal["vllm"]
+    vllm: InferVllmBackendOptions
+
+
+InferBackendConfig = Annotated[
+    InferHfBackendConfig | InferVllmBackendConfig,
+    Field(discriminator="type"),
+]
 
 
 class InferGenerationConfig(StrictConfigModel):
@@ -97,6 +104,7 @@ class InferGenerationConfig(StrictConfigModel):
     max_new_tokens: int = Field(gt=0)
     temperature: float = Field(ge=0.0, allow_inf_nan=False)
     top_p: float = Field(gt=0.0, le=1.0, allow_inf_nan=False)
+    n: Literal[1] = 1
     repetition_penalty: float = Field(default=1.0, gt=0.0, allow_inf_nan=False)
 
 
@@ -107,6 +115,7 @@ class InferScoringConfig(StrictConfigModel):
 class InferArtifactsConfig(StrictConfigModel):
     write_token_trace: bool = True
     write_parse_diagnostics: bool = True
+    include_raw_model_logprob: bool = False
 
 
 class InferDebugConfig(StrictConfigModel):
@@ -141,6 +150,50 @@ class InferConfig(StrictConfigModel):
                     "debug.smoke": self.debug.smoke,
                     "debug.dry_run": self.debug.dry_run,
                 },
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _canonical_inference_must_be_deterministic(self) -> "InferConfig":
+        if self.generation.temperature != 0.0 or self.generation.top_p != 1.0:
+            raise ConfigContractError(
+                "canonical inference requires temperature: 0.0 and top_p: 1.0",
+                code="config.deterministic_inference",
+                context={
+                    "generation.temperature": self.generation.temperature,
+                    "generation.top_p": self.generation.top_p,
+                },
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _canonical_inference_requires_scoring(self) -> "InferConfig":
+        if not self.scoring.enabled:
+            raise ConfigContractError(
+                "canonical inference requires scoring.enabled: true",
+                code="config.scoring_required",
+                context={"scoring.enabled": False},
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _canonical_inference_requires_evidence(self) -> "InferConfig":
+        disabled = [
+            field
+            for field, enabled in (
+                ("artifacts.write_token_trace", self.artifacts.write_token_trace),
+                (
+                    "artifacts.write_parse_diagnostics",
+                    self.artifacts.write_parse_diagnostics,
+                ),
+            )
+            if not enabled
+        ]
+        if disabled:
+            raise ConfigContractError(
+                "canonical inference requires token trace and parse diagnostics evidence",
+                code="config.inference_evidence_required",
+                context={"disabled_fields": disabled},
             )
         return self
 
@@ -205,6 +258,20 @@ def load_infer_config(path: str | Path) -> ResolvedInferConfig:
         sources=sources,
         path_origins=path_origins,
     )
+
+
+def validate_vllm_runtime_version(*, observed_version: str) -> None:
+    """Fail closed before engine construction for an unqualified vLLM version."""
+
+    if observed_version not in QUALIFIED_VLLM_VERSIONS:
+        raise ConfigContractError(
+            "installed vLLM version is not runtime-qualified",
+            code="config.vllm_version_unqualified",
+            context={
+                "observed_version": observed_version,
+                "qualified_versions": list(QUALIFIED_VLLM_VERSIONS),
+            },
+        )
 
 
 def resolve_infer_run_directory(

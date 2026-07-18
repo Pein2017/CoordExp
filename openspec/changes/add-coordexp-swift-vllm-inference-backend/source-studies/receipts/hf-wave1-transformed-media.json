@@ -1,0 +1,77 @@
+{
+  "artifact": {
+    "path": "outputs/coordexp_swift/infer/wave1_probes/wave1-real-hflip-probe-20260717T212426Z/image_plan.jsonl",
+    "row": {
+      "backend_projection_evidence_kind": "hf_executed_tensors",
+      "declared_height": 832,
+      "declared_width": 1248,
+      "decoded_height": 832,
+      "decoded_width": 1248,
+      "do_resize": false,
+      "error": null,
+      "example_id": "coco2017_train_000000000030__smoke2obj::aug:hflip",
+      "executed_media_sha256": "dc7399fa6ebf6ea39cbc515734ab81776934b94069ddf676431c4a5c834b7aed",
+      "expected_image_grid_thw": [
+        1,
+        52,
+        78
+      ],
+      "image_content_sha256": "b5888357f78716bb99985638fe0788160c538612d7e67654ee44ceb2ab66de6d",
+      "image_path": "/tmp/coordexp-wave1-hflip/images/train2017/000000000030.jpg",
+      "logical_transform_id": "hflip",
+      "merge_size": 2,
+      "merged_visual_tokens": 1014,
+      "observed_image_grid_thw": [
+        1,
+        52,
+        78
+      ],
+      "patch_size": 16,
+      "raw_patch_rows": 4056,
+      "row_id": "coco2017_train_000000000030__smoke2obj::aug:hflip",
+      "row_index": 0,
+      "status": "ok",
+      "temporal_patch_size": 2
+    },
+    "sha256": "2193b9026fc761367f024ef794188fd86e4e82a51f45a19a9b2c50d1f0f0bdab"
+  },
+  "executed_image": {
+    "backend_projection_evidence_kind": "hf_executed_tensors",
+    "do_resize": false,
+    "expected_image_grid_thw": [
+      1,
+      52,
+      78
+    ],
+    "observed_image_grid_thw": [
+      1,
+      52,
+      78
+    ],
+    "rgb8_sha256": "dc7399fa6ebf6ea39cbc515734ab81776934b94069ddf676431c4a5c834b7aed"
+  },
+  "logical_transform_id": "hflip",
+  "row_id": "coco2017_train_000000000030__smoke2obj::aug:hflip",
+  "run_root": "outputs/coordexp_swift/infer/wave1_probes/wave1-real-hflip-probe-20260717T212426Z",
+  "schema_version": 1,
+  "source": {
+    "files": {
+      "src/inference/backend.py": "db11e4a7409701fe5d5451452b9aeb5d66b357a67b29243fd2dbbc005c3d9382",
+      "src/inference/hf_backend.py": "8883fac8e22e2e9746dbf195912edf7517716960b6f6f9fe04dc4cc3d5fc6fab",
+      "src/inference/pipeline.py": "c27f3d13d2b347a620999b470775fec47af71a0757d58cf5fee87f9cad2f9136",
+      "src/qwen/images.py": "4a9205efc56469427d49dc8593828cb041dfd5e72983c53d0fa573cbbbce19c9"
+    },
+    "verifier": {
+      "path": "scripts/probes/coordexp_swift/hf_transformed_media.py",
+      "sha256": "a0407266efefb1ee35a9b2b71c31d88366e7311cd201383936af122416a62937"
+    }
+  },
+  "source_image": {
+    "file_sha256": "b5888357f78716bb99985638fe0788160c538612d7e67654ee44ceb2ab66de6d",
+    "height": 832,
+    "original_rgb8_sha256": "717ea08635737ef030944d9b316646c3d85d432056952d8632c4ceaf9764fd79",
+    "path": "tests/fixtures/smoke/qwen3_vl_single_image_pack/images/train2017/000000000030.jpg",
+    "width": 1248
+  },
+  "status": "passed"
+}

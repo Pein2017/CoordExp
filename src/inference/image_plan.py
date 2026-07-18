@@ -1,4 +1,4 @@
-"""Inference image-plan materialization through Qwen no-resize helpers."""
+"""Backend-neutral semantic image planning for inference requests."""
 
 from __future__ import annotations
 
@@ -11,8 +11,7 @@ from src.common.errors import EncodingContractError
 from src.config.models import ProcessorConfig
 from src.data import RawExample
 from src.qwen.images import (
-    materialize_qwen_image_encoding,
-    materialize_qwen_image_encoding_batch,
+    QwenNoResizeImagePlan,
     plan_qwen_image,
 )
 from src.qwen.runtime_loading import QwenProcessorIdentity
@@ -28,6 +27,7 @@ class ImagePlanRow:
     declared_height: int
     decoded_width: int
     decoded_height: int
+    image_content_sha256: str
     patch_size: int
     merge_size: int
     temporal_patch_size: int
@@ -35,7 +35,10 @@ class ImagePlanRow:
     observed_image_grid_thw: list[int] | None
     raw_patch_rows: int
     merged_visual_tokens: int
+    logical_transform_id: str
     do_resize: bool
+    backend_projection_evidence_kind: str
+    executed_media_sha256: str | None
     status: str
     error: dict[str, Any] | None
 
@@ -49,6 +52,7 @@ class ImagePlanRow:
             "declared_height": self.declared_height,
             "decoded_width": self.decoded_width,
             "decoded_height": self.decoded_height,
+            "image_content_sha256": self.image_content_sha256,
             "patch_size": self.patch_size,
             "merge_size": self.merge_size,
             "temporal_patch_size": self.temporal_patch_size,
@@ -56,7 +60,10 @@ class ImagePlanRow:
             "observed_image_grid_thw": self.observed_image_grid_thw,
             "raw_patch_rows": self.raw_patch_rows,
             "merged_visual_tokens": self.merged_visual_tokens,
+            "logical_transform_id": self.logical_transform_id,
             "do_resize": self.do_resize,
+            "backend_projection_evidence_kind": self.backend_projection_evidence_kind,
+            "executed_media_sha256": self.executed_media_sha256,
             "status": self.status,
             "error": self.error,
         }
@@ -65,7 +72,7 @@ class ImagePlanRow:
 @dataclass(frozen=True)
 class ImagePlanBatch:
     rows: list[ImagePlanRow]
-    model_inputs_by_row_id: dict[str, dict[str, Any]]
+    plans_by_row_id: dict[str, QwenNoResizeImagePlan]
 
 
 def verify_processor_model_vision_parity(
@@ -114,29 +121,26 @@ def verify_processor_model_vision_parity(
     }
 
 
-def materialize_image_plan_rows(
+def plan_image_rows(
     raw_examples: list[RawExample],
     *,
     components: Any,
     processor_config: ProcessorConfig,
-    materialize: bool,
     row_indices: list[int] | None = None,
 ) -> list[ImagePlanRow]:
-    return materialize_image_plan_batch(
+    return plan_image_batch(
         raw_examples,
         components=components,
         processor_config=processor_config,
-        materialize=materialize,
         row_indices=row_indices,
     ).rows
 
 
-def materialize_image_plan_batch(
+def plan_image_batch(
     raw_examples: list[RawExample],
     *,
     components: Any,
     processor_config: ProcessorConfig,
-    materialize: bool,
     row_indices: list[int] | None = None,
 ) -> ImagePlanBatch:
     encodings = [
@@ -147,36 +151,19 @@ def materialize_image_plan_batch(
         )
         for raw_example in raw_examples
     ]
-    if materialize and encodings:
-        if len(encodings) == 1:
-            encodings = [materialize_qwen_image_encoding(encodings[0])]
-        else:
-            pixel_values, image_grid_thw = materialize_qwen_image_encoding_batch(encodings)
-            materialized = []
-            pixel_offset = 0
-            for index, encoding in enumerate(encodings):
-                next_offset = pixel_offset + encoding.raw_patch_rows
-                materialized.append(
-                    type(encoding)(
-                        plan=encoding.plan,
-                        pixel_values=pixel_values[pixel_offset:next_offset],
-                        image_grid_thw_tensor=image_grid_thw[index : index + 1],
-                        image_processor=encoding.image_processor,
-                    )
-                )
-                pixel_offset = next_offset
-            encodings = materialized
     row_index_values = _resolve_row_indices(
         row_indices=row_indices,
         row_count=len(encodings),
     )
     rows = [
-        _row_from_encoding(row_index, encoding, materialized=materialize)
+        _row_from_encoding(row_index, encoding)
         for row_index, encoding in zip(row_index_values, encodings, strict=True)
     ]
     return ImagePlanBatch(
         rows=rows,
-        model_inputs_by_row_id=_model_inputs_by_row_id(encodings),
+        plans_by_row_id={
+            str(encoding.example_id): encoding.plan for encoding in encodings
+        },
     )
 
 
@@ -186,20 +173,12 @@ def write_image_plan_jsonl(
     components: Any,
     processor_config: ProcessorConfig,
     output_path: Path,
-    materialize: bool,
     row_indices: list[int] | None = None,
 ) -> list[ImagePlanRow]:
-    if not materialize:
-        raise EncodingContractError(
-            "V1 image_plan.jsonl writing requires materialized no-resize processor evidence",
-            code="inference.image_plan_materialize_required",
-            context={"output_path": str(output_path)},
-        )
-    rows = materialize_image_plan_rows(
+    rows = plan_image_rows(
         raw_examples,
         components=components,
         processor_config=processor_config,
-        materialize=materialize,
         row_indices=row_indices,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -209,9 +188,16 @@ def write_image_plan_jsonl(
     return rows
 
 
-def _row_from_encoding(index: int, encoding: Any, *, materialized: bool) -> ImagePlanRow:
-    artifact = encoding.to_artifact_dict()
-    observed = artifact["image_grid_thw"] if materialized else None
+def _row_from_encoding(index: int, encoding: Any) -> ImagePlanRow:
+    decoded_width = encoding.plan.decoded_width
+    decoded_height = encoding.plan.decoded_height
+    image_content_sha256 = encoding.plan.image_content_sha256
+    if decoded_width is None or decoded_height is None or image_content_sha256 is None:
+        raise EncodingContractError(
+            "semantic image plan is missing decoded media identity",
+            code="inference.image_plan_media_identity_missing",
+            context={"row_id": encoding.example_id},
+        )
     return ImagePlanRow(
         row_id=encoding.example_id,
         row_index=index,
@@ -219,16 +205,20 @@ def _row_from_encoding(index: int, encoding: Any, *, materialized: bool) -> Imag
         image_path=str(encoding.image_path),
         declared_width=encoding.width,
         declared_height=encoding.height,
-        decoded_width=encoding.width,
-        decoded_height=encoding.height,
+        decoded_width=decoded_width,
+        decoded_height=decoded_height,
+        image_content_sha256=image_content_sha256,
         patch_size=encoding.plan.patch_size,
         merge_size=encoding.plan.merge_size,
         temporal_patch_size=encoding.plan.temporal_patch_size,
         expected_image_grid_thw=list(encoding.image_grid_thw),
-        observed_image_grid_thw=observed,
+        observed_image_grid_thw=None,
         raw_patch_rows=encoding.raw_patch_rows,
         merged_visual_tokens=encoding.merged_visual_tokens,
+        logical_transform_id=encoding.plan.logical_transform_id,
         do_resize=False,
+        backend_projection_evidence_kind="shared_reference_plan",
+        executed_media_sha256=None,
         status="ok",
         error=None,
     )
@@ -248,19 +238,3 @@ def _resolve_row_indices(
             context={"row_index_count": len(row_indices), "row_count": row_count},
         )
     return [int(index) for index in row_indices]
-
-
-def _model_inputs_by_row_id(encodings: list[Any]) -> dict[str, dict[str, Any]]:
-    model_inputs: dict[str, dict[str, Any]] = {}
-    for encoding in encodings:
-        if encoding.pixel_values is None or encoding.image_grid_thw_tensor is None:
-            raise EncodingContractError(
-                "V1 decode requests require materialized Qwen image tensors",
-                code="inference.image_model_inputs_missing",
-                context={"row_id": encoding.example_id},
-            )
-        model_inputs[str(encoding.example_id)] = {
-            "pixel_values": encoding.pixel_values,
-            "image_grid_thw": encoding.image_grid_thw_tensor,
-        }
-    return model_inputs

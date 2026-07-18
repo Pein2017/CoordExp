@@ -227,7 +227,7 @@ def test_pipeline_non_dry_cuda_failure_happens_before_runtime_load(
         raise AssertionError("runtime must not load when CUDA is unavailable")
 
     with pytest.raises(RuntimeContractError) as exc_info:
-        pipeline.run(config_path=config_path, runtime_factory=fail_if_loaded)
+        pipeline.run(config_path=config_path, frontend_factory=fail_if_loaded)
 
     run_dir = tmp_path / "outputs" / "wave8-data-parallel"
     summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
@@ -256,7 +256,7 @@ def test_pipeline_non_empty_cuda_mask_with_zero_runtime_devices_fails_before_run
         raise AssertionError("runtime must not load when CUDA runtime sees no devices")
 
     with pytest.raises(RuntimeContractError) as exc_info:
-        pipeline.run(config_path=config_path, runtime_factory=fail_if_loaded)
+        pipeline.run(config_path=config_path, frontend_factory=fail_if_loaded)
 
     assert exc_info.value.code == "inference.cuda_unavailable"
     assert exc_info.value.context["visible_cuda_tokens"] == ["0"]
@@ -277,7 +277,7 @@ def test_pipeline_dry_run_does_not_require_cuda_or_load_runtime(
     def fail_if_loaded(config: Any) -> Any:
         raise AssertionError("dry-run must not load runtime")
 
-    assert pipeline.run(config_path=config_path, runtime_factory=fail_if_loaded) == 0
+    assert pipeline.run(config_path=config_path, frontend_factory=fail_if_loaded) == 0
 
 
 def test_pipeline_empty_input_fails_before_runtime_load(
@@ -298,7 +298,7 @@ def test_pipeline_empty_input_fails_before_runtime_load(
         raise AssertionError("runtime must not load for empty input")
 
     with pytest.raises(RuntimeContractError) as exc_info:
-        pipeline.run(config_path=config_path, runtime_factory=fail_if_loaded)
+        pipeline.run(config_path=config_path, frontend_factory=fail_if_loaded)
 
     assert exc_info.value.code == "inference.empty_input_jsonl"
     assert runtime_loaded is False
@@ -346,9 +346,7 @@ def _write_config(
         "model": {
             "base_model": str(tmp_path / "model_cache" / "qwen"),
             "dtype": "bf16",
-            "attn_implementation": "flash_attention_2",
             "processor": {"do_resize": False},
-            "runtime_patches": {"patch_embed_linearization": "enabled"},
         },
         "data": {"input_jsonl": str(input_jsonl)},
         "template": {
@@ -357,12 +355,19 @@ def _write_config(
             "assistant_format": "object_box_closed",
             "prompt": {"user": "Describe objects."},
         },
-        "backend": {"type": "hf"},
+        "backend": {
+            "type": "hf",
+            "hf": {
+                "attn_implementation": "flash_attention_2",
+                "patch_embed_linearization": "enabled",
+            },
+        },
         "generation": {
             "batch_size": 1,
             "max_new_tokens": 64,
             "temperature": 0.0,
             "top_p": 1.0,
+            "n": 1,
         },
         "scoring": {"enabled": True},
         "artifacts": {"write_token_trace": True, "write_parse_diagnostics": True},

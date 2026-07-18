@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 import math
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from src.common.errors import ArtifactContractError
-from src.inference.backend import DecodeResult, TokenTrace
+from src.common.errors import ArtifactContractError, RuntimeContractError
+from src.inference.backend import DecodeResult, LikelihoodPair, TokenTrace
 from src.inference.parsing import parse_compact_object_box_closed
 
 
@@ -17,7 +18,11 @@ OBJECT_TEXT = (
 )
 
 
-def _trace(*, logprob: float = math.log(0.25)) -> list[TokenTrace]:
+def _trace(
+    *,
+    logprob: float = math.log(0.25),
+    raw_model_logprob: float | None = None,
+) -> tuple[TokenTrace, ...]:
     pieces = [
         "<|object_ref_start|>",
         "cat",
@@ -29,12 +34,15 @@ def _trace(*, logprob: float = math.log(0.25)) -> list[TokenTrace]:
         "<|coord_400|>",
         "<|box_end|>",
     ]
-    return [
+    return tuple(
         TokenTrace(
             step_index=index,
             token_id=151646 + index,
             token_text=piece,
-            logprob=logprob,
+            likelihood=LikelihoodPair(
+                policy_logprob=logprob,
+                raw_model_logprob=raw_model_logprob,
+            ),
             is_stop=False,
             is_pad=False,
             backend="hf",
@@ -42,35 +50,45 @@ def _trace(*, logprob: float = math.log(0.25)) -> list[TokenTrace]:
             response_family="hf",
         )
         for index, piece in enumerate(pieces)
-    ]
+    )
 
 
-def _repeated_trace() -> list[TokenTrace]:
+def _repeated_trace() -> tuple[TokenTrace, ...]:
     first = _trace(logprob=math.log(0.5))
-    second = [
-        TokenTrace(**{**item.__dict__, "step_index": item.step_index + len(first), "logprob": math.log(0.25)})
+    second = tuple(
+        replace(
+            item,
+            step_index=item.step_index + len(first),
+            likelihood=LikelihoodPair(
+                policy_logprob=math.log(0.25),
+                raw_model_logprob=None,
+            ),
+        )
         for item in _trace()
-    ]
+    )
     return first + second
 
 
-def _decode_result(row_id: str, *, token_trace: list[TokenTrace] | None = None) -> DecodeResult:
+def _decode_result(
+    row_id: str,
+    *,
+    token_trace: tuple[TokenTrace, ...] | list[TokenTrace] | None = None,
+) -> DecodeResult:
     trace = _trace() if token_trace is None else token_trace
     return DecodeResult(
         request_id=row_id,
         backend="hf",
         backend_mode="generate",
         response_family="hf",
-        prompt_token_ids=[11, 12],
-        generated_token_ids=[item.token_id for item in trace],
+        executed_prompt_token_ids=(11, 12),
+        generated_token_ids=tuple(item.token_id for item in trace),
         raw_generated_text="".join(item.token_text for item in trace),
         parser_text="".join(item.token_text for item in trace),
         strip_policy="none",
         stop_reason="length",
-        model_identity={"family": "unit"},
-        tokenizer_identity={"sha256": "tok"},
-        generation_config_fingerprint="gen-fp",
-        token_trace=trace,
+        token_trace=tuple(trace),
+        observed_image_grid_thw=(1, 4, 6),
+        executed_media_sha256="a" * 64,
     )
 
 
@@ -271,6 +289,119 @@ def test_provenance_and_manifest_record_tokenizer_and_embedding_delta_identity_w
     }
 
 
+def test_provenance_manifest_and_summary_publish_backend_session_likelihoods(
+    tmp_path: Path,
+) -> None:
+    from src.inference.artifacts import write_inference_artifacts
+
+    metadata = {
+        **_metadata(),
+        "backend_session": {
+            "backend": "hf",
+            "backend_version": "test-transformers",
+            "effective_settings": {"text_padding_side": "left"},
+        },
+        "likelihood_semantics": {
+            "policy": "processed",
+            "raw": "unprocessed",
+            "score_owned_channel": "policy_logprob",
+        },
+        "execution_model_identity": {"fingerprint": "model-snapshot"},
+        "frontend_identity": {"processor": "fake-qwen"},
+        "raw_model_logprob_enabled": False,
+    }
+    paths = write_inference_artifacts(
+        output_dir=tmp_path,
+        rows=[_raw_row("row-1", 0)],
+        decode_results={"row-1": _decode_result("row-1")},
+        image_plan_rows=[_image_plan_row("row-1", 0)],
+        metadata=metadata,
+    )
+
+    provenance = json.loads(paths.provenance_json.read_text(encoding="utf-8"))
+    manifest = json.loads(paths.run_manifest_json.read_text(encoding="utf-8"))
+    summary = json.loads(paths.summary_json.read_text(encoding="utf-8"))
+    for artifact in (provenance, manifest):
+        assert artifact["backend_session"] == metadata["backend_session"]
+        assert artifact["likelihood_semantics"] == metadata["likelihood_semantics"]
+        assert artifact["execution_model_identity"] == {
+            "fingerprint": "model-snapshot"
+        }
+        assert artifact["frontend_identity"] == {"processor": "fake-qwen"}
+        assert artifact["raw_model_logprob_status"] == "disabled"
+    assert summary["likelihood_semantics"] == metadata["likelihood_semantics"]
+    assert summary["raw_model_logprob_status"] == "disabled"
+
+
+def test_raw_likelihood_is_additive_and_policy_score_remains_authoritative(
+    tmp_path: Path,
+) -> None:
+    from src.inference.artifacts import write_inference_artifacts
+
+    policy_logprob = math.log(0.25)
+    raw_logprob = math.log(0.75)
+    trace = _trace(
+        logprob=policy_logprob,
+        raw_model_logprob=raw_logprob,
+    )
+    paths = write_inference_artifacts(
+        output_dir=tmp_path,
+        rows=[_raw_row("row-1", 0)],
+        decode_results={"row-1": _decode_result("row-1", token_trace=trace)},
+        image_plan_rows=[_image_plan_row("row-1", 0)],
+        metadata={**_metadata(), "raw_model_logprob_enabled": True},
+    )
+
+    generated = [
+        row
+        for row in _read_jsonl(paths.token_trace_jsonl)
+        if row["trace_type"] == "generated_token"
+    ]
+    assert {row["raw_model_logprob_status"] for row in generated} == {"available"}
+    assert {row["raw_model_logprob"] for row in generated} == {raw_logprob}
+    assert {row["logprob"] for row in generated} == {policy_logprob}
+    scored = _read_jsonl(paths.scored_jsonl)[0]["pred"][0]
+    assert scored["score"] == pytest.approx(0.25)
+
+
+@pytest.mark.parametrize("invalid_raw", [None, 0.1, float("nan")])
+def test_raw_enabled_artifacts_reject_incomplete_or_invalid_token_evidence(
+    tmp_path: Path,
+    invalid_raw: float | None,
+) -> None:
+    from src.inference.artifacts import write_inference_artifacts
+
+    trace = list(_trace(raw_model_logprob=math.log(0.75)))
+    trace[4] = replace(
+        trace[4],
+        likelihood=LikelihoodPair(
+            policy_logprob=trace[4].policy_logprob,
+            raw_model_logprob=invalid_raw,
+        ),
+    )
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        write_inference_artifacts(
+            output_dir=tmp_path,
+            rows=[_raw_row("row-1", 0)],
+            decode_results={"row-1": _decode_result("row-1", token_trace=trace)},
+            image_plan_rows=[_image_plan_row("row-1", 0)],
+            metadata={**_metadata(), "raw_model_logprob_enabled": True},
+        )
+
+    assert exc_info.value.code == "artifacts.decode_result_invalid"
+    assert not (tmp_path / "pred_token_trace.jsonl").exists()
+    assert not (tmp_path / "gt_vs_pred_scored.jsonl").exists()
+
+
+def test_decode_result_requires_executed_media_identity() -> None:
+    with pytest.raises(RuntimeContractError) as exc_info:
+        replace(_decode_result("row-1"), executed_media_sha256=None)
+
+    assert exc_info.value.code == "backend_trace.invalid_result"
+    assert exc_info.value.context["field"] == "executed_media_sha256"
+
+
 def test_explicit_adapter_and_delta_provenance_is_recorded(tmp_path: Path) -> None:
     from src.inference.artifacts import write_inference_artifacts
 
@@ -397,11 +528,25 @@ def test_artifact_writer_refuses_empty_image_plan_rows_before_status_claims(tmp_
     assert exc_info.value.code == "artifacts.image_plan_row_mismatch"
 
 
-def test_artifact_writer_rejects_non_finite_generated_token_logprob_without_jsonl_output(tmp_path: Path) -> None:
+def test_artifact_writer_rejects_non_finite_generated_token_logprob_without_jsonl_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from src.inference.artifacts import write_inference_artifacts
 
-    bad_trace = _trace()
-    bad_trace[4] = TokenTrace(**{**bad_trace[4].__dict__, "logprob": float("nan")})
+    bad_trace = list(_trace())
+    bad_trace[4] = replace(
+        bad_trace[4],
+        likelihood=LikelihoodPair(
+            policy_logprob=float("nan"),
+            raw_model_logprob=None,
+        ),
+    )
+    monkeypatch.setattr(
+        DecodeResult,
+        "validate_for_scored",
+        lambda self, **kwargs: None,
+    )
 
     with pytest.raises(ArtifactContractError) as exc_info:
         write_inference_artifacts(
@@ -417,7 +562,10 @@ def test_artifact_writer_rejects_non_finite_generated_token_logprob_without_json
     assert not (tmp_path / "gt_vs_pred_scored.jsonl").exists()
 
 
-def test_artifact_writer_preserves_prior_final_artifacts_when_rerun_fails(tmp_path: Path) -> None:
+def test_artifact_writer_preserves_prior_final_artifacts_when_rerun_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from src.inference.artifacts import write_inference_artifacts
 
     valid_paths = write_inference_artifacts(
@@ -429,8 +577,19 @@ def test_artifact_writer_preserves_prior_final_artifacts_when_rerun_fails(tmp_pa
     )
     prior_scored = valid_paths.scored_jsonl.read_text(encoding="utf-8")
     prior_manifest = valid_paths.run_manifest_json.read_text(encoding="utf-8")
-    bad_trace = _trace()
-    bad_trace[4] = TokenTrace(**{**bad_trace[4].__dict__, "logprob": float("nan")})
+    bad_trace = list(_trace())
+    bad_trace[4] = replace(
+        bad_trace[4],
+        likelihood=LikelihoodPair(
+            policy_logprob=float("nan"),
+            raw_model_logprob=None,
+        ),
+    )
+    monkeypatch.setattr(
+        DecodeResult,
+        "validate_for_scored",
+        lambda self, **kwargs: None,
+    )
 
     with pytest.raises(ArtifactContractError):
         write_inference_artifacts(

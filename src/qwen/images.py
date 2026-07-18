@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+import hashlib
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +40,9 @@ class QwenNoResizeImagePlan:
     logical_transform_matrix: tuple[tuple[int, int, int], ...] = (
         COORD_AFFINE_MATRICES["identity"]
     )
+    image_content_sha256: str | None = None
+    decoded_width: int | None = None
+    decoded_height: int | None = None
 
     def to_artifact_dict(self) -> dict[str, Any]:
         return {
@@ -45,6 +50,9 @@ class QwenNoResizeImagePlan:
             "image_path": str(self.image_path),
             "width": self.width,
             "height": self.height,
+            "decoded_width": self.decoded_width,
+            "decoded_height": self.decoded_height,
+            "image_content_sha256": self.image_content_sha256,
             "patch_size": self.patch_size,
             "merge_size": self.merge_size,
             "temporal_patch_size": self.temporal_patch_size,
@@ -64,11 +72,30 @@ class QwenNoResizeImagePlan:
 
 
 @dataclass(frozen=True)
+class QwenExecutedImageEvidence:
+    media_sha256: str
+    decoded_width: int
+    decoded_height: int
+    observed_image_grid_thw: tuple[int, int, int]
+    do_resize: bool = False
+
+    def to_artifact_dict(self) -> dict[str, Any]:
+        return {
+            "executed_media_sha256": self.media_sha256,
+            "executed_decoded_width": self.decoded_width,
+            "executed_decoded_height": self.decoded_height,
+            "observed_image_grid_thw": list(self.observed_image_grid_thw),
+            "do_resize": self.do_resize,
+        }
+
+
+@dataclass(frozen=True)
 class QwenImageEncoding:
     plan: QwenNoResizeImagePlan
     pixel_values: Any | None
     image_grid_thw_tensor: Any | None
     image_processor: Any | None = None
+    execution_evidence: QwenExecutedImageEvidence | None = None
 
     def __getstate__(self) -> dict[str, Any]:
         return {
@@ -76,6 +103,7 @@ class QwenImageEncoding:
             "pixel_values": self.pixel_values,
             "image_grid_thw_tensor": self.image_grid_thw_tensor,
             "image_processor": None,
+            "execution_evidence": self.execution_evidence,
         }
 
     @property
@@ -115,7 +143,7 @@ class QwenImageEncoding:
         return self.plan.merged_visual_tokens
 
     def to_artifact_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             **self.plan.to_artifact_dict(),
             "do_resize": False,
             "pixel_values_shape": (
@@ -128,6 +156,9 @@ class QwenImageEncoding:
             ),
             "pixel_values_materialized": self.pixel_values is not None,
         }
+        if self.execution_evidence is not None:
+            payload.update(self.execution_evidence.to_artifact_dict())
+        return payload
 
 
 def build_no_resize_image_plan(
@@ -155,6 +186,29 @@ def build_no_resize_image_plan(
     required_factor = patch_size * merge_size
     width = raw_example.image.width
     height = raw_example.image.height
+    image_bytes = _read_image_bytes(
+        raw_example.image.path,
+        example_id=raw_example.example_id,
+    )
+    image_content_sha256 = hashlib.sha256(image_bytes).hexdigest()
+    decoded_width, decoded_height = _decoded_image_dimensions(
+        image_bytes,
+        image_path=raw_example.image.path,
+        example_id=raw_example.example_id,
+    )
+    if (decoded_width, decoded_height) != (width, height):
+        raise EncodingContractError(
+            "decoded image dimensions must match RawExample metadata",
+            code="qwen.image_dimension_mismatch",
+            context={
+                "example_id": raw_example.example_id,
+                "image_path": str(raw_example.image.path),
+                "declared_width": width,
+                "declared_height": height,
+                "decoded_width": decoded_width,
+                "decoded_height": decoded_height,
+            },
+        )
     if height % required_factor != 0 or width % required_factor != 0:
         raise EncodingContractError(
             "no-resize image dimensions must be divisible by patch_size * merge_size",
@@ -233,6 +287,9 @@ def build_no_resize_image_plan(
         max_merged_visual_tokens=processor_config.max_merged_visual_tokens,
         logical_transform_id=logical_transform_id,
         logical_transform_matrix=logical_transform_matrix,
+        image_content_sha256=image_content_sha256,
+        decoded_width=decoded_width,
+        decoded_height=decoded_height,
     )
 
 
@@ -293,24 +350,59 @@ def materialize_qwen_image_encoding(
                 "image_path": str(encoding.image_path),
             },
         )
-    image = _load_rgb_image_from_plan(encoding.plan)
-    encoded = encoding.image_processor(
-        images=[image],
-        return_tensors="pt",
-        do_resize=False,
+    return materialize_qwen_image_plan(
+        encoding.plan,
+        image_processor=encoding.image_processor,
     )
+
+
+def materialize_qwen_image_plan(
+    plan: QwenNoResizeImagePlan,
+    *,
+    image_processor: Any,
+) -> QwenImageEncoding:
+    """Privately materialize one hash-pinned semantic plan for backend use."""
+
+    if not isinstance(plan, QwenNoResizeImagePlan):
+        raise EncodingContractError(
+            "Qwen image materialization requires a no-resize image plan",
+            code="qwen.image_plan_type",
+            context={"value_type": type(plan).__name__},
+        )
+    image, _, decoded_width, decoded_height = (
+        _load_verified_rgb_image_from_plan(plan)
+    )
+    executed_media_sha256 = rgb_image_sha256(image)
+    try:
+        encoded = image_processor(
+            images=[image],
+            return_tensors="pt",
+            do_resize=False,
+        )
+    finally:
+        image.close()
     pixel_values = encoded.get("pixel_values")
     image_grid_thw_tensor = encoded.get("image_grid_thw")
     _validate_processor_output(
-        encoding.plan,
+        plan,
         pixel_values=pixel_values,
         image_grid_thw_tensor=image_grid_thw_tensor,
     )
+    observed_grid = tuple(
+        int(value)
+        for value in image_grid_thw_tensor[0].detach().cpu().tolist()
+    )
     return QwenImageEncoding(
-        plan=encoding.plan,
+        plan=plan,
         pixel_values=pixel_values,
         image_grid_thw_tensor=image_grid_thw_tensor,
-        image_processor=encoding.image_processor,
+        image_processor=image_processor,
+        execution_evidence=QwenExecutedImageEvidence(
+            media_sha256=executed_media_sha256,
+            decoded_width=decoded_width,
+            decoded_height=decoded_height,
+            observed_image_grid_thw=observed_grid,
+        ),
     )
 
 
@@ -399,6 +491,7 @@ def attach_qwen_image_processor(
         pixel_values=encoding.pixel_values,
         image_grid_thw_tensor=encoding.image_grid_thw_tensor,
         image_processor=image_processor,
+        execution_evidence=encoding.execution_evidence,
     )
 
 
@@ -501,7 +594,52 @@ def _load_rgb_image(raw_example: RawExample) -> Image.Image:
 
 
 def _load_rgb_image_from_plan(plan: QwenNoResizeImagePlan) -> Image.Image:
-    with Image.open(plan.image_path) as image:
+    if plan.image_content_sha256 is None:
+        image_bytes = _read_image_bytes(plan.image_path, example_id=plan.example_id)
+        return _rgb_image_from_bytes(plan, image_bytes)
+    image, _, _, _ = _load_verified_rgb_image_from_plan(plan)
+    return image
+
+
+def _load_verified_rgb_image_from_plan(
+    plan: QwenNoResizeImagePlan,
+) -> tuple[Image.Image, str, int, int]:
+    image_bytes = _read_image_bytes(plan.image_path, example_id=plan.example_id)
+    observed_sha256 = hashlib.sha256(image_bytes).hexdigest()
+    if plan.image_content_sha256 is None:
+        raise EncodingContractError(
+            "Qwen image plan is missing content SHA-256",
+            code="qwen.image_content_sha256_missing",
+            context={
+                "example_id": plan.example_id,
+                "image_path": str(plan.image_path),
+            },
+        )
+    if observed_sha256 != plan.image_content_sha256:
+        raise EncodingContractError(
+            "image content changed after semantic request preparation",
+            code="qwen.image_content_sha256_mismatch",
+            context={
+                "example_id": plan.example_id,
+                "image_path": str(plan.image_path),
+                "expected_sha256": plan.image_content_sha256,
+                "observed_sha256": observed_sha256,
+            },
+        )
+    rgb_image = _rgb_image_from_bytes(plan, image_bytes)
+    return (
+        rgb_image,
+        observed_sha256,
+        plan.width,
+        plan.height,
+    )
+
+
+def _rgb_image_from_bytes(
+    plan: QwenNoResizeImagePlan,
+    image_bytes: bytes,
+) -> Image.Image:
+    with Image.open(BytesIO(image_bytes)) as image:
         decoded_width, decoded_height = image.size
         if (decoded_width, decoded_height) != (plan.width, plan.height):
             raise EncodingContractError(
@@ -516,7 +654,38 @@ def _load_rgb_image_from_plan(plan: QwenNoResizeImagePlan) -> Image.Image:
                     "decoded_height": decoded_height,
                 },
             )
-        return _apply_logical_transform(image.convert("RGB"), plan)
+        rgb_image = image.convert("RGB")
+    return _apply_logical_transform(rgb_image, plan)
+
+
+def _read_image_bytes(image_path: Path, *, example_id: str) -> bytes:
+    try:
+        return image_path.read_bytes()
+    except OSError as exc:
+        raise EncodingContractError(
+            "failed to read image bytes",
+            code="qwen.image_read_failed",
+            context={"example_id": example_id, "image_path": str(image_path)},
+            cause=exc,
+        ) from exc
+
+
+def _decoded_image_dimensions(
+    image_bytes: bytes,
+    *,
+    image_path: Path,
+    example_id: str,
+) -> tuple[int, int]:
+    try:
+        with Image.open(BytesIO(image_bytes)) as image:
+            return tuple(int(value) for value in image.size)
+    except (OSError, ValueError) as exc:
+        raise EncodingContractError(
+            "failed to decode image dimensions",
+            code="qwen.image_decode_failed",
+            context={"example_id": example_id, "image_path": str(image_path)},
+            cause=exc,
+        ) from exc
 
 
 def _logical_transform_from_example(
@@ -544,11 +713,15 @@ def _logical_transform_from_example(
     return transform_id, matrix
 
 
-def _apply_logical_transform(
+def apply_logical_image_transform(
     image: Image.Image,
-    plan: QwenNoResizeImagePlan,
+    transform_id: str,
+    *,
+    example_id: str,
+    image_path: str | Path,
 ) -> Image.Image:
-    transform_id = plan.logical_transform_id
+    """Apply one validated geometry-only transform to decoded RGB pixels."""
+
     if transform_id == "identity":
         return image
     if transform_id == "hflip":
@@ -561,10 +734,34 @@ def _apply_logical_transform(
         "Qwen image materialization received an unsupported logical transform id",
         code="qwen.image_logical_transform",
         context={
-            "example_id": plan.example_id,
-            "image_path": str(plan.image_path),
+            "example_id": example_id,
+            "image_path": str(image_path),
             "logical_transform_id": transform_id,
         },
+    )
+
+
+def rgb_image_sha256(image: Image.Image) -> str:
+    """Hash canonical RGB8 dimensions and pixels, independent of file encoding."""
+
+    rgb = image if image.mode == "RGB" else image.convert("RGB")
+    digest = hashlib.sha256()
+    digest.update(b"coordexp-rgb8-pixels-v1\0")
+    digest.update(int(rgb.width).to_bytes(8, "big", signed=False))
+    digest.update(int(rgb.height).to_bytes(8, "big", signed=False))
+    digest.update(rgb.tobytes())
+    return digest.hexdigest()
+
+
+def _apply_logical_transform(
+    image: Image.Image,
+    plan: QwenNoResizeImagePlan,
+) -> Image.Image:
+    return apply_logical_image_transform(
+        image,
+        plan.logical_transform_id,
+        example_id=plan.example_id,
+        image_path=plan.image_path,
     )
 
 

@@ -12,16 +12,21 @@ and applied to tied input embedding and lm-head semantics.
 
 1. Validate base, tokenizer, adapter, and delta identities through their owner
    modules before mutation.
-2. Load the base model on CPU in the configured dtype.
-3. Load DoRA through PEFT and call `merge_and_unload(safe_merge=True)`.
+2. Load the base model on CPU directly in the configured target dtype.
+3. Inspect adapter content through `src.adapters.dora`, load it with
+   `PeftModel.from_pretrained(..., is_trainable=False)`, and call
+   `merge_and_unload(safe_merge=True, adapter_names=["default"])`.
 4. Validate that no PEFT wrappers, DoRA magnitude vectors, LoRA tensors, or
    parametrization wrappers remain in the standard model.
-5. Add the selected-token delta exactly once to indexed rows of the tied input
-   embedding/output-head weight.
+5. Inspect delta content through `src.qwen.special_token_embeddings`; add the
+   FP32 selected-token delta exactly once to target-dtype indexed rows of the
+   tied input embedding/output-head weight. Do not cast the whole model after
+   this fold.
 6. Verify tied storage and selected-token values after folding.
 7. Save model, config, tokenizer, and processor through standard HF
    `save_pretrained` surfaces.
-8. Hash the completed snapshot and atomically publish it with a manifest.
+8. Hash the completed `snapshot/`, write `coordexp_materialization.json` beside
+   it, and atomically publish the composition directory.
 
 ## Fingerprint Determinants
 
@@ -31,7 +36,17 @@ and applied to tied input embedding and lm-head semantics.
 - Target dtype, tied-weight expectation, algorithm version, Transformers and
   PEFT versions.
 
-Paths, timestamps, lock owner, and staging names are provenance only.
+The source determinants produce a `composition_key`; the actual published
+snapshot bytes produce a separate `snapshot_fingerprint`. Derived entries use
+`vllm_materialized/<composition_key>/snapshot/` and locks use
+`vllm_materialized/.locks/<composition_key>.lock`. The receipt remains outside
+the snapshot to avoid self-referential hashing. Paths, timestamps, lock owner,
+and staging names are provenance only.
+
+Adapter identity hashes `adapter_config.json` and every adapter tensor payload.
+Delta identity hashes metadata and tensor files plus tensor key/shape/dtype,
+selected token ids/strings, base-config identity, and tokenizer identity. A
+checkpoint-handoff manifest is an optional path source, not a prerequisite.
 
 ## Qualification
 

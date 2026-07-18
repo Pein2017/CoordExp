@@ -6,7 +6,7 @@ import hashlib
 import json
 from collections import Counter
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -28,7 +28,13 @@ from src.inference.artifacts import (
     write_inference_artifacts,
     write_terminal_status_artifacts,
 )
-from src.inference.backend import DecodeRequest, HFGenerateBackend
+from src.inference.backend import (
+    BackendSessionOpener,
+    DecodeRequest,
+    GenerationPolicy,
+    open_backend_session,
+    validate_decode_results,
+)
 from src.inference.data_parallel import (
     DataParallelPlan,
     RankShardPlan,
@@ -36,16 +42,15 @@ from src.inference.data_parallel import (
     require_visible_cuda_for_inference,
     sort_rows_by_index,
 )
-from src.inference.image_plan import materialize_image_plan_batch, verify_processor_model_vision_parity
+from src.inference.image_plan import plan_image_batch, verify_processor_model_vision_parity
 from src.inference.merge import merge_shard_artifacts
 from src.inference.parsing import PARSER_POLICY, parse_compact_object_box_closed
 from src.inference.prompt import TEMPLATE_ID, build_prompt_record, verify_prompt_token_parity
-from src.inference.runtime import InferenceRuntime, assemble_runtime
+from src.inference.runtime import InferenceFrontend, assemble_frontend
 from src.inference.scoring import SCORE_POLICY_FINGERPRINT
 
 
-RuntimeFactory = Callable[[InferConfig], Any]
-BackendFactory = Callable[[Any, InferConfig], Any]
+FrontendFactory = Callable[..., InferenceFrontend]
 WorkerLauncher = Callable[..., Any]
 
 
@@ -58,8 +63,8 @@ class DataParallelShardRunResult:
 def run(
     *,
     config_path: str | Path,
-    runtime_factory: RuntimeFactory | None = None,
-    backend_factory: BackendFactory | None = None,
+    frontend_factory: FrontendFactory | None = None,
+    session_opener: BackendSessionOpener | None = None,
     worker_launcher: WorkerLauncher | None = None,
 ) -> int:
     resolved = load_infer_config(config_path)
@@ -106,8 +111,8 @@ def run(
             output_dir=run_dir,
             indexed_raw_examples=tuple(enumerate(raw_examples)),
             metadata=metadata,
-            runtime_factory=runtime_factory,
-            backend_factory=backend_factory,
+            frontend_factory=frontend_factory,
+            session_opener=session_opener,
         )
         return 0
 
@@ -129,8 +134,8 @@ def run_shard(
     row_indices: Sequence[int],
     worker_metadata: dict[str, Any] | None = None,
     rank_plan: RankShardPlan | None = None,
-    runtime_factory: RuntimeFactory | None = None,
-    backend_factory: BackendFactory | None = None,
+    frontend_factory: FrontendFactory | None = None,
+    session_opener: BackendSessionOpener | None = None,
 ) -> int:
     raw_examples = list(load_raw_examples(resolved.config.data.input_jsonl))
     indexed_raw_examples = _select_indexed_raw_examples(
@@ -163,8 +168,8 @@ def run_shard(
         output_dir=output_dir,
         indexed_raw_examples=indexed_raw_examples,
         metadata=metadata,
-        runtime_factory=runtime_factory,
-        backend_factory=backend_factory,
+        frontend_factory=frontend_factory,
+        session_opener=session_opener,
     )
     return 0
 
@@ -174,8 +179,8 @@ def run_data_parallel_shards(
     resolved: ResolvedInferConfig,
     run_dir: Path,
     plan: DataParallelPlan,
-    runtime_factory: RuntimeFactory | None = None,
-    backend_factory: BackendFactory | None = None,
+    frontend_factory: FrontendFactory | None = None,
+    session_opener: BackendSessionOpener | None = None,
 ) -> DataParallelShardRunResult:
     shard_dirs: list[Path] = []
     raw_rows: list[dict[str, Any]] = []
@@ -200,8 +205,8 @@ def run_data_parallel_shards(
                 "batch_ids": list(rank_plan.batch_ids),
             },
             rank_plan=rank_plan,
-            runtime_factory=runtime_factory,
-            backend_factory=backend_factory,
+            frontend_factory=frontend_factory,
+            session_opener=session_opener,
         )
         raw_rows.extend(_read_jsonl(shard_dir / RAW_NAME))
     return DataParallelShardRunResult(
@@ -293,22 +298,23 @@ def _execute_indexed_rows_with_terminal_status(
     output_dir: Path,
     indexed_raw_examples: tuple[tuple[int, RawExample], ...],
     metadata: dict[str, Any],
-    runtime_factory: RuntimeFactory | None,
-    backend_factory: BackendFactory | None,
+    frontend_factory: FrontendFactory | None,
+    session_opener: BackendSessionOpener | None,
 ) -> None:
-    runtime = (runtime_factory or assemble_runtime)(resolved.config)
-    qwen = runtime.qwen
-    metadata.update(_runtime_metadata(runtime=runtime, qwen=qwen))
-    _fill_worker_runtime_device_metadata(metadata=metadata, qwen=qwen)
     try:
+        frontend = (frontend_factory or assemble_frontend)(
+            resolved.config,
+            generation_config_fingerprint=metadata[
+                "generation_config_fingerprint"
+            ],
+        )
         _execute_indexed_rows(
             resolved=resolved,
             output_dir=output_dir,
             indexed_raw_examples=indexed_raw_examples,
             metadata=metadata,
-            runtime=runtime,
-            qwen=qwen,
-            backend_factory=backend_factory,
+            frontend=frontend,
+            session_opener=session_opener,
         )
     except EncodingContractError as exc:
         write_terminal_status_artifacts(
@@ -337,59 +343,108 @@ def _execute_indexed_rows(
     output_dir: Path,
     indexed_raw_examples: tuple[tuple[int, RawExample], ...],
     metadata: dict[str, Any],
-    runtime: Any,
-    qwen: Any,
-    backend_factory: BackendFactory | None,
+    frontend: InferenceFrontend,
+    session_opener: BackendSessionOpener | None,
 ) -> None:
+    qwen = frontend.qwen
     verify_processor_model_vision_parity(
         processor_identity=qwen.processor_identity,
         model_config=_model_config(qwen),
     )
     raw_examples = [raw_example for _, raw_example in indexed_raw_examples]
-    image_plan_batch = materialize_image_plan_batch(
+    image_plan_batch = plan_image_batch(
         raw_examples,
         components=qwen,
         processor_config=_processor_config(resolved.config),
-        materialize=True,
         row_indices=[row_index for row_index, _ in indexed_raw_examples],
     )
-    backend = (backend_factory or _default_backend_factory)(runtime, resolved.config)
+    image_plan_by_row_id = {
+        row.row_id: row for row in image_plan_batch.rows
+    }
     prompt_records = [
         build_prompt_record(
             raw_example,
             _template_config(resolved.config),
             processor=qwen.processor,
             row_index=row_index,
+            merged_visual_tokens=image_plan_by_row_id[
+                raw_example.example_id
+            ].merged_visual_tokens,
         )
         for row_index, raw_example in indexed_raw_examples
     ]
+    generation_policy = GenerationPolicy(
+        max_new_tokens=resolved.config.generation.max_new_tokens,
+        repetition_penalty=resolved.config.generation.repetition_penalty,
+        temperature=resolved.config.generation.temperature,
+        top_p=resolved.config.generation.top_p,
+        include_raw_model_logprob=(
+            resolved.config.artifacts.include_raw_model_logprob
+        ),
+    )
     requests = [
         DecodeRequest(
             request_id=record.row_id,
-            prompt_token_ids=list(record.prompt_token_ids),
-            model_inputs=image_plan_batch.model_inputs_by_row_id[record.row_id],
-            max_new_tokens=resolved.config.generation.max_new_tokens,
-            repetition_penalty=resolved.config.generation.repetition_penalty,
+            chat_text=record.chat_text,
+            input_prompt_token_ids=tuple(record.input_prompt_token_ids),
+            expected_executed_prompt_token_ids=tuple(
+                record.expected_executed_prompt_token_ids
+            ),
+            image_path=image_plan_by_row_id[record.row_id].image_path,
+            declared_image_width=image_plan_by_row_id[record.row_id].declared_width,
+            declared_image_height=image_plan_by_row_id[record.row_id].declared_height,
+            decoded_image_width=image_plan_by_row_id[record.row_id].decoded_width,
+            decoded_image_height=image_plan_by_row_id[record.row_id].decoded_height,
+            image_sha256=image_plan_by_row_id[
+                record.row_id
+            ].image_content_sha256,
+            expected_image_grid_thw=tuple(
+                image_plan_by_row_id[record.row_id].expected_image_grid_thw
+            ),
+            logical_transform_id=image_plan_by_row_id[
+                record.row_id
+            ].logical_transform_id,
+            generation_policy=generation_policy,
         )
         for record in prompt_records
     ]
+    metadata["media_identity"] = {
+        "rows": [
+            {
+                "row_id": request.request_id,
+                "image_sha256": request.image_sha256,
+                "decoded_width": request.decoded_image_width,
+                "decoded_height": request.decoded_image_height,
+                "expected_image_grid_thw": list(
+                    request.expected_image_grid_thw or ()
+                ),
+                "logical_transform_id": request.logical_transform_id,
+            }
+            for request in requests
+        ]
+    }
 
-    decode_results = {}
-    for batch in _batches(requests, size=resolved.config.generation.batch_size):
-        batch_results = backend.generate_batch(
-            list(batch),
-            model_identity=metadata["model_identity"],
-            tokenizer_identity=metadata["tokenizer_identity"],
-            generation_config_fingerprint=metadata["generation_config_fingerprint"],
+    with open_backend_session(frontend.launch, opener=session_opener) as session:
+        metadata.update(
+            _session_metadata(frontend=frontend, receipt=session.receipt)
         )
-        _validate_backend_result_set(requests=list(batch), results=list(batch_results))
-        for result in batch_results:
-            record = _prompt_record_by_id(prompt_records, result.request_id)
-            verify_prompt_token_parity(
-                record,
-                backend_prompt_token_ids=list(result.prompt_token_ids),
-            )
-            decode_results[result.request_id] = result
+        _fill_worker_runtime_device_metadata(
+            metadata=metadata,
+            session_receipt=session.receipt,
+        )
+        results = validate_decode_results(
+            requests=requests,
+            results=session.decode(requests),
+            receipt=session.receipt,
+        )
+
+    decode_results = {result.request_id: result for result in results}
+    for result in results:
+        record = _prompt_record_by_id(prompt_records, result.request_id)
+        verify_prompt_token_parity(
+            record,
+            backend_prompt_token_ids=list(result.prompt_token_ids),
+        )
 
     rows = [
         _artifact_input_row(
@@ -405,7 +460,14 @@ def _execute_indexed_rows(
         output_dir=output_dir,
         rows=rows,
         decode_results=decode_results,
-        image_plan_rows=[row.to_artifact_dict() for row in image_plan_batch.rows],
+        image_plan_rows=[
+            _image_plan_artifact_dict(row=row)
+            for row in _image_plan_rows_with_backend_evidence(
+                rows=image_plan_batch.rows,
+                decode_results=decode_results,
+                backend=str(metadata["backend"]),
+            )
+        ],
         metadata=metadata,
     )
 
@@ -480,73 +542,6 @@ def _read_json(path: Path) -> dict[str, Any]:
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     text = json.dumps(payload, sort_keys=True, indent=2, allow_nan=False)
     path.write_text(text + "\n", encoding="utf-8")
-
-
-def _default_backend_factory(runtime: InferenceRuntime, config: InferConfig) -> HFGenerateBackend:
-    if config.backend.type != "hf":
-        raise ArtifactContractError(
-            "only HF backend is implemented for CoordExp-swift V1 pipeline",
-            code="pipeline.backend_not_implemented",
-            context={"backend": config.backend.type},
-        )
-    return HFGenerateBackend(model=runtime.qwen.model, tokenizer=runtime.qwen.tokenizer)
-
-
-def _validate_backend_result_set(
-    *,
-    requests: list[DecodeRequest],
-    results: list[Any],
-) -> None:
-    requested_ids = [request.request_id for request in requests]
-    observed_ids = [str(getattr(result, "request_id", "")) for result in results]
-    requested_counts = Counter(requested_ids)
-    observed_counts = Counter(observed_ids)
-    missing_ids = _counter_delta(requested_counts, observed_counts, requested_ids)
-    extra_ids = _counter_delta(observed_counts, requested_counts, observed_ids)
-    duplicate_ids = _duplicates_in_order(observed_ids)
-    unknown_ids = [row_id for row_id in observed_ids if row_id not in requested_counts]
-    if missing_ids or extra_ids or duplicate_ids or unknown_ids:
-        raise ArtifactContractError(
-            "backend decode result set must match requested batch request ids exactly",
-            code="pipeline.backend_result_set_mismatch",
-            context={
-                "requested_request_ids": requested_ids,
-                "observed_request_ids": observed_ids,
-                "missing_request_ids": missing_ids,
-                "extra_result_ids": extra_ids,
-                "duplicate_result_ids": duplicate_ids,
-                "unknown_result_ids": unknown_ids,
-            },
-        )
-
-
-def _counter_delta(
-    left: Counter[str],
-    right: Counter[str],
-    order: list[str],
-) -> list[str]:
-    remaining = left.copy()
-    for row_id, count in right.items():
-        remaining[row_id] -= count
-    values: list[str] = []
-    emitted: Counter[str] = Counter()
-    for row_id in order:
-        allowed = max(remaining[row_id], 0)
-        if emitted[row_id] < allowed:
-            values.append(row_id)
-            emitted[row_id] += 1
-    return values
-
-
-def _duplicates_in_order(values: list[str]) -> list[str]:
-    counts = Counter(values)
-    seen: set[str] = set()
-    duplicates = []
-    for value in values:
-        if counts[value] > 1 and value not in seen:
-            duplicates.append(value)
-            seen.add(value)
-    return duplicates
 
 
 def _artifact_input_row(
@@ -636,6 +631,9 @@ def _base_metadata(*, resolved: ResolvedInferConfig) -> dict[str, Any]:
             resolved.config.generation.model_dump(mode="json")
         ),
         "generation_policy": _generation_policy(resolved.config),
+        "raw_model_logprob_enabled": bool(
+            resolved.config.artifacts.include_raw_model_logprob
+        ),
         "model_identity_fingerprint": "unknown-before-runtime",
         "processor_identity_fingerprint": "unknown-before-runtime",
         "template_identity": {
@@ -657,27 +655,39 @@ def _base_metadata(*, resolved: ResolvedInferConfig) -> dict[str, Any]:
     }
 
 
-def _runtime_metadata(*, runtime: Any, qwen: Any) -> dict[str, Any]:
-    model_identity = dict(getattr(runtime, "model_identity", {}) or {})
-    tokenizer_identity = _tokenizer_identity(qwen)
-    processor_identity = qwen.processor_identity.to_artifact_dict()
+def _session_metadata(*, frontend: InferenceFrontend, receipt: Any) -> dict[str, Any]:
+    model_identity = dict(receipt.model_identity)
+    tokenizer_identity = dict(receipt.tokenizer_identity)
+    processor_identity = dict(receipt.processor_identity)
     return {
+        "backend": receipt.backend,
+        "backend_mode": receipt.backend_mode,
+        "response_family": receipt.response_family,
         "model_identity": model_identity,
         "tokenizer_identity": tokenizer_identity,
         "processor_identity": processor_identity,
         "model_identity_fingerprint": _fingerprint(model_identity),
         "processor_identity_fingerprint": _fingerprint(processor_identity),
-        "adapter_identity": getattr(runtime, "adapter_receipt", None),
-        "embedding_delta_identity": getattr(runtime, "embedding_delta_receipt", None),
+        "adapter_identity": model_identity.get("adapter"),
+        "embedding_delta_identity": model_identity.get("embedding_delta"),
+        "backend_session": receipt.to_artifact_dict(),
+        "likelihood_semantics": dict(receipt.likelihood_semantics),
+        "execution_model_identity": receipt.execution_model_identity,
+        "frontend_identity": frontend.qwen.to_artifact_dict(),
     }
 
 
-def _fill_worker_runtime_device_metadata(*, metadata: dict[str, Any], qwen: Any) -> None:
+def _fill_worker_runtime_device_metadata(
+    *,
+    metadata: dict[str, Any],
+    session_receipt: Any,
+) -> None:
     parallelism = metadata.get("parallelism")
     if not isinstance(parallelism, dict):
         return
-    model = getattr(qwen, "model", None)
-    device = _model_first_parameter_device(model)
+    effective_settings = dict(session_receipt.effective_settings)
+    device_value = effective_settings.get("device")
+    device = None if device_value is None else str(device_value)
     worker = parallelism.get("worker")
     if isinstance(worker, dict):
         if worker.get("model_first_parameter_device"):
@@ -706,25 +716,32 @@ def _fill_worker_runtime_device_metadata(*, metadata: dict[str, Any], qwen: Any)
         direct_runtime.setdefault("cuda_probe_error", type(exc).__name__)
 
 
-def _model_first_parameter_device(model: Any | None) -> str | None:
-    if model is None:
-        return None
-    parameters = getattr(model, "parameters", None)
-    if not callable(parameters):
-        return None
-    first_param = next(iter(parameters()), None)
-    device = getattr(first_param, "device", None)
-    return None if device is None else str(device)
+def _image_plan_rows_with_backend_evidence(
+    *,
+    rows: Sequence[Any],
+    decode_results: dict[str, Any],
+    backend: str,
+) -> list[Any]:
+    evidence_kind = (
+        "hf_executed_tensors" if backend == "hf" else "vllm_executed_media"
+    )
+    return [
+        replace(
+            row,
+            observed_image_grid_thw=list(
+                decode_results[row.row_id].observed_image_grid_thw
+            ),
+            backend_projection_evidence_kind=evidence_kind,
+            executed_media_sha256=decode_results[
+                row.row_id
+            ].executed_media_sha256,
+        )
+        for row in rows
+    ]
 
 
-def _tokenizer_identity(qwen: Any) -> dict[str, Any]:
-    token_identity = getattr(qwen, "token_identity", None)
-    if token_identity is not None and hasattr(token_identity, "to_artifact_dict"):
-        return token_identity.to_artifact_dict()
-    tokenizer_sha = getattr(qwen, "tokenizer_sha256", None)
-    if tokenizer_sha:
-        return {"tokenizer_sha256": tokenizer_sha}
-    return {"identity": "test-tokenizer"}
+def _image_plan_artifact_dict(*, row: Any) -> dict[str, Any]:
+    return row.to_artifact_dict()
 
 
 def _model_config(qwen: Any) -> Any:
@@ -766,6 +783,9 @@ def _generation_policy(config: InferConfig) -> dict[str, Any]:
         "do_sample": False,
         "return_dict_in_generate": True,
         "output_scores": True,
+        "include_raw_model_logprob": bool(
+            config.artifacts.include_raw_model_logprob
+        ),
         "stop_policy": "qwen_im_end",
     }
 
@@ -779,10 +799,6 @@ def _prompt_record_by_id(records: Sequence[Any], row_id: str) -> Any:
         code="pipeline.unknown_decode_result",
         context={"request_id": row_id},
     )
-
-
-def _batches(values: Sequence[Any], *, size: int) -> list[Sequence[Any]]:
-    return [values[index : index + size] for index in range(0, len(values), size)]
 
 
 def _fingerprint(payload: Any) -> str:

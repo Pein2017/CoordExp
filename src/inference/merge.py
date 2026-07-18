@@ -57,6 +57,39 @@ SHARD_OWNED_IDENTITY_FIELDS = (
     "tokenizer_identity",
     "adapter_identity",
     "embedding_delta_identity",
+    "backend_session",
+    "likelihood_semantics",
+    "execution_model_identity",
+    "frontend_identity",
+    "raw_model_logprob_status",
+)
+REQUIRED_NONEMPTY_SHARD_IDENTITY_OBJECTS = (
+    "model_identity",
+    "processor_identity",
+    "tokenizer_identity",
+    "backend_session",
+    "likelihood_semantics",
+    "frontend_identity",
+    "generation_policy",
+    "template_identity",
+    "dataset_identity",
+)
+REQUIRED_NONEMPTY_SHARD_IDENTITY_STRINGS = (
+    "model_identity_fingerprint",
+    "processor_identity_fingerprint",
+    "prompt_policy_fingerprint",
+    "generation_config_fingerprint",
+    "parser_policy",
+    "score_policy_fingerprint",
+    "backend",
+    "backend_mode",
+    "response_family",
+    "raw_model_logprob_status",
+)
+REQUIRED_EXPLICIT_NULLABLE_SHARD_IDENTITY_FIELDS = (
+    "adapter_identity",
+    "embedding_delta_identity",
+    "execution_model_identity",
 )
 
 
@@ -127,6 +160,19 @@ def merge_identity_vector(
         "tokenizer_identity": manifest.get("tokenizer_identity"),
         "adapter_identity": manifest.get("adapter_identity"),
         "embedding_delta_identity": manifest.get("embedding_delta_identity"),
+        "backend_session": manifest.get("backend_session")
+        or provenance.get("backend_session"),
+        "likelihood_semantics": manifest.get("likelihood_semantics")
+        or provenance.get("likelihood_semantics"),
+        "execution_model_identity": (
+            manifest.get("execution_model_identity")
+            if "execution_model_identity" in manifest
+            else provenance.get("execution_model_identity")
+        ),
+        "frontend_identity": manifest.get("frontend_identity")
+        or provenance.get("frontend_identity"),
+        "raw_model_logprob_status": manifest.get("raw_model_logprob_status")
+        or provenance.get("raw_model_logprob_status"),
         "template_identity": manifest.get("template_identity")
         or provenance.get("template_identity"),
         "prompt_policy_fingerprint": manifest.get("prompt_policy_fingerprint")
@@ -284,7 +330,10 @@ def _merge_shard_artifacts(
         scored_rows=scored_rows,
         image_plan_rows=image_plan_rows,
     )
-    _validate_trace_uniqueness(token_trace_rows)
+    _validate_trace_uniqueness(
+        token_trace_rows,
+        raw_model_logprob_status=metadata.get("raw_model_logprob_status"),
+    )
     _validate_row_local_score_provenance(
         scored_rows,
         token_trace_rows=token_trace_rows,
@@ -437,12 +486,19 @@ def _load_validated_shard(
         worker_metadata=worker_metadata,
         rank_plan=_rank_plan_for(plan=plan, rank=rank),
     )
+    identity = merge_identity_vector(manifest=manifest, provenance=provenance)
+    _require_complete_shard_identity(
+        manifest=manifest,
+        provenance=provenance,
+        identity=identity,
+        rank=rank,
+    )
     return {
         "rank": rank,
         "worker_status": worker_status,
         "manifest": manifest,
         "provenance": provenance,
-        "identity": merge_identity_vector(manifest=manifest, provenance=provenance),
+        "identity": identity,
         "artifact_hashes": {
             name: sha256_file(shard_dir / name) for name in REQUIRED_MERGE_ARTIFACTS
         },
@@ -458,6 +514,63 @@ def _load_validated_shard(
         ),
         "image_plan_rows": image_plan_rows,
     }
+
+
+def _require_complete_shard_identity(
+    *,
+    manifest: dict[str, Any],
+    provenance: dict[str, Any],
+    identity: dict[str, Any],
+    rank: int,
+) -> None:
+    missing: list[str] = []
+    invalid: list[str] = []
+    for field in REQUIRED_NONEMPTY_SHARD_IDENTITY_OBJECTS:
+        value = identity.get(field)
+        if not isinstance(value, dict) or not value:
+            missing.append(field)
+    for field in REQUIRED_NONEMPTY_SHARD_IDENTITY_STRINGS:
+        value = identity.get(field)
+        if not isinstance(value, str) or not value.strip():
+            missing.append(field)
+    for field in REQUIRED_EXPLICIT_NULLABLE_SHARD_IDENTITY_FIELDS:
+        if field not in manifest and field not in provenance:
+            missing.append(field)
+
+    backend_session = identity.get("backend_session")
+    if isinstance(backend_session, dict) and backend_session:
+        if backend_session.get("backend") != identity.get("backend"):
+            invalid.append("backend_session.backend")
+        if backend_session.get("backend_mode") != identity.get("backend_mode"):
+            invalid.append("backend_session.backend_mode")
+        if backend_session.get("response_family") != identity.get("response_family"):
+            invalid.append("backend_session.response_family")
+    likelihood = identity.get("likelihood_semantics")
+    if isinstance(likelihood, dict) and likelihood:
+        if likelihood.get("score_owned_channel") != "policy_logprob":
+            invalid.append("likelihood_semantics.score_owned_channel")
+        for field in ("policy", "raw"):
+            value = likelihood.get(field)
+            if not isinstance(value, str) or not value.strip():
+                invalid.append(f"likelihood_semantics.{field}")
+    raw_status = identity.get("raw_model_logprob_status")
+    if raw_status not in {"disabled", "available"}:
+        invalid.append("raw_model_logprob_status")
+    if identity.get("backend") == "vllm":
+        execution_identity = identity.get("execution_model_identity")
+        if not isinstance(execution_identity, dict) or not execution_identity:
+            invalid.append("execution_model_identity")
+
+    if missing or invalid:
+        raise ArtifactContractError(
+            "rank-local shard is missing mandatory semantic identity evidence",
+            code="merge.semantic_identity_incomplete",
+            context={
+                "rank": rank,
+                "missing_fields": sorted(set(missing)),
+                "invalid_fields": sorted(set(invalid)),
+            },
+        )
 
 
 def _require_shard_artifacts(shard_dir: Path) -> None:
@@ -879,6 +992,11 @@ def _controller_identity_vector(metadata: dict[str, Any]) -> dict[str, Any]:
         "tokenizer_identity": metadata.get("tokenizer_identity"),
         "adapter_identity": metadata.get("adapter_identity"),
         "embedding_delta_identity": metadata.get("embedding_delta_identity"),
+        "backend_session": metadata.get("backend_session"),
+        "likelihood_semantics": metadata.get("likelihood_semantics"),
+        "execution_model_identity": metadata.get("execution_model_identity"),
+        "frontend_identity": metadata.get("frontend_identity"),
+        "raw_model_logprob_status": metadata.get("raw_model_logprob_status"),
         "template_identity": metadata.get("template_identity"),
         "prompt_policy_fingerprint": metadata.get("prompt_policy_fingerprint"),
         "generation_config_fingerprint": metadata.get("generation_config_fingerprint"),
@@ -1447,7 +1565,17 @@ def _require_score_source_matches_replay(
             )
 
 
-def _validate_trace_uniqueness(rows: list[dict[str, Any]]) -> None:
+def _validate_trace_uniqueness(
+    rows: list[dict[str, Any]],
+    *,
+    raw_model_logprob_status: Any,
+) -> None:
+    if raw_model_logprob_status not in {"available", "disabled"}:
+        raise ArtifactContractError(
+            "merged token trace requires an explicit raw-model likelihood status",
+            code="merge.invalid_generated_likelihood",
+            context={"raw_model_logprob_status": raw_model_logprob_status},
+        )
     generated: set[tuple[str, int]] = set()
     replay: set[tuple[str, str]] = set()
     for row_position, row in enumerate(rows):
@@ -1466,6 +1594,13 @@ def _validate_trace_uniqueness(rows: list[dict[str, Any]]) -> None:
                 row_id=row_id,
                 row_position=row_position,
                 minimum=0,
+            )
+            _validate_generated_token_likelihood(
+                row,
+                row_id=row_id,
+                row_position=row_position,
+                generated_step_index=generated_step_index,
+                expected_raw_status=raw_model_logprob_status,
             )
             key = (row_id, generated_step_index)
             if key in generated:
@@ -1488,6 +1623,87 @@ def _validate_trace_uniqueness(rows: list[dict[str, Any]]) -> None:
                     context={"row_id": key[0], "object_span_id": key[1]},
                 )
             replay.add(key)
+
+
+def _validate_generated_token_likelihood(
+    row: dict[str, Any],
+    *,
+    row_id: str,
+    row_position: int,
+    generated_step_index: int,
+    expected_raw_status: str,
+) -> None:
+    context = {
+        "artifact": TOKEN_TRACE_NAME,
+        "row_id": row_id,
+        "row_position": row_position,
+        "generated_step_index": generated_step_index,
+    }
+    is_pad = row.get("is_pad")
+    if not isinstance(is_pad, bool):
+        raise ArtifactContractError(
+            "generated-token padding evidence must be boolean",
+            code="merge.invalid_generated_likelihood",
+            context={**context, "field": "is_pad", "value": is_pad},
+        )
+    observed_raw_status = row.get("raw_model_logprob_status")
+    if observed_raw_status != expected_raw_status:
+        raise ArtifactContractError(
+            "generated-token raw-model likelihood status disagrees with the shard contract",
+            code="merge.invalid_generated_likelihood",
+            context={
+                **context,
+                "field": "raw_model_logprob_status",
+                "observed": observed_raw_status,
+                "expected": expected_raw_status,
+            },
+        )
+    policy_logprob = row.get("logprob")
+    raw_model_logprob = row.get("raw_model_logprob")
+    if is_pad:
+        if policy_logprob is not None or raw_model_logprob is not None:
+            raise ArtifactContractError(
+                "padding trace rows must not carry likelihood evidence",
+                code="merge.invalid_generated_likelihood",
+                context={**context, "field": "logprob/raw_model_logprob"},
+            )
+        return
+    _require_generated_logprob(
+        policy_logprob,
+        field="logprob",
+        context=context,
+    )
+    if expected_raw_status == "available":
+        _require_generated_logprob(
+            raw_model_logprob,
+            field="raw_model_logprob",
+            context=context,
+        )
+    elif raw_model_logprob is not None:
+        raise ArtifactContractError(
+            "disabled raw-model likelihood channel must not carry values",
+            code="merge.invalid_generated_likelihood",
+            context={**context, "field": "raw_model_logprob", "value": raw_model_logprob},
+        )
+
+
+def _require_generated_logprob(
+    value: Any,
+    *,
+    field: str,
+    context: dict[str, Any],
+) -> None:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int | float)
+        or not math.isfinite(float(value))
+        or float(value) > 0.0
+    ):
+        raise ArtifactContractError(
+            "generated-token likelihood must be a finite non-positive number",
+            code="merge.invalid_generated_likelihood",
+            context={**context, "field": field, "value": value},
+        )
 
 
 def _validate_selected_replay_row_shape(
@@ -1763,6 +1979,11 @@ def _merged_provenance(
         "decode_policy_fingerprint": metadata["generation_config_fingerprint"],
         "generation_config_fingerprint": metadata["generation_config_fingerprint"],
         "generation_policy": dict(metadata.get("generation_policy") or {}),
+        "backend_session": dict(metadata.get("backend_session") or {}),
+        "likelihood_semantics": dict(metadata.get("likelihood_semantics") or {}),
+        "execution_model_identity": metadata.get("execution_model_identity"),
+        "frontend_identity": dict(metadata.get("frontend_identity") or {}),
+        "raw_model_logprob_status": metadata.get("raw_model_logprob_status"),
         "parallelism": parallelism,
         "model_identity": dict(metadata.get("model_identity") or {}),
         "model_identity_fingerprint": metadata["model_identity_fingerprint"],
@@ -1799,6 +2020,8 @@ def _merged_summary(
         "scored_artifact_materialized": True,
         "benchmark_eligible": False,
         "generation_policy": dict(metadata.get("generation_policy") or {}),
+        "likelihood_semantics": dict(metadata.get("likelihood_semantics") or {}),
+        "raw_model_logprob_status": metadata.get("raw_model_logprob_status"),
         **dict(metadata.get("pipeline_counters") or {}),
     }
 
@@ -1835,6 +2058,11 @@ def _merged_manifest(
         "dataset_identity": metadata["dataset_identity"],
         "generation_config_fingerprint": metadata["generation_config_fingerprint"],
         "generation_policy": dict(metadata.get("generation_policy") or {}),
+        "backend_session": dict(metadata.get("backend_session") or {}),
+        "likelihood_semantics": dict(metadata.get("likelihood_semantics") or {}),
+        "execution_model_identity": metadata.get("execution_model_identity"),
+        "frontend_identity": dict(metadata.get("frontend_identity") or {}),
+        "raw_model_logprob_status": metadata.get("raw_model_logprob_status"),
         "parallelism": parallelism,
         "merge_identity_fingerprint": identity_fingerprint,
         "score_policy_fingerprint": SCORE_POLICY_FINGERPRINT,

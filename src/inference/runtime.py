@@ -1,110 +1,117 @@
-"""Inference runtime assembly from explicit model payload paths."""
+"""Processor-only inference frontend and backend launch assembly."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
-import torch
-
-from src.adapters.dora import load_inference_dora_adapter
+from src.common.errors import RuntimeContractError
 from src.config.inference import InferConfig
+from src.inference.backend import BackendLaunch
 from src.qwen.runtime_loading import QwenLoadOptions, load_qwen_components_from_options
-from src.qwen.special_token_embeddings import load_inference_embedding_delta
 
 
 @dataclass(frozen=True)
-class InferenceRuntime:
+class InferenceFrontend:
+    """Shared prompt/image frontend; it never owns an executable model."""
+
     qwen: Any
-    adapter_receipt: Mapping[str, Any] | None
-    embedding_delta_receipt: Mapping[str, Any] | None
-    model_identity: dict[str, Any]
+    launch: BackendLaunch
 
 
-def assemble_runtime(config: InferConfig) -> InferenceRuntime:
-    qwen = _load_qwen(config)
-    adapter_receipt = (
-        load_inference_dora_adapter(config=config, qwen=qwen)
-        if config.adapter is not None
-        else None
-    )
-    embedding_delta_receipt = (
-        load_inference_embedding_delta(config=config, qwen=qwen)
-        if config.embedding_delta is not None
-        else None
-    )
-    _prepare_model_for_generation(qwen)
-    return InferenceRuntime(
+def assemble_frontend(
+    config: InferConfig,
+    *,
+    generation_config_fingerprint: str,
+    execution_model: Mapping[str, Any] | None = None,
+) -> InferenceFrontend:
+    qwen = load_qwen_components_from_options(_frontend_load_options(config))
+    if getattr(qwen, "model", None) is not None:
+        raise RuntimeContractError(
+            "the shared inference frontend must not load an executable model",
+            code="inference.frontend_model_loaded",
+        )
+    return InferenceFrontend(
         qwen=qwen,
-        adapter_receipt=adapter_receipt,
-        embedding_delta_receipt=embedding_delta_receipt,
-        model_identity=_model_identity(
-            config=config,
-            qwen=qwen,
-            adapter_receipt=adapter_receipt,
-            embedding_delta_receipt=embedding_delta_receipt,
+        launch=prepare_backend_launch(
+            config,
+            generation_config_fingerprint=generation_config_fingerprint,
+            execution_model=execution_model,
         ),
     )
 
 
-def _load_qwen(config: InferConfig) -> Any:
-    return load_qwen_components_from_options(
-        QwenLoadOptions(
-            base_model=config.model.base_model,
-            dtype=config.model.dtype,
-            attn_implementation=config.model.attn_implementation,
-            patch_embed_linearization=config.model.runtime_patches.patch_embed_linearization,
-            load_model=True,
+def prepare_backend_launch(
+    config: InferConfig,
+    *,
+    generation_config_fingerprint: str,
+    execution_model: Mapping[str, Any] | None = None,
+) -> BackendLaunch:
+    """Project strict config into a serializable backend launch contract."""
+
+    execution_identity = None if execution_model is None else dict(execution_model)
+    model_path = config.model.base_model
+    if execution_identity is not None:
+        candidate = execution_identity.get("model_path") or execution_identity.get(
+            "snapshot_root"
         )
+        if not isinstance(candidate, str) or not candidate:
+            raise RuntimeContractError(
+                "execution-model identity is missing its executable model path",
+                code="inference.execution_model_path_missing",
+            )
+        model_path = candidate
+
+    if config.backend.type == "hf":
+        backend_options = {"hf": config.backend.hf.model_dump(mode="json")}
+        adapter = (
+            None if config.adapter is None else config.adapter.model_dump(mode="json")
+        )
+        embedding_delta = (
+            None
+            if config.embedding_delta is None
+            else config.embedding_delta.model_dump(mode="json")
+        )
+    else:
+        if execution_identity is None and (
+            config.adapter is not None or config.embedding_delta is not None
+        ):
+            raise RuntimeContractError(
+                "composed vLLM inference requires a resolved execution model",
+                code="inference.execution_model_required",
+            )
+        backend_options = {"vllm": config.backend.vllm.model_dump(mode="json")}
+        adapter = None
+        embedding_delta = None
+
+    return BackendLaunch(
+        backend=config.backend.type,
+        model_path=str(Path(model_path).expanduser().resolve()),
+        model_dtype=config.model.dtype,
+        batch_size=config.generation.batch_size,
+        generation_config_fingerprint=generation_config_fingerprint,
+        backend_options=backend_options,
+        execution_model_identity=execution_identity,
+        adapter=adapter,
+        embedding_delta=embedding_delta,
     )
 
 
-def _prepare_model_for_generation(qwen: Any) -> None:
-    model = _qwen_model(qwen)
-    if model is None:
-        return
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    move = getattr(model, "to", None)
-    if callable(move):
-        move(device)
-    eval_model = getattr(model, "eval", None)
-    if callable(eval_model):
-        eval_model()
-
-
-def _model_identity(
-    *,
-    config: InferConfig,
-    qwen: Any,
-    adapter_receipt: Mapping[str, Any] | None,
-    embedding_delta_receipt: Mapping[str, Any] | None,
-) -> dict[str, Any]:
-    if config.adapter is not None and config.embedding_delta is not None:
-        family = "base-plus-adapter-plus-delta"
-    elif config.adapter is not None:
-        family = "base-plus-adapter"
-    elif config.embedding_delta is not None:
-        family = "base-plus-delta"
+def _frontend_load_options(config: InferConfig) -> QwenLoadOptions:
+    if config.backend.type == "hf":
+        attention = config.backend.hf.attn_implementation
+        patch_policy = config.backend.hf.patch_embed_linearization
     else:
-        family = "base-only"
-    return {
-        "family": family,
-        "base": {"path": _base_model_path(config, qwen)},
-        "adapter": None if adapter_receipt is None else dict(adapter_receipt),
-        "embedding_delta": None
-        if embedding_delta_receipt is None
-        else dict(embedding_delta_receipt),
-    }
-
-
-def _base_model_path(config: InferConfig, qwen: Any) -> str:
-    if isinstance(qwen, Mapping):
-        return str(qwen.get("base_model_path", config.model.base_model))
-    return str(getattr(qwen, "base_model_path", config.model.base_model))
-
-
-def _qwen_model(qwen: Any) -> Any | None:
-    if isinstance(qwen, Mapping):
-        return qwen.get("model")
-    return getattr(qwen, "model", None)
+        # These values are inert when no model is loaded; public vLLM config
+        # remains free of HF execution controls.
+        attention = "eager"
+        patch_policy = "disabled"
+    return QwenLoadOptions(
+        base_model=config.model.base_model,
+        dtype=config.model.dtype,
+        attn_implementation=attention,
+        patch_embed_linearization=patch_policy,
+        load_model=False,
+    )

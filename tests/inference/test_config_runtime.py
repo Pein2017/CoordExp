@@ -39,8 +39,17 @@ def test_valid_production_infer_config_loads() -> None:
 
     assert isinstance(resolved.config, InferConfig)
     assert resolved.config.backend.type == "hf"
+    assert resolved.config.backend.hf.attn_implementation == "flash_attention_2"
+    assert resolved.config.backend.hf.patch_embed_linearization == "enabled"
+    assert set(type(resolved.config.model).model_fields) == {
+        "base_model",
+        "dtype",
+        "processor",
+    }
     assert resolved.config.generation.batch_size > 1
+    assert resolved.config.generation.n == 1
     assert resolved.config.generation.repetition_penalty == pytest.approx(1.0)
+    assert resolved.config.artifacts.include_raw_model_logprob is False
     assert resolved.config.debug.smoke is False
     assert resolved.config_dict["generation"]["batch_size"] == 2
     assert Path(resolved.config.model.base_model) == expected_base_model
@@ -54,6 +63,38 @@ def test_valid_production_infer_config_loads() -> None:
         with pytest.raises(ValueError):
             resolved_path.relative_to(config_dir)
     assert resolved.fingerprint
+
+
+@pytest.mark.parametrize(
+    "config_path",
+    sorted(Path("configs/coordexp_swift/infer").glob("*.yaml")),
+    ids=lambda path: path.name,
+)
+def test_all_canonical_infer_configs_use_strict_hf_projection(
+    config_path: Path,
+) -> None:
+    from src.config.inference import load_infer_config
+
+    resolved = load_infer_config(config_path)
+
+    assert resolved.config.backend.type == "hf"
+    assert resolved.config.backend.hf.attn_implementation in {
+        "flash_attention_2",
+        "sdpa",
+        "eager",
+    }
+    assert resolved.config.backend.hf.patch_embed_linearization in {
+        "enabled",
+        "disabled",
+    }
+    assert set(resolved.config_dict["model"]) == {"base_model", "dtype", "processor"}
+    assert resolved.config.generation.temperature == pytest.approx(0.0)
+    assert resolved.config.generation.top_p == pytest.approx(1.0)
+    assert resolved.config.generation.n == 1
+    assert resolved.config.scoring.enabled is True
+    assert resolved.config.artifacts.write_token_trace is True
+    assert resolved.config.artifacts.write_parse_diagnostics is True
+    assert resolved.config.artifacts.include_raw_model_logprob is False
 
 
 @pytest.mark.parametrize(
@@ -153,17 +194,216 @@ def test_legacy_infer_config_path_is_rejected() -> None:
     assert "reference-only" in exc_info.value.message
 
 
-def test_vllm_backend_is_reserved_but_not_implemented(tmp_path: Path) -> None:
+@pytest.mark.parametrize("gpu_memory_utilization", [0.01, 0.7, 1.0])
+def test_vllm_backend_accepts_strict_selected_block(
+    tmp_path: Path,
+    gpu_memory_utilization: float,
+) -> None:
     from src.config.inference import load_infer_config
 
-    config_path = _write_config(tmp_path, backend={"type": "vllm"})
+    config_path = _write_vllm_config(
+        tmp_path,
+        gpu_memory_utilization=gpu_memory_utilization,
+    )
+
+    resolved = load_infer_config(config_path)
+
+    assert resolved.config.backend.type == "vllm"
+    assert resolved.config.backend.vllm.gpu_memory_utilization == pytest.approx(
+        gpu_memory_utilization
+    )
+
+
+@pytest.mark.parametrize("gpu_memory_utilization", [0.0, -0.1, 1.01, float("inf")])
+def test_vllm_backend_rejects_invalid_gpu_memory_utilization(
+    tmp_path: Path,
+    gpu_memory_utilization: float,
+) -> None:
+    from src.config.inference import load_infer_config
+
+    config_path = _write_vllm_config(
+        tmp_path,
+        gpu_memory_utilization=gpu_memory_utilization,
+    )
 
     with pytest.raises(ConfigContractError) as exc_info:
         load_infer_config(config_path)
 
-    assert exc_info.value.code == "config.backend_not_implemented"
-    assert exc_info.value.context["backend"] == "vllm"
-    assert "Wave 2" not in exc_info.value.message
+    assert exc_info.value.code == "config.schema_validation"
+    assert exc_info.value.context["field"].endswith(
+        "vllm.gpu_memory_utilization"
+    )
+
+
+@pytest.mark.parametrize(
+    ("backend", "field_suffix"),
+    [
+        (
+            {
+                "type": "hf",
+                "hf": {
+                    "attn_implementation": "sdpa",
+                    "patch_embed_linearization": "enabled",
+                },
+                "vllm": {"gpu_memory_utilization": 0.7},
+            },
+            "vllm",
+        ),
+        (
+            {
+                "type": "vllm",
+                "vllm": {"gpu_memory_utilization": 0.7},
+                "hf": {
+                    "attn_implementation": "sdpa",
+                    "patch_embed_linearization": "enabled",
+                },
+            },
+            "hf",
+        ),
+        ({"type": "hf"}, "hf"),
+        ({"type": "vllm"}, "vllm"),
+        (
+            {
+                "type": "hf",
+                "hf": {"attn_implementation": "sdpa"},
+            },
+            "hf.patch_embed_linearization",
+        ),
+        (
+            {
+                "type": "hf",
+                "hf": {"patch_embed_linearization": "enabled"},
+            },
+            "hf.attn_implementation",
+        ),
+        ({"type": "vllm", "vllm": {}}, "vllm.gpu_memory_utilization"),
+        (
+            {
+                "type": "vllm",
+                "vllm": {
+                    "gpu_memory_utilization": 0.7,
+                    "arbitrary_engine_kwarg": True,
+                },
+            },
+            "vllm.arbitrary_engine_kwarg",
+        ),
+    ],
+)
+def test_backend_discriminator_rejects_opposite_missing_and_unknown_blocks(
+    tmp_path: Path,
+    backend: dict[str, Any],
+    field_suffix: str,
+) -> None:
+    from src.config.inference import load_infer_config
+
+    config_path = _write_config(tmp_path)
+    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    payload["backend"] = backend
+    config_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+    with pytest.raises(ConfigContractError) as exc_info:
+        load_infer_config(config_path)
+
+    assert exc_info.value.code == "config.schema_validation"
+    assert exc_info.value.context["field"].endswith(field_suffix)
+
+
+@pytest.mark.parametrize(
+    ("legacy_field", "legacy_value"),
+    [
+        ("attn_implementation", "sdpa"),
+        ("runtime_patches", {"patch_embed_linearization": "enabled"}),
+    ],
+)
+def test_infer_model_rejects_legacy_hf_only_fields(
+    tmp_path: Path,
+    legacy_field: str,
+    legacy_value: Any,
+) -> None:
+    from src.config.inference import load_infer_config
+
+    config_path = _write_config(tmp_path)
+    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    payload["model"][legacy_field] = legacy_value
+    config_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+    with pytest.raises(ConfigContractError) as exc_info:
+        load_infer_config(config_path)
+
+    assert exc_info.value.code == "config.schema_validation"
+    assert exc_info.value.context["field"] == f"model.{legacy_field}"
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected_code"),
+    [
+        ({"generation": {"temperature": 0.1}}, "config.deterministic_inference"),
+        ({"generation": {"top_p": 0.9}}, "config.deterministic_inference"),
+        ({"generation": {"n": 2}}, "config.schema_validation"),
+        ({"scoring": {"enabled": False}}, "config.scoring_required"),
+        (
+            {"artifacts": {"write_token_trace": False}},
+            "config.inference_evidence_required",
+        ),
+        (
+            {"artifacts": {"write_parse_diagnostics": False}},
+            "config.inference_evidence_required",
+        ),
+    ],
+)
+def test_canonical_inference_rejects_stochastic_or_evidence_disabling_values(
+    tmp_path: Path,
+    overrides: dict[str, Any],
+    expected_code: str,
+) -> None:
+    from src.config.inference import load_infer_config
+
+    config_path = _write_config(tmp_path, **overrides)
+
+    with pytest.raises(ConfigContractError) as exc_info:
+        load_infer_config(config_path)
+
+    assert exc_info.value.code == expected_code
+
+
+def test_raw_model_logprob_is_opt_in(tmp_path: Path) -> None:
+    from src.config.inference import load_infer_config
+
+    default_config = load_infer_config(
+        _write_config(
+            tmp_path / "default",
+            debug={"smoke": False, "dry_run": True},
+        )
+    )
+    enabled_config = load_infer_config(
+        _write_config(
+            tmp_path / "enabled",
+            artifacts={
+                "write_token_trace": True,
+                "write_parse_diagnostics": True,
+                "include_raw_model_logprob": True,
+            },
+            debug={"smoke": False, "dry_run": True},
+        )
+    )
+
+    assert default_config.config.artifacts.include_raw_model_logprob is False
+    assert enabled_config.config.artifacts.include_raw_model_logprob is True
+
+
+def test_vllm_version_preflight_rejects_unqualified_version() -> None:
+    from src.config.inference import validate_vllm_runtime_version
+
+    validate_vllm_runtime_version(observed_version="0.14.1")
+
+    with pytest.raises(ConfigContractError) as exc_info:
+        validate_vllm_runtime_version(observed_version="0.14.2")
+
+    assert exc_info.value.code == "config.vllm_version_unqualified"
+    assert exc_info.value.context == {
+        "observed_version": "0.14.2",
+        "qualified_versions": ["0.14.1"],
+    }
 
 
 def test_debug_batch_size_one_requires_explicit_smoke(tmp_path: Path) -> None:
@@ -307,7 +547,7 @@ def test_pipeline_dry_run_does_not_overwrite_existing_resolved_config(
     assert second_payload["config"]["generation"]["max_new_tokens"] == 64
 
 
-def test_runtime_assembly_uses_default_owner_wired_adapter_and_delta_paths(
+def test_frontend_loads_processor_only_and_projects_hf_launch_payloads(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -321,266 +561,119 @@ def test_runtime_assembly_uses_default_owner_wired_adapter_and_delta_paths(
         debug={"smoke": True, "dry_run": True},
     )
     resolved = load_infer_config(config_path)
+    observed_options: list[Any] = []
+
+    def fake_load_qwen(options: Any) -> SimpleNamespace:
+        observed_options.append(options)
+        return SimpleNamespace(model=None)
 
     monkeypatch.setattr(
         runtime_module,
         "load_qwen_components_from_options",
-        lambda options: {
-            "base_model_path": options.base_model,
-            "load_model": options.load_model,
-        },
-    )
-    monkeypatch.setattr(
-        runtime_module,
-        "load_inference_dora_adapter",
-        lambda *, config, qwen: {
-            "status": "validated",
-            "adapter_path": config.adapter.path,
-            "base_model_path": qwen["base_model_path"],
-        },
-    )
-    monkeypatch.setattr(
-        runtime_module,
-        "load_inference_embedding_delta",
-        lambda *, config, qwen: {
-            "status": "loaded",
-            "identity": {
-                "status": "validated",
-                "delta_path": config.embedding_delta.path,
-                "base_model_path": qwen["base_model_path"],
-            },
-            "load": {"loaded": True},
-        },
+        fake_load_qwen,
     )
 
-    runtime = runtime_module.assemble_runtime(resolved.config)
-
-    assert runtime.model_identity["family"] == "base-plus-adapter-plus-delta"
-    assert runtime.model_identity["base"]["path"] == resolved.config.model.base_model
-    assert runtime.model_identity["adapter"]["adapter_path"].endswith(
-        "adapter/step-5"
+    frontend = runtime_module.assemble_frontend(
+        resolved.config,
+        generation_config_fingerprint="generation-fingerprint",
     )
-    assert runtime.model_identity["embedding_delta"]["identity"]["delta_path"].endswith(
+
+    assert observed_options[0].load_model is False
+    assert observed_options[0].attn_implementation == "flash_attention_2"
+    assert observed_options[0].patch_embed_linearization == "enabled"
+    assert frontend.launch.backend == "hf"
+    assert frontend.launch.adapter is not None
+    assert str(frontend.launch.adapter["path"]).endswith("adapter/step-5")
+    assert frontend.launch.embedding_delta is not None
+    assert str(frontend.launch.embedding_delta["path"]).endswith(
         "delta/special-token-delta.safetensors"
     )
 
 
-def test_adapter_runtime_loads_qwen_model_and_uses_adapter_owner(
+def test_frontend_rejects_any_shared_executable_model(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from src.config.inference import load_infer_config
     from src.inference import runtime as runtime_module
 
-    config_path = _write_config(
-        tmp_path,
-        adapter={"type": "dora", "path": "adapter/step-5"},
-        debug={"smoke": True, "dry_run": False},
+    resolved = load_infer_config(
+        _write_config(tmp_path, debug={"smoke": True, "dry_run": True})
     )
-    resolved = load_infer_config(config_path)
-    fake_model = FakePeftModel()
-    observed_load_model: list[bool] = []
+    monkeypatch.setattr(
+        runtime_module,
+        "load_qwen_components_from_options",
+        lambda options: SimpleNamespace(model=object()),
+    )
 
-    def fake_load_qwen(options: Any) -> SimpleNamespace:
-        observed_load_model.append(options.load_model)
-        if not options.load_model:
-            raise AssertionError("adapter runtime must not load Qwen with load_model=False")
-        return SimpleNamespace(
-            base_model_path=options.base_model,
-            model=fake_model,
-            token_identity=None,
-            base_config_sha256="base-config-sha",
-            tokenizer_sha256="tokenizer-sha",
+    with pytest.raises(RuntimeContractError) as exc_info:
+        runtime_module.assemble_frontend(
+            resolved.config,
+            generation_config_fingerprint="generation-fingerprint",
         )
 
-    monkeypatch.setattr(
-        runtime_module,
-        "load_qwen_components_from_options",
-        fake_load_qwen,
-    )
-
-    runtime = runtime_module.assemble_runtime(resolved.config)
-
-    assert observed_load_model == [True]
-    assert fake_model.loaded_path.endswith("adapter/step-5")
-    assert fake_model.active_adapter == "default"
-    assert runtime.adapter_receipt is not None
-    assert runtime.adapter_receipt["status"] == "validated"
-    assert runtime.model_identity["family"] == "base-plus-adapter"
+    assert exc_info.value.code == "inference.frontend_model_loaded"
 
 
-def test_base_only_runtime_loads_qwen_model_for_hf_generation(
+def test_vllm_composed_launch_requires_execution_model(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from src.config.inference import load_infer_config
-    from src.inference import runtime as runtime_module
+    from src.inference.runtime import prepare_backend_launch
 
-    config_path = _write_config(
-        tmp_path,
-        adapter=None,
-        embedding_delta=None,
-        debug={"smoke": True, "dry_run": False},
-    )
+    config_path = _write_vllm_config(tmp_path, gpu_memory_utilization=0.7)
+    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    payload["adapter"] = {
+        "type": "dora",
+        "path": str(tmp_path / "adapter"),
+        "name": "default",
+    }
+    config_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
     resolved = load_infer_config(config_path)
-    observed_load_model: list[bool] = []
 
-    def fake_load_qwen(options: Any) -> SimpleNamespace:
-        observed_load_model.append(options.load_model)
-        return SimpleNamespace(
-            base_model_path=options.base_model,
-            model=object() if options.load_model else None,
-            token_identity=None,
-            base_config_sha256="base-config-sha",
-            tokenizer_sha256="tokenizer-sha",
+    with pytest.raises(RuntimeContractError) as exc_info:
+        prepare_backend_launch(
+            resolved.config,
+            generation_config_fingerprint="generation-fingerprint",
         )
 
-    monkeypatch.setattr(
-        runtime_module,
-        "load_qwen_components_from_options",
-        fake_load_qwen,
-    )
-
-    runtime = runtime_module.assemble_runtime(resolved.config)
-
-    assert observed_load_model == [True]
-    assert runtime.qwen.model is not None
-    assert runtime.model_identity["family"] == "base-only"
+    assert exc_info.value.code == "inference.execution_model_required"
 
 
-def test_inference_runtime_moves_loaded_model_to_cuda_for_generation(
+def test_vllm_execution_model_launch_uses_materialized_path_without_live_payloads(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from src.config.inference import load_infer_config
-    from src.inference import runtime as runtime_module
+    from src.inference.runtime import prepare_backend_launch
 
-    config_path = _write_config(
-        tmp_path,
-        adapter=None,
-        embedding_delta=None,
-        debug={"smoke": True, "dry_run": False},
-    )
+    config_path = _write_vllm_config(tmp_path, gpu_memory_utilization=0.7)
+    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    payload["adapter"] = {
+        "type": "dora",
+        "path": str(tmp_path / "adapter"),
+        "name": "default",
+    }
+    payload["embedding_delta"] = {"path": str(tmp_path / "delta")}
+    config_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
     resolved = load_infer_config(config_path)
-    fake_model = FakeGenerationModel()
+    snapshot = tmp_path / "materialized" / "snapshot"
 
-    monkeypatch.setattr(runtime_module.torch.cuda, "is_available", lambda: True)
-    monkeypatch.setattr(
-        runtime_module,
-        "load_qwen_components_from_options",
-        lambda options: SimpleNamespace(
-            base_model_path=options.base_model,
-            model=fake_model if options.load_model else None,
-            token_identity=None,
-            base_config_sha256="base-config-sha",
-            tokenizer_sha256="tokenizer-sha",
-        ),
-    )
-
-    runtime = runtime_module.assemble_runtime(resolved.config)
-
-    assert runtime.qwen.model is fake_model
-    assert fake_model.to_calls == ["cuda"]
-    assert fake_model.eval_calls == 1
-
-
-def test_embedding_delta_runtime_loads_and_installs_delta_with_qwen_identity(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from src.config.inference import load_infer_config
-    from src.inference import runtime as runtime_module
-
-    delta_dir = tmp_path / "delta"
-    config_path = _write_config(
-        tmp_path,
-        embedding_delta={"path": str(delta_dir)},
-        debug={"smoke": True, "dry_run": True},
-    )
-    resolved = load_infer_config(config_path)
-    calls: list[tuple[str, str]] = []
-
-    monkeypatch.setattr(
-        runtime_module,
-        "load_qwen_components_from_options",
-        lambda options: SimpleNamespace(
-            base_model_path=resolved.config.model.base_model,
-            model=object(),
-            token_identity=_token_identity(),
-            base_config_sha256="base-config-sha",
-            tokenizer_sha256="tokenizer-sha",
-        ),
-    )
-    monkeypatch.setattr(
-        runtime_module,
-        "load_inference_embedding_delta",
-        lambda *, config, qwen: calls.append((config.embedding_delta.path, str(qwen.model)))
-        or {
-            "status": "loaded",
-            "identity": {
-                "status": "validated",
-                "metadata": {
-                    "base_config_sha256": qwen.base_config_sha256,
-                    "tokenizer_sha256": qwen.tokenizer_sha256,
-                },
-                "metadata_path": str(delta_dir / "special_token_embeddings.json"),
-            },
-            "load": {"loaded": True},
+    launch = prepare_backend_launch(
+        resolved.config,
+        generation_config_fingerprint="generation-fingerprint",
+        execution_model={
+            "model_path": str(snapshot),
+            "composition_key": "a" * 64,
+            "snapshot_fingerprint": "b" * 64,
         },
     )
 
-    runtime = runtime_module.assemble_runtime(resolved.config)
-
-    assert calls == [(str(delta_dir), str(runtime.qwen.model))]
-    assert runtime.embedding_delta_receipt is not None
-    assert runtime.embedding_delta_receipt["status"] == "loaded"
-    assert runtime.embedding_delta_receipt["identity"]["metadata"]["base_config_sha256"] == "base-config-sha"
-    assert runtime.model_identity["family"] == "base-plus-delta"
-    assert runtime.model_identity["embedding_delta"]["identity"]["metadata_path"].endswith(
-        "special_token_embeddings.json"
-    )
-
-
-def test_runtime_propagates_explicit_adapter_and_delta_loader_receipts(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from src.config.inference import load_infer_config
-    from src.inference import runtime as runtime_module
-
-    adapter_dir = tmp_path / "payloads" / "adapter"
-    delta_dir = tmp_path / "payloads" / "special_token_embeddings"
-    adapter_dir.mkdir(parents=True)
-    delta_dir.mkdir(parents=True)
-    config_path = _write_config(
-        tmp_path, adapter={"type": "dora", "path": str(adapter_dir), "name": "default"},
-        embedding_delta={"path": str(delta_dir)}, debug={"smoke": True, "dry_run": True},
-    )
-    resolved = load_infer_config(config_path)
-    monkeypatch.setattr(runtime_module, "load_qwen_components_from_options", lambda options: _fake_qwen_components(resolved.config))
-    monkeypatch.setattr(runtime_module, "load_inference_dora_adapter", lambda *, config, qwen: {"status": "validated", "adapter_path": config.adapter.path})
-    monkeypatch.setattr(runtime_module, "load_inference_embedding_delta", lambda *, config, qwen: {"status": "loaded", "delta_path": config.embedding_delta.path})
-    runtime = runtime_module.assemble_runtime(resolved.config)
-    assert runtime.adapter_receipt == {"status": "validated", "adapter_path": str(adapter_dir)}
-    assert runtime.embedding_delta_receipt == {"status": "loaded", "delta_path": str(delta_dir)}
-    assert runtime.model_identity["adapter"] == runtime.adapter_receipt
-    assert runtime.model_identity["embedding_delta"] == runtime.embedding_delta_receipt
-
-
-def test_runtime_uses_explicit_embedding_delta_tensor_file_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from src.config.inference import load_infer_config
-    from src.inference import runtime as runtime_module
-
-    delta_tensor = tmp_path / "payloads" / "special_token_embeddings.safetensors"
-    delta_tensor.parent.mkdir(parents=True)
-    delta_tensor.write_bytes(b"delta")
-    config_path = _write_config(tmp_path, adapter=None, embedding_delta={"path": str(delta_tensor)}, debug={"smoke": True, "dry_run": True})
-    resolved = load_infer_config(config_path)
-    monkeypatch.setattr(runtime_module, "load_qwen_components_from_options", lambda options: _fake_qwen_components(resolved.config))
-    monkeypatch.setattr(runtime_module, "load_inference_embedding_delta", lambda *, config, qwen: {"status": "loaded", "delta_path": config.embedding_delta.path})
-    runtime = runtime_module.assemble_runtime(resolved.config)
-    assert runtime.embedding_delta_receipt["delta_path"] == str(delta_tensor)
+    assert launch.backend == "vllm"
+    assert launch.model_path == str(snapshot.resolve())
+    assert launch.adapter is None
+    assert launch.embedding_delta is None
+    assert launch.execution_model_identity is not None
+    assert launch.execution_model_identity["composition_key"] == "a" * 64
 
 
 def test_qwen_components_shape_exposes_delta_identity_sha_fields() -> None:
@@ -685,6 +778,24 @@ def _write_config(path_or_dir: Path, **overrides: Any) -> Path:
     return path
 
 
+def _write_vllm_config(
+    path_or_dir: Path,
+    *,
+    gpu_memory_utilization: float,
+) -> Path:
+    directory = path_or_dir if path_or_dir.suffix == "" else path_or_dir.parent
+    directory.mkdir(parents=True, exist_ok=True)
+    path = path_or_dir if path_or_dir.suffix else directory / "infer.yaml"
+    payload = _base_config(directory)
+    payload["backend"] = {
+        "type": "vllm",
+        "vllm": {"gpu_memory_utilization": gpu_memory_utilization},
+    }
+    payload["debug"] = {"smoke": False, "dry_run": True}
+    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    return path
+
+
 def _base_config(directory: Path) -> dict[str, Any]:
     return {
         "schema_version": 1,
@@ -696,9 +807,7 @@ def _base_config(directory: Path) -> dict[str, Any]:
         "model": {
             "base_model": str(directory / "model_cache" / "qwen"),
             "dtype": "bf16",
-            "attn_implementation": "flash_attention_2",
             "processor": {"do_resize": False},
-            "runtime_patches": {"patch_embed_linearization": "enabled"},
         },
         "data": {"input_jsonl": str(directory / "data" / "examples.jsonl")},
         "template": {
@@ -707,12 +816,19 @@ def _base_config(directory: Path) -> dict[str, Any]:
             "assistant_format": "object_box_closed",
             "prompt": {"user": "Describe objects."},
         },
-        "backend": {"type": "hf"},
+        "backend": {
+            "type": "hf",
+            "hf": {
+                "attn_implementation": "flash_attention_2",
+                "patch_embed_linearization": "enabled",
+            },
+        },
         "generation": {
             "batch_size": 2,
             "max_new_tokens": 64,
             "temperature": 0.0,
             "top_p": 1.0,
+            "n": 1,
         },
         "scoring": {"enabled": True},
         "artifacts": {"write_token_trace": True, "write_parse_diagnostics": True},

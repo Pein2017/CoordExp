@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 
 from src.common.errors import ArtifactContractError
-from src.inference.backend import DecodeResult, TokenTrace
+from src.inference.backend import DecodeResult, LikelihoodPair, TokenTrace
 from src.inference.parsing import parse_compact_object_box_closed
 
 
@@ -669,7 +669,10 @@ def _decode_result(row_id: str, *, text: str = OBJECT_TEXT) -> DecodeResult:
             step_index=index,
             token_id=151646 + index,
             token_text=piece,
-            logprob=math.log(0.25),
+            likelihood=LikelihoodPair(
+                policy_logprob=math.log(0.25),
+                raw_model_logprob=None,
+            ),
             is_stop=False,
             is_pad=False,
             backend="hf",
@@ -683,16 +686,14 @@ def _decode_result(row_id: str, *, text: str = OBJECT_TEXT) -> DecodeResult:
         backend="hf",
         backend_mode="generate",
         response_family="hf",
-        prompt_token_ids=[11, 12],
-        generated_token_ids=[item.token_id for item in trace],
+        executed_prompt_token_ids=(11, 12),
+        generated_token_ids=tuple(item.token_id for item in trace),
         raw_generated_text=text,
         parser_text=text,
         strip_policy="none",
         stop_reason="length",
-        model_identity={"family": "unit"},
-        tokenizer_identity={"sha256": "tok"},
-        generation_config_fingerprint="gen-fp",
-        token_trace=trace,
+        token_trace=tuple(trace),
+        executed_media_sha256="a" * 64,
     )
 
 

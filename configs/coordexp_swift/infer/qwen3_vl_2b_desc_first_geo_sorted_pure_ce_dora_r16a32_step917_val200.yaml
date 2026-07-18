@@ -5,7 +5,9 @@ run:
   collision_policy: timestamp
 model:
   base_model: /data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent
-  attn_implementation: sdpa
+backend:
+  hf:
+    attn_implementation: sdpa
 data:
   input_jsonl: ../../../outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl
 template:

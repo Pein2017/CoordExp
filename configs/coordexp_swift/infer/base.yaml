@@ -6,11 +6,8 @@ run:
 model:
   base_model: ../../../model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent
   dtype: bf16
-  attn_implementation: flash_attention_2
   processor:
     do_resize: false
-  runtime_patches:
-    patch_embed_linearization: enabled
 data:
   input_jsonl: ../../../tests/fixtures/smoke/qwen3_vl_single_image_pack/examples.jsonl
 template:
@@ -21,17 +18,22 @@ template:
     user: Describe objects.
 backend:
   type: hf
+  hf:
+    attn_implementation: flash_attention_2
+    patch_embed_linearization: enabled
 generation:
   batch_size: 2
   max_new_tokens: 512
   temperature: 0.0
   top_p: 1.0
+  n: 1
   repetition_penalty: 1.0
 scoring:
   enabled: true
 artifacts:
   write_token_trace: true
   write_parse_diagnostics: true
+  include_raw_model_logprob: false
 debug:
   smoke: false
   dry_run: false

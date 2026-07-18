@@ -23,7 +23,7 @@ from src.inference.artifacts import (
     validate_scored_artifact_set,
     write_inference_artifacts,
 )
-from src.inference.backend import DecodeResult, TokenTrace
+from src.inference.backend import DecodeResult, LikelihoodPair, TokenTrace
 from src.inference.data_parallel import DataParallelPlan, RankShardPlan, plan_data_parallel_shards
 from src.inference.parsing import parse_compact_object_box_closed
 from src.inference.scoring import SCORE_POLICY_FINGERPRINT
@@ -137,6 +137,43 @@ def test_strict_merge_restores_original_order_and_regenerates_bound_provenance(t
     assert evaluate_result.metrics["metric_family"] == "coordexp_swift_detection_coco_bbox_v1"
 
 
+def test_strict_merge_preserves_raw_likelihood_while_scores_remain_policy_owned(
+    tmp_path: Path,
+) -> None:
+    from src.inference.merge import merge_shard_artifacts
+
+    row_ids = ("row-0", "row-1")
+    plan = _plan(row_ids)
+    shard_dirs = _write_plan_shards(
+        tmp_path,
+        plan,
+        raw_model_logprob_enabled=True,
+    )
+
+    paths = merge_shard_artifacts(
+        output_dir=tmp_path,
+        shard_dirs=shard_dirs,
+        expected_row_ids=row_ids,
+        metadata=_merge_metadata(plan, raw_model_logprob_enabled=True),
+        plan=plan,
+    )
+
+    generated = [
+        row
+        for row in _read_jsonl(paths.token_trace_jsonl)
+        if row["trace_type"] == "generated_token"
+    ]
+    assert generated
+    assert {row["raw_model_logprob_status"] for row in generated} == {"available"}
+    assert all(row["raw_model_logprob"] == pytest.approx(math.log(0.75)) for row in generated)
+    assert all(row["logprob"] == pytest.approx(math.log(0.25)) for row in generated)
+    assert _read_json(paths.run_manifest_json)["raw_model_logprob_status"] == "available"
+    assert _read_json(paths.provenance_json)["raw_model_logprob_status"] == "available"
+    assert _read_json(paths.summary_json)["raw_model_logprob_status"] == "available"
+    scored = _read_jsonl(paths.scored_jsonl)
+    assert all(row["pred"][0]["score"] == pytest.approx(0.25) for row in scored)
+
+
 def test_strict_merge_rejects_missing_duplicate_order_failed_worker_and_identity_mismatches(
     tmp_path: Path,
 ) -> None:
@@ -201,6 +238,22 @@ def test_strict_merge_rejects_missing_duplicate_order_failed_worker_and_identity
         expected_code="merge.identity_mismatch",
     )
     assert result.context["field"] == "model_identity_fingerprint"
+    result = _assert_merge_failure(
+        tmp_path / "backend-session-identity",
+        row_ids=row_ids,
+        mutate=lambda shard_dirs, plan: _rewrite_json(
+            shard_dirs[1] / MANIFEST_NAME,
+                lambda payload: {
+                    **payload,
+                    "backend_session": {
+                        **payload["backend_session"],
+                        "backend_version": "different-runtime",
+                    },
+                },
+        ),
+        expected_code="merge.identity_mismatch",
+    )
+    assert result.context["field"] == "backend_session"
     _assert_merge_failure(
         tmp_path / "controller-identity",
         row_ids=row_ids,
@@ -305,6 +358,45 @@ def test_strict_merge_rejects_missing_required_shard_metadata(tmp_path: Path) ->
     )
 
 
+@pytest.mark.parametrize(
+    "field",
+    (
+        "backend_session",
+        "likelihood_semantics",
+        "frontend_identity",
+        "execution_model_identity",
+    ),
+)
+def test_strict_merge_rejects_collectively_missing_semantic_identity(
+    tmp_path: Path,
+    field: str,
+) -> None:
+    _assert_merge_failure(
+        tmp_path / field,
+        row_ids=("row-0", "row-1"),
+        mutate=lambda shard_dirs, plan: [
+            _drop_identity_field(shard_dir, field=field)
+            for shard_dir in shard_dirs
+        ],
+        expected_code="merge.semantic_identity_incomplete",
+    )
+
+
+def test_strict_merge_rejects_empty_vllm_execution_identity(tmp_path: Path) -> None:
+    _assert_merge_failure(
+        tmp_path / "empty-vllm-execution-identity",
+        row_ids=("row-0", "row-1"),
+        mutate=lambda shard_dirs, plan: [
+            _rewrite_shard_as_vllm(
+                shard_dir,
+                execution_model_identity={},
+            )
+            for shard_dir in shard_dirs
+        ],
+        expected_code="merge.semantic_identity_incomplete",
+    )
+
+
 def test_strict_merge_rejects_missing_replay_and_duplicate_token_trace_keys(tmp_path: Path) -> None:
     row_ids = ("row-0", "row-1")
 
@@ -330,6 +422,26 @@ def test_strict_merge_rejects_missing_replay_and_duplicate_token_trace_keys(tmp_
             lambda source: {**source, "score_policy_fingerprint": "bad-score-policy"},
         ),
         expected_code="merge.row_score_policy_mismatch",
+    )
+
+
+@pytest.mark.parametrize("invalid_raw", [None, 0.1])
+def test_strict_merge_rejects_corrupt_raw_model_likelihood_without_publication(
+    tmp_path: Path,
+    invalid_raw: float | None,
+) -> None:
+    _assert_merge_failure(
+        tmp_path / f"invalid-raw-{invalid_raw}",
+        row_ids=("row-0", "row-1"),
+        mutate=lambda shard_dirs, plan: _rewrite_first_trace_row(
+            shard_dirs[0] / TOKEN_TRACE_NAME,
+            lambda row: {
+                **row,
+                "raw_model_logprob": invalid_raw,
+            },
+        ),
+        expected_code="merge.invalid_generated_likelihood",
+        raw_model_logprob_enabled=True,
     )
 
 
@@ -487,11 +599,16 @@ def _assert_merge_failure(
     expected_row_ids: tuple[str, ...] | None = None,
     worker_statuses: dict[int, str] | None = None,
     metadata_transform: Any | None = None,
+    raw_model_logprob_enabled: bool = False,
 ) -> ArtifactContractError:
     from src.inference.merge import merge_shard_artifacts
 
     plan = _plan(row_ids)
-    shard_dirs = _write_plan_shards(output_dir, plan)
+    shard_dirs = _write_plan_shards(
+        output_dir,
+        plan,
+        raw_model_logprob_enabled=raw_model_logprob_enabled,
+    )
     mutate(shard_dirs, plan)
     stale_eval_dir = output_dir / "eval_detection"
     stale_eval_dir.mkdir()
@@ -510,7 +627,10 @@ def _assert_merge_failure(
             shard_dirs=shard_dirs,
             expected_row_ids=expected_row_ids or row_ids,
             metadata=(metadata_transform or (lambda metadata: metadata))(
-                _merge_metadata(plan)
+                _merge_metadata(
+                    plan,
+                    raw_model_logprob_enabled=raw_model_logprob_enabled,
+                )
             ),
             plan=plan,
             worker_statuses=worker_statuses,
@@ -530,14 +650,32 @@ def _assert_merge_failure(
     return exc_info.value
 
 
-def _write_plan_shards(root: Path, plan: DataParallelPlan) -> tuple[Path, ...]:
+def _write_plan_shards(
+    root: Path,
+    plan: DataParallelPlan,
+    *,
+    raw_model_logprob_enabled: bool = False,
+) -> tuple[Path, ...]:
     shard_dirs = []
     for rank_plan in plan.ranks:
-        shard_dirs.append(_write_shard(root, plan=plan, rank_plan=rank_plan))
+        shard_dirs.append(
+            _write_shard(
+                root,
+                plan=plan,
+                rank_plan=rank_plan,
+                raw_model_logprob_enabled=raw_model_logprob_enabled,
+            )
+        )
     return tuple(shard_dirs)
 
 
-def _write_shard(root: Path, *, plan: DataParallelPlan, rank_plan: RankShardPlan) -> Path:
+def _write_shard(
+    root: Path,
+    *,
+    plan: DataParallelPlan,
+    rank_plan: RankShardPlan,
+    raw_model_logprob_enabled: bool = False,
+) -> Path:
     shard_dir = root / "shards" / rank_plan.shard_dir_name
     rows = [
         _raw_row(row_id=row_id, row_index=row_index)
@@ -546,11 +684,21 @@ def _write_shard(root: Path, *, plan: DataParallelPlan, rank_plan: RankShardPlan
     paths = write_inference_artifacts(
         output_dir=shard_dir,
         rows=rows,
-        decode_results={row["row_id"]: _decode_result(row["row_id"]) for row in rows},
+        decode_results={
+            row["row_id"]: _decode_result(
+                row["row_id"],
+                include_raw_model_logprob=raw_model_logprob_enabled,
+            )
+            for row in rows
+        },
         image_plan_rows=[
             {"row_id": row["row_id"], "row_index": row["row_index"]} for row in rows
         ],
-        metadata=_shard_metadata(plan=plan, rank_plan=rank_plan),
+        metadata=_shard_metadata(
+            plan=plan,
+            rank_plan=rank_plan,
+            raw_model_logprob_enabled=raw_model_logprob_enabled,
+        ),
     )
     _add_rank_metadata_to_jsonl(paths.token_trace_jsonl, rank_plan=rank_plan)
     _append_ranked_diagnostic_rows(paths.parse_diagnostics_jsonl, rank_plan=rank_plan)
@@ -587,13 +735,22 @@ def _raw_row(*, row_id: str, row_index: int) -> dict[str, Any]:
     }
 
 
-def _decode_result(row_id: str) -> DecodeResult:
+def _decode_result(
+    row_id: str,
+    *,
+    include_raw_model_logprob: bool = False,
+) -> DecodeResult:
     traces = [
         TokenTrace(
             step_index=index,
             token_id=151646 + index,
             token_text=piece,
-            logprob=math.log(0.25),
+            likelihood=LikelihoodPair(
+                policy_logprob=math.log(0.25),
+                raw_model_logprob=(
+                    math.log(0.75) if include_raw_model_logprob else None
+                ),
+            ),
             is_stop=False,
             is_pad=False,
             backend="hf",
@@ -619,20 +776,19 @@ def _decode_result(row_id: str) -> DecodeResult:
         backend="hf",
         backend_mode="generate",
         response_family="hf",
-        prompt_token_ids=[11, 12],
-        generated_token_ids=[trace.token_id for trace in traces],
+        executed_prompt_token_ids=(11, 12),
+        generated_token_ids=tuple(trace.token_id for trace in traces),
         raw_generated_text=OBJECT_TEXT,
         parser_text=OBJECT_TEXT,
         strip_policy="none",
         stop_reason="length",
-        model_identity={"family": "unit"},
-        tokenizer_identity={"tokenizer_sha256": "tok-fp"},
-        generation_config_fingerprint="gen-fp",
-        token_trace=traces,
+        token_trace=tuple(traces),
+        observed_image_grid_thw=(1, 4, 6),
+        executed_media_sha256="a" * 64,
     )
 
 
-def _base_metadata() -> dict[str, Any]:
+def _base_metadata(*, raw_model_logprob_enabled: bool = False) -> dict[str, Any]:
     return {
         "artifact_schema_version": 1,
         "resolved_config_fingerprints": {"infer_config": "infer-fp"},
@@ -660,6 +816,22 @@ def _base_metadata() -> dict[str, Any]:
             "status": "loaded",
             "fingerprint": "embed-delta-fp",
         },
+        "backend_session": {
+            "backend": "hf",
+            "backend_mode": "generate",
+            "response_family": "hf",
+            "backend_version": "unit",
+        },
+        "likelihood_semantics": {
+            "policy": "fp32_log_softmax_after_active_generation_processors",
+            "raw": "fp32_log_softmax_unmodified_lm_head_logits",
+            "score_owned_channel": "policy_logprob",
+        },
+        "execution_model_identity": None,
+        "frontend_identity": {
+            "load_model": False,
+            "base_model_path": "unit-qwen",
+        },
         "template_identity": {
             "id": "compact-object-box-closed",
             "object_field_order": "desc_first",
@@ -671,6 +843,7 @@ def _base_metadata() -> dict[str, Any]:
         "backend": "hf",
         "backend_mode": "generate",
         "response_family": "hf",
+        "raw_model_logprob_enabled": raw_model_logprob_enabled,
         "pipeline_counters": {
             "terminal_status": "completed",
             "decode_success_count": 1,
@@ -684,8 +857,57 @@ def _base_metadata() -> dict[str, Any]:
     }
 
 
-def _shard_metadata(*, plan: DataParallelPlan, rank_plan: RankShardPlan) -> dict[str, Any]:
-    metadata = _base_metadata()
+def _drop_identity_field(shard_dir: Path, *, field: str) -> None:
+    for artifact_name in (MANIFEST_NAME, PROVENANCE_NAME):
+        _rewrite_json(
+            shard_dir / artifact_name,
+            lambda payload: {
+                key: value for key, value in payload.items() if key != field
+            },
+        )
+
+
+def _rewrite_shard_as_vllm(
+    shard_dir: Path,
+    *,
+    execution_model_identity: dict[str, Any],
+) -> None:
+    def rewrite(payload: dict[str, Any]) -> dict[str, Any]:
+        backend_session = {
+            **payload["backend_session"],
+            "backend": "vllm",
+            "backend_mode": "offline",
+            "response_family": "vllm",
+            "execution_model_identity": execution_model_identity,
+        }
+        updated = {
+            **payload,
+            "backend_session": backend_session,
+            "execution_model_identity": execution_model_identity,
+        }
+        if "backend" in payload:
+            updated.update(
+                {
+                    "backend": "vllm",
+                    "backend_mode": "offline",
+                    "response_family": "vllm",
+                }
+            )
+        return updated
+
+    for artifact_name in (MANIFEST_NAME, PROVENANCE_NAME):
+        _rewrite_json(shard_dir / artifact_name, rewrite)
+
+
+def _shard_metadata(
+    *,
+    plan: DataParallelPlan,
+    rank_plan: RankShardPlan,
+    raw_model_logprob_enabled: bool = False,
+) -> dict[str, Any]:
+    metadata = _base_metadata(
+        raw_model_logprob_enabled=raw_model_logprob_enabled
+    )
     metadata["parallelism"] = {
         "execution_mode": "rank_local_shard",
         "shard_plan_fingerprint": plan.fingerprint,
@@ -707,8 +929,14 @@ def _shard_metadata(*, plan: DataParallelPlan, rank_plan: RankShardPlan) -> dict
     return metadata
 
 
-def _merge_metadata(plan: DataParallelPlan) -> dict[str, Any]:
-    metadata = _base_metadata()
+def _merge_metadata(
+    plan: DataParallelPlan,
+    *,
+    raw_model_logprob_enabled: bool = False,
+) -> dict[str, Any]:
+    metadata = _base_metadata(
+        raw_model_logprob_enabled=raw_model_logprob_enabled
+    )
     metadata["parallelism"] = {
         "execution_mode": "controller_worker",
         "active_ranks": plan.active_ranks,

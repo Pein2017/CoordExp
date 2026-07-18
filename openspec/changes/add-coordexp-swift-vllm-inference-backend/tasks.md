@@ -9,14 +9,14 @@
 
 ## 2. Wave 1 - Shared Contracts And HF Regression
 
-- [ ] 2.1 Add failing config tests for strict HF/vLLM block discrimination, migration of HF-only attention/patch controls, deterministic-only inference, mandatory evidence, raw-trace opt-in, and qualified-version failure.
-- [ ] 2.2 Implement the strict config projection, migrate canonical configs to `backend.hf`, and remove the reserved-vLLM rejection.
-- [ ] 2.3 Add semantic decode request with separate unexpanded input and expected executed prompt ids plus media SHA-256, likelihood pair, injectable backend-session opener, launch, and receipt contracts without native backend objects.
-- [ ] 2.4 Move the existing HF implementation behind an HF session with backend-private image tensor materialization and actual runtime receipts.
-- [ ] 2.5 Add HF raw-logit tracing and prove it against a teacher-forced FP32 reference.
-- [ ] 2.6 Refactor pipeline orchestration to semantic requests and session-owned execution while retaining the old HF path only as a temporary parity oracle.
-- [ ] 2.7 Run fresh real HF single-row and heterogeneous-batch artifact parity between the old and new paths, requiring exact canonical artifact equality.
-- [ ] 2.8 Delete `InferenceRuntime`, old backend factories, `model_inputs`, and pipeline `_batches` residue, then gate Wave 1 with targeted HF/config/pipeline/evaluator tests, OpenSpec validation, residue checks, and two independent reviews.
+- [x] 2.1 Add failing config tests for strict HF/vLLM block discrimination, migration of HF-only attention/patch controls, deterministic-only inference, mandatory evidence, raw-trace opt-in, and qualified-version failure.
+- [x] 2.2 Implement the strict config projection, migrate canonical configs to `backend.hf`, and remove the reserved-vLLM rejection.
+- [x] 2.3 Add semantic decode request with separate unexpanded input and expected executed prompt ids plus media SHA-256, likelihood pair, injectable backend-session opener, launch, and receipt contracts without native backend objects.
+- [x] 2.4 Move the existing HF implementation behind an HF session with backend-private image tensor materialization and actual runtime receipts.
+- [x] 2.5 Add HF raw-logit tracing and prove it against a teacher-forced FP32 reference.
+- [x] 2.6 Refactor pipeline orchestration to semantic requests and session-owned execution while retaining the old HF path only as a temporary parity oracle.
+- [x] 2.7 Run fresh real HF single-row and heterogeneous-batch artifact parity between the old and new paths, requiring byte-exact evaluator-bearing rows, exact projected sidecars, zero removed structured leaves, and zero additions or changed structured leaves outside the executable verifier's explicitly enumerated backend-session, likelihood, transform/media, identity-derivation, config-schema, and device-provenance policy.
+- [x] 2.8 Delete `InferenceRuntime`, old backend factories, `model_inputs`, and pipeline `_batches` residue, then gate Wave 1 with targeted HF/config/pipeline/evaluator tests, OpenSpec validation, residue checks, and two independent reviews.
 
 ## 3. Wave 2 - Execution Model
 

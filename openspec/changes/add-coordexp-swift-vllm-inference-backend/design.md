@@ -89,8 +89,12 @@ batch loop are deleted after HF parity is proven.
 
 Prompt rendering, expected prompt ids, decoded image dimensions and content
 hash, no-resize geometry, and expected image grid remain shared CoordExp
-evidence. HF materializes pixel tensors lazily per batch. vLLM receives the
-same hash-validated in-memory single-image media and `do_resize=False`.
+evidence. A request also carries the validated logical geometry transform
+(`identity`, `hflip`, `vflip`, or `hvflip`). Each backend reopens and
+hashes the source bytes, applies that transform exactly once in memory, and
+records a canonical RGB8 pixel hash for the executed media. HF materializes
+pixel tensors lazily per batch. vLLM receives the same transformed,
+hash-validated in-memory single-image media and `do_resize=False`.
 `image_plan.jsonl` distinguishes a shared reference plan from backend-observed
 evidence and never labels locally generated HF tensors as the tensors executed
 by vLLM. HF records executed `image_grid_thw`; vLLM records the exact executed
@@ -122,16 +126,32 @@ immutable execution-model receipt that exhaustively hashes every regular file
 in the snapshot, including weights, config, tokenizer, processor, token
 metadata, and chat templates. Every worker revalidates that receipt before
 engine construction. Any adapter or embedding delta uses
-`model_cache/coordexp_swift/vllm_materialized/<fingerprint>/`. The fingerprint
-binds source model shards/config/tokenizer, adapter config/tensor, embedding
-metadata/tensor, dtype, composition algorithm, and relevant library versions.
+`model_cache/coordexp_swift/vllm_materialized/<composition-key>/snapshot/`.
+The composition key binds source model shards/config/tokenizer, every adapter
+config/tensor payload, embedding metadata/tensor plus selected token identity,
+target dtype, composition algorithm, and relevant library versions. The saved
+snapshot receives a separate fingerprint over its actual executable bytes.
+The source-determinant composition key and executable snapshot fingerprint MUST
+NOT be conflated.
 
-Materialization loads the base on CPU, validates and merges DoRA through PEFT,
-folds the selected-token delta exactly once into the tied embedding/lm-head
-weight, removes adapter/parametrization residue, and saves a standard HF
-snapshot. A lock serializes builders; a unique staging directory is atomically
-renamed only after all hashes and the manifest validate. Existing corrupt
-published entries fail rather than being silently repaired.
+Materialization loads the base directly in the target dtype on CPU, validates
+the DoRA payload through the adapter owner, constructs
+`PeftModel.from_pretrained(..., is_trainable=False)`, and calls
+`merge_and_unload(safe_merge=True, adapter_names=["default"])`. It then folds
+the FP32 selected-token delta exactly once into target-dtype rows of the tied
+embedding/lm-head weight without a later whole-model cast, removes adapter and
+parametrization residue, and saves a standard HF snapshot. Adapter and delta
+identity inspection and mutation remain owned by `src.adapters.dora` and
+`src.qwen.special_token_embeddings`; the execution-model module orchestrates
+them rather than re-parsing their formats.
+
+A lock at `.locks/<composition-key>.lock` serializes builders; a unique staging
+directory is atomically renamed only after all hashes and the manifest
+validate. `coordexp_materialization.json` lives beside, not inside, `snapshot/`
+so the snapshot can be exhaustively hashed without self-reference. Existing
+corrupt published entries fail rather than being silently repaired. A
+checkpoint-handoff manifest may provide source paths, but it is not required;
+explicit base/adapter/delta config remains a supported research composition.
 
 The controller prepares this execution model before launching rank workers and
 passes a serializable execution-model receipt. This applies to one-GPU and

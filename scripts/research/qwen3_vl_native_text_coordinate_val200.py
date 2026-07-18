@@ -33,8 +33,15 @@ from src.config.models import ProcessorConfig
 from src.data import RawExample, load_raw_examples
 from src.data.geometry import coord_bins_to_pixel_xyxy
 from src.eval.detection_categories import COCO_80_CLASS_NAMES
-from src.inference.backend import DecodeRequest, HFGenerateBackend
-from src.inference.image_plan import materialize_image_plan_batch, verify_processor_model_vision_parity
+from src.inference.backend import (
+    BackendLaunch,
+    DecodeRequest,
+    GenerationPolicy,
+    open_backend_session,
+    validate_decode_results,
+)
+from src.inference.hf_backend import open_hf_backend_session
+from src.inference.image_plan import plan_image_batch, verify_processor_model_vision_parity
 from src.qwen.runtime_loading import QwenProcessorIdentity
 
 
@@ -107,18 +114,31 @@ def main() -> None:
 
     assigned = [(index, rows[index]) for index in indices if index % world_size == rank]
     print(f"rank={rank}/{world_size} assigned_rows={len(assigned)}", flush=True)
-    components = _load_native_components(config)
+    components = _load_native_metadata_components(config)
     verify_processor_model_vision_parity(
         processor_identity=components.processor_identity,
-        model_config=components.model.config,
+        model_config=components.config,
     )
-    model = components.model
-    if model is None:
-        raise RuntimeError("native baseline model failed to load")
-    model.eval()
-    device = torch.device(f"cuda:{local_rank}" if torch.cuda.is_available() else "cpu")
-    model.to(device)
-    backend = HFGenerateBackend(model=model, tokenizer=components.tokenizer)
+    generation_fingerprint = sha256_json(config["generation"])
+    generation_policy = GenerationPolicy(
+        max_new_tokens=int(config["generation"]["max_new_tokens"]),
+        repetition_penalty=float(config["generation"]["repetition_penalty"]),
+        temperature=float(config["generation"]["temperature"]),
+        top_p=float(config["generation"]["top_p"]),
+    )
+    launch = BackendLaunch(
+        backend="hf",
+        model_path=str(components.base_model_path),
+        model_dtype=str(config["model"]["dtype"]),
+        batch_size=int(config["generation"]["batch_size"]),
+        generation_config_fingerprint=generation_fingerprint,
+        backend_options={
+            "hf": {
+                "attn_implementation": str(config["model"]["attn_implementation"]),
+                "patch_embed_linearization": "disabled",
+            }
+        },
+    )
 
     rank_dir = output_dir / "shards" / f"rank-{rank:02d}"
     rank_dir.mkdir(parents=True, exist_ok=True)
@@ -128,70 +148,96 @@ def main() -> None:
     rank_image_plan: list[dict[str, Any]] = []
     started = time.time()
     batch_size = int(config["generation"]["batch_size"])
-    for batch_start in range(0, len(assigned), batch_size):
-        batch = assigned[batch_start : batch_start + batch_size]
-        examples = [example for _, example in batch]
-        image_plan = materialize_image_plan_batch(
-            examples,
-            components=components,
-            processor_config=ProcessorConfig(
-                do_resize=False,
-                max_raw_pixels=1_000_000_000,
-                max_merged_visual_tokens=1_000_000,
-            ),
-            materialize=True,
-            row_indices=[index for index, _ in batch],
-        )
-        rank_image_plan.extend(row.to_artifact_dict() for row in image_plan.rows)
-        requests = []
-        for (row_index, example) in batch:
-            messages = _messages(config, example, output_format=args.format)
-            prompt_ids = _prompt_ids(components.processor, messages)
-            requests.append(
-                DecodeRequest(
-                    request_id=example.example_id,
-                    prompt_token_ids=prompt_ids,
-                    model_inputs=image_plan.model_inputs_by_row_id[example.example_id],
-                    max_new_tokens=int(config["generation"]["max_new_tokens"]),
-                    repetition_penalty=float(config["generation"]["repetition_penalty"]),
-                    temperature=float(config["generation"]["temperature"]),
-                    top_p=float(config["generation"]["top_p"]),
+    session_opener = lambda backend_launch: open_hf_backend_session(
+        backend_launch,
+        components_loader=lambda active_launch: _load_native_backend_components(
+            config,
+            active_launch,
+        ),
+    )
+    with open_backend_session(launch, opener=session_opener) as session:
+        for batch_start in range(0, len(assigned), batch_size):
+            batch = assigned[batch_start : batch_start + batch_size]
+            examples = [example for _, example in batch]
+            image_plan = plan_image_batch(
+                examples,
+                components=components,
+                processor_config=ProcessorConfig(
+                    do_resize=False,
+                    max_raw_pixels=1_000_000_000,
+                    max_merged_visual_tokens=1_000_000,
+                ),
+                row_indices=[index for index, _ in batch],
+            )
+            rank_image_plan.extend(row.to_artifact_dict() for row in image_plan.rows)
+            image_plan_by_row_id = {row.row_id: row for row in image_plan.rows}
+            requests = []
+            for row_index, example in batch:
+                messages = _messages(config, example, output_format=args.format)
+                chat_text = _chat_text(components.processor, messages)
+                input_prompt_ids = _prompt_ids(components.tokenizer, chat_text)
+                plan_row = image_plan_by_row_id[example.example_id]
+                executed_prompt_ids = _expand_image_placeholder(
+                    components.tokenizer,
+                    input_prompt_ids,
+                    merged_visual_tokens=plan_row.merged_visual_tokens,
+                    row_id=example.example_id,
                 )
+                requests.append(
+                    DecodeRequest(
+                        request_id=example.example_id,
+                        chat_text=chat_text,
+                        input_prompt_token_ids=tuple(input_prompt_ids),
+                        expected_executed_prompt_token_ids=tuple(executed_prompt_ids),
+                        image_path=plan_row.image_path,
+                        declared_image_width=plan_row.declared_width,
+                        declared_image_height=plan_row.declared_height,
+                        decoded_image_width=plan_row.decoded_width,
+                        decoded_image_height=plan_row.decoded_height,
+                        image_sha256=plan_row.image_content_sha256,
+                        expected_image_grid_thw=tuple(plan_row.expected_image_grid_thw),
+                        generation_policy=generation_policy,
+                    )
+                )
+            results = validate_decode_results(
+                requests=requests,
+                results=session.decode(requests),
+                receipt=session.receipt,
             )
-        results = backend.generate_batch(
-            requests,
-            model_identity=_model_identity(components),
-            tokenizer_identity=components.token_identity.to_artifact_dict(),
-            generation_config_fingerprint=sha256_json(config["generation"]),
-        )
-        by_id = {result.request_id: result for result in results}
-        for row_index, example in batch:
-            result = by_id[example.example_id]
-            parsed = _parse_output(
-                result.parser_text,
-                output_format=args.format,
-                row_id=example.example_id,
-                row_index=row_index,
-                image_width=example.image.width,
-                image_height=example.image.height,
-            )
-            rank_rows.append(
-                _row_payload(
-                    example=example,
+            by_id = {result.request_id: result for result in results}
+            for row_index, example in batch:
+                result = by_id[example.example_id]
+                parsed = _parse_output(
+                    result.parser_text,
+                    output_format=args.format,
+                    row_id=example.example_id,
                     row_index=row_index,
-                    result=result,
-                    parsed=parsed,
-                    tokenizer=components.tokenizer,
+                    image_width=example.image.width,
+                    image_height=example.image.height,
                 )
+                rank_rows.append(
+                    _row_payload(
+                        example=example,
+                        row_index=row_index,
+                        result=result,
+                        parsed=parsed,
+                        tokenizer=components.tokenizer,
+                    )
+                )
+                rank_diagnostics.extend(parsed["diagnostics"])
+                rank_traces.extend(_trace_rows(result))
+                rank_traces.extend(
+                    _score_trace_rows(
+                        result,
+                        parsed["predictions"],
+                        row_id=example.example_id,
+                    )
+                )
+            print(
+                f"rank={rank} completed={min(batch_start + batch_size, len(assigned))}/{len(assigned)} "
+                f"elapsed={time.time() - started:.1f}s",
+                flush=True,
             )
-            rank_diagnostics.extend(parsed["diagnostics"])
-            rank_traces.extend(_trace_rows(result))
-            rank_traces.extend(_score_trace_rows(result, parsed["predictions"], row_id=example.example_id))
-        print(
-            f"rank={rank} completed={min(batch_start + batch_size, len(assigned))}/{len(assigned)} "
-            f"elapsed={time.time() - started:.1f}s",
-            flush=True,
-        )
 
     _write_jsonl(rank_dir / RAW_NAME, rank_rows)
     _write_jsonl(rank_dir / TRACE_NAME, rank_traces)
@@ -310,6 +356,19 @@ def _load_native_components(config: dict[str, Any]) -> Any:
     )
 
 
+def _load_native_backend_components(config: dict[str, Any], launch: BackendLaunch) -> Any:
+    components = _load_native_components(config)
+    if components.base_model_path != Path(launch.model_path).expanduser().resolve():
+        raise RuntimeError("native backend loader model path differs from the backend launch")
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        qwen=components,
+        adapter_receipt=None,
+        embedding_delta_receipt=None,
+    )
+
+
 def _load_native_metadata_components(config: dict[str, Any]) -> Any:
     base_model = Path(config["model"]["base_model"]).expanduser().resolve()
     processor = AutoProcessor.from_pretrained(
@@ -324,6 +383,9 @@ def _load_native_metadata_components(config: dict[str, Any]) -> Any:
 
     return SimpleNamespace(
         base_model_path=base_model,
+        processor=processor,
+        tokenizer=tokenizer,
+        config=hf_config,
         model_identity={
             "config_class": type(hf_config).__name__,
             "model_type": str(getattr(hf_config, "model_type", "")),
@@ -452,13 +514,53 @@ def _parse_compact_legacy(text: str, *, row_id: str, row_index: int, image_width
     return {"predictions": predictions, "dropped": dropped, "status": status, "metric_bearing": bool(predictions) and status in {"accepted", "accepted_with_drops"}, "diagnostics": diagnostics}
 
 
-def _prompt_ids(processor: Any, messages: list[dict[str, Any]]) -> list[int]:
-    encoded = processor.apply_chat_template(messages, tokenize=True, add_generation_prompt=True)
-    if hasattr(encoded, "tolist"):
-        encoded = encoded.tolist()
-    if isinstance(encoded, list) and len(encoded) == 1 and isinstance(encoded[0], list):
-        encoded = encoded[0]
-    return [int(value) for value in encoded]
+def _chat_text(processor: Any, messages: list[dict[str, Any]]) -> str:
+    chat_text = processor.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True,
+    )
+    if not isinstance(chat_text, str) or not chat_text:
+        raise ValueError("native Qwen chat template must return non-empty text")
+    return chat_text
+
+
+def _prompt_ids(tokenizer: Any, chat_text: str) -> list[int]:
+    encoded = tokenizer(chat_text, add_special_tokens=False)
+    input_ids = encoded.get("input_ids") if isinstance(encoded, dict) else None
+    if hasattr(input_ids, "tolist"):
+        input_ids = input_ids.tolist()
+    if isinstance(input_ids, list) and len(input_ids) == 1 and isinstance(input_ids[0], list):
+        input_ids = input_ids[0]
+    if not isinstance(input_ids, list) or not input_ids:
+        raise ValueError("native Qwen tokenizer must return non-empty input_ids")
+    return [int(value) for value in input_ids]
+
+
+def _expand_image_placeholder(
+    tokenizer: Any,
+    input_prompt_ids: list[int],
+    *,
+    merged_visual_tokens: int,
+    row_id: str,
+) -> list[int]:
+    image_token_id = tokenizer.convert_tokens_to_ids("<|image_pad|>")
+    if image_token_id is None:
+        raise ValueError("native Qwen tokenizer is missing <|image_pad|>")
+    image_token_id = int(image_token_id)
+    image_indices = [
+        index for index, token_id in enumerate(input_prompt_ids) if token_id == image_token_id
+    ]
+    if len(image_indices) != 1:
+        raise ValueError(
+            f"native Qwen prompt for {row_id} must contain exactly one image placeholder"
+        )
+    image_index = image_indices[0]
+    return [
+        *input_prompt_ids[:image_index],
+        *([image_token_id] * int(merged_visual_tokens)),
+        *input_prompt_ids[image_index + 1 :],
+    ]
 
 
 def _parse_native_json(text: str, *, row_id: str, row_index: int, image_width: int, image_height: int) -> dict[str, Any]:

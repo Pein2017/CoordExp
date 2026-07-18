@@ -33,27 +33,35 @@ approximate, or natively reinterpret DoRA or the selected-token delta.
 
 ### Requirement: Content-addressed materialization identity
 Each derived execution model MUST live under
-`model_cache/coordexp_swift/vllm_materialized/<fingerprint>/`. The fingerprint
-MUST bind base model weight shards, base config, tokenizer identity, every
+`model_cache/coordexp_swift/vllm_materialized/<composition-key>/snapshot/`.
+The composition key MUST bind base model weight shards, base config, tokenizer identity, every
 processor/chat-template asset copied into or loaded from the snapshot, adapter
 config and tensor payloads, embedding metadata and tensor payloads, target
 dtype, materialization algorithm version, and relevant Transformers and PEFT
-versions. Output location and worker count MUST NOT alter semantic identity.
+versions. The materialization receipt MUST separately record an exhaustive
+fingerprint of the published snapshot bytes. Output location and worker count
+MUST NOT alter either semantic identity.
 
 #### Scenario: Identical composition reuses cache
 - **WHEN** two runs resolve byte-identical model, adapter, delta, dtype, and
   algorithm identities
-- **THEN** both resolve the same fingerprint and the second run validates and
-  reuses the existing execution model
+- **THEN** both resolve the same composition key and snapshot fingerprint and
+  the second run validates and reuses the existing execution model
 
 #### Scenario: Payload changes in place
 - **WHEN** an adapter or delta tensor changes while its path stays constant
-- **THEN** the execution-model fingerprint changes
+- **THEN** the execution-model composition key changes
+
+#### Scenario: Receipt avoids self-referential hashing
+- **WHEN** the published execution snapshot is fingerprinted
+- **THEN** `coordexp_materialization.json` is stored beside `snapshot/` and is
+  not part of the exhaustive snapshot-file manifest it records
 
 ### Requirement: Atomic single-builder publication
-Materialization MUST use an inter-process lock and unique staging directory.
-The final fingerprint directory MUST become visible only after the snapshot,
-manifest, hashes, tied-weight checks, and residue checks pass. Multi-rank
+Materialization MUST use an inter-process lock at
+`.locks/<composition-key>.lock` and a unique staging directory. The final
+composition directory MUST become visible only after the snapshot, receipt,
+hashes, tied-weight checks, and residue checks pass. Multi-rank
 controller execution MUST materialize once before launching GPU workers.
 
 #### Scenario: Concurrent cache miss
@@ -81,6 +89,26 @@ reused.
 - **WHEN** a copied preprocessor, processor, or chat-template asset changes
 - **THEN** the execution-model fingerprint changes or cache validation fails
   before engine construction
+
+### Requirement: Owner-defined deterministic composition
+Adapter identity MUST be inspected by the adapter owner and MUST hash
+`adapter_config.json` plus every adapter tensor file. DoRA composition MUST load
+the adapter as frozen through PEFT and call
+`merge_and_unload(safe_merge=True, adapter_names=["default"])`. Selected-token
+identity MUST be inspected by the embedding-delta owner and MUST hash metadata,
+tensor payload, tensor key/shape/dtype, token ids/strings, base identity, and
+tokenizer identity. The base MUST be loaded in target dtype before merge, and
+the FP32 delta MUST be folded directly into target-dtype tied rows without a
+later whole-model cast.
+
+#### Scenario: Adapter tensor payload changes
+- **WHEN** any adapter tensor file changes while the adapter path is unchanged
+- **THEN** adapter identity and the execution-model composition key change
+
+#### Scenario: Target-dtype selected-row fold
+- **WHEN** an FP32 selected-token delta is materialized into a BF16 execution model
+- **THEN** each selected tied row is computed once against the BF16 base row and
+  stored in BF16 without a subsequent whole-model dtype conversion
 
 ### Requirement: Composition parity gate
 The derived checkpoint MUST be reloaded through HF and compared with the

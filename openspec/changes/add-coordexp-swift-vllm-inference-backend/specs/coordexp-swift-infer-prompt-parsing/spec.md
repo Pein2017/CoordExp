@@ -5,7 +5,8 @@ The shared inference request SHALL contain authoritative executable
 `chat_text`, `input_prompt_token_ids` with exactly one image placeholder,
 `expected_executed_prompt_token_ids` with the no-resize visual expansion,
 image path, image content SHA-256, declared and decoded image dimensions, row
-identity, and shared policies. Human-facing task prompt text MAY remain in the
+identity, validated logical transform id, and shared policies. Human-facing
+task prompt text MAY remain in the
 prompt record as diagnostics but MUST NOT be an alternate backend execution
 input. The request MUST NOT contain HF pixel tensors, vLLM multimodal objects,
 or backend-owned model inputs. Multi-image and video inputs MUST fail before
@@ -14,6 +15,11 @@ backend construction.
 #### Scenario: One image request
 - **WHEN** a valid single-image row is prepared
 - **THEN** both backends receive the same semantic prompt and image identity
+
+#### Scenario: Geometry-augmented row
+- **WHEN** a row declares `hflip`, `vflip`, or `hvflip`
+- **THEN** the backend applies that transform exactly once to decoded RGB
+  pixels before native projection and records the transformed RGB8 pixel hash
 
 #### Scenario: Diagnostic prompt text diverges from chat text
 - **WHEN** human-facing task prompt text differs from executable `chat_text`
@@ -29,8 +35,10 @@ Shared image planning MUST validate decoded dimensions, Qwen vision parameters,
 expected no-resize grid, patch rows, visual-token counts, and image content
 SHA-256 before decode. Each backend MUST reopen and hash the image immediately
 before native projection and MUST fail if the bytes or decoded dimensions
-differ. HF MUST record the grid observed from its executed tensors. vLLM MUST
-pass the same hash-validated in-memory image with `do_resize: false` and record
+differ. Each backend MUST apply the request's logical transform before native
+projection and record a canonical RGB8 hash of the transformed pixels. HF MUST
+record the grid observed from its executed tensors. vLLM MUST pass the same
+transformed, hash-validated in-memory image with `do_resize: false` and record
 the actual returned prompt ids, multimodal placeholder ranges/count, processor
 identity, and no-resize kwargs. Locally materialized HF tensors MUST NOT be
 described as the tensors executed by vLLM.

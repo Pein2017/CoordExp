@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -12,6 +13,7 @@ from src.templates import render_example
 
 
 TEMPLATE_ID = "coordexp-swift-template-v1"
+IMAGE_PAD_TOKEN = "<|image_pad|>"
 
 
 @dataclass(frozen=True)
@@ -22,7 +24,8 @@ class PromptRecord:
     messages: tuple[dict[str, Any], ...]
     prompt_text: str
     chat_text: str
-    prompt_token_ids: list[int]
+    input_prompt_token_ids: list[int]
+    expected_executed_prompt_token_ids: list[int]
     template_id: str
     template_fingerprint: str
     object_ordering: str
@@ -30,14 +33,29 @@ class PromptRecord:
     assistant_format: str
     realized_object_order: list[dict[str, int | str]]
 
+    @property
+    def prompt_token_ids(self) -> list[int]:
+        """Backward-compatible artifact prompt ids: the executed prompt form."""
+
+        return self.expected_executed_prompt_token_ids
+
     def to_artifact_dict(self) -> dict[str, Any]:
         return {
             "row_id": self.row_id,
             "row_index": self.row_index,
             "example_id": self.example_id,
             "prompt_text": self.prompt_text,
+            "chat_text": self.chat_text,
             "prompt_token_ids": list(self.prompt_token_ids),
             "prompt_token_count": len(self.prompt_token_ids),
+            "input_prompt_token_ids": list(self.input_prompt_token_ids),
+            "input_prompt_token_count": len(self.input_prompt_token_ids),
+            "expected_executed_prompt_token_ids": list(
+                self.expected_executed_prompt_token_ids
+            ),
+            "expected_executed_prompt_token_count": len(
+                self.expected_executed_prompt_token_ids
+            ),
             "template_id": self.template_id,
             "template_fingerprint": self.template_fingerprint,
             "object_ordering": self.object_ordering,
@@ -53,6 +71,7 @@ def build_prompt_record(
     *,
     processor: Any,
     row_index: int,
+    merged_visual_tokens: int,
     object_order_seed: int | None = None,
 ) -> PromptRecord:
     rendered = render_example(
@@ -66,10 +85,15 @@ def build_prompt_record(
         messages=messages,
         example_id=raw_example.example_id,
     )
-    prompt_token_ids = _tokenize_prompt(
+    input_prompt_token_ids = _tokenize_prompt(
         processor,
         chat_text=chat_text,
-        messages=messages,
+        example_id=raw_example.example_id,
+    )
+    expected_executed_prompt_token_ids = _expand_image_placeholder(
+        tokenizer=processor.tokenizer,
+        input_prompt_token_ids=input_prompt_token_ids,
+        merged_visual_tokens=merged_visual_tokens,
         example_id=raw_example.example_id,
     )
     return PromptRecord(
@@ -79,7 +103,8 @@ def build_prompt_record(
         messages=messages,
         prompt_text=rendered.prompt_text,
         chat_text=chat_text,
-        prompt_token_ids=prompt_token_ids,
+        input_prompt_token_ids=input_prompt_token_ids,
+        expected_executed_prompt_token_ids=expected_executed_prompt_token_ids,
         template_id=TEMPLATE_ID,
         template_fingerprint=rendered.template_fingerprint,
         object_ordering=rendered.object_ordering,
@@ -139,16 +164,8 @@ def _tokenize_prompt(
     processor: Any,
     *,
     chat_text: str,
-    messages: tuple[dict[str, Any], ...],
     example_id: str,
 ) -> list[int]:
-    tokenized = processor.apply_chat_template(
-        list(messages),
-        tokenize=True,
-        add_generation_prompt=True,
-    )
-    if isinstance(tokenized, list):
-        return _int_ids(tokenized, example_id=example_id)
     tokenizer = getattr(processor, "tokenizer", None)
     if tokenizer is None:
         raise EncodingContractError(
@@ -157,7 +174,7 @@ def _tokenize_prompt(
             context={"example_id": example_id},
         )
     encoded = tokenizer(chat_text, add_special_tokens=False)
-    if not isinstance(encoded, dict) or "input_ids" not in encoded:
+    if not isinstance(encoded, Mapping) or "input_ids" not in encoded:
         raise EncodingContractError(
             "Qwen tokenizer did not return input_ids",
             code="inference.prompt_tokenizer_output",
@@ -183,3 +200,58 @@ def _int_ids(value: Any, *, example_id: str) -> list[int]:
             cause=exc,
         ) from exc
     return ids
+
+
+def _expand_image_placeholder(
+    *,
+    tokenizer: Any,
+    input_prompt_token_ids: list[int],
+    merged_visual_tokens: int,
+    example_id: str,
+) -> list[int]:
+    if isinstance(merged_visual_tokens, bool) or not isinstance(
+        merged_visual_tokens, int
+    ) or merged_visual_tokens <= 0:
+        raise EncodingContractError(
+            "merged visual token count must be a positive integer",
+            code="inference.prompt_visual_token_count",
+            context={
+                "example_id": example_id,
+                "merged_visual_tokens": merged_visual_tokens,
+            },
+        )
+    convert_tokens_to_ids = getattr(tokenizer, "convert_tokens_to_ids", None)
+    if not callable(convert_tokens_to_ids):
+        raise EncodingContractError(
+            "Qwen tokenizer does not expose image placeholder token lookup",
+            code="inference.prompt_image_token_lookup",
+            context={"example_id": example_id},
+        )
+    image_token_id = convert_tokens_to_ids(IMAGE_PAD_TOKEN)
+    if image_token_id is None:
+        raise EncodingContractError(
+            "Qwen tokenizer is missing <|image_pad|>",
+            code="inference.prompt_image_token_missing",
+            context={"example_id": example_id},
+        )
+    image_token_id = int(image_token_id)
+    image_indices = [
+        index
+        for index, token_id in enumerate(input_prompt_token_ids)
+        if token_id == image_token_id
+    ]
+    if len(image_indices) != 1:
+        raise EncodingContractError(
+            "inference input prompt must contain exactly one image placeholder",
+            code="inference.prompt_image_token_count",
+            context={
+                "example_id": example_id,
+                "image_placeholder_count": len(image_indices),
+            },
+        )
+    image_index = image_indices[0]
+    return [
+        *input_prompt_token_ids[:image_index],
+        *([image_token_id] * merged_visual_tokens),
+        *input_prompt_token_ids[image_index + 1 :],
+    ]
