@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,8 @@ from torch import nn
 
 from src.adapters.dora import (
     discover_dora_targets,
+    inspect_dora_adapter_payload,
+    merge_dora_adapter_for_execution,
     setup_dora_adapter,
     _validate_trainable_dora_surface,
 )
@@ -27,6 +30,106 @@ from src.config.models import AdapterConfig
 LOCAL_QWEN_MODEL = Path(
     "/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent"
 )
+
+
+def test_execution_dora_identity_is_path_independent_and_binds_payload(
+    tmp_path: Path,
+) -> None:
+    adapter_dir = _write_source_adapter(tmp_path, target_towers=("language",))
+    config_path = adapter_dir / "adapter_config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["base_model_name_or_path"] = "/models/qwen-base"
+    config_path.write_text(json.dumps(config, sort_keys=True), encoding="utf-8")
+
+    identity = inspect_dora_adapter_payload(
+        adapter_dir,
+        expected_base_model_path=Path("/models/qwen-base"),
+    )
+    copied_dir = tmp_path / "copied-adapter"
+    shutil.copytree(adapter_dir, copied_dir)
+    copied = inspect_dora_adapter_payload(copied_dir)
+
+    assert identity["kind"] == "dora_adapter"
+    assert identity["fingerprint"] == copied["fingerprint"]
+    assert identity["root"] != copied["root"]
+    assert identity["semantic_identity"]["peft_type"] == "LORA"
+    assert identity["tensor_manifest"]["lora_magnitude_vector_count"] == 1
+
+    tensors_path = copied_dir / "adapter_model.safetensors"
+    with safe_open(str(tensors_path), framework="pt", device="cpu") as handle:
+        tensors = {key: handle.get_tensor(key) for key in handle.keys()}
+    first_key = sorted(tensors)[0]
+    tensors[first_key] = tensors[first_key].clone()
+    tensors[first_key].view(-1)[0] += 1
+    save_file(tensors, tensors_path)
+    changed = inspect_dora_adapter_payload(copied_dir)
+    assert changed["fingerprint"] != identity["fingerprint"]
+
+
+def test_merge_dora_adapter_for_execution_is_frozen_safe_and_residue_free(
+    tmp_path: Path,
+) -> None:
+    adapter_dir = _write_source_adapter(tmp_path, target_towers=("language",))
+
+    merged, receipt = merge_dora_adapter_for_execution(
+        TinyQwenLikeModel(),
+        adapter_dir,
+    )
+
+    assert type(merged) is TinyQwenLikeModel
+    assert receipt["status"] == "merged"
+    assert receipt["load"]["is_trainable"] is False
+    assert receipt["load"]["autocast_adapter_dtype"] is False
+    assert receipt["load"]["trainable_parameter_count"] == 0
+    assert receipt["load"]["status"]["active_adapters"] == ["default"]
+    assert receipt["load"]["status"]["merged_adapters"] == []
+    assert receipt["merge"] == {
+        "safe_merge": True,
+        "adapter_names": ["default"],
+    }
+    assert not any(receipt["residue"].values())
+    assert not hasattr(merged, "peft_config")
+    assert all(not parameter.requires_grad for parameter in merged.parameters())
+    assert all(
+        marker not in name.lower()
+        for name, _ in merged.named_parameters()
+        for marker in ("lora_", "dora", "magnitude_vector")
+    )
+
+
+def test_merge_dora_adapter_rejects_payload_drift_after_inspection(
+    tmp_path: Path,
+) -> None:
+    adapter_dir = _write_source_adapter(tmp_path, target_towers=("language",))
+    identity = inspect_dora_adapter_payload(adapter_dir)
+    tensor_path = adapter_dir / "adapter_model.safetensors"
+    with safe_open(str(tensor_path), framework="pt", device="cpu") as handle:
+        tensors = {key: handle.get_tensor(key) for key in handle.keys()}
+    first_key = sorted(tensors)[0]
+    tensors[first_key] = tensors[first_key].clone()
+    tensors[first_key].view(-1)[0] += 1
+    save_file(tensors, tensor_path)
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        merge_dora_adapter_for_execution(
+            TinyQwenLikeModel(),
+            adapter_dir,
+            expected_identity=identity,
+        )
+    assert exc_info.value.code == "adapter.execution_identity_mismatch"
+
+
+def test_execution_dora_inspection_rejects_non_dora_config(tmp_path: Path) -> None:
+    adapter_dir = _write_source_adapter(tmp_path, target_towers=("language",))
+    config_path = adapter_dir / "adapter_config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["use_dora"] = False
+    config_path.write_text(json.dumps(config, sort_keys=True), encoding="utf-8")
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        inspect_dora_adapter_payload(adapter_dir)
+
+    assert exc_info.value.code == "adapter.execution_not_dora"
 
 
 def test_dora_target_discovery_is_tower_scoped_and_excludes_lm_head() -> None:
@@ -63,13 +166,17 @@ def test_real_qwen_meta_target_discovery_matches_language_tower_contract() -> No
     receipt = discover_dora_targets(model, plan)
 
     assert receipt.counts_by_tower["language"] == 196
-    assert receipt.matched_modules[0] == "model.language_model.layers.0.self_attn.q_proj"
+    assert (
+        receipt.matched_modules[0] == "model.language_model.layers.0.self_attn.q_proj"
+    )
     assert "lm_head" not in receipt.matched_modules
     assert receipt.lm_head_seen is True
     assert receipt.lm_head_excluded is True
 
 
-def test_real_qwen_meta_dora_setup_counts_discovered_modules_not_peft_compact_targets() -> None:
+def test_real_qwen_meta_dora_setup_counts_discovered_modules_not_peft_compact_targets() -> (
+    None
+):
     from accelerate import init_empty_weights
     from transformers import AutoConfig, Qwen3VLForConditionalGeneration
 
@@ -275,8 +382,12 @@ def test_existing_dora_adapter_load_rejects_target_mismatch(tmp_path: Path) -> N
         setup_dora_adapter(TinyQwenLikeModel(), load_plan)
 
     assert exc_info.value.code == "adapter.loaded_target_mismatch"
-    assert exc_info.value.context["loaded_target_modules"] == ["model.language_model.q_proj"]
-    assert exc_info.value.context["discovered_target_modules"] == ["model.visual.block_proj"]
+    assert exc_info.value.context["loaded_target_modules"] == [
+        "model.language_model.q_proj"
+    ]
+    assert exc_info.value.context["discovered_target_modules"] == [
+        "model.visual.block_proj"
+    ]
 
 
 def test_existing_dora_adapter_load_rejects_lm_head_target(tmp_path: Path) -> None:
@@ -659,26 +770,28 @@ def _probe_receipt_for_towers(target_towers: tuple[str, ...]) -> dict[str, objec
         "aligner": "model.visual.merger.mlp",
     }
     target_modules = [selected_targets[tower] for tower in target_towers]
-    trainable_names = [
-        f"base_model.model.{target}.lora_A.default.weight"
-        for target in target_modules
-    ] + [
-        f"base_model.model.{target}.lora_B.default.weight"
-        for target in target_modules
-    ] + [
-        f"base_model.model.{target}.lora_magnitude_vector.default.weight"
-        for target in target_modules
-    ]
-    payload_keys = [
-        f"base_model.model.{target}.lora_A.weight"
-        for target in target_modules
-    ] + [
-        f"base_model.model.{target}.lora_B.weight"
-        for target in target_modules
-    ] + [
-        f"base_model.model.{target}.lora_magnitude_vector.weight"
-        for target in target_modules
-    ]
+    trainable_names = (
+        [
+            f"base_model.model.{target}.lora_A.default.weight"
+            for target in target_modules
+        ]
+        + [
+            f"base_model.model.{target}.lora_B.default.weight"
+            for target in target_modules
+        ]
+        + [
+            f"base_model.model.{target}.lora_magnitude_vector.default.weight"
+            for target in target_modules
+        ]
+    )
+    payload_keys = (
+        [f"base_model.model.{target}.lora_A.weight" for target in target_modules]
+        + [f"base_model.model.{target}.lora_B.weight" for target in target_modules]
+        + [
+            f"base_model.model.{target}.lora_magnitude_vector.weight"
+            for target in target_modules
+        ]
+    )
     magnitude_names = [
         f"base_model.model.{target}.lora_magnitude_vector.default.weight"
         for target in target_modules

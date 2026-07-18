@@ -20,10 +20,10 @@
 
 ## 3. Wave 2 - Execution Model
 
-- [ ] 3.1 Add failing tests for base-only and composed fingerprint determinants, worker revalidation, cache hits, payload changes, invalid counts, tied weights, corrupt entries, locks, and failed atomic publication.
-- [ ] 3.2 Deepen adapter and selected-token owners with reusable identity inspection and deterministic merge/fold operations.
-- [ ] 3.3 Implement content-addressed execution-model resolution under `model_cache/coordexp_swift/vllm_materialized`.
-- [ ] 3.4 Implement controller-side locking, staging, standard HF save, manifest/hash validation, and worker receipt loading.
+- [x] 3.1 Add failing tests for base-only and composed fingerprint determinants, worker revalidation, cache hits, payload changes, invalid counts, tied weights, corrupt entries, locks, and failed atomic publication.
+- [x] 3.2 Deepen adapter and selected-token owners with reusable identity inspection and deterministic merge/fold operations.
+- [x] 3.3 Implement content-addressed execution-model resolution under `model_cache/coordexp_swift/vllm_materialized`.
+- [x] 3.4 Implement controller-side locking, staging, standard HF save, manifest/hash validation, and worker receipt loading.
 - [ ] 3.5 Add dynamic-HF versus materialized-HF parity tooling with the specified target-dtype row equality and FP32 logit tolerances, then run it on one real base-plus-DoRA-plus-delta checkpoint.
 - [ ] 3.6 Gate Wave 2 with materialization tests, real parity receipt, residue checks, OpenSpec validation, and two independent reviews.
 

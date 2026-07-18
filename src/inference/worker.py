@@ -21,6 +21,7 @@ from src.inference.data_parallel import (
     DecodeBatchBlock,
     RankShardPlan,
 )
+from src.inference.execution_model import load_execution_model_receipt
 
 
 WORKER_MODULE = "src.inference.worker"
@@ -132,6 +133,7 @@ def launch_worker_subprocess(
     resolved_config_json: str | Path,
     shard_plan_json: str | Path,
     output_dir: str | Path,
+    execution_model_json: str | Path | None = None,
     base_env: Mapping[str, str] | None = None,
 ) -> subprocess.Popen[Any]:
     env = build_worker_environment(
@@ -146,6 +148,7 @@ def launch_worker_subprocess(
             resolved_config_json=resolved_config_json,
             shard_plan_json=shard_plan_json,
             output_dir=output_dir,
+            execution_model_json=execution_model_json,
         ),
         env=env,
     )
@@ -159,8 +162,9 @@ def build_worker_command(
     resolved_config_json: str | Path,
     shard_plan_json: str | Path,
     output_dir: str | Path,
+    execution_model_json: str | Path | None = None,
 ) -> list[str]:
-    return [
+    command = [
         sys.executable,
         "-m",
         WORKER_MODULE,
@@ -177,6 +181,9 @@ def build_worker_command(
         "--output-dir",
         str(output_dir),
     ]
+    if execution_model_json is not None:
+        command.extend(["--execution-model-json", str(execution_model_json)])
+    return command
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -187,6 +194,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--resolved-config-json", required=True)
     parser.add_argument("--shard-plan-json", required=True)
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--execution-model-json")
     args = parser.parse_args(argv)
     resolved = load_resolved_infer_config_artifact(args.resolved_config_json)
     plan = load_data_parallel_plan_artifact(args.shard_plan_json)
@@ -216,6 +224,11 @@ def main(argv: list[str] | None = None) -> int:
         world_size=args.world_size,
         parent_visible_device_token=args.parent_visible_device_token,
     )
+    execution_model = (
+        None
+        if args.execution_model_json is None
+        else load_execution_model_receipt(args.execution_model_json)
+    )
     pipeline.run_shard(
         resolved=resolved,
         output_dir=Path(args.output_dir),
@@ -240,6 +253,7 @@ def main(argv: list[str] | None = None) -> int:
             "batch_ids": list(rank_plan.batch_ids),
         },
         rank_plan=rank_plan,
+        execution_model=execution_model,
     )
     return 0
 
