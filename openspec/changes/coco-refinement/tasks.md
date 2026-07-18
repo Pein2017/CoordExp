@@ -30,6 +30,7 @@
 - [x] 3.6 Add Commit controls and exact per-task/batch status cues for Committed/Saving/Draft/Conflict plus Queued/Running/Reconciling/Succeeded/Failed and newer-Draft preservation.
 - [x] 3.7 Run focused browser E2E against the real local service for CRUD, invalid geometry, class search, autosave/reload, navigation/save failure, visibility/Undo, multi-task Commit during later editing, restart recovery, and full-index task opening.
 - [ ] 3.8 Launch an isolated Gate A experience instance on a non-8080 port and runtime root, hand the train/val URLs to the user, remove measured interaction blockers without weakening authority checks, relaunch, and wait for explicit human-loop approval before beginning real ROI implementation.
+- [x] 3.9 Add tested Select/Draw Command+1/Command+2 plus plain 1/2 fallback shortcuts, bounded Draw pointer guides, visible sticky class context with split reset, and a bidirectionally selectable right-panel object inventory that recomputes transient IDs in exact training order after completed authoritative edits.
 
 ## 4. Real ROI Assistance Gate
 
@@ -44,6 +45,7 @@
 ## 5. Operator Handoff and Replacement Acceptance
 
 - [ ] 5.1 Run representative train/val human-only and inference-assisted sessions, materialize the terminal generation, load it through the current CoordExp-Swift data path, and verify positive/negative IDs, sparse category mapping, geometry, ordering, metadata, and shared images.
+- [ ] 5.1a Add and attest the operator-approved training publisher that validates a terminal generation and the 12000-token ceiling, then transactionally replaces the selected max_len12000 norm/coord pair with shared image locators while preserving original COCO data and recovering the previous pair on failure.
 - [ ] 5.2 Add concise operator docs for dependencies, launch/shutdown, runtime roots, Draft versus Commit, recovery/status, output/materialization, ROI profiles, known exclusions, fallback, and protected source data.
 - [ ] 5.3 Record final legacy boundaries: archived vendor branch, old OpenSpec status, retained 8080/state disposition, new runtime identity, and the manual cleanup command for AgentGuard-blocked untracked harness files.
 - [ ] 5.4 Conduct final user acceptance on train and validation, require explicit approval before deactivating legacy 8080 or treating the standalone workspace as active, then sync stable specs/docs and archive `coco-refinement` only after every requirement has executed evidence.

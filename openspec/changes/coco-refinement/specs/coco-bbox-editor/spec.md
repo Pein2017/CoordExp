@@ -50,6 +50,65 @@ SHALL NOT be persisted.
 - **WHEN** no canonical option is selected
 - **THEN** no object class mutation is persisted
 
+### Requirement: Fast mode switching and visible class context
+The editor SHALL expose Select as mode 1 and Draw bbox as mode 2 through
+Command+1/Command+2 when delivered by the browser and plain 1/2 outside text
+entry controls as a reliable fallback. The active canonical class SHALL remain
+visible and sticky across image navigation, SHALL follow selection of an
+existing object, and SHALL clear on train/validation split change.
+
+#### Scenario: Operator switches modes by keyboard
+- **WHEN** the editor is writable and the operator invokes mode 1 or mode 2 outside an input, textarea, or select control
+- **THEN** the matching mode becomes visibly active without mutating the Draft
+
+#### Scenario: Draw mode has no active class
+- **WHEN** the operator enters Draw mode before any canonical class is active
+- **THEN** Draw mode remains selected, class search receives focus, and no bbox is persisted until a canonical class is chosen
+
+#### Scenario: Existing object supplies class context
+- **WHEN** the operator selects an existing object and later enters Draw mode
+- **THEN** that object's canonical class is shown as the active Draw class and is used for the next valid created bbox
+
+#### Scenario: Dataset split changes
+- **WHEN** the operator switches between train and validation
+- **THEN** the active Draw class is cleared while ordinary image-to-image navigation preserves it
+
+### Requirement: Draw-mode pointer guides
+While Draw mode is active, the editor SHALL render one horizontal and one
+vertical presentation-only guide through the current pointer position inside
+the natural image. The guides SHALL remain visible during bbox drag and SHALL
+respect zoom, pan, and image bounds.
+
+#### Scenario: Pointer enters the drawable image
+- **WHEN** Draw mode is active and the pointer is inside the natural image
+- **THEN** bounded horizontal and vertical guides intersect at the pointer without changing Draft state
+
+#### Scenario: Pointer leaves or mode changes
+- **WHEN** the pointer leaves the natural image, the task is disabled, or the operator exits Draw mode
+- **THEN** both guides disappear without emitting an edit gesture
+
+### Requirement: Training-order object inventory
+The right panel SHALL list every current object by canonical class and a
+transient `#1..#N` ordinal in the exact training top-left order: ascending
+`(y1, x1)`, with exact-anchor ties preserving prior rank before new-object
+creation order. Inventory ordinals SHALL NOT be persisted as object identity.
+
+#### Scenario: Current objects are shown
+- **WHEN** a committed task or Draft is rendered
+- **THEN** the right panel shows all objects once in training order and identifies each as `#<ordinal> <canonical class>`
+
+#### Scenario: Geometry or membership changes
+- **WHEN** create, move, resize, delete, Undo, reload, or ROI insertion completes authoritatively
+- **THEN** the inventory and its transient ordinals are recomputed immediately from the resulting object list
+
+#### Scenario: Object is actively dragged
+- **WHEN** a move or resize pointer gesture is still in progress
+- **THEN** the inventory keeps its prior order until the completed canonical result arrives
+
+#### Scenario: Selection crosses canvas and inventory
+- **WHEN** an object is selected in either the SVG or the right-panel inventory
+- **THEN** the same stable region is highlighted in both surfaces and the inventory item is scrolled into view
+
 ### Requirement: Discrete autosave and navigation flush
 The editor SHALL save after semantic gesture completion and SHALL await only
 the active Draft save before in-app task navigation. It SHALL NOT wait for an

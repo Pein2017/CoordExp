@@ -58,7 +58,8 @@ editing and navigation must not wait for publication.
   split, distributed queues, or queued ROI jobs.
 - Automatic NMS, duplicate deletion, per-box accept/reject staging, or model
   results with lower authority than human boxes.
-- Automatic promotion into training. Coord materialization remains explicit.
+- Mutation of original COCO annotations or shared images. The derived
+  max_len12000 norm/coord pair is an approved iterative training target.
 
 ## Decisions
 
@@ -234,6 +235,28 @@ Class selection accepts exact canonical English COCO-80 names and offers
 prefix, substring, and spelling-tolerant filtering over that fixed list. Only
 the selected canonical name and official sparse category ID are saved.
 
+The editor exposes two primary mode shortcuts: Command+1/Command+2 when the
+browser delivers them, plus plain 1/2 outside text-entry controls as a reliable
+fallback. Select is mode 1 and Draw bbox is mode 2. Draw mode renders
+presentation-only horizontal and vertical guides through the pointer while it
+is inside the natural image, including during the drag. Guides never affect
+geometry, Draft state, or exported data.
+
+The right panel renders every current authoritative-or-Draft object in the
+same top-left order required by training: ascending `(y1, x1)`, with exact
+anchor ties retaining prior committed rank and then new-object creation order.
+The displayed `#1..#N` identifiers are transient presentation ordinals, not
+`coco_ann_id`, and are recomputed after each completed authoritative create,
+move, resize, delete, relabel, Undo, reload, or ROI insertion. They do not jump
+during an active pointer drag. Canvas and list selection remain bidirectionally
+synchronized.
+
+Class selection is sticky across image navigation. Selecting an existing
+object makes its class the active Draw class; a visible `Drawing as: <class>`
+cue exposes that state. Entering Draw without an active class focuses the class
+search. A train/val split change clears the active class because it changes the
+operator's dataset context.
+
 Uncommitted inference-origin regions reuse the deterministic neighborhood
 color/badge and same-class IoU advisory policy already implemented in the
 parent editor policy. Colors and duplicate hints remain presentation-only.
@@ -281,6 +304,16 @@ Source JSONL and source images are opened read-only and fingerprinted. All
 mutable files live under the new ignored runtime root. Working JSONL advances
 only through the existing atomic store publication. Tests bind before/after
 source and image identities.
+
+The immutable-source statement applies to the original COCO dataset and shared
+image store. After a terminal committed generation, the operator-approved
+training publisher may replace the derived
+`rescale_32_1024_bbox_len12000/{split}.norm.jsonl` and matching
+`{split}.coord.jsonl` as one receipt-bound transaction. It rebases image
+locators to the shared store, validates exact row/object equivalence and the
+current CoordExp-Swift loader, rejects the whole publish if any row exceeds
+12000 encoded tokens, and preserves the prior pair on failure. No image bytes
+or original COCO annotation file are copied or changed.
 
 ## Risks / Trade-offs
 

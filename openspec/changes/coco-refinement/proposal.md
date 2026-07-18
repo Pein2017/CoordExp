@@ -20,8 +20,10 @@ change, and easier to reason about.
   COCO-80 registry, identity allocation, batch recovery, inference profiles,
   resident model runtime, and ROI transform/mapping contracts.
 - Provide lightweight bbox create/move/resize/relabel/delete, exact COCO-80
-  search, Undo, dense-scene focus/hide controls, task navigation with Draft
-  flush, pending-Draft status, and one explicit same-split batch Commit.
+  search, mode shortcuts, draw-mode pointer guides, a training-order object
+  inventory, sticky visible class context, Undo, dense-scene focus/hide
+  controls, task navigation with Draft flush, pending-Draft status, and one
+  explicit same-split batch Commit.
 - Keep Commit asynchronous and deliberately simple: one worker per split,
   immutable pending-Draft capture, atomic derived JSONL publication, and no
   performance target beyond remaining usable while the worker runs.
@@ -64,7 +66,8 @@ contracts remain unchanged.
   initially through adapter protocols; vendor-shaped names and DTOs may be
   separated only where required by the native Draft boundary.
 - New ignored runtime state is isolated from
-  `outputs/label_studio_coco_refinement/`; source JSONL and images remain
-  immutable and shared by validated paths.
+  `outputs/label_studio_coco_refinement/`; original COCO annotations and shared
+  images remain immutable. The derived max_len12000 norm/coord training pair is
+  an explicitly publishable iterative target with generation/hash receipts.
 - The existing Label Studio checkout, state, and port 8080 remain untouched
   during the replacement gate and are not current authority for the new Drafts.

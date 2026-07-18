@@ -122,6 +122,25 @@ metadata, and shared image resolution.
 - **WHEN** the operator explicitly requests coord output for a terminal working generation
 - **THEN** the materializer emits one derived coord JSONL bound to that exact generation and accepted by the current CoordExp-Swift data path
 
+### Requirement: Iterative training-pair publication
+The system SHALL permit an operator-approved terminal generation to replace the
+derived max_len12000 split's norm and coord JSONL pair while leaving original
+COCO annotations and all shared images unchanged. Publication SHALL be
+receipt-bound, failure-recoverable, and all-or-nothing at the application
+contract boundary.
+
+#### Scenario: Terminal generation is published
+- **WHEN** the selected generation, working hash, task inventory, shared-image resolution, norm/coord equivalence, current training loader, and 12000-token budget all validate
+- **THEN** the selected split's norm and coord targets advance together and a receipt records generation, paths, hashes, counts, and validation evidence
+
+#### Scenario: Any refined row exceeds the budget
+- **WHEN** current CoordExp-Swift encoding reports more than 12000 tokens for any candidate row
+- **THEN** publication fails with the offending sample identities and neither training target advances
+
+#### Scenario: Publication is interrupted
+- **WHEN** replacement fails or a prior transaction is discovered incomplete
+- **THEN** recovery restores the previous complete pair or finishes the verified new pair before reporting success
+
 ### Requirement: Legacy isolation and rollback
 The standalone runtime SHALL use a distinct port, runtime root, SQLite state,
 and Draft namespace from the legacy Label Studio runtime until explicit user

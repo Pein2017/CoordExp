@@ -47,10 +47,11 @@
           </div>
           <div class="editor-toolbar" aria-label="Bounding box tools">
             <div class="tool-group" role="group" aria-label="Editor mode">
-              <button id="mode-select" type="button" aria-pressed="true" disabled>Select / move</button>
-              <button id="mode-draw" type="button" aria-pressed="false" disabled>Draw bbox</button>
+              <button id="mode-select" type="button" aria-pressed="true" title="Command/Ctrl+1 or 1" disabled>Select / move · 1</button>
+              <button id="mode-draw" type="button" aria-pressed="false" title="Command/Ctrl+2 or 2" disabled>Draw bbox · 2</button>
               <button id="mode-pan" type="button" aria-pressed="false" disabled>Pan</button>
             </div>
+            <p id="drawing-category" class="drawing-category" data-active="false">Drawing as: choose a COCO-80 category</p>
             <div class="tool-group" role="group" aria-label="Viewport zoom">
               <button id="zoom-out" type="button" aria-label="Zoom out" disabled>−</button>
               <button id="zoom-in" type="button" aria-label="Zoom in" disabled>+</button>
@@ -96,6 +97,13 @@
             <ul id="category-results" class="category-results" role="listbox" hidden></ul>
             <p id="category-selection" class="selection-hint">No category selected.</p>
           </div>
+          <section class="object-inventory" aria-labelledby="object-inventory-heading">
+            <div class="panel-heading">
+              <h2 id="object-inventory-heading">Objects</h2>
+              <span id="object-count">0 objects</span>
+            </div>
+            <ol id="object-list" class="object-list" aria-label="Objects in training order"></ol>
+          </section>
         </aside>
       </section>
     </main>

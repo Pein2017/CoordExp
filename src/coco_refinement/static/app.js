@@ -28,21 +28,35 @@ let categoryPicker = null;
 const setNotice = (message, tone = '') => { notice.textContent = message; notice.dataset.tone = tone; };
 const setStatus = (message, tone = 'pending') => { status.textContent = message; status.dataset.tone = tone; };
 
+function objectsInTrainingOrder(objects) {
+  return objects
+    .map((object, index) => ({ object, index }))
+    .sort((left, right) => (
+      left.object.bbox_2d[1] - right.object.bbox_2d[1]
+      || left.object.bbox_2d[0] - right.object.bbox_2d[0]
+      || left.index - right.index
+    ))
+    .map(({ object }) => object);
+}
+
+function modeShortcut(event) {
+  const target = event.target instanceof Element ? event.target : null;
+  const tag = target?.tagName || '';
+  if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) || target?.isContentEditable) return null;
+  if (event.key !== '1' && event.key !== '2') return null;
+  const commandModified = event.metaKey || event.ctrlKey;
+  const plain = !event.metaKey && !event.ctrlKey && !event.altKey;
+  if ((!commandModified && !plain) || event.altKey) return null;
+  return event.key === '1' ? 'select' : 'draw';
+}
+
 let controller;
 let commitController;
 const editor = createSvgEditor({
   svg: $('bbox-overlay'),
   onGesture: detail => { void applyEditorGesture(detail); },
   onSelection: ({ regionKey, object }) => {
-    state.selectedRegion = regionKey;
-    $('visibility-mode').value = editor.getPresentationState().visibilityMode;
-    $('hide-selected').disabled = !regionKey || !state.taskOpen;
-    $('delete-button').disabled = !regionKey || !state.taskOpen;
-    if (object) {
-      state.category = { id: object.category_id, name: object.category_name };
-      editor.setCategory(state.category);
-      categoryPicker?.choose(state.category, { notify: false });
-    }
+    selectObject(regionKey, object, { editorAlreadySelected: true, scroll: true });
   },
   onMessage: ({ message, tone }) => setNotice(message, tone),
 });
@@ -103,8 +117,73 @@ function renderTaskShell() {
   setEditorControls(true);
 }
 
+function renderDrawingCategory() {
+  const cue = $('drawing-category');
+  cue.textContent = state.category
+    ? `Drawing as: ${state.category.name}`
+    : 'Drawing as: choose a COCO-80 category';
+  cue.dataset.active = String(Boolean(state.category));
+}
+
+function setActiveCategory(category, { syncPicker = true } = {}) {
+  state.category = category
+    ? { id: category.id, name: category.name }
+    : null;
+  editor.setCategory(state.category);
+  if (syncPicker && categoryPicker) {
+    if (state.category) categoryPicker.choose(state.category, { notify: false });
+    else categoryPicker.clearSelection({ notify: false });
+  }
+  renderDrawingCategory();
+}
+
+function syncObjectInventorySelection({ scroll = false } = {}) {
+  let selectedButton = null;
+  for (const button of $('object-list').querySelectorAll('button')) {
+    const selected = button.dataset.regionKey === state.selectedRegion;
+    button.setAttribute('aria-current', String(selected));
+    if (selected) selectedButton = button;
+  }
+  if (scroll && selectedButton) selectedButton.scrollIntoView({ block: 'nearest' });
+}
+
+function selectObject(regionKey, object, { editorAlreadySelected = false, scroll = false } = {}) {
+  state.selectedRegion = regionKey || null;
+  if (!editorAlreadySelected) editor.setSelected(state.selectedRegion);
+  $('visibility-mode').value = editor.getPresentationState().visibilityMode;
+  $('hide-selected').disabled = !state.selectedRegion || !state.taskOpen;
+  $('delete-button').disabled = !state.selectedRegion || !state.taskOpen;
+  if (object) {
+    setActiveCategory({ id: object.category_id, name: object.category_name });
+  }
+  syncObjectInventorySelection({ scroll });
+}
+
+function renderObjectInventory(objects) {
+  const ordered = objectsInTrainingOrder(objects);
+  $('object-count').textContent = `${ordered.length} object${ordered.length === 1 ? '' : 's'}`;
+  const rows = ordered.map((object, index) => {
+    const item = document.createElement('li');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.regionKey = object.region_key;
+    button.setAttribute('aria-current', String(object.region_key === state.selectedRegion));
+    button.disabled = !state.taskOpen;
+    button.textContent = `#${index + 1} ${object.category_name}`;
+    button.addEventListener('click', () => selectObject(object.region_key, object));
+    item.append(button);
+    return item;
+  });
+  $('object-list').replaceChildren(...rows);
+}
+
 function renderDraftState(snapshot) {
-  if (state.taskOpen) editor.updateObjects(snapshot.objects);
+  if (state.taskOpen) {
+    editor.updateObjects(snapshot.objects);
+    renderObjectInventory(snapshot.objects);
+  } else {
+    renderObjectInventory([]);
+  }
   const visiblePhase = state.interactionBusy ? 'Saving'
     : commitRebindRequired() ? 'Refreshing authority' : snapshot.phase;
   const tone = { Committed: 'ok', Draft: 'pending', Saving: 'pending', Conflict: 'error', Error: 'error' }[visiblePhase] || 'pending';
@@ -216,6 +295,7 @@ function clearVisibleTask() {
   state.commitRebindTarget = null;
   state.commitRebindError = null;
   editor.setTask(null);
+  renderObjectInventory([]);
   $('visibility-mode').value = 'all';
   renderTaskShell();
 }
@@ -264,6 +344,7 @@ async function loadTask(taskId, { flush = true, selectedIndex = null } = {}) {
   editor.setTask(task);
   $('visibility-mode').value = 'all';
   editor.setCategory(state.category);
+  renderDraftState(controller.getState());
   renderPage();
   renderTaskShell();
   setStatus('Connected', 'ok');
@@ -304,8 +385,7 @@ async function applyEditorGesture(detail) {
       pixel_xyxy: detail.pixelXYXY,
       category_name: category.name,
     });
-    state.selectedRegion = projected.region_key;
-    editor.setSelected(projected.region_key);
+    selectObject(projected.region_key, projected);
     setNotice('Draft saved. Continue editing or navigate to another sample.', 'ok');
   });
 }
@@ -316,8 +396,7 @@ async function chooseCategory(category) {
     else categoryPicker?.clearSelection({ notify: false });
     return;
   }
-  state.category = category;
-  editor.setCategory(category);
+  setActiveCategory(category, { syncPicker: false });
   if (!state.taskOpen || !state.selectedRegion) return;
   const object = controller.getState().objects.find(candidate => candidate.region_key === state.selectedRegion);
   if (!object || object.category_name === category.name) return;
@@ -443,14 +522,17 @@ async function navigate(action) {
 
 async function switchSplit(nextSplit) {
   const prior = state.split;
+  const priorCategory = state.category;
   try {
     await beforeNavigation();
     state.split = nextSplit;
+    setActiveCategory(null);
     await commitController.setSplit(nextSplit).catch(() => undefined);
     await loadPage(0, 0, { flush: false });
   } catch (error) {
     state.split = prior;
     $('split-select').value = prior;
+    setActiveCategory(priorCategory);
     await commitController.setSplit(prior).catch(() => undefined);
     throw error;
   }
@@ -460,6 +542,9 @@ function setMode(mode) {
   editor.setMode(mode);
   for (const name of ['select', 'draw', 'pan']) {
     $(`mode-${name}`).setAttribute('aria-pressed', String(name === mode));
+  }
+  if (mode === 'draw' && state.taskOpen && !state.category) {
+    $('category-search').focus({ preventScroll: true });
   }
 }
 
@@ -496,10 +581,10 @@ async function start() {
       categories: state.categories,
       onChoose: category => { void chooseCategory(category); },
       onClear: () => {
-        state.category = null;
-        editor.setCategory(null);
+        setActiveCategory(null, { syncPicker: false });
       },
     });
+    renderDrawingCategory();
     setMode('select');
     await commitController.setSplit(state.split).catch(() => undefined);
     await loadPage(0, 0, { flush: false });
@@ -530,6 +615,13 @@ $('save-retry').addEventListener('click', () => navigate(retrySave));
 $('task-reload').addEventListener('click', () => navigate(reloadCurrentTask));
 document.addEventListener('keydown', event => {
   const tag = event.target instanceof Element ? event.target.tagName : '';
+  const shortcutMode = modeShortcut(event);
+  if (shortcutMode) {
+    if (!state.taskOpen || semanticActionLocked()) return;
+    event.preventDefault();
+    setMode(shortcutMode);
+    return;
+  }
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z'
       && !['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)
       && !semanticActionLocked() && controller.getState().canUndo) {
