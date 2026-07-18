@@ -59,6 +59,8 @@ cd -- "${REPO_ROOT}"
 printf 'COCO refinement Gate A\n'
 printf 'Browser: %s\n' "${BROWSER_URL}"
 printf 'Runtime: %s\n' "${RUNTIME_ROOT}"
+printf 'Startup validates the full workspace before binding the port (about 1-2 minutes).\n'
+printf 'VS Code can offer Forward/Open after Uvicorn reports that it is running.\n'
 printf 'Stop cleanly with Ctrl-C.\n'
 
 exec "${CONDA_BIN}" run --no-capture-output -n ms \

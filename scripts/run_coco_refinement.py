@@ -226,6 +226,11 @@ def run_server(
     )
 
     selected_runtime = _resolve_runtime_root(repo_root.resolve(strict=True), runtime_root)
+    print(
+        "[coco-refinement] Validating the complete train/val workspace before "
+        "opening the browser port; this normally takes about 1-2 minutes.",
+        flush=True,
+    )
     runtime = runtime_factory(
         repo_root,
         runtime_root=selected_runtime,
@@ -238,6 +243,11 @@ def run_server(
         workers=1,
     )
     try:
+        print(
+            "[coco-refinement] Workspace validation complete; starting Commit "
+            "workers.",
+            flush=True,
+        )
         runtime.start()
         app_kwargs: dict[str, object] = {
             "bind_host": authority.host,
@@ -254,6 +264,12 @@ def run_server(
             workers=1,
             access_log=False,
             timeout_graceful_shutdown=shutdown_timeout,
+        )
+        print(
+            f"[coco-refinement] Handing off to Uvicorn at "
+            f"http://{authority.host}:{authority.port}; VS Code can forward the "
+            "port after the listener is ready.",
+            flush=True,
         )
         server_factory(config).run()
     finally:

@@ -72,6 +72,12 @@ the runtime. Port overrides are intentionally rejected so bookmarks remain
 stable. Both `localhost:53662` and `127.0.0.1:53662` are accepted authorities;
 forwarded headers remain forbidden.
 
+Startup deliberately validates the complete train/val workspace before it
+binds the browser port, which normally takes about one to two minutes on the
+current Pod. The launcher prints this pre-bind phase immediately. VS Code can
+discover and offer to forward `53662` only after the terminal reports
+`Uvicorn running on http://127.0.0.1:53662`.
+
 Only one process may own this runtime root. A second launcher fails before
 binding the port. Stop the owning foreground process with `Ctrl-C` and wait
 for exit so both split workers and the writer lock shut down cleanly. Do not

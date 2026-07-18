@@ -35,3 +35,10 @@ def test_fixed_gate_a_launcher_rejects_unknown_arguments() -> None:
 
     assert result.returncode == 2
     assert "fixed at 53662" in result.stderr
+
+
+def test_fixed_gate_a_launcher_explains_prebind_validation() -> None:
+    source = LAUNCHER.read_text(encoding="utf-8")
+
+    assert "validates the full workspace before binding the port" in source
+    assert "VS Code can offer Forward/Open after Uvicorn reports" in source

@@ -22,7 +22,7 @@ def _launch_kwargs(tmp_path: Path) -> dict[str, Any]:
 
 
 def test_launcher_orders_runtime_lifecycle_and_pins_server_shape(
-    tmp_path: Path,
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
 ) -> None:
     events: list[object] = []
     repo_root = tmp_path / "repo"
@@ -106,6 +106,11 @@ def test_launcher_orders_runtime_lifecycle_and_pins_server_shape(
         },
     )
     assert events[5:] == [("server", config), "serve", ("shutdown", 7)]
+    output = capsys.readouterr().out
+    assert "Validating the complete train/val workspace" in output
+    assert "Workspace validation complete" in output
+    assert "Handing off to Uvicorn at http://127.0.0.1:19172" in output
+    assert "VS Code can forward the port after the listener is ready" in output
 
 
 def test_launcher_passes_explicit_browser_origin_only_to_app_factory(
