@@ -41,6 +41,8 @@ class ImagePlanRow:
     executed_media_sha256: str | None
     status: str
     error: dict[str, Any] | None
+    backend_prompt_token_count: int | None = None
+    backend_image_placeholder_ranges: list[dict[str, int]] | None = None
 
     def to_artifact_dict(self) -> dict[str, Any]:
         return {
@@ -66,6 +68,8 @@ class ImagePlanRow:
             "executed_media_sha256": self.executed_media_sha256,
             "status": self.status,
             "error": self.error,
+            "backend_prompt_token_count": self.backend_prompt_token_count,
+            "backend_image_placeholder_ranges": self.backend_image_placeholder_ranges,
         }
 
 

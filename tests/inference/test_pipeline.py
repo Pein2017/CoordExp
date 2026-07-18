@@ -236,7 +236,87 @@ def test_pipeline_orchestrates_batched_decode_and_artifact_writing(tmp_path: Pat
     )
     assert provenance["generation_policy"]["max_new_tokens"] == 64
     assert provenance["parallelism"] == manifest["parallelism"]
+    assert provenance["prompt_trace"] == manifest["prompt_trace"]
+    assert [row["row_id"] for row in provenance["prompt_trace"]] == [
+        "row-0",
+        "row-1",
+        "row-2",
+    ]
+    for prompt_trace in provenance["prompt_trace"]:
+        assert prompt_trace["prompt_token_parity"] == "verified"
+        assert (
+            prompt_trace["expected_executed_prompt_token_ids_sha256"]
+            == prompt_trace["backend_executed_prompt_token_ids_sha256"]
+        )
+        assert (
+            prompt_trace["expected_executed_prompt_token_count"]
+            == prompt_trace["backend_executed_prompt_token_count"]
+        )
     assert raw_rows[0]["decode_stop_reason"] == "length"
+
+
+def test_pipeline_keeps_tiny_non_smoke_run_out_of_benchmark_scope(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.config import inference as inference_config
+    from src.inference import pipeline
+
+    monkeypatch.setattr(
+        inference_config,
+        "_validate_canonical_namespace",
+        lambda config, entry_path: None,
+    )
+
+    config_path = _write_config(
+        tmp_path,
+        batch_size=2,
+        row_count=2,
+        smoke=False,
+    )
+
+    result = pipeline.run(
+        config_path=config_path,
+        frontend_factory=_frontend_factory(),
+        session_opener=lambda launch: FakeBackend([], launch=launch),
+    )
+
+    run_dir = tmp_path / "outputs" / "wave6-pipeline"
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    manifest = json.loads(
+        (run_dir / "run_manifest.json").read_text(encoding="utf-8")
+    )
+
+    assert result == 0
+    assert summary["terminal_status"] == "completed"
+    assert summary["benchmark_eligible"] is False
+    assert manifest["benchmark_eligible"] is False
+
+
+def test_benchmark_scope_requires_non_smoke_val200_or_larger() -> None:
+    from src.inference.pipeline import _benchmark_scope_eligible
+
+    assert (
+        _benchmark_scope_eligible(
+            config=SimpleNamespace(debug=SimpleNamespace(smoke=False)),
+            row_count=200,
+        )
+        is True
+    )
+    assert (
+        _benchmark_scope_eligible(
+            config=SimpleNamespace(debug=SimpleNamespace(smoke=False)),
+            row_count=199,
+        )
+        is False
+    )
+    assert (
+        _benchmark_scope_eligible(
+            config=SimpleNamespace(debug=SimpleNamespace(smoke=True)),
+            row_count=200,
+        )
+        is False
+    )
 
 
 def test_pipeline_keeps_direct_path_when_only_one_active_rank(
@@ -319,6 +399,7 @@ def test_pipeline_uses_controller_workers_and_merges_when_active_ranks_exceeds_o
                 "batch_ids": list(rank_plan.batch_ids),
             },
             rank_plan=rank_plan,
+            execution_model=None,
             frontend_factory=_frontend_factory(),
             session_opener=lambda launch: FakeBackend([], launch=launch),
         )
@@ -344,12 +425,279 @@ def test_pipeline_uses_controller_workers_and_merges_when_active_ranks_exceeds_o
     assert [call["rank"] for call in launched] == [0, 1]
     assert all(Path(call["resolved_config_json"]).is_file() for call in launched)
     assert all(Path(call["shard_plan_json"]).is_file() for call in launched)
+    assert all(call.get("execution_model_json") is None for call in launched)
     assert [row["row_id"] for row in raw_rows] == ["row-0", "row-1"]
     assert manifest["parallelism"]["execution_mode"] == "controller_worker"
     assert manifest["parallelism"]["merge_status"] == "completed"
     assert manifest["parallelism"]["active_ranks"] == 2
     assert provenance["parallelism"]["rank_to_device"] == {"0": "0", "1": "1"}
     assert not (run_dir / "metrics.json").exists()
+
+
+def test_pipeline_partial_worker_launch_failure_terminates_started_workers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.inference import data_parallel
+    from src.inference import pipeline
+
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0,1")
+    monkeypatch.setattr(data_parallel, "detect_cuda_device_count", lambda: 2)
+    config_path = _write_config(tmp_path, batch_size=1, row_count=2)
+
+    class LiveProcess:
+        pid = None
+        returncode: int | None = None
+        terminated = False
+
+        def terminate(self) -> None:
+            self.terminated = True
+            self.returncode = -15
+
+        def wait(self, *, timeout: float | None = None) -> int:
+            assert timeout is not None
+            assert self.returncode is not None
+            return self.returncode
+
+    first = LiveProcess()
+    cache_root = tmp_path / "partial-launch-worker-cache"
+    cache_root.mkdir()
+    first._coordexp_runtime_cache_root = str(cache_root)
+
+    def partial_launcher(**kwargs: Any) -> LiveProcess:
+        if kwargs["rank"] == 0:
+            return first
+        raise RuntimeError("injected rank-1 launch failure")
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        pipeline.run(
+            config_path=config_path,
+            frontend_factory=_frontend_factory(),
+            session_opener=lambda launch: FakeBackend([], launch=launch),
+            worker_launcher=partial_launcher,
+        )
+
+    run_dir = tmp_path / "outputs" / "wave6-pipeline"
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+    assert exc_info.value.code == "pipeline.worker_launch_failed"
+    assert first.terminated is True
+    assert first.returncode == -15
+    assert not cache_root.exists()
+    assert summary["terminal_status"] == "failed"
+    assert manifest["terminal_status"] == "failed"
+    assert not (run_dir / "gt_vs_pred.jsonl").exists()
+    assert not (run_dir / "gt_vs_pred_scored.jsonl").exists()
+    assert not (run_dir / "gt_vs_pred_scored.jsonl.provenance.json").exists()
+
+
+def test_pipeline_cleanup_failure_still_publishes_terminal_diagnostics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.inference import data_parallel, pipeline, worker
+
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0,1")
+    monkeypatch.setattr(data_parallel, "detect_cuda_device_count", lambda: 2)
+    config_path = _write_config(tmp_path, batch_size=1, row_count=2)
+    process = SimpleNamespace(pid=None, returncode=None)
+
+    def partial_launcher(**kwargs: Any) -> object:
+        if kwargs["rank"] == 0:
+            return process
+        raise RuntimeError("injected rank-1 launch failure")
+
+    def fail_termination(_: object) -> int:
+        raise RuntimeContractError(
+            "survived",
+            code="inference.worker_process_tree_survived",
+        )
+
+    monkeypatch.setattr(worker, "_terminate_worker_process_tree", fail_termination)
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        pipeline.run(
+            config_path=config_path,
+            frontend_factory=_frontend_factory(),
+            session_opener=lambda launch: FakeBackend([], launch=launch),
+            worker_launcher=partial_launcher,
+        )
+
+    run_dir = tmp_path / "outputs" / "wave6-pipeline"
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+
+    assert exc_info.value.code == "inference.worker_process_tree_survived"
+    assert summary["terminal_status"] == "failed"
+    assert summary["error"]["code"] == "inference.worker_process_tree_survived"
+    assert summary["error"]["context"]["controller_phase"] == "worker_launch"
+    assert summary["error"]["context"]["trigger_exception_type"] == "RuntimeError"
+    assert manifest["terminal_status"] == "failed"
+    assert not (run_dir / "gt_vs_pred.jsonl").exists()
+    assert not (run_dir / "gt_vs_pred_scored.jsonl").exists()
+
+
+@pytest.mark.parametrize("failure_kind", ("worker_timeout", "orphan_process"))
+def test_pipeline_controller_wait_failure_cleans_owned_workers_and_publishes_only_terminal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_kind: str,
+) -> None:
+    from src.inference import data_parallel, pipeline, worker
+
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0,1")
+    monkeypatch.setattr(data_parallel, "detect_cuda_device_count", lambda: 2)
+    config_path = _write_config(tmp_path, batch_size=1, row_count=2)
+    processes: list[Any] = []
+
+    class FakeProcess:
+        def __init__(self, rank: int) -> None:
+            self.rank = rank
+            self.pid = 5678 if failure_kind == "orphan_process" and rank == 0 else None
+            self.returncode: int | None = (
+                0 if failure_kind == "orphan_process" and rank == 0 else None
+            )
+            self.terminated = False
+
+        def poll(self) -> int | None:
+            return self.returncode
+
+        def terminate(self) -> None:
+            self.terminated = True
+            self.returncode = -15
+
+        def wait(self, *, timeout: float | None = None) -> int:
+            if self.returncode is None:
+                raise worker.subprocess.TimeoutExpired("worker", timeout)
+            return self.returncode
+
+    def launcher(**kwargs: Any) -> FakeProcess:
+        rank = int(kwargs["rank"])
+        process = FakeProcess(rank)
+        cache_root = tmp_path / f"wait-failure-cache-{rank}"
+        cache_root.mkdir()
+        process._coordexp_runtime_cache_root = str(cache_root)
+        processes.append(process)
+        return process
+
+    original_wait = worker.wait_for_worker_processes
+    if failure_kind == "worker_timeout":
+        monkeypatch.setattr(
+            worker,
+            "wait_for_worker_processes",
+            lambda launched: original_wait(launched, timeout_seconds=1e-9),
+        )
+    else:
+        process_group_alive = True
+
+        def process_group_exists(process_group_id: int) -> bool:
+            return process_group_id == 5678 and process_group_alive
+
+        def signal_process_group(process_group_id: int, signal: object) -> None:
+            nonlocal process_group_alive
+            assert process_group_id == 5678
+            process_group_alive = False
+
+        monkeypatch.setattr(worker, "WORKER_TERMINATION_GRACE_SECONDS", 0.0)
+        monkeypatch.setattr(worker, "_process_group_exists", process_group_exists)
+        monkeypatch.setattr(worker, "_signal_process_group", signal_process_group)
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        pipeline.run(
+            config_path=config_path,
+            frontend_factory=_frontend_factory(),
+            session_opener=lambda launch: FakeBackend([], launch=launch),
+            worker_launcher=launcher,
+        )
+
+    expected_code = {
+        "worker_timeout": "inference.worker_timeout",
+        "orphan_process": "inference.worker_orphan_process",
+    }[failure_kind]
+    assert exc_info.value.code == expected_code
+    assert len(processes) == 2
+    assert all(
+        not (tmp_path / f"wait-failure-cache-{rank}").exists()
+        for rank in (0, 1)
+    )
+    if failure_kind == "worker_timeout":
+        assert all(process.terminated for process in processes)
+    else:
+        assert processes[1].terminated is True
+        assert process_group_alive is False
+
+    run_dir = tmp_path / "outputs" / "wave6-pipeline"
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+    assert summary["terminal_status"] == "failed"
+    assert summary["error"]["code"] == expected_code
+    assert manifest["terminal_status"] == "failed"
+    assert manifest["benchmark_eligible"] is False
+    assert not (run_dir / "gt_vs_pred.jsonl").exists()
+    assert not (run_dir / "gt_vs_pred_scored.jsonl").exists()
+    assert not (run_dir / "gt_vs_pred_scored.jsonl.provenance.json").exists()
+
+
+def test_pipeline_controller_interrupt_reaps_every_launched_worker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.inference import data_parallel, pipeline, worker
+
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0,1")
+    monkeypatch.setattr(data_parallel, "detect_cuda_device_count", lambda: 2)
+    config_path = _write_config(tmp_path, batch_size=1, row_count=2)
+    processes: list[Any] = []
+
+    class LiveProcess:
+        pid = None
+        returncode: int | None = None
+        terminated = False
+
+        def terminate(self) -> None:
+            self.terminated = True
+            self.returncode = -15
+
+        def wait(self, *, timeout: float | None = None) -> int:
+            assert self.returncode is not None
+            return self.returncode
+
+    def launcher(**kwargs: Any) -> LiveProcess:
+        process = LiveProcess()
+        cache_root = tmp_path / f"interrupt-cache-{kwargs['rank']}"
+        cache_root.mkdir()
+        process._coordexp_runtime_cache_root = str(cache_root)
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(
+        worker,
+        "wait_for_worker_processes",
+        lambda launched: (_ for _ in ()).throw(KeyboardInterrupt()),
+    )
+
+    with pytest.raises(KeyboardInterrupt):
+        pipeline.run(
+            config_path=config_path,
+            frontend_factory=_frontend_factory(),
+            session_opener=lambda launch: FakeBackend([], launch=launch),
+            worker_launcher=launcher,
+        )
+
+    assert len(processes) == 2
+    assert all(process.terminated for process in processes)
+    assert not any((tmp_path / f"interrupt-cache-{rank}").exists() for rank in (0, 1))
+    run_dir = tmp_path / "outputs" / "wave6-pipeline"
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+    assert summary["terminal_status"] == "failed"
+    assert summary["error"]["code"] == "pipeline.controller_interrupted"
+    assert summary["error"]["context"]["phase"] == "worker_wait"
+    assert manifest["terminal_status"] == "failed"
+    assert manifest["benchmark_eligible"] is False
+    assert not (run_dir / "gt_vs_pred.jsonl").exists()
+    assert not (run_dir / "gt_vs_pred_scored.jsonl").exists()
+    assert not (run_dir / "gt_vs_pred_scored.jsonl.provenance.json").exists()
 
 
 def test_pipeline_controller_missing_rank_zero_artifacts_writes_terminal_failure(
@@ -583,6 +931,176 @@ def test_pipeline_terminal_artifact_failure_writes_status_without_row_artifacts(
     assert summary["failure_class"] == "contract_failure"
     assert summary["contract_failure_count"] == 1
     assert summary["benchmark_eligible"] is False
+    assert manifest["terminal_status"] == "failed"
+    assert manifest["benchmark_eligible"] is False
+    assert not (run_dir / "gt_vs_pred.jsonl").exists()
+    assert not (run_dir / "gt_vs_pred_scored.jsonl").exists()
+
+
+@pytest.mark.parametrize(
+    ("error", "failure_class", "error_code"),
+    [
+        (
+            torch.OutOfMemoryError("injected CUDA OOM"),
+            "cuda_oom",
+            "inference.cuda_oom",
+        ),
+        (
+            RuntimeError("injected backend startup failure"),
+            "runtime_failure",
+            "inference.unhandled_runtime_failure",
+        ),
+    ],
+    ids=("cuda-oom", "backend-startup"),
+)
+def test_pipeline_unhandled_runtime_failure_writes_terminal_diagnostics_only(
+    tmp_path: Path,
+    error: Exception,
+    failure_class: str,
+    error_code: str,
+) -> None:
+    from src.inference import pipeline
+
+    config_path = _write_config(tmp_path, batch_size=1, row_count=1)
+
+    def fail_session_open(launch: Any) -> Any:
+        raise error
+
+    with pytest.raises(type(error), match="injected"):
+        pipeline.run(
+            config_path=config_path,
+            frontend_factory=_frontend_factory(),
+            session_opener=fail_session_open,
+        )
+
+    run_dir = tmp_path / "outputs" / "wave6-pipeline"
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+
+    assert summary["terminal_status"] == "failed"
+    assert summary["failure_class"] == failure_class
+    assert summary["error"]["code"] == error_code
+    assert summary["error"]["context"]["exception_type"] == type(error).__name__
+    assert manifest["terminal_status"] == "failed"
+    assert manifest["benchmark_eligible"] is False
+    assert not (run_dir / "gt_vs_pred.jsonl").exists()
+    assert not (run_dir / "gt_vs_pred_scored.jsonl").exists()
+    assert not (run_dir / "gt_vs_pred_scored.jsonl.provenance.json").exists()
+
+
+@pytest.mark.parametrize(
+    ("error", "failure_class", "error_code"),
+    [
+        (
+            torch.OutOfMemoryError("injected vLLM worker CUDA OOM"),
+            "cuda_oom",
+            "inference.cuda_oom",
+        ),
+        (
+            RuntimeError("injected vLLM worker engine startup failure"),
+            "runtime_failure",
+            "inference.unhandled_runtime_failure",
+        ),
+    ],
+    ids=("cuda-oom", "engine-startup"),
+)
+def test_pipeline_vllm_controller_worker_failures_publish_shard_and_controller_diagnostics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    error: Exception,
+    failure_class: str,
+    error_code: str,
+) -> None:
+    from src.config.inference import load_infer_config
+    from src.inference import data_parallel, pipeline
+
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
+    monkeypatch.setattr(data_parallel, "detect_cuda_device_count", lambda: 1)
+    config_path = _write_config(
+        tmp_path,
+        batch_size=1,
+        row_count=1,
+        backend_type="vllm",
+    )
+    resolved = load_infer_config(config_path)
+    plan = data_parallel.plan_data_parallel_shards(
+        row_ids=("row-0",),
+        per_device_batch_size=1,
+        visible_cuda_tokens=("0",),
+    )
+    execution_model = {
+        "mode": "base_only",
+        "model_path": str(tmp_path / "model_cache" / "qwen"),
+    }
+    monkeypatch.setattr(
+        pipeline,
+        "_resolve_execution_model_for_run",
+        lambda _: execution_model,
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "validate_execution_model_receipt",
+        lambda receipt: dict(receipt),
+    )
+
+    class FailedWorkerProcess:
+        pid = None
+        returncode = 1
+
+        def poll(self) -> int:
+            return self.returncode
+
+    def fail_session_open(_: Any) -> Any:
+        raise error
+
+    def launcher(**kwargs: Any) -> FailedWorkerProcess:
+        rank_plan = plan.ranks[int(kwargs["rank"])]
+        assert kwargs["execution_model_json"] is not None
+        with pytest.raises(type(error), match="injected vLLM worker"):
+            pipeline.run_shard(
+                resolved=resolved,
+                output_dir=Path(kwargs["output_dir"]),
+                row_indices=rank_plan.row_indices,
+                worker_metadata={
+                    "shard_plan_fingerprint": plan.fingerprint,
+                    "rank": rank_plan.rank,
+                    "world_size": rank_plan.world_size,
+                    "parent_visible_device_token": rank_plan.parent_visible_device_token,
+                    "worker_cuda_visible_devices": rank_plan.parent_visible_device_token,
+                    "worker_logical_device": "cuda:0",
+                    "cuda_device_count": 1,
+                    "cuda_current_device": 0,
+                    "model_first_parameter_device": "cuda:0",
+                    "per_device_batch_size": rank_plan.per_device_batch_size,
+                    "batch_ids": list(rank_plan.batch_ids),
+                },
+                rank_plan=rank_plan,
+                frontend_factory=_frontend_factory(),
+                session_opener=fail_session_open,
+                execution_model=execution_model,
+            )
+        return FailedWorkerProcess()
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        pipeline.run(
+            config_path=config_path,
+            worker_launcher=launcher,
+        )
+
+    run_dir = tmp_path / "outputs" / "wave6-pipeline"
+    shard_summary = json.loads(
+        (run_dir / "shards" / "rank-000" / "summary.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+
+    assert exc_info.value.code == "pipeline.worker_failed"
+    assert shard_summary["failure_class"] == failure_class
+    assert shard_summary["error"]["code"] == error_code
+    assert summary["terminal_status"] == "failed"
+    assert summary["error"]["code"] == "pipeline.worker_failed"
     assert manifest["terminal_status"] == "failed"
     assert manifest["benchmark_eligible"] is False
     assert not (run_dir / "gt_vs_pred.jsonl").exists()
@@ -994,6 +1512,23 @@ def test_data_parallel_controller_uses_shard_primitive_for_each_rank_and_restore
     ]
 
 
+def test_data_parallel_shards_reject_vllm_in_process_execution(tmp_path: Path) -> None:
+    from src.inference import pipeline
+
+    resolved = SimpleNamespace(
+        config=SimpleNamespace(backend=SimpleNamespace(type="vllm"))
+    )
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        pipeline.run_data_parallel_shards(
+            resolved=resolved,
+            run_dir=tmp_path / "dp-run",
+            plan=SimpleNamespace(),
+        )
+
+    assert exc_info.value.code == "pipeline.vllm_in_process_forbidden"
+
+
 def test_data_parallel_shard_manifest_records_plan_and_worker_device_metadata(
     tmp_path: Path,
 ) -> None:
@@ -1091,10 +1626,12 @@ def _frontend_factory() -> Any:
         config: Any,
         *,
         generation_config_fingerprint: str,
+        execution_model: Any | None = None,
     ) -> InferenceFrontend:
         return _frontend(
             config=config,
             generation_config_fingerprint=generation_config_fingerprint,
+            execution_model=execution_model,
         )
 
     return factory
@@ -1104,6 +1641,7 @@ def _frontend(
     *,
     config: Any,
     generation_config_fingerprint: str,
+    execution_model: Any | None = None,
 ) -> InferenceFrontend:
     processor_identity = QwenProcessorIdentity(
         processor_class="FakeQwen3VLProcessor",
@@ -1126,15 +1664,25 @@ def _frontend(
         model=None,
         to_artifact_dict=lambda: {"frontend": "unit"},
     )
+    if config.backend.type == "hf":
+        model_path = config.model.base_model
+        backend_options = {"hf": config.backend.hf.model_dump(mode="json")}
+        execution_model_identity = None
+    else:
+        assert execution_model is not None
+        model_path = execution_model["model_path"]
+        backend_options = {"vllm": config.backend.vllm.model_dump(mode="json")}
+        execution_model_identity = dict(execution_model)
     return InferenceFrontend(
         qwen=qwen,
         launch=BackendLaunch(
-            backend="hf",
-            model_path=config.model.base_model,
+            backend=config.backend.type,
+            model_path=model_path,
             model_dtype=config.model.dtype,
             batch_size=config.generation.batch_size,
             generation_config_fingerprint=generation_config_fingerprint,
-            backend_options={"hf": config.backend.hf.model_dump(mode="json")},
+            backend_options=backend_options,
+            execution_model_identity=execution_model_identity,
         ),
     )
 
@@ -1203,6 +1751,8 @@ def _write_config(
     batch_size: int,
     row_count: int,
     invalid_image: bool = False,
+    smoke: bool = True,
+    backend_type: str = "hf",
 ) -> Path:
     data_dir = tmp_path / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -1251,13 +1801,20 @@ def _write_config(
             "assistant_format": "object_box_closed",
             "prompt": {"user": "Describe objects."},
         },
-        "backend": {
-            "type": "hf",
-            "hf": {
-                "attn_implementation": "flash_attention_2",
-                "patch_embed_linearization": "enabled",
-            },
-        },
+        "backend": (
+            {
+                "type": "hf",
+                "hf": {
+                    "attn_implementation": "flash_attention_2",
+                    "patch_embed_linearization": "enabled",
+                },
+            }
+            if backend_type == "hf"
+            else {
+                "type": "vllm",
+                "vllm": {"gpu_memory_utilization": 0.7},
+            }
+        ),
         "generation": {
             "batch_size": batch_size,
             "max_new_tokens": 64,
@@ -1267,7 +1824,7 @@ def _write_config(
         },
         "scoring": {"enabled": True},
         "artifacts": {"write_token_trace": True, "write_parse_diagnostics": True},
-        "debug": {"smoke": True, "dry_run": False},
+        "debug": {"smoke": smoke, "dry_run": False},
     }
     config_path = tmp_path / "infer.yaml"
     config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")

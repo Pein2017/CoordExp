@@ -1,0 +1,174 @@
+{
+  "algorithm_version": "coordexp-swift-dora-delta-fold-v4",
+  "comparison": {
+    "behavior_checks": {
+      "full_vocab_within_reference_tolerance": true,
+      "greedy_generated_ids_match": true,
+      "selected_vocab_within_reference_tolerance": true
+    },
+    "compared_positions": [
+      1358,
+      1359,
+      1360,
+      1361
+    ],
+    "composition_checks": {
+      "dynamic_tied_weights": true,
+      "materialized_tied_weights": true,
+      "merged_target_weights": true,
+      "prompt_ids": true,
+      "selected_rows_target_dtype": true
+    },
+    "dtypes": {
+      "comparison_logits": "torch.float32",
+      "dynamic_native_logits": "torch.float32",
+      "dynamic_selected_rows": "torch.float32",
+      "materialized_native_logits": "torch.float32",
+      "materialized_selected_rows": "torch.float32"
+    },
+    "dynamic_generated_ids": [
+      151646,
+      79,
+      15521,
+      6008,
+      151647,
+      151648,
+      151992,
+      151746,
+      152388,
+      152488,
+      151649,
+      151646,
+      85,
+      519,
+      151647,
+      151648
+    ],
+    "full_vocab": {
+      "allclose": true,
+      "atol": 0.005,
+      "max_abs_diff": 0.0002841949462890625,
+      "max_rel_diff": 3.7226929664611816,
+      "rtol": 0.0001
+    },
+    "full_vocab_shape": [
+      1,
+      4,
+      152670
+    ],
+    "materialized_generated_ids": [
+      151646,
+      79,
+      15521,
+      6008,
+      151647,
+      151648,
+      151992,
+      151746,
+      152388,
+      152488,
+      151649,
+      151646,
+      85,
+      519,
+      151647,
+      151648
+    ],
+    "merged_target_weight_identity": {
+      "expected": {
+        "fingerprint": "2e391d6ea913dfc0dcec6d3065117e89d0ace795ad2534ebeb5ecb938ce61e09",
+        "target_count": 196
+      },
+      "observed": {
+        "fingerprint": "2e391d6ea913dfc0dcec6d3065117e89d0ace795ad2534ebeb5ecb938ce61e09",
+        "target_count": 196
+      }
+    },
+    "selected_row_identity": {
+      "dynamic_effective_sha256": "b09fe7e86d45dae0477d6f5f85a9c551ea71599a370baebcaa497826ce33dfe6",
+      "materializer_folded_sha256": "b09fe7e86d45dae0477d6f5f85a9c551ea71599a370baebcaa497826ce33dfe6",
+      "reloaded_materialized_sha256": "b09fe7e86d45dae0477d6f5f85a9c551ea71599a370baebcaa497826ce33dfe6"
+    },
+    "selected_vocab": {
+      "allclose": true,
+      "atol": 0.002,
+      "max_abs_diff": 0.0002288818359375,
+      "max_rel_diff": 3.7226929664611816,
+      "rtol": 0.0001
+    },
+    "selected_vocab_shape": [
+      1,
+      4,
+      1004
+    ]
+  },
+  "composition_key": "39df6dd7a41edb1b2d94db8772b487a21781998dd84d637bd16c81986cb1743a",
+  "digest": "778b5358dc9857c4024dc7f13c817bbe3e324c425844f46d87670b340ee4b0bc",
+  "fixture_identity": {
+    "dynamic_executed_prompt_ids_sha256": "dc21acac635d4fddfeca65c2572e453ce5624dab403351da6973b434623b5ca1",
+    "executed_media_sha256": "717ea08635737ef030944d9b316646c3d85d432056952d8632c4ceaf9764fd79",
+    "generation_fingerprint": "b70f5579bed5ab3a127571f9bc69a6218505f6895dfcde48ee91d8019ed4d0ae",
+    "image_file_sha256": "b5888357f78716bb99985638fe0788160c538612d7e67654ee44ceb2ab66de6d",
+    "input_jsonl_sha256": "f1a13e7470f4636f2c89e11c23074c69a1318ba60fc3292ae0aa72bfbd495ace",
+    "materialized_executed_prompt_ids_sha256": "dc21acac635d4fddfeca65c2572e453ce5624dab403351da6973b434623b5ca1",
+    "max_new_tokens": 16,
+    "processor_fingerprint": "1b6a8d3fdd4ee4bc30734aab17d902f1ce89ae2ac208f875b624cdb6cac4d055",
+    "prompt_ids_sha256": "dc21acac635d4fddfeca65c2572e453ce5624dab403351da6973b434623b5ca1",
+    "row_id": "coco2017_train_000000000030__smoke2obj",
+    "row_index": 0
+  },
+  "materialization_identity": {
+    "folded_selected_rows_sha256": "b09fe7e86d45dae0477d6f5f85a9c551ea71599a370baebcaa497826ce33dfe6",
+    "merged_target_weight_identity": {
+      "fingerprint": "2e391d6ea913dfc0dcec6d3065117e89d0ace795ad2534ebeb5ecb938ce61e09",
+      "target_count": 196
+    }
+  },
+  "package_versions": {
+    "peft": "0.17.1",
+    "safetensors": "0.6.2",
+    "torch": "2.9.1",
+    "transformers": "4.57.1"
+  },
+  "probe_identity": {
+    "path": "scripts/probes/coordexp_swift/execution_model_composition.py",
+    "sha256": "6c6bb887c4ce228c6b97d22582d5a83516050bf4d257aa38c749993c1f86081a"
+  },
+  "resolved_config_identity": {
+    "entry_config_path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/infer/smoke/qwen3_vl_2b_step4887_dynamic_hf_fp32_composition.yaml",
+    "fingerprint": "7d47996f36a762f7a622ee7087ff73a0bb1d9fb9cca7458e20560572614c6b1c",
+    "sources": [
+      {
+        "path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/infer/base.yaml",
+        "sha256": "eae71758eff67e59411519d2f75e467706fa3ee039f78bc9311af8ea1d598de2"
+      },
+      {
+        "path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200.yaml",
+        "sha256": "c7dc34e37b53b9aeac76b959f5791a677a810d9dc30d0f11f42e4fdae51a8c06"
+      },
+      {
+        "path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/infer/smoke/qwen3_vl_2b_step4887_dynamic_hf_fp32_composition.yaml",
+        "sha256": "d960353c89a2e9985d4164711e9e28e52e9a07e352d71618326199975f9fc815"
+      }
+    ]
+  },
+  "snapshot_fingerprint": "9a8ab6c471e1c5df036b502ea229dc173cbd1050980aac97b79acc2f3f56a281",
+  "source_fingerprints": {
+    "adapter": "04aacc1ebf58a9f353a995d350be8d663fc89ffa97ad0dd45dc5f91b165f27a8",
+    "base": "e43d3a07b5fe47db7abcc07a9b6a318dd32d9a2fa12f620c2e734573bf9fe5eb",
+    "embedding_delta": "63a4ca8bd66a0552080de2eb26ec53120c9ac0a12021e4fff05b49abd61cbd9f"
+  },
+  "status": "passed",
+  "target_dtype": "fp32",
+  "thresholds": {
+    "full_vocab": {
+      "atol": 0.005,
+      "rtol": 0.0001
+    },
+    "selected_vocab": {
+      "atol": 0.002,
+      "rtol": 0.0001
+    }
+  },
+  "version": "coordexp-swift-execution-model-composition-v1"
+}

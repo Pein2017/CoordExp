@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import gc
 import hashlib
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from importlib import metadata
@@ -27,6 +28,9 @@ from src.inference.backend import (
     DecodeResult,
     LikelihoodPair,
     TokenTrace,
+    cuda_peak_memory_snapshot,
+    synchronize_cuda_for_timing,
+    update_decode_performance_receipt,
     validate_decode_results,
 )
 from src.qwen.images import apply_logical_image_transform, rgb_image_sha256
@@ -88,6 +92,8 @@ class HFBackendSession:
                 code="hf_backend.duplicate_request_id",
                 context={"request_ids": request_ids},
             )
+        synchronize_cuda_for_timing(torch)
+        started_at = time.perf_counter()
         results: list[DecodeResult] = []
         for offset in range(0, len(checked), self._launch.batch_size):
             results.extend(
@@ -95,11 +101,22 @@ class HFBackendSession:
                     checked[offset : offset + self._launch.batch_size]
                 )
             )
-        return validate_decode_results(
+        validated = validate_decode_results(
             requests=checked,
             results=results,
             receipt=self.receipt,
         )
+        synchronize_cuda_for_timing(torch)
+        allocated, reserved = cuda_peak_memory_snapshot(torch)
+        self._receipt = update_decode_performance_receipt(
+            self._receipt,
+            request_count=len(checked),
+            generated_token_count=sum(len(result.generated_token_ids) for result in validated),
+            elapsed_seconds=time.perf_counter() - started_at,
+            peak_cuda_memory_allocated_bytes=allocated,
+            peak_cuda_memory_reserved_bytes=reserved,
+        )
+        return validated
 
     def close(self) -> None:
         if self._closed:

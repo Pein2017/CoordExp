@@ -52,6 +52,11 @@ def prepare_backend_launch(
     """Project strict config into a serializable backend launch contract."""
 
     execution_identity = None if execution_model is None else dict(execution_model)
+    if config.backend.type == "hf" and execution_identity is not None:
+        raise RuntimeContractError(
+            "HF inference must use the configured dynamic base, adapter, and embedding delta",
+            code="inference.hf_execution_model_forbidden",
+        )
     model_path = config.model.base_model
     if execution_identity is not None:
         candidate = execution_identity.get("model_path") or execution_identity.get(
@@ -81,6 +86,18 @@ def prepare_backend_launch(
             raise RuntimeContractError(
                 "composed vLLM inference requires a resolved execution model",
                 code="inference.execution_model_required",
+            )
+        if (
+            execution_identity is not None
+            and execution_identity.get("mode") == "materialized"
+            and not isinstance(execution_identity.get("composition_fidelity"), Mapping)
+        ):
+            raise RuntimeContractError(
+                "materialized vLLM inference requires a bound composition-fidelity receipt",
+                code="inference.execution_model_composition_fidelity_required",
+                context={
+                    "composition_key": execution_identity.get("composition_key")
+                },
             )
         backend_options = {"vllm": config.backend.vllm.model_dump(mode="json")}
         adapter = None

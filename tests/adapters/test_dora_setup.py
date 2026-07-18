@@ -54,6 +54,9 @@ def test_execution_dora_identity_is_path_independent_and_binds_payload(
     assert identity["root"] != copied["root"]
     assert identity["semantic_identity"]["peft_type"] == "LORA"
     assert identity["tensor_manifest"]["lora_magnitude_vector_count"] == 1
+    assert identity["tensor_manifest"]["target_names"] == [
+        "model.language_model.q_proj"
+    ]
 
     tensors_path = copied_dir / "adapter_model.safetensors"
     with safe_open(str(tensors_path), framework="pt", device="cpu") as handle:
@@ -83,10 +86,15 @@ def test_merge_dora_adapter_for_execution_is_frozen_safe_and_residue_free(
     assert receipt["load"]["trainable_parameter_count"] == 0
     assert receipt["load"]["status"]["active_adapters"] == ["default"]
     assert receipt["load"]["status"]["merged_adapters"] == []
-    assert receipt["merge"] == {
-        "safe_merge": True,
-        "adapter_names": ["default"],
-    }
+    assert receipt["merge"]["safe_merge"] is True
+    assert receipt["merge"]["adapter_names"] == ["default"]
+    weight_identity = receipt["merge"]["target_weight_identity"]
+    assert weight_identity["target_count"] == 1
+    assert weight_identity["targets"][0]["target_name"] == (
+        "model.language_model.q_proj"
+    )
+    assert weight_identity["targets"][0]["dtype"] == "torch.float32"
+    assert len(weight_identity["fingerprint"]) == 64
     assert not any(receipt["residue"].values())
     assert not hasattr(merged, "peft_config")
     assert all(not parameter.requires_grad for parameter in merged.parameters())

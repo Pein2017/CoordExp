@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -43,6 +44,70 @@ REQUIRED_SHARD_ARTIFACTS = {
     SUMMARY_NAME,
     MANIFEST_NAME,
 }
+
+
+def test_backend_session_merge_aggregates_rank_decode_performance() -> None:
+    from src.inference.merge import (
+        _backend_session_semantic_identity,
+        _merge_backend_sessions,
+    )
+
+    base = {
+        "backend": "vllm",
+        "effective_settings": {"batch_size": 4},
+    }
+    sessions = [
+        {
+            **base,
+            "effective_settings": {
+                **base["effective_settings"],
+                "performance": {
+                    "measurement_scope": "backend_decode_including_native_media_projection",
+                    "request_count": 5,
+                    "generated_token_count": 20,
+                    "decode_elapsed_seconds": 2.0,
+                    "requests_per_second": 2.5,
+                    "generated_tokens_per_second": 10.0,
+                    "peak_cuda_memory_allocated_bytes": 100,
+                    "peak_cuda_memory_reserved_bytes": 120,
+                },
+            },
+        },
+        {
+            **base,
+            "effective_settings": {
+                **base["effective_settings"],
+                "performance": {
+                    "measurement_scope": "backend_decode_including_native_media_projection",
+                    "request_count": 7,
+                    "generated_token_count": 35,
+                    "decode_elapsed_seconds": 2.5,
+                    "requests_per_second": 2.8,
+                    "generated_tokens_per_second": 14.0,
+                    "peak_cuda_memory_allocated_bytes": 110,
+                    "peak_cuda_memory_reserved_bytes": 130,
+                },
+            },
+        },
+    ]
+    semantic = _backend_session_semantic_identity(sessions[0])
+
+    merged = _merge_backend_sessions(
+        semantic_session=semantic,
+        shard_sessions=sessions,
+        raw_replay_trace=[],
+        raw_replay_required=False,
+    )
+
+    performance = merged["effective_settings"]["performance"]
+    assert performance["rank_count"] == 2
+    assert performance["request_count"] == 12
+    assert performance["generated_token_count"] == 55
+    assert performance["parallel_decode_wall_seconds_max"] == pytest.approx(2.5)
+    assert performance["requests_per_second"] == pytest.approx(4.8)
+    assert performance["generated_tokens_per_second"] == pytest.approx(22.0)
+    assert performance["peak_cuda_memory_allocated_bytes_per_rank_max"] == 110
+    assert performance["peak_cuda_memory_reserved_bytes_per_rank_max"] == 130
 
 
 def test_rank_local_shard_dirs_contain_complete_scored_artifact_family(tmp_path: Path) -> None:
@@ -89,6 +154,9 @@ def test_strict_merge_restores_original_order_and_regenerates_bound_provenance(t
     assert all("assigned_parent_visible_device_token" in row for row in token_trace_rows)
     assert {row["rank"] for row in diagnostic_rows} == {0, 1}
     assert "rank" not in scored_rows[0]
+    assert [row["row_id"] for row in provenance["prompt_trace"]] == list(row_ids)
+    assert manifest["prompt_trace"] == provenance["prompt_trace"]
+    assert provenance["raw_replay_trace"] == []
 
     assert provenance["raw_artifact"]["path"] == RAW_NAME
     assert provenance["scored_artifact"]["path"] == SCORED_NAME
@@ -174,6 +242,112 @@ def test_strict_merge_preserves_raw_likelihood_while_scores_remain_policy_owned(
     assert all(row["pred"][0]["score"] == pytest.approx(0.25) for row in scored)
 
 
+def test_strict_merge_aggregates_vllm_raw_replay_receipts_in_row_order(
+    tmp_path: Path,
+) -> None:
+    from src.inference.merge import merge_shard_artifacts
+
+    row_ids = ("row-0", "row-1")
+    plan = _plan(row_ids)
+    shard_dirs = _write_plan_shards(
+        tmp_path,
+        plan,
+        raw_model_logprob_enabled=True,
+    )
+    execution_identity = {"snapshot_fingerprint": "execution-fp"}
+    for shard_dir in shard_dirs:
+        _rewrite_shard_as_vllm_raw_replay(
+            shard_dir,
+            execution_model_identity=execution_identity,
+        )
+    metadata = _merge_metadata(plan, raw_model_logprob_enabled=True)
+    metadata.update(
+        {
+            "backend": "vllm",
+            "backend_mode": "offline",
+            "response_family": "vllm",
+            "backend_session": {},
+            "execution_model_identity": {},
+        }
+    )
+
+    paths = merge_shard_artifacts(
+        output_dir=tmp_path,
+        shard_dirs=tuple(reversed(shard_dirs)),
+        expected_row_ids=row_ids,
+        metadata=metadata,
+        plan=plan,
+    )
+
+    manifest = _read_json(paths.run_manifest_json)
+    provenance = _read_json(paths.provenance_json)
+    assert [row["row_id"] for row in manifest["raw_replay_trace"]] == list(row_ids)
+    assert manifest["raw_replay_trace"] == provenance["raw_replay_trace"]
+    raw_receipt = manifest["backend_session"]["effective_settings"]["raw_replay"]
+    assert raw_receipt["request_count"] == 2
+    assert raw_receipt["row_evidence_sha256"] == _sha256_json(
+        {
+            row["row_id"]: {
+                key: value for key, value in row.items() if key != "row_id"
+            }
+            for row in manifest["raw_replay_trace"]
+        }
+    )
+
+
+def test_strict_merge_rejects_missing_or_disagreeing_prompt_trace(tmp_path: Path) -> None:
+    row_ids = ("row-0", "row-1", "row-2", "row-3")
+    _assert_merge_failure(
+        tmp_path / "missing-prompt-trace",
+        row_ids=row_ids,
+        mutate=lambda shard_dirs, plan: [
+            _rewrite_json(
+                shard_dirs[0] / artifact_name,
+                lambda payload: {**payload, "prompt_trace": []},
+            )
+            for artifact_name in (MANIFEST_NAME, PROVENANCE_NAME)
+        ],
+        expected_code="merge.runtime_trace_assignment_mismatch",
+    )
+    _assert_merge_failure(
+        tmp_path / "disagreeing-prompt-trace",
+        row_ids=row_ids,
+        mutate=lambda shard_dirs, plan: _rewrite_json(
+            shard_dirs[0] / MANIFEST_NAME,
+            lambda payload: {**payload, "prompt_trace": []},
+        ),
+        expected_code="merge.runtime_trace_surface_mismatch",
+    )
+
+
+def test_strict_merge_rejects_backend_session_surface_disagreement(tmp_path: Path) -> None:
+    row_ids = ("row-0", "row-1", "row-2", "row-3")
+    _assert_merge_failure(
+        tmp_path / "missing-backend-session",
+        row_ids=row_ids,
+        mutate=lambda shard_dirs, plan: _rewrite_json(
+            shard_dirs[0] / MANIFEST_NAME,
+            lambda payload: {**payload, "backend_session": {}},
+        ),
+        expected_code="merge.backend_session_surface_missing",
+    )
+    _assert_merge_failure(
+        tmp_path / "disagreeing-backend-session",
+        row_ids=row_ids,
+        mutate=lambda shard_dirs, plan: _rewrite_json(
+            shard_dirs[0] / MANIFEST_NAME,
+            lambda payload: {
+                **payload,
+                "backend_session": {
+                    **payload["backend_session"],
+                    "backend_version": "different",
+                },
+            },
+        ),
+        expected_code="merge.backend_session_surface_mismatch",
+    )
+
+
 def test_strict_merge_rejects_missing_duplicate_order_failed_worker_and_identity_mismatches(
     tmp_path: Path,
 ) -> None:
@@ -235,9 +409,9 @@ def test_strict_merge_rejects_missing_duplicate_order_failed_worker_and_identity
             shard_dirs[1] / MANIFEST_NAME,
             lambda payload: {**payload, "model_identity_fingerprint": "different-model"},
         ),
-        expected_code="merge.identity_mismatch",
+        expected_code="merge.semantic_surface_mismatch",
     )
-    assert result.context["field"] == "model_identity_fingerprint"
+    assert result.context["fields"] == ["model_identity_fingerprint"]
     result = _assert_merge_failure(
         tmp_path / "backend-session-identity",
         row_ids=row_ids,
@@ -251,9 +425,9 @@ def test_strict_merge_rejects_missing_duplicate_order_failed_worker_and_identity
                     },
                 },
         ),
-        expected_code="merge.identity_mismatch",
+        expected_code="merge.backend_session_surface_mismatch",
     )
-    assert result.context["field"] == "backend_session"
+    assert result.context["rank"] == 1
     _assert_merge_failure(
         tmp_path / "controller-identity",
         row_ids=row_ids,
@@ -378,7 +552,50 @@ def test_strict_merge_rejects_collectively_missing_semantic_identity(
             _drop_identity_field(shard_dir, field=field)
             for shard_dir in shard_dirs
         ],
-        expected_code="merge.semantic_identity_incomplete",
+        expected_code=(
+            "merge.backend_session_surface_missing"
+            if field == "backend_session"
+            else "merge.semantic_surface_missing"
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "field",
+    (
+        "adapter_identity",
+        "embedding_delta_identity",
+        "execution_model_identity",
+        "frontend_identity",
+        "generation_config_fingerprint",
+        "generation_policy",
+        "likelihood_semantics",
+        "media_identity",
+        "model_identity",
+        "model_identity_fingerprint",
+        "parallelism",
+        "parser_policy",
+        "processor_identity",
+        "processor_identity_fingerprint",
+        "prompt_policy_fingerprint",
+        "raw_model_logprob_status",
+        "score_policy_fingerprint",
+        "template_identity",
+        "tokenizer_identity",
+    ),
+)
+def test_strict_merge_rejects_manifest_provenance_semantic_disagreement(
+    tmp_path: Path,
+    field: str,
+) -> None:
+    _assert_merge_failure(
+        tmp_path / field,
+        row_ids=("row-0", "row-1"),
+        mutate=lambda shard_dirs, plan: _rewrite_json(
+            shard_dirs[0] / PROVENANCE_NAME,
+            lambda payload: {**payload, field: {"drift": field}},
+        ),
+        expected_code="merge.semantic_surface_mismatch",
     )
 
 
@@ -899,6 +1116,63 @@ def _rewrite_shard_as_vllm(
         _rewrite_json(shard_dir / artifact_name, rewrite)
 
 
+def _rewrite_shard_as_vllm_raw_replay(
+    shard_dir: Path,
+    *,
+    execution_model_identity: dict[str, Any],
+) -> None:
+    _rewrite_shard_as_vllm(
+        shard_dir,
+        execution_model_identity=execution_model_identity,
+    )
+
+    def rewrite(payload: dict[str, Any]) -> dict[str, Any]:
+        row_ids = [row["row_id"] for row in payload["prompt_trace"]]
+        raw_replay_trace = [
+            {
+                "row_id": row_id,
+                "status": "verified",
+                "prompt_token_count": 4,
+                "prompt_token_ids_sha256": hashlib.sha256(
+                    f"executed:{row_id}".encode()
+                ).hexdigest(),
+                "generated_token_count": 9,
+                "generated_token_ids_sha256": hashlib.sha256(
+                    f"generated:{row_id}".encode()
+                ).hexdigest(),
+                "finish_reason": "stop",
+                "native_stop_reason": None,
+            }
+            for row_id in row_ids
+        ]
+        backend_session = dict(payload["backend_session"])
+        effective_settings = dict(backend_session.get("effective_settings") or {})
+        effective_settings["raw_replay"] = {
+            "status": "completed",
+            "logprobs_mode": "raw_logprobs",
+            "max_num_seqs": 1,
+            "forced_logits_processor": {"source_sha256": "f" * 64},
+            "request_count": len(raw_replay_trace),
+            "row_evidence_sha256": _sha256_json(
+                {
+                    row["row_id"]: {
+                        key: value for key, value in row.items() if key != "row_id"
+                    }
+                    for row in raw_replay_trace
+                }
+            ),
+        }
+        backend_session["effective_settings"] = effective_settings
+        return {
+            **payload,
+            "backend_session": backend_session,
+            "raw_replay_trace": raw_replay_trace,
+        }
+
+    for artifact_name in (MANIFEST_NAME, PROVENANCE_NAME):
+        _rewrite_json(shard_dir / artifact_name, rewrite)
+
+
 def _shard_metadata(
     *,
     plan: DataParallelPlan,
@@ -926,7 +1200,25 @@ def _shard_metadata(
             "assigned_row_ids": list(rank_plan.row_ids),
         },
     }
+    metadata["prompt_trace"] = [
+        _prompt_trace_row(row_id) for row_id in rank_plan.row_ids
+    ]
     return metadata
+
+
+def _prompt_trace_row(row_id: str) -> dict[str, Any]:
+    input_digest = hashlib.sha256(f"input:{row_id}".encode()).hexdigest()
+    executed_digest = hashlib.sha256(f"executed:{row_id}".encode()).hexdigest()
+    return {
+        "row_id": row_id,
+        "input_prompt_token_count": 2,
+        "input_prompt_token_ids_sha256": input_digest,
+        "expected_executed_prompt_token_count": 4,
+        "expected_executed_prompt_token_ids_sha256": executed_digest,
+        "backend_executed_prompt_token_count": 4,
+        "backend_executed_prompt_token_ids_sha256": executed_digest,
+        "prompt_token_parity": "verified",
+    }
 
 
 def _merge_metadata(
@@ -972,6 +1264,12 @@ def _rewrite_json(path: Path, transform: Any) -> None:
         json.dumps(transform(_read_json(path)), sort_keys=True, indent=2) + "\n",
         encoding="utf-8",
     )
+
+
+def _sha256_json(payload: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
 
 
 def _rewrite_manifest_parallelism(shard_dir: Path, transform: Any) -> None:

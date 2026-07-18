@@ -1,0 +1,17 @@
+extends: qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200.yaml
+run:
+  name: qwen3-vl-2b-desc-first-geo-sorted-pure-ce-typegate-dora-r16a32-step4887-val200-vllm
+backend:
+  type: vllm
+  vllm:
+    gpu_memory_utilization: 0.70
+data:
+  input_jsonl: ../../../outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl
+generation:
+  batch_size: 4
+  max_new_tokens: 512
+  temperature: 0.0
+  top_p: 1.0
+  repetition_penalty: 1.10
+scoring:
+  enabled: true

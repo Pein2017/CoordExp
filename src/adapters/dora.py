@@ -331,6 +331,10 @@ def merge_dora_adapter_for_execution(
             code="adapter.execution_merge_residue",
             context=residue,
         )
+    target_weight_identity = inspect_merged_dora_target_weights(
+        merged_model,
+        tuple(identity["tensor_manifest"]["target_names"]),
+    )
     return merged_model, {
         "status": "merged",
         "adapter_name": adapter_name,
@@ -341,8 +345,68 @@ def merge_dora_adapter_for_execution(
             "trainable_parameter_count": 0,
             "status": status_receipt.to_artifact_dict(),
         },
-        "merge": {"safe_merge": True, "adapter_names": [adapter_name]},
+        "merge": {
+            "safe_merge": True,
+            "adapter_names": [adapter_name],
+            "target_weight_identity": target_weight_identity,
+        },
         "residue": residue,
+    }
+
+
+def inspect_merged_dora_target_weights(
+    model: nn.Module,
+    target_names: tuple[str, ...] | list[str],
+) -> dict[str, Any]:
+    """Content-address the executable weights owned by one merged adapter."""
+
+    normalized_targets = tuple(str(item) for item in target_names)
+    if not normalized_targets or len(set(normalized_targets)) != len(
+        normalized_targets
+    ):
+        raise RuntimeContractError(
+            "merged DoRA target names must be non-empty and unique",
+            code="adapter.execution_target_identity_invalid",
+            context={"target_names": list(normalized_targets)},
+        )
+    modules = dict(model.named_modules())
+    records: list[dict[str, Any]] = []
+    missing: list[str] = []
+    for target_name in sorted(normalized_targets):
+        module = modules.get(target_name)
+        if module is None:
+            missing.append(target_name)
+            continue
+        base_layer = (
+            module.get_base_layer()
+            if callable(getattr(module, "get_base_layer", None))
+            else module
+        )
+        weight = getattr(base_layer, "weight", None)
+        if not isinstance(weight, torch.Tensor):
+            raise RuntimeContractError(
+                "merged DoRA target does not expose a tensor weight",
+                code="adapter.execution_target_weight_missing",
+                context={"target_name": target_name},
+            )
+        records.append(
+            {
+                "target_name": target_name,
+                "shape": list(weight.shape),
+                "dtype": str(weight.dtype),
+                "sha256": _sha256_tensor(weight),
+            }
+        )
+    if missing:
+        raise RuntimeContractError(
+            "merged model is missing DoRA target modules from the adapter payload",
+            code="adapter.execution_target_missing",
+            context={"missing_target_names": missing},
+        )
+    return {
+        "target_count": len(records),
+        "targets": records,
+        "fingerprint": _sha256_json(records),
     }
 
 
@@ -1249,6 +1313,10 @@ def _inspect_dora_tensor_payloads(
     return {
         "tensor_key_count": len(tensor_records),
         "target_count": target_count,
+        "target_names": sorted(
+            _execution_dora_model_target_name(target)
+            for target in tensors_by_target
+        ),
         "lora_A_count": target_count,
         "lora_B_count": target_count,
         "lora_magnitude_vector_count": target_count,
@@ -1267,6 +1335,18 @@ def _execution_dora_tensor_target_and_kind(
         if marker in key:
             return key.split(marker, 1)[0], kind
     return None, None
+
+
+def _execution_dora_model_target_name(payload_target: str) -> str:
+    prefix = "base_model.model."
+    if payload_target.startswith(prefix):
+        return payload_target[len(prefix) :]
+    return payload_target
+
+
+def _sha256_tensor(value: torch.Tensor) -> str:
+    tensor = value.detach().cpu().contiguous().view(torch.uint8)
+    return hashlib.sha256(memoryview(tensor.numpy())).hexdigest()
 
 
 def _execution_adapter_residue(model: nn.Module) -> dict[str, list[str]]:

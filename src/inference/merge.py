@@ -160,8 +160,9 @@ def merge_identity_vector(
         "tokenizer_identity": manifest.get("tokenizer_identity"),
         "adapter_identity": manifest.get("adapter_identity"),
         "embedding_delta_identity": manifest.get("embedding_delta_identity"),
-        "backend_session": manifest.get("backend_session")
-        or provenance.get("backend_session"),
+        "backend_session": _backend_session_semantic_identity(
+            manifest.get("backend_session") or provenance.get("backend_session")
+        ),
         "likelihood_semantics": manifest.get("likelihood_semantics")
         or provenance.get("likelihood_semantics"),
         "execution_model_identity": (
@@ -191,6 +192,29 @@ def merge_identity_vector(
     }
 
 
+_DUPLICATED_SEMANTIC_SURFACE_FIELDS = (
+    "adapter_identity",
+    "embedding_delta_identity",
+    "execution_model_identity",
+    "frontend_identity",
+    "generation_config_fingerprint",
+    "generation_policy",
+    "likelihood_semantics",
+    "media_identity",
+    "model_identity",
+    "model_identity_fingerprint",
+    "parallelism",
+    "parser_policy",
+    "processor_identity",
+    "processor_identity_fingerprint",
+    "prompt_policy_fingerprint",
+    "raw_model_logprob_status",
+    "score_policy_fingerprint",
+    "template_identity",
+    "tokenizer_identity",
+)
+
+
 def fingerprint_merge_identity_vector(vector: dict[str, Any]) -> str:
     return _sha256_json(vector)
 
@@ -214,6 +238,9 @@ def _merge_shard_artifacts(
     token_trace_rows: list[dict[str, Any]] = []
     diagnostic_rows: list[dict[str, Any]] = []
     image_plan_rows: list[dict[str, Any]] = []
+    prompt_trace_rows: list[dict[str, Any]] = []
+    raw_replay_trace_rows: list[dict[str, Any]] = []
+    backend_sessions: list[dict[str, Any]] = []
     shard_evidence: list[ShardEvidence] = []
     identity: dict[str, Any] | None = None
     expected_ranks = {rank_plan.rank for rank_plan in plan.ranks}
@@ -261,6 +288,9 @@ def _merge_shard_artifacts(
         token_trace_rows.extend(shard["token_trace_rows"])
         diagnostic_rows.extend(shard["diagnostic_rows"])
         image_plan_rows.extend(shard["image_plan_rows"])
+        prompt_trace_rows.extend(shard["prompt_trace"])
+        raw_replay_trace_rows.extend(shard["raw_replay_trace"])
+        backend_sessions.append(shard["backend_session"])
         shard_evidence.append(
             ShardEvidence(
                 rank=rank,
@@ -348,6 +378,34 @@ def _merge_shard_artifacts(
         expected_index_by_row_id=expected_index_by_row_id,
         artifact_name=PARSE_DIAGNOSTICS_NAME,
     )
+    prompt_trace_rows = _validate_and_sort_runtime_trace(
+        rows=prompt_trace_rows,
+        expected_row_ids=expected_row_ids,
+        expected_index_by_row_id=expected_index_by_row_id,
+        trace_name="prompt_trace",
+        required=True,
+    )
+    _validate_prompt_trace(prompt_trace_rows)
+    raw_replay_required = (
+        metadata.get("backend") == "vllm"
+        and metadata.get("raw_model_logprob_status") == "available"
+    )
+    raw_replay_trace_rows = _validate_and_sort_runtime_trace(
+        rows=raw_replay_trace_rows,
+        expected_row_ids=expected_row_ids,
+        expected_index_by_row_id=expected_index_by_row_id,
+        trace_name="raw_replay_trace",
+        required=raw_replay_required,
+    )
+    _validate_raw_replay_trace(raw_replay_trace_rows)
+    metadata["prompt_trace"] = prompt_trace_rows
+    metadata["raw_replay_trace"] = raw_replay_trace_rows
+    metadata["backend_session"] = _merge_backend_sessions(
+        semantic_session=dict(metadata.get("backend_session") or {}),
+        shard_sessions=backend_sessions,
+        raw_replay_trace=raw_replay_trace_rows,
+        raw_replay_required=raw_replay_required,
+    )
 
     paths = _paths(output_dir)
     staging_dir = Path(tempfile.mkdtemp(prefix=".merge-artifacts-", dir=output_dir))
@@ -384,7 +442,8 @@ def _merge_shard_artifacts(
         )
         _write_json(staged.provenance_json, provenance)
         summary = _merged_summary(
-            rows=scored_rows,
+            raw_rows=raw_rows,
+            scored_rows=scored_rows,
             token_trace_rows=token_trace_rows,
             diagnostic_rows=diagnostic_rows,
             metadata=metadata,
@@ -486,11 +545,58 @@ def _load_validated_shard(
         worker_metadata=worker_metadata,
         rank_plan=_rank_plan_for(plan=plan, rank=rank),
     )
+    _require_matching_semantic_surfaces(
+        manifest=manifest,
+        provenance=provenance,
+        rank=rank,
+    )
+    backend_session = _matching_backend_session_surface(
+        manifest=manifest,
+        provenance=provenance,
+        rank=rank,
+    )
     identity = merge_identity_vector(manifest=manifest, provenance=provenance)
     _require_complete_shard_identity(
         manifest=manifest,
         provenance=provenance,
         identity=identity,
+        rank=rank,
+    )
+    prompt_trace = _matching_runtime_trace_surface(
+        manifest=manifest,
+        provenance=provenance,
+        field="prompt_trace",
+        rank=rank,
+    )
+    raw_replay_trace = _matching_runtime_trace_surface(
+        manifest=manifest,
+        provenance=provenance,
+        field="raw_replay_trace",
+        rank=rank,
+    )
+    rank_plan = _rank_plan_for(plan=plan, rank=rank)
+    _require_runtime_trace_assignment(
+        rows=prompt_trace,
+        expected_row_ids=rank_plan.row_ids,
+        field="prompt_trace",
+        rank=rank,
+        required=True,
+    )
+    raw_replay_required = (
+        identity.get("backend") == "vllm"
+        and identity.get("raw_model_logprob_status") == "available"
+    )
+    _require_runtime_trace_assignment(
+        rows=raw_replay_trace,
+        expected_row_ids=rank_plan.row_ids,
+        field="raw_replay_trace",
+        rank=rank,
+        required=raw_replay_required,
+    )
+    _validate_shard_raw_replay_receipt(
+        backend_session=backend_session,
+        raw_replay_trace=raw_replay_trace,
+        required=raw_replay_required,
         rank=rank,
     )
     return {
@@ -513,7 +619,40 @@ def _load_validated_shard(
             worker_metadata=worker_metadata,
         ),
         "image_plan_rows": image_plan_rows,
+        "prompt_trace": prompt_trace,
+        "raw_replay_trace": raw_replay_trace,
+        "backend_session": backend_session,
     }
+
+
+def _require_matching_semantic_surfaces(
+    *,
+    manifest: dict[str, Any],
+    provenance: dict[str, Any],
+    rank: int,
+) -> None:
+    missing = [
+        field
+        for field in _DUPLICATED_SEMANTIC_SURFACE_FIELDS
+        if field not in manifest or field not in provenance
+    ]
+    if missing:
+        raise ArtifactContractError(
+            "rank-local semantic identity must exist in manifest and provenance",
+            code="merge.semantic_surface_missing",
+            context={"rank": rank, "fields": missing},
+        )
+    mismatched = [
+        field
+        for field in _DUPLICATED_SEMANTIC_SURFACE_FIELDS
+        if manifest[field] != provenance[field]
+    ]
+    if mismatched:
+        raise ArtifactContractError(
+            "rank-local semantic identity disagrees between manifest and provenance",
+            code="merge.semantic_surface_mismatch",
+            context={"rank": rank, "fields": mismatched},
+        )
 
 
 def _require_complete_shard_identity(
@@ -571,6 +710,443 @@ def _require_complete_shard_identity(
                 "invalid_fields": sorted(set(invalid)),
             },
         )
+
+
+def _backend_session_semantic_identity(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    session = _json_safe(value)
+    effective_settings = session.get("effective_settings")
+    if isinstance(effective_settings, dict):
+        effective_settings.pop("performance", None)
+        raw_replay = effective_settings.get("raw_replay")
+        if isinstance(raw_replay, dict):
+            raw_replay = dict(raw_replay)
+            raw_replay.pop("request_count", None)
+            raw_replay.pop("row_evidence_sha256", None)
+            effective_settings["raw_replay"] = raw_replay
+    return session
+
+
+def _matching_runtime_trace_surface(
+    *,
+    manifest: dict[str, Any],
+    provenance: dict[str, Any],
+    field: str,
+    rank: int,
+) -> list[dict[str, Any]]:
+    manifest_value = manifest.get(field, [])
+    provenance_value = provenance.get(field, [])
+    if manifest_value != provenance_value:
+        raise ArtifactContractError(
+            "rank-local runtime trace disagrees between manifest and provenance",
+            code="merge.runtime_trace_surface_mismatch",
+            context={"rank": rank, "field": field},
+        )
+    if not isinstance(manifest_value, list):
+        raise ArtifactContractError(
+            "rank-local runtime trace must be a JSON list",
+            code="merge.invalid_runtime_trace",
+            context={"rank": rank, "field": field},
+        )
+    rows: list[dict[str, Any]] = []
+    for position, row in enumerate(manifest_value):
+        if not isinstance(row, dict):
+            raise ArtifactContractError(
+                "rank-local runtime trace rows must be JSON objects",
+                code="merge.invalid_runtime_trace",
+                context={"rank": rank, "field": field, "row_position": position},
+            )
+        rows.append(dict(row))
+    return rows
+
+
+def _matching_backend_session_surface(
+    *,
+    manifest: dict[str, Any],
+    provenance: dict[str, Any],
+    rank: int,
+) -> dict[str, Any]:
+    manifest_value = manifest.get("backend_session")
+    provenance_value = provenance.get("backend_session")
+    if (
+        not isinstance(manifest_value, dict)
+        or not manifest_value
+        or not isinstance(provenance_value, dict)
+        or not provenance_value
+    ):
+        raise ArtifactContractError(
+            "rank-local backend session must be present in manifest and provenance",
+            code="merge.backend_session_surface_missing",
+            context={"rank": rank},
+        )
+    if manifest_value != provenance_value:
+        raise ArtifactContractError(
+            "rank-local backend session disagrees between manifest and provenance",
+            code="merge.backend_session_surface_mismatch",
+            context={"rank": rank},
+        )
+    return dict(manifest_value)
+
+
+def _require_runtime_trace_assignment(
+    *,
+    rows: list[dict[str, Any]],
+    expected_row_ids: tuple[str, ...],
+    field: str,
+    rank: int,
+    required: bool,
+) -> None:
+    if not rows and not required:
+        return
+    observed = [
+        _require_artifact_str(
+            row.get("row_id"),
+            artifact_name=MANIFEST_NAME,
+            field=f"{field}[{position}].row_id",
+            row_position=position,
+        )
+        for position, row in enumerate(rows)
+    ]
+    if observed != list(expected_row_ids):
+        raise ArtifactContractError(
+            "rank-local runtime trace does not exactly cover its assigned rows",
+            code="merge.runtime_trace_assignment_mismatch",
+            context={
+                "rank": rank,
+                "field": field,
+                "expected_row_ids": list(expected_row_ids),
+                "observed_row_ids": observed,
+            },
+        )
+
+
+def _validate_shard_raw_replay_receipt(
+    *,
+    backend_session: dict[str, Any],
+    raw_replay_trace: list[dict[str, Any]],
+    required: bool,
+    rank: int,
+) -> None:
+    effective_settings = backend_session.get("effective_settings")
+    raw_replay = (
+        effective_settings.get("raw_replay")
+        if isinstance(effective_settings, dict)
+        else None
+    )
+    if not required:
+        if raw_replay_trace:
+            raise ArtifactContractError(
+                "raw replay evidence is present when the backend contract does not require it",
+                code="merge.unexpected_raw_replay_trace",
+                context={"rank": rank},
+            )
+        return
+    if not isinstance(raw_replay, dict) or raw_replay.get("status") != "completed":
+        raise ArtifactContractError(
+            "vLLM raw likelihood is missing its completed replay receipt",
+            code="merge.raw_replay_receipt_missing",
+            context={"rank": rank},
+        )
+    if raw_replay.get("request_count") != len(raw_replay_trace):
+        raise ArtifactContractError(
+            "vLLM raw replay request count disagrees with row evidence",
+            code="merge.raw_replay_receipt_mismatch",
+            context={
+                "rank": rank,
+                "expected": len(raw_replay_trace),
+                "observed": raw_replay.get("request_count"),
+            },
+        )
+    expected_hash = _sha256_json(_raw_replay_trace_mapping(raw_replay_trace))
+    if raw_replay.get("row_evidence_sha256") != expected_hash:
+        raise ArtifactContractError(
+            "vLLM raw replay receipt hash disagrees with row evidence",
+            code="merge.raw_replay_receipt_mismatch",
+            context={
+                "rank": rank,
+                "expected": expected_hash,
+                "observed": raw_replay.get("row_evidence_sha256"),
+            },
+        )
+
+
+def _validate_and_sort_runtime_trace(
+    *,
+    rows: list[dict[str, Any]],
+    expected_row_ids: tuple[str, ...],
+    expected_index_by_row_id: dict[str, int],
+    trace_name: str,
+    required: bool,
+) -> list[dict[str, Any]]:
+    if not rows and not required:
+        return []
+    observed: dict[str, dict[str, Any]] = {}
+    for position, row in enumerate(rows):
+        row_id = _require_artifact_str(
+            row.get("row_id"),
+            artifact_name=MANIFEST_NAME,
+            field=f"{trace_name}[{position}].row_id",
+            row_position=position,
+        )
+        if row_id in observed:
+            raise ArtifactContractError(
+                "merged runtime trace contains duplicate row evidence",
+                code="merge.duplicate_runtime_trace",
+                context={"field": trace_name, "row_id": row_id},
+            )
+        if row_id not in expected_index_by_row_id:
+            raise ArtifactContractError(
+                "merged runtime trace contains an unknown row id",
+                code="merge.unknown_runtime_trace_row",
+                context={"field": trace_name, "row_id": row_id},
+            )
+        observed[row_id] = row
+    missing = [row_id for row_id in expected_row_ids if row_id not in observed]
+    if missing:
+        raise ArtifactContractError(
+            "merged runtime trace is missing row evidence",
+            code="merge.missing_runtime_trace_row",
+            context={"field": trace_name, "missing_row_ids": missing},
+        )
+    return [observed[row_id] for row_id in expected_row_ids]
+
+
+def _validate_prompt_trace(rows: list[dict[str, Any]]) -> None:
+    for row in rows:
+        row_id = str(row["row_id"])
+        if row.get("prompt_token_parity") != "verified":
+            raise ArtifactContractError(
+                "prompt trace is not parity verified",
+                code="merge.prompt_trace_mismatch",
+                context={"row_id": row_id},
+            )
+        for prefix in ("input", "expected_executed", "backend_executed"):
+            count = row.get(f"{prefix}_prompt_token_count")
+            if not isinstance(count, int) or isinstance(count, bool) or count <= 0:
+                raise ArtifactContractError(
+                    "prompt trace token count must be a positive integer",
+                    code="merge.invalid_prompt_trace",
+                    context={"row_id": row_id, "field": f"{prefix}_prompt_token_count"},
+                )
+            _require_sha256(
+                row.get(f"{prefix}_prompt_token_ids_sha256"),
+                code="merge.invalid_prompt_trace",
+                context={"row_id": row_id, "field": f"{prefix}_prompt_token_ids_sha256"},
+            )
+        if (
+            row["expected_executed_prompt_token_count"]
+            != row["backend_executed_prompt_token_count"]
+            or row["expected_executed_prompt_token_ids_sha256"]
+            != row["backend_executed_prompt_token_ids_sha256"]
+        ):
+            raise ArtifactContractError(
+                "prompt trace expected and backend-executed identities disagree",
+                code="merge.prompt_trace_mismatch",
+                context={"row_id": row_id},
+            )
+
+
+def _validate_raw_replay_trace(rows: list[dict[str, Any]]) -> None:
+    for row in rows:
+        row_id = str(row["row_id"])
+        if row.get("status") != "verified":
+            raise ArtifactContractError(
+                "raw replay trace is not verified",
+                code="merge.raw_replay_trace_mismatch",
+                context={"row_id": row_id},
+            )
+        for prefix in ("prompt", "generated"):
+            count = row.get(f"{prefix}_token_count")
+            if not isinstance(count, int) or isinstance(count, bool) or count <= 0:
+                raise ArtifactContractError(
+                    "raw replay token count must be a positive integer",
+                    code="merge.invalid_raw_replay_trace",
+                    context={"row_id": row_id, "field": f"{prefix}_token_count"},
+                )
+            _require_sha256(
+                row.get(f"{prefix}_token_ids_sha256"),
+                code="merge.invalid_raw_replay_trace",
+                context={"row_id": row_id, "field": f"{prefix}_token_ids_sha256"},
+            )
+        finish_reason = row.get("finish_reason")
+        if not isinstance(finish_reason, str) or not finish_reason:
+            raise ArtifactContractError(
+                "raw replay finish reason must be a non-empty string",
+                code="merge.invalid_raw_replay_trace",
+                context={"row_id": row_id, "field": "finish_reason"},
+            )
+        native_stop_reason = row.get("native_stop_reason")
+        if native_stop_reason is not None and not isinstance(native_stop_reason, str | int):
+            raise ArtifactContractError(
+                "raw replay native stop reason has an unsupported type",
+                code="merge.invalid_raw_replay_trace",
+                context={"row_id": row_id, "field": "native_stop_reason"},
+            )
+
+
+def _require_sha256(value: Any, *, code: str, context: dict[str, Any]) -> None:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise ArtifactContractError(
+            "runtime trace hash must be a lowercase SHA-256 digest",
+            code=code,
+            context=context,
+        )
+
+
+def _merge_backend_sessions(
+    *,
+    semantic_session: dict[str, Any],
+    shard_sessions: list[dict[str, Any]],
+    raw_replay_trace: list[dict[str, Any]],
+    raw_replay_required: bool,
+) -> dict[str, Any]:
+    for session in shard_sessions:
+        observed = _backend_session_semantic_identity(session)
+        if observed != semantic_session:
+            raise ArtifactContractError(
+                "rank-local backend session disagrees with merged semantic identity",
+                code="merge.identity_mismatch",
+                context={"field": "backend_session", "expected": semantic_session, "observed": observed},
+            )
+    merged = _json_safe(semantic_session)
+    performance = _merge_decode_performance(shard_sessions)
+    if not raw_replay_required and performance is None:
+        return merged
+    effective_settings = merged.get("effective_settings")
+    if not isinstance(effective_settings, dict):
+        raise ArtifactContractError(
+            "merged backend session requires effective settings",
+            code="merge.backend_session_effective_settings_missing",
+        )
+    if performance is not None:
+        effective_settings["performance"] = performance
+    if not raw_replay_required:
+        return merged
+    raw_replay = effective_settings.get("raw_replay")
+    if not isinstance(raw_replay, dict):
+        raise ArtifactContractError(
+            "vLLM raw replay requires semantic replay settings",
+            code="merge.raw_replay_receipt_missing",
+        )
+    raw_replay["request_count"] = len(raw_replay_trace)
+    raw_replay["row_evidence_sha256"] = _sha256_json(
+        _raw_replay_trace_mapping(raw_replay_trace)
+    )
+    return merged
+
+
+def _merge_decode_performance(
+    shard_sessions: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    rows: list[dict[str, Any]] = []
+    missing_count = 0
+    for session in shard_sessions:
+        settings = session.get("effective_settings")
+        performance = settings.get("performance") if isinstance(settings, dict) else None
+        if performance is None:
+            missing_count += 1
+            continue
+        if not isinstance(performance, dict):
+            raise ArtifactContractError(
+                "rank-local decode performance must be a JSON object",
+                code="merge.decode_performance_invalid",
+            )
+        rows.append(dict(performance))
+    if not rows:
+        return None
+    if missing_count:
+        raise ArtifactContractError(
+            "rank-local decode performance is missing on some ranks",
+            code="merge.decode_performance_missing",
+            context={"missing_rank_count": missing_count, "rank_count": len(shard_sessions)},
+        )
+
+    request_count = sum(_performance_int(row, "request_count") for row in rows)
+    generated_token_count = sum(
+        _performance_int(row, "generated_token_count") for row in rows
+    )
+    wall_seconds = max(
+        _performance_float(row, "decode_elapsed_seconds") for row in rows
+    )
+    allocated = _performance_optional_ints(rows, "peak_cuda_memory_allocated_bytes")
+    reserved = _performance_optional_ints(rows, "peak_cuda_memory_reserved_bytes")
+    return {
+        "measurement_scope": "parallel_rank_backend_decode",
+        "rank_count": len(rows),
+        "request_count": request_count,
+        "generated_token_count": generated_token_count,
+        "parallel_decode_wall_seconds_max": wall_seconds,
+        "requests_per_second": request_count / wall_seconds,
+        "generated_tokens_per_second": generated_token_count / wall_seconds,
+        "peak_cuda_memory_allocated_bytes_per_rank_max": (
+            max(allocated) if allocated else None
+        ),
+        "peak_cuda_memory_reserved_bytes_per_rank_max": (
+            max(reserved) if reserved else None
+        ),
+        "rank_measurements": rows,
+    }
+
+
+def _performance_int(row: dict[str, Any], field: str) -> int:
+    value = row.get(field)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ArtifactContractError(
+            "rank-local decode performance integer is invalid",
+            code="merge.decode_performance_invalid",
+            context={"field": field, "value": value},
+        )
+    return value
+
+
+def _performance_float(row: dict[str, Any], field: str) -> float:
+    value = row.get(field)
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(float(value))
+        or float(value) <= 0
+    ):
+        raise ArtifactContractError(
+            "rank-local decode performance duration is invalid",
+            code="merge.decode_performance_invalid",
+            context={"field": field, "value": value},
+        )
+    return float(value)
+
+
+def _performance_optional_ints(
+    rows: list[dict[str, Any]], field: str
+) -> list[int]:
+    values: list[int] = []
+    for row in rows:
+        value = row.get(field)
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ArtifactContractError(
+                "rank-local decode performance peak memory is invalid",
+                code="merge.decode_performance_invalid",
+                context={"field": field, "value": value},
+            )
+        values.append(value)
+    return values
+
+
+def _raw_replay_trace_mapping(
+    rows: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    return {
+        str(row["row_id"]): {
+            key: value for key, value in row.items() if key != "row_id"
+        }
+        for row in rows
+    }
 
 
 def _require_shard_artifacts(shard_dir: Path) -> None:
@@ -1984,6 +2560,8 @@ def _merged_provenance(
         "execution_model_identity": metadata.get("execution_model_identity"),
         "frontend_identity": dict(metadata.get("frontend_identity") or {}),
         "raw_model_logprob_status": metadata.get("raw_model_logprob_status"),
+        "prompt_trace": list(metadata.get("prompt_trace") or []),
+        "raw_replay_trace": list(metadata.get("raw_replay_trace") or []),
         "parallelism": parallelism,
         "model_identity": dict(metadata.get("model_identity") or {}),
         "model_identity_fingerprint": metadata["model_identity_fingerprint"],
@@ -2004,26 +2582,55 @@ def _merged_provenance(
 
 def _merged_summary(
     *,
-    rows: list[dict[str, Any]],
+    raw_rows: list[dict[str, Any]],
+    scored_rows: list[dict[str, Any]],
     token_trace_rows: list[dict[str, Any]],
     diagnostic_rows: list[dict[str, Any]],
     metadata: dict[str, Any],
 ) -> dict[str, Any]:
-    return {
+    decode_stop_reasons: dict[str, int] = {}
+    for row in raw_rows:
+        reason = str(row.get("decode_stop_reason", ""))
+        decode_stop_reasons[reason] = decode_stop_reasons.get(reason, 0) + 1
+    parser_failure_count = sum(
+        1
+        for row in raw_rows
+        if row.get("parse_status") not in {"accepted", "accepted_with_drops"}
+    )
+    score_failure_count = sum(
+        1 for row in diagnostic_rows if row.get("diagnostic_type") == "scoring"
+    )
+    summary = {
         "terminal_status": "completed",
-        "row_count": len(rows),
-        "raw_row_count": len(rows),
-        "scored_row_count": len(rows),
-        "scoreable_prediction_count": sum(len(row.get("pred", [])) for row in rows),
+        "row_count": len(scored_rows),
+        "raw_row_count": len(raw_rows),
+        "scored_row_count": len(scored_rows),
+        "scoreable_prediction_count": sum(
+            len(row.get("pred", [])) for row in scored_rows
+        ),
         "diagnostic_row_count": len(diagnostic_rows),
         "trace_row_count": len(token_trace_rows),
         "scored_artifact_materialized": True,
-        "benchmark_eligible": False,
+        "benchmark_eligible": bool(metadata.get("benchmark_eligible", False)),
         "generation_policy": dict(metadata.get("generation_policy") or {}),
         "likelihood_semantics": dict(metadata.get("likelihood_semantics") or {}),
         "raw_model_logprob_status": metadata.get("raw_model_logprob_status"),
-        **dict(metadata.get("pipeline_counters") or {}),
+        "decode_success_count": len(raw_rows),
+        "parser_failure_count": parser_failure_count,
+        "dropped_prediction_count": sum(
+            int(row.get("dropped_prediction_count", 0)) for row in raw_rows
+        ),
+        "truncated_decode_count": int(decode_stop_reasons.get("length", 0)),
+        "decode_stop_reasons": dict(sorted(decode_stop_reasons.items())),
+        "image_validation_failure_count": 0,
+        "score_failure_count": score_failure_count,
     }
+    session = metadata.get("backend_session")
+    settings = session.get("effective_settings") if isinstance(session, dict) else None
+    performance = settings.get("performance") if isinstance(settings, dict) else None
+    if isinstance(performance, dict):
+        summary["performance"] = dict(performance)
+    return summary
 
 
 def _merged_manifest(
@@ -2063,6 +2670,8 @@ def _merged_manifest(
         "execution_model_identity": metadata.get("execution_model_identity"),
         "frontend_identity": dict(metadata.get("frontend_identity") or {}),
         "raw_model_logprob_status": metadata.get("raw_model_logprob_status"),
+        "prompt_trace": list(metadata.get("prompt_trace") or []),
+        "raw_replay_trace": list(metadata.get("raw_replay_trace") or []),
         "parallelism": parallelism,
         "merge_identity_fingerprint": identity_fingerprint,
         "score_policy_fingerprint": SCORE_POLICY_FINGERPRINT,

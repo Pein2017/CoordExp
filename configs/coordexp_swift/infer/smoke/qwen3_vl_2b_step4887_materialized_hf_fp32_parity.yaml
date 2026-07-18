@@ -1,0 +1,6 @@
+extends: qwen3_vl_2b_step4887_materialized_hf_parity.yaml
+run:
+  name: qwen3-vl-2b-step4887-materialized-hf-fp32-parity-smoke
+model:
+  base_model: /data/Qwen3-VL/model_cache/coordexp_swift/vllm_materialized/39df6dd7a41edb1b2d94db8772b487a21781998dd84d637bd16c81986cb1743a/snapshot
+  dtype: fp32

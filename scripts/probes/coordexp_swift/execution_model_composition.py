@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Real dynamic-HF versus materialized-HF parity qualification."""
+"""Prove materialized-model composition fidelity and record HF diagnostics."""
 
 from __future__ import annotations
 
@@ -17,14 +17,14 @@ from src.config.inference import load_infer_config
 from src.config.models import ProcessorConfig, TemplateConfig, TemplatePromptConfig
 from src.data import load_raw_examples
 from src.inference.execution_model import (
-    bind_execution_model_parity,
+    bind_execution_model_composition,
     resolve_execution_model,
 )
-from src.inference.execution_model_parity import (
-    EXECUTION_MODEL_PARITY_NAME,
-    build_execution_model_parity_receipt,
+from src.inference.execution_model_composition import (
+    EXECUTION_MODEL_COMPOSITION_NAME,
+    build_execution_model_composition_receipt,
     compare_execution_models,
-    write_execution_model_parity_receipt,
+    write_execution_model_composition_receipt,
 )
 from src.inference.hf_backend import _load_hf_components
 from src.inference.image_plan import plan_image_batch
@@ -47,7 +47,9 @@ def main() -> int:
     resolved = load_infer_config(args.config)
     config = resolved.config
     if config.backend.type != "hf" or config.adapter is None or config.embedding_delta is None:
-        raise ValueError("parity probe requires an HF config with adapter and embedding delta")
+        raise ValueError(
+            "composition probe requires an HF config with adapter and embedding delta"
+        )
     generation_fingerprint = sha256_json(config.generation.model_dump(mode="json"))
     execution_model = resolve_execution_model(
         base_model_path=config.model.base_model,
@@ -111,16 +113,27 @@ def main() -> int:
             image_path=raw_example.image.path,
         )
     try:
-        encoded = dynamic_qwen.processor(
+        dynamic_encoded = dynamic_qwen.processor(
             text=[prompt_record.chat_text],
             images=[image],
             padding=True,
             return_tensors="pt",
             do_resize=False,
         )
-        native_inputs = {
+        materialized_encoded = materialized_qwen.processor(
+            text=[prompt_record.chat_text],
+            images=[image.copy()],
+            padding=True,
+            return_tensors="pt",
+            do_resize=False,
+        )
+        dynamic_native_inputs = {
             key: value.to(device) if isinstance(value, torch.Tensor) else value
-            for key, value in dict(encoded).items()
+            for key, value in dict(dynamic_encoded).items()
+        }
+        materialized_native_inputs = {
+            key: value.to(device) if isinstance(value, torch.Tensor) else value
+            for key, value in dict(materialized_encoded).items()
         }
         selected_token_ids = [
             *(
@@ -132,7 +145,8 @@ def main() -> int:
         comparison = compare_execution_models(
             dynamic_model=dynamic_model,
             materialized_model=materialized_model,
-            native_inputs=native_inputs,
+            dynamic_native_inputs=dynamic_native_inputs,
+            materialized_native_inputs=materialized_native_inputs,
             selected_token_ids=selected_token_ids,
             generation_kwargs={
                 "max_new_tokens": args.max_new_tokens,
@@ -142,6 +156,12 @@ def main() -> int:
                 "pad_token_id": dynamic_qwen.tokenizer.pad_token_id,
                 "use_cache": True,
             },
+            expected_merged_target_identity=_merged_target_identity(
+                execution_model
+            ),
+            expected_folded_selected_rows_sha256=(
+                _folded_selected_rows_sha256(execution_model)
+            ),
         )
         if comparison["dynamic_generated_ids"] != comparison["materialized_generated_ids"]:
             mismatch = next(
@@ -164,7 +184,7 @@ def main() -> int:
             print(
                 json.dumps(
                     {
-                        "parity_failure": "greedy_generated_ids",
+                        "behavioral_diagnostic": "greedy_generated_ids_differ",
                         "first_mismatch_index": mismatch,
                         "comparison": comparison,
                     },
@@ -177,6 +197,12 @@ def main() -> int:
             "row_index": args.row_index,
             "input_jsonl_sha256": _sha256_file(Path(config.data.input_jsonl)),
             "prompt_ids_sha256": sha256_json(prompt_record.prompt_token_ids),
+            "dynamic_executed_prompt_ids_sha256": sha256_json(
+                dynamic_native_inputs["input_ids"][0].detach().cpu().tolist()
+            ),
+            "materialized_executed_prompt_ids_sha256": sha256_json(
+                materialized_native_inputs["input_ids"][0].detach().cpu().tolist()
+            ),
             "processor_fingerprint": sha256_json(
                 dynamic_qwen.processor_identity.to_artifact_dict()
             ),
@@ -185,32 +211,48 @@ def main() -> int:
             "generation_fingerprint": generation_fingerprint,
             "max_new_tokens": args.max_new_tokens,
         }
-        parity = build_execution_model_parity_receipt(
+        composition = build_execution_model_composition_receipt(
             execution_model=execution_model,
             fixture_identity=fixture_identity,
+            probe_identity={
+                "path": str(Path(__file__).resolve().relative_to(Path.cwd().resolve())),
+                "sha256": _sha256_file(Path(__file__).resolve()),
+            },
+            resolved_config_identity={
+                "fingerprint": resolved.fingerprint,
+                "entry_config_path": str(resolved.entry_config_path),
+                "sources": [
+                    {"path": str(source.path), "sha256": source.sha256}
+                    for source in resolved.sources
+                ],
+            },
             comparison=comparison,
+        )
+        cache_output = Path(str(execution_model["receipt_path"])).with_name(
+            EXECUTION_MODEL_COMPOSITION_NAME
         )
         output = (
             Path(args.output).resolve()
             if args.output
-            else Path(str(execution_model["receipt_path"])).with_name(
-                EXECUTION_MODEL_PARITY_NAME
-            )
+            else cache_output
         )
-        write_execution_model_parity_receipt(output, parity)
-        qualified = bind_execution_model_parity(
+        write_execution_model_composition_receipt(cache_output, composition)
+        if output != cache_output:
+            write_execution_model_composition_receipt(output, composition)
+        bound = bind_execution_model_composition(
             execution_model,
-            parity,
-            parity_path=output,
+            composition,
+            composition_path=cache_output,
         )
         print(
             json.dumps(
                 {
                     "ok": True,
                     "output": str(output),
-                    "composition_key": qualified["composition_key"],
-                    "snapshot_fingerprint": qualified["snapshot_fingerprint"],
-                    "parity_digest": parity["digest"],
+                    "cache_output": str(cache_output),
+                    "composition_key": bound["composition_key"],
+                    "snapshot_fingerprint": bound["snapshot_fingerprint"],
+                    "composition_digest": composition["digest"],
                     "comparison": comparison,
                 },
                 indent=2,
@@ -228,6 +270,36 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _merged_target_identity(
+    execution_model: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        identity = execution_model["materialization"]["adapter_merge"]["merge"][
+            "target_weight_identity"
+        ]
+    except (KeyError, TypeError) as exc:
+        raise ValueError(
+            "execution-model receipt lacks merged DoRA target identity"
+        ) from exc
+    if not isinstance(identity, dict):
+        raise ValueError("merged DoRA target identity must be an object")
+    return identity
+
+
+def _folded_selected_rows_sha256(execution_model: dict[str, Any]) -> str:
+    try:
+        value = execution_model["materialization"]["embedding_delta_fold"][
+            "selected_rows_after_sha256"
+        ]
+    except (KeyError, TypeError) as exc:
+        raise ValueError(
+            "execution-model receipt lacks folded selected-row identity"
+        ) from exc
+    if not isinstance(value, str) or len(value) != 64:
+        raise ValueError("folded selected-row identity must be a SHA-256 digest")
+    return value
 
 
 if __name__ == "__main__":

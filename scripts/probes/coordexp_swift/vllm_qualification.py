@@ -36,8 +36,7 @@ DEFAULT_CONFIG = Path(
     "configs/coordexp_swift/infer/wave7_real_base_single_smoke.yaml"
 )
 DEFAULT_RECEIPT = Path(
-    "openspec/changes/add-coordexp-swift-vllm-inference-backend/"
-    "source-studies/receipts/vllm-0.14.1-qualification.json"
+    "src/inference/qualification_receipts/vllm-0.14.1-qualification.json"
 )
 STATIC_SOURCE_FILES = {
     "qwen3_vl": "model_executor/models/qwen3_vl.py",
@@ -190,6 +189,7 @@ def _run_worker(args: argparse.Namespace) -> None:
         "schema_version": 1,
         "probe": {
             "path": str(Path(__file__).resolve()),
+            "repo_relative_path": Path(__file__).resolve().relative_to(REPO_ROOT).as_posix(),
             "sha256": _sha256_file(Path(__file__).resolve()),
             "argv": list(sys.argv),
         },
@@ -380,7 +380,9 @@ def _configure_process_mode(mode: str) -> dict[str, Any]:
 
 def _prepare_fixture(args: argparse.Namespace) -> tuple[Any, Any, Any, Any]:
     from src.config.inference import load_infer_config
+    from src.config.models import ProcessorConfig
     from src.data import load_raw_examples
+    from src.inference.image_plan import plan_image_batch
     from src.inference.prompt import build_prompt_record
     from src.qwen.runtime_loading import (
         QwenLoadOptions,
@@ -394,22 +396,37 @@ def _prepare_fixture(args: argparse.Namespace) -> tuple[Any, Any, Any, Any]:
             f"qualification fixture must contain exactly one row, got {len(raw_examples)}"
         )
     raw_example = raw_examples[0]
+    if resolved.config.backend.type == "hf":
+        attention = resolved.config.backend.hf.attn_implementation
+        patch_policy = resolved.config.backend.hf.patch_embed_linearization
+    else:
+        attention = "eager"
+        patch_policy = "disabled"
     components = load_qwen_components_from_options(
         QwenLoadOptions(
             base_model=resolved.config.model.base_model,
             dtype=resolved.config.model.dtype,
-            attn_implementation=resolved.config.model.attn_implementation,
-            patch_embed_linearization=(
-                resolved.config.model.runtime_patches.patch_embed_linearization
-            ),
+            attn_implementation=attention,
+            patch_embed_linearization=patch_policy,
             load_model=False,
         )
     )
+    image_row = plan_image_batch(
+        [raw_example],
+        components=components,
+        processor_config=ProcessorConfig(
+            do_resize=False,
+            max_raw_pixels=1_000_000_000,
+            max_merged_visual_tokens=1_000_000,
+        ),
+        row_indices=[0],
+    ).rows[0]
     prompt_record = build_prompt_record(
         raw_example,
         resolved.config.template,
         processor=components.processor,
         row_index=0,
+        merged_visual_tokens=image_row.merged_visual_tokens,
     )
     return resolved, raw_example, components, prompt_record
 
@@ -774,7 +791,11 @@ def _identity_receipt(
 
     vllm_root = Path(vllm.__file__).resolve().parent
     source_files = {
-        name: _file_identity(vllm_root / relative)
+        name: _installed_file_identity(
+            vllm_root / relative,
+            package="vllm",
+            package_root=vllm_root,
+        )
         for name, relative in STATIC_SOURCE_FILES.items()
     }
     source_files.update(_runtime_source_identities(llm=llm, components=components))
@@ -853,7 +874,7 @@ def _identity_receipt(
                 "base_only": "exact snapshot fingerprint",
                 "composed": (
                     "matching source-base, architecture, tokenizer, and processor "
-                    "identity plus a passed dynamic-HF/materialized-HF parity receipt"
+                    "identity plus a passed execution-model composition-fidelity receipt"
                 ),
             },
         },
@@ -888,12 +909,32 @@ def _runtime_source_identities(*, llm: Any, components: Any) -> dict[str, Any]:
         "runtime_tokenizer_class": type(components.tokenizer),
         "runtime_image_processor_class": type(components.processor.image_processor),
     }
+    import peft
+    import qwen_vl_utils
+    import transformers
+    import vllm
+
+    package_roots = {
+        "peft": Path(peft.__file__).resolve().parent,
+        "qwen_vl_utils": Path(qwen_vl_utils.__file__).resolve().parent,
+        "transformers": Path(transformers.__file__).resolve().parent,
+        "vllm": Path(vllm.__file__).resolve().parent,
+    }
     identities: dict[str, Any] = {}
     for name, value in objects.items():
         source = inspect.getsourcefile(value) or inspect.getfile(value)
         if source is None:
             raise RuntimeError(f"cannot locate installed source for {name}")
-        identities[name] = _file_identity(Path(source))
+        source_path = Path(source).resolve()
+        owner = _source_package_owner(source_path, packages=package_roots)
+        if owner is None:
+            raise RuntimeError(f"installed source is outside qualified packages: {source_path}")
+        package_name, package_root = owner
+        identities[name] = _installed_file_identity(
+            source_path,
+            package=package_name,
+            package_root=package_root,
+        )
     return identities
 
 
@@ -1142,6 +1183,21 @@ def _file_identity(path: Path) -> dict[str, Any]:
         "path": str(path),
         "size_bytes": path.stat().st_size,
         "sha256": _sha256_file(path),
+    }
+
+
+def _installed_file_identity(
+    path: Path,
+    *,
+    package: str,
+    package_root: Path,
+) -> dict[str, Any]:
+    path = path.resolve()
+    package_root = package_root.resolve()
+    return {
+        "package": package,
+        "relative_path": (Path(package) / path.relative_to(package_root)).as_posix(),
+        **_file_identity(path),
     }
 
 

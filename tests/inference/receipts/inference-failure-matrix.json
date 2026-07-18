@@ -1,0 +1,108 @@
+{
+  "cases": [
+    {
+      "canonical_publication": false,
+      "case": "engine_startup",
+      "cleanup_scope": "composite evidence: a synchronous vLLM controller-owned shard injection records startup failure and terminal-only controller status; fresh-worker cleanup is covered by the process_tree_termination cases",
+      "complete_cleanup": true,
+      "terminal_diagnostics": true,
+      "tests": [
+        "tests/inference/test_pipeline.py::test_pipeline_unhandled_runtime_failure_writes_terminal_diagnostics_only[backend-startup]",
+        "tests/inference/test_pipeline.py::test_pipeline_vllm_controller_worker_failures_publish_shard_and_controller_diagnostics[engine-startup]"
+      ]
+    },
+    {
+      "canonical_publication": false,
+      "case": "cuda_oom",
+      "cleanup_scope": "composite evidence: a synchronous vLLM controller-owned shard injection records CUDA OOM and terminal-only controller status; fresh-worker cleanup is covered by the process_tree_termination cases",
+      "complete_cleanup": true,
+      "terminal_diagnostics": true,
+      "tests": [
+        "tests/inference/test_pipeline.py::test_pipeline_unhandled_runtime_failure_writes_terminal_diagnostics_only[cuda-oom]",
+        "tests/inference/test_pipeline.py::test_pipeline_vllm_controller_worker_failures_publish_shard_and_controller_diagnostics[cuda-oom]"
+      ]
+    },
+    {
+      "canonical_publication": false,
+      "case": "worker_timeout",
+      "cleanup_scope": "all pending worker processes terminated and private runtime caches removed",
+      "complete_cleanup": true,
+      "terminal_diagnostics": true,
+      "tests": [
+        "tests/inference/test_pipeline.py::test_pipeline_controller_wait_failure_cleans_owned_workers_and_publishes_only_terminal[worker_timeout]",
+        "tests/inference/test_worker_runtime.py::test_worker_wait_timeout_terminates_owned_process_tree"
+      ]
+    },
+    {
+      "canonical_publication": false,
+      "case": "process_tree_termination",
+      "cleanup_scope": "partial-launch and interrupted-controller workers terminate; exited leaders cannot leave descendants; private runtime caches are removed",
+      "complete_cleanup": true,
+      "terminal_diagnostics": true,
+      "tests": [
+        "tests/inference/test_pipeline.py::test_pipeline_partial_worker_launch_failure_terminates_started_workers",
+        "tests/inference/test_pipeline.py::test_pipeline_controller_interrupt_reaps_every_launched_worker",
+        "tests/inference/test_pipeline.py::test_pipeline_cleanup_failure_still_publishes_terminal_diagnostics",
+        "tests/inference/test_worker_runtime.py::test_terminate_worker_processes_stops_all_owned_processes",
+        "tests/inference/test_worker_runtime.py::test_worker_termination_kills_descendants_after_leader_exits",
+        "tests/inference/test_worker_runtime.py::test_worker_termination_attempts_every_rank_before_reporting_failure"
+      ]
+    },
+    {
+      "canonical_publication": false,
+      "case": "orphan_process",
+      "cleanup_scope": "orphan process group and pending sibling workers terminated; private caches removed",
+      "complete_cleanup": true,
+      "terminal_diagnostics": true,
+      "tests": [
+        "tests/inference/test_pipeline.py::test_pipeline_controller_wait_failure_cleans_owned_workers_and_publishes_only_terminal[orphan_process]",
+        "tests/inference/test_worker_runtime.py::test_worker_orphan_failure_terminates_pending_sibling_ranks"
+      ]
+    },
+    {
+      "canonical_publication": false,
+      "case": "malformed_shard",
+      "cleanup_scope": "all synthetic workers exited before strict merge validation",
+      "complete_cleanup": true,
+      "terminal_diagnostics": true,
+      "tests": [
+        "tests/inference/test_pipeline.py::test_pipeline_controller_malformed_rank_zero_manifest_writes_terminal_failure"
+      ]
+    },
+    {
+      "canonical_publication": false,
+      "case": "backend_identity",
+      "cleanup_scope": "strict merge executes only after workers have exited",
+      "complete_cleanup": true,
+      "terminal_diagnostics": true,
+      "tests": [
+        "tests/inference/test_data_parallel_merge.py::test_strict_merge_rejects_missing_duplicate_order_failed_worker_and_identity_mismatches"
+      ]
+    },
+    {
+      "canonical_publication": false,
+      "case": "likelihood_mismatch",
+      "cleanup_scope": "strict merge executes only after workers have exited",
+      "complete_cleanup": true,
+      "terminal_diagnostics": true,
+      "tests": [
+        "tests/inference/test_data_parallel_merge.py::test_strict_merge_rejects_corrupt_raw_model_likelihood_without_publication[None]"
+      ]
+    }
+  ],
+  "digest": "3f1d1ff4e39377cdef35d923868cd801369bbe273094b0adc503f603fbef9cc2",
+  "pytest_command": "conda run -n ms pytest tests/inference/test_pipeline.py tests/inference/test_worker_runtime.py tests/inference/test_data_parallel_merge.py -q",
+  "pytest_result": "94 passed in 16.60s",
+  "receipt_version": "coordexp-swift-inference-failure-matrix-v2",
+  "schema_version": 2,
+  "source_sha256": {
+    "src/inference/merge.py": "970dac0bb7442d7bd02848767c7d9ee0efff2f28ea263d8ab9f6ef2a56055945",
+    "src/inference/pipeline.py": "008b6b208cae877e3da2dbcfbbb08ae07e2cbbb9de35ca1f2ffc3843ac43a9d8",
+    "src/inference/worker.py": "5661b0ebd4bd266bbaab7273a10c102b6617ee65944e5e99cebaa7948f1279c0",
+    "tests/inference/test_data_parallel_merge.py": "28aa6323f3e4a06fe2124c0080079dcbc0f2df166aef6f1385f1f976fd38e803",
+    "tests/inference/test_failure_matrix_receipt.py": "d92c82a19b951db6aa4bee45309a40131aa3da4e6a6da180021472f0166f4ff7",
+    "tests/inference/test_pipeline.py": "90d1db6ab7cead7d6f02d44ffd05807b72b10b9f8e54dbe77771e170127eaf53",
+    "tests/inference/test_worker_runtime.py": "4702cdd95e1eef6a4a898449d1c4cc58eb0895972f0b8452d7f3327df3463283"
+  },
+  "status": "passed"
+}

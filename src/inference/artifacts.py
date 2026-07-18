@@ -25,6 +25,13 @@ PARSE_DIAGNOSTICS_NAME = "parse_diagnostics.jsonl"
 IMAGE_PLAN_NAME = "image_plan.jsonl"
 SUMMARY_NAME = "summary.json"
 MANIFEST_NAME = "run_manifest.json"
+MIN_BENCHMARK_ROW_COUNT = 200
+
+
+def benchmark_scope_eligible(row_count: int) -> bool:
+    """Return whether an artifact set is large enough for benchmark claims."""
+
+    return row_count >= MIN_BENCHMARK_ROW_COUNT
 
 
 @dataclass(frozen=True)
@@ -154,7 +161,7 @@ def write_inference_artifacts(
             "diagnostic_row_count": len(diagnostic_rows),
             "trace_row_count": len(token_trace_rows),
             "scored_artifact_materialized": True,
-            "benchmark_eligible": False,
+            "benchmark_eligible": bool(metadata.get("benchmark_eligible", False)),
             "generation_policy": dict(metadata.get("generation_policy") or {}),
             "likelihood_semantics": dict(
                 metadata.get("likelihood_semantics") or {}
@@ -163,6 +170,9 @@ def write_inference_artifacts(
             **dict(metadata.get("pipeline_counters") or {}),
             "score_failure_count": score_failure_count,
         }
+        performance = _backend_performance(metadata)
+        if performance:
+            summary["performance"] = performance
         _write_json(staged_paths.summary_json, summary)
         _write_json(staged_paths.run_manifest_json, _manifest(metadata=metadata, summary=summary))
         validate_scored_artifact_set(staging_dir)
@@ -171,6 +181,13 @@ def write_inference_artifacts(
         shutil.rmtree(staging_dir, ignore_errors=True)
     validate_scored_artifact_set(output_dir)
     return paths
+
+
+def _backend_performance(metadata: dict[str, Any]) -> dict[str, Any]:
+    session = metadata.get("backend_session")
+    settings = session.get("effective_settings") if isinstance(session, dict) else None
+    performance = settings.get("performance") if isinstance(settings, dict) else None
+    return dict(performance) if isinstance(performance, dict) else {}
 
 
 def write_terminal_status_artifacts(
@@ -496,6 +513,8 @@ def _provenance(
         "frontend_identity": dict(metadata.get("frontend_identity") or {}),
         "raw_model_logprob_status": _raw_model_logprob_status(metadata),
         "media_identity": dict(metadata.get("media_identity") or {}),
+        "prompt_trace": list(metadata.get("prompt_trace") or []),
+        "raw_replay_trace": list(metadata.get("raw_replay_trace") or []),
         "parallelism": dict(metadata.get("parallelism") or {}),
         "model_identity": dict(metadata.get("model_identity") or {}),
         "model_identity_fingerprint": metadata["model_identity_fingerprint"],
@@ -547,11 +566,14 @@ def _manifest(*, metadata: dict[str, Any], summary: dict[str, Any]) -> dict[str,
         "frontend_identity": dict(metadata.get("frontend_identity") or {}),
         "raw_model_logprob_status": _raw_model_logprob_status(metadata),
         "media_identity": dict(metadata.get("media_identity") or {}),
+        "prompt_trace": list(metadata.get("prompt_trace") or []),
+        "raw_replay_trace": list(metadata.get("raw_replay_trace") or []),
         "parallelism": dict(metadata.get("parallelism") or {}),
         "score_policy_fingerprint": SCORE_POLICY_FINGERPRINT,
         "trace_scoring_status": "scored",
         "prompt_policy_fingerprint": metadata["prompt_policy_fingerprint"],
         "template_identity": metadata["template_identity"],
+        "parser_policy": metadata["parser_policy"],
         "processor_identity_fingerprint": metadata["processor_identity_fingerprint"],
         "evaluator_consumer_status": str(
             metadata.get("evaluator_consumer_status", "available_not_run")

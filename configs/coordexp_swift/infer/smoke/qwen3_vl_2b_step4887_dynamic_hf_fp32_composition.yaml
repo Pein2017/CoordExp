@@ -1,0 +1,19 @@
+extends: ../qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200.yaml
+run:
+  name: qwen3-vl-2b-step4887-dynamic-hf-fp32-composition-smoke
+  artifact_root: ../../../../outputs/coordexp_swift/infer/smoke
+  collision_policy: timestamp
+model:
+  dtype: fp32
+data:
+  input_jsonl: ../../../../tests/fixtures/smoke/qwen3_vl_single_image_pack/examples.jsonl
+generation:
+  batch_size: 1
+  max_new_tokens: 64
+artifacts:
+  write_token_trace: true
+  write_parse_diagnostics: true
+  include_raw_model_logprob: true
+debug:
+  smoke: true
+  dry_run: false
