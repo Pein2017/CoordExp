@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import torch
+from safetensors import safe_open
 from safetensors.torch import load_file, save_file
 from torch import nn
 
@@ -27,6 +28,9 @@ SPECIAL_TOKEN_EMBEDDINGS_SAFE_TENSORS = "special_token_embeddings.safetensors"
 SPECIAL_TOKEN_EMBEDDINGS_JSON = "special_token_embeddings.json"
 DEFAULT_EMBED_DELTA_TENSOR_KEY = "shared_embed_delta"
 SPECIAL_TOKEN_EMBEDDING_SEMANTICS = "additive_delta"
+SPECIAL_TOKEN_EMBEDDING_PAYLOAD_IDENTITY_VERSION = (
+    "coordexp-swift-special-token-embedding-delta-v1"
+)
 DEFAULT_SPECIAL_TOKEN_EMBEDDING_SOURCE_STUDY_PATH = Path(
     "docs/history/architecture/proposals/2026-06-27-coordexp-swift/source-studies/"
     "special-token-embeddings.md"
@@ -47,7 +51,9 @@ class SpecialTokenSelection:
         token_strings: Sequence[str],
         token_ids: Sequence[int],
     ) -> None:
-        object.__setattr__(self, "token_strings", tuple(str(item) for item in token_strings))
+        object.__setattr__(
+            self, "token_strings", tuple(str(item) for item in token_strings)
+        )
         object.__setattr__(self, "token_ids", tuple(int(item) for item in token_ids))
         self._validate()
 
@@ -127,9 +133,7 @@ def load_default_special_token_embedding_source_gate_evidence(
         source_study_path
     )
     probe_receipt = (
-        _load_probe_receipt(probe_receipt_path)
-        if probe_receipt_path.exists()
-        else None
+        _load_probe_receipt(probe_receipt_path) if probe_receipt_path.exists() else None
     )
     return SpecialTokenEmbeddingSourceGateEvidence(
         source_study_passed=source_study_passed,
@@ -177,7 +181,9 @@ class SpecialTokenEmbeddingInstallReceipt:
             "tensor_dtype": self.delta_dtype,
             "token_strings": list(self.token_selection.token_strings),
             "token_ids": list(self.token_selection.token_ids),
-            "base_model_path": None if base_model_path is None else str(base_model_path),
+            "base_model_path": None
+            if base_model_path is None
+            else str(base_model_path),
             "base_config_sha256": base_config_sha256,
             "tokenizer_sha256": tokenizer_sha256,
             "tie_word_embeddings": self.tie_word_embeddings,
@@ -253,6 +259,329 @@ class InferenceEmbeddingDeltaIdentityReceipt:
             "metadata": dict(self.metadata),
             "base_model_path": self.base_model_path,
         }
+
+
+def inspect_special_token_embedding_delta_payload(
+    path: str | Path,
+    expected_base_model_path: str | Path | None = None,
+    expected_base_config_sha256: str | None = None,
+    expected_tokenizer_sha256: str | None = None,
+) -> dict[str, Any]:
+    """Validate and content-address one compact additive embedding delta."""
+
+    configured_path = Path(path).expanduser().resolve()
+    root = configured_path.parent if configured_path.is_file() else configured_path
+    metadata_path = root / SPECIAL_TOKEN_EMBEDDINGS_JSON
+    tensor_path = root / SPECIAL_TOKEN_EMBEDDINGS_SAFE_TENSORS
+    metadata = _load_metadata(metadata_path)
+    required_fields = (
+        "semantics",
+        "tensor_key",
+        "tensor_shape",
+        "tensor_dtype",
+        "token_strings",
+        "token_ids",
+        "base_model_path",
+        "base_config_sha256",
+        "tokenizer_sha256",
+        "tie_word_embeddings",
+    )
+    missing = [field for field in required_fields if field not in metadata]
+    if missing:
+        raise RuntimeContractError(
+            "special-token embedding payload metadata is incomplete",
+            code="special_token_embeddings.execution_metadata_missing",
+            context={"missing_fields": missing},
+        )
+    if metadata["semantics"] != SPECIAL_TOKEN_EMBEDDING_SEMANTICS:
+        raise RuntimeContractError(
+            "special-token embedding payload must use additive-delta semantics",
+            code="special_token_embeddings.execution_semantics",
+            context={"actual": metadata["semantics"]},
+        )
+    if metadata["tensor_key"] != DEFAULT_EMBED_DELTA_TENSOR_KEY:
+        raise RuntimeContractError(
+            "special-token embedding payload records the wrong tensor key",
+            code="special_token_embeddings.execution_tensor_key",
+            context={
+                "expected": DEFAULT_EMBED_DELTA_TENSOR_KEY,
+                "actual": metadata["tensor_key"],
+            },
+        )
+    supported_source_dtypes = {"float32": "F32", "bfloat16": "BF16"}
+    if metadata["tensor_dtype"] not in supported_source_dtypes:
+        raise RuntimeContractError(
+            "special-token embedding execution payload has an unsupported source dtype",
+            code="special_token_embeddings.execution_dtype",
+            context={"actual": metadata["tensor_dtype"]},
+        )
+    if metadata["tie_word_embeddings"] is not True:
+        raise RuntimeContractError(
+            "special-token embedding execution payload must require tied weights",
+            code="special_token_embeddings.execution_untied",
+            context={"tie_word_embeddings": metadata["tie_word_embeddings"]},
+        )
+
+    token_strings = metadata["token_strings"]
+    token_ids = metadata["token_ids"]
+    if (
+        not isinstance(token_strings, list)
+        or not token_strings
+        or not all(isinstance(item, str) and item for item in token_strings)
+        or len(set(token_strings)) != len(token_strings)
+    ):
+        raise RuntimeContractError(
+            "special-token embedding token strings must be a non-empty unique list",
+            code="special_token_embeddings.execution_token_strings",
+        )
+    if (
+        not isinstance(token_ids, list)
+        or not token_ids
+        or not all(
+            isinstance(item, int) and not isinstance(item, bool) for item in token_ids
+        )
+        or any(item < 0 for item in token_ids)
+        or len(set(token_ids)) != len(token_ids)
+    ):
+        raise RuntimeContractError(
+            "special-token embedding token ids must be a non-negative unique integer list",
+            code="special_token_embeddings.execution_token_ids",
+            context={"token_ids": token_ids},
+        )
+    if len(token_strings) != len(token_ids):
+        raise RuntimeContractError(
+            "special-token embedding token strings and ids differ in length",
+            code="special_token_embeddings.execution_token_identity",
+            context={
+                "token_string_count": len(token_strings),
+                "token_id_count": len(token_ids),
+            },
+        )
+    tensor_shape = metadata["tensor_shape"]
+    if (
+        not isinstance(tensor_shape, list)
+        or len(tensor_shape) != 2
+        or not all(isinstance(item, int) and item > 0 for item in tensor_shape)
+        or tensor_shape[0] != len(token_ids)
+    ):
+        raise RuntimeContractError(
+            "special-token embedding metadata tensor shape is invalid",
+            code="special_token_embeddings.execution_tensor_shape",
+            context={"tensor_shape": tensor_shape, "token_count": len(token_ids)},
+        )
+    for field in ("base_model_path", "base_config_sha256", "tokenizer_sha256"):
+        if not isinstance(metadata[field], str) or not metadata[field]:
+            raise RuntimeContractError(
+                "special-token embedding payload requires complete base identity",
+                code="special_token_embeddings.execution_base_identity",
+                context={"field": field, "actual": metadata[field]},
+            )
+    _require_expected_delta_identity_field(
+        metadata,
+        field="base_model_path",
+        expected=expected_base_model_path,
+        normalize_path=True,
+    )
+    _require_expected_delta_identity_field(
+        metadata,
+        field="base_config_sha256",
+        expected=expected_base_config_sha256,
+    )
+    _require_expected_delta_identity_field(
+        metadata,
+        field="tokenizer_sha256",
+        expected=expected_tokenizer_sha256,
+    )
+
+    try:
+        with safe_open(str(tensor_path), framework="pt", device="cpu") as handle:
+            tensor_keys = list(handle.keys())
+            if tensor_keys != [DEFAULT_EMBED_DELTA_TENSOR_KEY]:
+                raise RuntimeContractError(
+                    "special-token embedding payload must contain exactly one tensor key",
+                    code="special_token_embeddings.execution_tensor_key",
+                    context={"actual_keys": tensor_keys},
+                )
+            tensor_slice = handle.get_slice(DEFAULT_EMBED_DELTA_TENSOR_KEY)
+            observed_shape = [int(item) for item in tensor_slice.get_shape()]
+            observed_dtype = str(tensor_slice.get_dtype())
+    except RuntimeContractError:
+        raise
+    except Exception as exc:
+        raise RuntimeContractError(
+            "special-token embedding safetensors payload is missing or unreadable",
+            code="special_token_embeddings.execution_payload_invalid",
+            context={"tensor_path": str(tensor_path)},
+            cause=exc,
+        ) from exc
+    if observed_shape != tensor_shape:
+        raise RuntimeContractError(
+            "special-token embedding tensor shape does not match metadata",
+            code="special_token_embeddings.execution_tensor_shape",
+            context={"metadata": tensor_shape, "tensor": observed_shape},
+        )
+    expected_safetensors_dtype = supported_source_dtypes[metadata["tensor_dtype"]]
+    if observed_dtype != expected_safetensors_dtype:
+        raise RuntimeContractError(
+            "special-token embedding tensor dtype does not match metadata",
+            code="special_token_embeddings.execution_dtype",
+            context={
+                "metadata": metadata["tensor_dtype"],
+                "expected_tensor": expected_safetensors_dtype,
+                "tensor": observed_dtype,
+            },
+        )
+
+    files = [
+        _embedding_payload_file_identity(metadata_path, root=root),
+        _embedding_payload_file_identity(tensor_path, root=root),
+    ]
+    semantic_identity = {
+        "semantics": metadata["semantics"],
+        "tensor_key": metadata["tensor_key"],
+        "tensor_shape": list(tensor_shape),
+        "tensor_dtype": metadata["tensor_dtype"],
+        "token_strings": list(token_strings),
+        "token_ids": list(token_ids),
+        "base_model_path": metadata["base_model_path"],
+        "base_config_sha256": metadata["base_config_sha256"],
+        "tokenizer_sha256": metadata["tokenizer_sha256"],
+        "tie_word_embeddings": True,
+    }
+    determinants = {
+        "version": SPECIAL_TOKEN_EMBEDDING_PAYLOAD_IDENTITY_VERSION,
+        "files": files,
+        "semantic_identity": semantic_identity,
+    }
+    return {
+        "kind": "special_token_embedding_delta",
+        "version": SPECIAL_TOKEN_EMBEDDING_PAYLOAD_IDENTITY_VERSION,
+        "root": str(root),
+        "file_count": len(files),
+        "files": files,
+        "semantic_identity": semantic_identity,
+        "fingerprint": _sha256_json(determinants),
+    }
+
+
+def fold_special_token_embedding_delta_for_execution(
+    model: nn.Module,
+    path: str | Path,
+    expected_identity: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Normalize one compact delta to FP32, then fold target-dtype tied rows once."""
+
+    identity = inspect_special_token_embedding_delta_payload(path)
+    if expected_identity is not None:
+        if not isinstance(expected_identity, Mapping):
+            raise RuntimeContractError(
+                "expected embedding-delta identity must be a mapping",
+                code="special_token_embeddings.execution_expected_identity",
+            )
+        expected_fingerprint = expected_identity.get("fingerprint")
+        if not isinstance(expected_fingerprint, str) or not expected_fingerprint:
+            raise RuntimeContractError(
+                "expected embedding-delta identity must contain a fingerprint",
+                code="special_token_embeddings.execution_expected_identity",
+            )
+        if identity["fingerprint"] != expected_fingerprint:
+            raise RuntimeContractError(
+                "embedding-delta payload changed after identity inspection",
+                code="special_token_embeddings.execution_identity_mismatch",
+                context={
+                    "expected_fingerprint": expected_fingerprint,
+                    "observed_fingerprint": identity["fingerprint"],
+                },
+            )
+    wrappers = _special_token_execution_wrappers(model)
+    if wrappers:
+        raise RuntimeContractError(
+            "execution delta folding requires a wrapper-free model",
+            code="special_token_embeddings.execution_wrapper_residue",
+            context={"wrapper_modules": wrappers},
+        )
+    embedding = _input_embedding(model)
+    output_head = _output_head(model)
+    _validate_tied_base_weights(embedding, output_head)
+    semantic = identity["semantic_identity"]
+    token_ids = tuple(int(item) for item in semantic["token_ids"])
+    if (
+        max(token_ids) >= embedding.num_embeddings
+        or max(token_ids) >= output_head.out_features
+    ):
+        raise RuntimeContractError(
+            "embedding-delta token id is outside the execution-model vocabulary",
+            code="special_token_embeddings.execution_token_id_out_of_range",
+            context={
+                "max_token_id": max(token_ids),
+                "embedding_vocab_size": embedding.num_embeddings,
+                "output_vocab_size": output_head.out_features,
+            },
+        )
+    if int(semantic["tensor_shape"][1]) != int(embedding.embedding_dim):
+        raise RuntimeContractError(
+            "embedding-delta hidden size does not match the execution model",
+            code="special_token_embeddings.execution_hidden_size",
+            context={
+                "delta_hidden_size": semantic["tensor_shape"][1],
+                "model_hidden_size": embedding.embedding_dim,
+            },
+        )
+    if not embedding.weight.dtype.is_floating_point:
+        raise RuntimeContractError(
+            "execution embedding weight must use a floating-point dtype",
+            code="special_token_embeddings.execution_model_dtype",
+            context={"dtype": _dtype_name(embedding.weight.dtype)},
+        )
+    tensor_path = Path(identity["root"]) / SPECIAL_TOKEN_EMBEDDINGS_SAFE_TENSORS
+    delta = load_file(str(tensor_path), device="cpu")[DEFAULT_EMBED_DELTA_TENSOR_KEY]
+    if delta.dtype not in (torch.float32, torch.bfloat16):
+        raise RuntimeContractError(
+            "execution embedding delta has an unsupported source dtype",
+            code="special_token_embeddings.execution_dtype",
+            context={"dtype": _dtype_name(delta.dtype)},
+        )
+    source_dtype = _dtype_name(delta.dtype)
+    delta_fp32 = delta.to(dtype=torch.float32)
+    index = torch.tensor(token_ids, dtype=torch.long, device=embedding.weight.device)
+    with torch.no_grad():
+        before = embedding.weight.index_select(0, index).detach().clone()
+        embedding.weight.index_add_(
+            0,
+            index,
+            delta_fp32.to(
+                device=embedding.weight.device,
+                dtype=embedding.weight.dtype,
+            ),
+        )
+        after = embedding.weight.index_select(0, index).detach().clone()
+    if embedding.weight is not output_head.weight:
+        raise RuntimeContractError(
+            "embedding/lm-head tied storage was lost during delta folding",
+            code="special_token_embeddings.execution_tie_lost",
+        )
+    wrappers_after = _special_token_execution_wrappers(model)
+    if wrappers_after:
+        raise RuntimeContractError(
+            "execution model retains selected-token wrappers after folding",
+            code="special_token_embeddings.execution_wrapper_residue",
+            context={"wrapper_modules": wrappers_after},
+        )
+    return {
+        "status": "folded",
+        "delta_identity": identity,
+        "semantics": SPECIAL_TOKEN_EMBEDDING_SEMANTICS,
+        "token_count": len(token_ids),
+        "token_ids": list(token_ids),
+        "source_dtype": source_dtype,
+        "runtime_delta_dtype": "float32",
+        "target_dtype": _dtype_name(embedding.weight.dtype),
+        "row_addition_count": 1,
+        "tied_input_output_storage": True,
+        "selected_rows_before_sha256": _tensor_payload_sha256(before),
+        "selected_rows_after_sha256": _tensor_payload_sha256(after),
+        "wrapper_modules": [],
+    }
 
 
 def validate_inference_embedding_delta_identity(
@@ -423,7 +752,10 @@ def build_default_special_token_selection(
     return SpecialTokenSelection(
         token_strings=(*DEFAULT_WRAPPER_TOKENS, *DEFAULT_COORDINATE_TOKENS),
         token_ids=(
-            tuple(token_identity.wrapper_token_ids[token] for token in DEFAULT_WRAPPER_TOKENS)
+            tuple(
+                token_identity.wrapper_token_ids[token]
+                for token in DEFAULT_WRAPPER_TOKENS
+            )
             + token_identity.coordinate_token_ids
         ),
     )
@@ -712,7 +1044,9 @@ def _output_head(model: nn.Module) -> nn.Linear:
     return output
 
 
-def _validate_tied_base_weights(embedding: nn.Embedding, output_head: nn.Linear) -> None:
+def _validate_tied_base_weights(
+    embedding: nn.Embedding, output_head: nn.Linear
+) -> None:
     if embedding.weight is not output_head.weight:
         raise RuntimeContractError(
             "V1 special-token embedding deltas require tied input embedding and lm_head weights",
@@ -788,7 +1122,9 @@ def _inference_delta_payload_dir(delta_path: Path) -> Path:
     return delta_path
 
 
-def _validate_inference_delta_metadata(metadata: Mapping[str, Any], *, qwen: Any) -> None:
+def _validate_inference_delta_metadata(
+    metadata: Mapping[str, Any], *, qwen: Any
+) -> None:
     required = (
         "semantics",
         "tensor_key",
@@ -817,7 +1153,10 @@ def _validate_inference_delta_metadata(metadata: Mapping[str, Any], *, qwen: Any
             },
         )
     base_model_path = _qwen_base_model_path(qwen)
-    if base_model_path is not None and metadata.get("base_model_path") != base_model_path:
+    if (
+        base_model_path is not None
+        and metadata.get("base_model_path") != base_model_path
+    ):
         raise RuntimeContractError(
             "special-token embedding metadata base model does not match runtime base",
             code="special_token_embeddings.identity_mismatch",
@@ -1001,6 +1340,88 @@ def _parameter_name(model: nn.Module, target: nn.Parameter) -> str | None:
 
 def _dtype_name(dtype: torch.dtype) -> str:
     return str(dtype).replace("torch.", "")
+
+
+def _require_expected_delta_identity_field(
+    metadata: Mapping[str, Any],
+    *,
+    field: str,
+    expected: str | Path | None,
+    normalize_path: bool = False,
+) -> None:
+    if expected is None:
+        return
+    actual_value = str(metadata[field])
+    expected_value = str(expected)
+    if normalize_path:
+        actual_value = _normalize_payload_identity_path(actual_value)
+        expected_value = _normalize_payload_identity_path(expected_value)
+    if actual_value != expected_value:
+        raise RuntimeContractError(
+            "special-token embedding payload base identity does not match expectation",
+            code="special_token_embeddings.execution_identity_mismatch",
+            context={
+                "field": field,
+                "expected": expected_value,
+                "actual": actual_value,
+            },
+        )
+
+
+def _normalize_payload_identity_path(value: str) -> str:
+    raw = value.strip()
+    path = Path(raw).expanduser()
+    if path.is_absolute() or raw.startswith("~"):
+        return str(path.resolve(strict=False))
+    return raw
+
+
+def _embedding_payload_file_identity(path: Path, *, root: Path) -> dict[str, Any]:
+    return {
+        "relative_path": path.relative_to(root).as_posix(),
+        "size_bytes": path.stat().st_size,
+        "sha256": _sha256_file_required(path),
+    }
+
+
+def _sha256_file_required(path: Path) -> str:
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except FileNotFoundError as exc:
+        raise RuntimeContractError(
+            "special-token embedding payload file is missing",
+            code="special_token_embeddings.execution_payload_missing",
+            context={"path": str(path)},
+            cause=exc,
+        ) from exc
+    return digest.hexdigest()
+
+
+def _sha256_json(payload: Any) -> str:
+    encoded = json.dumps(
+        payload,
+        allow_nan=False,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _tensor_payload_sha256(tensor: torch.Tensor) -> str:
+    byte_view = tensor.detach().cpu().contiguous().view(torch.uint8)
+    return hashlib.sha256(byte_view.numpy().tobytes()).hexdigest()
+
+
+def _special_token_execution_wrappers(model: nn.Module) -> list[str]:
+    return sorted(
+        name or "<root>"
+        for name, module in model.named_modules()
+        if isinstance(module, (SelectedDeltaInputEmbedding, SelectedDeltaOutputHead))
+    )
 
 
 def sha256_file(path: Path) -> str | None:

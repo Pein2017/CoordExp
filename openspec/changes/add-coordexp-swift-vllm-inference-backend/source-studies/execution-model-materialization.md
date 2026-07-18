@@ -14,8 +14,12 @@ and applied to tied input embedding and lm-head semantics.
    modules before mutation.
 2. Load the base model on CPU directly in the configured target dtype.
 3. Inspect adapter content through `src.adapters.dora`, load it with
-   `PeftModel.from_pretrained(..., is_trainable=False)`, and call
+   `PeftModel.from_pretrained(..., is_trainable=False,
+   autocast_adapter_dtype=False)`, and call
    `merge_and_unload(safe_merge=True, adapter_names=["default"])`.
+   Disabling adapter autocast is required to match the existing Transformers
+   inference path: PEFT otherwise promotes BF16 adapter tensors to FP32 before
+   the merge and changes the resulting executable weights.
 4. Validate that no PEFT wrappers, DoRA magnitude vectors, LoRA tensors, or
    parametrization wrappers remain in the standard model.
 5. Inspect delta content through `src.qwen.special_token_embeddings`; add the
@@ -57,6 +61,29 @@ must be bitwise equal after target-dtype casting. FP32 full-vocabulary logits
 use `rtol=1e-4`, `atol=5e-3`; FP32 selected-token logits use `rtol=1e-4`,
 `atol=2e-3`. Tied storage and greedy token ids are exact checks. Only then may
 vLLM consume the derived snapshot.
+
+## Executed BF16 Finding
+
+The real step-4887 base-plus-DoRA-plus-delta probe established two separate
+facts:
+
+- After disabling PEFT adapter autocast, the Transformers-mixin and PeftModel
+  loaders produce bitwise-equal BF16 base, LoRA-A, LoRA-B, magnitude, and
+  safely merged weights. A safely merged language-layer weight also remains
+  bitwise equal after standard snapshot save/reload.
+- The existing unmerged DoRA forward and the equivalent merged BF16 linear
+  layer are not execution-identical because they evaluate the same algebra
+  through different BF16 operation orderings. On the accepted row-0 fixture,
+  the dynamic/materialized comparison observed full-vocabulary maximum
+  absolute logit difference `0.921875`, selected-vocabulary maximum absolute
+  difference `0.75390625`, and the first greedy-token mismatch at generated
+  index `4`. A layer-level FP32 merge did not remove the discrepancy.
+
+Therefore the owner-defined state composition is exact, while the current
+dynamic-forward behavioral parity gate is unresolved. No composed vLLM support
+is qualified by this finding. The active design requires a user-owned decision
+between preserving canonical dynamic HF behavior with an explicitly diagnostic
+dynamic/materialized comparison, or changing canonical HF execution semantics.
 
 ## Failure Policy
 

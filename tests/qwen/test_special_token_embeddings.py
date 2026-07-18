@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -22,6 +23,8 @@ from src.qwen.special_token_embeddings import (
     SpecialTokenEmbeddingSourceGateEvidence,
     SpecialTokenSelection,
     build_default_special_token_selection,
+    fold_special_token_embedding_delta_for_execution,
+    inspect_special_token_embedding_delta_payload,
     install_special_token_embedding_deltas,
     load_inference_embedding_delta,
     load_default_special_token_embedding_source_gate_evidence,
@@ -105,8 +108,14 @@ def test_special_token_embedding_install_requires_source_gate() -> None:
 @pytest.mark.parametrize(
     ("receipt_patch", "expected_code"),
     [
-        ({"semantics": "absolute_rows"}, "special_token_embeddings.source_gate_semantics"),
-        ({"num_selected_tokens": 2}, "special_token_embeddings.source_gate_selected_count"),
+        (
+            {"semantics": "absolute_rows"},
+            "special_token_embeddings.source_gate_semantics",
+        ),
+        (
+            {"num_selected_tokens": 2},
+            "special_token_embeddings.source_gate_selected_count",
+        ),
     ],
 )
 def test_special_token_embedding_source_gate_rejects_drifted_probe_receipts(
@@ -223,14 +232,18 @@ def test_selected_delta_output_head_avoids_full_logits_clone() -> None:
     wrapper = SelectedDeltaOutputHead(base, selection, delta)
     hidden = torch.randn(2, 5, 4, requires_grad=True)
 
-    with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CPU]) as prof:
+    with torch.profiler.profile(
+        activities=[torch.profiler.ProfilerActivity.CPU]
+    ) as prof:
         logits = wrapper(hidden)
 
     assert logits.shape == (2, 5, 128)
     assert not any(event.key == "aten::clone" for event in prof.key_averages())
 
 
-def test_special_token_embedding_install_preserves_existing_trainable_adapters() -> None:
+def test_special_token_embedding_install_preserves_existing_trainable_adapters() -> (
+    None
+):
     model = TinyTiedQwenWithAdapter(vocab_size=8, hidden_size=4)
     selection = SpecialTokenSelection(token_strings=("<a>",), token_ids=(2,))
 
@@ -241,7 +254,9 @@ def test_special_token_embedding_install_preserves_existing_trainable_adapters()
     )
 
     trainable_names = {
-        name for name, parameter in result.model.named_parameters() if parameter.requires_grad
+        name
+        for name, parameter in result.model.named_parameters()
+        if parameter.requires_grad
     }
     assert trainable_names == {
         "adapter_weight",
@@ -312,9 +327,141 @@ def test_special_token_embedding_compact_payload_round_trips(tmp_path: Path) -> 
     assert load_receipt.loaded is True
     assert torch.allclose(reloaded.shared_embed_delta, result.shared_embed_delta)
     input_ids = torch.tensor([[2, 1]], dtype=torch.long)
-    input_diff = reloaded.input_wrapper(input_ids) - reloaded.input_wrapper.base(input_ids)
+    input_diff = reloaded.input_wrapper(input_ids) - reloaded.input_wrapper.base(
+        input_ids
+    )
     assert torch.allclose(input_diff[0, 0], result.shared_embed_delta[0])
     assert torch.allclose(input_diff[0, 1], torch.zeros(4))
+
+
+def test_execution_delta_identity_is_path_independent_and_binds_tensor_bytes(
+    tmp_path: Path,
+) -> None:
+    payload_dir, _ = _write_execution_delta(tmp_path / "original")
+    identity = inspect_special_token_embedding_delta_payload(
+        payload_dir,
+        expected_base_model_path=Path("/models/qwen-base"),
+        expected_base_config_sha256="config-sha",
+        expected_tokenizer_sha256="tokenizer-sha",
+    )
+    copied_dir = tmp_path / "copied"
+    shutil.copytree(payload_dir, copied_dir)
+    copied = inspect_special_token_embedding_delta_payload(copied_dir)
+
+    assert identity["kind"] == "special_token_embedding_delta"
+    assert identity["fingerprint"] == copied["fingerprint"]
+    assert identity["root"] != copied["root"]
+    assert identity["semantic_identity"]["tensor_key"] == (
+        DEFAULT_EMBED_DELTA_TENSOR_KEY
+    )
+    assert identity["semantic_identity"]["tensor_dtype"] == "float32"
+
+    tensor_path = copied_dir / SPECIAL_TOKEN_EMBEDDINGS_SAFE_TENSORS
+    changed = torch.tensor(
+        [[0.75, -0.5, 0.25, 1.0], [-0.25, 0.5, -1.0, 0.125]],
+        dtype=torch.float32,
+    )
+    save_file({DEFAULT_EMBED_DELTA_TENSOR_KEY: changed}, tensor_path)
+    changed_identity = inspect_special_token_embedding_delta_payload(copied_dir)
+    assert changed_identity["fingerprint"] != identity["fingerprint"]
+
+
+def test_fold_execution_delta_adds_once_in_target_dtype_and_preserves_tie(
+    tmp_path: Path,
+) -> None:
+    payload_dir, delta = _write_execution_delta(tmp_path / "payload")
+    identity = inspect_special_token_embedding_delta_payload(payload_dir)
+    model = TinyTiedQwenModel(vocab_size=8, hidden_size=4).to(torch.bfloat16)
+    tied_weight = model.get_input_embeddings().weight
+    before = tied_weight.detach().clone()
+    expected = before.clone()
+    expected.index_add_(
+        0,
+        torch.tensor([2, 5]),
+        delta.to(dtype=torch.bfloat16),
+    )
+
+    receipt = fold_special_token_embedding_delta_for_execution(
+        model,
+        payload_dir,
+        expected_identity=identity,
+    )
+
+    assert torch.equal(tied_weight, expected)
+    assert model.get_input_embeddings().weight is model.get_output_embeddings().weight
+    assert receipt["source_dtype"] == "float32"
+    assert receipt["target_dtype"] == "bfloat16"
+    assert receipt["row_addition_count"] == 1
+
+
+def test_execution_delta_accepts_bfloat16_source_and_normalizes_for_fold(
+    tmp_path: Path,
+) -> None:
+    payload_dir, delta = _write_execution_delta(tmp_path / "payload")
+    tensor_path = payload_dir / SPECIAL_TOKEN_EMBEDDINGS_SAFE_TENSORS
+    save_file(
+        {DEFAULT_EMBED_DELTA_TENSOR_KEY: delta.to(torch.bfloat16)},
+        tensor_path,
+    )
+    metadata_path = payload_dir / SPECIAL_TOKEN_EMBEDDINGS_JSON
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["tensor_dtype"] = "bfloat16"
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    identity = inspect_special_token_embedding_delta_payload(payload_dir)
+    model = TinyTiedQwenModel(vocab_size=8, hidden_size=4).to(torch.bfloat16)
+    receipt = fold_special_token_embedding_delta_for_execution(
+        model,
+        payload_dir,
+        expected_identity=identity,
+    )
+
+    assert receipt["source_dtype"] == "bfloat16"
+    assert receipt["runtime_delta_dtype"] == "float32"
+    assert model.get_input_embeddings().weight is model.get_output_embeddings().weight
+    assert receipt["tied_input_output_storage"] is True
+    assert receipt["wrapper_modules"] == []
+
+
+def test_fold_execution_delta_rejects_wrappers_and_out_of_range_ids(
+    tmp_path: Path,
+) -> None:
+    payload_dir, _ = _write_execution_delta(tmp_path / "payload")
+    wrapped = install_special_token_embedding_deltas(
+        TinyTiedQwenModel(vocab_size=8, hidden_size=4),
+        SpecialTokenSelection(token_strings=("<a>", "<b>"), token_ids=(2, 5)),
+        source_gate=_source_gate(selected_count=2),
+    ).model
+
+    with pytest.raises(RuntimeContractError) as wrapper_error:
+        fold_special_token_embedding_delta_for_execution(wrapped, payload_dir)
+    assert wrapper_error.value.code == (
+        "special_token_embeddings.execution_wrapper_residue"
+    )
+
+    with pytest.raises(RuntimeContractError) as range_error:
+        fold_special_token_embedding_delta_for_execution(
+            TinyTiedQwenModel(vocab_size=5, hidden_size=4),
+            payload_dir,
+        )
+    assert range_error.value.code == (
+        "special_token_embeddings.execution_token_id_out_of_range"
+    )
+
+
+def test_execution_delta_inspection_rejects_duplicate_token_ids(
+    tmp_path: Path,
+) -> None:
+    payload_dir, _ = _write_execution_delta(tmp_path / "payload")
+    metadata_path = payload_dir / SPECIAL_TOKEN_EMBEDDINGS_JSON
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["token_ids"] = [2, 2]
+    metadata_path.write_text(json.dumps(metadata, sort_keys=True), encoding="utf-8")
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        inspect_special_token_embedding_delta_payload(payload_dir)
+
+    assert exc_info.value.code == "special_token_embeddings.execution_token_ids"
 
 
 @pytest.mark.parametrize(
@@ -490,7 +637,9 @@ def test_inference_embedding_delta_identity_accepts_matching_metadata(
 def test_inference_embedding_delta_load_installs_wrappers_and_payload(
     tmp_path: Path,
 ) -> None:
-    qwen = _qwen_identity_context(model=TinyTiedQwenModel(vocab_size=152670, hidden_size=4))
+    qwen = _qwen_identity_context(
+        model=TinyTiedQwenModel(vocab_size=152670, hidden_size=4)
+    )
     selection = build_default_special_token_selection(
         SpecialTokenEmbeddingsConfig(
             groups=SpecialTokenEmbeddingGroupsConfig(
@@ -521,7 +670,10 @@ def test_inference_embedding_delta_load_installs_wrappers_and_payload(
     assert receipt["identity"]["status"] == "validated"
     assert receipt["load"]["loaded"] is True
     assert qwen.model.get_input_embeddings().selection.token_ids == selection.token_ids
-    assert qwen.model.get_output_embeddings().selection.token_strings == selection.token_strings
+    assert (
+        qwen.model.get_output_embeddings().selection.token_strings
+        == selection.token_strings
+    )
     assert torch.allclose(
         qwen.model.get_input_embeddings().shared_embed_delta,
         torch.full((len(selection), 4), 0.125),
@@ -664,6 +816,32 @@ class TinyTiedQwenWithAdapter(TinyTiedQwenModel):
         self.adapter_weight = nn.Parameter(torch.ones(hidden_size))
 
 
+def _write_execution_delta(path: Path) -> tuple[Path, torch.Tensor]:
+    selection = SpecialTokenSelection(
+        token_strings=("<a>", "<b>"),
+        token_ids=(2, 5),
+    )
+    installed = install_special_token_embedding_deltas(
+        TinyTiedQwenModel(vocab_size=8, hidden_size=4),
+        selection,
+        source_gate=_source_gate(selected_count=2),
+    )
+    delta = torch.tensor(
+        [[0.5, 0.25, -0.125, 0.75], [-0.5, 0.75, 0.25, -0.25]],
+        dtype=torch.float32,
+    )
+    with torch.no_grad():
+        installed.shared_embed_delta.copy_(delta)
+    save_special_token_embedding_deltas(
+        installed,
+        path,
+        base_model_path=Path("/models/qwen-base"),
+        base_config_sha256="config-sha",
+        tokenizer_sha256="tokenizer-sha",
+    )
+    return path, delta
+
+
 def _source_gate(*, selected_count: int) -> SpecialTokenEmbeddingSourceGateEvidence:
     return SpecialTokenEmbeddingSourceGateEvidence(
         source_study_passed=True,
@@ -685,8 +863,7 @@ def _token_identity() -> QwenTokenIdentity:
     return QwenTokenIdentity(
         required_tokens=(*DEFAULT_WRAPPER_TOKENS, *DEFAULT_COORDINATE_TOKENS),
         wrapper_token_ids={
-            token: 151646 + index
-            for index, token in enumerate(DEFAULT_WRAPPER_TOKENS)
+            token: 151646 + index for index, token in enumerate(DEFAULT_WRAPPER_TOKENS)
         },
         coordinate_token_ids=tuple(range(151670, 152670)),
         im_end_newline_text="<|im_end|>\n",

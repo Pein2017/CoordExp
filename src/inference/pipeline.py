@@ -42,6 +42,10 @@ from src.inference.data_parallel import (
     require_visible_cuda_for_inference,
     sort_rows_by_index,
 )
+from src.inference.execution_model import (
+    resolve_execution_model,
+    validate_execution_model_receipt,
+)
 from src.inference.image_plan import plan_image_batch, verify_processor_model_vision_parity
 from src.inference.merge import merge_shard_artifacts
 from src.inference.parsing import PARSER_POLICY, parse_compact_object_box_closed
@@ -97,6 +101,9 @@ def run(
             ),
             "plan": data_parallel_plan.to_artifact_dict(),
         }
+        execution_model = _resolve_execution_model_for_run(resolved)
+        if execution_model is not None:
+            metadata["execution_model"] = execution_model
     except CoordExpError as exc:
         _write_terminal_contract_failure(
             output_dir=run_dir,
@@ -113,6 +120,7 @@ def run(
             metadata=metadata,
             frontend_factory=frontend_factory,
             session_opener=session_opener,
+            execution_model=execution_model,
         )
         return 0
 
@@ -123,6 +131,7 @@ def run(
         metadata=metadata,
         plan=data_parallel_plan,
         worker_launcher=worker_launcher,
+        execution_model=execution_model,
     )
     return 0
 
@@ -136,6 +145,7 @@ def run_shard(
     rank_plan: RankShardPlan | None = None,
     frontend_factory: FrontendFactory | None = None,
     session_opener: BackendSessionOpener | None = None,
+    execution_model: dict[str, Any] | None = None,
 ) -> int:
     raw_examples = list(load_raw_examples(resolved.config.data.input_jsonl))
     indexed_raw_examples = _select_indexed_raw_examples(
@@ -170,6 +180,7 @@ def run_shard(
         metadata=metadata,
         frontend_factory=frontend_factory,
         session_opener=session_opener,
+        execution_model=execution_model,
     )
     return 0
 
@@ -181,6 +192,7 @@ def run_data_parallel_shards(
     plan: DataParallelPlan,
     frontend_factory: FrontendFactory | None = None,
     session_opener: BackendSessionOpener | None = None,
+    execution_model: dict[str, Any] | None = None,
 ) -> DataParallelShardRunResult:
     shard_dirs: list[Path] = []
     raw_rows: list[dict[str, Any]] = []
@@ -207,6 +219,7 @@ def run_data_parallel_shards(
             rank_plan=rank_plan,
             frontend_factory=frontend_factory,
             session_opener=session_opener,
+            execution_model=execution_model,
         )
         raw_rows.extend(_read_jsonl(shard_dir / RAW_NAME))
     return DataParallelShardRunResult(
@@ -223,12 +236,17 @@ def _execute_controller_worker_path(
     metadata: dict[str, Any],
     plan: DataParallelPlan,
     worker_launcher: WorkerLauncher | None,
+    execution_model: dict[str, Any] | None,
 ) -> None:
     from src.inference import worker as worker_module
 
     plan_json = _write_data_parallel_plan_artifact(run_dir=run_dir, plan=plan)
     resolved_config_json = run_dir / "configs" / "resolved.json"
     launcher = worker_launcher or worker_module.launch_worker_subprocess
+    execution_model_json = _write_execution_model_artifact(
+        run_dir=run_dir,
+        execution_model=execution_model,
+    )
     launched: list[tuple[RankShardPlan, Any]] = []
     for rank_plan in plan.ranks:
         shard_dir = run_dir / "shards" / rank_plan.shard_dir_name
@@ -239,6 +257,7 @@ def _execute_controller_worker_path(
             resolved_config_json=resolved_config_json,
             shard_plan_json=plan_json,
             output_dir=shard_dir,
+            execution_model_json=execution_model_json,
         )
         launched.append((rank_plan, process))
 
@@ -300,14 +319,18 @@ def _execute_indexed_rows_with_terminal_status(
     metadata: dict[str, Any],
     frontend_factory: FrontendFactory | None,
     session_opener: BackendSessionOpener | None,
+    execution_model: dict[str, Any] | None,
 ) -> None:
     try:
-        frontend = (frontend_factory or assemble_frontend)(
-            resolved.config,
-            generation_config_fingerprint=metadata[
+        factory = frontend_factory or assemble_frontend
+        frontend_kwargs: dict[str, Any] = {
+            "generation_config_fingerprint": metadata[
                 "generation_config_fingerprint"
-            ],
-        )
+            ]
+        }
+        if execution_model is not None:
+            frontend_kwargs["execution_model"] = execution_model
+        frontend = factory(resolved.config, **frontend_kwargs)
         _execute_indexed_rows(
             resolved=resolved,
             output_dir=output_dir,
@@ -335,6 +358,36 @@ def _execute_indexed_rows_with_terminal_status(
             error=exc,
         )
         raise
+
+
+def _resolve_execution_model_for_run(
+    resolved: ResolvedInferConfig,
+) -> dict[str, Any] | None:
+    config = resolved.config
+    if config.backend.type != "vllm":
+        return None
+    return resolve_execution_model(
+        base_model_path=config.model.base_model,
+        target_dtype=config.model.dtype,
+        adapter_path=None if config.adapter is None else config.adapter.path,
+        adapter_name="default" if config.adapter is None else config.adapter.name,
+        embedding_delta_path=(
+            None if config.embedding_delta is None else config.embedding_delta.path
+        ),
+    )
+
+
+def _write_execution_model_artifact(
+    *,
+    run_dir: Path,
+    execution_model: dict[str, Any] | None,
+) -> Path | None:
+    if execution_model is None:
+        return None
+    validated = validate_execution_model_receipt(execution_model)
+    path = run_dir / "execution_model.json"
+    _write_json(path, validated)
+    return path
 
 
 def _execute_indexed_rows(

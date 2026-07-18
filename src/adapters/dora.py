@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 from dataclasses import dataclass
 from importlib import metadata
 from pathlib import Path
@@ -18,6 +18,7 @@ from src.common.errors import RuntimeContractError
 
 
 DEFAULT_ADAPTER_NAME = "default"
+DORA_ADAPTER_PAYLOAD_IDENTITY_VERSION = "coordexp-swift-dora-adapter-v1"
 
 
 @dataclass(frozen=True)
@@ -111,6 +112,240 @@ class InferenceAdapterStatusReceipt:
         }
 
 
+def inspect_dora_adapter_payload(
+    path: str | Path,
+    expected_base_model_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Validate and content-address one standard PEFT DoRA adapter payload."""
+
+    configured_path = Path(path).expanduser().resolve()
+    root = configured_path.parent if configured_path.is_file() else configured_path
+    config_path = root / "adapter_config.json"
+    if not root.is_dir():
+        raise RuntimeContractError(
+            "DoRA adapter payload root is not a directory",
+            code="adapter.execution_payload_missing",
+            context={"path": str(configured_path)},
+        )
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise RuntimeContractError(
+            "DoRA adapter payload is missing adapter_config.json",
+            code="adapter.execution_config_missing",
+            context={"root": str(root)},
+            cause=exc,
+        ) from exc
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise RuntimeContractError(
+            "DoRA adapter config is not valid UTF-8 JSON",
+            code="adapter.execution_config_invalid",
+            context={"config_path": str(config_path)},
+            cause=exc,
+        ) from exc
+    if not isinstance(config, dict):
+        raise RuntimeContractError(
+            "DoRA adapter config must be a JSON object",
+            code="adapter.execution_config_invalid",
+            context={"config_path": str(config_path)},
+        )
+    if config.get("peft_type") != "LORA" or config.get("use_dora") is not True:
+        raise RuntimeContractError(
+            "execution adapter must declare PEFT LORA with use_dora=true",
+            code="adapter.execution_not_dora",
+            context={
+                "peft_type": config.get("peft_type"),
+                "use_dora": config.get("use_dora"),
+            },
+        )
+    target_modules = config.get("target_modules")
+    if (
+        not isinstance(target_modules, list)
+        or not target_modules
+        or not all(isinstance(item, str) and item for item in target_modules)
+    ):
+        raise RuntimeContractError(
+            "DoRA adapter config must declare non-empty target_modules",
+            code="adapter.execution_config_invalid",
+            context={"target_modules": target_modules},
+        )
+    try:
+        rank = int(config.get("r"))
+        alpha = float(config.get("lora_alpha"))
+    except (TypeError, ValueError) as exc:
+        raise RuntimeContractError(
+            "DoRA adapter rank and alpha must be numeric",
+            code="adapter.execution_config_invalid",
+            context={"r": config.get("r"), "lora_alpha": config.get("lora_alpha")},
+            cause=exc,
+        ) from exc
+    if rank <= 0 or alpha <= 0:
+        raise RuntimeContractError(
+            "DoRA adapter rank and alpha must be positive",
+            code="adapter.execution_config_invalid",
+            context={"r": rank, "lora_alpha": alpha},
+        )
+
+    declared_base = _normalize_base_model_identity(
+        config.get("base_model_name_or_path")
+    )
+    expected_base = _normalize_base_model_identity(expected_base_model_path)
+    if expected_base is not None and declared_base != expected_base:
+        raise RuntimeContractError(
+            "DoRA adapter base identity does not match the expected base model",
+            code="adapter.execution_base_mismatch",
+            context={
+                "expected_base_model_path": expected_base,
+                "adapter_base_model_path": declared_base,
+            },
+        )
+
+    tensor_paths = tuple(
+        candidate
+        for candidate in sorted(root.glob("adapter_model*.safetensors"))
+        if candidate.is_file()
+    )
+    if not tensor_paths:
+        raise RuntimeContractError(
+            "DoRA adapter payload contains no safetensors payload",
+            code="adapter.execution_payload_missing",
+            context={"root": str(root)},
+        )
+    tensor_manifest = _inspect_dora_tensor_payloads(tensor_paths, rank=rank)
+    file_manifest = [
+        _payload_file_identity(config_path, root=root),
+        *(_payload_file_identity(item, root=root) for item in tensor_paths),
+    ]
+    semantic_identity = {
+        "peft_type": "LORA",
+        "use_dora": True,
+        "base_model_name_or_path": declared_base,
+        "target_modules": sorted(target_modules),
+        "r": rank,
+        "lora_alpha": alpha,
+        "tensor_key_count": tensor_manifest["tensor_key_count"],
+        "lora_A_count": tensor_manifest["lora_A_count"],
+        "lora_B_count": tensor_manifest["lora_B_count"],
+        "lora_magnitude_vector_count": tensor_manifest["lora_magnitude_vector_count"],
+    }
+    determinants = {
+        "version": DORA_ADAPTER_PAYLOAD_IDENTITY_VERSION,
+        "files": file_manifest,
+        "semantic_identity": semantic_identity,
+    }
+    return {
+        "kind": "dora_adapter",
+        "version": DORA_ADAPTER_PAYLOAD_IDENTITY_VERSION,
+        "root": str(root),
+        "file_count": len(file_manifest),
+        "files": file_manifest,
+        "semantic_identity": semantic_identity,
+        "tensor_manifest": tensor_manifest,
+        "fingerprint": _sha256_json(determinants),
+    }
+
+
+def merge_dora_adapter_for_execution(
+    model: nn.Module,
+    adapter_path: str | Path,
+    adapter_name: str = DEFAULT_ADAPTER_NAME,
+    expected_identity: Mapping[str, Any] | None = None,
+) -> tuple[nn.Module, dict[str, Any]]:
+    """Load one frozen DoRA adapter, safely merge it, and reject PEFT residue."""
+
+    if not isinstance(adapter_name, str) or not adapter_name:
+        raise RuntimeContractError(
+            "execution adapter name must be a non-empty string",
+            code="adapter.execution_adapter_name_invalid",
+        )
+    identity = inspect_dora_adapter_payload(adapter_path)
+    if expected_identity is not None:
+        expected_fingerprint = expected_identity.get("fingerprint")
+        if not isinstance(expected_fingerprint, str) or not expected_fingerprint:
+            raise RuntimeContractError(
+                "expected DoRA adapter identity must contain a fingerprint",
+                code="adapter.execution_expected_identity",
+            )
+        if identity["fingerprint"] != expected_fingerprint:
+            raise RuntimeContractError(
+                "DoRA adapter payload changed after identity inspection",
+                code="adapter.execution_identity_mismatch",
+                context={
+                    "expected_fingerprint": expected_fingerprint,
+                    "observed_fingerprint": identity["fingerprint"],
+                },
+            )
+    from peft import PeftModel
+
+    peft_model = PeftModel.from_pretrained(
+        model,
+        str(identity["root"]),
+        adapter_name=adapter_name,
+        is_trainable=False,
+        torch_device="cpu",
+        # Match Transformers' PeftAdapterMixin inference path. PEFT otherwise
+        # promotes BF16 adapter tensors to FP32 before merging, changing the
+        # executable weights even though the source payload is identical.
+        autocast_adapter_dtype=False,
+    )
+    trainable_before_merge = sorted(
+        name
+        for name, parameter in peft_model.named_parameters()
+        if parameter.requires_grad
+    )
+    if trainable_before_merge:
+        raise RuntimeContractError(
+            "execution DoRA adapter was not loaded frozen",
+            code="adapter.execution_not_frozen",
+            context={"trainable_parameter_names": trainable_before_merge[:20]},
+        )
+    status_receipt = validate_inference_adapter_status(
+        load_result=SimpleLoadResult(),
+        status=_get_inference_adapter_status(peft_model),
+        expected_adapter_name=adapter_name,
+    )
+    expected_layer_count = int(identity["tensor_manifest"]["lora_A_count"])
+    if (
+        status_receipt.num_adapter_layers is not None
+        and status_receipt.num_adapter_layers != expected_layer_count
+    ):
+        raise RuntimeContractError(
+            "loaded DoRA adapter layer count differs from its payload",
+            code="adapter.execution_layer_count_mismatch",
+            context={
+                "expected_layer_count": expected_layer_count,
+                "loaded_layer_count": status_receipt.num_adapter_layers,
+            },
+        )
+    merged_model = peft_model.merge_and_unload(
+        safe_merge=True,
+        adapter_names=[adapter_name],
+    )
+    # PEFT 0.17 leaves the now-empty config dictionary on the original base.
+    if "peft_config" in vars(merged_model):
+        delattr(merged_model, "peft_config")
+    residue = _execution_adapter_residue(merged_model)
+    if any(residue.values()):
+        raise RuntimeContractError(
+            "merged execution model retains LoRA, DoRA, PEFT, or parametrization residue",
+            code="adapter.execution_merge_residue",
+            context=residue,
+        )
+    return merged_model, {
+        "status": "merged",
+        "adapter_name": adapter_name,
+        "adapter_identity": identity,
+        "load": {
+            "is_trainable": False,
+            "autocast_adapter_dtype": False,
+            "trainable_parameter_count": 0,
+            "status": status_receipt.to_artifact_dict(),
+        },
+        "merge": {"safe_merge": True, "adapter_names": [adapter_name]},
+        "residue": residue,
+    }
+
+
 def validate_inference_adapter_status(
     *,
     load_result: Any,
@@ -132,10 +367,16 @@ def validate_inference_adapter_status(
         )
 
     enabled = getattr(status, "enabled", None)
-    active_adapters = tuple(str(item) for item in getattr(status, "active_adapters", ()))
-    merged_adapters = tuple(str(item) for item in getattr(status, "merged_adapters", ()))
+    active_adapters = tuple(
+        str(item) for item in getattr(status, "active_adapters", ())
+    )
+    merged_adapters = tuple(
+        str(item) for item in getattr(status, "merged_adapters", ())
+    )
     requires_grad = getattr(status, "requires_grad", None)
-    available_adapters = tuple(str(item) for item in getattr(status, "available_adapters", ()))
+    available_adapters = tuple(
+        str(item) for item in getattr(status, "available_adapters", ())
+    )
     num_adapter_layers = getattr(status, "num_adapter_layers", None)
     irregular_fields = [
         field
@@ -207,7 +448,9 @@ def validate_inference_adapter_status(
         merged_adapters=merged_adapters,
         requires_grad=requires_grad,
         available_adapters=available_adapters,
-        num_adapter_layers=None if num_adapter_layers is None else int(num_adapter_layers),
+        num_adapter_layers=None
+        if num_adapter_layers is None
+        else int(num_adapter_layers),
     )
 
 
@@ -262,7 +505,10 @@ def load_inference_dora_adapter(
         raise RuntimeContractError(
             "inference DoRA adapter owner requires captured PEFT load_adapter result",
             code="adapter.inference_load_adapter_unavailable",
-            context={"model_class": type(model).__name__, "adapter_path": str(adapter.path)},
+            context={
+                "model_class": type(model).__name__,
+                "adapter_path": str(adapter.path),
+            },
         )
     load_result = model.load_adapter(
         adapter.path,
@@ -367,9 +613,11 @@ def _validate_inference_adapter_payload(
         )
     if expected_base_model_path is not None:
         declared_base = config.get("base_model_name_or_path")
-        if declared_base is not None and Path(str(declared_base)).resolve() != Path(
-            expected_base_model_path
-        ).resolve():
+        if (
+            declared_base is not None
+            and Path(str(declared_base)).resolve()
+            != Path(expected_base_model_path).resolve()
+        ):
             raise RuntimeContractError(
                 "inference adapter base identity does not match runtime base",
                 code="adapter.inference_base_mismatch",
@@ -430,7 +678,9 @@ def _adapter_tensor_evidence(keys: list[str]) -> dict[str, Any]:
         "key_count": len(keys),
         "lora_A_count": sum(".lora_A." in key for key in keys),
         "lora_B_count": sum(".lora_B." in key for key in keys),
-        "lora_magnitude_vector_count": sum("lora_magnitude_vector" in key for key in keys),
+        "lora_magnitude_vector_count": sum(
+            "lora_magnitude_vector" in key for key in keys
+        ),
     }
 
 
@@ -453,7 +703,10 @@ def _validate_transformers_mixin_adapter_state(
     tensor_path = adapter_path / "adapter_model.safetensors"
     with safe_open(str(tensor_path), framework="pt", device="cpu") as handle:
         saved_keys = list(handle.keys())
-    normalized_saved = {_normalize_adapter_state_key(key, adapter_name=adapter_name) for key in saved_keys}
+    normalized_saved = {
+        _normalize_adapter_state_key(key, adapter_name=adapter_name)
+        for key in saved_keys
+    }
     normalized_state = {
         _normalize_adapter_state_key(str(key), adapter_name=adapter_name)
         for key in state
@@ -521,15 +774,15 @@ def discover_dora_targets(
             )
 
     matched_modules = tuple(
-        name
-        for tower in plan.target_towers
-        for name in matched_by_tower[tower]
+        name for tower in plan.target_towers for name in matched_by_tower[tower]
     )
     return DoraTargetDiscoveryReceipt(
         target_policy=plan.target_policy,
         target_towers=plan.target_towers,
         matched_modules=matched_modules,
-        counts_by_tower={tower: len(names) for tower, names in matched_by_tower.items()},
+        counts_by_tower={
+            tower: len(names) for tower, names in matched_by_tower.items()
+        },
         lm_head_seen=lm_head_seen,
         lm_head_excluded=not any(_is_lm_head(name) for name in matched_modules),
     )
@@ -736,7 +989,9 @@ def _warm_start_expand_dora_adapter(
         "source_adapter_path": str(source_adapter_path),
         "source_adapter_tensor_path": str(tensor_path),
         "source_adapter_tensor_sha256": _sha256_file(tensor_path),
-        "base_model_path": None if plan.base_model_path is None else str(plan.base_model_path),
+        "base_model_path": None
+        if plan.base_model_path is None
+        else str(plan.base_model_path),
         "source_gate": plan.source_gate.to_artifact_dict(),
         "target_towers": list(target_receipt.target_towers),
         "target_policy": target_receipt.target_policy,
@@ -878,6 +1133,179 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _sha256_json(payload: Any) -> str:
+    encoded = json.dumps(
+        payload,
+        allow_nan=False,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _payload_file_identity(path: Path, *, root: Path) -> dict[str, Any]:
+    return {
+        "relative_path": path.relative_to(root).as_posix(),
+        "size_bytes": path.stat().st_size,
+        "sha256": _sha256_file(path),
+    }
+
+
+def _inspect_dora_tensor_payloads(
+    tensor_paths: tuple[Path, ...],
+    *,
+    rank: int,
+) -> dict[str, Any]:
+    tensors_by_target: dict[str, dict[str, tuple[int, ...]]] = {}
+    tensor_records: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
+    for tensor_path in tensor_paths:
+        try:
+            with safe_open(str(tensor_path), framework="pt", device="cpu") as handle:
+                for key in handle.keys():
+                    if key in seen_keys:
+                        raise RuntimeContractError(
+                            "DoRA adapter tensor key appears in multiple payload files",
+                            code="adapter.execution_duplicate_tensor_key",
+                            context={"tensor_key": key},
+                        )
+                    seen_keys.add(key)
+                    tensor_slice = handle.get_slice(key)
+                    shape = tuple(int(item) for item in tensor_slice.get_shape())
+                    dtype = str(tensor_slice.get_dtype())
+                    tensor_records.append(
+                        {
+                            "relative_path": tensor_path.name,
+                            "tensor_key": key,
+                            "shape": list(shape),
+                            "dtype": dtype,
+                        }
+                    )
+                    target, kind = _execution_dora_tensor_target_and_kind(key)
+                    if target is None or kind is None:
+                        continue
+                    target_tensors = tensors_by_target.setdefault(target, {})
+                    if kind in target_tensors:
+                        raise RuntimeContractError(
+                            "DoRA adapter target contains duplicate tensor kinds",
+                            code="adapter.execution_duplicate_tensor_kind",
+                            context={"target": target, "kind": kind},
+                        )
+                    target_tensors[kind] = shape
+        except RuntimeContractError:
+            raise
+        except Exception as exc:
+            raise RuntimeContractError(
+                "DoRA adapter safetensors payload is unreadable",
+                code="adapter.execution_payload_invalid",
+                context={"tensor_path": str(tensor_path)},
+                cause=exc,
+            ) from exc
+
+    expected_kinds = {"lora_A", "lora_B", "lora_magnitude_vector"}
+    incomplete = {
+        target: sorted(expected_kinds - set(tensors))
+        for target, tensors in tensors_by_target.items()
+        if set(tensors) != expected_kinds
+    }
+    if not tensors_by_target or incomplete:
+        raise RuntimeContractError(
+            "DoRA adapter payload has incomplete LoRA/DoRA target tensors",
+            code="adapter.execution_payload_incomplete",
+            context={
+                "target_count": len(tensors_by_target),
+                "missing_by_target": incomplete,
+            },
+        )
+    shape_errors: dict[str, dict[str, list[int]]] = {}
+    for target, tensors in tensors_by_target.items():
+        lora_a = tensors["lora_A"]
+        lora_b = tensors["lora_B"]
+        magnitude = tensors["lora_magnitude_vector"]
+        if (
+            len(lora_a) != 2
+            or len(lora_b) != 2
+            or len(magnitude) != 1
+            or lora_a[0] != rank
+            or lora_b[1] != rank
+            or lora_b[0] != magnitude[0]
+        ):
+            shape_errors[target] = {
+                "lora_A": list(lora_a),
+                "lora_B": list(lora_b),
+                "lora_magnitude_vector": list(magnitude),
+            }
+    if shape_errors:
+        raise RuntimeContractError(
+            "DoRA adapter tensor shapes do not match rank/output dimensions",
+            code="adapter.execution_tensor_shape",
+            context={"rank": rank, "shape_errors": shape_errors},
+        )
+    tensor_records.sort(
+        key=lambda item: (str(item["relative_path"]), str(item["tensor_key"]))
+    )
+    target_count = len(tensors_by_target)
+    return {
+        "tensor_key_count": len(tensor_records),
+        "target_count": target_count,
+        "lora_A_count": target_count,
+        "lora_B_count": target_count,
+        "lora_magnitude_vector_count": target_count,
+        "tensors": tensor_records,
+    }
+
+
+def _execution_dora_tensor_target_and_kind(
+    key: str,
+) -> tuple[str | None, str | None]:
+    for marker, kind in (
+        (".lora_A.", "lora_A"),
+        (".lora_B.", "lora_B"),
+        (".lora_magnitude_vector", "lora_magnitude_vector"),
+    ):
+        if marker in key:
+            return key.split(marker, 1)[0], kind
+    return None, None
+
+
+def _execution_adapter_residue(model: nn.Module) -> dict[str, list[str]]:
+    residue_parameter_names = sorted(
+        name
+        for name, _ in model.named_parameters()
+        if any(
+            marker in name.lower() for marker in ("lora_", "dora", "magnitude_vector")
+        )
+    )
+    residue_buffer_names = sorted(
+        name
+        for name, _ in model.named_buffers()
+        if any(
+            marker in name.lower() for marker in ("lora_", "dora", "magnitude_vector")
+        )
+    )
+    peft_module_names: list[str] = []
+    parametrized_module_names: list[str] = []
+    peft_config_module_names: list[str] = []
+    for name, module in model.named_modules():
+        module_name = name or "<root>"
+        module_type = f"{type(module).__module__}.{type(module).__qualname__}"
+        if type(module).__module__.startswith("peft"):
+            peft_module_names.append(f"{module_name}:{module_type}")
+        parametrizations = vars(module).get("parametrizations")
+        if parametrizations is not None and len(parametrizations) > 0:
+            parametrized_module_names.append(module_name)
+        if vars(module).get("peft_config"):
+            peft_config_module_names.append(module_name)
+    return {
+        "parameter_names": residue_parameter_names,
+        "buffer_names": residue_buffer_names,
+        "peft_module_names": sorted(peft_module_names),
+        "peft_config_module_names": sorted(peft_config_module_names),
+        "parametrized_module_names": sorted(parametrized_module_names),
+    }
+
+
 def _tensor_sha256(tensor: torch.Tensor) -> str:
     cpu_tensor = tensor.detach().cpu().contiguous()
     byte_view = cpu_tensor.view(torch.uint8)
@@ -902,12 +1330,18 @@ def _validate_loaded_adapter_identity(
         getattr(active_config, "base_model_name_or_path", None)
     )
     requested_base = _normalize_base_model_identity(plan.base_model_path)
-    if loaded_base is not None and requested_base is not None and loaded_base != requested_base:
+    if (
+        loaded_base is not None
+        and requested_base is not None
+        and loaded_base != requested_base
+    ):
         raise RuntimeContractError(
             "loaded DoRA adapter base model identity does not match requested base model",
             code="adapter.loaded_base_model_mismatch",
             context={
-                "adapter_path": None if plan.adapter_path is None else str(plan.adapter_path),
+                "adapter_path": None
+                if plan.adapter_path is None
+                else str(plan.adapter_path),
                 "loaded_base_model_name_or_path": loaded_base,
                 "requested_base_model_path": requested_base,
             },
@@ -920,7 +1354,9 @@ def _validate_loaded_adapter_identity(
             "loaded DoRA adapter base model class does not match current model",
             code="adapter.loaded_base_model_class_mismatch",
             context={
-                "adapter_path": None if plan.adapter_path is None else str(plan.adapter_path),
+                "adapter_path": None
+                if plan.adapter_path is None
+                else str(plan.adapter_path),
                 "loaded_base_model_class": loaded_model_class,
                 "current_base_model_class": current_model_class,
             },
@@ -1107,7 +1543,9 @@ def _linear_belongs_to_tower(name: str, tower: str) -> bool:
     if tower == "aligner":
         return _is_aligner_name(name)
     if tower == "vision":
-        return ("visual." in name or name.startswith("visual.")) and not _is_aligner_name(name)
+        return (
+            "visual." in name or name.startswith("visual.")
+        ) and not _is_aligner_name(name)
     return False
 
 
