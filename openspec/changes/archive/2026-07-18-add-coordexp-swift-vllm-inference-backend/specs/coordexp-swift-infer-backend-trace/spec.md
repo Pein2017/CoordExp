@@ -49,9 +49,14 @@ teacher-forced forward reference.
 
 ### Requirement: vLLM policy and raw likelihood implementation
 vLLM generation MUST request processed logprobs and MUST extract the chosen
-token's likelihood at each generated step. Raw likelihood MUST be computed by
-teacher-forced replay over the exact prompt plus generated token ids using
-prompt-logprob evidence. Any replay-only generated token MUST be discarded.
+token's likelihood at each generated step. When raw tracing is enabled, the
+processed engine MUST be closed before a fresh raw-logprob engine starts over
+the same execution snapshot. The raw pass MUST use incremental decode and a
+version-pinned non-argmax-invariant processor that forces each authoritative
+generated token only after vLLM captures the unmodified raw distribution.
+Prompt ids, generated ids, stop semantics, and lengths MUST match exactly
+before raw values are attached to policy-owned results. Prompt-logprob prefill
+replay MUST NOT be labeled `raw_model_logprob`.
 
 #### Scenario: Chosen token missing from vLLM logprobs
 - **WHEN** vLLM output does not include the chosen generated token likelihood
@@ -59,7 +64,13 @@ prompt-logprob evidence. Any replay-only generated token MUST be discarded.
 
 #### Scenario: Raw replay disabled
 - **WHEN** raw tracing is false
-- **THEN** no replay request is issued and raw likelihood is recorded as absent
+- **THEN** no second engine or replay request is issued and raw likelihood is
+  recorded as absent
+
+#### Scenario: Forced raw replay differs from authoritative generation
+- **WHEN** the raw engine returns a different prompt id, generated token id,
+  stop reason, or continuation length
+- **THEN** inference fails before scored artifacts are published
 
 ### Requirement: Executable offline vLLM backend
 The schema and decode records SHALL support offline vLLM execution through the
@@ -84,6 +95,18 @@ recorded from actual backend receipts.
 ## REMOVED Requirements
 
 ### Requirement: Future vLLM reservation
+The V1 schema and decode records SHALL reserve backend-neutral fields for future vLLM support.
+Reserved fields include `backend`, `backend_mode`, and `response_family`. V1
+MUST validate vLLM execution as not implemented.
+
+#### Scenario: Reserved vLLM config
+- **WHEN** an inference config selects `backend.type: vllm`
+- **THEN** validation fails with a not-implemented contract error rather than
+  attempting to run vLLM
+
+#### Scenario: Response family recorded
+- **WHEN** an HF decode result is materialized
+- **THEN** the manifest and trace identify its response family as HF
 
 **Reason**: This change replaces the reserved, fail-only vLLM surface with the
 qualified executable offline backend requirement above.

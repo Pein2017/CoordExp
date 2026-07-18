@@ -1,0 +1,266 @@
+{
+  "algorithm_version": "coordexp-swift-dora-delta-fold-v4",
+  "comparison": {
+    "behavior_checks": {
+      "full_vocab_within_reference_tolerance": false,
+      "greedy_generated_ids_match": false,
+      "selected_vocab_within_reference_tolerance": false
+    },
+    "compared_positions": [
+      1358,
+      1359,
+      1360,
+      1361
+    ],
+    "composition_checks": {
+      "dynamic_tied_weights": true,
+      "materialized_tied_weights": true,
+      "merged_target_weights": true,
+      "prompt_ids": true,
+      "selected_rows_target_dtype": true
+    },
+    "dtypes": {
+      "comparison_logits": "torch.float32",
+      "dynamic_native_logits": "torch.bfloat16",
+      "dynamic_selected_rows": "torch.bfloat16",
+      "materialized_native_logits": "torch.bfloat16",
+      "materialized_selected_rows": "torch.bfloat16"
+    },
+    "dynamic_generated_ids": [
+      151646,
+      20666,
+      151647,
+      151648,
+      152371,
+      151951,
+      152392,
+      152003,
+      151649,
+      151646,
+      8987,
+      151647,
+      151648,
+      152313,
+      152040,
+      152397,
+      152363,
+      151649,
+      151646,
+      79,
+      15521,
+      6008,
+      151647,
+      151648,
+      152031,
+      152053,
+      152088,
+      152172,
+      151649,
+      151646,
+      22209,
+      151647,
+      151648,
+      151676,
+      152060,
+      151912,
+      152286,
+      151649,
+      151646,
+      1097,
+      63944,
+      850,
+      151647,
+      151648,
+      152435,
+      152076,
+      152472,
+      152338,
+      151649,
+      151646,
+      85,
+      519,
+      151647,
+      151648,
+      152048,
+      152134,
+      152065,
+      152168,
+      151649,
+      151646,
+      34196,
+      151647,
+      151648,
+      152149
+    ],
+    "full_vocab": {
+      "allclose": false,
+      "atol": 0.005,
+      "max_abs_diff": 0.921875,
+      "max_rel_diff": 13568.5703125,
+      "rtol": 0.0001
+    },
+    "full_vocab_shape": [
+      1,
+      4,
+      152670
+    ],
+    "materialized_generated_ids": [
+      151646,
+      20666,
+      151647,
+      151648,
+      152370,
+      151951,
+      152392,
+      152005,
+      151649,
+      151646,
+      8987,
+      151647,
+      151648,
+      152313,
+      152040,
+      152397,
+      152363,
+      151649,
+      151646,
+      79,
+      15521,
+      6008,
+      151647,
+      151648,
+      152031,
+      152053,
+      152088,
+      152172,
+      151649,
+      151646,
+      22209,
+      151647,
+      151648,
+      151676,
+      152060,
+      151912,
+      152286,
+      151649,
+      151646,
+      1097,
+      63944,
+      850,
+      151647,
+      151648,
+      152435,
+      152076,
+      152472,
+      152338,
+      151649,
+      151646,
+      85,
+      519,
+      151647,
+      151648,
+      152048,
+      152134,
+      152065,
+      152168,
+      151649,
+      151646,
+      34196,
+      151647,
+      151648,
+      152149
+    ],
+    "merged_target_weight_identity": {
+      "expected": {
+        "fingerprint": "f559863dd74ed6053c22eb6dedd007bc319d0040cb8c3b7c578984b03ae82b2b",
+        "target_count": 196
+      },
+      "observed": {
+        "fingerprint": "f559863dd74ed6053c22eb6dedd007bc319d0040cb8c3b7c578984b03ae82b2b",
+        "target_count": 196
+      }
+    },
+    "selected_row_identity": {
+      "dynamic_effective_sha256": "e71bde91c60a6ef7755ac632e54de74a0531666fd398d95db31818852e6331b2",
+      "materializer_folded_sha256": "e71bde91c60a6ef7755ac632e54de74a0531666fd398d95db31818852e6331b2",
+      "reloaded_materialized_sha256": "e71bde91c60a6ef7755ac632e54de74a0531666fd398d95db31818852e6331b2"
+    },
+    "selected_vocab": {
+      "allclose": false,
+      "atol": 0.002,
+      "max_abs_diff": 0.75390625,
+      "max_rel_diff": 79.8479995727539,
+      "rtol": 0.0001
+    },
+    "selected_vocab_shape": [
+      1,
+      4,
+      1004
+    ]
+  },
+  "composition_key": "2ae15bcc86014bcee1eda6e9bf1c79ffc246243b938a140ac5b851760b26d6ce",
+  "digest": "2bf1c7661475d327eb58afebc1e84039fd48548a3c041e07a89644190ff3699c",
+  "fixture_identity": {
+    "dynamic_executed_prompt_ids_sha256": "dc21acac635d4fddfeca65c2572e453ce5624dab403351da6973b434623b5ca1",
+    "executed_media_sha256": "6ae3491786480dc89e0f464b773c7e18b060978e8c053e8995bf0c89384fb043",
+    "generation_fingerprint": "2b08401a5638c7b76abe84e45c6a6786c3cb3fd9d7ce713d2a629cd907baa0fe",
+    "image_file_sha256": "99475180da0ad018a3ff8cb84445c468a149d58f4b92c3601d9fad05a2c3020c",
+    "input_jsonl_sha256": "9b524a8c20f03758e2e3939703ff35a1e35a1108fb095ac6e7af5a1539c8cfc4",
+    "materialized_executed_prompt_ids_sha256": "dc21acac635d4fddfeca65c2572e453ce5624dab403351da6973b434623b5ca1",
+    "max_new_tokens": 64,
+    "processor_fingerprint": "1b6a8d3fdd4ee4bc30734aab17d902f1ce89ae2ac208f875b624cdb6cac4d055",
+    "prompt_ids_sha256": "dc21acac635d4fddfeca65c2572e453ce5624dab403351da6973b434623b5ca1",
+    "row_id": "coco2017_val_000000000139",
+    "row_index": 0
+  },
+  "materialization_identity": {
+    "folded_selected_rows_sha256": "e71bde91c60a6ef7755ac632e54de74a0531666fd398d95db31818852e6331b2",
+    "merged_target_weight_identity": {
+      "fingerprint": "f559863dd74ed6053c22eb6dedd007bc319d0040cb8c3b7c578984b03ae82b2b",
+      "target_count": 196
+    }
+  },
+  "package_versions": {
+    "peft": "0.17.1",
+    "safetensors": "0.6.2",
+    "torch": "2.9.1",
+    "transformers": "4.57.1"
+  },
+  "probe_identity": {
+    "path": "scripts/probes/coordexp_swift/execution_model_composition.py",
+    "sha256": "6c6bb887c4ce228c6b97d22582d5a83516050bf4d257aa38c749993c1f86081a"
+  },
+  "resolved_config_identity": {
+    "entry_config_path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200.yaml",
+    "fingerprint": "d57d6d58f979bb77babd17c3ad08ffff2ae71de51d6d1eabe959c42fdd1361ed",
+    "sources": [
+      {
+        "path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/infer/base.yaml",
+        "sha256": "eae71758eff67e59411519d2f75e467706fa3ee039f78bc9311af8ea1d598de2"
+      },
+      {
+        "path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200.yaml",
+        "sha256": "c7dc34e37b53b9aeac76b959f5791a677a810d9dc30d0f11f42e4fdae51a8c06"
+      }
+    ]
+  },
+  "snapshot_fingerprint": "4b3cdcacd9452811281572cfd6f1a984fc89e93442625ffdc11c6dab32809eff",
+  "source_fingerprints": {
+    "adapter": "04aacc1ebf58a9f353a995d350be8d663fc89ffa97ad0dd45dc5f91b165f27a8",
+    "base": "e43d3a07b5fe47db7abcc07a9b6a318dd32d9a2fa12f620c2e734573bf9fe5eb",
+    "embedding_delta": "63a4ca8bd66a0552080de2eb26ec53120c9ac0a12021e4fff05b49abd61cbd9f"
+  },
+  "status": "passed",
+  "target_dtype": "bf16",
+  "thresholds": {
+    "full_vocab": {
+      "atol": 0.005,
+      "rtol": 0.0001
+    },
+    "selected_vocab": {
+      "atol": 0.002,
+      "rtol": 0.0001
+    }
+  },
+  "version": "coordexp-swift-execution-model-composition-v1"
+}

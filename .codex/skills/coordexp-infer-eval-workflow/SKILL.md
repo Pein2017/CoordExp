@@ -1,25 +1,29 @@
 ---
 name: coordexp-infer-eval-workflow
-description: Use when launching, repairing, checking artifact contracts, or summarizing CoordExp infer/scoring/eval/Oracle-K/proxy-bundle workflows.
+description: Use when launching, repairing, validating, or summarizing current CoordExp-Swift inference, scoring, and detection evaluation through HF or vLLM.
 ---
 
-# CoordExp Inference And Evaluation Workflow
+# CoordExp-Swift Inference And Evaluation
 
 Use YAML-first production paths. Do not invent stable CLI flags when config already captures the run.
 Treat this skill as the stable workflow guide, not a promise that one exact script path will never move.
 
 ## Entry Points
 
-- Primary pipeline surfaces:
-  - infer entrypoints such as `scripts/run_infer.py`, `src/infer/pipeline.py::run_pipeline`, `src/infer/runtime.py`, and `src/infer/backend.py`
-  - confidence / scoring surfaces such as `scripts/postop_confidence.py`, `src/eval/confidence_postop.py`
-  - evaluation surfaces such as `scripts/evaluate_detection.py`, `src/eval/detection.py::evaluate_and_save`
-  - proxy / bundle surfaces such as `scripts/evaluate_proxy_detection_bundle.py`, `src/eval/proxy_eval_bundle.py`
-  - artifact ownership such as `src/infer/artifacts.py`, `src/eval/artifacts.py`
-- Workflow references:
-  - `docs/eval/WORKFLOW.md`
-  - `docs/eval/CONTRACT.md`
-  - `docs/ARTIFACTS.md`
+- Config: `configs/coordexp_swift/infer/`
+- Entrypoint: `python -m src.infer --config <config.yaml>`
+- Pipeline: `src/inference/pipeline.py`
+- Shared request/session contract: `src/inference/backend.py`
+- Processor-only frontend and launch projection: `src/inference/runtime.py`
+- Backends: `src/inference/hf_backend.py`, `src/inference/vllm_backend.py`
+- Execution-model materialization: `src/inference/execution_model.py`
+- Artifacts: `src/inference/artifacts.py`, `src/inference/merge.py`
+- Evaluator: `scripts/evaluate_detection.py` and
+  `src/eval/detection_consumer.py`
+
+Older `scripts/run_infer.py`, `src/infer/`, confidence post-op, Oracle-K,
+proxy-bundle, grammar-constrained, and Stage-2 rollout paths are historical for
+this worktree unless the user explicitly names one.
 
 When code moves, prefer the current checked-in pipeline/config surfaces over memorized script names. First verify:
 
@@ -31,24 +35,59 @@ When code moves, prefer the current checked-in pipeline/config surfaces over mem
 Commands:
 
 ```bash
-PYTHONPATH=. python scripts/run_infer.py --config <infer.yaml>
-PYTHONPATH=. python scripts/postop_confidence.py --config <postop.yaml>
-PYTHONPATH=. python scripts/evaluate_detection.py --config <eval.yaml>
-PYTHONPATH=. python scripts/evaluate_oracle_k.py --config <oracle.yaml>
+CUDA_VISIBLE_DEVICES=<ids> conda run -n ms \
+  python -m src.infer --config configs/coordexp_swift/infer/<config>.yaml
+
+conda run -n ms python scripts/evaluate_detection.py \
+  --artifact-dir <run-dir> \
+  --out-dir <run-dir>/evaluation/detection
 ```
 
 Codex shells initialize the `ms` conda environment by default; do not add `conda run -n ms` unless working outside that initialized environment.
 
 Wrap with `rtk` when filtered output is acceptable.
 
-## Default Decode Assumptions
+## Backend And Decode Contract
 
-Unless the user explicitly asks otherwise, use:
+- `backend.type: hf` dynamically loads the base model, optional DoRA adapter,
+  and optional selected-token embedding delta. HF remains first-class.
+- `backend.type: vllm` resolves the same composition into a content-addressed
+  immutable execution model, then runs one offline vLLM engine per active
+  rank-local worker.
+- Materialized HF is a composition-fidelity oracle, not a replacement for
+  dynamic HF.
+- Use FP32 for strict HF/vLLM parity claims. BF16 vLLM is supported for
+  throughput runs but must be labeled non-parity evidence.
 
-- `temperature = 0.0`
-- `repeat_penalty = 1.10`
+Canonical scored inference requires `temperature: 0.0`, `top_p: 1.0`, and
+`n: 1`. Treat repetition penalty as an explicit config choice, not a hidden
+default. `generation.batch_size` is immutable per-device decode concurrency.
 
-Treat these as the default reproducibility settings for ordinary CoordExp infer/eval prep. Override them only for intentional decoding ablations, legacy reproduction, or when a checked-in config already pins different values.
+## Current Artifact Gate
+
+Before citing a benchmark, require completed summary/manifest status, complete
+raw/scored/provenance/trace/diagnostic/image-plan artifacts, exact row/image/GT
+binding, and zero unexplained parser/drop/truncation/score failures. Non-smoke
+runs must report `benchmark_eligible: true`; the evaluator must also report
+`benchmark_metric: true`.
+
+Selected-token scores always use policy likelihood after active generation
+processors. Optional `raw_model_logprob` is diagnostic LM-head likelihood only
+and must never replace `pred[*].score`.
+
+GT boxes are norm1000 `xyxy`; parser-normalized prediction `bbox` values are
+pixel `xyxy`. Prediction `coord_bins` is source evidence and must not be drawn
+or evaluated as pixels.
+
+For distributed runs, require complete rank coverage, strict merged order,
+backend performance, worker exit, no orphan engine process, and GPU memory
+return. Failed runs may publish terminal diagnostics but not benchmark-looking
+top-level raw/scored artifacts.
+
+## Historical Addenda
+
+The remaining confidence, proxy, Oracle-K, and Stage-2 notes apply only when
+the user explicitly requests those historical/mainline workflows.
 
 ## Coordinate-Surface Rules
 

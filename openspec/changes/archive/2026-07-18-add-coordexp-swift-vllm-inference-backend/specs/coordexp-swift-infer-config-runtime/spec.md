@@ -23,6 +23,23 @@ NOT be exposed as stable config.
   `model.attn_implementation`
 - **THEN** validation fails instead of recording an ignored execution setting
 
+### Requirement: Explicit dual-backend precision roles
+Dynamic HF SHALL remain a first-class backend for direct base, DoRA, and
+selected-token embedding-delta composition. vLLM SHALL remain a first-class
+offline backend over a validated execution model. FP32 SHALL be the strict
+cross-backend parity mode. BF16 vLLM MAY be used for supported throughput runs,
+but its artifacts and documentation MUST NOT claim strict HF parity.
+
+#### Scenario: Dynamic HF composed checkpoint
+- **WHEN** `backend.type: hf` selects a base plus DoRA plus embedding delta
+- **THEN** runtime loads that composition directly without requiring a vLLM
+  execution-model snapshot
+
+#### Scenario: BF16 vLLM throughput run
+- **WHEN** `backend.type: vllm` and `model.dtype: bf16` are selected
+- **THEN** inference remains executable but the run cannot satisfy the strict
+  FP32 cross-backend parity gate
+
 ### Requirement: Deterministic evidence-bearing scored inference
 Canonical inference MUST require `temperature: 0.0`, `top_p: 1.0`, scoring
 enabled, token trace writing enabled, and parse diagnostics writing enabled.
@@ -66,6 +83,11 @@ Runtime matching MUST distinguish invariant semantics
 from explicitly qualified engine-argument values. An unqualified version,
 source drift, invariant mismatch, or unprobed argument value MUST fail before
 engine construction and MUST NOT be treated as benchmark evidence.
+Runtime-owned qualification receipts MUST live outside an active OpenSpec
+change and MUST bind repository sources by repo-relative path plus hash and
+installed sources by package-relative path plus hash. Recorded absolute paths
+MAY remain as diagnostics but MUST NOT determine whether an unchanged checkout
+or environment is qualified.
 
 #### Scenario: Unqualified installed version
 - **WHEN** the installed vLLM version is outside the qualified set
@@ -80,7 +102,7 @@ engine construction and MUST NOT be treated as benchmark evidence.
 #### Scenario: Qualified composed derivative
 - **WHEN** a materialized model derives from the qualified source base,
   preserves its architecture/tokenizer/processor/template identities, and has
-  a passed dynamic-HF/materialized-HF parity receipt
+  a passed composition-fidelity receipt with dynamic-HF behavioral diagnostics
 - **THEN** its distinct execution-model fingerprint is accepted without being
   mistaken for runtime qualification drift
 
@@ -89,3 +111,40 @@ engine construction and MUST NOT be treated as benchmark evidence.
   concurrency receipt
 - **THEN** runtime fails before engine construction and names the qualified
   values
+
+#### Scenario: Equivalent checkout at a different root
+- **WHEN** the same qualified repository and package source bytes are available
+  under different absolute installation paths
+- **THEN** qualification succeeds through relative identities without editing
+  the receipts
+
+#### Scenario: OpenSpec change is archived
+- **WHEN** the change that introduced vLLM is archived
+- **THEN** runtime still resolves its accepted receipts from the stable
+  inference-owned qualification directory
+
+## MODIFIED Requirements
+
+### Requirement: Parallelism metadata in resolved runtime evidence
+Every data-parallel inference run SHALL record its resolved parallelism policy.
+The evidence MUST include parent visible CUDA tokens, active rank count,
+per-device decode batch size, worker binding policy, shard-plan fingerprint,
+and whether the run used direct single-process or controller/worker execution.
+
+#### Scenario: Parallel run metadata
+- **WHEN** a multi-rank inference run completes
+- **THEN** manifest or provenance evidence records active rank count,
+  per-device batch size, and rank-to-device mapping
+
+#### Scenario: Direct single-rank path
+- **WHEN** only one active rank is needed and HF is selected
+- **THEN** manifest or summary evidence MAY record that the direct
+  single-process path was used
+- **AND** non-dry direct execution still records CUDA-required runtime evidence
+- **AND** the manifest records direct-runtime device evidence after model load,
+  including logical device and model first-parameter device when available
+
+#### Scenario: Fresh single-rank vLLM worker
+- **WHEN** only one active rank is needed and vLLM is selected
+- **THEN** manifest or summary evidence records controller/worker execution
+- **AND** the vLLM engine runs in a fresh rank-local worker process

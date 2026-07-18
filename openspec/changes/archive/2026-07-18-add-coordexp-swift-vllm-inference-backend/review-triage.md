@@ -52,7 +52,7 @@ upstream, and architecture lanes correctly held Wave 0 on qualification gaps.
 
 | Severity | Finding | Decision | Resolution |
 | --- | --- | --- | --- |
-| P1 | Runtime qualification incorrectly required every composed execution model to equal the base-only probe fingerprint. | fix | Runtime/model-family qualification is now separate from exact per-run execution-model identity. A derivative must bind the qualified source base and a passed dynamic-HF/materialized-HF parity receipt. |
+| P1 | Runtime qualification incorrectly required every composed execution model to equal the base-only probe fingerprint. | fix | Runtime/model-family qualification is now separate from exact per-run execution-model identity. A derivative must bind the qualified source base and a passed execution-model composition-fidelity receipt; dynamic-HF/materialized-HF behavior remains diagnostic rather than an identity claim. |
 | P1 | The receipt omitted live tokenizer, processor, chat-template, multimodal, engine-core, and distributed-cleanup source identities. | fix and probe | Snapshot identity now exhaustively hashes every regular model file. The regenerated canonical receipt records all 19 snapshot files and 24 static/runtime-discovered source owners. |
 | P1 | The probe did not bind the submitted in-memory image bytes or nonempty placeholder ranges. | probe | Generation and replay now independently reopen one byte payload, hash source and RGB pixels, derive one exact placeholder range from returned prompt ids, and require equal media identities. |
 | P1 | One-rank vLLM could bypass the only qualified process-exit cleanup boundary. | fix | Every vLLM run, including one active rank, must use a fresh worker. Parent-observed worker exit, no descendants, and GPU-memory return precede canonical publication. |
@@ -108,9 +108,121 @@ deletion requires a separate manual gate.
 ## Wave 1 Status
 
 The final evidence lane and strict-merge lane both returned GO with no unresolved
-P0/P1. The complete targeted inference, evaluator, and Qwen slice passes with
+P0/P1. The complete targeted inference, evaluator, and Qwen slice passed with
 286 tests; strict OpenSpec validation, receipt/catalog hash checks, executable
-receipt replay, and `git diff --check` pass. Wave 1 remains administratively
-open only for deletion of `src/inference/legacy_hf_backend.py` and
-`tests/inference/test_backend_trace.py`; Wave 2 must not start until that
-protected deletion gate is completed and the residue checks are rerun.
+receipt replay, and `git diff --check` passed. The temporary HF oracle and its
+legacy test were subsequently removed, residue checks passed, and Wave 2 began
+only after that protected deletion gate was completed.
+
+## Wave 2 Implementation Triage
+
+Two independent read-only lanes reviewed execution-model materialization,
+dynamic-HF ownership, DoRA merge ownership, selected-token folding, immutable
+snapshot validation, path-independent identity, and the real step-4887
+composition-fidelity receipt. Both returned GO with no P0, P1, or P2 finding.
+
+The reviews confirmed that HF remains a first-class dynamic backend: it loads
+the live DoRA adapter and special-token embedding delta without passing through
+materialization. Only vLLM resolves the immutable execution snapshot. PEFT owns
+the safe DoRA merge, while CoordExp owns the single FP32 selected-token fold and
+the tied embedding/lm-head checks.
+
+The current materialization and composition-fidelity receipts pass all exact
+identity checks. The deliberately separate BF16 behavior diagnostics retain
+their observed numeric and greedy differences without being misrepresented as
+exact state failures. Targeted adapter, selected-token, execution-model,
+composition, and config coverage passed with 153 tests. Strict OpenSpec
+validation, legacy parity-symbol residue checks, and `git diff --check` passed.
+
+## Wave 2 Status
+
+Wave 2 is converged. No unresolved P0/P1 remains, and task 3.6 is closed. Wave
+3 may proceed while preserving both supported execution paths: dynamic HF and
+materialized vLLM.
+
+## Waves 3-6 Pre-Final Hardening
+
+Implementation and real-run evidence were reviewed during the vLLM tracer,
+dual-likelihood, distributed, and acceptance waves. The following findings
+were accepted and fixed before the final convergence review.
+
+| Severity | Finding | Decision | Resolution |
+| --- | --- | --- | --- |
+| P1 | A completed worker could leave a pending sibling alive after another rank failed. | fix | Controller cleanup now terminates the complete owned worker set and removes private runtime caches before terminal publication. |
+| P1 | vLLM artifacts copied the frontend's expected image grid as if the backend had observed it. | fix | vLLM now records returned prompt ids, placeholder ranges, media identity, and a null observed grid; HF continues to record its actual tensor grid. |
+| P1 | Runtime qualification covered installed package sources but not every CoordExp application owner. | fix and receipt | A separate exact 23-path application-source receipt is mandatory and is rehashed before vLLM session creation. |
+| P1 | Global GPU-memory equality was treated as a cleanup gate on shared GPUs. | narrow | Owned worker/process exit and private-cache removal are publication gates. Parent-observed global GPU memory remains diagnostic because unrelated jobs may change it. |
+| P1 | Benchmark eligibility could be claimed by tiny smokes. | fix | Canonical benchmark eligibility now requires a non-smoke scope and at least 200 rows; one/two-rank fixtures remain explicitly non-benchmark. |
+| P1 | Likelihood failures lacked request, token, and channel-local diagnostics. | fix | Alignment failures now identify request id, token position/id, semantic channel, and observed value while remaining terminal. |
+| P2 | Concurrency qualification was tied to one derivative checkpoint instead of the qualified source family. | fix | Concurrency receipts bind the qualified base family, dtype, and `max_num_seqs`; each derivative still requires its own execution-model identity. |
+| P2 | Failure evidence did not table every required class with publication and cleanup outcomes. | fix and execute | The v2 failure matrix binds all eight classes to executed tests and requires terminal diagnostics, complete cleanup, and no canonical publication. |
+
+Fresh current-code runs then passed for one active rank, two active ranks, and
+eight active ranks. The eight-rank vLLM val200 run used 50 nonempty decode
+blocks, completed all 200 rows with zero parser/drop/truncation/score failures,
+and was consumed by the unchanged evaluator. The matched eight-rank dynamic-HF
+run preserved the same dataset, prompt, generation, and scoring contracts.
+Absolute mAP and mRecall deltas were `0.0011065226287719776` and
+`0.0003795564820910924`, both below the approved `0.005` gate. These results
+are bound in the distributed and val200 receipts; final review convergence is
+still pending.
+
+## Exact-Source Revalidation
+
+Pre-final hardening moved runtime qualification authority into
+`src/inference/qualification_receipts/`, replaced checkout-absolute source
+identity with repo- or package-relative identity, made strict FP32 composition
+proof durable across a clean materialization cache, and hardened controller
+cleanup for interrupts and descendants surviving an exited worker leader.
+
+After the final source edit, all four real vLLM 0.14.1 qualification probes
+(BF16/FP32, concurrency four/raw replay one) were regenerated successfully.
+Fresh current-source one-rank and two-rank FP32 dual-likelihood runs completed
+through strict merge and the unchanged evaluator, with exact two-row order,
+zero parser/score/drop/truncation failures, available raw likelihood, and all
+workers exited. The complete shared HF/vLLM, execution-model, evaluator, DoRA,
+and selected-token suite passed with 431 tests. Strict OpenSpec validation,
+delta inspection, config/Markdown hygiene, failure-matrix verification, and
+`git diff --check` also passed before final independent review.
+
+The acceptance/artifact lane then found one archive blocker: the executable
+failure-matrix test still loaded its receipt from the active change directory.
+The receipt now lives under `tests/inference/receipts/`, and both the test and
+task record use that durable path. The lane's missing-stable-spec observation
+is resolved by the required delta-spec sync before archival.
+
+## Final Convergence Review
+
+Four independent final lanes reviewed backend semantics, distributed cleanup,
+receipt integrity, and OpenSpec/archive readiness. Their accepted P1 findings
+were fixed before a focused two-lane re-review:
+
+- worker cleanup now attempts every owned rank and aggregates failures instead
+  of aborting after the first termination error;
+- controller launch, wait, and interruption failures publish terminal-only
+  diagnostics even when cleanup itself fails;
+- startup and CUDA-OOM injections cover the vLLM controller-owned shard path,
+  while the durable failure matrix states honestly that fresh-worker cleanup is
+  composite evidence from the process-tree cases;
+- acceptance receipts name every hashed artifact relative to its run root, and
+  all recorded paths and SHA-256 values were revalidated;
+- the failure-matrix receipt records the exact 94-test command that produced its
+  result; and
+- backend sessions remain independent of evaluator/artifact orchestration so a
+  later GRPO or post-training rollout owner can reuse the same HF/vLLM execution
+  boundary without introducing another engine wrapper in this change.
+
+Both focused re-review lanes returned `APPROVE` with no unresolved P0/P1. The
+complete inference/evaluator/adapter/special-token suite passed with 455 tests.
+Fresh current-source one-rank and two-rank FP32 vLLM dual-likelihood runs also
+completed through strict merge and the unchanged evaluator:
+
+- one rank: `outputs/coordexp_swift/infer/smoke/qwen3-vl-2b-step4887-vllm-fp32-parity-smoke-20260718T152112Z`;
+- two ranks: `outputs/coordexp_swift/infer/smoke/qwen3-vl-2b-step4887-vllm-fp32-parity-smoke-20260718T151658Z`.
+
+The accepted val200 evidence remains bounded to its recorded source identities:
+dynamic HF mAP/mRecall are `0.4253271187757268` and `0.5087078247640996`;
+vLLM FP32 mAP/mRecall are `0.4264336414044988` and
+`0.5090873812461907`. Absolute deltas are `0.0011065226287719776` and
+`0.0003795564820910924`, below the `0.005` gate. The accepted delta specs were
+synced into stable authority and the change was archived on 2026-07-18.

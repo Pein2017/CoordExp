@@ -43,6 +43,39 @@ published.
 
 ## MODIFIED Requirements
 
+### Requirement: Inference source ownership
+The pipeline SHALL use the approved `src/inference/*` module ownership
+boundaries. `runtime.py` SHALL own processor-only frontend setup and backend
+session launch preparation. `backend.py` SHALL own semantic requests, results,
+likelihood pairs, and the session protocol. `hf_backend.py` SHALL own dynamic
+HF model composition and execution. `vllm_backend.py` SHALL own offline vLLM
+engine execution. `execution_model.py` SHALL own immutable execution-model
+materialization and composition-fidelity binding. `prompt.py`, `parsing.py`,
+`scoring.py`, and `artifacts.py` SHALL own their corresponding semantic
+contracts. `pipeline.py` MUST remain orchestration-only and MUST NOT import
+`src.training.pipeline`, `TrainConfig`, `ResolvedTrainConfig`, or
+`ResolvedStepSchedule`.
+
+#### Scenario: No training pipeline import
+- **WHEN** inference modules are imported
+- **THEN** they do not import `src.training.pipeline`, `TrainConfig`,
+  `ResolvedTrainConfig`, or `ResolvedStepSchedule`
+
+#### Scenario: Runtime assembler
+- **WHEN** runtime setup loads a base-plus-adapter checkpoint
+- **THEN** it delegates Qwen, adapter, backend-session, and artifact identity
+  mechanics to their owner modules rather than reimplementing them inline
+
+#### Scenario: Dynamic HF runtime
+- **WHEN** runtime setup loads a base-plus-adapter checkpoint for HF
+- **THEN** `hf_backend.py` composes the base, DoRA adapter, and selected-token
+  delta directly through their owner modules
+
+#### Scenario: Materialized vLLM runtime
+- **WHEN** runtime setup launches vLLM
+- **THEN** `execution_model.py` resolves the validated immutable model before
+  `vllm_backend.py` opens the rank-local engine
+
 ### Requirement: Batched generation
 The pipeline SHALL interpret `generation.batch_size` as the per-device decode
 concurrency and shard-block size. Production configs MUST use a value greater
@@ -51,7 +84,7 @@ MUST set their sequence-concurrency ceiling to that size and MAY submit all
 rank-local requests to continuous scheduling. The pipeline itself MUST NOT
 construct backend-native batches.
 
-#### Scenario: HF production batch
+#### Scenario: Production batch
 - **WHEN** a production HF config sets `generation.batch_size: 8`
 - **THEN** the HF session submits native decode batches up to size 8
 
@@ -83,7 +116,7 @@ artifact set.
 - **THEN** summary counters include the parser failure and diagnostics identify
   the row
 
-#### Scenario: Parser-level score exclusion counted
+#### Scenario: Score failure counted
 - **WHEN** a salvaged prediction lacks a complete eight-token score span
 - **THEN** diagnostics count that prediction exclusion while preserving other
   valid predictions in the row

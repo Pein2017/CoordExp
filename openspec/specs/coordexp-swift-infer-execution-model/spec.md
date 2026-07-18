@@ -1,5 +1,8 @@
-## ADDED Requirements
+# coordexp-swift-infer-execution-model Specification
 
+## Purpose
+TBD - created by archiving change add-coordexp-swift-vllm-inference-backend. Update Purpose after archive.
+## Requirements
 ### Requirement: Exact execution-model composition
 The system SHALL resolve one immutable execution model for the configured base,
 optional DoRA adapter, and optional selected-token embedding delta. Base-only
@@ -24,9 +27,9 @@ approximate, or natively reinterpret DoRA or the selected-token delta.
 - **THEN** DoRA is merged first and the delta is folded exactly once into the
   tied input/output weight before the standard checkpoint is published
 
-#### Scenario: Qualified source base with parity-approved derivative
+#### Scenario: Qualified source base with composition-proven derivative
 - **WHEN** a composed execution model has a different output fingerprint but
-  binds the qualified source-base fingerprint and a passed composition-parity
+  binds the qualified source-base fingerprint and a passed composition-fidelity
   receipt
 - **THEN** runtime qualification validates the source family while per-run
   execution identity validates the exact materialized output
@@ -110,26 +113,54 @@ later whole-model cast.
 - **THEN** each selected tied row is computed once against the BF16 base row and
   stored in BF16 without a subsequent whole-model dtype conversion
 
-### Requirement: Composition parity gate
-The derived checkpoint MUST be reloaded through HF and compared with the
-existing dynamic HF composition before adapter-enabled vLLM support is claimed.
-Both paths MUST use the same real multimodal fixture, target dtype, processor,
-prompt ids, no-resize image input, attention implementation, and deterministic
-generation policy. Tied input/output storage and exact greedy generated token
-ids MUST match. Selected embedding rows, after both paths are cast to the target
-dtype, MUST be bitwise equal. FP32 fixed-prefix full-vocabulary logits MUST
-match with `rtol=1e-4` and `atol=5e-3`; FP32 logits restricted to the selected
-special-token vocabulary MUST match with `rtol=1e-4` and `atol=2e-3`. The
-receipt MUST record fixture and source fingerprints, compared positions,
-shapes, dtypes, maximum absolute and relative differences, exact checks, and
-the configured thresholds.
+### Requirement: Composition fidelity and behavioral diagnosis
+The derived checkpoint MUST be reloaded through HF before adapter-enabled vLLM
+support is claimed. Its merged DoRA target weights MUST be bitwise identical to
+the owner-recorded target-dtype weights produced before snapshot publication.
+Its selected embedding rows MUST be bitwise equal to the effective rows of the
+existing dynamic HF composition after target-dtype casting. Both models MUST
+retain tied input/output storage and use identical prompt ids on one real
+multimodal no-resize fixture.
 
-#### Scenario: Materialized model changes logits
-- **WHEN** dynamic and materialized HF selected-token logits exceed the approved
-  numeric tolerance or greedy token ids differ
-- **THEN** the execution model is rejected for vLLM inference
+The same fixture MUST also record dynamic-HF versus materialized-HF FP32
+fixed-prefix full-vocabulary and selected-vocabulary logit differences plus
+greedy generated ids. Those values are behavioral diagnostics, not composition
+fidelity failures, because unmerged DoRA and one folded BF16 linear weight use
+different floating-point operation orderings. The diagnostic MUST retain the
+reference thresholds `rtol=1e-4`, full-vocabulary `atol=5e-3`, and
+selected-vocabulary `atol=2e-3` without claiming execution identity when they
+are exceeded.
+
+Canonical HF inference MUST continue to use dynamic DoRA plus the selected-token
+delta. Materialized HF MUST be the exact executable-model oracle for vLLM. The
+receipt MUST record fixture/source fingerprints, merged-target identities,
+compared positions, shapes, dtypes, maximum absolute/relative differences,
+generated ids, composition checks, behavioral checks, and thresholds.
+Passed composition receipts used as runtime authority MUST be preserved in a
+stable inference-owned qualification directory and keyed by composition key.
+When a newly materialized cache entry has no local composition sidecar, runtime
+MAY bind a durable receipt only after exact linkage validation against the new
+execution-model receipt. It MUST NOT infer, weaken, or silently regenerate the
+proof.
+
+#### Scenario: Dynamic and materialized BF16 behavior differs
+- **WHEN** exact state-composition checks pass but dynamic and materialized HF
+  logits exceed a reference threshold or greedy ids differ
+- **THEN** the receipt records the difference without replacing canonical HF or
+  rejecting the correctly materialized execution model
+
+#### Scenario: Reloaded merged target differs
+- **WHEN** any reloaded materialized DoRA target weight differs from the
+  owner-recorded pre-save merged target identity
+- **THEN** the execution model is rejected before vLLM loading
 
 #### Scenario: Folded selected row differs after target-dtype cast
 - **WHEN** any selected embedding row is not bitwise equal between dynamic and
   materialized HF after target-dtype casting
 - **THEN** the execution model is rejected before vLLM loading
+
+#### Scenario: Clean cache reuses durable FP32 proof
+- **WHEN** a clean checkout materializes the byte-identical FP32 composition
+  and the cache has no local composition sidecar
+- **THEN** runtime binds the durable content-addressed receipt after exact
+  composition and snapshot linkage validation

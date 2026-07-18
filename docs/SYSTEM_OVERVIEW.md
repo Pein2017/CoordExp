@@ -86,11 +86,16 @@ gradient clipping, optimizer/scheduler stepping, and safe artifact writes.
 `src/infer.py` delegates to `src/inference/pipeline.py`. The pipeline resolves
 the inference config, writes resolved config artifacts, loads input rows,
 plans optional data-parallel shards, runs direct inference, writes shard
-artifacts, and merges them. `src/inference/runtime.py` composes the base Qwen
-model, optional adapter, optional selected-token embedding delta, and validated
-payload/base/token identities from those explicit paths.
-`src/inference/backend.py` provides the current HF
-generation adapter and trace normalization boundary.
+artifacts, and merges them. `src/inference/runtime.py` loads the shared
+processor-only frontend and projects strict config into a backend-neutral
+launch contract. `src/inference/backend.py` owns semantic requests/results,
+likelihood semantics, validation, and session lifecycle.
+`src/inference/hf_backend.py` dynamically composes the base Qwen model,
+optional DoRA adapter, and optional selected-token embedding delta.
+`src/inference/execution_model.py` materializes the same composition into an
+immutable snapshot for `src/inference/vllm_backend.py`. Both backends preserve
+the same prompt, parser, scoring, artifact, and evaluator contracts. FP32 is
+the strict parity surface; BF16 vLLM is throughput-oriented evidence only.
 
 `src/inference/parsing.py` owns best-effort parser diagnostics and
 `src/inference/scoring.py` owns selected-token scoring. The evaluator does not

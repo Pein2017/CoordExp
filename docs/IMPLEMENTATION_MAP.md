@@ -71,8 +71,14 @@ schema from an archived YAML file or an old plan.
   payloads plus `final.json` and `best.json`.
 - `src/training/pack_cache.py` owns rebuild-only cache v2 outside the run tree;
   the run retains only compact materialization bindings.
-- `src/inference/backend.py` owns backend-neutral trace normalization; the
-  implemented adapter in this route is HF generation.
+- `src/inference/backend.py` owns backend-neutral requests, results, dual
+  likelihood semantics, validation, and session lifecycle.
+- `src/inference/hf_backend.py` owns dynamic HF composition and generation;
+  `src/inference/execution_model.py` owns immutable composed snapshots; and
+  `src/inference/vllm_backend.py` owns offline vLLM generation and raw replay.
+- `src/inference/runtime.py` owns the processor-only frontend and strict
+  backend launch projection. FP32 is the cross-backend parity mode; BF16 vLLM
+  remains an explicitly non-parity throughput mode.
 - `src/eval/detection_consumer.py` owns score-provenance validation, coordinate
   conversion, and detection metrics.
 
@@ -87,6 +93,7 @@ Use the exact relevant spec, not a proposal copy:
 - `openspec/specs/coordexp-swift-adapters-embeddings-optim/spec.md`
 - `openspec/specs/coordexp-swift-infer-pipeline/spec.md`
 - `openspec/specs/coordexp-swift-infer-backend-trace/spec.md`
+- `openspec/specs/coordexp-swift-infer-execution-model/spec.md`
 - `openspec/specs/coordexp-swift-infer-scoring-artifacts/spec.md`
 - `openspec/specs/coordexp-swift-detection-evaluator/spec.md`
 
