@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 
 import pytest
 
 from src.common.errors import ArtifactContractError
-from src.inference.backend import TokenTrace
+from src.inference.backend import LikelihoodPair, TokenTrace
 
 
-def _trace_for_text(text: str, *, logprob: float = math.log(0.25)) -> list[TokenTrace]:
+def _trace_for_text(
+    text: str,
+    *,
+    policy_logprob: float = math.log(0.25),
+) -> list[TokenTrace]:
     pieces = [
         "<|object_ref_start|>",
         "cat",
@@ -26,7 +31,10 @@ def _trace_for_text(text: str, *, logprob: float = math.log(0.25)) -> list[Token
             step_index=index,
             token_id=151646 + index,
             token_text=piece,
-            logprob=logprob,
+            likelihood=LikelihoodPair(
+                policy_logprob=policy_logprob,
+                raw_model_logprob=None,
+            ),
             is_stop=False,
             is_pad=False,
             backend="hf",
@@ -35,6 +43,19 @@ def _trace_for_text(text: str, *, logprob: float = math.log(0.25)) -> list[Token
         )
         for index, piece in enumerate(pieces)
     ]
+
+
+def _with_policy_logprob(
+    trace: TokenTrace,
+    policy_logprob: float | None,
+) -> TokenTrace:
+    return replace(
+        trace,
+        likelihood=LikelihoodPair(
+            policy_logprob=policy_logprob,
+            raw_model_logprob=None,
+        ),
+    )
 
 
 def _prediction(text: str) -> dict:
@@ -56,12 +77,12 @@ def test_score_formula_uses_exp_mean_selected_token_logprobs() -> None:
         "<|object_ref_start|>cat<|object_ref_end|>"
         "<|box_start|><|coord_100|><|coord_200|><|coord_300|><|coord_400|><|box_end|>"
     )
-    logprob = math.log(0.2)
+    policy_logprob = math.log(0.2)
 
     scored = score_prediction(
         row_id="row-1",
         prediction=_prediction(text),
-        token_trace=_trace_for_text(text, logprob=logprob),
+        token_trace=_trace_for_text(text, policy_logprob=policy_logprob),
     )
 
     assert scored.score == pytest.approx(0.2)
@@ -126,8 +147,8 @@ def test_description_tokens_are_excluded_from_score() -> None:
         "<|object_ref_start|>cat<|object_ref_end|>"
         "<|box_start|><|coord_100|><|coord_200|><|coord_300|><|coord_400|><|box_end|>"
     )
-    trace = _trace_for_text(text, logprob=math.log(0.5))
-    trace[1] = TokenTrace(**{**trace[1].__dict__, "logprob": math.log(0.01)})
+    trace = _trace_for_text(text, policy_logprob=math.log(0.5))
+    trace[1] = _with_policy_logprob(trace[1], math.log(0.01))
 
     scored = score_prediction(
         row_id="row-1",
@@ -161,7 +182,7 @@ def test_non_finite_selected_logprob_invalidates_prediction() -> None:
         "<|box_start|><|coord_100|><|coord_200|><|coord_300|><|coord_400|><|box_end|>"
     )
     trace = _trace_for_text(text)
-    trace[4] = TokenTrace(**{**trace[4].__dict__, "logprob": float("nan")})
+    trace[4] = _with_policy_logprob(trace[4], float("nan"))
 
     with pytest.raises(ArtifactContractError) as exc_info:
         score_prediction(row_id="row-1", prediction=_prediction(text), token_trace=trace)
@@ -176,8 +197,8 @@ def test_positive_selected_logprob_invalidates_prediction_even_when_mean_score_i
         "<|object_ref_start|>cat<|object_ref_end|>"
         "<|box_start|><|coord_100|><|coord_200|><|coord_300|><|coord_400|><|box_end|>"
     )
-    trace = _trace_for_text(text, logprob=math.log(0.01))
-    trace[4] = TokenTrace(**{**trace[4].__dict__, "logprob": 0.1})
+    trace = _trace_for_text(text, policy_logprob=math.log(0.01))
+    trace[4] = _with_policy_logprob(trace[4], 0.1)
 
     with pytest.raises(ArtifactContractError) as exc_info:
         score_prediction(row_id="row-1", prediction=_prediction(text), token_trace=trace)
@@ -198,7 +219,7 @@ def test_duplicate_span_alignment_is_ambiguous_without_unique_trace_interval() -
     prediction.pop("char_end")
     prediction.pop("raw_span_sha256")
     trace = _trace_for_text(object_text) + [
-        TokenTrace(**{**item.__dict__, "step_index": item.step_index + 9})
+        replace(item, step_index=item.step_index + 9)
         for item in _trace_for_text(object_text)
     ]
 
@@ -225,10 +246,10 @@ def test_identical_repeated_object_spans_use_parser_absolute_offsets_for_scoring
         image_width=1000,
         image_height=1000,
     )
-    first_trace = _trace_for_text(object_text, logprob=math.log(0.5))
+    first_trace = _trace_for_text(object_text, policy_logprob=math.log(0.5))
     second_trace = [
-        TokenTrace(**{**item.__dict__, "step_index": item.step_index + len(first_trace)})
-        for item in _trace_for_text(object_text, logprob=math.log(0.25))
+        replace(item, step_index=item.step_index + len(first_trace))
+        for item in _trace_for_text(object_text, policy_logprob=math.log(0.25))
     ]
 
     scored = [
@@ -257,7 +278,10 @@ def test_object_span_must_map_to_contiguous_generated_token_interval() -> None:
             step_index=99,
             token_id=999,
             token_text="noise",
-            logprob=math.log(0.5),
+            likelihood=LikelihoodPair(
+                policy_logprob=math.log(0.5),
+                raw_model_logprob=None,
+            ),
             is_stop=False,
             is_pad=False,
             backend="hf",
@@ -280,7 +304,7 @@ def test_direct_score_alignment_errors_preserve_caller_row_id_context() -> None:
         "<|box_start|><|coord_100|><|coord_200|><|coord_300|><|coord_400|><|box_end|>"
     )
     mismatched_trace = _trace_for_text(text)
-    mismatched_trace[1] = TokenTrace(**{**mismatched_trace[1].__dict__, "token_text": "dog"})
+    mismatched_trace[1] = replace(mismatched_trace[1], token_text="dog")
 
     with pytest.raises(ArtifactContractError) as exc_info:
         score_prediction(
@@ -300,7 +324,7 @@ def test_missing_logprob_error_preserves_caller_row_id_context() -> None:
         "<|box_start|><|coord_100|><|coord_200|><|coord_300|><|coord_400|><|box_end|>"
     )
     trace = _trace_for_text(text)
-    trace[4] = TokenTrace(**{**trace[4].__dict__, "logprob": None})
+    trace[4] = _with_policy_logprob(trace[4], None)
 
     with pytest.raises(ArtifactContractError) as exc_info:
         score_prediction(row_id="row-missing-logprob", prediction=_prediction(text), token_trace=trace)

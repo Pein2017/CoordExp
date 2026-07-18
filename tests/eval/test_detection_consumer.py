@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import subprocess
 import sys
 from pathlib import Path
@@ -9,9 +10,8 @@ from typing import Any
 import pytest
 
 from src.common.errors import ArtifactContractError
-from src.inference.backend import DecodeResult, TokenTrace
+from src.inference.backend import DecodeResult, LikelihoodPair, TokenTrace
 from src.inference.parsing import parse_compact_object_box_closed
-from helpers.inference_receipts import build_greedy_decode_result
 
 
 OBJECT_TEXT = (
@@ -669,7 +669,10 @@ def _decode_result(row_id: str, *, text: str = OBJECT_TEXT) -> DecodeResult:
             step_index=index,
             token_id=151646 + index,
             token_text=piece,
-            logprob=-1.3862943611198906,
+            likelihood=LikelihoodPair(
+                policy_logprob=math.log(0.25),
+                raw_model_logprob=None,
+            ),
             is_stop=False,
             is_pad=False,
             backend="hf",
@@ -678,10 +681,19 @@ def _decode_result(row_id: str, *, text: str = OBJECT_TEXT) -> DecodeResult:
         )
         for index, piece in enumerate(pieces)
     ]
-    return build_greedy_decode_result(
+    return DecodeResult(
         request_id=row_id,
-        token_trace=trace,
+        backend="hf",
+        backend_mode="generate",
+        response_family="hf",
+        executed_prompt_token_ids=(11, 12),
+        generated_token_ids=tuple(item.token_id for item in trace),
         raw_generated_text=text,
+        parser_text=text,
+        strip_policy="none",
+        stop_reason="length",
+        token_trace=tuple(trace),
+        executed_media_sha256="a" * 64,
     )
 
 

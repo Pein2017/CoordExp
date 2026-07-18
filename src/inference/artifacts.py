@@ -62,7 +62,12 @@ def write_inference_artifacts(
     )
     _require_traces_for_predicted_rows(rows, decode_results)
     _validate_image_plan_rows(rows, image_plan_rows)
-    _validate_decode_results(rows, decode_results)
+    raw_model_logprob_status = _raw_model_logprob_status(metadata)
+    _validate_decode_results(
+        rows,
+        decode_results,
+        raw_model_logprob_required=raw_model_logprob_status == "available",
+    )
 
     raw_rows: list[dict[str, Any]] = []
     scored_rows: list[dict[str, Any]] = []
@@ -79,7 +84,13 @@ def write_inference_artifacts(
 
         decode_result = decode_results.get(str(row["row_id"]))
         if decode_result is not None:
-            token_trace_rows.extend(_token_trace_rows(row_id=str(row["row_id"]), result=decode_result))
+            token_trace_rows.extend(
+                _token_trace_rows(
+                    row_id=str(row["row_id"]),
+                    result=decode_result,
+                    raw_model_logprob_status=raw_model_logprob_status,
+                )
+            )
         scored_pred: list[dict[str, Any]] = []
         if decode_result is not None and parse_row.predictions:
             for prediction in parse_row.predictions:
@@ -145,6 +156,10 @@ def write_inference_artifacts(
             "scored_artifact_materialized": True,
             "benchmark_eligible": False,
             "generation_policy": dict(metadata.get("generation_policy") or {}),
+            "likelihood_semantics": dict(
+                metadata.get("likelihood_semantics") or {}
+            ),
+            "raw_model_logprob_status": _raw_model_logprob_status(metadata),
             **dict(metadata.get("pipeline_counters") or {}),
             "score_failure_count": score_failure_count,
         }
@@ -325,6 +340,8 @@ def _validate_image_plan_rows(
 def _validate_decode_results(
     rows: list[dict[str, Any]],
     decode_results: dict[str, DecodeResult],
+    *,
+    raw_model_logprob_required: bool,
 ) -> None:
     for row in rows:
         row_id = str(row["row_id"])
@@ -338,7 +355,9 @@ def _validate_decode_results(
                 context={"row_id": row_id, "request_id": result.request_id},
             )
         try:
-            result.validate_for_scored()
+            result.validate_for_scored(
+                raw_model_logprob_required=raw_model_logprob_required
+            )
         except ArtifactContractError:
             raise
         except Exception as exc:
@@ -401,7 +420,12 @@ def _diagnostic_rows(parse_row: Any) -> list[dict[str, Any]]:
     return [_json_safe(item) for item in parse_row.diagnostics]
 
 
-def _token_trace_rows(*, row_id: str, result: DecodeResult) -> list[dict[str, Any]]:
+def _token_trace_rows(
+    *,
+    row_id: str,
+    result: DecodeResult,
+    raw_model_logprob_status: str,
+) -> list[dict[str, Any]]:
     rows = []
     for trace in result.token_trace:
         rows.append(
@@ -412,6 +436,8 @@ def _token_trace_rows(*, row_id: str, result: DecodeResult) -> list[dict[str, An
                 "token_id": trace.token_id,
                 "token_text": trace.token_text,
                 "logprob": trace.logprob,
+                "raw_model_logprob": trace.raw_model_logprob,
+                "raw_model_logprob_status": raw_model_logprob_status,
                 "is_stop": trace.is_stop,
                 "is_pad": trace.is_pad,
                 "backend": trace.backend,
@@ -437,6 +463,17 @@ def _replay_trace_row(replay: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _raw_model_logprob_status(metadata: dict[str, Any]) -> str:
+    enabled = metadata.get("raw_model_logprob_enabled", False)
+    if not isinstance(enabled, bool):
+        raise ArtifactContractError(
+            "raw-model likelihood enablement must be boolean",
+            code="artifacts.invalid_raw_model_logprob_status",
+            context={"raw_model_logprob_enabled": enabled},
+        )
+    return "available" if enabled else "disabled"
+
+
 def _provenance(
     *,
     metadata: dict[str, Any],
@@ -453,6 +490,12 @@ def _provenance(
         "decode_policy_fingerprint": metadata["generation_config_fingerprint"],
         "generation_config_fingerprint": metadata["generation_config_fingerprint"],
         "generation_policy": dict(metadata.get("generation_policy") or {}),
+        "backend_session": dict(metadata.get("backend_session") or {}),
+        "likelihood_semantics": dict(metadata.get("likelihood_semantics") or {}),
+        "execution_model_identity": metadata.get("execution_model_identity"),
+        "frontend_identity": dict(metadata.get("frontend_identity") or {}),
+        "raw_model_logprob_status": _raw_model_logprob_status(metadata),
+        "media_identity": dict(metadata.get("media_identity") or {}),
         "parallelism": dict(metadata.get("parallelism") or {}),
         "model_identity": dict(metadata.get("model_identity") or {}),
         "model_identity_fingerprint": metadata["model_identity_fingerprint"],
@@ -498,6 +541,12 @@ def _manifest(*, metadata: dict[str, Any], summary: dict[str, Any]) -> dict[str,
         "dataset_identity": metadata["dataset_identity"],
         "generation_config_fingerprint": metadata["generation_config_fingerprint"],
         "generation_policy": dict(metadata.get("generation_policy") or {}),
+        "backend_session": dict(metadata.get("backend_session") or {}),
+        "likelihood_semantics": dict(metadata.get("likelihood_semantics") or {}),
+        "execution_model_identity": metadata.get("execution_model_identity"),
+        "frontend_identity": dict(metadata.get("frontend_identity") or {}),
+        "raw_model_logprob_status": _raw_model_logprob_status(metadata),
+        "media_identity": dict(metadata.get("media_identity") or {}),
         "parallelism": dict(metadata.get("parallelism") or {}),
         "score_policy_fingerprint": SCORE_POLICY_FINGERPRINT,
         "trace_scoring_status": "scored",
@@ -531,6 +580,15 @@ def _terminal_manifest(*, metadata: dict[str, Any], summary: dict[str, Any]) -> 
         "dataset_identity": metadata.get("dataset_identity", {}),
         "generation_config_fingerprint": metadata.get("generation_config_fingerprint"),
         "generation_policy": dict(metadata.get("generation_policy") or {}),
+        "backend_session": dict(metadata.get("backend_session") or {}),
+        "likelihood_semantics": dict(metadata.get("likelihood_semantics") or {}),
+        "execution_model_identity": metadata.get("execution_model_identity"),
+        "frontend_identity": dict(metadata.get("frontend_identity") or {}),
+        "raw_model_logprob_status": (
+            "failed"
+            if metadata.get("raw_model_logprob_enabled")
+            else "disabled"
+        ),
         "parallelism": dict(metadata.get("parallelism") or {}),
         "score_policy_fingerprint": SCORE_POLICY_FINGERPRINT,
         "trace_scoring_status": "not_materialized",

@@ -1,0 +1,151 @@
+{
+  "schema_version": 1,
+  "source_commit": "958bce1",
+  "candidate_source": {
+    "git_head": "958bce17bac7b1e44ef53e82852d544fff8fd2be",
+    "files": {
+      "src/inference/artifacts.py": "2d92279b0698f74766af8da0899e0dfb4c4d016f404eb7f14c79968e468f3270",
+      "src/inference/backend.py": "db11e4a7409701fe5d5451452b9aeb5d66b357a67b29243fd2dbbc005c3d9382",
+      "src/inference/hf_backend.py": "8883fac8e22e2e9746dbf195912edf7517716960b6f6f9fe04dc4cc3d5fc6fab",
+      "src/inference/image_plan.py": "8cd0e2f67cdf6e4f1896fbe592af96e77c61d513e5fb75143fa692e157ea2119",
+      "src/inference/merge.py": "dabbb3f22052869f8fef224367fbf93d3b77bdbb5ca64f2a1f286204d9ae3dd9",
+      "src/inference/pipeline.py": "c27f3d13d2b347a620999b470775fec47af71a0757d58cf5fee87f9cad2f9136",
+      "src/qwen/images.py": "4a9205efc56469427d49dc8593828cb041dfd5e72983c53d0fa573cbbbce19c9"
+    }
+  },
+  "backend": "hf",
+  "purpose": "Wave 1 temporary old-path artifact parity oracle and run identity catalog",
+  "comparison_policy": {
+    "byte_exact_files": [
+      "gt_vs_pred.jsonl",
+      "gt_vs_pred_scored.jsonl",
+      "parse_diagnostics.jsonl"
+    ],
+    "projected_exact_files": {
+      "image_plan.jsonl": {
+        "excluded_additive_fields": [
+          "logical_transform_id",
+          "image_content_sha256",
+          "backend_projection_evidence_kind",
+          "executed_media_sha256"
+        ]
+      },
+      "pred_token_trace.jsonl": {
+        "excluded_additive_fields": [
+          "raw_model_logprob",
+          "raw_model_logprob_status"
+        ]
+      }
+    },
+    "structured_leaf_verification": {
+      "receipt_path": "openspec/changes/add-coordexp-swift-vllm-inference-backend/source-studies/receipts/hf-wave1-artifact-parity.json",
+      "receipt_sha256": "00afe34685caa520f25bc5d3e185e5bd20cfe8eed6f48f502cd714cb6c16e418",
+      "verifier_path": "scripts/probes/coordexp_swift/hf_wave1_artifact_parity.py",
+      "verifier_sha256": "e1b32a06c2609992710723b95ab9d55eb32a5b1e57e4b9e67f4d8007bdb6501d"
+    }
+  },
+  "parity_verification": {
+    "status": "passed",
+    "single_row_candidate_root": "outputs/coordexp_swift/infer/wave7_real_smokes/wave7-real-base-single-smoke-20260717T211209Z",
+    "heterogeneous_batch_candidate_root": "outputs/coordexp_swift/infer/wave7_real_smokes/wave7-real-base-batched-smoke-20260717T211209Z",
+    "structured_leaf_verification_status": "passed",
+    "single_row_byte_exact_file_count": 3,
+    "single_row_projected_exact_file_count": 2,
+    "heterogeneous_batch_byte_exact_file_count": 3,
+    "heterogeneous_batch_projected_exact_file_count": 2,
+    "heterogeneous_batch_regression_closed": {
+      "cause": "the processor inherited right padding while the oracle explicitly left padded decoder-only prompts",
+      "symptom": "28 policy logprob values changed for the shorter prompt although generated ids remained equal",
+      "max_absolute_logprob_delta_before_fix": 0.18802420794963837,
+      "resolution": "the HF session now enforces left padding before native projection",
+      "post_fix_token_trace_sha256": "f4bd854551243861adbb764922c53a149530d2f5f7b2a0848fdb0fa74e4f5372"
+    }
+  },
+  "wave1_execution_receipts": {
+    "raw_likelihood_execution": {
+      "status": "passed",
+      "receipt_path": "openspec/changes/add-coordexp-swift-vllm-inference-backend/source-studies/receipts/hf-wave1-raw-likelihood.json",
+      "receipt_sha256": "5af8aa8f6c0a585d4054936bf0ae46dbdde89aed1f373f23211e2ed35d2f45d8",
+      "verifier_path": "scripts/probes/coordexp_swift/hf_raw_likelihood.py",
+      "verifier_sha256": "2ddc13458c7bd4730c97df060a12589974e4df6c8deb5bdbf4bf926aad5a3097"
+    },
+    "transformed_media_identity": {
+      "status": "passed",
+      "receipt_path": "openspec/changes/add-coordexp-swift-vllm-inference-backend/source-studies/receipts/hf-wave1-transformed-media.json",
+      "receipt_sha256": "4d0f6a3a33c7fbec50db9d52ae6211abe13c85b9173d9ee856861dab77fc329c",
+      "verifier_path": "scripts/probes/coordexp_swift/hf_transformed_media.py",
+      "verifier_sha256": "a0407266efefb1ee35a9b2b71c31d88366e7311cd201383936af122416a62937"
+    },
+    "policy_score_and_evaluator_ownership": {
+      "status": "passed",
+      "receipt_path": "openspec/changes/add-coordexp-swift-vllm-inference-backend/source-studies/receipts/hf-wave1-policy-score.json",
+      "receipt_sha256": "2d2526a7475b61c2c67ba5c85af3714c06b8148b4975277bf961589de82b773e",
+      "verifier_path": "scripts/probes/coordexp_swift/hf_policy_score.py",
+      "verifier_sha256": "6dbd6e2d5c39d116387bdcd74e8ee8a44d82e0fbaef71f350e33c929ac86f6ea"
+    }
+  },
+  "baseline_runs": [
+    {
+      "kind": "single_row",
+      "run_root": "outputs/coordexp_swift/infer/wave7_real_smokes/wave7-real-base-single-smoke-20260717T190626Z",
+      "infer_config_fingerprint": "94ee252f47061c5ee94c98ed51b6127c5b04ff2764cb01c2f5f761448bab5142",
+      "model_identity_fingerprint": "a906578136201c0762e3f2dae51c1c38d814f19d65f49316b740329023a19fa3",
+      "processor_identity_fingerprint": "1b6a8d3fdd4ee4bc30734aab17d902f1ce89ae2ac208f875b624cdb6cac4d055",
+      "generation_config_fingerprint": "e38b96f3c7756e34c6211803f505d9d8c8111763a85ee120dee9d6f953c1ad97",
+      "sha256": {
+        "gt_vs_pred.jsonl": "0119b75796df908a5f810cf81f297be50c98b5355ec942641eced653edd39b7c",
+        "gt_vs_pred_scored.jsonl": "8cdc16ba4bc8d26dde2020b679e24ec7a9564fc31555a09e19fb0edb52df0994",
+        "image_plan.jsonl": "c523df02e2d067cc6c8a169ada47dc609919b346f077b6b473a56074a9664229",
+        "parse_diagnostics.jsonl": "8c19dafbdadf74f0b3168865566a3a624a9be99c83ff56adf9c36777f5efc5f3",
+        "pred_token_trace.jsonl": "4d78ade70dc7feaff0a6af57202c5e53270fccab76eaea966a71f1bb90507fe9"
+      }
+    },
+    {
+      "kind": "heterogeneous_batch",
+      "run_root": "outputs/coordexp_swift/infer/wave7_real_smokes/wave7-real-base-batched-smoke-20260717T190743Z",
+      "infer_config_fingerprint": "cd6e136be25c9404ecbd50e66fb3929462651b107427207699be41d6fbc85c32",
+      "model_identity_fingerprint": "a906578136201c0762e3f2dae51c1c38d814f19d65f49316b740329023a19fa3",
+      "processor_identity_fingerprint": "1b6a8d3fdd4ee4bc30734aab17d902f1ce89ae2ac208f875b624cdb6cac4d055",
+      "generation_config_fingerprint": "ef4bd1dbc4d738e867d4e7651ca44b15d95757349da2f28fa8713883a08515e3",
+      "sha256": {
+        "gt_vs_pred.jsonl": "a78a0089d289c3b421e7a6344dd596115feb4c1f19400dacf278fbbd2a02d6fb",
+        "gt_vs_pred_scored.jsonl": "bdeebfa7d45b2f0752542f49a31bc81706f4f97a2d29806154f70a8723531d35",
+        "image_plan.jsonl": "cf76c426fff852fe88c38be1fdcf60604802aae91675a57851aaef67b12d9ebf",
+        "parse_diagnostics.jsonl": "a590da5004f648acae88a4c76fc2223aa319a021e81c12162f78eca381f151ed",
+        "pred_token_trace.jsonl": "f4bd854551243861adbb764922c53a149530d2f5f7b2a0848fdb0fa74e4f5372"
+      }
+    }
+  ],
+  "candidate_runs": [
+    {
+      "kind": "single_row",
+      "run_root": "outputs/coordexp_swift/infer/wave7_real_smokes/wave7-real-base-single-smoke-20260717T211209Z",
+      "infer_config_fingerprint": "c0c270d14a667cc797345bf7469a5165932d9a09510be69dc2b46550913699d1",
+      "model_identity_fingerprint": "78246496913e1cc83e5f3ac70a1a931441cf27307dcd6a20ed54f073f69bab0b",
+      "processor_identity_fingerprint": "1b6a8d3fdd4ee4bc30734aab17d902f1ce89ae2ac208f875b624cdb6cac4d055",
+      "generation_config_fingerprint": "4d801588a4fd5748cb9df03a87ac53372321fdf3d4fed5f3b985f1047e9c395a",
+      "sha256": {
+        "gt_vs_pred.jsonl": "0119b75796df908a5f810cf81f297be50c98b5355ec942641eced653edd39b7c",
+        "gt_vs_pred_scored.jsonl": "8cdc16ba4bc8d26dde2020b679e24ec7a9564fc31555a09e19fb0edb52df0994",
+        "image_plan.jsonl": "0b922ec62dcd294b54aafba9fe226c1db57eab665974db79ec692506d5c7d9ae",
+        "parse_diagnostics.jsonl": "8c19dafbdadf74f0b3168865566a3a624a9be99c83ff56adf9c36777f5efc5f3",
+        "pred_token_trace.jsonl": "7d9276a9345b06943a93dc805b5b85c3cd8e9ae52f341c33319a9cbfed68204c"
+      }
+    },
+    {
+      "kind": "heterogeneous_batch",
+      "run_root": "outputs/coordexp_swift/infer/wave7_real_smokes/wave7-real-base-batched-smoke-20260717T211209Z",
+      "infer_config_fingerprint": "ec03edb66b730bbbe6f4883ac10db826ea4f759587390f2e739287f3f6036538",
+      "model_identity_fingerprint": "78246496913e1cc83e5f3ac70a1a931441cf27307dcd6a20ed54f073f69bab0b",
+      "processor_identity_fingerprint": "1b6a8d3fdd4ee4bc30734aab17d902f1ce89ae2ac208f875b624cdb6cac4d055",
+      "generation_config_fingerprint": "a58380c8b3e95511ae16520d0e3fd34be5fb8131a43633658b8d6ac26ec83535",
+      "sha256": {
+        "gt_vs_pred.jsonl": "a78a0089d289c3b421e7a6344dd596115feb4c1f19400dacf278fbbd2a02d6fb",
+        "gt_vs_pred_scored.jsonl": "bdeebfa7d45b2f0752542f49a31bc81706f4f97a2d29806154f70a8723531d35",
+        "image_plan.jsonl": "a562217cfdd30442575fa0a5d54f1a8c80788e881cdc5235155944a3631d2cd0",
+        "parse_diagnostics.jsonl": "a590da5004f648acae88a4c76fc2223aa319a021e81c12162f78eca381f151ed",
+        "pred_token_trace.jsonl": "2b881a1cb446332799c15a7373e9f1cf7428398c17f3eb43c1f16ead1d1eff2a"
+      }
+    }
+  ]
+}

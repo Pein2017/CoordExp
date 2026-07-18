@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import json
 import hashlib
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +18,8 @@ from src.templates import render_example
 
 
 class FakeTokenizer:
+    image_token_id = 151655
+
     def __call__(
         self,
         text: str,
@@ -26,7 +28,22 @@ class FakeTokenizer:
         **_: Any,
     ) -> dict[str, list[int]]:
         assert add_special_tokens is False
-        return {"input_ids": [ord(char) for char in text]}
+        return {"input_ids": self.encode(text)}
+
+    def encode(self, text: str) -> list[int]:
+        marker = "<|image_pad|>"
+        pieces = text.split(marker)
+        ids: list[int] = []
+        for index, piece in enumerate(pieces):
+            ids.extend(ord(char) for char in piece)
+            if index < len(pieces) - 1:
+                ids.append(self.image_token_id)
+        return ids
+
+    def convert_tokens_to_ids(self, token: str) -> int | None:
+        if token == "<|image_pad|>":
+            return self.image_token_id
+        return None
 
 
 class FakeProcessor:
@@ -56,32 +73,23 @@ class FakeProcessor:
         *,
         tokenize: bool,
         add_generation_prompt: bool,
-        continue_final_message: bool = False,
         **_: Any,
     ) -> str | list[int]:
-        if continue_final_message:
-            assert messages[-1]["role"] == "assistant"
-            assert add_generation_prompt is False
-        else:
-            assert messages[-1]["role"] == "user"
+        assert messages[-1]["role"] == "user"
         pieces: list[str] = []
-        for index, message in enumerate(messages):
+        for message in messages:
             pieces.append(f"<|im_start|>{message['role']}\n")
             for item in message["content"]:
                 if item["type"] == "image":
                     pieces.append("<|vision_start|><|image_pad|><|vision_end|>")
                 elif item["type"] == "text":
                     pieces.append(item["text"])
-            is_open_final_message = (
-                continue_final_message and index == len(messages) - 1
-            )
-            if not is_open_final_message:
-                pieces.append("<|im_end|>\n")
+            pieces.append("<|im_end|>\n")
         if add_generation_prompt:
             pieces.append("<|im_start|>assistant\n")
         text = "".join(pieces)
         if tokenize:
-            return self.tokenizer(text, add_special_tokens=False)["input_ids"]
+            return self.tokenizer.encode(text)
         return text
 
 
@@ -102,7 +110,9 @@ class FakeComponents:
     processor: FakeProcessor
 
 
-def test_inference_prompt_token_ids_match_backend_prompt_ids(tmp_path: Path) -> None:
+def test_prompt_record_separates_unexpanded_and_executed_prompt_ids(
+    tmp_path: Path,
+) -> None:
     from src.inference.prompt import build_prompt_record, verify_prompt_token_parity
 
     example = _raw_example(tmp_path, width=96, height=64)
@@ -110,81 +120,52 @@ def test_inference_prompt_token_ids_match_backend_prompt_ids(tmp_path: Path) -> 
     rendered = render_example(example, template)
     processor = FakeProcessor()
 
-    record = build_prompt_record(example, template, processor=processor, row_index=0)
-    backend_prompt_ids = processor.apply_chat_template(
+    record = build_prompt_record(
+        example,
+        template,
+        processor=processor,
+        row_index=0,
+        merged_visual_tokens=6,
+    )
+    input_prompt_ids = processor.apply_chat_template(
         list(record.messages),
         tokenize=True,
         add_generation_prompt=True,
     )
 
-    assert record.prompt_token_ids == backend_prompt_ids
+    image_token_id = processor.tokenizer.image_token_id
+    assert record.chat_text == processor.apply_chat_template(
+        list(record.messages),
+        tokenize=False,
+        add_generation_prompt=True,
+    )
+    assert record.input_prompt_token_ids == input_prompt_ids
+    assert record.input_prompt_token_ids.count(image_token_id) == 1
+    assert record.expected_executed_prompt_token_ids.count(image_token_id) == 6
+    assert len(record.expected_executed_prompt_token_ids) == len(input_prompt_ids) + 5
+    assert record.prompt_token_ids == record.expected_executed_prompt_token_ids
     assert record.prompt_text != rendered.supervised_response_text
     parity = verify_prompt_token_parity(
         record,
-        backend_prompt_token_ids=list(backend_prompt_ids),
+        backend_prompt_token_ids=list(record.expected_executed_prompt_token_ids),
     )
     assert parity["prompt_token_parity"] == "verified"
     assert parity["prompt_token_count"] == len(record.prompt_token_ids)
-
-
-def test_prompt_tokenization_uses_explicit_visual_input_image(tmp_path: Path) -> None:
-    from src.inference.prompt import build_prompt_record
-
-    observed_sizes: list[tuple[int, int]] = []
-
-    class RecordingProcessor(FakeProcessor):
-        def apply_chat_template(
-            self,
-            messages: list[dict[str, Any]],
-            *,
-            tokenize: bool,
-            add_generation_prompt: bool,
-            **kwargs: Any,
-        ) -> str | list[int]:
-            image_items = [
-                item
-                for message in messages
-                for item in message["content"]
-                if item["type"] == "image"
-            ]
-            assert len(image_items) == 1
-            image = image_items[0]["image"]
-            assert isinstance(image, Image.Image)
-            observed_sizes.append(image.size)
-            return super().apply_chat_template(
-                messages,
-                tokenize=tokenize,
-                add_generation_prompt=add_generation_prompt,
-                **kwargs,
-            )
-
-    visual_input_image = Image.new("RGB", (32, 48), color=(1, 2, 3))
-    example = _raw_example(tmp_path, width=96, height=64)
-    try:
-        record = build_prompt_record(
-            example,
-            _template_config(),
-            processor=RecordingProcessor(),
-            row_index=0,
-            visual_input_image=visual_input_image,
-        )
-    finally:
-        visual_input_image.close()
-
-    assert observed_sizes == [(32, 48), (32, 48)]
-    retained_image_item = next(
-        item
-        for message in record.messages
-        for item in message["content"]
-        if item["type"] == "image"
+    artifact = record.to_artifact_dict()
+    assert artifact["prompt_token_ids"] == record.expected_executed_prompt_token_ids
+    assert artifact["input_prompt_token_ids"] == record.input_prompt_token_ids
+    assert (
+        artifact["expected_executed_prompt_token_ids"]
+        == record.expected_executed_prompt_token_ids
     )
-    assert retained_image_item["image"] == str(example.image.path)
 
 
-def test_prompt_token_ids_accept_real_qwen_single_batch_shape(tmp_path: Path) -> None:
+def test_prompt_token_ids_are_derived_from_authoritative_chat_text(
+    tmp_path: Path,
+) -> None:
     from src.inference.prompt import build_prompt_record
 
-    class NestedTokenProcessor(FakeProcessor):
+    class DivergentTokenProcessor(FakeProcessor):
         def apply_chat_template(
             self,
             messages: list[dict[str, Any]],
@@ -201,17 +182,20 @@ def test_prompt_token_ids_accept_real_qwen_single_batch_shape(tmp_path: Path) ->
             )
             assert isinstance(rendered, str)
             if tokenize:
-                return [[ord(char) for char in rendered]]
+                return [[999]]
             return rendered
 
+    processor = DivergentTokenProcessor()
     record = build_prompt_record(
         _raw_example(tmp_path, width=96, height=64),
         _template_config(),
-        processor=NestedTokenProcessor(),
+        processor=processor,
         row_index=0,
+        merged_visual_tokens=6,
     )
 
-    assert record.prompt_token_ids
+    assert record.input_prompt_token_ids == processor.tokenizer.encode(record.chat_text)
+    assert record.input_prompt_token_ids != [999]
     assert all(isinstance(token_id, int) for token_id in record.prompt_token_ids)
 
 
@@ -223,7 +207,13 @@ def test_prompt_record_preserves_template_identity_and_training_fingerprint(
     example = _raw_example(tmp_path, width=96, height=64)
     template = _template_config()
 
-    record = build_prompt_record(example, template, processor=FakeProcessor(), row_index=3)
+    record = build_prompt_record(
+        example,
+        template,
+        processor=FakeProcessor(),
+        row_index=3,
+        merged_visual_tokens=6,
+    )
     rendered = render_example(example, template)
 
     assert record.row_index == 3
@@ -237,439 +227,6 @@ def test_prompt_record_preserves_template_identity_and_training_fingerprint(
     assert record.to_artifact_dict()["template_fingerprint"] == rendered.template_fingerprint
 
 
-def test_open_assistant_continuation_appends_without_boundary_and_records_evidence(
-    tmp_path: Path,
-) -> None:
-    from src.inference.prompt import AssistantContinuation, build_prompt_record
-
-    processor = FakeProcessor()
-    ordinary = build_prompt_record(
-        _raw_example(tmp_path, width=96, height=64),
-        _template_config(),
-        processor=processor,
-        row_index=0,
-    )
-    continuation_text = (
-        "<|object_ref_start|>café<|object_ref_end|>"
-        "<|box_start|><|coord_100|><|coord_200|>"
-        "<|coord_300|><|coord_400|><|box_end|>"
-    )
-    continued = build_prompt_record(
-        _raw_example(tmp_path, width=96, height=64),
-        _template_config(),
-        processor=processor,
-        row_index=0,
-        assistant_continuation=AssistantContinuation(continuation_text),
-    )
-
-    assert continued.prompt_text == ordinary.prompt_text
-    assert continued.messages == ordinary.messages
-    assert continued.chat_text == ordinary.chat_text + continuation_text
-    assert continued.chat_text.endswith("assistant\n" + continuation_text)
-    assert "assistant\n\n" not in continued.chat_text
-    assert continued.prompt_token_ids == [ord(char) for char in continued.chat_text]
-    assert continued.image_placeholder_count == 1
-    assert continued.open_assistant_interval_verified is True
-
-    char_start, char_end = continued.continuation_character_span or (-1, -1)
-    byte_start, byte_end = continued.continuation_byte_span or (-1, -1)
-    assert continued.chat_text[char_start:char_end] == continuation_text
-    assert continued.chat_text.encode("utf-8")[byte_start:byte_end] == (
-        continuation_text.encode("utf-8")
-    )
-    assert continued.open_assistant_content_start_character == len(ordinary.chat_text)
-    assert continued.open_assistant_content_start_byte == len(
-        ordinary.chat_text.encode("utf-8")
-    )
-    assert continued.continuation_text_sha256 == hashlib.sha256(
-        continuation_text.encode("utf-8")
-    ).hexdigest()
-    assert continued.continuation_token_impact_span == (
-        len(ordinary.prompt_token_ids),
-        len(continued.prompt_token_ids),
-    )
-
-    artifact = continued.to_artifact_dict()
-    assert artifact["prompt_text"] == ordinary.prompt_text
-    assert artifact["full_chat_text"] == continued.chat_text
-    assert artifact["prompt_token_ids"] == continued.prompt_token_ids
-    assert artifact["continuation_character_span"] == [char_start, char_end]
-    assert artifact["continuation_byte_span"] == [byte_start, byte_end]
-    assert artifact["continuation_token_impact_span"] == list(
-        continued.continuation_token_impact_span
-    )
-    assert len(artifact["full_prompt_fingerprint"]) == 64
-
-
-def test_continuation_token_impact_span_includes_boundary_retokenization(
-    tmp_path: Path,
-) -> None:
-    from src.inference.prompt import AssistantContinuation, build_prompt_record
-
-    class BoundaryMergingTokenizer(FakeTokenizer):
-        def __call__(
-            self,
-            text: str,
-            *,
-            add_special_tokens: bool = False,
-            **kwargs: Any,
-        ) -> dict[str, list[int]]:
-            ids = super().__call__(
-                text,
-                add_special_tokens=add_special_tokens,
-                **kwargs,
-            )["input_ids"]
-            boundary = text.rfind("\nX")
-            if boundary >= 0:
-                ids = ids[:boundary] + [900_001] + ids[boundary + 2 :]
-            return {"input_ids": ids}
-
-    processor = FakeProcessor()
-    processor.tokenizer = BoundaryMergingTokenizer()
-    ordinary = build_prompt_record(
-        _raw_example(tmp_path, width=96, height=64),
-        _template_config(),
-        processor=processor,
-        row_index=0,
-    )
-    continued = build_prompt_record(
-        _raw_example(tmp_path, width=96, height=64),
-        _template_config(),
-        processor=processor,
-        row_index=0,
-        assistant_continuation=AssistantContinuation("X"),
-    )
-
-    assert continued.continuation_token_impact_span == (
-        len(ordinary.prompt_token_ids) - 1,
-        len(continued.prompt_token_ids),
-    )
-    assert continued.prompt_token_ids[-1] == 900_001
-
-
-@pytest.mark.parametrize(
-    ("text", "boundary_class"),
-    [
-        ("prefix<|image_pad|>", "image_placeholder"),
-        ("prefix<|im_end|>", "assistant_terminator"),
-        ("prefix<|endoftext|>", "end_of_sequence"),
-        ("prefix<|im_start|>user", "chat_turn_opener"),
-    ],
-)
-def test_open_assistant_continuation_rejects_forbidden_controls(
-    tmp_path: Path,
-    text: str,
-    boundary_class: str,
-) -> None:
-    from src.inference.prompt import AssistantContinuation, build_prompt_record
-
-    with pytest.raises(EncodingContractError) as exc_info:
-        build_prompt_record(
-            _raw_example(tmp_path, width=96, height=64),
-            _template_config(),
-            processor=FakeProcessor(),
-            row_index=0,
-            assistant_continuation=AssistantContinuation(text),
-        )
-
-    assert exc_info.value.code == "inference.assistant_continuation_forbidden_control"
-    assert exc_info.value.context["boundary_class"] == boundary_class
-
-
-def test_open_assistant_continuation_allows_earlier_completed_turn_terminators(
-    tmp_path: Path,
-) -> None:
-    from src.inference.prompt import AssistantContinuation, build_prompt_record
-
-    record = build_prompt_record(
-        _raw_example(tmp_path, width=96, height=64),
-        _template_config(),
-        processor=FakeProcessor(),
-        row_index=0,
-        assistant_continuation=AssistantContinuation("accepted-row"),
-    )
-
-    assistant_start = record.chat_text.rfind("<|im_start|>assistant\n")
-    assert "<|im_end|>" in record.chat_text[:assistant_start]
-    assert "<|im_end|>" not in record.chat_text[assistant_start:]
-
-
-def test_open_assistant_continuation_rejects_closed_or_prepopulated_assistant(
-    tmp_path: Path,
-) -> None:
-    from src.inference.prompt import AssistantContinuation, build_prompt_record
-
-    class ClosedAssistantProcessor(FakeProcessor):
-        def apply_chat_template(
-            self,
-            messages: list[dict[str, Any]],
-            *,
-            tokenize: bool,
-            add_generation_prompt: bool,
-            **kwargs: Any,
-        ) -> str | list[int]:
-            text = super().apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=add_generation_prompt,
-                **kwargs,
-            )
-            assert isinstance(text, str)
-            text += "existing<|im_end|>"
-            return [ord(char) for char in text] if tokenize else text
-
-    with pytest.raises(EncodingContractError) as exc_info:
-        build_prompt_record(
-            _raw_example(tmp_path, width=96, height=64),
-            _template_config(),
-            processor=ClosedAssistantProcessor(),
-            row_index=0,
-            assistant_continuation=AssistantContinuation("accepted-row"),
-        )
-
-    assert exc_info.value.code == "inference.open_assistant_forbidden_boundary"
-    assert exc_info.value.context["boundary_class"] == "assistant_terminator"
-
-
-def test_open_assistant_continuation_rejects_extra_chat_turn(
-    tmp_path: Path,
-) -> None:
-    from src.inference.prompt import AssistantContinuation, build_prompt_record
-
-    class ExtraTurnProcessor(FakeProcessor):
-        def apply_chat_template(
-            self,
-            messages: list[dict[str, Any]],
-            *,
-            tokenize: bool,
-            add_generation_prompt: bool,
-            **kwargs: Any,
-        ) -> str | list[int]:
-            text = super().apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=add_generation_prompt,
-                **kwargs,
-            )
-            assert isinstance(text, str)
-            text += "<|im_start|>assistant\n"
-            return [ord(char) for char in text] if tokenize else text
-
-    with pytest.raises(EncodingContractError) as exc_info:
-        build_prompt_record(
-            _raw_example(tmp_path, width=96, height=64),
-            _template_config(),
-            processor=ExtraTurnProcessor(),
-            row_index=0,
-            assistant_continuation=AssistantContinuation("accepted-row"),
-        )
-
-    assert exc_info.value.code == "inference.open_assistant_extra_turn"
-
-
-def test_open_assistant_continuation_requires_exactly_one_image_placeholder(
-    tmp_path: Path,
-) -> None:
-    from src.inference.prompt import AssistantContinuation, build_prompt_record
-
-    class MissingImagePlaceholderProcessor(FakeProcessor):
-        def apply_chat_template(
-            self,
-            messages: list[dict[str, Any]],
-            *,
-            tokenize: bool,
-            add_generation_prompt: bool,
-            **kwargs: Any,
-        ) -> str | list[int]:
-            text = super().apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=add_generation_prompt,
-                **kwargs,
-            )
-            assert isinstance(text, str)
-            text = text.replace("<|image_pad|>", "")
-            return [ord(char) for char in text] if tokenize else text
-
-    with pytest.raises(EncodingContractError) as exc_info:
-        build_prompt_record(
-            _raw_example(tmp_path, width=96, height=64),
-            _template_config(),
-            processor=MissingImagePlaceholderProcessor(),
-            row_index=0,
-            assistant_continuation=AssistantContinuation("accepted-row"),
-        )
-
-    assert exc_info.value.code == "inference.continuation_image_placeholder_count"
-    assert exc_info.value.context["image_placeholder_count"] == 0
-
-
-def test_open_assistant_continuation_rejects_context_overflow(
-    tmp_path: Path,
-) -> None:
-    from src.inference.prompt import AssistantContinuation, build_prompt_record
-
-    example = _raw_example(tmp_path, width=96, height=64)
-    with pytest.raises(EncodingContractError) as context_exc:
-        build_prompt_record(
-            example,
-            _template_config(),
-            processor=FakeProcessor(),
-            row_index=0,
-            assistant_continuation=AssistantContinuation("accepted-row"),
-            max_prompt_tokens=1,
-        )
-    assert context_exc.value.code == "inference.continuation_context_limit"
-
-
-def test_open_assistant_continuation_rejects_non_native_chat_text(
-    tmp_path: Path,
-) -> None:
-    from src.inference.prompt import AssistantContinuation, build_prompt_record
-
-    class ClosingContinuationProcessor(FakeProcessor):
-        def apply_chat_template(
-            self,
-            messages: list[dict[str, Any]],
-            *,
-            tokenize: bool,
-            add_generation_prompt: bool,
-            continue_final_message: bool = False,
-            **kwargs: Any,
-        ) -> str | list[int]:
-            rendered = super().apply_chat_template(
-                messages,
-                tokenize=tokenize,
-                add_generation_prompt=add_generation_prompt,
-                continue_final_message=continue_final_message,
-                **kwargs,
-            )
-            if not continue_final_message:
-                return rendered
-            suffix = "<|im_end|>\n"
-            if tokenize:
-                assert isinstance(rendered, list)
-                return [*rendered, *(ord(char) for char in suffix)]
-            assert isinstance(rendered, str)
-            return rendered + suffix
-
-    with pytest.raises(EncodingContractError) as exc_info:
-        build_prompt_record(
-            _raw_example(tmp_path, width=96, height=64),
-            _template_config(),
-            processor=ClosingContinuationProcessor(),
-            row_index=0,
-            assistant_continuation=AssistantContinuation("accepted-row"),
-        )
-    assert exc_info.value.code == "inference.continuation_native_chat_text"
-
-
-def test_real_qwen_continuation_preserves_expanded_image_tokens(
-    tmp_path: Path,
-) -> None:
-    from src.inference.prompt import AssistantContinuation, build_prompt_record
-    from src.qwen.runtime_loading import (
-        QwenLoadOptions,
-        load_qwen_components_from_options,
-    )
-
-    base_model = Path(
-        "/data/Qwen3-VL/model_cache/models/Qwen/"
-        "Qwen3-VL-2B-Instruct-coordexp-natural-adjacent"
-    )
-    if not base_model.is_dir():
-        pytest.skip("local Qwen3-VL processor fixture is unavailable")
-    components = load_qwen_components_from_options(
-        QwenLoadOptions(
-            base_model=str(base_model),
-            dtype="bf16",
-            attn_implementation="sdpa",
-            load_model=False,
-        )
-    )
-    image_pad_token_id = components.tokenizer.convert_tokens_to_ids(
-        "<|image_pad|>"
-    )
-    example = _raw_example(tmp_path, width=96, height=64)
-    with Image.open(example.image.path) as source_image:
-        explicit_image = source_image.convert("RGB")
-    observed_counts: list[tuple[int, int]] = []
-    try:
-        for visual_input_image in (None, explicit_image):
-            prompt_kwargs = (
-                {}
-                if visual_input_image is None
-                else {"visual_input_image": visual_input_image}
-            )
-            ordinary = build_prompt_record(
-                example,
-                _template_config(),
-                processor=components.processor,
-                row_index=0,
-                **prompt_kwargs,
-            )
-            continued = build_prompt_record(
-                example,
-                _template_config(),
-                processor=components.processor,
-                row_index=0,
-                assistant_continuation=AssistantContinuation("accepted-row"),
-                **prompt_kwargs,
-            )
-            observed_counts.append(
-                (
-                    ordinary.prompt_token_ids.count(image_pad_token_id),
-                    continued.prompt_token_ids.count(image_pad_token_id),
-                )
-            )
-    finally:
-        explicit_image.close()
-
-    assert observed_counts == [(70, 70), (70, 70)]
-
-
-def test_open_assistant_continuation_rejects_non_integral_context_limit(
-    tmp_path: Path,
-) -> None:
-    from src.inference.prompt import AssistantContinuation, build_prompt_record
-
-    with pytest.raises(EncodingContractError) as exc_info:
-        build_prompt_record(
-            _raw_example(tmp_path, width=96, height=64),
-            _template_config(),
-            processor=FakeProcessor(),
-            row_index=0,
-            assistant_continuation=AssistantContinuation("accepted-row"),
-            max_prompt_tokens=1.5,  # type: ignore[arg-type]
-        )
-
-    assert exc_info.value.code == "inference.continuation_context_limit_invalid"
-
-
-def test_no_continuation_argument_preserves_prompt_bytes_and_tokens(tmp_path: Path) -> None:
-    from src.inference.prompt import build_prompt_record
-
-    processor = FakeProcessor()
-    example = _raw_example(tmp_path, width=96, height=64)
-    omitted = build_prompt_record(
-        example,
-        _template_config(),
-        processor=processor,
-        row_index=0,
-    )
-    explicit_none = build_prompt_record(
-        example,
-        _template_config(),
-        processor=processor,
-        row_index=0,
-        assistant_continuation=None,
-    )
-
-    assert explicit_none.chat_text.encode("utf-8") == omitted.chat_text.encode("utf-8")
-    assert explicit_none.prompt_token_ids == omitted.prompt_token_ids
-    assert explicit_none.to_artifact_dict() == omitted.to_artifact_dict()
-
-
 def test_image_plan_jsonl_records_mandatory_no_resize_fields(tmp_path: Path) -> None:
     from src.inference.image_plan import write_image_plan_jsonl
 
@@ -681,7 +238,6 @@ def test_image_plan_jsonl_records_mandatory_no_resize_fields(tmp_path: Path) -> 
         components=components,
         processor_config=_processor_config(),
         output_path=output_path,
-        materialize=True,
     )
 
     assert len(rows) == 1
@@ -695,6 +251,7 @@ def test_image_plan_jsonl_records_mandatory_no_resize_fields(tmp_path: Path) -> 
         "declared_height",
         "decoded_width",
         "decoded_height",
+        "image_content_sha256",
         "patch_size",
         "merge_size",
         "temporal_patch_size",
@@ -709,8 +266,11 @@ def test_image_plan_jsonl_records_mandatory_no_resize_fields(tmp_path: Path) -> 
         assert field in row
     assert row["row_id"] == "image-96x64"
     assert row["row_index"] == 0
+    assert row["image_content_sha256"] == hashlib.sha256(
+        Path(row["image_path"]).read_bytes()
+    ).hexdigest()
     assert row["expected_image_grid_thw"] == [1, 4, 6]
-    assert row["observed_image_grid_thw"] == [1, 4, 6]
+    assert row["observed_image_grid_thw"] is None
     assert row["raw_patch_rows"] == 24
     assert row["merged_visual_tokens"] == 6
     assert row["do_resize"] is False
@@ -718,20 +278,117 @@ def test_image_plan_jsonl_records_mandatory_no_resize_fields(tmp_path: Path) -> 
     assert row["error"] is None
 
 
-def test_image_plan_jsonl_refuses_non_materialized_public_write(tmp_path: Path) -> None:
+def test_image_plan_jsonl_writes_shared_plan_without_materialized_tensors(
+    tmp_path: Path,
+) -> None:
     from src.inference.image_plan import write_image_plan_jsonl
 
+    processor = FakeProcessor()
+    rows = write_image_plan_jsonl(
+        [_raw_example(tmp_path / "data", width=96, height=64)],
+        components=FakeComponents(_processor_identity(), processor),
+        processor_config=_processor_config(),
+        output_path=tmp_path / "image_plan.jsonl",
+    )
+
+    assert len(rows) == 1
+    assert rows[0].observed_image_grid_thw is None
+    assert rows[0].backend_projection_evidence_kind == "shared_reference_plan"
+    assert processor.image_processor.calls == []
+    assert (tmp_path / "image_plan.jsonl").exists()
+
+
+def test_shared_image_plan_batch_requires_no_model_tensors(tmp_path: Path) -> None:
+    from src.inference.image_plan import plan_image_batch
+
+    processor = FakeProcessor()
+    batch = plan_image_batch(
+        [_raw_example(tmp_path, width=96, height=64)],
+        components=FakeComponents(_processor_identity(), processor),
+        processor_config=_processor_config(),
+    )
+
+    assert list(batch.plans_by_row_id) == ["image-96x64"]
+    assert set(vars(batch)) == {"rows", "plans_by_row_id"}
+    assert batch.rows[0].image_content_sha256
+    assert batch.rows[0].observed_image_grid_thw is None
+    assert processor.image_processor.calls == []
+
+
+def test_private_image_materialization_rejects_path_mutation(tmp_path: Path) -> None:
+    from src.inference.image_plan import plan_image_batch
+    from src.qwen.images import materialize_qwen_image_plan
+
+    processor = FakeProcessor()
+    batch = plan_image_batch(
+        [_raw_example(tmp_path, width=96, height=64)],
+        components=FakeComponents(_processor_identity(), processor),
+        processor_config=_processor_config(),
+    )
+    plan = batch.plans_by_row_id["image-96x64"]
+    Image.new("RGB", (96, 64), color=(99, 88, 77)).save(plan.image_path)
+
     with pytest.raises(EncodingContractError) as exc_info:
-        write_image_plan_jsonl(
-            [_raw_example(tmp_path / "data", width=96, height=64)],
-            components=FakeComponents(_processor_identity(), FakeProcessor()),
-            processor_config=_processor_config(),
-            output_path=tmp_path / "image_plan.jsonl",
-            materialize=False,
+        materialize_qwen_image_plan(
+            plan,
+            image_processor=processor.image_processor,
         )
 
-    assert exc_info.value.code == "inference.image_plan_materialize_required"
-    assert not (tmp_path / "image_plan.jsonl").exists()
+    assert exc_info.value.code == "qwen.image_content_sha256_mismatch"
+    assert processor.image_processor.calls == []
+
+
+def test_private_image_materialization_returns_executed_evidence(
+    tmp_path: Path,
+) -> None:
+    from src.inference.image_plan import plan_image_batch
+    from src.qwen.images import (
+        apply_logical_image_transform,
+        materialize_qwen_image_plan,
+        rgb_image_sha256,
+    )
+
+    processor = FakeProcessor()
+    example = _raw_example(tmp_path, width=96, height=64)
+    with Image.open(example.image.path) as source:
+        asymmetric = source.convert("RGB")
+    asymmetric.paste((255, 0, 0), (0, 0, 48, 64))
+    asymmetric.paste((0, 0, 255), (48, 0, 96, 64))
+    asymmetric.save(example.image.path)
+    example = replace(
+        example,
+        metadata={"augmentation": {"transform_id": "hflip"}},
+    )
+    batch = plan_image_batch(
+        [example],
+        components=FakeComponents(_processor_identity(), processor),
+        processor_config=_processor_config(),
+    )
+    plan = batch.plans_by_row_id["image-96x64"]
+    with Image.open(plan.image_path) as source:
+        source_rgb = source.convert("RGB")
+    transformed = apply_logical_image_transform(
+        source_rgb,
+        "hflip",
+        example_id=plan.example_id,
+        image_path=plan.image_path,
+    )
+    expected_executed_sha256 = rgb_image_sha256(transformed)
+    original_rgb_sha256 = rgb_image_sha256(source_rgb)
+
+    encoding = materialize_qwen_image_plan(
+        plan,
+        image_processor=processor.image_processor,
+    )
+
+    assert encoding.pixel_values is not None
+    assert encoding.image_grid_thw_tensor is not None
+    assert encoding.execution_evidence is not None
+    assert encoding.execution_evidence.media_sha256 == expected_executed_sha256
+    assert encoding.execution_evidence.media_sha256 != original_rgb_sha256
+    assert encoding.execution_evidence.media_sha256 != plan.image_content_sha256
+    assert encoding.execution_evidence.observed_image_grid_thw == (1, 4, 6)
+    assert encoding.execution_evidence.do_resize is False
 
 
 def test_image_plan_records_processor_model_vision_parity(tmp_path: Path) -> None:
@@ -767,34 +424,32 @@ def test_processor_model_vision_mismatch_fails_before_generation() -> None:
     assert exc_info.value.context["field"] == "patch_size"
 
 
-def test_valid_no_resize_image_materializes_with_do_resize_false(tmp_path: Path) -> None:
-    from src.inference.image_plan import materialize_image_plan_rows
+def test_valid_no_resize_image_plan_avoids_backend_projection(tmp_path: Path) -> None:
+    from src.inference.image_plan import plan_image_rows
 
     processor = FakeProcessor()
-    rows = materialize_image_plan_rows(
+    rows = plan_image_rows(
         [_raw_example(tmp_path, width=96, height=64)],
         components=FakeComponents(_processor_identity(), processor),
         processor_config=_processor_config(),
-        materialize=True,
     )
 
     assert rows[0].status == "ok"
     assert rows[0].do_resize is False
-    assert rows[0].observed_image_grid_thw == [1, 4, 6]
-    assert processor.image_processor.calls[0]["do_resize"] is False
+    assert rows[0].observed_image_grid_thw is None
+    assert processor.image_processor.calls == []
 
 
 def test_invalid_no_resize_dimensions_are_terminal_input_failure(tmp_path: Path) -> None:
-    from src.inference.image_plan import materialize_image_plan_rows
+    from src.inference.image_plan import plan_image_rows
 
     processor = FakeProcessor()
 
     with pytest.raises(EncodingContractError) as exc_info:
-        materialize_image_plan_rows(
+        plan_image_rows(
             [_raw_example(tmp_path, width=96, height=65)],
             components=FakeComponents(_processor_identity(), processor),
             processor_config=_processor_config(),
-            materialize=True,
         )
 
     assert exc_info.value.code == "qwen.image_no_resize_dimensions"
@@ -802,9 +457,9 @@ def test_invalid_no_resize_dimensions_are_terminal_input_failure(tmp_path: Path)
 
 
 def test_image_plan_row_count_matches_input_rows(tmp_path: Path) -> None:
-    from src.inference.image_plan import materialize_image_plan_rows
+    from src.inference.image_plan import plan_image_rows
 
-    rows = materialize_image_plan_rows(
+    rows = plan_image_rows(
         [
             _raw_example(tmp_path / "a", width=96, height=64, example_id="row-a"),
             _raw_example(tmp_path / "b", width=96, height=64, example_id="row-b"),
@@ -817,7 +472,6 @@ def test_image_plan_row_count_matches_input_rows(tmp_path: Path) -> None:
             ),
         ),
         processor_config=_processor_config(),
-        materialize=True,
     )
 
     assert [row.row_id for row in rows] == ["row-a", "row-b"]

@@ -1,0 +1,219 @@
+{
+  "artifacts": {
+    "gt_vs_pred.jsonl": "59e247afef1dfb7e4af46a70750da5b787459893128ccbf26d382f06d49d7d08",
+    "gt_vs_pred_scored.jsonl": "07927bf4210d499112cbdbc40b0fd512d940a0eeadfe54a74dde4aae784106fe",
+    "gt_vs_pred_scored.jsonl.provenance.json": "a2d2b00f592cd0212fae9f3fef15d3acaa9cb16edc0840ffff1a008cb2d05af5",
+    "pred_token_trace.jsonl": "1803716b9639da314712e48837c2a5018dfd04d88da00beb2e24fb451a239fb6",
+    "run_manifest.json": "6f99ef998802947c52c14ef9720c8044b87528573d90d94417ca394594e0a12a",
+    "summary.json": "a166e307d27432e0465d45fe79b71ee75f70be86c2c8bad4b344bd053b6968a6"
+  },
+  "evaluator": {
+    "evaluation_receipt_path": "outputs/coordexp_swift/infer/wave1_probes/wave1-real-scored-raw-probe/eval_detection/evaluation_receipt.json",
+    "evaluation_receipt_sha256": "14aba1ae8876e6f48f5c911048520f1fe76ccd1afc27948bd8563c97092cbe23",
+    "input_artifacts": {
+      "gt_vs_pred.jsonl": {
+        "path": "gt_vs_pred.jsonl",
+        "sha256": "59e247afef1dfb7e4af46a70750da5b787459893128ccbf26d382f06d49d7d08"
+      },
+      "gt_vs_pred_scored.jsonl": {
+        "path": "gt_vs_pred_scored.jsonl",
+        "sha256": "07927bf4210d499112cbdbc40b0fd512d940a0eeadfe54a74dde4aae784106fe"
+      },
+      "gt_vs_pred_scored.jsonl.provenance.json": {
+        "path": "gt_vs_pred_scored.jsonl.provenance.json",
+        "sha256": "a2d2b00f592cd0212fae9f3fef15d3acaa9cb16edc0840ffff1a008cb2d05af5"
+      },
+      "run_manifest.json": {
+        "path": "run_manifest.json",
+        "sha256": "6f99ef998802947c52c14ef9720c8044b87528573d90d94417ca394594e0a12a"
+      },
+      "summary.json": {
+        "path": "summary.json",
+        "sha256": "a166e307d27432e0465d45fe79b71ee75f70be86c2c8bad4b344bd053b6968a6"
+      }
+    },
+    "metric_family": "coordexp_swift_detection_coco_bbox_v1",
+    "metrics_path": "outputs/coordexp_swift/infer/wave1_probes/wave1-real-scored-raw-probe/eval_detection/metrics.json",
+    "metrics_sha256": "f541790018b34300b5586a652224cb6d54eb829954663b4f0914fe58602bdd11",
+    "row_count": 1,
+    "scored_pred_count": 14
+  },
+  "execution_payload_evidence": {
+    "fingerprint": "ae51ea6ed2e60bf495fcdfb4bc30be0c8b550efb3b990d2b3f0104ee7efb6fa9",
+    "identity": {
+      "adapter": {
+        "configured_path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/adapter",
+        "files": {
+          "adapter_config.json": {
+            "path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/adapter/adapter_config.json",
+            "sha256": "088aab8bec52f40d6261e8c1c4271458bb1e7c3eb69a9c9c3fa016d609b78a9d",
+            "size_bytes": 1119
+          },
+          "adapter_model.safetensors": {
+            "path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/adapter/adapter_model.safetensors",
+            "sha256": "7f6ee67a71f4d948f0e89729ad50f3856a7a215b5ba433fdd3f3dd5b329e5a81",
+            "size_bytes": 72111984
+          }
+        },
+        "fingerprint": "aacf3035e1ec493ca2e3fc36c1b45664ae8682a50e8e1c19beb5de40d76e361d",
+        "role": "adapter",
+        "root": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/adapter"
+      },
+      "embedding_delta": {
+        "configured_path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/special_token_embeddings",
+        "files": {
+          "special_token_embeddings.json": {
+            "path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/special_token_embeddings/special_token_embeddings.json",
+            "sha256": "7a465c6b7d43c5a46066d99a1076e96fa26dc0fe30f7ca69fc289ed347b30983",
+            "size_bytes": 33548
+          },
+          "special_token_embeddings.safetensors": {
+            "path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/special_token_embeddings/special_token_embeddings.safetensors",
+            "sha256": "33d65d575df398375e72994e2a197aaff0a257e26c088717e3b7689b3f494c3b",
+            "size_bytes": 8224864
+          }
+        },
+        "fingerprint": "f0916b798d08d31c4b1b865701535cf2998c15b342b087944f8ab00420e4f0e9",
+        "role": "embedding_delta",
+        "root": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/special_token_embeddings"
+      },
+      "fingerprint": "ae51ea6ed2e60bf495fcdfb4bc30be0c8b550efb3b990d2b3f0104ee7efb6fa9"
+    },
+    "receipt_path": "openspec/changes/add-coordexp-swift-vllm-inference-backend/source-studies/receipts/hf-wave1-raw-likelihood.json",
+    "receipt_sha256": "5af8aa8f6c0a585d4054936bf0ae46dbdde89aed1f373f23211e2ed35d2f45d8"
+  },
+  "generated_token_count": 136,
+  "maximum_policy_raw_score_delta": 0.02133838501913571,
+  "policy_raw_distinct_prediction_count": 14,
+  "prediction_checks": [
+    {
+      "absolute_policy_raw_score_delta": 3.717932673596991e-05,
+      "object_span_id": "coco2017_val_000000000139:span-0",
+      "policy_score": 0.4567693320222238,
+      "raw_counterfactual_score": 0.4568065113489598,
+      "row_id": "coco2017_val_000000000139",
+      "stored_score": 0.4567693320222238
+    },
+    {
+      "absolute_policy_raw_score_delta": 0.0041914549839731086,
+      "object_span_id": "coco2017_val_000000000139:span-1",
+      "policy_score": 0.34301818098801967,
+      "raw_counterfactual_score": 0.33882672600404656,
+      "row_id": "coco2017_val_000000000139",
+      "stored_score": 0.34301818098801967
+    },
+    {
+      "absolute_policy_raw_score_delta": 0.0021743517884897923,
+      "object_span_id": "coco2017_val_000000000139:span-2",
+      "policy_score": 0.28765379892926013,
+      "raw_counterfactual_score": 0.28547944714077034,
+      "row_id": "coco2017_val_000000000139",
+      "stored_score": 0.28765379892926013
+    },
+    {
+      "absolute_policy_raw_score_delta": 0.0008210122971751277,
+      "object_span_id": "coco2017_val_000000000139:span-3",
+      "policy_score": 0.3850153580600295,
+      "raw_counterfactual_score": 0.3841943457628544,
+      "row_id": "coco2017_val_000000000139",
+      "stored_score": 0.3850153580600295
+    },
+    {
+      "absolute_policy_raw_score_delta": 0.002248595764124839,
+      "object_span_id": "coco2017_val_000000000139:span-4",
+      "policy_score": 0.30522384881924175,
+      "raw_counterfactual_score": 0.3029752530551169,
+      "row_id": "coco2017_val_000000000139",
+      "stored_score": 0.30522384881924175
+    },
+    {
+      "absolute_policy_raw_score_delta": 0.009834066041208345,
+      "object_span_id": "coco2017_val_000000000139:span-5",
+      "policy_score": 0.42976439378588205,
+      "raw_counterfactual_score": 0.4199303277446737,
+      "row_id": "coco2017_val_000000000139",
+      "stored_score": 0.42976439378588205
+    },
+    {
+      "absolute_policy_raw_score_delta": 0.0024319157071816255,
+      "object_span_id": "coco2017_val_000000000139:span-6",
+      "policy_score": 0.2376077838177505,
+      "raw_counterfactual_score": 0.23517586811056887,
+      "row_id": "coco2017_val_000000000139",
+      "stored_score": 0.2376077838177505
+    },
+    {
+      "absolute_policy_raw_score_delta": 0.007794451154869764,
+      "object_span_id": "coco2017_val_000000000139:span-7",
+      "policy_score": 0.27865046851969494,
+      "raw_counterfactual_score": 0.2708560173648252,
+      "row_id": "coco2017_val_000000000139",
+      "stored_score": 0.27865046851969494
+    },
+    {
+      "absolute_policy_raw_score_delta": 0.008188038514687163,
+      "object_span_id": "coco2017_val_000000000139:span-8",
+      "policy_score": 0.25328961590883575,
+      "raw_counterfactual_score": 0.2451015773941486,
+      "row_id": "coco2017_val_000000000139",
+      "stored_score": 0.25328961590883575
+    },
+    {
+      "absolute_policy_raw_score_delta": 0.013893998197435808,
+      "object_span_id": "coco2017_val_000000000139:span-9",
+      "policy_score": 0.2829479910399002,
+      "raw_counterfactual_score": 0.2690539928424644,
+      "row_id": "coco2017_val_000000000139",
+      "stored_score": 0.2829479910399002
+    },
+    {
+      "absolute_policy_raw_score_delta": 0.02133838501913571,
+      "object_span_id": "coco2017_val_000000000139:span-10",
+      "policy_score": 0.35752104078998626,
+      "raw_counterfactual_score": 0.33618265577085055,
+      "row_id": "coco2017_val_000000000139",
+      "stored_score": 0.35752104078998626
+    },
+    {
+      "absolute_policy_raw_score_delta": 0.0120781667473428,
+      "object_span_id": "coco2017_val_000000000139:span-11",
+      "policy_score": 0.4374730229513754,
+      "raw_counterfactual_score": 0.4253948562040326,
+      "row_id": "coco2017_val_000000000139",
+      "stored_score": 0.4374730229513754
+    },
+    {
+      "absolute_policy_raw_score_delta": 0.010533624885198656,
+      "object_span_id": "coco2017_val_000000000139:span-12",
+      "policy_score": 0.349599830973717,
+      "raw_counterfactual_score": 0.33906620608851834,
+      "row_id": "coco2017_val_000000000139",
+      "stored_score": 0.349599830973717
+    },
+    {
+      "absolute_policy_raw_score_delta": 0.009412949295264872,
+      "object_span_id": "coco2017_val_000000000139:span-13",
+      "policy_score": 0.4126023450738386,
+      "raw_counterfactual_score": 0.4031893957785737,
+      "row_id": "coco2017_val_000000000139",
+      "stored_score": 0.4126023450738386
+    }
+  ],
+  "raw_model_logprob_status": "available",
+  "run_root": "outputs/coordexp_swift/infer/wave1_probes/wave1-real-scored-raw-probe",
+  "schema_version": 1,
+  "scoreable_prediction_count": 14,
+  "source": {
+    "files": {
+      "src/eval/detection_consumer.py": "02b75d8926543e1c628ec8e51a71c7de6889243b242811754801ac0b986f6514",
+      "src/inference/artifacts.py": "2d92279b0698f74766af8da0899e0dfb4c4d016f404eb7f14c79968e468f3270",
+      "src/inference/backend.py": "db11e4a7409701fe5d5451452b9aeb5d66b357a67b29243fd2dbbc005c3d9382",
+      "src/inference/scoring.py": "cc83b014bdd8073ef1ab9a3035d56882622b1b9a0c64c2ab1c5ed63c638f8cb3"
+    },
+    "verifier": {
+      "path": "scripts/probes/coordexp_swift/hf_policy_score.py",
+      "sha256": "6dbd6e2d5c39d116387bdcd74e8ee8a44d82e0fbaef71f350e33c929ac86f6ea"
+    }
+  },
+  "status": "passed"
+}

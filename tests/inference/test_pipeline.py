@@ -12,14 +12,19 @@ import torch
 import yaml
 from PIL import Image
 
-from helpers.inference_receipts import build_greedy_decode_result
-from src.common.errors import ArtifactContractError, EncodingContractError
-from src.inference.backend import (
-    DecodeRequest,
-    DecodeResult,
-    TokenTrace,
-    batch_request_order_fingerprint,
+from src.common.errors import (
+    ArtifactContractError,
+    EncodingContractError,
+    RuntimeContractError,
 )
+from src.inference.backend import (
+    BackendLaunch,
+    BackendSessionReceipt,
+    DecodeResult,
+    LikelihoodPair,
+    TokenTrace,
+)
+from src.inference.runtime import InferenceFrontend
 from src.qwen.loading import QwenProcessorIdentity
 
 
@@ -30,9 +35,23 @@ OBJECT_TEXT = (
 
 
 class FakeTokenizer:
+    image_pad_id = 151655
+
     def __call__(self, text: str, *, add_special_tokens: bool = False, **_: Any) -> dict[str, list[int]]:
         assert add_special_tokens is False
-        return {"input_ids": [ord(char) for char in text]}
+        ids: list[int] = []
+        marker = "<|image_pad|>"
+        while marker in text:
+            prefix, text = text.split(marker, 1)
+            ids.extend(ord(char) for char in prefix)
+            ids.append(self.image_pad_id)
+        ids.extend(ord(char) for char in text)
+        return {"input_ids": ids}
+
+    def convert_tokens_to_ids(self, token: str) -> int:
+        if token == "<|image_pad|>":
+            return self.image_pad_id
+        raise KeyError(token)
 
 
 class FakeProcessor:
@@ -75,39 +94,77 @@ class FakeImageProcessor:
 
 
 class FakeBackend:
-    def __init__(self, calls: list[list[str]]) -> None:
+    def __init__(
+        self,
+        calls: list[list[str]],
+        *,
+        launch: BackendLaunch,
+        model_identity: dict[str, Any] | None = None,
+    ) -> None:
         self.calls = calls
+        self.launch = launch
+        self.closed = False
+        self.receipt = BackendSessionReceipt(
+            backend="hf",
+            backend_mode="generate",
+            response_family="hf",
+            backend_version="test-transformers",
+            model_identity=dict(
+                model_identity
+                or {"family": "unit", "base": {"path": "fake-qwen"}}
+            ),
+            tokenizer_identity={"sha256": "tok"},
+            processor_identity={
+                "processor_class": "FakeQwen3VLProcessor",
+                "tokenizer_class": "FakeTokenizer",
+                "image_processor_class": "FakeQwen2VLImageProcessorFast",
+                "patch_size": 16,
+                "merge_size": 2,
+                "temporal_patch_size": 2,
+            },
+            generation_config_fingerprint=launch.generation_config_fingerprint,
+            effective_settings={"batch_size": launch.batch_size, "device": "cuda:0"},
+            likelihood_semantics={
+                "policy": "fp32_log_softmax_after_active_generation_processors",
+                "raw": "fp32_log_softmax_unmodified_lm_head_logits",
+                "score_owned_channel": "policy_logprob",
+            },
+        )
+
+    def decode(self, requests: list[Any]) -> list[DecodeResult]:
+        results: list[DecodeResult] = []
+        for start in range(0, len(requests), self.launch.batch_size):
+            results.extend(
+                self.generate_batch(requests[start : start + self.launch.batch_size])
+            )
+        return results
+
+    def close(self) -> None:
+        self.closed = True
 
     def generate_batch(
         self,
         requests: list[Any],
-        *,
-        model_identity: dict[str, Any],
-        tokenizer_identity: dict[str, Any],
-        generation_config_fingerprint: str,
+        **_: Any,
     ) -> list[DecodeResult]:
         self.calls.append([request.request_id for request in requests])
         for request in requests:
-            assert set(request.model_inputs) == {"pixel_values", "image_grid_thw"}
-            assert tuple(request.model_inputs["pixel_values"].shape) == (24, 1536)
-            assert tuple(request.model_inputs["image_grid_thw"].shape) == (1, 3)
-            assert request.generation_policy.mode == "greedy"
-            assert request.generation_policy.temperature == pytest.approx(0.0)
-            assert request.generation_policy.top_p == pytest.approx(1.0)
-            assert request.sampling_seed is None
-        order_fingerprint = batch_request_order_fingerprint(requests)
+            assert not hasattr(request, "model_inputs")
+            assert request.image_sha256
+            assert request.chat_text
+            assert request.logical_transform_id in {
+                "identity",
+                "hflip",
+                "vflip",
+                "hvflip",
+            }
         return [
             _decode_result(
                 request.request_id,
                 prompt_token_ids=list(request.prompt_token_ids),
-                model_identity=model_identity,
-                tokenizer_identity=tokenizer_identity,
-                generation_config_fingerprint=generation_config_fingerprint,
-                decode_request=request,
-                request_execution_index=index,
-                batch_order_fingerprint=order_fingerprint,
+                observed_image_grid_thw=request.expected_image_grid_thw,
             )
-            for index, request in enumerate(requests)
+            for request in requests
         ]
 
 
@@ -126,13 +183,11 @@ def test_pipeline_orchestrates_batched_decode_and_artifact_writing(tmp_path: Pat
 
     config_path = _write_config(tmp_path, batch_size=2, row_count=3)
     backend_calls: list[list[str]] = []
-    runtime = _runtime()
-    runtime.qwen.model.parameters = lambda: iter([SimpleNamespace(device="cuda:0")])
 
     result = pipeline.run(
         config_path=config_path,
-        runtime_factory=lambda config: runtime,
-        backend_factory=lambda runtime, config: FakeBackend(backend_calls),
+        frontend_factory=_frontend_factory(),
+        session_opener=lambda launch: FakeBackend(backend_calls, launch=launch),
     )
 
     run_dir = tmp_path / "outputs" / "wave6-pipeline"
@@ -140,19 +195,22 @@ def test_pipeline_orchestrates_batched_decode_and_artifact_writing(tmp_path: Pat
     manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
     raw_rows = _read_jsonl(run_dir / "gt_vs_pred.jsonl")
     scored_rows = _read_jsonl(run_dir / "gt_vs_pred_scored.jsonl")
+    image_plan_rows = _read_jsonl(run_dir / "image_plan.jsonl")
 
     assert result == 0
     assert backend_calls == [["row-0", "row-1"], ["row-2"]]
     assert [row["row_id"] for row in raw_rows] == ["row-0", "row-1", "row-2"]
     assert [row["row_id"] for row in scored_rows] == ["row-0", "row-1", "row-2"]
+    assert image_plan_rows[0]["logical_transform_id"] == "identity"
+    assert image_plan_rows[0]["image_content_sha256"]
+    assert image_plan_rows[0]["backend_projection_evidence_kind"] == "hf_executed_tensors"
+    assert image_plan_rows[0]["executed_media_sha256"] == "a" * 64
     assert summary["row_count"] == 3
     assert summary["decode_success_count"] == 3
     assert summary["parser_failure_count"] == 0
     assert summary["truncated_decode_count"] == 3
     assert summary["decode_stop_reasons"] == {"length": 3}
     assert summary["generation_policy"]["repetition_penalty"] == pytest.approx(1.0)
-    assert summary["generation_policy"]["mode"] == "greedy"
-    assert summary["generation_policy"]["sampling_profile"] == "temperature_top_p_categorical_v1"
     assert summary["generation_policy"]["do_sample"] is False
     assert summary["terminal_status"] == "completed"
     assert manifest["trace_scoring_status"] == "scored"
@@ -181,44 +239,6 @@ def test_pipeline_orchestrates_batched_decode_and_artifact_writing(tmp_path: Pat
     assert raw_rows[0]["decode_stop_reason"] == "length"
 
 
-def test_pipeline_preserves_authored_sampling_provenance_but_executes_neutral_greedy(
-    tmp_path: Path,
-) -> None:
-    from src.inference import pipeline
-
-    config_path = _write_config(
-        tmp_path,
-        batch_size=4,
-        row_count=3,
-        temperature=0.7,
-        top_p=0.8,
-    )
-    backend_calls: list[list[str]] = []
-
-    result = pipeline.run(
-        config_path=config_path,
-        runtime_factory=lambda config: _runtime(),
-        backend_factory=lambda runtime, config: FakeBackend(backend_calls),
-    )
-
-    run_dir = tmp_path / "outputs" / "wave6-pipeline"
-    resolved = json.loads(
-        (run_dir / "configs" / "resolved.json").read_text(encoding="utf-8")
-    )
-    manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
-
-    assert result == 0
-    assert backend_calls == [["row-0", "row-1", "row-2"]]
-    assert resolved["config"]["generation"]["temperature"] == pytest.approx(0.7)
-    assert resolved["config"]["generation"]["top_p"] == pytest.approx(0.8)
-    assert manifest["generation_policy"]["do_sample"] is False
-    assert manifest["generation_policy"]["mode"] == "greedy"
-    assert manifest["generation_policy"]["temperature"] == pytest.approx(0.0)
-    assert manifest["generation_policy"]["top_p"] == pytest.approx(1.0)
-    assert manifest["parallelism"]["plan"]["per_device_batch_size"] == 4
-    assert manifest["parallelism"]["plan"]["decode_batch_count"] == 1
-
-
 def test_pipeline_keeps_direct_path_when_only_one_active_rank(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -235,8 +255,8 @@ def test_pipeline_keeps_direct_path_when_only_one_active_rank(
 
     result = pipeline.run(
         config_path=config_path,
-        runtime_factory=lambda config: _runtime(),
-        backend_factory=lambda runtime, config: FakeBackend([]),
+        frontend_factory=_frontend_factory(),
+        session_opener=lambda launch: FakeBackend([], launch=launch),
         worker_launcher=fail_worker_launcher,
     )
 
@@ -299,15 +319,15 @@ def test_pipeline_uses_controller_workers_and_merges_when_active_ranks_exceeds_o
                 "batch_ids": list(rank_plan.batch_ids),
             },
             rank_plan=rank_plan,
-            runtime_factory=lambda config: _runtime(),
-            backend_factory=lambda runtime, config: FakeBackend([]),
+            frontend_factory=_frontend_factory(),
+            session_opener=lambda launch: FakeBackend([], launch=launch),
         )
         return FakeProcess()
 
     result = pipeline.run(
         config_path=config_path,
-        runtime_factory=lambda config: _runtime(),
-        backend_factory=lambda runtime, config: FakeBackend([]),
+        frontend_factory=_frontend_factory(),
+        session_opener=lambda launch: FakeBackend([], launch=launch),
         worker_launcher=fake_worker_launcher,
     )
 
@@ -378,16 +398,16 @@ def test_pipeline_controller_missing_rank_zero_artifacts_writes_terminal_failure
                     "batch_ids": list(rank_plan.batch_ids),
                 },
                 rank_plan=rank_plan,
-                runtime_factory=lambda config: _runtime(),
-                backend_factory=lambda runtime, config: FakeBackend([]),
+                frontend_factory=_frontend_factory(),
+                session_opener=lambda launch: FakeBackend([], launch=launch),
             )
         return FakeProcess()
 
     with pytest.raises(ArtifactContractError) as exc_info:
         pipeline.run(
             config_path=config_path,
-            runtime_factory=lambda config: _runtime(),
-            backend_factory=lambda runtime, config: FakeBackend([]),
+            frontend_factory=_frontend_factory(),
+            session_opener=lambda launch: FakeBackend([], launch=launch),
             worker_launcher=fake_worker_launcher,
         )
 
@@ -452,8 +472,8 @@ def test_pipeline_controller_malformed_rank_zero_manifest_writes_terminal_failur
                 "batch_ids": list(rank_plan.batch_ids),
             },
             rank_plan=rank_plan,
-            runtime_factory=lambda config: _runtime(),
-            backend_factory=lambda runtime, config: FakeBackend([]),
+            frontend_factory=_frontend_factory(),
+            session_opener=lambda launch: FakeBackend([], launch=launch),
         )
         if rank == 0:
             (Path(kwargs["output_dir"]) / "run_manifest.json").write_text(
@@ -465,8 +485,8 @@ def test_pipeline_controller_malformed_rank_zero_manifest_writes_terminal_failur
     with pytest.raises(ArtifactContractError) as exc_info:
         pipeline.run(
             config_path=config_path,
-            runtime_factory=lambda config: _runtime(),
-            backend_factory=lambda runtime, config: FakeBackend([]),
+            frontend_factory=_frontend_factory(),
+            session_opener=lambda launch: FakeBackend([], launch=launch),
             worker_launcher=fake_worker_launcher,
         )
 
@@ -488,22 +508,28 @@ def test_pipeline_manifest_records_embedding_delta_load_receipt(tmp_path: Path) 
     from src.inference import pipeline
 
     config_path = _write_config(tmp_path, batch_size=1, row_count=1)
-    runtime = _runtime()
-    runtime.adapter_receipt = {
+    adapter_identity = {
         "status": "validated",
         "adapter_path": "checkpoints/step-5/adapter",
     }
-    runtime.model_identity["embedding_delta"] = {
+    embedding_delta_identity = {
         "status": "loaded",
         "identity": {"status": "validated", "metadata_path": "delta/special_token_embeddings.json"},
         "load": {"loaded": True, "tensor_shape": [1004, 2048]},
     }
-    runtime.embedding_delta_receipt = runtime.model_identity["embedding_delta"]
+    model_identity = {
+        "family": "base-plus-adapter-plus-delta",
+        "base": {"path": "fake-qwen"},
+        "adapter": adapter_identity,
+        "embedding_delta": embedding_delta_identity,
+    }
 
     pipeline.run(
         config_path=config_path,
-        runtime_factory=lambda config: runtime,
-        backend_factory=lambda runtime, config: FakeBackend([]),
+        frontend_factory=_frontend_factory(),
+        session_opener=lambda launch: FakeBackend(
+            [], launch=launch, model_identity=model_identity
+        ),
     )
 
     manifest = json.loads(
@@ -513,11 +539,11 @@ def test_pipeline_manifest_records_embedding_delta_load_receipt(tmp_path: Path) 
     )
     assert manifest["model_identity"]["embedding_delta"]["status"] == "loaded"
     assert manifest["model_identity"]["embedding_delta"]["load"]["loaded"] is True
-    assert manifest["adapter_identity"] == runtime.adapter_receipt
-    assert manifest["embedding_delta_identity"] == runtime.embedding_delta_receipt
+    assert manifest["adapter_identity"] == adapter_identity
+    assert manifest["embedding_delta_identity"] == embedding_delta_identity
 
 
-def test_pipeline_terminal_receipt_failure_writes_status_without_row_artifacts(tmp_path: Path) -> None:
+def test_pipeline_terminal_artifact_failure_writes_status_without_row_artifacts(tmp_path: Path) -> None:
     from src.inference import pipeline
 
     config_path = _write_config(tmp_path, batch_size=1, row_count=1)
@@ -530,24 +556,32 @@ def test_pipeline_terminal_receipt_failure_writes_status_without_row_artifacts(t
                 prompt_token_ids=list(requests[0].prompt_token_ids),
             )
             bad_trace = list(bad.token_trace)
-            bad_trace[4] = TokenTrace(**{**bad_trace[4].__dict__, "logprob": float("nan")})
+            bad_trace[4] = TokenTrace(
+                **{
+                    **bad_trace[4].__dict__,
+                    "likelihood": LikelihoodPair(
+                        policy_logprob=float("nan"),
+                        raw_model_logprob=None,
+                    ),
+                }
+            )
             return [DecodeResult(**{**bad.__dict__, "token_trace": bad_trace})]
 
-    with pytest.raises(ArtifactContractError) as exc_info:
+    with pytest.raises(RuntimeContractError) as exc_info:
         pipeline.run(
             config_path=config_path,
-            runtime_factory=lambda config: _runtime(),
-            backend_factory=lambda runtime, config: BadTraceBackend([]),
+            frontend_factory=_frontend_factory(),
+            session_opener=lambda launch: BadTraceBackend([], launch=launch),
         )
 
     run_dir = tmp_path / "outputs" / "wave6-pipeline"
     summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
     manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
 
-    assert exc_info.value.code == "artifacts.decode_result_invalid"
+    assert exc_info.value.code == "backend_trace.invalid_likelihood"
     assert summary["terminal_status"] == "failed"
-    assert summary["failure_class"] == "artifact_contract_failure"
-    assert summary["artifact_contract_failure_count"] == 1
+    assert summary["failure_class"] == "contract_failure"
+    assert summary["contract_failure_count"] == 1
     assert summary["benchmark_eligible"] is False
     assert manifest["terminal_status"] == "failed"
     assert manifest["benchmark_eligible"] is False
@@ -570,23 +604,22 @@ def test_pipeline_rejects_backend_batch_with_too_few_results(tmp_path: Path) -> 
                 )
             ]
 
-    with pytest.raises(ArtifactContractError) as exc_info:
+    with pytest.raises(RuntimeContractError) as exc_info:
         pipeline.run(
             config_path=config_path,
-            runtime_factory=lambda config: _runtime(),
-            backend_factory=lambda runtime, config: TooFewBackend([]),
+            frontend_factory=_frontend_factory(),
+            session_opener=lambda launch: TooFewBackend([], launch=launch),
         )
 
     run_dir = tmp_path / "outputs" / "wave6-pipeline"
     summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
     manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
 
-    assert exc_info.value.code == "pipeline.backend_result_set_mismatch"
+    assert exc_info.value.code == "backend_contract.result_set"
     assert exc_info.value.context["requested_request_ids"] == ["row-0", "row-1"]
     assert exc_info.value.context["observed_request_ids"] == ["row-0"]
-    assert exc_info.value.context["missing_request_ids"] == ["row-1"]
     assert summary["terminal_status"] == "failed"
-    assert summary["failure_class"] == "artifact_contract_failure"
+    assert summary["failure_class"] == "contract_failure"
     assert manifest["terminal_status"] == "failed"
     assert manifest["benchmark_eligible"] is False
     assert not (run_dir / "gt_vs_pred.jsonl").exists()
@@ -616,65 +649,26 @@ def test_pipeline_rejects_backend_batch_with_extra_duplicate_result(tmp_path: Pa
                 ),
             ]
 
-    with pytest.raises(ArtifactContractError) as exc_info:
+    with pytest.raises(RuntimeContractError) as exc_info:
         pipeline.run(
             config_path=config_path,
-            runtime_factory=lambda config: _runtime(),
-            backend_factory=lambda runtime, config: DuplicateBackend([]),
+            frontend_factory=_frontend_factory(),
+            session_opener=lambda launch: DuplicateBackend([], launch=launch),
         )
 
     run_dir = tmp_path / "outputs" / "wave6-pipeline"
     summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
     manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
 
-    assert exc_info.value.code == "pipeline.backend_result_set_mismatch"
+    assert exc_info.value.code == "backend_contract.result_set"
     assert exc_info.value.context["requested_request_ids"] == ["row-0", "row-1"]
     assert exc_info.value.context["observed_request_ids"] == ["row-0", "row-1", "row-0"]
-    assert exc_info.value.context["duplicate_result_ids"] == ["row-0"]
-    assert exc_info.value.context["extra_result_ids"] == ["row-0"]
     assert summary["terminal_status"] == "failed"
-    assert summary["failure_class"] == "artifact_contract_failure"
+    assert summary["failure_class"] == "contract_failure"
     assert manifest["terminal_status"] == "failed"
     assert manifest["benchmark_eligible"] is False
     assert not (run_dir / "gt_vs_pred.jsonl").exists()
     assert not (run_dir / "gt_vs_pred_scored.jsonl").exists()
-
-
-def test_pipeline_joins_reordered_backend_results_by_request_identity(
-    tmp_path: Path,
-) -> None:
-    from src.inference import pipeline
-
-    config_path = _write_config(tmp_path, batch_size=4, row_count=3)
-
-    class ReorderedBackend(FakeBackend):
-        def generate_batch(self, requests: list[Any], **kwargs: Any) -> list[DecodeResult]:
-            self.calls.append([request.request_id for request in requests])
-            order_fingerprint = batch_request_order_fingerprint(requests)
-            return [
-                _decode_result(
-                    request.request_id,
-                    prompt_token_ids=list(request.prompt_token_ids),
-                    decode_request=request,
-                    request_execution_index=index,
-                    batch_order_fingerprint=order_fingerprint,
-                )
-                for index, request in reversed(list(enumerate(requests)))
-            ]
-
-    backend_calls: list[list[str]] = []
-    result = pipeline.run(
-        config_path=config_path,
-        runtime_factory=lambda config: _runtime(),
-        backend_factory=lambda runtime, config: ReorderedBackend(backend_calls),
-    )
-
-    run_dir = tmp_path / "outputs" / "wave6-pipeline"
-    raw_rows = _read_jsonl(run_dir / "gt_vs_pred.jsonl")
-
-    assert result == 0
-    assert backend_calls == [["row-0", "row-1", "row-2"]]
-    assert [row["row_id"] for row in raw_rows] == ["row-0", "row-1", "row-2"]
 
 
 def test_pipeline_records_parser_and_score_counters_without_metric_reduction(tmp_path: Path) -> None:
@@ -706,8 +700,8 @@ def test_pipeline_records_parser_and_score_counters_without_metric_reduction(tmp
 
     pipeline.run(
         config_path=config_path,
-        runtime_factory=lambda config: _runtime(),
-        backend_factory=lambda runtime, config: MixedBackend([]),
+        frontend_factory=_frontend_factory(),
+        session_opener=lambda launch: MixedBackend([], launch=launch),
     )
 
     run_dir = tmp_path / "outputs" / "wave6-pipeline"
@@ -756,8 +750,8 @@ def test_pipeline_terminal_image_failure_writes_status_without_row_artifacts(tmp
     with pytest.raises(EncodingContractError) as exc_info:
         pipeline.run(
             config_path=config_path,
-            runtime_factory=lambda config: _runtime(),
-            backend_factory=lambda runtime, config: FakeBackend([]),
+            frontend_factory=_frontend_factory(),
+            session_opener=lambda launch: FakeBackend([], launch=launch),
         )
 
     run_dir = tmp_path / "outputs" / "wave6-pipeline"
@@ -789,8 +783,8 @@ def test_pipeline_writes_resolved_config_before_backend_generation(tmp_path: Pat
 
     pipeline.run(
         config_path=config_path,
-        runtime_factory=lambda config: _runtime(),
-        backend_factory=lambda runtime, config: OrderBackend([]),
+        frontend_factory=_frontend_factory(),
+        session_opener=lambda launch: OrderBackend([], launch=launch),
     )
 
     assert events == ["backend_generate"]
@@ -812,8 +806,8 @@ def test_shard_primitive_processes_only_assigned_rows_and_preserves_original_ind
         output_dir=shard_dir,
         row_indices=(0, 2),
         worker_metadata={"rank": 0, "world_size": 2},
-        runtime_factory=lambda config: _runtime(),
-        backend_factory=lambda runtime, config: FakeBackend(backend_calls),
+        frontend_factory=_frontend_factory(),
+        session_opener=lambda launch: FakeBackend(backend_calls, launch=launch),
     )
 
     raw_rows = _read_jsonl(shard_dir / "gt_vs_pred.jsonl")
@@ -847,8 +841,8 @@ def test_shard_primitive_writes_only_fixed_shard_output_dir(tmp_path: Path) -> N
         output_dir=shard_dir,
         row_indices=(1,),
         worker_metadata={"rank": 1, "world_size": 2},
-        runtime_factory=lambda config: _runtime(),
-        backend_factory=lambda runtime, config: FakeBackend([]),
+        frontend_factory=_frontend_factory(),
+        session_opener=lambda launch: FakeBackend([], launch=launch),
     )
 
     assert (shard_dir / "gt_vs_pred.jsonl").is_file()
@@ -874,8 +868,8 @@ def test_shard_primitive_does_not_resolve_collision_policy_run_directory(
         output_dir=shard_dir,
         row_indices=(0,),
         worker_metadata={"rank": 0, "world_size": 1},
-        runtime_factory=lambda config: _runtime(),
-        backend_factory=lambda runtime, config: FakeBackend([]),
+        frontend_factory=_frontend_factory(),
+        session_opener=lambda launch: FakeBackend([], launch=launch),
     )
 
     assert (shard_dir / "run_manifest.json").is_file()
@@ -900,8 +894,8 @@ def test_shard_primitive_rejects_non_integral_row_indices(
             output_dir=tmp_path / "manual-root" / "shards" / "rank-000",
             row_indices=(row_index,),  # type: ignore[arg-type]
             worker_metadata={"rank": 0, "world_size": 1},
-            runtime_factory=lambda config: _runtime(),
-            backend_factory=lambda runtime, config: FakeBackend([]),
+            frontend_factory=_frontend_factory(),
+            session_opener=lambda launch: FakeBackend([], launch=launch),
         )
 
     assert exc_info.value.code == "pipeline.invalid_shard_row_index"
@@ -928,8 +922,8 @@ def test_shard_primitive_rejects_rank_plan_row_mismatch(tmp_path: Path) -> None:
             row_indices=(2,),
             rank_plan=plan.ranks[0],
             worker_metadata={"rank": 0, "world_size": 2},
-            runtime_factory=lambda config: _runtime(),
-            backend_factory=lambda runtime, config: FakeBackend([]),
+            frontend_factory=_frontend_factory(),
+            session_opener=lambda launch: FakeBackend([], launch=launch),
         )
 
     assert exc_info.value.code == "pipeline.rank_plan_row_mismatch"
@@ -983,8 +977,8 @@ def test_data_parallel_controller_uses_shard_primitive_for_each_rank_and_restore
         resolved=resolved,
         run_dir=tmp_path / "dp-run",
         plan=plan,
-        runtime_factory=lambda config: _runtime(),
-        backend_factory=lambda runtime, config: FakeBackend([]),
+        frontend_factory=_frontend_factory(),
+        session_opener=lambda launch: FakeBackend([], launch=launch),
     )
 
     assert [call["rank"] for call in calls] == [0, 1]
@@ -1019,8 +1013,8 @@ def test_data_parallel_shard_manifest_records_plan_and_worker_device_metadata(
         resolved=resolved,
         run_dir=tmp_path / "dp-real-shards",
         plan=plan,
-        runtime_factory=lambda config: _runtime(),
-        backend_factory=lambda runtime, config: FakeBackend([]),
+        frontend_factory=_frontend_factory(),
+        session_opener=lambda launch: FakeBackend([], launch=launch),
     )
 
     assert len(result.shard_dirs) == 2
@@ -1056,10 +1050,6 @@ def test_shard_primitive_fills_worker_model_device_after_runtime_load(
         per_device_batch_size=1,
         visible_cuda_tokens=("0",),
     )
-    runtime = _runtime()
-    parameter = SimpleNamespace(device="cuda:0")
-    runtime.qwen.model.parameters = lambda: iter([parameter])
-
     pipeline.run_shard(
         resolved=resolved,
         output_dir=tmp_path / "manual-root" / "shards" / "rank-000",
@@ -1077,8 +1067,8 @@ def test_shard_primitive_fills_worker_model_device_after_runtime_load(
             "batch_ids": [0],
         },
         rank_plan=plan.ranks[0],
-        runtime_factory=lambda config: runtime,
-        backend_factory=lambda runtime, config: FakeBackend([]),
+        frontend_factory=_frontend_factory(),
+        session_opener=lambda launch: FakeBackend([], launch=launch),
     )
 
     manifest = json.loads(
@@ -1096,7 +1086,25 @@ def test_shard_primitive_fills_worker_model_device_after_runtime_load(
     )
 
 
-def _runtime() -> SimpleNamespace:
+def _frontend_factory() -> Any:
+    def factory(
+        config: Any,
+        *,
+        generation_config_fingerprint: str,
+    ) -> InferenceFrontend:
+        return _frontend(
+            config=config,
+            generation_config_fingerprint=generation_config_fingerprint,
+        )
+
+    return factory
+
+
+def _frontend(
+    *,
+    config: Any,
+    generation_config_fingerprint: str,
+) -> InferenceFrontend:
     processor_identity = QwenProcessorIdentity(
         processor_class="FakeQwen3VLProcessor",
         tokenizer_class="FakeTokenizer",
@@ -1108,21 +1116,26 @@ def _runtime() -> SimpleNamespace:
     qwen = SimpleNamespace(
         processor=FakeProcessor(),
         processor_identity=processor_identity,
-        model=SimpleNamespace(
-            config=SimpleNamespace(
-                vision_config=SimpleNamespace(
-                    patch_size=16,
-                    spatial_merge_size=2,
-                    temporal_patch_size=2,
-                )
+        config=SimpleNamespace(
+            vision_config=SimpleNamespace(
+                patch_size=16,
+                spatial_merge_size=2,
+                temporal_patch_size=2,
             )
         ),
+        model=None,
+        to_artifact_dict=lambda: {"frontend": "unit"},
     )
-    return SimpleNamespace(
+    return InferenceFrontend(
         qwen=qwen,
-        adapter_receipt=None,
-        embedding_delta_receipt=None,
-        model_identity={"family": "unit", "base": {"path": "fake-qwen"}},
+        launch=BackendLaunch(
+            backend="hf",
+            model_path=config.model.base_model,
+            model_dtype=config.model.dtype,
+            batch_size=config.generation.batch_size,
+            generation_config_fingerprint=generation_config_fingerprint,
+            backend_options={"hf": config.backend.hf.model_dump(mode="json")},
+        ),
     )
 
 
@@ -1131,21 +1144,18 @@ def _decode_result(
     *,
     text: str = OBJECT_TEXT,
     prompt_token_ids: list[int] | None = None,
-    model_identity: dict[str, Any] | None = None,
-    tokenizer_identity: dict[str, Any] | None = None,
-    generation_config_fingerprint: str = "gen-fp",
-    decode_request: DecodeRequest | None = None,
-    request_execution_index: int = 0,
-    batch_order_fingerprint: str | None = None,
-    token_trace: list[TokenTrace] | None = None,
+    observed_image_grid_thw: tuple[int, int, int] | None = (1, 4, 6),
 ) -> DecodeResult:
     pieces = _token_pieces(text)
-    traces = token_trace or [
+    traces = [
         TokenTrace(
             step_index=index,
             token_id=151646 + index,
             token_text=piece,
-            logprob=math.log(0.25),
+            likelihood=LikelihoodPair(
+                policy_logprob=math.log(0.25),
+                raw_model_logprob=None,
+            ),
             is_stop=False,
             is_pad=False,
             backend="hf",
@@ -1154,18 +1164,20 @@ def _decode_result(
         )
         for index, piece in enumerate(pieces)
     ]
-    return build_greedy_decode_result(
+    return DecodeResult(
         request_id=row_id,
-        token_trace=traces,
+        backend="hf",
+        backend_mode="generate",
+        response_family="hf",
+        executed_prompt_token_ids=tuple(prompt_token_ids or [11, 12]),
+        generated_token_ids=tuple(trace.token_id for trace in traces),
         raw_generated_text=text,
         parser_text=text,
-        prompt_token_ids=prompt_token_ids or [11, 12],
-        model_identity=model_identity,
-        tokenizer_identity=tokenizer_identity,
-        generation_config_fingerprint=generation_config_fingerprint,
-        decode_request=decode_request,
-        request_execution_index=request_execution_index,
-        batch_request_order_fingerprint=batch_order_fingerprint,
+        strip_policy="none",
+        stop_reason="length",
+        token_trace=tuple(traces),
+        observed_image_grid_thw=observed_image_grid_thw,
+        executed_media_sha256="a" * 64,
     )
 
 
@@ -1191,8 +1203,6 @@ def _write_config(
     batch_size: int,
     row_count: int,
     invalid_image: bool = False,
-    temperature: float = 0.0,
-    top_p: float = 1.0,
 ) -> Path:
     data_dir = tmp_path / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -1232,9 +1242,7 @@ def _write_config(
         "model": {
             "base_model": str(tmp_path / "model_cache" / "qwen"),
             "dtype": "bf16",
-            "attn_implementation": "flash_attention_2",
             "processor": {"do_resize": False},
-            "runtime_patches": {"patch_embed_linearization": "enabled"},
         },
         "data": {"input_jsonl": str(input_jsonl)},
         "template": {
@@ -1243,12 +1251,19 @@ def _write_config(
             "assistant_format": "object_box_closed",
             "prompt": {"user": "Describe objects."},
         },
-        "backend": {"type": "hf"},
+        "backend": {
+            "type": "hf",
+            "hf": {
+                "attn_implementation": "flash_attention_2",
+                "patch_embed_linearization": "enabled",
+            },
+        },
         "generation": {
             "batch_size": batch_size,
             "max_new_tokens": 64,
-            "temperature": temperature,
-            "top_p": top_p,
+            "temperature": 0.0,
+            "top_p": 1.0,
+            "n": 1,
         },
         "scoring": {"enabled": True},
         "artifacts": {"write_token_trace": True, "write_parse_diagnostics": True},
