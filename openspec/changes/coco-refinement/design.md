@@ -76,11 +76,12 @@ step and no vendor editor dependency.
 
 The operator entrypoint is one foreground shell wrapper that directly binds
 `127.0.0.1:53662`, accepts `http://localhost:53662` as the one explicit browser
-authority, and always reopens
+authority, opts into VS Code remapping of only `localhost` or the exact
+`127.0.0.1` bind host to another explicit non-default browser port, and always reopens
 `outputs/coco_refinement/gate-a-20260717`. It rejects port overrides. This
 removes the transient relay that made browser bookmarks expire while retaining
-the numeric-loopback and exact-authority security boundary. `Ctrl-C` remains
-the normal graceful shutdown path.
+the numeric-loopback boundary and request-selected exact Origin/CSRF checks.
+`Ctrl-C` remains the normal graceful shutdown path.
 
 SVG renders the natural image with an overlay in the same view box. Client
 pointer geometry is mapped to natural-image edges, while the server validates
@@ -303,10 +304,12 @@ When a local in-app browser proxy rewrites the browser-visible authority, the
 launcher may accept one explicit canonical `http://localhost:<port>` or numeric
 loopback browser origin with a non-default HTTP port. This option does not
 change the numeric loopback bind, does not trust `Forwarded` or
-`X-Forwarded-*`, and is disabled by default. Each
-request `Host` must exactly match either the bind authority or that one explicit
-browser authority; a mutation `Origin` must match the authority selected by its
-own `Host`, so the two authorities cannot be mixed.
+`X-Forwarded-*`, and is disabled by default. A separate explicit remap opt-in
+may accept another canonical non-default port only when request Host remains
+the configured browser hostname or exact numeric bind host. Each mutation
+`Origin` must match the authority selected by its own request Host, so ports and
+authorities cannot be mixed. Other hostnames, other numeric loopbacks, default
+port 80, and noncanonical forms remain rejected.
 
 Source JSONL and source images are opened read-only and fingerprinted. All
 mutable files live under the new ignored runtime root. Working JSONL advances

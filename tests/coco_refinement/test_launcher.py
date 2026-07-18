@@ -131,6 +131,7 @@ def test_launcher_passes_explicit_browser_origin_only_to_app_factory(
 
     kwargs = _launch_kwargs(tmp_path)
     kwargs["browser_origin"] = "http://localhost:53662"
+    kwargs["allow_browser_port_remap"] = True
     launcher.run_server(
         **kwargs,
         receipt_store_factory=lambda _path: object(),
@@ -145,6 +146,7 @@ def test_launcher_passes_explicit_browser_origin_only_to_app_factory(
             "bind_host": "127.0.0.1",
             "port": 19172,
             "browser_origin": "http://localhost:53662",
+            "allow_browser_port_remap": True,
         }
     ]
 
@@ -279,6 +281,45 @@ def test_cli_accepts_one_explicit_localhost_browser_origin() -> None:
     )
 
     assert args.browser_origin == "http://localhost:53662"
+
+
+def test_cli_accepts_explicit_browser_port_remap_opt_in() -> None:
+    args = launcher._parser().parse_args(
+        [
+            "--browser-origin",
+            "http://localhost:53662",
+            "--allow-browser-port-remap",
+        ]
+    )
+
+    assert args.allow_browser_port_remap is True
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [(True, "requires an explicit browser origin"), (1, "must be boolean")],
+)
+def test_programmatic_browser_port_remap_configuration_fails_before_factories(
+    tmp_path: Path, value: object, message: str
+) -> None:
+    calls: list[str] = []
+
+    def unexpected(*_args: object, **_kwargs: object) -> object:
+        calls.append("called")
+        raise AssertionError("no factory may run for invalid remap configuration")
+
+    kwargs = _launch_kwargs(tmp_path)
+    kwargs["allow_browser_port_remap"] = value
+    with pytest.raises(ValueError, match=message):
+        launcher.run_server(
+            **kwargs,
+            receipt_store_factory=unexpected,
+            runtime_factory=unexpected,
+            app_factory=unexpected,
+            config_factory=unexpected,
+            server_factory=unexpected,
+        )
+    assert calls == []
 
 
 @pytest.mark.parametrize("port", ["0", "8080", "65536", "not-a-port"])

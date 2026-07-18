@@ -8,6 +8,7 @@ import pytest
 from src.coco_refinement.http_security import (
     CSRF_HEADER,
     HttpSecurityError,
+    LocalHttpSecurity,
     SESSION_COOKIE,
     validate_browser_origin,
     validate_loopback_authority,
@@ -28,13 +29,17 @@ def _app():
 
 
 def _app_with_service(
-    task_service: TaskService, *, browser_origin: str | None = None
+    task_service: TaskService,
+    *,
+    browser_origin: str | None = None,
+    allow_browser_port_remap: bool = False,
 ):
     return create_service_app(
         task_service,
         bind_host="127.0.0.1",
         port=9123,
         browser_origin=browser_origin,
+        allow_browser_port_remap=allow_browser_port_remap,
     )
 
 
@@ -131,6 +136,146 @@ def test_explicit_browser_origin_does_not_allow_other_localhost_ports() -> None:
         response = client.get("/api/session")
 
     assert response.status_code == 400
+
+
+def test_opted_in_browser_port_remap_keeps_loopback_origin_and_csrf_exact() -> None:
+    service = object.__new__(_MutationBoundaryTaskService)
+    service.mutation_calls = 0
+    app = _app_with_service(
+        service,
+        browser_origin=BROWSER_ORIGIN,
+        allow_browser_port_remap=True,
+    )
+    remapped_origin = "http://localhost:53663"
+    body = {
+        "mutation_id": "remapped-browser-proxy",
+        "expected_revision": 0,
+        "expected_generation": 0,
+        "expected_base_row_hash": "a" * 64,
+        "objects": [],
+    }
+    path = "/api/splits/train/tasks/train:1/draft"
+
+    with TestClient(
+        app,
+        base_url=remapped_origin,
+        raise_server_exceptions=False,
+    ) as client:
+        assert client.get("/").status_code == 200
+        csrf = client.get("/api/session").json()["csrf_token"]
+
+        missing_origin = client.put(
+            path,
+            json=body,
+            headers={CSRF_HEADER: csrf},
+        )
+        assert missing_origin.status_code == 403
+        assert service.mutation_calls == 0
+
+        cross_port = client.put(
+            path,
+            json=body,
+            headers={CSRF_HEADER: csrf, "Origin": BROWSER_ORIGIN},
+        )
+        assert cross_port.status_code == 403
+        assert service.mutation_calls == 0
+
+        wrong_csrf = client.put(
+            path,
+            json=body,
+            headers={CSRF_HEADER: "wrong", "Origin": remapped_origin},
+        )
+        assert wrong_csrf.status_code == 403
+        assert service.mutation_calls == 0
+
+        same_origin = client.put(
+            path,
+            json=body,
+            headers={CSRF_HEADER: csrf, "Origin": remapped_origin},
+        )
+        assert same_origin.status_code == 500
+        assert service.mutation_calls == 1
+
+        non_loopback = client.get(
+            "/api/session", headers={"Host": "example.com:53663"}
+        )
+        assert non_loopback.status_code == 400
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "http://localhost:1",
+        "http://localhost:65535",
+        "http://127.0.0.1:53663",
+    ],
+)
+def test_opted_in_browser_port_remap_accepts_only_configured_local_hosts(
+    origin: str,
+) -> None:
+    app = _app_with_service(
+        object.__new__(TaskService),
+        browser_origin=BROWSER_ORIGIN,
+        allow_browser_port_remap=True,
+    )
+    with TestClient(app, base_url=origin) as client:
+        response = client.get("/api/session")
+
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        "localhost",
+        "localhost:80",
+        "LOCALHOST:53663",
+        "localhost.:53663",
+        "127.0.0.2:53663",
+        "[::1]:53663",
+        "192.168.1.7:53663",
+        "example.com:53663",
+    ],
+)
+def test_opted_in_browser_port_remap_rejects_other_or_noncanonical_hosts(
+    host: str,
+) -> None:
+    app = _app_with_service(
+        object.__new__(TaskService),
+        browser_origin=BROWSER_ORIGIN,
+        allow_browser_port_remap=True,
+    )
+    with TestClient(app, base_url=BROWSER_ORIGIN) as client:
+        response = client.get("/api/session", headers={"Host": host})
+
+    assert response.status_code == 400
+
+
+def test_opted_in_browser_port_remap_still_rejects_forwarded_authority() -> None:
+    app = _app_with_service(
+        object.__new__(TaskService),
+        browser_origin=BROWSER_ORIGIN,
+        allow_browser_port_remap=True,
+    )
+    with TestClient(app, base_url="http://localhost:53663") as client:
+        response = client.get(
+            "/api/session", headers={"X-Forwarded-Host": "localhost:53663"}
+        )
+
+    assert response.status_code == 400
+    assert "forwarded" in response.json()["error"]["message"]
+
+
+def test_browser_port_remap_configuration_fails_closed() -> None:
+    authority = validate_loopback_authority("127.0.0.1", 9123)
+    with pytest.raises(HttpSecurityError, match="requires an explicit browser"):
+        LocalHttpSecurity(authority, allow_browser_port_remap=True)
+    with pytest.raises(HttpSecurityError, match="must be boolean"):
+        LocalHttpSecurity(
+            authority,
+            browser_authority=validate_browser_origin(BROWSER_ORIGIN),
+            allow_browser_port_remap=1,  # type: ignore[arg-type]
+        )
 
 
 def test_session_cookie_is_opaque_httponly_strict_and_csrf_is_separate() -> None:

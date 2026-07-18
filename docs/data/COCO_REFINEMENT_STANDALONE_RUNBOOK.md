@@ -70,7 +70,10 @@ The wrapper fixes the numeric bind and accepted browser authority to port
 `ms` conda environment. `--print-config` reports those values without starting
 the runtime. Port overrides are intentionally rejected so bookmarks remain
 stable. Both `localhost:53662` and `127.0.0.1:53662` are accepted authorities;
-forwarded headers remain forbidden.
+the fixed launcher also accepts a canonical non-default local port chosen by
+VS Code when Host remains `localhost` or `127.0.0.1`. Mutations still require
+Origin to exactly match that browser-selected Host and a valid CSRF token.
+Other hosts and forwarded authority headers remain forbidden.
 
 Startup deliberately validates the complete train/val workspace before it
 binds the browser port, which normally takes about one to two minutes on the

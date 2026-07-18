@@ -187,8 +187,10 @@ supported dependency or process shape is unavailable.
 The service SHALL use the exact numeric loopback bind authority by default. A
 launcher MAY declare one canonical HTTP browser origin whose host is exactly
 `localhost` or a numeric loopback and whose port is explicit and non-default.
-This browser authority SHALL NOT change the listening socket or authorize
-forwarded authority headers.
+The launcher MAY separately opt into VS Code port remapping for only that
+configured browser host and the exact numeric bind host. A remapped authority
+SHALL still use canonical HTTP with an explicit non-default port. Neither mode
+SHALL change the listening socket or authorize forwarded authority headers.
 
 #### Scenario: No browser proxy origin is configured
 - **WHEN** a request Host differs from the exact numeric bind authority
@@ -198,15 +200,21 @@ forwarded authority headers.
 - **WHEN** request Host exactly matches that configured authority and a mutation Origin matches the same authority with a valid session and CSRF token
 - **THEN** the request follows the ordinary route and mutation validation path
 
+#### Scenario: VS Code remaps the browser port
+- **WHEN** remapping is explicitly enabled and request Host is the configured browser host or exact numeric bind host with another canonical non-default port
+- **THEN** the request follows the ordinary path and every mutation still requires Origin to equal that exact request-selected authority plus a valid session and CSRF token
+
 #### Scenario: Browser and mutation authorities are mixed
-- **WHEN** request Host matches one accepted authority but mutation Origin names the other authority, an unconfigured port, or any non-loopback origin
+- **WHEN** request Host matches one accepted exact or remapped authority but mutation Origin names another port/authority, or Host uses any other name/address
 - **THEN** the service rejects the mutation before route dispatch and performs no semantic write
 
 ### Requirement: Fixed direct Gate A launcher
 The operator launcher SHALL run the standalone service in the foreground on
 numeric loopback port `53662`, accept `http://localhost:53662` as the one
-browser authority, reuse the approved Gate A runtime root, and reject port
-overrides. It SHALL NOT require a separate forwarding process.
+configured browser authority, opt into canonical VS Code port remapping only
+for `localhost` and `127.0.0.1`, reuse the approved Gate A runtime root, and
+reject server-port overrides. It SHALL NOT require a separate forwarding
+process.
 
 #### Scenario: Operator starts Gate A
 - **WHEN** the operator invokes the launcher from any working directory

@@ -174,6 +174,7 @@ class LocalHttpSecurity:
         authority: LoopbackAuthority,
         *,
         browser_authority: BrowserAuthority | None = None,
+        allow_browser_port_remap: bool = False,
         sessions: OpaqueSessionStore | None = None,
     ) -> None:
         if not isinstance(authority, LoopbackAuthority):
@@ -184,8 +185,15 @@ class LocalHttpSecurity:
             raise HttpSecurityError(
                 "browser authority must be a validated browser authority"
             )
+        if not isinstance(allow_browser_port_remap, bool):
+            raise HttpSecurityError("browser port remap policy must be boolean")
+        if allow_browser_port_remap and browser_authority is None:
+            raise HttpSecurityError(
+                "browser port remap requires an explicit browser authority"
+            )
         self.authority = authority
         self.browser_authority = browser_authority
+        self.allow_browser_port_remap = allow_browser_port_remap
         self.sessions = sessions or OpaqueSessionStore()
 
     async def enforce(self, request: Request, call_next: object) -> Response:
@@ -199,6 +207,8 @@ class LocalHttpSecurity:
             if candidate is not None and host_values == [candidate.host_header]:
                 request_authority = candidate
                 break
+        if request_authority is None and self.allow_browser_port_remap:
+            request_authority = self._remapped_browser_authority(host_values)
         if request_authority is None:
             return self._error(400, "request Host does not match the bound authority")
 
@@ -251,6 +261,22 @@ class LocalHttpSecurity:
         if is_api:
             _mark_no_store(response)
         return response
+
+    def _remapped_browser_authority(
+        self, host_values: list[str]
+    ) -> BrowserAuthority | None:
+        if len(host_values) != 1:
+            return None
+        try:
+            candidate = validate_browser_origin(f"http://{host_values[0]}")
+        except HttpSecurityError:
+            return None
+        allowed_hosts = {self.authority.host}
+        if self.browser_authority is not None:
+            allowed_hosts.add(self.browser_authority.host)
+        if candidate.host not in allowed_hosts:
+            return None
+        return candidate
 
     def issue_response(self) -> JSONResponse:
         session, csrf = self.sessions.issue()

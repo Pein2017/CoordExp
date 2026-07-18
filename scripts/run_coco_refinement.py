@@ -157,6 +157,15 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--allow-browser-port-remap",
+        action="store_true",
+        help=(
+            "Allow VS Code to remap the configured localhost browser authority "
+            "to another explicit loopback port while preserving exact Origin "
+            "and CSRF checks (default: disabled)."
+        ),
+    )
+    parser.add_argument(
         "--startup-timeout",
         type=_positive_startup_timeout,
         default=DEFAULT_STARTUP_TIMEOUT,
@@ -199,6 +208,7 @@ def run_server(
     startup_timeout: int,
     shutdown_timeout: int,
     browser_origin: str | None = None,
+    allow_browser_port_remap: bool = False,
     receipt_store_factory: Callable[[Path], object] = InferenceReceiptStore,
     runtime_factory: Callable[..., Any] = create_standalone_runtime,
     app_factory: Callable[..., Any] = create_runtime_service_app,
@@ -224,6 +234,12 @@ def run_server(
         if browser_origin is None
         else validate_browser_origin(browser_origin).origin
     )
+    if not isinstance(allow_browser_port_remap, bool):
+        raise ValueError("allow_browser_port_remap must be boolean")
+    if allow_browser_port_remap and validated_browser_origin is None:
+        raise ValueError(
+            "allow_browser_port_remap requires an explicit browser origin"
+        )
 
     selected_runtime = _resolve_runtime_root(repo_root.resolve(strict=True), runtime_root)
     print(
@@ -255,6 +271,8 @@ def run_server(
         }
         if validated_browser_origin is not None:
             app_kwargs["browser_origin"] = validated_browser_origin
+        if allow_browser_port_remap:
+            app_kwargs["allow_browser_port_remap"] = True
         app = app_factory(runtime, **app_kwargs)
         config = config_factory(
             app,
@@ -292,6 +310,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         startup_timeout=args.startup_timeout,
         shutdown_timeout=args.shutdown_timeout,
         browser_origin=args.browser_origin,
+        allow_browser_port_remap=args.allow_browser_port_remap,
     )
     return 0
 

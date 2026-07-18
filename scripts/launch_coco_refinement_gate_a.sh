@@ -160,6 +160,7 @@ main() {
     --host "${HOST}" \
     --port "${PORT}" \
     --browser-origin "http://localhost:${PORT}" \
+    --allow-browser-port-remap \
     --startup-timeout 300 \
     --shutdown-timeout 10
 }

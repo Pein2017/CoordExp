@@ -44,6 +44,7 @@ def test_fixed_gate_a_launcher_explains_prebind_validation() -> None:
 
     assert "validates the full workspace before binding the port" in source
     assert "VS Code can offer Forward/Open after Uvicorn reports" in source
+    assert "--allow-browser-port-remap" in source
 
 
 def test_fixed_gate_a_launcher_releases_an_existing_listener() -> None:

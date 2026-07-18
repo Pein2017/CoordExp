@@ -121,6 +121,7 @@ def create_service_app(
     bind_host: str,
     port: int,
     browser_origin: str | None = None,
+    allow_browser_port_remap: bool = False,
     sessions: OpaqueSessionStore | None = None,
     commit_service: CommitService | None = None,
 ) -> FastAPI:
@@ -135,6 +136,7 @@ def create_service_app(
     security = LocalHttpSecurity(
         authority,
         browser_authority=browser_authority,
+        allow_browser_port_remap=allow_browser_port_remap,
         sessions=sessions,
     )
     app = FastAPI(
@@ -460,6 +462,7 @@ def create_runtime_service_app(
     bind_host: str,
     port: int,
     browser_origin: str | None = None,
+    allow_browser_port_remap: bool = False,
     sessions: OpaqueSessionStore | None = None,
 ) -> FastAPI:
     """Adapt an assembled runtime to HTTP while leaving bind/start to the launcher."""
@@ -469,6 +472,7 @@ def create_runtime_service_app(
         bind_host=bind_host,
         port=port,
         browser_origin=browser_origin,
+        allow_browser_port_remap=allow_browser_port_remap,
         sessions=sessions,
         commit_service=CommitService.from_runtime(runtime),
     )
