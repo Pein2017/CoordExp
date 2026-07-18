@@ -38,12 +38,6 @@ DEFAULT_CONFIG = Path(
     "qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_"
     "dora_r16a32_step4887_val200.yaml"
 )
-DEFAULT_OUTPUT = Path(
-    "openspec/changes/add-coordexp-swift-vllm-inference-backend/"
-    "source-studies/receipts/hf-wave1-raw-likelihood.json"
-)
-
-
 def main() -> int:
     args = _parse_args()
     repo_root = Path.cwd().resolve()
@@ -366,7 +360,7 @@ def _git_bytes(repo_root: Path, *args: str) -> bytes:
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default=str(DEFAULT_CONFIG))
-    parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
+    parser.add_argument("--output", required=True)
     parser.add_argument("--atol", type=float, default=1e-4)
     parser.add_argument("--max-new-tokens", type=int, default=512)
     parser.add_argument("--dtype", choices=("bf16", "fp16", "fp32"), default="fp32")

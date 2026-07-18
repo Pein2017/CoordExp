@@ -478,6 +478,26 @@ def test_manifest_records_artifact_paths_without_claiming_wave5_benchmark_eligib
     assert summary["scoreable_prediction_count"] == 1
 
 
+def test_manifest_preserves_explicit_benchmark_eligibility(tmp_path: Path) -> None:
+    from src.inference.artifacts import write_inference_artifacts
+
+    metadata = _metadata()
+    metadata["benchmark_eligible"] = True
+    paths = write_inference_artifacts(
+        output_dir=tmp_path,
+        rows=[_raw_row("row-1", 0)],
+        decode_results={"row-1": _decode_result("row-1")},
+        image_plan_rows=[_image_plan_row("row-1", 0)],
+        metadata=metadata,
+    )
+
+    manifest = json.loads(paths.run_manifest_json.read_text(encoding="utf-8"))
+    summary = json.loads(paths.summary_json.read_text(encoding="utf-8"))
+
+    assert manifest["benchmark_eligible"] is True
+    assert summary["benchmark_eligible"] is True
+
+
 def test_terminal_status_artifacts_do_not_publish_partial_summary_without_manifest(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

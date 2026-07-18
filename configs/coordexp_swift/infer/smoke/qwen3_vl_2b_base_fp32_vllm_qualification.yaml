@@ -1,0 +1,5 @@
+extends: ../wave7_real_base_single_smoke.yaml
+run:
+  name: qwen3-vl-2b-base-fp32-vllm-qualification
+model:
+  dtype: fp32

@@ -1,0 +1,20 @@
+extends: ../qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200_vllm.yaml
+run:
+  name: qwen3-vl-2b-step4887-vllm-concurrency4-smoke
+  artifact_root: ../../../../outputs/coordexp_swift/infer/smoke
+  collision_policy: timestamp
+generation:
+  batch_size: 4
+  max_new_tokens: 64
+  temperature: 0.0
+  top_p: 1.0
+  repetition_penalty: 1.10
+scoring:
+  enabled: true
+artifacts:
+  write_token_trace: true
+  write_parse_diagnostics: true
+  include_raw_model_logprob: true
+debug:
+  smoke: true
+  dry_run: false

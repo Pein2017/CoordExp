@@ -22,10 +22,13 @@ from src.inference.model_assets import (
 
 
 EXECUTION_MODEL_RECEIPT_VERSION = "coordexp-swift-execution-model-v1"
-MATERIALIZATION_ALGORITHM_VERSION = "coordexp-swift-dora-delta-fold-v3"
+MATERIALIZATION_ALGORITHM_VERSION = "coordexp-swift-dora-delta-fold-v4"
 MATERIALIZATION_RECEIPT_NAME = "coordexp_materialization.json"
 DEFAULT_EXECUTION_MODEL_CACHE_ROOT = Path(
     "model_cache/coordexp_swift/vllm_materialized"
+)
+DURABLE_COMPOSITION_RECEIPT_ROOT = Path(__file__).resolve().with_name(
+    "qualification_receipts"
 )
 
 MaterializeSnapshot = Callable[[Path], Mapping[str, object] | None]
@@ -145,7 +148,7 @@ def resolve_execution_model(
                 source_identity=source_identity,
                 target_dtype=target_dtype,
             )
-            return _bind_existing_parity_if_present(
+            return _bind_existing_composition_fidelity_if_present(
                 validate_execution_model_receipt(receipt)
             )
 
@@ -165,7 +168,10 @@ def resolve_execution_model(
                 embedding_delta_identity=embedding_delta_identity,
             )
             evidence = dict(builder(staging_snapshot) or {})
-            _validate_standard_snapshot(staging_snapshot)
+            _validate_standard_snapshot(
+                staging_snapshot,
+                expected_weight_dtype=target_dtype,
+            )
             staged_manifest = build_model_snapshot_manifest(staging_snapshot)
             published_manifest = {
                 **staged_manifest,
@@ -189,7 +195,7 @@ def resolve_execution_model(
             shutil.rmtree(staging_root, ignore_errors=True)
             raise
 
-    return _bind_existing_parity_if_present(
+    return _bind_existing_composition_fidelity_if_present(
         validate_execution_model_receipt(_load_receipt(receipt_path))
     )
 
@@ -257,11 +263,21 @@ def validate_execution_model_receipt(
         Path(str(snapshot_manifest["root"])).resolve()
     ):
         _receipt_error("model_path", payload)
-    _validate_standard_snapshot(Path(str(payload["model_path"])))
+    _validate_standard_snapshot(
+        Path(str(payload["model_path"])),
+        expected_weight_dtype=(
+            str(payload["target_dtype"])
+            if payload["mode"] == "materialized"
+            else None
+        ),
+    )
 
-    qualification = payload.get("qualification")
-    if qualification is not None:
-        _validate_qualification(qualification, execution_model=payload)
+    composition_fidelity = payload.get("composition_fidelity")
+    if composition_fidelity is not None:
+        _validate_composition_fidelity(
+            composition_fidelity,
+            execution_model=payload,
+        )
 
     if payload["mode"] == "materialized":
         receipt_path = payload.get("receipt_path")
@@ -269,7 +285,7 @@ def validate_execution_model_receipt(
             _receipt_error("receipt_path", payload)
         on_disk = _load_receipt(Path(receipt_path))
         on_disk_comparable = {
-            key: value for key, value in payload.items() if key != "qualification"
+            key: value for key, value in payload.items() if key != "composition_fidelity"
         }
         if on_disk != on_disk_comparable:
             raise RuntimeContractError(
@@ -283,53 +299,64 @@ def validate_execution_model_receipt(
     return payload
 
 
-def bind_execution_model_parity(
+def bind_execution_model_composition(
     receipt: Mapping[str, object],
-    parity_receipt: Mapping[str, object],
+    composition_receipt: Mapping[str, object],
     *,
-    parity_path: str | Path | None = None,
+    composition_path: str | Path | None = None,
 ) -> dict[str, Any]:
-    from src.inference.execution_model_parity import (
-        validate_execution_model_parity_receipt,
+    from src.inference.execution_model_composition import (
+        validate_execution_model_composition_receipt,
     )
 
     execution_model = validate_execution_model_receipt(receipt)
-    parity = validate_execution_model_parity_receipt(
-        parity_receipt,
+    composition = validate_execution_model_composition_receipt(
+        composition_receipt,
         execution_model=execution_model,
     )
-    qualified = dict(execution_model)
-    qualified["qualification"] = {
-        "parity_digest": parity["digest"],
-        "parity_path": None if parity_path is None else str(Path(parity_path).resolve()),
-        "parity_receipt": parity,
+    bound = dict(execution_model)
+    bound["composition_fidelity"] = {
+        "digest": composition["digest"],
+        "path": (
+            None
+            if composition_path is None
+            else str(Path(composition_path).resolve())
+        ),
+        "receipt": composition,
     }
-    return validate_execution_model_receipt(qualified)
+    return validate_execution_model_receipt(bound)
 
 
 def load_execution_model_receipt(path: str | Path) -> dict[str, Any]:
-    return _bind_existing_parity_if_present(
+    return _bind_existing_composition_fidelity_if_present(
         validate_execution_model_receipt(_load_receipt(Path(path)))
     )
 
 
-def _bind_existing_parity_if_present(receipt: Mapping[str, object]) -> dict[str, Any]:
+def _bind_existing_composition_fidelity_if_present(
+    receipt: Mapping[str, object],
+) -> dict[str, Any]:
     if receipt.get("mode") != "materialized":
         return dict(receipt)
-    from src.inference.execution_model_parity import (
-        EXECUTION_MODEL_PARITY_NAME,
-        load_execution_model_parity_receipt,
+    from src.inference.execution_model_composition import (
+        EXECUTION_MODEL_COMPOSITION_NAME,
+        load_execution_model_composition_receipt,
     )
 
     receipt_path = Path(str(receipt["receipt_path"]))
-    parity_path = receipt_path.with_name(EXECUTION_MODEL_PARITY_NAME)
-    if not parity_path.is_file():
+    composition_path = receipt_path.with_name(EXECUTION_MODEL_COMPOSITION_NAME)
+    if not composition_path.is_file():
+        composition_path = DURABLE_COMPOSITION_RECEIPT_ROOT / (
+            "execution-model-composition-"
+            f"{receipt['composition_key']}.json"
+        )
+    if not composition_path.is_file():
         return dict(receipt)
-    parity = load_execution_model_parity_receipt(parity_path)
-    return bind_execution_model_parity(
+    composition = load_execution_model_composition_receipt(composition_path)
+    return bind_execution_model_composition(
         receipt,
-        parity,
-        parity_path=parity_path,
+        composition,
+        composition_path=composition_path,
     )
 
 
@@ -467,26 +494,20 @@ def _receipt_fingerprint(receipt: Mapping[str, object]) -> str:
             "model_path",
             "receipt_path",
             "receipt_fingerprint",
-            "qualification",
+            "composition_fidelity",
         }
     }
     return _sha256_json(_without_provenance_paths(semantic))
 
 
-def _validate_standard_snapshot(root: Path) -> None:
+def _validate_standard_snapshot(
+    root: Path,
+    *,
+    expected_weight_dtype: str | None = None,
+) -> None:
     required = ("config.json", "tokenizer.json", "preprocessor_config.json")
     missing = [name for name in required if not (root / name).is_file()]
-    weight_files = [
-        path
-        for path in root.glob("*")
-        if path.is_file()
-        and (
-            path.name.endswith(".safetensors")
-            or path.name.endswith(".bin")
-            or path.name.endswith(".index.json")
-        )
-        and path.name.startswith(("model", "pytorch_model"))
-    ]
+    weight_files = sorted(root.glob("model*.safetensors"))
     if missing or not weight_files:
         raise RuntimeContractError(
             "execution-model snapshot is missing required standard HF files",
@@ -497,28 +518,137 @@ def _validate_standard_snapshot(root: Path) -> None:
                 "weight_files": [path.name for path in weight_files],
             },
         )
+    try:
+        config = json.loads((root / "config.json").read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise RuntimeContractError(
+            "execution-model config is not valid UTF-8 JSON",
+            code="inference.execution_model_snapshot_config_invalid",
+            context={"root": str(root)},
+            cause=exc,
+        ) from exc
+    if (
+        not isinstance(config, dict)
+        or config.get("model_type") != "qwen3_vl"
+        or config.get("tie_word_embeddings") is not True
+        or "Qwen3VLForConditionalGeneration"
+        not in (config.get("architectures") or ["Qwen3VLForConditionalGeneration"])
+    ):
+        raise RuntimeContractError(
+            "execution-model config is not a tied Qwen3-VL conditional model",
+            code="inference.execution_model_snapshot_config_invalid",
+            context={
+                "model_type": config.get("model_type") if isinstance(config, dict) else None,
+                "architectures": config.get("architectures") if isinstance(config, dict) else None,
+                "tie_word_embeddings": config.get("tie_word_embeddings") if isinstance(config, dict) else None,
+            },
+        )
+    if expected_weight_dtype is not None:
+        configured_dtype = config.get("dtype") or config.get("torch_dtype")
+        expected_config_dtype = {
+            "bf16": "bfloat16",
+            "fp16": "float16",
+            "fp32": "float32",
+        }[expected_weight_dtype]
+        if configured_dtype != expected_config_dtype:
+            raise RuntimeContractError(
+                "materialized execution-model config dtype differs from its receipt",
+                code="inference.execution_model_snapshot_dtype_mismatch",
+                context={
+                    "expected_dtype": expected_config_dtype,
+                    "configured_dtype": configured_dtype,
+                },
+            )
+
+    from safetensors import safe_open
+
+    seen_keys: set[str] = set()
+    observed_dtypes: set[str] = set()
+    residue_keys: list[str] = []
+    try:
+        for weight_path in weight_files:
+            with safe_open(str(weight_path), framework="pt", device="cpu") as handle:
+                for key in handle.keys():
+                    if key in seen_keys:
+                        raise RuntimeContractError(
+                            "execution-model snapshot repeats a tensor key across shards",
+                            code="inference.execution_model_snapshot_tensor_duplicate",
+                            context={"tensor_key": key},
+                        )
+                    seen_keys.add(key)
+                    observed_dtypes.add(str(handle.get_slice(key).get_dtype()))
+                    if any(
+                        marker in key.lower()
+                        for marker in (
+                            "lora_",
+                            "dora",
+                            "magnitude_vector",
+                            "parametrizations",
+                            "peft",
+                        )
+                    ):
+                        residue_keys.append(key)
+    except RuntimeContractError:
+        raise
+    except Exception as exc:
+        raise RuntimeContractError(
+            "execution-model safetensors payload is unreadable",
+            code="inference.execution_model_snapshot_tensor_invalid",
+            context={"root": str(root)},
+            cause=exc,
+        ) from exc
+    required_weight = "model.language_model.embed_tokens.weight"
+    if required_weight not in seen_keys or residue_keys:
+        raise RuntimeContractError(
+            "execution-model snapshot tensor surface is not a residue-free tied Qwen model",
+            code="inference.execution_model_snapshot_tensor_invalid",
+            context={
+                "required_weight_present": required_weight in seen_keys,
+                "residue_keys": residue_keys[:20],
+            },
+        )
+    if any(key.endswith("lm_head.weight") for key in seen_keys):
+        raise RuntimeContractError(
+            "tied execution-model snapshot unexpectedly stores a separate lm_head weight",
+            code="inference.execution_model_snapshot_untied",
+        )
+    if expected_weight_dtype is not None:
+        expected_safetensors_dtype = {
+            "bf16": "BF16",
+            "fp16": "F16",
+            "fp32": "F32",
+        }[expected_weight_dtype]
+        if observed_dtypes != {expected_safetensors_dtype}:
+            raise RuntimeContractError(
+                "materialized execution-model tensor dtype differs from its receipt",
+                code="inference.execution_model_snapshot_dtype_mismatch",
+                context={
+                    "expected_dtype": expected_safetensors_dtype,
+                    "observed_dtypes": sorted(observed_dtypes),
+                },
+            )
 
 
-def _validate_qualification(
-    qualification: object,
+def _validate_composition_fidelity(
+    composition_fidelity: object,
     *,
     execution_model: Mapping[str, object],
 ) -> None:
-    from src.inference.execution_model_parity import (
-        validate_execution_model_parity_receipt,
+    from src.inference.execution_model_composition import (
+        validate_execution_model_composition_receipt,
     )
 
-    if not isinstance(qualification, Mapping):
-        _receipt_error("qualification", execution_model)
-    parity = qualification.get("parity_receipt")
-    if not isinstance(parity, Mapping):
-        _receipt_error("qualification.parity_receipt", execution_model)
-    validated = validate_execution_model_parity_receipt(
-        parity,
+    if not isinstance(composition_fidelity, Mapping):
+        _receipt_error("composition_fidelity", execution_model)
+    composition = composition_fidelity.get("receipt")
+    if not isinstance(composition, Mapping):
+        _receipt_error("composition_fidelity.receipt", execution_model)
+    validated = validate_execution_model_composition_receipt(
+        composition,
         execution_model=execution_model,
     )
-    if qualification.get("parity_digest") != validated["digest"]:
-        _receipt_error("qualification.parity_digest", execution_model)
+    if composition_fidelity.get("digest") != validated["digest"]:
+        _receipt_error("composition_fidelity.digest", execution_model)
 
 
 def _validate_tied_weights(model: Any) -> None:
@@ -633,6 +763,8 @@ def _without_provenance_paths(value: Any) -> Any:
                 "metadata_path",
                 "config_path",
                 "model_path",
+                "base_model_path",
+                "base_model_name_or_path",
                 "receipt_path",
             }
         }
@@ -701,10 +833,11 @@ def _sha256_json(payload: Any) -> str:
 __all__ = [
     "DEFAULT_EXECUTION_MODEL_CACHE_ROOT",
     "EXECUTION_MODEL_RECEIPT_VERSION",
+    "DURABLE_COMPOSITION_RECEIPT_ROOT",
     "MATERIALIZATION_ALGORITHM_VERSION",
     "MATERIALIZATION_RECEIPT_NAME",
     "build_execution_model_composition_key",
-    "bind_execution_model_parity",
+    "bind_execution_model_composition",
     "load_execution_model_receipt",
     "resolve_execution_model",
     "validate_execution_model_receipt",

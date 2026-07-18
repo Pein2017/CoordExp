@@ -25,6 +25,7 @@ from src.config.writer import write_resolved_config_artifacts
 from src.data import RawExample, load_raw_examples
 from src.inference.artifacts import (
     RAW_NAME,
+    benchmark_scope_eligible,
     write_inference_artifacts,
     write_terminal_status_artifacts,
 )
@@ -33,6 +34,7 @@ from src.inference.backend import (
     DecodeRequest,
     GenerationPolicy,
     open_backend_session,
+    token_ids_sha256,
     validate_decode_results,
 )
 from src.inference.data_parallel import (
@@ -88,16 +90,24 @@ def run(
             debug_dry_run=resolved.config.debug.dry_run,
         )
         raw_examples = list(load_raw_examples(resolved.config.data.input_jsonl))
+        metadata["benchmark_eligible"] = _benchmark_scope_eligible(
+            config=resolved.config,
+            row_count=len(raw_examples),
+        )
         data_parallel_plan = plan_data_parallel_shards(
             row_ids=tuple(example.example_id for example in raw_examples),
             per_device_batch_size=resolved.config.generation.batch_size,
             visible_cuda_tokens=visible_cuda_tokens,
         )
+        use_controller_worker = (
+            data_parallel_plan.active_ranks > 1
+            or resolved.config.backend.type == "vllm"
+        )
         metadata["parallelism"] = {
             "execution_mode": (
-                "direct_single_process"
-                if data_parallel_plan.active_ranks == 1
-                else "controller_worker"
+                "controller_worker"
+                if use_controller_worker
+                else "direct_single_process"
             ),
             "plan": data_parallel_plan.to_artifact_dict(),
         }
@@ -112,7 +122,7 @@ def run(
         )
         raise
 
-    if data_parallel_plan.active_ranks == 1:
+    if not use_controller_worker:
         _execute_indexed_rows_with_terminal_status(
             resolved=resolved,
             output_dir=run_dir,
@@ -148,6 +158,11 @@ def run_shard(
     execution_model: dict[str, Any] | None = None,
 ) -> int:
     raw_examples = list(load_raw_examples(resolved.config.data.input_jsonl))
+    metadata = _base_metadata(resolved=resolved)
+    metadata["benchmark_eligible"] = _benchmark_scope_eligible(
+        config=resolved.config,
+        row_count=len(raw_examples),
+    )
     indexed_raw_examples = _select_indexed_raw_examples(
         raw_examples=raw_examples,
         row_indices=row_indices,
@@ -157,7 +172,6 @@ def run_shard(
             rank_plan=rank_plan,
             row_indices=tuple(index for index, _ in indexed_raw_examples),
         )
-    metadata = _base_metadata(resolved=resolved)
     shard_worker_metadata = dict(worker_metadata or {})
     metadata["parallelism"] = {
         "execution_mode": "rank_local_shard",
@@ -194,6 +208,11 @@ def run_data_parallel_shards(
     session_opener: BackendSessionOpener | None = None,
     execution_model: dict[str, Any] | None = None,
 ) -> DataParallelShardRunResult:
+    if resolved.config.backend.type == "vllm":
+        raise RuntimeContractError(
+            "vLLM shards must run through fresh rank-local worker processes",
+            code="pipeline.vllm_in_process_forbidden",
+        )
     shard_dirs: list[Path] = []
     raw_rows: list[dict[str, Any]] = []
     for rank_plan in plan.ranks:
@@ -248,32 +267,100 @@ def _execute_controller_worker_path(
         execution_model=execution_model,
     )
     launched: list[tuple[RankShardPlan, Any]] = []
-    for rank_plan in plan.ranks:
-        shard_dir = run_dir / "shards" / rank_plan.shard_dir_name
-        process = launcher(
-            rank=rank_plan.rank,
-            world_size=rank_plan.world_size,
-            parent_visible_device_token=rank_plan.parent_visible_device_token,
-            resolved_config_json=resolved_config_json,
-            shard_plan_json=plan_json,
-            output_dir=shard_dir,
-            execution_model_json=execution_model_json,
+    try:
+        for rank_plan in plan.ranks:
+            shard_dir = run_dir / "shards" / rank_plan.shard_dir_name
+            process = launcher(
+                rank=rank_plan.rank,
+                world_size=rank_plan.world_size,
+                parent_visible_device_token=rank_plan.parent_visible_device_token,
+                resolved_config_json=resolved_config_json,
+                shard_plan_json=plan_json,
+                output_dir=shard_dir,
+                execution_model_json=execution_model_json,
+            )
+            launched.append((rank_plan, process))
+    except BaseException as cause:
+        return_codes = _terminate_owned_workers_after_controller_failure(
+            worker_module=worker_module,
+            launched=launched,
+            run_dir=run_dir,
+            metadata=metadata,
+            phase="worker_launch",
+            cause=cause,
         )
-        launched.append((rank_plan, process))
+        if isinstance(cause, (KeyboardInterrupt, SystemExit)):
+            error = RuntimeContractError(
+                "inference controller was interrupted during worker launch",
+                code="pipeline.controller_interrupted",
+                context={
+                    "phase": "worker_launch",
+                    "launched_ranks": [rank_plan.rank for rank_plan, _ in launched],
+                    "worker_return_codes": return_codes,
+                },
+                cause=cause,
+            )
+            _write_terminal_contract_failure(
+                output_dir=run_dir,
+                metadata=metadata,
+                error=error,
+            )
+            raise
+        error = RuntimeContractError(
+            "an inference worker failed during controller launch",
+            code="pipeline.worker_launch_failed",
+            context={
+                "launched_ranks": [rank_plan.rank for rank_plan, _ in launched],
+                "worker_return_codes": return_codes,
+            },
+            cause=cause,
+        )
+        _write_terminal_contract_failure(
+            output_dir=run_dir,
+            metadata=metadata,
+            error=error,
+        )
+        raise error from cause
 
-    worker_statuses: dict[int, str] = {}
-    return_codes: dict[int, int | None] = {}
-    for rank_plan, process in launched:
-        wait = getattr(process, "wait", None)
-        if callable(wait):
-            code = wait()
-        else:
-            code = getattr(process, "returncode", None)
-        if code is None:
-            code = getattr(process, "returncode", None)
-        code_int = None if code is None else int(code)
-        return_codes[rank_plan.rank] = code_int
-        worker_statuses[rank_plan.rank] = "completed" if code_int == 0 else "failed"
+    try:
+        return_codes = worker_module.wait_for_worker_processes(
+            tuple((rank_plan.rank, process) for rank_plan, process in launched)
+        )
+    except RuntimeContractError as error:
+        _write_terminal_contract_failure(
+            output_dir=run_dir,
+            metadata=metadata,
+            error=error,
+        )
+        raise
+    except BaseException as cause:
+        return_codes = _terminate_owned_workers_after_controller_failure(
+            worker_module=worker_module,
+            launched=launched,
+            run_dir=run_dir,
+            metadata=metadata,
+            phase="worker_wait",
+            cause=cause,
+        )
+        error = RuntimeContractError(
+            "inference controller was interrupted while waiting for workers",
+            code="pipeline.controller_interrupted",
+            context={
+                "phase": "worker_wait",
+                "worker_return_codes": return_codes,
+            },
+            cause=cause,
+        )
+        _write_terminal_contract_failure(
+            output_dir=run_dir,
+            metadata=metadata,
+            error=error,
+        )
+        raise
+    worker_statuses = {
+        rank: "completed" if code == 0 else "failed"
+        for rank, code in sorted(return_codes.items())
+    }
 
     failed = {
         rank: code
@@ -302,6 +389,39 @@ def _execute_controller_worker_path(
         plan=plan,
         worker_statuses=worker_statuses,
     )
+
+
+def _terminate_owned_workers_after_controller_failure(
+    *,
+    worker_module: Any,
+    launched: Sequence[tuple[RankShardPlan, Any]],
+    run_dir: Path,
+    metadata: dict[str, Any],
+    phase: str,
+    cause: BaseException,
+) -> dict[int, int | None]:
+    try:
+        return worker_module.terminate_worker_processes(
+            tuple((rank_plan.rank, process) for rank_plan, process in launched)
+        )
+    except RuntimeContractError as cleanup_error:
+        error = RuntimeContractError(
+            "inference controller could not fully terminate its owned workers",
+            code=cleanup_error.code,
+            context={
+                **cleanup_error.context,
+                "controller_phase": phase,
+                "trigger_exception_type": type(cause).__name__,
+                "trigger_error": str(cause),
+            },
+            cause=cleanup_error,
+        )
+        _write_terminal_contract_failure(
+            output_dir=run_dir,
+            metadata=metadata,
+            error=error,
+        )
+        raise error from cause
 
 
 def _write_data_parallel_plan_artifact(*, run_dir: Path, plan: DataParallelPlan) -> Path:
@@ -355,6 +475,24 @@ def _execute_indexed_rows_with_terminal_status(
         _write_terminal_contract_failure(
             output_dir=output_dir,
             metadata=metadata,
+            error=exc,
+        )
+        raise
+    except torch.OutOfMemoryError as exc:
+        _write_terminal_unhandled_failure(
+            output_dir=output_dir,
+            metadata=metadata,
+            failure_class="cuda_oom",
+            error_code="inference.cuda_oom",
+            error=exc,
+        )
+        raise
+    except Exception as exc:
+        _write_terminal_unhandled_failure(
+            output_dir=output_dir,
+            metadata=metadata,
+            failure_class="runtime_failure",
+            error_code="inference.unhandled_runtime_failure",
             error=exc,
         )
         raise
@@ -490,6 +628,17 @@ def _execute_indexed_rows(
             results=session.decode(requests),
             receipt=session.receipt,
         )
+        # Decode may add executed backend evidence, such as vLLM raw replay.
+        metadata.update(
+            _session_metadata(frontend=frontend, receipt=session.receipt)
+        )
+        metadata["prompt_trace"] = _prompt_trace(
+            requests=requests,
+            results=results,
+        )
+        raw_replay_trace = _raw_replay_trace(results=results)
+        if raw_replay_trace:
+            metadata["raw_replay_trace"] = raw_replay_trace
 
     decode_results = {result.request_id: result for result in results}
     for result in results:
@@ -669,6 +818,30 @@ def _failure_class(error: CoordExpError) -> str:
     return "contract_failure"
 
 
+def _write_terminal_unhandled_failure(
+    *,
+    output_dir: Path,
+    metadata: dict[str, Any],
+    failure_class: str,
+    error_code: str,
+    error: Exception,
+) -> None:
+    write_terminal_status_artifacts(
+        output_dir=output_dir,
+        metadata=metadata,
+        summary={
+            "terminal_status": "failed",
+            "failure_class": failure_class,
+            f"{failure_class}_count": 1,
+            "error": {
+                "code": error_code,
+                "message": str(error),
+                "context": {"exception_type": type(error).__name__},
+            },
+        },
+    )
+
+
 def _base_metadata(*, resolved: ResolvedInferConfig) -> dict[str, Any]:
     return {
         "artifact_schema_version": 1,
@@ -687,6 +860,7 @@ def _base_metadata(*, resolved: ResolvedInferConfig) -> dict[str, Any]:
         "raw_model_logprob_enabled": bool(
             resolved.config.artifacts.include_raw_model_logprob
         ),
+        "benchmark_eligible": False,
         "model_identity_fingerprint": "unknown-before-runtime",
         "processor_identity_fingerprint": "unknown-before-runtime",
         "template_identity": {
@@ -701,11 +875,21 @@ def _base_metadata(*, resolved: ResolvedInferConfig) -> dict[str, Any]:
             "input_jsonl": resolved.config.data.input_jsonl,
         },
         "backend": resolved.config.backend.type,
-        "backend_mode": "generate",
+        "backend_mode": (
+            "generate"
+            if resolved.config.backend.type == "hf"
+            else "offline_generate"
+        ),
         "response_family": resolved.config.backend.type,
         "model_identity": {},
         "tokenizer_identity": {},
     }
+
+
+def _benchmark_scope_eligible(*, config: InferConfig, row_count: int) -> bool:
+    """V1 benchmark claims require the accepted val200-or-larger scope."""
+
+    return not config.debug.smoke and benchmark_scope_eligible(row_count)
 
 
 def _session_metadata(*, frontend: InferenceFrontend, receipt: Any) -> dict[str, Any]:
@@ -728,6 +912,47 @@ def _session_metadata(*, frontend: InferenceFrontend, receipt: Any) -> dict[str,
         "execution_model_identity": receipt.execution_model_identity,
         "frontend_identity": frontend.qwen.to_artifact_dict(),
     }
+
+
+def _prompt_trace(
+    *,
+    requests: Sequence[DecodeRequest],
+    results: Sequence[Any],
+) -> list[dict[str, Any]]:
+    results_by_id = {result.request_id: result for result in results}
+    rows: list[dict[str, Any]] = []
+    for request in requests:
+        result = results_by_id[request.request_id]
+        input_ids = request.input_prompt_token_ids
+        expected_ids = request.expected_executed_prompt_token_ids
+        executed_ids = result.executed_prompt_token_ids
+        rows.append(
+            {
+                "row_id": request.request_id,
+                "input_prompt_token_count": len(input_ids),
+                "input_prompt_token_ids_sha256": token_ids_sha256(input_ids),
+                "expected_executed_prompt_token_count": len(expected_ids),
+                "expected_executed_prompt_token_ids_sha256": token_ids_sha256(
+                    expected_ids
+                ),
+                "backend_executed_prompt_token_count": len(executed_ids),
+                "backend_executed_prompt_token_ids_sha256": token_ids_sha256(
+                    executed_ids
+                ),
+                "prompt_token_parity": "verified",
+            }
+        )
+    return rows
+
+
+def _raw_replay_trace(*, results: Sequence[Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for result in results:
+        evidence = result.native_evidence.get("raw_replay")
+        if evidence is None:
+            continue
+        rows.append({"row_id": result.request_id, **dict(evidence)})
+    return rows
 
 
 def _fill_worker_runtime_device_metadata(
@@ -781,13 +1006,24 @@ def _image_plan_rows_with_backend_evidence(
     return [
         replace(
             row,
-            observed_image_grid_thw=list(
-                decode_results[row.row_id].observed_image_grid_thw
+            observed_image_grid_thw=(
+                None
+                if decode_results[row.row_id].observed_image_grid_thw is None
+                else list(decode_results[row.row_id].observed_image_grid_thw)
             ),
             backend_projection_evidence_kind=evidence_kind,
             executed_media_sha256=decode_results[
                 row.row_id
             ].executed_media_sha256,
+            backend_prompt_token_count=len(
+                decode_results[row.row_id].executed_prompt_token_ids
+            ),
+            backend_image_placeholder_ranges=list(
+                decode_results[row.row_id].native_evidence.get(
+                    "image_placeholder_ranges",
+                    [],
+                )
+            ),
         )
         for row in rows
     ]

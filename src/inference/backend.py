@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 import re
 from collections import Counter
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass, field
-from typing import Literal, Protocol, runtime_checkable
+from dataclasses import dataclass, field, replace
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from src.common.errors import RuntimeContractError
 
@@ -19,6 +21,15 @@ ALLOWED_LOGICAL_IMAGE_TRANSFORMS = {"identity", "hflip", "vflip", "hvflip"}
 POLICY_LIKELIHOOD_DEFINITION = "fp32_log_softmax_after_active_generation_processors"
 RAW_LIKELIHOOD_DEFINITION = "fp32_log_softmax_unmodified_lm_head_logits"
 _SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
+
+
+def token_ids_sha256(token_ids: Sequence[int]) -> str:
+    """Return the canonical identity for one ordered token-id sequence."""
+
+    normalized = [int(token_id) for token_id in token_ids]
+    return hashlib.sha256(
+        json.dumps(normalized, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -297,6 +308,7 @@ class DecodeResult:
     executed_media_sha256: str
     observed_image_grid_thw: tuple[int, int, int] | None = None
     native_generated_text: str | None = None
+    native_evidence: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -316,6 +328,16 @@ class DecodeResult:
                 "observed_image_grid_thw",
                 tuple(self.observed_image_grid_thw),
             )
+        if not isinstance(self.native_evidence, Mapping):
+            _fail_result(
+                "decode result native evidence must be a mapping",
+                field="native_evidence",
+                request_id=self.request_id,
+            )
+        _require_backend_neutral(
+            self.native_evidence,
+            field_name="native_evidence",
+        )
         if (
             not isinstance(self.executed_media_sha256, str)
             or _SHA256_PATTERN.fullmatch(self.executed_media_sha256) is None
@@ -360,8 +382,14 @@ class DecodeResult:
                 field="executed_prompt_token_ids",
                 request_id=request.request_id,
             )
+        requires_observed_grid = self.backend == "hf"
+        observed_grid_mismatch = (
+            self.observed_image_grid_thw is not None
+            and self.observed_image_grid_thw != request.expected_image_grid_thw
+        )
         if request.expected_image_grid_thw is not None and (
-            self.observed_image_grid_thw != request.expected_image_grid_thw
+            (requires_observed_grid and self.observed_image_grid_thw is None)
+            or observed_grid_mismatch
         ):
             _fail_result(
                 "decode result image grid does not match shared no-resize evidence",
@@ -594,6 +622,8 @@ class BackendSessionReceipt:
             if not isinstance(value, Mapping) or not value:
                 _fail_receipt(field_name, launch=launch, receipt=self)
             _require_backend_neutral(value, field_name=field_name)
+        if self.likelihood_semantics.get("score_owned_channel") != "policy_logprob":
+            _fail_receipt("likelihood_semantics.score_owned_channel", launch=launch, receipt=self)
         if self.effective_settings.get("batch_size") != launch.batch_size:
             _fail_receipt("effective_settings.batch_size", launch=launch, receipt=self)
         if self.likelihood_semantics.get("policy") != POLICY_LIKELIHOOD_DEFINITION:
@@ -639,6 +669,84 @@ class BackendSessionReceipt:
                 else dict(self.execution_model_identity)
             ),
         }
+
+
+def update_decode_performance_receipt(
+    receipt: BackendSessionReceipt,
+    *,
+    request_count: int,
+    generated_token_count: int,
+    elapsed_seconds: float,
+    peak_cuda_memory_allocated_bytes: int | None,
+    peak_cuda_memory_reserved_bytes: int | None,
+) -> BackendSessionReceipt:
+    """Accumulate backend-neutral decode throughput and CUDA peak evidence."""
+
+    if request_count < 0 or generated_token_count < 0 or elapsed_seconds <= 0:
+        raise RuntimeContractError(
+            "decode performance evidence is invalid",
+            code="backend_contract.decode_performance",
+            context={
+                "request_count": request_count,
+                "generated_token_count": generated_token_count,
+                "elapsed_seconds": elapsed_seconds,
+            },
+        )
+    settings = dict(receipt.effective_settings)
+    previous = settings.get("performance")
+    previous = dict(previous) if isinstance(previous, Mapping) else {}
+    total_requests = int(previous.get("request_count", 0)) + request_count
+    total_tokens = int(previous.get("generated_token_count", 0)) + generated_token_count
+    total_elapsed = float(previous.get("decode_elapsed_seconds", 0.0)) + elapsed_seconds
+    allocated = _optional_peak_max(
+        previous.get("peak_cuda_memory_allocated_bytes"),
+        peak_cuda_memory_allocated_bytes,
+    )
+    reserved = _optional_peak_max(
+        previous.get("peak_cuda_memory_reserved_bytes"),
+        peak_cuda_memory_reserved_bytes,
+    )
+    settings["performance"] = {
+        "measurement_scope": "backend_decode_including_native_media_projection",
+        "request_count": total_requests,
+        "generated_token_count": total_tokens,
+        "decode_elapsed_seconds": total_elapsed,
+        "requests_per_second": total_requests / total_elapsed,
+        "generated_tokens_per_second": total_tokens / total_elapsed,
+        "peak_cuda_memory_allocated_bytes": allocated,
+        "peak_cuda_memory_reserved_bytes": reserved,
+    }
+    return replace(receipt, effective_settings=settings)
+
+
+def cuda_peak_memory_snapshot(torch_module: Any) -> tuple[int | None, int | None]:
+    """Read process-lifetime CUDA peaks without resetting model-load evidence."""
+
+    try:
+        cuda = torch_module.cuda
+        if not cuda.is_available():
+            return None, None
+        return int(cuda.max_memory_allocated()), int(cuda.max_memory_reserved())
+    except (AttributeError, RuntimeError, TypeError, ValueError):
+        return None, None
+
+
+def synchronize_cuda_for_timing(torch_module: Any) -> None:
+    try:
+        cuda = torch_module.cuda
+        if cuda.is_available():
+            cuda.synchronize()
+    except (AttributeError, RuntimeError):
+        return
+
+
+def _optional_peak_max(previous: object, current: int | None) -> int | None:
+    values = [
+        int(value)
+        for value in (previous, current)
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0
+    ]
+    return max(values) if values else None
 
 
 @runtime_checkable

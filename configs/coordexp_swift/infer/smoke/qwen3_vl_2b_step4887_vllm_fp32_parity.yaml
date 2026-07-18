@@ -1,0 +1,5 @@
+extends: qwen3_vl_2b_step4887_vllm_parity.yaml
+run:
+  name: qwen3-vl-2b-step4887-vllm-fp32-parity-smoke
+model:
+  dtype: fp32

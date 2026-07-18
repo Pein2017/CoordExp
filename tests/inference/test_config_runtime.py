@@ -70,23 +70,27 @@ def test_valid_production_infer_config_loads() -> None:
     sorted(Path("configs/coordexp_swift/infer").glob("*.yaml")),
     ids=lambda path: path.name,
 )
-def test_all_canonical_infer_configs_use_strict_hf_projection(
+def test_all_canonical_infer_configs_use_strict_backend_projection(
     config_path: Path,
 ) -> None:
     from src.config.inference import load_infer_config
 
     resolved = load_infer_config(config_path)
 
-    assert resolved.config.backend.type == "hf"
-    assert resolved.config.backend.hf.attn_implementation in {
-        "flash_attention_2",
-        "sdpa",
-        "eager",
-    }
-    assert resolved.config.backend.hf.patch_embed_linearization in {
-        "enabled",
-        "disabled",
-    }
+    if resolved.config.backend.type == "hf":
+        assert resolved.config.backend.hf.attn_implementation in {
+            "flash_attention_2",
+            "sdpa",
+            "eager",
+        }
+        assert resolved.config.backend.hf.patch_embed_linearization in {
+            "enabled",
+            "disabled",
+        }
+        assert set(resolved.config_dict["backend"]) == {"type", "hf"}
+    else:
+        assert 0 < resolved.config.backend.vllm.gpu_memory_utilization <= 1
+        assert set(resolved.config_dict["backend"]) == {"type", "vllm"}
     assert set(resolved.config_dict["model"]) == {"base_model", "dtype", "processor"}
     assert resolved.config.generation.temperature == pytest.approx(0.0)
     assert resolved.config.generation.top_p == pytest.approx(1.0)
@@ -212,6 +216,38 @@ def test_vllm_backend_accepts_strict_selected_block(
     assert resolved.config.backend.vllm.gpu_memory_utilization == pytest.approx(
         gpu_memory_utilization
     )
+
+
+def test_vllm_backend_replaces_inherited_hf_discriminated_block(
+    tmp_path: Path,
+) -> None:
+    from src.config.inference import load_infer_config
+
+    base = tmp_path / "base.yaml"
+    base.write_text(
+        yaml.safe_dump(_base_config(tmp_path), sort_keys=False),
+        encoding="utf-8",
+    )
+    child = tmp_path / "vllm.yaml"
+    child.write_text(
+        yaml.safe_dump(
+            {
+                "extends": "base.yaml",
+                "backend": {
+                    "type": "vllm",
+                    "vllm": {"gpu_memory_utilization": 0.7},
+                },
+                "debug": {"smoke": True, "dry_run": True},
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    resolved = load_infer_config(child)
+
+    assert resolved.config.backend.type == "vllm"
+    assert "hf" not in resolved.config_dict["backend"]
 
 
 @pytest.mark.parametrize("gpu_memory_utilization", [0.0, -0.1, 1.01, float("inf")])
@@ -615,6 +651,29 @@ def test_frontend_rejects_any_shared_executable_model(
     assert exc_info.value.code == "inference.frontend_model_loaded"
 
 
+def test_hf_launch_rejects_vllm_execution_model_receipt(tmp_path: Path) -> None:
+    from src.config.inference import load_infer_config
+    from src.inference.runtime import prepare_backend_launch
+
+    resolved = load_infer_config(
+        _write_config(
+            tmp_path,
+            adapter={"type": "dora", "path": "adapter/step-5"},
+            embedding_delta={"path": "delta/special-token-delta.safetensors"},
+            debug={"smoke": True, "dry_run": True},
+        )
+    )
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        prepare_backend_launch(
+            resolved.config,
+            generation_config_fingerprint="generation-fingerprint",
+            execution_model={"model_path": str(tmp_path / "materialized")},
+        )
+
+    assert exc_info.value.code == "inference.hf_execution_model_forbidden"
+
+
 def test_vllm_composed_launch_requires_execution_model(
     tmp_path: Path,
 ) -> None:
@@ -663,8 +722,10 @@ def test_vllm_execution_model_launch_uses_materialized_path_without_live_payload
         generation_config_fingerprint="generation-fingerprint",
         execution_model={
             "model_path": str(snapshot),
+            "mode": "materialized",
             "composition_key": "a" * 64,
             "snapshot_fingerprint": "b" * 64,
+            "composition_fidelity": {"digest": "c" * 64},
         },
     )
 
@@ -674,6 +735,32 @@ def test_vllm_execution_model_launch_uses_materialized_path_without_live_payload
     assert launch.embedding_delta is None
     assert launch.execution_model_identity is not None
     assert launch.execution_model_identity["composition_key"] == "a" * 64
+
+
+def test_vllm_materialized_launch_rejects_unqualified_execution_model(
+    tmp_path: Path,
+) -> None:
+    from src.config.inference import load_infer_config
+    from src.inference.runtime import prepare_backend_launch
+
+    config_path = _write_vllm_config(tmp_path, gpu_memory_utilization=0.7)
+    resolved = load_infer_config(config_path)
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        prepare_backend_launch(
+            resolved.config,
+            generation_config_fingerprint="generation-fingerprint",
+            execution_model={
+                "model_path": str(tmp_path / "snapshot"),
+                "mode": "materialized",
+                "composition_key": "a" * 64,
+                "snapshot_fingerprint": "b" * 64,
+            },
+        )
+    assert (
+        exc_info.value.code
+        == "inference.execution_model_composition_fidelity_required"
+    )
 
 
 def test_qwen_components_shape_exposes_delta_identity_sha_fields() -> None:

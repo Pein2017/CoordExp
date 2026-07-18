@@ -20,6 +20,7 @@ from src.eval.detection_categories import (
     COCO_80_CLASS_NAMES,
     normalize_coco_category_name,
 )
+from src.inference.artifacts import benchmark_scope_eligible
 
 
 RAW_NAME = "gt_vs_pred.jsonl"
@@ -682,7 +683,12 @@ def _evaluation_receipt(
     run_manifest_payload = manifest.get("payload")
     if isinstance(run_manifest_payload, dict):
         terminal_status = str(run_manifest_payload.get("terminal_status", "completed"))
-        benchmark_eligible = bool(run_manifest_payload.get("benchmark_eligible", False))
+        manifest_benchmark_eligible = bool(
+            run_manifest_payload.get("benchmark_eligible", False)
+        )
+        benchmark_eligible = manifest_benchmark_eligible and benchmark_scope_eligible(
+            len(rows)
+        )
         evaluator_consumer_status = run_manifest_payload.get("evaluator_consumer_status")
         artifacts[RUN_MANIFEST_NAME] = {
             "path": RUN_MANIFEST_NAME,
@@ -690,6 +696,7 @@ def _evaluation_receipt(
         }
     else:
         terminal_status = "missing"
+        manifest_benchmark_eligible = False
         benchmark_eligible = False
         evaluator_consumer_status = "manifest_missing"
     if summary.get("payload") is not None:
@@ -722,6 +729,7 @@ def _evaluation_receipt(
             "path": RUN_MANIFEST_NAME,
             "sha256": manifest.get("sha256"),
             "terminal_status": terminal_status,
+            "manifest_benchmark_eligible": manifest_benchmark_eligible,
             "benchmark_eligible": benchmark_eligible,
             "evaluator_consumer_status": evaluator_consumer_status,
         },

@@ -7,6 +7,8 @@ from functools import partial
 from pathlib import Path
 
 import pytest
+import torch
+from safetensors.torch import save_file
 
 from src.common.errors import RuntimeContractError
 from src.inference.execution_model import (
@@ -20,12 +22,28 @@ from src.inference.model_assets import build_model_snapshot_manifest
 def _write_snapshot(root: Path, *, weight: bytes = b"weights") -> Path:
     root.mkdir(parents=True, exist_ok=True)
     (root / "config.json").write_text(
-        json.dumps({"model_type": "qwen3_vl", "tie_word_embeddings": True}),
+        json.dumps(
+            {
+                "model_type": "qwen3_vl",
+                "architectures": ["Qwen3VLForConditionalGeneration"],
+                "tie_word_embeddings": True,
+                "dtype": "bfloat16",
+            }
+        ),
         encoding="utf-8",
     )
     (root / "tokenizer.json").write_text("{}", encoding="utf-8")
     (root / "preprocessor_config.json").write_text("{}", encoding="utf-8")
-    (root / "model.safetensors").write_bytes(weight)
+    save_file(
+        {
+            "model.language_model.embed_tokens.weight": torch.full(
+                (2, 2),
+                float(sum(weight) % 251),
+                dtype=torch.bfloat16,
+            )
+        },
+        root / "model.safetensors",
+    )
     return root
 
 
@@ -73,14 +91,35 @@ def test_composition_key_ignores_source_paths_and_changes_with_payload() -> None
         "files": [{"relative_path": "model.safetensors", "sha256": "base"}],
     }
     base_b = {**base_a, "root": "/second/base"}
+    adapter_a = {
+        **_identity("adapter", "adapter-a"),
+        "base_model_name_or_path": "/first/base",
+    }
+    delta_a = {
+        **_identity("delta", "delta-a"),
+        "base_model_path": "/first/base",
+    }
     common = {
-        "adapter_identity": _identity("adapter", "adapter-a"),
-        "embedding_delta_identity": _identity("delta", "delta-a"),
+        "adapter_identity": adapter_a,
+        "embedding_delta_identity": delta_a,
         "target_dtype": "bf16",
         "package_versions": {"peft": "0.17.1", "transformers": "4.57.1"},
     }
     key_a = build_execution_model_composition_key(base_manifest=base_a, **common)
-    key_b = build_execution_model_composition_key(base_manifest=base_b, **common)
+    key_b = build_execution_model_composition_key(
+        base_manifest=base_b,
+        **{
+            **common,
+            "adapter_identity": {
+                **adapter_a,
+                "base_model_name_or_path": "/second/base",
+            },
+            "embedding_delta_identity": {
+                **delta_a,
+                "base_model_path": "/second/base",
+            },
+        },
+    )
     assert key_a == key_b
 
     changed_adapter = build_execution_model_composition_key(
@@ -220,6 +259,47 @@ def test_failed_build_never_publishes_completed_directory(tmp_path: Path) -> Non
         if path.is_dir() and path.name not in {".locks", ".staging"}
     ]
     assert completed == []
+
+
+def test_materialized_snapshot_rejects_unreadable_model_payload(
+    tmp_path: Path,
+) -> None:
+    base = _write_snapshot(tmp_path / "base")
+    cache_root = tmp_path / "cache"
+
+    def materialize(snapshot_root: Path) -> dict[str, object]:
+        snapshot_root.mkdir(parents=True)
+        (snapshot_root / "config.json").write_text(
+            json.dumps(
+                {
+                    "model_type": "qwen3_vl",
+                    "architectures": ["Qwen3VLForConditionalGeneration"],
+                    "tie_word_embeddings": True,
+                    "dtype": "bfloat16",
+                }
+            ),
+            encoding="utf-8",
+        )
+        (snapshot_root / "tokenizer.json").write_text("{}", encoding="utf-8")
+        (snapshot_root / "preprocessor_config.json").write_text(
+            "{}", encoding="utf-8"
+        )
+        (snapshot_root / "model.safetensors").write_bytes(b"not-a-model")
+        return {"owner": "malformed-test"}
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        resolve_execution_model(
+            base_model_path=base,
+            target_dtype="bf16",
+            adapter_identity=_identity("adapter", "adapter-a"),
+            cache_root=cache_root,
+            materialize_snapshot=materialize,
+        )
+    assert exc_info.value.code == "inference.execution_model_snapshot_tensor_invalid"
+    assert not any(
+        path.is_dir() and path.name not in {".locks", ".staging"}
+        for path in cache_root.iterdir()
+    )
 
 
 def test_concurrent_cache_miss_has_exactly_one_builder(tmp_path: Path) -> None:

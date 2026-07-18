@@ -467,7 +467,11 @@ def _deep_merge(
     for key, child_value in child.items():
         field_path = f"{prefix}.{key}" if prefix else key
         parent_value = merged.get(key)
-        if isinstance(parent_value, dict) and isinstance(child_value, dict):
+        if (
+            isinstance(parent_value, dict)
+            and isinstance(child_value, dict)
+            and not _discriminator_changed(parent_value, child_value)
+        ):
             sub_payload, sub_origins = _deep_merge(
                 parent_value,
                 child_value,
@@ -503,6 +507,19 @@ def _deep_merge(
             }
         )
     return merged, origins
+
+
+def _discriminator_changed(
+    parent: dict[str, Any],
+    child: dict[str, Any],
+) -> bool:
+    """Replace a discriminated config object when its selected variant changes."""
+
+    return (
+        "type" in parent
+        and "type" in child
+        and parent["type"] != child["type"]
+    )
 
 
 def _sub_origins(origins: dict[str, Path], key: str) -> dict[str, Path]:

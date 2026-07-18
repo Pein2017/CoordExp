@@ -196,7 +196,11 @@ def _backend_launch(*, batch_size: int = 2) -> Any:
     )
 
 
-def _session_receipt(*, batch_size: int = 2) -> Any:
+def _session_receipt(
+    *,
+    batch_size: int = 2,
+    score_owned_channel: str = "policy_logprob",
+) -> Any:
     from src.inference.backend import (
         POLICY_LIKELIHOOD_DEFINITION,
         RAW_LIKELIHOOD_DEFINITION,
@@ -216,7 +220,7 @@ def _session_receipt(*, batch_size: int = 2) -> Any:
         likelihood_semantics={
             "policy": POLICY_LIKELIHOOD_DEFINITION,
             "raw": RAW_LIKELIHOOD_DEFINITION,
-            "score_owned_channel": "policy_logprob",
+            "score_owned_channel": score_owned_channel,
         },
     )
 
@@ -269,6 +273,18 @@ def test_injected_session_opener_validates_receipt_and_closes() -> None:
         assert opened is session
         assert session.closed is False
     assert session.closed is True
+
+
+def test_session_receipt_rejects_non_policy_score_ownership() -> None:
+    receipt = _session_receipt(score_owned_channel="raw_model_logprob")
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        receipt.validate_for_launch(_backend_launch())
+
+    assert exc_info.value.code == "backend_contract.session_receipt"
+    assert exc_info.value.context["field"] == (
+        "likelihood_semantics.score_owned_channel"
+    )
 
 
 def test_hf_session_native_batch_records_policy_and_raw_fp32_channels(
@@ -326,6 +342,12 @@ def test_hf_session_native_batch_records_policy_and_raw_fp32_channels(
     )
     assert results[0].generated_token_ids == (21, tokenizer.eos_token_id)
     assert results[0].parser_text == "A"
+    performance = session.receipt.effective_settings["performance"]
+    assert performance["request_count"] == 2
+    assert performance["generated_token_count"] == 4
+    assert performance["decode_elapsed_seconds"] > 0
+    assert performance["requests_per_second"] > 0
+    assert performance["generated_tokens_per_second"] > 0
 
 
 def test_hf_session_forces_left_padding_for_heterogeneous_prompts(

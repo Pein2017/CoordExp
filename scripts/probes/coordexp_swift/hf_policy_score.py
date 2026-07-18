@@ -11,12 +11,6 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_EXECUTION_PAYLOAD_RECEIPT = Path(
-    "openspec/changes/add-coordexp-swift-vllm-inference-backend/"
-    "source-studies/receipts/hf-wave1-raw-likelihood.json"
-)
-
-
 def main() -> int:
     args = _parse_args()
     repo_root = Path.cwd().resolve()
@@ -306,7 +300,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--run-root", required=True)
     parser.add_argument(
         "--execution-payload-receipt",
-        default=str(DEFAULT_EXECUTION_PAYLOAD_RECEIPT),
+        required=True,
     )
     parser.add_argument("--output", required=True)
     return parser.parse_args()

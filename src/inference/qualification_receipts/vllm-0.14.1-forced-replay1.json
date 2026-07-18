@@ -1,0 +1,271 @@
+{
+  "artifacts": [
+    {
+      "relative_path": "configs/resolved.json",
+      "sha256": "0f3b04962b21c4f7dbb0288ddb0cf85f432406476a0a584eaf2e55016936e187",
+      "size_bytes": 7446
+    },
+    {
+      "relative_path": "configs/resolved.yaml",
+      "sha256": "073d876db2927266ac2594ed730b325c5dde03f25f5b43d9e55fa007af2fcae5",
+      "size_bytes": 6836
+    },
+    {
+      "relative_path": "execution_model.json",
+      "sha256": "9fd3e86b6bdc1a7e481cb1bb093bf0447955cfcf81067283d64f092a730ae3a9",
+      "size_bytes": 570138
+    },
+    {
+      "relative_path": "gt_vs_pred.jsonl",
+      "sha256": "ccc237891d98d8debd5130f12344d36c66187f5abd232c5dbc88070263c17142",
+      "size_bytes": 3199
+    },
+    {
+      "relative_path": "gt_vs_pred_scored.jsonl",
+      "sha256": "fba078d06520e879e97fe33819615b825c3ae1b9213c13ad5b09dbd8ccb6540f",
+      "size_bytes": 2774
+    },
+    {
+      "relative_path": "gt_vs_pred_scored.jsonl.provenance.json",
+      "sha256": "5bebbbac37fe65a83741bdea7996f4f213ada9c4cddda3bdaa15b887971ab733",
+      "size_bytes": 1262695
+    },
+    {
+      "relative_path": "image_plan.jsonl",
+      "sha256": "cf1cef5d54f9b06f6b23ba17bd6f8578820337273b08723279b2531c6975e8e4",
+      "size_bytes": 932
+    },
+    {
+      "relative_path": "parse_diagnostics.jsonl",
+      "sha256": "8434d3e5d25f1de83ab35e90f5108bbbc2100abc2af3407f4f9e682924b0531f",
+      "size_bytes": 216
+    },
+    {
+      "relative_path": "pred_token_trace.jsonl",
+      "sha256": "6fb5bf1847632d5e688bbd9ddf6ebecc3da69fc509b91c545fd1d40fa82c35f5",
+      "size_bytes": 9713
+    },
+    {
+      "relative_path": "run_manifest.json",
+      "sha256": "145380a825cc00eeca9d4fd339d6f8fd0f8a29e0ad01985ba3d2fe9e6c66920a",
+      "size_bytes": 1262957
+    },
+    {
+      "relative_path": "summary.json",
+      "sha256": "d21e726bdfab48f868fdb130bd53fcdb28a18bbf8c3f78a2bf5ac438ab22df1b",
+      "size_bytes": 1534
+    }
+  ],
+  "backend_session_engine_kwargs": {
+    "data_parallel_size": 1,
+    "disable_custom_all_reduce": true,
+    "disable_log_stats": true,
+    "dtype": "bfloat16",
+    "generation_config": "vllm",
+    "gpu_memory_utilization": 0.7,
+    "limit_mm_per_prompt": {
+      "image": 1,
+      "video": 0
+    },
+    "logprobs_mode": "processed_logprobs",
+    "max_model_len": 2048,
+    "max_num_seqs": 1,
+    "mm_processor_kwargs": {
+      "do_resize": false
+    },
+    "model": "/data/Qwen3-VL/model_cache/coordexp_swift/vllm_materialized/2ae15bcc86014bcee1eda6e9bf1c79ffc246243b938a140ac5b851760b26d6ce/snapshot",
+    "seed": 0,
+    "tensor_parallel_size": 1,
+    "tokenizer": "/data/Qwen3-VL/model_cache/coordexp_swift/vllm_materialized/2ae15bcc86014bcee1eda6e9bf1c79ffc246243b938a140ac5b851760b26d6ce/snapshot",
+    "trust_remote_code": true
+  },
+  "config": {
+    "entry_path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/infer/smoke/qwen3_vl_2b_step4887_vllm_parity.yaml",
+    "entry_repo_relative_path": "configs/coordexp_swift/infer/smoke/qwen3_vl_2b_step4887_vllm_parity.yaml",
+    "fingerprint": "96a3e3be1e30a15abcf2065166ba03b7fde269681495a9afed9fb6728125c4d7",
+    "sources": [
+      {
+        "path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/infer/base.yaml",
+        "repo_relative_path": "configs/coordexp_swift/infer/base.yaml",
+        "sha256": "eae71758eff67e59411519d2f75e467706fa3ee039f78bc9311af8ea1d598de2"
+      },
+      {
+        "path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200.yaml",
+        "repo_relative_path": "configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200.yaml",
+        "sha256": "c7dc34e37b53b9aeac76b959f5791a677a810d9dc30d0f11f42e4fdae51a8c06"
+      },
+      {
+        "path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200_vllm.yaml",
+        "repo_relative_path": "configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200_vllm.yaml",
+        "sha256": "d91ffbcb64e6ea209ffd785f01cd943119c3cedd9f41b28b9d37a653f733da5e"
+      },
+      {
+        "path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/infer/smoke/qwen3_vl_2b_step4887_vllm_parity.yaml",
+        "repo_relative_path": "configs/coordexp_swift/infer/smoke/qwen3_vl_2b_step4887_vllm_parity.yaml",
+        "sha256": "061bf61aa977e6bbc1dcb0b4e3a6891c17fb99f344b9ef0377421f6898d04b8a"
+      }
+    ]
+  },
+  "execution_model": {
+    "composition_key": "2ae15bcc86014bcee1eda6e9bf1c79ffc246243b938a140ac5b851760b26d6ce",
+    "mode": "materialized",
+    "receipt_fingerprint": "57c815ddaad7a0a053fed7ba83f29c6c722660b6d59dffeeab784ecca7b07c72",
+    "snapshot_fingerprint": "4b3cdcacd9452811281572cfd6f1a984fc89e93442625ffdc11c6dab32809eff",
+    "source_base_snapshot_fingerprint": "e43d3a07b5fe47db7abcc07a9b6a318dd32d9a2fa12f620c2e734573bf9fe5eb"
+  },
+  "input_source": {
+    "path": "/data/CoordExp/.worktrees/CoordExp-swift/tests/fixtures/smoke/qwen3_vl_single_image_pack/examples.jsonl",
+    "row_count": 2,
+    "selected_prefix_row_count": 1,
+    "sha256": "f1a13e7470f4636f2c89e11c23074c69a1318ba60fc3292ae0aa72bfbd495ace"
+  },
+  "max_num_seqs": 1,
+  "probe_source_sha256": "52bc43da664111733dc9e11308f4cf9b62a2c936cc70cc193f1eb61425c946df",
+  "process_cuda_binding": {
+    "cuda": {
+      "CUDA_VISIBLE_DEVICES": "1",
+      "cuda_available": true,
+      "cuda_current_device": 0,
+      "cuda_device_count": 1,
+      "device_name": "NVIDIA A100 80GB PCIe",
+      "logical_device": "cuda:0",
+      "torch_cuda_version": "12.8",
+      "visible_cuda_tokens": [
+        "1"
+      ]
+    },
+    "process": {
+      "pid": 3501646,
+      "ppid": 3501609
+    }
+  },
+  "prompt_trace": {
+    "row_evidence_sha256": "30fac706915e12de96327cd745ec6be662a7a1a9c90cd4bd31f7b6497d9e5e0f",
+    "rows": [
+      {
+        "backend_executed_prompt_token_count": 1362,
+        "backend_executed_prompt_token_ids_sha256": "dc21acac635d4fddfeca65c2572e453ce5624dab403351da6973b434623b5ca1",
+        "expected_executed_prompt_token_count": 1362,
+        "expected_executed_prompt_token_ids_sha256": "dc21acac635d4fddfeca65c2572e453ce5624dab403351da6973b434623b5ca1",
+        "input_prompt_token_count": 349,
+        "input_prompt_token_ids_sha256": "259098915d7ddac3cab52d4cb7cf65360a807e25d2d4da3d9fa30bd1f3c860e2",
+        "prompt_token_parity": "verified",
+        "row_id": "coco2017_train_000000000030__smoke2obj"
+      }
+    ]
+  },
+  "raw_model_logprob_status": "available",
+  "raw_replay": {
+    "row_evidence_sha256": "9d3e4327f1c93f191a13f8e05894b470d1409a57d50ce241309f736b186075c2",
+    "rows": [
+      {
+        "finish_reason": "stop",
+        "generated_token_count": 22,
+        "generated_token_ids_sha256": "788ea46638875ef84465294824cdb943760a65dcffb7a6afab9af5622ff6939f",
+        "native_stop_reason": null,
+        "prompt_token_count": 1362,
+        "prompt_token_ids_sha256": "dc21acac635d4fddfeca65c2572e453ce5624dab403351da6973b434623b5ca1",
+        "row_id": "coco2017_train_000000000030__smoke2obj",
+        "status": "verified"
+      }
+    ],
+    "settings": {
+      "forced_logits_processor": {
+        "module": "src.inference.vllm_forced_replay",
+        "qualname": "CoordExpForcedSequenceLogitsProcessor",
+        "source_path": "/data/CoordExp/.worktrees/CoordExp-swift/src/inference/vllm_forced_replay.py",
+        "source_sha256": "8c833e66759d3059b11e2c3d9d3f5f837710d1a39eb5eb3e2e209d423a2ff692"
+      },
+      "gpu_memory_utilization": 0.2,
+      "kv_cache_memory_bytes": 1073741824,
+      "logprobs_mode": "raw_logprobs",
+      "max_num_seqs": 1,
+      "qualification": {
+        "probe_source_sha256": "52bc43da664111733dc9e11308f4cf9b62a2c936cc70cc193f1eb61425c946df",
+        "processor_source_sha256": "8c833e66759d3059b11e2c3d9d3f5f837710d1a39eb5eb3e2e209d423a2ff692",
+        "source_base_snapshot_fingerprint": "e43d3a07b5fe47db7abcc07a9b6a318dd32d9a2fa12f620c2e734573bf9fe5eb",
+        "status": "qualification_probe_under_renewal"
+      },
+      "request_count": 1,
+      "row_evidence_sha256": "33d8310e53efe768c78a275547a1c3da52576690170413e18e24ce5eea83f795",
+      "status": "completed"
+    }
+  },
+  "request_count": 1,
+  "request_ids": [
+    "coco2017_train_000000000030__smoke2obj"
+  ],
+  "requests": [
+    {
+      "generated_token_ids": [
+        151646,
+        79,
+        15521,
+        6008,
+        151647,
+        151648,
+        151992,
+        151746,
+        152388,
+        152488,
+        151649,
+        151646,
+        85,
+        519,
+        151647,
+        151648,
+        152044,
+        152030,
+        152303,
+        152489,
+        151649,
+        151645
+      ],
+      "prompt_image_plan_evidence": {
+        "backend_image_placeholder_ranges": [
+          {
+            "length": 1014,
+            "offset": 87
+          }
+        ],
+        "backend_prompt_token_count": 1362,
+        "executed_media_sha256": "717ea08635737ef030944d9b316646c3d85d432056952d8632c4ceaf9764fd79",
+        "expected_image_grid_thw": [
+          1,
+          52,
+          78
+        ],
+        "image_content_sha256": "b5888357f78716bb99985638fe0788160c538612d7e67654ee44ceb2ab66de6d",
+        "image_plan_row_sha256": "a51cbd5fbe82cc6dd468faa8a01ff78d1b1f8d2d7b1b4038944aa95f93f20155"
+      },
+      "request_id": "coco2017_train_000000000030__smoke2obj",
+      "stop_reason": "im_end"
+    }
+  ],
+  "runtime_qualification": {
+    "baseline": {
+      "application_qualification": {
+        "receipt_path": "/data/CoordExp/.worktrees/CoordExp-swift/src/inference/qualification_receipts/vllm-0.14.1-application-sources.json",
+        "receipt_sha256": "bcb112782e158af90bcfe3249d921487e65858dba4cde2f4389f27382d394c5d",
+        "source_count": 23,
+        "status": "passed"
+      },
+      "candidate_version": "0.14.1",
+      "max_num_seqs": 1,
+      "model_dtype": "bf16",
+      "receipt_path": "/data/CoordExp/.worktrees/CoordExp-swift/src/inference/qualification_receipts/vllm-0.14.1-qualification.json",
+      "receipt_sha256": "ed9bbdcf6c63c6960c02e89ae186e1403ffb98152f216cd8ada4c79eae2ef895",
+      "source_base_snapshot_fingerprint": "e43d3a07b5fe47db7abcc07a9b6a318dd32d9a2fa12f620c2e734573bf9fe5eb",
+      "status": "passed"
+    },
+    "engine_factory": "explicit_wrapper_around_src.inference.vllm_backend._default_engine_factory",
+    "override_scope": "max_num_seqs_only",
+    "probed_max_num_seqs": 1,
+    "qualified_baseline_max_num_seqs": 1,
+    "status": "production_baseline_passed_concurrency_under_probe"
+  },
+  "schema_version": 1,
+  "status": "passed",
+  "version": "coordexp-swift-vllm-concurrency-qualification-v1",
+  "vllm_version": "0.14.1"
+}

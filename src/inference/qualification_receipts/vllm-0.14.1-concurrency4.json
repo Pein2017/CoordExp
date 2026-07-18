@@ -1,0 +1,534 @@
+{
+  "artifacts": [
+    {
+      "relative_path": "configs/resolved.json",
+      "sha256": "b18d5e131b2f71fe6746509668bd5eb04b9cc66bd4643b4601464ae6551858d3",
+      "size_bytes": 7596
+    },
+    {
+      "relative_path": "configs/resolved.yaml",
+      "sha256": "ed8cbc4dcad7ade3ddb172ac0e4300361d4e975e48f2508167c8cc1f7bdea417",
+      "size_bytes": 6986
+    },
+    {
+      "relative_path": "execution_model.json",
+      "sha256": "9fd3e86b6bdc1a7e481cb1bb093bf0447955cfcf81067283d64f092a730ae3a9",
+      "size_bytes": 570138
+    },
+    {
+      "relative_path": "gt_vs_pred.jsonl",
+      "sha256": "66980df10633b470e2e3905e5df64741384441e50736f7678331d008db092b4c",
+      "size_bytes": 28468
+    },
+    {
+      "relative_path": "gt_vs_pred_scored.jsonl",
+      "sha256": "028fcc33a58cb61e140871633ed4b900d55f25a828336922c202a68c8261ade4",
+      "size_bytes": 25145
+    },
+    {
+      "relative_path": "gt_vs_pred_scored.jsonl.provenance.json",
+      "sha256": "0c2ffd4921e95e979c5ccfe9464373cc8c49b3ddd2d121fe4bd0941744c2330f",
+      "size_bytes": 1266959
+    },
+    {
+      "relative_path": "image_plan.jsonl",
+      "sha256": "74a56112c8898e0a79f8fb671ca72e856d9e2712fb98f991036637b22b32678b",
+      "size_bytes": 3466
+    },
+    {
+      "relative_path": "parse_diagnostics.jsonl",
+      "sha256": "8227c6530b19d0bbfdb2906721032a2f5a454df5f21bc54e8b1ac481617106f2",
+      "size_bytes": 1547
+    },
+    {
+      "relative_path": "pred_token_trace.jsonl",
+      "sha256": "6fe5e086166dc10df0bb3f518b560bf2ab0defb5cb6d72e5be72890897ba5a2b",
+      "size_bytes": 66145
+    },
+    {
+      "relative_path": "run_manifest.json",
+      "sha256": "4c87660e3ec24d83f5b60c0792a3b2b622e0110bcb4d98b9b37457fd13ae82de",
+      "size_bytes": 1267249
+    },
+    {
+      "relative_path": "summary.json",
+      "sha256": "d7afce86a100fdf01d761447c7fbf2a055cf36cc8f7002decb0f1390df4176a8",
+      "size_bytes": 1554
+    }
+  ],
+  "backend_session_engine_kwargs": {
+    "data_parallel_size": 1,
+    "disable_custom_all_reduce": true,
+    "disable_log_stats": true,
+    "dtype": "bfloat16",
+    "generation_config": "vllm",
+    "gpu_memory_utilization": 0.7,
+    "limit_mm_per_prompt": {
+      "image": 1,
+      "video": 0
+    },
+    "logprobs_mode": "processed_logprobs",
+    "max_model_len": 2048,
+    "max_num_seqs": 4,
+    "mm_processor_kwargs": {
+      "do_resize": false
+    },
+    "model": "/data/Qwen3-VL/model_cache/coordexp_swift/vllm_materialized/2ae15bcc86014bcee1eda6e9bf1c79ffc246243b938a140ac5b851760b26d6ce/snapshot",
+    "seed": 0,
+    "tensor_parallel_size": 1,
+    "tokenizer": "/data/Qwen3-VL/model_cache/coordexp_swift/vllm_materialized/2ae15bcc86014bcee1eda6e9bf1c79ffc246243b938a140ac5b851760b26d6ce/snapshot",
+    "trust_remote_code": true
+  },
+  "config": {
+    "entry_path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/infer/smoke/qwen3_vl_2b_step4887_vllm_concurrency4.yaml",
+    "entry_repo_relative_path": "configs/coordexp_swift/infer/smoke/qwen3_vl_2b_step4887_vllm_concurrency4.yaml",
+    "fingerprint": "c8029d90f059e8b54ebc503a6a8135f536a6ec4fbbcd7eebcd8b97d946a6d20d",
+    "sources": [
+      {
+        "path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/infer/base.yaml",
+        "repo_relative_path": "configs/coordexp_swift/infer/base.yaml",
+        "sha256": "eae71758eff67e59411519d2f75e467706fa3ee039f78bc9311af8ea1d598de2"
+      },
+      {
+        "path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200.yaml",
+        "repo_relative_path": "configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200.yaml",
+        "sha256": "c7dc34e37b53b9aeac76b959f5791a677a810d9dc30d0f11f42e4fdae51a8c06"
+      },
+      {
+        "path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200_vllm.yaml",
+        "repo_relative_path": "configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200_vllm.yaml",
+        "sha256": "d91ffbcb64e6ea209ffd785f01cd943119c3cedd9f41b28b9d37a653f733da5e"
+      },
+      {
+        "path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/infer/smoke/qwen3_vl_2b_step4887_vllm_concurrency4.yaml",
+        "repo_relative_path": "configs/coordexp_swift/infer/smoke/qwen3_vl_2b_step4887_vllm_concurrency4.yaml",
+        "sha256": "346a705f149c00e712346b23795de31b459b37989cc33f6749b52c6e89670cf3"
+      }
+    ]
+  },
+  "execution_model": {
+    "composition_key": "2ae15bcc86014bcee1eda6e9bf1c79ffc246243b938a140ac5b851760b26d6ce",
+    "mode": "materialized",
+    "receipt_fingerprint": "57c815ddaad7a0a053fed7ba83f29c6c722660b6d59dffeeab784ecca7b07c72",
+    "snapshot_fingerprint": "4b3cdcacd9452811281572cfd6f1a984fc89e93442625ffdc11c6dab32809eff",
+    "source_base_snapshot_fingerprint": "e43d3a07b5fe47db7abcc07a9b6a318dd32d9a2fa12f620c2e734573bf9fe5eb"
+  },
+  "input_source": {
+    "path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl",
+    "row_count": 200,
+    "selected_prefix_row_count": 4,
+    "sha256": "9b524a8c20f03758e2e3939703ff35a1e35a1108fb095ac6e7af5a1539c8cfc4"
+  },
+  "max_num_seqs": 4,
+  "probe_source_sha256": "52bc43da664111733dc9e11308f4cf9b62a2c936cc70cc193f1eb61425c946df",
+  "process_cuda_binding": {
+    "cuda": {
+      "CUDA_VISIBLE_DEVICES": "0",
+      "cuda_available": true,
+      "cuda_current_device": 0,
+      "cuda_device_count": 1,
+      "device_name": "NVIDIA A100 80GB PCIe",
+      "logical_device": "cuda:0",
+      "torch_cuda_version": "12.8",
+      "visible_cuda_tokens": [
+        "0"
+      ]
+    },
+    "process": {
+      "pid": 3501645,
+      "ppid": 3501603
+    }
+  },
+  "prompt_trace": {
+    "row_evidence_sha256": "fa144cbd0be981c864234eed3486c888fbb2107f151d2a9c74baf4c1f3628224",
+    "rows": [
+      {
+        "backend_executed_prompt_token_count": 1362,
+        "backend_executed_prompt_token_ids_sha256": "dc21acac635d4fddfeca65c2572e453ce5624dab403351da6973b434623b5ca1",
+        "expected_executed_prompt_token_count": 1362,
+        "expected_executed_prompt_token_ids_sha256": "dc21acac635d4fddfeca65c2572e453ce5624dab403351da6973b434623b5ca1",
+        "input_prompt_token_count": 349,
+        "input_prompt_token_ids_sha256": "259098915d7ddac3cab52d4cb7cf65360a807e25d2d4da3d9fa30bd1f3c860e2",
+        "prompt_token_parity": "verified",
+        "row_id": "coco2017_val_000000000139"
+      },
+      {
+        "backend_executed_prompt_token_count": 1338,
+        "backend_executed_prompt_token_ids_sha256": "be135ad992de7372c59c3b1d8c97b81767c9928f159273b6fdf4835a7fc43ddb",
+        "expected_executed_prompt_token_count": 1338,
+        "expected_executed_prompt_token_ids_sha256": "be135ad992de7372c59c3b1d8c97b81767c9928f159273b6fdf4835a7fc43ddb",
+        "input_prompt_token_count": 349,
+        "input_prompt_token_ids_sha256": "259098915d7ddac3cab52d4cb7cf65360a807e25d2d4da3d9fa30bd1f3c860e2",
+        "prompt_token_parity": "verified",
+        "row_id": "coco2017_val_000000000285"
+      },
+      {
+        "backend_executed_prompt_token_count": 1320,
+        "backend_executed_prompt_token_ids_sha256": "3fba18e878f1f98599328b0f65b1960b96e1ed64d33085cbb9f5859c23153fa7",
+        "expected_executed_prompt_token_count": 1320,
+        "expected_executed_prompt_token_ids_sha256": "3fba18e878f1f98599328b0f65b1960b96e1ed64d33085cbb9f5859c23153fa7",
+        "input_prompt_token_count": 349,
+        "input_prompt_token_ids_sha256": "259098915d7ddac3cab52d4cb7cf65360a807e25d2d4da3d9fa30bd1f3c860e2",
+        "prompt_token_parity": "verified",
+        "row_id": "coco2017_val_000000000632"
+      },
+      {
+        "backend_executed_prompt_token_count": 1320,
+        "backend_executed_prompt_token_ids_sha256": "3fba18e878f1f98599328b0f65b1960b96e1ed64d33085cbb9f5859c23153fa7",
+        "expected_executed_prompt_token_count": 1320,
+        "expected_executed_prompt_token_ids_sha256": "3fba18e878f1f98599328b0f65b1960b96e1ed64d33085cbb9f5859c23153fa7",
+        "input_prompt_token_count": 349,
+        "input_prompt_token_ids_sha256": "259098915d7ddac3cab52d4cb7cf65360a807e25d2d4da3d9fa30bd1f3c860e2",
+        "prompt_token_parity": "verified",
+        "row_id": "coco2017_val_000000000724"
+      }
+    ]
+  },
+  "raw_model_logprob_status": "available",
+  "raw_replay": {
+    "row_evidence_sha256": "7cd08e301964105cdc2d1eaecd010cadbd69d0aa9afad5b046e0889c6a8157c8",
+    "rows": [
+      {
+        "finish_reason": "length",
+        "generated_token_count": 64,
+        "generated_token_ids_sha256": "40148b5001f55b402e83c81fb0536de6f8f9ea170af63e5b8848e63147f99dc0",
+        "native_stop_reason": null,
+        "prompt_token_count": 1362,
+        "prompt_token_ids_sha256": "dc21acac635d4fddfeca65c2572e453ce5624dab403351da6973b434623b5ca1",
+        "row_id": "coco2017_val_000000000139",
+        "status": "verified"
+      },
+      {
+        "finish_reason": "stop",
+        "generated_token_count": 10,
+        "generated_token_ids_sha256": "97414971a7a7a4be84c66a998acdab2dc87ce1f70b84405e318fffd21a485a8a",
+        "native_stop_reason": null,
+        "prompt_token_count": 1338,
+        "prompt_token_ids_sha256": "be135ad992de7372c59c3b1d8c97b81767c9928f159273b6fdf4835a7fc43ddb",
+        "row_id": "coco2017_val_000000000285",
+        "status": "verified"
+      },
+      {
+        "finish_reason": "stop",
+        "generated_token_count": 59,
+        "generated_token_ids_sha256": "8a8896fbbe2735a98eee03dbf1d4ebd48b3186b7a5845ffa6dfe039f80c349bb",
+        "native_stop_reason": null,
+        "prompt_token_count": 1320,
+        "prompt_token_ids_sha256": "3fba18e878f1f98599328b0f65b1960b96e1ed64d33085cbb9f5859c23153fa7",
+        "row_id": "coco2017_val_000000000632",
+        "status": "verified"
+      },
+      {
+        "finish_reason": "stop",
+        "generated_token_count": 20,
+        "generated_token_ids_sha256": "3d6b8781380a1d6bcec13d4f91c7d780be6e0bdc172fbfbb6fa0a256dff69aa3",
+        "native_stop_reason": null,
+        "prompt_token_count": 1320,
+        "prompt_token_ids_sha256": "3fba18e878f1f98599328b0f65b1960b96e1ed64d33085cbb9f5859c23153fa7",
+        "row_id": "coco2017_val_000000000724",
+        "status": "verified"
+      }
+    ],
+    "settings": {
+      "forced_logits_processor": {
+        "module": "src.inference.vllm_forced_replay",
+        "qualname": "CoordExpForcedSequenceLogitsProcessor",
+        "source_path": "/data/CoordExp/.worktrees/CoordExp-swift/src/inference/vllm_forced_replay.py",
+        "source_sha256": "8c833e66759d3059b11e2c3d9d3f5f837710d1a39eb5eb3e2e209d423a2ff692"
+      },
+      "gpu_memory_utilization": 0.2,
+      "kv_cache_memory_bytes": 1073741824,
+      "logprobs_mode": "raw_logprobs",
+      "max_num_seqs": 4,
+      "qualification": {
+        "probe_source_sha256": "52bc43da664111733dc9e11308f4cf9b62a2c936cc70cc193f1eb61425c946df",
+        "processor_source_sha256": "8c833e66759d3059b11e2c3d9d3f5f837710d1a39eb5eb3e2e209d423a2ff692",
+        "source_base_snapshot_fingerprint": "e43d3a07b5fe47db7abcc07a9b6a318dd32d9a2fa12f620c2e734573bf9fe5eb",
+        "status": "qualification_probe_under_renewal"
+      },
+      "request_count": 4,
+      "row_evidence_sha256": "fb55ff8a8a685317dbb26692964f2ad8d4dfd69a11ebc7ee7bd80a95564171c2",
+      "status": "completed"
+    }
+  },
+  "request_count": 4,
+  "request_ids": [
+    "coco2017_val_000000000139",
+    "coco2017_val_000000000285",
+    "coco2017_val_000000000632",
+    "coco2017_val_000000000724"
+  ],
+  "requests": [
+    {
+      "generated_token_ids": [
+        151646,
+        20666,
+        151647,
+        151648,
+        152371,
+        151951,
+        152392,
+        152003,
+        151649,
+        151646,
+        8987,
+        151647,
+        151648,
+        152313,
+        152040,
+        152397,
+        152363,
+        151649,
+        151646,
+        79,
+        15521,
+        6008,
+        151647,
+        151648,
+        152031,
+        152053,
+        152088,
+        152172,
+        151649,
+        151646,
+        22209,
+        151647,
+        151648,
+        151676,
+        152060,
+        151912,
+        152286,
+        151649,
+        151646,
+        1097,
+        63944,
+        850,
+        151647,
+        151648,
+        152435,
+        152076,
+        152472,
+        152338,
+        151649,
+        151646,
+        85,
+        519,
+        151647,
+        151648,
+        152048,
+        152132,
+        152065,
+        152168,
+        151649,
+        151646,
+        34196,
+        151647,
+        151648,
+        152149
+      ],
+      "prompt_image_plan_evidence": {
+        "backend_image_placeholder_ranges": [
+          {
+            "length": 1014,
+            "offset": 87
+          }
+        ],
+        "backend_prompt_token_count": 1362,
+        "executed_media_sha256": "6ae3491786480dc89e0f464b773c7e18b060978e8c053e8995bf0c89384fb043",
+        "expected_image_grid_thw": [
+          1,
+          52,
+          78
+        ],
+        "image_content_sha256": "99475180da0ad018a3ff8cb84445c468a149d58f4b92c3601d9fad05a2c3020c",
+        "image_plan_row_sha256": "1d53d0fa66f4cf396eace7bc8746cec1525fbce7c4d46121bc503faf4d78ac70"
+      },
+      "request_id": "coco2017_val_000000000139",
+      "stop_reason": "length"
+    },
+    {
+      "generated_token_ids": [
+        151646,
+        67660,
+        151647,
+        151648,
+        151670,
+        151773,
+        152669,
+        152659,
+        151649,
+        151645
+      ],
+      "prompt_image_plan_evidence": {
+        "backend_image_placeholder_ranges": [
+          {
+            "length": 990,
+            "offset": 87
+          }
+        ],
+        "backend_prompt_token_count": 1338,
+        "executed_media_sha256": "c7af49a2c475493116488f78c9e782d885864c002f42f06efcdfec8e256d922d",
+        "expected_image_grid_thw": [
+          1,
+          66,
+          60
+        ],
+        "image_content_sha256": "53869ff7dda065291454a2ac10dda6e8dacda3e83bb0bb89346ba77ff4c8e31c",
+        "image_plan_row_sha256": "a5c7d578b9f0e67935bc41fe83c21b14502445cf5eb5010425c9c9d204b80543"
+      },
+      "request_id": "coco2017_val_000000000285",
+      "stop_reason": "im_end"
+    },
+    {
+      "generated_token_ids": [
+        151646,
+        2190,
+        151647,
+        151648,
+        152435,
+        151768,
+        152459,
+        151841,
+        151649,
+        151646,
+        79,
+        15521,
+        6008,
+        151647,
+        151648,
+        151962,
+        151953,
+        152050,
+        152144,
+        151649,
+        151646,
+        65,
+        62118,
+        151647,
+        151648,
+        151819,
+        152063,
+        151848,
+        152151,
+        151649,
+        151646,
+        34196,
+        151647,
+        151648,
+        152057,
+        152146,
+        152216,
+        152334,
+        151649,
+        151646,
+        2721,
+        151647,
+        151648,
+        151670,
+        152254,
+        152295,
+        152669,
+        151649,
+        151646,
+        85,
+        519,
+        151647,
+        151648,
+        152211,
+        152290,
+        152315,
+        152399,
+        151649,
+        151645
+      ],
+      "prompt_image_plan_evidence": {
+        "backend_image_placeholder_ranges": [
+          {
+            "length": 972,
+            "offset": 87
+          }
+        ],
+        "backend_prompt_token_count": 1320,
+        "executed_media_sha256": "6f7c26c1fc8a4723680a287a526e3e7c56cdf6eec25bfec707c0175fff5ab7d6",
+        "expected_image_grid_thw": [
+          1,
+          54,
+          72
+        ],
+        "image_content_sha256": "d4299fc4f04965fb051140f612c5bc6a4c0d3b7ce4e47f4732af291be5276713",
+        "image_plan_row_sha256": "50ac4376e1db73d55f5cbd5d7091d3b8ee050efc97382bf589749f43c9c3f9f3"
+      },
+      "request_id": "coco2017_val_000000000632",
+      "stop_reason": "im_end"
+    },
+    {
+      "generated_token_ids": [
+        151646,
+        9495,
+        1841,
+        151647,
+        151648,
+        151990,
+        151808,
+        152353,
+        152122,
+        151649,
+        151646,
+        98318,
+        151647,
+        151648,
+        151715,
+        152189,
+        152056,
+        152297,
+        151649,
+        151645
+      ],
+      "prompt_image_plan_evidence": {
+        "backend_image_placeholder_ranges": [
+          {
+            "length": 972,
+            "offset": 87
+          }
+        ],
+        "backend_prompt_token_count": 1320,
+        "executed_media_sha256": "6520d292fed463697267693494a90c6a5abbf0849bebe76f25a8ece34b08344d",
+        "expected_image_grid_thw": [
+          1,
+          72,
+          54
+        ],
+        "image_content_sha256": "264165674a846226c34cc8b032e19df775dc0c570366a245d483817de9c87d6c",
+        "image_plan_row_sha256": "4ea95dbb7b3d34a872a630c95d8f9628e0485356a5f22505ae7a72f3bf0ad702"
+      },
+      "request_id": "coco2017_val_000000000724",
+      "stop_reason": "im_end"
+    }
+  ],
+  "runtime_qualification": {
+    "baseline": {
+      "application_qualification": {
+        "receipt_path": "/data/CoordExp/.worktrees/CoordExp-swift/src/inference/qualification_receipts/vllm-0.14.1-application-sources.json",
+        "receipt_sha256": "bcb112782e158af90bcfe3249d921487e65858dba4cde2f4389f27382d394c5d",
+        "source_count": 23,
+        "status": "passed"
+      },
+      "candidate_version": "0.14.1",
+      "max_num_seqs": 1,
+      "model_dtype": "bf16",
+      "receipt_path": "/data/CoordExp/.worktrees/CoordExp-swift/src/inference/qualification_receipts/vllm-0.14.1-qualification.json",
+      "receipt_sha256": "ed9bbdcf6c63c6960c02e89ae186e1403ffb98152f216cd8ada4c79eae2ef895",
+      "source_base_snapshot_fingerprint": "e43d3a07b5fe47db7abcc07a9b6a318dd32d9a2fa12f620c2e734573bf9fe5eb",
+      "status": "passed"
+    },
+    "engine_factory": "explicit_wrapper_around_src.inference.vllm_backend._default_engine_factory",
+    "override_scope": "max_num_seqs_only",
+    "probed_max_num_seqs": 4,
+    "qualified_baseline_max_num_seqs": 1,
+    "status": "production_baseline_passed_concurrency_under_probe"
+  },
+  "schema_version": 1,
+  "status": "passed",
+  "version": "coordexp-swift-vllm-concurrency-qualification-v1",
+  "vllm_version": "0.14.1"
+}

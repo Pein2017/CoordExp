@@ -86,6 +86,55 @@ def test_detection_consumer_writes_official_coco_metrics_for_perfect_prediction(
     assert receipt["generation_config_fingerprint"] == "gen-fp"
 
 
+def test_detection_consumer_does_not_promote_small_manifest_claim(
+    tmp_path: Path,
+) -> None:
+    from src.eval.detection_consumer import evaluate_scored_detection_artifacts
+
+    artifact_dir = _write_scored_fixture(
+        tmp_path / "artifacts",
+        rows=[_raw_row("row-1", 0, text=OBJECT_TEXT)],
+        benchmark_eligible=True,
+    )
+    result = evaluate_scored_detection_artifacts(
+        artifact_dir=artifact_dir,
+        output_dir=tmp_path / "eval",
+    )
+
+    metrics = json.loads(result.metrics_path.read_text(encoding="utf-8"))
+    receipt = json.loads(result.receipt_path.read_text(encoding="utf-8"))
+
+    assert metrics["benchmark_metric"] is False
+    assert receipt["benchmark_metric"] is False
+    assert receipt["run_manifest"]["manifest_benchmark_eligible"] is True
+    assert receipt["run_manifest"]["benchmark_eligible"] is False
+
+
+def test_detection_consumer_preserves_val200_benchmark_eligibility(
+    tmp_path: Path,
+) -> None:
+    from src.eval.detection_consumer import evaluate_scored_detection_artifacts
+
+    rows = [
+        _raw_row(f"row-{index}", index, text=OBJECT_TEXT)
+        for index in range(200)
+    ]
+    artifact_dir = _write_scored_fixture(
+        tmp_path / "artifacts",
+        rows=rows,
+        benchmark_eligible=True,
+    )
+    result = evaluate_scored_detection_artifacts(
+        artifact_dir=artifact_dir,
+        output_dir=tmp_path / "eval",
+    )
+
+    receipt = json.loads(result.receipt_path.read_text(encoding="utf-8"))
+    assert receipt["benchmark_metric"] is True
+    assert receipt["run_manifest"]["manifest_benchmark_eligible"] is True
+    assert receipt["run_manifest"]["benchmark_eligible"] is True
+
+
 def test_detection_consumer_scales_gt_coord_bins_to_prediction_pixel_space(
     tmp_path: Path,
 ) -> None:
@@ -580,6 +629,7 @@ def _write_scored_fixture(
     *,
     rows: list[dict[str, Any]] | None = None,
     decode_results: dict[str, DecodeResult] | None = None,
+    benchmark_eligible: bool = False,
 ) -> Path:
     from src.inference.artifacts import write_inference_artifacts
 
@@ -618,6 +668,7 @@ def _write_scored_fixture(
             "backend": "hf",
             "backend_mode": "generate",
             "response_family": "hf",
+            "benchmark_eligible": benchmark_eligible,
         },
     )
     return output_dir
