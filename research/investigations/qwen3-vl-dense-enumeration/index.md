@@ -27,8 +27,15 @@ cross-entropy is therefore the current baseline; the proposed additional
 coordinate-consistency training screen is not promoted. The program has not
 established autonomous selection, order-free commit or coverage, clean-state
 synthesis, or a stable training intervention.
-The weekly report and research compass own the current synthesis and
-next-discriminator boundary.
+The same-covered-set order probe then closes a previously missing causal cell:
+with complete rows, physical covered set, row count, and final row held fixed,
+earlier order can change the next physical owner, while one case also shows a
+clean order-robust covered-owner suppression effect. The evidence supports a
+hybrid decoder state rather than a pure set-only or pure last-row-only account.
+It does not yet show that path dependence harms final set completion, so the
+training OpenSpec remains pending a symmetric removal control and a short
+future-horizon value test. The weekly report and research compass own the
+broader synthesis and next-discriminator boundary.
 
 ## Reading Path
 
@@ -104,6 +111,7 @@ durable program reading path below.
 66. [Matched-objective coordinate-branch signature comparison](experiments/2026-07-18-matched-objective-coordinate-branch-signature-comparison/unit.md)
 67. [Exact current-sampler objective comparison results](experiments/2026-07-18-matched-objective-coordinate-branch-signature-comparison/results.md)
 68. [Same covered physical-object set under different earlier prefix orders](experiments/2026-07-19-same-covered-set-prefix-order-equivalence/unit.md)
+69. [Same covered physical-object set order results and hybrid-state verdict](experiments/2026-07-19-same-covered-set-prefix-order-equivalence/results.md)
 
 The review and readiness amendment preserve the pre-execution gate. The
 completed unit and results record own current lifecycle and evidence status.

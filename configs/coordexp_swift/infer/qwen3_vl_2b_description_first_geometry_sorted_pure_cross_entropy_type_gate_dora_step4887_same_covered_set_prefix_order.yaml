@@ -1,0 +1,16 @@
+extends: qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_step4887_fixed_prompt_coordinate_branches.yaml
+run:
+  name: qwen3-vl-2b-description-first-geometry-sorted-pure-cross-entropy-type-gate-dora-step4887-same-covered-set-prefix-order
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-19-same-covered-set-prefix-order-equivalence
+  collision_policy: fail
+data:
+  input_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl
+generation:
+  batch_size: 4
+  max_new_tokens: 32
+  temperature: 0.0
+  top_p: 1.0
+  n: 1
+  repetition_penalty: 1.0
+scoring:
+  enabled: true

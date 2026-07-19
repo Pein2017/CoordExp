@@ -197,6 +197,18 @@ Markdown links, rather than this diagram, are the durable graph edges.
   next mechanism baseline and keep Gaussian smoothing plus Ranked Probability
   Score as an ablation. See
   [Matched-Objective Coordinate-Branch Signature Comparison](experiments/2026-07-18-matched-objective-coordinate-branch-signature-comparison/results.md).
+- The same-covered-set order probe closes a previously missing comparison on
+  image `2299`. With complete prefix rows, physical covered set, row count,
+  final row, model, prompt, and paired seeds held fixed, exchanging two earlier
+  rows changes the next physical owner in two of four cases. A separate case
+  produces person rank 6 in all nine runs when its row is omitted and in zero
+  of eighteen runs when its row is present, independent of the exchanged
+  order. This supports a hybrid behavior: local covered-owner suppression can
+  coexist with path-sensitive competition among uncovered people. It does not
+  show that path dependence harms later set completion, and the symmetric
+  removal of the second exchanged owner remains unexecuted. See [Same Covered
+  Physical-Object Set under Different Earlier Prefix Orders
+  Results](experiments/2026-07-19-same-covered-set-prefix-order-equivalence/results.md).
 - At exact prefix state 56 on image `12576`, repeated one-row sampling exposes
   two valid object modes: the target pizza and a competing left cup. The same
   target disappears at the greedy-terminal state; an independent chair case
@@ -361,7 +373,7 @@ cross-row coverage.
 | Input-level spatial restriction changes one object opportunity | Bounded support under hard eligibility; the count-balanced all-keys-readable soft cross operator is now closed because both matched-owner controls fail, so its crossed arms cannot adjudicate the hard asymmetry | Hard exclusion and its abrupt phase switch may manufacture the asymmetry; the historical uniform-dose operator and current query-phase-restricted operator cannot be pooled into one trajectory | No immediate successor is active. A historical-uniform-operator `3.9060049` endpoint would require a fresh separately authorized execution; artifact-only cross-operator pooling is rejected. |
 | Safe final masked policy improves enumeration | Ruled out under the executed protocol | Equal-call full-image sampling is at least as useful after aggregation | Revisit only after a new masking mechanism avoids retention and output-expansion failures. |
 | Fixed-prefix next-object probability is fragmented across several real objects | Supported at one exact state; not population-estimated | Some other bagging rescues may still arise only from earlier trajectory divergence | Replicate only when a future route decision requires prevalence, not as the immediate discriminator. |
-| Prefix state is an executable but fragile traversal state | Supported locally. Complete rows change future-row likelihoods, and the random-order person-25 closeout reproduces a strong immediate transition both with raw donors and in a generated three-row continuation after the forced canonical prefix. The effect is not atomic: overlapping same-class paths can remain shared until `y2`, and an earlier committed person remains active but repeats in `55/96` samples. The six-case geometry-sorted replication further shows that earlier coordinate tokens can reshape later geometry without one universal owner-lock point. | Strong dependence on the latest row, weaker earlier-row influence, and coordinate-extent competition explain more of the current evidence than a persistent covered-object ledger; independent boundary noise and low-probability sampling tails also occur. | Execute the ready same-covered-set earlier-order unit as a bounded forced-prefix test, using symmetric earlier-owner removal controls. Its result establishes local order robustness or sequence dependence, not whether that dependence is useful. Then use pure cross-entropy own-prefix trajectories to compare a sampling-rescued valid object with the greedy-missed branch at the first transition where reachability separates. |
+| Prefix state is an executable but fragile traversal state | Supported locally. Complete rows change future-row likelihoods. Under the same covered set and final row, earlier order changes the next physical owner in selected cases, while one separate case shows clean order-robust suppression of an emitted owner. Exact coordinates remain more order-sensitive than physical ownership. | The behavior may combine a compact covered-owner signal with ordinary path and recency effects; one final-row spatial successor rule plus coordinate noise still explains cases that fail the removal control. | Pre-screen activation-qualified tuples, add the missing symmetric owner-removal control, and compare two-to-four-row unique coverage after different immediate valid routes. Then repeat the exact intervention on a matched random-order checkpoint and locate sampling-rescued versus greedy-missed divergence on natural prefixes. |
 | Late-middle residual states implement phase-specific decisions | Bounded one-sided support: an eligible clock-description path is conditionally portable, and one same-description paired-object state after decoder block `23` switches the unrestricted geometry owner through an `x1` basin change where the trusted block-`13` control does not | The portable state may select only the first coordinate, with the emitted `x1` and native autoregressive computation recovering the rest of the box; one image and one direction do not establish a general object state | No successor is active. If separately authorized, mediate `x1` by forcing paired `x1` without replacement and forcing baseline `x1` under paired-state replacement, then compare later coordinates and final owner. |
 | Early coordinate choice establishes a stable complete-object owner | Rejected as a universal rule. In one primary bowl case, a one-bin `x1` branch and later `x2` difference reshape `y2`; in a nearby-person control, shared `x1` remains ambiguous and ownership separates through `y1` and `x2`; one small-person case instead keeps the same owner after a bad `y1`. The older dense-chair transport result still shows that early coordinates can strongly constrain later boundaries. | Coordinate generation mixes box grammar, visual boundary evidence, route state, and instance ownership; the dominant component changes by scene and coordinate slot. | If separately authorized, use on-support same-object coordinate perturbations and coherent full-row alternatives. Do not infer an owner from one coordinate or average coordinate marginals across neighboring instances. |
 | Incomplete dense annotations teach conservative omission and premature termination | Plausible | Sequence-mode concentration or weak visual evidence is the dominant cause | Compare exhaustive labels with original labels and controlled thinning on the same images. |
@@ -410,29 +422,26 @@ so it is inaccurate to call it mechanism-unprobed. Before importing the older
 commit or transition findings as baseline-independent, replicate two or three
 of those specific anchors on pure cross-entropy.
 
-The ready [Same Covered Physical-Object Set under Different Earlier Prefix
-Orders](experiments/2026-07-19-same-covered-set-prefix-order-equivalence/unit.md)
-is the immediate low-cost discriminator. It compares `A then B then C` with `B
-then A then C` while holding the physical covered set, row count, complete rows,
-and final row fixed. Symmetric `B then C` and `A then C` controls must first show
-that both exchanged earlier owners are active. Order robustness after that gate
-is compatible with local set-like compression but does not prove a persistent
-covered-object memory. Order sensitivity proves path dependence but does not
-show that the dependence is harmful; a later value and safety comparison must
-decide that before any consistency loss is proposed. Because the main prefixes
-are forced, the result remains a robustness finding rather than a native-state
-claim.
+The completed [Same Covered Physical-Object Set under Different Earlier Prefix
+Orders](experiments/2026-07-19-same-covered-set-prefix-order-equivalence/results.md)
+finds conditional path sensitivity and one clean local order-robust
+covered-owner effect. It rejects both a strict set-only account and a strict
+final-row-only account. It does not show that selecting a different valid next
+person is harmful to set completion. Exact generated rows are less stable than
+physical owners, so exact-token or exact-coordinate invariance is not an
+appropriate training target.
 
-No expensive successor is active. Do not continue sampling image `2299`
-beyond the bounded order unit, expand this six-case panel, average coordinate
-marginals, introduce a covered-set architecture, or launch the previously
-proposed 256-image coordinate screen from these results. After the order unit,
-the highest-information next unit is a small pure-cross-entropy own-prefix
-study of physically valid objects found by sampling but missed by greedy
-decoding. It should locate the first prefix transition where the full object
-row becomes reachable and test whether the obstruction lies in object choice,
-phrase-to-geometry binding, or later coordinate completion before proposing a
-training treatment.
+No expensive successor is active and no training algorithm is promoted. Do
+not add more seeds to the existing image-`2299` cases, introduce a covered-set
+architecture, or launch the previously proposed 256-image coordinate screen.
+The next bounded discriminator should pre-screen tuples on the current
+checkpoint, require both symmetric owner-removal controls, and compare only a
+two-to-four-row future horizon across two to four human-reviewable dense
+images. Its value question is whether different immediate valid routes reach
+the same unique uncovered set or instead cause systematic omission,
+duplication, or early stopping. In parallel or immediately after, the small
+pure-cross-entropy own-prefix study should locate the first transition where a
+sampling-rescued valid object becomes reachable but greedy misses it.
 
 The completed [Native Sibling-Row Branch Value and Commit Crossover
 results](experiments/2026-07-17-native-sibling-row-branch-value-and-commit-crossover/results.md)

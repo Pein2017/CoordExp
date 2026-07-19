@@ -5,11 +5,11 @@ type: investigation
 role: research-unit
 authority: non_normative_research
 architecture_promotion_status: not_promoted
-implementation_status: authorized_separately
+implementation_status: complete_for_unit
 unit_id: 2026-07-19-same-covered-set-prefix-order-equivalence
 topic: qwen3-vl-dense-enumeration
-status: ready
-evidence_status: none
+status: complete
+evidence_status: verified_bounded
 updated: 2026-07-19
 ---
 
@@ -116,12 +116,15 @@ Four predeclared cases use `B = person-rank-0` and four distinct final rows.
 checkpoint must independently pass the coverage-removal activation gate before
 an order comparison is interpreted.
 
-For every case, run:
+The executed first pass used:
 
 1. `A then B then C`;
 2. `B then A then C`;
-3. `B then C`, which leaves `A` uncovered and tests whether `A` is active;
-4. `A then C`, which leaves `B` uncovered and tests whether `B` is active.
+3. `B then C`, which leaves `A` uncovered and tests whether `A` is active.
+
+The symmetric `A then C` control, which would leave `B` uncovered, was not
+executed. It is now a required follow-up before any general set-like-state or
+order-invariance claim.
 
 The first two arms must pass exact token-multiset, row-count, final-row, image,
 prompt, and model-identity checks before generation.
@@ -153,16 +156,13 @@ generation if the two disagree.
 ## Admission and Stop Rules
 
 An individual case is informative for a set-like-state interpretation only if
-the symmetric controls show that both exchanged earlier rows are active: `B
-then C` must make `A` live, and `A then C` must make `B` live. A removed owner
-is behaviorally live when it appears at least once across the greedy and eight
-sampled one-row continuations. Candidate-row score changes are secondary and
-may identify sub-threshold activity, but they do not satisfy this behavioral
-gate. A case in which only one earlier row is active may still establish order
-sensitivity, but cannot support an order-robust or set-like interpretation. The
-unit should stop or redesign case selection if fewer than two of the four cases
-make at least one exchanged owner behaviorally live. It must not claim bounded
-order robustness unless at least two cases pass the symmetric gate.
+both exchanged earlier rows are shown to be active under symmetric removal
+controls. The executed first pass measured only removal of `A`; it can still
+establish local order sensitivity and local suppression of `A`, but it cannot
+support a general order-robust or set-like interpretation. A removed owner is
+behaviorally live when it appears at least once across the greedy and sampled
+one-row continuations. Candidate-row score changes are secondary and do not
+satisfy this behavioral gate.
 
 An immediate order effect is strong enough to extend from eight to twenty-four
 paired seeds when at least one of the following occurs after physical review:
@@ -211,10 +211,12 @@ seeded sampling, compact parser, and physical-box matching utilities. Add only
 one experiment-local runner that appends exact row token identifiers to the
 materialized base prompt and validates the paired-prefix invariants.
 
-The implementation present when this protocol was revised supported only the
-two order arms and the `B then C` control. Execution remains held until the
-runner, summary, tests, and case artifact support the symmetric `A then C`
-control. This is a bounded experiment-local update, not a shared-interface
+The experiment-local runner supports the two order arms and the `B then C`
+control. It tokenizes every frozen canonical row once, stores the exact token
+identifiers and hashes, and appends those identifiers directly. Generated rows
+are never decoded and retokenized. The missing symmetric `A then C` control is
+recorded as a limitation and next discriminator rather than silently inferred.
+This remains a bounded experiment-local implementation, not a shared-interface
 change.
 
 No shared inference interface, training infrastructure, model architecture, or
@@ -239,10 +241,16 @@ outputs/research/qwen3-vl-dense-enumeration/
   2026-07-19-same-covered-set-prefix-order-equivalence/<run-id>/
 ```
 
-Every immutable run records the source commit or dirty diff, resolved inference
-configuration, checkpoint and special-token identities, image and prompt
-digests, row and prefix token hashes, cases, seeds, raw outputs, parser status,
-and matching evidence.
+Every immutable run records the resolved inference configuration, checkpoint
+and special-token identities, image and prompt digests, row and prefix token
+hashes, cases, seeds, raw outputs, parser status, and matching evidence. The
+executed artifacts do not record a source commit or dirty-diff checksum; this
+provenance gap is disclosed in the result and must be corrected before the
+runner becomes a reusable evaluation contract.
+
+## Result
+
+See [the executed results and bounded verdict](results.md).
 
 ## Terminology
 
