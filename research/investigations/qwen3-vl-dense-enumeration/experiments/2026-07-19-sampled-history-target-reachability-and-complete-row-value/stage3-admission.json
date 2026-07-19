@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-07-19-sampled-history-target-reachability-and-complete-row-value",
+  "decision_timing": "Frozen after the complete Stage 2 prefix-sufficiency ladder and two independent artifact reviews, before any Stage 3 no-op replay execution",
+  "source_stage_two_union": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-19-sampled-history-target-reachability-and-complete-row-value/stage2-prefix-sufficiency-ladder-fp32-v1/union.json",
+  "source_stage_two_union_sha256": "cdfc50132fed1a5cf1b2a4ecd3c12b34e0ee2e4dae09fe6e0b3447e88b6d82e3",
+  "source_stage_two_admission": "/data/CoordExp/.worktrees/research-probes/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-sampled-history-target-reachability-and-complete-row-value/stage2-admission.json",
+  "source_stage_two_admission_sha256": "96d61221fce17a50a3fcb37970ba73ebc1c3496ac418bc89f18025dcecdcdc1d",
+  "primary_interpretation": "same-owner coordinate-history sensitivity",
+  "absolute_complete_row_horizon": 8,
+  "required_no_op_check": "Appending the exact native greedy branch row to the exact parent prefix must reproduce the direct native suffix raw token identifiers exactly.",
+  "candidates": [
+    {
+      "image_id": "7816",
+      "parent_prefix_row_count": 0,
+      "target_owner_id": "211764",
+      "branch_owner_id": "2153918",
+      "parent_prefix_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "sampled_branch_row_sha256": "06d3c969afe4a1f0b33b9ef94a03a27687de379fd8df8c001db2f04769b23545",
+      "native_branch_row_sha256": "2c2a5376f7f4cead0e6bddff56a7bd49295bd1e63efdf397521faf3d2c2aab5d",
+      "sampled_coordinates": [386, 83, 462, 342],
+      "native_coordinates": [387, 82, 460, 340],
+      "branch_row_token_count": 9,
+      "stage_two_transition": ["clean_miss", "hit"],
+      "admission": "primary",
+      "allowed_claim": "terminal-omission target access and safe unique-owner value"
+    },
+    {
+      "image_id": "12576",
+      "parent_prefix_row_count": 3,
+      "target_owner_id": "678023",
+      "branch_owner_id": "1509406",
+      "parent_prefix_sha256": "c1ed0317f979056d38b1eda77963415b96eae6714a5a4539e6011edf57fee547",
+      "sampled_branch_row_sha256": "ab994ebc2a863bd48197a9e26e6395cfa96c4a3ae1db0178b5eb9acfce516dab",
+      "native_branch_row_sha256": "0c4f64b6500acd6f9ceaebffe9f460f4634a15795442fb7918a900303124846f",
+      "sampled_coordinates": [801, 176, 886, 268],
+      "native_coordinates": [795, 177, 883, 267],
+      "branch_row_token_count": 9,
+      "stage_two_transition": ["clean_miss", "hit"],
+      "admission": "primary",
+      "allowed_claim": "route timing and owner exchange only"
+    },
+    {
+      "image_id": "18380",
+      "parent_prefix_row_count": 1,
+      "target_owner_id": "2030411",
+      "branch_owner_id": "1330599",
+      "parent_prefix_sha256": "3cdf953bbb4800266902f728a5ab122dcc7a49c0fd6eeddf40eaea217b198291",
+      "sampled_branch_row_sha256": "ab49124d6dccbe3b9176228e19e7c21d1abfb206ba7f9f51168930e605cf2f02",
+      "native_branch_row_sha256": "5116a58a7cfc0376f1a6e51540f7a73500dd01a27cbb3da1259fb7e52caefdef",
+      "sampled_coordinates": [370, 81, 432, 276],
+      "native_coordinates": [363, 81, 432, 279],
+      "branch_row_token_count": 9,
+      "stage_two_transition": ["clean_miss", "hit"],
+      "admission": "primary",
+      "allowed_claim": "bounded route timing and owner exchange only"
+    }
+  ],
+  "held_cases": [
+    {
+      "image_id": "19109",
+      "reason": "The sampled branch row at the nominal transition has no strict single-owner match."
+    },
+    {
+      "image_id": "19432",
+      "reason": "The transition begins from unresolved target-relevant chair-group geometry and was pre-excluded from primary claims."
+    },
+    {
+      "image_id": "2299",
+      "reason": "No adjacent clean_miss to hit transition exists."
+    }
+  ],
+  "training_promotion": "blocked pending exact native-row no-op parity and safe unique-owner analysis"
+}

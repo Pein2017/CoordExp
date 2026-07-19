@@ -6,11 +6,11 @@ role: research-unit
 authority: non_normative_research
 architecture_promotion_status: not_promoted
 training_promotion_status: not_promoted
-implementation_status: stage_2_launch_ready
+implementation_status: stage_3_implementation_in_progress
 unit_id: 2026-07-19-sampled-history-target-reachability-and-complete-row-value
 topic: qwen3-vl-dense-enumeration
 status: active
-evidence_status: stage_1_complete
+evidence_status: stage_2_complete
 updated: 2026-07-19
 ---
 
@@ -182,6 +182,14 @@ clean_miss at P_k and hit at P_(k+1)
 ```
 
 enter this stage.
+
+The exact post-Stage-2 candidate set and permitted claims are frozen in
+[stage3-admission.json](stage3-admission.json). The three admitted sampled
+rows and their native greedy counterparts name the same physical object and
+have the same nine-token row length. They differ only in several coordinate
+tokens. Stage 3 therefore tests same-owner coordinate-history sensitivity; it
+cannot by itself establish a covered-set carrier or a different-object commit
+effect.
 
 At exact parent `P_k`, let:
 
