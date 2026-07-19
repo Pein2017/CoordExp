@@ -6,11 +6,11 @@ role: research-unit
 authority: non_normative_research
 architecture_promotion_status: not_promoted
 training_promotion_status: not_promoted
-implementation_status: stage_3_implementation_in_progress
+implementation_status: complete
 unit_id: 2026-07-19-sampled-history-target-reachability-and-complete-row-value
 topic: qwen3-vl-dense-enumeration
-status: active
-evidence_status: stage_2_complete
+status: complete
+evidence_status: stage_7_complete
 updated: 2026-07-19
 ---
 
@@ -33,6 +33,15 @@ rollout.
 The first stage is mandatory because every earlier root trajectory hit its
 eight-row cap. No causal branch arm may run until the extended greedy screen
 classifies the frozen targets.
+
+This unit is now complete. Three same-parent complete-row interventions prove
+that natural same-owner coordinate history can redirect later physical-owner
+access. Only image `7816` yields a safe final unique-owner gain; images `12576`
+and `18380` exchange routes. Follow-up controls show one image-local `x1` or
+`y1` route switch and one separate image requiring a joint two-row history.
+The promotion threshold is not met. No training objective, object ledger,
+architecture change, or further arm inside this unit is authorized. The final
+evidence and claim boundary are recorded in [results.md](results.md).
 
 ## Main question
 
@@ -353,3 +362,48 @@ or token-level intervention in this unit.
 4. Pass deterministic target-freeze tests.
 5. Reuse the already passed full-model float32 token-append no-op smoke.
 6. Run Stage 1 on all eight images before admitting any Stage 2 case.
+
+## Executed follow-up amendments
+
+Stages 1 through 3 followed the frozen protocol above. The following
+follow-ups were admitted only after the preceding result opened a narrower
+question.
+
+### Stage 4: final-horizon confirmation
+
+Only the safe positive image-`7816` pair was continued to natural terminal.
+The sampled-coordinate arm ended with ten strict unique owners, including
+target owner `211764`, with no verified loss or duplicate. The native arm ended
+with nine strict unique owners and duplicate owner `205108`.
+
+### Stage 5: row-0 by row-4 crossover
+
+Image `7816` contained two earlier native-versus-sampled coordinate variants.
+A four-arm crossover held the common suffix fixed. Row 4, not row 0, was
+sufficient for the later `205108` versus `211764` owner switch in this image.
+
+### Stage 6: row-4 coordinate factorial
+
+The natural native or sampled values of `x1`, `y1`, and `y2` were crossed while
+identical `x2` stayed fixed. Either sampled `x1` or sampled `y1` was sufficient
+for the rescued route; sampled `y2` alone was not. Reverse-direction and
+orthogonal-coordinate controls produced unmatched hybrid boxes rather than the
+target. Candidate-row scoring confirmed a coordinate-stage change rather than
+a terminal or rollout-length effect.
+
+### Stage 7: image-`12576` two-row crossover
+
+An independent route-exchange case crossed native or sampled row 3 with native
+or sampled row 4 while holding later rows 5 and 6 fixed. Only the joint sampled
+row-3 and sampled row-4 endpoint produced cup target owner `678023`; both
+crossed prefixes produced native pizza owner `1571077`. This rejects a
+universal latest-row carrier. Because the crossed prefixes are off-policy, the
+result is classified as joint interaction or endpoint dependence, not formal
+hidden-state mediation.
+
+### Final stop
+
+The preregistered multi-image safety gate fails: one safe final gain is below
+the required minimum of three, and the other two causal cases are route
+exchanges. No extra factorial arm, larger cohort, training screen, or OpenSpec
+implementation is active from this unit.

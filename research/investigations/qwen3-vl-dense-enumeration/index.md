@@ -45,8 +45,14 @@ image-`19109` route states redirect same-description motorcycle geometry mainly
 through `y1`, including toward covered instances, but also contain different
 generated histories and are not an order-only comparison. Complete-row sums
 do not consistently predict the greedy branch. The four-case disagreement
-does not authorize training; it routes next to a small recurrence gate for
-branch-aware uncovered-versus-covered ranking under natural own-prefix states.
+does not authorize training. The subsequent sampled-history causal-value unit
+finds three exact same-parent route effects from natural same-owner coordinate
+rows, but only one safe final unique-owner gain. One positive image has
+separable `x1` and `y1` route effects; a second image requires the joint history
+of two earlier rows. Natural row geometry is therefore an executable part of
+the recurrent traversal state, but the result rejects a universal latest-row
+carrier and does not justify sampled-row preference training or an explicit
+ledger architecture.
 The weekly report and research compass own the broader synthesis and next-
 discriminator boundary.
 
@@ -132,6 +138,7 @@ durable program reading path below.
 74. [Local branch causality and downstream unique-object value](experiments/2026-07-19-local-branch-causality-and-downstream-coverage-value/unit.md)
 75. [Local branch cohort closeout and path-mediated accessibility result](experiments/2026-07-19-local-branch-causality-and-downstream-coverage-value/results.md)
 76. [Sampled-history target reachability and complete-row causal value](experiments/2026-07-19-sampled-history-target-reachability-and-complete-row-value/unit.md)
+77. [Sampled-history causal-value results and coordinate-sensitive route-state verdict](experiments/2026-07-19-sampled-history-target-reachability-and-complete-row-value/results.md)
 
 The review and readiness amendment preserve the pre-execution gate. The
 completed unit and results record own current lifecycle and evidence status.

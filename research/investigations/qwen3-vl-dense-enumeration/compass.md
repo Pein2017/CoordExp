@@ -225,6 +225,21 @@ Markdown links, rather than this diagram, are the durable graph edges.
   or covered-set rule. See
   [Complete Candidate-Row Score Decomposition
   Results](experiments/2026-07-19-complete-candidate-row-score-decomposition/results.md).
+- The sampled-history reachability unit now closes the direct path from bagged
+  novelty to complete-row preference training. Exact sampled prefixes make
+  later targets greedily reachable in several images, but access can be
+  non-monotonic. Three same-parent natural rows that name the same physical
+  owner and differ only in coordinates all redirect later owner access. Only
+  image `7816` preserves a safe final gain, from nine to ten strict unique
+  owners; images `12576` and `18380` exchange owners. On image `7816`, sampled
+  `x1` or sampled `y1` in row 4 is individually sufficient for the rescued
+  route, while reverse and orthogonal controls produce unmatched hybrid boxes.
+  On image `12576`, neither sampled row 3 nor sampled row 4 is sufficient alone;
+  their joint history is required after two common rows. Prefix geometry is
+  therefore causally executable route state, but not a demonstrated monotonic
+  object ledger, universal latest-row carrier, or safe training target. See
+  [Sampled-History Target Reachability and Complete-Row Causal Value
+  Results](experiments/2026-07-19-sampled-history-target-reachability-and-complete-row-value/results.md).
 - At exact prefix state 56 on image `12576`, repeated one-row sampling exposes
   two valid object modes: the target pizza and a competing left cup. The same
   target disappears at the greedy-terminal state; an independent chair case
@@ -389,11 +404,11 @@ cross-row coverage.
 | Input-level spatial restriction changes one object opportunity | Bounded support under hard eligibility; the count-balanced all-keys-readable soft cross operator is now closed because both matched-owner controls fail, so its crossed arms cannot adjudicate the hard asymmetry | Hard exclusion and its abrupt phase switch may manufacture the asymmetry; the historical uniform-dose operator and current query-phase-restricted operator cannot be pooled into one trajectory | No immediate successor is active. A historical-uniform-operator `3.9060049` endpoint would require a fresh separately authorized execution; artifact-only cross-operator pooling is rejected. |
 | Safe final masked policy improves enumeration | Ruled out under the executed protocol | Equal-call full-image sampling is at least as useful after aggregation | Revisit only after a new masking mechanism avoids retention and output-expansion failures. |
 | Fixed-prefix next-object probability is fragmented across several real objects | Supported at one exact state; not population-estimated | Some other bagging rescues may still arise only from earlier trajectory divergence | Replicate only when a future route decision requires prevalence, not as the immediate discriminator. |
-| Prefix state is an executable but fragile traversal state | Supported in an activated multi-image panel. Earlier order changes strict four-row owner sets in `99 / 216` paired trajectories but completion in only `8 / 216`. Full-model float32 scoring further shows an initial `person`-versus-`cup` branch flip followed by uncovered-versus-covered cup separation at `x1` on image `18380`. Later route states change same-description motorcycle geometry on image `19109`, but do not isolate order from accumulated generated history. | Strict overlap matching, dense same-class geometry, incomplete annotation, and selected-case bias remain alternatives. Image `9590` also shows that one sampled terminal branch need not reflect a raw terminal argmax. The result supports a route-shaped native scoring state, not absence of all commit or necessity of an explicit ledger. | On `4` to `8` crop-reviewed dense same-category scenes, test whether a verified uncovered path repeatedly loses to a covered or duplicate path at the earliest distinguishing token under natural own-prefix states. Track complete-row score only as a secondary coherence signal. Authorize training only if that branch defect recurs. |
+| Prefix state is an executable but fragile traversal state | Supported across order, scoring, and exact same-parent interventions. Natural same-owner coordinate rows redirect later physical owners in all three admissible sampled-history cases, but only one gives a safe final unique-owner gain. Reachability can disappear after more sampled rows; image `7816` has separate `x1` and `y1` route effects, while image `12576` requires a joint two-row history. | The state may encode geometry-conditioned route compatibility rather than semantic coverage. Strict owner matching, dense same-class geometry, incomplete annotation, selected-case bias, and off-policy crossover prefixes remain alternatives. | No training successor is active. Revisit only with a separately admitted independent cohort whose primary endpoint is safe final unique-owner gain, not target novelty or route exchange. |
 | Late-middle residual states implement phase-specific decisions | Bounded one-sided support: an eligible clock-description path is conditionally portable, and one same-description paired-object state after decoder block `23` switches the unrestricted geometry owner through an `x1` basin change where the trusted block-`13` control does not | The portable state may select only the first coordinate, with the emitted `x1` and native autoregressive computation recovering the rest of the box; one image and one direction do not establish a general object state | No successor is active. If separately authorized, mediate `x1` by forcing paired `x1` without replacement and forcing baseline `x1` under paired-state replacement, then compare later coordinates and final owner. |
 | Early coordinate choice establishes a stable complete-object owner | Rejected as a universal rule. In one primary bowl case, a one-bin `x1` branch and later `x2` difference reshape `y2`; in a nearby-person control, shared `x1` remains ambiguous and ownership separates through `y1` and `x2`; one small-person case instead keeps the same owner after a bad `y1`. The older dense-chair transport result still shows that early coordinates can strongly constrain later boundaries. | Coordinate generation mixes box grammar, visual boundary evidence, route state, and instance ownership; the dominant component changes by scene and coordinate slot. | If separately authorized, use on-support same-object coordinate perturbations and coherent full-row alternatives. Do not infer an owner from one coordinate or average coordinate marginals across neighboring instances. |
 | Incomplete dense annotations teach conservative omission and premature termination | Plausible | Sequence-mode concentration or weak visual evidence is the dominant cause | Compare exhaustive labels with original labels and controlled thinning on the same images. |
-| Bagging support can be concentrated into deterministic greedy traversal | Speculative; natural sibling rows expose executable successor state, but neither the released panel nor the human-resolved image-`2299` four-row extension finds a safe positive sampled-branch value gap | Bagging may expose useful diversity rather than a single superior first branch; alternative routes can also reveal plausible semantics while degrading physical extent | Under the pure cross-entropy baseline, isolate valid sampling-rescued objects that greedy misses and score complete rows at the first causal prefix divergence. Do not treat sampled novelty alone as a preference target. |
+| Bagging support can be concentrated into deterministic greedy traversal | Still speculative. Exact sampled prefixes and same-parent rows can unlock greedy targets, but only one of three causal cases improves the final strict unique-owner set; two exchange owners. | Bagging may expose several valid but mutually competing routes rather than one globally superior transition. Coordinate variants can also create unmatched hybrid geometry. | Do not treat sampled novelty or sampled coordinates as positive labels. A future test must first reproduce safe final unique-owner gain on an independent cohort. |
 | A persistent ledger, object slot, or external detector is necessary | Unsupported and not authorized | Native prefix state plus better data and transition training may suffice | Consider only after transition shaping fails despite reliable object support and complete labels. |
 
 The completed [Fixed-Prefix Complete-Box Coherence and Progressive Coordinate-
@@ -447,17 +462,19 @@ person is harmful to set completion. Exact generated rows are less stable than
 physical owners, so exact-token or exact-coordinate invariance is not an
 appropriate training target.
 
-That short-horizon discriminator and its complete-row scoring successor are
-now closed. No expensive successor is active and no training algorithm is
-promoted. Do not add more seeds to the existing image-`2299` cases, introduce
-a covered-set architecture, suppress terminal globally, or launch the
-previously proposed 256-image coordinate screen. The next bounded question is
-recurrence rather than another layer or rollout sweep: on `4` to `8`
-crop-reviewed dense same-category scenes, determine whether verified uncovered
-paths repeatedly lose to covered or duplicate paths at the earliest
-distinguishing token under natural own-prefix states. Complete-row score is a
-secondary coherence measure because it does not consistently predict the
-greedy branch. This is the minimum gate for a branch-aware ranking screen.
+That short-horizon discriminator, its complete-row scoring successor, and the
+subsequent sampled-history causal-value unit are now closed. No expensive
+successor is active and no training algorithm is promoted. Do not add more
+seeds or post-hoc factorial arms to the existing cases, introduce a covered-set
+architecture, suppress terminal globally, or launch the previously proposed
+256-image coordinate screen. The last unit found three causal same-owner
+coordinate-history effects but only one safe final unique-owner gain; the two
+other cases exchanged owners. It also found both a one-row-local effect and a
+joint two-row effect. This is insufficient to define one recurrent defect or
+one local loss. If revisited, the next unit must freeze a fresh independent
+cohort and make safe final unique-owner gain its primary admission and promotion
+endpoint. Complete-row and per-token scores remain secondary mechanism probes,
+not labels by themselves.
 
 The completed [Native Sibling-Row Branch Value and Commit Crossover
 results](experiments/2026-07-17-native-sibling-row-branch-value-and-commit-crossover/results.md)
@@ -623,15 +640,14 @@ Current gate decision: **not authorized**. Controlled object support, tight
 persistent-hard geometry donors, immediate owner-sensitive redistribution, and
 order-sensitive four-row behavior are established in bounded states. The
 short-horizon prefix-permutation unit also exposes scene-specific recurrence of
-covered motorcycles. However, no alternative order consistently improves
-unique coverage, and the earlier human-resolved image-`2299` extension finds
-no safety-preserving positive sampled-branch value gap. The completed
-candidate-row score probe shows both clean selective uncovered-instance
-redistribution and a dense downstream route state where covered same-category
-geometry becomes locally greedy-compatible. It also shows that complete-row
-sums can disagree with the actual greedy branch. The signature is not yet
-recurrent enough to define a general loss. A `4`- to `8`-image recurrence gate
-and a safe multi-image label cohort remain absent.
+covered motorcycles. The sampled-history causal-value unit then supplies three
+exact same-parent complete-row effects, but only one produces a safe final
+unique-owner gain. Two cases exchange owners; one positive image has separable
+`x1` and `y1` route effects, while another image requires a joint two-row
+history. Complete-row sums can also disagree with the actual greedy branch.
+The evidence is therefore recurrent enough to establish coordinate-sensitive
+route state, but not recurrent or uniform enough to define a safe general loss.
+The required multi-image positive-value cohort and label support remain absent.
 
 ## Demoted or Rejected Claims
 
@@ -646,6 +662,10 @@ and a safe multi-image label cohort remain absent.
 - One owner-specific `x1` basin switch is not a portable four-coordinate object
   representation or a general instance-binding mechanism.
 - A stable native order-free coverage ledger has not been established.
+- One safe coordinate-history rescue is not evidence that sampled coordinates
+  are generally better supervision; two matched causal cases exchange owners.
+- A latest-row effect on one image is not a universal carrier when another
+  image requires the joint history of two earlier rows.
 - One reciprocal transition between two nearly nested, cross-category owners
   is not evidence for a spatially indexed physical-object covered set.
 - A null under raw committed-object pixel erasure is not proof of visual
