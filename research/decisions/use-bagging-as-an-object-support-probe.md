@@ -2,13 +2,14 @@
 id: decision.use-bagging-as-an-object-support-probe
 type: decision
 status: active
-updated: 2026-07-17
+updated: 2026-07-19
 topic: qwen3-vl-dense-enumeration
 evidence:
   - research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-13-spatial-scope-history-disentanglement/results.md
   - research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-14-sampled-rescue-object-transition-causal-replay/results.md
   - research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-16-human-audited-rare-object-trajectory-genealogy/results.md
   - research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-16-fixed-prefix-complete-box-coherence-and-coordinate-release-factorial/results.md
+  - research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-18-human-resolved-dense-branch-value-and-calibration-screen/results.md
 relations:
   supports:
     - decision.separate-selection-transcription-commit-stop
@@ -61,6 +62,11 @@ one committed physical object solely because its phrase is correct: geometry
 may represent a discriminative part, a hybrid, or several same-category
 instances. Early-coordinate coupling is evidence of autoregressive spatial
 transport, not automatically evidence of instance ownership.
+
+The 2026-07-18 human-resolved branch-value screen adds a further boundary: no
+sampled-only branch produced a positive, safety-preserving four-row value gain
+over the greedy branch on the relabeled image `2299`, so a bagging-revealed
+row is a candidate for audit, not automatically a preferable training target.
 
 ## Next Discriminator
 

@@ -2,7 +2,7 @@
 id: decision.separate-selection-transcription-commit-stop
 type: decision
 status: active
-updated: 2026-07-15
+updated: 2026-07-19
 topic: qwen3-vl-painted-gt-transcription-probe
 evidence:
   - research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-10-pvci-native-commit-to-uncovered-redistribution/unit.md
@@ -13,6 +13,9 @@ evidence:
   - research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-15-prefix-state-phrase-geometry-factorial/results.md
   - research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-15-visual-support-counterfactual-commit/results.md
   - research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-15-pre-vision-raw-bounding-box-visual-support-counterfactual-commit/results.md
+  - research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-17-next-row-probability-transition-and-causal-source-trace/results.md
+  - research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-18-image2299-near-complete-human-relabel-successor-transition/results.md
+  - research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-18-person25-dominant-owner-commit-and-persistence-closeout/results.md
 relations:
   supports:
     - decision.let-architecture-emerge-from-hypothesis-gates
@@ -79,3 +82,18 @@ the bounded own-rollout question recorded in the pre-vision result: whether
 causally correcting an approximate or incoherent emitted row changes the next
 valid uncovered successor, while separating event construction from broader
 next-object state.
+
+**Update 2026-07-19.** The own-rollout locus above was overtaken by the
+executed 2026-07-17 and 2026-07-18 exact-prefix transition units. The Gaussian
+step-4887 image-`2299` units supply immediate owner-specific self-suppression
+concentrated at `x1`, zero immediate self-repeats, and owner-specific
+redistribution. The historical random-order checkpoint-3668 person-25 closeout
+separately supplies partial, unreliable earlier-history exclusion. These
+checkpoint-scoped findings must not be merged into one checkpoint-independent
+mechanism claim. The
+[dense-enumeration compass](../investigations/qwen3-vl-dense-enumeration/compass.md)
+discriminator queue owns the current next step. The pending same-covered-set
+earlier-row order-equivalence unit is the cheapest missing forced-prefix test
+of local order sensitivity, but it does not by itself establish a native
+covered-set state or decide whether order dependence should be removed during
+training.

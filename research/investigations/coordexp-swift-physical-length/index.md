@@ -2,6 +2,7 @@
 
 ## Main Reading Path
 
+- [Summary](summary.md)
 - [Experiments](experiments/)
 
 This investigation tracks smoke-scope probes around physical packed-row length,

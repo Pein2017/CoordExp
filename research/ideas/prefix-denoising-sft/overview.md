@@ -4,7 +4,7 @@ title: Prefix Denoising SFT
 description: Explores whether Stage-1 compact detection teacher forcing can improve coordinate robustness by training on clean and coordinate-noised prefix views.
 tags: [stage1, compact-detection, prefix-denoising, teacher-forcing, coordinate-robustness]
 state: active
-updated: 2026-06-20
+updated: 2026-07-19
 ---
 
 # Prefix Denoising SFT
@@ -47,6 +47,17 @@ an unmatched baseline.
 The next interpretation gate is a matched denoising-OFF hard-CE LoRA control at
 the same recipe, plus a coordinate-objective comparison before any claim about
 denoising benefit or harm.
+
+**Scope note, 2026-07-19.** The root-cause reading that "coordinate prediction
+appeared insensitive to previous coordinate tokens" is specific to the tested
+compact-coordinate checkpoint and objective. Later dense-enumeration units on
+the step-4887 geometry-sorted adapter found strong cross-coordinate
+sensitivity: forced early coordinates causally reshape later boundaries in
+selected states. See the
+[fixed-prefix complete-box coherence factorial](../../investigations/qwen3-vl-dense-enumeration/experiments/2026-07-16-fixed-prefix-complete-box-coherence-and-coordinate-release-factorial/results.md)
+and the
+[clean-versus-degraded coordinate branch replication](../../investigations/qwen3-vl-dense-enumeration/experiments/2026-07-18-fixed-prompt-clean-versus-degraded-coordinate-branch-replication/results.md).
+Do not import the historical insensitivity claim into current checkpoints.
 
 ## Worktree And Branch Handles
 

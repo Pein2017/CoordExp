@@ -4,7 +4,7 @@ description: Detailed hypothesis and evidence atlas for object-mode fragmentatio
 type: investigation
 status: active
 topic: qwen3-vl-dense-enumeration
-updated: 2026-07-17
+updated: 2026-07-19
 ---
 
 # Qwen3 Vision-Language Dense Enumeration Bottleneck
@@ -454,6 +454,47 @@ reciprocity, and one dense-person state is refused. The bounded conclusion is
 executable native row-conditioned successor state, not a general
 physical-object covered set.
 
+The subsequent exact-prefix transition sequence is also complete. The
+completed [Next-Row Likelihood Change and Causal Source Trace](experiments/2026-07-17-next-row-probability-transition-and-causal-source-trace/results.md)
+finds strong own-owner suppression and selective later-owner increases,
+concentrated at `x1`, in a same-category native image-`2299` chain, but stops
+at its natural-sibling admission gate (153 of 160 samples select one
+successor), leaving physical commit versus geometry-sorted traversal
+unresolved. The earlier [random-versus-geometry-sorted common-prompt
+draft](experiments/2026-07-17-random-versus-geometry-sorted-common-prompt-prefix-comparison/unit.md)
+was superseded before execution by that unit; its earlier-row order-swap
+panel therefore remains unexecuted. The completed [Image 2299 Near-Complete
+Human Relabel Successor Transition](experiments/2026-07-18-image2299-near-complete-human-relabel-successor-transition/results.md)
+supports an immediate physical-owner-sensitive transition: the just-emitted
+person is excluded from all 96 paired successors, redistribution is
+owner-specific, and 53 of 93 matched successors move backward in geometry
+order, while multi-row covered-set state versus last-row spatial routing
+stays unresolved. The completed [Historical Random versus Geometry-Sorted
+Image 2299 Screen](experiments/2026-07-18-historical-random-versus-geometry-sorted-image2299-screen/results.md)
+shows the two historical checkpoint-3668 adapters implement qualitatively
+different next-row rules under one identical forced state, and the completed
+[Person 25 Dominant-Owner Commit and Persistence Closeout](experiments/2026-07-18-person25-dominant-owner-commit-and-persistence-closeout/results.md)
+closes the missing dominant-owner treatment on the random-order adapter:
+strong latest-row redirection without a reliable covered-object ledger, with
+a fixed-prefix `y2` state where a large valid-boundary probability cluster
+loses greedy argmax to one isolated extreme coordinate token. The completed
+[Human-Resolved Dense Branch Value and Calibration Screen](experiments/2026-07-18-human-resolved-dense-branch-value-and-calibration-screen/results.md)
+finds no positive safety-preserving sampled-branch value gap over four rows,
+closing sampled-row novelty as a direct preference-training target. The
+completed [Fixed-Prompt Clean-versus-Degraded Coordinate Branch
+Replication](experiments/2026-07-18-fixed-prompt-clean-versus-degraded-coordinate-branch-replication/results.md)
+replicates distributed raw physical-boundary mass in all three same-object
+focus cases but fails its predeclared policy-survival gate in two, separating
+independent boundary error, autoregressive geometry drift, and tail sampling
+while rejecting `x1` as a universal owner lock. Finally, the completed
+[Matched-Objective Coordinate-Branch Signature Comparison](experiments/2026-07-18-matched-objective-coordinate-branch-signature-comparison/results.md)
+shows that the scoring checkpoint, not prefix source, owns the bowl,
+umbrella, and bus coordinate modes and that pure cross-entropy wins the
+matched validation-200 comparison; pure cross-entropy is therefore the next
+mechanism baseline and the proposed coordinate-consistency training screen is
+not promoted. The [research compass](compass.md) owns the resulting
+discriminator boundary.
+
 ## Completed Evidence Units
 
 | Unit | Status | Purpose |
@@ -481,3 +522,10 @@ physical-object covered set.
 | [Fixed-Prefix Complete-Box Coherence and Progressive Coordinate-Release Factorial](experiments/2026-07-16-fixed-prefix-complete-box-coherence-and-coordinate-release-factorial/unit.md) | complete; evidence verified; [results](experiments/2026-07-16-fixed-prefix-complete-box-coherence-and-coordinate-release-factorial/results.md); architecture and training not promoted | Establishes strong `x1`-to-`x2` geometry transport in one dense-chair state, a strong case-level fork part-sized or late-extent basin without isolating its cause, and cross-row transition sensitivity; physical owner state and correct uncovered redistribution remain unproved. |
 | [Object-Specific Geometry Transport, Decision Phase, and Cross-Row Influence Horizon](experiments/2026-07-17-object-specific-geometry-transport-and-cross-row-influence-horizon/unit.md) | complete; evidence verified; stopped after Wave One common-support failure; [results](experiments/2026-07-17-object-specific-geometry-transport-and-cross-row-influence-horizon/results.md); architecture and training not promoted | Finds sharp donor-specific early-coordinate basins and coherent off-support coordinate-translation behavior, but no admitted common-support contrast; later phase and cross-row waves do not run. |
 | [Native Sibling-Row Branch Value and Commit Crossover](experiments/2026-07-17-native-sibling-row-branch-value-and-commit-crossover/unit.md) | complete; evidence verified; [results](experiments/2026-07-17-native-sibling-row-branch-value-and-commit-crossover/results.md); architecture and training not promoted | Finds no safe greedy branch-value handle and one numerically robust reciprocal successor switch between spatially nested bowl and carrot owners; establishes native cross-row state but not a general physical-instance ledger. |
+| [Next-Row Likelihood Change and Causal Source Trace](experiments/2026-07-17-next-row-probability-transition-and-causal-source-trace/unit.md) | complete; evidence verified; stopped at the natural-sibling admission gate; [results](experiments/2026-07-17-next-row-probability-transition-and-causal-source-trace/results.md); architecture and training not promoted | Establishes strong exact self-owner suppression with selective later-owner increases concentrated at `x1` in a same-category chain; the equal-depth reciprocal discriminator is unidentified because no alternative owner passed admission, so physical commit versus traversal stays unresolved. |
+| [Image 2299 Near-Complete Human Relabel Successor Transition](experiments/2026-07-18-image2299-near-complete-human-relabel-successor-transition/unit.md) | complete; evidence verified; [results](experiments/2026-07-18-image2299-near-complete-human-relabel-successor-transition/results.md); architecture and training not promoted | Finds zero immediate self-owner repeats across 96 paired successors, owner-specific redistribution, and frequent backward geometry-order transitions; supports an immediate physical-owner-sensitive transition while leaving multi-row covered-set state versus last-row spatial routing unresolved. |
+| [Historical Random versus Geometry-Sorted Image 2299 Next-Row Screen](experiments/2026-07-18-historical-random-versus-geometry-sorted-image2299-screen/unit.md) | complete; evidence verified; [results](experiments/2026-07-18-historical-random-versus-geometry-sorted-image2299-screen/results.md); architecture and training not promoted | The random-order adapter sends all 96 samples to one prefix-insensitive person while the geometry-sorted adapter moves generated `x1` and physical owner with the latest row; supports a learned spatial transition habit, not a coverage ledger, from one historical seed pair. |
+| [Human-Resolved Dense Branch Value and Calibration Screen](experiments/2026-07-18-human-resolved-dense-branch-value-and-calibration-screen/unit.md) | complete; evidence verified; [results](experiments/2026-07-18-human-resolved-dense-branch-value-and-calibration-screen/results.md); sampled-branch preference training not promoted | No sampled-only third-row branch beats the greedy branch over four rows; alternative routes more often enter weakly localized `tie` output, so sampled novelty alone is not a safe preference-training target. |
+| [Person 25 Dominant-Owner Commit and Persistence Closeout](experiments/2026-07-18-person25-dominant-owner-commit-and-persistence-closeout/unit.md) | complete; evidence verified; [results](experiments/2026-07-18-person25-dominant-owner-commit-and-persistence-closeout/results.md); architecture and training not promoted | A person-25 row strongly redirects sampling toward overlapping person 18 on the random-order adapter, but earlier history gives only partial exclusion (`55/96` recurrence) and greedy picks a merged extent because one isolated `y2=999` token beats a much larger valid-boundary cluster. |
+| [Fixed-Prompt Clean-versus-Degraded Coordinate Branch Replication](experiments/2026-07-18-fixed-prompt-clean-versus-degraded-coordinate-branch-replication/unit.md) | complete; evidence verified; [results](experiments/2026-07-18-fixed-prompt-clean-versus-degraded-coordinate-branch-replication/results.md); architecture and training not promoted | Replicates distributed raw physical-boundary mass in all three same-object cases, but the predeclared combined gate fails because top-p removes the tight cluster in two; separates independent boundary error, branch amplification, and tail sampling and rejects `x1` as a universal owner lock. |
+| [Matched-Objective Coordinate-Branch Signature Comparison](experiments/2026-07-18-matched-objective-coordinate-branch-signature-comparison/unit.md) | complete; bounded case-level evidence verified; [results](experiments/2026-07-18-matched-objective-coordinate-branch-signature-comparison/results.md); proposed training screen not promoted | Exact current-sampler replication shows the scoring checkpoint, not prefix source, owns the bowl, umbrella, and bus coordinate modes; pure cross-entropy wins the matched validation-200 comparison and becomes the next mechanism baseline. |

@@ -7,5 +7,7 @@ or a final conclusion to live here.
 
 ## Current Pilots
 
-- [Prefix Denoising SFT](prefix-denoising-sft/)
+- [Prefix Denoising SFT](prefix-denoising-sft/) - dormant since 2026-06-20;
+  awaiting the matched denoising-OFF control named in its overview before any
+  promotion or rejection verdict
 - [Qwen3-VL Painted-GT Transcription Probe](qwen3-vl-painted-gt-transcription-probe/)
