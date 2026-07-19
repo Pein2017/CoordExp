@@ -1,0 +1,187 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-07-19-sampled-history-target-reachability-and-complete-row-value",
+  "stage_name": "Stage 6 row-four coordinate factorial and matched-direction controls",
+  "decision_timing": "Frozen after Stage 5 showed that row 4 is sufficient or mediating for the image-7816 row-5 target-versus-duplicate decision, and before any Stage 6 arm was generated or scored",
+  "source_stage_five_admission": "/data/CoordExp/.worktrees/research-probes/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-sampled-history-target-reachability-and-complete-row-value/stage5-coordinate-history-crossover-admission.json",
+  "source_stage_five_admission_sha256": "3d6952e08ccaf0515c393e9d09f8266aa4dc58927b7068704882a0a5d138dc82",
+  "source_stage_five_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-19-sampled-history-target-reachability-and-complete-row-value/stage5-coordinate-history-crossover-fp32-v1/image-7816.json",
+  "source_stage_five_artifact_sha256": "fddec82836a86809ffd05a28181912e5aaf8bb2aa5606b384ac201f9bd973445",
+  "source_stage_three_shard": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-19-sampled-history-target-reachability-and-complete-row-value/stage3-same-parent-complete-row-intervention-fp32-v1/image-7816.json",
+  "source_stage_three_shard_sha256": "ac65ef62e0ce8750675b86bfe8b304cf485c6496f46c924027bbf1d40a400491",
+  "primary_question": "Does the row-4 effect have coordinate-specific or spatially directional structure, or can an unrelated coordinate perturbation of the same magnitude trigger the same target-versus-duplicate branch change?",
+  "coordinate_convention": {
+    "x1": "left horizontal boundary in normalized coordinate bins 0 through 999",
+    "y1": "top vertical boundary in normalized coordinate bins 0 through 999",
+    "x2": "right horizontal boundary in normalized coordinate bins 0 through 999",
+    "y2": "bottom vertical boundary in normalized coordinate bins 0 through 999"
+  },
+  "execution_contract": {
+    "image_id": "7816",
+    "row_four_owner_id": "205108",
+    "target_owner_id": "211764",
+    "native_duplicate_owner_id": "205108",
+    "forced_prefix_complete_row_count": 5,
+    "forced_prefix_token_count": 45,
+    "common_rows_zero_through_three_token_ids_sha256": "3585a36ca78acce2158f017d084c12975169ca6e12966f124c277c2d5c66d79d",
+    "total_trajectory_generated_token_budget": 512,
+    "post_prefix_generated_token_budget": 467,
+    "continuation_row_ceiling": 512,
+    "decoding": "greedy",
+    "repetition_penalty": 1.0,
+    "model_dtype": "fp32",
+    "physical_batch_size": 1,
+    "factorial_variables": ["x1", "y1", "y2"],
+    "factorial_fixed_coordinate": {"x2": 927},
+    "native_row_four_coordinates": [877, 132, 927, 432],
+    "sampled_row_four_coordinates": [874, 129, 927, 421],
+    "sampled_minus_native_coordinate_change": [-3, -3, 0, -11],
+    "sum_of_absolute_coordinate_changes": 17
+  },
+  "candidate_rows_for_teacher_forced_scoring": [
+    {
+      "candidate_id": "native_duplicate_owner_row",
+      "owner_id": "205108",
+      "role": "native duplicate successor",
+      "coordinates": [886, 145, 935, 432],
+      "row_token_ids": [151646, 8987, 151647, 151648, 152556, 151815, 152605, 152102, 151649],
+      "row_token_ids_sha256": "6f254c918edb7d6f52be7dc77b46e1be0899b91ad599c1297731d67c1d4033e9"
+    },
+    {
+      "candidate_id": "sampled_target_owner_row",
+      "owner_id": "211764",
+      "role": "sampled rescued successor",
+      "coordinates": [894, 129, 935, 213],
+      "row_token_ids": [151646, 8987, 151647, 151648, 152564, 151799, 152605, 151883, 151649],
+      "row_token_ids_sha256": "53c6a73daef262bc11fd135cff80f33898d712e06de4024485a4cc2746207ec6"
+    }
+  ],
+  "arms": [
+    {
+      "arm": "factor_x1_native_y1_native_y2_native",
+      "role": "factorial native endpoint and exact replay control",
+      "coordinates": [877, 132, 927, 432],
+      "row_token_ids": [151646, 8987, 151647, 151648, 152547, 151802, 152597, 152102, 151649],
+      "row_token_ids_sha256": "9b7b6a6aa6932221ea3f67a76fabfc549befc0953e020a17e22dc79d6d54ef7e",
+      "prefix_token_ids_sha256": "3757b1090b39f2d8db0f2745892ca98932c9c2efa2926637cfff715666132194",
+      "frozen_expected_first_suffix_owner_id": "205108"
+    },
+    {
+      "arm": "factor_x1_native_y1_native_y2_sampled",
+      "role": "factorial y2-only substitution",
+      "coordinates": [877, 132, 927, 421],
+      "row_token_ids": [151646, 8987, 151647, 151648, 152547, 151802, 152597, 152091, 151649],
+      "row_token_ids_sha256": "907e9f672b6871e8d3f22ab6823c7e3daee968b6c83897dde8dca83b86ffa030",
+      "prefix_token_ids_sha256": "41592756db91d29fe4c0e2cbc7f7f8e4ebf5a1410cf47d35822e68632803ae02"
+    },
+    {
+      "arm": "factor_x1_native_y1_sampled_y2_native",
+      "role": "factorial y1-only substitution",
+      "coordinates": [877, 129, 927, 432],
+      "row_token_ids": [151646, 8987, 151647, 151648, 152547, 151799, 152597, 152102, 151649],
+      "row_token_ids_sha256": "2250c519f5105c2b5a57c8b4c553d46354a894b81a1153d40b038664aebb0f09",
+      "prefix_token_ids_sha256": "f1b00cc9467c9583932b849d93c958378b3258133fa9d80ae8d747dcc5d97a66"
+    },
+    {
+      "arm": "factor_x1_native_y1_sampled_y2_sampled",
+      "role": "factorial y1-by-y2 pair substitution",
+      "coordinates": [877, 129, 927, 421],
+      "row_token_ids": [151646, 8987, 151647, 151648, 152547, 151799, 152597, 152091, 151649],
+      "row_token_ids_sha256": "bf55d2b3fad85692121dabb5d9c1eeab04cfc038f5e065eb326286e82ee16c4e",
+      "prefix_token_ids_sha256": "dadf720f2ef4860f50f4517ed49e3832bd85117b7281bf4f3190f45713981a76"
+    },
+    {
+      "arm": "factor_x1_sampled_y1_native_y2_native",
+      "role": "factorial x1-only substitution",
+      "coordinates": [874, 132, 927, 432],
+      "row_token_ids": [151646, 8987, 151647, 151648, 152544, 151802, 152597, 152102, 151649],
+      "row_token_ids_sha256": "f9bb5d750703e48a474cdb803583b006a512da198f6bb3035ffe4e6a15c8533b",
+      "prefix_token_ids_sha256": "dc2f3e9a34e48123f1f7c78f042961dd6eb3e5edf053b1aae5990809869e8f74"
+    },
+    {
+      "arm": "factor_x1_sampled_y1_native_y2_sampled",
+      "role": "factorial x1-by-y2 pair substitution",
+      "coordinates": [874, 132, 927, 421],
+      "row_token_ids": [151646, 8987, 151647, 151648, 152544, 151802, 152597, 152091, 151649],
+      "row_token_ids_sha256": "de0db4cf9c736168d45a5f48b2a119b1052ea50e06c8463fb364d6fcd8192f53",
+      "prefix_token_ids_sha256": "f17c68213bf89916d1ce5c73e4cbb28da22cc9a4debd33ea39d53f1b51e88e90"
+    },
+    {
+      "arm": "factor_x1_sampled_y1_sampled_y2_native",
+      "role": "factorial x1-by-y1 pair substitution",
+      "coordinates": [874, 129, 927, 432],
+      "row_token_ids": [151646, 8987, 151647, 151648, 152544, 151799, 152597, 152102, 151649],
+      "row_token_ids_sha256": "a4095880d038876e3a768f0e30161bf3c43945e1b76eb91e48ace6d992879d80",
+      "prefix_token_ids_sha256": "53fa16823b92985c2a049087fb673ff43d52401baa99848b24aad018333b4a29"
+    },
+    {
+      "arm": "factor_x1_sampled_y1_sampled_y2_sampled",
+      "role": "factorial sampled endpoint and exact replay control",
+      "coordinates": [874, 129, 927, 421],
+      "row_token_ids": [151646, 8987, 151647, 151648, 152544, 151799, 152597, 152091, 151649],
+      "row_token_ids_sha256": "7ce3b663847daa458ab384c5b83eac2a806e67d72ffd784c4178416152bc3f90",
+      "prefix_token_ids_sha256": "4ac34f93703165e849f36939208bdb681d1643a491d147438b658c05e9c818db",
+      "frozen_expected_first_suffix_owner_id": "211764"
+    },
+    {
+      "arm": "reverse_natural_coordinate_direction",
+      "role": "same-magnitude reverse-direction control",
+      "coordinates": [880, 135, 927, 443],
+      "coordinate_change_from_native": [3, 3, 0, 11],
+      "sum_of_absolute_coordinate_changes": 17,
+      "row_token_ids": [151646, 8987, 151647, 151648, 152550, 151805, 152597, 152113, 151649],
+      "row_token_ids_sha256": "a87e162d19ea2e0785827126644d488e01991a989ae8cbacf5f089447bcb61e7",
+      "prefix_token_ids_sha256": "8fe40e1ac165231a726b8b7549a8561eaa7cb1bf304cd78d85c7489718c94713"
+    },
+    {
+      "arm": "orthogonal_x2_only_coordinate_control",
+      "role": "same-magnitude coordinate control orthogonal to the observed natural direction",
+      "coordinates": [877, 132, 910, 432],
+      "coordinate_change_from_native": [0, 0, -17, 0],
+      "sum_of_absolute_coordinate_changes": 17,
+      "dot_product_with_sampled_minus_native_direction": 0,
+      "row_token_ids": [151646, 8987, 151647, 151648, 152547, 151802, 152580, 152102, 151649],
+      "row_token_ids_sha256": "37485e779d80efdf3342eb6facdb4898c631be6bfae14619336a465ef14058dc",
+      "prefix_token_ids_sha256": "0239616f310cf58f9d1adf96eafbe66a7b2d01c8a395cdeb0f8ce7c9856c46ea"
+    }
+  ],
+  "required_pre_execution_gates": [
+    "Every arm contains native row 0, the same raw-token rows 1 through 3, and exactly one admitted row-4 variant.",
+    "Every prefix contains exactly five complete nine-token rows and exactly 45 generated-prefix tokens.",
+    "Only row-4 coordinate token identifiers may differ across arms.",
+    "Every row-4 variant must be a valid x1-less-than-x2 and y1-less-than-y2 box and must strictly match physical owner 205108 under the frozen same-category matching policy.",
+    "No row-4 variant may strictly match target owner 211764.",
+    "The native and sampled endpoints must reproduce the Stage 5 first-suffix owner decisions before any interpretation is allowed.",
+    "Checkpoint, adapter, prompt, image, processor, image grid, configuration, greedy decoding, float32 model dtype, repetition penalty 1.0, physical batch size 1, and total 512-token trajectory budget remain frozen.",
+    "Both exact successor candidate rows and all prefix token hashes are frozen before teacher-forced scoring."
+  ],
+  "primary_outcome": "Strict physical owner of the first complete suffix row after each five-row forced prefix.",
+  "secondary_outcomes": [
+    "Teacher-forced full-row log-probability margin of sampled target owner row minus native duplicate owner row under each exact prefix.",
+    "Per-token and per-coordinate contributions to both exact candidate-row scores.",
+    "Natural-terminal strict owner set, duplicate owners, malformed rows, unresolved rows, and warnings under the same total 512-token trajectory budget."
+  ],
+  "interpretation_rules": {
+    "single_coordinate_effect": "One coordinate's sampled value retrieves owner 211764 across its factorial contexts while reverse and orthogonal controls do not, and the candidate-row margin changes in the same direction.",
+    "pairwise_coordinate_interaction": "No corresponding single-coordinate arm is sufficient, but one two-coordinate combination repeatedly retrieves owner 211764 and its candidate-row margin supports the same branch.",
+    "three_coordinate_conjunction": "Only the full sampled x1, y1, and y2 combination retrieves owner 211764 while all lower-order factorial arms and matched controls remain on owner 205108 or move consistently but do not cross the greedy branch.",
+    "generic_prefix_instability": "The reverse or orthogonal matched control retrieves owner 211764, several unrelated changes select inconsistent owners, or greedy choices disagree with the direction of the exact candidate-row score margin.",
+    "below_argmax_probability_redistribution": "An arm does not switch the greedy owner but moves the exact target-versus-duplicate candidate-row margin toward the target in an ordered way.",
+    "unresolved": "Endpoint parity, physical-owner identity, prefix identity, complete-row, or clean first-suffix interpretation fails."
+  },
+  "adaptive_follow_up_rule": "No interpolation arm is admitted in this file. After the first wave, at most one midpoint arm may be frozen in a new admission: use the midpoint of the smallest sufficient coordinate subset; if no lower-order subset is sufficient but controls are clean, use the combined natural-direction midpoint; if either matched control retrieves the target, do not run a midpoint.",
+  "allowed_claim": "An image-specific causal map of how row-4 coordinate-token components alter the next greedy owner choice and exact target-versus-duplicate candidate-row scores.",
+  "forbidden_claims": [
+    "general geometric semantics of coordinate tokens",
+    "covered-set or object-ledger mechanism",
+    "general coordinate-history effectiveness across images",
+    "training-objective promotion",
+    "causal interpretation from teacher-forced likelihood alone"
+  ],
+  "stop_rules": [
+    "Stop without interpretation if endpoint replay, model identity, prompt/media identity, strict row-four owner identity, or exact prefix gates fail.",
+    "Stop the spatial-direction interpretation if the reverse or orthogonal matched control behaves like the sampled endpoint.",
+    "Do not run a dense coordinate sweep; admit at most one midpoint according to the frozen adaptive rule.",
+    "Do not design training from this image alone. A spatially structured positive result must first be tested on at least one independently admitted same-owner coordinate-history case."
+  ]
+}
