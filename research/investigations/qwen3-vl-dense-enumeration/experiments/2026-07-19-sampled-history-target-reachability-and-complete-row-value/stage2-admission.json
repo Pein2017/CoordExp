@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-07-19-sampled-history-target-reachability-and-complete-row-value",
+  "decision_timing": "Frozen after the extended greedy screen and crop-assisted physical-owner review, before any Stage 2 prefix-ladder execution",
+  "source_stage_one_union": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-19-sampled-history-target-reachability-and-complete-row-value/stage1-extended-root-greedy-fp32-v1/union.json",
+  "source_stage_one_union_sha256": "ac3ee031f75f3344610322a1baba89cadb305ddfcab8bfc708b4b977226b6875",
+  "reachability_states": [
+    "hit",
+    "clean_miss",
+    "right_censored",
+    "unresolved"
+  ],
+  "targets": [
+    {
+      "image_id": "2299",
+      "target_owner_id": "-2",
+      "final_recall_stratum": "terminally_omitted",
+      "target_absent_from_prefix": "yes",
+      "prefix_coverage_integrity": "resolved",
+      "physical_owner_review": "admitted",
+      "run_prefix_ladder": true,
+      "primary_causal_admission": true,
+      "allowed_claim": "target_reachability_only",
+      "note": "Distinct top-row boy; the nearest greedy box belongs to adjacent owner -9."
+    },
+    {
+      "image_id": "7816",
+      "target_owner_id": "211764",
+      "final_recall_stratum": "terminally_omitted",
+      "target_absent_from_prefix": "yes",
+      "prefix_coverage_integrity": "resolved_with_neighbor_overlap_reviewed",
+      "physical_owner_review": "admitted",
+      "run_prefix_ladder": true,
+      "primary_causal_admission": true,
+      "allowed_claim": "target_reachability_only",
+      "note": "Small occluded white-shirted person is distinct from the neighboring repeated red-shirted adult."
+    },
+    {
+      "image_id": "12576",
+      "target_owner_id": "678023",
+      "final_recall_stratum": "delayed",
+      "target_absent_from_prefix": "yes",
+      "prefix_coverage_integrity": "contains_unrelated_unresolved_rows",
+      "physical_owner_review": "admitted",
+      "run_prefix_ladder": true,
+      "primary_causal_admission": true,
+      "allowed_claim": "route_timing_only",
+      "note": "Earlier unresolved chair box surrounds a banana and cannot represent the target cup."
+    },
+    {
+      "image_id": "18380",
+      "target_owner_id": "2030411",
+      "final_recall_stratum": "delayed_with_final_set_right_censored",
+      "target_absent_from_prefix": "yes",
+      "prefix_coverage_integrity": "contains_unrelated_unresolved_rows",
+      "physical_owner_review": "admitted",
+      "run_prefix_ladder": true,
+      "primary_causal_admission": true,
+      "allowed_claim": "bounded_route_timing_only",
+      "note": "Earlier unresolved person rows depict different rear people; the extended greedy final set remains right-censored."
+    },
+    {
+      "image_id": "19109",
+      "target_owner_id": "1726831",
+      "final_recall_stratum": "terminally_omitted",
+      "target_absent_from_prefix": "yes",
+      "prefix_coverage_integrity": "contains_unrelated_unresolved_rows",
+      "physical_owner_review": "admitted",
+      "run_prefix_ladder": true,
+      "primary_causal_admission": true,
+      "allowed_claim": "target_reachability_only",
+      "note": "Earlier unresolved rows depict other people or motorcycles; none represents the target cafe-side person."
+    },
+    {
+      "image_id": "19432",
+      "target_owner_id": "384172",
+      "final_recall_stratum": "delayed",
+      "target_absent_from_prefix": "unresolved",
+      "prefix_coverage_integrity": "contains_target_relevant_group_box",
+      "physical_owner_review": "excluded_from_primary_claims",
+      "run_prefix_ladder": true,
+      "primary_causal_admission": false,
+      "allowed_claim": "group_to_instance_geometry_refinement_diagnostic_only",
+      "note": "Sampled row 0 is a broad multi-chair box that contains the target region, so later tight localization is not clean new-owner discovery."
+    }
+  ],
+  "root_decision_control": {
+    "image_id": "19109",
+    "target_owner_id": "1680320",
+    "run_prefix_ladder": false,
+    "allowed_claim": "same_empty_prefix_stochastic_object_choice_only",
+    "note": "Sample seed 11 emits this person at row 0 with Intersection over Union 0.809; greedy never emits the owner before natural termination."
+  },
+  "stage_three_admission_rule": "Only an adjacent clean_miss to hit transition with target absent from the parent prefix, complete single-owner equal-token-length branch rows, a non-target sampled branch owner, and later target appearance may enter the same-parent complete-row intervention.",
+  "training_promotion": "blocked"
+}

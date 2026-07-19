@@ -6,11 +6,11 @@ role: research-unit
 authority: non_normative_research
 architecture_promotion_status: not_promoted
 training_promotion_status: not_promoted
-implementation_status: implemented_and_launch_gated
+implementation_status: stage_2_launch_ready
 unit_id: 2026-07-19-sampled-history-target-reachability-and-complete-row-value
 topic: qwen3-vl-dense-enumeration
-status: ready
-evidence_status: none
+status: active
+evidence_status: stage_1_complete
 updated: 2026-07-19
 ---
 
@@ -121,17 +121,33 @@ selection rules.
 
 ## Stage 2: prefix sufficiency ladder
 
+The post-Stage-1 cohort and allowed interpretation are frozen in
+[stage2-admission.json](stage2-admission.json). Diagnostic cases may be run for
+comparison but cannot enter the primary target-access denominator.
+
 Let `P_k` be the exact sampled prefix after the first `k` complete sampled
 rows. Let the frozen target first occur in the sampled trajectory at row `j`.
 For every `k` from zero through `j`, start from exact `P_k` and greedily
 generate until the complete trajectory reaches the absolute eight-row horizon.
 
-Define:
+Assign one reachability state to every tested prefix:
 
-```text
-H_k = 1 when the target physical owner appears in the greedy continuation
-H_k = 0 when it does not
-```
+- `hit`: a complete, single-owner, phrase-and-geometry-consistent target row
+  appears in the greedy continuation;
+- `clean_miss`: the continuation ends at the absolute eight-row horizon or a
+  natural terminal, all target-relevant rows are interpretable, and the target
+  does not appear. Unrelated unmatched rows remain explicit crop-review
+  warnings but do not automatically erase the target-specific judgment;
+- `right_censored`: the available generation budget ends before the requested
+  horizon or a natural terminal; and
+- `unresolved`: malformed output, mixed ownership, or ambiguous geometry
+  prevents a trustworthy hit-or-miss judgment.
+
+The four-valued state is required because absence from strict owner matches is
+not negative evidence when the continuation itself is ambiguous.
+When the token budget ends before the requested horizon or a natural terminal,
+`right_censored` takes precedence over an incomplete final row; the incomplete
+row evidence is still retained.
 
 Also record:
 
@@ -145,23 +161,24 @@ Also record:
 
 Interpretation is deliberately narrow:
 
-- `H_0 = 0` and `H_j = 1`: accumulated sampled history is sufficient for
-  greedy target retrieval;
-- `H_j = 0`: even the sampled target prefix does not make the target greedy;
+- root prefix `clean_miss` and sampled target prefix `hit`: accumulated sampled
+  history is sufficient for greedy target retrieval;
+- sampled target prefix `clean_miss`: even the sampled target prefix does not
+  make the target greedy;
   its natural occurrence remains a same-prefix stochastic branch;
-- non-monotonic `H_k`: route state is unstable, and there is no single
+- a non-monotonic reachability sequence: route state is unstable, and there is no single
   monotonic memory-acquisition point.
 
-The smallest `k` with `H_k = 1` is called the earliest tested sufficient
-prefix. It is not called a causal onset because each prefix contains a
-different accumulated history.
+The smallest `k` whose reachability state is `hit` is called the earliest
+tested sufficient prefix. It is not called a causal onset because each prefix
+contains a different accumulated history.
 
 ## Stage 3: same-parent complete-row intervention
 
 Only adjacent transitions with:
 
 ```text
-H_k = 0 and H_(k+1) = 1
+clean_miss at P_k and hit at P_(k+1)
 ```
 
 enter this stage.
@@ -181,7 +198,9 @@ Run these exposure-matched arms:
 
 The target must not be the owner of `S_k`; it must appear in a later suffix
 row. The two branch rows must be complete and have one resolved physical owner.
-Exact no-op raw-token parity is mandatory. A mismatch refuses the case.
+They must also add exactly the same number of raw token identifiers. Exact
+no-op raw-token parity is mandatory. A parity or length mismatch refuses the
+primary causal case.
 
 This is the primary causal contrast:
 
@@ -260,8 +279,9 @@ until natural terminal or the fixed 512-token total budget.
    of one definite unsupported, malformed, duplicate, or binding failure.
 4. If fewer than four targets survive, complete a bounded case study only; do
    not expand the image pool, seeds, or owner rules.
-5. If most `H_j` values remain zero, stop the sampled-history route and return
-   to direct same-prefix stochastic target choice.
+5. If most sampled target prefixes remain `clean_miss`, stop the
+   sampled-history route and return to direct same-prefix stochastic target
+   choice.
 6. If all positive effects disappear at the 512-token horizon, classify them
    as route acceleration and do not claim recall repair.
 7. If same-owner geometry controls reproduce the effect, do not call it
