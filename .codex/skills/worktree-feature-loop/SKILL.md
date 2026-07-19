@@ -37,17 +37,20 @@ Serena MCP uses the custom `coordexp-codex` context, not the built-in `codex`
 context. Its stdio server starts with `--project-from-cwd`; dynamic project
 switching, Serena memory, onboarding, shell, generic file operations, and broad
 text search are disabled. CoordExp research knowledge remains in `research/`,
-docs, skills, and Codex memory. Install or verify the portable context with:
+docs, skills, and Codex memory. Serena runtime state is persisted under
+`/data/CoordExp/.codex/runtime/serena`. Install or verify the portable context
+and concise initial instructions with:
 
 ```bash
-.codex/serena/install-context.sh
-.codex/serena/install-context.sh --check
+.codex/serena/setup.sh
+.codex/serena/setup.sh --check
 ```
 
 At the start of a conclusion-sensitive task, call `initial_instructions` and
-confirm the reported absolute worktree path. Restart Serena from the intended
-worktree if it differs. Do not share one active-project server across parallel
-worktrees.
+confirm the reported absolute worktree path. The response is intentionally a
+short routing note plus project receipt, not a general coding manual. Restart
+Serena from the intended worktree if it differs. Do not share one active-project
+server across parallel worktrees.
 
 Use these Serena tools when symbol semantics matter:
 
