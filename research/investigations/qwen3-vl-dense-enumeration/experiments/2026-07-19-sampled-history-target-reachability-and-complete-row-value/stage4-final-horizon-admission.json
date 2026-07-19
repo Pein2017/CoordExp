@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-07-19-sampled-history-target-reachability-and-complete-row-value",
+  "decision_timing": "Frozen after independent validation of the complete three-image Stage 3 union and before any Stage 4 terminal-extension generation",
+  "source_stage_three_union": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-19-sampled-history-target-reachability-and-complete-row-value/stage3-same-parent-complete-row-intervention-fp32-v1/union.json",
+  "source_stage_three_union_sha256": "3d32b66c55379452515cb4cc361ee233ab62ba035601e363cd16241a3b7c1ee9",
+  "source_stage_three_admission": "/data/CoordExp/.worktrees/research-probes/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-sampled-history-target-reachability-and-complete-row-value/stage3-admission.json",
+  "source_stage_three_admission_sha256": "2f9ea8a1dfe6e7a5647747bf4f0a006285df7fbfd101cb41b17d778e8fe82aca",
+  "source_stage_three_shard": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-19-sampled-history-target-reachability-and-complete-row-value/stage3-same-parent-complete-row-intervention-fp32-v1/image-7816.json",
+  "source_stage_three_shard_sha256": "ac65ef62e0ce8750675b86bfe8b304cf485c6496f46c924027bbf1d40a400491",
+  "source_stage_one_shard": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-19-sampled-history-target-reachability-and-complete-row-value/stage1-extended-root-greedy-fp32-v1/image-7816.json",
+  "source_stage_one_shard_sha256": "6dd3c7c243a8437f8c7eb78ec6ab66d59af1be4b728b47928c5b3c67bdcc3b45",
+  "primary_question": "Does the image-7816 fixed-horizon unique-owner gain survive when both coordinate-only branch arms continue to natural termination under the original total generation budget?",
+  "execution_contract": {
+    "image_id": "7816",
+    "parent_prefix_row_count": 0,
+    "branch_owner_id": "2153918",
+    "target_owner_id": "211764",
+    "branch_row_token_count": 9,
+    "total_trajectory_generated_token_budget": 512,
+    "post_branch_generated_token_budget": 503,
+    "continuation_row_ceiling": 512,
+    "decoding": "greedy",
+    "repetition_penalty": 1.0,
+    "model_dtype": "fp32",
+    "physical_batch_size": 1
+  },
+  "admission_evidence": {
+    "stage_one_native_classification": "terminally_omitted",
+    "stage_one_native_terminal_row_index": 10,
+    "stage_three_structural_gate_passed": true,
+    "stage_three_native_no_op_parity_passed": true,
+    "stage_three_sampled_source_replay_parity_passed": true,
+    "stage_three_target_access_reproduced": true,
+    "stage_three_fixed_horizon_unique_owner_difference": 1,
+    "stage_three_fixed_horizon_gained_owner_ids": ["211764"],
+    "stage_three_fixed_horizon_lost_owner_ids": [],
+    "stage_three_native_duplicate_owner_ids": ["205108"],
+    "stage_three_sampled_duplicate_owner_ids": [],
+    "stage_three_native_coordinates": [387, 82, 460, 340],
+    "stage_three_sampled_coordinates": [386, 83, 462, 342]
+  },
+  "required_parity": [
+    "The native branch plus continuation must reproduce the frozen Stage 1 native trajectory exactly through natural terminal at the raw-row level.",
+    "The first seven post-branch rows of each Stage 4 arm must reproduce the corresponding frozen Stage 3 suffix at the raw-token, status, parse-status, and row-stop level.",
+    "The prompt, processed media, image grid, resolved inference configuration, stable model identity, and source file identities must match the frozen sources."
+  ],
+  "outcome_rules": {
+    "sampled_final_gain": "Both arms naturally terminate; every strict native final owner remains in the sampled final set; sampled additionally contains target owner 211764; and the sampled arm adds no malformed, unresolved, warning, unsupported, duplicate, or binding failure.",
+    "same_final_set_or_timing": "Both arms naturally terminate and their final strict owner sets are equal, or native also retrieves target owner 211764.",
+    "sampled_final_exchange": "The sampled arm retrieves target owner 211764 but loses at least one strict native final owner.",
+    "right_censored": "Either arm reaches the 512-token total-trajectory budget without a natural terminal.",
+    "unresolved": "A required parity or identity gate fails, or malformed, target-relevant unresolved, or warning evidence prevents a safe final-set comparison."
+  },
+  "allowed_claim": "An image-specific final unique-owner value judgment for one natural coordinate-only complete-row intervention.",
+  "forbidden_claims": [
+    "general coordinate-history treatment effectiveness",
+    "covered-set or object-ledger mechanism",
+    "training-objective promotion",
+    "validation-set recall improvement"
+  ],
+  "next_step_rule": "Run the row-0 versus row-4 coordinate crossover only if sampled_final_gain is established. Otherwise stop before coordinate sweeps unless mechanism-only work is explicitly prioritized later."
+}
