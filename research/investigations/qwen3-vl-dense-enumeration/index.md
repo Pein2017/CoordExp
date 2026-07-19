@@ -36,10 +36,19 @@ activated five-case panel, earlier order changes the strict four-row owner set
 in `99 / 216` paired trajectories while changing four-row completion in only
 `8 / 216`. Some paths reconverge, but image `19109` also reselects previously
 covered motorcycles several rows later. The current native state is therefore
-useful but route-shaped and order-sensitive, not a clean set ledger. Training
-remains pending a complete-row candidate-score probe that separates uncovered,
-covered, and terminal alternatives. The weekly report and research compass own
-the broader synthesis and next-discriminator boundary.
+useful but route-shaped and order-sensitive, not a clean set ledger. The
+complete-row candidate-score successor now localizes selected changes to
+local branch tokens and physical coordinate continuations rather than one
+universal terminal or description effect. Image `18380` first flips `person`
+versus `cup`, then selectively redirects the uncovered cup at `x1`. The later
+image-`19109` route states redirect same-description motorcycle geometry mainly
+through `y1`, including toward covered instances, but also contain different
+generated histories and are not an order-only comparison. Complete-row sums
+do not consistently predict the greedy branch. The four-case disagreement
+does not authorize training; it routes next to a small recurrence gate for
+branch-aware uncovered-versus-covered ranking under natural own-prefix states.
+The weekly report and research compass own the broader synthesis and next-
+discriminator boundary.
 
 ## Reading Path
 
@@ -118,6 +127,8 @@ durable program reading path below.
 69. [Same covered physical-object set order results and hybrid-state verdict](experiments/2026-07-19-same-covered-set-prefix-order-equivalence/results.md)
 70. [Common physical objects under different prefix permutations and a short future horizon](experiments/2026-07-19-common-object-prefix-permutation-short-horizon/unit.md)
 71. [Short-horizon prefix-permutation results and order-sensitive recurrence verdict](experiments/2026-07-19-common-object-prefix-permutation-short-horizon/results.md)
+72. [Complete candidate-row score decomposition](experiments/2026-07-19-complete-candidate-row-score-decomposition/unit.md)
+73. [Complete candidate-row scoring results and route-conditioned geometry verdict](experiments/2026-07-19-complete-candidate-row-score-decomposition/results.md)
 
 The review and readiness amendment preserve the pre-execution gate. The
 completed unit and results record own current lifecycle and evidence status.
