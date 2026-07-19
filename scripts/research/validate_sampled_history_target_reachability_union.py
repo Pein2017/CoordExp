@@ -9,7 +9,12 @@ import glob
 import hashlib
 import json
 from pathlib import Path
+import sys
 from typing import Any
+
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.research.run_sampled_history_target_reachability import StageOneValidationError, _load_json, sha256_file
 
