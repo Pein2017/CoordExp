@@ -9,15 +9,24 @@ The target remains diagnosis, not a final architecture. The completed program
 has progressed from input-level spatial-policy controls through fixed-prefix
 mode fragmentation, phrase-geometry transition state, fixed-encoding
 post-vision routing, query-phase decomposition, exact-row successor effects,
-and dense-scene human-resolved branch analysis. The latest random-order
-person-25 closeout shows that a complete row can redirect the next spatial
-trajectory, but overlapping same-class instances can remain unresolved until
-the final `y2` coordinate. At one fixed partial row, greedy selects an isolated
-full-height token while sampling can access a much larger physically coherent
-boundary cluster. Earlier rows remain causally active but do not provide
-reliable covered-object exclusion. The program has not established autonomous
-selection, order-free commit or coverage, clean-state synthesis, or a stable
-training intervention.
+and dense-scene human-resolved branch analysis. The random-order person-25
+closeout shows that a complete row can redirect the next spatial trajectory,
+but overlapping same-class instances can remain unresolved until the final
+`y2` coordinate. The subsequent six-case geometry-sorted replication finds
+distributed physically useful coordinate mass in all three same-object cases,
+while separating independent boundary error, autoregressive geometry drift,
+and low-probability extent sampling. Tight valid support does not always
+survive the source top-p cutoff, and same-class controls show that ownership
+may remain unresolved beyond `x1`. Earlier rows remain causally active but do
+not provide reliable covered-object exclusion. A matched-objective follow-up
+then shows that the scoring checkpoint, not prefix source alone, determines
+several coordinate modes. Exact current-sampler replication preserves the
+Gaussian-smoothed bowl endpoint spread and one person branch failure, while
+reducing a historical bus-wide spread to a stable boundary preference. Pure
+cross-entropy is therefore the current baseline; the proposed additional
+coordinate-consistency training screen is not promoted. The program has not
+established autonomous selection, order-free commit or coverage, clean-state
+synthesis, or a stable training intervention.
 The weekly report and research compass own the current synthesis and
 next-discriminator boundary.
 
@@ -85,6 +94,10 @@ durable program reading path below.
 56. [Human-resolved branch-value results](experiments/2026-07-18-human-resolved-dense-branch-value-and-calibration-screen/results.md)
 57. [Person 25 dominant-owner commit and persistence closeout](experiments/2026-07-18-person25-dominant-owner-commit-and-persistence-closeout/unit.md)
 58. [Person 25 closeout results and final-coordinate probability diagnosis](experiments/2026-07-18-person25-dominant-owner-commit-and-persistence-closeout/results.md)
+59. [Fixed-prompt clean-versus-degraded coordinate branch replication](experiments/2026-07-18-fixed-prompt-clean-versus-degraded-coordinate-branch-replication/unit.md)
+60. [Six-case coordinate-branch replication results](experiments/2026-07-18-fixed-prompt-clean-versus-degraded-coordinate-branch-replication/results.md)
+61. [Matched-objective coordinate-branch signature comparison](experiments/2026-07-18-matched-objective-coordinate-branch-signature-comparison/unit.md)
+62. [Exact current-sampler objective comparison results](experiments/2026-07-18-matched-objective-coordinate-branch-signature-comparison/results.md)
 
 The review and readiness amendment preserve the pre-execution gate. The
 completed unit and results record own current lifecycle and evidence status.

@@ -1,0 +1,18 @@
+extends: qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_step4887_fixed_prompt_coordinate_branches.yaml
+run:
+  name: qwen3-vl-2b-description-first-geometry-sorted-pure-cross-entropy-type-gate-dora-step4887-bfloat16-sampled-coordinate-trajectories
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-18-matched-objective-coordinate-branch-signature-comparison
+  collision_policy: timestamp
+model:
+  dtype: bf16
+data:
+  input_jsonl: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-18-fixed-prompt-clean-versus-degraded-coordinate-branch-replication/inputs/six-crop-reviewed-images.coord.jsonl
+generation:
+  batch_size: 4
+  max_new_tokens: 512
+  temperature: 0.0
+  top_p: 1.0
+  n: 1
+  repetition_penalty: 1.0
+scoring:
+  enabled: true

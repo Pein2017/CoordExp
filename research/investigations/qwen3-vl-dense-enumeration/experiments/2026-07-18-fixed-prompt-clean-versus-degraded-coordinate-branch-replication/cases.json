@@ -1,0 +1,79 @@
+{
+  "schema_version": "fixed_prompt_clean_degraded_coordinate_cases.v1",
+  "experiment_full_name": "Fixed-Prompt Clean-versus-Degraded Coordinate Branch Replication",
+  "source_bundle_root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-13-spatial-scope-history-disentanglement/executions/dense-union-51-primary-after-wave-local-tail-contract/artifacts/calls",
+  "cases": [
+    {
+      "name": "image-15335-person-top-boundary-expansion",
+      "role": "primary_same_owner_extent",
+      "image_id": 15335,
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000015335.jpg",
+      "category": "person",
+      "reference_object_identifier": "coco-ann:2028889",
+      "reference_box_xyxy": [964.4760131835938, 38.95199966430664, 1018.7460327148438, 123.60599517822266],
+      "clean_bundle": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-13-spatial-scope-history-disentanglement/executions/dense-union-51-primary-after-wave-local-tail-contract/artifacts/calls/4e7cb5758e53ec31ae61272137586781a081948fb429fdc55273c8a994422968/terminal-output-bundle.json",
+      "degraded_bundle": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-13-spatial-scope-history-disentanglement/executions/dense-union-51-primary-after-wave-local-tail-contract/artifacts/calls/f7c0f6e5fa167f26acfbaa5a492c7ede43a244bd056bac419f94fb2ee84ab5df/terminal-output-bundle.json",
+      "crop_review": "Both boxes refer to the same small person; the degraded y1 expands to the top canvas edge."
+    },
+    {
+      "name": "image-16451-umbrella-lower-extent-expansion",
+      "role": "primary_same_owner_extent_with_ontology_ambiguity",
+      "image_id": 16451,
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000016451.jpg",
+      "category": "umbrella",
+      "reference_object_identifier": "coco-ann:282644",
+      "reference_box_xyxy": [254.59451293945312, 205.92105102539062, 477.5320739746094, 266.1730651855469],
+      "clean_bundle": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-13-spatial-scope-history-disentanglement/executions/dense-union-51-primary-after-wave-local-tail-contract/artifacts/calls/e830021c3d356e8c01a09f765e5ecf74f2bbb79f6aa27db2aff8d53243a851e9/terminal-output-bundle.json",
+      "degraded_bundle": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-13-spatial-scope-history-disentanglement/executions/dense-union-51-primary-after-wave-local-tail-contract/artifacts/calls/9751db9e0fa23a57884c5b885d1c2a77bd08e035a17154f663c40bc2e3475b2d/terminal-output-bundle.json",
+      "crop_review": "Both boxes refer to the same umbrella; the degraded row extends below the annotated canopy and is ontology-sensitive."
+    },
+    {
+      "name": "image-7574-bowl-upper-part-truncation",
+      "role": "primary_same_owner_extent",
+      "image_id": 7574,
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000007574.jpg",
+      "category": "bowl",
+      "reference_object_identifier": "coco-ann:1535235",
+      "reference_box_xyxy": [185.2740020751953, 134.83799743652344, 276.13800048828125, 160.9199981689453],
+      "clean_bundle": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-13-spatial-scope-history-disentanglement/executions/dense-union-51-primary-after-wave-local-tail-contract/artifacts/calls/6ea680bc021555440810a7eb43dfec3903993f0532d8c6d8d17daffc326e4b93/terminal-output-bundle.json",
+      "degraded_bundle": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-13-spatial-scope-history-disentanglement/executions/dense-union-51-primary-after-wave-local-tail-contract/artifacts/calls/de000c29aacc0ab4e6d4641cfc58887b83391dbda5d86014dd970518611aeff6/terminal-output-bundle.json",
+      "crop_review": "Both boxes refer to the same white bowl; the degraded row captures only its upper part."
+    },
+    {
+      "name": "image-12670-nearby-person-owner-switch",
+      "role": "negative_same_class_owner_switch",
+      "image_id": 12670,
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000012670.jpg",
+      "category": "person",
+      "reference_object_identifier": "coco-ann:1231358",
+      "reference_box_xyxy": [513.8834838867188, 89.75096893310547, 663.9359741210938, 471.149169921875],
+      "clean_bundle": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-13-spatial-scope-history-disentanglement/executions/dense-union-51-primary-after-wave-local-tail-contract/artifacts/calls/e3c27719691d64bcb16c8b9775772458ee8e062604e09e855b5cf2b5558528da/terminal-output-bundle.json",
+      "degraded_bundle": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-13-spatial-scope-history-disentanglement/executions/dense-union-51-primary-after-wave-local-tail-contract/artifacts/calls/92e9b6363d47a2cdbf38f04f9ff7e71671717ecb53b5888fe5124ed461ac498a/terminal-output-bundle.json",
+      "crop_review": "The clean row refers to the red-shirt person; the degraded row refers to a different person immediately above."
+    },
+    {
+      "name": "image-6471-nearby-spectator-owner-switch",
+      "role": "negative_same_class_owner_switch",
+      "image_id": 6471,
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000006471.jpg",
+      "category": "person",
+      "reference_object_identifier": "coco-ann:1243438",
+      "reference_box_xyxy": [98.99136352539062, 0.0, 190.51968383789062, 35.528648376464844],
+      "clean_bundle": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-13-spatial-scope-history-disentanglement/executions/dense-union-51-primary-after-wave-local-tail-contract/artifacts/calls/1d912481228f9de98b39d2147454cf719a031b23f187d5e443a8b018edc8c930/terminal-output-bundle.json",
+      "degraded_bundle": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-13-spatial-scope-history-disentanglement/executions/dense-union-51-primary-after-wave-local-tail-contract/artifacts/calls/4eb6eee2ad000f580a34b476587fb350acfee6852f3e53901b5e889cdf4d8f81/terminal-output-bundle.json",
+      "crop_review": "The rows refer to adjacent spectators along the top edge rather than two extents of one person."
+    },
+    {
+      "name": "image-15517-neighboring-bus-owner-ambiguity",
+      "role": "negative_same_class_owner_switch_or_ambiguity",
+      "image_id": 15517,
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000015517.jpg",
+      "category": "bus",
+      "reference_object_identifier": "coco-ann:1794789",
+      "reference_box_xyxy": [609.426025390625, 474.21002197265625, 725.5079956054688, 508.5539855957031],
+      "clean_bundle": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-13-spatial-scope-history-disentanglement/executions/dense-union-51-primary-after-wave-local-tail-contract/artifacts/calls/7db18f21a318b724f267706d46917836d71ec16390cacb56ac1e3ce2e73c8dab/terminal-output-bundle.json",
+      "degraded_bundle": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-13-spatial-scope-history-disentanglement/executions/dense-union-51-primary-after-wave-local-tail-contract/artifacts/calls/5b86a3e6e0c990a0fa04c9b8fe7764e842455831bc790e65229d09a9082fe520/terminal-output-bundle.json",
+      "crop_review": "The degraded box shifts toward the neighboring bus segment; physical ownership is not cleanly shared."
+    }
+  ]
+}

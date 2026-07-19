@@ -173,6 +173,30 @@ Markdown links, rather than this diagram, are the durable graph edges.
   strong dependence on the most recent row in this case, plus fragmented valid
   coordinate mass, not a stable covered-object ledger. See
   [Person 25 Dominant-Owner Commit and Persistence Closeout](experiments/2026-07-18-person25-dominant-owner-commit-and-persistence-closeout/results.md).
+- A six-case crop-reviewed geometry-sorted replication separates three
+  within-row failure families. Image `15335` has an independent top-boundary
+  error while later coordinates remain on the same person; image `7574` shows
+  a small early coordinate branch amplifying into a truncated bowl extent; and
+  image `16451` is better explained by a low-probability tail plus
+  ontology-sensitive umbrella extent. Raw physical-boundary mass exceeds the
+  isolated coordinate argmax in all three primary focus states, but the tight
+  cluster survives the source top-p cutoff clearly in only one, so the
+  predeclared combined gate fails. Same-class controls show that physical
+  ownership can remain unresolved beyond `x1`. This keeps a bounded
+  coordinate-and-whole-row calibration question open, but does not promote an
+  independent-coordinate decoder or a new state carrier. See
+  [Fixed-Prompt Clean-versus-Degraded Coordinate Branch Replication](experiments/2026-07-18-fixed-prompt-clean-versus-degraded-coordinate-branch-replication/results.md).
+- The matched-objective follow-up prevents that six-case result from being
+  promoted directly into another coordinate loss. Fixed-prefix scoring shows
+  that the scoring checkpoint, rather than prefix source alone, determines the
+  bowl, umbrella, and bus coordinate modes. A final 96-rollout Gaussian
+  replication using the exact current sampler preserves the bowl `y2` spread
+  and one dense-person branch failure, but reduces the historical bus-wide
+  spread to a stable left-boundary preference. Pure cross-entropy also wins the
+  existing matched validation-200 comparison. Use pure cross-entropy as the
+  next mechanism baseline and keep Gaussian smoothing plus Ranked Probability
+  Score as an ablation. See
+  [Matched-Objective Coordinate-Branch Signature Comparison](experiments/2026-07-18-matched-objective-coordinate-branch-signature-comparison/results.md).
 - At exact prefix state 56 on image `12576`, repeated one-row sampling exposes
   two valid object modes: the target pizza and a competing left cup. The same
   target disappears at the greedy-terminal state; an independent chair case
@@ -337,11 +361,11 @@ cross-row coverage.
 | Input-level spatial restriction changes one object opportunity | Bounded support under hard eligibility; the count-balanced all-keys-readable soft cross operator is now closed because both matched-owner controls fail, so its crossed arms cannot adjudicate the hard asymmetry | Hard exclusion and its abrupt phase switch may manufacture the asymmetry; the historical uniform-dose operator and current query-phase-restricted operator cannot be pooled into one trajectory | No immediate successor is active. A historical-uniform-operator `3.9060049` endpoint would require a fresh separately authorized execution; artifact-only cross-operator pooling is rejected. |
 | Safe final masked policy improves enumeration | Ruled out under the executed protocol | Equal-call full-image sampling is at least as useful after aggregation | Revisit only after a new masking mechanism avoids retention and output-expansion failures. |
 | Fixed-prefix next-object probability is fragmented across several real objects | Supported at one exact state; not population-estimated | Some other bagging rescues may still arise only from earlier trajectory divergence | Replicate only when a future route decision requires prevalence, not as the immediate discriminator. |
-| Prefix state is an executable but fragile traversal state | Supported locally. Complete rows change future-row likelihoods, and the random-order person-25 closeout reproduces a strong immediate transition both with raw donors and in a generated three-row continuation after the forced canonical prefix. The effect is not atomic: overlapping same-class paths can remain shared until `y2`, and an earlier committed person remains active but repeats in `55/96` samples. | Strong dependence on the latest row, weaker earlier-row influence, and coordinate-extent competition explain more of the current evidence than a persistent covered-object ledger; the nested bowl-carrot reciprocal state may still reflect binary complementation. | Replicate the sampled-clean versus greedy-merged coordinate-mass comparison on 4 to 8 crop-reviewed dense cases before choosing a loss-only extent calibration or a new state carrier. |
+| Prefix state is an executable but fragile traversal state | Supported locally. Complete rows change future-row likelihoods, and the random-order person-25 closeout reproduces a strong immediate transition both with raw donors and in a generated three-row continuation after the forced canonical prefix. The effect is not atomic: overlapping same-class paths can remain shared until `y2`, and an earlier committed person remains active but repeats in `55/96` samples. The six-case geometry-sorted replication further shows that earlier coordinate tokens can reshape later geometry without one universal owner-lock point. | Strong dependence on the latest row, weaker earlier-row influence, and coordinate-extent competition explain more of the current evidence than a persistent covered-object ledger; independent boundary noise and low-probability sampling tails also occur. | No new state carrier or coordinate-consistency training screen is active. The next mechanism seed, if authorized as a new unit, should use pure cross-entropy own-prefix trajectories to compare a sampling-rescued valid object with the greedy-missed branch at the exact transition where their reachability separates. |
 | Late-middle residual states implement phase-specific decisions | Bounded one-sided support: an eligible clock-description path is conditionally portable, and one same-description paired-object state after decoder block `23` switches the unrestricted geometry owner through an `x1` basin change where the trusted block-`13` control does not | The portable state may select only the first coordinate, with the emitted `x1` and native autoregressive computation recovering the rest of the box; one image and one direction do not establish a general object state | No successor is active. If separately authorized, mediate `x1` by forcing paired `x1` without replacement and forcing baseline `x1` under paired-state replacement, then compare later coordinates and final owner. |
-| Early coordinate choice establishes a stable complete-object owner | Mixed and unresolved: the prior dense-chair result has `63/64` released `x2` edges follow real `x1` cues; the new full-`float32` four-arm sweep is monotonically translation-grammar-compatible, but only one arm passes its frozen history-support floor. The image-`7818` donor pair likewise has no branch-supported common `x1,y1` history. | The coherent forced suffix may be off-manifold extrapolation; native box grammar, visual boundaries, geometry-sorted route state, and physical-object state remain unseparated. | [Wave-One results](experiments/2026-07-17-object-specific-geometry-transport-and-cross-row-influence-horizon/results.md) close the current hard-clamp route without phase or cross-row escalation. Any future unit must establish intervention overlap before opening downstream outcomes; do not repair this unit post hoc. |
+| Early coordinate choice establishes a stable complete-object owner | Rejected as a universal rule. In one primary bowl case, a one-bin `x1` branch and later `x2` difference reshape `y2`; in a nearby-person control, shared `x1` remains ambiguous and ownership separates through `y1` and `x2`; one small-person case instead keeps the same owner after a bad `y1`. The older dense-chair transport result still shows that early coordinates can strongly constrain later boundaries. | Coordinate generation mixes box grammar, visual boundary evidence, route state, and instance ownership; the dominant component changes by scene and coordinate slot. | If separately authorized, use on-support same-object coordinate perturbations and coherent full-row alternatives. Do not infer an owner from one coordinate or average coordinate marginals across neighboring instances. |
 | Incomplete dense annotations teach conservative omission and premature termination | Plausible | Sequence-mode concentration or weak visual evidence is the dominant cause | Compare exhaustive labels with original labels and controlled thinning on the same images. |
-| Bagging support can be concentrated into deterministic greedy traversal | Speculative; natural sibling rows expose executable successor state, but neither the released panel nor the human-resolved image-`2299` four-row extension finds a safe positive sampled-branch value gap | Bagging may expose useful diversity rather than a single superior first branch; alternative routes can also reveal plausible semantics while degrading physical extent | On natural alternative routes, separate recoverable correct-box support from semantic-only or part-sized output before selecting a phrase-and-geometry or short-horizon set-value training target. |
+| Bagging support can be concentrated into deterministic greedy traversal | Speculative; natural sibling rows expose executable successor state, but neither the released panel nor the human-resolved image-`2299` four-row extension finds a safe positive sampled-branch value gap | Bagging may expose useful diversity rather than a single superior first branch; alternative routes can also reveal plausible semantics while degrading physical extent | Under the pure cross-entropy baseline, isolate valid sampling-rescued objects that greedy misses and score complete rows at the first causal prefix divergence. Do not treat sampled novelty alone as a preference target. |
 | A persistent ledger, object slot, or external detector is necessary | Unsupported and not authorized | Native prefix state plus better data and transition training may suffice | Consider only after transition shaping fails despite reliable object support and complete labels. |
 
 The completed [Fixed-Prefix Complete-Box Coherence and Progressive Coordinate-
@@ -366,15 +390,27 @@ It also rejects a clean persistent-ledger interpretation because earlier
 person 18 still returns in most samples and the intervention expands
 full-canvas failures.
 
-No expensive successor is active. Do not continue sampling image `2299` or
-introduce a covered-set architecture from this case. The smallest
-treatment-linked next seed is a 4-to-8-case, crop-reviewed replication of the
-same discriminator: locate the first coordinate at which sampled clean and
-greedy contaminated rows diverge, then compare aggregate physically valid
-coordinate mass with the greedy single-token spike. Repeated positive cases
-would authorize a bounded own-prefix coordinate-neighborhood or complete-row
-calibration screen; absent native valid mass would instead raise the priority
-of a visual bridge or explicit state carrier.
+That replication is now complete in [Fixed-Prompt Clean-versus-Degraded
+Coordinate Branch Replication](experiments/2026-07-18-fixed-prompt-clean-versus-degraded-coordinate-branch-replication/results.md).
+Raw physically useful boundary mass is distributed in all three same-object
+focus states, but source-policy survival is window- and cutoff-sensitive. The
+cases separate independent boundary failure, autoregressive geometry drift,
+and tail sampling; controls reject `x1` as a universal owner lock.
+
+The matched-objective comparison is now also complete. Its exact current-
+sampler control confirms one endpoint-specific Gaussian failure but rejects
+the six-case panel as sufficient motivation for a general coordinate-
+consistency training screen. Pure cross-entropy is the better next baseline.
+
+No expensive successor is active. Do not continue sampling image `2299`,
+expand this six-case panel, average coordinate marginals, introduce a covered-
+set architecture, or launch the previously proposed 256-image coordinate
+screen from these results. The highest-information next unit, if separately
+authorized, is a small pure-cross-entropy own-prefix study of physically valid
+objects found by sampling but missed by greedy decoding. It should locate the
+first prefix transition where the full object row becomes reachable and test
+whether the obstruction lies in object choice, phrase-to-geometry binding, or
+later coordinate completion before proposing a training treatment.
 
 The completed [Native Sibling-Row Branch Value and Commit Crossover
 results](experiments/2026-07-17-native-sibling-row-branch-value-and-commit-crossover/results.md)

@@ -1,0 +1,82 @@
+{
+  "schema_version": "native_coordinate_branch_pairs.v1",
+  "experiment_full_name": "Matched-Objective Coordinate-Branch Signature Comparison",
+  "selection_rule": "Visually reviewed native pure-cross-entropy row pairs with an exact shared generated prefix through at least y1; these pairs are stable same-owner controls, not mined failure extremes.",
+  "cases": [
+    {
+      "name": "image-7574-white-bowl-native-lower-boundary-variation",
+      "role": "native_same_owner_stable_control",
+      "image_id": 7574,
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000007574.jpg",
+      "category": "bowl",
+      "reference_object_identifier": "coco-ann:1535235",
+      "reference_box_xyxy": [
+        185.2740020751953,
+        134.83799743652344,
+        276.13800048828125,
+        160.9199981689453
+      ],
+      "source_rollout_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-18-matched-objective-coordinate-branch-signature-comparison/native-pure-cross-entropy-bfloat16/image-7574.json",
+      "clean": {
+        "seed": 4209410074752047304,
+        "generated_order": 0
+      },
+      "degraded": {
+        "seed": 8916398442995466935,
+        "generated_order": 0
+      },
+      "owner_review": "Both rows tightly describe the same white bowl. They share x1=161, y1=142, and x2=231; y2 changes from 189 to 181. Both remain near the accepted physical lower boundary, and neither reproduces the Gaussian-source y2=157-172 truncation family.",
+      "review_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-18-matched-objective-coordinate-branch-signature-comparison/native-row0-crop-overlays-v1/image-7574-bowl-row0-pure-vs-gaussian.png"
+    },
+    {
+      "name": "image-16451-umbrella-native-right-and-lower-boundary-variation",
+      "role": "native_same_owner_ontology_sensitive_control",
+      "image_id": 16451,
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000016451.jpg",
+      "category": "umbrella",
+      "reference_object_identifier": "coco-ann:282644",
+      "reference_box_xyxy": [
+        254.59451293945312,
+        205.92105102539062,
+        477.5320739746094,
+        266.1730651855469
+      ],
+      "source_rollout_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-18-matched-objective-coordinate-branch-signature-comparison/native-pure-cross-entropy-bfloat16/image-16451.json",
+      "clean": {
+        "seed": 5082006552727933398,
+        "generated_order": 0
+      },
+      "degraded": {
+        "seed": 1691697576790465214,
+        "generated_order": 0
+      },
+      "owner_review": "Both rows describe the same umbrella and share x1=250 and y1=192. Their x2/y2 values are 474/300 and 473/305. The official annotation covers the canopy more tightly than many physically plausible predictions, so this case remains ontology-sensitive rather than a clean localization failure.",
+      "review_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-18-matched-objective-coordinate-branch-signature-comparison/native-row0-crop-overlays-v1/image-16451-umbrella-row0-pure-vs-gaussian.png"
+    },
+    {
+      "name": "image-15517-center-right-bus-native-lower-boundary-variation",
+      "role": "native_same_owner_stable_control",
+      "image_id": 15517,
+      "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000015517.jpg",
+      "category": "bus",
+      "reference_object_identifier": "coco-ann:1794789",
+      "reference_box_xyxy": [
+        609.426025390625,
+        474.21002197265625,
+        725.5079956054688,
+        508.5539855957031
+      ],
+      "source_rollout_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-18-matched-objective-coordinate-branch-signature-comparison/native-pure-cross-entropy-bfloat16/image-15517.json",
+      "clean": {
+        "seed": 4201724297823881505,
+        "generated_order": 0
+      },
+      "degraded": {
+        "seed": 2409303721583454889,
+        "generated_order": 0
+      },
+      "owner_review": "Both rows describe the same center-right green-and-white bus. They share x1=511, y1=530, and x2=625; y2 changes only from 590 to 586. Pure cross-entropy remains on one bus, unlike the Gaussian-source row-zero distribution that often spans or switches among neighboring bus segments.",
+      "review_overlay": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-18-matched-objective-coordinate-branch-signature-comparison/native-row0-crop-overlays-v1/image-15517-bus-row0-pure-vs-gaussian.png"
+    }
+  ]
+}
