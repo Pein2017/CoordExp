@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.research.run_same_covered_set_prefix_order_probe import ARMS, SCHEMA_VERSION
+from scripts.research.run_same_covered_set_prefix_order_probe import ARMS, SCHEMA_VERSION, SCHEMA_VERSION_V2, _sha256_json, validate_artifact_payload
 from scripts.research.summarize_same_covered_set_prefix_order_probe import summarize
 
 
@@ -113,3 +113,90 @@ def test_summary_distinguishes_failed_and_unmatched_runs(tmp_path: Path) -> None
     assert arm["primary_owner_counts"]["failed"] == 1
     assert arm["status_counts"]["failed"] == 1
     assert arm["primary_owner_counts"]["none"] == 1
+
+
+def test_v2_summary_groups_comparisons_and_horizon_owners(tmp_path: Path) -> None:
+    initial_prefix = [7]
+    prefix_after_first = [7, 91]
+    final_prefix = [7, 91, 92]
+    row = {
+        "row_index": 0,
+        "input_prefix_token_ids_sha256": _sha256_json(initial_prefix),
+        "cumulative_prefix_token_ids_sha256": _sha256_json(prefix_after_first),
+        "row_stop": {"stop_reason": "complete_row"},
+        "parse_evidence": {"parse_status": "accepted"},
+        "raw_generated_token_ids": [91],
+        "accepted_complete_row": True,
+        "appended_to_prefix": True,
+        "owner_entity_ids": ["D"],
+    }
+    run = {
+        "comparison_id": "swap",
+        "mode": "sample",
+        "seed": 11,
+        "status": "success",
+        "horizon_complete": True,
+        "horizon_rows_requested": 2,
+        "horizon_rows_generated": 2,
+        "initial_prefix_token_ids": initial_prefix,
+        "final_prefix_token_ids": final_prefix,
+        "initial_prefix_token_ids_sha256": _sha256_json(initial_prefix),
+        "final_prefix_token_ids_sha256": _sha256_json(final_prefix),
+        "cumulative_owner_entity_ids": ["D", "E"],
+        "rows": [row, {**row, "row_index": 1, "input_prefix_token_ids_sha256": _sha256_json(prefix_after_first), "cumulative_prefix_token_ids_sha256": _sha256_json(final_prefix), "raw_generated_token_ids": [92], "owner_entity_ids": ["E"]}],
+    }
+    run2 = {**run, "comparison_id": "swap2", "seed": 12}
+    arms = {
+        "canonical": {"entity_ids": ["A", "B", "C"], "prefix_token_ids_sha256": _sha256_json(initial_prefix), "permutation_inversion_count_relative_to_canonical_order": 0, "runs": [run, run2]},
+        "swap": {"entity_ids": ["B", "A", "C"], "prefix_token_ids_sha256": _sha256_json(initial_prefix), "permutation_inversion_count_relative_to_canonical_order": 1, "runs": [{**run, "comparison_id": "swap", "seed": 12}, {**run2, "comparison_id": "swap2", "seed": 13}]},
+    }
+    payload = {
+        "schema_version": SCHEMA_VERSION_V2,
+        "config": {},
+        "cases": [{
+            "case_id": "v2",
+            "image_id": "image-v2",
+            "entity_ledger": [],
+            "comparisons": [
+                {"comparison_id": "swap", "arm_names": ["canonical", "swap"], "shared_suffix_length": 1, "rollout_horizon_rows": 2},
+                {"comparison_id": "swap2", "arm_names": ["canonical", "swap"], "shared_suffix_length": 1, "rollout_horizon_rows": 2},
+            ],
+            "invariants_by_comparison": {"swap": {"same_row_count": True}, "swap2": {"same_row_count": True}},
+            "arms": arms,
+        }],
+    }
+    result = summarize([_write(tmp_path / "v2.json", payload)])
+    assert result["schema_version"].endswith(".v2")
+    comparison = result["cases"][0]["comparisons"][0]
+    assert comparison["comparison_id"] == "swap"
+    assert comparison["arms"]["canonical"]["generated_row_count"] == 2
+    assert comparison["arms"]["canonical"]["permutation_distance"] == 0
+    assert comparison["arms"]["swap"]["permutation_distance"] == 1
+    assert comparison["arms"]["canonical"]["physical_owner_counts"] == {"D": 1, "E": 1}
+    trajectory = comparison["arms"]["canonical"]["runs"][0]["ordered_owner_trajectory"]
+    assert [item["owner_entity_ids"] for item in trajectory] == [["D"], ["E"]]
+    assert comparison["arms"]["canonical"]["runs"][0]["per_row_stop_reasons"] == ["complete_row", "complete_row"]
+    assert comparison["arms"]["canonical"]["runs"][0]["cumulative_unique_owner_ids"] == ["D", "E"]
+
+
+def test_v2_artifact_rejects_undeclared_comparison_and_nonsequential_rows(tmp_path: Path) -> None:
+    # Reuse the compact valid artifact assembled by the preceding test shape.
+    row = {
+        "row_index": 0, "input_prefix_token_ids_sha256": "p0", "cumulative_prefix_token_ids_sha256": "p1",
+        "row_stop": {"stop_reason": "complete_row"}, "parse_evidence": {}, "raw_generated_token_ids": [1],
+        "accepted_complete_row": True, "appended_to_prefix": True,
+    }
+    run = {
+        "comparison_id": "missing", "mode": "greedy", "seed": None, "status": "success", "horizon_complete": True,
+        "horizon_rows_requested": 1, "horizon_rows_generated": 1, "initial_prefix_token_ids": [1], "final_prefix_token_ids": [1, 1],
+        "initial_prefix_token_ids_sha256": _sha256_json([1]), "final_prefix_token_ids_sha256": _sha256_json([1, 1]), "rows": [row],
+    }
+    payload = {
+        "schema_version": SCHEMA_VERSION_V2, "config": {},
+        "cases": [{"case_id": "bad", "image_id": "i", "entity_ledger": [],
+                    "comparisons": [{"comparison_id": "declared", "arm_names": ["a", "b"], "shared_suffix_length": 1, "rollout_horizon_rows": 1}],
+                    "invariants_by_comparison": {},
+                    "arms": {"a": {"entity_ids": ["A"], "prefix_token_ids_sha256": "a", "runs": [run]}, "b": {"entity_ids": ["A"], "prefix_token_ids_sha256": "b", "runs": []}}}],
+    }
+    with pytest.raises(ValueError, match="undeclared comparison"):
+        validate_artifact_payload(payload)

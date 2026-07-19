@@ -1,0 +1,1515 @@
+{
+  "schema_version": "same_covered_set_prefix_order.case.v2",
+  "image_id": "18380",
+  "entities": [
+    {
+      "entity_id": "gt_0000",
+      "description": "person",
+      "bbox_pixel_xyxy": [
+        441.0,
+        61.0,
+        549.0,
+        231.0
+      ],
+      "bbox_norm1000": [
+        353,
+        73,
+        440,
+        278
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_353|><|coord_73|><|coord_440|><|coord_278|><|box_end|>",
+      "source_gt_index": 0,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0001",
+      "description": "person",
+      "bbox_pixel_xyxy": [
+        740.0,
+        124.0,
+        896.0,
+        390.0
+      ],
+      "bbox_norm1000": [
+        593,
+        149,
+        718,
+        469
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_593|><|coord_149|><|coord_718|><|coord_469|><|box_end|>",
+      "source_gt_index": 1,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0002",
+      "description": "person",
+      "bbox_pixel_xyxy": [
+        577.0,
+        125.0,
+        700.0,
+        255.0
+      ],
+      "bbox_norm1000": [
+        462,
+        150,
+        561,
+        306
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_462|><|coord_150|><|coord_561|><|coord_306|><|box_end|>",
+      "source_gt_index": 2,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0003",
+      "description": "person",
+      "bbox_pixel_xyxy": [
+        721.0,
+        150.0,
+        795.0,
+        330.0
+      ],
+      "bbox_norm1000": [
+        578,
+        180,
+        637,
+        397
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_578|><|coord_180|><|coord_637|><|coord_397|><|box_end|>",
+      "source_gt_index": 3,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0004",
+      "description": "person",
+      "bbox_pixel_xyxy": [
+        429.0,
+        152.0,
+        518.0,
+        339.0
+      ],
+      "bbox_norm1000": [
+        344,
+        183,
+        415,
+        407
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_344|><|coord_183|><|coord_415|><|coord_407|><|box_end|>",
+      "source_gt_index": 4,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0005",
+      "description": "vase",
+      "bbox_pixel_xyxy": [
+        1001.0,
+        172.0,
+        1024.0,
+        231.0
+      ],
+      "bbox_norm1000": [
+        802,
+        207,
+        821,
+        278
+      ],
+      "row_text": "<|object_ref_start|>vase<|object_ref_end|><|box_start|><|coord_802|><|coord_207|><|coord_821|><|coord_278|><|box_end|>",
+      "source_gt_index": 5,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0006",
+      "description": "person",
+      "bbox_pixel_xyxy": [
+        272.0,
+        200.0,
+        457.0,
+        593.0
+      ],
+      "bbox_norm1000": [
+        218,
+        240,
+        366,
+        713
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_218|><|coord_240|><|coord_366|><|coord_713|><|box_end|>",
+      "source_gt_index": 6,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0007",
+      "description": "person",
+      "bbox_pixel_xyxy": [
+        443.0,
+        236.0,
+        544.0,
+        422.0
+      ],
+      "bbox_norm1000": [
+        355,
+        284,
+        436,
+        507
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_355|><|coord_284|><|coord_436|><|coord_507|><|box_end|>",
+      "source_gt_index": 7,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0008",
+      "description": "dining table",
+      "bbox_pixel_xyxy": [
+        241.0,
+        238.0,
+        1046.0,
+        831.0
+      ],
+      "bbox_norm1000": [
+        193,
+        286,
+        838,
+        999
+      ],
+      "row_text": "<|object_ref_start|>dining table<|object_ref_end|><|box_start|><|coord_193|><|coord_286|><|coord_838|><|coord_999|><|box_end|>",
+      "source_gt_index": 8,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0009",
+      "description": "wine glass",
+      "bbox_pixel_xyxy": [
+        644.0,
+        239.0,
+        695.0,
+        354.0
+      ],
+      "bbox_norm1000": [
+        516,
+        287,
+        557,
+        425
+      ],
+      "row_text": "<|object_ref_start|>wine glass<|object_ref_end|><|box_start|><|coord_516|><|coord_287|><|coord_557|><|coord_425|><|box_end|>",
+      "source_gt_index": 9,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0010",
+      "description": "chair",
+      "bbox_pixel_xyxy": [
+        886.0,
+        250.0,
+        922.0,
+        365.0
+      ],
+      "bbox_norm1000": [
+        710,
+        300,
+        739,
+        439
+      ],
+      "row_text": "<|object_ref_start|>chair<|object_ref_end|><|box_start|><|coord_710|><|coord_300|><|coord_739|><|coord_439|><|box_end|>",
+      "source_gt_index": 10,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0011",
+      "description": "person",
+      "bbox_pixel_xyxy": [
+        950.0,
+        260.0,
+        1247.0,
+        831.0
+      ],
+      "bbox_norm1000": [
+        761,
+        312,
+        999,
+        999
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_761|><|coord_312|><|coord_999|><|coord_999|><|box_end|>",
+      "source_gt_index": 11,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0012",
+      "description": "person",
+      "bbox_pixel_xyxy": [
+        366.0,
+        260.0,
+        463.0,
+        467.0
+      ],
+      "bbox_norm1000": [
+        293,
+        312,
+        371,
+        561
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_293|><|coord_312|><|coord_371|><|coord_561|><|box_end|>",
+      "source_gt_index": 12,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0013",
+      "description": "person",
+      "bbox_pixel_xyxy": [
+        770.0,
+        268.0,
+        890.0,
+        491.0
+      ],
+      "bbox_norm1000": [
+        617,
+        322,
+        713,
+        590
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_617|><|coord_322|><|coord_713|><|coord_590|><|box_end|>",
+      "source_gt_index": 13,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0014",
+      "description": "cup",
+      "bbox_pixel_xyxy": [
+        595.0,
+        284.0,
+        622.0,
+        305.0
+      ],
+      "bbox_norm1000": [
+        477,
+        341,
+        498,
+        367
+      ],
+      "row_text": "<|object_ref_start|>cup<|object_ref_end|><|box_start|><|coord_477|><|coord_341|><|coord_498|><|coord_367|><|box_end|>",
+      "source_gt_index": 14,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0015",
+      "description": "person",
+      "bbox_pixel_xyxy": [
+        131.0,
+        295.0,
+        345.0,
+        800.0
+      ],
+      "bbox_norm1000": [
+        105,
+        355,
+        276,
+        962
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_105|><|coord_355|><|coord_276|><|coord_962|><|box_end|>",
+      "source_gt_index": 15,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0016",
+      "description": "bowl",
+      "bbox_pixel_xyxy": [
+        574.0,
+        304.0,
+        670.0,
+        349.0
+      ],
+      "bbox_norm1000": [
+        460,
+        365,
+        537,
+        419
+      ],
+      "row_text": "<|object_ref_start|>bowl<|object_ref_end|><|box_start|><|coord_460|><|coord_365|><|coord_537|><|coord_419|><|box_end|>",
+      "source_gt_index": 16,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0017",
+      "description": "cup",
+      "bbox_pixel_xyxy": [
+        670.0,
+        319.0,
+        699.0,
+        361.0
+      ],
+      "bbox_norm1000": [
+        537,
+        383,
+        560,
+        434
+      ],
+      "row_text": "<|object_ref_start|>cup<|object_ref_end|><|box_start|><|coord_537|><|coord_383|><|coord_560|><|coord_434|><|box_end|>",
+      "source_gt_index": 17,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0018",
+      "description": "cup",
+      "bbox_pixel_xyxy": [
+        565.0,
+        324.0,
+        597.0,
+        363.0
+      ],
+      "bbox_norm1000": [
+        453,
+        389,
+        478,
+        436
+      ],
+      "row_text": "<|object_ref_start|>cup<|object_ref_end|><|box_start|><|coord_453|><|coord_389|><|coord_478|><|coord_436|><|box_end|>",
+      "source_gt_index": 18,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0019",
+      "description": "person",
+      "bbox_pixel_xyxy": [
+        1.0,
+        328.0,
+        252.0,
+        820.0
+      ],
+      "bbox_norm1000": [
+        1,
+        394,
+        202,
+        986
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_1|><|coord_394|><|coord_202|><|coord_986|><|box_end|>",
+      "source_gt_index": 19,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0020",
+      "description": "cup",
+      "bbox_pixel_xyxy": [
+        683.0,
+        339.0,
+        712.0,
+        385.0
+      ],
+      "bbox_norm1000": [
+        547,
+        407,
+        571,
+        463
+      ],
+      "row_text": "<|object_ref_start|>cup<|object_ref_end|><|box_start|><|coord_547|><|coord_407|><|coord_571|><|coord_463|><|box_end|>",
+      "source_gt_index": 20,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0021",
+      "description": "cup",
+      "bbox_pixel_xyxy": [
+        569.0,
+        359.0,
+        604.0,
+        405.0
+      ],
+      "bbox_norm1000": [
+        456,
+        431,
+        484,
+        487
+      ],
+      "row_text": "<|object_ref_start|>cup<|object_ref_end|><|box_start|><|coord_456|><|coord_431|><|coord_484|><|coord_487|><|box_end|>",
+      "source_gt_index": 21,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0022",
+      "description": "wine glass",
+      "bbox_pixel_xyxy": [
+        569.0,
+        360.0,
+        603.0,
+        403.0
+      ],
+      "bbox_norm1000": [
+        456,
+        433,
+        483,
+        484
+      ],
+      "row_text": "<|object_ref_start|>wine glass<|object_ref_end|><|box_start|><|coord_456|><|coord_433|><|coord_483|><|coord_484|><|box_end|>",
+      "source_gt_index": 22,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0023",
+      "description": "person",
+      "bbox_pixel_xyxy": [
+        885.0,
+        360.0,
+        1042.0,
+        671.0
+      ],
+      "bbox_norm1000": [
+        709,
+        433,
+        835,
+        806
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_709|><|coord_433|><|coord_835|><|coord_806|><|box_end|>",
+      "source_gt_index": 23,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0024",
+      "description": "bowl",
+      "bbox_pixel_xyxy": [
+        608.0,
+        373.0,
+        689.0,
+        423.0
+      ],
+      "bbox_norm1000": [
+        487,
+        448,
+        552,
+        508
+      ],
+      "row_text": "<|object_ref_start|>bowl<|object_ref_end|><|box_start|><|coord_487|><|coord_448|><|coord_552|><|coord_508|><|box_end|>",
+      "source_gt_index": 24,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0025",
+      "description": "cup",
+      "bbox_pixel_xyxy": [
+        548.0,
+        419.0,
+        594.0,
+        473.0
+      ],
+      "bbox_norm1000": [
+        439,
+        504,
+        476,
+        569
+      ],
+      "row_text": "<|object_ref_start|>cup<|object_ref_end|><|box_start|><|coord_439|><|coord_504|><|coord_476|><|coord_569|><|box_end|>",
+      "source_gt_index": 25,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0026",
+      "description": "bowl",
+      "bbox_pixel_xyxy": [
+        593.0,
+        422.0,
+        702.0,
+        468.0
+      ],
+      "bbox_norm1000": [
+        475,
+        507,
+        562,
+        562
+      ],
+      "row_text": "<|object_ref_start|>bowl<|object_ref_end|><|box_start|><|coord_475|><|coord_507|><|coord_562|><|coord_562|><|box_end|>",
+      "source_gt_index": 26,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0027",
+      "description": "spoon",
+      "bbox_pixel_xyxy": [
+        482.0,
+        428.0,
+        529.0,
+        464.0
+      ],
+      "bbox_norm1000": [
+        386,
+        514,
+        424,
+        558
+      ],
+      "row_text": "<|object_ref_start|>spoon<|object_ref_end|><|box_start|><|coord_386|><|coord_514|><|coord_424|><|coord_558|><|box_end|>",
+      "source_gt_index": 27,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0028",
+      "description": "fork",
+      "bbox_pixel_xyxy": [
+        482.0,
+        428.0,
+        533.0,
+        464.0
+      ],
+      "bbox_norm1000": [
+        386,
+        514,
+        427,
+        558
+      ],
+      "row_text": "<|object_ref_start|>fork<|object_ref_end|><|box_start|><|coord_386|><|coord_514|><|coord_427|><|coord_558|><|box_end|>",
+      "source_gt_index": 28,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0029",
+      "description": "knife",
+      "bbox_pixel_xyxy": [
+        739.0,
+        431.0,
+        819.0,
+        448.0
+      ],
+      "bbox_norm1000": [
+        592,
+        518,
+        656,
+        538
+      ],
+      "row_text": "<|object_ref_start|>knife<|object_ref_end|><|box_start|><|coord_592|><|coord_518|><|coord_656|><|coord_538|><|box_end|>",
+      "source_gt_index": 29,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0030",
+      "description": "cup",
+      "bbox_pixel_xyxy": [
+        710.0,
+        448.0,
+        755.0,
+        487.0
+      ],
+      "bbox_norm1000": [
+        569,
+        538,
+        605,
+        585
+      ],
+      "row_text": "<|object_ref_start|>cup<|object_ref_end|><|box_start|><|coord_569|><|coord_538|><|coord_605|><|coord_585|><|box_end|>",
+      "source_gt_index": 30,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0031",
+      "description": "bowl",
+      "bbox_pixel_xyxy": [
+        502.0,
+        473.0,
+        653.0,
+        578.0
+      ],
+      "bbox_norm1000": [
+        402,
+        569,
+        523,
+        695
+      ],
+      "row_text": "<|object_ref_start|>bowl<|object_ref_end|><|box_start|><|coord_402|><|coord_569|><|coord_523|><|coord_695|><|box_end|>",
+      "source_gt_index": 31,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0032",
+      "description": "wine glass",
+      "bbox_pixel_xyxy": [
+        492.0,
+        475.0,
+        544.0,
+        607.0
+      ],
+      "bbox_norm1000": [
+        394,
+        571,
+        436,
+        730
+      ],
+      "row_text": "<|object_ref_start|>wine glass<|object_ref_end|><|box_start|><|coord_394|><|coord_571|><|coord_436|><|coord_730|><|box_end|>",
+      "source_gt_index": 32,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0033",
+      "description": "cup",
+      "bbox_pixel_xyxy": [
+        697.0,
+        476.0,
+        748.0,
+        552.0
+      ],
+      "bbox_norm1000": [
+        558,
+        572,
+        599,
+        663
+      ],
+      "row_text": "<|object_ref_start|>cup<|object_ref_end|><|box_start|><|coord_558|><|coord_572|><|coord_599|><|coord_663|><|box_end|>",
+      "source_gt_index": 33,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0034",
+      "description": "carrot",
+      "bbox_pixel_xyxy": [
+        553.0,
+        487.0,
+        583.0,
+        501.0
+      ],
+      "bbox_norm1000": [
+        443,
+        585,
+        467,
+        602
+      ],
+      "row_text": "<|object_ref_start|>carrot<|object_ref_end|><|box_start|><|coord_443|><|coord_585|><|coord_467|><|coord_602|><|box_end|>",
+      "source_gt_index": 34,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0035",
+      "description": "knife",
+      "bbox_pixel_xyxy": [
+        428.0,
+        495.0,
+        463.0,
+        502.0
+      ],
+      "bbox_norm1000": [
+        343,
+        595,
+        371,
+        603
+      ],
+      "row_text": "<|object_ref_start|>knife<|object_ref_end|><|box_start|><|coord_343|><|coord_595|><|coord_371|><|coord_603|><|box_end|>",
+      "source_gt_index": 35,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0036",
+      "description": "carrot",
+      "bbox_pixel_xyxy": [
+        600.0,
+        495.0,
+        612.0,
+        504.0
+      ],
+      "bbox_norm1000": [
+        481,
+        595,
+        490,
+        606
+      ],
+      "row_text": "<|object_ref_start|>carrot<|object_ref_end|><|box_start|><|coord_481|><|coord_595|><|coord_490|><|coord_606|><|box_end|>",
+      "source_gt_index": 36,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0037",
+      "description": "wine glass",
+      "bbox_pixel_xyxy": [
+        759.0,
+        502.0,
+        824.0,
+        650.0
+      ],
+      "bbox_norm1000": [
+        608,
+        603,
+        660,
+        781
+      ],
+      "row_text": "<|object_ref_start|>wine glass<|object_ref_end|><|box_start|><|coord_608|><|coord_603|><|coord_660|><|coord_781|><|box_end|>",
+      "source_gt_index": 37,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0038",
+      "description": "carrot",
+      "bbox_pixel_xyxy": [
+        542.0,
+        511.0,
+        562.0,
+        529.0
+      ],
+      "bbox_norm1000": [
+        434,
+        614,
+        450,
+        636
+      ],
+      "row_text": "<|object_ref_start|>carrot<|object_ref_end|><|box_start|><|coord_434|><|coord_614|><|coord_450|><|coord_636|><|box_end|>",
+      "source_gt_index": 38,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0039",
+      "description": "spoon",
+      "bbox_pixel_xyxy": [
+        675.0,
+        535.0,
+        710.0,
+        596.0
+      ],
+      "bbox_norm1000": [
+        541,
+        643,
+        569,
+        716
+      ],
+      "row_text": "<|object_ref_start|>spoon<|object_ref_end|><|box_start|><|coord_541|><|coord_643|><|coord_569|><|coord_716|><|box_end|>",
+      "source_gt_index": 39,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0040",
+      "description": "cup",
+      "bbox_pixel_xyxy": [
+        457.0,
+        576.0,
+        527.0,
+        628.0
+      ],
+      "bbox_norm1000": [
+        366,
+        692,
+        422,
+        755
+      ],
+      "row_text": "<|object_ref_start|>cup<|object_ref_end|><|box_start|><|coord_366|><|coord_692|><|coord_422|><|coord_755|><|box_end|>",
+      "source_gt_index": 40,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0041",
+      "description": "cup",
+      "bbox_pixel_xyxy": [
+        791.0,
+        595.0,
+        863.0,
+        700.0
+      ],
+      "bbox_norm1000": [
+        634,
+        715,
+        692,
+        841
+      ],
+      "row_text": "<|object_ref_start|>cup<|object_ref_end|><|box_start|><|coord_634|><|coord_715|><|coord_692|><|coord_841|><|box_end|>",
+      "source_gt_index": 41,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0042",
+      "description": "cup",
+      "bbox_pixel_xyxy": [
+        461.0,
+        619.0,
+        537.0,
+        727.0
+      ],
+      "bbox_norm1000": [
+        369,
+        744,
+        430,
+        874
+      ],
+      "row_text": "<|object_ref_start|>cup<|object_ref_end|><|box_start|><|coord_369|><|coord_744|><|coord_430|><|coord_874|><|box_end|>",
+      "source_gt_index": 42,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0043",
+      "description": "wine glass",
+      "bbox_pixel_xyxy": [
+        528.0,
+        630.0,
+        583.0,
+        766.0
+      ],
+      "bbox_norm1000": [
+        423,
+        757,
+        467,
+        921
+      ],
+      "row_text": "<|object_ref_start|>wine glass<|object_ref_end|><|box_start|><|coord_423|><|coord_757|><|coord_467|><|coord_921|><|box_end|>",
+      "source_gt_index": 43,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0044",
+      "description": "wine glass",
+      "bbox_pixel_xyxy": [
+        554.0,
+        631.0,
+        624.0,
+        824.0
+      ],
+      "bbox_norm1000": [
+        444,
+        758,
+        500,
+        990
+      ],
+      "row_text": "<|object_ref_start|>wine glass<|object_ref_end|><|box_start|><|coord_444|><|coord_758|><|coord_500|><|coord_990|><|box_end|>",
+      "source_gt_index": 44,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0045",
+      "description": "spoon",
+      "bbox_pixel_xyxy": [
+        828.0,
+        676.0,
+        940.0,
+        711.0
+      ],
+      "bbox_norm1000": [
+        663,
+        812,
+        753,
+        855
+      ],
+      "row_text": "<|object_ref_start|>spoon<|object_ref_end|><|box_start|><|coord_663|><|coord_812|><|coord_753|><|coord_855|><|box_end|>",
+      "source_gt_index": 45,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0046",
+      "description": "bowl",
+      "bbox_pixel_xyxy": [
+        622.0,
+        678.0,
+        811.0,
+        831.0
+      ],
+      "bbox_norm1000": [
+        498,
+        815,
+        650,
+        999
+      ],
+      "row_text": "<|object_ref_start|>bowl<|object_ref_end|><|box_start|><|coord_498|><|coord_815|><|coord_650|><|coord_999|><|box_end|>",
+      "source_gt_index": 46,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0047",
+      "description": "knife",
+      "bbox_pixel_xyxy": [
+        331.0,
+        680.0,
+        477.0,
+        692.0
+      ],
+      "bbox_norm1000": [
+        265,
+        817,
+        382,
+        832
+      ],
+      "row_text": "<|object_ref_start|>knife<|object_ref_end|><|box_start|><|coord_265|><|coord_817|><|coord_382|><|coord_832|><|box_end|>",
+      "source_gt_index": 47,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0048",
+      "description": "fork",
+      "bbox_pixel_xyxy": [
+        839.0,
+        683.0,
+        927.0,
+        768.0
+      ],
+      "bbox_norm1000": [
+        672,
+        821,
+        743,
+        923
+      ],
+      "row_text": "<|object_ref_start|>fork<|object_ref_end|><|box_start|><|coord_672|><|coord_821|><|coord_743|><|coord_923|><|box_end|>",
+      "source_gt_index": 48,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0049",
+      "description": "knife",
+      "bbox_pixel_xyxy": [
+        869.0,
+        698.0,
+        974.0,
+        789.0
+      ],
+      "bbox_norm1000": [
+        696,
+        839,
+        780,
+        948
+      ],
+      "row_text": "<|object_ref_start|>knife<|object_ref_end|><|box_start|><|coord_696|><|coord_839|><|coord_780|><|coord_948|><|box_end|>",
+      "source_gt_index": 49,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0050",
+      "description": "cup",
+      "bbox_pixel_xyxy": [
+        472.0,
+        730.0,
+        562.0,
+        831.0
+      ],
+      "bbox_norm1000": [
+        378,
+        877,
+        450,
+        999
+      ],
+      "row_text": "<|object_ref_start|>cup<|object_ref_end|><|box_start|><|coord_378|><|coord_877|><|coord_450|><|coord_999|><|box_end|>",
+      "source_gt_index": 50,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0051",
+      "description": "fork",
+      "bbox_pixel_xyxy": [
+        396.0,
+        787.0,
+        423.0,
+        831.0
+      ],
+      "bbox_norm1000": [
+        317,
+        946,
+        339,
+        999
+      ],
+      "row_text": "<|object_ref_start|>fork<|object_ref_end|><|box_start|><|coord_317|><|coord_946|><|coord_339|><|coord_999|><|box_end|>",
+      "source_gt_index": 51,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0052",
+      "description": "bowl",
+      "bbox_pixel_xyxy": [
+        864.0,
+        794.0,
+        1021.0,
+        831.0
+      ],
+      "bbox_norm1000": [
+        692,
+        954,
+        818,
+        999
+      ],
+      "row_text": "<|object_ref_start|>bowl<|object_ref_end|><|box_start|><|coord_692|><|coord_954|><|coord_818|><|coord_999|><|box_end|>",
+      "source_gt_index": 52,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "common_objects_depth_6",
+      "selected_common_entity_ids": [
+        "gt_0000",
+        "gt_0008",
+        "gt_0001",
+        "gt_0007",
+        "gt_0015",
+        "gt_0017"
+      ],
+      "selected_common_gt_indices": [
+        0,
+        8,
+        1,
+        7,
+        15,
+        17
+      ],
+      "entity_ledger_scope": "full_artifact_local_gt",
+      "entity_ledger_entity_count": 53,
+      "arms": {
+        "current_sorted_rollout_order": {
+          "entity_ids": [
+            "gt_0000",
+            "gt_0008",
+            "gt_0001",
+            "gt_0007",
+            "gt_0015",
+            "gt_0017"
+          ],
+          "permutation_inversion_count_relative_to_canonical_order": 0
+        },
+        "historical_random_relative_order_with_fixed_final_two": {
+          "entity_ids": [
+            "gt_0008",
+            "gt_0001",
+            "gt_0000",
+            "gt_0007",
+            "gt_0015",
+            "gt_0017"
+          ],
+          "permutation_inversion_count_relative_to_canonical_order": 2
+        },
+        "reverse_earlier_rows_with_fixed_final_two": {
+          "entity_ids": [
+            "gt_0007",
+            "gt_0001",
+            "gt_0008",
+            "gt_0000",
+            "gt_0015",
+            "gt_0017"
+          ],
+          "permutation_inversion_count_relative_to_canonical_order": 6
+        },
+        "reverse_earlier_rows_with_fixed_final_one": {
+          "entity_ids": [
+            "gt_0015",
+            "gt_0007",
+            "gt_0001",
+            "gt_0008",
+            "gt_0000",
+            "gt_0017"
+          ],
+          "permutation_inversion_count_relative_to_canonical_order": 10
+        },
+        "adjacent_swap_before_fixed_final_two": {
+          "entity_ids": [
+            "gt_0000",
+            "gt_0008",
+            "gt_0007",
+            "gt_0001",
+            "gt_0015",
+            "gt_0017"
+          ],
+          "permutation_inversion_count_relative_to_canonical_order": 1
+        },
+        "seeded_shuffle_earlier_rows_with_fixed_final_two": {
+          "entity_ids": [
+            "gt_0000",
+            "gt_0001",
+            "gt_0007",
+            "gt_0008",
+            "gt_0015",
+            "gt_0017"
+          ],
+          "permutation_inversion_count_relative_to_canonical_order": 2
+        }
+      },
+      "comparisons": [
+        {
+          "comparison_id": "current_sorted_rollout_order_vs_historical_random_relative_order_with_fixed_final_two",
+          "arm_names": [
+            "current_sorted_rollout_order",
+            "historical_random_relative_order_with_fixed_final_two"
+          ],
+          "require_same_covered_set": true,
+          "shared_suffix_length": 2,
+          "rollout_horizon_rows": 1,
+          "comparison_meaning": "Compare earlier prefix order while keeping the same physical rows and final two rows."
+        },
+        {
+          "comparison_id": "current_sorted_rollout_order_vs_reverse_earlier_rows_with_fixed_final_two",
+          "arm_names": [
+            "current_sorted_rollout_order",
+            "reverse_earlier_rows_with_fixed_final_two"
+          ],
+          "require_same_covered_set": true,
+          "shared_suffix_length": 2,
+          "rollout_horizon_rows": 1,
+          "comparison_meaning": "Compare earlier prefix order while keeping the same physical rows and final two rows."
+        },
+        {
+          "comparison_id": "current_sorted_rollout_order_vs_reverse_earlier_rows_with_fixed_final_one",
+          "arm_names": [
+            "current_sorted_rollout_order",
+            "reverse_earlier_rows_with_fixed_final_one"
+          ],
+          "require_same_covered_set": true,
+          "shared_suffix_length": 1,
+          "rollout_horizon_rows": 1,
+          "comparison_meaning": "Compare earlier prefix order while keeping the same physical rows and final one row."
+        },
+        {
+          "comparison_id": "current_sorted_rollout_order_vs_adjacent_swap_before_fixed_final_two",
+          "arm_names": [
+            "current_sorted_rollout_order",
+            "adjacent_swap_before_fixed_final_two"
+          ],
+          "require_same_covered_set": true,
+          "shared_suffix_length": 2,
+          "rollout_horizon_rows": 1,
+          "comparison_meaning": "Compare earlier prefix order while keeping the same physical rows and final two rows."
+        },
+        {
+          "comparison_id": "current_sorted_rollout_order_vs_seeded_shuffle_earlier_rows_with_fixed_final_two",
+          "arm_names": [
+            "current_sorted_rollout_order",
+            "seeded_shuffle_earlier_rows_with_fixed_final_two"
+          ],
+          "require_same_covered_set": true,
+          "shared_suffix_length": 2,
+          "rollout_horizon_rows": 1,
+          "comparison_meaning": "Compare earlier prefix order while keeping the same physical rows and final two rows."
+        }
+      ],
+      "omitted_comparisons": [],
+      "depth_meaning": "Number of common physical entities included in the covered prefix."
+    },
+    {
+      "case_id": "common_objects_depth_10",
+      "selected_common_entity_ids": [
+        "gt_0000",
+        "gt_0008",
+        "gt_0001",
+        "gt_0007",
+        "gt_0015",
+        "gt_0017",
+        "gt_0019",
+        "gt_0025",
+        "gt_0028",
+        "gt_0037"
+      ],
+      "selected_common_gt_indices": [
+        0,
+        8,
+        1,
+        7,
+        15,
+        17,
+        19,
+        25,
+        28,
+        37
+      ],
+      "entity_ledger_scope": "full_artifact_local_gt",
+      "entity_ledger_entity_count": 53,
+      "arms": {
+        "current_sorted_rollout_order": {
+          "entity_ids": [
+            "gt_0000",
+            "gt_0008",
+            "gt_0001",
+            "gt_0007",
+            "gt_0015",
+            "gt_0017",
+            "gt_0019",
+            "gt_0025",
+            "gt_0028",
+            "gt_0037"
+          ],
+          "permutation_inversion_count_relative_to_canonical_order": 0
+        },
+        "historical_random_relative_order_with_fixed_final_two": {
+          "entity_ids": [
+            "gt_0019",
+            "gt_0008",
+            "gt_0001",
+            "gt_0000",
+            "gt_0007",
+            "gt_0015",
+            "gt_0025",
+            "gt_0017",
+            "gt_0028",
+            "gt_0037"
+          ],
+          "permutation_inversion_count_relative_to_canonical_order": 9
+        },
+        "reverse_earlier_rows_with_fixed_final_two": {
+          "entity_ids": [
+            "gt_0025",
+            "gt_0019",
+            "gt_0017",
+            "gt_0015",
+            "gt_0007",
+            "gt_0001",
+            "gt_0008",
+            "gt_0000",
+            "gt_0028",
+            "gt_0037"
+          ],
+          "permutation_inversion_count_relative_to_canonical_order": 28
+        },
+        "reverse_earlier_rows_with_fixed_final_one": {
+          "entity_ids": [
+            "gt_0028",
+            "gt_0025",
+            "gt_0019",
+            "gt_0017",
+            "gt_0015",
+            "gt_0007",
+            "gt_0001",
+            "gt_0008",
+            "gt_0000",
+            "gt_0037"
+          ],
+          "permutation_inversion_count_relative_to_canonical_order": 36
+        },
+        "adjacent_swap_before_fixed_final_two": {
+          "entity_ids": [
+            "gt_0000",
+            "gt_0008",
+            "gt_0001",
+            "gt_0007",
+            "gt_0015",
+            "gt_0017",
+            "gt_0025",
+            "gt_0019",
+            "gt_0028",
+            "gt_0037"
+          ],
+          "permutation_inversion_count_relative_to_canonical_order": 1
+        },
+        "seeded_shuffle_earlier_rows_with_fixed_final_two": {
+          "entity_ids": [
+            "gt_0017",
+            "gt_0019",
+            "gt_0008",
+            "gt_0001",
+            "gt_0007",
+            "gt_0015",
+            "gt_0025",
+            "gt_0000",
+            "gt_0028",
+            "gt_0037"
+          ],
+          "permutation_inversion_count_relative_to_canonical_order": 15
+        }
+      },
+      "comparisons": [
+        {
+          "comparison_id": "current_sorted_rollout_order_vs_historical_random_relative_order_with_fixed_final_two",
+          "arm_names": [
+            "current_sorted_rollout_order",
+            "historical_random_relative_order_with_fixed_final_two"
+          ],
+          "require_same_covered_set": true,
+          "shared_suffix_length": 2,
+          "rollout_horizon_rows": 1,
+          "comparison_meaning": "Compare earlier prefix order while keeping the same physical rows and final two rows."
+        },
+        {
+          "comparison_id": "current_sorted_rollout_order_vs_reverse_earlier_rows_with_fixed_final_two",
+          "arm_names": [
+            "current_sorted_rollout_order",
+            "reverse_earlier_rows_with_fixed_final_two"
+          ],
+          "require_same_covered_set": true,
+          "shared_suffix_length": 2,
+          "rollout_horizon_rows": 1,
+          "comparison_meaning": "Compare earlier prefix order while keeping the same physical rows and final two rows."
+        },
+        {
+          "comparison_id": "current_sorted_rollout_order_vs_reverse_earlier_rows_with_fixed_final_one",
+          "arm_names": [
+            "current_sorted_rollout_order",
+            "reverse_earlier_rows_with_fixed_final_one"
+          ],
+          "require_same_covered_set": true,
+          "shared_suffix_length": 1,
+          "rollout_horizon_rows": 1,
+          "comparison_meaning": "Compare earlier prefix order while keeping the same physical rows and final one row."
+        },
+        {
+          "comparison_id": "current_sorted_rollout_order_vs_adjacent_swap_before_fixed_final_two",
+          "arm_names": [
+            "current_sorted_rollout_order",
+            "adjacent_swap_before_fixed_final_two"
+          ],
+          "require_same_covered_set": true,
+          "shared_suffix_length": 2,
+          "rollout_horizon_rows": 1,
+          "comparison_meaning": "Compare earlier prefix order while keeping the same physical rows and final two rows."
+        },
+        {
+          "comparison_id": "current_sorted_rollout_order_vs_seeded_shuffle_earlier_rows_with_fixed_final_two",
+          "arm_names": [
+            "current_sorted_rollout_order",
+            "seeded_shuffle_earlier_rows_with_fixed_final_two"
+          ],
+          "require_same_covered_set": true,
+          "shared_suffix_length": 2,
+          "rollout_horizon_rows": 1,
+          "comparison_meaning": "Compare earlier prefix order while keeping the same physical rows and final two rows."
+        }
+      ],
+      "omitted_comparisons": [],
+      "depth_meaning": "Number of common physical entities included in the covered prefix."
+    }
+  ],
+  "metadata": {
+    "experiment_name": "Common-object prefix permutation with a fixed final two-row suffix",
+    "experiment_meaning": "Test whether earlier prefix order changes the next-row rollout when the same physical objects have already been covered.",
+    "cohort_status": "artifact-local provisional cohort; selected from the intersection of two rollout matches; not current relabeled ground truth",
+    "current_sorted_rollout_meaning": "Current geometry-sorted pure cross-entropy rollout used as the physical-order reference.",
+    "secondary_rollout_meaning": "Historical or secondary rollout used only to provide an independent relative order for common matched entities.",
+    "matching_rule": "Same description and intersection over union at or above threshold, globally greedily assigned by descending intersection over union, then prediction index, then ground-truth index.",
+    "same_coverage_rule": "Every compared arm contains the same selected physical entities and the same byte-identical final one- or two-row suffix declared by its comparison.",
+    "entity_ledger_scope": "full_artifact_local_gt",
+    "entity_ledger_meaning": "The entities list is the complete artifact-local COCO-80 ground-truth set; each arm entity_ids list is only the selected common covered prefix.",
+    "full_artifact_local_gt_entity_count": 53,
+    "selected_prefix_entity_counts_by_depth": {
+      "common_objects_depth_6": 6,
+      "common_objects_depth_10": 10
+    },
+    "selected_prefix_is_a_subset_of_full_entity_ledger": true,
+    "prefix_likelihood_scoring": {
+      "status": "unavailable_in_this_pilot",
+      "meaning": "No prefix likelihood or plausibility score was computed; permutations are evaluated only by exact entity order and declared comparisons."
+    },
+    "permutation_distance_metric": {
+      "metric_full_name": "Kendall tau inversion count relative to canonical order",
+      "operational_meaning": "For each arm, count unordered pairs of selected entities whose relative order is reversed compared with current_sorted_rollout_order; zero means identical order.",
+      "per_arm_field": "permutation_inversion_count_relative_to_canonical_order"
+    },
+    "omitted_comparison_rule": {
+      "reason_value": "identical_row_order",
+      "meaning": "If a predefined permutation is byte-identical in entity order to an earlier arm for one image and depth, omit only that redundant comparison and record its duplicate arm."
+    },
+    "prefix_depths": [
+      6,
+      10
+    ],
+    "intersection_over_union_threshold": 0.5,
+    "shuffle_seed": 17,
+    "rollout_horizon_rows": 1,
+    "shared_suffix_length": 2,
+    "source_artifacts": {
+      "current_sorted_rollout_jsonl": "/data/CoordExp/outputs/infer/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200_bsz4_temp0_rp1p10_max3084_8gpu/gt_vs_pred.jsonl",
+      "secondary_rollout_jsonl": "/data/CoordExp/outputs/infer/recursive_detection_ce_latest/compact_full_fullobj_random_sft_free_greedy_ckpt3668_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/gt_vs_pred.jsonl",
+      "current_sorted_rollout_file_sha256": "341974d7292ee9b15abb8a808d4bd714a816210ec1295b334cbda90e9dc15ccb",
+      "secondary_rollout_file_sha256": "c032695a5cca9ee2dcc57d6e767fa23be84a7effde7c4bb8dd72c46f7a965d17",
+      "digest_meaning": "SHA-256 cryptographic digest of the complete source JSONL file when a filesystem path was supplied."
+    },
+    "source_artifact_row_sha256": {
+      "current_sorted_rollout_row": "3d7b4dc22ab31c8b187365680f10949f220e43922bb00f9f809dfd264f8dd547",
+      "secondary_rollout_row": "4c50f0f4401903fda8c2706d92d6d3422993e74f3b080e963d05ba6c04b0bbb3",
+      "digest_meaning": "SHA-256 cryptographic digest of the exact selected artifact row."
+    },
+    "source_gt_arrays_are_exactly_equal": true,
+    "common_matched_gt_indices": [
+      0,
+      8,
+      1,
+      7,
+      15,
+      17,
+      19,
+      25,
+      28,
+      37,
+      41,
+      44,
+      46,
+      50
+    ],
+    "current_sorted_matched_gt_order": [
+      0,
+      8,
+      1,
+      2,
+      4,
+      3,
+      5,
+      7,
+      11,
+      15,
+      17,
+      18,
+      19,
+      21,
+      25,
+      28,
+      29,
+      33,
+      32,
+      37,
+      40,
+      41,
+      42,
+      44,
+      46,
+      50,
+      51
+    ],
+    "secondary_matched_gt_order": [
+      19,
+      46,
+      8,
+      45,
+      1,
+      13,
+      0,
+      44,
+      7,
+      37,
+      15,
+      12,
+      41,
+      50,
+      25,
+      28,
+      17,
+      23,
+      48
+    ],
+    "image_width": 1248,
+    "image_height": 832
+  }
+}

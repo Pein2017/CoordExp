@@ -30,7 +30,24 @@ if __package__ in {None, ""}:
 
 
 CASE_SCHEMA_VERSION = "same_covered_set_prefix_order.case.v1"
+CASE_SCHEMA_VERSION_V2 = "same_covered_set_prefix_order.case.v2"
 SCHEMA_VERSION = "same_covered_set_prefix_order.v1"
+SCHEMA_VERSION_V2 = "same_covered_set_prefix_order.v2"
+
+# These case annotations describe the intervention and must survive
+# materialization into the result arm. They are not used to construct token
+# ids, so caller-supplied prefixes and hashes remain non-authoritative.
+ARM_EXPERIMENT_METADATA_FIELDS = (
+    "permutation_inversion_count_relative_to_canonical_order",
+    "permutation_distance",
+    "permutation_distance_from_canonical",
+    "prefix_likelihood",
+    "prefix_likelihood_status",
+    "prefix_plausibility",
+    "prefix_plausibility_status",
+    "prefix_plausibility_unavailable",
+    "prefix_likelihood_scoring",
+)
 ARMS = (
     "a_then_b_then_c",
     "b_then_a_then_c",
@@ -103,10 +120,13 @@ def parse_case_ids(value: str | Iterable[str] | None) -> tuple[str, ...] | None:
 
     if value is None:
         return None
-    if isinstance(value, str):
-        values = [piece.strip() for piece in value.split(",") if piece.strip()]
-    else:
-        values = [str(piece).strip() for piece in value if str(piece).strip()]
+    raw_values = [value] if isinstance(value, str) else list(value)
+    values = [
+        piece.strip()
+        for raw_value in raw_values
+        for piece in str(raw_value).split(",")
+        if piece.strip()
+    ]
     if not values:
         raise ValueError("case ids must contain at least one non-empty id")
     if len(set(values)) != len(values):
@@ -149,7 +169,12 @@ def validate_case_spec(spec: Mapping[str, Any]) -> dict[str, Any]:
 
     spec = _as_mapping(spec, "case specification")
     schema = str(spec.get("schema_version", ""))
-    if schema not in {CASE_SCHEMA_VERSION, "same_covered_set_prefix_order.v1"}:
+    if schema not in {
+        CASE_SCHEMA_VERSION,
+        "same_covered_set_prefix_order.v1",
+        CASE_SCHEMA_VERSION_V2,
+        "same_covered_set_prefix_order.v2",
+    }:
         raise ValueError(f"unsupported case schema_version {schema!r}")
     if spec.get("image_id") is None or not str(spec.get("image_id")).strip():
         raise ValueError("case specification requires a non-empty image_id")
@@ -199,17 +224,82 @@ def validate_case_spec(spec: Mapping[str, Any]) -> dict[str, Any]:
         if case_id in case_ids:
             raise ValueError(f"case ids must be unique; repeated {case_id!r}")
         case_ids.add(case_id)
-        selected = tuple(str(case.get(field, "")).strip() for field in ("a_entity_id", "b_entity_id", "c_entity_id"))
-        if any(not value for value in selected):
-            raise ValueError(f"case {case_id} requires a_entity_id, b_entity_id, and c_entity_id")
-        if len(set(selected)) != 3:
-            raise ValueError(f"case {case_id} requires distinct A/B/C entity identities")
-        missing = [value for value in selected if value not in entity_ids]
-        if missing:
-            raise ValueError(f"case {case_id} references unknown entity ids: {missing}")
+        if schema in {CASE_SCHEMA_VERSION_V2, "same_covered_set_prefix_order.v2"}:
+            raw_arms = case.get("arms")
+            if isinstance(raw_arms, list):
+                converted_arms: dict[str, Any] = {}
+                for raw_arm in raw_arms:
+                    arm_value = _as_mapping(raw_arm, f"case {case_id} arm")
+                    arm_name = str(arm_value.get("arm_name", "")).strip()
+                    if not arm_name:
+                        raise ValueError(f"case {case_id} arm list entries require arm_name")
+                    converted_arms[arm_name] = dict(arm_value)
+                raw_arms = converted_arms
+            if not isinstance(raw_arms, Mapping) or len(raw_arms) < 2:
+                raise ValueError(f"case {case_id} requires at least two named arms")
+            arms: dict[str, dict[str, Any]] = {}
+            for raw_name, raw_arm in raw_arms.items():
+                arm_name = str(raw_name).strip()
+                if not arm_name:
+                    raise ValueError(f"case {case_id} arm names must be non-empty")
+                arm = dict(_as_mapping(raw_arm, f"case {case_id} arm {arm_name}"))
+                values = arm.get("entity_ids")
+                if not isinstance(values, list) or not values:
+                    raise ValueError(f"case {case_id} arm {arm_name} requires a non-empty entity_ids list")
+                ordered = [str(value).strip() for value in values]
+                if any(not value for value in ordered) or len(set(ordered)) != len(ordered):
+                    raise ValueError(f"case {case_id} arm {arm_name} entity_ids must be unique non-empty values")
+                missing = [value for value in ordered if value not in entity_ids]
+                if missing:
+                    raise ValueError(f"case {case_id} arm {arm_name} references unknown entity ids: {missing}")
+                arm["entity_ids"] = ordered
+                arms[arm_name] = arm
+            comparisons = case.get("comparisons")
+            if not isinstance(comparisons, list) or not comparisons:
+                raise ValueError(f"case {case_id} requires a non-empty comparisons list")
+            checked_comparisons: list[dict[str, Any]] = []
+            comparison_ids: set[str] = set()
+            for raw_comparison in comparisons:
+                comparison = dict(_as_mapping(raw_comparison, f"case {case_id} comparison"))
+                comparison_id = str(comparison.get("comparison_id", "")).strip()
+                if not comparison_id or comparison_id in comparison_ids:
+                    raise ValueError(f"case {case_id} comparison_id must be unique and non-empty")
+                comparison_ids.add(comparison_id)
+                names = comparison.get("arm_names", comparison.get("arms"))
+                if not isinstance(names, list) or len(names) < 2:
+                    raise ValueError(f"comparison {comparison_id} requires at least two arm_names")
+                names = [str(value).strip() for value in names]
+                if len(set(names)) != len(names) or any(value not in arms for value in names):
+                    raise ValueError(f"comparison {comparison_id} references unknown or repeated arm names")
+                suffix = comparison.get("shared_suffix_length", 1)
+                horizon = comparison.get("rollout_horizon_rows", comparison.get("horizon_rows", 1))
+                same_coverage = comparison.get("require_same_covered_set", comparison.get("same_coverage", True))
+                if not isinstance(same_coverage, bool):
+                    raise ValueError(f"comparison {comparison_id} require_same_covered_set must be boolean")
+                if isinstance(suffix, bool) or not isinstance(suffix, int) or suffix not in {1, 2}:
+                    raise ValueError(f"comparison {comparison_id} shared_suffix_length must be 1 or 2")
+                if isinstance(horizon, bool) or not isinstance(horizon, int) or not 1 <= horizon <= 4:
+                    raise ValueError(f"comparison {comparison_id} rollout_horizon_rows must be in [1,4]")
+                comparison["comparison_id"] = comparison_id
+                comparison["arm_names"] = names
+                comparison["shared_suffix_length"] = suffix
+                comparison["rollout_horizon_rows"] = horizon
+                comparison["require_same_covered_set"] = same_coverage
+                checked_comparisons.append(comparison)
+            case["arms"] = arms
+            case["comparisons"] = checked_comparisons
+        else:
+            selected = tuple(str(case.get(field, "")).strip() for field in ("a_entity_id", "b_entity_id", "c_entity_id"))
+            if any(not value for value in selected):
+                raise ValueError(f"case {case_id} requires a_entity_id, b_entity_id, and c_entity_id")
+            if len(set(selected)) != 3:
+                raise ValueError(f"case {case_id} requires distinct A/B/C entity identities")
+            missing = [value for value in selected if value not in entity_ids]
+            if missing:
+                raise ValueError(f"case {case_id} references unknown entity ids: {missing}")
+            for field, value in zip(("a_entity_id", "b_entity_id", "c_entity_id"), selected, strict=True):
+                case[field] = value
         case["case_id"] = case_id
-        for field, value in zip(("a_entity_id", "b_entity_id", "c_entity_id"), selected, strict=True):
-            case[field] = value
         cases.append(case)
     result = dict(spec)
     result["schema_version"] = schema
@@ -284,7 +374,7 @@ def build_prefix_arms(case: Mapping[str, Any], entity_rows: Mapping[str, Mapping
         rows = [dict(entity_rows[entity_id]) for entity_id in entity_ids]
         row_ids = [list(map(int, row["row_token_ids"])) for row in rows]
         prefix = [token_id for row in row_ids for token_id in row]
-        arms[arm_name] = {
+        materialized_arm = {
             "arm_name": arm_name,
             "entity_ids": entity_ids,
             "covered_entity_ids": entity_ids,
@@ -298,8 +388,133 @@ def build_prefix_arms(case: Mapping[str, Any], entity_rows: Mapping[str, Mapping
             "final_row_text": rows[-1].get("row_text"),
             "final_row_text_sha256": rows[-1].get("row_text_sha256"),
         }
+        arms[arm_name] = materialized_arm
     validate_same_coverage_order_invariants(arms, entity_rows, case=case)
     return arms
+
+
+def build_named_prefix_arms(
+    case: Mapping[str, Any],
+    entity_rows: Mapping[str, Mapping[str, Any]],
+    *,
+    comparison: Mapping[str, Any] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Materialize arbitrary named v2 arms from immutable entity rows.
+
+    The comparison is deliberately explicit.  It is the unit of validation:
+    all arms named by it must have the same complete rows and covered set, and
+    must share the declared final one- or two-row suffix.
+    """
+
+    # ``entity_rows`` has intentionally materialized both the original
+    # ``row_text`` and its immutable token ids.  Re-running the input-schema
+    # validator here would reject that internal representation as if it were a
+    # user document.  The caller validates the user case before materializing.
+    checked = dict(case)
+    raw_arms = checked.get("arms")
+    if not isinstance(raw_arms, Mapping):
+        raise ValueError("v2 case requires named arms")
+    if comparison is None:
+        comparisons = checked.get("comparisons")
+        if not isinstance(comparisons, list) or len(comparisons) != 1:
+            raise ValueError("comparison must be supplied when a case has zero or multiple comparisons")
+        comparison = comparisons[0]
+    names = comparison.get("arm_names")
+    if not isinstance(names, list) or len(names) < 2:
+        raise ValueError("comparison arm_names must contain at least two names")
+    suffix_length = int(comparison.get("shared_suffix_length", 1))
+    arms: dict[str, dict[str, Any]] = {}
+    for raw_name in names:
+        arm_name = str(raw_name)
+        arm_spec = _as_mapping(raw_arms.get(arm_name), f"arm {arm_name}")
+        entity_ids = [str(value) for value in arm_spec["entity_ids"]]
+        rows = [dict(entity_rows[entity_id]) for entity_id in entity_ids]
+        row_ids = [list(map(int, row["row_token_ids"])) for row in rows]
+        prefix = [token_id for row in row_ids for token_id in row]
+        materialized_arm = {
+            "arm_name": arm_name,
+            "entity_ids": entity_ids,
+            "covered_entity_ids": entity_ids,
+            "row_count": len(row_ids),
+            "row_token_ids": row_ids,
+            "row_token_ids_sha256": [_sha256_json(row) for row in row_ids],
+            "prefix_token_ids": prefix,
+            "prefix_token_ids_sha256": _sha256_json(prefix),
+            "shared_suffix_length": suffix_length,
+            "final_row_token_ids": row_ids[-1],
+            "final_row_token_ids_sha256": _sha256_json(row_ids[-1]),
+            "final_row_text": rows[-1].get("row_text"),
+            "final_row_text_sha256": rows[-1].get("row_text_sha256"),
+        }
+        for field in ARM_EXPERIMENT_METADATA_FIELDS:
+            if field in arm_spec:
+                materialized_arm[field] = arm_spec[field]
+        arms[arm_name] = materialized_arm
+    validate_named_prefix_invariants(arms, entity_rows, comparison=comparison)
+    return arms
+
+
+def validate_named_prefix_invariants(
+    arms: Mapping[str, Mapping[str, Any]],
+    entity_rows: Mapping[str, Mapping[str, Any]],
+    *,
+    comparison: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Validate the v2 same-coverage, common-suffix intervention."""
+
+    names = [str(value) for value in comparison.get("arm_names", [])]
+    suffix_length = int(comparison.get("shared_suffix_length", 1))
+    if len(names) < 2 or suffix_length not in {1, 2}:
+        raise ValueError("v2 comparisons need two arms and a one- or two-row suffix")
+    missing = [name for name in names if name not in arms]
+    if missing:
+        raise ValueError(f"comparison references missing arms: {missing}")
+    materialized: dict[str, list[tuple[int, ...]]] = {}
+    for name in names:
+        arm = arms[name]
+        entity_ids = [str(value) for value in arm.get("entity_ids", [])]
+        if not entity_ids or len(set(entity_ids)) != len(entity_ids):
+            raise ValueError(f"arm {name} has an invalid entity_ids list")
+        if any(entity_id not in entity_rows for entity_id in entity_ids):
+            raise ValueError(f"arm {name} references an unknown entity")
+        declared_covered = arm.get("covered_entity_ids")
+        if declared_covered is not None and set(str(value) for value in declared_covered) != set(entity_ids):
+            raise ValueError(f"arm {name} covered_entity_ids must match entity_ids")
+        rows = [tuple(int(item) for item in row) for row in arm.get("row_token_ids", [])]
+        expected = [tuple(int(item) for item in entity_rows[entity_id]["row_token_ids"]) for entity_id in entity_ids]
+        if rows != expected or len(rows) != int(arm.get("row_count", -1)):
+            raise ValueError(f"arm {name} row ids do not match immutable entity rows")
+        if len(rows) < suffix_length:
+            raise ValueError(f"arm {name} is shorter than shared_suffix_length")
+        materialized[name] = rows
+    first = materialized[names[0]]
+    first_set = set(str(value) for value in arms[names[0]].get("covered_entity_ids", arms[names[0]].get("entity_ids", [])))
+    first_count = len(first)
+    same_coverage = bool(comparison.get("require_same_covered_set", comparison.get("same_coverage", True)))
+    for name in names[1:]:
+        rows = materialized[name]
+        if same_coverage and rows == first:
+            raise ValueError("same-coverage comparison arms must have distinct exact prefixes")
+        if same_coverage and len(rows) != first_count:
+            raise ValueError("compared arms must have the same row count")
+        row_counter = Counter(first)
+        if same_coverage and row_counter != Counter(rows):
+            raise ValueError("compared arms must contain the same complete row-token multiset")
+        covered = set(str(value) for value in arms[name].get("covered_entity_ids", arms[name].get("entity_ids", [])))
+        if same_coverage and covered != first_set:
+            raise ValueError("compared arms must cover the same physical entity set")
+        if rows[-suffix_length:] != first[-suffix_length:]:
+            raise ValueError("compared arms must share byte-identical final rows")
+    return {
+        "comparison_id": str(comparison.get("comparison_id", "")),
+        "arm_names": names,
+        "same_row_token_multiset": same_coverage,
+        "same_physical_covered_set": same_coverage,
+        "same_row_count": same_coverage,
+        "shared_suffix_length": suffix_length,
+        "require_same_covered_set": bool(comparison.get("require_same_covered_set", comparison.get("same_coverage", True))),
+        "byte_identical_shared_suffix": True,
+    }
 
 
 def validate_same_coverage_order_invariants(
@@ -421,6 +636,29 @@ def extract_row_stop(text: str, *, malformed_limit: int = 2) -> dict[str, Any]:
     }
 
 
+def validate_generated_row_boundary(raw_text: str, row_stop: Mapping[str, Any]) -> dict[str, Any]:
+    """Reject a complete row surrounded by unrelated generated text.
+
+    The legacy parser intentionally finds a complete row inside arbitrary text.
+    Model-generated continuation must be stricter: appending a span with
+    leading or trailing contamination would silently change the next prefix.
+    """
+
+    if row_stop.get("stop_reason") != "complete_row":
+        return dict(row_stop)
+    start = row_stop.get("char_start")
+    end = row_stop.get("char_end")
+    if start is not None and end is not None and int(start) == 0 and int(end) == len(raw_text):
+        return dict(row_stop)
+    contaminated = dict(row_stop)
+    contaminated["stop_reason"] = "contaminated_complete_row"
+    contaminated["contamination"] = {
+        "leading_char_count": max(0, int(start) if start is not None else 0),
+        "trailing_char_count": max(0, len(raw_text) - (int(end) if end is not None else len(raw_text))),
+    }
+    return contaminated
+
+
 def _xyxy_iou(left: Sequence[float], right: Sequence[float]) -> float:
     x1 = max(float(left[0]), float(right[0]))
     y1 = max(float(left[1]), float(right[1]))
@@ -433,9 +671,23 @@ def _xyxy_iou(left: Sequence[float], right: Sequence[float]) -> float:
     return 0.0 if union <= 0 else inter / union
 
 
+def _normalised_center_distance(left: Sequence[float], right: Sequence[float]) -> float:
+    """Euclidean center distance in the normalized 0..1000 coordinate space."""
+
+    left_center = ((float(left[0]) + float(left[2])) / 2.0, (float(left[1]) + float(left[3])) / 2.0)
+    right_center = ((float(right[0]) + float(right[2])) / 2.0, (float(right[1]) + float(right[3])) / 2.0)
+    return math.hypot((left_center[0] - right_center[0]) / 1000.0, (left_center[1] - right_center[1]) / 1000.0)
+
+
 def _is_person_description(description: str) -> bool:
-    value = re.sub(r"[^a-z ]+", " ", description.lower()).strip()
+    value = _normalise_description(description)
     return value in {"person", "people", "man", "woman", "boy", "girl", "human"} or value.startswith("person ")
+
+
+def _normalise_description(description: str) -> str:
+    """Normalize a short generated/entity category for exact bounded matching."""
+
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]+", " ", str(description).lower())).strip()
 
 
 def match_predictions_to_entities(
@@ -446,8 +698,15 @@ def match_predictions_to_entities(
     image_height: int,
     iou_threshold: float = 0.5,
     ambiguity_margin: float = 0.05,
+    restrict_to_person: bool = True,
 ) -> list[dict[str, Any]]:
-    """Match person boxes by IoU, preserving unmatched/ambiguous outcomes."""
+    """Match boxes to same-description physical entities by IoU.
+
+    The legacy default remains person-only.  The v2 dense-object probe opts
+    into all entity-ledger descriptions, keeping category identity separate
+    from geometry and preventing an unrelated category from becoming an
+    owner match.
+    """
 
     if image_width <= 0 or image_height <= 0:
         raise ValueError("image dimensions must be positive")
@@ -459,7 +718,15 @@ def match_predictions_to_entities(
         description = str(prediction.get("description", ""))
         raw_box = prediction.get("bbox", prediction.get("bbox_xyxy"))
         if not isinstance(raw_box, Sequence) or len(raw_box) != 4:
-            result.append({"prediction_index": index, "status": "unmatched", "reason": "missing_bbox", "candidates": []})
+            result.append({
+                "prediction_index": index,
+                "status": "unmatched",
+                "reason": "missing_bbox",
+                "candidates": [],
+                "top_same_category_candidate_id": None,
+                "top_same_category_candidate_iou": None,
+                "top_same_category_candidate_center_distance_norm": None,
+            })
             continue
         pixel_box = [float(value) for value in raw_box]
         normalized_box = [
@@ -468,22 +735,49 @@ def match_predictions_to_entities(
             pixel_box[2] / image_width * 1000,
             pixel_box[3] / image_height * 1000,
         ]
-        if not _is_person_description(description):
+        if restrict_to_person and not _is_person_description(description):
             result.append({
                 "prediction_index": index,
                 "description": description,
                 "status": "not_person",
                 "predicted_bbox_norm1000": normalized_box,
                 "candidates": [],
+                "top_same_category_candidate_id": None,
+                "top_same_category_candidate_iou": None,
+                "top_same_category_candidate_center_distance_norm": None,
+            })
+            continue
+        prediction_description = _normalise_description(description)
+        candidate_entities = []
+        for entity_id, entity in entity_items:
+            entity_description = _normalise_description(str(entity.get("description", "")))
+            if restrict_to_person or entity_description == prediction_description:
+                candidate_entities.append((entity_id, entity))
+        if not candidate_entities:
+            result.append({
+                "prediction_index": index,
+                "description": description,
+                "status": "unmatched",
+                "reason": "no_same_description_entity",
+                "predicted_bbox": pixel_box,
+                "predicted_bbox_norm1000": normalized_box,
+                "candidates": [],
+                "top_same_category_candidate_id": None,
+                "top_same_category_candidate_iou": None,
+                "top_same_category_candidate_center_distance_norm": None,
             })
             continue
         candidates = []
-        for entity_id, entity in entity_items:
+        for entity_id, entity in candidate_entities:
             try:
                 entity_box = _entity_bbox(entity)
             except ValueError:
                 continue
-            candidates.append({"entity_id": str(entity_id), "iou": _xyxy_iou(normalized_box, entity_box)})
+            candidates.append({
+                "entity_id": str(entity_id),
+                "iou": _xyxy_iou(normalized_box, entity_box),
+                "center_distance_norm": _normalised_center_distance(normalized_box, entity_box),
+            })
         candidates.sort(key=lambda item: (-float(item["iou"]), str(item["entity_id"])))
         if not candidates or float(candidates[0]["iou"]) < iou_threshold:
             status = "unmatched"
@@ -494,6 +788,7 @@ def match_predictions_to_entities(
         else:
             status = "matched"
             matched_id = candidates[0]["entity_id"]
+        top_candidate = candidates[0] if candidates else None
         result.append({
             "prediction_index": index,
             "description": description,
@@ -502,6 +797,9 @@ def match_predictions_to_entities(
             "predicted_bbox": pixel_box,
             "predicted_bbox_norm1000": normalized_box,
             "candidates": candidates,
+            "top_same_category_candidate_id": None if top_candidate is None else top_candidate["entity_id"],
+            "top_same_category_candidate_iou": None if top_candidate is None else top_candidate["iou"],
+            "top_same_category_candidate_center_distance_norm": None if top_candidate is None else top_candidate["center_distance_norm"],
         })
     return result
 
@@ -510,6 +808,101 @@ def validate_artifact_payload(payload: Mapping[str, Any]) -> None:
     """Validate the compact result shape without loading torch or a model."""
 
     payload = _as_mapping(payload, "artifact")
+    if payload.get("schema_version") == SCHEMA_VERSION_V2:
+        if not isinstance(payload.get("config"), Mapping):
+            raise ValueError("artifact config metadata is required")
+        cases = payload.get("cases")
+        if not isinstance(cases, list) or not cases:
+            raise ValueError("artifact must contain at least one v2 case")
+        for raw_case in cases:
+            case = _as_mapping(raw_case, "artifact v2 case")
+            for field in ("case_id", "image_id", "entity_ledger", "comparisons", "invariants_by_comparison", "arms"):
+                if field not in case:
+                    raise ValueError(f"artifact v2 case is missing {field}")
+            if not isinstance(case["comparisons"], list) or not case["comparisons"]:
+                raise ValueError("artifact v2 case comparisons must be non-empty")
+            arms = _as_mapping(case["arms"], "artifact v2 arms")
+            declared_comparisons: dict[str, Mapping[str, Any]] = {}
+            for raw_comparison in case["comparisons"]:
+                comparison = _as_mapping(raw_comparison, "artifact v2 comparison")
+                comparison_id = str(comparison.get("comparison_id", ""))
+                if not comparison_id or comparison_id in declared_comparisons:
+                    raise ValueError("artifact v2 comparison ids must be unique")
+                declared_comparisons[comparison_id] = comparison
+                names = comparison.get("arm_names")
+                if not isinstance(names, list) or len(names) < 2:
+                    raise ValueError("artifact v2 comparison arm_names are invalid")
+                suffix = comparison.get("shared_suffix_length")
+                horizon = comparison.get("rollout_horizon_rows")
+                if suffix not in {1, 2} or not isinstance(horizon, int) or not 1 <= horizon <= 4:
+                    raise ValueError("artifact v2 comparison metadata is invalid")
+                for name in names:
+                    if name not in arms:
+                        raise ValueError(f"artifact v2 comparison references missing arm {name}")
+            for name, raw_arm in arms.items():
+                arm = _as_mapping(raw_arm, f"artifact v2 arm {name}")
+                if not isinstance(arm.get("entity_ids"), list) or not isinstance(arm.get("runs"), list) or not arm.get("runs") or not isinstance(arm.get("prefix_token_ids_sha256"), str):
+                    raise ValueError(f"artifact v2 arm {name} is malformed")
+                for raw_run in arm["runs"]:
+                    run = _as_mapping(raw_run, "artifact v2 run")
+                    for field in ("comparison_id", "mode", "seed", "status", "rows", "horizon_rows_requested", "horizon_rows_generated", "horizon_complete", "initial_prefix_token_ids", "final_prefix_token_ids", "initial_prefix_token_ids_sha256", "final_prefix_token_ids_sha256"):
+                        if field not in run:
+                            raise ValueError(f"artifact v2 run is missing {field}")
+                    run_comparison_id = str(run["comparison_id"])
+                    if run_comparison_id not in declared_comparisons:
+                        raise ValueError(f"artifact v2 run references undeclared comparison {run_comparison_id}")
+                    declared_names = [str(value) for value in declared_comparisons[run_comparison_id].get("arm_names", [])]
+                    if str(name) not in declared_names:
+                        raise ValueError(f"artifact v2 run comparison {run_comparison_id} does not include arm {name}")
+                    if run["status"] not in {"success", "failed"} or not isinstance(run["rows"], list):
+                        raise ValueError("artifact v2 run status or rows are invalid")
+                    requested = int(declared_comparisons[run_comparison_id].get("rollout_horizon_rows", -1))
+                    if int(run["horizon_rows_requested"]) != requested:
+                        raise ValueError("artifact v2 run horizon differs from its declared comparison")
+                    initial_prefix = _normalise_token_ids(run["initial_prefix_token_ids"], label="artifact v2 initial prefix")
+                    final_prefix = _normalise_token_ids(run["final_prefix_token_ids"], label="artifact v2 final prefix")
+                    arm_prefix_hash = str(arm.get("prefix_token_ids_sha256"))
+                    if _sha256_json(initial_prefix) != arm_prefix_hash:
+                        raise ValueError("artifact v2 run initial prefix differs from declared arm prefix")
+                    if _sha256_json(initial_prefix) != str(run["initial_prefix_token_ids_sha256"]):
+                        raise ValueError("artifact v2 initial prefix hash is inconsistent")
+                    expected_prefix = list(initial_prefix)
+                    previous_prefix_hash = _sha256_json(expected_prefix)
+                    completed_count = 0
+                    rows = run["rows"]
+                    if len(rows) > requested:
+                        raise ValueError("artifact v2 run contains more rows than requested horizon")
+                    for expected_index, row in enumerate(rows):
+                        row = _as_mapping(row, "artifact v2 generated row")
+                        for field in ("row_index", "input_prefix_token_ids_sha256", "cumulative_prefix_token_ids_sha256", "row_stop", "parse_evidence", "raw_generated_token_ids", "accepted_complete_row", "appended_to_prefix"):
+                            if field not in row:
+                                raise ValueError(f"artifact v2 generated row is missing {field}")
+                        if int(row["row_index"]) != expected_index:
+                            raise ValueError("artifact v2 generated row indexes must be sequential")
+                        if str(row["input_prefix_token_ids_sha256"]) != previous_prefix_hash:
+                            raise ValueError("artifact v2 generated row prefix hashes are not sequential")
+                        accepted = bool(row["accepted_complete_row"])
+                        if accepted != bool(row["appended_to_prefix"]):
+                            raise ValueError("artifact v2 row append flags disagree")
+                        if accepted:
+                            completed_count += 1
+                            expected_prefix.extend(_normalise_token_ids(row["raw_generated_token_ids"], label="artifact v2 generated row token ids"))
+                            previous_prefix_hash = _sha256_json(expected_prefix)
+                            if str(row["cumulative_prefix_token_ids_sha256"]) != previous_prefix_hash:
+                                raise ValueError("artifact v2 accepted row cumulative prefix hash is inconsistent")
+                        elif str(row["cumulative_prefix_token_ids_sha256"]) != str(row["input_prefix_token_ids_sha256"]):
+                            raise ValueError("non-complete artifact v2 row changed the cumulative prefix")
+                        if not isinstance(row["row_stop"], Mapping) or not isinstance(row["parse_evidence"], Mapping):
+                            raise ValueError("artifact v2 generated row evidence is malformed")
+                    if int(run["horizon_rows_generated"]) != completed_count:
+                        raise ValueError("artifact v2 completed-row count disagrees with horizon_rows_generated")
+                    if bool(run["horizon_complete"]) != (completed_count == requested):
+                        raise ValueError("artifact v2 horizon completion flag is inconsistent")
+                    if final_prefix != expected_prefix or str(run["final_prefix_token_ids_sha256"]) != _sha256_json(final_prefix) or str(run["final_prefix_token_ids_sha256"]) != previous_prefix_hash:
+                        raise ValueError("artifact v2 final prefix hash is inconsistent with row hashes")
+                    if run["status"] == "success" and completed_count == 0:
+                        raise ValueError("artifact v2 success run has no accepted complete row")
+        return
     if payload.get("schema_version") != SCHEMA_VERSION:
         raise ValueError("unexpected same-covered-set artifact schema version")
     if not isinstance(payload.get("config"), Mapping):
@@ -674,6 +1067,7 @@ def _generate_one(
     repetition_penalty: float,
     max_new_tokens: int,
     malformed_limit: int,
+    row_index: int = 0,
 ) -> dict[str, Any]:
     import torch
 
@@ -713,14 +1107,29 @@ def _generate_one(
         raise RuntimeError("generation did not return one sequence")
     raw_ids = [int(value) for value in sequences[0, prompt_width:].tolist()]
     raw_text = tokenizer.decode(raw_ids, skip_special_tokens=False)
-    row_stop = extract_row_stop(raw_text, malformed_limit=malformed_limit)
+    row_stop = validate_generated_row_boundary(raw_text, extract_row_stop(raw_text, malformed_limit=malformed_limit))
+    if row_stop.get("stop_reason") == "contaminated_complete_row":
+        return {
+            "mode": mode,
+            "seed": seed,
+            "status": "failed",
+            "prefix_token_ids": list(map(int, prefix_token_ids)),
+            "prefix_token_ids_sha256": _sha256_json(prefix_token_ids),
+            "raw_generated_token_ids": raw_ids,
+            "raw_generated_token_ids_sha256": _sha256_json(raw_ids),
+            "raw_generated_text": raw_text,
+            "raw_generated_text_sha256": _sha256_text(raw_text),
+            "row_stop": row_stop,
+            "parse_evidence": {"parse_status": "not_run", "predictions": [], "dropped_predictions": []},
+            "parsed_predictions": [],
+        }
     parser_text = row_stop.get("row_text") or raw_text
     from src.inference.parsing import parse_compact_object_box_closed
 
     parsed = parse_compact_object_box_closed(
         parser_text,
-        row_id=f"same-covered-set:{mode}:{seed}",
-        row_index=0,
+        row_id=f"same-covered-set:{mode}:{seed}:row-{row_index}",
+        row_index=int(row_index),
         image_width=int(image_width),
         image_height=int(image_height),
     )
@@ -737,6 +1146,124 @@ def _generate_one(
         "row_stop": row_stop,
         "parse_evidence": parsed.to_artifact_dict(),
         "parsed_predictions": parsed.predictions,
+    }
+
+
+def _generate_horizon(
+    *,
+    session: Any,
+    native_inputs: Mapping[str, Any],
+    prefix_token_ids: Sequence[int],
+    tokenizer: Any,
+    image_width: int,
+    image_height: int,
+    mode: str,
+    seed: int | None,
+    temperature: float,
+    top_p: float,
+    repetition_penalty: float,
+    max_new_tokens: int,
+    malformed_limit: int,
+    horizon_rows: int,
+    entity_rows: Mapping[str, Mapping[str, Any]],
+    covered_entity_ids: Sequence[str] = (),
+) -> dict[str, Any]:
+    """Generate a short sequence while preserving the model's actual rows.
+
+    The random generator is seeded once before row one.  Later rows consume
+    the same generator stream and append the exact generated token ids to the
+    prefix; no decode/re-tokenize round trip is used to construct a successor
+    state.
+    """
+
+    if not 1 <= int(horizon_rows) <= 4:
+        raise ValueError("horizon_rows must be in [1,4]")
+    if seed is not None:
+        _seed_torch(seed)
+    current_prefix = [int(value) for value in prefix_token_ids]
+    rows: list[dict[str, Any]] = []
+    cumulative_owner_ids: list[str] = []
+    completed_rows = 0
+    for row_index in range(int(horizon_rows)):
+        prefix_hash = _sha256_json(current_prefix)
+        try:
+            row = _generate_one(
+                session=session,
+                native_inputs=native_inputs,
+                prefix_token_ids=current_prefix,
+                tokenizer=tokenizer,
+                image_width=image_width,
+                image_height=image_height,
+                mode=mode,
+                seed=None,
+                temperature=temperature,
+                top_p=top_p,
+                repetition_penalty=repetition_penalty,
+                max_new_tokens=max_new_tokens,
+                malformed_limit=malformed_limit,
+                row_index=row_index,
+            )
+        except Exception as exc:
+            row = _failed_run(mode=mode, seed=None, prefix_token_ids=current_prefix, error=exc)
+            row["row_index"] = row_index
+            row["input_prefix_token_ids_sha256"] = prefix_hash
+            row["cumulative_prefix_token_ids_sha256"] = prefix_hash
+            row["accepted_complete_row"] = False
+            row["appended_to_prefix"] = False
+            rows.append(row)
+            break
+        row["row_index"] = row_index
+        row["input_prefix_token_ids_sha256"] = prefix_hash
+        row["entity_matches"] = match_predictions_to_entities(
+            row.get("parsed_predictions", []),
+            entity_rows,
+            image_width=int(image_width),
+            image_height=int(image_height),
+            restrict_to_person=False,
+        )
+        matches = row.get("entity_matches", [])
+        owners = sorted({
+            str(match.get("matched_entity_id"))
+            for match in matches
+            if isinstance(match, Mapping) and match.get("status") == "matched" and match.get("matched_entity_id") is not None
+        })
+        covered_set = {str(value) for value in covered_entity_ids}
+        row["strict_matched_owner_ids"] = owners
+        row["covered_prefix_owner_ids"] = sorted(owner for owner in owners if owner in covered_set)
+        row["uncovered_ledger_owner_ids"] = sorted(owner for owner in owners if owner not in covered_set)
+        row["unmatched_or_ambiguous_prediction_indices"] = [
+            int(match["prediction_index"])
+            for match in matches
+            if isinstance(match, Mapping) and match.get("status") in {"unmatched", "ambiguous"} and match.get("prediction_index") is not None
+        ]
+        row["owner_entity_ids"] = owners
+        row["owner_recurrence"] = [owner in cumulative_owner_ids for owner in owners]
+        generated = [int(value) for value in row.get("raw_generated_token_ids", [])]
+        appendable = bool(row.get("status") == "success" and row.get("row_stop", {}).get("stop_reason") == "complete_row")
+        row["accepted_complete_row"] = appendable
+        row["appended_to_prefix"] = appendable
+        if appendable:
+            cumulative_owner_ids.extend(owner for owner in owners if owner not in cumulative_owner_ids)
+            current_prefix.extend(generated)
+            completed_rows += 1
+        row["cumulative_prefix_token_ids_sha256"] = _sha256_json(current_prefix)
+        row["cumulative_owner_entity_ids"] = list(cumulative_owner_ids)
+        rows.append(row)
+        if not appendable:
+            break
+    return {
+        "mode": mode,
+        "seed": seed,
+        "status": "success" if completed_rows > 0 else "failed",
+        "horizon_complete": bool(completed_rows == int(horizon_rows)),
+        "horizon_rows_requested": int(horizon_rows),
+        "horizon_rows_generated": completed_rows,
+        "initial_prefix_token_ids": [int(value) for value in prefix_token_ids],
+        "initial_prefix_token_ids_sha256": _sha256_json(prefix_token_ids),
+        "final_prefix_token_ids": list(current_prefix),
+        "final_prefix_token_ids_sha256": _sha256_json(current_prefix),
+        "cumulative_owner_entity_ids": list(cumulative_owner_ids),
+        "rows": rows,
     }
 
 
@@ -815,7 +1342,12 @@ def run_probe(
     # Tokenize row text once with the loaded frontend tokenizer, before opening
     # the executable model.  Supplied token ids take the no-tokenizer path.
     entity_rows = materialize_entity_rows(checked_spec, tokenizer=frontend.qwen.tokenizer)
-    arms_by_case = {str(case["case_id"]): build_prefix_arms(case, entity_rows) for case in selected_cases}
+    is_v2 = checked_spec["schema_version"] in {CASE_SCHEMA_VERSION_V2, "same_covered_set_prefix_order.v2"}
+    arms_by_case = (
+        {str(case["case_id"]): build_prefix_arms(case, entity_rows) for case in selected_cases}
+        if not is_v2
+        else {}
+    )
     request, plan, prompt_meta = _build_request(config, frontend, example)
     output.parent.mkdir(parents=True, exist_ok=True)
     case_artifacts: list[dict[str, Any]] = []
@@ -826,6 +1358,70 @@ def run_probe(
         image_width, image_height = int(plan.decoded_width), int(plan.decoded_height)
         for case in selected_cases:
             case_id = str(case["case_id"])
+            if is_v2:
+                artifact_arms: dict[str, Any] = {}
+                invariant_records: dict[str, Any] = {}
+                comparison_records = []
+                for raw_comparison in case["comparisons"]:
+                    comparison = dict(raw_comparison)
+                    comparison_id = str(comparison["comparison_id"])
+                    comparison_arms = build_named_prefix_arms(case, entity_rows, comparison=comparison)
+                    invariant_records[comparison_id] = validate_named_prefix_invariants(
+                        comparison_arms, entity_rows, comparison=comparison
+                    )
+                    comparison_records.append(comparison)
+                    for arm_name, arm in comparison_arms.items():
+                        target = artifact_arms.setdefault(arm_name, {**arm, "runs": []})
+                        modes: list[tuple[str, int | None]] = ([('greedy', None)] if include_greedy else []) + [("sample", int(seed)) for seed in seeds]
+                        for mode, seed in modes:
+                            try:
+                                run = _generate_horizon(
+                                    session=session,
+                                    native_inputs=native_inputs,
+                                    prefix_token_ids=arm["prefix_token_ids"],
+                                    tokenizer=session._tokenizer,
+                                    image_width=image_width,
+                                    image_height=image_height,
+                                    mode=mode,
+                                    seed=seed,
+                                    temperature=temperature,
+                                    top_p=top_p,
+                                    repetition_penalty=repetition_penalty,
+                                    max_new_tokens=max_new_tokens,
+                                    malformed_limit=malformed_limit,
+                                    horizon_rows=int(comparison["rollout_horizon_rows"]),
+                                    entity_rows=entity_rows,
+                                    covered_entity_ids=arm["covered_entity_ids"],
+                                )
+                            except Exception as exc:
+                                prefix_hash = _sha256_json(arm["prefix_token_ids"])
+                                run = {
+                                    "mode": mode,
+                                    "seed": seed,
+                                    "status": "failed",
+                                    "horizon_complete": False,
+                                    "horizon_rows_requested": int(comparison["rollout_horizon_rows"]),
+                                    "horizon_rows_generated": 0,
+                                    "initial_prefix_token_ids": list(arm["prefix_token_ids"]),
+                                    "final_prefix_token_ids": list(arm["prefix_token_ids"]),
+                                    "initial_prefix_token_ids_sha256": prefix_hash,
+                                    "final_prefix_token_ids_sha256": prefix_hash,
+                                    "cumulative_owner_entity_ids": [],
+                                    "rows": [],
+                                    "failure": {"type": type(exc).__name__, "message": str(exc)},
+                                }
+                            run["comparison_id"] = comparison_id
+                            run["shared_suffix_length"] = int(comparison["shared_suffix_length"])
+                            target["runs"].append(run)
+                case_artifacts.append({
+                    "case_id": case_id,
+                    "image_id": str(checked_spec["image_id"]),
+                    "entity_ledger": [dict(row) for row in entity_rows.values()],
+                    "comparisons": comparison_records,
+                    "invariants_by_comparison": invariant_records,
+                    "arms": artifact_arms,
+                })
+                continue
             case_arms = arms_by_case[case_id]
             artifact_arms: dict[str, Any] = {}
             # Matching uses the complete image ledger, not only A/B/C.  This
@@ -867,7 +1463,7 @@ def run_probe(
             })
         receipt_artifact = session.receipt.to_artifact_dict()
     payload = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": SCHEMA_VERSION_V2 if is_v2 else SCHEMA_VERSION,
         "experiment": "same_covered_set_prefix_order",
         "config": {
             "infer_config_path": str(infer_config.expanduser().resolve()),

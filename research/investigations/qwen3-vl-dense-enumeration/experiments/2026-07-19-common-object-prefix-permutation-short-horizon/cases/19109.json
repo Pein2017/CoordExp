@@ -1,0 +1,960 @@
+{
+  "schema_version": "same_covered_set_prefix_order.case.v2",
+  "image_id": "19109",
+  "entities": [
+    {
+      "entity_id": "gt_0000",
+      "description": "person",
+      "bbox_pixel_xyxy": [
+        107.0,
+        339.0,
+        161.0,
+        453.0
+      ],
+      "bbox_norm1000": [
+        86,
+        407,
+        129,
+        544
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_86|><|coord_407|><|coord_129|><|coord_544|><|box_end|>",
+      "source_gt_index": 0,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0001",
+      "description": "person",
+      "bbox_pixel_xyxy": [
+        558.0,
+        413.0,
+        594.0,
+        524.0
+      ],
+      "bbox_norm1000": [
+        447,
+        496,
+        476,
+        630
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_447|><|coord_496|><|coord_476|><|coord_630|><|box_end|>",
+      "source_gt_index": 1,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0002",
+      "description": "person",
+      "bbox_pixel_xyxy": [
+        7.0,
+        427.0,
+        56.0,
+        509.0
+      ],
+      "bbox_norm1000": [
+        6,
+        513,
+        45,
+        612
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_6|><|coord_513|><|coord_45|><|coord_612|><|box_end|>",
+      "source_gt_index": 2,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0003",
+      "description": "person",
+      "bbox_pixel_xyxy": [
+        1162.0,
+        431.0,
+        1192.0,
+        532.0
+      ],
+      "bbox_norm1000": [
+        931,
+        518,
+        955,
+        639
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_931|><|coord_518|><|coord_955|><|coord_639|><|box_end|>",
+      "source_gt_index": 3,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0004",
+      "description": "person",
+      "bbox_pixel_xyxy": [
+        50.0,
+        434.0,
+        94.0,
+        514.0
+      ],
+      "bbox_norm1000": [
+        40,
+        522,
+        75,
+        618
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_40|><|coord_522|><|coord_75|><|coord_618|><|box_end|>",
+      "source_gt_index": 4,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0005",
+      "description": "person",
+      "bbox_pixel_xyxy": [
+        86.0,
+        436.0,
+        151.0,
+        551.0
+      ],
+      "bbox_norm1000": [
+        69,
+        524,
+        121,
+        662
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_69|><|coord_524|><|coord_121|><|coord_662|><|box_end|>",
+      "source_gt_index": 5,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0006",
+      "description": "person",
+      "bbox_pixel_xyxy": [
+        714.0,
+        442.0,
+        761.0,
+        547.0
+      ],
+      "bbox_norm1000": [
+        572,
+        531,
+        610,
+        657
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_572|><|coord_531|><|coord_610|><|coord_657|><|box_end|>",
+      "source_gt_index": 6,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0007",
+      "description": "person",
+      "bbox_pixel_xyxy": [
+        1076.0,
+        443.0,
+        1135.0,
+        512.0
+      ],
+      "bbox_norm1000": [
+        862,
+        532,
+        909,
+        615
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_862|><|coord_532|><|coord_909|><|coord_615|><|box_end|>",
+      "source_gt_index": 7,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0008",
+      "description": "person",
+      "bbox_pixel_xyxy": [
+        677.0,
+        446.0,
+        724.0,
+        523.0
+      ],
+      "bbox_norm1000": [
+        542,
+        536,
+        580,
+        629
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_542|><|coord_536|><|coord_580|><|coord_629|><|box_end|>",
+      "source_gt_index": 8,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0009",
+      "description": "person",
+      "bbox_pixel_xyxy": [
+        1054.0,
+        453.0,
+        1082.0,
+        482.0
+      ],
+      "bbox_norm1000": [
+        845,
+        544,
+        867,
+        579
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_845|><|coord_544|><|coord_867|><|coord_579|><|box_end|>",
+      "source_gt_index": 9,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0010",
+      "description": "person",
+      "bbox_pixel_xyxy": [
+        0.0,
+        457.0,
+        36.0,
+        725.0
+      ],
+      "bbox_norm1000": [
+        0,
+        549,
+        29,
+        871
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_0|><|coord_549|><|coord_29|><|coord_871|><|box_end|>",
+      "source_gt_index": 10,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0011",
+      "description": "person",
+      "bbox_pixel_xyxy": [
+        869.0,
+        470.0,
+        890.0,
+        517.0
+      ],
+      "bbox_norm1000": [
+        696,
+        565,
+        713,
+        621
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_696|><|coord_565|><|coord_713|><|coord_621|><|box_end|>",
+      "source_gt_index": 11,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0012",
+      "description": "person",
+      "bbox_pixel_xyxy": [
+        926.0,
+        480.0,
+        941.0,
+        488.0
+      ],
+      "bbox_norm1000": [
+        742,
+        577,
+        754,
+        587
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_742|><|coord_577|><|coord_754|><|coord_587|><|box_end|>",
+      "source_gt_index": 12,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0013",
+      "description": "motorcycle",
+      "bbox_pixel_xyxy": [
+        738.0,
+        483.0,
+        901.0,
+        670.0
+      ],
+      "bbox_norm1000": [
+        591,
+        581,
+        722,
+        805
+      ],
+      "row_text": "<|object_ref_start|>motorcycle<|object_ref_end|><|box_start|><|coord_591|><|coord_581|><|coord_722|><|coord_805|><|box_end|>",
+      "source_gt_index": 13,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0014",
+      "description": "motorcycle",
+      "bbox_pixel_xyxy": [
+        1091.0,
+        486.0,
+        1195.0,
+        632.0
+      ],
+      "bbox_norm1000": [
+        874,
+        584,
+        958,
+        760
+      ],
+      "row_text": "<|object_ref_start|>motorcycle<|object_ref_end|><|box_start|><|coord_874|><|coord_584|><|coord_958|><|coord_760|><|box_end|>",
+      "source_gt_index": 14,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0015",
+      "description": "motorcycle",
+      "bbox_pixel_xyxy": [
+        553.0,
+        487.0,
+        664.0,
+        680.0
+      ],
+      "bbox_norm1000": [
+        443,
+        585,
+        532,
+        817
+      ],
+      "row_text": "<|object_ref_start|>motorcycle<|object_ref_end|><|box_start|><|coord_443|><|coord_585|><|coord_532|><|coord_817|><|box_end|>",
+      "source_gt_index": 15,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0016",
+      "description": "motorcycle",
+      "bbox_pixel_xyxy": [
+        609.0,
+        488.0,
+        726.0,
+        690.0
+      ],
+      "bbox_norm1000": [
+        488,
+        587,
+        582,
+        829
+      ],
+      "row_text": "<|object_ref_start|>motorcycle<|object_ref_end|><|box_start|><|coord_488|><|coord_587|><|coord_582|><|coord_829|><|box_end|>",
+      "source_gt_index": 16,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0017",
+      "description": "motorcycle",
+      "bbox_pixel_xyxy": [
+        891.0,
+        488.0,
+        1029.0,
+        655.0
+      ],
+      "bbox_norm1000": [
+        714,
+        587,
+        825,
+        787
+      ],
+      "row_text": "<|object_ref_start|>motorcycle<|object_ref_end|><|box_start|><|coord_714|><|coord_587|><|coord_825|><|coord_787|><|box_end|>",
+      "source_gt_index": 17,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0018",
+      "description": "motorcycle",
+      "bbox_pixel_xyxy": [
+        839.0,
+        492.0,
+        957.0,
+        659.0
+      ],
+      "bbox_norm1000": [
+        672,
+        591,
+        767,
+        792
+      ],
+      "row_text": "<|object_ref_start|>motorcycle<|object_ref_end|><|box_start|><|coord_672|><|coord_591|><|coord_767|><|coord_792|><|box_end|>",
+      "source_gt_index": 18,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0019",
+      "description": "motorcycle",
+      "bbox_pixel_xyxy": [
+        139.0,
+        492.0,
+        303.0,
+        749.0
+      ],
+      "bbox_norm1000": [
+        111,
+        591,
+        243,
+        900
+      ],
+      "row_text": "<|object_ref_start|>motorcycle<|object_ref_end|><|box_start|><|coord_111|><|coord_591|><|coord_243|><|coord_900|><|box_end|>",
+      "source_gt_index": 19,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0020",
+      "description": "handbag",
+      "bbox_pixel_xyxy": [
+        721.0,
+        493.0,
+        744.0,
+        514.0
+      ],
+      "bbox_norm1000": [
+        578,
+        593,
+        596,
+        618
+      ],
+      "row_text": "<|object_ref_start|>handbag<|object_ref_end|><|box_start|><|coord_578|><|coord_593|><|coord_596|><|coord_618|><|box_end|>",
+      "source_gt_index": 20,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0021",
+      "description": "motorcycle",
+      "bbox_pixel_xyxy": [
+        31.0,
+        497.0,
+        187.0,
+        769.0
+      ],
+      "bbox_norm1000": [
+        25,
+        597,
+        150,
+        924
+      ],
+      "row_text": "<|object_ref_start|>motorcycle<|object_ref_end|><|box_start|><|coord_25|><|coord_597|><|coord_150|><|coord_924|><|box_end|>",
+      "source_gt_index": 21,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0022",
+      "description": "motorcycle",
+      "bbox_pixel_xyxy": [
+        704.0,
+        498.0,
+        790.0,
+        679.0
+      ],
+      "bbox_norm1000": [
+        564,
+        599,
+        633,
+        816
+      ],
+      "row_text": "<|object_ref_start|>motorcycle<|object_ref_end|><|box_start|><|coord_564|><|coord_599|><|coord_633|><|coord_816|><|box_end|>",
+      "source_gt_index": 22,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0023",
+      "description": "motorcycle",
+      "bbox_pixel_xyxy": [
+        278.0,
+        500.0,
+        374.0,
+        731.0
+      ],
+      "bbox_norm1000": [
+        223,
+        601,
+        300,
+        879
+      ],
+      "row_text": "<|object_ref_start|>motorcycle<|object_ref_end|><|box_start|><|coord_223|><|coord_601|><|coord_300|><|coord_879|><|box_end|>",
+      "source_gt_index": 23,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0024",
+      "description": "motorcycle",
+      "bbox_pixel_xyxy": [
+        1171.0,
+        507.0,
+        1247.0,
+        578.0
+      ],
+      "bbox_norm1000": [
+        938,
+        609,
+        999,
+        695
+      ],
+      "row_text": "<|object_ref_start|>motorcycle<|object_ref_end|><|box_start|><|coord_938|><|coord_609|><|coord_999|><|coord_695|><|box_end|>",
+      "source_gt_index": 24,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0025",
+      "description": "motorcycle",
+      "bbox_pixel_xyxy": [
+        1153.0,
+        522.0,
+        1210.0,
+        611.0
+      ],
+      "bbox_norm1000": [
+        924,
+        627,
+        970,
+        734
+      ],
+      "row_text": "<|object_ref_start|>motorcycle<|object_ref_end|><|box_start|><|coord_924|><|coord_627|><|coord_970|><|coord_734|><|box_end|>",
+      "source_gt_index": 25,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    },
+    {
+      "entity_id": "gt_0026",
+      "description": "motorcycle",
+      "bbox_pixel_xyxy": [
+        362.0,
+        527.0,
+        625.0,
+        712.0
+      ],
+      "bbox_norm1000": [
+        290,
+        633,
+        501,
+        856
+      ],
+      "row_text": "<|object_ref_start|>motorcycle<|object_ref_end|><|box_start|><|coord_290|><|coord_633|><|coord_501|><|coord_856|><|box_end|>",
+      "source_gt_index": 26,
+      "source_object_id": null,
+      "row_text_source": "artifact_local_gt_pixel_box_normalized_once"
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "common_objects_depth_6",
+      "selected_common_entity_ids": [
+        "gt_0002",
+        "gt_0005",
+        "gt_0013",
+        "gt_0007",
+        "gt_0008",
+        "gt_0016"
+      ],
+      "selected_common_gt_indices": [
+        2,
+        5,
+        13,
+        7,
+        8,
+        16
+      ],
+      "entity_ledger_scope": "full_artifact_local_gt",
+      "entity_ledger_entity_count": 27,
+      "arms": {
+        "current_sorted_rollout_order": {
+          "entity_ids": [
+            "gt_0002",
+            "gt_0005",
+            "gt_0013",
+            "gt_0007",
+            "gt_0008",
+            "gt_0016"
+          ],
+          "permutation_inversion_count_relative_to_canonical_order": 0
+        },
+        "historical_random_relative_order_with_fixed_final_two": {
+          "entity_ids": [
+            "gt_0002",
+            "gt_0005",
+            "gt_0007",
+            "gt_0013",
+            "gt_0008",
+            "gt_0016"
+          ],
+          "permutation_inversion_count_relative_to_canonical_order": 1
+        },
+        "reverse_earlier_rows_with_fixed_final_two": {
+          "entity_ids": [
+            "gt_0007",
+            "gt_0013",
+            "gt_0005",
+            "gt_0002",
+            "gt_0008",
+            "gt_0016"
+          ],
+          "permutation_inversion_count_relative_to_canonical_order": 6
+        },
+        "reverse_earlier_rows_with_fixed_final_one": {
+          "entity_ids": [
+            "gt_0008",
+            "gt_0007",
+            "gt_0013",
+            "gt_0005",
+            "gt_0002",
+            "gt_0016"
+          ],
+          "permutation_inversion_count_relative_to_canonical_order": 10
+        },
+        "seeded_shuffle_earlier_rows_with_fixed_final_two": {
+          "entity_ids": [
+            "gt_0007",
+            "gt_0013",
+            "gt_0002",
+            "gt_0005",
+            "gt_0008",
+            "gt_0016"
+          ],
+          "permutation_inversion_count_relative_to_canonical_order": 5
+        }
+      },
+      "comparisons": [
+        {
+          "comparison_id": "current_sorted_rollout_order_vs_historical_random_relative_order_with_fixed_final_two",
+          "arm_names": [
+            "current_sorted_rollout_order",
+            "historical_random_relative_order_with_fixed_final_two"
+          ],
+          "require_same_covered_set": true,
+          "shared_suffix_length": 2,
+          "rollout_horizon_rows": 1,
+          "comparison_meaning": "Compare earlier prefix order while keeping the same physical rows and final two rows."
+        },
+        {
+          "comparison_id": "current_sorted_rollout_order_vs_reverse_earlier_rows_with_fixed_final_two",
+          "arm_names": [
+            "current_sorted_rollout_order",
+            "reverse_earlier_rows_with_fixed_final_two"
+          ],
+          "require_same_covered_set": true,
+          "shared_suffix_length": 2,
+          "rollout_horizon_rows": 1,
+          "comparison_meaning": "Compare earlier prefix order while keeping the same physical rows and final two rows."
+        },
+        {
+          "comparison_id": "current_sorted_rollout_order_vs_reverse_earlier_rows_with_fixed_final_one",
+          "arm_names": [
+            "current_sorted_rollout_order",
+            "reverse_earlier_rows_with_fixed_final_one"
+          ],
+          "require_same_covered_set": true,
+          "shared_suffix_length": 1,
+          "rollout_horizon_rows": 1,
+          "comparison_meaning": "Compare earlier prefix order while keeping the same physical rows and final one row."
+        },
+        {
+          "comparison_id": "current_sorted_rollout_order_vs_seeded_shuffle_earlier_rows_with_fixed_final_two",
+          "arm_names": [
+            "current_sorted_rollout_order",
+            "seeded_shuffle_earlier_rows_with_fixed_final_two"
+          ],
+          "require_same_covered_set": true,
+          "shared_suffix_length": 2,
+          "rollout_horizon_rows": 1,
+          "comparison_meaning": "Compare earlier prefix order while keeping the same physical rows and final two rows."
+        }
+      ],
+      "omitted_comparisons": [
+        {
+          "arm_name": "adjacent_swap_before_fixed_final_two",
+          "duplicate_of": "historical_random_relative_order_with_fixed_final_two",
+          "reason": "identical_row_order"
+        }
+      ],
+      "depth_meaning": "Number of common physical entities included in the covered prefix."
+    },
+    {
+      "case_id": "common_objects_depth_10",
+      "selected_common_entity_ids": [
+        "gt_0002",
+        "gt_0005",
+        "gt_0013",
+        "gt_0007",
+        "gt_0008",
+        "gt_0016",
+        "gt_0021",
+        "gt_0018",
+        "gt_0026",
+        "gt_0017"
+      ],
+      "selected_common_gt_indices": [
+        2,
+        5,
+        13,
+        7,
+        8,
+        16,
+        21,
+        18,
+        26,
+        17
+      ],
+      "entity_ledger_scope": "full_artifact_local_gt",
+      "entity_ledger_entity_count": 27,
+      "arms": {
+        "current_sorted_rollout_order": {
+          "entity_ids": [
+            "gt_0002",
+            "gt_0005",
+            "gt_0013",
+            "gt_0007",
+            "gt_0008",
+            "gt_0016",
+            "gt_0021",
+            "gt_0018",
+            "gt_0026",
+            "gt_0017"
+          ],
+          "permutation_inversion_count_relative_to_canonical_order": 0
+        },
+        "historical_random_relative_order_with_fixed_final_two": {
+          "entity_ids": [
+            "gt_0021",
+            "gt_0002",
+            "gt_0005",
+            "gt_0008",
+            "gt_0018",
+            "gt_0016",
+            "gt_0007",
+            "gt_0013",
+            "gt_0026",
+            "gt_0017"
+          ],
+          "permutation_inversion_count_relative_to_canonical_order": 14
+        },
+        "reverse_earlier_rows_with_fixed_final_two": {
+          "entity_ids": [
+            "gt_0018",
+            "gt_0021",
+            "gt_0016",
+            "gt_0008",
+            "gt_0007",
+            "gt_0013",
+            "gt_0005",
+            "gt_0002",
+            "gt_0026",
+            "gt_0017"
+          ],
+          "permutation_inversion_count_relative_to_canonical_order": 28
+        },
+        "reverse_earlier_rows_with_fixed_final_one": {
+          "entity_ids": [
+            "gt_0026",
+            "gt_0018",
+            "gt_0021",
+            "gt_0016",
+            "gt_0008",
+            "gt_0007",
+            "gt_0013",
+            "gt_0005",
+            "gt_0002",
+            "gt_0017"
+          ],
+          "permutation_inversion_count_relative_to_canonical_order": 36
+        },
+        "adjacent_swap_before_fixed_final_two": {
+          "entity_ids": [
+            "gt_0002",
+            "gt_0005",
+            "gt_0013",
+            "gt_0007",
+            "gt_0008",
+            "gt_0016",
+            "gt_0018",
+            "gt_0021",
+            "gt_0026",
+            "gt_0017"
+          ],
+          "permutation_inversion_count_relative_to_canonical_order": 1
+        },
+        "seeded_shuffle_earlier_rows_with_fixed_final_two": {
+          "entity_ids": [
+            "gt_0008",
+            "gt_0018",
+            "gt_0016",
+            "gt_0005",
+            "gt_0002",
+            "gt_0013",
+            "gt_0007",
+            "gt_0021",
+            "gt_0026",
+            "gt_0017"
+          ],
+          "permutation_inversion_count_relative_to_canonical_order": 15
+        }
+      },
+      "comparisons": [
+        {
+          "comparison_id": "current_sorted_rollout_order_vs_historical_random_relative_order_with_fixed_final_two",
+          "arm_names": [
+            "current_sorted_rollout_order",
+            "historical_random_relative_order_with_fixed_final_two"
+          ],
+          "require_same_covered_set": true,
+          "shared_suffix_length": 2,
+          "rollout_horizon_rows": 1,
+          "comparison_meaning": "Compare earlier prefix order while keeping the same physical rows and final two rows."
+        },
+        {
+          "comparison_id": "current_sorted_rollout_order_vs_reverse_earlier_rows_with_fixed_final_two",
+          "arm_names": [
+            "current_sorted_rollout_order",
+            "reverse_earlier_rows_with_fixed_final_two"
+          ],
+          "require_same_covered_set": true,
+          "shared_suffix_length": 2,
+          "rollout_horizon_rows": 1,
+          "comparison_meaning": "Compare earlier prefix order while keeping the same physical rows and final two rows."
+        },
+        {
+          "comparison_id": "current_sorted_rollout_order_vs_reverse_earlier_rows_with_fixed_final_one",
+          "arm_names": [
+            "current_sorted_rollout_order",
+            "reverse_earlier_rows_with_fixed_final_one"
+          ],
+          "require_same_covered_set": true,
+          "shared_suffix_length": 1,
+          "rollout_horizon_rows": 1,
+          "comparison_meaning": "Compare earlier prefix order while keeping the same physical rows and final one row."
+        },
+        {
+          "comparison_id": "current_sorted_rollout_order_vs_adjacent_swap_before_fixed_final_two",
+          "arm_names": [
+            "current_sorted_rollout_order",
+            "adjacent_swap_before_fixed_final_two"
+          ],
+          "require_same_covered_set": true,
+          "shared_suffix_length": 2,
+          "rollout_horizon_rows": 1,
+          "comparison_meaning": "Compare earlier prefix order while keeping the same physical rows and final two rows."
+        },
+        {
+          "comparison_id": "current_sorted_rollout_order_vs_seeded_shuffle_earlier_rows_with_fixed_final_two",
+          "arm_names": [
+            "current_sorted_rollout_order",
+            "seeded_shuffle_earlier_rows_with_fixed_final_two"
+          ],
+          "require_same_covered_set": true,
+          "shared_suffix_length": 2,
+          "rollout_horizon_rows": 1,
+          "comparison_meaning": "Compare earlier prefix order while keeping the same physical rows and final two rows."
+        }
+      ],
+      "omitted_comparisons": [],
+      "depth_meaning": "Number of common physical entities included in the covered prefix."
+    }
+  ],
+  "metadata": {
+    "experiment_name": "Common-object prefix permutation with a fixed final two-row suffix",
+    "experiment_meaning": "Test whether earlier prefix order changes the next-row rollout when the same physical objects have already been covered.",
+    "cohort_status": "artifact-local provisional cohort; selected from the intersection of two rollout matches; not current relabeled ground truth",
+    "current_sorted_rollout_meaning": "Current geometry-sorted pure cross-entropy rollout used as the physical-order reference.",
+    "secondary_rollout_meaning": "Historical or secondary rollout used only to provide an independent relative order for common matched entities.",
+    "matching_rule": "Same description and intersection over union at or above threshold, globally greedily assigned by descending intersection over union, then prediction index, then ground-truth index.",
+    "same_coverage_rule": "Every compared arm contains the same selected physical entities and the same byte-identical final one- or two-row suffix declared by its comparison.",
+    "entity_ledger_scope": "full_artifact_local_gt",
+    "entity_ledger_meaning": "The entities list is the complete artifact-local COCO-80 ground-truth set; each arm entity_ids list is only the selected common covered prefix.",
+    "full_artifact_local_gt_entity_count": 27,
+    "selected_prefix_entity_counts_by_depth": {
+      "common_objects_depth_6": 6,
+      "common_objects_depth_10": 10
+    },
+    "selected_prefix_is_a_subset_of_full_entity_ledger": true,
+    "prefix_likelihood_scoring": {
+      "status": "unavailable_in_this_pilot",
+      "meaning": "No prefix likelihood or plausibility score was computed; permutations are evaluated only by exact entity order and declared comparisons."
+    },
+    "permutation_distance_metric": {
+      "metric_full_name": "Kendall tau inversion count relative to canonical order",
+      "operational_meaning": "For each arm, count unordered pairs of selected entities whose relative order is reversed compared with current_sorted_rollout_order; zero means identical order.",
+      "per_arm_field": "permutation_inversion_count_relative_to_canonical_order"
+    },
+    "omitted_comparison_rule": {
+      "reason_value": "identical_row_order",
+      "meaning": "If a predefined permutation is byte-identical in entity order to an earlier arm for one image and depth, omit only that redundant comparison and record its duplicate arm."
+    },
+    "prefix_depths": [
+      6,
+      10
+    ],
+    "intersection_over_union_threshold": 0.5,
+    "shuffle_seed": 17,
+    "rollout_horizon_rows": 1,
+    "shared_suffix_length": 2,
+    "source_artifacts": {
+      "current_sorted_rollout_jsonl": "/data/CoordExp/outputs/infer/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200_bsz4_temp0_rp1p10_max3084_8gpu/gt_vs_pred.jsonl",
+      "secondary_rollout_jsonl": "/data/CoordExp/outputs/infer/recursive_detection_ce_latest/compact_full_fullobj_random_sft_free_greedy_ckpt3668_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu/gt_vs_pred.jsonl",
+      "current_sorted_rollout_file_sha256": "341974d7292ee9b15abb8a808d4bd714a816210ec1295b334cbda90e9dc15ccb",
+      "secondary_rollout_file_sha256": "c032695a5cca9ee2dcc57d6e767fa23be84a7effde7c4bb8dd72c46f7a965d17",
+      "digest_meaning": "SHA-256 cryptographic digest of the complete source JSONL file when a filesystem path was supplied."
+    },
+    "source_artifact_row_sha256": {
+      "current_sorted_rollout_row": "cb7a10b031506c105e7af02a720c3cc455ce53bf4c39e399e35d3e03d13d07d6",
+      "secondary_rollout_row": "81f64efc4d88fab120dd03a932bd1955d9fb984b14faa392b63fe0653cfdd059",
+      "digest_meaning": "SHA-256 cryptographic digest of the exact selected artifact row."
+    },
+    "source_gt_arrays_are_exactly_equal": true,
+    "common_matched_gt_indices": [
+      2,
+      5,
+      13,
+      7,
+      8,
+      16,
+      21,
+      18,
+      26,
+      17,
+      22,
+      23
+    ],
+    "current_sorted_matched_gt_order": [
+      2,
+      4,
+      5,
+      13,
+      7,
+      8,
+      11,
+      19,
+      16,
+      21,
+      18,
+      26,
+      17,
+      22,
+      23
+    ],
+    "secondary_matched_gt_order": [
+      21,
+      10,
+      2,
+      5,
+      23,
+      8,
+      18,
+      16,
+      22,
+      7,
+      17,
+      26,
+      13,
+      14
+    ],
+    "image_width": 1248,
+    "image_height": 832
+  }
+}

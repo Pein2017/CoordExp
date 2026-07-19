@@ -30,12 +30,16 @@ synthesis, or a stable training intervention.
 The same-covered-set order probe then closes a previously missing causal cell:
 with complete rows, physical covered set, row count, and final row held fixed,
 earlier order can change the next physical owner, while one case also shows a
-clean order-robust covered-owner suppression effect. The evidence supports a
-hybrid decoder state rather than a pure set-only or pure last-row-only account.
-It does not yet show that path dependence harms final set completion, so the
-training OpenSpec remains pending a symmetric removal control and a short
-future-horizon value test. The weekly report and research compass own the
-broader synthesis and next-discriminator boundary.
+clean order-robust covered-owner suppression effect. Its short-horizon
+successor now shows that the effect is not only a harmless next-row swap. In an
+activated five-case panel, earlier order changes the strict four-row owner set
+in `99 / 216` paired trajectories while changing four-row completion in only
+`8 / 216`. Some paths reconverge, but image `19109` also reselects previously
+covered motorcycles several rows later. The current native state is therefore
+useful but route-shaped and order-sensitive, not a clean set ledger. Training
+remains pending a complete-row candidate-score probe that separates uncovered,
+covered, and terminal alternatives. The weekly report and research compass own
+the broader synthesis and next-discriminator boundary.
 
 ## Reading Path
 
@@ -112,6 +116,8 @@ durable program reading path below.
 67. [Exact current-sampler objective comparison results](experiments/2026-07-18-matched-objective-coordinate-branch-signature-comparison/results.md)
 68. [Same covered physical-object set under different earlier prefix orders](experiments/2026-07-19-same-covered-set-prefix-order-equivalence/unit.md)
 69. [Same covered physical-object set order results and hybrid-state verdict](experiments/2026-07-19-same-covered-set-prefix-order-equivalence/results.md)
+70. [Common physical objects under different prefix permutations and a short future horizon](experiments/2026-07-19-common-object-prefix-permutation-short-horizon/unit.md)
+71. [Short-horizon prefix-permutation results and order-sensitive recurrence verdict](experiments/2026-07-19-common-object-prefix-permutation-short-horizon/results.md)
 
 The review and readiness amendment preserve the pre-execution gate. The
 completed unit and results record own current lifecycle and evidence status.

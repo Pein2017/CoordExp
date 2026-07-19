@@ -22,6 +22,7 @@ if __package__ in {None, ""}:
 from scripts.research.run_same_covered_set_prefix_order_probe import (
     ARMS,
     SCHEMA_VERSION,
+    SCHEMA_VERSION_V2,
     validate_artifact_payload,
 )
 
@@ -53,6 +54,20 @@ def _owner_labels(run: Mapping[str, Any]) -> tuple[str, ...]:
         and match.get("matched_entity_id") is not None
     }
     return tuple(sorted(owners))
+
+
+def _permutation_distance(arm: Mapping[str, Any]) -> Any:
+    """Read the explicit inversion-count field and older aliases.
+
+    The case builder uses the long field name so durable artifacts explain the
+    metric without requiring a separate abbreviation. Older hand-authored v2
+    cases may use one of the shorter aliases, which remain supported here.
+    """
+
+    return arm.get(
+        "permutation_inversion_count_relative_to_canonical_order",
+        arm.get("permutation_distance", arm.get("permutation_distance_from_canonical")),
+    )
 
 
 def _primary_owner(run: Mapping[str, Any]) -> str:
@@ -116,6 +131,7 @@ def _run_summary(arm_name: str, arm: Mapping[str, Any]) -> dict[str, Any]:
         )
     return {
         "entity_ids": sorted(covered),
+        "permutation_distance": _permutation_distance(arm),
         "run_count": len(runs),
         "primary_owner_counts": dict(sorted(primary_counts.items())),
         "physical_owner_counts": dict(sorted(owner_counts.items())),
@@ -123,6 +139,134 @@ def _run_summary(arm_name: str, arm: Mapping[str, Any]) -> dict[str, Any]:
         "covered_owner_counts": dict(sorted(covered_counts.items())),
         "uncovered_owner_counts": dict(sorted(uncovered_counts.items())),
         "runs": run_rows,
+    }
+
+
+def _horizon_owner_labels(run: Mapping[str, Any]) -> tuple[str, ...]:
+    owners: set[str] = set()
+    for row in run.get("rows", []):
+        if not isinstance(row, Mapping):
+            continue
+        owners.update(str(value) for value in row.get("owner_entity_ids", []) if value is not None)
+    return tuple(sorted(owners))
+
+
+def _v2_run_summary(arm_name: str, arm: Mapping[str, Any], *, comparison_id: str | None = None) -> dict[str, Any]:
+    covered = {str(value) for value in arm.get("entity_ids", [])}
+    primary_counts: Counter[str] = Counter()
+    owner_counts: Counter[str] = Counter()
+    horizon_counts: Counter[str] = Counter()
+    covered_owner_counts: Counter[str] = Counter()
+    uncovered_owner_counts: Counter[str] = Counter()
+    unmatched_or_ambiguous_count = 0
+    rows_attempted = 0
+    rows_accepted = 0
+    run_rows: list[dict[str, Any]] = []
+    for raw_run in arm.get("runs", []):
+        run = _as_mapping(raw_run, f"v2 arm {arm_name} run")
+        if comparison_id is not None and str(run.get("comparison_id")) != str(comparison_id):
+            continue
+        owners = _horizon_owner_labels(run)
+        rows = run.get("rows", []) if isinstance(run.get("rows", []), list) else []
+        first_row = _as_mapping(rows[0], "v2 first generated row") if rows else None
+        first_owners = tuple(str(value) for value in (first_row or {}).get("owner_entity_ids", []) if value is not None)
+        first_owner = first_owners[0] if len(first_owners) == 1 else "multiple" if len(first_owners) > 1 else ("failed" if run.get("status") != "success" else "none")
+        primary = first_owner
+        primary_counts[primary] += 1
+        owner_counts.update(owners)
+        rows_attempted += len(rows)
+        rows_accepted += sum(bool(row.get("accepted_complete_row")) for row in rows if isinstance(row, Mapping))
+        horizon_counts[str(run.get("horizon_rows_generated", 0))] += 1
+        row_trajectory = []
+        for row in rows:
+            row_map = _as_mapping(row, "v2 generated row")
+            row_trajectory.append({
+                "row_index": row_map.get("row_index"),
+                "owner_entity_ids": list(row_map.get("owner_entity_ids", [])),
+                "strict_matched_owner_ids": list(row_map.get("strict_matched_owner_ids", row_map.get("owner_entity_ids", []))),
+                "covered_prefix_owner_ids": list(row_map.get("covered_prefix_owner_ids", [])),
+                "uncovered_ledger_owner_ids": list(row_map.get("uncovered_ledger_owner_ids", [])),
+                "unmatched_or_ambiguous_prediction_indices": list(row_map.get("unmatched_or_ambiguous_prediction_indices", [])),
+                "owner_recurrence": list(row_map.get("owner_recurrence", [])),
+                "cumulative_owner_entity_ids": list(row_map.get("cumulative_owner_entity_ids", [])),
+                "status": row_map.get("status", "success"),
+                "stop_reason": _as_mapping(row_map.get("row_stop", {}), "v2 row_stop").get("stop_reason"),
+                "input_prefix_token_ids_sha256": row_map.get("input_prefix_token_ids_sha256"),
+                "cumulative_prefix_token_ids_sha256": row_map.get("cumulative_prefix_token_ids_sha256"),
+            })
+        for item in row_trajectory:
+            covered_owner_counts.update(item["covered_prefix_owner_ids"])
+            uncovered_owner_counts.update(item["uncovered_ledger_owner_ids"])
+            unmatched_or_ambiguous_count += len(item["unmatched_or_ambiguous_prediction_indices"])
+        run_rows.append({
+            "comparison_id": run.get("comparison_id"),
+            "mode": run.get("mode"),
+            "seed": run.get("seed"),
+            "status": run.get("status"),
+            "first_row_status": None if first_row is None else first_row.get("status", "success"),
+            "first_row_owner": first_owner,
+            "horizon_complete": run.get("horizon_complete"),
+            "horizon_rows_generated": run.get("horizon_rows_generated"),
+            "owner_ids": list(owners),
+            "cumulative_owner_entity_ids": list(run.get("cumulative_owner_entity_ids", [])),
+            "initial_prefix_token_ids_sha256": run.get("initial_prefix_token_ids_sha256"),
+            "final_prefix_token_ids_sha256": run.get("final_prefix_token_ids_sha256"),
+            "ordered_owner_trajectory": row_trajectory,
+            "per_row_stop_reasons": [item["stop_reason"] for item in row_trajectory],
+            "cumulative_unique_owner_ids": list(run.get("cumulative_owner_entity_ids", [])),
+            "covered_recurrence_by_row": [
+                {
+                    "row_index": item["row_index"],
+                    "owner_entity_ids": item["owner_entity_ids"],
+                    "strict_matched_owner_ids": item["strict_matched_owner_ids"],
+                    "uncovered_ledger_owner_ids": item["uncovered_ledger_owner_ids"],
+                    "covered_owner_entity_ids": [owner for owner in item["owner_entity_ids"] if owner in covered],
+                    "recurrence": item["owner_recurrence"],
+                }
+                for item in row_trajectory
+            ],
+        })
+    return {
+        "entity_ids": sorted(covered),
+        "permutation_distance": _permutation_distance(arm),
+        "run_count": len(run_rows),
+        # ``generated_row_count`` is retained for compatibility and now means
+        # accepted complete rows.  The two explicit fields remove ambiguity
+        # for horizon analyses that retain terminal/malformed attempts.
+        "generated_row_count": rows_accepted,
+        "accepted_row_count": rows_accepted,
+        "attempted_row_count": rows_attempted,
+        "horizon_rows_generated_counts": dict(sorted(horizon_counts.items())),
+        "primary_owner_counts": dict(sorted(primary_counts.items())),
+        "physical_owner_counts": dict(sorted(owner_counts.items())),
+        "covered_prefix_owner_counts": dict(sorted(covered_owner_counts.items())),
+        "uncovered_ledger_owner_counts": dict(sorted(uncovered_owner_counts.items())),
+        "unmatched_or_ambiguous_prediction_count": unmatched_or_ambiguous_count,
+        "runs": run_rows,
+    }
+
+
+def _v2_case_summary(case_id: str, case: Mapping[str, Any]) -> dict[str, Any]:
+    arms = _as_mapping(case.get("arms"), f"case {case_id}.arms")
+    comparisons: list[dict[str, Any]] = []
+    for raw_comparison in case.get("comparisons", []):
+        comparison = _as_mapping(raw_comparison, f"case {case_id} comparison")
+        names = [str(value) for value in comparison.get("arm_names", [])]
+        comparisons.append({
+            "comparison_id": comparison.get("comparison_id"),
+            "arm_names": names,
+            "shared_suffix_length": comparison.get("shared_suffix_length"),
+            "rollout_horizon_rows": comparison.get("rollout_horizon_rows"),
+            "permutation_distance": comparison.get("permutation_distance"),
+            "require_same_covered_set": comparison.get("require_same_covered_set", True),
+            "invariants": _as_mapping(case.get("invariants_by_comparison", {}), "invariants_by_comparison").get(str(comparison.get("comparison_id")), {}),
+            "arms": {name: _v2_run_summary(name, _as_mapping(arms.get(name), f"arm {name}"), comparison_id=str(comparison.get("comparison_id"))) for name in names},
+        })
+    return {
+        "case_id": case_id,
+        "image_id": case.get("image_id"),
+        "comparisons": comparisons,
+        "arms": {str(name): _v2_run_summary(str(name), _as_mapping(arm, f"arm {name}")) for name, arm in arms.items()},
     }
 
 
@@ -283,6 +427,84 @@ def _merge_payloads(paths: Sequence[Path]) -> tuple[dict[str, Any], list[dict[st
 
 
 def summarize(paths: Sequence[Path]) -> dict[str, Any]:
+    payloads = []
+    for path in paths:
+        resolved = path.expanduser().resolve(strict=True)
+        payloads.append(json.loads(resolved.read_text(encoding="utf-8")))
+    if payloads and all(payload.get("schema_version") == SCHEMA_VERSION_V2 for payload in payloads):
+        cases: dict[str, dict[str, Any]] = {}
+        seen_runs: set[tuple[str, str, str, str, str]] = set()
+        source_paths: list[str] = []
+        global_signature: dict[str, Any] | None = None
+        case_signatures: dict[str, dict[str, Any]] = {}
+        for path, payload in zip(paths, payloads, strict=True):
+            validate_artifact_payload(payload)
+            source_paths.append(str(path.expanduser().resolve()))
+            config = dict(_as_mapping(payload.get("config", {}), "v2 config"))
+            config.pop("case_ids", None)
+            signature = {
+                "config": config,
+                "model_identity": payload.get("model_identity"),
+            }
+            if global_signature is None:
+                global_signature = signature
+            elif signature != global_signature:
+                raise ValueError("v2 result files disagree on model identity or inference configuration")
+            for raw_case in payload["cases"]:
+                case = dict(_as_mapping(raw_case, "v2 artifact case"))
+                case_id = str(case["case_id"])
+                image = payload.get("image")
+                image_signature = None
+                if isinstance(image, Mapping):
+                    image_signature = {key: image.get(key) for key in ("image_id", "image_sha256", "executed_media_sha256", "width", "height")}
+                arm_signature = {
+                    str(name): {
+                        "prefix_token_ids_sha256": _as_mapping(arm, f"v2 arm {name}").get("prefix_token_ids_sha256"),
+                        "row_token_ids_sha256": _as_mapping(arm, f"v2 arm {name}").get("row_token_ids_sha256"),
+                    }
+                    for name, arm in _as_mapping(case["arms"], "v2 artifact arms").items()
+                }
+                case_signature = {
+                    "image": image_signature,
+                    "entity_ledger": case.get("entity_ledger"),
+                    "comparisons": case.get("comparisons"),
+                    "arm_signature": arm_signature,
+                }
+                if case_id in case_signatures and case_signatures[case_id] != case_signature:
+                    raise ValueError(f"case {case_id} differs in image hash, entity ledger, comparison, or arm prefix hashes")
+                case_signatures[case_id] = case_signature
+                target = cases.setdefault(case_id, {
+                    "case_id": case_id,
+                    "image_id": case.get("image_id"),
+                    "comparisons": case.get("comparisons", []),
+                    "invariants_by_comparison": case.get("invariants_by_comparison", {}),
+                    "arms": {},
+                })
+                if target["image_id"] != case.get("image_id"):
+                    raise ValueError(f"case {case_id} metadata differs across v2 result files")
+                for raw_comparison in case.get("comparisons", []):
+                    comparison = dict(raw_comparison)
+                    comparison_id = str(comparison.get("comparison_id"))
+                    known = {str(item.get("comparison_id")): item for item in target["comparisons"]}
+                    if comparison_id not in known:
+                        target["comparisons"].append(comparison)
+                target["invariants_by_comparison"].update(case.get("invariants_by_comparison", {}))
+                for raw_name, raw_arm in _as_mapping(case["arms"], "v2 artifact arms").items():
+                    name = str(raw_name)
+                    arm = _as_mapping(raw_arm, f"v2 arm {name}")
+                    arm_target = target["arms"].setdefault(name, {key: value for key, value in arm.items() if key != "runs"} | {"runs": []})
+                    for raw_run in arm.get("runs", []):
+                        run = dict(_as_mapping(raw_run, "v2 run"))
+                        key = (case_id, name, str(run.get("comparison_id")), str(run.get("mode")), "none" if run.get("seed") is None else str(run.get("seed")))
+                        if key in seen_runs:
+                            raise ValueError(f"duplicate v2 run key {key} across result files")
+                        seen_runs.add(key)
+                        arm_target["runs"].append(run)
+        return {
+            "schema_version": "same_covered_set_prefix_order.summary.v2",
+            "source": {"source_result_paths": source_paths, "case_count": len(cases), "run_count": len(seen_runs)},
+            "cases": [_v2_case_summary(case_id, cases[case_id]) for case_id in sorted(cases)],
+        }
     metadata, cases = _merge_payloads(paths)
     return {
         "schema_version": "same_covered_set_prefix_order.summary.v1",
