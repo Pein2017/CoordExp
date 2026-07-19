@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-07-19-sampled-history-target-reachability-and-complete-row-value",
+  "decision_timing": "Frozen after Stage 4 established an image-specific safe final unique-owner gain and before either crossover prefix was executed",
+  "source_stage_three_shard": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-19-sampled-history-target-reachability-and-complete-row-value/stage3-same-parent-complete-row-intervention-fp32-v1/image-7816.json",
+  "source_stage_three_shard_sha256": "ac65ef62e0ce8750675b86bfe8b304cf485c6496f46c924027bbf1d40a400491",
+  "source_stage_four_admission": "/data/CoordExp/.worktrees/research-probes/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-sampled-history-target-reachability-and-complete-row-value/stage4-final-horizon-admission.json",
+  "source_stage_four_admission_sha256": "d2d5c527268315f485fdbba9f226d98e2b93e37ae6d1c8cf9bc42e7c12d51332",
+  "source_stage_four_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-19-sampled-history-target-reachability-and-complete-row-value/stage4-final-horizon-fp32-v1/image-7816.json",
+  "source_stage_four_artifact_sha256": "9a5661855502b18cad253b522314fc73a935ca0b2a71a9c438ca0cf569218f2e",
+  "primary_question": "Does the row-0 coordinate history still affect the row-5 object choice after rows 1 through 3 are identical, or is the effect mediated by the later row-4 geometry?",
+  "execution_contract": {
+    "image_id": "7816",
+    "target_owner_id": "211764",
+    "native_duplicate_owner_id": "205108",
+    "forced_prefix_complete_row_count": 5,
+    "forced_prefix_token_count": 45,
+    "total_trajectory_generated_token_budget": 512,
+    "post_prefix_generated_token_budget": 467,
+    "continuation_row_ceiling": 512,
+    "decoding": "greedy",
+    "repetition_penalty": 1.0,
+    "model_dtype": "fp32",
+    "physical_batch_size": 1
+  },
+  "frozen_rows": {
+    "native_row_zero": {
+      "owner_id": "2153918",
+      "coordinates": [387, 82, 460, 340],
+      "raw_row_sha256": "2c2a5376f7f4cead0e6bddff56a7bd49295bd1e63efdf397521faf3d2c2aab5d"
+    },
+    "sampled_row_zero": {
+      "owner_id": "2153918",
+      "coordinates": [386, 83, 462, 342],
+      "raw_row_sha256": "06d3c969afe4a1f0b33b9ef94a03a27687de379fd8df8c001db2f04769b23545"
+    },
+    "rows_one_through_three": "The native and sampled Stage 3 trajectories have exactly equal raw token identifiers for all three rows.",
+    "native_row_four": {
+      "owner_id": "205108",
+      "coordinates": [877, 132, 927, 432],
+      "raw_row_sha256": "9b7b6a6aa6932221ea3f67a76fabfc549befc0953e020a17e22dc79d6d54ef7e"
+    },
+    "sampled_row_four": {
+      "owner_id": "205108",
+      "coordinates": [874, 129, 927, 421],
+      "raw_row_sha256": "7ce3b663847daa458ab384c5b83eac2a806e67d72ffd784c4178416152bc3f90"
+    }
+  },
+  "factorial_prefixes": [
+    {
+      "arm": "native_row_zero__native_row_four",
+      "status": "frozen_endpoint",
+      "prefix_sha256": "3757b1090b39f2d8db0f2745892ca98932c9c2efa2926637cfff715666132194",
+      "frozen_next_owner_id": "205108"
+    },
+    {
+      "arm": "sampled_row_zero__native_row_four",
+      "status": "new_crossover",
+      "prefix_sha256": "7be5489e2e1f2a9538dd060387254379a333dec05735b034993281ff8b482fe2"
+    },
+    {
+      "arm": "native_row_zero__sampled_row_four",
+      "status": "new_crossover",
+      "prefix_sha256": "4ac34f93703165e849f36939208bdb681d1643a491d147438b658c05e9c818db"
+    },
+    {
+      "arm": "sampled_row_zero__sampled_row_four",
+      "status": "frozen_endpoint",
+      "prefix_sha256": "5e9e789dbc7013cdd7d7d4c1ae4d807ab1227fa67eb3d3dac8537fe570f6ed9a",
+      "frozen_next_owner_id": "211764"
+    }
+  ],
+  "required_checks": [
+    "All four prefixes contain exactly five complete nine-token rows and do not contain target owner 211764.",
+    "Rows 1 through 3 are raw-token identical in all four prefixes.",
+    "The row-0 pair has the same physical owner, description, syntax, and token count and differs only in four coordinate tokens.",
+    "The row-4 pair has the same physical owner, description, syntax, and token count and differs only in coordinate tokens.",
+    "The two frozen endpoints reproduce the Stage 4 row-5 owner choice and final owner sets from raw artifacts; only the two crossover arms require new generation.",
+    "Prompt, media, image grid, model, configuration, and source file identities remain frozen."
+  ],
+  "primary_outcome": "The strict physical owner of the first complete row after the five-row forced prefix.",
+  "secondary_outcome": "Natural-terminal strict owner set, duplicate owners, malformed rows, unresolved rows, and warnings under the same total 512-token trajectory budget.",
+  "interpretation_rules": {
+    "persistent_row_zero_effect": "sampled-row-zero plus native-row-four retrieves target 211764 while native-row-zero plus sampled-row-four follows duplicate owner 205108.",
+    "row_four_sufficient_or_mediating": "native-row-zero plus sampled-row-four retrieves target 211764 while sampled-row-zero plus native-row-four follows duplicate owner 205108.",
+    "either_coordinate_state_sufficient": "Both crossover arms retrieve target 211764.",
+    "joint_interaction": "Neither crossover arm retrieves target 211764 while the sampled-row-zero plus sampled-row-four endpoint does.",
+    "other_or_unresolved": "A crossover selects another owner, fails a frozen identity/prefix check, or contains malformed or ambiguous first-row evidence."
+  },
+  "allowed_claim": "An image-specific causal decomposition of whether the row-0 and row-4 coordinate histories are sufficient alone or only jointly for the row-5 target choice.",
+  "forbidden_claims": [
+    "smooth geometric meaning of coordinate changes",
+    "covered-set or object-ledger mechanism",
+    "general coordinate-history effectiveness",
+    "training-objective promotion"
+  ],
+  "next_step_rule": "Only after an interpretable crossover result may one matched same-magnitude different-direction coordinate perturbation be frozen at the implicated row."
+}
