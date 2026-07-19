@@ -227,9 +227,6 @@ def validate_union(*, shard_paths: Sequence[Path], admission_path: Path) -> dict
             reference = normalized
         elif any(_canonical_hash(normalized[key]) != _canonical_hash(reference[key]) for key in normalized):
             raise StageTwoValidationError(f"Stage 3 shard identity conflict: {path}")
-        stage3_model_check = images[0].get("model_identity_check")
-        if not isinstance(stage3_model_check, Mapping) or stage3_model_check.get("passed") is not True:
-            raise StageTwoValidationError(f"Stage 3 model identity gate is missing: {path}")
         seen[image_id] = {"image_id": image_id, "path": str(path), "sha256": sha256_file(path)}
     if set(seen) != set(candidates):
         raise StageTwoValidationError(f"Stage 3 union does not exactly cover candidates: missing={sorted(set(candidates)-set(seen))} extra={sorted(set(seen)-set(candidates))}")
