@@ -13,6 +13,13 @@
 - Ask only when the choice changes research meaning, is costly/destructive, publishes externally, touches secrets, or risks irreversible compatibility.
 - In this checkout, Python checks normally run in the conda environment `ms`; use it explicitly if the shell is not already there.
 - When subagents are allowed or requested, dispatch independent lanes instead of stacking broad raw context in one thread. Give each lane scope, permissions, and a stop condition; the parent agent must synthesize, remove duplication, and decide.
+- Prefer generic subagents with task-specific briefs. Choose the model and
+  reasoning effort at dispatch time rather than relying on a fixed
+  role-to-model mapping.
+- Use a cost-efficient model when a command, test, artifact receipt, or other
+  mechanical check can decide success. Use the strongest appropriate model
+  when judgment can change scientific meaning, architecture, or a
+  conclusion-critical implementation; escalate only when evidence warrants it.
 - Give one current semantic owner to each independent decision surface. Preserve
   source reviews and audits as provenance, but record later changes as evidence
   or deltas instead of creating duplicate current authorities.
