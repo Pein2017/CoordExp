@@ -1,0 +1,208 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-07-19-sampled-history-target-reachability-and-complete-row-value",
+  "stage_name": "Stage 7 image-12576 row-three and row-four mediation crossover",
+  "decision_timing": "Frozen after the Stage 3 image-12576 route exchange was inspected and before any Stage 7 arm was executed",
+  "primary_question": "Does the coordinate-only variation in row 3 retain a direct effect on the row-7 owner after rows 4 through 6 are fixed, or is the observed route change carried by the generated row-4 coordinates?",
+  "hash_contract": "Every sha256 field is the SHA-256 cryptographic digest of either the named file bytes or the compact JSON serialization of the exact integer token-identifier array, as stated by its field name.",
+  "source_evidence": {
+    "stage_three_shard": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-19-sampled-history-target-reachability-and-complete-row-value/stage3-same-parent-complete-row-intervention-fp32-v1/image-12576.json",
+    "stage_three_shard_sha256": "53c061e7855b25c69d701a4206915ebd3100299f584fc8198cecb6cd8e4b85a7",
+    "stage_three_union": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-19-sampled-history-target-reachability-and-complete-row-value/stage3-same-parent-complete-row-intervention-fp32-v1/union.json",
+    "stage_three_union_sha256": "3d32b66c55379452515cb4cc361ee233ab62ba035601e363cd16241a3b7c1ee9",
+    "stage_three_admission": "/data/CoordExp/.worktrees/research-probes/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-sampled-history-target-reachability-and-complete-row-value/stage3-admission.json",
+    "stage_three_admission_sha256": "2f9ea8a1dfe6e7a5647747bf4f0a006285df7fbfd101cb41b17d778e8fe82aca",
+    "source_jsonl": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl",
+    "source_jsonl_sha256": "0aad73adb45d7d8c0b8238bac8cecec897583e99c484e18e58a9e132fcbd7e27",
+    "checkpoint_json": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/checkpoint.json",
+    "checkpoint_json_sha256": "c8ad1ab01550fc640c67457fec9ad1f8b3bd1b8cef351cb90d41666233b80da1",
+    "adapter_model_sha256": "7f6ee67a71f4d948f0e89729ad50f3856a7a215b5ba433fdd3f3dd5b329e5a81",
+    "special_token_embeddings_sha256": "33d65d575df398375e72994e2a197aaff0a257e26c088717e3b7689b3f494c3b",
+    "infer_config": "/data/CoordExp/.worktrees/research-probes/configs/coordexp_swift/infer/qwen3_vl_2b_description_first_geometry_sorted_pure_cross_entropy_type_gate_dora_step4887_same_covered_set_prefix_order.yaml",
+    "infer_config_sha256": "d6790bb1bd130d5c2823e0ffc68791aa97054cf6cbc7d423b86f3c9f55ac9dea",
+    "resolved_config_fingerprint": "6af0ff8b638a4464cfb993e74d0f2fa2fb87789f81b83f0f7fd851e62d861df5"
+  },
+  "execution_contract": {
+    "image_id": "12576",
+    "backend": "Hugging Face Transformers execution used by the accepted Stage 3 runner",
+    "model_dtype": "float32 (32-bit floating point)",
+    "physical_batch_size": 1,
+    "decoding": "greedy",
+    "repetition_penalty": 1.0,
+    "forced_prefix_complete_row_count": 7,
+    "forced_prefix_token_count": 65,
+    "total_trajectory_generated_token_budget": 512,
+    "post_prefix_generated_token_budget": 447,
+    "generation_horizon": "Stop immediately after the first complete row following the seven-row forced prefix; this is row 7 under zero-based row numbering.",
+    "retries": 0
+  },
+  "frozen_parent": {
+    "complete_row_count": 3,
+    "verified_strict_owner_ids": ["1725035", "29816"],
+    "note": "One parent row does not have a strict single-owner assignment in the Stage 3 evidence. It is held raw-token identical in every arm and is not promoted to an owner claim.",
+    "token_ids": [151646, 8987, 151647, 151648, 152094, 151699, 152269, 151911, 151649, 151646, 22209, 151647, 151648, 152542, 151730, 152669, 151866, 151649, 151646, 34196, 151647, 151648, 152016, 151830, 152169, 151911, 151649],
+    "token_ids_sha256": "c1ed0317f979056d38b1eda77963415b96eae6714a5a4539e6011edf57fee547"
+  },
+  "frozen_rows": {
+    "native_row_three": {
+      "description": "cup",
+      "physical_owner_id": "1509406",
+      "coordinates_normalized_to_0_999": [795, 177, 883, 267],
+      "token_ids": [151646, 36665, 151647, 151648, 152465, 151847, 152553, 151937, 151649],
+      "token_ids_sha256": "0c4f64b6500acd6f9ceaebffe9f460f4634a15795442fb7918a900303124846f"
+    },
+    "sampled_row_three": {
+      "description": "cup",
+      "physical_owner_id": "1509406",
+      "coordinates_normalized_to_0_999": [801, 176, 886, 268],
+      "token_ids": [151646, 36665, 151647, 151648, 152471, 151846, 152556, 151938, 151649],
+      "token_ids_sha256": "ab994ebc2a863bd48197a9e26e6395cfa96c4a3ae1db0178b5eb9acfce516dab"
+    },
+    "native_row_four": {
+      "description": "cup",
+      "physical_owner_id": "1506295",
+      "coordinates_normalized_to_0_999": [557, 184, 652, 306],
+      "token_ids": [151646, 36665, 151647, 151648, 152227, 151854, 152322, 151976, 151649],
+      "token_ids_sha256": "faa579e49b2f54ddf3062db58b8db7683da6325204729338a672b8f6d41c7e94"
+    },
+    "sampled_row_four": {
+      "description": "cup",
+      "physical_owner_id": "1506295",
+      "coordinates_normalized_to_0_999": [559, 184, 652, 306],
+      "token_ids": [151646, 36665, 151647, 151648, 152229, 151854, 152322, 151976, 151649],
+      "token_ids_sha256": "8db14d2179bf9202f6552a02e9e36c3fb04db7b72cdc237e2d5977884d787699"
+    },
+    "common_row_five": {
+      "description": "dining table",
+      "physical_owner_id": "1620693",
+      "coordinates_normalized_to_0_999": [0, 236, 999, 999],
+      "token_ids": [151646, 67, 5740, 1965, 151647, 151648, 151670, 151906, 152669, 152669, 151649],
+      "token_ids_sha256": "8df35490e016ee343f883434e03f1c4cb664955e25fa5cca3bff3430ec991a06"
+    },
+    "common_row_six": {
+      "description": "pizza",
+      "physical_owner_id": "1571233",
+      "coordinates_normalized_to_0_999": [155, 273, 516, 350],
+      "token_ids": [151646, 92438, 151647, 151648, 151825, 151943, 152186, 152020, 151649],
+      "token_ids_sha256": "f9e22e50a1424231fca5ac5b39dc2a10d07116ab8a97a6f4576fad6cb362ccfe"
+    }
+  },
+  "frozen_row_seven_candidates": {
+    "native_candidate": {
+      "description": "pizza",
+      "physical_owner_id": "1571077",
+      "coordinates_normalized_to_0_999": [604, 294, 999, 369],
+      "token_ids": [151646, 92438, 151647, 151648, 152274, 151964, 152669, 152039, 151649],
+      "token_ids_sha256": "2f9e86f129c500bd04ab8179378d21550e6b210b06e2bbf365633cfac06c3732"
+    },
+    "sampled_target_candidate": {
+      "description": "cup",
+      "physical_owner_id": "678023",
+      "coordinates_normalized_to_0_999": [290, 314, 457, 539],
+      "token_ids": [151646, 36665, 151647, 151648, 151960, 151984, 152127, 152209, 151649],
+      "token_ids_sha256": "124aa3638ddf240af936f41b8cac9d1948323f2b5900ed61e2951f0c821cee2e"
+    }
+  },
+  "factorial_prefixes": [
+    {
+      "arm": "native_row_three__native_row_four",
+      "operational_meaning": "Use the native row 3, native row 4, and common rows 5 and 6 after the shared parent.",
+      "status": "frozen_endpoint",
+      "expected_row_seven_owner_id": "1571077",
+      "prefix_token_ids": [151646, 8987, 151647, 151648, 152094, 151699, 152269, 151911, 151649, 151646, 22209, 151647, 151648, 152542, 151730, 152669, 151866, 151649, 151646, 34196, 151647, 151648, 152016, 151830, 152169, 151911, 151649, 151646, 36665, 151647, 151648, 152465, 151847, 152553, 151937, 151649, 151646, 36665, 151647, 151648, 152227, 151854, 152322, 151976, 151649, 151646, 67, 5740, 1965, 151647, 151648, 151670, 151906, 152669, 152669, 151649, 151646, 92438, 151647, 151648, 151825, 151943, 152186, 152020, 151649],
+      "prefix_token_ids_sha256": "89b541d3a17a06687663a7d1e12e130b9fa980bd7c39e8dcc00b244d24790dda"
+    },
+    {
+      "arm": "sampled_row_three__native_row_four",
+      "operational_meaning": "Use the sampled row 3, native row 4, and common rows 5 and 6 after the shared parent.",
+      "status": "new_crossover",
+      "prefix_token_ids": [151646, 8987, 151647, 151648, 152094, 151699, 152269, 151911, 151649, 151646, 22209, 151647, 151648, 152542, 151730, 152669, 151866, 151649, 151646, 34196, 151647, 151648, 152016, 151830, 152169, 151911, 151649, 151646, 36665, 151647, 151648, 152471, 151846, 152556, 151938, 151649, 151646, 36665, 151647, 151648, 152227, 151854, 152322, 151976, 151649, 151646, 67, 5740, 1965, 151647, 151648, 151670, 151906, 152669, 152669, 151649, 151646, 92438, 151647, 151648, 151825, 151943, 152186, 152020, 151649],
+      "prefix_token_ids_sha256": "14e0b9f92a61fdff91ec6715d96784f166606eb381a969fd59d8f2b447e252f4"
+    },
+    {
+      "arm": "native_row_three__sampled_row_four",
+      "operational_meaning": "Use the native row 3, sampled row 4, and common rows 5 and 6 after the shared parent.",
+      "status": "new_crossover",
+      "prefix_token_ids": [151646, 8987, 151647, 151648, 152094, 151699, 152269, 151911, 151649, 151646, 22209, 151647, 151648, 152542, 151730, 152669, 151866, 151649, 151646, 34196, 151647, 151648, 152016, 151830, 152169, 151911, 151649, 151646, 36665, 151647, 151648, 152465, 151847, 152553, 151937, 151649, 151646, 36665, 151647, 151648, 152229, 151854, 152322, 151976, 151649, 151646, 67, 5740, 1965, 151647, 151648, 151670, 151906, 152669, 152669, 151649, 151646, 92438, 151647, 151648, 151825, 151943, 152186, 152020, 151649],
+      "prefix_token_ids_sha256": "aa121668feb5072f446d14f97fcdf3f82d2388151eda1c965d7030cbd3a29d28"
+    },
+    {
+      "arm": "sampled_row_three__sampled_row_four",
+      "operational_meaning": "Use the sampled row 3, sampled row 4, and common rows 5 and 6 after the shared parent.",
+      "status": "frozen_endpoint",
+      "expected_row_seven_owner_id": "678023",
+      "prefix_token_ids": [151646, 8987, 151647, 151648, 152094, 151699, 152269, 151911, 151649, 151646, 22209, 151647, 151648, 152542, 151730, 152669, 151866, 151649, 151646, 34196, 151647, 151648, 152016, 151830, 152169, 151911, 151649, 151646, 36665, 151647, 151648, 152471, 151846, 152556, 151938, 151649, 151646, 36665, 151647, 151648, 152229, 151854, 152322, 151976, 151649, 151646, 67, 5740, 1965, 151647, 151648, 151670, 151906, 152669, 152669, 151649, 151646, 92438, 151647, 151648, 151825, 151943, 152186, 152020, 151649],
+      "prefix_token_ids_sha256": "b814df9b724c22d68abb129c9444354d5d4e4a4a8e9d7a0329c6d6ce8a4cd9d6"
+    }
+  ],
+  "required_validation_gates": [
+    "All source file hashes, model identities, prompt, media, image grid, configuration, and decoding settings must match the frozen Stage 3 evidence.",
+    "Every arm must equal its exact 65-token frozen prefix and contain exactly seven syntactically complete rows.",
+    "The row-3 pair must have the same description, syntax, token count, and strict physical owner 1509406 and differ only at the four coordinate-token positions.",
+    "The row-4 pair must have the same description, syntax, token count, and strict physical owner 1506295 and differ only at the x1 coordinate-token position.",
+    "Rows 5 and 6 must be exact raw-token matches in all four arms and must retain strict owners 1620693 and 1571233 respectively.",
+    "Neither frozen row-7 candidate may occur inside any forced prefix.",
+    "The native-row-three plus native-row-four endpoint must reproduce the exact frozen native row-7 token identifiers and owner 1571077.",
+    "The sampled-row-three plus sampled-row-four endpoint must reproduce the exact frozen sampled target row-7 token identifiers and owner 678023.",
+    "Each arm must generate exactly one accepted complete row and stop without appending it for any further generation."
+  ],
+  "primary_outcome": "The strict physical owner of the one generated row 7, classified as native owner 1571077, sampled target owner 678023, another strict owner, or unresolved.",
+  "secondary_outcomes": [
+    "Exact raw-token reproduction for both frozen endpoints.",
+    "Generated row description, normalized coordinates, complete-row validity, and strict entity-match evidence.",
+    "Teacher-forced log-probability difference between the exact sampled-target and native row-7 candidates may be recorded only as a secondary diagnostic; it cannot replace physical-owner evaluation."
+  ],
+  "decision_table": [
+    {
+      "sampled_row_three__native_row_four": "sampled target owner 678023",
+      "native_row_three__sampled_row_four": "native owner 1571077",
+      "interpretation": "The Stage 3 route effect remains directly attributable to row 3 after row 4 and later rows are held fixed."
+    },
+    {
+      "sampled_row_three__native_row_four": "native owner 1571077",
+      "native_row_three__sampled_row_four": "sampled target owner 678023",
+      "interpretation": "The Stage 3 route effect is consistent with being carried or screened by the generated row-4 coordinates rather than retained directly from row 3."
+    },
+    {
+      "sampled_row_three__native_row_four": "sampled target owner 678023",
+      "native_row_three__sampled_row_four": "sampled target owner 678023",
+      "interpretation": "Either changed row is sufficient for the target branch in this image-specific prefix."
+    },
+    {
+      "sampled_row_three__native_row_four": "native owner 1571077",
+      "native_row_three__sampled_row_four": "native owner 1571077",
+      "interpretation": "The two changed rows act jointly, or the sampled endpoint depends on an interaction not isolated by either crossover alone."
+    },
+    {
+      "sampled_row_three__native_row_four": "another strict owner or unresolved",
+      "native_row_three__sampled_row_four": "any outcome",
+      "interpretation": "The planned two-owner mediation contrast is not identified; report the observed owner or failure without forcing it into a direct-versus-mediated claim."
+    },
+    {
+      "sampled_row_three__native_row_four": "any outcome",
+      "native_row_three__sampled_row_four": "another strict owner or unresolved",
+      "interpretation": "The planned two-owner mediation contrast is not identified; report the observed owner or failure without forcing it into a direct-versus-mediated claim."
+    }
+  ],
+  "allowed_claims": [
+    "An image-specific causal comparison of whether the row-3 token variation still changes the row-7 owner when rows 4 through 6 are fixed.",
+    "An image-specific result consistent with direct retention, row-4 mediation or screening, independent sufficiency, joint interaction, or an unresolved alternative, according to the frozen decision table.",
+    "The intervention concerns prefix token history. It does not by itself identify a hidden-state memory representation."
+  ],
+  "forbidden_claims": [
+    "A general object ledger, covered-set carrier, or universal memory horizon.",
+    "Smooth or monotonic physical meaning of the coordinate-token differences.",
+    "A general causal role for row 3 or row 4 across images, categories, checkpoints, prompts, or ordering policies.",
+    "A random-order versus geometry-sorted training conclusion.",
+    "A training objective, architecture modification, coordinate factorial, or training promotion.",
+    "A mediation claim if either frozen endpoint fails exact replay or either crossover has another owner, malformed output, or unresolved owner evidence."
+  ],
+  "hard_stop_rules": [
+    "Stop before model execution if any frozen file, token-array, prefix, configuration, prompt, media, or model hash does not match.",
+    "Stop interpretation if either frozen endpoint fails exact row-7 raw-token reproduction; do not repair the run or substitute owner-only parity.",
+    "Run each of the four arms once. Do not retry, resample, tune decoding, or replace a malformed or unresolved arm.",
+    "Generate only row 7. Do not continue to a natural terminal and do not use later rows to rescue an ambiguous first outcome.",
+    "Do not add coordinate subsets, midpoint values, perturbation sweeps, new images, or adaptive controls inside Stage 7.",
+    "After the four-arm result, close Stage 7 with the frozen decision table. Any replication, training, or architecture work requires a separately admitted research unit."
+  ]
+}
