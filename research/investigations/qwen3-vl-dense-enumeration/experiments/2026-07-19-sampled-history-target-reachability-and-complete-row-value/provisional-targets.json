@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-07-19-sampled-history-target-reachability-and-complete-row-value",
+  "selection_timing": "Frozen from eight-row discovery artifacts before extended greedy execution",
+  "selection_rule": [
+    "verified physical owner",
+    "absent from root greedy strict owner set within eight rows",
+    "present in a natural sampled trajectory",
+    "first sampled occurrence after zero-based row zero",
+    "lowest first-occurrence row",
+    "lowest sampled seed",
+    "lexicographically smallest owner identifier"
+  ],
+  "source_contract": {
+    "model": "Qwen3-VL 2B description-first geometry-sorted pure cross-entropy plus token-type-gate Weight-Decomposed Low-Rank Adaptation checkpoint at step 4887",
+    "backend": "Hugging Face",
+    "floating_point": "full float32",
+    "physical_batch_size": 1,
+    "repetition_penalty": 1.0,
+    "root_horizon_complete_rows": 8,
+    "sampled_seeds": [11, 12, 13, 14, 15, 16, 17, 18]
+  },
+  "source_artifacts": {
+    "2299": "fe5f68da4c3106fa76c0d19a1001bd5b2a5f39829497aece8c4b03e156628abc",
+    "7816": "3a33b56d0ff6f1a25f440926e303a9ec83f0b20f1a5fd8c2296da54702adcf64",
+    "9400": "e237c369acf204d72e50ce02b0bad0f0ff46feb5756946cbcf6ab3703b283ec0",
+    "9590": "4d79c5799a690f3c89137359b3dbd7bfd955dba44311bfc254316892cf298917",
+    "12576": "46689131b7f81ce15dad75916c0ed908cff67c5f0a0b363bb542473f40fde3b9",
+    "18380": "ad67f393086e5ed67177eaf95a99ee82c58a0c25472d4b809f8dde7ffbe72f26",
+    "19109": "e19509b3e88e7f6afb5a0d8e8fa8f3fb96e175c0d6eb728c3f861f8c76ed8c59",
+    "19432": "df1fc17a22b36d831ca2d158e96ebfa357339dd8486418f3d6176eb7bf13d645"
+  },
+  "provisional_targets": [
+    {
+      "image_id": "2299",
+      "target_owner_id": "-2",
+      "sampled_seed": 15,
+      "first_sampled_row_index_zero_based": 1,
+      "target_parent_prefix_sha256": "cfa5a1ec31ffd2d9830af6d876630586c0bee99043e2adafc38b552ed6ddda20",
+      "coverage_at_target_prefix": "valid"
+    },
+    {
+      "image_id": "7816",
+      "target_owner_id": "211764",
+      "sampled_seed": 13,
+      "first_sampled_row_index_zero_based": 5,
+      "target_parent_prefix_sha256": "b5285433df869fb0a6609ae96c378f02cd0f52b682b6f28e7cf3cd16857fe8b4",
+      "coverage_at_target_prefix": "valid"
+    },
+    {
+      "image_id": "12576",
+      "target_owner_id": "678023",
+      "sampled_seed": 12,
+      "first_sampled_row_index_zero_based": 7,
+      "target_parent_prefix_sha256": "666d8690eef53658da81e22492ea935fbea2b83d13654b50ca0ac416c9dc0e79",
+      "coverage_at_target_prefix": "unresolved"
+    },
+    {
+      "image_id": "18380",
+      "target_owner_id": "2030411",
+      "sampled_seed": 16,
+      "first_sampled_row_index_zero_based": 5,
+      "target_parent_prefix_sha256": "02595a6e1aafadb320fa52f82640c354541b204e9c7cda811d11377198e9ed2f",
+      "coverage_at_target_prefix": "unresolved"
+    },
+    {
+      "image_id": "19109",
+      "target_owner_id": "1726831",
+      "sampled_seed": 13,
+      "first_sampled_row_index_zero_based": 5,
+      "target_parent_prefix_sha256": "7cb3a16df522f043bd68328a5eaa83cf9074079fca5d42b4f0144bf22e221667",
+      "coverage_at_target_prefix": "unresolved"
+    },
+    {
+      "image_id": "19432",
+      "target_owner_id": "384172",
+      "sampled_seed": 12,
+      "first_sampled_row_index_zero_based": 7,
+      "target_parent_prefix_sha256": "45c8301eed961eaba74435ea485124554c569f4982f6274ace27a7e3ba756fdc",
+      "coverage_at_target_prefix": "unresolved"
+    }
+  ],
+  "root_decision_diagnostic": {
+    "image_id": "19109",
+    "target_owner_id": "1680320",
+    "sampled_seed": 11,
+    "first_sampled_row_index_zero_based": 0,
+    "reason_excluded_from_history_ladder": "No earlier sampled row exists before the target decision"
+  },
+  "negative_discovery_controls": ["9400", "9590"],
+  "stage_one_total_generated_token_budget": 512,
+  "post_stage_one_target_expansion_forbidden": true
+}

@@ -1,0 +1,117 @@
+{
+  "schema_version": 2,
+  "pool_name": "Frozen eight-image natural-prefix discovery pool",
+  "purpose": "Discover exact natural own-prefix states where native greedy decoding repeats a verified covered owner while an already emitted natural sample reaches a verified uncovered owner. The pool and discovery budget are frozen before downstream branch-value intervention.",
+  "primary_checkpoint": {
+    "name": "Qwen3-VL 2B description-first geometry-sorted pure cross-entropy plus token-type-gate Weight-Decomposed Low-Rank Adaptation checkpoint at step 4887",
+    "checkpoint_json": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/checkpoint.json",
+    "checkpoint_json_sha256": "c8ad1ab01550fc640c67457fec9ad1f8b3bd1b8cef351cb90d41666233b80da1",
+    "resolved_training_config_fingerprint": "e86e2d98447c8235f2c390b2ed674fc9a312f64952aff35b917f74fd64ae7e06",
+    "adapter_fingerprint": "35fd88b1586b946943b936f24531ee95d4a4c57c8efc358bc81a06af9ecbb6c3",
+    "adapter_model_sha256": "7f6ee67a71f4d948f0e89729ad50f3856a7a215b5ba433fdd3f3dd5b329e5a81",
+    "special_token_embeddings_fingerprint": "b5bef0f097c4ddf8f8879e71183795ab877f55c5702c2fb48979d9c555f2c9c9",
+    "special_token_embeddings_tensor_sha256": "33d65d575df398375e72994e2a197aaff0a257e26c088717e3b7689b3f494c3b"
+  },
+  "inference_contract": {
+    "config_path": "/data/CoordExp/.worktrees/research-probes/configs/coordexp_swift/infer/qwen3_vl_2b_description_first_geometry_sorted_pure_cross_entropy_type_gate_dora_step4887_same_covered_set_prefix_order.yaml",
+    "config_sha256": "d6790bb1bd130d5c2823e0ffc68791aa97054cf6cbc7d423b86f3c9f55ac9dea",
+    "source_jsonl": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl",
+    "source_jsonl_sha256": "0aad73adb45d7d8c0b8238bac8cecec897583e99c484e18e58a9e132fcbd7e27",
+    "backend": "Hugging Face",
+    "floating_point": "full float32",
+    "physical_batch_size": 1,
+    "repetition_penalty": 1.0,
+    "temperature": 0.4,
+    "top_p": 0.95,
+    "terminal_suppression": false,
+    "image_crop_or_resize": false
+  },
+  "discovery_budget": {
+    "native_greedy_root_trajectories_per_image": 1,
+    "sampled_root_trajectories_per_image": 8,
+    "sampled_root_seeds": [11, 12, 13, 14, 15, 16, 17, 18],
+    "maximum_complete_rows_per_trajectory": 8,
+    "maximum_new_tokens_per_row": 256,
+    "malformed_row_limit": 2,
+    "additional_same_prefix_sampling": false,
+    "finish_all_images_before_case_selection": true,
+    "maximum_primary_cases_per_image": 1
+  },
+  "secondary_suffix_budget": {
+    "applies_to": ["force_native_complete_row", "force_rescue_complete_row"],
+    "sampled_suffix_seeds": [101, 102, 103, 104, 105, 106, 107, 108],
+    "successor_rows": 4,
+    "seeds_are_repeated_measurements_not_cases": true
+  },
+  "owner_review_contract": {
+    "ontology": "Common Objects in Context 80 categories only",
+    "ledger_semantics": "All annotated objects are positive owners; absence of an annotation is never negative evidence.",
+    "provisional_category_match": "exact normalized category",
+    "provisional_iou_threshold": 0.5,
+    "provisional_ambiguity_margin": 0.05,
+    "covered_owner_update": "one clean complete prefix row with exactly one unambiguous physical owner",
+    "unmatched_or_ambiguous": "unresolved_refusal until explicit enlarged-crop review",
+    "crop_review_axes": ["entity existence and category", "geometry and physical ownership"]
+  },
+  "primary_case_rule": {
+    "greedy_outcome": "verified_covered_duplicate",
+    "sampled_outcome": "verified_uncovered_owner",
+    "same_category_required": true,
+    "equal_tokenized_row_length_required": true,
+    "resolved_earliest_candidate_distinguishing_token_required": true,
+    "deterministic_tie_break": ["lowest natural row index", "lowest discovery seed", "lexicographically smallest exact-prefix SHA-256"],
+    "sampled_only_prefix_claim": "conditional own-prefix learnability only; a later training screen must establish fresh end-to-end greedy improvement"
+  },
+  "images": [
+    {
+      "image_id": 2299,
+      "role": "Near-complete human relabel with dense people and ties; strongest owner-identity authority for an object-versus-object branch case.",
+      "ledger_priority": "human relabel"
+    },
+    {
+      "image_id": 7816,
+      "role": "Dense small-person scene with known missing-person pressure in previous reviews.",
+      "ledger_priority": "official positive labels plus crop review"
+    },
+    {
+      "image_id": 12576,
+      "role": "Food and tabletop scene with historical sampled-rescue and route-fragmentation evidence; it must be rediscovered under the primary checkpoint.",
+      "ledger_priority": "official positive labels plus crop review"
+    },
+    {
+      "image_id": 19432,
+      "role": "Dense chair scene for same-category ambiguity and possible whole-object-extent failures.",
+      "ledger_priority": "official positive labels plus crop review"
+    },
+    {
+      "image_id": 9400,
+      "role": "Dense tabletop scene with prior human-reviewed candidate evidence.",
+      "ledger_priority": "official positive labels plus crop review"
+    },
+    {
+      "image_id": 9590,
+      "role": "Dense tabletop scene with known terminal sensitivity in earlier probes.",
+      "ledger_priority": "official positive labels plus crop review"
+    },
+    {
+      "image_id": 18380,
+      "role": "Very dense mixed-object scene for high candidate competition.",
+      "ledger_priority": "official positive labels plus crop review"
+    },
+    {
+      "image_id": 19109,
+      "role": "Dense motorcycle scene with historical recurrence pressure.",
+      "ledger_priority": "official positive labels plus crop review"
+    }
+  ],
+  "diagnostic_outcome_labels": [
+    "verified_covered_duplicate",
+    "verified_uncovered_owner",
+    "verified_benign_uncovered_owner",
+    "verified_unsupported",
+    "terminal_diagnostic",
+    "malformed_diagnostic",
+    "unresolved_refusal"
+  ],
+  "admission_rule": "A primary case requires an exact naturally generated prefix from the primary checkpoint, a native greedy verified covered duplicate, and an already emitted same-prefix sampled row that crop review assigns to one verified uncovered physical owner of the same category and tokenized row length. Terminal, malformed, unsupported, benign-uncovered, and unresolved outcomes remain diagnostics or refusals and cannot enter the promotion denominator. Reconstructed, teacher-forced, reordered, and supplementary same-prefix sampled prefixes are excluded."
+}

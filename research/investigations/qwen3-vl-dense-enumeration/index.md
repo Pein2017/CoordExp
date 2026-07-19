@@ -129,6 +129,9 @@ durable program reading path below.
 71. [Short-horizon prefix-permutation results and order-sensitive recurrence verdict](experiments/2026-07-19-common-object-prefix-permutation-short-horizon/results.md)
 72. [Complete candidate-row score decomposition](experiments/2026-07-19-complete-candidate-row-score-decomposition/unit.md)
 73. [Complete candidate-row scoring results and route-conditioned geometry verdict](experiments/2026-07-19-complete-candidate-row-score-decomposition/results.md)
+74. [Local branch causality and downstream unique-object value](experiments/2026-07-19-local-branch-causality-and-downstream-coverage-value/unit.md)
+75. [Local branch cohort closeout and path-mediated accessibility result](experiments/2026-07-19-local-branch-causality-and-downstream-coverage-value/results.md)
+76. [Sampled-history target reachability and complete-row causal value](experiments/2026-07-19-sampled-history-target-reachability-and-complete-row-value/unit.md)
 
 The review and readiness amendment preserve the pre-execution gate. The
 completed unit and results record own current lifecycle and evidence status.
