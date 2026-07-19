@@ -1,0 +1,19 @@
+description: Codex with one Serena project bound to the current worktree at server startup.
+prompt: |
+  Use Serena for precise code-symbol navigation and language-server-backed refactoring.
+  Use Codex shell and file tools for text search, file operations, and ordinary edits.
+  The active Serena project is the current worktree and must not be switched by name.
+
+excluded_tools:
+  - create_text_file
+  - read_file
+  - execute_shell_command
+  - replace_content
+  - replace_in_files
+  - search_for_pattern
+  - find_file
+  - list_dir
+
+included_optional_tools: []
+single_project: true
+structured_tool_output: true

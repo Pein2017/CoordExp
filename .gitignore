@@ -76,10 +76,8 @@
 /claude_install.sh
 /(deleted)
 
-# Serena project memories (track these, keep other .serena/* ignored)
-!.serena/
-!.serena/memories/
-!.serena/memories/**
+# Serena runtime state is local. The portable context lives under
+# .codex/serena/ instead of creating a second project-memory authority.
 
 # Shared self-improving memory for this workspace
 !.self-improving/
@@ -89,6 +87,8 @@
 !.codex/
 !.codex/agents/
 !.codex/agents/**
+!.codex/serena/
+!.codex/serena/**
 !.codex/skills/
 !.codex/skills/**
 .codex/.tmp/
