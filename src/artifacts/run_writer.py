@@ -309,6 +309,7 @@ class RunWriter:
         planned_step_id: int,
         post_backward_gradient: Mapping[str, Any],
         pre_update_margins: Mapping[str, float],
+        post_update_margins: Mapping[str, float] | None = None,
         optimizer_update_status: str,
     ) -> None:
         state = self.read_run()
@@ -328,14 +329,38 @@ class RunWriter:
             ),
             "optimizer_update_status": str(optimizer_update_status),
         }
-        qualification["target_margins"] = {
-            "status": "partial",
-            "pre_update": {
+        normalized_post_update = (
+            {
                 str(name): float(value)
-                for name, value in sorted(pre_update_margins.items())
-            },
-            "post_update": {},
-            "reason": "post_update_margin_requires_shared_smoke_replay",
+                for name, value in sorted(post_update_margins.items())
+            }
+            if post_update_margins is not None
+            else {}
+        )
+        normalized_pre_update = {
+            str(name): float(value)
+            for name, value in sorted(pre_update_margins.items())
+        }
+        if normalized_post_update and set(normalized_post_update) != set(
+            normalized_pre_update
+        ):
+            raise ArtifactContractError(
+                "post-update calibration margin keys differ from pre-update keys",
+                code="run_writer.rollout_calibration_margin_keys_mismatch",
+                context={
+                    "pre_update_keys": sorted(normalized_pre_update),
+                    "post_update_keys": sorted(normalized_post_update),
+                },
+            )
+        qualification["target_margins"] = {
+            "status": "complete" if normalized_post_update else "partial",
+            "pre_update": normalized_pre_update,
+            "post_update": normalized_post_update,
+            "reason": (
+                "post_update_margin_replayed_without_event_reconsumption"
+                if normalized_post_update
+                else "post_update_margin_requires_shared_smoke_replay"
+            ),
         }
         calibration["qualification"] = qualification
         state["rollout_calibration"] = calibration

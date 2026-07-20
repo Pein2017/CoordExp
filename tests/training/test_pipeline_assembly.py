@@ -5,12 +5,13 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import torch
 
 import src.training.pipeline as pipeline
 from src.artifacts.run_writer import RunWriter
 from src.common.errors import RuntimeContractError
 from src.config.models import RunDirectory
-from src.training.supervised_trainer import CompletedStepObservation
+from src.training.supervised_trainer import CompletedStepObservation, SupervisedMicroStep
 
 
 class _Accelerator:
@@ -48,6 +49,26 @@ def _observation(step: int) -> CompletedStepObservation:
     )
 
 
+def _calibration_observation(
+    *,
+    post_update_margins: dict[str, float],
+) -> CompletedStepObservation:
+    return CompletedStepObservation(
+        planned_step_id=1,
+        micro_step_count=1,
+        loss_bundle_artifact={
+            "metrics": {
+                "calibration/rollout_entity_transition/target_margin": -0.5,
+                "calibration/rollout_coordinate_boundary/target_margin": -0.25,
+            },
+            "diagnostics": {"profile": "joint"},
+        },
+        optimizer_update_status="applied",
+        finite_status="finite",
+        post_update_margins=post_update_margins,
+    )
+
+
 def test_five_train_and_two_eval_callbacks_write_exact_wide_rows(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -82,6 +103,187 @@ def test_five_train_and_two_eval_callbacks_write_exact_wide_rows(
     assert lifecycle["completed_steps"] == 5
     assert lifecycle["consumed_packs"] == 10
     assert all("non_finite_fields" in row for row in rows)
+
+
+def test_post_update_replay_collects_only_entity_and_coordinate_margins() -> None:
+    model = torch.nn.Linear(1, 1)
+    model.train()
+    observed: dict[str, bool] = {}
+
+    def qwen_forward(observed_model: object, _micro_step: SupervisedMicroStep) -> object:
+        observed["model_eval"] = not bool(observed_model.training)
+        observed["forward_no_grad"] = not torch.is_grad_enabled()
+        return SimpleNamespace()
+
+    def context_factory(_micro_step: SupervisedMicroStep, _forward_result: object) -> object:
+        observed["context_no_grad"] = not torch.is_grad_enabled()
+        return SimpleNamespace()
+
+    class LossRunner:
+        def compute_micro_step(
+            self,
+            _context: object,
+            _plan: object,
+            *,
+            local_micro_step_index: int,
+        ) -> object:
+            del local_micro_step_index
+            observed["loss_no_grad"] = not torch.is_grad_enabled()
+            return SimpleNamespace(
+                terms=(
+                    SimpleNamespace(
+                        name="rollout_entity_transition",
+                        diagnostics={"target_margin_contribution": 0.25},
+                    ),
+                    SimpleNamespace(
+                        name="rollout_coordinate_boundary",
+                        diagnostics={"target_margin_contribution": 0.5},
+                    ),
+                    SimpleNamespace(
+                        name="rollout_site_token_type_gate",
+                        diagnostics={"target_margin_contribution": 99.0},
+                    ),
+                )
+            )
+
+    replay = pipeline._build_rollout_calibration_post_update_replay(
+        loss_runner=LossRunner(),
+        loss_context_factory=context_factory,
+    )
+    margins = replay(
+        qwen_forward,
+        model,
+        (
+            SupervisedMicroStep(
+                pack="pack",
+                encoded_examples=(),
+                position_inputs=(),
+                token_sequence=(),
+                vocab_groups=(),
+            ),
+        ),
+        SimpleNamespace(
+            enabled_terms=(
+                "rollout_entity_transition",
+                "rollout_coordinate_boundary",
+                "rollout_site_token_type_gate",
+            )
+        ),
+        1,
+    )
+
+    assert margins == {
+        "calibration/rollout_entity_transition/target_margin": 0.25,
+        "calibration/rollout_coordinate_boundary/target_margin": 0.5,
+    }
+    assert observed == {
+        "model_eval": True,
+        "forward_no_grad": True,
+        "context_no_grad": True,
+        "loss_no_grad": True,
+    }
+    assert model.training is True
+
+
+def test_post_update_replay_rejects_nonfinite_margin() -> None:
+    model = torch.nn.Linear(1, 1)
+
+    class LossRunner:
+        def compute_micro_step(self, *_args: object, **_kwargs: object) -> object:
+            return SimpleNamespace(
+                terms=(
+                    SimpleNamespace(
+                        name="rollout_entity_transition",
+                        diagnostics={"target_margin_contribution": float("nan")},
+                    ),
+                )
+            )
+
+    replay = pipeline._build_rollout_calibration_post_update_replay(
+        loss_runner=LossRunner(),
+        loss_context_factory=lambda _micro_step, _result: SimpleNamespace(),
+    )
+    with pytest.raises(RuntimeContractError) as exc_info:
+        replay(
+            lambda _model, _micro_step: SimpleNamespace(),
+            model,
+            (
+                SupervisedMicroStep(
+                    pack="pack",
+                    encoded_examples=(),
+                    position_inputs=(),
+                    token_sequence=(),
+                    vocab_groups=(),
+                ),
+            ),
+            SimpleNamespace(enabled_terms=("rollout_entity_transition",)),
+            1,
+        )
+    assert exc_info.value.code == "trainer.post_update_replay_nonfinite_margin"
+
+
+def test_train_logging_gathers_and_writes_exact_post_update_margin_keys(
+    tmp_path: Path,
+) -> None:
+    writer = _writer(tmp_path)
+    writer.bind_rollout_calibration(
+        bank_identity="bank",
+        bank_fingerprint="bank",
+        source_composite_fingerprint="source",
+        profile="joint",
+        records_sha256="records",
+        record_count=2,
+        split_counts={"train": 2},
+        event_counts={"entity_transition": 1, "coordinate_boundary": 1},
+        rejection_reasons={},
+    )
+    writer.bind_rollout_calibration_qualification(
+        source_checkpoint={"id": "source"},
+        source_step_zero_parity={"status": "pass"},
+        trainable_surface={"groups": ["adapter.language"]},
+    )
+    calls: list[dict[str, float]] = []
+
+    class Runtime(_Runtime):
+        def gather_metrics(self, metrics: object, **kwargs: object) -> object:
+            del kwargs
+            calls.append(dict(metrics))
+            return {"metrics": {str(key): float(value) * 2.0 for key, value in dict(metrics).items()}}
+
+    pipeline._train_logging_handler(writer, {}, Runtime())(
+        _calibration_observation(
+            post_update_margins={
+                "calibration/rollout_entity_transition/target_margin": 0.1,
+                "calibration/rollout_coordinate_boundary/target_margin": 0.2,
+            }
+        )
+    )
+    state = writer.read_run()["rollout_calibration"]["qualification"]["target_margins"]
+    assert calls[0]["post_update/calibration/rollout_entity_transition/target_margin"] == 0.1
+    assert set(state["pre_update"]) == set(state["post_update"])
+    assert state["post_update"] == {
+        "calibration/rollout_coordinate_boundary/target_margin": 0.4,
+        "calibration/rollout_entity_transition/target_margin": 0.2,
+    }
+
+
+def test_train_logging_rejects_post_update_margin_key_mismatch() -> None:
+    class Writer:
+        def record_rollout_calibration_step_evidence(self, **_kwargs: object) -> None:
+            raise AssertionError("writer must not receive mismatched margins")
+
+        def append_logging_row(self, _row: object) -> None:
+            raise AssertionError("logging must stop before row append")
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        pipeline._train_logging_handler(Writer(), {}, _Runtime())(
+            _calibration_observation(
+                post_update_margins={
+                    "calibration/rollout_entity_transition/target_margin": 0.1,
+                }
+            )
+        )
+    assert exc_info.value.code == "training.post_update_replay_margin_keys"
 
 
 def test_peer_artifact_initialization_returns_no_writer(

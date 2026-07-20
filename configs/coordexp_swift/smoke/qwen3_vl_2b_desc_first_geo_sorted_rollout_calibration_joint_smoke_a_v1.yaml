@@ -2,7 +2,7 @@ schema_version: 1
 
 run:
   name: qwen3_vl_2b_desc_first_geo_sorted_rollout_calibration_joint_smoke_a_v1
-  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-a-combined-v3/runs
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-a-combined-v4/runs
   collision_policy: fail
 
 model:

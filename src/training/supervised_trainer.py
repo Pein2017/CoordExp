@@ -56,6 +56,7 @@ class CompletedStepObservation:
     finite_status: str
     scheduler_artifact: Mapping[str, Any] = field(default_factory=dict)
     post_backward_artifact: Mapping[str, Any] = field(default_factory=dict)
+    post_update_margins: Mapping[str, float] = field(default_factory=dict)
 
     def to_artifact_dict(self) -> dict[str, Any]:
         return {
@@ -66,6 +67,10 @@ class CompletedStepObservation:
             "finite_status": self.finite_status,
             "scheduler": dict(self.scheduler_artifact),
             "post_backward": dict(self.post_backward_artifact),
+            "post_update_margins": {
+                str(name): float(value)
+                for name, value in self.post_update_margins.items()
+            },
         }
 
 
@@ -127,6 +132,9 @@ class LossRunnerBoundary(Protocol):
 
 QwenForwardFn = Callable[[Any, SupervisedMicroStep], Any]
 LossContextFactory = Callable[[SupervisedMicroStep, Any], Any]
+PostUpdateReplayHandler = Callable[
+    [QwenForwardFn, Any, Sequence[SupervisedMicroStep], Any, int], Mapping[str, float]
+]
 CompletedStepHandler = Callable[[CompletedStepObservation], None]
 ScheduledStepHandler = Callable[[StepScheduleEvent, CompletedStepObservation], None]
 
@@ -143,6 +151,7 @@ class SupervisedTrainer:
         loss_runner: LossRunnerBoundary,
         runtime: RuntimeBoundary,
         on_completed_step: CompletedStepHandler | None = None,
+        post_update_replay: PostUpdateReplayHandler | None = None,
         on_eval: ScheduledStepHandler | None = None,
         on_checkpoint: ScheduledStepHandler | None = None,
         on_final: ScheduledStepHandler | None = None,
@@ -155,6 +164,7 @@ class SupervisedTrainer:
         self.loss_runner = loss_runner
         self.runtime = runtime
         self.on_completed_step = on_completed_step
+        self.post_update_replay = post_update_replay
         self.on_eval = on_eval
         self.on_checkpoint = on_checkpoint
         self.on_final = on_final
@@ -355,6 +365,30 @@ class SupervisedTrainer:
                 self.runtime.optimizer_step(planned_step_id=planned_step_id)
                 optimizer_update_status = "applied"
 
+        post_update_margins: dict[str, float] = {}
+        if (
+            post_decision is not None
+            and post_decision.should_call_optimizer_step
+            and optimizer_update_status == "applied"
+            and self.post_update_replay is not None
+        ):
+            replayed = self.post_update_replay(
+                self.qwen_forward,
+                _runtime_model(self.runtime, self.model),
+                tuple(moved_micro_steps),
+                plan,
+                planned_step_id,
+            )
+            if not isinstance(replayed, Mapping):
+                raise RuntimeContractError(
+                    "post-update replay must return a scalar margin mapping",
+                    code="trainer.post_update_replay_invalid_result",
+                    context={"result_type": type(replayed).__name__},
+                )
+            post_update_margins = {
+                str(name): float(value) for name, value in replayed.items()
+            }
+
         post_backward_artifact = _post_backward_receipt(
             post_decision,
             optimizer_update_status=optimizer_update_status,
@@ -375,6 +409,7 @@ class SupervisedTrainer:
             finite_status=finite_status,
             scheduler_artifact=scheduler_artifact,
             post_backward_artifact=post_backward_artifact,
+            post_update_margins=post_update_margins,
         )
         del moved_micro_steps, micro_loss_artifacts, plan
         del pre_decision, post_decision, scheduler_artifact, loss_bundle_artifact

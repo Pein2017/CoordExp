@@ -8,6 +8,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 import hashlib
 import json
+import math
 import multiprocessing
 import os
 from pathlib import Path
@@ -100,6 +101,8 @@ from src.training.supervised_trainer import (
 )
 from src.training.rollout_calibration import (
     CalibrationTokenSequence,
+    COORDINATE_TERM,
+    ENTITY_TERM,
     RolloutCalibrationLossRunner,
     build_calibration_micro_step_stream,
     rollout_calibration_loss_context,
@@ -109,6 +112,7 @@ from src.training.rollout_calibration import (
 TRAIN_SPLIT = "train"
 _PACK_CACHE_WORKER_CONTEXT: dict[str, Any] | None = None
 BEST_EVAL_SELECTOR_NAME = "acc_top1"
+_TARGET_MARGIN_TERMS = frozenset((ENTITY_TERM, COORDINATE_TERM))
 
 
 def build_repeating_micro_step_stream(
@@ -241,6 +245,13 @@ def _train_logging_handler(
         scalar_metrics = _scheduler_lr_metrics(observation.scheduler_artifact)
         if isinstance(metrics, Mapping):
             scalar_metrics.update({str(name): value for name, value in metrics.items()})
+        post_update_metric_prefix = "post_update/"
+        scalar_metrics.update(
+            {
+                f"{post_update_metric_prefix}{name}": float(value)
+                for name, value in observation.post_update_margins.items()
+            }
+        )
         gathered = runtime.gather_metrics(
             scalar_metrics,
             planned_step_id=observation.planned_step_id,
@@ -270,17 +281,105 @@ def _train_logging_handler(
             pre_update_margins = {
                 str(name): float(value)
                 for name, value in reduced.items()
-                if str(name).endswith("/target_margin")
+                if not str(name).startswith(post_update_metric_prefix)
+                and str(name).endswith("/target_margin")
             }
+            post_update_margins = {
+                str(name)[len(post_update_metric_prefix) :]: float(value)
+                for name, value in reduced.items()
+                if str(name).startswith(post_update_metric_prefix)
+            }
+            if post_update_margins and set(post_update_margins) != set(
+                pre_update_margins
+            ):
+                raise RuntimeContractError(
+                    "post-update calibration margin keys differ from pre-update keys",
+                    code="training.post_update_replay_margin_keys",
+                    context={
+                        "pre_update_keys": sorted(pre_update_margins),
+                        "post_update_keys": sorted(post_update_margins),
+                    },
+                )
             writer.record_rollout_calibration_step_evidence(
                 planned_step_id=observation.planned_step_id,
                 post_backward_gradient=observation.post_backward_artifact,
                 pre_update_margins=pre_update_margins,
+                post_update_margins=post_update_margins or None,
                 optimizer_update_status=observation.optimizer_update_status,
             )
         _append_logging_row_shared(writer=writer, row=row, runtime=runtime)
 
     return handle
+
+
+def _build_rollout_calibration_post_update_replay(
+    *,
+    loss_runner: Any,
+    loss_context_factory: Callable[[SupervisedMicroStep, Any], Any],
+) -> Callable[..., Mapping[str, float]]:
+    """Re-read the consumed calibration window after its optimizer update.
+
+    This reuses already-moved micro-steps. It never consumes another frozen
+    event and never calls an optimizer, scheduler, or backward boundary.
+    """
+
+    def replay(
+        qwen_forward: Callable[[Any, SupervisedMicroStep], Any],
+        model: Any,
+        micro_steps: Sequence[SupervisedMicroStep],
+        plan: Any,
+        planned_step_id: int,
+    ) -> Mapping[str, float]:
+        del planned_step_id
+        enabled_terms = tuple(
+            str(item)
+            for item in getattr(plan, "enabled_terms", ())
+            if str(item) in _TARGET_MARGIN_TERMS
+        )
+        margins = {
+            f"calibration/{term}/target_margin": 0.0 for term in enabled_terms
+        }
+        module_states = tuple(
+            (module, bool(module.training)) for module in model.modules()
+        )
+        model.eval()
+        try:
+            with torch.no_grad():
+                for local_micro_step_index, micro_step in enumerate(micro_steps):
+                    forward_result = qwen_forward(model, micro_step)
+                    context = loss_context_factory(micro_step, forward_result)
+                    bundle = loss_runner.compute_micro_step(
+                        context,
+                        plan,
+                        local_micro_step_index=local_micro_step_index,
+                    )
+                    for term in getattr(bundle, "terms", ()):
+                        diagnostics = getattr(term, "diagnostics", {})
+                        if not isinstance(diagnostics, Mapping):
+                            continue
+                        contribution = diagnostics.get("target_margin_contribution")
+                        if contribution is None:
+                            continue
+                        if str(term.name) not in _TARGET_MARGIN_TERMS:
+                            continue
+                        key = f"calibration/{term.name}/target_margin"
+                        if key not in margins:
+                            margins[key] = 0.0
+                        value = float(contribution)
+                        if not math.isfinite(value):
+                            raise RuntimeContractError(
+                                "post-update calibration margin is non-finite",
+                                code="trainer.post_update_replay_nonfinite_margin",
+                                context={"term": str(term.name)},
+                            )
+                        margins[key] += value
+                    del bundle, context, forward_result
+        finally:
+            for module, was_training in module_states:
+                module.train(was_training)
+        return margins
+
+    return replay
 
 
 def _append_logging_row_shared(
@@ -665,6 +764,17 @@ def _run_initialized_training(
         lifecycle=lifecycle,
         save_final=config.checkpoint.save_final,
     )
+    post_update_replay = None
+    if calibration_bank is not None:
+        if loss_context_factory is None:
+            raise RuntimeContractError(
+                "rollout calibration requires a loss-context factory for post-update replay",
+                code="training.rollout_calibration_replay_context_missing",
+            )
+        post_update_replay = _build_rollout_calibration_post_update_replay(
+            loss_runner=loss_runner,
+            loss_context_factory=loss_context_factory,
+        )
     trainer = SupervisedTrainer(
         model=model,
         schedule=schedule,
@@ -673,6 +783,7 @@ def _run_initialized_training(
         loss_runner=loss_runner,
         runtime=runtime,
         on_completed_step=_train_logging_handler(writer, lifecycle, runtime),
+        post_update_replay=post_update_replay,
         on_checkpoint=checkpoint_handler,
         on_eval=eval_handler,
         on_final=_final_handler(

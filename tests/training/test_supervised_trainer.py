@@ -732,6 +732,46 @@ def test_streaming_completion_callback_does_not_expose_micro_or_gate_events() ->
     assert observations[0].micro_step_count == 2
 
 
+def test_post_update_replay_reuses_consumed_window_without_second_update() -> None:
+    log: list[str] = []
+    replay_calls: list[tuple[int, tuple[str, ...]]] = []
+
+    def replay(
+        _qwen_forward: QwenForwardFn,
+        _model: object,
+        micro_steps: tuple[SupervisedMicroStep, ...],
+        _plan: object,
+        planned_step_id: int,
+    ) -> dict[str, float]:
+        replay_calls.append(
+            (planned_step_id, tuple(str(item.pack) for item in micro_steps))
+        )
+        log.append("replay:1")
+        return {"calibration/entity/target_margin": 0.75}
+
+    trainer = SupervisedTrainer(
+        model=object(),
+        schedule=_schedule(resolved_max_steps=1, grad_accum_steps=1),
+        pack_stream=_micro_steps(1, log),
+        qwen_forward=_forward(log),
+        loss_context_factory=_loss_context(log),
+        loss_runner=StreamingFakeLossRunner(log),
+        runtime=FakeRuntime(log),
+        post_update_replay=replay,
+    )
+
+    result = trainer.run()
+
+    assert replay_calls == [(1, ("pack-0",))]
+    assert result.consumed_micro_steps == 1
+    assert result.latest_observation.post_update_margins == {
+        "calibration/entity/target_margin": 0.75
+    }
+    assert log.count("runtime.optimizer:1") == 1
+    assert log.index("runtime.optimizer:1") < log.index("replay:1")
+    assert log.index("replay:1") < log.index("runtime.scheduler:1")
+
+
 def test_trainer_profile_sync_helper_is_exact_env_gated(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

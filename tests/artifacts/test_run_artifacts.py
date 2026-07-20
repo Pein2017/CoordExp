@@ -234,7 +234,14 @@ def test_rollout_calibration_qualification_persists_surface_gradient_and_pending
             "finite_nonzero_gradient": True,
             "grad_norm": 0.25,
         },
-        pre_update_margins={"entity": -0.5, "coordinate": -0.25},
+        pre_update_margins={
+            "calibration/rollout_entity_transition/target_margin": -0.5,
+            "calibration/rollout_coordinate_boundary/target_margin": -0.25,
+        },
+        post_update_margins={
+            "calibration/rollout_entity_transition/target_margin": 0.1,
+            "calibration/rollout_coordinate_boundary/target_margin": 0.2,
+        },
         optimizer_update_status="applied",
     )
     qualification = writer.read_run()["rollout_calibration"]["qualification"]
@@ -242,8 +249,15 @@ def test_rollout_calibration_qualification_persists_surface_gradient_and_pending
     assert (
         qualification["post_backward_gradient"]["optimizer_update_status"] == "applied"
     )
-    assert qualification["target_margins"]["status"] == "partial"
-    assert qualification["target_margins"]["post_update"] == {}
+    assert qualification["target_margins"]["status"] == "complete"
+    assert qualification["target_margins"]["post_update"] == {
+        "calibration/rollout_coordinate_boundary/target_margin": 0.2,
+        "calibration/rollout_entity_transition/target_margin": 0.1,
+    }
+    assert (
+        qualification["target_margins"]["reason"]
+        == "post_update_margin_replayed_without_event_reconsumption"
+    )
 
 
 @pytest.mark.parametrize(
