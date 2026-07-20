@@ -53,6 +53,16 @@ of two earlier rows. Natural row geometry is therefore an executable part of
 the recurrent traversal state, but the result rejects a universal latest-row
 carrier and does not justify sampled-row preference training or an explicit
 ledger architecture.
+The matched step-`4,887` random-order versus geometry-sorted checkpoint pilot
+then shows that randomizing complete training rows changes the learned route
+policy but does not produce useful covered-set invariance. On image `2299`,
+the random checkpoint ignores both earlier order and symmetric leave-one-out
+controls by routing every arm to one habitual person. Geometry-sorted training
+retains more route diversity and supplies a clean image-`18380` category-plus-
+`x1` intervention, but neither checkpoint demonstrates an order-invariant
+ledger. The result supports a small geometry-sorted-base local transition-
+calibration training screen, with random ordering retained as an ablation and
+execution separately authorized.
 The weekly report and research compass own the broader synthesis and next-
 discriminator boundary.
 
@@ -139,6 +149,9 @@ durable program reading path below.
 75. [Local branch cohort closeout and path-mediated accessibility result](experiments/2026-07-19-local-branch-causality-and-downstream-coverage-value/results.md)
 76. [Sampled-history target reachability and complete-row causal value](experiments/2026-07-19-sampled-history-target-reachability-and-complete-row-value/unit.md)
 77. [Sampled-history causal-value results and coordinate-sensitive route-state verdict](experiments/2026-07-19-sampled-history-target-reachability-and-complete-row-value/results.md)
+78. [Matched random-order-trained versus geometry-sorted-trained prefix-order screen](experiments/2026-07-20-matched-random-sorted-prefix-order-screen/unit.md)
+79. [Matched ordering-policy results and local transition-calibration recommendation](experiments/2026-07-20-matched-random-sorted-prefix-order-screen/results.md)
+80. [Own-prefix entity-transition and coordinate-boundary calibration training screen](experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/unit.md)
 
 The review and readiness amendment preserve the pre-execution gate. The
 completed unit and results record own current lifecycle and evidence status.

@@ -225,6 +225,23 @@ Markdown links, rather than this diagram, are the durable graph edges.
   or covered-set rule. See
   [Complete Candidate-Row Score Decomposition
   Results](experiments/2026-07-19-complete-candidate-row-score-decomposition/results.md).
+- The matched step-`4,887` ordering-policy pilot now rules out the simple claim
+  that random complete-row order teaches useful order-free coverage. On the
+  near-complete image `2299`, the random-order checkpoint sends every order and
+  leave-one-out arm to person rank `18`; this is one habitual route, not a
+  covered-set state. The geometry-sorted checkpoint preserves more route
+  diversity but also remains order-sensitive, and neither checkpoint passes
+  symmetric leave-one-out coverage. Candidate scoring localizes the clean
+  image-`18380` geometry-sorted switch first to `person` versus `cup` and then
+  to cup `x1`; selected random image-`19109` switches cross much smaller local
+  category margins. Row start strongly dominates terminal output throughout.
+  Strict owner matching is available for only `103 / 240` geometry-sorted
+  outputs versus `201 / 240` random outputs, so raw activation counts cannot
+  rank checkpoint sensitivity. Geometry-sorted pure cross-entropy is the
+  pragmatic base for a small local transition-calibration screen; random
+  ordering remains an ablation, not a treatment. See [Matched Random-Order-
+  Trained versus Geometry-Sorted-Trained Prefix-Order Screen
+  Results](experiments/2026-07-20-matched-random-sorted-prefix-order-screen/results.md).
 - The sampled-history reachability unit now closes the direct path from bagged
   novelty to complete-row preference training. Exact sampled prefixes make
   later targets greedily reachable in several images, but access can be
@@ -404,7 +421,7 @@ cross-row coverage.
 | Input-level spatial restriction changes one object opportunity | Bounded support under hard eligibility; the count-balanced all-keys-readable soft cross operator is now closed because both matched-owner controls fail, so its crossed arms cannot adjudicate the hard asymmetry | Hard exclusion and its abrupt phase switch may manufacture the asymmetry; the historical uniform-dose operator and current query-phase-restricted operator cannot be pooled into one trajectory | No immediate successor is active. A historical-uniform-operator `3.9060049` endpoint would require a fresh separately authorized execution; artifact-only cross-operator pooling is rejected. |
 | Safe final masked policy improves enumeration | Ruled out under the executed protocol | Equal-call full-image sampling is at least as useful after aggregation | Revisit only after a new masking mechanism avoids retention and output-expansion failures. |
 | Fixed-prefix next-object probability is fragmented across several real objects | Supported at one exact state; not population-estimated | Some other bagging rescues may still arise only from earlier trajectory divergence | Replicate only when a future route decision requires prevalence, not as the immediate discriminator. |
-| Prefix state is an executable but fragile traversal state | Supported across order, scoring, and exact same-parent interventions. Natural same-owner coordinate rows redirect later physical owners in all three admissible sampled-history cases, but only one gives a safe final unique-owner gain. Reachability can disappear after more sampled rows; image `7816` has separate `x1` and `y1` route effects, while image `12576` requires a joint two-row history. | The state may encode geometry-conditioned route compatibility rather than semantic coverage. Strict owner matching, dense same-class geometry, incomplete annotation, selected-case bias, and off-policy crossover prefixes remain alternatives. | No training successor is active. Revisit only with a separately admitted independent cohort whose primary endpoint is safe final unique-owner gain, not target novelty or route exchange. |
+| Prefix state is an executable but fragile traversal state | Supported across order, scoring, exact same-parent interventions, and a matched ordering-policy pilot. Random complete-row training changes the route distribution but does not create symmetric covered-set behavior; on image `2299` it collapses to one successor. Local route changes can begin at category choice and continue through geometry. | The state may encode geometry-conditioned route compatibility rather than semantic coverage. Strict owner matching, dense same-class geometry, incomplete annotation, selected-case bias, and one checkpoint per ordering policy remain alternatives. | Design one small geometry-sorted-base transition-calibration screen with same-covered-set permutations and symmetric leave-one-out controls. Its primary endpoint is safe greedy unique-owner gain, not exact-row invariance or route imitation. |
 | Late-middle residual states implement phase-specific decisions | Bounded one-sided support: an eligible clock-description path is conditionally portable, and one same-description paired-object state after decoder block `23` switches the unrestricted geometry owner through an `x1` basin change where the trusted block-`13` control does not | The portable state may select only the first coordinate, with the emitted `x1` and native autoregressive computation recovering the rest of the box; one image and one direction do not establish a general object state | No successor is active. If separately authorized, mediate `x1` by forcing paired `x1` without replacement and forcing baseline `x1` under paired-state replacement, then compare later coordinates and final owner. |
 | Early coordinate choice establishes a stable complete-object owner | Rejected as a universal rule. In one primary bowl case, a one-bin `x1` branch and later `x2` difference reshape `y2`; in a nearby-person control, shared `x1` remains ambiguous and ownership separates through `y1` and `x2`; one small-person case instead keeps the same owner after a bad `y1`. The older dense-chair transport result still shows that early coordinates can strongly constrain later boundaries. | Coordinate generation mixes box grammar, visual boundary evidence, route state, and instance ownership; the dominant component changes by scene and coordinate slot. | If separately authorized, use on-support same-object coordinate perturbations and coherent full-row alternatives. Do not infer an owner from one coordinate or average coordinate marginals across neighboring instances. |
 | Incomplete dense annotations teach conservative omission and premature termination | Plausible | Sequence-mode concentration or weak visual evidence is the dominant cause | Compare exhaustive labels with original labels and controlled thinning on the same images. |
@@ -636,18 +653,18 @@ The screen compares a few matched-budget arms on 256 images. It is a stop-or-
 promote test for learnability, not a final model, broad hyperparameter search,
 or paper result.
 
-Current gate decision: **not authorized**. Controlled object support, tight
-persistent-hard geometry donors, immediate owner-sensitive redistribution, and
-order-sensitive four-row behavior are established in bounded states. The
-short-horizon prefix-permutation unit also exposes scene-specific recurrence of
-covered motorcycles. The sampled-history causal-value unit then supplies three
-exact same-parent complete-row effects, but only one produces a safe final
-unique-owner gain. Two cases exchange owners; one positive image has separable
-`x1` and `y1` route effects, while another image requires a joint two-row
-history. Complete-row sums can also disagree with the actual greedy branch.
-The evidence is therefore recurrent enough to establish coordinate-sensitive
-route state, but not recurrent or uniform enough to define a safe general loss.
-The required multi-image positive-value cohort and label support remain absent.
+Current gate decision: **authorized for a small specification and matched
+screen; execution remains separately authorized**. The matched ordering-policy
+pilot identifies a safer local target than sampled-row imitation: preserve a
+verified uncovered transition across same-covered-set order permutations, and
+require an omitted verified object to become more competitive than when its
+row is present. Keep ordinary geometry-sorted pure cross-entropy as the base,
+use random ordering as an ablation, and score the earliest route-distinguishing
+token or short prefix rather than one exact complete coordinate row. The
+screen must not treat unmatched dense predictions as negatives. The pending
+human-reviewed dense cohort should be used for entity-versus-geometry outcome
+adjudication and final unique-object value. This authorization does not select
+an architecture, launch training, or establish a general loss.
 
 ## Demoted or Rejected Claims
 
@@ -662,6 +679,9 @@ The required multi-image positive-value cohort and label support remain absent.
 - One owner-specific `x1` basin switch is not a portable four-coordinate object
   representation or a general instance-binding mechanism.
 - A stable native order-free coverage ledger has not been established.
+- Random-order output invariance is not evidence for a covered-set state when
+  leave-one-out controls do not reactivate omitted owners; it can be a single
+  habitual-successor collapse.
 - One safe coordinate-history rescue is not evidence that sampled coordinates
   are generally better supervision; two matched causal cases exchange owners.
 - A latest-row effect on one image is not a universal carrier when another

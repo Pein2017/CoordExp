@@ -1,0 +1,1140 @@
+{
+  "builder": {
+    "ambiguities": [
+      {
+        "case_id": "common_objects_depth_10",
+        "checkpoint": "random",
+        "comparison_id": "current_sorted_rollout_order_vs_reverse_earlier_rows_with_fixed_final_two",
+        "fallback_owners": [
+          "gt_0019",
+          "gt_0010"
+        ],
+        "issue": "one greedy arm was unmatched; sampled strict owner used as an explicit fallback",
+        "pair_index": 8
+      }
+    ],
+    "candidate_policy": "canonical frozen entity rows only; unmatched generated rows are never positives",
+    "name": "build_matched_random_sorted_candidate_score_manifest.py",
+    "terminal_policy": "terminal is scored separately by the existing scorer"
+  },
+  "images": [
+    {
+      "base_prompt": {
+        "selector": {
+          "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/sorted/18380-depth6.json",
+          "token_field": "base_prompt.prompt_token_ids"
+        },
+        "token_ids_sha256": "dc21acac635d4fddfeca65c2572e453ce5624dab403351da6973b434623b5ca1"
+      },
+      "boundaries": [
+        {
+          "boundary_id": "common_objects_depth_6__sorted__seeded_shuffle_earlier_rows_with_fixed_final_two__left",
+          "candidates": [
+            {
+              "candidate_id": "entity-gt_0019",
+              "category": "person",
+              "covered": false,
+              "owner": "gt_0019",
+              "role": "greedy_left_owner",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_6",
+                  "entity_id": "gt_0019",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/sorted/18380-depth6.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "358df161db1c06ee62b020a3b39cbbc8dc0317f5228deb9fe5a82fac6f6f5372"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            },
+            {
+              "candidate_id": "entity-gt_0018",
+              "category": "cup",
+              "covered": false,
+              "owner": "gt_0018",
+              "role": "greedy_right_owner",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_6",
+                  "entity_id": "gt_0018",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/sorted/18380-depth6.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "346e771b8d56daee82ec2b673dfb33566faf3c6b97a96d216f534182cb3fbcfe"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            },
+            {
+              "candidate_id": "entity-gt_0017",
+              "category": "cup",
+              "covered": true,
+              "notes": "Canonical row for an entity present in both frozen prefix arms; terminal is scored separately.",
+              "owner": "gt_0017",
+              "role": "frozen_prefix_covered",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_6",
+                  "entity_id": "gt_0017",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/sorted/18380-depth6.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "8ac8daa844edbe315121426ebf8a5886cf261ac50f2de5fd62160245cb9df6fd"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            }
+          ],
+          "case_id": "common_objects_depth_6",
+          "checkpoint_arm": "sorted",
+          "comparison_id": "current_sorted_rollout_order_vs_seeded_shuffle_earlier_rows_with_fixed_final_two",
+          "paired_prefix_arm": "seeded_shuffle_earlier_rows_with_fixed_final_two",
+          "prefix": {
+            "selector": {
+              "arm_name": "current_sorted_rollout_order",
+              "case_id": "common_objects_depth_6",
+              "comparison_id": "current_sorted_rollout_order_vs_seeded_shuffle_earlier_rows_with_fixed_final_two",
+              "mode": "greedy",
+              "row_index": 0,
+              "seed": null,
+              "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/sorted/18380-depth6.json",
+              "token_field": "initial_prefix_token_ids"
+            },
+            "token_ids_sha256": "719f8705970c0a98faa16b66c4be3a19ce08e73dfe4ec261089128e90768ec63"
+          },
+          "prefix_arm": "current_sorted_rollout_order",
+          "prefix_mode": "base_prompt_plus_generated"
+        },
+        {
+          "boundary_id": "common_objects_depth_6__sorted__seeded_shuffle_earlier_rows_with_fixed_final_two__right",
+          "candidates": [
+            {
+              "candidate_id": "entity-gt_0019",
+              "category": "person",
+              "covered": false,
+              "owner": "gt_0019",
+              "role": "greedy_left_owner",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_6",
+                  "entity_id": "gt_0019",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/sorted/18380-depth6.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "358df161db1c06ee62b020a3b39cbbc8dc0317f5228deb9fe5a82fac6f6f5372"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            },
+            {
+              "candidate_id": "entity-gt_0018",
+              "category": "cup",
+              "covered": false,
+              "owner": "gt_0018",
+              "role": "greedy_right_owner",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_6",
+                  "entity_id": "gt_0018",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/sorted/18380-depth6.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "346e771b8d56daee82ec2b673dfb33566faf3c6b97a96d216f534182cb3fbcfe"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            },
+            {
+              "candidate_id": "entity-gt_0017",
+              "category": "cup",
+              "covered": true,
+              "notes": "Canonical row for an entity present in both frozen prefix arms; terminal is scored separately.",
+              "owner": "gt_0017",
+              "role": "frozen_prefix_covered",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_6",
+                  "entity_id": "gt_0017",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/sorted/18380-depth6.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "8ac8daa844edbe315121426ebf8a5886cf261ac50f2de5fd62160245cb9df6fd"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            }
+          ],
+          "case_id": "common_objects_depth_6",
+          "checkpoint_arm": "sorted",
+          "comparison_id": "current_sorted_rollout_order_vs_seeded_shuffle_earlier_rows_with_fixed_final_two",
+          "paired_prefix_arm": "current_sorted_rollout_order",
+          "prefix": {
+            "selector": {
+              "arm_name": "seeded_shuffle_earlier_rows_with_fixed_final_two",
+              "case_id": "common_objects_depth_6",
+              "comparison_id": "current_sorted_rollout_order_vs_seeded_shuffle_earlier_rows_with_fixed_final_two",
+              "mode": "greedy",
+              "row_index": 0,
+              "seed": null,
+              "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/sorted/18380-depth6.json",
+              "token_field": "initial_prefix_token_ids"
+            },
+            "token_ids_sha256": "62df81b1930619c60a94e7cc07f5563bba153b62cf74090c77a5a74e8604b40d"
+          },
+          "prefix_arm": "seeded_shuffle_earlier_rows_with_fixed_final_two",
+          "prefix_mode": "base_prompt_plus_generated"
+        }
+      ],
+      "image_id": "18380"
+    },
+    {
+      "base_prompt": {
+        "selector": {
+          "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+          "token_field": "base_prompt.prompt_token_ids"
+        },
+        "token_ids_sha256": "dc21acac635d4fddfeca65c2572e453ce5624dab403351da6973b434623b5ca1"
+      },
+      "boundaries": [
+        {
+          "boundary_id": "common_objects_depth_10__random__historical_random_relative_order_with_fixed_final_two__left",
+          "candidates": [
+            {
+              "candidate_id": "entity-gt_0021",
+              "category": "motorcycle",
+              "covered": true,
+              "notes": "Selection receipt marks this canonical owner as a covered recurrence; do not interpret as a verified-uncovered positive.",
+              "owner": "gt_0021",
+              "role": "greedy_left_owner_and_covered_recurrence",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_10",
+                  "entity_id": "gt_0021",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "5cd2f642b70541e9acf20237af92bf0608d19ada1df42ab5647f9b9c67cfcf4e"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            },
+            {
+              "candidate_id": "entity-gt_0010",
+              "category": "person",
+              "covered": false,
+              "owner": "gt_0010",
+              "role": "greedy_right_owner",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_10",
+                  "entity_id": "gt_0010",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "89bd6f1eb3a63e8c947d86b1616020703b439cf2848c01d10e5b5f1d0d2985c1"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            },
+            {
+              "candidate_id": "entity-gt_0026",
+              "category": "motorcycle",
+              "covered": true,
+              "notes": "Canonical row for an entity present in both frozen prefix arms; terminal is scored separately.",
+              "owner": "gt_0026",
+              "role": "frozen_prefix_covered",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_10",
+                  "entity_id": "gt_0026",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "3aec1910edf1f10a58de6c91d7178ef346d34ba684ed6d99a59ba59967f6147b"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            }
+          ],
+          "case_id": "common_objects_depth_10",
+          "checkpoint_arm": "random",
+          "comparison_id": "current_sorted_rollout_order_vs_historical_random_relative_order_with_fixed_final_two",
+          "paired_prefix_arm": "historical_random_relative_order_with_fixed_final_two",
+          "prefix": {
+            "selector": {
+              "arm_name": "current_sorted_rollout_order",
+              "case_id": "common_objects_depth_10",
+              "comparison_id": "current_sorted_rollout_order_vs_historical_random_relative_order_with_fixed_final_two",
+              "mode": "greedy",
+              "row_index": 0,
+              "seed": null,
+              "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+              "token_field": "initial_prefix_token_ids"
+            },
+            "token_ids_sha256": "5745187b7b4196efc2f3e0bc73035de056e8a6294a5b497580e4fedfbe3a0d52"
+          },
+          "prefix_arm": "current_sorted_rollout_order",
+          "prefix_mode": "base_prompt_plus_generated"
+        },
+        {
+          "boundary_id": "common_objects_depth_10__random__historical_random_relative_order_with_fixed_final_two__right",
+          "candidates": [
+            {
+              "candidate_id": "entity-gt_0021",
+              "category": "motorcycle",
+              "covered": true,
+              "notes": "Selection receipt marks this canonical owner as a covered recurrence; do not interpret as a verified-uncovered positive.",
+              "owner": "gt_0021",
+              "role": "greedy_left_owner_and_covered_recurrence",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_10",
+                  "entity_id": "gt_0021",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "5cd2f642b70541e9acf20237af92bf0608d19ada1df42ab5647f9b9c67cfcf4e"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            },
+            {
+              "candidate_id": "entity-gt_0010",
+              "category": "person",
+              "covered": false,
+              "owner": "gt_0010",
+              "role": "greedy_right_owner",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_10",
+                  "entity_id": "gt_0010",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "89bd6f1eb3a63e8c947d86b1616020703b439cf2848c01d10e5b5f1d0d2985c1"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            },
+            {
+              "candidate_id": "entity-gt_0026",
+              "category": "motorcycle",
+              "covered": true,
+              "notes": "Canonical row for an entity present in both frozen prefix arms; terminal is scored separately.",
+              "owner": "gt_0026",
+              "role": "frozen_prefix_covered",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_10",
+                  "entity_id": "gt_0026",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "3aec1910edf1f10a58de6c91d7178ef346d34ba684ed6d99a59ba59967f6147b"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            }
+          ],
+          "case_id": "common_objects_depth_10",
+          "checkpoint_arm": "random",
+          "comparison_id": "current_sorted_rollout_order_vs_historical_random_relative_order_with_fixed_final_two",
+          "paired_prefix_arm": "current_sorted_rollout_order",
+          "prefix": {
+            "selector": {
+              "arm_name": "historical_random_relative_order_with_fixed_final_two",
+              "case_id": "common_objects_depth_10",
+              "comparison_id": "current_sorted_rollout_order_vs_historical_random_relative_order_with_fixed_final_two",
+              "mode": "greedy",
+              "row_index": 0,
+              "seed": null,
+              "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+              "token_field": "initial_prefix_token_ids"
+            },
+            "token_ids_sha256": "c81b150933af1a72e7930a5020c920e859593f21e77cbe6cf82872a307ef296d"
+          },
+          "prefix_arm": "historical_random_relative_order_with_fixed_final_two",
+          "prefix_mode": "base_prompt_plus_generated"
+        },
+        {
+          "boundary_id": "common_objects_depth_10__random__reverse_earlier_rows_with_fixed_final_one__left",
+          "candidates": [
+            {
+              "candidate_id": "entity-gt_0021",
+              "category": "motorcycle",
+              "covered": true,
+              "notes": "Selection receipt marks this canonical owner as a covered recurrence; do not interpret as a verified-uncovered positive.",
+              "owner": "gt_0021",
+              "role": "greedy_left_owner_and_covered_recurrence",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_10",
+                  "entity_id": "gt_0021",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "5cd2f642b70541e9acf20237af92bf0608d19ada1df42ab5647f9b9c67cfcf4e"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            },
+            {
+              "candidate_id": "entity-gt_0010",
+              "category": "person",
+              "covered": false,
+              "owner": "gt_0010",
+              "role": "greedy_right_owner",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_10",
+                  "entity_id": "gt_0010",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "89bd6f1eb3a63e8c947d86b1616020703b439cf2848c01d10e5b5f1d0d2985c1"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            },
+            {
+              "candidate_id": "entity-gt_0026",
+              "category": "motorcycle",
+              "covered": true,
+              "notes": "Canonical row for an entity present in both frozen prefix arms; terminal is scored separately.",
+              "owner": "gt_0026",
+              "role": "frozen_prefix_covered",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_10",
+                  "entity_id": "gt_0026",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "3aec1910edf1f10a58de6c91d7178ef346d34ba684ed6d99a59ba59967f6147b"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            }
+          ],
+          "case_id": "common_objects_depth_10",
+          "checkpoint_arm": "random",
+          "comparison_id": "current_sorted_rollout_order_vs_reverse_earlier_rows_with_fixed_final_one",
+          "paired_prefix_arm": "reverse_earlier_rows_with_fixed_final_one",
+          "prefix": {
+            "selector": {
+              "arm_name": "current_sorted_rollout_order",
+              "case_id": "common_objects_depth_10",
+              "comparison_id": "current_sorted_rollout_order_vs_reverse_earlier_rows_with_fixed_final_one",
+              "mode": "greedy",
+              "row_index": 0,
+              "seed": null,
+              "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+              "token_field": "initial_prefix_token_ids"
+            },
+            "token_ids_sha256": "5745187b7b4196efc2f3e0bc73035de056e8a6294a5b497580e4fedfbe3a0d52"
+          },
+          "prefix_arm": "current_sorted_rollout_order",
+          "prefix_mode": "base_prompt_plus_generated"
+        },
+        {
+          "boundary_id": "common_objects_depth_10__random__reverse_earlier_rows_with_fixed_final_one__right",
+          "candidates": [
+            {
+              "candidate_id": "entity-gt_0021",
+              "category": "motorcycle",
+              "covered": true,
+              "notes": "Selection receipt marks this canonical owner as a covered recurrence; do not interpret as a verified-uncovered positive.",
+              "owner": "gt_0021",
+              "role": "greedy_left_owner_and_covered_recurrence",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_10",
+                  "entity_id": "gt_0021",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "5cd2f642b70541e9acf20237af92bf0608d19ada1df42ab5647f9b9c67cfcf4e"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            },
+            {
+              "candidate_id": "entity-gt_0010",
+              "category": "person",
+              "covered": false,
+              "owner": "gt_0010",
+              "role": "greedy_right_owner",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_10",
+                  "entity_id": "gt_0010",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "89bd6f1eb3a63e8c947d86b1616020703b439cf2848c01d10e5b5f1d0d2985c1"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            },
+            {
+              "candidate_id": "entity-gt_0026",
+              "category": "motorcycle",
+              "covered": true,
+              "notes": "Canonical row for an entity present in both frozen prefix arms; terminal is scored separately.",
+              "owner": "gt_0026",
+              "role": "frozen_prefix_covered",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_10",
+                  "entity_id": "gt_0026",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "3aec1910edf1f10a58de6c91d7178ef346d34ba684ed6d99a59ba59967f6147b"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            }
+          ],
+          "case_id": "common_objects_depth_10",
+          "checkpoint_arm": "random",
+          "comparison_id": "current_sorted_rollout_order_vs_reverse_earlier_rows_with_fixed_final_one",
+          "paired_prefix_arm": "current_sorted_rollout_order",
+          "prefix": {
+            "selector": {
+              "arm_name": "reverse_earlier_rows_with_fixed_final_one",
+              "case_id": "common_objects_depth_10",
+              "comparison_id": "current_sorted_rollout_order_vs_reverse_earlier_rows_with_fixed_final_one",
+              "mode": "greedy",
+              "row_index": 0,
+              "seed": null,
+              "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+              "token_field": "initial_prefix_token_ids"
+            },
+            "token_ids_sha256": "92973aeffa6c3566fe17ff60cf15d56ee362c796db6da941ee69880c40051f5b"
+          },
+          "prefix_arm": "reverse_earlier_rows_with_fixed_final_one",
+          "prefix_mode": "base_prompt_plus_generated"
+        },
+        {
+          "boundary_id": "common_objects_depth_10__random__reverse_earlier_rows_with_fixed_final_two__left",
+          "candidates": [
+            {
+              "candidate_id": "entity-gt_0021",
+              "category": "motorcycle",
+              "covered": true,
+              "notes": "Selection receipt marks this canonical owner as a covered recurrence; do not interpret as a verified-uncovered positive.",
+              "owner": "gt_0021",
+              "role": "greedy_left_owner_and_covered_recurrence",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_10",
+                  "entity_id": "gt_0021",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "5cd2f642b70541e9acf20237af92bf0608d19ada1df42ab5647f9b9c67cfcf4e"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            },
+            {
+              "candidate_id": "entity-gt_0019",
+              "category": "motorcycle",
+              "covered": false,
+              "notes": "Greedy alternate was unmatched; this canonical row was observed as a strict owner in a paired sample and is included only as a flagged fallback.",
+              "owner": "gt_0019",
+              "role": "sampled_strict_owner_fallback",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_10",
+                  "entity_id": "gt_0019",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "76bec4259102eb785758d73944599cf9d546bae97bbcee29c75c510269a51764"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            },
+            {
+              "candidate_id": "entity-gt_0010",
+              "category": "person",
+              "covered": false,
+              "notes": "Greedy alternate was unmatched; this canonical row was observed as a strict owner in a paired sample and is included only as a flagged fallback.",
+              "owner": "gt_0010",
+              "role": "sampled_strict_owner_fallback",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_10",
+                  "entity_id": "gt_0010",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "89bd6f1eb3a63e8c947d86b1616020703b439cf2848c01d10e5b5f1d0d2985c1"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            },
+            {
+              "candidate_id": "entity-gt_0026",
+              "category": "motorcycle",
+              "covered": true,
+              "notes": "Canonical row for an entity present in both frozen prefix arms; terminal is scored separately.",
+              "owner": "gt_0026",
+              "role": "frozen_prefix_covered",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_10",
+                  "entity_id": "gt_0026",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "3aec1910edf1f10a58de6c91d7178ef346d34ba684ed6d99a59ba59967f6147b"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            }
+          ],
+          "case_id": "common_objects_depth_10",
+          "checkpoint_arm": "random",
+          "comparison_id": "current_sorted_rollout_order_vs_reverse_earlier_rows_with_fixed_final_two",
+          "paired_prefix_arm": "reverse_earlier_rows_with_fixed_final_two",
+          "prefix": {
+            "selector": {
+              "arm_name": "current_sorted_rollout_order",
+              "case_id": "common_objects_depth_10",
+              "comparison_id": "current_sorted_rollout_order_vs_reverse_earlier_rows_with_fixed_final_two",
+              "mode": "greedy",
+              "row_index": 0,
+              "seed": null,
+              "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+              "token_field": "initial_prefix_token_ids"
+            },
+            "token_ids_sha256": "5745187b7b4196efc2f3e0bc73035de056e8a6294a5b497580e4fedfbe3a0d52"
+          },
+          "prefix_arm": "current_sorted_rollout_order",
+          "prefix_mode": "base_prompt_plus_generated"
+        },
+        {
+          "boundary_id": "common_objects_depth_10__random__reverse_earlier_rows_with_fixed_final_two__right",
+          "candidates": [
+            {
+              "candidate_id": "entity-gt_0021",
+              "category": "motorcycle",
+              "covered": true,
+              "notes": "Selection receipt marks this canonical owner as a covered recurrence; do not interpret as a verified-uncovered positive.",
+              "owner": "gt_0021",
+              "role": "greedy_left_owner_and_covered_recurrence",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_10",
+                  "entity_id": "gt_0021",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "5cd2f642b70541e9acf20237af92bf0608d19ada1df42ab5647f9b9c67cfcf4e"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            },
+            {
+              "candidate_id": "entity-gt_0019",
+              "category": "motorcycle",
+              "covered": false,
+              "notes": "Greedy alternate was unmatched; this canonical row was observed as a strict owner in a paired sample and is included only as a flagged fallback.",
+              "owner": "gt_0019",
+              "role": "sampled_strict_owner_fallback",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_10",
+                  "entity_id": "gt_0019",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "76bec4259102eb785758d73944599cf9d546bae97bbcee29c75c510269a51764"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            },
+            {
+              "candidate_id": "entity-gt_0010",
+              "category": "person",
+              "covered": false,
+              "notes": "Greedy alternate was unmatched; this canonical row was observed as a strict owner in a paired sample and is included only as a flagged fallback.",
+              "owner": "gt_0010",
+              "role": "sampled_strict_owner_fallback",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_10",
+                  "entity_id": "gt_0010",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "89bd6f1eb3a63e8c947d86b1616020703b439cf2848c01d10e5b5f1d0d2985c1"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            },
+            {
+              "candidate_id": "entity-gt_0026",
+              "category": "motorcycle",
+              "covered": true,
+              "notes": "Canonical row for an entity present in both frozen prefix arms; terminal is scored separately.",
+              "owner": "gt_0026",
+              "role": "frozen_prefix_covered",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_10",
+                  "entity_id": "gt_0026",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "3aec1910edf1f10a58de6c91d7178ef346d34ba684ed6d99a59ba59967f6147b"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            }
+          ],
+          "case_id": "common_objects_depth_10",
+          "checkpoint_arm": "random",
+          "comparison_id": "current_sorted_rollout_order_vs_reverse_earlier_rows_with_fixed_final_two",
+          "paired_prefix_arm": "current_sorted_rollout_order",
+          "prefix": {
+            "selector": {
+              "arm_name": "reverse_earlier_rows_with_fixed_final_two",
+              "case_id": "common_objects_depth_10",
+              "comparison_id": "current_sorted_rollout_order_vs_reverse_earlier_rows_with_fixed_final_two",
+              "mode": "greedy",
+              "row_index": 0,
+              "seed": null,
+              "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+              "token_field": "initial_prefix_token_ids"
+            },
+            "token_ids_sha256": "0c82f745c0de90099bd3d12c7605c9b1e3466786bf59d612c0878c4b64b93856"
+          },
+          "prefix_arm": "reverse_earlier_rows_with_fixed_final_two",
+          "prefix_mode": "base_prompt_plus_generated"
+        },
+        {
+          "boundary_id": "common_objects_depth_6__random__reverse_earlier_rows_with_fixed_final_two__left",
+          "candidates": [
+            {
+              "candidate_id": "entity-gt_0021",
+              "category": "motorcycle",
+              "covered": false,
+              "owner": "gt_0021",
+              "role": "greedy_left_owner",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_6",
+                  "entity_id": "gt_0021",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "5cd2f642b70541e9acf20237af92bf0608d19ada1df42ab5647f9b9c67cfcf4e"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            },
+            {
+              "candidate_id": "entity-gt_0010",
+              "category": "person",
+              "covered": false,
+              "owner": "gt_0010",
+              "role": "greedy_right_owner",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_6",
+                  "entity_id": "gt_0010",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "89bd6f1eb3a63e8c947d86b1616020703b439cf2848c01d10e5b5f1d0d2985c1"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            },
+            {
+              "candidate_id": "entity-gt_0016",
+              "category": "motorcycle",
+              "covered": true,
+              "notes": "Canonical row for an entity present in both frozen prefix arms; terminal is scored separately.",
+              "owner": "gt_0016",
+              "role": "frozen_prefix_covered",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_6",
+                  "entity_id": "gt_0016",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "d0fe70a56cb51d16afb8c1dd9eae1429b2d495b3b867ded37089605580f93375"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            }
+          ],
+          "case_id": "common_objects_depth_6",
+          "checkpoint_arm": "random",
+          "comparison_id": "current_sorted_rollout_order_vs_reverse_earlier_rows_with_fixed_final_two",
+          "paired_prefix_arm": "reverse_earlier_rows_with_fixed_final_two",
+          "prefix": {
+            "selector": {
+              "arm_name": "current_sorted_rollout_order",
+              "case_id": "common_objects_depth_6",
+              "comparison_id": "current_sorted_rollout_order_vs_reverse_earlier_rows_with_fixed_final_two",
+              "mode": "greedy",
+              "row_index": 0,
+              "seed": null,
+              "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+              "token_field": "initial_prefix_token_ids"
+            },
+            "token_ids_sha256": "bb4b4bec633c17aab980501a53647006221987285b70cf2e9ca6a5faf7c7565d"
+          },
+          "prefix_arm": "current_sorted_rollout_order",
+          "prefix_mode": "base_prompt_plus_generated"
+        },
+        {
+          "boundary_id": "common_objects_depth_6__random__reverse_earlier_rows_with_fixed_final_two__right",
+          "candidates": [
+            {
+              "candidate_id": "entity-gt_0021",
+              "category": "motorcycle",
+              "covered": false,
+              "owner": "gt_0021",
+              "role": "greedy_left_owner",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_6",
+                  "entity_id": "gt_0021",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "5cd2f642b70541e9acf20237af92bf0608d19ada1df42ab5647f9b9c67cfcf4e"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            },
+            {
+              "candidate_id": "entity-gt_0010",
+              "category": "person",
+              "covered": false,
+              "owner": "gt_0010",
+              "role": "greedy_right_owner",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_6",
+                  "entity_id": "gt_0010",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "89bd6f1eb3a63e8c947d86b1616020703b439cf2848c01d10e5b5f1d0d2985c1"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            },
+            {
+              "candidate_id": "entity-gt_0016",
+              "category": "motorcycle",
+              "covered": true,
+              "notes": "Canonical row for an entity present in both frozen prefix arms; terminal is scored separately.",
+              "owner": "gt_0016",
+              "role": "frozen_prefix_covered",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_6",
+                  "entity_id": "gt_0016",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "d0fe70a56cb51d16afb8c1dd9eae1429b2d495b3b867ded37089605580f93375"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            }
+          ],
+          "case_id": "common_objects_depth_6",
+          "checkpoint_arm": "random",
+          "comparison_id": "current_sorted_rollout_order_vs_reverse_earlier_rows_with_fixed_final_two",
+          "paired_prefix_arm": "current_sorted_rollout_order",
+          "prefix": {
+            "selector": {
+              "arm_name": "reverse_earlier_rows_with_fixed_final_two",
+              "case_id": "common_objects_depth_6",
+              "comparison_id": "current_sorted_rollout_order_vs_reverse_earlier_rows_with_fixed_final_two",
+              "mode": "greedy",
+              "row_index": 0,
+              "seed": null,
+              "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+              "token_field": "initial_prefix_token_ids"
+            },
+            "token_ids_sha256": "7b9f0cd1adf150821f176accb6f578f72d02f86311c1bf6714dbbc8b49e2e266"
+          },
+          "prefix_arm": "reverse_earlier_rows_with_fixed_final_two",
+          "prefix_mode": "base_prompt_plus_generated"
+        },
+        {
+          "boundary_id": "common_objects_depth_6__random__seeded_shuffle_earlier_rows_with_fixed_final_two__left",
+          "candidates": [
+            {
+              "candidate_id": "entity-gt_0021",
+              "category": "motorcycle",
+              "covered": false,
+              "owner": "gt_0021",
+              "role": "greedy_left_owner",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_6",
+                  "entity_id": "gt_0021",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "5cd2f642b70541e9acf20237af92bf0608d19ada1df42ab5647f9b9c67cfcf4e"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            },
+            {
+              "candidate_id": "entity-gt_0010",
+              "category": "person",
+              "covered": false,
+              "owner": "gt_0010",
+              "role": "greedy_right_owner",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_6",
+                  "entity_id": "gt_0010",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "89bd6f1eb3a63e8c947d86b1616020703b439cf2848c01d10e5b5f1d0d2985c1"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            },
+            {
+              "candidate_id": "entity-gt_0016",
+              "category": "motorcycle",
+              "covered": true,
+              "notes": "Canonical row for an entity present in both frozen prefix arms; terminal is scored separately.",
+              "owner": "gt_0016",
+              "role": "frozen_prefix_covered",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_6",
+                  "entity_id": "gt_0016",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "d0fe70a56cb51d16afb8c1dd9eae1429b2d495b3b867ded37089605580f93375"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            }
+          ],
+          "case_id": "common_objects_depth_6",
+          "checkpoint_arm": "random",
+          "comparison_id": "current_sorted_rollout_order_vs_seeded_shuffle_earlier_rows_with_fixed_final_two",
+          "paired_prefix_arm": "seeded_shuffle_earlier_rows_with_fixed_final_two",
+          "prefix": {
+            "selector": {
+              "arm_name": "current_sorted_rollout_order",
+              "case_id": "common_objects_depth_6",
+              "comparison_id": "current_sorted_rollout_order_vs_seeded_shuffle_earlier_rows_with_fixed_final_two",
+              "mode": "greedy",
+              "row_index": 0,
+              "seed": null,
+              "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+              "token_field": "initial_prefix_token_ids"
+            },
+            "token_ids_sha256": "bb4b4bec633c17aab980501a53647006221987285b70cf2e9ca6a5faf7c7565d"
+          },
+          "prefix_arm": "current_sorted_rollout_order",
+          "prefix_mode": "base_prompt_plus_generated"
+        },
+        {
+          "boundary_id": "common_objects_depth_6__random__seeded_shuffle_earlier_rows_with_fixed_final_two__right",
+          "candidates": [
+            {
+              "candidate_id": "entity-gt_0021",
+              "category": "motorcycle",
+              "covered": false,
+              "owner": "gt_0021",
+              "role": "greedy_left_owner",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_6",
+                  "entity_id": "gt_0021",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "5cd2f642b70541e9acf20237af92bf0608d19ada1df42ab5647f9b9c67cfcf4e"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            },
+            {
+              "candidate_id": "entity-gt_0010",
+              "category": "person",
+              "covered": false,
+              "owner": "gt_0010",
+              "role": "greedy_right_owner",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_6",
+                  "entity_id": "gt_0010",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "89bd6f1eb3a63e8c947d86b1616020703b439cf2848c01d10e5b5f1d0d2985c1"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            },
+            {
+              "candidate_id": "entity-gt_0016",
+              "category": "motorcycle",
+              "covered": true,
+              "notes": "Canonical row for an entity present in both frozen prefix arms; terminal is scored separately.",
+              "owner": "gt_0016",
+              "role": "frozen_prefix_covered",
+              "row": {
+                "selector": {
+                  "arm_name": "current_sorted_rollout_order",
+                  "case_id": "common_objects_depth_6",
+                  "entity_id": "gt_0016",
+                  "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+                  "token_field": "entity_row_token_ids"
+                },
+                "token_ids_sha256": "d0fe70a56cb51d16afb8c1dd9eae1429b2d495b3b867ded37089605580f93375"
+              },
+              "truth_status": "canonical_frozen_entity_row"
+            }
+          ],
+          "case_id": "common_objects_depth_6",
+          "checkpoint_arm": "random",
+          "comparison_id": "current_sorted_rollout_order_vs_seeded_shuffle_earlier_rows_with_fixed_final_two",
+          "paired_prefix_arm": "current_sorted_rollout_order",
+          "prefix": {
+            "selector": {
+              "arm_name": "seeded_shuffle_earlier_rows_with_fixed_final_two",
+              "case_id": "common_objects_depth_6",
+              "comparison_id": "current_sorted_rollout_order_vs_seeded_shuffle_earlier_rows_with_fixed_final_two",
+              "mode": "greedy",
+              "row_index": 0,
+              "seed": null,
+              "source_artifact": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/common-prefix-permutation/random/19109-depth6-depth10.json",
+              "token_field": "initial_prefix_token_ids"
+            },
+            "token_ids_sha256": "c81090dee912ff23efb7a5280897f95c5e005980d41303890edaf10338c81164"
+          },
+          "prefix_arm": "seeded_shuffle_earlier_rows_with_fixed_final_two",
+          "prefix_mode": "base_prompt_plus_generated"
+        }
+      ],
+      "image_id": "19109"
+    }
+  ],
+  "promoted_pairs": [
+    {
+      "arms": [
+        "current_sorted_rollout_order",
+        "seeded_shuffle_earlier_rows_with_fixed_final_two"
+      ],
+      "artifact_file": "18380-depth6.json",
+      "candidate_owner_ids": [
+        "gt_0019",
+        "gt_0018"
+      ],
+      "case_id": "common_objects_depth_6",
+      "checkpoint": "sorted",
+      "comparison_id": "current_sorted_rollout_order_vs_seeded_shuffle_earlier_rows_with_fixed_final_two",
+      "pair_index": 4
+    },
+    {
+      "arms": [
+        "current_sorted_rollout_order",
+        "historical_random_relative_order_with_fixed_final_two"
+      ],
+      "artifact_file": "19109-depth6-depth10.json",
+      "candidate_owner_ids": [
+        "gt_0021",
+        "gt_0010"
+      ],
+      "case_id": "common_objects_depth_10",
+      "checkpoint": "random",
+      "comparison_id": "current_sorted_rollout_order_vs_historical_random_relative_order_with_fixed_final_two",
+      "pair_index": 6
+    },
+    {
+      "arms": [
+        "current_sorted_rollout_order",
+        "reverse_earlier_rows_with_fixed_final_one"
+      ],
+      "artifact_file": "19109-depth6-depth10.json",
+      "candidate_owner_ids": [
+        "gt_0021",
+        "gt_0010"
+      ],
+      "case_id": "common_objects_depth_10",
+      "checkpoint": "random",
+      "comparison_id": "current_sorted_rollout_order_vs_reverse_earlier_rows_with_fixed_final_one",
+      "pair_index": 7
+    },
+    {
+      "arms": [
+        "current_sorted_rollout_order",
+        "reverse_earlier_rows_with_fixed_final_two"
+      ],
+      "artifact_file": "19109-depth6-depth10.json",
+      "candidate_owner_ids": [
+        "gt_0021",
+        "gt_0019",
+        "gt_0010"
+      ],
+      "case_id": "common_objects_depth_10",
+      "checkpoint": "random",
+      "comparison_id": "current_sorted_rollout_order_vs_reverse_earlier_rows_with_fixed_final_two",
+      "pair_index": 8
+    },
+    {
+      "arms": [
+        "current_sorted_rollout_order",
+        "reverse_earlier_rows_with_fixed_final_two"
+      ],
+      "artifact_file": "19109-depth6-depth10.json",
+      "candidate_owner_ids": [
+        "gt_0021",
+        "gt_0010"
+      ],
+      "case_id": "common_objects_depth_6",
+      "checkpoint": "random",
+      "comparison_id": "current_sorted_rollout_order_vs_reverse_earlier_rows_with_fixed_final_two",
+      "pair_index": 12
+    },
+    {
+      "arms": [
+        "current_sorted_rollout_order",
+        "seeded_shuffle_earlier_rows_with_fixed_final_two"
+      ],
+      "artifact_file": "19109-depth6-depth10.json",
+      "candidate_owner_ids": [
+        "gt_0021",
+        "gt_0010"
+      ],
+      "case_id": "common_objects_depth_6",
+      "checkpoint": "random",
+      "comparison_id": "current_sorted_rollout_order_vs_seeded_shuffle_earlier_rows_with_fixed_final_two",
+      "pair_index": 13
+    }
+  ],
+  "schema_version": "complete_candidate_row_scoring.manifest.v1",
+  "selection_receipt": {
+    "activated_pair_count": 6,
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-matched-random-sorted-prefix-order-screen/stage1/matched-random-sorted-prefix-order-selection.json",
+    "sha256": "1ed48801ae0024fedb30b980328fbf6f2a179ae6ba22b1d5098d4ef903ae07c4"
+  },
+  "unit_id": "2026-07-20-matched-random-sorted-prefix-order-screen"
+}

@@ -1,0 +1,678 @@
+{
+  "schema_version": "same_covered_set_prefix_order.case.v2",
+  "image_id": 2299,
+  "entities": [
+    {
+      "entity_id": "person-rank-0",
+      "description": "person",
+      "bbox_norm1000": [
+        525,
+        61,
+        617,
+        356
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_525|><|coord_61|><|coord_617|><|coord_356|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-2",
+      "description": "person",
+      "bbox_norm1000": [
+        625,
+        86,
+        711,
+        356
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_625|><|coord_86|><|coord_711|><|coord_356|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-3",
+      "description": "person",
+      "bbox_norm1000": [
+        331,
+        87,
+        423,
+        369
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_331|><|coord_87|><|coord_423|><|coord_369|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-4",
+      "description": "person",
+      "bbox_norm1000": [
+        708,
+        91,
+        784,
+        368
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_708|><|coord_91|><|coord_784|><|coord_368|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-6",
+      "description": "person",
+      "bbox_norm1000": [
+        219,
+        98,
+        327,
+        396
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_219|><|coord_98|><|coord_327|><|coord_396|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-10",
+      "description": "person",
+      "bbox_norm1000": [
+        814,
+        256,
+        913,
+        509
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_814|><|coord_256|><|coord_913|><|coord_509|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-14",
+      "description": "person",
+      "bbox_norm1000": [
+        639,
+        266,
+        734,
+        514
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_639|><|coord_266|><|coord_734|><|coord_514|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-1",
+      "description": "person",
+      "bbox_norm1000": [
+        427,
+        69,
+        520,
+        357
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_427|><|coord_69|><|coord_520|><|coord_357|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-5",
+      "description": "person",
+      "bbox_norm1000": [
+        790,
+        92,
+        873,
+        381
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_790|><|coord_92|><|coord_873|><|coord_381|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-7",
+      "description": "person",
+      "bbox_norm1000": [
+        119,
+        108,
+        227,
+        465
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_119|><|coord_108|><|coord_227|><|coord_465|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-8",
+      "description": "person",
+      "bbox_norm1000": [
+        458,
+        220,
+        570,
+        494
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_458|><|coord_220|><|coord_570|><|coord_494|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-9",
+      "description": "person",
+      "bbox_norm1000": [
+        555,
+        249,
+        652,
+        508
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_555|><|coord_249|><|coord_652|><|coord_508|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-11",
+      "description": "person",
+      "bbox_norm1000": [
+        88,
+        259,
+        186,
+        502
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_88|><|coord_259|><|coord_186|><|coord_502|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-12",
+      "description": "person",
+      "bbox_norm1000": [
+        724,
+        263,
+        820,
+        512
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_724|><|coord_263|><|coord_820|><|coord_512|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-13",
+      "description": "person",
+      "bbox_norm1000": [
+        199,
+        265,
+        294,
+        512
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_199|><|coord_265|><|coord_294|><|coord_512|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-15",
+      "description": "person",
+      "bbox_norm1000": [
+        369,
+        270,
+        464,
+        513
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_369|><|coord_270|><|coord_464|><|coord_513|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-16",
+      "description": "person",
+      "bbox_norm1000": [
+        285,
+        275,
+        382,
+        519
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_285|><|coord_275|><|coord_382|><|coord_519|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-17",
+      "description": "person",
+      "bbox_norm1000": [
+        886,
+        279,
+        998,
+        899
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_886|><|coord_279|><|coord_998|><|coord_899|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-18",
+      "description": "person",
+      "bbox_norm1000": [
+        3,
+        298,
+        100,
+        552
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_3|><|coord_298|><|coord_100|><|coord_552|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-19",
+      "description": "person",
+      "bbox_norm1000": [
+        376,
+        382,
+        450,
+        759
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_376|><|coord_382|><|coord_450|><|coord_759|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-20",
+      "description": "person",
+      "bbox_norm1000": [
+        568,
+        391,
+        652,
+        754
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_568|><|coord_391|><|coord_652|><|coord_754|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-21",
+      "description": "person",
+      "bbox_norm1000": [
+        431,
+        399,
+        526,
+        717
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_431|><|coord_399|><|coord_526|><|coord_717|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-22",
+      "description": "person",
+      "bbox_norm1000": [
+        499,
+        400,
+        590,
+        701
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_499|><|coord_400|><|coord_590|><|coord_701|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-23",
+      "description": "person",
+      "bbox_norm1000": [
+        292,
+        406,
+        373,
+        738
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_292|><|coord_406|><|coord_373|><|coord_738|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-24",
+      "description": "person",
+      "bbox_norm1000": [
+        69,
+        412,
+        165,
+        922
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_69|><|coord_412|><|coord_165|><|coord_922|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-25",
+      "description": "person",
+      "bbox_norm1000": [
+        1,
+        415,
+        98,
+        928
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_1|><|coord_415|><|coord_98|><|coord_928|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-26",
+      "description": "person",
+      "bbox_norm1000": [
+        218,
+        417,
+        296,
+        748
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_218|><|coord_417|><|coord_296|><|coord_748|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-27",
+      "description": "person",
+      "bbox_norm1000": [
+        718,
+        421,
+        795,
+        839
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_718|><|coord_421|><|coord_795|><|coord_839|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-28",
+      "description": "person",
+      "bbox_norm1000": [
+        788,
+        422,
+        870,
+        729
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_788|><|coord_422|><|coord_870|><|coord_729|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-29",
+      "description": "person",
+      "bbox_norm1000": [
+        645,
+        428,
+        723,
+        668
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_645|><|coord_428|><|coord_723|><|coord_668|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-30",
+      "description": "person",
+      "bbox_norm1000": [
+        148,
+        443,
+        232,
+        757
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_148|><|coord_443|><|coord_232|><|coord_757|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-31",
+      "description": "person",
+      "bbox_norm1000": [
+        862,
+        445,
+        948,
+        914
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_862|><|coord_445|><|coord_948|><|coord_914|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-32",
+      "description": "person",
+      "bbox_norm1000": [
+        408,
+        619,
+        541,
+        956
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_408|><|coord_619|><|coord_541|><|coord_956|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-33",
+      "description": "person",
+      "bbox_norm1000": [
+        140,
+        627,
+        269,
+        999
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_140|><|coord_627|><|coord_269|><|coord_999|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-34",
+      "description": "person",
+      "bbox_norm1000": [
+        655,
+        629,
+        783,
+        945
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_655|><|coord_629|><|coord_783|><|coord_945|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-35",
+      "description": "person",
+      "bbox_norm1000": [
+        279,
+        630,
+        424,
+        989
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_279|><|coord_630|><|coord_424|><|coord_989|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-36",
+      "description": "person",
+      "bbox_norm1000": [
+        515,
+        636,
+        661,
+        952
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_515|><|coord_636|><|coord_661|><|coord_952|><|box_end|>"
+    },
+    {
+      "entity_id": "person-rank-37",
+      "description": "person",
+      "bbox_norm1000": [
+        773,
+        641,
+        899,
+        968
+      ],
+      "row_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_773|><|coord_641|><|coord_899|><|coord_968|><|box_end|>"
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "person-2-and-person-0-before-common-person-3",
+      "arms": {
+        "a_then_b_then_c": {
+          "entity_ids": [
+            "person-rank-2",
+            "person-rank-0",
+            "person-rank-3"
+          ]
+        },
+        "b_then_a_then_c": {
+          "entity_ids": [
+            "person-rank-0",
+            "person-rank-2",
+            "person-rank-3"
+          ]
+        },
+        "b_then_c_coverage_control": {
+          "entity_ids": [
+            "person-rank-0",
+            "person-rank-3"
+          ]
+        },
+        "a_then_c_coverage_control": {
+          "entity_ids": [
+            "person-rank-2",
+            "person-rank-3"
+          ]
+        }
+      },
+      "comparisons": [
+        {
+          "comparison_id": "same_covered_set_order_swap",
+          "arm_names": [
+            "a_then_b_then_c",
+            "b_then_a_then_c"
+          ],
+          "shared_suffix_length": 1,
+          "rollout_horizon_rows": 1,
+          "require_same_covered_set": true
+        },
+        {
+          "comparison_id": "a_omitted_removal_control",
+          "arm_names": [
+            "b_then_a_then_c",
+            "b_then_c_coverage_control"
+          ],
+          "shared_suffix_length": 1,
+          "rollout_horizon_rows": 1,
+          "require_same_covered_set": false
+        },
+        {
+          "comparison_id": "b_omitted_removal_control",
+          "arm_names": [
+            "a_then_b_then_c",
+            "a_then_c_coverage_control"
+          ],
+          "shared_suffix_length": 1,
+          "rollout_horizon_rows": 1,
+          "require_same_covered_set": false
+        }
+      ]
+    },
+    {
+      "case_id": "person-6-and-person-0-before-common-person-2",
+      "arms": {
+        "a_then_b_then_c": {
+          "entity_ids": [
+            "person-rank-6",
+            "person-rank-0",
+            "person-rank-2"
+          ]
+        },
+        "b_then_a_then_c": {
+          "entity_ids": [
+            "person-rank-0",
+            "person-rank-6",
+            "person-rank-2"
+          ]
+        },
+        "b_then_c_coverage_control": {
+          "entity_ids": [
+            "person-rank-0",
+            "person-rank-2"
+          ]
+        },
+        "a_then_c_coverage_control": {
+          "entity_ids": [
+            "person-rank-6",
+            "person-rank-2"
+          ]
+        }
+      },
+      "comparisons": [
+        {
+          "comparison_id": "same_covered_set_order_swap",
+          "arm_names": [
+            "a_then_b_then_c",
+            "b_then_a_then_c"
+          ],
+          "shared_suffix_length": 1,
+          "rollout_horizon_rows": 1,
+          "require_same_covered_set": true
+        },
+        {
+          "comparison_id": "a_omitted_removal_control",
+          "arm_names": [
+            "b_then_a_then_c",
+            "b_then_c_coverage_control"
+          ],
+          "shared_suffix_length": 1,
+          "rollout_horizon_rows": 1,
+          "require_same_covered_set": false
+        },
+        {
+          "comparison_id": "b_omitted_removal_control",
+          "arm_names": [
+            "a_then_b_then_c",
+            "a_then_c_coverage_control"
+          ],
+          "shared_suffix_length": 1,
+          "rollout_horizon_rows": 1,
+          "require_same_covered_set": false
+        }
+      ]
+    },
+    {
+      "case_id": "person-3-and-person-0-before-common-person-4",
+      "arms": {
+        "a_then_b_then_c": {
+          "entity_ids": [
+            "person-rank-3",
+            "person-rank-0",
+            "person-rank-4"
+          ]
+        },
+        "b_then_a_then_c": {
+          "entity_ids": [
+            "person-rank-0",
+            "person-rank-3",
+            "person-rank-4"
+          ]
+        },
+        "b_then_c_coverage_control": {
+          "entity_ids": [
+            "person-rank-0",
+            "person-rank-4"
+          ]
+        },
+        "a_then_c_coverage_control": {
+          "entity_ids": [
+            "person-rank-3",
+            "person-rank-4"
+          ]
+        }
+      },
+      "comparisons": [
+        {
+          "comparison_id": "same_covered_set_order_swap",
+          "arm_names": [
+            "a_then_b_then_c",
+            "b_then_a_then_c"
+          ],
+          "shared_suffix_length": 1,
+          "rollout_horizon_rows": 1,
+          "require_same_covered_set": true
+        },
+        {
+          "comparison_id": "a_omitted_removal_control",
+          "arm_names": [
+            "b_then_a_then_c",
+            "b_then_c_coverage_control"
+          ],
+          "shared_suffix_length": 1,
+          "rollout_horizon_rows": 1,
+          "require_same_covered_set": false
+        },
+        {
+          "comparison_id": "b_omitted_removal_control",
+          "arm_names": [
+            "a_then_b_then_c",
+            "a_then_c_coverage_control"
+          ],
+          "shared_suffix_length": 1,
+          "rollout_horizon_rows": 1,
+          "require_same_covered_set": false
+        }
+      ]
+    },
+    {
+      "case_id": "person-10-and-person-0-before-common-person-14",
+      "arms": {
+        "a_then_b_then_c": {
+          "entity_ids": [
+            "person-rank-10",
+            "person-rank-0",
+            "person-rank-14"
+          ]
+        },
+        "b_then_a_then_c": {
+          "entity_ids": [
+            "person-rank-0",
+            "person-rank-10",
+            "person-rank-14"
+          ]
+        },
+        "b_then_c_coverage_control": {
+          "entity_ids": [
+            "person-rank-0",
+            "person-rank-14"
+          ]
+        },
+        "a_then_c_coverage_control": {
+          "entity_ids": [
+            "person-rank-10",
+            "person-rank-14"
+          ]
+        }
+      },
+      "comparisons": [
+        {
+          "comparison_id": "same_covered_set_order_swap",
+          "arm_names": [
+            "a_then_b_then_c",
+            "b_then_a_then_c"
+          ],
+          "shared_suffix_length": 1,
+          "rollout_horizon_rows": 1,
+          "require_same_covered_set": true
+        },
+        {
+          "comparison_id": "a_omitted_removal_control",
+          "arm_names": [
+            "b_then_a_then_c",
+            "b_then_c_coverage_control"
+          ],
+          "shared_suffix_length": 1,
+          "rollout_horizon_rows": 1,
+          "require_same_covered_set": false
+        },
+        {
+          "comparison_id": "b_omitted_removal_control",
+          "arm_names": [
+            "a_then_b_then_c",
+            "a_then_c_coverage_control"
+          ],
+          "shared_suffix_length": 1,
+          "rollout_horizon_rows": 1,
+          "require_same_covered_set": false
+        }
+      ]
+    }
+  ]
+}

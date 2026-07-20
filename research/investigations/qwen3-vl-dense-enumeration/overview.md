@@ -492,8 +492,18 @@ shows that the scoring checkpoint, not prefix source, owns the bowl,
 umbrella, and bus coordinate modes and that pure cross-entropy wins the
 matched validation-200 comparison; pure cross-entropy is therefore the next
 mechanism baseline and the proposed coordinate-consistency training screen is
-not promoted. The [research compass](compass.md) owns the resulting
-discriminator boundary.
+not promoted. The later [Matched Random-Order-Trained versus Geometry-Sorted-
+Trained Prefix-Order Screen](experiments/2026-07-20-matched-random-sorted-prefix-order-screen/results.md)
+compares the step-`4,887` pure-cross-entropy checkpoints under identical
+literal prompts and frozen prefixes. Random complete-row training changes the
+transition policy but does not create useful covered-set invariance: on image
+`2299` every order and leave-one-out arm routes to one habitual person, and no
+tuple passes symmetric coverage. Geometry-sorted training remains path-
+sensitive but preserves more route diversity and supplies the cleanest local
+category-plus-`x1` intervention. This supports designing a small geometry-
+sorted-base local transition-calibration screen, with execution separately
+authorized and random ordering retained as an ablation. The [research
+compass](compass.md) owns the resulting discriminator boundary.
 
 ## Completed Evidence Units
 
@@ -531,3 +541,4 @@ discriminator boundary.
 | [Matched-Objective Coordinate-Branch Signature Comparison](experiments/2026-07-18-matched-objective-coordinate-branch-signature-comparison/unit.md) | complete; bounded case-level evidence verified; [results](experiments/2026-07-18-matched-objective-coordinate-branch-signature-comparison/results.md); proposed training screen not promoted | Exact current-sampler replication shows the scoring checkpoint, not prefix source, owns the bowl, umbrella, and bus coordinate modes; pure cross-entropy wins the matched validation-200 comparison and becomes the next mechanism baseline. |
 | [Same Covered Physical-Object Set under Different Earlier Prefix Orders](experiments/2026-07-19-same-covered-set-prefix-order-equivalence/unit.md) | complete; bounded evidence verified; [results](experiments/2026-07-19-same-covered-set-prefix-order-equivalence/results.md); training and architecture not promoted | Establishes both a local order-robust emitted-owner suppression case and physical next-owner switches under the same covered set and final row, motivating a short future-horizon value test. |
 | [Common Physical Objects under Different Prefix Permutations and a Short Future Horizon](experiments/2026-07-19-common-object-prefix-permutation-short-horizon/unit.md) | complete for the geometry-sorted pure-cross-entropy checkpoint; bounded evidence verified; [results](experiments/2026-07-19-common-object-prefix-permutation-short-horizon/results.md); matched random-order replication pending; training and architecture not promoted | Finds that same-set prefix order can alter later strict owner sets without generic decoding collapse. Some routes reconverge, while dense image 19109 exposes order-sensitive recurrence of already covered motorcycles; routes next to complete-row covered-versus-uncovered scoring. |
+| [Matched Random-Order-Trained versus Geometry-Sorted-Trained Prefix-Order Screen](experiments/2026-07-20-matched-random-sorted-prefix-order-screen/unit.md) | complete; bounded checkpoint-conditional evidence verified; [results](experiments/2026-07-20-matched-random-sorted-prefix-order-screen/results.md); architecture not promoted; small training-screen design supported | Random complete-row training changes path sensitivity but does not create symmetric covered-set behavior; its image-2299 invariance is one habitual-successor collapse. Geometry-sorted pure cross-entropy remains the pragmatic base for a local transition-calibration screen. |
