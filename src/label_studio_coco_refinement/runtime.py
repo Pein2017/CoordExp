@@ -80,6 +80,24 @@ class DraftCatalogRequest:
     split: str
     project_id: str
     principal: AuthenticatedPrincipal
+    task_ids: Sequence[str] | None = None
+
+    def __post_init__(self) -> None:
+        if self.task_ids is None:
+            return
+        task_ids = self.task_ids
+        if isinstance(task_ids, (str, bytes, bytearray)) or not isinstance(
+            task_ids, Sequence
+        ):
+            raise DraftCatalogError("Draft task scope must be a sequence")
+        frozen = tuple(task_ids)
+        if any(type(task_id) is not str or not task_id for task_id in frozen):
+            raise DraftCatalogError(
+                "Draft task scope must contain non-empty task IDs"
+            )
+        if len(set(frozen)) != len(frozen):
+            raise DraftCatalogError("Draft task scope must contain unique task IDs")
+        object.__setattr__(self, "task_ids", frozen)
 
 
 @dataclass(frozen=True)
@@ -519,6 +537,7 @@ class RefinementRuntime:
         split: str,
         batch_id: str,
         principal: AuthenticatedPrincipal,
+        task_ids: Sequence[str] | None = None,
     ) -> BatchStatusReceipt:
         """Capture and durably enqueue without waiting for background work.
 
@@ -537,12 +556,14 @@ class RefinementRuntime:
             if existing.status is not BatchStatus.NOT_FOUND:
                 return BatchStatusReceipt.from_status_view(existing)
 
+            scoped_task_ids = _validate_task_scope(task_ids)
             project_id = self.project_ids[split]
             capture = self.catalog.capture_current_user_drafts(
                 DraftCatalogRequest(
                     split=split,
                     project_id=project_id,
                     principal=principal,
+                    task_ids=scoped_task_ids,
                 )
             )
             request = self._build_batch_request(
@@ -707,6 +728,21 @@ def _freeze_json(value: Any) -> _FrozenJson:
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         return tuple(_freeze_json(item) for item in value)
     raise DraftCatalogError(f"Draft payload is not JSON-safe: {type(value).__name__}")
+
+
+def _validate_task_scope(task_ids: Sequence[str] | None) -> tuple[str, ...] | None:
+    if task_ids is None:
+        return None
+    if isinstance(task_ids, (str, bytes, bytearray)) or not isinstance(
+        task_ids, Sequence
+    ):
+        raise DraftCatalogError("Draft task scope must be a sequence")
+    frozen = tuple(task_ids)
+    if any(type(task_id) is not str or not task_id for task_id in frozen):
+        raise DraftCatalogError("Draft task scope must contain non-empty task IDs")
+    if len(set(frozen)) != len(frozen):
+        raise DraftCatalogError("Draft task scope must contain unique task IDs")
+    return frozen
 
 
 def _thaw_json(value: Any) -> Any:

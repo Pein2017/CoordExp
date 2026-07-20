@@ -156,6 +156,75 @@ contract boundary.
 - **WHEN** replacement fails or a prior transaction is discovered incomplete
 - **THEN** recovery restores the previous complete pair or finishes the verified new pair before reporting success
 
+### Requirement: Persistent ordered Focus Queue
+The system SHALL maintain at most one active temporary Focus Queue as a durable
+ordered projection of existing task identities. Queue metadata SHALL survive
+browser refresh and service restart until explicit release and SHALL NOT copy
+images, JSONL rows, object payloads, or create another project.
+
+#### Scenario: Valid image paths create a queue
+- **WHEN** every supplied path exists beneath the approved shared-image root, maps uniquely to the current max_len12000 index, belongs to one split, and is not duplicated
+- **THEN** one transaction creates the active queue in exact supplied order and Focus navigation exposes only those tasks
+
+#### Scenario: Any requested member is invalid
+- **WHEN** a path is absent, outside the approved root, ambiguous, unindexed, duplicated, or belongs to another split
+- **THEN** the whole create request fails with member-specific errors and no active queue metadata is changed
+
+#### Scenario: Another queue is active
+- **WHEN** create is requested before the active queue is released
+- **THEN** the request fails without replacing or merging the existing queue
+
+#### Scenario: Service restarts with an active queue
+- **WHEN** SQLite and project identities remain valid across restart
+- **THEN** the same ordered queue resumes without reimporting tasks or annotations
+
+#### Scenario: Queue is released
+- **WHEN** the operator explicitly releases the active queue
+- **THEN** only queue metadata is deleted while every Draft, batch, generation, published annotation, original file, and image remains unchanged
+
+#### Scenario: Queue release is requested while work is active
+- **WHEN** the Focus batch is nonterminal or its automatic publication is waiting or running
+- **THEN** release fails Busy and preserves the complete queue/status chain
+
+### Requirement: Focus-scoped Commit and automatic training publication
+The system SHALL offer a Focus Commit that captures only pending Drafts whose
+stable task identities are members of the active queue. After terminal batch
+success it SHALL asynchronously publish that generation to the selected
+split's derived max_len12000 norm/coord pair through the validated
+transactional publisher.
+
+#### Scenario: Focus queue has pending Drafts
+- **WHEN** the operator invokes Focus Commit after the active Draft save completes
+- **THEN** one immutable batch captures every and only eligible pending queue member and editing/navigation remain available while it runs
+
+#### Scenario: Another same-split Commit overlaps Focus work
+- **WHEN** a Focus capture, batch, or training publication is nonterminal and another Focus or ordinary Commit is requested for that split
+- **THEN** the existing capture/admission barrier accepts at most one durable batch, rejects the other request Busy, and never freezes the same Draft revision/hash into two batches
+
+#### Scenario: Focus queue has no pending Drafts
+- **WHEN** no active queue member differs from its committed baseline
+- **THEN** the service reports an empty capture without creating a batch or publishing training files
+
+#### Scenario: Focus batch and publication succeed
+- **WHEN** the scoped batch reaches a terminal generation and the publisher validates image bindings, norm/coord equivalence, loader compatibility, and the 12000-token ceiling
+- **THEN** that split's derived norm/coord pair advances transactionally and one status chain binds queue, batch, generation, and publication receipt
+
+#### Scenario: Training publication fails
+- **WHEN** token-budget or publication validation fails after the Focus batch committed
+- **THEN** the successful working generation remains authoritative, the previous training pair remains complete, the queue remains active and reserves same-split Commit admission, and status exposes a retryable publication failure without recapturing Drafts
+
+#### Scenario: Failed publication is released instead of retried
+- **WHEN** the operator releases a terminal failed Focus publication
+- **THEN** only its queue/retry metadata is abandoned, annotation and generation state remain, and later same-split Commit admission becomes available
+
+#### Scenario: Service restarts between Commit and publication
+- **WHEN** a persisted Focus batch succeeded but its bound publication is absent or nonterminal after restart
+- **THEN** the service resumes publication from the same queue, batch, split, and terminal generation without recapturing Drafts or allowing a newer same-split generation to overtake it
+
+#### Scenario: Ordinary workflow is used while a queue exists
+- **WHEN** the operator requests direct/full-dataset navigation or ordinary same-split Commit
+- **THEN** full navigation remains available; ordinary Commit retains its full-split scope and is accepted after Focus publication succeeds or its failed retry intent is explicitly released
+
 ### Requirement: Legacy isolation and rollback
 The standalone runtime SHALL use a distinct port, runtime root, SQLite state,
 and Draft namespace from the legacy Label Studio runtime until explicit user

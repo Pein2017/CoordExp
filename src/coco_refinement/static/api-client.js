@@ -55,6 +55,7 @@ export function createApiClient({
     getJson(path) { return requestJson(path); },
     postJson(path, body) { return requestJson(path, { method: 'POST', body, mutation: true }); },
     putJson(path, body) { return requestJson(path, { method: 'PUT', body, mutation: true }); },
+    deleteJson(path) { return requestJson(path, { method: 'DELETE', mutation: true }); },
   });
 }
 

@@ -13,12 +13,17 @@ from src.coco_refinement.repository import (
     CompactTaskRecord,
     DraftSaveApplied,
     DraftSaveConflict,
+    FocusQueueActiveError,
+    FocusQueueBusyError,
+    FocusQueueConflictError,
+    FocusQueueNotFoundError,
     MutationCollisionError,
     ProjectRecord,
     RepositoryCorruptionError,
     RepositoryInvariantError,
     SaveDraftRequest,
     SqliteDraftRepository,
+    TaskNotFoundError,
 )
 
 
@@ -124,6 +129,46 @@ def _request(
             else committed
         ),  # type: ignore[arg-type]
         draft=draft,  # type: ignore[arg-type]
+    )
+
+
+def _request_for_task(
+    task: CompactTaskRecord,
+    *,
+    mutation_id: str,
+    x1: int,
+) -> SaveDraftRequest:
+    committed = canonicalize_objects(
+        [
+            {
+                "region_key": f"train:coco:{task.identity.image_id}",
+                "bbox_2d": [1, 2, 3, 4],
+                "category_name": "person",
+                "category_id": 1,
+                "coco_ann_id": task.identity.image_id,
+            }
+        ],
+        split="train",
+    )
+    return SaveDraftRequest(
+        project_id=task.project_id,
+        task_id=task.task_id,
+        mutation_id=mutation_id,
+        expected_revision=0,
+        expected_generation=task.current_generation,
+        expected_base_row_hash=task.base_row_hash,
+        committed=committed,
+        draft=canonicalize_objects(
+            [
+                {
+                    "region_key": f"local:00000000-0000-4000-8000-{task.identity.image_id:012d}",
+                    "bbox_2d": [x1, 20, 300, 400],
+                    "category_name": "person",
+                    "category_id": 1,
+                }
+            ],
+            split="train",
+        ),
     )
 
 
@@ -603,14 +648,21 @@ def test_empty_unversioned_database_is_initialized_atomically(tmp_path: Path) ->
     SqliteDraftRepository(path)
 
     with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
         tables = {
             row[0]
             for row in connection.execute(
                 "SELECT name FROM sqlite_master WHERE type = 'table'"
             )
         }
-    assert tables == {"projects", "tasks", "drafts", "mutations"}
+    assert tables == {
+        "projects",
+        "tasks",
+        "drafts",
+        "mutations",
+        "focus_queues",
+        "focus_queue_members",
+    }
 
 
 def test_version_one_missing_tables_is_rejected_without_self_healing(
@@ -762,3 +814,285 @@ def test_empty_object_list_is_repository_data_not_a_commit_policy(
     assert response.state.revision == 1
     assert response.state.draft == empty
     assert response.state.draft.to_json_regions() == []
+
+
+def test_version_one_migrates_additively_without_losing_runtime_state(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "state.sqlite3"
+    repository = _repository(path)
+    draft = canonicalize_objects([_object()], split="train")
+    applied = repository.save_draft(_request(draft, mutation_id="before-v2"))
+    with sqlite3.connect(path) as connection:
+        connection.execute("DROP TABLE focus_queue_members")
+        connection.execute("DROP TABLE focus_queues")
+        connection.execute("DROP INDEX tasks_image_locator")
+        connection.execute("PRAGMA user_version = 1")
+
+    migrated = SqliteDraftRepository(path)
+
+    assert migrated.get_task_state("coco:train", "train:7") == applied.state
+    assert migrated.count_drafts(project_id="coco:train") == 1
+    assert migrated.count_mutations() == 1
+    assert migrated.get_focus_queue() is None
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert connection.execute(
+            "SELECT COUNT(*) FROM tasks"
+        ).fetchone()[0] == 1
+
+
+def test_resolve_tasks_by_locators_is_indexed_exact_and_order_preserving(
+    tmp_path: Path,
+) -> None:
+    tasks = tuple(_task(image_id=7 + index, row=index) for index in range(3))
+    repository = _repository(tmp_path / "state.sqlite3", tasks=tasks)
+
+    resolved = repository.resolve_tasks_by_locators(
+        (tasks[2].image_locator, tasks[0].image_locator)
+    )
+
+    assert resolved == (tasks[2], tasks[0])
+    with sqlite3.connect(repository.path) as connection:
+        assert tuple(
+            row[2]
+            for row in connection.execute("PRAGMA index_info(tasks_image_locator)")
+        ) == ("image_locator",)
+
+
+def test_resolve_tasks_by_locators_rejects_duplicate_missing_and_mixed_scope(
+    tmp_path: Path,
+) -> None:
+    train = _task()
+    repository = _repository(tmp_path / "state.sqlite3", tasks=(train,))
+    val = replace(
+        train,
+        project_id="coco:val",
+        identity=NativeTaskIdentity(split="val", image_id=8, source_row_index=0),
+        image_locator="val2017/000000000008.jpg",
+    )
+    repository.bootstrap_project(
+        ProjectRecord(
+            project_id="coco:val",
+            split="val",
+            source_fingerprint=_digest("d"),
+            task_count=1,
+        ),
+        (val,),
+    )
+
+    with pytest.raises(RepositoryInvariantError) as duplicate:
+        repository.resolve_tasks_by_locators((train.image_locator, train.image_locator))
+    assert duplicate.value.code == "coco_refinement.focus_locator_duplicate"
+    with pytest.raises(RepositoryInvariantError) as missing:
+        repository.resolve_tasks_by_locators(("train2017/missing.jpg",))
+    assert missing.value.code == "coco_refinement.focus_locator_resolution"
+    with pytest.raises(RepositoryInvariantError) as mixed:
+        repository.resolve_tasks_by_locators(
+            (train.image_locator, val.image_locator)
+        )
+    assert mixed.value.code == "coco_refinement.focus_locator_scope"
+
+
+def test_focus_queue_create_is_atomic_ordered_idempotent_and_restart_safe(
+    tmp_path: Path,
+) -> None:
+    tasks = tuple(_task(image_id=7 + index, row=index) for index in range(3))
+    path = tmp_path / "state.sqlite3"
+    repository = _repository(path, tasks=tasks)
+
+    created = repository.create_focus_queue(
+        queue_id="focus-1",
+        project_id="coco:train",
+        split="train",
+        task_ids=(tasks[2].task_id, tasks[0].task_id),
+    )
+
+    assert created.task_ids == (tasks[2].task_id, tasks[0].task_id)
+    assert tuple(member.position for member in created.members) == (0, 1)
+    assert created.commit_status == "idle"
+    assert created.publication_status == "idle"
+    assert repository.create_focus_queue(
+        queue_id="focus-1",
+        project_id="coco:train",
+        split="train",
+        task_ids=created.task_ids,
+    ) == created
+    assert SqliteDraftRepository(path).get_focus_queue() == created
+
+    with pytest.raises(FocusQueueActiveError):
+        repository.create_focus_queue(
+            queue_id="focus-2",
+            project_id="coco:train",
+            split="train",
+            task_ids=(tasks[1].task_id,),
+        )
+
+
+def test_focus_queue_create_validation_rolls_back_everything(tmp_path: Path) -> None:
+    tasks = (_task(image_id=7, row=0), _task(image_id=8, row=1))
+    repository = _repository(tmp_path / "state.sqlite3", tasks=tasks)
+
+    with pytest.raises(TaskNotFoundError) as missing:
+        repository.create_focus_queue(
+            queue_id="bad-focus",
+            project_id="coco:train",
+            split="train",
+            task_ids=(tasks[0].task_id, "train:999"),
+        )
+    assert missing.value.code == "coco_refinement.task_scope"
+    assert repository.get_focus_queue() is None
+    with sqlite3.connect(repository.path) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM focus_queue_members"
+        ).fetchone()[0] == 0
+
+    with pytest.raises(RepositoryInvariantError) as duplicate:
+        repository.create_focus_queue(
+            queue_id="bad-focus",
+            project_id="coco:train",
+            split="train",
+            task_ids=(tasks[0].task_id, tasks[0].task_id),
+        )
+    assert duplicate.value.code == "coco_refinement.focus_member_duplicate"
+    assert repository.get_focus_queue() is None
+
+
+def test_focus_queue_status_is_cas_updated_and_supports_later_batches(
+    tmp_path: Path,
+) -> None:
+    repository = _repository(tmp_path / "state.sqlite3")
+    queue = repository.create_focus_queue(
+        queue_id="focus-status",
+        project_id="coco:train",
+        split="train",
+        task_ids=("train:7",),
+    )
+    bound = repository.bind_focus_batch(
+        queue_id=queue.queue_id,
+        expected_updated_at=queue.updated_at,
+        batch_id="batch-1",
+    )
+    assert bound.batch_id == "batch-1"
+    assert bound.commit_status == "waiting"
+    queued = repository.update_focus_queue(
+        queue_id=queue.queue_id,
+        expected_updated_at=bound.updated_at,
+        commit_status="queued",
+    )
+    running = repository.update_focus_queue(
+        queue_id=queue.queue_id,
+        expected_updated_at=queued.updated_at,
+        commit_status="running",
+    )
+    reconciling = repository.update_focus_queue(
+        queue_id=queue.queue_id,
+        expected_updated_at=running.updated_at,
+        commit_status="reconciling",
+    )
+    committed = repository.update_focus_queue(
+        queue_id=queue.queue_id,
+        expected_updated_at=reconciling.updated_at,
+        commit_status="succeeded",
+        publication_status="running",
+        committed_generation=4,
+    )
+    published = repository.update_focus_queue(
+        queue_id=queue.queue_id,
+        expected_updated_at=committed.updated_at,
+        publication_status="succeeded",
+        publication_receipt={"generation": 4, "path": "val.norm.jsonl"},
+    )
+    assert published.publication_receipt == {
+        "generation": 4,
+        "path": "val.norm.jsonl",
+    }
+
+    with pytest.raises(FocusQueueConflictError):
+        repository.update_focus_queue(
+            queue_id=queue.queue_id,
+            expected_updated_at=committed.updated_at,
+            error="stale writer",
+        )
+    second = repository.bind_focus_batch(
+        queue_id=queue.queue_id,
+        expected_updated_at=published.updated_at,
+        batch_id="batch-2",
+    )
+    assert second.batch_id == "batch-2"
+    assert second.commit_status == "waiting"
+    assert second.publication_status == "idle"
+    assert second.committed_generation is None
+    assert second.publication_receipt is None
+
+
+def test_focus_release_rejects_background_work_and_preserves_annotations(
+    tmp_path: Path,
+) -> None:
+    repository = _repository(tmp_path / "state.sqlite3")
+    repository.save_draft(
+        _request(canonicalize_objects([_object()], split="train"), mutation_id="draft")
+    )
+    queue = repository.create_focus_queue(
+        queue_id="focus-release",
+        project_id="coco:train",
+        split="train",
+        task_ids=("train:7",),
+    )
+    busy = repository.bind_focus_batch(
+        queue_id=queue.queue_id,
+        expected_updated_at=queue.updated_at,
+        batch_id="batch-release",
+    )
+    with pytest.raises(FocusQueueBusyError):
+        repository.release_focus_queue(queue_id=queue.queue_id)
+    failed = repository.update_focus_queue(
+        queue_id=queue.queue_id,
+        expected_updated_at=busy.updated_at,
+        commit_status="failed",
+        error="worker stopped",
+    )
+    assert failed.error == "worker stopped"
+
+    repository.release_focus_queue(queue_id=queue.queue_id)
+
+    assert repository.get_focus_queue() is None
+    assert repository.count_drafts(project_id="coco:train") == 1
+    assert repository.count_mutations() == 1
+    with pytest.raises(FocusQueueNotFoundError):
+        repository.release_focus_queue(queue_id=queue.queue_id)
+
+
+def test_scoped_capture_and_count_validate_identity_and_keep_source_order(
+    tmp_path: Path,
+) -> None:
+    tasks = tuple(_task(image_id=7 + index, row=index) for index in range(3))
+    repository = _repository(tmp_path / "state.sqlite3", tasks=tasks)
+    repository.save_draft(_request_for_task(tasks[0], mutation_id="draft-0", x1=10))
+    repository.save_draft(_request_for_task(tasks[2], mutation_id="draft-2", x1=12))
+
+    capture = repository.capture_pending_draft_states(
+        project_id="coco:train",
+        split="train",
+        task_ids=(tasks[2].task_id, tasks[0].task_id),
+    )
+
+    assert tuple(state.task_id for state in capture.states) == (
+        tasks[0].task_id,
+        tasks[2].task_id,
+    )
+    assert repository.count_pending_drafts(
+        project_id="coco:train", task_ids=(tasks[1].task_id, tasks[2].task_id)
+    ) == 1
+    assert repository.capture_pending_draft_states(
+        project_id="coco:train", split="train", task_ids=()
+    ).states == ()
+    assert repository.count_pending_drafts(
+        project_id="coco:train", task_ids=()
+    ) == 0
+    with pytest.raises(TaskNotFoundError):
+        repository.capture_pending_draft_states(
+            project_id="coco:train",
+            split="train",
+            task_ids=(tasks[0].task_id, "val:7"),
+        )

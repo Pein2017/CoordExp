@@ -202,3 +202,43 @@ process.stdout.write(JSON.stringify(projected));
         for vector in vectors
     ]
     assert actual == expected
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node is optional test tooling")
+def test_api_client_delete_is_same_origin_and_csrf_protected() -> None:
+    module_uri = (
+        Path(service_module.__file__).with_name("static") / "api-client.js"
+    ).as_uri()
+    script = """
+import { createApiClient } from %s;
+const calls = [];
+const fetchImpl = async (path, options) => {
+  calls.push({path, options});
+  const body = path === '/api/session' ? {csrf_token: 'focus-csrf'} : {active: false};
+  return {ok: true, status: 200, async json() { return body; }};
+};
+const client = createApiClient({fetchImpl, origin: 'http://127.0.0.1:9144'});
+await client.bootstrapSession();
+await client.deleteJson('/api/focus');
+process.stdout.write(JSON.stringify(calls));
+""" % json.dumps(module_uri)
+
+    completed = subprocess.run(
+        [
+            shutil.which("node") or "node",
+            "--experimental-default-type=module",
+            "--input-type=module",
+            "--eval",
+            script,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    calls = json.loads(completed.stdout)
+
+    assert calls[1]["path"] == "/api/focus"
+    assert calls[1]["options"]["method"] == "DELETE"
+    assert calls[1]["options"]["headers"]["x-csrf-token"] == "focus-csrf"
+    assert calls[1]["options"]["credentials"] == "same-origin"
+    assert "body" not in calls[1]["options"]

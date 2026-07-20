@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 import re
 from typing import Any, Protocol
@@ -47,7 +47,12 @@ class CommitServiceError(RuntimeContractError):
 
 class _RuntimeCore(Protocol):
     def capture_and_enqueue(
-        self, *, split: str, batch_id: str, principal: AuthenticatedPrincipal
+        self,
+        *,
+        split: str,
+        batch_id: str,
+        principal: AuthenticatedPrincipal,
+        task_ids: Sequence[str] | None = None,
     ) -> BatchStatusReceipt: ...
 
     def batch_status(self, *, split: str, batch_id: str) -> BatchStatusReceipt: ...
@@ -226,8 +231,22 @@ class CommitService:
             accepting_writes=lambda: bool(getattr(runtime, "accepting_writes", False)),
         )
 
-    def enqueue(self, *, split: str, batch_id: str) -> SafeCommitStatus:
+    def enqueue(
+        self,
+        *,
+        split: str,
+        batch_id: str,
+        task_ids: Sequence[str] | None = None,
+        focus_queue_id: str | None = None,
+    ) -> SafeCommitStatus:
         selected = _split(split)
+        scoped_task_ids = _task_scope(task_ids)
+        self._assert_focus_admission(
+            split=selected,
+            batch_id=batch_id,
+            task_ids=scoped_task_ids,
+            focus_queue_id=focus_queue_id,
+        )
         if not self.accepting_writes():
             try:
                 return self.status(split=selected, batch_id=batch_id)
@@ -247,6 +266,7 @@ class CommitService:
                     user_id=LOCAL_OPERATOR,
                     authenticated=True,
                 ),
+                task_ids=scoped_task_ids,
             )
         except NoEligibleDraftsError as exc:
             raise CommitServiceError(
@@ -297,6 +317,59 @@ class CommitService:
                 code="coco_refinement.commit_busy",
             )
         return safe
+
+    def _assert_focus_admission(
+        self,
+        *,
+        split: Split,
+        batch_id: str,
+        task_ids: tuple[str, ...] | None,
+        focus_queue_id: str | None,
+    ) -> None:
+        """Keep ordinary and foreign Commit calls out of active Focus work."""
+
+        if focus_queue_id is not None and (
+            not isinstance(focus_queue_id, str) or not focus_queue_id
+        ):
+            raise CommitServiceError(
+                "Focus Queue identity must be non-empty text",
+                code="coco_refinement.commit_invalid_scope",
+            )
+        focus = self.repository.get_focus_queue()
+        if focus is None:
+            if focus_queue_id is not None:
+                raise CommitServiceError(
+                    "Focus Queue is no longer active",
+                    code="coco_refinement.commit_busy",
+                )
+            return
+        if focus_queue_id is not None:
+            matches = (
+                focus_queue_id == focus.queue_id
+                and focus.split == split
+                and task_ids == focus.task_ids
+                and (focus.batch_id is None or focus.batch_id == batch_id)
+            )
+            if not matches:
+                raise CommitServiceError(
+                    "another Focus Queue owns the Commit scope",
+                    code="coco_refinement.commit_busy",
+                )
+            return
+        active = (
+            focus.commit_status in {"waiting", "queued", "running", "reconciling"}
+            or focus.publication_status in {"waiting", "running"}
+            or (
+                focus.commit_status == "succeeded"
+                and focus.publication_status == "failed"
+            )
+        )
+        if not active or focus.split != split:
+            return
+        raise CommitServiceError(
+            "split Commit authority is reserved by active Focus work",
+            code="coco_refinement.commit_busy",
+        )
 
     def status(self, *, split: str, batch_id: str) -> SafeCommitStatus:
         selected = _split(split)
@@ -478,6 +551,30 @@ def _is_sha256(value: object) -> bool:
 
 def _is_batch_id(value: object) -> bool:
     return isinstance(value, str) and _BATCH_ID_RE.fullmatch(value) is not None
+
+
+def _task_scope(task_ids: Sequence[str] | None) -> tuple[str, ...] | None:
+    if task_ids is None:
+        return None
+    if isinstance(task_ids, (str, bytes, bytearray)) or not isinstance(
+        task_ids, Sequence
+    ):
+        raise CommitServiceError(
+            "Commit task scope must be a sequence",
+            code="coco_refinement.commit_invalid_scope",
+        )
+    frozen = tuple(task_ids)
+    if any(type(task_id) is not str or not task_id for task_id in frozen):
+        raise CommitServiceError(
+            "Commit task scope must contain non-empty task IDs",
+            code="coco_refinement.commit_invalid_scope",
+        )
+    if len(set(frozen)) != len(frozen):
+        raise CommitServiceError(
+            "Commit task scope must contain unique task IDs",
+            code="coco_refinement.commit_invalid_scope",
+        )
+    return frozen
 
 
 def _split(value: str) -> Split:

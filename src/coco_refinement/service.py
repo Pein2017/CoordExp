@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.common.errors import DataContractError, RuntimeContractError
 from src.coco_refinement.commit_service import CommitService, CommitServiceError
+from src.coco_refinement.focus_service import FocusQueueService, FocusQueueServiceError
 from src.coco_refinement.http_security import (
     LOCAL_OPERATOR,
     LocalHttpSecurity,
@@ -66,7 +67,8 @@ class DraftPutBody(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     mutation_id: Annotated[
-        str, Field(min_length=1, max_length=200, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
+        str,
+        Field(min_length=1, max_length=200, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$"),
     ]
     expected_revision: Annotated[int, Field(ge=0)]
     expected_generation: Annotated[int, Field(ge=0)]
@@ -85,6 +87,12 @@ class CommitPostBody(BaseModel):
     ]
 
 
+class FocusCreateBody(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    image_paths: Annotated[list[str], Field(min_length=1, max_length=1000)]
+
+
 class _ObjectProjectionBody(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -100,7 +108,8 @@ class _ObjectProjectionBody(BaseModel):
 class CreateObjectProjectionBody(_ObjectProjectionBody):
     operation: Literal["create"]
     request_id: Annotated[
-        str, Field(min_length=1, max_length=200, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
+        str,
+        Field(min_length=1, max_length=200, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$"),
     ]
 
 
@@ -124,6 +133,7 @@ def create_service_app(
     allow_browser_port_remap: bool = False,
     sessions: OpaqueSessionStore | None = None,
     commit_service: CommitService | None = None,
+    focus_service: FocusQueueService | None = None,
 ) -> FastAPI:
     """Build the HTTP app without binding a port or changing runtime lifecycle."""
 
@@ -147,6 +157,7 @@ def create_service_app(
     )
     app.state.task_service = task_service
     app.state.commit_service = commit_service
+    app.state.focus_service = focus_service
     app.state.local_principal = LOCAL_OPERATOR
     app.state.bound_authority = authority
     app.state.browser_authority = browser_authority
@@ -166,7 +177,9 @@ def create_service_app(
         )
 
     @app.exception_handler(TaskNotFoundError)
-    async def task_not_found(_request: Request, _exc: TaskNotFoundError) -> JSONResponse:
+    async def task_not_found(
+        _request: Request, _exc: TaskNotFoundError
+    ) -> JSONResponse:
         return _error_response(
             404, "coco_refinement.task_not_found", "task was not found"
         )
@@ -245,6 +258,43 @@ def create_service_app(
             status, exc.code, "Commit request could not be completed"
         )
 
+    @app.exception_handler(FocusQueueServiceError)
+    async def focus_service_error(
+        _request: Request, exc: FocusQueueServiceError
+    ) -> JSONResponse:
+        if exc.code == "coco_refinement.focus_not_found":
+            status = 404
+        elif exc.code in {
+            "coco_refinement.focus_busy",
+            "coco_refinement.focus_active",
+            "coco_refinement.focus_conflict",
+            "coco_refinement.commit_busy",
+            "coco_refinement.focus_publication_not_retryable",
+            "coco_refinement.focus_publication_retry_required",
+            "coco_refinement.no_pending_drafts",
+        }:
+            status = 409
+        elif exc.code in {
+            "coco_refinement.focus_paths",
+            "coco_refinement.focus_tasks",
+            "coco_refinement.focus_split",
+            "coco_refinement.focus_locators",
+            "coco_refinement.focus_locator_duplicate",
+            "coco_refinement.focus_locator_resolution",
+            "coco_refinement.focus_locator_scope",
+        }:
+            status = 422
+        else:
+            status = 503
+        error: dict[str, Any] = {"code": exc.code, "message": exc.message}
+        if exc.context:
+            error["details"] = dict(exc.context)
+        return JSONResponse(
+            {"error": error},
+            status_code=status,
+            headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
+        )
+
     @app.exception_handler(DataContractError)
     async def data_contract_error(
         _request: Request, exc: DataContractError
@@ -252,9 +302,7 @@ def create_service_app(
         return _error_response(422, exc.code, "Draft objects are invalid")
 
     @app.exception_handler(RepositoryError)
-    async def repository_error(
-        _request: Request, exc: RepositoryError
-    ) -> JSONResponse:
+    async def repository_error(_request: Request, exc: RepositoryError) -> JSONResponse:
         if exc.code == "coco_refinement.task_bound_identity":
             return _error_response(422, exc.code, "Draft objects are invalid")
         status = 422 if exc.code == "coco_refinement.task_cursor" else 503
@@ -351,8 +399,12 @@ def create_service_app(
             split=split,
             task_id=task_id,
             operation=body.operation,
-            request_id=body.request_id if isinstance(body, CreateObjectProjectionBody) else None,
-            region_key=body.region_key if isinstance(body, UpdateObjectProjectionBody) else None,
+            request_id=body.request_id
+            if isinstance(body, CreateObjectProjectionBody)
+            else None,
+            region_key=body.region_key
+            if isinstance(body, UpdateObjectProjectionBody)
+            else None,
             pixel_xyxy=body.pixel_xyxy,
             category_name=body.category_name,
             expected_revision=body.expected_revision,
@@ -405,6 +457,30 @@ def create_service_app(
         ) -> dict[str, Any]:
             return commit_service.project_state(split=split).to_dict()
 
+    if focus_service is not None:
+
+        @app.get("/api/focus")
+        async def get_focus_queue() -> dict[str, Any]:
+            return focus_service.status()
+
+        @app.post("/api/focus")
+        async def create_focus_queue(body: FocusCreateBody) -> JSONResponse:
+            return JSONResponse(focus_service.create(body.image_paths), status_code=201)
+
+        @app.delete("/api/focus")
+        async def release_focus_queue() -> dict[str, Any]:
+            return focus_service.release()
+
+        @app.post("/api/focus/commits")
+        async def enqueue_focus_commit(body: CommitPostBody) -> JSONResponse:
+            value = focus_service.enqueue(batch_id=body.batch_id)
+            status = value.get("queue", {}).get("batch", {}).get("status")
+            return JSONResponse(value, status_code=202 if status == "queued" else 200)
+
+        @app.post("/api/focus/publication/retry")
+        async def retry_focus_publication() -> JSONResponse:
+            return JSONResponse(focus_service.retry_publication(), status_code=202)
+
     @app.get("/", include_in_schema=False)
     async def get_application_shell() -> Response:
         return _static_file("index.html", media_type="text/html")
@@ -425,9 +501,7 @@ def create_service_app(
 
     @app.get("/api-client.js", include_in_schema=False)
     async def get_api_client_module() -> Response:
-        return _static_file(
-            "api-client.js", media_type=_STATIC_ASSETS["api-client.js"]
-        )
+        return _static_file("api-client.js", media_type=_STATIC_ASSETS["api-client.js"])
 
     @app.get("/draft-controller.js", include_in_schema=False)
     async def get_draft_controller_module() -> Response:
@@ -449,9 +523,7 @@ def create_service_app(
 
     @app.get("/svg-editor.js", include_in_schema=False)
     async def get_svg_editor_module() -> Response:
-        return _static_file(
-            "svg-editor.js", media_type=_STATIC_ASSETS["svg-editor.js"]
-        )
+        return _static_file("svg-editor.js", media_type=_STATIC_ASSETS["svg-editor.js"])
 
     return app
 
@@ -467,6 +539,7 @@ def create_runtime_service_app(
 ) -> FastAPI:
     """Adapt an assembled runtime to HTTP while leaving bind/start to the launcher."""
 
+    commit_service = CommitService.from_runtime(runtime)
     return create_service_app(
         TaskService.from_runtime(runtime),
         bind_host=bind_host,
@@ -474,7 +547,10 @@ def create_runtime_service_app(
         browser_origin=browser_origin,
         allow_browser_port_remap=allow_browser_port_remap,
         sessions=sessions,
-        commit_service=CommitService.from_runtime(runtime),
+        commit_service=commit_service,
+        focus_service=FocusQueueService.from_runtime(
+            runtime, commit_service=commit_service
+        ),
     )
 
 
@@ -509,6 +585,7 @@ __all__ = [
     "CommitPostBody",
     "CreateObjectProjectionBody",
     "DraftPutBody",
+    "FocusCreateBody",
     "UpdateObjectProjectionBody",
     "create_runtime_service_app",
     "create_service_app",

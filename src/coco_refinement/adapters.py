@@ -95,6 +95,7 @@ class SqliteDraftCatalog:
             capture = self.repository.capture_pending_draft_states(
                 project_id=request.project_id,
                 split=request.split,  # type: ignore[arg-type]
+                task_ids=request.task_ids,
             )
         except RepositoryError as exc:
             raise AdapterContractError(

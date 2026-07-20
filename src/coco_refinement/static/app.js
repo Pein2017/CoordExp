@@ -12,6 +12,8 @@ const state = {
   interactionPromise: null, navigationReminder: false,
   commitActionPromise: null,
   commitRebindTarget: null, commitRebindPromise: null, commitRebindError: null,
+  navigationView: 'full', focus: null, focusActionPromise: null,
+  focusPollTimer: null, focusRequest: 0,
 };
 const $ = id => document.getElementById(id);
 const api = createApiClient();
@@ -76,7 +78,8 @@ function commitRebindRequired() {
 }
 
 const navigationBusy = () => Boolean(
-  state.interactionBusy || state.commitActionPromise || state.commitRebindPromise,
+  state.interactionBusy || state.commitActionPromise || state.focusActionPromise
+    || state.commitRebindPromise,
 );
 
 function semanticActionLocked(snapshot = controller.getState()) {
@@ -86,7 +89,11 @@ function semanticActionLocked(snapshot = controller.getState()) {
 
 function renderPage() {
   const page = state.page;
-  $('page-summary').textContent = page && page.total ? `${page.cursor + 1}–${Math.min(page.cursor + page.tasks.length, page.total)} / ${page.total}` : page ? '0 / 0' : '—';
+  const focusView = state.navigationView === 'focus';
+  $('task-list-heading').textContent = focusView ? 'Focus queue' : 'Tasks';
+  $('page-summary').textContent = focusView && page
+    ? `${pagePosition()} / ${page.total}`
+    : page && page.total ? `${page.cursor + 1}–${Math.min(page.cursor + page.tasks.length, page.total)} / ${page.total}` : page ? '0 / 0' : '—';
   $('task-list').replaceChildren(...(page?.tasks || []).map((task, index) => {
     const li = document.createElement('li');
     const button = document.createElement('button');
@@ -97,10 +104,16 @@ function renderPage() {
   }));
   $('previous-button').disabled = navigationBusy() || !page || page.cursor + state.selected <= 0;
   $('next-button').disabled = navigationBusy() || !page || page.cursor + state.selected + 1 >= page.total;
-  $('split-select').disabled = navigationBusy();
+  $('split-select').disabled = navigationBusy() || focusView;
   $('sample-number').disabled = navigationBusy();
   $('jump-button').disabled = navigationBusy();
   $('sample-number').value = page && state.selected >= 0 ? String(page.cursor + state.selected + 1) : '';
+  $('commit-button').hidden = focusView;
+  $('commit-status').hidden = focusView;
+  $('focus-commit-button').hidden = !focusView;
+  $('view-full-button').setAttribute('aria-pressed', String(!focusView));
+  $('view-focus-button').setAttribute('aria-pressed', String(focusView));
+  if (state.focus) renderFocusState();
 }
 
 function renderTaskShell() {
@@ -200,7 +213,7 @@ function renderDraftState(snapshot) {
   for (const control of visibilityControls) control.disabled = !state.taskOpen;
   $('hide-selected').disabled = !state.taskOpen || !state.selectedRegion;
   for (const button of $('task-list').querySelectorAll('button')) button.disabled = navigationBusy();
-  $('split-select').disabled = navigationBusy();
+  $('split-select').disabled = navigationBusy() || state.navigationView === 'focus';
   $('sample-number').disabled = navigationBusy();
   $('jump-button').disabled = navigationBusy();
   $('previous-button').disabled = navigationBusy() || !state.page || pagePosition() <= 1;
@@ -235,6 +248,97 @@ function renderCommitState(snapshot) {
   $('commit-button').disabled = Boolean(state.commitActionPromise) || snapshot.busy || active || (!snapshot.canRetry && (
     !snapshot.projectState || !snapshot.projectState.accepting_writes || pending === 0
   ));
+}
+
+const FOCUS_ACTIVE_STATES = new Set(['queued', 'running', 'reconciling', 'waiting', 'publishing']);
+
+function focusState(value, fallback = 'idle') {
+  if (!value) return fallback;
+  const candidate = value.status ?? value.state ?? value.phase;
+  return typeof candidate === 'string' && candidate ? candidate.toLowerCase() : fallback;
+}
+
+function focusTone(value) {
+  const current = focusState(value);
+  return ['failed', 'error'].includes(current) ? 'error'
+    : ['succeeded', 'published', 'complete', 'completed'].includes(current) ? 'ok' : 'pending';
+}
+
+function focusChainActive(queue = state.focus) {
+  if (!queue) return false;
+  const batch = focusState(queue.batch);
+  const publication = focusState(queue.publication);
+  return FOCUS_ACTIVE_STATES.has(batch)
+    || FOCUS_ACTIVE_STATES.has(publication)
+    || (batch === 'succeeded' && publication === 'idle');
+}
+
+function renderFocusState() {
+  const queue = state.focus;
+  const panel = $('focus-panel');
+  panel.hidden = !queue;
+  if (!queue) return;
+  const members = Array.isArray(queue.members) ? queue.members : [];
+  const pending = Number.isInteger(queue.pending_draft_count) ? queue.pending_draft_count : 0;
+  const position = state.navigationView === 'focus' ? pagePosition() : 0;
+  $('focus-queue-status').textContent = `Focus ${position || '—'} / ${members.length} · ${pending} pending`;
+  $('focus-batch-status').textContent = `Batch: ${focusState(queue.batch)}`;
+  $('focus-batch-status').dataset.tone = focusTone(queue.batch);
+  $('focus-publication-status').textContent = `Publish: ${focusState(queue.publication)}`;
+  $('focus-publication-status').dataset.tone = focusTone(queue.publication);
+  const retryPublication = focusState(queue.batch) === 'succeeded'
+    && focusState(queue.publication) === 'failed';
+  $('focus-commit-button').textContent = retryPublication ? 'Retry publish' : 'Commit focus';
+  $('focus-commit-button').disabled = Boolean(state.focusActionPromise)
+    || focusChainActive(queue) || (!retryPublication && pending === 0);
+  $('focus-release-button').disabled = Boolean(state.focusActionPromise) || focusChainActive(queue);
+  $('view-full-button').disabled = navigationBusy() || state.navigationView === 'full';
+  $('view-focus-button').disabled = navigationBusy() || state.navigationView === 'focus';
+  $('view-full-button').setAttribute('aria-pressed', String(state.navigationView === 'full'));
+  $('view-focus-button').setAttribute('aria-pressed', String(state.navigationView === 'focus'));
+}
+
+function scheduleFocusPoll() {
+  if (state.focusPollTimer !== null) {
+    window.clearTimeout(state.focusPollTimer);
+    state.focusPollTimer = null;
+  }
+  if (!focusChainActive()) return;
+  state.focusPollTimer = window.setTimeout(() => {
+    state.focusPollTimer = null;
+    void refreshFocus().catch(error => {
+      setNotice(error.message || 'Focus status refresh failed.', 'error');
+      scheduleFocusPoll();
+    });
+  }, 1000);
+}
+
+function scheduleFocusRebind(queue) {
+  const generation = queue?.batch?.generation;
+  if (!state.taskOpen || queue?.split !== state.split || state.task?.split !== queue.split
+      || !Number.isInteger(generation)) return;
+  if (!['reconciling', 'succeeded'].includes(focusState(queue.batch))) return;
+  const current = controller.getState().binding?.generation;
+  if (!Number.isInteger(current) || generation <= current) return;
+  state.commitRebindTarget = Math.max(state.commitRebindTarget ?? 0, generation);
+  void ensureCurrentCommitBinding().catch(error => {
+    setNotice(error.message || 'Focus Commit succeeded, but task authority refresh failed.', 'error');
+  });
+}
+
+async function refreshFocus({ navigateWhenReleased = true } = {}) {
+  const request = ++state.focusRequest;
+  const payload = await api.getJson('/api/focus');
+  if (request !== state.focusRequest) return state.focus;
+  state.focus = payload?.active && payload.queue ? payload.queue : null;
+  if (state.focus) scheduleFocusRebind(state.focus);
+  renderFocusState();
+  scheduleFocusPoll();
+  if (!state.focus && state.navigationView === 'focus' && navigateWhenReleased) {
+    state.navigationView = 'full';
+    await loadPage(0, 0);
+  }
+  return state.focus;
 }
 
 function scheduleCommitRebind(snapshot) {
@@ -326,6 +430,26 @@ async function loadPage(cursor = 0, selected = 0, { flush = true } = {}) {
   else setNotice('This split contains no indexed samples.');
 }
 
+async function loadFocusQueue(selected = 0, { flush = true } = {}) {
+  if (!state.focus) throw new Error('No active Focus Queue is available.');
+  if (flush) await beforeNavigation();
+  clearVisibleTask();
+  const queue = state.focus;
+  const members = Array.isArray(queue.members) ? queue.members : [];
+  state.page = {
+    split: queue.split,
+    cursor: 0,
+    limit: members.length,
+    total: members.length,
+    next_cursor: null,
+    tasks: members,
+  };
+  state.selected = members.length ? Math.max(0, Math.min(selected, members.length - 1)) : -1;
+  renderPage();
+  if (state.selected >= 0) await loadTask(members[state.selected].task_id, { flush: false });
+  else setNotice('The active Focus Queue contains no samples.', 'warning');
+}
+
 async function loadTask(taskId, { flush = true, selectedIndex = null } = {}) {
   if (flush) await beforeNavigation();
   clearVisibleTask();
@@ -361,6 +485,12 @@ async function selectIndex(index) {
 
 async function goTo(position) {
   const target = Math.max(1, Math.min(Number(position) || 1, state.page?.total || 1));
+  if (state.navigationView === 'focus') {
+    const index = target - 1;
+    if (index === state.selected) return;
+    await loadTask(state.page.tasks[index].task_id, { selectedIndex: index });
+    return;
+  }
   const cursor = Math.floor((target - 1) / state.limit) * state.limit;
   await loadPage(cursor, target - cursor - 1);
 }
@@ -428,6 +558,7 @@ async function runEditorMutation(action) {
     try {
       await action();
       void commitController.refreshProjectState().catch(() => undefined);
+      if (state.focus) void refreshFocus({ navigateWhenReleased: false }).catch(() => undefined);
     }
     catch (error) { setNotice(error.message || 'Edit could not be saved.', 'error'); }
     finally {
@@ -492,6 +623,72 @@ function startCommit() {
   return state.commitActionPromise;
 }
 
+function focusBatchId() {
+  const suffix = globalThis.crypto?.randomUUID?.();
+  if (!suffix) throw new Error('Browser UUID support is required for Focus Commit.');
+  return suffix;
+}
+
+function startFocusCommit() {
+  if (state.focusActionPromise || !state.focus) return state.focusActionPromise;
+  const queueId = state.focus.queue_id;
+  state.focusActionPromise = (async () => {
+    if (state.interactionPromise) await state.interactionPromise;
+    await ensureCurrentCommitBinding();
+    if (state.taskOpen) await controller.flush();
+    const retryPublication = focusState(state.focus.batch) === 'succeeded'
+      && focusState(state.focus.publication) === 'failed';
+    const response = retryPublication
+      ? await api.postJson('/api/focus/publication/retry', {})
+      : await api.postJson('/api/focus/commits', { batch_id: focusBatchId() });
+    await refreshFocus({ navigateWhenReleased: false });
+    if (!state.focus || state.focus.queue_id !== queueId) {
+      throw new Error('The active Focus Queue changed while Commit was starting.');
+    }
+    const empty = response?.empty === true || response?.status === 'empty';
+    setNotice(retryPublication
+      ? 'Focus publication retry started; no Drafts were recaptured.'
+      : empty
+      ? 'Focus has no pending Drafts; no batch was created.'
+      : 'Focus Commit queued. Editing remains available while batch and publication run.',
+    empty && !retryPublication ? 'warning' : 'ok');
+  })().catch(error => {
+    setNotice(error.message || 'Focus Commit could not be started.', 'error');
+  }).finally(() => {
+    state.focusActionPromise = null;
+    renderPage();
+    renderFocusState();
+  });
+  renderPage();
+  renderFocusState();
+  return state.focusActionPromise;
+}
+
+async function releaseFocus() {
+  if (state.focusActionPromise || !state.focus) return;
+  if (!window.confirm('Release this Focus Queue? Saved Drafts and committed annotations are kept.')) return;
+  state.focusActionPromise = (async () => {
+    if (state.interactionPromise) await state.interactionPromise;
+    if (state.taskOpen) await controller.flush();
+    await api.deleteJson('/api/focus');
+    state.focus = null;
+    state.navigationView = 'full';
+    scheduleFocusPoll();
+    renderFocusState();
+    await loadPage(0, 0, { flush: false });
+    setNotice('Focus Queue released. Drafts and committed annotations were preserved.', 'ok');
+  })().catch(error => {
+    setNotice(error.message || 'Focus Queue could not be released.', 'error');
+  }).finally(() => {
+    state.focusActionPromise = null;
+    renderPage();
+    renderFocusState();
+  });
+  renderPage();
+  renderFocusState();
+  return state.focusActionPromise;
+}
+
 async function retrySave() {
   await controller.retry();
   setNotice('Draft retry succeeded.', 'ok');
@@ -520,7 +717,28 @@ async function navigate(action) {
   catch (error) { setNotice(error.message || 'Navigation failed.', 'error'); }
 }
 
+async function switchNavigationView(nextView) {
+  if (nextView === state.navigationView) return;
+  if (nextView !== 'full' && nextView !== 'focus') throw new Error('Unknown navigation view.');
+  if (nextView === 'focus' && !state.focus) throw new Error('No active Focus Queue is available.');
+  await beforeNavigation();
+  if (nextView === 'focus') {
+    if (state.split !== state.focus.split) {
+      state.split = state.focus.split;
+      $('split-select').value = state.split;
+      setActiveCategory(null);
+      await commitController.setSplit(state.split).catch(() => undefined);
+    }
+    state.navigationView = 'focus';
+    await loadFocusQueue(0, { flush: false });
+  } else {
+    state.navigationView = 'full';
+    await loadPage(0, 0, { flush: false });
+  }
+}
+
 async function switchSplit(nextSplit) {
+  if (state.navigationView === 'focus') throw new Error('Switch to Full dataset before changing split.');
   const prior = state.split;
   const priorCategory = state.category;
   try {
@@ -586,8 +804,15 @@ async function start() {
     });
     renderDrawingCategory();
     setMode('select');
+    await refreshFocus({ navigateWhenReleased: false });
+    if (state.focus) {
+      state.navigationView = 'focus';
+      state.split = state.focus.split;
+      $('split-select').value = state.split;
+    }
     await commitController.setSplit(state.split).catch(() => undefined);
-    await loadPage(0, 0, { flush: false });
+    if (state.navigationView === 'focus') await loadFocusQueue(0, { flush: false });
+    else await loadPage(0, 0, { flush: false });
   } catch (error) {
     setStatus('Unavailable', 'error');
     setNotice(error.message || 'Application startup failed.', 'error');
@@ -611,6 +836,10 @@ $('visibility-mode').addEventListener('change', event => setVisibilityMode(event
 $('hide-selected').addEventListener('click', hideSelectedRegion);
 $('restore-visibility').addEventListener('click', restoreVisibility);
 $('commit-button').addEventListener('click', () => navigate(startCommit));
+$('focus-commit-button').addEventListener('click', () => { void startFocusCommit(); });
+$('focus-release-button').addEventListener('click', () => { void releaseFocus(); });
+$('view-full-button').addEventListener('click', () => navigate(() => switchNavigationView('full')));
+$('view-focus-button').addEventListener('click', () => navigate(() => switchNavigationView('focus')));
 $('save-retry').addEventListener('click', () => navigate(retrySave));
 $('task-reload').addEventListener('click', () => navigate(reloadCurrentTask));
 document.addEventListener('keydown', event => {

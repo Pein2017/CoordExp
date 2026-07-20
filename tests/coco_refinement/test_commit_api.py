@@ -16,7 +16,7 @@ from src.coco_refinement.adapters import (
 )
 from src.coco_refinement.bootstrap import BootstrapSourceContract, bootstrap_workspace
 from src.coco_refinement.canonical import canonicalize_objects
-from src.coco_refinement.commit_service import CommitService
+from src.coco_refinement.commit_service import CommitService, CommitServiceError
 from src.coco_refinement.http_security import CSRF_HEADER
 from src.coco_refinement.repository import SaveDraftRequest, SqliteDraftRepository
 from src.coco_refinement.service import create_service_app
@@ -350,6 +350,82 @@ def test_paused_worker_captures_all_drafts_and_lost_retry_never_recaptures(
     for split, before in source_before.items():
         assert source_paths[split].read_bytes() == before
     assert all(path.read_bytes() == before for path, before in image_before.items())
+
+
+def test_focus_scope_blocks_ordinary_commit_and_captures_only_members(
+    commit_api,
+) -> None:
+    repository = commit_api["repository"]
+    service = commit_api["commit_service"]
+    queue = repository.create_focus_queue(
+        queue_id="focus-one",
+        project_id="coco-refinement:train",
+        split="train",
+        task_ids=("train:3",),
+    )
+    queue = repository.bind_focus_batch(
+        queue_id=queue.queue_id,
+        expected_updated_at=queue.updated_at,
+        batch_id="focus-batch",
+    )
+
+    with pytest.raises(CommitServiceError) as ordinary:
+        service.enqueue(split="train", batch_id="ordinary-batch")
+    focused = service.enqueue(
+        split="train",
+        batch_id="focus-batch",
+        task_ids=("train:3",),
+        focus_queue_id=queue.queue_id,
+    )
+
+    assert ordinary.value.code == "coco_refinement.commit_busy"
+    assert focused.member_count == 1
+    assert [
+        member.request.task_id
+        for member in commit_api["coordinator"].requests[0].members
+    ] == ["train:3"]
+
+
+def test_explicit_empty_commit_scope_has_no_eligible_drafts(commit_api) -> None:
+    with pytest.raises(CommitServiceError) as captured:
+        commit_api["commit_service"].enqueue(
+            split="train",
+            batch_id="empty-scope",
+            task_ids=(),
+        )
+
+    assert captured.value.code == "coco_refinement.no_pending_drafts"
+    assert commit_api["coordinator"].requests == []
+
+
+def test_failed_focus_publication_reserves_split_until_release(commit_api) -> None:
+    repository = commit_api["repository"]
+    service = commit_api["commit_service"]
+    queue = repository.create_focus_queue(
+        queue_id="focus-publish-failed",
+        project_id="coco-refinement:train",
+        split="train",
+        task_ids=("train:3",),
+    )
+    queue = repository.bind_focus_batch(
+        queue_id=queue.queue_id,
+        expected_updated_at=queue.updated_at,
+        batch_id="focus-publish-failed-batch",
+    )
+    queue = repository.update_focus_queue(
+        queue_id=queue.queue_id,
+        expected_updated_at=queue.updated_at,
+        commit_status="succeeded",
+        publication_status="failed",
+        committed_generation=1,
+        error="synthetic",
+    )
+
+    with pytest.raises(CommitServiceError) as reserved:
+        service.enqueue(split="train", batch_id="ordinary-before-release")
+
+    assert reserved.value.code == "coco_refinement.commit_busy"
+    repository.release_focus_queue(queue_id=queue.queue_id)
 
 
 def test_project_state_and_reads_remain_available_when_commit_writes_are_disabled(

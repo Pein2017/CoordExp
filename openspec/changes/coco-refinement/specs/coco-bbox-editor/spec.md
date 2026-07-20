@@ -170,3 +170,25 @@ SHALL NOT be displayed as committed dataset success.
 #### Scenario: Newer Draft follows a successful batch
 - **WHEN** a captured task was edited after enqueue and its batch succeeds
 - **THEN** the UI shows the committed generation plus that task's newer pending Draft without replacing it
+
+### Requirement: Focus Queue navigation and status
+When an active Focus Queue exists, the editor SHALL expose a Focus mode whose
+task list and Next/Previous controls follow exact queue order. It SHALL show
+queue position, pending queue Draft count, Focus Commit progress, training
+publication progress/failure, and an explicit path back to full-dataset view.
+
+#### Scenario: Focus task is opened
+- **WHEN** the operator enters Focus mode with an active queue
+- **THEN** the editor opens an ordered queue member and shows its `current/total` position without changing task or object identity
+
+#### Scenario: Focus navigation reaches a boundary
+- **WHEN** Previous is requested on the first member or Next on the last member
+- **THEN** navigation remains within the queue and does not wrap or fall through to the full split
+
+#### Scenario: Focus Commit is running
+- **WHEN** a scoped batch or its automatic publisher is queued, running, reconciling, succeeded, or failed
+- **THEN** the UI distinguishes Draft save, annotation Commit, and training-pair publication states while ordinary editing remains responsive
+
+#### Scenario: Full view is selected
+- **WHEN** the operator leaves Focus mode without releasing the queue
+- **THEN** ordinary full-index navigation resumes and the durable queue remains available for later return

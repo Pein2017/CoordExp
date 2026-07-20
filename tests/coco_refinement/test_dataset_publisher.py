@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import fcntl
 from pathlib import Path
+import threading
 
 import pytest
 
@@ -49,6 +51,22 @@ class _RejectingTokenValidator:
             code="test.over_budget",
             context={"row": expected_row_count, "path": str(coord_jsonl)},
         )
+
+
+class _BlockingTokenValidator(_PassingTokenValidator):
+    def __init__(self, entered: threading.Event, release: threading.Event) -> None:
+        self.entered = entered
+        self.release = release
+
+    def validate(
+        self,
+        coord_jsonl: Path,
+        *,
+        expected_row_count: int,
+    ) -> TokenBudgetValidation:
+        self.entered.set()
+        assert self.release.wait(timeout=2)
+        return super().validate(coord_jsonl, expected_row_count=expected_row_count)
 
 
 def _sha256(path: Path) -> str:
@@ -190,7 +208,36 @@ def test_publish_replaces_only_selected_split_and_reuses_shared_images(
     }
     assert not (target_root / "images").exists()
     for suffix in ("norm", "coord"):
-        assert (target_root / f"train.{suffix}.jsonl").read_bytes() == train_before[suffix]
+        assert (target_root / f"train.{suffix}.jsonl").read_bytes() == train_before[
+            suffix
+        ]
+
+
+def test_publish_holds_batch_process_barrier_through_token_validation(
+    tmp_path: Path,
+) -> None:
+    repository, runtime_root = _prepare_repository(tmp_path)
+    entered = threading.Event()
+    release = threading.Event()
+    publisher = _publisher(
+        repository,
+        runtime_root,
+        validator=_BlockingTokenValidator(entered, release),
+    )
+    outcome: list[object] = []
+    worker = threading.Thread(target=lambda: outcome.append(publisher.publish()))
+    worker.start()
+    assert entered.wait(timeout=2)
+
+    process_lock = runtime_root / "val/.batch-process.lock"
+    with process_lock.open("a+b") as handle:
+        with pytest.raises(BlockingIOError):
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    release.set()
+    worker.join(timeout=2)
+    assert not worker.is_alive()
+    assert len(outcome) == 1
 
 
 def test_over_budget_failure_preserves_both_training_files(tmp_path: Path) -> None:
@@ -220,7 +267,7 @@ def test_failure_between_pair_replacements_rolls_back_outputs_and_receipt(
     repository, runtime_root = _prepare_repository(tmp_path)
     target_root = repository / "public_data/coco/rescale_32_1024_bbox_len12000"
     receipt_path = runtime_root / "val" / RECEIPT_NAME
-    receipt_path.write_bytes(b'old-receipt\n')
+    receipt_path.write_bytes(b"old-receipt\n")
     before = {
         "norm": (target_root / "val.norm.jsonl").read_bytes(),
         "coord": (target_root / "val.coord.jsonl").read_bytes(),
@@ -267,7 +314,9 @@ def test_reversed_xyxy_is_rejected_without_touching_targets(tmp_path: Path) -> N
         _publisher(repository, runtime_root).publish()
 
 
-def test_prepared_transaction_is_rolled_back_before_next_publish(tmp_path: Path) -> None:
+def test_prepared_transaction_is_rolled_back_before_next_publish(
+    tmp_path: Path,
+) -> None:
     repository, runtime_root = _prepare_repository(tmp_path)
     target_root = repository / "public_data/coco/rescale_32_1024_bbox_len12000"
     split_root = runtime_root / "val"

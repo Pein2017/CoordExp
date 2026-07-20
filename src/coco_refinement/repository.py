@@ -8,7 +8,7 @@ import sqlite3
 from collections.abc import Mapping, Sequence
 from contextlib import closing
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Literal, TypeAlias
 
@@ -17,9 +17,9 @@ from src.coco_refinement.canonical import canonicalize_objects
 from src.coco_refinement.models import CanonicalDraft, NativeTaskIdentity, Split
 
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 _DEFAULT_BUSY_TIMEOUT_MS = 5_000
-_REQUIRED_COLUMNS: dict[str, tuple[tuple[str, str, int, int], ...]] = {
+_V1_REQUIRED_COLUMNS: dict[str, tuple[tuple[str, str, int, int], ...]] = {
     "projects": (
         ("project_id", "TEXT", 0, 1),
         ("split", "TEXT", 1, 0),
@@ -58,16 +58,61 @@ _REQUIRED_COLUMNS: dict[str, tuple[tuple[str, str, int, int], ...]] = {
         ("created_at", "TEXT", 1, 0),
     ),
 }
-_REQUIRED_FOREIGN_KEYS = {
+_V2_REQUIRED_COLUMNS: dict[str, tuple[tuple[str, str, int, int], ...]] = {
+    **_V1_REQUIRED_COLUMNS,
+    "focus_queues": (
+        ("queue_slot", "INTEGER", 0, 1),
+        ("queue_id", "TEXT", 1, 0),
+        ("project_id", "TEXT", 1, 0),
+        ("split", "TEXT", 1, 0),
+        ("created_at", "TEXT", 1, 0),
+        ("updated_at", "TEXT", 1, 0),
+        ("batch_id", "TEXT", 0, 0),
+        ("commit_status", "TEXT", 1, 0),
+        ("publication_status", "TEXT", 1, 0),
+        ("committed_generation", "INTEGER", 0, 0),
+        ("publication_receipt_json", "TEXT", 0, 0),
+        ("error", "TEXT", 0, 0),
+    ),
+    "focus_queue_members": (
+        ("queue_id", "TEXT", 1, 1),
+        ("position", "INTEGER", 1, 2),
+        ("task_id", "TEXT", 1, 0),
+    ),
+}
+_V1_REQUIRED_FOREIGN_KEYS = {
     "projects": (),
     "tasks": (("projects", "project_id", "project_id", "RESTRICT", "RESTRICT"),),
     "drafts": (("tasks", "task_id", "task_id", "RESTRICT", "RESTRICT"),),
     "mutations": (("tasks", "task_id", "task_id", "RESTRICT", "RESTRICT"),),
 }
-_REQUIRED_INDEXES = {
+_V2_REQUIRED_FOREIGN_KEYS = {
+    **_V1_REQUIRED_FOREIGN_KEYS,
+    "focus_queues": (("projects", "project_id", "project_id", "RESTRICT", "RESTRICT"),),
+    "focus_queue_members": (
+        ("tasks", "task_id", "task_id", "RESTRICT", "RESTRICT"),
+        ("focus_queues", "queue_id", "queue_id", "RESTRICT", "CASCADE"),
+    ),
+}
+_V1_REQUIRED_INDEXES = {
     "tasks_project_order": ("tasks", ("project_id", "source_row_index")),
     "mutations_task": ("mutations", ("task_id", "created_at")),
 }
+_V2_REQUIRED_INDEXES = {
+    **_V1_REQUIRED_INDEXES,
+    "tasks_image_locator": ("tasks", ("image_locator",)),
+    "focus_queue_members_task": ("focus_queue_members", ("task_id",)),
+}
+
+CommitPhase: TypeAlias = Literal[
+    "idle", "waiting", "queued", "running", "reconciling", "succeeded", "failed"
+]
+PublicationPhase: TypeAlias = Literal[
+    "idle", "waiting", "running", "succeeded", "failed"
+]
+_ACTIVE_COMMIT_PHASES = frozenset(("waiting", "queued", "running", "reconciling"))
+_ACTIVE_PUBLICATION_PHASES = frozenset(("waiting", "running"))
+_UNSET = object()
 
 
 class RepositoryError(RuntimeContractError):
@@ -92,6 +137,22 @@ class TaskNotFoundError(RepositoryError):
 
 class MutationCollisionError(RepositoryError):
     """Raised when a mutation ID is reused for a different request."""
+
+
+class FocusQueueNotFoundError(RepositoryError):
+    """Raised when a requested Focus Queue is not the active queue."""
+
+
+class FocusQueueActiveError(RepositoryError):
+    """Raised when a different single-active Focus Queue already exists."""
+
+
+class FocusQueueBusyError(RepositoryError):
+    """Raised when an active Focus Queue has non-terminal background work."""
+
+
+class FocusQueueConflictError(RepositoryError):
+    """Raised when a Focus Queue update loses its optimistic CAS race."""
 
 
 @dataclass(frozen=True)
@@ -142,6 +203,113 @@ class CompactTaskRecord:
     @property
     def task_id(self) -> str:
         return self.identity.task_key
+
+
+@dataclass(frozen=True)
+class FocusQueueMember:
+    """One immutable, ordered task projection in the active Focus Queue."""
+
+    position: int
+    task: CompactTaskRecord
+
+    def __post_init__(self) -> None:
+        _integer(self.position, field="position", minimum=0)
+        if not isinstance(self.task, CompactTaskRecord):
+            raise RepositoryInvariantError(
+                "Focus Queue member task must be compact task metadata",
+                code="coco_refinement.focus_member_type",
+            )
+
+    @property
+    def task_id(self) -> str:
+        return self.task.task_id
+
+
+@dataclass(frozen=True)
+class FocusQueueRecord:
+    """Durable single-active temporary task projection and background status."""
+
+    queue_id: str
+    project_id: str
+    split: Split
+    created_at: str
+    updated_at: str
+    members: tuple[FocusQueueMember, ...]
+    batch_id: str | None = None
+    commit_status: CommitPhase = "idle"
+    publication_status: PublicationPhase = "idle"
+    committed_generation: int | None = None
+    publication_receipt: Mapping[str, Any] | None = None
+    error: str | None = None
+
+    def __post_init__(self) -> None:
+        _nonempty(self.queue_id, field="queue_id")
+        _nonempty(self.project_id, field="project_id")
+        _split(self.split)
+        _timestamp(self.created_at, field="created_at")
+        _timestamp(self.updated_at, field="updated_at")
+        if not self.members:
+            raise RepositoryInvariantError(
+                "Focus Queue must contain at least one member",
+                code="coco_refinement.focus_members",
+            )
+        expected_positions = tuple(range(len(self.members)))
+        actual_positions = tuple(member.position for member in self.members)
+        task_ids = tuple(member.task_id for member in self.members)
+        if actual_positions != expected_positions or len(set(task_ids)) != len(
+            task_ids
+        ):
+            raise RepositoryInvariantError(
+                "Focus Queue members must be unique and contiguously ordered",
+                code="coco_refinement.focus_members",
+            )
+        if any(
+            member.task.project_id != self.project_id
+            or member.task.identity.split != self.split
+            for member in self.members
+        ):
+            raise RepositoryInvariantError(
+                "Focus Queue member belongs to another project or split",
+                code="coco_refinement.focus_member_project",
+            )
+        if self.batch_id is not None:
+            _nonempty(self.batch_id, field="batch_id")
+        _commit_phase(self.commit_status)
+        _publication_phase(self.publication_status)
+        if self.committed_generation is not None:
+            _integer(
+                self.committed_generation,
+                field="committed_generation",
+                minimum=0,
+            )
+        if self.publication_receipt is not None:
+            if not isinstance(self.publication_receipt, Mapping):
+                raise RepositoryInvariantError(
+                    "publication_receipt must be a JSON object",
+                    code="coco_refinement.focus_receipt",
+                )
+            try:
+                normalized = json.loads(_json(dict(self.publication_receipt)))
+            except (TypeError, ValueError) as exc:
+                raise RepositoryInvariantError(
+                    "publication_receipt must be a JSON object",
+                    code="coco_refinement.focus_receipt",
+                    cause=exc,
+                ) from exc
+            object.__setattr__(self, "publication_receipt", normalized)
+        if self.error is not None and not isinstance(self.error, str):
+            raise RepositoryInvariantError(
+                "Focus Queue error must be text when present",
+                code="coco_refinement.focus_error",
+            )
+
+    @property
+    def task_ids(self) -> tuple[str, ...]:
+        return tuple(member.task_id for member in self.members)
+
+    @property
+    def member_count(self) -> int:
+        return len(self.members)
 
 
 @dataclass(frozen=True)
@@ -207,9 +375,7 @@ class TaskDraftState:
         return self.draft is not None
 
 
-ConflictReason: TypeAlias = Literal[
-    "revision", "generation", "base_row_hash"
-]
+ConflictReason: TypeAlias = Literal["revision", "generation", "base_row_hash"]
 
 
 @dataclass(frozen=True)
@@ -468,7 +634,10 @@ class SqliteDraftRepository:
                     "tasks must be CompactTaskRecord values",
                     code="coco_refinement.task_type",
                 )
-            if task.project_id != project.project_id or task.identity.split != project.split:
+            if (
+                task.project_id != project.project_id
+                or task.identity.split != project.split
+            ):
                 raise RepositoryInvariantError(
                     "compact task belongs to another project or split",
                     code="coco_refinement.task_project",
@@ -737,10 +906,10 @@ class SqliteDraftRepository:
     def _verify_committed_baseline(
         task_row: sqlite3.Row, request: SaveDraftRequest
     ) -> None:
-        if (
-            str(task_row["split"]) != request.committed.split
-            or request.committed.result_hash
-            != str(task_row["committed_result_hash"])
+        if str(
+            task_row["split"]
+        ) != request.committed.split or request.committed.result_hash != str(
+            task_row["committed_result_hash"]
         ):
             raise RepositoryInvariantError(
                 "supplied committed baseline differs from task authority",
@@ -751,8 +920,7 @@ class SqliteDraftRepository:
     @staticmethod
     def _verify_task_bound_identities(request: SaveDraftRequest) -> None:
         committed_ids = {
-            value.region_key: value.coco_ann_id
-            for value in request.committed.objects
+            value.region_key: value.coco_ann_id for value in request.committed.objects
         }
         if any(value is None for value in committed_ids.values()):
             raise RepositoryInvariantError(
@@ -859,13 +1027,326 @@ class SqliteDraftRepository:
             ).fetchall()
             return project, tuple(_compact_task_from_row(row) for row in rows)
 
+    def resolve_tasks_by_locators(
+        self, image_locators: Sequence[str]
+    ) -> tuple[CompactTaskRecord, ...]:
+        """Resolve exact locators without a source scan, preserving caller order."""
+
+        locators = tuple(_relative_locator(value) for value in image_locators)
+        if not locators:
+            raise RepositoryInvariantError(
+                "at least one image locator is required",
+                code="coco_refinement.focus_locators",
+            )
+        if len(set(locators)) != len(locators):
+            raise RepositoryInvariantError(
+                "image locators must be unique",
+                code="coco_refinement.focus_locator_duplicate",
+            )
+        with self._transaction(immediate=False) as connection:
+            matches: dict[str, list[sqlite3.Row]] = {value: [] for value in locators}
+            for chunk in _chunks(locators):
+                placeholders = ",".join("?" for _ in chunk)
+                rows = connection.execute(
+                    f"SELECT * FROM tasks WHERE image_locator IN ({placeholders})",
+                    chunk,
+                ).fetchall()
+                for row in rows:
+                    matches[str(row["image_locator"])].append(row)
+            missing = [value for value, rows in matches.items() if not rows]
+            ambiguous = [value for value, rows in matches.items() if len(rows) > 1]
+            if missing or ambiguous:
+                raise RepositoryInvariantError(
+                    "image locators must resolve exactly once in the compact index",
+                    code="coco_refinement.focus_locator_resolution",
+                    context={"missing": missing, "ambiguous": ambiguous},
+                )
+            ordered = tuple(
+                _compact_task_from_row(matches[value][0]) for value in locators
+            )
+            if (
+                len({task.project_id for task in ordered}) != 1
+                or len({task.identity.split for task in ordered}) != 1
+            ):
+                raise RepositoryInvariantError(
+                    "Focus Queue locators must belong to one project and split",
+                    code="coco_refinement.focus_locator_scope",
+                )
+            return ordered
+
+    def create_focus_queue(
+        self,
+        *,
+        queue_id: str,
+        project_id: str,
+        split: Split,
+        task_ids: Sequence[str],
+    ) -> FocusQueueRecord:
+        """Create the single active queue atomically from pre-resolved task IDs."""
+
+        _nonempty(queue_id, field="queue_id")
+        _nonempty(project_id, field="project_id")
+        _split(split)
+        selected = tuple(_nonempty(value, field="task_id") for value in task_ids)
+        if not selected:
+            raise RepositoryInvariantError(
+                "Focus Queue must contain at least one task",
+                code="coco_refinement.focus_members",
+            )
+        if len(set(selected)) != len(selected):
+            raise RepositoryInvariantError(
+                "Focus Queue task IDs must be unique",
+                code="coco_refinement.focus_member_duplicate",
+            )
+        with self._transaction(immediate=True) as connection:
+            active = self._focus_queue_from_connection(connection)
+            if active is not None:
+                if (
+                    active.queue_id == queue_id
+                    and active.project_id == project_id
+                    and active.split == split
+                    and active.task_ids == selected
+                ):
+                    return active
+                raise FocusQueueActiveError(
+                    "a different Focus Queue is already active",
+                    code="coco_refinement.focus_active",
+                    context={"queue_id": active.queue_id},
+                )
+            project_row = connection.execute(
+                "SELECT * FROM projects WHERE project_id = ? AND split = ?",
+                (project_id, split),
+            ).fetchone()
+            if project_row is None:
+                raise ProjectNotFoundError(
+                    "project does not exist for the requested Focus Queue split",
+                    code="coco_refinement.project_not_found",
+                    context={"project_id": project_id, "split": split},
+                )
+            rows_by_id = self._task_rows_by_ids(
+                connection,
+                project_id=project_id,
+                split=split,
+                task_ids=selected,
+            )
+            now = _now()
+            connection.execute(
+                """
+                INSERT INTO focus_queues(
+                    queue_slot, queue_id, project_id, split, created_at, updated_at,
+                    batch_id, commit_status, publication_status,
+                    committed_generation, publication_receipt_json, error
+                ) VALUES (1, ?, ?, ?, ?, ?, NULL, 'idle', 'idle', NULL, NULL, NULL)
+                """,
+                (queue_id, project_id, split, now, now),
+            )
+            connection.executemany(
+                """
+                INSERT INTO focus_queue_members(queue_id, position, task_id)
+                VALUES (?, ?, ?)
+                """,
+                (
+                    (queue_id, position, task_id)
+                    for position, task_id in enumerate(selected)
+                ),
+            )
+            # Materialize through the same integrity-checking read path used after restart.
+            created = self._focus_queue_from_connection(connection)
+            if created is None or any(
+                task_id not in rows_by_id for task_id in selected
+            ):
+                raise RepositoryCorruptionError(
+                    "created Focus Queue could not be reproduced",
+                    code="coco_refinement.focus_create",
+                )
+            return created
+
+    def get_focus_queue(self) -> FocusQueueRecord | None:
+        """Return the active queue, if any, with ordered current task metadata."""
+
+        with self._transaction(immediate=False) as connection:
+            return self._focus_queue_from_connection(connection)
+
+    def bind_focus_batch(
+        self,
+        *,
+        queue_id: str,
+        expected_updated_at: str,
+        batch_id: str,
+    ) -> FocusQueueRecord:
+        """Bind a new/replayed batch and atomically reset its publication state."""
+
+        _nonempty(queue_id, field="queue_id")
+        _timestamp(expected_updated_at, field="expected_updated_at")
+        _nonempty(batch_id, field="batch_id")
+        with self._transaction(immediate=True) as connection:
+            current = self._required_focus_queue(connection, queue_id)
+            if current.batch_id == batch_id:
+                return current
+            self._verify_focus_cas(current, expected_updated_at)
+            if (
+                current.commit_status in _ACTIVE_COMMIT_PHASES
+                or current.publication_status in _ACTIVE_PUBLICATION_PHASES
+            ):
+                raise FocusQueueBusyError(
+                    "Focus Queue already has active background work",
+                    code="coco_refinement.focus_busy",
+                    context={"queue_id": queue_id},
+                )
+            now = _after_timestamp(current.updated_at)
+            connection.execute(
+                """
+                UPDATE focus_queues
+                SET updated_at = ?, batch_id = ?, commit_status = 'waiting',
+                    publication_status = 'idle', committed_generation = NULL,
+                    publication_receipt_json = NULL, error = NULL
+                WHERE queue_id = ?
+                """,
+                (now, batch_id, queue_id),
+            )
+            return self._required_focus_queue(connection, queue_id)
+
+    def clear_focus_batch_intent(
+        self,
+        *,
+        queue_id: str,
+        expected_updated_at: str,
+        batch_id: str,
+    ) -> FocusQueueRecord:
+        """Remove an unmaterialized Focus batch after an empty capture."""
+
+        _nonempty(queue_id, field="queue_id")
+        _timestamp(expected_updated_at, field="expected_updated_at")
+        _nonempty(batch_id, field="batch_id")
+        with self._transaction(immediate=True) as connection:
+            current = self._required_focus_queue(connection, queue_id)
+            self._verify_focus_cas(current, expected_updated_at)
+            if (
+                current.batch_id != batch_id
+                or current.commit_status != "waiting"
+                or current.publication_status != "idle"
+                or current.committed_generation is not None
+                or current.publication_receipt is not None
+            ):
+                raise FocusQueueBusyError(
+                    "Focus Queue batch intent is no longer empty",
+                    code="coco_refinement.focus_busy",
+                    context={"queue_id": queue_id, "batch_id": batch_id},
+                )
+            now = _after_timestamp(current.updated_at)
+            connection.execute(
+                """
+                UPDATE focus_queues
+                SET updated_at = ?, batch_id = NULL, commit_status = 'idle',
+                    publication_status = 'idle', committed_generation = NULL,
+                    publication_receipt_json = NULL, error = NULL
+                WHERE queue_id = ?
+                """,
+                (now, queue_id),
+            )
+            return self._required_focus_queue(connection, queue_id)
+
+    def update_focus_queue(
+        self,
+        *,
+        queue_id: str,
+        expected_updated_at: str,
+        commit_status: CommitPhase | object = _UNSET,
+        publication_status: PublicationPhase | object = _UNSET,
+        committed_generation: int | None | object = _UNSET,
+        publication_receipt: Mapping[str, Any] | None | object = _UNSET,
+        error: str | None | object = _UNSET,
+    ) -> FocusQueueRecord:
+        """CAS-update background state while preserving unspecified fields."""
+
+        _nonempty(queue_id, field="queue_id")
+        _timestamp(expected_updated_at, field="expected_updated_at")
+        if commit_status is not _UNSET:
+            _commit_phase(commit_status)
+        if publication_status is not _UNSET:
+            _publication_phase(publication_status)
+        if committed_generation is not _UNSET and committed_generation is not None:
+            _integer(committed_generation, field="committed_generation", minimum=0)
+        receipt_json: str | None | object = _UNSET
+        if publication_receipt is not _UNSET:
+            if publication_receipt is None:
+                receipt_json = None
+            elif isinstance(publication_receipt, Mapping):
+                try:
+                    receipt_json = _json(dict(publication_receipt))
+                except (TypeError, ValueError) as exc:
+                    raise RepositoryInvariantError(
+                        "publication_receipt must be a JSON object",
+                        code="coco_refinement.focus_receipt",
+                        cause=exc,
+                    ) from exc
+            else:
+                raise RepositoryInvariantError(
+                    "publication_receipt must be a JSON object",
+                    code="coco_refinement.focus_receipt",
+                )
+        if error is not _UNSET and error is not None and not isinstance(error, str):
+            raise RepositoryInvariantError(
+                "Focus Queue error must be text when present",
+                code="coco_refinement.focus_error",
+            )
+        updates: dict[str, object] = {}
+        for column, value in (
+            ("commit_status", commit_status),
+            ("publication_status", publication_status),
+            ("committed_generation", committed_generation),
+            ("publication_receipt_json", receipt_json),
+            ("error", error),
+        ):
+            if value is not _UNSET:
+                updates[column] = value
+        if not updates:
+            raise RepositoryInvariantError(
+                "Focus Queue update contains no fields",
+                code="coco_refinement.focus_update_empty",
+            )
+        with self._transaction(immediate=True) as connection:
+            current = self._required_focus_queue(connection, queue_id)
+            self._verify_focus_cas(current, expected_updated_at)
+            updates["updated_at"] = _after_timestamp(current.updated_at)
+            assignments = ", ".join(f"{column} = ?" for column in updates)
+            connection.execute(
+                f"UPDATE focus_queues SET {assignments} WHERE queue_id = ?",
+                (*updates.values(), queue_id),
+            )
+            return self._required_focus_queue(connection, queue_id)
+
+    def release_focus_queue(self, *, queue_id: str) -> None:
+        """Release queue metadata only after its background work is terminal."""
+
+        _nonempty(queue_id, field="queue_id")
+        with self._transaction(immediate=True) as connection:
+            current = self._required_focus_queue(connection, queue_id)
+            if (
+                current.commit_status in _ACTIVE_COMMIT_PHASES
+                or current.publication_status in _ACTIVE_PUBLICATION_PHASES
+            ):
+                raise FocusQueueBusyError(
+                    "Focus Queue cannot be released while background work is active",
+                    code="coco_refinement.focus_busy",
+                    context={"queue_id": queue_id},
+                )
+            connection.execute(
+                "DELETE FROM focus_queues WHERE queue_id = ?", (queue_id,)
+            )
+
     def capture_pending_draft_states(
-        self, *, project_id: str, split: Split
+        self,
+        *,
+        project_id: str,
+        split: Split,
+        task_ids: Sequence[str] | None = None,
     ) -> PendingDraftCapture:
-        """Capture all eligible sparse Drafts in source order in one read txn."""
+        """Capture eligible sparse Drafts in source order in one read txn."""
 
         _nonempty(project_id, field="project_id")
         _split(split)
+        selected = _optional_unique_task_ids(task_ids)
         with self._transaction(immediate=False) as connection:
             project_row = connection.execute(
                 "SELECT * FROM projects WHERE project_id = ? AND split = ?",
@@ -888,16 +1369,45 @@ class SqliteDraftRepository:
                     context={"project_id": project_id},
                 )
             current_generation = int(generation_rows[0]["current_generation"])
-            rows = connection.execute(
-                """
-                SELECT t.*, d.objects_json, d.semantic_hash, d.result_hash
-                FROM tasks AS t
-                JOIN drafts AS d ON d.task_id = t.task_id
-                WHERE t.project_id = ? AND t.split = ?
-                ORDER BY t.source_row_index
-                """,
-                (project_id, split),
-            ).fetchall()
+            if selected is None:
+                rows = connection.execute(
+                    """
+                    SELECT t.*, d.objects_json, d.semantic_hash, d.result_hash
+                    FROM tasks AS t
+                    JOIN drafts AS d ON d.task_id = t.task_id
+                    WHERE t.project_id = ? AND t.split = ?
+                    ORDER BY t.source_row_index
+                    """,
+                    (project_id, split),
+                ).fetchall()
+            else:
+                task_rows = self._task_rows_by_ids(
+                    connection,
+                    project_id=project_id,
+                    split=split,
+                    task_ids=selected,
+                )
+                rows = []
+                for chunk in _chunks(selected):
+                    placeholders = ",".join("?" for _ in chunk)
+                    rows.extend(
+                        connection.execute(
+                            f"""
+                            SELECT t.*, d.objects_json, d.semantic_hash, d.result_hash
+                            FROM tasks AS t
+                            JOIN drafts AS d ON d.task_id = t.task_id
+                            WHERE t.project_id = ? AND t.split = ?
+                              AND t.task_id IN ({placeholders})
+                            """,
+                            (project_id, split, *chunk),
+                        ).fetchall()
+                    )
+                rows.sort(key=lambda row: int(row["source_row_index"]))
+                if any(str(row["task_id"]) not in task_rows for row in rows):
+                    raise RepositoryCorruptionError(
+                        "scoped Draft capture escaped its validated task set",
+                        code="coco_refinement.capture_scope",
+                    )
             states: list[TaskDraftState] = []
             for row in rows:
                 state = self._state_from_rows(row, row)
@@ -1134,8 +1644,7 @@ class SqliteDraftRepository:
                 if (
                     str(task_row["split"]) != value.split
                     or int(task_row["image_id"]) != value.image_id
-                    or int(task_row["current_generation"])
-                    != value.captured_generation
+                    or int(task_row["current_generation"]) != value.captured_generation
                     or str(task_row["base_row_hash"]) != value.captured_base_row_hash
                     or int(task_row["revision"]) < value.captured_revision
                 ):
@@ -1179,8 +1688,7 @@ class SqliteDraftRepository:
                         live_draft, value.region_id_mapping
                     )
                     retired = (
-                        next_draft.semantic_hash
-                        == value.committed_draft.semantic_hash
+                        next_draft.semantic_hash == value.committed_draft.semantic_hash
                     )
                     if retired:
                         next_draft = None
@@ -1297,9 +1805,63 @@ class SqliteDraftRepository:
                 ).fetchone()
             return int(row[0])
 
+    def count_pending_drafts(
+        self,
+        *,
+        project_id: str,
+        task_ids: Sequence[str] | None = None,
+    ) -> int:
+        """Count pending Drafts globally for a project or in an exact task scope."""
+
+        _nonempty(project_id, field="project_id")
+        selected = _optional_unique_task_ids(task_ids)
+        with self._transaction(immediate=False) as connection:
+            project_row = connection.execute(
+                "SELECT split FROM projects WHERE project_id = ?", (project_id,)
+            ).fetchone()
+            if project_row is None:
+                raise ProjectNotFoundError(
+                    "project does not exist",
+                    code="coco_refinement.project_not_found",
+                    context={"project_id": project_id},
+                )
+            if selected is None:
+                return int(
+                    connection.execute(
+                        """
+                        SELECT COUNT(*) FROM drafts AS d
+                        JOIN tasks AS t ON t.task_id = d.task_id
+                        WHERE t.project_id = ?
+                        """,
+                        (project_id,),
+                    ).fetchone()[0]
+                )
+            self._task_rows_by_ids(
+                connection,
+                project_id=project_id,
+                split=str(project_row["split"]),  # type: ignore[arg-type]
+                task_ids=selected,
+            )
+            total = 0
+            for chunk in _chunks(selected):
+                placeholders = ",".join("?" for _ in chunk)
+                total += int(
+                    connection.execute(
+                        f"""
+                        SELECT COUNT(*) FROM drafts AS d
+                        JOIN tasks AS t ON t.task_id = d.task_id
+                        WHERE t.project_id = ? AND t.task_id IN ({placeholders})
+                        """,
+                        (project_id, *chunk),
+                    ).fetchone()[0]
+                )
+            return total
+
     def count_mutations(self) -> int:
         with closing(self._connect()) as connection:
-            return int(connection.execute("SELECT COUNT(*) FROM mutations").fetchone()[0])
+            return int(
+                connection.execute("SELECT COUNT(*) FROM mutations").fetchone()[0]
+            )
 
     def list_task_identities(
         self, *, project_id: str
@@ -1324,13 +1886,138 @@ class SqliteDraftRepository:
     def connection_settings(self) -> SqliteConnectionSettings:
         with closing(self._connect()) as connection:
             return SqliteConnectionSettings(
-                journal_mode=str(connection.execute("PRAGMA journal_mode").fetchone()[0]),
+                journal_mode=str(
+                    connection.execute("PRAGMA journal_mode").fetchone()[0]
+                ),
                 foreign_keys=bool(
                     connection.execute("PRAGMA foreign_keys").fetchone()[0]
                 ),
                 busy_timeout_ms=int(
                     connection.execute("PRAGMA busy_timeout").fetchone()[0]
                 ),
+            )
+
+    @staticmethod
+    def _task_rows_by_ids(
+        connection: sqlite3.Connection,
+        *,
+        project_id: str,
+        split: Split,
+        task_ids: Sequence[str],
+    ) -> dict[str, sqlite3.Row]:
+        """Validate an exact task scope and return its authoritative rows."""
+
+        selected = tuple(task_ids)
+        rows_by_id: dict[str, sqlite3.Row] = {}
+        for chunk in _chunks(selected):
+            placeholders = ",".join("?" for _ in chunk)
+            rows = connection.execute(
+                f"SELECT * FROM tasks WHERE task_id IN ({placeholders})",
+                chunk,
+            ).fetchall()
+            for row in rows:
+                rows_by_id[str(row["task_id"])] = row
+        missing = [task_id for task_id in selected if task_id not in rows_by_id]
+        wrong_scope = [
+            task_id
+            for task_id in selected
+            if task_id in rows_by_id
+            and (
+                str(rows_by_id[task_id]["project_id"]) != project_id
+                or str(rows_by_id[task_id]["split"]) != split
+            )
+        ]
+        if missing or wrong_scope:
+            raise TaskNotFoundError(
+                "task scope is not fully contained in the requested project and split",
+                code="coco_refinement.task_scope",
+                context={"missing": missing, "wrong_scope": wrong_scope},
+            )
+        return rows_by_id
+
+    def _focus_queue_from_connection(
+        self, connection: sqlite3.Connection
+    ) -> FocusQueueRecord | None:
+        row = connection.execute(
+            "SELECT * FROM focus_queues WHERE queue_slot = 1"
+        ).fetchone()
+        if row is None:
+            return None
+        member_rows = connection.execute(
+            """
+            SELECT m.position, t.*
+            FROM focus_queue_members AS m
+            JOIN tasks AS t ON t.task_id = m.task_id
+            WHERE m.queue_id = ?
+            ORDER BY m.position
+            """,
+            (str(row["queue_id"]),),
+        ).fetchall()
+        try:
+            receipt = (
+                None
+                if row["publication_receipt_json"] is None
+                else json.loads(str(row["publication_receipt_json"]))
+            )
+            if receipt is not None and not isinstance(receipt, dict):
+                raise TypeError("publication receipt is not an object")
+            return FocusQueueRecord(
+                queue_id=str(row["queue_id"]),
+                project_id=str(row["project_id"]),
+                split=str(row["split"]),  # type: ignore[arg-type]
+                created_at=str(row["created_at"]),
+                updated_at=str(row["updated_at"]),
+                members=tuple(
+                    FocusQueueMember(
+                        position=int(member["position"]),
+                        task=_compact_task_from_row(member),
+                    )
+                    for member in member_rows
+                ),
+                batch_id=(None if row["batch_id"] is None else str(row["batch_id"])),
+                commit_status=str(row["commit_status"]),  # type: ignore[arg-type]
+                publication_status=str(row["publication_status"]),  # type: ignore[arg-type]
+                committed_generation=(
+                    None
+                    if row["committed_generation"] is None
+                    else int(row["committed_generation"])
+                ),
+                publication_receipt=receipt,
+                error=None if row["error"] is None else str(row["error"]),
+            )
+        except Exception as exc:
+            if isinstance(exc, RepositoryCorruptionError):
+                raise
+            raise RepositoryCorruptionError(
+                "stored Focus Queue is invalid",
+                code="coco_refinement.focus_corrupt",
+                context={"queue_id": str(row["queue_id"])},
+                cause=exc,
+            ) from exc
+
+    def _required_focus_queue(
+        self, connection: sqlite3.Connection, queue_id: str
+    ) -> FocusQueueRecord:
+        current = self._focus_queue_from_connection(connection)
+        if current is None or current.queue_id != queue_id:
+            raise FocusQueueNotFoundError(
+                "Focus Queue is not active",
+                code="coco_refinement.focus_not_found",
+                context={"queue_id": queue_id},
+            )
+        return current
+
+    @staticmethod
+    def _verify_focus_cas(current: FocusQueueRecord, expected_updated_at: str) -> None:
+        if current.updated_at != expected_updated_at:
+            raise FocusQueueConflictError(
+                "Focus Queue changed after it was read",
+                code="coco_refinement.focus_conflict",
+                context={
+                    "queue_id": current.queue_id,
+                    "expected_updated_at": expected_updated_at,
+                    "actual_updated_at": current.updated_at,
+                },
             )
 
     def _initialize(self) -> None:
@@ -1343,11 +2030,11 @@ class SqliteDraftRepository:
                     code="coco_refinement.database_integrity",
                     cause=exc,
                 ) from exc
-            if version not in (0, _SCHEMA_VERSION):
+            if version not in (0, 1, _SCHEMA_VERSION):
                 raise RepositoryInvariantError(
                     "SQLite schema version is unsupported",
                     code="coco_refinement.schema_version",
-                    context={"expected": _SCHEMA_VERSION, "actual": version},
+                    context={"supported": [1, _SCHEMA_VERSION], "actual": version},
                 )
             if version == 0:
                 user_objects = connection.execute(
@@ -1374,13 +2061,28 @@ class SqliteDraftRepository:
                     for statement in _schema_statements():
                         connection.execute(statement)
                     connection.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
-                    _validate_schema_v1(connection)
+                    _validate_schema_v2(connection)
                     connection.commit()
                 except Exception:
                     connection.rollback()
                     raise
                 return
-            _validate_schema_v1(connection)
+            if version == 1:
+                # Never bless or repair a malformed v1 database: validate the exact
+                # historical contract before applying the additive v2 migration.
+                _validate_schema_v1(connection)
+                try:
+                    connection.execute("BEGIN IMMEDIATE")
+                    for statement in _schema_v2_additions():
+                        connection.execute(statement)
+                    connection.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
+                    _validate_schema_v2(connection)
+                    connection.commit()
+                except Exception:
+                    connection.rollback()
+                    raise
+                return
+            _validate_schema_v2(connection)
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(
@@ -1418,10 +2120,9 @@ class SqliteDraftRepository:
                     context={"task_id": str(task_row["task_id"])},
                     cause=exc,
                 ) from exc
-            if (
-                draft.semantic_hash != str(draft_row["semantic_hash"])
-                or draft.result_hash != str(draft_row["result_hash"])
-            ):
+            if draft.semantic_hash != str(
+                draft_row["semantic_hash"]
+            ) or draft.result_hash != str(draft_row["result_hash"]):
                 raise RepositoryCorruptionError(
                     "stored Draft hashes do not reproduce from objects",
                     code="coco_refinement.draft_hash_corrupt",
@@ -1587,6 +2288,10 @@ class _Transaction:
 
 
 def _schema_statements() -> tuple[str, ...]:
+    return _schema_v1_statements() + _schema_v2_additions()
+
+
+def _schema_v1_statements() -> tuple[str, ...]:
     return (
         """
         CREATE TABLE projects (
@@ -1644,6 +2349,45 @@ def _schema_statements() -> tuple[str, ...]:
     )
 
 
+def _schema_v2_additions() -> tuple[str, ...]:
+    return (
+        "CREATE INDEX tasks_image_locator ON tasks(image_locator)",
+        """
+        CREATE TABLE focus_queues (
+            queue_slot INTEGER PRIMARY KEY CHECK(queue_slot = 1),
+            queue_id TEXT NOT NULL UNIQUE,
+            project_id TEXT NOT NULL REFERENCES projects(project_id)
+                ON UPDATE RESTRICT ON DELETE RESTRICT,
+            split TEXT NOT NULL CHECK(split IN ('train', 'val')),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            batch_id TEXT,
+            commit_status TEXT NOT NULL
+                CHECK(commit_status IN (
+                    'idle', 'waiting', 'queued', 'running', 'reconciling',
+                    'succeeded', 'failed'
+                )),
+            publication_status TEXT NOT NULL
+                CHECK(publication_status IN ('idle', 'waiting', 'running', 'succeeded', 'failed')),
+            committed_generation INTEGER CHECK(committed_generation >= 0),
+            publication_receipt_json TEXT,
+            error TEXT
+        )
+        """,
+        """
+        CREATE TABLE focus_queue_members (
+            queue_id TEXT NOT NULL REFERENCES focus_queues(queue_id)
+                ON UPDATE RESTRICT ON DELETE CASCADE,
+            position INTEGER NOT NULL CHECK(position >= 0),
+            task_id TEXT NOT NULL UNIQUE REFERENCES tasks(task_id)
+                ON UPDATE RESTRICT ON DELETE RESTRICT,
+            PRIMARY KEY(queue_id, position)
+        )
+        """,
+        "CREATE INDEX focus_queue_members_task ON focus_queue_members(task_id)",
+    )
+
+
 def _normalized_create_table_sql(sql: str) -> str:
     """Return a whitespace/case-stable identity for canonical SQLite table DDL."""
     value = sql.strip()
@@ -1674,20 +2418,46 @@ def _normalized_create_table_sql(sql: str) -> str:
     return "".join(normalized)
 
 
-def _required_create_table_sql() -> dict[str, str]:
+def _required_create_table_sql(
+    required_columns: Mapping[str, object],
+) -> dict[str, str]:
     required: dict[str, str] = {}
     for statement in _schema_statements():
         normalized = _normalized_create_table_sql(statement)
-        for table in _REQUIRED_COLUMNS:
+        for table in required_columns:
             if normalized.startswith(f"createtable{table}("):
                 required[table] = normalized
                 break
-    if set(required) != set(_REQUIRED_COLUMNS):
+    if set(required) != set(required_columns):
         raise RuntimeError("canonical SQLite table definitions are incomplete")
     return required
 
 
 def _validate_schema_v1(connection: sqlite3.Connection) -> None:
+    _validate_schema(
+        connection,
+        required_columns=_V1_REQUIRED_COLUMNS,
+        required_foreign_keys=_V1_REQUIRED_FOREIGN_KEYS,
+        required_indexes=_V1_REQUIRED_INDEXES,
+    )
+
+
+def _validate_schema_v2(connection: sqlite3.Connection) -> None:
+    _validate_schema(
+        connection,
+        required_columns=_V2_REQUIRED_COLUMNS,
+        required_foreign_keys=_V2_REQUIRED_FOREIGN_KEYS,
+        required_indexes=_V2_REQUIRED_INDEXES,
+    )
+
+
+def _validate_schema(
+    connection: sqlite3.Connection,
+    *,
+    required_columns: Mapping[str, tuple[tuple[str, str, int, int], ...]],
+    required_foreign_keys: Mapping[str, tuple[tuple[str, str, str, str, str], ...]],
+    required_indexes: Mapping[str, tuple[str, tuple[str, ...]]],
+) -> None:
     try:
         tables = {
             str(row["name"])
@@ -1696,14 +2466,14 @@ def _validate_schema_v1(connection: sqlite3.Connection) -> None:
             ).fetchall()
             if not str(row["name"]).startswith("sqlite_")
         }
-        missing = set(_REQUIRED_COLUMNS) - tables
+        missing = set(required_columns) - tables
         if missing:
             raise RepositoryInvariantError(
                 "versioned SQLite database is missing required tables",
                 code="coco_refinement.schema_missing",
                 context={"missing": sorted(missing)},
             )
-        for table, expected in _REQUIRED_COLUMNS.items():
+        for table, expected in required_columns.items():
             actual = tuple(
                 (
                     str(row["name"]),
@@ -1719,7 +2489,7 @@ def _validate_schema_v1(connection: sqlite3.Connection) -> None:
                     code="coco_refinement.schema_columns",
                     context={"table": table},
                 )
-        for table, expected in _REQUIRED_FOREIGN_KEYS.items():
+        for table, expected in required_foreign_keys.items():
             actual = tuple(
                 (
                     str(row["table"]),
@@ -1736,7 +2506,7 @@ def _validate_schema_v1(connection: sqlite3.Connection) -> None:
                     code="coco_refinement.schema_foreign_keys",
                     context={"table": table},
                 )
-        for table, expected in _required_create_table_sql().items():
+        for table, expected in _required_create_table_sql(required_columns).items():
             table_row = connection.execute(
                 "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
                 (table,),
@@ -1752,7 +2522,7 @@ def _validate_schema_v1(connection: sqlite3.Connection) -> None:
                     code="coco_refinement.schema_constraints",
                     context={"table": table},
                 )
-        for index, (table, expected_columns) in _REQUIRED_INDEXES.items():
+        for index, (table, expected_columns) in required_indexes.items():
             index_row = connection.execute(
                 "SELECT tbl_name FROM sqlite_master WHERE type = 'index' AND name = ?",
                 (index,),
@@ -2052,6 +2822,69 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
+def _after_timestamp(previous: str) -> str:
+    """Return a CAS token strictly newer than the prior persisted timestamp."""
+
+    _timestamp(previous, field="updated_at")
+    candidate = _now()
+    if candidate > previous:
+        return candidate
+    parsed = datetime.fromisoformat(previous[:-1] + "+00:00")
+    return (
+        (parsed + timedelta(microseconds=1))
+        .isoformat(timespec="microseconds")
+        .replace("+00:00", "Z")
+    )
+
+
+def _chunks(values: Sequence[str], *, size: int = 500) -> tuple[tuple[str, ...], ...]:
+    return tuple(
+        tuple(values[index : index + size]) for index in range(0, len(values), size)
+    )
+
+
+def _optional_unique_task_ids(
+    task_ids: Sequence[str] | None,
+) -> tuple[str, ...] | None:
+    if task_ids is None:
+        return None
+    selected = tuple(_nonempty(value, field="task_id") for value in task_ids)
+    if len(set(selected)) != len(selected):
+        raise RepositoryInvariantError(
+            "scoped task IDs must be unique",
+            code="coco_refinement.task_scope_duplicate",
+        )
+    return selected
+
+
+def _commit_phase(value: object) -> CommitPhase:
+    if value not in (
+        "idle",
+        "waiting",
+        "queued",
+        "running",
+        "reconciling",
+        "succeeded",
+        "failed",
+    ):
+        raise RepositoryInvariantError(
+            "commit_status is invalid",
+            code="coco_refinement.focus_commit_status",
+            context={"commit_status": value},
+        )
+    return value  # type: ignore[return-value]
+
+
+def _publication_phase(value: object) -> PublicationPhase:
+    if value not in ("idle", "waiting", "running", "succeeded", "failed"):
+        raise RepositoryInvariantError(
+            "publication_status is invalid",
+            code="coco_refinement.focus_publication_status",
+            context={"publication_status": value},
+        )
+    return value  # type: ignore[return-value]
+
+
 def _nonempty(value: object, *, field: str) -> str:
     if not isinstance(value, str) or not value:
         raise RepositoryInvariantError(
@@ -2151,14 +2984,22 @@ def _integer(
 
 
 __all__ = [
+    "CommitPhase",
     "CompactTaskRecord",
     "DraftSaveApplied",
     "DraftSaveConflict",
     "DraftSaveResponse",
+    "FocusQueueActiveError",
+    "FocusQueueBusyError",
+    "FocusQueueConflictError",
+    "FocusQueueMember",
+    "FocusQueueNotFoundError",
+    "FocusQueueRecord",
     "MutationCollisionError",
     "PendingDraftCapture",
     "ProjectNotFoundError",
     "ProjectRecord",
+    "PublicationPhase",
     "RepositoryCorruptionError",
     "RepositoryError",
     "RepositoryInvariantError",

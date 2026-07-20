@@ -53,3 +53,33 @@ def test_object_inventory_uses_stable_training_order_and_bidirectional_selection
         r"function renderDraftState\(snapshot\)[\s\S]*?renderObjectInventory\(snapshot.objects\)",
         app_source,
     )
+
+
+def test_focus_queue_shell_separates_navigation_commit_and_publication() -> None:
+    index = (STATIC_ROOT / "index.html").read_text()
+    css = (STATIC_ROOT / "app.css").read_text()
+    app_source = (STATIC_ROOT / "app.js").read_text()
+
+    assert 'id="view-full-button"' in index
+    assert 'id="view-focus-button"' in index
+    assert 'id="focus-commit-button"' in index
+    assert 'id="focus-batch-status"' in index
+    assert 'id="focus-publication-status"' in index
+    assert ".focus-panel[hidden]" in css
+    assert "await api.getJson('/api/focus')" in app_source
+    assert "await api.postJson('/api/focus/commits', { batch_id: focusBatchId() })" in app_source
+    assert "await api.postJson('/api/focus/publication/retry', {})" in app_source
+    assert "await api.deleteJson('/api/focus')" in app_source
+    assert "tasks: members" in app_source
+    assert "if (state.navigationView === 'focus')" in app_source
+    assert "state.page.tasks[index].task_id" in app_source
+    assert "Batch: ${focusState(queue.batch)}" in app_source
+    assert "Publish: ${focusState(queue.publication)}" in app_source
+
+
+def test_api_client_exposes_csrf_protected_delete() -> None:
+    source = (STATIC_ROOT / "api-client.js").read_text()
+
+    assert "deleteJson(path)" in source
+    assert "method: 'DELETE'" in source
+    assert "mutation: true" in source

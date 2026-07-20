@@ -283,6 +283,7 @@ class CommittedGenerationPublisher:
         self.manifest_path = self.split_root / "project.json"
         self.journal_path = self.split_root / "journal.jsonl"
         self.lock_path = self.split_root / ".commit.lock"
+        self.process_lock_path = self.split_root / ".batch-process.lock"
         self.target_root = self.repository_root / TARGET_RELATIVE_ROOT
         self.image_root = self.repository_root / IMAGE_RELATIVE_ROOT
         self.target_norm_path = self.target_root / f"{split}.norm.jsonl"
@@ -292,9 +293,14 @@ class CommittedGenerationPublisher:
         self._validate_paths()
 
     def publish(self) -> DatasetPublicationReceipt:
-        with self._committed_generation_lock():
-            self._recover_incomplete_transaction()
-            authority = self._read_generation_authority()
+        # Keep the store generation fixed without holding the committed-file
+        # lock through the expensive candidate/token pass.  The store worker
+        # uses this same process barrier, while task navigation only needs the
+        # short committed-file lock and therefore remains responsive.
+        with self._batch_process_barrier():
+            with self._committed_generation_lock():
+                self._recover_incomplete_transaction()
+                authority = self._read_generation_authority()
             candidates = self._build_candidates(authority)
             try:
                 coord_loader_rows = sum(1 for _ in iter_raw_examples(candidates.coord_path))
@@ -311,8 +317,13 @@ class CommittedGenerationPublisher:
                     candidates.coord_path,
                     expected_row_count=candidates.row_count,
                 )
-                self._recheck_generation_authority(authority, candidates.working_sha256)
-                return self._publish_candidates(candidates, authority, token_budget)
+                with self._committed_generation_lock():
+                    self._recheck_generation_authority(
+                        authority, candidates.working_sha256
+                    )
+                    return self._publish_candidates(
+                        candidates, authority, token_budget
+                    )
             finally:
                 candidates.norm_path.unlink(missing_ok=True)
                 candidates.coord_path.unlink(missing_ok=True)
@@ -359,6 +370,17 @@ class CommittedGenerationPublisher:
                     context={"split": self.split, "runtime_root": str(self.runtime_root)},
                     cause=exc,
                 ) from exc
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+    @contextmanager
+    def _batch_process_barrier(self) -> Iterator[None]:
+        """Serialize the publisher with store recovery/batch processing."""
+
+        with self.process_lock_path.open("a+b") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
             try:
                 yield
             finally:

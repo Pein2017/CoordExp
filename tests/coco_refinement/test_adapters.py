@@ -399,6 +399,47 @@ def test_catalog_captures_only_pending_drafts_in_source_order_and_one_generation
     assert all(snapshot.annotation_revision == "1" for snapshot in capture.snapshots)
 
 
+def test_catalog_honors_explicit_task_scope_and_empty_scope(
+    tmp_path: Path,
+) -> None:
+    tasks = (_task(7, 0), _task(8, 1), _task(9, 2))
+    repository = _repository(tmp_path / "state.sqlite3", tasks=tasks)
+    for index, task in enumerate(tasks):
+        _save(
+            repository,
+            task=task,
+            objects=[_local_object((LOCAL_A, LOCAL_B, LOCAL_C)[index])],
+            revision=0,
+            mutation_id=f"save-{index}",
+        )
+    catalog = SqliteDraftCatalog(repository, current_user_id=PRINCIPAL)
+    principal = AuthenticatedPrincipal(user_id=PRINCIPAL, authenticated=True)
+
+    scoped = catalog.capture_current_user_drafts(
+        DraftCatalogRequest(
+            split="train",
+            project_id=PROJECT_ID,
+            principal=principal,
+            task_ids=("train:9", "train:7"),
+        )
+    )
+    empty = catalog.capture_current_user_drafts(
+        DraftCatalogRequest(
+            split="train",
+            project_id=PROJECT_ID,
+            principal=principal,
+            task_ids=(),
+        )
+    )
+
+    assert [snapshot.task_id for snapshot in scoped.snapshots] == [
+        "train:7",
+        "train:9",
+    ]
+    assert empty.snapshots == ()
+    assert empty.base_generation == 3
+
+
 def test_catalog_rejects_principal_or_cross_generation_authority(
     tmp_path: Path,
 ) -> None:

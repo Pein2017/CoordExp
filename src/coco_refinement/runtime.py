@@ -316,6 +316,7 @@ class StandaloneRefinementRuntime:
         startup_cleanup_timeout: float = 5.0,
         monotonic: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
+        repository_root: str | Path | None = None,
     ) -> None:
         startup_timeout = _validate_positive_finite_timing(
             "startup_timeout", startup_timeout
@@ -332,6 +333,11 @@ class StandaloneRefinementRuntime:
                 code="coco_refinement.runtime_splits",
             )
         self.preflight = preflight
+        self.repository_root = (
+            Path(repository_root).resolve(strict=True)
+            if repository_root is not None
+            else workspace.runtime_root.resolve().parents[2]
+        )
         self.workspace = workspace
         self.inspections = tuple(inspections)
         self.adapters = adapters
@@ -1258,6 +1264,7 @@ def create_standalone_runtime(
             startup_timeout=startup_timeout,
             startup_cleanup_timeout=startup_cleanup_timeout,
             poll_interval=poll_interval,
+            repository_root=root,
         )
     except BaseException:
         preflight.release()

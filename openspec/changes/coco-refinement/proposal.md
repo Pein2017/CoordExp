@@ -33,6 +33,14 @@ change, and easier to reason about.
 - Add one foreground launcher with a fixed direct `localhost:53662` endpoint
   and fixed Gate A runtime root so operator bookmarks and restart commands do
   not depend on an ephemeral relay.
+- Add one persistent temporary Focus Queue over the existing task index so an
+  operator can supply a small ordered list of approved image paths, navigate
+  only those tasks, commit only their pending Drafts, and release the queue
+  without copying images/JSONL or deleting annotation state.
+- After a Focus Commit succeeds, automatically run the validated training
+  publisher in the background and replace only that split's derived
+  max_len12000 norm/coord pair as one transaction. Invalid paths, duplicate or
+  mixed-split selections, and rows exceeding 12000 tokens fail closed.
 - **BREAKING for the legacy prototype only:** do not migrate or remain wire
   compatible with uncommitted Label Studio Drafts. Source/working JSONL, shared
   images, committed object identity, materialized coord output, and inference
@@ -72,5 +80,8 @@ contracts remain unchanged.
   `outputs/label_studio_coco_refinement/`; original COCO annotations and shared
   images remain immutable. The derived max_len12000 norm/coord training pair is
   an explicitly publishable iterative target with generation/hash receipts.
+- Focus Queue metadata is a small SQLite projection over stable existing task
+  identities. It survives browser/service restart until explicit release and
+  never becomes a second annotation or image authority.
 - The existing Label Studio checkout, state, and port 8080 remain untouched
   during the replacement gate and are not current authority for the new Drafts.

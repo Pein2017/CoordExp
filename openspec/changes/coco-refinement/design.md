@@ -342,6 +342,70 @@ Fresh recovery from an iterated target therefore remains fail-closed until an
 explicit identity-sidecar contract is designed; this is not part of the fixed
 launcher slice.
 
+### 9. One persistent Focus Queue projects the existing task index
+
+The runtime stores at most one active Focus Queue in SQLite. A queue is an
+ordered projection of existing stable task identities, not a project, copied
+dataset, or annotation namespace. Its members contain only queue ordinal,
+split, task ID, image ID, and the already indexed source-row identity. Browser
+refresh and service restart preserve the active queue until explicit release.
+
+The operator-facing CLI is intentionally small:
+
+```text
+scripts/coco_refinement_focus.py create <image paths...>
+scripts/coco_refinement_focus.py status
+scripts/coco_refinement_focus.py release
+scripts/coco_refinement_focus.py retry-publication
+```
+
+`create` validates the complete request before one SQLite transaction: every
+path must resolve beneath the approved shared-image root, exist, map uniquely
+to the current max_len12000 task index, belong to one split, and appear only
+once. Any invalid, absent, ambiguous, duplicate, or mixed-split member rejects
+the whole request. Creating while another queue is active fails until that
+queue is released. Supplied order is preserved exactly.
+The CLI reaches these operations only through the loopback HTTP/session/CSRF
+boundary and never opens `state.sqlite3` directly.
+
+When a queue is active, Focus mode Next/Previous and its task list stay within
+the ordered members. Direct task reads, full-dataset navigation, and the
+ordinary same-split Commit remain available as separate existing operations.
+Releasing a queue removes only queue metadata; it never removes or rewrites a
+Draft, batch, generation, published row, or image.
+
+`Commit focus` first flushes the active browser Draft, then captures only
+pending Drafts whose stable task IDs are active queue members. Capture remains
+all-or-nothing and uses the same immutable snapshot, worker, retirement, and
+newer-Draft rules as ordinary Commit. An empty focus capture is reported
+without creating a batch.
+
+The existing per-split capture lock and single-active-batch store admission are
+the reservation boundary: only one same-split capture can durably enqueue, so
+the same Draft revision/hash cannot enter both a Focus and ordinary batch.
+While a Focus batch is nonterminal or its training publication is waiting or
+running, another same-split Commit returns Busy. Editing and Draft saves remain
+available. Release also returns Busy until both stages are terminal.
+
+After a Focus batch reaches terminal success, the same background workflow
+invokes the accepted training publisher for that split and generation. Focus
+success is not reported as fully published until the norm/coord replacement
+receipt is terminal. A token-budget or publication failure leaves the previous
+training pair intact, preserves annotation/generation state, exposes the
+failure receipt, and does not auto-release the queue. Publication never changes
+the raw split JSONL, original COCO annotations, or shared images.
+While that failed publication remains retryable, the queue continues reserving
+its split against newer Commit admission. Explicit release abandons that retry
+intent and makes later same-split Commit available without deleting any
+annotation or generation state.
+
+The publication job is persisted before enqueue and recovered by exact
+`queue_id`, `batch_id`, split, and terminal generation after restart. It holds
+the store's per-split batch-process barrier while validating/publishing, but
+uses the committed-file lock only for short authority snapshots and final
+replacement. This prevents a newer generation from overtaking publication
+without blocking ordinary task reads and Draft writes for the full token check.
+
 ## Risks / Trade-offs
 
 - **[Risk] The reusable package still contains Label Studio names and payload
@@ -380,6 +444,18 @@ launcher slice.
 - **[Trade-off] Commit performance is not optimized.** → Retain the already
   proven atomic store implementation and report status; correctness and
   continued editing are the only gates.
+- **[Risk] A temporary selection could become a second task authority.** →
+  Persist only ordered references to indexed stable task IDs, revalidate them
+  against the current project, and keep Draft/read/Commit semantics owned by
+  the existing repository and working store.
+- **[Risk] Automatic training publication can fail after annotation Commit.** →
+  Model Focus completion as Commit followed by a separately receipted publish;
+  retain the successful generation and prior training pair on publish failure,
+  keep the queue active, and permit explicit retry without recapturing Drafts.
+- **[Risk] A later same-split Commit could overtake an older Focus publish.** →
+  Persist the publication intent before enqueue, reject new same-split Commit
+  admission until that chain is terminal, and hold the existing batch-process
+  barrier while publishing.
 
 ## Migration Plan
 
@@ -397,6 +473,10 @@ launcher slice.
 6. After explicit user acceptance, stop treating 8080 as fallback and update
    current operator docs. Preserve the Git archive branch and runtime receipt;
    runtime-state deletion remains a separate explicit cleanup decision.
+7. Add the persistent Focus Queue as a projection over the accepted standalone
+   workspace; prove ordered navigation, scoped capture, automatic norm/coord
+   publication, restart persistence, and metadata-only release before using it
+   for high-frequency small-image refinement.
 
 Rollback at every pre-acceptance step is simply stopping the new service and
 returning to unchanged 8080. No source or legacy runtime mutation is required.

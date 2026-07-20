@@ -319,6 +319,37 @@ def test_lost_response_retry_queries_status_without_recapturing(
     assert len(catalog.calls) == 1
 
 
+def test_task_scope_reaches_catalog_and_lost_retry_still_uses_status(
+    stores: tuple[
+        dict[str, WorkingDatasetStore],
+        AcceptingAnnotationVerifier,
+        EmptyInferenceResolver,
+    ],
+) -> None:
+    split_stores, _, _ = stores
+    catalog = MutableCatalog()
+    _set_capture(catalog, split_stores["train"], "train", (2,))
+    runtime = _runtime({"train": split_stores["train"]}, catalog)
+    principal = AuthenticatedPrincipal("reviewer", authenticated=True)
+
+    first = runtime.capture_and_enqueue(
+        split="train",
+        batch_id="scoped-lost-response",
+        principal=principal,
+        task_ids=("train:2",),
+    )
+    retry = runtime.capture_and_enqueue(
+        split="train",
+        batch_id="scoped-lost-response",
+        principal=principal,
+        task_ids=("invalid", "invalid"),
+    )
+
+    assert retry == first
+    assert len(catalog.calls) == 1
+    assert catalog.calls[0].task_ids == ("train:2",)
+
+
 def test_same_split_has_one_active_batch_and_server_resolves_member_order(
     stores: tuple[
         dict[str, WorkingDatasetStore],

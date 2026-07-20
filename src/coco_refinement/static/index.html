@@ -33,11 +33,23 @@
         <span id="commit-status" class="status-badge" data-tone="pending" role="status">Commit unavailable</span>
       </section>
 
+      <section id="focus-panel" class="focus-panel" aria-label="Focus Queue" hidden>
+        <div class="focus-view-switch" role="group" aria-label="Task navigation scope">
+          <button id="view-full-button" type="button" aria-pressed="false">Full dataset</button>
+          <button id="view-focus-button" type="button" aria-pressed="true">Focus queue</button>
+        </div>
+        <span id="focus-queue-status" class="status-badge" data-tone="pending" role="status">Focus unavailable</span>
+        <span id="focus-batch-status" class="status-badge" data-tone="pending" role="status">Batch: idle</span>
+        <span id="focus-publication-status" class="status-badge" data-tone="pending" role="status">Publish: idle</span>
+        <button id="focus-commit-button" type="button" disabled>Commit focus</button>
+        <button id="focus-release-button" type="button">Release focus</button>
+      </section>
+
       <p id="notice" class="notice" role="status">Loading local session…</p>
 
       <section class="workspace">
         <aside class="task-list-panel" aria-label="Task list">
-          <div class="panel-heading"><h2>Tasks</h2><span id="page-summary">—</span></div>
+          <div class="panel-heading"><h2 id="task-list-heading">Tasks</h2><span id="page-summary">—</span></div>
           <ol id="task-list" class="task-list"></ol>
         </aside>
         <section class="preview-panel" aria-label="Sample preview">
