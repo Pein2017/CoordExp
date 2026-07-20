@@ -72,7 +72,7 @@ losses:
 
 rollout_calibration:
   profile: transition_only
-  state_bank_manifest_path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-a-combined-v3/state-bank/manifest.json
+  state_bank_manifest_path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-a-combined-v4/state-bank/manifest.json
   source_checkpoint_id: ec308f8f5a26f5425eadeecf6fde5114d10dbf8e31de0b1fa0cc78abab8c3f2c
   entity_transition:
     weight: 1.0
