@@ -315,8 +315,6 @@ export function createSvgEditor({
         'aria-hidden': String(hidden),
       });
       if (hidden) group.setAttribute('hidden', '');
-      const title = element('title');
-      title.textContent = `${object.category_name || object.category_id} · ${regionKey}`;
       const visual = element('rect', {
         class: 'editor-box',
         x: rect.x,
@@ -343,7 +341,7 @@ export function createSvgEditor({
         fill: color,
       });
       label.textContent = object.category_name || `COCO ${object.category_id}`;
-      group.append(title, visual, hitTarget, label);
+      group.append(visual, hitTarget, label);
       regionsLayer.append(group);
     }
     renderSelectionAffordance();

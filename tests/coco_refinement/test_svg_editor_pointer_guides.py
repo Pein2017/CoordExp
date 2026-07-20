@@ -281,6 +281,29 @@ assert.deepEqual(callbacks, { gestures: [], selections: [], messages: [] });
     )
 
 
+def test_bbox_regions_do_not_expose_native_title_tooltips() -> None:
+    _run_node(
+        r"""
+const svg = new FakeSVGSVGElement();
+const editor = createSvgEditor({ svg });
+editor.setTask({
+  image_width: 1000,
+  image_height: 500,
+  image_url: '/api/images/tooltip',
+  objects: [
+    { region_key: 'val:coco:421744', bbox_2d: [100, 100, 300, 400], category_id: 1, category_name: 'person' },
+  ],
+});
+
+assert.equal(descendants(svg).filter(node => node.tagName === 'title').length, 0);
+const region = descendants(svg).find(node => node.getAttribute('data-region-key') === 'val:coco:421744'
+  && node.tagName === 'g');
+assert.ok(region);
+assert.equal(region.getAttribute('aria-label'), 'person, bbox 100, 100, 300, 400');
+"""
+    )
+
+
 def test_pointer_guides_use_current_viewbox_and_stay_bounded_during_capture_drag() -> None:
     _run_node(
         r"""
