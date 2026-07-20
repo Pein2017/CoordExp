@@ -7,7 +7,7 @@ authority: non_normative_research
 architecture_promotion_status: not_promoted
 topic: qwen3-vl-dense-enumeration
 status: active
-updated: 2026-07-19
+updated: 2026-07-20
 ---
 
 # Qwen3 Vision-Language Autoregressive Detection Research Compass
@@ -242,6 +242,19 @@ Markdown links, rather than this diagram, are the durable graph edges.
   ordering remains an ablation, not a treatment. See [Matched Random-Order-
   Trained versus Geometry-Sorted-Trained Prefix-Order Screen
   Results](experiments/2026-07-20-matched-random-sorted-prefix-order-screen/results.md).
+- The resulting first-wrong-coordinate Smoke B now separates local
+  learnability from end-to-end treatment value. Two optimizer steps on eight
+  reviewed events improve the frozen accepted-coordinate-versus-wrong-token
+  margin on four of five held-out events relative to both source and the
+  learning-rate-matched token-type-gate control. The gain does not survive as
+  a stable free-rollout advantage. On the three held-out images, neither
+  coordinate arm improves matched-box Intersection over Union relative to its
+  matched control, and both create substantially more unmatched and duplicate
+  candidates. The gate-only `1e-5` arm is the strongest ordinary-rollout arm
+  on the eight-image smoke. The local coordinate objective is therefore a
+  valid diagnostic and an insufficient treatment; the 256-image stage is
+  closed. See [Smoke B First-Wrong-Coordinate Calibration
+  Results](experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-b-v1/results.md).
 - The sampled-history reachability unit now closes the direct path from bagged
   novelty to complete-row preference training. Exact sampled prefixes make
   later targets greedily reachable in several images, but access can be
@@ -421,7 +434,7 @@ cross-row coverage.
 | Input-level spatial restriction changes one object opportunity | Bounded support under hard eligibility; the count-balanced all-keys-readable soft cross operator is now closed because both matched-owner controls fail, so its crossed arms cannot adjudicate the hard asymmetry | Hard exclusion and its abrupt phase switch may manufacture the asymmetry; the historical uniform-dose operator and current query-phase-restricted operator cannot be pooled into one trajectory | No immediate successor is active. A historical-uniform-operator `3.9060049` endpoint would require a fresh separately authorized execution; artifact-only cross-operator pooling is rejected. |
 | Safe final masked policy improves enumeration | Ruled out under the executed protocol | Equal-call full-image sampling is at least as useful after aggregation | Revisit only after a new masking mechanism avoids retention and output-expansion failures. |
 | Fixed-prefix next-object probability is fragmented across several real objects | Supported at one exact state; not population-estimated | Some other bagging rescues may still arise only from earlier trajectory divergence | Replicate only when a future route decision requires prevalence, not as the immediate discriminator. |
-| Prefix state is an executable but fragile traversal state | Supported across order, scoring, exact same-parent interventions, and a matched ordering-policy pilot. Random complete-row training changes the route distribution but does not create symmetric covered-set behavior; on image `2299` it collapses to one successor. Local route changes can begin at category choice and continue through geometry. | The state may encode geometry-conditioned route compatibility rather than semantic coverage. Strict owner matching, dense same-class geometry, incomplete annotation, selected-case bias, and one checkpoint per ordering policy remain alternatives. | Design one small geometry-sorted-base transition-calibration screen with same-covered-set permutations and symmetric leave-one-out controls. Its primary endpoint is safe greedy unique-owner gain, not exact-row invariance or route imitation. |
+| Prefix state is an executable but fragile traversal state | Supported across order, scoring, exact same-parent interventions, and a matched ordering-policy pilot. Random complete-row training changes the route distribution but does not create symmetric covered-set behavior; on image `2299` it collapses to one successor. The first-wrong-coordinate Smoke B proves that a local exact-prefix boundary margin is learnable, but it does not improve free-rollout geometry or health relative to the matched gate-only control. | The state may encode geometry-conditioned route compatibility rather than semantic coverage, and a local frozen-prefix target may not control owner selection or later trajectory state. Strict owner matching, dense same-class geometry, incomplete annotation, selected-case bias, and one checkpoint per ordering policy remain alternatives. | Do not scale the current coordinate loss. Any later loss-only unit must first compare same-prefix one-row alternatives by downstream owner-and-geometry value; any explicit carrier remains a separate hypothesis rather than the default next implementation. |
 | Late-middle residual states implement phase-specific decisions | Bounded one-sided support: an eligible clock-description path is conditionally portable, and one same-description paired-object state after decoder block `23` switches the unrestricted geometry owner through an `x1` basin change where the trusted block-`13` control does not | The portable state may select only the first coordinate, with the emitted `x1` and native autoregressive computation recovering the rest of the box; one image and one direction do not establish a general object state | No successor is active. If separately authorized, mediate `x1` by forcing paired `x1` without replacement and forcing baseline `x1` under paired-state replacement, then compare later coordinates and final owner. |
 | Early coordinate choice establishes a stable complete-object owner | Rejected as a universal rule. In one primary bowl case, a one-bin `x1` branch and later `x2` difference reshape `y2`; in a nearby-person control, shared `x1` remains ambiguous and ownership separates through `y1` and `x2`; one small-person case instead keeps the same owner after a bad `y1`. The older dense-chair transport result still shows that early coordinates can strongly constrain later boundaries. | Coordinate generation mixes box grammar, visual boundary evidence, route state, and instance ownership; the dominant component changes by scene and coordinate slot. | If separately authorized, use on-support same-object coordinate perturbations and coherent full-row alternatives. Do not infer an owner from one coordinate or average coordinate marginals across neighboring instances. |
 | Incomplete dense annotations teach conservative omission and premature termination | Plausible | Sequence-mode concentration or weak visual evidence is the dominant cause | Compare exhaustive labels with original labels and controlled thinning on the same images. |
@@ -439,6 +452,14 @@ changes the next-row category, proving cross-row state sensitivity while
 failing to establish correct uncovered-object redistribution.
 
 ## Current Discriminator Queue
+
+The [Own-Prefix Entity-Transition and Coordinate-Boundary Calibration Training
+Screen](experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-b-v1/results.md)
+is now closed. No trusted same-prefix complete-row rescue was found, so the
+entity-transition and joint arms did not run. The coordinate arm passed its
+local learnability check and failed its end-to-end promotion check against the
+matched token-type-gate controls. No replicated seed, 256-image, 1,024-image,
+or full-size successor is active for this objective.
 
 The completed [Person 25 Dominant-Owner Commit and Persistence Closeout
 results](experiments/2026-07-18-person25-dominant-owner-commit-and-persistence-closeout/results.md)
@@ -653,18 +674,15 @@ The screen compares a few matched-budget arms on 256 images. It is a stop-or-
 promote test for learnability, not a final model, broad hyperparameter search,
 or paper result.
 
-Current gate decision: **authorized for a small specification and matched
-screen; execution remains separately authorized**. The matched ordering-policy
-pilot identifies a safer local target than sampled-row imitation: preserve a
-verified uncovered transition across same-covered-set order permutations, and
-require an omitted verified object to become more competitive than when its
-row is present. Keep ordinary geometry-sorted pure cross-entropy as the base,
-use random ordering as an ablation, and score the earliest route-distinguishing
-token or short prefix rather than one exact complete coordinate row. The
-screen must not treat unmatched dense predictions as negatives. The pending
-human-reviewed dense cohort should be used for entity-versus-geometry outcome
-adjudication and final unique-object value. This authorization does not select
-an architecture, launch training, or establish a general loss.
+Current gate decision: **closed for the executed first-wrong-coordinate
+objective**. Its local held-out margin moved as intended, but ordinary rollout
+did not beat the learning-rate-matched gate-only control on owner consistency,
+matched-box geometry, or duplication health. The formal 256-image screen is
+not authorized. A future screen needs a new research unit and a target that
+connects a same-prefix decision to downstream owner-and-geometry value; it
+must not inherit authorization from this smoke or treat unmatched dense
+predictions as negatives. This decision selects neither an architecture nor a
+general replacement loss.
 
 ## Demoted or Rejected Claims
 
@@ -684,6 +702,9 @@ an architecture, launch training, or establish a general loss.
   habitual-successor collapse.
 - One safe coordinate-history rescue is not evidence that sampled coordinates
   are generally better supervision; two matched causal cases exchange owners.
+- A held-out exact-prefix coordinate-margin improvement is not evidence of
+  better free-rollout localization when matched-box geometry and duplicate
+  behavior do not improve against a learning-rate-matched control.
 - A latest-row effect on one image is not a universal carrier when another
   image requires the joint history of two earlier rows.
 - One reciprocal transition between two nearly nested, cross-category owners

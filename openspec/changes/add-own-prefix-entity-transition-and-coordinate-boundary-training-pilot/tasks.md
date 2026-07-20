@@ -32,7 +32,7 @@
 ## 5. Smoke Evidence
 
 - [x] 5.1 Build and run the deterministic one-transition-plus-one-geometry smoke; verify exact replay, masks, selected positions, intended token types, finite gradients, and intended margin movement after one tiny update.
-- [ ] 5.2 Build and run the 13-reviewed-coordinate-state smoke for coordinate-boundary and learning-rate-matched coordinate-boundary-gate-only profiles; verify parseable ordinary free-row inference from each produced adapter and prove that no canonical supervised-fine-tuning examples were consumed. Keep transition and joint profiles deferred until a visually trusted same-prefix transition positive exists.
+- [x] 5.2 Build and run the 13-reviewed-coordinate-state smoke for coordinate-boundary and learning-rate-matched coordinate-boundary-gate-only profiles; verify parseable ordinary free-row inference from each produced adapter and prove that no canonical supervised-fine-tuning examples were consumed. Keep transition and joint profiles deferred until a visually trusted same-prefix transition positive exists.
 - [x] 5.3 Verify that each smoke checkpoint loads through the existing inference composition and requires no state bank or custom controller at inference time.
 
 ## 6. Implementation-Race Handoff Gate

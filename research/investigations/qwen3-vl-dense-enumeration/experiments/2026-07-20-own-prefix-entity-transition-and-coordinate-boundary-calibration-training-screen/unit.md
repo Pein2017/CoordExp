@@ -5,12 +5,12 @@ type: investigation
 role: research-unit
 authority: non_normative_research
 architecture_promotion_status: not_promoted
-training_promotion_status: smoke_a_complete_real_smoke_b_required
-implementation_status: implemented_and_smoke_a_validated
+training_promotion_status: smoke_b_closed_not_promoted
+implementation_status: implemented_and_smoke_b_evaluated
 unit_id: 2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen
 topic: qwen3-vl-dense-enumeration
-status: active
-evidence_status: smoke_a_and_dose_screen_complete
+status: complete
+evidence_status: smoke_b_complete_bounded_negative
 updated: 2026-07-20
 ---
 
@@ -18,19 +18,26 @@ updated: 2026-07-20
 
 ## Decision Status
 
+Smoke B is complete. The [Smoke B first-wrong-coordinate calibration
+results](smoke-b-v1/results.md) close this unit without promotion to the
+256-image screen. Both coordinate-loss arms improve the frozen held-out
+coordinate margin relative to source and their learning-rate-matched gate-only
+controls on four of five events, but neither arm beats its matched control on
+ordinary rollout health or matched-box geometry. The local objective is real;
+its end-to-end treatment value is not established.
+
 This document originally froze the scientific design for a small training
 screen. The independent implementation race, source-parity check, deterministic
 one-event Smoke A, learning-rate dose screen, checkpoint reload, and ordinary
 greedy inference have now completed. The [Smoke A and dose-screen results](smoke-a-dose-screen-results.md)
 record the evidence and the required interpretation changes.
 
-The formal 256-image screen is still not authorized. The reviewed Smoke B
-coordinate bank contains 13 current-row boundary decisions: 8 image-grouped
-training events and 5 evaluation events. Seven nonempty-prefix events have an
-unresolved prior-row covered set, but all 13 retain an exact prefix and an
-independently reviewed current physical owner and first wrong coordinate.
-Before launch, the bank contract must encode that distinction explicitly and
-the canonical prompt contract must be bound to the source traces.
+The formal 256-image screen is not authorized. The completed Smoke B bank
+contains 13 current-row boundary decisions: 8 image-grouped training events
+and 5 evaluation events. Seven nonempty-prefix events have an unresolved
+prior-row covered set, while all 13 retain an exact prefix and an independently
+reviewed current physical owner and first wrong coordinate. The bank contract
+encodes that distinction and binds the canonical prompt to the source traces.
 
 The screen deliberately tests a loss-only treatment before adding object
 slots, object queries, an external detector, a persistent covered-object
