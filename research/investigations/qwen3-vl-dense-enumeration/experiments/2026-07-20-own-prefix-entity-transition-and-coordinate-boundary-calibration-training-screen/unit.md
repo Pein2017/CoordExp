@@ -320,11 +320,41 @@ Split by image identity. All exact-prefix sibling candidates, alternate
 sampling seeds, counterfactual candidates, and physical-entity aliases remain
 in the same split.
 
-The formal screen uses a frozen 256-image state-bank source. The 12 dense
-images currently receiving detailed user relabeling are a blind evaluation
-cohort. They must not be used for training, candidate mining, learning-rate
-selection, stopping, or arm selection. Their artifact path is frozen before
-the full screen is launched.
+The formal screen uses a frozen 256-image state-bank source. The following 12
+dense images form a completed blind evaluation cohort:
+
+```text
+1584, 2685, 4134, 5001, 6040, 7511,
+10707, 13348, 13923, 14038, 14439, 16228
+```
+
+They are published as generation `7` inside the complete validation files,
+not as a separate 12-row dataset:
+
+```text
+/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.norm.jsonl
+sha256: 44ab9fd985890129128bdacb07081cc00bd4affe8c6768d5e49609ca20a72e52
+
+/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl
+sha256: 81d674070d4b588488a2cb911c09f765b63c0e6d035b50db27ee0a41ff2a1894
+```
+
+The publication receipt is:
+
+```text
+/data/CoordExp/outputs/coco_refinement/gate-a-20260717/val/training.publish.receipt.json
+```
+
+The human pass added objects, resized or repositioned existing boxes, and in
+some cases deleted and redrew an object. Therefore annotation-identifier sign
+and old-versus-new row difference are provenance only; they must not be used
+to infer whether a physical entity is newly discovered. The generation-7
+current row is the evaluation authority.
+
+These 12 images must not be used for training, candidate mining, learning-rate
+selection, stopping, arm selection, implementation-race fixtures, or smoke
+fixtures. Before the full screen is launched, the lead freezes their exact row
+hashes and asserts that no image appears in a state-bank split.
 
 ## Objective One: Entity-Transition Preference
 
