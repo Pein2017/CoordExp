@@ -195,6 +195,31 @@ function coordinates(node) {
   return Object.fromEntries(['x1', 'y1', 'x2', 'y2'].map(name => [name, Number(node.getAttribute(name))]));
 }
 
+function editorPart(svg, regionKey, part, handle = null) {
+  const match = descendants(svg).find(node =>
+    node.getAttribute('data-region-key') === regionKey &&
+    node.getAttribute('data-editor-part') === part &&
+    (handle === null || node.getAttribute('data-handle') === handle));
+  assert.ok(match, `missing ${regionKey} ${part} ${handle || ''}`);
+  return match;
+}
+
+function rectCenter(node) {
+  return {
+    x: Number(node.getAttribute('x')) + Number(node.getAttribute('width')) / 2,
+    y: Number(node.getAttribute('y')) + Number(node.getAttribute('height')) / 2,
+  };
+}
+
+function naturalToClient(svg, point) {
+  const [x, y, width, height] = svg.getAttribute('viewBox').split(/\s+/).map(Number);
+  const bounds = svg.getBoundingClientRect();
+  return {
+    clientX: bounds.left + (point.x - x) * bounds.width / width,
+    clientY: bounds.top + (point.y - y) * bounds.height / height,
+  };
+}
+
 const { createSvgEditor } = await import(MODULE_URL);
 """
     script = harness.replace("MODULE_URL", json.dumps(MODULE.resolve().as_uri())) + body
@@ -291,5 +316,112 @@ svg.dispatch('pointerup', { pointerId: 7, clientX: 260, clientY: 200 });
 assert.equal(editor.hasActiveGesture(), false);
 for (const node of guides(svg)) assert.ok(node.hasAttribute('hidden'));
 assert.deepEqual(gestures, [{ operation: 'create', pixelXYXY: [380, 150, 1000, 500] }]);
+"""
+    )
+
+
+def test_selected_handle_wins_over_overlapping_body_without_raising_selected_body() -> None:
+    _run_node(
+        r"""
+const svg = new FakeSVGSVGElement();
+const gestures = [];
+const selections = [];
+const editor = createSvgEditor({
+  svg,
+  onGesture: detail => gestures.push(detail),
+  onSelection: detail => selections.push(detail),
+});
+editor.setTask({
+  image_width: 1000,
+  image_height: 500,
+  image_url: '/api/images/overlap',
+  objects: [
+    { region_key: 'a', bbox_2d: [100, 100, 500, 500], category_id: 1, category_name: 'person' },
+    { region_key: 'b', bbox_2d: [450, 450, 800, 800], category_id: 1, category_name: 'person' },
+  ],
+});
+editor.setSelected('a');
+
+const regionsLayer = svg.children.find(node => node.classList.contains('editor-regions'));
+const selectionLayer = svg.children.find(node => node.classList.contains('editor-selection-layer'));
+assert.ok(svg.children.indexOf(selectionLayer) > svg.children.indexOf(regionsLayer));
+const bodyB = editorPart(svg, 'b', 'body');
+const se = editorPart(svg, 'a', 'handle', 'se');
+assert.equal(se.getAttribute('pointer-events'), 'none');
+const corner = naturalToClient(svg, rectCenter(se));
+
+svg.dispatch('pointermove', { ...corner, target: bodyB });
+assert.equal(svg.getAttribute('data-resize-handle'), 'nwse');
+assert.ok(editorPart(svg, 'a', 'handle', 'se').classList.contains('is-hovered'));
+svg.dispatch('pointerdown', { pointerId: 4, ...corner, target: bodyB });
+assert.equal(editor.hasActiveGesture(), true);
+assert.equal(svg.capturedPointers.has(4), true);
+svg.dispatch('pointermove', {
+  pointerId: 4,
+  clientX: corner.clientX + 10,
+  clientY: corner.clientY + 6,
+  target: bodyB,
+});
+svg.dispatch('pointerup', {
+  pointerId: 4,
+  clientX: corner.clientX + 10,
+  clientY: corner.clientY + 6,
+  target: bodyB,
+});
+assert.equal(gestures.length, 1);
+assert.equal(gestures[0].operation, 'update');
+assert.equal(gestures[0].regionKey, 'a');
+assert.ok(gestures[0].pixelXYXY[2] > rectCenter(se).x);
+assert.deepEqual(selections, []);
+
+const bodyBCenter = naturalToClient(svg, rectCenter(bodyB));
+svg.dispatch('pointermove', { ...bodyBCenter, target: bodyB });
+assert.equal(svg.getAttribute('data-resize-handle'), null);
+svg.dispatch('pointerdown', { pointerId: 5, ...bodyBCenter, target: bodyB });
+svg.dispatch('pointerup', { pointerId: 5, ...bodyBCenter, target: bodyB });
+assert.equal(selections.at(-1).regionKey, 'b');
+assert.equal(gestures.length, 1);
+"""
+    )
+
+
+def test_screen_space_handle_radius_uses_nearest_with_corner_tie_priority() -> None:
+    _run_node(
+        r"""
+const svg = new FakeSVGSVGElement();
+const editor = createSvgEditor({ svg });
+editor.setTask({
+  image_width: 1000,
+  image_height: 500,
+  image_url: '/api/images/tiny',
+  objects: [
+    { region_key: 'tiny', bbox_2d: [100, 100, 120, 120], category_id: 1, category_name: 'person' },
+  ],
+});
+editor.setSelected('tiny');
+
+let nw = naturalToClient(svg, rectCenter(editorPart(svg, 'tiny', 'handle', 'nw')));
+let n = naturalToClient(svg, rectCenter(editorPart(svg, 'tiny', 'handle', 'n')));
+const exactTie = {
+  clientX: (nw.clientX + n.clientX) / 2,
+  clientY: (nw.clientY + n.clientY) / 2,
+};
+svg.dispatch('pointermove', exactTie);
+assert.equal(svg.getAttribute('data-resize-handle'), 'nwse');
+assert.ok(editorPart(svg, 'tiny', 'handle', 'nw').classList.contains('is-hovered'));
+
+editor.zoomIn();
+nw = naturalToClient(svg, rectCenter(editorPart(svg, 'tiny', 'handle', 'nw')));
+const outwardUnit = 1 / Math.sqrt(2);
+svg.dispatch('pointermove', {
+  clientX: nw.clientX - 13 * outwardUnit,
+  clientY: nw.clientY - 13 * outwardUnit,
+});
+assert.equal(svg.getAttribute('data-resize-handle'), 'nwse');
+svg.dispatch('pointermove', {
+  clientX: nw.clientX - 15 * outwardUnit,
+  clientY: nw.clientY - 15 * outwardUnit,
+});
+assert.equal(svg.getAttribute('data-resize-handle'), null);
 """
     )

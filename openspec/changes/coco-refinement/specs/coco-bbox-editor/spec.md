@@ -28,6 +28,18 @@ rotation.
 - **WHEN** the operator moves, resizes, or relabels a selected object
 - **THEN** the next durable Draft retains the same stable region key and any valid committed identity while updating only the requested semantics
 
+#### Scenario: Selected resize handle overlaps another object
+- **WHEN** Select mode is active and pointer down is nearest to a selected bbox corner within 14 CSS pixels or edge midpoint within 12 CSS pixels while another bbox body overlaps that location
+- **THEN** the editor starts resize on the selected bbox through that handle, captures the pointer, and does not change selection
+
+#### Scenario: Pointer is outside selected resize handles
+- **WHEN** Select mode is active and the operator clicks another bbox outside every selected-handle screen-space zone
+- **THEN** ordinary bbox hit order selects that object without the selected bbox body intercepting the click
+
+#### Scenario: Selected handle zones overlap each other
+- **WHEN** zoom or a small bbox places multiple selected handles within their accepted screen-space distance
+- **THEN** the nearest handle wins deterministically, an exact tie prefers a corner, and hover displays the matching resize cursor before the gesture begins
+
 #### Scenario: Bbox is deleted
 - **WHEN** the operator deletes a selected object
 - **THEN** the next durable Draft omits that object and later Commit records its deletion without renumbering unrelated objects

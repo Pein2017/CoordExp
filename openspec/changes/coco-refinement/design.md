@@ -240,6 +240,21 @@ The editor supports show-all, dim-non-selected, hide-non-selected, per-region
 visibility, restore, and focused deletion. These flags exist only in browser
 state and never mark a Draft dirty.
 
+Select-mode resize uses an explicit selection-affordance layer above every
+region body without raising the selected region's full body above its peers.
+On pointer down, the editor first performs screen-space proximity arbitration
+against only the selected region's eight handles: corner handles accept the
+nearest point within 14 CSS pixels and edge-midpoint handles within 12 CSS
+pixels, with corners winning an exact tie. A matched handle starts resize and
+captures the pointer before any overlapping region body can change selection.
+Outside those handle zones, ordinary region-body hit order remains unchanged,
+so clicking another visible object still switches selection. Hover previews
+the winning resize cursor/handle. Screen-space thresholds remain constant
+through zoom, pan, aspect-preserving letterboxing, and image resolution; tiny
+boxes with overlapping handle zones resolve by nearest distance rather than
+DOM paint order. Fully coincident bodies remain selectable through the
+existing right-panel inventory rather than adding click cycling or modifiers.
+
 Class selection accepts exact canonical English COCO-80 names and offers
 prefix, substring, and spelling-tolerant filtering over that fixed list. Only
 the selected canonical name and official sparse category ID are saved.

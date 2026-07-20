@@ -32,6 +32,7 @@
 - [ ] 3.8 Launch an isolated Gate A experience instance on a non-8080 port and runtime root, hand the train/val URLs to the user, remove measured interaction blockers without weakening authority checks, relaunch, and wait for explicit human-loop approval before beginning real ROI implementation.
 - [x] 3.9 Add tested Select/Draw Command+1/Command+2 plus plain 1/2 fallback shortcuts, bounded Draw pointer guides, visible sticky class context with split reset, and a bidirectionally selectable right-panel object inventory that recomputes transient IDs in exact training order after completed authoritative edits.
 - [x] 3.10 Add one tested foreground Gate A launcher that directly binds the fixed `localhost:53662` browser endpoint and approved runtime root without an ephemeral relay.
+- [x] 3.11 Add a tested topmost selection-affordance layer and screen-space selected-handle arbitration so corner/edge resize wins over overlapping bbox bodies while clicks outside handle zones retain ordinary object selection.
 
 ## 4. Real ROI Assistance Gate
 

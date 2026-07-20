@@ -23,6 +23,12 @@ def test_app_shell_exposes_sticky_class_and_object_inventory() -> None:
     assert "stroke: rgba(255, 255, 255, .78)" in guide_rule.group(1)
     assert "vector-effect: non-scaling-stroke" in guide_rule.group(1)
     assert "pointer-events: none" in guide_rule.group(1)
+    handle_rule = re.search(r"\.editor-handle\s*\{([^}]*)\}", css)
+    assert handle_rule
+    assert "pointer-events: none" in handle_rule.group(1)
+    assert ".editor-handle.is-hovered" in css
+    for cursor in ("ns", "ew", "nesw", "nwse"):
+        assert f'#bbox-overlay[data-resize-handle="{cursor}"]' in css
 
 
 def test_app_wires_guarded_mode_shortcuts_and_split_class_reset() -> None:
