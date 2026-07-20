@@ -1,0 +1,44 @@
+extends: ../qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200.yaml
+
+run:
+  name: qwen3-vl-2b-rollout-calibration-smoke-b-source
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-a-combined-v4/smoke-b/runs
+  collision_policy: fail
+
+model:
+  base_model: /data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent
+  dtype: fp32
+
+backend:
+  type: hf
+  hf:
+    attn_implementation: flash_attention_2
+    patch_embed_linearization: enabled
+
+data:
+  input_jsonl: ../../../../research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-fixture-v1/smoke-b-input.coord.jsonl
+
+generation:
+  batch_size: 2
+  max_new_tokens: 512
+  temperature: 0.0
+  top_p: 1.0
+  n: 1
+  repetition_penalty: 1.0
+
+artifacts:
+  write_token_trace: true
+  write_parse_diagnostics: true
+  include_raw_model_logprob: true
+
+debug:
+  smoke: true
+  dry_run: false
+
+adapter:
+  type: dora
+  path: /data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/adapter
+  name: default
+
+embedding_delta:
+  path: /data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/special_token_embeddings

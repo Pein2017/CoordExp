@@ -1,0 +1,2 @@
+{"images":["/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000007816.jpg"],"objects":[],"width":1248,"height":832,"image_id":7816,"file_name":"images/val2017/000000007816.jpg","metadata":{"source":"coco2017","split":"val","purpose":"smoke_b_checkpoint_reload"}}
+{"images":["/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000009400.jpg"],"objects":[],"width":1152,"height":864,"image_id":9400,"file_name":"images/val2017/000000009400.jpg","metadata":{"source":"coco2017","split":"val","purpose":"smoke_b_checkpoint_reload"}}
