@@ -428,6 +428,25 @@ export function createSvgEditor({
     return clientToNaturalPoint({ x: event.clientX, y: event.clientY }, bounds, state.viewBox);
   }
 
+  function pointerInsideViewBox(event) {
+    const point = clientToNatural(event);
+    return point.x >= state.viewBox.x && point.x <= state.viewBox.x + state.viewBox.width &&
+      point.y >= state.viewBox.y && point.y <= state.viewBox.y + state.viewBox.height;
+  }
+
+  function wheelDeltaPixels(event, delta, axis) {
+    if (event.deltaMode === 1) return delta * 16;
+    if (event.deltaMode === 2) {
+      const bounds = svg.getBoundingClientRect();
+      return delta * (axis === 'x' ? bounds.width : bounds.height);
+    }
+    return delta;
+  }
+
+  function naturalUnitsForSignedPixels(pixels) {
+    return Math.sign(pixels) * naturalUnitsForPixels(Math.abs(pixels));
+  }
+
   function hidePointerGuides() {
     horizontalGuide.setAttribute('visibility', 'hidden');
     verticalGuide.setAttribute('visibility', 'hidden');
@@ -639,23 +658,44 @@ export function createSvgEditor({
     renderPointerGuides();
   });
   svg.addEventListener('wheel', event => {
-    if (state.disabled || !hasTask() || !Number.isFinite(event.deltaY) || event.deltaY === 0) return;
+    if (state.disabled || !hasTask() || !pointerInsideViewBox(event)) return;
+    if (!event.metaKey && (event.ctrlKey || event.altKey)) return;
+
+    const previous = state.viewBox;
+    let next;
+    if (event.metaKey) {
+      if (!Number.isFinite(event.deltaY) || event.deltaY === 0) return;
+      const deltaPixels = wheelDeltaPixels(event, event.deltaY, 'y');
+      const factor = Math.min(1.5, Math.max(
+        2 / 3,
+        Math.exp(-deltaPixels * WHEEL_ZOOM_SENSITIVITY),
+      ));
+      next = zoomViewBox(
+        previous,
+        factor,
+        clientToNatural(event),
+        state.width,
+        state.height,
+        MINIMUM_VIEW_SIZE,
+      );
+    } else if (event.shiftKey) {
+      const delta = Number.isFinite(event.deltaX) && event.deltaX !== 0
+        ? event.deltaX
+        : event.deltaY;
+      if (!Number.isFinite(delta) || delta === 0) return;
+      const deltaNatural = naturalUnitsForSignedPixels(wheelDeltaPixels(event, delta, 'x'));
+      next = panViewBox(previous, deltaNatural, 0, state.width, state.height);
+    } else {
+      if (!Number.isFinite(event.deltaY) || event.deltaY === 0) return;
+      const deltaNatural = naturalUnitsForSignedPixels(
+        wheelDeltaPixels(event, event.deltaY, 'y'),
+      );
+      next = panViewBox(previous, 0, deltaNatural, state.width, state.height);
+    }
+
+    if (rectanglesEqual(previous, next)) return;
     event.preventDefault();
-    const anchor = clientToNatural(event);
-    const deltaUnit = event.deltaMode === 1 ? 16
-      : event.deltaMode === 2 ? svg.getBoundingClientRect().height : 1;
-    const factor = Math.min(1.5, Math.max(
-      2 / 3,
-      Math.exp(-event.deltaY * deltaUnit * WHEEL_ZOOM_SENSITIVITY),
-    ));
-    state.viewBox = zoomViewBox(
-      state.viewBox,
-      factor,
-      anchor,
-      state.width,
-      state.height,
-      MINIMUM_VIEW_SIZE,
-    );
+    state.viewBox = next;
     applyViewBox();
   }, { passive: false });
   svg.addEventListener('pointermove', event => {

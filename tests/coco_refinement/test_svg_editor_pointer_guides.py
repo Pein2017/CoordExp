@@ -323,6 +323,143 @@ assert.deepEqual(gestures, [{ operation: 'create', pixelXYXY: [380, 150, 1000, 5
     )
 
 
+def test_wheel_zoom_pan_and_boundary_handoff_are_scoped_to_the_image_viewport() -> None:
+    _run_node(
+        r"""
+const svg = new FakeSVGSVGElement();
+const viewChanges = [];
+const editor = createSvgEditor({ svg, onViewChange: detail => viewChanges.push(detail) });
+editor.setTask({
+  image_width: 1000,
+  image_height: 500,
+  image_url: '/api/images/wheel',
+  objects: [
+    { region_key: 'a', bbox_2d: [100, 200, 400, 600], category_id: 1, category_name: 'person' },
+  ],
+});
+
+function viewBox() {
+  return svg.getAttribute('viewBox').split(/\s+/).map(Number);
+}
+
+function assertViewBoxUnchanged(before) {
+  assert.deepEqual(viewBox(), before);
+}
+
+const boxBefore = editorPart(svg, 'a', 'body');
+const geometryBefore = ['x', 'y', 'width', 'height'].map(name => boxBefore.getAttribute(name));
+
+// At fit, scrolling cannot move the natural view, so the page keeps the event.
+const fitScroll = svg.dispatch('wheel', {
+  clientX: 110, clientY: 70, deltaX: 0, deltaY: 20, deltaMode: 0,
+});
+assert.notEqual(fitScroll.defaultPrevented, true);
+assert.deepEqual(viewBox(), [0, 0, 1000, 500]);
+const fitZoomOut = svg.dispatch('wheel', {
+  clientX: 110, clientY: 70, metaKey: true, deltaX: 0, deltaY: 20, deltaMode: 0,
+});
+assert.notEqual(fitZoomOut.defaultPrevented, true);
+assert.deepEqual(viewBox(), [0, 0, 1000, 500]);
+
+// Command-wheel zooms around the cursor: the natural point under it stays fixed.
+const anchorBefore = naturalToClient(svg, { x: 250, y: 125 });
+const zoom = svg.dispatch('wheel', {
+  ...anchorBefore, metaKey: true, deltaX: 0, deltaY: -100, deltaMode: 0,
+});
+assert.equal(zoom.defaultPrevented, true, 'Command zoom should be consumed');
+const anchorAfter = naturalToClient(svg, { x: 250, y: 125 });
+assert.ok(Math.abs(anchorAfter.clientX - anchorBefore.clientX) < 1e-9);
+assert.ok(Math.abs(anchorAfter.clientY - anchorBefore.clientY) < 1e-9);
+const beforeMetaShift = viewBox();
+const metaShift = svg.dispatch('wheel', {
+  clientX: 110, clientY: 70, metaKey: true, shiftKey: true,
+  deltaX: 100, deltaY: -10, deltaMode: 0,
+});
+assert.equal(metaShift.defaultPrevented, true, 'Command should take priority over Shift');
+const zoomed = viewBox();
+assert.ok(zoomed[2] < beforeMetaShift[2]);
+assert.ok(zoomed[2] < 1000 && zoomed[3] < 500);
+
+// Plain wheel pans vertically in natural-image coordinates.
+const vertical = svg.dispatch('wheel', {
+  clientX: 110, clientY: 70, deltaX: 0, deltaY: 20, deltaMode: 0,
+});
+assert.equal(vertical.defaultPrevented, true, 'vertical pan should be consumed');
+const verticallyPanned = viewBox();
+assert.equal(verticallyPanned[0], zoomed[0]);
+assert.ok(verticallyPanned[1] > zoomed[1]);
+
+// Shift-wheel accepts both a normal vertical wheel delta and browser-remapped deltaX.
+const horizontal = svg.dispatch('wheel', {
+  clientX: 110, clientY: 70, shiftKey: true, deltaX: 0, deltaY: 20, deltaMode: 0,
+});
+assert.equal(horizontal.defaultPrevented, true, 'Shift vertical delta should pan horizontally');
+const horizontallyPanned = viewBox();
+assert.ok(horizontallyPanned[0] > verticallyPanned[0]);
+assert.equal(horizontallyPanned[1], verticallyPanned[1]);
+const remappedHorizontal = svg.dispatch('wheel', {
+  clientX: 110, clientY: 70, shiftKey: true, deltaX: -10, deltaY: 0, deltaMode: 0,
+});
+assert.equal(remappedHorizontal.defaultPrevented, true, 'Shift deltaX should pan horizontally');
+assert.ok(viewBox()[0] < horizontallyPanned[0]);
+
+// Once the requested direction is clamped, the next wheel event passes to the page.
+const toTop = svg.dispatch('wheel', {
+  clientX: 110, clientY: 70, deltaX: 0, deltaY: -100, deltaMode: 2,
+});
+assert.equal(toTop.defaultPrevented, true, 'pan to top should be consumed');
+const toBottom = svg.dispatch('wheel', {
+  clientX: 110, clientY: 70, deltaX: 0, deltaY: 100, deltaMode: 2,
+});
+assert.equal(toBottom.defaultPrevented, true, 'pan to bottom should be consumed');
+const bottom = viewBox();
+const atBottom = svg.dispatch('wheel', {
+  clientX: 110, clientY: 70, deltaX: 0, deltaY: 1, deltaMode: 2,
+});
+assert.notEqual(atBottom.defaultPrevented, true);
+assertViewBoxUnchanged(bottom);
+
+const toLeft = svg.dispatch('wheel', {
+  clientX: 110, clientY: 70, shiftKey: true, deltaX: -100, deltaY: 0, deltaMode: 2,
+});
+assert.equal(toLeft.defaultPrevented, true, 'pan to left should be consumed');
+const toRight = svg.dispatch('wheel', {
+  clientX: 110, clientY: 70, shiftKey: true, deltaX: 0, deltaY: 100, deltaMode: 2,
+});
+assert.equal(toRight.defaultPrevented, true, 'pan to right should be consumed');
+const right = viewBox();
+const atRight = svg.dispatch('wheel', {
+  clientX: 110, clientY: 70, shiftKey: true, deltaX: 1, deltaY: 0, deltaMode: 2,
+});
+assert.notEqual(atRight.defaultPrevented, true);
+assertViewBoxUnchanged(right);
+
+// The SVG can include letterbox space; wheel events there belong to the page.
+svg.bounds = { left: 10, top: 20, width: 200, height: 200 };
+const outsideBefore = viewBox();
+const outside = svg.dispatch('wheel', {
+  clientX: 110, clientY: 30, metaKey: true, deltaX: 0, deltaY: -100, deltaMode: 0,
+});
+assert.notEqual(outside.defaultPrevented, true);
+assertViewBoxUnchanged(outsideBefore);
+
+// Other browser modifiers are not treated as plain image panning.
+const ctrl = svg.dispatch('wheel', {
+  clientX: 110, clientY: 120, ctrlKey: true, deltaX: 0, deltaY: -20, deltaMode: 0,
+});
+assert.notEqual(ctrl.defaultPrevented, true);
+assertViewBoxUnchanged(outsideBefore);
+
+const boxAfter = editorPart(svg, 'a', 'body');
+assert.deepEqual(
+  ['x', 'y', 'width', 'height'].map(name => boxAfter.getAttribute(name)),
+  geometryBefore,
+);
+assert.ok(viewChanges.length > 1);
+"""
+    )
+
+
 def test_selected_handle_wins_over_overlapping_body_without_raising_selected_body() -> None:
     _run_node(
         r"""
@@ -453,7 +590,7 @@ editor.setMode('draw');
 
 const anchorClient = { clientX: 60, clientY: 45 };
 const anchorBefore = { x: 250, y: 125 };
-const wheel = svg.dispatch('wheel', { ...anchorClient, deltaY: -100 });
+const wheel = svg.dispatch('wheel', { ...anchorClient, metaKey: true, deltaY: -100 });
 assert.equal(wheel.defaultPrevented, true);
 const [x, y, width, height] = svg.getAttribute('viewBox').split(/\s+/).map(Number);
 const anchorAfter = {

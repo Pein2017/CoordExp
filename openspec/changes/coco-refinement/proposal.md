@@ -22,7 +22,8 @@ change, and easier to reason about.
 - Provide lightweight bbox create/move/resize/relabel/delete, exact COCO-80
   search, mode shortcuts, draw-mode pointer guides, a training-order object
   inventory with edit-equivalent activation, sticky visible class context,
-  cursor-anchored local magnification, temporary pan, selected-object focus,
+  cursor-anchored local magnification, temporary pan, image-scoped wheel pan
+  with page-scroll handoff, selected-object focus,
   a canvas-focus layout, overlap-safe selected-handle resize,
   Undo, dense-scene focus/hide controls, task navigation with Draft flush,
   pending-Draft status, and one explicit same-split batch Commit.

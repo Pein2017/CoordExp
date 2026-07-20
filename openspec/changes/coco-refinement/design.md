@@ -281,13 +281,22 @@ Local magnification remains a presentation transform over the original image,
 never a second geometry authority. `editor-geometry` owns the testable contain
 transform between client CSS pixels and the SVG `viewBox`, including
 aspect-preserving letterbox offsets and its exact inverse. `svg-editor` owns one
-`viewBox` expressed only in natural-image pixels. Wheel or trackpad input zooms
-about the natural point under the pointer, Space+primary-drag and middle-drag
-temporarily pan without changing Select/Draw mode, and the selected-object
-focus action fits its natural rectangle with 15 percent padding while
-preserving image aspect and clamping to image bounds. The application receives
-only natural-pixel `pixelXYXY`; the existing server projection remains the sole
-norm1000 quantizer.
+`viewBox` expressed only in natural-image pixels. Command/Meta plus wheel or
+trackpad input zooms about the natural point under the pointer; plain wheel
+pans vertically and Shift plus wheel pans horizontally. Wheel deltas are
+normalized from pixel, line, or page units, and Shift-remapped horizontal input
+may arrive through either axis. Meta takes precedence over Shift. This wheel
+router is active only over the rendered image pixels, excluding SVG
+letterboxing, and calls `preventDefault` only when the clamped candidate
+`viewBox` actually differs from the current one. Events outside the image and
+outward movement at a fit or pan/zoom boundary therefore remain available to
+ordinary webpage scrolling or browser behavior. Ctrl/Alt without Meta is not
+reinterpreted as image pan. Space+primary-drag and middle-drag temporarily pan
+without changing Select/Draw mode, and the selected-object focus action fits
+its natural rectangle with 15 percent padding while preserving image aspect
+and clamping to image bounds. The application receives only natural-pixel
+`pixelXYXY`; the existing server projection remains the sole norm1000
+quantizer.
 
 The UI exposes the current fit-relative zoom, Fit/reset, selected-object focus,
 and a canvas-focus layout that hides both side panels without changing the

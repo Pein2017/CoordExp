@@ -23,8 +23,20 @@ transform into original natural-image pixels before the existing server
 projection quantizes any completed bbox to norm1000.
 
 #### Scenario: Operator zooms at a small object
-- **WHEN** wheel or trackpad input zooms while the pointer is over the image
+- **WHEN** Command/Meta plus wheel or trackpad input zooms while the pointer is over rendered image pixels
 - **THEN** the same natural-image point remains under the pointer whenever image bounds permit, the view otherwise clamps inside the original image, and no Draft mutation occurs
+
+#### Scenario: Operator wheel-pans a magnified image
+- **WHEN** unmodified wheel input occurs over rendered image pixels and the natural view can move in that direction
+- **THEN** the editor pans vertically, or pans horizontally when Shift is held, consumes only that successful viewport operation, and does not mutate the Draft
+
+#### Scenario: Wheel input belongs to the page
+- **WHEN** wheel input occurs outside rendered image pixels, inside SVG letterboxing, with Ctrl/Alt but not Meta, or requests a pan/zoom that cannot change the clamped natural view
+- **THEN** the editor leaves the event unconsumed so ordinary webpage scrolling or browser behavior may continue
+
+#### Scenario: Browser reports alternate wheel units
+- **WHEN** an image-scoped wheel event uses pixel, line, or page delta mode, or Shift-remapped horizontal motion appears in either `deltaX` or `deltaY`
+- **THEN** the editor normalizes that input before applying the same natural-coordinate pan contract, while Meta plus Shift remains zoom
 
 #### Scenario: Operator temporarily pans
 - **WHEN** the operator drags with Space plus the primary button or with the middle button while Select or Draw mode is active

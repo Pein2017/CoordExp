@@ -36,6 +36,7 @@
 - [x] 3.11 Add a tested topmost selection-affordance layer and screen-space selected-handle arbitration so corner/edge resize wins over overlapping bbox bodies while clicks outside handle zones retain ordinary object selection.
 - [x] 3.12 Add tested edit-equivalent right-panel object activation that enters Select mode and accepts Delete/Backspace from inventory focus while preserving ordinary move/resize/autosave behavior.
 - [x] 3.13 Add tested cursor-anchored local magnification with ordinary raster resampling, fit-relative zoom status, Space/middle temporary pan, 15-percent selected-object focus, canvas-focus reflow, and one natural/client contain-transform authority that preserves norm1000 output across zoom history.
+- [x] 3.14 Add tested rendered-image wheel routing: Command/Meta zoom, plain vertical pan, Shift horizontal pan with browser delta normalization, letterbox/outside page pass-through, and fit/boundary handoff without Draft mutation.
 
 ## 4. Real ROI Assistance Gate
 
