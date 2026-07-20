@@ -216,6 +216,17 @@ and all unrelated metadata remain byte-for-byte equivalent; missing regions
 are never recreated. Failure preserves every Draft and exposes a retry/status
 receipt. Startup runs existing store reconciliation before accepting writes.
 
+Every terminal-success batch, whether ordinary or Focus-scoped, then enters
+the same background training-publication stage. The validated publisher
+transactionally overwrites that split's derived max_len12000 norm/coord pair;
+the later successful Commit is always the current training target. Store
+`generation` remains an internal serialization, idempotency, and crash-recovery
+identity and is never an operator-selected dataset branch. Draft reads, saves,
+and navigation do not wait for this stage. A restart detects a terminal working
+generation whose training receipt is absent or older, republishes that latest
+working authority, and only then opens the browser port. The original COCO
+annotations and shared images remain outside this overwrite boundary.
+
 ### 5. One navigation/save coordinator and small client state machine
 
 Semantic writes occur after discrete gestures: pointer-up create/move/resize,
@@ -359,8 +370,8 @@ only through the existing atomic store publication. Tests bind before/after
 source and image identities.
 
 The immutable-source statement applies to the original COCO dataset and shared
-image store. After a terminal committed generation, the operator-approved
-training publisher may replace the derived
+image store. After every terminal committed generation, the operator-approved
+training publisher automatically replaces the derived
 `rescale_32_1024_bbox_len12000/{split}.norm.jsonl` and matching
 `{split}.coord.jsonl` as one receipt-bound transaction. It rebases image
 locators to the shared store, validates exact row/object equivalence and the
@@ -370,13 +381,14 @@ or original COCO annotation file are copied or changed.
 
 The original max_len12000 hashes recorded at first bootstrap remain the
 immutable identity baseline; the overwritten norm/coord pair is the mutable
-active training target. Restarting that same runtime after publication is
-authorized only by the exact terminal schema-v2 publication receipt plus the
-manifest-bound working store and journal. The service verifies the current
-published pair, terminal generation, object counts, loader result, token
-ceiling, working hash, and journal hash before opening SQLite. It then resumes
-the existing workspaces rather than reimporting the mutable target, preserving
-Drafts and stable local negative IDs.
+active training target. Restarting that same runtime is authorized by the
+manifest-bound working store and journal. If the schema-v2 publication receipt
+does not yet bind their latest terminal generation, startup reruns the same
+transactional publisher before source inspection; otherwise it verifies the
+current published pair, object counts, loader result, token ceiling, working
+hash, and journal hash. It then resumes the existing workspaces rather than
+reimporting the mutable target, preserving Drafts and stable local negative
+IDs.
 
 The current training JSONL does not persist `region_key`, so it is insufficient
 to reconstruct stable negative IDs in a brand-new runtime after iteration.

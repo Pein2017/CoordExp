@@ -29,7 +29,11 @@ from src.coco_refinement.bootstrap import (
     production_source_contracts,
     resume_workspace,
 )
-from src.coco_refinement.dataset_publisher import PUBLISHER_VERSION, RECEIPT_NAME
+from src.coco_refinement.dataset_publisher import (
+    PUBLISHER_VERSION,
+    RECEIPT_NAME,
+    DatasetPublicationReceipt,
+)
 from src.coco_refinement.preflight import (
     LaunchPreflight,
     VersionResolver,
@@ -45,6 +49,7 @@ from src.label_studio_coco_refinement.runtime import (
 from src.label_studio_coco_refinement.store import (
     BatchRequest,
     BatchResult,
+    BatchStatus,
     ValidationError,
     WorkingDatasetStore,
     _bootstrap_image_sha256,
@@ -187,6 +192,13 @@ class NativeAdapterBindings:
             "terminal_reconciler": _qualified_type(self.terminal_reconciler),
             "verifier": _qualified_type(self.verifier),
         }
+
+
+class TerminalGenerationPublisher(Protocol):
+    def publish(self) -> DatasetPublicationReceipt: ...
+
+
+TerminalPublisherFactory = Callable[[str], TerminalGenerationPublisher]
 
 
 class CoordinatorFactory(Protocol):
@@ -891,6 +903,98 @@ def _inspect_published_iteration(
     )
 
 
+def synchronize_latest_training_publications(
+    contracts: Sequence[BootstrapSourceContract],
+    runtime_root: str | Path,
+    publisher_factory: TerminalPublisherFactory,
+) -> tuple[DatasetPublicationReceipt, ...]:
+    """Publish any terminal working generation not bound by the current receipt."""
+
+    selected = _validate_dual_contracts(contracts)
+    selected_runtime = Path(runtime_root).resolve(strict=True)
+    published: list[DatasetPublicationReceipt] = []
+    for contract in selected:
+        source = contract.source_path.resolve(strict=True)
+        image_root = contract.image_root.resolve(strict=True)
+        manifest = _read_json_artifact(
+            selected_runtime / contract.split / "project.json",
+            field="runtime project manifest",
+        )
+        generation = manifest.get("generation")
+        if isinstance(generation, bool) or not isinstance(generation, int) or generation < 0:
+            raise SourceInspectionError(
+                "runtime project manifest lacks a valid generation",
+                code="coco_refinement.resume_publication_receipt",
+                context={"split": contract.split},
+            )
+        current = False
+        try:
+            _inspect_published_iteration(
+                contract,
+                runtime_root=selected_runtime,
+                source=source,
+                source_sha256=sha256_file(source),
+                image_root=image_root,
+            )
+            current = True
+        except SourceInspectionError:
+            current = False
+        if current or generation == 0:
+            continue
+        receipt = publisher_factory(contract.split).publish()
+        if receipt.split != contract.split or receipt.generation != generation:
+            raise SourceInspectionError(
+                "automatic training publication did not bind the latest generation",
+                code="coco_refinement.resume_publication_receipt",
+                context={
+                    "expected_generation": generation,
+                    "published_generation": receipt.generation,
+                    "split": contract.split,
+                },
+            )
+        _inspect_published_iteration(
+            contract,
+            runtime_root=selected_runtime,
+            source=source,
+            source_sha256=sha256_file(source),
+            image_root=image_root,
+        )
+        published.append(receipt)
+    return tuple(published)
+
+
+def _publish_terminal_commit(
+    *,
+    repository: SqliteDraftRepository,
+    publisher_factory: TerminalPublisherFactory,
+    split: str,
+    request: BatchRequest,
+    result: BatchResult,
+) -> DatasetPublicationReceipt | None:
+    if result.status is not BatchStatus.SUCCEEDED:
+        return None
+    focus = repository.get_focus_queue()
+    if (
+        focus is not None
+        and focus.split == split
+        and focus.batch_id == request.batch_id
+    ):
+        return None
+    publication = publisher_factory(split).publish()
+    if publication.generation != result.generation:
+        raise RuntimeAssemblyError(
+            "automatic training publication differs from terminal Commit",
+            code="coco_refinement.terminal_publication_generation",
+            context={
+                "batch_id": result.batch_id,
+                "committed_generation": result.generation,
+                "published_generation": publication.generation,
+                "split": split,
+            },
+        )
+    return publication
+
+
 def _validate_resume_rows(
     source: Path,
     *,
@@ -1070,6 +1174,7 @@ def create_standalone_runtime(
     inference_receipt_store_factory: Callable[[], object] | None = None,
     current_user_id: str = "local-operator",
     terminal_pair_provider: TerminalPairProvider | None = None,
+    terminal_publisher_factory: TerminalPublisherFactory | None = None,
     source_inspector: Callable[
         [Sequence[BootstrapSourceContract]], Sequence[SourceInspectionReceipt]
     ] = inspect_source_contracts_read_only,
@@ -1164,6 +1269,12 @@ def create_standalone_runtime(
                 code="coco_refinement.resume_partial_runtime",
             )
         resuming = existing_count == len(_SPLITS)
+        if resuming and terminal_publisher_factory is not None:
+            synchronize_latest_training_publications(
+                selected_contracts,
+                selected_runtime,
+                terminal_publisher_factory,
+            )
         inspections = tuple(
             resume_source_inspector(selected_contracts, selected_runtime)
             if resuming
@@ -1239,6 +1350,15 @@ def create_standalone_runtime(
                     code="coco_refinement.terminal_reconcile",
                 )
             reconcile_batch(request, result)
+            if terminal_publisher_factory is None:
+                return
+            _publish_terminal_commit(
+                repository=repository,
+                publisher_factory=terminal_publisher_factory,
+                split=split,
+                request=request,
+                result=result,
+            )
 
         coordinator = selected_coordinator_factory(
             stores, on_batch_result=on_batch_result

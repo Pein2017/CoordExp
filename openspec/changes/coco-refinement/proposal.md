@@ -39,10 +39,12 @@ change, and easier to reason about.
   operator can supply a small ordered list of approved image paths, navigate
   only those tasks, commit only their pending Drafts, and release the queue
   without copying images/JSONL or deleting annotation state.
-- After a Focus Commit succeeds, automatically run the validated training
-  publisher in the background and replace only that split's derived
-  max_len12000 norm/coord pair as one transaction. Invalid paths, duplicate or
-  mixed-split selections, and rows exceeding 12000 tokens fail closed.
+- After any ordinary or Focus Commit succeeds, automatically run the validated
+  training publisher in the background and replace only that split's derived
+  max_len12000 norm/coord pair as one transaction. The latest successful Commit
+  supersedes the prior pair; `generation` remains internal recovery/CAS
+  metadata rather than an operator-selected version. Invalid paths, duplicate
+  or mixed-split selections, and rows exceeding 12000 tokens fail closed.
 - **BREAKING for the legacy prototype only:** do not migrate or remain wire
   compatible with uncommitted Label Studio Drafts. Source/working JSONL, shared
   images, committed object identity, materialized coord output, and inference

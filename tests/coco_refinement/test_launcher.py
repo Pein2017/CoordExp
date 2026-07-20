@@ -46,8 +46,10 @@ def test_launcher_orders_runtime_lifecycle_and_pins_server_shape(
 
     def make_runtime(repo_root: Path, **kwargs: object) -> Runtime:
         receipt_factory = kwargs.pop("inference_receipt_store_factory")
+        publisher_factory = kwargs.pop("terminal_publisher_factory")
         events.append(("create", repo_root, kwargs))
         assert callable(receipt_factory)
+        assert callable(publisher_factory)
         assert receipt_factory() is receipt_store
         return runtime
 

@@ -28,10 +28,12 @@ from src.coco_refinement.runtime import (
     RuntimeState,
     SourceInspectionError,
     StoreTerminalPairProvider,
+    _publish_terminal_commit,
     create_standalone_runtime,
     inspect_source_contracts_read_only,
     inspect_source_contracts_for_resume,
     production_adapter_factories,
+    synchronize_latest_training_publications,
 )
 from src.coco_refinement.dataset_publisher import (
     CommittedGenerationPublisher,
@@ -722,7 +724,7 @@ def test_resume_source_requires_exact_terminal_publication_receipt(
         inspect_source_contracts_for_resume(contracts, runtime_root)
 
 
-def test_resume_accepts_published_target_before_newer_ordinary_commit(
+def test_startup_sync_publishes_latest_terminal_working_generation(
     tmp_path: Path,
 ) -> None:
     contracts = _dual_contracts(tmp_path)
@@ -733,52 +735,84 @@ def test_resume_accepts_published_target_before_newer_ordinary_commit(
         source_contracts=contracts,
     )
     split = workspace.splits["val"]
-
-    def advance_generation(generation: int, bbox: list[int]) -> None:
-        working_path = split.store.working_path
-        manifest_path = split.store.manifest_path
-        journal_path = split.store.journal_path
-        row = json.loads(working_path.read_text(encoding="utf-8"))
-        row["objects"][0]["bbox_2d"] = bbox
-        working_path.write_text(canonical_json(row) + "\n", encoding="utf-8")
-        working_sha256 = sha256_file(working_path)
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        manifest["generation"] = generation
-        manifest["working_sha256"] = working_sha256
-        manifest_path.write_text(
-            canonical_json(manifest) + "\n", encoding="utf-8"
-        )
-        with journal_path.open("a", encoding="utf-8") as journal:
-            journal.write(
-                canonical_json(
-                    {
-                        "batch_id": f"ordinary-{generation}",
-                        "error": None,
-                        "generation": generation,
-                        "kind": "batch_terminal",
-                        "status": "succeeded",
-                        "working_sha256": working_sha256,
-                    }
-                )
-                + "\n"
+    working_path = split.store.working_path
+    row = json.loads(working_path.read_text(encoding="utf-8"))
+    row["objects"][0]["bbox_2d"] = [20, 30, 310, 410]
+    working_path.write_text(canonical_json(row) + "\n", encoding="utf-8")
+    manifest_path = split.store.manifest_path
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["generation"] = 1
+    manifest["working_sha256"] = sha256_file(working_path)
+    manifest_path.write_text(canonical_json(manifest) + "\n", encoding="utf-8")
+    with split.store.journal_path.open("a", encoding="utf-8") as journal:
+        journal.write(
+            canonical_json(
+                {
+                    "batch_id": "ordinary-1",
+                    "error": None,
+                    "generation": 1,
+                    "kind": "batch_terminal",
+                    "status": "succeeded",
+                    "working_sha256": manifest["working_sha256"],
+                }
             )
+            + "\n"
+        )
 
-    advance_generation(1, [20, 30, 310, 410])
-    published = CommittedGenerationPublisher(
-        repository_root=tmp_path,
-        runtime_root=runtime_root,
-        split="val",
-        token_budget_validator=_PublisherTokenValidator(),
-    ).publish()
-    advance_generation(2, [30, 40, 320, 420])
+    receipts = synchronize_latest_training_publications(
+        contracts,
+        runtime_root,
+        lambda selected: CommittedGenerationPublisher(
+            repository_root=tmp_path,
+            runtime_root=runtime_root,
+            split=selected,  # type: ignore[arg-type]
+            token_budget_validator=_PublisherTokenValidator(),
+        ),
+    )
 
+    assert [(receipt.split, receipt.generation) for receipt in receipts] == [
+        ("val", 1)
+    ]
     inspected = inspect_source_contracts_for_resume(contracts, runtime_root)
-
     assert inspected[1].authority == "published_iteration"
-    assert published.generation == 1
-    assert json.loads(
-        (runtime_root / "val/project.json").read_text(encoding="utf-8")
-    )["generation"] == 2
+
+
+def test_terminal_success_triggers_latest_training_publication(tmp_path: Path) -> None:
+    contracts = _dual_contracts(tmp_path)
+    workspace = bootstrap_workspace(
+        tmp_path,
+        runtime_root=tmp_path / "runtime",
+        source_contracts=contracts,
+    )
+    calls: list[str] = []
+
+    class Publisher:
+        def publish(self) -> object:
+            return SimpleNamespace(generation=1)
+
+    request = BatchRequest("ordinary-1", "val", "local-operator", 0, ())
+    result = BatchResult(
+        "ordinary-1",
+        "payload",
+        BatchStatus.SUCCEEDED,
+        "val",
+        1,
+        "working",
+        (),
+        None,
+    )
+
+    publication = _publish_terminal_commit(
+        repository=workspace.repository,
+        publisher_factory=lambda split: calls.append(split) or Publisher(),  # type: ignore[return-value]
+        split="val",
+        request=request,
+        result=result,
+    )
+
+    assert publication is not None
+    assert publication.generation == 1
+    assert calls == ["val"]
 
 
 def test_receipt_store_factory_runs_only_after_writer_lock(

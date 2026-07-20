@@ -17,6 +17,11 @@ if str(REPO_ROOT) not in sys.path:
 import uvicorn  # noqa: E402
 
 from src.coco_refinement.bootstrap import DEFAULT_RUNTIME_RELATIVE  # noqa: E402
+from src.coco_refinement.dataset_publisher import (  # noqa: E402
+    DEFAULT_TRAINING_CONFIG,
+    CommittedGenerationPublisher,
+    CoordExpSwiftTokenBudgetValidator,
+)
 from src.coco_refinement.http_security import (  # noqa: E402
     HttpSecurityError,
     validate_browser_origin,
@@ -35,6 +40,23 @@ DEFAULT_STARTUP_TIMEOUT = 300
 DEFAULT_SHUTDOWN_TIMEOUT = 5
 RESERVED_LEGACY_PORT = 8080
 RECEIPT_STORE_NAME = "roi-receipts.jsonl"
+
+
+def _terminal_publisher_factory(
+    repo_root: Path, runtime_root: Path
+) -> Callable[[str], CommittedGenerationPublisher]:
+    def factory(split: str) -> CommittedGenerationPublisher:
+        return CommittedGenerationPublisher(
+            repository_root=repo_root,
+            runtime_root=runtime_root,
+            split=split,  # type: ignore[arg-type]
+            token_budget_validator=CoordExpSwiftTokenBudgetValidator(
+                repo_root / DEFAULT_TRAINING_CONFIG,
+                max_total_tokens=12000,
+            ),
+        )
+
+    return factory
 
 
 def _existing_directory(value: str) -> Path:
@@ -256,6 +278,9 @@ def run_server(
         reload=False,
         startup_cleanup_timeout=shutdown_timeout,
         startup_timeout=startup_timeout,
+        terminal_publisher_factory=_terminal_publisher_factory(
+            repo_root, selected_runtime
+        ),
         workers=1,
     )
     try:

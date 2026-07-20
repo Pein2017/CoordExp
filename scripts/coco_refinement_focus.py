@@ -61,6 +61,7 @@ class _Client:
     def __init__(self, server: str) -> None:
         self.server = server.rstrip("/")
         self.opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({}),
             urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
         )
         self.csrf_token = ""

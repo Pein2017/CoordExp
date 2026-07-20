@@ -21,12 +21,12 @@ COCO data SHALL NOT be modified or copied.
 - **WHEN** a source hash, task identity, image binding, or row count differs from the recorded contract
 - **THEN** startup fails closed before serving or mutating a workspace
 
-#### Scenario: Existing runtime restarts after a formal training publish
-- **WHEN** both split workspaces already exist and the derived max_len12000 pair differs from its bootstrap hash
-- **THEN** startup requires an exact terminal publication receipt, verifies its current norm/coord and working/journal identities, and resumes the manifest-bound working store without replacing bootstrap identity or Drafts
+#### Scenario: Existing runtime restarts after a terminal Commit
+- **WHEN** both split workspaces already exist and a latest terminal working generation lacks an exact current training-publication receipt
+- **THEN** startup validates the manifest-bound working authority, republishes that latest generation through the transactional publisher, verifies the resulting norm/coord receipt, and resumes without replacing bootstrap identity or Drafts
 
 #### Scenario: Iterated source lacks valid restart authority
-- **WHEN** a derived max_len12000 pair drifted but its terminal publication receipt is missing, pending, stale, or tampered
+- **WHEN** neither an exact current receipt nor a valid manifest-bound working/journal authority can produce the latest derived pair
 - **THEN** startup fails closed before binding the browser port
 
 #### Scenario: Fresh runtime is requested from an iterated target
@@ -138,15 +138,21 @@ metadata, and shared image resolution.
 - **THEN** the materializer emits one derived coord JSONL bound to that exact generation and accepted by the current CoordExp-Swift data path
 
 ### Requirement: Iterative training-pair publication
-The system SHALL permit an operator-approved terminal generation to replace the
-derived max_len12000 split's norm and coord JSONL pair while leaving original
-COCO annotations and all shared images unchanged. Publication SHALL be
-receipt-bound, failure-recoverable, and all-or-nothing at the application
+The system SHALL automatically publish every successful ordinary or
+Focus-scoped Commit as the latest derived max_len12000 split norm and coord
+JSONL pair while leaving original COCO annotations and all shared images
+unchanged. Later successful Commits SHALL supersede earlier pairs in commit
+order; generation SHALL remain internal recovery metadata. Publication SHALL
+be receipt-bound, failure-recoverable, and all-or-nothing at the application
 contract boundary.
 
 #### Scenario: Terminal generation is published
-- **WHEN** the selected generation, working hash, task inventory, shared-image resolution, norm/coord equivalence, current training loader, and 12000-token budget all validate
-- **THEN** the selected split's norm and coord targets advance together and a receipt records generation, paths, hashes, counts, and validation evidence
+- **WHEN** a terminal-success Commit's working hash, task inventory, shared-image resolution, norm/coord equivalence, current training loader, and 12000-token budget all validate
+- **THEN** that split's norm and coord targets advance together to that latest Commit and a receipt records the internal generation, paths, hashes, counts, and validation evidence
+
+#### Scenario: Service restarts before automatic publication completes
+- **WHEN** the latest terminal working state is newer than, or lacks, its training-publication receipt
+- **THEN** startup republishes that latest working state before binding the browser port and does not expose an older pair as current
 
 #### Scenario: Any refined row exceeds the budget
 - **WHEN** current CoordExp-Swift encoding reports more than 12000 tokens for any candidate row
@@ -186,12 +192,11 @@ images, JSONL rows, object payloads, or create another project.
 - **WHEN** the Focus batch is nonterminal or its automatic publication is waiting or running
 - **THEN** release fails Busy and preserves the complete queue/status chain
 
-### Requirement: Focus-scoped Commit and automatic training publication
+### Requirement: Focus-scoped Commit and observable training publication
 The system SHALL offer a Focus Commit that captures only pending Drafts whose
 stable task identities are members of the active queue. After terminal batch
-success it SHALL asynchronously publish that generation to the selected
-split's derived max_len12000 norm/coord pair through the validated
-transactional publisher.
+success it SHALL use the same automatic latest-Commit publisher as ordinary
+Commit while retaining queue-scoped publication status and retry controls.
 
 #### Scenario: Focus queue has pending Drafts
 - **WHEN** the operator invokes Focus Commit after the active Draft save completes
