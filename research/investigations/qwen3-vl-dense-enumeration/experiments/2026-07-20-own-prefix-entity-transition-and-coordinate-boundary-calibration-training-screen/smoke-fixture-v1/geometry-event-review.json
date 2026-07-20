@@ -1,0 +1,245 @@
+{
+  "schema_version": "own_prefix_coordinate_boundary_review.v1",
+  "event_id": "geometry_sorted_step_4887_image_9400_empty_prefix_row_0_owner_1211112",
+  "research_unit": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/unit.md",
+  "status": "frozen_for_shared_smoke_fixture",
+  "reviewed_at_utc": "2026-07-20T18:22:06Z",
+  "reviewer": {
+    "identity": "lead_agent",
+    "confidence": "high",
+    "method": "Original-image inspection, enlarged-crop inspection, current-artifact owner matching, and comparison with the user's historical geometry comment."
+  },
+  "source_checkpoint": {
+    "checkpoint_json_path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/checkpoint.json",
+    "checkpoint_json_sha256": "c8ad1ab01550fc640c67457fec9ad1f8b3bd1b8cef351cb90d41666233b80da1",
+    "adapter_model_path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/adapter/adapter_model.safetensors",
+    "adapter_model_sha256": "7f6ee67a71f4d948f0e89729ad50f3856a7a215b5ba433fdd3f3dd5b329e5a81",
+    "special_token_embeddings_path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/special_token_embeddings/special_token_embeddings.safetensors",
+    "special_token_embeddings_sha256": "33d65d575df398375e72994e2a197aaff0a257e26c088717e3b7689b3f494c3b"
+  },
+  "source_generation": {
+    "producer_mode": "greedy",
+    "seed": null,
+    "temperature": 0.0,
+    "top_p": 1.0,
+    "repetition_penalty": 1.0,
+    "model_dtype": "float32"
+  },
+  "source_artifact": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-19-sampled-history-target-reachability-and-complete-row-value/stage1-extended-root-greedy-fp32-v1/image-9400.json",
+    "sha256": "9c25dab30a5ca1b7ca1afec445244b132ca5f1ba93ba3eb2f3e2f7f6ab2bcbd1",
+    "source_identity_check_passed": true,
+    "first_eight_root_rows_exact_parity_passed": true
+  },
+  "image": {
+    "image_id": "9400",
+    "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000009400.jpg",
+    "sha256": "666645994ec1df903671318c696d6871cbe91ee08c68173a67d96dabfdfa8fc0",
+    "width": 1152,
+    "height": 864,
+    "observed_image_grid_thw": [
+      1,
+      54,
+      72
+    ],
+    "prompt_token_ids_sha256": "3fba18e878f1f98599328b0f65b1960b96e1ed64d33085cbb9f5859c23153fa7",
+    "chat_text_sha256": "8c92b41c82292f040cabec4a72afcca2ad0344802e47c5342a70670dd7c5a089"
+  },
+  "exact_prefix": {
+    "token_ids": [],
+    "token_ids_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  },
+  "generated_row": {
+    "row_index": 0,
+    "token_ids": [
+      151646,
+      8987,
+      151647,
+      151648,
+      152544,
+      151768,
+      152669,
+      151933,
+      151649
+    ],
+    "token_ids_sha256": "02b88f5a9a9b17cb243746d372be1536662d27aa386c47c2a5a70ce0438be610",
+    "raw_span_sha256": "011c13bf0ac1d9414c43e7815534b9a531725a50bee24f8d1d6f85cf1eeb9dca",
+    "description": "person",
+    "coordinate_bins_xyxy": [
+      874,
+      98,
+      999,
+      263
+    ],
+    "pixel_box_xyxy": [
+      1007,
+      85,
+      1151,
+      227
+    ],
+    "parse_status": "one_complete_row",
+    "unresolved_prediction_indices": []
+  },
+  "physical_owner": {
+    "entity_id": "1211112",
+    "category": "person",
+    "entity_existence_trusted": true,
+    "category_trusted": true,
+    "geometry_trusted": true,
+    "reference_source": "Current artifact verified entity ledger backed by the current selected validation example.",
+    "reference_coordinate_bins_xyxy": [
+      880,
+      99,
+      960,
+      257
+    ],
+    "reference_pixel_box_xyxy": [
+      1014,
+      86,
+      1106,
+      222
+    ],
+    "predicted_box_intersection_over_union": 0.6152653521126761,
+    "next_same_category_owner_id": "511102",
+    "next_same_category_intersection_over_union": 0.05213959321433411,
+    "owner_occurs_once_in_source_rollout": true
+  },
+  "ordered_coordinate_review": [
+    {
+      "coordinate": "x1",
+      "meaning": "left horizontal boundary",
+      "candidate_token_offset_zero_based": 4,
+      "actual_bin": 874,
+      "actual_token_id": 152544,
+      "reference_bin": 880,
+      "accepted_bins": [
+        874,
+        875,
+        876,
+        877,
+        878,
+        879,
+        880
+      ],
+      "accepted": true,
+      "review_basis": "The generated and historical reviewed boxes agree on this left boundary; the user's rejection concerned excess background to the right."
+    },
+    {
+      "coordinate": "y1",
+      "meaning": "top vertical boundary",
+      "candidate_token_offset_zero_based": 5,
+      "actual_bin": 98,
+      "actual_token_id": 151768,
+      "reference_bin": 99,
+      "accepted_bins": [
+        98,
+        99
+      ],
+      "accepted": true,
+      "review_basis": "The user explicitly judged the top boundary to agree with the trusted reference."
+    },
+    {
+      "coordinate": "x2",
+      "meaning": "right horizontal boundary",
+      "candidate_token_offset_zero_based": 6,
+      "actual_bin": 999,
+      "actual_token_id": 152669,
+      "reference_bin": 960,
+      "accepted_bins": [
+        959,
+        960,
+        961
+      ],
+      "accepted_token_ids": [
+        152629,
+        152630,
+        152631
+      ],
+      "accepted": false,
+      "review_basis": "The generated right boundary reaches the image edge and includes substantial background to the person's right; the user explicitly judged that horizontal extension unacceptable."
+    },
+    {
+      "coordinate": "y2",
+      "meaning": "bottom vertical boundary",
+      "candidate_token_offset_zero_based": 7,
+      "actual_bin": 263,
+      "actual_token_id": 151933,
+      "reference_bin": 257,
+      "accepted_bins_inclusive_range": [
+        257,
+        282
+      ],
+      "accepted": true,
+      "review_basis": "The user judged a small downward extension over the occluded body acceptable. This later coordinate does not change the first-wrong-coordinate decision."
+    }
+  ],
+  "first_wrong_coordinate": {
+    "coordinate": "x2",
+    "candidate_token_offset_zero_based": 6,
+    "wrong_bin": 999,
+    "wrong_token_id": 152669,
+    "accepted_bins": [
+      959,
+      960,
+      961
+    ],
+    "accepted_token_ids": [
+      152629,
+      152630,
+      152631
+    ],
+    "all_earlier_coordinates_reviewed_and_accepted": true
+  },
+  "same_owner_corrected_row": {
+    "token_ids": [
+      151646,
+      8987,
+      151647,
+      151648,
+      152550,
+      151769,
+      152630,
+      151927,
+      151649
+    ],
+    "description": "person",
+    "coordinate_bins_xyxy": [
+      880,
+      99,
+      960,
+      257
+    ],
+    "owner_id": "1211112"
+  },
+  "visual_review_artifacts": [
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-a-fixture-preparation-v1/visual-review/image-9400-owner-1211112-enlarged-crop.png",
+      "sha256": "fafb769563ff3d29f4a2b28e2fa4d7fab6c8bf4652face628d69277918d31e4a",
+      "meaning": "Enlarged original-image crop without annotation overlays."
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-a-fixture-preparation-v1/visual-review/image-9400-owner-1211112-reference-green-prediction-red.png",
+      "sha256": "c9d28490244bd58c7c1de45766155f1ab2f885a474fd809fc77a3bbd5f4d3e14",
+      "meaning": "Trusted reference box in green and current generated box in red."
+    }
+  ],
+  "historical_human_comment_provenance": {
+    "path": "/data/CoordExp/.codex/attachments/66f7e558-3bc6-49cf-98f1-dfacd97802d7/human-review-candidate-ledger-20260716a.review.json",
+    "candidate_id": "spatial-scope-history-request:c6fe7731dfc5ad0b05fe7ffebfe6941b0eb0911ce7b3475a72aec33eee0b79d8:span-0",
+    "historical_candidate_pixel_box_xyxy": [
+      1008,
+      85,
+      1151,
+      244
+    ],
+    "original_comment": "附近有一个 GT 标注,是准确的.\n这个框垂直方向算是正确的,顶部跟 GT 一致,底部比 GT 更往下延展了,算是脑补了一点点被遮挡的画面,不能算错;但是,水平方向涵盖了这个人的右边的一些背景区域,则是不可接受的.",
+    "english_interpretation": "The nearby trusted reference annotation is accurate. The vertical placement is acceptable: the top agrees, and a small downward extension over the occluded body is not considered wrong. The horizontal extent is unacceptable because it includes background to the person's right.",
+    "admission_policy": "Contextual review evidence only. This historical record is not the training event because it has an empty entity reference, comes from an older full-image bagging run, and failed the old export admission gate."
+  },
+  "decision": {
+    "entity_transition_eligible": false,
+    "coordinate_boundary_eligible": true,
+    "coordinate_loss_site": "x2",
+    "reason": "The physical owner and corrected geometry are trusted, x1 and y1 are reviewed as acceptable, and x2 is the first reviewed coordinate outside its accepted discrete set."
+  }
+}

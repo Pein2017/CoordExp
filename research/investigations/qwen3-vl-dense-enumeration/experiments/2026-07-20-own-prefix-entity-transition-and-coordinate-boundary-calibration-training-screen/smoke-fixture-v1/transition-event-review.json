@@ -1,0 +1,167 @@
+{
+  "schema_version": "own_prefix_entity_transition_review.v1",
+  "research_unit": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/unit.md",
+  "status": "closed_without_eligible_transition_event",
+  "reviewed_at_utc": "2026-07-20T20:00:00Z",
+  "reviewer": {
+    "identity": "lead_agent",
+    "confidence": "high",
+    "method": "Exact-artifact inspection followed by full-image and four-times enlarged crop review with the sampled prediction and all adjacent physical-owner boxes overlaid."
+  },
+  "source_checkpoint": {
+    "name": "Qwen3-VL 2B description-first geometry-sorted pure cross-entropy plus token-type-gate Weight-Decomposed Low-Rank Adaptation checkpoint at step 4887",
+    "checkpoint_json_path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/checkpoint.json",
+    "checkpoint_json_sha256": "c8ad1ab01550fc640c67457fec9ad1f8b3bd1b8cef351cb90d41666233b80da1"
+  },
+  "fixed_panel": {
+    "manifest_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-fixture-v1/sorted-natural-prefix-rescue-panel-manifest.json",
+    "manifest_sha256": "4eafc4f0d99c3d00ef7c2ef9d81b0686ca1f75799fe54c5dcf38111b42319d95",
+    "image_ids": [
+      9400,
+      12576,
+      2299,
+      139,
+      12120,
+      18380
+    ],
+    "natural_prefixes_reviewed": 384,
+    "eligible_harmful_prefixes": 0,
+    "strict_same_prefix_sampled_rescues": 0,
+    "refusal_counts": {
+      "greedy_already_reached_verified_uncovered_owner": 124,
+      "prior_prefix_owner_unresolved": 235,
+      "unresolved_greedy_owner_or_stop_state": 25
+    },
+    "interpretation": "The source checkpoint often produced a valid new entity while prefix ownership remained trustworthy. In denser same-category trajectories, earlier mixed or unresolved rows made the physical covered set untrustworthy before a clean harmful transition could be admitted."
+  },
+  "last_near_miss": {
+    "image_id": 7816,
+    "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000007816.jpg",
+    "image_width": 1248,
+    "image_height": 832,
+    "exact_prefix_token_ids_sha256": "3757b1090b39f2d8db0f2745892ca98932c9c2efa2926637cfff715666132194",
+    "exact_sample_artifact_path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-a-fixture-preparation-v1/exact-prefix-sampled-rescue-image7816-seeds11-18.json",
+    "exact_sample_artifact_sha256": "e12df4e3013e1a29211d2d54f8c7132cf1265bb92c0d766dd65c787a18a9d824",
+    "covered_owner_id": "205108",
+    "candidate_uncovered_owner_id": "211764",
+    "adjacent_owner_id": "213695",
+    "physical_owner_boxes": {
+      "205108": {
+        "role": "covered red-clothed person",
+        "coordinate_bins_xyxy": [
+          882,
+          138,
+          919,
+          408
+        ]
+      },
+      "211764": {
+        "role": "uncovered white-clothed person",
+        "coordinate_bins_xyxy": [
+          895,
+          126,
+          935,
+          194
+        ]
+      },
+      "213695": {
+        "role": "adjacent orange-clothed person",
+        "coordinate_bins_xyxy": [
+          908,
+          110,
+          971,
+          437
+        ]
+      }
+    },
+    "sampled_candidates": [
+      {
+        "seed": 12,
+        "candidate_token_ids_sha256": "da10dd0a40e0226e6960954a56b3ba9477b6d8bb25b725d63785436f18ea0a19",
+        "pixel_box_xyxy": [
+          1102,
+          111,
+          1161,
+          177
+        ],
+        "coordinate_bins_xyxy": [
+          883,
+          134,
+          930,
+          213
+        ],
+        "intersection_over_union_with_211764": 0.4935121170958232
+      },
+      {
+        "seed": 15,
+        "candidate_token_ids_sha256": "1dac6019c261d668cfbd1a0191304bfa11a3f7e609bfd344a8a71d2937cd158b",
+        "pixel_box_xyxy": [
+          1106,
+          114,
+          1162,
+          196
+        ],
+        "coordinate_bins_xyxy": [
+          886,
+          137,
+          931,
+          235
+        ],
+        "intersection_over_union_with_211764": 0.40432668128203225
+      },
+      {
+        "seed": 16,
+        "candidate_token_ids_sha256": "cd86129af4e6b356ad0d475235872c635b41e21922f6d051a04c23ecad7e67a3",
+        "pixel_box_xyxy": [
+          1111,
+          120,
+          1169,
+          201
+        ],
+        "coordinate_bins_xyxy": [
+          890,
+          144,
+          937,
+          241
+        ],
+        "intersection_over_union_with_211764": 0.37892147908503404
+      }
+    ],
+    "visual_review_artifacts": [
+      {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-a-fixture-preparation-v1/visual-review/image-7816-near-miss/seed-12-gt-vs-pred.png",
+        "sha256": "022418cce90b510c476ec234f088c2193194908fafcc5e6dc44f606adfa9fc05",
+        "meaning": "Canonical full-image ground-truth-versus-prediction comparison for seed 12."
+      },
+      {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-a-fixture-preparation-v1/visual-review/image-7816-near-miss/seed-12-right-cluster-enlarged-overlay.png",
+        "sha256": "f5475c53c5f4a34416110143906809c84c001bb887caf5b988bf88d72e8e4594",
+        "meaning": "Four-times enlarged right-person cluster with all three adjacent owner boxes and seed-12 prediction overlaid."
+      },
+      {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-a-fixture-preparation-v1/visual-review/image-7816-near-miss/seed-15-right-cluster-enlarged-overlay.png",
+        "sha256": "3308c9d4759ee1e65405363daeff7b7b992e0a05ab82265f3c3cdf4fb283948d",
+        "meaning": "Four-times enlarged right-person cluster with seed-15 prediction overlaid."
+      },
+      {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-a-fixture-preparation-v1/visual-review/image-7816-near-miss/seed-16-right-cluster-enlarged-overlay.png",
+        "sha256": "243ca3f21c8958ca3e1cc03ff74e294981b229bb1705dc8f6f418f3e7b13b28b",
+        "meaning": "Four-times enlarged right-person cluster with seed-16 prediction overlaid."
+      }
+    ],
+    "decision": {
+      "entity_existence_and_category": "person evidence is present",
+      "physical_owner_resolution": "mixed_or_ambiguous",
+      "entity_transition_eligible": false,
+      "geometry_eligible": false,
+      "reason": "Every sampled candidate spans visible evidence from both the already covered owner 205108 and the uncovered owner 211764. Seeds 15 and 16 extend farther toward adjacent owner 213695. The candidate therefore cannot be assigned to exactly one physical owner, even though its highest numerical overlap is with 211764."
+    }
+  },
+  "unit_consequence": {
+    "transition_smoke_a_status": "blocked_by_missing_valid_same_prefix_rescue",
+    "joint_smoke_a_status": "blocked_by_missing_transition_event",
+    "formal_twelve_job_screen_status": "not_admissible_under_current_frozen_unit",
+    "coordinate_only_diagnostic_status": "may_continue_without_promoting_the_formal_screen",
+    "next_interpretation": "The frozen unit's interpretation matrix applies: local entity-transition preference cannot invent a route absent from same-prefix sampled support. Any short-horizon, visual intervention, or different candidate-construction treatment requires a new research unit and a new user decision."
+  }
+}

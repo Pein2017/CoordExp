@@ -1,0 +1,131 @@
+{
+  "schema_version": 2,
+  "pool_name": "Geometry-sorted pure-cross-entropy natural-prefix transition fixture search panel",
+  "purpose": "Search a fixed non-blind panel for one real Smoke A transition event. Every candidate prefix must be generated naturally by the bound source checkpoint. Each eligible harmful prefix receives exactly one fixed bag of eight same-prefix samples. All six images finish before event selection; no per-image seed extension, threshold relaxation, reconstructed prefix, or cross-checkpoint prefix is permitted.",
+  "primary_checkpoint": {
+    "name": "Qwen3-VL 2B description-first geometry-sorted pure cross-entropy plus token-type-gate Weight-Decomposed Low-Rank Adaptation checkpoint at step 4887",
+    "checkpoint_json": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/checkpoint.json",
+    "checkpoint_json_sha256": "c8ad1ab01550fc640c67457fec9ad1f8b3bd1b8cef351cb90d41666233b80da1",
+    "resolved_training_config_fingerprint": "e86e2d98447c8235f2c390b2ed674fc9a312f64952aff35b917f74fd64ae7e06",
+    "adapter_fingerprint": "35fd88b1586b946943b936f24531ee95d4a4c57c8efc358bc81a06af9ecbb6c3",
+    "adapter_model_sha256": "7f6ee67a71f4d948f0e89729ad50f3856a7a215b5ba433fdd3f3dd5b329e5a81",
+    "special_token_embeddings_fingerprint": "b5bef0f097c4ddf8f8879e71183795ab877f55c5702c2fb48979d9c555f2c9c9",
+    "special_token_embeddings_tensor_sha256": "33d65d575df398375e72994e2a197aaff0a257e26c088717e3b7689b3f494c3b"
+  },
+  "inference_contract": {
+    "config_path": "/data/CoordExp/.worktrees/research-probes/configs/coordexp_swift/infer/qwen3_vl_2b_description_first_geometry_sorted_pure_cross_entropy_type_gate_dora_step4887_same_covered_set_prefix_order.yaml",
+    "config_sha256": "d6790bb1bd130d5c2823e0ffc68791aa97054cf6cbc7d423b86f3c9f55ac9dea",
+    "source_jsonl": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl",
+    "source_jsonl_sha256": "81d674070d4b588488a2cb911c09f765b63c0e6d035b50db27ee0a41ff2a1894",
+    "backend": "Hugging Face",
+    "floating_point": "full float32",
+    "physical_batch_size": 1,
+    "repetition_penalty": 1.0,
+    "temperature": 0.4,
+    "top_p": 0.95,
+    "terminal_suppression": false,
+    "image_crop_or_resize": false
+  },
+  "discovery_budget": {
+    "native_greedy_root_trajectories_per_image": 1,
+    "sampled_root_trajectories_per_image": 8,
+    "sampled_root_seeds": [11, 12, 13, 14, 15, 16, 17, 18],
+    "maximum_complete_rows_per_trajectory": 8,
+    "maximum_new_tokens_per_row": 256,
+    "malformed_row_limit": 2,
+    "additional_same_prefix_sampling": true,
+    "same_prefix_samples_per_eligible_prefix": 8,
+    "finish_all_images_before_case_selection": true,
+    "maximum_primary_cases_per_image": 1
+  },
+  "secondary_suffix_budget": {
+    "applies_to": [],
+    "sampled_suffix_seeds": [],
+    "successor_rows": 0,
+    "seeds_are_repeated_measurements_not_cases": true
+  },
+  "owner_review_contract": {
+    "ontology": "Common Objects in Context 80 categories only",
+    "ledger_semantics": "All annotated objects are positive owners; absence of an annotation is never negative evidence.",
+    "provisional_category_match": "exact normalized category",
+    "provisional_iou_threshold": 0.5,
+    "provisional_ambiguity_margin": 0.05,
+    "covered_owner_update": "one clean complete prefix row with exactly one unambiguous physical owner",
+    "unmatched_or_ambiguous": "unresolved_refusal until explicit enlarged-crop review",
+    "crop_review_axes": [
+      "entity existence and category",
+      "geometry and physical ownership"
+    ]
+  },
+  "primary_case_rule": {
+    "greedy_outcome": "verified_covered_duplicate_or_verified_premature_terminal",
+    "sampled_outcome": "verified_uncovered_owner",
+    "same_category_required": false,
+    "equal_tokenized_row_length_required": false,
+    "resolved_shortest_owner_prefix_required": true,
+    "deterministic_tie_break": [
+      "manifest image order",
+      "lowest natural row index",
+      "lowest same-prefix seed",
+      "lexicographically smallest exact-prefix SHA-256"
+    ],
+    "claim_boundary": "The chosen event is a functional development fixture only. It cannot estimate rescue frequency, generalization, or training effectiveness."
+  },
+  "blind_image_ids_excluded": [
+    1584,
+    2685,
+    4134,
+    5001,
+    6040,
+    7511,
+    10707,
+    13348,
+    13923,
+    14038,
+    14439,
+    16228
+  ],
+  "images": [
+    {
+      "image_id": 9400,
+      "role": "Dense mixed person and computer scene with prior user review and an independently trusted geometry event.",
+      "ledger_priority": "current validation annotations plus prior enlarged-crop user review"
+    },
+    {
+      "image_id": 12576,
+      "role": "Dense dining scene with prior user review of entity and geometry errors across several object categories.",
+      "ledger_priority": "current validation annotations plus prior enlarged-crop user review"
+    },
+    {
+      "image_id": 2299,
+      "role": "Dense person scene with 46 current validation entities and existing region-level visual evidence.",
+      "ledger_priority": "current validation annotations plus current-generation human refinements"
+    },
+    {
+      "image_id": 139,
+      "role": "Mixed dense scene with prior independent visual review showing real omitted entities as well as localization errors.",
+      "ledger_priority": "current validation annotations; unmatched outcomes remain unresolved until crop review"
+    },
+    {
+      "image_id": 12120,
+      "role": "Dense repeated-chair scene with prior independent visual review and strong same-category competition.",
+      "ledger_priority": "current validation annotations; ambiguous chair ownership remains unresolved"
+    },
+    {
+      "image_id": 18380,
+      "role": "Dense person scene with 53 current validation entities used as a high-competition breadth control.",
+      "ledger_priority": "current validation annotations; unmatched outcomes remain unresolved until crop review"
+    }
+  ],
+  "diagnostic_outcome_labels": [
+    "verified_covered_duplicate",
+    "verified_uncovered_owner",
+    "verified_benign_uncovered_owner",
+    "verified_unsupported",
+    "terminal_diagnostic",
+    "malformed_diagnostic",
+    "unresolved_refusal"
+  ],
+  "admission_rule": "A Smoke A transition event requires an exact naturally generated prefix from this checkpoint and run, an actual greedy verified covered duplicate or verified premature terminal, and a same-prefix sampled complete row assigned to exactly one verified uncovered physical owner. All generated outcomes are retained. Reconstructed, teacher-forced, manually reordered, cross-checkpoint, ambiguous, mixed-owner, and official-mismatch-only candidates are excluded.",
+  "stop_rule": "Finish all six fixed images. Select the first passing event by the declared tie-break. If none passes, close this panel without adding images, seeds, relaxing thresholds, or reinterpreting ownership."
+}
