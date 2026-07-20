@@ -21,7 +21,8 @@ change, and easier to reason about.
   resident model runtime, and ROI transform/mapping contracts.
 - Provide lightweight bbox create/move/resize/relabel/delete, exact COCO-80
   search, mode shortcuts, draw-mode pointer guides, a training-order object
-  inventory, sticky visible class context, overlap-safe selected-handle resize,
+  inventory with edit-equivalent activation, sticky visible class context,
+  overlap-safe selected-handle resize,
   Undo, dense-scene focus/hide controls, task navigation with Draft flush,
   pending-Draft status, and one explicit same-split batch Commit.
 - Keep Commit asynchronous and deliberately simple: one worker per split,

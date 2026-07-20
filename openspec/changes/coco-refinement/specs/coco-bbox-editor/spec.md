@@ -121,6 +121,14 @@ creation order. Inventory ordinals SHALL NOT be persisted as object identity.
 - **WHEN** an object is selected in either the SVG or the right-panel inventory
 - **THEN** the same stable region is highlighted in both surfaces and the inventory item is scrolled into view
 
+#### Scenario: Inventory activation enters the editing context
+- **WHEN** the operator activates an inventory object by pointer or keyboard while Draw or Pan mode is active
+- **THEN** the editor enters Select mode, selects the same stable region, and exposes its ordinary canvas move and resize affordances without mutating the Draft
+
+#### Scenario: Inventory-focused selection is deleted by keyboard
+- **WHEN** focus remains in the right-panel inventory and the operator presses Delete or Backspace for its selected object
+- **THEN** the editor prevents the browser default and deletes that object through the ordinary autosaved Draft path
+
 ### Requirement: Discrete autosave and navigation flush
 The editor SHALL save after semantic gesture completion and SHALL await only
 the active Draft save before in-app task navigation. It SHALL NOT wait for an

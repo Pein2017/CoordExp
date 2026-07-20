@@ -172,6 +172,18 @@ function selectObject(regionKey, object, { editorAlreadySelected = false, scroll
   syncObjectInventorySelection({ scroll });
 }
 
+function activateInventoryObject(regionKey, object) {
+  setMode('select');
+  selectObject(regionKey, object);
+}
+
+function isSelectedObjectKeyboardContext(target) {
+  if (!(target instanceof Element)) return false;
+  if ($('bbox-overlay').contains(target)) return true;
+  if (!$('object-list').contains(target)) return false;
+  return target.closest('button[data-region-key]')?.dataset.regionKey === state.selectedRegion;
+}
+
 function renderObjectInventory(objects) {
   const ordered = objectsInTrainingOrder(objects);
   $('object-count').textContent = `${ordered.length} object${ordered.length === 1 ? '' : 's'}`;
@@ -183,7 +195,7 @@ function renderObjectInventory(objects) {
     button.setAttribute('aria-current', String(object.region_key === state.selectedRegion));
     button.disabled = !state.taskOpen;
     button.textContent = `#${index + 1} ${object.category_name}`;
-    button.addEventListener('click', () => selectObject(object.region_key, object));
+    button.addEventListener('click', () => activateInventoryObject(object.region_key, object));
     item.append(button);
     return item;
   });
@@ -858,7 +870,7 @@ document.addEventListener('keydown', event => {
     void undoLastEdit();
   }
   if ((event.key === 'Delete' || event.key === 'Backspace')
-      && $('bbox-overlay').contains(event.target)
+      && isSelectedObjectKeyboardContext(event.target)
       && !semanticActionLocked() && state.selectedRegion) {
     event.preventDefault();
     void deleteSelectedRegion();

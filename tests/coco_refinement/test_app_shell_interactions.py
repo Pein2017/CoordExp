@@ -53,10 +53,34 @@ def test_object_inventory_uses_stable_training_order_and_bidirectional_selection
     assert "left.object.bbox_2d[0] - right.object.bbox_2d[0]" in app_source
     assert "left.index - right.index" in app_source
     assert "editor.setSelected(state.selectedRegion)" in app_source
-    assert "selectObject(object.region_key, object)" in app_source
+    assert "activateInventoryObject(object.region_key, object)" in app_source
     assert "scrollIntoView({ block: 'nearest' })" in app_source
     assert re.search(
         r"function renderDraftState\(snapshot\)[\s\S]*?renderObjectInventory\(snapshot.objects\)",
+        app_source,
+    )
+
+
+def test_object_inventory_activation_enters_select_and_supports_keyboard_delete() -> None:
+    app_source = (STATIC_ROOT / "app.js").read_text()
+
+    assert re.search(
+        r"function activateInventoryObject\(regionKey, object\)\s*\{"
+        r"\s*setMode\('select'\);"
+        r"\s*selectObject\(regionKey, object\);",
+        app_source,
+    )
+    assert re.search(
+        r"function isSelectedObjectKeyboardContext\(target\)[\s\S]*?"
+        r"\$\('bbox-overlay'\)\.contains\(target\)[\s\S]*?"
+        r"\$\('object-list'\)\.contains\(target\)[\s\S]*?"
+        r"dataset\.regionKey === state\.selectedRegion",
+        app_source,
+    )
+    assert re.search(
+        r"event\.key === 'Delete' \|\| event\.key === 'Backspace'[\s\S]*?"
+        r"isSelectedObjectKeyboardContext\(event\.target\)[\s\S]*?"
+        r"event\.preventDefault\(\);[\s\S]*?deleteSelectedRegion\(\)",
         app_source,
     )
 

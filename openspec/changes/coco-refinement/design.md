@@ -273,7 +273,13 @@ The displayed `#1..#N` identifiers are transient presentation ordinals, not
 `coco_ann_id`, and are recomputed after each completed authoritative create,
 move, resize, delete, relabel, Undo, reload, or ROI insertion. They do not jump
 during an active pointer drag. Canvas and list selection remain bidirectionally
-synchronized.
+synchronized. Activating an inventory item by pointer or keyboard enters Select
+mode before selecting that stable region, so the ordinary canvas move/resize
+affordances are immediately available even when Draw or Pan was previously
+active. While focus remains in the inventory, Delete or Backspace deletes the
+selected region through the same autosaved Draft path as canvas-focused
+deletion. Mode and selection remain presentation-only; deletion remains a
+semantic edit.
 
 Class selection is sticky across image navigation. Selecting an existing
 object makes its class the active Draw class; a visible `Drawing as: <class>`
