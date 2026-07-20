@@ -27,11 +27,13 @@ from src.adapters import (
     load_default_adapter_source_gate_evidence,
     setup_dora_adapter,
 )
+from src.adapters.dora import inspect_dora_adapter_payload
 from src.augmentation.factory import build_augmentation_processor
 from src.augmentation.processor import AugmentationMaterializationResult
 from src.artifacts import CheckpointWriter, RunWriter
 from src.common.errors import RuntimeContractError
 from src.config.loader import load_train_config
+from src.config.fingerprint import sha256_json
 from src.config.models import RunDirectory
 from src.config.paths import resolve_run_directory
 from src.config.resolve import resolve_qwen_runtime_controls
@@ -54,9 +56,17 @@ from src.qwen import (
     load_qwen_components,
 )
 from src.qwen.special_token_embeddings import (
+    inspect_special_token_embedding_delta_payload,
     load_default_special_token_embedding_source_gate_evidence,
     install_special_token_embedding_deltas,
     load_special_token_embedding_deltas,
+)
+from src.rollout_calibration import (
+    CheckpointIdentity,
+    load_state_bank,
+    load_state_bank_manifest_binding,
+    plan_calibration_micro_steps,
+    validate_state_bank_token_identity,
 )
 from src.runtime import (
     TrainRuntime,
@@ -88,6 +98,12 @@ from src.training.supervised_trainer import (
     SupervisedMicroStep,
     SupervisedTrainer,
 )
+from src.training.rollout_calibration import (
+    CalibrationTokenSequence,
+    RolloutCalibrationLossRunner,
+    build_calibration_micro_step_stream,
+    rollout_calibration_loss_context,
+)
 
 
 TRAIN_SPLIT = "train"
@@ -111,8 +127,7 @@ def build_repeating_micro_step_stream(
     if schedule.runtime_batch.world_size != world_size:
         raise ValueError("stream world_size must match schedule runtime_batch")
     total_rank_local_micro_steps = (
-        schedule.resolved_max_steps
-        * schedule.runtime_batch.resolved_grad_accum_steps
+        schedule.resolved_max_steps * schedule.runtime_batch.resolved_grad_accum_steps
     )
 
     def iter_repeated() -> Iterator[SupervisedMicroStep]:
@@ -120,9 +135,7 @@ def build_repeating_micro_step_stream(
             planned_step_index = (
                 index // schedule.runtime_batch.resolved_grad_accum_steps
             )
-            local_accum_index = (
-                index % schedule.runtime_batch.resolved_grad_accum_steps
-            )
+            local_accum_index = index % schedule.runtime_batch.resolved_grad_accum_steps
             global_micro_step_index = (
                 planned_step_index * schedule.runtime_batch.effective_batch_size
                 + local_accum_index * world_size
@@ -215,7 +228,6 @@ def _initialize_artifact_owner(
 def _train_logging_handler(
     writer: RunWriter | None, lifecycle: dict[str, Any], runtime: Any
 ) -> Any:
-
     def handle(observation: CompletedStepObservation) -> None:
         lifecycle.update(
             completed_steps=observation.planned_step_id,
@@ -259,7 +271,9 @@ def _append_logging_row_shared(
     """Append on rank zero and make its bounded outcome common to every rank."""
     accelerator = getattr(runtime, "accelerator", runtime)
     is_main = bool(
-        getattr(runtime, "is_main_process", getattr(accelerator, "is_main_process", True))
+        getattr(
+            runtime, "is_main_process", getattr(accelerator, "is_main_process", True)
+        )
     )
     status: dict[str, Any] = {"ok": True}
     if is_main:
@@ -273,9 +287,10 @@ def _append_logging_row_shared(
                 "error": f"{type(exc).__name__}: {exc}"[:1024],
             }
     values: list[Any] = [status]
-    if int(
-        getattr(runtime, "world_size", getattr(accelerator, "num_processes", 1))
-    ) > 1:
+    if (
+        int(getattr(runtime, "world_size", getattr(accelerator, "num_processes", 1)))
+        > 1
+    ):
         broadcast = getattr(accelerator, "broadcast_object_list", None)
         if callable(broadcast):
             result = broadcast(values, from_process=0)
@@ -290,7 +305,11 @@ def _append_logging_row_shared(
             )
     shared = values[0]
     if not isinstance(shared, Mapping) or not bool(shared.get("ok")):
-        error = shared.get("error", "invalid status") if isinstance(shared, Mapping) else shared
+        error = (
+            shared.get("error", "invalid status")
+            if isinstance(shared, Mapping)
+            else shared
+        )
         raise RuntimeContractError(
             f"rank zero logging append failed: {error}",
             code="runtime.logging_append_failed",
@@ -393,13 +412,20 @@ def _run_initialized_training(
         base_model_path=components.base_model_path,
     )
     adapter_plan_mode = getattr(adapter_plan, "mode", None)
-    adapter_result = setup_dora_adapter(components.model, adapter_plan)
-    model = adapter_result.model
-
     special_token_selection = build_default_special_token_selection(
         config.model.special_token_embeddings,
         components.token_identity,
     )
+    calibration_bank = None
+    if getattr(config.training, "mode", "supervised") == "rollout_calibration":
+        calibration_bank = _load_bound_rollout_calibration_bank(
+            config,
+            components=components,
+            special_token_selection=special_token_selection,
+        )
+
+    adapter_result = setup_dora_adapter(components.model, adapter_plan)
+    model = adapter_result.model
     special_token_evidence = load_default_special_token_embedding_source_gate_evidence(
         repo_root
     )
@@ -428,36 +454,83 @@ def _run_initialized_training(
         components.token_identity,
         tokenizer=components.tokenizer,
     )
-    train_cache = _resolve_or_build_train_pack_cache(
-        config,
-        components,
-        vocab_groups,
-        repo_root=repo_root,
-        accelerator=accelerator,
-        rank=int(accelerator.process_index),
-    )
-    schedule = resolve_planned_step_schedule(
-        config,
-        packs_per_epoch=train_cache["micro_step_count"],
-        world_size=int(accelerator.num_processes),
-        source_config_path=str(resolved_config.entry_config_path),
-    )
-    if writer is not None:
-        writer.bind_schedule(resolved_max_steps=schedule.resolved_max_steps)
-        _bind_cache_materialization(writer, "train", train_cache)
-    train_micro_steps = load_rank_micro_steps_from_cache(
-        train_cache["cache_dir"],
-        expected_fingerprint=str(train_cache["fingerprint"]),
-        schedule=schedule,
-        rank=int(accelerator.process_index),
-        world_size=int(accelerator.num_processes),
-    )
+    if calibration_bank is None:
+        train_cache = _resolve_or_build_train_pack_cache(
+            config,
+            components,
+            vocab_groups,
+            repo_root=repo_root,
+            accelerator=accelerator,
+            rank=int(accelerator.process_index),
+        )
+        schedule = resolve_planned_step_schedule(
+            config,
+            packs_per_epoch=train_cache["micro_step_count"],
+            world_size=int(accelerator.num_processes),
+            source_config_path=str(resolved_config.entry_config_path),
+        )
+        if writer is not None:
+            writer.bind_schedule(resolved_max_steps=schedule.resolved_max_steps)
+            _bind_cache_materialization(writer, "train", train_cache)
+        train_micro_steps = load_rank_micro_steps_from_cache(
+            train_cache["cache_dir"],
+            expected_fingerprint=str(train_cache["fingerprint"]),
+            schedule=schedule,
+            rank=int(accelerator.process_index),
+            world_size=int(accelerator.num_processes),
+        )
+        loss_runner = LossRunner.from_config(config.losses)
+        loss_context_factory = None
+    else:
+        calibration = config.rollout_calibration
+        assert calibration is not None
+        base_calibration_micro_steps = _build_rollout_calibration_micro_steps(
+            config,
+            components,
+            vocab_groups,
+            calibration_bank,
+        )
+        schedule = resolve_planned_step_schedule(
+            config,
+            packs_per_epoch=len(base_calibration_micro_steps),
+            world_size=int(accelerator.num_processes),
+            source_config_path=str(resolved_config.entry_config_path),
+        )
+        train_micro_steps = build_calibration_micro_step_stream(
+            base_calibration_micro_steps,
+            schedule,
+            profile=calibration.profile,
+            rank=int(accelerator.process_index),
+            world_size=int(accelerator.num_processes),
+        )
+        loss_runner = RolloutCalibrationLossRunner.from_config(
+            config,
+            rejection_count=sum(
+                int(value)
+                for value in calibration_bank.manifest.rejection_reasons.values()
+            ),
+        )
+        loss_context_factory = rollout_calibration_loss_context
+        if writer is not None:
+            writer.bind_schedule(resolved_max_steps=schedule.resolved_max_steps)
+            writer.bind_rollout_calibration(
+                bank_identity=calibration_bank.manifest.bank_id,
+                bank_fingerprint=calibration_bank.manifest.bank_id,
+                source_composite_fingerprint=(
+                    calibration_bank.manifest.source_checkpoint_id
+                ),
+                profile=calibration.profile,
+                records_sha256=calibration_bank.manifest.records_sha256,
+                record_count=calibration_bank.manifest.record_count,
+                split_counts=calibration_bank.manifest.split_counts,
+                event_counts=calibration_bank.manifest.event_family_counts,
+                rejection_reasons=calibration_bank.manifest.rejection_reasons,
+            )
     train_micro_steps = _attach_image_processors_to_micro_steps(
         train_micro_steps,
         image_processor=_qwen_image_processor(components),
     )
     train_micro_steps = _apply_fa2_branch_proof_policy(train_micro_steps, config)
-    loss_runner = LossRunner.from_config(config.losses)
 
     optimizer_group_plan = build_optimizer_group_plan(
         model,
@@ -496,30 +569,45 @@ def _run_initialized_training(
         ),
     )
 
-    eval_cache = _resolve_eval_pack_cache(
-        config,
-        components,
-        vocab_groups,
-        repo_root=repo_root,
-        accelerator=accelerator,
-        rank=int(accelerator.process_index),
-    )
-    if eval_cache is None:
-        eval_micro_steps = train_micro_steps
-    else:
-        eval_micro_steps = load_all_micro_steps_from_cache(
-            eval_cache["cache_dir"],
-            expected_fingerprint=str(eval_cache["fingerprint"]),
-        )
-        eval_micro_steps = _attach_image_processors_to_micro_steps(
-            eval_micro_steps,
-            image_processor=_qwen_image_processor(components),
-        )
-        if writer is not None:
-            _bind_cache_materialization(writer, "eval", eval_cache)
-    eval_micro_steps = _apply_fa2_branch_proof_policy(eval_micro_steps, config)
-    checkpoint_writer = CheckpointWriter(run_directory.run_dir)
     eval_by_step: dict[int, dict[str, Any]] = {}
+    eval_handler = None
+    if calibration_bank is None:
+        eval_cache = _resolve_eval_pack_cache(
+            config,
+            components,
+            vocab_groups,
+            repo_root=repo_root,
+            accelerator=accelerator,
+            rank=int(accelerator.process_index),
+        )
+        if eval_cache is None:
+            eval_micro_steps = train_micro_steps
+        else:
+            eval_micro_steps = load_all_micro_steps_from_cache(
+                eval_cache["cache_dir"],
+                expected_fingerprint=str(eval_cache["fingerprint"]),
+            )
+            eval_micro_steps = _attach_image_processors_to_micro_steps(
+                eval_micro_steps,
+                image_processor=_qwen_image_processor(components),
+            )
+            if writer is not None:
+                _bind_cache_materialization(writer, "eval", eval_cache)
+        eval_micro_steps = _apply_fa2_branch_proof_policy(eval_micro_steps, config)
+        eval_handler = _eval_forward_handler(
+            model=runtime.model,
+            runtime=runtime,
+            eval_micro_steps=eval_micro_steps,
+            loss_runner=loss_runner,
+            writer=writer,
+            eval_source=(
+                config.data.eval.model_dump(mode="json")
+                if config.data.eval is not None
+                else None
+            ),
+            eval_by_step=eval_by_step,
+        )
+    checkpoint_writer = CheckpointWriter(run_directory.run_dir)
     committed_checkpoint_steps: set[int] = set()
     checkpoint_handler = _checkpoint_handler(
         checkpoint_writer,
@@ -541,21 +629,12 @@ def _run_initialized_training(
         model=model,
         schedule=schedule,
         pack_stream=iter(train_micro_steps),
+        loss_context_factory=loss_context_factory,
         loss_runner=loss_runner,
         runtime=runtime,
         on_completed_step=_train_logging_handler(writer, lifecycle, runtime),
         on_checkpoint=checkpoint_handler,
-        on_eval=_eval_forward_handler(
-                model=runtime.model,
-                runtime=runtime,
-                eval_micro_steps=eval_micro_steps,
-                loss_runner=loss_runner,
-                writer=writer,
-                eval_source=config.data.eval.model_dump(mode="json")
-                if config.data.eval is not None
-                else None,
-                eval_by_step=eval_by_step,
-            ),
+        on_eval=eval_handler,
         on_final=_final_handler(
             checkpoint_handler=checkpoint_handler,
             committed_steps=committed_checkpoint_steps,
@@ -571,7 +650,9 @@ def _run_initialized_training(
             completed_steps=result.completed_steps,
             consumed_packs=result.consumed_micro_steps,
             checkpoint_event_count=result.scheduled_event_counts.get("checkpoint", 0),
-            optimizer_update_status=None if latest is None else latest.optimizer_update_status,
+            optimizer_update_status=None
+            if latest is None
+            else latest.optimizer_update_status,
             finite_status=None if latest is None else latest.finite_status,
         )
     return {
@@ -582,6 +663,99 @@ def _run_initialized_training(
         "consumed_micro_steps": result.consumed_micro_steps,
         "scheduled_event_counts": dict(result.scheduled_event_counts),
     }
+
+
+def _load_bound_rollout_calibration_bank(
+    config: Any,
+    *,
+    components: Any,
+    special_token_selection: Any,
+) -> Any:
+    calibration = config.rollout_calibration
+    if calibration is None:
+        raise RuntimeContractError(
+            "rollout-calibration mode requires rollout_calibration config",
+            code="training.rollout_calibration_config_missing",
+        )
+    binding = load_state_bank_manifest_binding(calibration.state_bank_manifest_path)
+    source_adapter_path = config.adapter.source_adapter_path
+    embedding_payload_path = config.adapter.repaired_embedding_payload_path
+    if source_adapter_path is None or embedding_payload_path is None:
+        raise RuntimeContractError(
+            "rollout calibration requires both warm-start checkpoint payloads",
+            code="training.rollout_calibration_source_paths_missing",
+        )
+    adapter_identity = inspect_dora_adapter_payload(
+        source_adapter_path,
+        expected_base_model_path=components.base_model_path,
+    )
+    embedding_identity = inspect_special_token_embedding_delta_payload(
+        embedding_payload_path,
+        expected_base_model_path=components.base_model_path,
+        expected_base_config_sha256=components.base_config_sha256,
+        expected_tokenizer_sha256=components.tokenizer_sha256,
+    )
+    observed = CheckpointIdentity(
+        adapter_fingerprint=str(adapter_identity["fingerprint"]),
+        embedding_delta_fingerprint=str(embedding_identity["fingerprint"]),
+        base_config_sha256=str(components.base_config_sha256),
+        tokenizer_sha256=str(components.tokenizer_sha256),
+        token_identity_sha256=sha256_json(components.token_identity.to_artifact_dict()),
+        special_token_identity_sha256=sha256_json(
+            special_token_selection.to_artifact_dict()
+        ),
+        processor_identity_sha256=sha256_json(
+            components.processor_identity.to_artifact_dict()
+        ),
+    )
+    if observed != binding.source_checkpoint:
+        raise RuntimeContractError(
+            "configured warm-start payloads do not match the state-bank source checkpoint",
+            code="training.rollout_calibration_source_checkpoint_mismatch",
+            context={
+                "expected": binding.source_checkpoint.to_artifact_dict(),
+                "observed": observed.to_artifact_dict(),
+                "state_bank_id": binding.bank_id,
+            },
+        )
+    bank = load_state_bank(
+        calibration.state_bank_manifest_path,
+        expected_source_checkpoint=observed,
+        expected_prompt_identity_sha256=binding.prompt_identity_sha256,
+    )
+    validate_state_bank_token_identity(bank, components.token_identity)
+    return bank
+
+
+def _build_rollout_calibration_micro_steps(
+    config: Any,
+    components: Any,
+    vocab_groups: Any,
+    bank: Any,
+) -> tuple[SupervisedMicroStep, ...]:
+    planned = plan_calibration_micro_steps(
+        bank,
+        split=TRAIN_SPLIT,
+        components=components,
+        processor_config=config.model.processor,
+        global_max_length=config.packing.global_max_length,
+    )
+    coordinate_token_ids = tuple(
+        int(value) for value in components.token_identity.coordinate_token_ids
+    )
+    return tuple(
+        SupervisedMicroStep(
+            pack=item.pack,
+            encoded_examples=item.replay_segments,
+            position_inputs=item.position_inputs,
+            token_sequence=CalibrationTokenSequence(pack_index=item.pack.pack_index),
+            vocab_groups=vocab_groups,
+            metadata={"coordinate_token_ids": coordinate_token_ids},
+            expected_vocab_size=components.token_identity.tokenizer_vocab_size,
+            calibration_metadata=item.calibration_metadata,
+        )
+        for item in planned
+    )
 
 
 def build_base_micro_steps(
@@ -761,9 +935,7 @@ def _resolve_or_build_pack_cache(
         )
     cache_dir = Path(cache_dir_value)
     if rank != 0:
-        manifest = load_cache_manifest(
-            cache_dir, expected_fingerprint=fingerprint
-        )
+        manifest = load_cache_manifest(cache_dir, expected_fingerprint=fingerprint)
     if manifest is None:
         raise RuntimeContractError(
             "packing cache resolution returned no manifest",
@@ -779,9 +951,7 @@ def _resolve_or_build_pack_cache(
         "chunk_count": len(manifest["chunks"]),
         "chunk_size": int(manifest["chunk_size"]),
         "status": manifest["status"],
-        "build_status": (
-            "waited" if rank != 0 else str(shared["build_status"])
-        ),
+        "build_status": ("waited" if rank != 0 else str(shared["build_status"])),
         "manifest_path": cache_manifest_path,
         "manifest_sha256": _file_sha256(cache_manifest_path),
         "determinants_sha256": _sha256_json(manifest["determinants"]),
@@ -951,8 +1121,7 @@ def _encode_examples_with_fork_process_pool(
                 for index in range(len(raw_examples))
             ]
             indexed_results = [
-                future.result()
-                for future in concurrent.futures.as_completed(futures)
+                future.result() for future in concurrent.futures.as_completed(futures)
             ]
     finally:
         _PACK_CACHE_WORKER_CONTEXT = None
@@ -1035,9 +1204,7 @@ def _restore_encoded_example_order(
 
 def _resolve_pack_cache_materialization_workers(workers: int | None) -> int:
     resolved_workers = (
-        DEFAULT_PACK_CACHE_MATERIALIZATION_WORKERS
-        if workers is None
-        else workers
+        DEFAULT_PACK_CACHE_MATERIALIZATION_WORKERS if workers is None else workers
     )
     if isinstance(resolved_workers, bool) or not isinstance(resolved_workers, int):
         raise RuntimeContractError(
@@ -1172,9 +1339,11 @@ def enable_training_memory_savers(model: Any) -> dict[str, Any]:
     train_mode_enabled = _enable_train_mode(model)
     use_cache_disabled = _disable_use_cache(model)
     gradient_checkpointing_kwargs = {"use_reentrant": False}
-    gradient_checkpointing_enabled, applied_gradient_checkpointing_kwargs = _enable_gradient_checkpointing(
-        model,
-        gradient_checkpointing_kwargs=gradient_checkpointing_kwargs,
+    gradient_checkpointing_enabled, applied_gradient_checkpointing_kwargs = (
+        _enable_gradient_checkpointing(
+            model,
+            gradient_checkpointing_kwargs=gradient_checkpointing_kwargs,
+        )
     )
     input_require_grads_enabled = _call_first_available(
         model,
@@ -1222,7 +1391,9 @@ def _checkpoint_handler(
             tokenizer_sha256=tokenizer_sha256,
             run_writer=writer,
             is_final=save_final and step == schedule.resolved_max_steps,
-            best_candidate=None if eval_observation is None else {
+            best_candidate=None
+            if eval_observation is None
+            else {
                 "completed": True,
                 "selector": BEST_EVAL_SELECTOR_NAME,
                 "value": eval_observation.get(BEST_EVAL_SELECTOR_NAME),
@@ -1231,9 +1402,9 @@ def _checkpoint_handler(
             },
         )
         committed_steps.add(step)
-        lifecycle["checkpoint_event_count"] = int(
-            lifecycle.get("checkpoint_event_count", 0)
-        ) + 1
+        lifecycle["checkpoint_event_count"] = (
+            int(lifecycle.get("checkpoint_event_count", 0)) + 1
+        )
 
     return handle
 
@@ -1384,7 +1555,9 @@ def _resolve_shared_run_directory(
     )
 
 
-def _loss_plan_artifact(config: Any, vocab_groups_artifact: dict[str, Any]) -> dict[str, Any]:
+def _loss_plan_artifact(
+    config: Any, vocab_groups_artifact: dict[str, Any]
+) -> dict[str, Any]:
     term_order = ["base_ce", "token_type_gate"]
     if config.losses.protected.coord_gaussian_rps.weight > 0.0:
         term_order.append("coord_gaussian_rps")
@@ -1420,8 +1593,7 @@ def _encoded_examples_for_pack(
     encoded_examples: Sequence[Any],
 ) -> tuple[Any, ...]:
     examples_by_id = {
-        str(getattr(example, "example_id")): example
-        for example in encoded_examples
+        str(getattr(example, "example_id")): example for example in encoded_examples
     }
     return tuple(examples_by_id[segment.example_id] for segment in pack.segments)
 

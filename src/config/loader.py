@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import importlib
+import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +39,7 @@ def load_train_config(path: str | Path) -> ResolvedTrainConfig:
         config = TrainConfig.model_validate(resolved_payload)
     except ValidationError as exc:
         _raise_validation_error(exc, entry_path)
+    rollout_calibration_binding = _validate_rollout_calibration_manifest_binding(config)
     validate_static_qwen_runtime_controls(config)
     config_dict = config.model_dump(mode="json")
     fingerprint = sha256_json(config_dict)
@@ -48,6 +52,7 @@ def load_train_config(path: str | Path) -> ResolvedTrainConfig:
         entry_config_path=entry_path,
         sources=sources,
         path_origins=path_origins,
+        rollout_calibration_binding=rollout_calibration_binding,
     )
 
 
@@ -117,6 +122,118 @@ def _load_yaml_mapping(path: Path) -> dict[str, Any]:
             context={"path": str(path), "value_type": type(payload).__name__},
         )
     return payload
+
+
+def _validate_rollout_calibration_manifest_binding(
+    config: TrainConfig,
+) -> dict[str, Any] | None:
+    calibration = config.rollout_calibration
+    if calibration is None:
+        return None
+    manifest_path = Path(calibration.state_bank_manifest_path)
+    manifest_binding = _load_manifest_binding(manifest_path)
+    manifest_checkpoint_id = _validate_manifest_checkpoint_id(
+        manifest_binding.get("source_checkpoint_id"),
+        manifest_path,
+    )
+    if manifest_checkpoint_id != calibration.source_checkpoint_id:
+        raise ConfigContractError(
+            "rollout calibration state bank belongs to another source checkpoint",
+            code="config.state_bank_checkpoint_mismatch",
+            context={
+                "state_bank_manifest_path": str(manifest_path),
+                "configured_source_checkpoint_id": calibration.source_checkpoint_id,
+                "manifest_source_checkpoint_id": manifest_checkpoint_id,
+            },
+        )
+    return manifest_binding
+
+
+def _load_manifest_source_checkpoint_id(path: Path) -> str:
+    """Load only manifest-level checkpoint binding, not state-bank records."""
+
+    binding = _load_manifest_binding(path)
+    return _validate_manifest_checkpoint_id(binding.get("source_checkpoint_id"), path)
+
+
+def _load_manifest_binding(path: Path) -> dict[str, Any]:
+    """Load the immutable manifest receipt without reading state-bank records."""
+
+    try:
+        module = importlib.import_module("src.rollout_calibration.state_bank")
+    except ModuleNotFoundError as exc:
+        if exc.name not in {
+            "src.rollout_calibration",
+            "src.rollout_calibration.state_bank",
+        }:
+            raise
+    else:
+        loader = getattr(module, "load_state_bank_manifest_binding", None)
+        if callable(loader):
+            binding = loader(path)
+            if isinstance(binding, Mapping):
+                return dict(binding)
+            to_artifact_dict = getattr(binding, "to_artifact_dict", None)
+            if callable(to_artifact_dict):
+                artifact = to_artifact_dict()
+                if isinstance(artifact, Mapping):
+                    return dict(artifact)
+            raise ConfigContractError(
+                "rollout calibration manifest binding has an invalid shape",
+                code="config.state_bank_manifest_binding",
+                context={"state_bank_manifest_path": str(path)},
+            )
+
+    try:
+        payload = json.loads(
+            path.read_text(encoding="utf-8"),
+            object_pairs_hook=_strict_json_object,
+            parse_constant=_reject_json_constant,
+        )
+    except FileNotFoundError as exc:
+        raise ConfigContractError(
+            "rollout calibration state-bank manifest does not exist",
+            code="config.state_bank_manifest_missing",
+            context={"state_bank_manifest_path": str(path)},
+            cause=exc,
+        ) from exc
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        raise ConfigContractError(
+            "rollout calibration state-bank manifest is not strict JSON",
+            code="config.state_bank_manifest_json",
+            context={"state_bank_manifest_path": str(path)},
+            cause=exc,
+        ) from exc
+    if not isinstance(payload, Mapping):
+        raise ConfigContractError(
+            "rollout calibration state-bank manifest must be a JSON object",
+            code="config.state_bank_manifest_binding",
+            context={"state_bank_manifest_path": str(path)},
+        )
+    return dict(payload)
+
+
+def _validate_manifest_checkpoint_id(value: object, path: Path) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ConfigContractError(
+            "rollout calibration state-bank manifest requires source_checkpoint_id",
+            code="config.state_bank_manifest_binding",
+            context={"state_bank_manifest_path": str(path)},
+        )
+    return value
+
+
+def _strict_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in payload:
+            raise ValueError(f"duplicate JSON key: {key}")
+        payload[key] = value
+    return payload
+
+
+def _reject_json_constant(value: str) -> None:
+    raise ValueError(f"non-finite JSON constant: {value}")
 
 
 def _reject_nested_extends(value: Any, path: Path, dotted: str = "") -> None:

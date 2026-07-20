@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from dataclasses import replace
 from dataclasses import dataclass
 import inspect
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -24,6 +25,66 @@ from src.training.supervised_trainer import (
     QwenForwardFn,
     RuntimeBoundary,
 )
+
+
+@dataclass(frozen=True)
+class FakeCalibrationMetadata:
+    selected_causal_logits_positions: tuple[int, ...]
+
+
+def test_logits_positions_union_ordinary_atoms_with_calibration_sites() -> None:
+    micro_step = _logits_micro_step(
+        atom_positions=(2, 7),
+        calibration_metadata=FakeCalibrationMetadata((5, 2)),
+    )
+
+    assert trainer_module._logits_positions_to_keep(micro_step) == (2, 5, 7)
+
+
+def test_logits_positions_keep_ordinary_behavior_without_calibration_metadata() -> None:
+    micro_step = _logits_micro_step(atom_positions=(7, 2, 7))
+
+    assert trainer_module._logits_positions_to_keep(micro_step) == (2, 7)
+    assert (
+        trainer_module._logits_positions_to_keep(
+            _logits_micro_step(atom_positions=None)
+        )
+        is None
+    )
+
+
+def test_logits_positions_support_calibration_only_token_sequences() -> None:
+    micro_step = _logits_micro_step(
+        atom_positions=None,
+        calibration_metadata=FakeCalibrationMetadata((4, 1)),
+    )
+
+    assert trainer_module._logits_positions_to_keep(micro_step) == (1, 4)
+
+
+@pytest.mark.parametrize(
+    "calibration_metadata",
+    [
+        object(),
+        FakeCalibrationMetadata(()),
+        SimpleNamespace(selected_causal_logits_positions="3"),
+        SimpleNamespace(selected_causal_logits_positions=(True,)),
+        SimpleNamespace(selected_causal_logits_positions=(-1,)),
+        SimpleNamespace(selected_causal_logits_positions=(1.5,)),
+    ],
+)
+def test_logits_positions_reject_malformed_calibration_metadata(
+    calibration_metadata: Any,
+) -> None:
+    micro_step = _logits_micro_step(
+        atom_positions=(2,),
+        calibration_metadata=calibration_metadata,
+    )
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        trainer_module._logits_positions_to_keep(micro_step)
+
+    assert exc_info.value.code == "trainer.invalid_calibration_logits_positions"
 
 
 def test_supervised_trainer_orchestrates_accumulation_and_runtime_boundaries() -> None:
@@ -98,21 +159,17 @@ def test_supervised_trainer_orchestrates_accumulation_and_runtime_boundaries() -
     ]
 
 
-def test_supervised_trainer_triggers_scheduled_eval_checkpoint_and_final_events() -> None:
+def test_supervised_trainer_triggers_scheduled_eval_checkpoint_and_final_events() -> (
+    None
+):
     scheduled_calls: list[tuple[str, int, tuple[str, ...], str]] = []
     schedule = _schedule(
         resolved_max_steps=2,
         grad_accum_steps=1,
         events={
-            "eval.forward": (
-                _event(1, "eval.forward", ("explicit_step",)),
-            ),
-            "checkpoint": (
-                _event(2, "checkpoint", ("save_final",)),
-            ),
-            "final": (
-                _event(2, "final", ("final",), required=True),
-            ),
+            "eval.forward": (_event(1, "eval.forward", ("explicit_step",)),),
+            "checkpoint": (_event(2, "checkpoint", ("save_final",)),),
+            "final": (_event(2, "final", ("final",), required=True),),
         },
     )
     trainer = SupervisedTrainer(
@@ -123,9 +180,15 @@ def test_supervised_trainer_triggers_scheduled_eval_checkpoint_and_final_events(
         loss_context_factory=_loss_context([]),
         loss_runner=FakeLossRunner([]),
         runtime=FakeRuntime([]),
-        on_eval=lambda event, observation: scheduled_calls.append(_scheduled_tuple(event, observation)),
-        on_checkpoint=lambda event, observation: scheduled_calls.append(_scheduled_tuple(event, observation)),
-        on_final=lambda event, observation: scheduled_calls.append(_scheduled_tuple(event, observation)),
+        on_eval=lambda event, observation: scheduled_calls.append(
+            _scheduled_tuple(event, observation)
+        ),
+        on_checkpoint=lambda event, observation: scheduled_calls.append(
+            _scheduled_tuple(event, observation)
+        ),
+        on_final=lambda event, observation: scheduled_calls.append(
+            _scheduled_tuple(event, observation)
+        ),
     )
 
     result = trainer.run()
@@ -149,15 +212,9 @@ def test_supervised_trainer_runs_same_step_eval_before_checkpoint() -> None:
         resolved_max_steps=1,
         grad_accum_steps=1,
         events={
-            "checkpoint": (
-                _event(1, "checkpoint", ("every_fraction:1.0",)),
-            ),
-            "eval.forward": (
-                _event(1, "eval.forward", ("explicit_step",)),
-            ),
-            "final": (
-                _event(1, "final", ("final",), required=True),
-            ),
+            "checkpoint": (_event(1, "checkpoint", ("every_fraction:1.0",)),),
+            "eval.forward": (_event(1, "eval.forward", ("explicit_step",)),),
+            "final": (_event(1, "final", ("final",), required=True),),
         },
     )
     trainer = SupervisedTrainer(
@@ -318,7 +375,9 @@ def test_supervised_trainer_has_no_generic_scheduled_event_dispatch_residue() ->
     assert "training." + "logging" not in inspect.getsource(trainer_module)
 
 
-def test_supervised_trainer_skips_backward_and_update_when_scalar_gate_is_unsafe() -> None:
+def test_supervised_trainer_skips_backward_and_update_when_scalar_gate_is_unsafe() -> (
+    None
+):
     log: list[str] = []
     trainer = SupervisedTrainer(
         model=object(),
@@ -332,7 +391,9 @@ def test_supervised_trainer_skips_backward_and_update_when_scalar_gate_is_unsafe
 
     result = trainer.run()
 
-    assert result.latest_observation.optimizer_update_status == "skipped_non_finite_scalar"
+    assert (
+        result.latest_observation.optimizer_update_status == "skipped_non_finite_scalar"
+    )
     assert not any(item.startswith("runtime.backward:1.0") for item in log)
     assert "runtime.post:1" not in log
     assert "runtime.optimizer:1" not in log
@@ -340,7 +401,9 @@ def test_supervised_trainer_skips_backward_and_update_when_scalar_gate_is_unsafe
     assert log[-2:] == ["runtime.scheduler:1", "runtime.zero:1"]
 
 
-def test_supervised_trainer_advances_scheduler_when_post_backward_gate_skips_update() -> None:
+def test_supervised_trainer_advances_scheduler_when_post_backward_gate_skips_update() -> (
+    None
+):
     log: list[str] = []
     trainer = SupervisedTrainer(
         model=object(),
@@ -354,7 +417,10 @@ def test_supervised_trainer_advances_scheduler_when_post_backward_gate_skips_upd
 
     result = trainer.run()
 
-    assert result.latest_observation.optimizer_update_status == "skipped_gradient_or_overflow"
+    assert (
+        result.latest_observation.optimizer_update_status
+        == "skipped_gradient_or_overflow"
+    )
     assert "runtime.backward:1.0:sync=True" in log
     assert "runtime.optimizer:1" not in log
     assert log[-3:] == ["runtime.post:1", "runtime.scheduler:1", "runtime.zero:1"]
@@ -423,7 +489,9 @@ def test_supervised_trainer_forwards_with_runtime_owned_model() -> None:
     prepared_model = object()
     observed_models: list[object] = []
 
-    def qwen_forward(model: object, micro_step: SupervisedMicroStep) -> FakeForwardResult:
+    def qwen_forward(
+        model: object, micro_step: SupervisedMicroStep
+    ) -> FakeForwardResult:
         observed_models.append(model)
         return FakeForwardResult(
             pack_index=int(str(micro_step.pack).split("-")[1]),
@@ -453,7 +521,9 @@ def test_supervised_trainer_runs_with_accelerate_prepared_runtime_model() -> Non
     runtime = RuntimeWithPreparedModel([], prepared_model)
     observed_models: list[object] = []
 
-    def qwen_forward(observed_model: object, _micro_step: SupervisedMicroStep) -> FakeForwardResult:
+    def qwen_forward(
+        observed_model: object, _micro_step: SupervisedMicroStep
+    ) -> FakeForwardResult:
         observed_models.append(observed_model)
         return FakeForwardResult(
             pack_index=0,
@@ -530,7 +600,9 @@ def test_supervised_trainer_fails_if_pack_stream_cannot_fill_planned_window() ->
     assert exc_info.value.context["local_micro_step_index"] == 1
 
 
-def test_supervised_trainer_streams_backward_before_next_forward_when_supported() -> None:
+def test_supervised_trainer_streams_backward_before_next_forward_when_supported() -> (
+    None
+):
     log: list[str] = []
     trainer = SupervisedTrainer(
         model=object(),
@@ -597,9 +669,12 @@ def test_streaming_multirank_loss_plan_uses_runtime_denominator_gatherer() -> No
     result = trainer.run()
 
     assert result.completed_steps == 1
-    assert result.latest_observation.loss_bundle_artifact["diagnostics"][
-        "denominator_scope"
-    ] == "planned_step_global"
+    assert (
+        result.latest_observation.loss_bundle_artifact["diagnostics"][
+            "denominator_scope"
+        ]
+        == "planned_step_global"
+    )
     assert "runtime.gather_denominators:1" in log
     assert "streaming.prepare_global:1:2:0:3" in log
 
@@ -623,7 +698,9 @@ def test_streaming_completion_callback_does_not_expose_micro_or_gate_events() ->
     assert observations[0].micro_step_count == 2
 
 
-def test_trainer_profile_sync_helper_is_exact_env_gated(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_trainer_profile_sync_helper_is_exact_env_gated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls: list[str] = []
     monkeypatch.setattr(trainer_module.torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(
@@ -663,7 +740,9 @@ def test_streaming_scalar_gate_partial_window_marks_metrics_unavailable() -> Non
     assert artifact["diagnostics"]["processed_micro_step_count"] == 1
     assert artifact["diagnostics"]["planned_micro_step_count"] == 2
     assert result.latest_observation.micro_step_count == 1
-    assert result.latest_observation.optimizer_update_status == "skipped_non_finite_scalar"
+    assert (
+        result.latest_observation.optimizer_update_status == "skipped_non_finite_scalar"
+    )
     assert not any(item.startswith("runtime.backward:0.5") for item in log)
     assert "runtime.accumulation:False:enter" in log
     assert "runtime.accumulation:False:exit" in log
@@ -699,7 +778,9 @@ class StreamingFakeLossRunner(FakeLossRunner):
     def compute(self, contexts: tuple[Any, ...]) -> FakeLossBundle:
         raise AssertionError("streaming trainer path must not retain all contexts")
 
-    def prepare_planned_step(self, micro_steps: tuple[SupervisedMicroStep, ...]) -> dict[str, int]:
+    def prepare_planned_step(
+        self, micro_steps: tuple[SupervisedMicroStep, ...]
+    ) -> dict[str, int]:
         self.log.append(f"streaming.prepare:{len(micro_steps)}")
         return {"micro_step_count": len(micro_steps)}
 
@@ -721,8 +802,14 @@ class StreamingFakeLossRunner(FakeLossRunner):
         plan: dict[str, int],
     ) -> dict[str, float]:
         return {
-            "total_loss": sum(float(item["total_loss"]) for item in micro_loss_artifacts),
-            "metrics": {"loss/total": sum(float(item["total_loss"]) for item in micro_loss_artifacts)},
+            "total_loss": sum(
+                float(item["total_loss"]) for item in micro_loss_artifacts
+            ),
+            "metrics": {
+                "loss/total": sum(
+                    float(item["total_loss"]) for item in micro_loss_artifacts
+                )
+            },
             "diagnostics": {"normalizer_scope": "planned_step_streaming"},
         }
 
@@ -819,7 +906,10 @@ class FakeRuntime:
         self.log.append(f"runtime.pre:{planned_step_id}")
         call_index = self.pre_call_count
         self.pre_call_count += 1
-        if planned_step_id in self.unsafe_pre_steps or call_index in self.unsafe_pre_call_indices:
+        if (
+            planned_step_id in self.unsafe_pre_steps
+            or call_index in self.unsafe_pre_call_indices
+        ):
             return _gate(
                 planned_step_id,
                 stage="pre_backward_scalar",
@@ -934,6 +1024,31 @@ def _micro_steps(count: int, log: list[str] | None = None):
             vocab_groups=f"vocab-{index}",
             metadata={},
         )
+
+
+def _logits_micro_step(
+    *,
+    atom_positions: tuple[int, ...] | None,
+    calibration_metadata: Any = None,
+) -> SupervisedMicroStep:
+    token_sequence = (
+        object()
+        if atom_positions is None
+        else SimpleNamespace(
+            atoms=tuple(
+                SimpleNamespace(causal_logits_position=position)
+                for position in atom_positions
+            )
+        )
+    )
+    return SupervisedMicroStep(
+        pack=object(),
+        encoded_examples=(),
+        position_inputs=object(),
+        token_sequence=token_sequence,
+        vocab_groups=object(),
+        calibration_metadata=calibration_metadata,
+    )
 
 
 def _forward(log: list[str]):

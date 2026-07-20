@@ -66,29 +66,29 @@ class RunWriter:
             )
             staging_writer._write_json_atomic(
                 staging_writer.run_path,
-            {
-                "run_id": run_id,
-                "run_name": run_name,
-                "run_dir": str(run_dir),
-                "artifact_root": str(artifact_root.resolve()),
-                "collision_outcome": collision_outcome,
-                "status": "initialized",
-                "created_at": created_at,
-                "updated_at": created_at,
-                "completed_at": None,
-                "resolved_config_path": "resolved_config.json",
-                "config_fingerprint": config_fingerprint,
-                "runtime": {"world_size": world_size},
-                "resolved_max_steps": resolved_max_steps,
-                "completed_steps": 0,
-                "consumed_packs": 0,
-                "checkpoint_event_count": 0,
-                "final_optimizer_update_status": None,
-                "final_finite_status": None,
-                "terminal_error": None,
-                "warning_counts": {},
-                "materializations": {},
-            },
+                {
+                    "run_id": run_id,
+                    "run_name": run_name,
+                    "run_dir": str(run_dir),
+                    "artifact_root": str(artifact_root.resolve()),
+                    "collision_outcome": collision_outcome,
+                    "status": "initialized",
+                    "created_at": created_at,
+                    "updated_at": created_at,
+                    "completed_at": None,
+                    "resolved_config_path": "resolved_config.json",
+                    "config_fingerprint": config_fingerprint,
+                    "runtime": {"world_size": world_size},
+                    "resolved_max_steps": resolved_max_steps,
+                    "completed_steps": 0,
+                    "consumed_packs": 0,
+                    "checkpoint_event_count": 0,
+                    "final_optimizer_update_status": None,
+                    "final_finite_status": None,
+                    "terminal_error": None,
+                    "warning_counts": {},
+                    "materializations": {},
+                },
             )
             staging_writer.logging_path.touch(exist_ok=False)
             os.replace(staging_dir, run_dir)
@@ -137,7 +137,10 @@ class RunWriter:
         counts = state["warning_counts"]
         target = code
         reserved_other_slot = _OTHER_WARNING_CODE not in counts
-        if code not in counts and len(counts) >= _MAX_WARNING_CODES - reserved_other_slot:
+        if (
+            code not in counts
+            and len(counts) >= _MAX_WARNING_CODES - reserved_other_slot
+        ):
             target = _OTHER_WARNING_CODE
         counts[target] = min(_MAX_WARNING_COUNT, counts.get(target, 0) + count)
         self._write_json_atomic(self.run_path, state)
@@ -185,6 +188,78 @@ class RunWriter:
                 code="run_writer.schedule_already_bound",
             )
         state["resolved_max_steps"] = resolved_max_steps
+        self._write_json_atomic(self.run_path, state)
+
+    def bind_rollout_calibration(
+        self,
+        *,
+        bank_identity: str,
+        bank_fingerprint: str,
+        source_composite_fingerprint: str,
+        profile: str,
+        records_sha256: str,
+        record_count: int,
+        split_counts: Mapping[str, int],
+        event_counts: Mapping[str, int],
+        rejection_reasons: Mapping[str, int],
+    ) -> None:
+        """Bind one immutable rollout-calibration provenance summary to run.json."""
+        string_fields = {
+            "bank_identity": bank_identity,
+            "bank_fingerprint": bank_fingerprint,
+            "source_composite_fingerprint": source_composite_fingerprint,
+            "profile": profile,
+            "records_sha256": records_sha256,
+        }
+        invalid_fields = tuple(
+            name
+            for name, value in string_fields.items()
+            if not isinstance(value, str) or not value.strip()
+        )
+        if invalid_fields:
+            raise ArtifactContractError(
+                "rollout-calibration identity fields must be nonempty strings",
+                code="run_writer.invalid_rollout_calibration_binding",
+                context={"invalid_fields": invalid_fields},
+            )
+        binding = {
+            **string_fields,
+            "validation_receipt": {
+                "status": "validated",
+                "bank_id": bank_identity,
+                "source_checkpoint_id": source_composite_fingerprint,
+                "records_sha256": records_sha256,
+                "record_count": _normalize_binding_count(
+                    record_count,
+                    field="record_count",
+                ),
+                "split_counts": _normalize_binding_counts(
+                    split_counts,
+                    field="split_counts",
+                ),
+                "event_family_counts": _normalize_binding_counts(
+                    event_counts,
+                    field="event_counts",
+                ),
+                "rejection_reasons": _normalize_binding_counts(
+                    rejection_reasons,
+                    field="rejection_reasons",
+                ),
+            },
+            "split_counts": _normalize_binding_counts(
+                split_counts, field="split_counts"
+            ),
+            "event_counts": _normalize_binding_counts(
+                event_counts, field="event_counts"
+            ),
+        }
+        state = self.read_run()
+        if "rollout_calibration" in state:
+            raise ArtifactContractError(
+                "rollout-calibration run binding is immutable",
+                code="run_writer.rollout_calibration_already_bound",
+            )
+        state["rollout_calibration"] = binding
         self._write_json_atomic(self.run_path, state)
 
     def finalize(
@@ -316,7 +391,9 @@ def _normalize_logging_row(row: Mapping[str, Any]) -> dict[str, Any]:
     fields: list[str] = []
     normalized = _replace_non_finite(normalized, path="", fields=fields)
     declared = normalized.get("non_finite_fields", [])
-    if not isinstance(declared, list) or not all(isinstance(item, str) for item in declared):
+    if not isinstance(declared, list) or not all(
+        isinstance(item, str) for item in declared
+    ):
         raise ArtifactContractError(
             "non_finite_fields must be a list of field names",
             code="run_writer.invalid_non_finite_fields",
@@ -324,6 +401,45 @@ def _normalize_logging_row(row: Mapping[str, Any]) -> dict[str, Any]:
     normalized["non_finite_fields"] = sorted(set(declared).union(fields))
     _reject_non_finite(normalized)
     return normalized
+
+
+def _normalize_binding_counts(
+    counts: Mapping[str, int],
+    *,
+    field: str,
+) -> dict[str, int]:
+    if not isinstance(counts, Mapping):
+        raise ArtifactContractError(
+            "rollout-calibration counts must be mappings",
+            code="run_writer.invalid_rollout_calibration_binding",
+            context={"field": field, "value_type": type(counts).__name__},
+        )
+    normalized: dict[str, int] = {}
+    for name, count in counts.items():
+        if (
+            not isinstance(name, str)
+            or not name.strip()
+            or isinstance(count, bool)
+            or not isinstance(count, int)
+            or count < 0
+        ):
+            raise ArtifactContractError(
+                "rollout-calibration count names and values must be valid",
+                code="run_writer.invalid_rollout_calibration_binding",
+                context={"field": field, "name": name, "count": count},
+            )
+        normalized[name] = count
+    return dict(sorted(normalized.items()))
+
+
+def _normalize_binding_count(value: int, *, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ArtifactContractError(
+            "rollout-calibration binding counts must be nonnegative integers",
+            code="run_writer.invalid_rollout_calibration_binding",
+            context={"field": field, "value": value},
+        )
+    return int(value)
 
 
 def _replace_non_finite(value: Any, *, path: str, fields: list[str]) -> Any:

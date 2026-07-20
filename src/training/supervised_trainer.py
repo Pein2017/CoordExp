@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 import inspect
 import os
@@ -18,6 +18,13 @@ from src.qwen.forward import build_qwen_forward_inputs, run_qwen_forward
 from src.runtime.finite_gates import GateDecision
 from src.supervision import TokenSequence
 from src.training.schedule import ResolvedStepSchedule, StepScheduleEvent
+
+
+class CalibrationMetadataBoundary(Protocol):
+    """Minimal calibration sidecar contract consumed by the forward boundary."""
+
+    @property
+    def selected_causal_logits_positions(self) -> Sequence[int]: ...
 
 
 @dataclass(frozen=True)
@@ -36,6 +43,7 @@ class SupervisedMicroStep:
     capture_fa2_branch: bool = False
     require_fa2_branch_proof: bool = False
     fa2_branch_proof_policy: str | None = None
+    calibration_metadata: CalibrationMetadataBoundary | None = None
 
 
 @dataclass(frozen=True)
@@ -150,9 +158,7 @@ class SupervisedTrainer:
 
     def run(self) -> SupervisedTrainingResult:
         latest_observation: CompletedStepObservation | None = None
-        scheduled_event_counts = {
-            name: 0 for name in sorted(self.schedule.events)
-        }
+        scheduled_event_counts = {name: 0 for name in sorted(self.schedule.events)}
         consumed_micro_steps = 0
         micro_steps_per_planned_step = (
             self.schedule.runtime_batch.resolved_grad_accum_steps
@@ -190,9 +196,7 @@ class SupervisedTrainer:
                     _runtime_model(self.runtime, self.model),
                     micro_step,
                 )
-                contexts.append(
-                    self.loss_context_factory(micro_step, forward_result)
-                )
+                contexts.append(self.loss_context_factory(micro_step, forward_result))
                 del forward_result, micro_step
 
             loss_bundle = self.loss_runner.compute(tuple(contexts))
@@ -526,7 +530,12 @@ def _runtime_loss_denominator_gatherer(
     *,
     planned_step_id: int,
     world_size: int,
-) -> Callable[[Mapping[str, Mapping[str, Any]]], Sequence[Mapping[str, Mapping[str, Any]]]] | None:
+) -> (
+    Callable[
+        [Mapping[str, Mapping[str, Any]]], Sequence[Mapping[str, Mapping[str, Any]]]
+    ]
+    | None
+):
     gather_loss_denominators = getattr(runtime, "gather_loss_denominators", None)
     if callable(gather_loss_denominators):
         return lambda payload: gather_loss_denominators(
@@ -570,14 +579,65 @@ def _default_loss_context(
     )
 
 
-def _logits_positions_to_keep(micro_step: SupervisedMicroStep) -> tuple[int, ...] | None:
+def _logits_positions_to_keep(
+    micro_step: SupervisedMicroStep,
+) -> tuple[int, ...] | None:
+    positions: set[int] = set()
     atoms = getattr(micro_step.token_sequence, "atoms", None)
-    if atoms is None:
-        return None
-    positions = tuple(
-        sorted({int(atom.causal_logits_position) for atom in atoms})
-    )
-    return positions or None
+    if atoms is not None:
+        positions.update(int(atom.causal_logits_position) for atom in atoms)
+    positions.update(_calibration_logits_positions(micro_step.calibration_metadata))
+    return tuple(sorted(positions)) or None
+
+
+def _calibration_logits_positions(
+    metadata: CalibrationMetadataBoundary | None,
+) -> tuple[int, ...]:
+    if metadata is None:
+        return ()
+    try:
+        selected = metadata.selected_causal_logits_positions
+    except AttributeError as exc:
+        raise RuntimeContractError(
+            "calibration metadata must expose selected causal-logit positions",
+            code="trainer.invalid_calibration_logits_positions",
+            context={
+                "metadata_type": type(metadata).__name__,
+                "reason": "missing_property",
+            },
+            cause=exc,
+        ) from exc
+    if isinstance(selected, (str, bytes)) or not isinstance(selected, Sequence):
+        raise RuntimeContractError(
+            "selected calibration causal-logit positions must be a sequence of integers",
+            code="trainer.invalid_calibration_logits_positions",
+            context={
+                "metadata_type": type(metadata).__name__,
+                "positions_type": type(selected).__name__,
+                "reason": "invalid_container",
+            },
+        )
+    positions: list[int] = []
+    for index, value in enumerate(selected):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise RuntimeContractError(
+                "selected calibration causal-logit positions must be nonnegative integers",
+                code="trainer.invalid_calibration_logits_positions",
+                context={
+                    "index": index,
+                    "metadata_type": type(metadata).__name__,
+                    "reason": "invalid_position",
+                    "value": value,
+                },
+            )
+        positions.append(value)
+    if not positions:
+        raise RuntimeContractError(
+            "calibration metadata must select at least one causal-logit position",
+            code="trainer.invalid_calibration_logits_positions",
+            context={"metadata_type": type(metadata).__name__, "reason": "empty"},
+        )
+    return tuple(positions)
 
 
 def _total_loss(loss_bundle: LossBundle | Any) -> torch.Tensor:
@@ -641,9 +701,7 @@ def _partial_loss_artifact(
     result = dict(artifact)
     diagnostics_value = result.get("diagnostics")
     diagnostics = (
-        dict(diagnostics_value)
-        if isinstance(diagnostics_value, Mapping)
-        else {}
+        dict(diagnostics_value) if isinstance(diagnostics_value, Mapping) else {}
     )
     diagnostics.update(
         {

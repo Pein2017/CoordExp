@@ -13,8 +13,11 @@ from src.config.models import PathOrigin, RunDirectory, TrainConfig
 PATH_FIELDS = (
     "model.base_model",
     "adapter.path",
+    "adapter.source_adapter_path",
+    "adapter.repaired_embedding_payload_path",
     "data.train.path",
     "data.eval.path",
+    "rollout_calibration.state_bank_manifest_path",
 )
 
 

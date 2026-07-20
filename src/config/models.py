@@ -76,7 +76,9 @@ class ModelConfig(StrictConfigModel):
 
 class AdapterConfig(StrictConfigModel):
     type: Literal["dora"]
-    seed_mode: Literal["initialize_new", "load_existing", "warm_start_expand_dora"] | None = None
+    seed_mode: (
+        Literal["initialize_new", "load_existing", "warm_start_expand_dora"] | None
+    ) = None
     path: str | None = None
     source_adapter_path: str | None = None
     repaired_embedding_payload_path: str | None = None
@@ -91,7 +93,9 @@ class AdapterConfig(StrictConfigModel):
     @classmethod
     def _type_uses_public_v1_dora_name(cls, value: object) -> object:
         if value == "dlora":
-            raise ValueError("V1 uses adapter.type: dora; adapter.type: dlora is unsupported")
+            raise ValueError(
+                "V1 uses adapter.type: dora; adapter.type: dlora is unsupported"
+            )
         return value
 
     @field_validator("target_towers")
@@ -109,29 +113,44 @@ class AdapterConfig(StrictConfigModel):
     def _seed_mode_contract(self) -> "AdapterConfig":
         seed_mode = self.seed_mode
         if seed_mode is None:
-            if self.source_adapter_path is not None or self.repaired_embedding_payload_path is not None:
+            if (
+                self.source_adapter_path is not None
+                or self.repaired_embedding_payload_path is not None
+            ):
                 raise ValueError(
                     "adapter source/payload seed paths require adapter.seed_mode: warm_start_expand_dora"
                 )
             return self
         if seed_mode == "initialize_new":
             if self.path is not None:
-                raise ValueError("adapter.seed_mode=initialize_new must not set adapter.path")
-            if self.source_adapter_path is not None or self.repaired_embedding_payload_path is not None:
+                raise ValueError(
+                    "adapter.seed_mode=initialize_new must not set adapter.path"
+                )
+            if (
+                self.source_adapter_path is not None
+                or self.repaired_embedding_payload_path is not None
+            ):
                 raise ValueError(
                     "adapter.seed_mode=initialize_new must not set warm-start source paths"
                 )
             return self
         if seed_mode == "load_existing":
             if self.path is None:
-                raise ValueError("adapter.seed_mode=load_existing requires adapter.path")
-            if self.source_adapter_path is not None or self.repaired_embedding_payload_path is not None:
+                raise ValueError(
+                    "adapter.seed_mode=load_existing requires adapter.path"
+                )
+            if (
+                self.source_adapter_path is not None
+                or self.repaired_embedding_payload_path is not None
+            ):
                 raise ValueError(
                     "adapter.seed_mode=load_existing must not set warm-start source paths"
                 )
             return self
         if self.path is not None:
-            raise ValueError("adapter.seed_mode=warm_start_expand_dora must not set adapter.path")
+            raise ValueError(
+                "adapter.seed_mode=warm_start_expand_dora must not set adapter.path"
+            )
         if self.source_adapter_path is None:
             raise ValueError(
                 "adapter.seed_mode=warm_start_expand_dora requires adapter.source_adapter_path"
@@ -182,7 +201,7 @@ class DataAugmentationConfig(StrictConfigModel):
 
 
 class DataConfig(StrictConfigModel):
-    train: DatasetSplitConfig
+    train: DatasetSplitConfig | None = None
     eval: DatasetSplitConfig | None = None
     train_order: Literal["source_order"] = "source_order"
     augmentation: DataAugmentationConfig = Field(default_factory=DataAugmentationConfig)
@@ -255,17 +274,76 @@ class CoordGaussianRPSLossConfig(WeightedLossConfig):
         return self
 
 
+class RolloutSiteTokenTypeGateLossConfig(WeightedLossConfig):
+    """Token-type legality weight for rollout-selected causal sites only."""
+
+
 class ProtectedLossesConfig(StrictConfigModel):
     base_ce: WeightedLossConfig
     token_type_gate: TokenTypeGateLossConfig
     coord_gaussian_rps: CoordGaussianRPSLossConfig = Field(
         default_factory=CoordGaussianRPSLossConfig
     )
+    rollout_site_token_type_gate: RolloutSiteTokenTypeGateLossConfig | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
 
 
 class LossesConfig(StrictConfigModel):
-    normalizer: Literal["segment_balanced"]
+    normalizer: Literal["segment_balanced", "event_balanced"]
     protected: ProtectedLossesConfig
+
+
+class EntityTransitionObjectiveConfig(StrictConfigModel):
+    weight: float = Field(ge=0.0, allow_inf_nan=False)
+    margin: float = Field(ge=0.0, allow_inf_nan=False)
+    smooth_max_temperature: float = Field(gt=0.0, allow_inf_nan=False)
+
+
+class CoordinateBoundaryObjectiveConfig(StrictConfigModel):
+    weight: float = Field(ge=0.0, allow_inf_nan=False)
+    margin: float = Field(ge=0.0, allow_inf_nan=False)
+
+
+class RolloutCalibrationConfig(StrictConfigModel):
+    profile: Literal[
+        "transition_only",
+        "coordinate_boundary_only",
+        "joint",
+    ]
+    state_bank_manifest_path: str
+    source_checkpoint_id: str
+    entity_transition: EntityTransitionObjectiveConfig
+    coordinate_boundary: CoordinateBoundaryObjectiveConfig
+    incomplete_objective_policy: Literal["fail"] = "fail"
+    online_state_bank_refresh: Literal[False] = False
+
+    @field_validator("state_bank_manifest_path", "source_checkpoint_id")
+    @classmethod
+    def _identity_fields_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("rollout calibration identity fields must not be blank")
+        return value
+
+    @model_validator(mode="after")
+    def _profile_has_exact_objective_weights(self) -> "RolloutCalibrationConfig":
+        expected = {
+            "transition_only": (1.0, 0.0),
+            "coordinate_boundary_only": (0.0, 1.0),
+            "joint": (0.5, 0.5),
+        }[self.profile]
+        actual = (
+            self.entity_transition.weight,
+            self.coordinate_boundary.weight,
+        )
+        if actual != expected:
+            raise ValueError(
+                f"rollout_calibration.profile={self.profile} requires "
+                f"entity_transition.weight={expected[0]} and "
+                f"coordinate_boundary.weight={expected[1]}"
+            )
+        return self
 
 
 class OptimizerGroupConfig(StrictConfigModel):
@@ -319,7 +397,7 @@ class OptimizerConfig(StrictConfigModel):
 
 
 class TrainingConfig(StrictConfigModel):
-    mode: Literal["supervised"]
+    mode: Literal["supervised", "rollout_calibration"]
     epochs: int = Field(gt=0)
     max_steps: int | None = Field(default=None, gt=0)
     effective_batch_size: int = Field(gt=0)
@@ -362,6 +440,87 @@ class TrainConfig(StrictConfigModel):
     runtime: RuntimeConfig
     eval: EvalConfig
     checkpoint: CheckpointConfig
+    rollout_calibration: RolloutCalibrationConfig | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+
+    @model_validator(mode="after")
+    def _training_mode_contract(self) -> "TrainConfig":
+        protected = self.losses.protected
+        rollout_gate = protected.rollout_site_token_type_gate
+        rollout_gate_weight = 0.0 if rollout_gate is None else rollout_gate.weight
+
+        if self.training.mode == "supervised":
+            if self.rollout_calibration is not None:
+                raise ValueError(
+                    "training.mode=supervised must not declare rollout_calibration"
+                )
+            if self.data.train is None:
+                raise ValueError("training.mode=supervised requires data.train")
+            if self.losses.normalizer != "segment_balanced":
+                raise ValueError(
+                    "training.mode=supervised requires losses.normalizer=segment_balanced"
+                )
+            if protected.base_ce.weight <= 0.0:
+                raise ValueError(
+                    "training.mode=supervised requires positive losses.protected.base_ce.weight"
+                )
+            if rollout_gate_weight != 0.0:
+                raise ValueError(
+                    "training.mode=supervised requires "
+                    "losses.protected.rollout_site_token_type_gate.weight=0"
+                )
+            return self
+
+        calibration = self.rollout_calibration
+        if calibration is None:
+            raise ValueError(
+                "training.mode=rollout_calibration requires rollout_calibration"
+            )
+        if self.data.train is not None or self.data.eval is not None:
+            raise ValueError(
+                "training.mode=rollout_calibration rejects data.train and data.eval"
+            )
+        if self.losses.normalizer != "event_balanced":
+            raise ValueError(
+                "training.mode=rollout_calibration requires losses.normalizer=event_balanced"
+            )
+        if protected.base_ce.weight != 0.0:
+            raise ValueError(
+                "training.mode=rollout_calibration requires "
+                "losses.protected.base_ce.weight=0"
+            )
+        if protected.token_type_gate.weight != 0.0:
+            raise ValueError(
+                "training.mode=rollout_calibration requires the ordinary "
+                "losses.protected.token_type_gate.weight=0"
+            )
+        if protected.coord_gaussian_rps.weight != 0.0:
+            raise ValueError(
+                "training.mode=rollout_calibration requires "
+                "losses.protected.coord_gaussian_rps.weight=0"
+            )
+        if rollout_gate_weight <= 0.0:
+            raise ValueError(
+                "training.mode=rollout_calibration requires positive "
+                "losses.protected.rollout_site_token_type_gate.weight"
+            )
+        if self.adapter.seed_mode != "warm_start_expand_dora":
+            raise ValueError(
+                "training.mode=rollout_calibration requires "
+                "adapter.seed_mode=warm_start_expand_dora"
+            )
+        if (
+            self.eval.forward.every_fraction is not None
+            or self.eval.forward.steps
+            or self.eval.inference.enabled
+        ):
+            raise ValueError(
+                "training.mode=rollout_calibration requires scheduled training-time "
+                "evaluation to be disabled; ordinary free-row inference is a separate smoke"
+            )
+        return self
 
 
 @dataclass(frozen=True)
@@ -398,21 +557,27 @@ class ResolvedTrainConfig:
     entry_config_path: Path
     sources: tuple[ConfigSource, ...]
     path_origins: dict[str, PathOrigin]
+    rollout_calibration_binding: dict[str, Any] | None = None
 
     def to_artifact_dict(self) -> dict[str, Any]:
+        resolution: dict[str, Any] = {
+            "schema_version": self.schema_version,
+            "loader_version": self.loader_version,
+            "fingerprint": self.fingerprint,
+            "entry_config_path": str(self.entry_config_path),
+            "sources": [source.to_artifact_dict() for source in self.sources],
+            "path_origins": {
+                field: origin.to_artifact_dict()
+                for field, origin in sorted(self.path_origins.items())
+            },
+        }
+        if self.rollout_calibration_binding is not None:
+            resolution["rollout_calibration_manifest"] = dict(
+                self.rollout_calibration_binding
+            )
         return {
             "config": self.config_dict,
-            "resolution": {
-                "schema_version": self.schema_version,
-                "loader_version": self.loader_version,
-                "fingerprint": self.fingerprint,
-                "entry_config_path": str(self.entry_config_path),
-                "sources": [source.to_artifact_dict() for source in self.sources],
-                "path_origins": {
-                    field: origin.to_artifact_dict()
-                    for field, origin in sorted(self.path_origins.items())
-                },
-            },
+            "resolution": resolution,
         }
 
 

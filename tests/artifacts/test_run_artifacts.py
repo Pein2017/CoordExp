@@ -9,16 +9,28 @@ from src.artifacts.run_writer import RunWriter
 from src.common.errors import ArtifactContractError
 
 
-def test_initialize_writes_only_fixed_run_files_with_no_selector_state(tmp_path: Path) -> None:
+def test_initialize_writes_only_fixed_run_files_with_no_selector_state(
+    tmp_path: Path,
+) -> None:
     writer = _writer(tmp_path)
 
-    assert writer.file_inventory() == ("logging.jsonl", "resolved_config.json", "run.json")
+    assert writer.file_inventory() == (
+        "logging.jsonl",
+        "resolved_config.json",
+        "run.json",
+    )
     state = writer.read_run()
     assert state["resolved_config_path"] == "resolved_config.json"
     assert state["runtime"] == {"world_size": 2}
+    assert "rollout_calibration" not in state
     assert not set(state).intersection({"final", "best", "selector", "selector_value"})
-    assert json.loads(writer.resolved_config_path.read_text()) == {"training": {"seed": 7}}
-    assert not any((writer.run_dir / name).exists() for name in ("metrics", "receipts", "reports", "eval"))
+    assert json.loads(writer.resolved_config_path.read_text()) == {
+        "training": {"seed": 7}
+    }
+    assert not any(
+        (writer.run_dir / name).exists()
+        for name in ("metrics", "receipts", "reports", "eval")
+    )
 
 
 def test_logging_appends_one_self_contained_train_and_eval_row(tmp_path: Path) -> None:
@@ -36,7 +48,13 @@ def test_logging_appends_one_self_contained_train_and_eval_row(tmp_path: Path) -
         }
     )
     writer.append_logging_row(
-        {"step": 1, "split": "eval", "example_count": 3, "pack_count": 2, "acc_top1": 0.6}
+        {
+            "step": 1,
+            "split": "eval",
+            "example_count": 3,
+            "pack_count": 2,
+            "acc_top1": 0.6,
+        }
     )
 
     rows = [json.loads(line) for line in writer.logging_path.read_text().splitlines()]
@@ -49,15 +67,25 @@ def test_logging_appends_one_self_contained_train_and_eval_row(tmp_path: Path) -
 def test_logging_normalizes_nested_nonfinite_values_to_null(tmp_path: Path) -> None:
     writer = _writer(tmp_path)
     writer.append_logging_row(
-        {"step": 2, "split": "train", "loss": float("nan"), "metrics": {"x": float("inf")}}
+        {
+            "step": 2,
+            "split": "train",
+            "loss": float("nan"),
+            "metrics": {"x": float("inf")},
+        }
     )
     row = json.loads(writer.logging_path.read_text())
     assert row["loss"] is None and row["metrics"]["x"] is None
     assert row["non_finite_fields"] == ["loss", "metrics.x"]
-    assert "NaN" not in writer.logging_path.read_text() and "Infinity" not in writer.logging_path.read_text()
+    assert (
+        "NaN" not in writer.logging_path.read_text()
+        and "Infinity" not in writer.logging_path.read_text()
+    )
 
 
-def test_logging_rejects_non_json_values_without_appending_partial_row(tmp_path: Path) -> None:
+def test_logging_rejects_non_json_values_without_appending_partial_row(
+    tmp_path: Path,
+) -> None:
     writer = _writer(tmp_path)
     with pytest.raises(ArtifactContractError) as exc_info:
         writer.append_logging_row({"step": 1, "split": "train", "bad": {1, 2}})
@@ -65,7 +93,9 @@ def test_logging_rejects_non_json_values_without_appending_partial_row(tmp_path:
     assert writer.logging_path.read_bytes() == b""
 
 
-def test_warning_counts_are_grouped_and_bounded_without_contexts(tmp_path: Path) -> None:
+def test_warning_counts_are_grouped_and_bounded_without_contexts(
+    tmp_path: Path,
+) -> None:
     writer = _writer(tmp_path)
     writer.record_warning("bad_example", count=2)
     writer.record_warning("bad_example", count=3)
@@ -78,17 +108,25 @@ def test_warning_counts_are_grouped_and_bounded_without_contexts(tmp_path: Path)
     assert all(isinstance(value, int) for value in counts.values())
 
 
-def test_materialization_binding_is_one_time_and_survives_cache_deletion(tmp_path: Path) -> None:
+def test_materialization_binding_is_one_time_and_survives_cache_deletion(
+    tmp_path: Path,
+) -> None:
     writer = _writer(tmp_path)
     cache = tmp_path / "cache"
     cache.mkdir()
     writer.bind_materialization(
-        "train", cache_format_version=4, semantic_fingerprint="fp", determinant_digest="digest"
+        "train",
+        cache_format_version=4,
+        semantic_fingerprint="fp",
+        determinant_digest="digest",
     )
     cache.rmdir()
     with pytest.raises(ArtifactContractError) as exc_info:
         writer.bind_materialization(
-            "train", cache_format_version=4, semantic_fingerprint="changed", determinant_digest="changed"
+            "train",
+            cache_format_version=4,
+            semantic_fingerprint="changed",
+            determinant_digest="changed",
         )
     assert exc_info.value.code == "run_writer.materialization_already_bound"
     assert writer.read_run()["materializations"]["train"] == {
@@ -98,11 +136,105 @@ def test_materialization_binding_is_one_time_and_survives_cache_deletion(tmp_pat
     }
 
 
+def test_rollout_calibration_binding_is_compact_immutable_and_adds_no_file(
+    tmp_path: Path,
+) -> None:
+    writer = _writer(tmp_path)
+    inventory = writer.file_inventory()
+    writer.bind_rollout_calibration(
+        bank_identity="bank-v1",
+        bank_fingerprint="bank-sha256",
+        source_composite_fingerprint="source-sha256",
+        profile="joint",
+        records_sha256="records-sha256",
+        record_count=10,
+        split_counts={"eval": 2, "train": 8},
+        event_counts={"entity_transition": 4, "coordinate_boundary": 3},
+        rejection_reasons={"ambiguous": 2},
+    )
+
+    assert writer.file_inventory() == inventory
+    assert writer.read_run()["rollout_calibration"] == {
+        "bank_identity": "bank-v1",
+        "bank_fingerprint": "bank-sha256",
+        "source_composite_fingerprint": "source-sha256",
+        "profile": "joint",
+        "records_sha256": "records-sha256",
+        "split_counts": {"eval": 2, "train": 8},
+        "event_counts": {"coordinate_boundary": 3, "entity_transition": 4},
+        "validation_receipt": {
+            "status": "validated",
+            "bank_id": "bank-v1",
+            "source_checkpoint_id": "source-sha256",
+            "records_sha256": "records-sha256",
+            "record_count": 10,
+            "split_counts": {"eval": 2, "train": 8},
+            "event_family_counts": {
+                "coordinate_boundary": 3,
+                "entity_transition": 4,
+            },
+            "rejection_reasons": {"ambiguous": 2},
+        },
+    }
+    with pytest.raises(ArtifactContractError) as exc_info:
+        writer.bind_rollout_calibration(
+            bank_identity="other-bank",
+            bank_fingerprint="other-fingerprint",
+            source_composite_fingerprint="other-source",
+            profile="transition_only",
+            records_sha256="other-records",
+            record_count=1,
+            split_counts={"train": 1},
+            event_counts={"entity_transition": 1},
+            rejection_reasons={},
+        )
+    assert exc_info.value.code == "run_writer.rollout_calibration_already_bound"
+
+
+@pytest.mark.parametrize(
+    ("split_counts", "event_counts"),
+    [
+        ({"train": True}, {"entity_transition": 1}),
+        ({"train": -1}, {"entity_transition": 1}),
+        ({"": 1}, {"entity_transition": 1}),
+        ({"train": 1}, {"entity_transition": 1.5}),
+    ],
+)
+def test_rollout_calibration_binding_rejects_malformed_counts_without_mutation(
+    tmp_path: Path,
+    split_counts: dict[str, object],
+    event_counts: dict[str, object],
+) -> None:
+    writer = _writer(tmp_path)
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        writer.bind_rollout_calibration(
+            bank_identity="bank-v1",
+            bank_fingerprint="bank-sha256",
+            source_composite_fingerprint="source-sha256",
+            profile="joint",
+            records_sha256="records-sha256",
+            record_count=1,
+            split_counts=split_counts,  # type: ignore[arg-type]
+            event_counts=event_counts,  # type: ignore[arg-type]
+            rejection_reasons={},
+        )
+
+    assert exc_info.value.code == "run_writer.invalid_rollout_calibration_binding"
+    assert "rollout_calibration" not in writer.read_run()
+
+
 def test_schedule_can_be_bound_once_after_early_initialization(tmp_path: Path) -> None:
     writer = RunWriter.initialize(
-        run_dir=tmp_path / "run", run_id="run", run_name="experiment",
-        artifact_root=tmp_path, collision_outcome="created", created_at="now",
-        config_fingerprint="fp", resolved_config={}, world_size=1,
+        run_dir=tmp_path / "run",
+        run_id="run",
+        run_name="experiment",
+        artifact_root=tmp_path,
+        collision_outcome="created",
+        created_at="now",
+        config_fingerprint="fp",
+        resolved_config={},
+        world_size=1,
     )
     assert writer.read_run()["resolved_max_steps"] is None
     writer.bind_schedule(resolved_max_steps=5)
@@ -126,9 +258,15 @@ def test_initialize_failure_leaves_no_partial_run_tree(
     run_dir = tmp_path / "run"
     with pytest.raises(OSError, match="injected logging"):
         RunWriter.initialize(
-            run_dir=run_dir, run_id="run", run_name="experiment",
-            artifact_root=tmp_path, collision_outcome="created", created_at="now",
-            config_fingerprint="fp", resolved_config={}, world_size=1,
+            run_dir=run_dir,
+            run_id="run",
+            run_name="experiment",
+            artifact_root=tmp_path,
+            collision_outcome="created",
+            created_at="now",
+            config_fingerprint="fp",
+            resolved_config={},
+            world_size=1,
         )
     assert not run_dir.exists()
     assert not list(tmp_path.glob(".run.*.init"))
@@ -140,24 +278,43 @@ def test_initialize_can_atomically_replace_precreated_empty_run_directory(
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     writer = RunWriter.initialize(
-        run_dir=run_dir, run_id="run", run_name="experiment",
-        artifact_root=tmp_path, collision_outcome="created", created_at="now",
-        config_fingerprint="fp", resolved_config={}, world_size=1,
+        run_dir=run_dir,
+        run_id="run",
+        run_name="experiment",
+        artifact_root=tmp_path,
+        collision_outcome="created",
+        created_at="now",
+        config_fingerprint="fp",
+        resolved_config={},
+        world_size=1,
     )
-    assert writer.file_inventory() == ("logging.jsonl", "resolved_config.json", "run.json")
+    assert writer.file_inventory() == (
+        "logging.jsonl",
+        "resolved_config.json",
+        "run.json",
+    )
 
 
 def test_final_and_best_aliases_are_canonical_selector_owners(tmp_path: Path) -> None:
     writer = _writer(tmp_path)
     writer.write_final(step=5)
     assert writer.write_best(
-        step=4, selector="acc_top1", value=0.8, optimizer_update_status="applied", finite_status="finite", checkpoint_committed=True
+        step=4,
+        selector="acc_top1",
+        value=0.8,
+        optimizer_update_status="applied",
+        finite_status="finite",
+        checkpoint_committed=True,
     )
     assert json.loads((writer.checkpoints_dir / "final.json").read_text()) == {
-        "checkpoint_path": "checkpoints/step-5", "step": 5
+        "checkpoint_path": "checkpoints/step-5",
+        "step": 5,
     }
     assert json.loads((writer.checkpoints_dir / "best.json").read_text()) == {
-        "checkpoint_path": "checkpoints/step-4", "selector": "acc_top1", "step": 4, "value": 0.8
+        "checkpoint_path": "checkpoints/step-4",
+        "selector": "acc_top1",
+        "step": 4,
+        "value": 0.8,
     }
     state = writer.read_run()
     assert not set(state).intersection({"final", "best", "selector", "selector_value"})
@@ -178,10 +335,20 @@ def test_ineligible_step_cannot_advance_best(
 ) -> None:
     writer = _writer(tmp_path)
     assert writer.write_best(
-        step=1, selector="acc_top1", value=0.5, optimizer_update_status="applied", finite_status="finite", checkpoint_committed=True
+        step=1,
+        selector="acc_top1",
+        value=0.5,
+        optimizer_update_status="applied",
+        finite_status="finite",
+        checkpoint_committed=True,
     )
     assert not writer.write_best(
-        step=2, selector="acc_top1", value=value, optimizer_update_status=update, finite_status=finite, checkpoint_committed=committed
+        step=2,
+        selector="acc_top1",
+        value=value,
+        optimizer_update_status=update,
+        finite_status=finite,
+        checkpoint_committed=committed,
     )
     assert json.loads((writer.checkpoints_dir / "best.json").read_text())["step"] == 1
 
@@ -189,8 +356,14 @@ def test_ineligible_step_cannot_advance_best(
 def test_finalize_is_atomic_compact_and_bounds_terminal_error(tmp_path: Path) -> None:
     writer = _writer(tmp_path)
     writer.finalize(
-        status="failed", updated_at="2026-07-11T00:01:00Z", completed_steps=2, consumed_packs=8,
-        checkpoint_event_count=1, optimizer_update_status="skipped", finite_status="unsafe", terminal_error="x" * 5000,
+        status="failed",
+        updated_at="2026-07-11T00:01:00Z",
+        completed_steps=2,
+        consumed_packs=8,
+        checkpoint_event_count=1,
+        optimizer_update_status="skipped",
+        finite_status="unsafe",
+        terminal_error="x" * 5000,
     )
     state = writer.read_run()
     assert state["status"] == "failed" and state["completed_steps"] == 2
@@ -200,8 +373,14 @@ def test_finalize_is_atomic_compact_and_bounds_terminal_error(tmp_path: Path) ->
 
 def _writer(tmp_path: Path) -> RunWriter:
     return RunWriter.initialize(
-        run_dir=tmp_path / "run-a", run_id="run-a", run_name="experiment",
-        artifact_root=tmp_path, collision_outcome="created", created_at="2026-07-11T00:00:00Z",
-        config_fingerprint="config-fp", resolved_config={"training": {"seed": 7}}, world_size=2,
+        run_dir=tmp_path / "run-a",
+        run_id="run-a",
+        run_name="experiment",
+        artifact_root=tmp_path,
+        collision_outcome="created",
+        created_at="2026-07-11T00:00:00Z",
+        config_fingerprint="config-fp",
+        resolved_config={"training": {"seed": 7}},
+        world_size=2,
         resolved_max_steps=5,
     )
