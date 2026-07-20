@@ -334,6 +334,78 @@ def test_unknown_axis_cannot_receive_direct_gradient(
 
 
 @pytest.mark.parametrize(
+    ("mutate", "expected_code"),
+    [
+        (
+            lambda rollouts, reviews: rollouts[0]["candidates"][0][
+                "generation_provenance"
+            ].update(mode="greedy", temperature=0.0),
+            "state_bank.greedy_harmful_identity",
+        ),
+        (
+            lambda rollouts, reviews: rollouts[0]["candidates"][0][
+                "generation_provenance"
+            ].update(prompt_token_ids_sha256="f" * 64),
+            "state_bank.candidate_prompt_provenance",
+        ),
+        (
+            lambda rollouts, reviews: reviews[0].update(prefix_covered_owner_proofs=[]),
+            "state_bank.duplicate_prefix_uncovered",
+        ),
+        (
+            lambda rollouts, reviews: reviews[0]["candidates"][0][
+                "coordinate_decision"
+            ].update(owner_id="entity-covered"),
+            "state_bank.geometry_same_owner",
+        ),
+        (
+            lambda rollouts, reviews: reviews[0]["candidates"][0].update(
+                owner_resolution_interval=[1, 2]
+            ),
+            "state_bank.owner_interval_start",
+        ),
+    ],
+)
+def test_adversarial_candidate_provenance_owner_and_interval_contracts(
+    tmp_path: Path, mutate, expected_code: str
+) -> None:
+    rollouts, reviews, _ = synthetic_inputs(tmp_path)
+    mutate(rollouts, reviews)
+    with pytest.raises(ArtifactContractError) as exc_info:
+        StateBankEvent.from_mapping(_joined_event(rollouts[0], reviews[0]))
+    assert exc_info.value.code == expected_code
+
+
+def test_coordinate_evidence_requires_ordered_accepted_prefix_then_first_wrong(
+    tmp_path: Path,
+) -> None:
+    rollouts, reviews, _ = synthetic_inputs(tmp_path)
+    decision = reviews[0]["candidates"][0]["coordinate_decision"]
+    decision["observations"] = [
+        {
+            **decision["observations"][0],
+            "actual_coordinate_value": 500,
+            "acceptable_coordinate_values": [490],
+        },
+        {
+            **decision["observations"][0],
+            "coordinate": "y1",
+            "tolerance_axis": "vertical",
+            "candidate_token_offset": 2,
+            "actual_coordinate_value": 600,
+            "acceptable_coordinate_values": [590],
+        },
+    ]
+    reviews[0]["candidates"][0]["selected_sites"] = [
+        {"candidate_token_offset": 0, "intended_token_type": "desc_text"},
+        {"candidate_token_offset": 2, "intended_token_type": "coordinate"},
+    ]
+    with pytest.raises(ArtifactContractError) as exc_info:
+        StateBankEvent.from_mapping(_joined_event(rollouts[0], reviews[0]))
+    assert exc_info.value.code == "state_bank.coordinate_earlier_wrong"
+
+
+@pytest.mark.parametrize(
     ("mutation", "code"),
     [
         (
@@ -353,7 +425,9 @@ def test_coordinate_acceptable_set_and_axis_validation(
     tmp_path: Path, mutation: dict, code: str
 ) -> None:
     rollouts, reviews, _ = synthetic_inputs(tmp_path)
-    reviews[0]["candidates"][0]["coordinate_decision"].update(mutation)
+    reviews[0]["candidates"][0]["coordinate_decision"]["observations"][0].update(
+        mutation
+    )
     with pytest.raises(ArtifactContractError) as exc_info:
         StateBankEvent.from_mapping(_joined_event(rollouts[0], reviews[0]))
     assert exc_info.value.code == code
@@ -503,6 +577,7 @@ def _joined_event(rollout: dict, review: dict) -> dict:
     return {
         **{key: value for key, value in rollout.items() if key != "candidates"},
         "physical_entities": review["physical_entities"],
+        "prefix_covered_owner_proofs": review["prefix_covered_owner_proofs"],
         "entity_transition_eligible": review["entity_transition_eligible"],
         "coordinate_boundary_eligible": review["coordinate_boundary_eligible"],
         "candidates": candidates,

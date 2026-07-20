@@ -12,6 +12,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -50,6 +51,181 @@ _COORDINATE_AXES = {
     "x2": "horizontal",
     "y2": "vertical",
 }
+_COORDINATE_ORDER = ("x1", "y1", "x2", "y2")
+_GENERATION_MODES = frozenset({"greedy", "sampled"})
+
+
+@dataclass(frozen=True)
+class ReviewProvenance:
+    source: str
+    reviewer: str
+    confidence: str
+    comment: str
+
+    @classmethod
+    def from_mapping(
+        cls, value: Mapping[str, Any], *, field: str
+    ) -> "ReviewProvenance":
+        checked = _mapping(value, field=field)
+        _require_exact_keys(
+            checked,
+            {"source", "reviewer", "confidence", "comment"},
+            field=field,
+        )
+        return cls(
+            source=_string(checked["source"], field=f"{field}.source"),
+            reviewer=_string(checked["reviewer"], field=f"{field}.reviewer"),
+            confidence=_string(checked["confidence"], field=f"{field}.confidence"),
+            comment=_string_allow_empty(checked["comment"], field=f"{field}.comment"),
+        )
+
+    def to_artifact_dict(self) -> dict[str, str]:
+        return {
+            "source": self.source,
+            "reviewer": self.reviewer,
+            "confidence": self.confidence,
+            "comment": self.comment,
+        }
+
+
+@dataclass(frozen=True)
+class GenerationProvenance:
+    mode: str
+    seed: int
+    temperature: float
+    top_p: float
+    repetition_penalty: float
+    checkpoint_id: str
+    prompt_token_ids_sha256: str
+    prefix_token_ids_sha256: str
+
+    @classmethod
+    def from_mapping(
+        cls, value: Mapping[str, Any], *, field: str
+    ) -> "GenerationProvenance":
+        checked = _mapping(value, field=field)
+        _require_exact_keys(
+            checked,
+            {
+                "mode",
+                "seed",
+                "temperature",
+                "top_p",
+                "repetition_penalty",
+                "checkpoint_id",
+                "prompt_token_ids_sha256",
+                "prefix_token_ids_sha256",
+            },
+            field=field,
+        )
+        mode = _choice(checked["mode"], _GENERATION_MODES, field=f"{field}.mode")
+        temperature = _finite_float(
+            checked["temperature"], field=f"{field}.temperature", minimum=0.0
+        )
+        top_p = _finite_float(
+            checked["top_p"], field=f"{field}.top_p", minimum=0.0, maximum=1.0
+        )
+        repetition_penalty = _finite_float(
+            checked["repetition_penalty"],
+            field=f"{field}.repetition_penalty",
+            minimum=0.0,
+        )
+        if mode == "greedy" and temperature != 0.0:
+            _fail(
+                "state_bank.greedy_temperature",
+                "producer-declared greedy generation requires temperature zero",
+                field=field,
+                temperature=temperature,
+            )
+        if mode == "sampled" and temperature <= 0.0:
+            _fail(
+                "state_bank.sampled_temperature",
+                "producer-declared sampled generation requires positive temperature",
+                field=field,
+                temperature=temperature,
+            )
+        if top_p <= 0.0 or repetition_penalty <= 0.0:
+            _fail(
+                "state_bank.generation_policy_range",
+                "top-p and repetition penalty must be positive",
+                field=field,
+                top_p=top_p,
+                repetition_penalty=repetition_penalty,
+            )
+        checkpoint_id = _string(
+            checked["checkpoint_id"], field=f"{field}.checkpoint_id"
+        )
+        prompt_hash = _string(
+            checked["prompt_token_ids_sha256"],
+            field=f"{field}.prompt_token_ids_sha256",
+        )
+        prefix_hash = _string(
+            checked["prefix_token_ids_sha256"],
+            field=f"{field}.prefix_token_ids_sha256",
+        )
+        _require_sha256(checkpoint_id, field=f"{field}.checkpoint_id")
+        _require_sha256(prompt_hash, field=f"{field}.prompt_token_ids_sha256")
+        _require_sha256(prefix_hash, field=f"{field}.prefix_token_ids_sha256")
+        return cls(
+            mode=mode,
+            seed=_require_nonnegative_int(checked["seed"], field=f"{field}.seed"),
+            temperature=temperature,
+            top_p=top_p,
+            repetition_penalty=repetition_penalty,
+            checkpoint_id=checkpoint_id,
+            prompt_token_ids_sha256=prompt_hash,
+            prefix_token_ids_sha256=prefix_hash,
+        )
+
+    def to_artifact_dict(self) -> dict[str, Any]:
+        return {
+            "mode": self.mode,
+            "seed": self.seed,
+            "temperature": self.temperature,
+            "top_p": self.top_p,
+            "repetition_penalty": self.repetition_penalty,
+            "checkpoint_id": self.checkpoint_id,
+            "prompt_token_ids_sha256": self.prompt_token_ids_sha256,
+            "prefix_token_ids_sha256": self.prefix_token_ids_sha256,
+        }
+
+
+@dataclass(frozen=True)
+class PrefixCoveredOwnerProof:
+    prefix_object_row_index: int
+    owner_id: str
+    review_provenance: ReviewProvenance
+
+    @classmethod
+    def from_mapping(
+        cls, value: Mapping[str, Any], *, field: str
+    ) -> "PrefixCoveredOwnerProof":
+        checked = _mapping(value, field=field)
+        _require_exact_keys(
+            checked,
+            {"prefix_object_row_index", "owner_id", "review_provenance"},
+            field=field,
+        )
+        return cls(
+            prefix_object_row_index=_require_nonnegative_int(
+                checked["prefix_object_row_index"],
+                field=f"{field}.prefix_object_row_index",
+            ),
+            owner_id=_string(checked["owner_id"], field=f"{field}.owner_id"),
+            review_provenance=ReviewProvenance.from_mapping(
+                _mapping(
+                    checked["review_provenance"], field=f"{field}.review_provenance"
+                ),
+                field=f"{field}.review_provenance",
+            ),
+        )
+
+    def to_artifact_dict(self) -> dict[str, Any]:
+        return {
+            "prefix_object_row_index": self.prefix_object_row_index,
+            "owner_id": self.owner_id,
+            "review_provenance": self.review_provenance.to_artifact_dict(),
+        }
 
 
 @dataclass(frozen=True)
@@ -245,28 +421,28 @@ class SelectedSite:
 
 
 @dataclass(frozen=True)
-class CoordinateDecision:
-    owner_id: str
+class CoordinateBoundaryObservation:
     coordinate: str
     tolerance_axis: str
     candidate_token_offset: int
-    actual_wrong_coordinate_value: int
+    actual_coordinate_value: int
     acceptable_coordinate_values: tuple[int, ...]
+    review_provenance: ReviewProvenance
 
     @classmethod
     def from_mapping(
         cls, value: Mapping[str, Any], *, field: str
-    ) -> "CoordinateDecision":
+    ) -> "CoordinateBoundaryObservation":
         checked = _mapping(value, field=field)
         _require_exact_keys(
             checked,
             {
-                "owner_id",
                 "coordinate",
                 "tolerance_axis",
                 "candidate_token_offset",
-                "actual_wrong_coordinate_value",
+                "actual_coordinate_value",
                 "acceptable_coordinate_values",
+                "review_provenance",
             },
             field=field,
         )
@@ -294,36 +470,134 @@ class CoordinateDecision:
             field=f"{field}.acceptable_coordinate_values",
         )
         actual = _coordinate_value(
-            checked["actual_wrong_coordinate_value"],
-            field=f"{field}.actual_wrong_coordinate_value",
+            checked["actual_coordinate_value"],
+            field=f"{field}.actual_coordinate_value",
         )
-        if actual in acceptable:
-            _fail(
-                "state_bank.coordinate_wrong_inside_acceptable",
-                "actual wrong coordinate must not belong to its acceptable set",
-                field=field,
-                actual_wrong_coordinate_value=actual,
-            )
         return cls(
-            owner_id=_string(checked["owner_id"], field=f"{field}.owner_id"),
             coordinate=coordinate,
             tolerance_axis=tolerance_axis,
             candidate_token_offset=_require_nonnegative_int(
                 checked["candidate_token_offset"],
                 field=f"{field}.candidate_token_offset",
             ),
-            actual_wrong_coordinate_value=actual,
+            actual_coordinate_value=actual,
             acceptable_coordinate_values=acceptable,
+            review_provenance=ReviewProvenance.from_mapping(
+                _mapping(
+                    checked["review_provenance"], field=f"{field}.review_provenance"
+                ),
+                field=f"{field}.review_provenance",
+            ),
         )
 
     def to_artifact_dict(self) -> dict[str, Any]:
         return {
-            "owner_id": self.owner_id,
             "coordinate": self.coordinate,
             "tolerance_axis": self.tolerance_axis,
             "candidate_token_offset": self.candidate_token_offset,
-            "actual_wrong_coordinate_value": self.actual_wrong_coordinate_value,
+            "actual_coordinate_value": self.actual_coordinate_value,
             "acceptable_coordinate_values": list(self.acceptable_coordinate_values),
+            "review_provenance": self.review_provenance.to_artifact_dict(),
+        }
+
+
+@dataclass(frozen=True)
+class CoordinateDecision:
+    owner_id: str
+    observations: tuple[CoordinateBoundaryObservation, ...]
+
+    @classmethod
+    def from_mapping(
+        cls, value: Mapping[str, Any], *, field: str
+    ) -> "CoordinateDecision":
+        checked = _mapping(value, field=field)
+        _require_exact_keys(checked, {"owner_id", "observations"}, field=field)
+        observations = tuple(
+            CoordinateBoundaryObservation.from_mapping(
+                item, field=f"{field}.observations[{index}]"
+            )
+            for index, item in enumerate(
+                _sequence(checked["observations"], field=f"{field}.observations")
+            )
+        )
+        if not observations:
+            _fail(
+                "state_bank.coordinate_observations_empty",
+                "coordinate decision requires the ordered prefix through the first wrong boundary",
+                field=field,
+            )
+        expected_coordinates = _COORDINATE_ORDER[: len(observations)]
+        actual_coordinates = tuple(item.coordinate for item in observations)
+        if actual_coordinates != expected_coordinates:
+            _fail(
+                "state_bank.coordinate_observation_order",
+                "coordinate observations must be the ordered x1,y1,x2,y2 prefix",
+                field=field,
+                expected=list(expected_coordinates),
+                actual=list(actual_coordinates),
+            )
+        offsets = tuple(item.candidate_token_offset for item in observations)
+        if tuple(sorted(offsets)) != offsets or len(set(offsets)) != len(offsets):
+            _fail(
+                "state_bank.coordinate_observation_offsets",
+                "coordinate observation token offsets must be unique and increasing",
+                field=field,
+                offsets=list(offsets),
+            )
+        for observation in observations[:-1]:
+            if (
+                observation.actual_coordinate_value
+                not in observation.acceptable_coordinate_values
+            ):
+                _fail(
+                    "state_bank.coordinate_earlier_wrong",
+                    "every coordinate before the selected boundary must be accepted",
+                    field=field,
+                    coordinate=observation.coordinate,
+                    actual_coordinate_value=observation.actual_coordinate_value,
+                )
+        selected = observations[-1]
+        if selected.actual_coordinate_value in selected.acceptable_coordinate_values:
+            _fail(
+                "state_bank.coordinate_final_accepted",
+                "the final stored boundary must be the first wrong coordinate",
+                field=field,
+                coordinate=selected.coordinate,
+                actual_coordinate_value=selected.actual_coordinate_value,
+            )
+        return cls(
+            owner_id=_string(checked["owner_id"], field=f"{field}.owner_id"),
+            observations=observations,
+        )
+
+    @property
+    def selected_observation(self) -> CoordinateBoundaryObservation:
+        return self.observations[-1]
+
+    @property
+    def coordinate(self) -> str:
+        return self.selected_observation.coordinate
+
+    @property
+    def tolerance_axis(self) -> str:
+        return self.selected_observation.tolerance_axis
+
+    @property
+    def candidate_token_offset(self) -> int:
+        return self.selected_observation.candidate_token_offset
+
+    @property
+    def actual_wrong_coordinate_value(self) -> int:
+        return self.selected_observation.actual_coordinate_value
+
+    @property
+    def acceptable_coordinate_values(self) -> tuple[int, ...]:
+        return self.selected_observation.acceptable_coordinate_values
+
+    def to_artifact_dict(self) -> dict[str, Any]:
+        return {
+            "owner_id": self.owner_id,
+            "observations": [item.to_artifact_dict() for item in self.observations],
         }
 
 
@@ -343,7 +617,7 @@ class StateBankCandidate:
     owner_resolution_interval: tuple[int, int] | None
     coordinate_decision: CoordinateDecision | None
     selected_sites: tuple[SelectedSite, ...]
-    generation_provenance: Mapping[str, Any]
+    generation_provenance: GenerationProvenance
     evidence_text: str | None
 
     @classmethod
@@ -436,11 +710,12 @@ class StateBankCandidate:
             owner_resolution_interval=interval,
             coordinate_decision=coordinate,
             selected_sites=sites,
-            generation_provenance=freeze_json(
+            generation_provenance=GenerationProvenance.from_mapping(
                 _mapping(
                     checked["generation_provenance"],
                     field=f"{field}.generation_provenance",
-                )
+                ),
+                field=f"{field}.generation_provenance",
             ),
             evidence_text=_optional_string(
                 checked["evidence_text"], field=f"{field}.evidence_text"
@@ -518,6 +793,13 @@ class StateBankCandidate:
                         field=field,
                     )
                 start, end = self.owner_resolution_interval
+                if start != 0:
+                    _fail(
+                        "state_bank.owner_interval_start",
+                        "owner-resolution interval must begin at candidate offset zero",
+                        field=field,
+                        start=start,
+                    )
                 missing_sites = [
                     offset
                     for offset in range(start, end)
@@ -619,7 +901,7 @@ class StateBankCandidate:
                 else self.coordinate_decision.to_artifact_dict()
             ),
             "selected_sites": [site.to_artifact_dict() for site in self.selected_sites],
-            "generation_provenance": _thaw(self.generation_provenance),
+            "generation_provenance": self.generation_provenance.to_artifact_dict(),
             "evidence_text": self.evidence_text,
         }
 
@@ -636,6 +918,7 @@ class StateBankEvent:
     prefix_token_ids: tuple[int, ...]
     prefix_token_ids_sha256: str
     physical_entities: tuple[PhysicalEntity, ...]
+    prefix_covered_owner_proofs: tuple[PrefixCoveredOwnerProof, ...]
     entity_transition_eligible: bool
     coordinate_boundary_eligible: bool
     candidates: tuple[StateBankCandidate, ...]
@@ -659,6 +942,7 @@ class StateBankEvent:
                 "prefix_token_ids",
                 "prefix_token_ids_sha256",
                 "physical_entities",
+                "prefix_covered_owner_proofs",
                 "entity_transition_eligible",
                 "coordinate_boundary_eligible",
                 "candidates",
@@ -729,6 +1013,27 @@ class StateBankEvent:
             code="state_bank.entity_id_duplicate",
             field=f"{field}.physical_entities",
         )
+        prefix_owner_proofs = tuple(
+            PrefixCoveredOwnerProof.from_mapping(
+                item, field=f"{field}.prefix_covered_owner_proofs[{index}]"
+            )
+            for index, item in enumerate(
+                _sequence(
+                    checked["prefix_covered_owner_proofs"],
+                    field=f"{field}.prefix_covered_owner_proofs",
+                )
+            )
+        )
+        proof_indices = tuple(
+            item.prefix_object_row_index for item in prefix_owner_proofs
+        )
+        if proof_indices != tuple(range(len(prefix_owner_proofs))):
+            _fail(
+                "state_bank.prefix_owner_proof_rows",
+                "prefix owner proofs must cover every prior object row in order",
+                field=field,
+                row_indices=list(proof_indices),
+            )
         candidates = tuple(
             StateBankCandidate.from_mapping(item, field=f"{field}.candidates[{index}]")
             for index, item in enumerate(
@@ -757,6 +1062,7 @@ class StateBankEvent:
             prefix_token_ids=prefix_ids,
             prefix_token_ids_sha256=prefix_hash,
             physical_entities=entities,
+            prefix_covered_owner_proofs=prefix_owner_proofs,
             entity_transition_eligible=_bool(
                 checked["entity_transition_eligible"],
                 field=f"{field}.entity_transition_eligible",
@@ -777,7 +1083,37 @@ class StateBankEvent:
 
     def _validate_semantics(self, *, field: str) -> None:
         entity_by_id = {entity.entity_id: entity for entity in self.physical_entities}
+        covered_owner_ids = frozenset(
+            proof.owner_id for proof in self.prefix_covered_owner_proofs
+        )
+        for proof in self.prefix_covered_owner_proofs:
+            owner = entity_by_id.get(proof.owner_id)
+            if owner is None or not owner.entity_trusted:
+                _fail(
+                    "state_bank.prefix_owner_untrusted",
+                    "prefix-covered owner proof requires a trusted physical ledger owner",
+                    event_id=self.event_id,
+                    owner_id=proof.owner_id,
+                )
         for candidate in self.candidates:
+            provenance = candidate.generation_provenance
+            if (
+                provenance.prompt_token_ids_sha256
+                != self.executed_prompt_token_ids_sha256
+            ):
+                _fail(
+                    "state_bank.candidate_prompt_provenance",
+                    "candidate generation provenance does not bind the exact executed prompt",
+                    event_id=self.event_id,
+                    candidate_id=candidate.candidate_id,
+                )
+            if provenance.prefix_token_ids_sha256 != self.prefix_token_ids_sha256:
+                _fail(
+                    "state_bank.candidate_prefix_provenance",
+                    "candidate generation provenance does not bind the exact prefix",
+                    event_id=self.event_id,
+                    candidate_id=candidate.candidate_id,
+                )
             if (
                 candidate.physical_owner_id is not None
                 and candidate.physical_owner_id not in entity_by_id
@@ -808,12 +1144,97 @@ class StateBankEvent:
                         candidate_id=candidate.candidate_id,
                         owner_id=decision.owner_id,
                     )
+                if candidate.physical_owner_id != decision.owner_id:
+                    _fail(
+                        "state_bank.geometry_same_owner",
+                        "coordinate correction owner must equal the trusted candidate owner",
+                        event_id=self.event_id,
+                        candidate_id=candidate.candidate_id,
+                        candidate_owner_id=candidate.physical_owner_id,
+                        correction_owner_id=decision.owner_id,
+                    )
+                for observation in decision.observations:
+                    if observation.candidate_token_offset >= len(candidate.token_ids):
+                        _fail(
+                            "state_bank.coordinate_offset_bounds",
+                            "coordinate observation offset exceeds candidate token count",
+                            event_id=self.event_id,
+                            candidate_id=candidate.candidate_id,
+                            offset=observation.candidate_token_offset,
+                        )
+            if candidate.entity_eligible and candidate.physical_owner_id is not None:
+                owner = entity_by_id[candidate.physical_owner_id]
+                if not owner.entity_trusted:
+                    _fail(
+                        "state_bank.entity_owner_untrusted",
+                        "entity-eligible owner must be trusted in the physical ledger",
+                        event_id=self.event_id,
+                        candidate_id=candidate.candidate_id,
+                        owner_id=candidate.physical_owner_id,
+                    )
+                if (
+                    candidate.role == "positive"
+                    and candidate.physical_owner_id in covered_owner_ids
+                ):
+                    _fail(
+                        "state_bank.positive_prefix_covered",
+                        "transition positive owner must be absent from the exact-prefix covered set",
+                        event_id=self.event_id,
+                        candidate_id=candidate.candidate_id,
+                        owner_id=candidate.physical_owner_id,
+                    )
+                if (
+                    candidate.harmful_kind == "duplicate"
+                    and candidate.physical_owner_id not in covered_owner_ids
+                ):
+                    _fail(
+                        "state_bank.duplicate_prefix_uncovered",
+                        "physical-duplicate harmful owner must be present in the exact-prefix covered set",
+                        event_id=self.event_id,
+                        candidate_id=candidate.candidate_id,
+                        owner_id=candidate.physical_owner_id,
+                    )
         entity_candidates = [
             candidate for candidate in self.candidates if candidate.entity_eligible
         ]
         geometry_candidates = [
             candidate for candidate in self.candidates if candidate.geometry_eligible
         ]
+        harmful_candidates = [
+            candidate for candidate in self.candidates if candidate.role == "harmful"
+        ]
+        greedy_candidates = [
+            candidate
+            for candidate in self.candidates
+            if candidate.generation_provenance.mode == "greedy"
+        ]
+        if (
+            len(harmful_candidates) != 1
+            or len(greedy_candidates) != 1
+            or greedy_candidates[0] is not harmful_candidates[0]
+        ):
+            _fail(
+                "state_bank.greedy_harmful_identity",
+                "the sole harmful branch must be the sole producer-declared greedy candidate",
+                event_id=self.event_id,
+                greedy_candidate_ids=[item.candidate_id for item in greedy_candidates],
+                harmful_candidate_ids=[
+                    item.candidate_id for item in harmful_candidates
+                ],
+            )
+        non_sampled_positives = [
+            candidate.candidate_id
+            for candidate in self.candidates
+            if candidate.role == "positive"
+            and candidate.generation_provenance.mode != "sampled"
+        ]
+        if non_sampled_positives:
+            _fail(
+                "state_bank.positive_not_sampled",
+                "every positive must have same-prefix sampled provenance",
+                event_id=self.event_id,
+                candidate_ids=non_sampled_positives,
+            )
         if self.entity_transition_eligible:
             positives = [
                 candidate
@@ -907,6 +1328,9 @@ class StateBankEvent:
             "prefix_token_ids_sha256": self.prefix_token_ids_sha256,
             "physical_entities": [
                 entity.to_artifact_dict() for entity in self.physical_entities
+            ],
+            "prefix_covered_owner_proofs": [
+                proof.to_artifact_dict() for proof in self.prefix_covered_owner_proofs
             ],
             "entity_transition_eligible": self.entity_transition_eligible,
             "coordinate_boundary_eligible": self.coordinate_boundary_eligible,
@@ -1214,6 +1638,10 @@ def assemble_state_bank(
         )
     records.sort(key=lambda item: item.event_id)
     _validate_record_collection(tuple(records))
+    source_checkpoint_id = sha256_json(checkpoint.to_artifact_dict())
+    _validate_record_checkpoint_provenance(
+        tuple(records), source_checkpoint_id=source_checkpoint_id
+    )
     return _write_state_bank(
         output_dir=Path(output_dir),
         records=tuple(records),
@@ -1278,6 +1706,9 @@ def load_state_bank(
             actual=len(records),
         )
     _validate_record_collection(records)
+    _validate_record_checkpoint_provenance(
+        records, source_checkpoint_id=manifest.source_checkpoint_id
+    )
     expected_assignments = _split_assignments(records)
     if tuple(manifest.split_assignments) != expected_assignments:
         _fail(
@@ -1363,19 +1794,23 @@ def validate_state_bank_token_identity(
             decision = candidate.coordinate_decision
             if decision is None:
                 continue
-            expected_coordinate_id = coordinate_token_ids[
-                decision.actual_wrong_coordinate_value
-            ]
-            actual_coordinate_id = candidate.token_ids[decision.candidate_token_offset]
-            if actual_coordinate_id != expected_coordinate_id:
-                _fail(
-                    "state_bank.coordinate_token_identity",
-                    "coordinate decision value does not match its exact candidate token",
-                    event_id=event.event_id,
-                    candidate_id=candidate.candidate_id,
-                    expected_token_id=expected_coordinate_id,
-                    actual_token_id=actual_coordinate_id,
-                )
+            for observation in decision.observations:
+                expected_coordinate_id = coordinate_token_ids[
+                    observation.actual_coordinate_value
+                ]
+                actual_coordinate_id = candidate.token_ids[
+                    observation.candidate_token_offset
+                ]
+                if actual_coordinate_id != expected_coordinate_id:
+                    _fail(
+                        "state_bank.coordinate_token_identity",
+                        "coordinate observation value does not match its exact candidate token",
+                        event_id=event.event_id,
+                        candidate_id=candidate.candidate_id,
+                        coordinate=observation.coordinate,
+                        expected_token_id=expected_coordinate_id,
+                        actual_token_id=actual_coordinate_id,
+                    )
 
 
 def _join_rollout_and_review(
@@ -1404,6 +1839,7 @@ def _join_rollout_and_review(
             "admission_status",
             "rejection_reason",
             "physical_entities",
+            "prefix_covered_owner_proofs",
             "entity_transition_eligible",
             "coordinate_boundary_eligible",
             "candidates",
@@ -1483,6 +1919,7 @@ def _join_rollout_and_review(
         "prefix_token_ids": rollout["prefix_token_ids"],
         "prefix_token_ids_sha256": rollout["prefix_token_ids_sha256"],
         "physical_entities": review["physical_entities"],
+        "prefix_covered_owner_proofs": review["prefix_covered_owner_proofs"],
         "entity_transition_eligible": review["entity_transition_eligible"],
         "coordinate_boundary_eligible": review["coordinate_boundary_eligible"],
         "candidates": joined_candidates,
@@ -1614,6 +2051,23 @@ def _validate_record_collection(records: tuple[StateBankEvent, ...]) -> None:
             "pilot permits at most four training states per image",
             counts=excessive,
         )
+
+
+def _validate_record_checkpoint_provenance(
+    records: tuple[StateBankEvent, ...], *, source_checkpoint_id: str
+) -> None:
+    for record in records:
+        for candidate in record.candidates:
+            actual = candidate.generation_provenance.checkpoint_id
+            if actual != source_checkpoint_id:
+                _fail(
+                    "state_bank.candidate_checkpoint_provenance",
+                    "candidate generation provenance belongs to another checkpoint",
+                    event_id=record.event_id,
+                    candidate_id=candidate.candidate_id,
+                    expected=source_checkpoint_id,
+                    actual=actual,
+                )
 
 
 def _validate_images(records: tuple[StateBankEvent, ...]) -> None:
@@ -2126,6 +2580,47 @@ def _require_positive_int(value: Any, *, field: str) -> int:
     return parsed
 
 
+def _finite_float(
+    value: Any,
+    *,
+    field: str,
+    minimum: float | None = None,
+    maximum: float | None = None,
+) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        _fail(
+            "state_bank.finite_float",
+            "field must be a finite number",
+            field=field,
+            value_type=type(value).__name__,
+        )
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        _fail(
+            "state_bank.finite_float",
+            "field must be a finite number",
+            field=field,
+            value=parsed,
+        )
+    if minimum is not None and parsed < minimum:
+        _fail(
+            "state_bank.finite_float_range",
+            "field is below its minimum",
+            field=field,
+            value=parsed,
+            minimum=minimum,
+        )
+    if maximum is not None and parsed > maximum:
+        _fail(
+            "state_bank.finite_float_range",
+            "field exceeds its maximum",
+            field=field,
+            value=parsed,
+            maximum=maximum,
+        )
+    return parsed
+
+
 def _require_sha256(value: Any, *, field: str) -> str:
     if not isinstance(value, str) or _SHA256.fullmatch(value) is None:
         _fail(
@@ -2151,10 +2646,14 @@ def _fail(code: str, message: str, **context: Any) -> None:
 __all__ = [
     "BLIND_IMAGE_IDS",
     "CheckpointIdentity",
+    "CoordinateBoundaryObservation",
     "CoordinateDecision",
+    "GenerationProvenance",
     "ImageIdentity",
     "LoadedStateBank",
     "PhysicalEntity",
+    "PrefixCoveredOwnerProof",
+    "ReviewProvenance",
     "STATE_BANK_MANIFEST_NAME",
     "STATE_BANK_RECORDS_NAME",
     "STATE_BANK_SCHEMA_VERSION",

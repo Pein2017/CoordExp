@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 import inspect
+import math
 import os
 from typing import Any, Protocol
 
@@ -54,6 +55,7 @@ class CompletedStepObservation:
     optimizer_update_status: str
     finite_status: str
     scheduler_artifact: Mapping[str, Any] = field(default_factory=dict)
+    post_backward_artifact: Mapping[str, Any] = field(default_factory=dict)
 
     def to_artifact_dict(self) -> dict[str, Any]:
         return {
@@ -63,6 +65,7 @@ class CompletedStepObservation:
             "optimizer_update_status": self.optimizer_update_status,
             "finite_status": self.finite_status,
             "scheduler": dict(self.scheduler_artifact),
+            "post_backward": dict(self.post_backward_artifact),
         }
 
 
@@ -236,6 +239,11 @@ class SupervisedTrainer:
                 optimizer_update_status=optimizer_update_status,
                 finite_status=finite_status,
                 scheduler_artifact=scheduler_artifact,
+                post_backward_artifact=_post_backward_receipt(
+                    post_decision,
+                    optimizer_update_status=optimizer_update_status,
+                    require_nonzero_gradient=False,
+                ),
             )
             del contexts, loss_bundle, pre_decision, post_decision, scheduler_artifact
             latest_observation = observation
@@ -295,10 +303,7 @@ class SupervisedTrainer:
                     micro_step,
                 )
                 _sync_forward_result_if_requested(forward_result)
-                _sync_forward_result_if_requested(forward_result)
                 context = self.loss_context_factory(micro_step, forward_result)
-                _sync_forward_result_if_requested(forward_result)
-                _sync_forward_result_if_requested(forward_result)
                 loss_bundle = self.loss_runner.compute_micro_step(
                     context,
                     plan,
@@ -315,13 +320,11 @@ class SupervisedTrainer:
                 finite_status = pre_decision.finite_status
                 if not pre_decision.should_call_backward:
                     break
-                _sync_loss_bundle_if_requested(loss_bundle)
                 self.runtime.backward(
                     _total_loss(loss_bundle),
                     planned_step_id=planned_step_id,
                     sync_gradients=sync_gradients,
                 )
-                _sync_loss_bundle_if_requested(loss_bundle)
             del loss_bundle, context, forward_result
 
         if pre_decision is None:
@@ -352,6 +355,12 @@ class SupervisedTrainer:
                 self.runtime.optimizer_step(planned_step_id=planned_step_id)
                 optimizer_update_status = "applied"
 
+        post_backward_artifact = _post_backward_receipt(
+            post_decision,
+            optimizer_update_status=optimizer_update_status,
+            require_nonzero_gradient=hasattr(self.loss_runner, "profile"),
+        )
+
         scheduler_artifact = _optional_artifact(
             self.runtime.scheduler_step(planned_step_id=planned_step_id)
         )
@@ -365,9 +374,11 @@ class SupervisedTrainer:
             optimizer_update_status=optimizer_update_status,
             finite_status=finite_status,
             scheduler_artifact=scheduler_artifact,
+            post_backward_artifact=post_backward_artifact,
         )
         del moved_micro_steps, micro_loss_artifacts, plan
         del pre_decision, post_decision, scheduler_artifact, loss_bundle_artifact
+        del post_backward_artifact
         return observation, consumed_count
 
     def _next_micro_step(
@@ -472,6 +483,45 @@ def _default_qwen_forward(model: Any, micro_step: SupervisedMicroStep) -> Any:
         capture_fa2_branch=micro_step.capture_fa2_branch,
         require_fa2_branch_proof=micro_step.require_fa2_branch_proof,
     )
+
+
+def _post_backward_receipt(
+    decision: GateDecision | None,
+    *,
+    optimizer_update_status: str,
+    require_nonzero_gradient: bool,
+) -> dict[str, Any]:
+    if decision is None:
+        return {
+            "status": "not_run",
+            "finite_nonzero_gradient": False,
+            "optimizer_update_status": optimizer_update_status,
+        }
+    artifact = decision.to_artifact_dict()
+    grad_norm = decision.diagnostics.get("max_grad_norm")
+    finite_nonzero = (
+        isinstance(grad_norm, (int, float))
+        and not isinstance(grad_norm, bool)
+        and math.isfinite(float(grad_norm))
+        and float(grad_norm) > 0.0
+    )
+    if require_nonzero_gradient and not finite_nonzero:
+        raise RuntimeContractError(
+            "rollout-calibration backward produced no finite nonzero gradient norm",
+            code="trainer.rollout_calibration_zero_gradient",
+            context={
+                "grad_norm": grad_norm,
+                "finite_status": decision.finite_status,
+                "optimizer_update_status": optimizer_update_status,
+            },
+        )
+    return {
+        "status": "pass" if finite_nonzero else "recorded",
+        "finite_nonzero_gradient": finite_nonzero,
+        "grad_norm": None if grad_norm is None else float(grad_norm),
+        "optimizer_update_status": optimizer_update_status,
+        "gate_decision": artifact,
+    }
 
 
 def _runtime_model(runtime: RuntimeBoundary, fallback_model: Any) -> Any:

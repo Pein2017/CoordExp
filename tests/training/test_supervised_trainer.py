@@ -41,6 +41,40 @@ def test_logits_positions_union_ordinary_atoms_with_calibration_sites() -> None:
     assert trainer_module._logits_positions_to_keep(micro_step) == (2, 5, 7)
 
 
+def test_rollout_post_backward_receipt_requires_finite_nonzero_gradient_norm() -> None:
+    decision = GateDecision(
+        stage="post_backward_gradient",
+        planned_step_id=1,
+        world_size=1,
+        ranks=(0,),
+        all_ranks_safe=True,
+        should_call_backward=False,
+        should_call_optimizer_step=True,
+        should_clear_gradients=False,
+        optimizer_update_status="ready_to_step",
+        finite_status="finite",
+        reason_codes=(),
+        rank_diagnostics=(),
+        diagnostics={"max_grad_norm": 0.0},
+    )
+    with pytest.raises(RuntimeContractError) as exc_info:
+        trainer_module._post_backward_receipt(
+            decision,
+            optimizer_update_status="applied",
+            require_nonzero_gradient=True,
+        )
+    assert exc_info.value.code == "trainer.rollout_calibration_zero_gradient"
+
+    receipt = trainer_module._post_backward_receipt(
+        replace(decision, diagnostics={"max_grad_norm": 0.25}),
+        optimizer_update_status="applied",
+        require_nonzero_gradient=True,
+    )
+    assert receipt["status"] == "pass"
+    assert receipt["finite_nonzero_gradient"] is True
+    assert receipt["grad_norm"] == 0.25
+
+
 def test_logits_positions_keep_ordinary_behavior_without_calibration_metadata() -> None:
     micro_step = _logits_micro_step(atom_positions=(7, 2, 7))
 

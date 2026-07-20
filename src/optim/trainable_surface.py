@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections import Counter
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -51,6 +51,7 @@ class TrainableSurfaceReceipt:
     optimizer_groups: tuple[Mapping[str, Any], ...]
     unmatched_trainable_names: tuple[str, ...]
     frozen_reason_summaries: tuple[FrozenReasonSummary, ...]
+    exact_surface_groups: Mapping[str, Any] = field(default_factory=dict)
 
     def to_artifact_dict(self) -> dict[str, Any]:
         return {
@@ -63,9 +64,9 @@ class TrainableSurfaceReceipt:
             "optimizer_groups": [dict(group) for group in self.optimizer_groups],
             "unmatched_trainable_names": list(self.unmatched_trainable_names),
             "frozen_reason_summaries": [
-                summary.to_artifact_dict()
-                for summary in self.frozen_reason_summaries
+                summary.to_artifact_dict() for summary in self.frozen_reason_summaries
             ],
+            "exact_surface_groups": dict(self.exact_surface_groups),
         }
 
 
@@ -106,8 +107,7 @@ def build_trainable_surface_receipt(
     )
 
     optimizer_groups = tuple(
-        group.to_artifact_dict()
-        for group in optimizer_group_plan.groups
+        group.to_artifact_dict() for group in optimizer_group_plan.groups
     )
     return TrainableSurfaceReceipt(
         phase=phase,
@@ -129,6 +129,11 @@ def build_trainable_surface_receipt(
         unmatched_trainable_names=tuple(optimizer_group_plan.unmatched_trainable_names),
         frozen_reason_summaries=_frozen_reason_summaries(
             frozen_parameters=frozen_parameters,
+            special_token_receipt=special_token_receipt,
+        ),
+        exact_surface_groups=_exact_surface_groups(
+            frozen_parameters=frozen_parameters,
+            optimizer_group_plan=optimizer_group_plan,
             special_token_receipt=special_token_receipt,
         ),
     )
@@ -248,9 +253,7 @@ def _selected_embedding_artifact(
             "enabled": True,
             "semantics": special_token_receipt.semantics,
             "tensor_key": special_token_receipt.tensor_key,
-            "delta_parameter_names": list(
-                special_token_receipt.delta_parameter_names
-            ),
+            "delta_parameter_names": list(special_token_receipt.delta_parameter_names),
             "delta_shape": list(special_token_receipt.delta_shape),
             "delta_dtype": special_token_receipt.delta_dtype,
         }
@@ -331,8 +334,86 @@ def _frozen_reason_summaries(
                 },
             )
         )
+        frozen_delta_names = tuple(
+            name
+            for name in special_token_receipt.delta_parameter_names
+            if name in frozen_parameters
+        )
+        if frozen_delta_names:
+            summaries.append(
+                FrozenReasonSummary(
+                    reason="loaded_source_selected_embedding_delta_frozen",
+                    parameter_count=len(frozen_delta_names),
+                    scalar_count=_scalar_count(
+                        frozen_parameters[name] for name in frozen_delta_names
+                    ),
+                    parameter_names_preview=frozen_delta_names,
+                    context={
+                        "optimizer_owned": False,
+                        "delta_parameter_names": list(frozen_delta_names),
+                        "semantics": special_token_receipt.semantics,
+                    },
+                )
+            )
     return tuple(summaries)
 
 
 def _scalar_count(parameters: Any) -> int:
     return sum(int(parameter.numel()) for parameter in parameters)
+
+
+def _exact_surface_groups(
+    *,
+    frozen_parameters: Mapping[str, nn.Parameter],
+    optimizer_group_plan: OptimizerGroupPlan,
+    special_token_receipt: SpecialTokenEmbeddingInstallReceipt | None,
+) -> dict[str, Any]:
+    language_dora = tuple(
+        name
+        for group in optimizer_group_plan.groups
+        if group.group_name == "adapter.language"
+        for name in group.parameter_names
+    )
+    delta_names = frozenset(
+        ()
+        if special_token_receipt is None
+        else special_token_receipt.delta_parameter_names
+    )
+    frozen_delta = tuple(
+        sorted(name for name in frozen_parameters if name in delta_names)
+    )
+    frozen_aligner = tuple(
+        sorted(
+            name
+            for name in frozen_parameters
+            if ".visual.merger" in name
+            or name.startswith("visual.merger")
+            or "deepstack_merger" in name
+        )
+    )
+    frozen_vision = tuple(
+        sorted(
+            name
+            for name in frozen_parameters
+            if (".visual." in name or name.startswith("visual."))
+            and name not in frozen_aligner
+        )
+    )
+
+    def group(names: tuple[str, ...]) -> dict[str, Any]:
+        return {
+            "parameter_count": len(names),
+            "scalar_count": _scalar_count(frozen_parameters[name] for name in names)
+            if all(name in frozen_parameters for name in names)
+            else _scalar_count(
+                optimizer_group_plan.parameters_by_name[name] for name in names
+            ),
+            "parameter_names": list(names),
+        }
+
+    return {
+        "trainable_language_dora": group(language_dora),
+        "frozen_vision": group(frozen_vision),
+        "frozen_aligner": group(frozen_aligner),
+        "frozen_selected_token_delta": group(frozen_delta),
+    }

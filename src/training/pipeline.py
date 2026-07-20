@@ -258,8 +258,26 @@ def _train_logging_handler(
             "micro_step_count": observation.micro_step_count,
             "optimizer_update_status": observation.optimizer_update_status,
             "finite_status": observation.finite_status,
+            "post_backward_gradient": dict(observation.post_backward_artifact),
             **dict(reduced),
         }
+        diagnostics = loss_bundle.get("diagnostics", {})
+        if (
+            writer is not None
+            and isinstance(diagnostics, Mapping)
+            and isinstance(diagnostics.get("profile"), str)
+        ):
+            pre_update_margins = {
+                str(name): float(value)
+                for name, value in reduced.items()
+                if str(name).endswith("/target_margin")
+            }
+            writer.record_rollout_calibration_step_evidence(
+                planned_step_id=observation.planned_step_id,
+                post_backward_gradient=observation.post_backward_artifact,
+                pre_update_margins=pre_update_margins,
+                optimizer_update_status=observation.optimizer_update_status,
+            )
         _append_logging_row_shared(writer=writer, row=row, runtime=runtime)
 
     return handle
@@ -448,6 +466,13 @@ def _run_initialized_training(
             expected_base_config_sha256=components.base_config_sha256,
             expected_tokenizer_sha256=components.tokenizer_sha256,
         )
+    source_step_zero_parity = None
+    if calibration_bank is not None:
+        special_token_result.shared_embed_delta.requires_grad_(False)
+        source_step_zero_parity = _validate_calibration_source_step_zero_parity(
+            adapter_result.receipt,
+            special_token_result=special_token_result,
+        )
     enable_training_memory_savers(model)
 
     vocab_groups = build_token_vocabulary_groups(
@@ -492,7 +517,9 @@ def _run_initialized_training(
         )
         schedule = resolve_planned_step_schedule(
             config,
-            packs_per_epoch=len(base_calibration_micro_steps),
+            packs_per_epoch=_calibration_profile_event_count(
+                base_calibration_micro_steps, calibration.profile
+            ),
             world_size=int(accelerator.num_processes),
             source_config_path=str(resolved_config.entry_config_path),
         )
@@ -536,7 +563,9 @@ def _run_initialized_training(
         model,
         config.optimizer,
         adapter_receipt=adapter_result.receipt,
-        special_token_receipt=special_token_result.receipt,
+        special_token_receipt=(
+            None if calibration_bank is not None else special_token_result.receipt
+        ),
     )
     scheduler_plan = build_scheduler_plan(
         config.optimizer,
@@ -548,12 +577,23 @@ def _run_initialized_training(
         optimizer_group_plan,
         total_training_steps=schedule.resolved_max_steps,
     )
-    build_trainable_surface_receipt(
+    trainable_surface_receipt = build_trainable_surface_receipt(
         model,
         adapter_receipt=adapter_result.receipt,
         special_token_receipt=special_token_result.receipt,
         optimizer_group_plan=optimizer_group_plan,
     )
+    if calibration_bank is not None:
+        _validate_calibration_trainable_surface(
+            trainable_surface_receipt,
+            special_token_result=special_token_result,
+        )
+        if writer is not None:
+            writer.bind_rollout_calibration_qualification(
+                source_checkpoint=calibration_bank.manifest.source_checkpoint.to_artifact_dict(),
+                source_step_zero_parity=source_step_zero_parity,
+                trainable_surface=trainable_surface_receipt.to_artifact_dict(),
+            )
 
     runtime = TrainRuntime(
         runtime_config=config.runtime,
@@ -727,6 +767,81 @@ def _load_bound_rollout_calibration_bank(
     return bank
 
 
+def _validate_calibration_source_step_zero_parity(
+    adapter_receipt: Any,
+    *,
+    special_token_result: Any,
+) -> dict[str, Any]:
+    warm_start = getattr(adapter_receipt, "warm_start", None)
+    if not isinstance(warm_start, Mapping):
+        raise RuntimeContractError(
+            "rollout calibration requires a durable warm-start parity receipt",
+            code="training.rollout_calibration_source_parity_missing",
+        )
+    initialized = tuple(
+        str(item) for item in warm_start.get("initialized_target_tensors", ())
+    )
+    ignored = tuple(str(item) for item in warm_start.get("ignored_source_tensors", ()))
+    post_copy = warm_start.get("post_copy_equality")
+    if initialized or ignored or post_copy != "pass":
+        raise RuntimeContractError(
+            "step-zero calibration adapter surface differs from the frozen source adapter",
+            code="training.rollout_calibration_source_surface_mismatch",
+            context={
+                "initialized_target_tensors": list(initialized),
+                "ignored_source_tensors": list(ignored),
+                "post_copy_equality": post_copy,
+            },
+        )
+    delta_names = tuple(special_token_result.receipt.delta_parameter_names)
+    if special_token_result.shared_embed_delta.requires_grad:
+        raise RuntimeContractError(
+            "loaded source selected-token embedding delta must be frozen",
+            code="training.rollout_calibration_embedding_delta_trainable",
+            context={"delta_parameter_names": list(delta_names)},
+        )
+    return {
+        "status": "pass",
+        "semantic_scope": "source_adapter_tensor_surface_and_loaded_embedding_delta",
+        "post_copy_equality": "pass",
+        "initialized_target_tensors": [],
+        "ignored_source_tensors": [],
+        "loaded_selected_token_delta": True,
+        "selected_token_delta_frozen": True,
+        "selected_token_delta_parameter_names": list(delta_names),
+        "real_fixture_logit_parity": {
+            "status": "not_run",
+            "reason": "shared_real_smoke_fixture_not_available",
+        },
+    }
+
+
+def _validate_calibration_trainable_surface(
+    receipt: Any,
+    *,
+    special_token_result: Any,
+) -> None:
+    groups = tuple(str(group.get("group_name")) for group in receipt.optimizer_groups)
+    if groups != ("adapter.language",):
+        raise RuntimeContractError(
+            "rollout-calibration optimizer must own language DoRA parameters only",
+            code="training.rollout_calibration_optimizer_surface",
+            context={"optimizer_groups": list(groups)},
+        )
+    trainable_towers = tuple(str(item) for item in receipt.trainable_towers)
+    if trainable_towers != ("adapter.language",):
+        raise RuntimeContractError(
+            "rollout-calibration trainable surface must contain language DoRA only",
+            code="training.rollout_calibration_trainable_surface",
+            context={"trainable_towers": list(trainable_towers)},
+        )
+    if special_token_result.shared_embed_delta.requires_grad:
+        raise RuntimeContractError(
+            "selected-token embedding delta regained gradient ownership",
+            code="training.rollout_calibration_embedding_delta_trainable",
+        )
+
+
 def _build_rollout_calibration_micro_steps(
     config: Any,
     components: Any,
@@ -739,6 +854,7 @@ def _build_rollout_calibration_micro_steps(
         components=components,
         processor_config=config.model.processor,
         global_max_length=config.packing.global_max_length,
+        image_token_id=_image_token_id(components),
     )
     coordinate_token_ids = tuple(
         int(value) for value in components.token_identity.coordinate_token_ids
@@ -756,6 +872,29 @@ def _build_rollout_calibration_micro_steps(
         )
         for item in planned
     )
+
+
+def _calibration_profile_event_count(
+    micro_steps: Sequence[SupervisedMicroStep], profile: str
+) -> int:
+    count = 0
+    for micro_step in micro_steps:
+        metadata = micro_step.calibration_metadata
+        entity = bool(getattr(metadata, "entity_transition_eligible", False))
+        coordinate = bool(getattr(metadata, "coordinate_boundary_eligible", False))
+        if (
+            (profile == "transition_only" and entity)
+            or (profile == "coordinate_boundary_only" and coordinate)
+            or (profile == "joint" and (entity or coordinate))
+        ):
+            count += 1
+    if count <= 0:
+        raise RuntimeContractError(
+            "rollout calibration profile admits no frozen-bank events",
+            code="training.rollout_calibration_profile_empty",
+            context={"profile": profile},
+        )
+    return count
 
 
 def build_base_micro_steps(

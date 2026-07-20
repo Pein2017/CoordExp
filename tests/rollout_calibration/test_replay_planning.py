@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from src.common.errors import PackingContractError
+from src.common.errors import EncodingContractError
 from src.qwen.forward import build_qwen_forward_inputs
 from src.rollout_calibration import (
     assemble_state_bank,
@@ -54,6 +56,7 @@ def test_exact_replay_uses_stored_prompt_prefix_and_candidate_without_tokenizer(
         components=fake_components,
         processor_config=processor_config,
         global_max_length=128,
+        image_token_id=IMAGE_TOKEN_ID,
     )
 
     assert replay.input_ids == (
@@ -160,3 +163,66 @@ def test_atomic_event_capacity_fails_without_partial_pack(
     assert exc_info.value.code == "rollout_calibration.event_capacity"
     assert exc_info.value.context["event_id"] == "synthetic-event-1"
     assert exc_info.value.context["required_length"] == 20
+
+
+def test_exact_replay_rejects_wrong_or_discontiguous_image_placeholder_identity(
+    tmp_path: Path,
+    checkpoint_identity,
+    prompt_identity_sha256: str,
+    fake_components,
+    processor_config,
+) -> None:
+    bank = _loaded_bank(tmp_path, checkpoint_identity, prompt_identity_sha256)
+    event = bank.records[0]
+    object.__setattr__(
+        event,
+        "executed_prompt_token_ids",
+        (10, IMAGE_TOKEN_ID, IMAGE_TOKEN_ID, 999, IMAGE_TOKEN_ID, 11),
+    )
+    with pytest.raises(EncodingContractError) as exc_info:
+        build_exact_replay_segment(
+            event,
+            event.candidates[0],
+            components=fake_components,
+            processor_config=processor_config,
+            global_max_length=128,
+            image_token_id=IMAGE_TOKEN_ID,
+        )
+    assert exc_info.value.code == "rollout_calibration.image_placeholder_identity"
+
+
+def test_exact_replay_rejects_placeholder_count_against_active_processor(
+    tmp_path: Path,
+    checkpoint_identity,
+    prompt_identity_sha256: str,
+    fake_components,
+    processor_config,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import src.rollout_calibration.replay as replay_module
+
+    bank = _loaded_bank(tmp_path, checkpoint_identity, prompt_identity_sha256)
+    event = bank.records[0]
+    original = replay_module.plan_qwen_image
+
+    def mismatched_plan(*args, **kwargs):
+        encoding = original(*args, **kwargs)
+        return replace(
+            encoding,
+            plan=replace(
+                encoding.plan,
+                merged_visual_tokens=encoding.merged_visual_tokens + 1,
+            ),
+        )
+
+    monkeypatch.setattr(replay_module, "plan_qwen_image", mismatched_plan)
+    with pytest.raises(EncodingContractError) as exc_info:
+        build_exact_replay_segment(
+            event,
+            event.candidates[0],
+            components=fake_components,
+            processor_config=processor_config,
+            global_max_length=128,
+            image_token_id=IMAGE_TOKEN_ID,
+        )
+    assert exc_info.value.code == "rollout_calibration.image_placeholder_count"

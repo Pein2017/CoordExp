@@ -191,6 +191,14 @@ def test_inherited_calibration_paths_resolve_from_declaring_config(
         ),
         (("losses.protected.rollout_site_token_type_gate.weight", 0.0), "positive"),
         (("adapter.seed_mode", "initialize_new"), "warm-start source paths"),
+        (("adapter.target_towers", ["language", "vision"]), "language-only"),
+        (
+            (
+                "optimizer.groups.adapters.vision",
+                {"lr": 2.0e-4, "weight_decay": 0.0},
+            ),
+            "language DoRA only",
+        ),
         (("rollout_calibration.online_state_bank_refresh", True), "False"),
         (("rollout_calibration.incomplete_objective_policy", "skip"), "fail"),
         (("rollout_calibration.kl_anchor_weight", 0.1), "Extra inputs"),

@@ -127,7 +127,8 @@ class RolloutCalibrationLossRunner:
             )
         metadata = tuple(_micro_step_metadata(item) for item in micro_steps)
         local = {
-            term: _local_denominator(term, metadata) for term in self.enabled_terms
+            term: _local_denominator(term, metadata, profile=self.profile)
+            for term in self.enabled_terms
         }
         checked_world_size = int(world_size)
         checked_rank = int(rank)
@@ -578,7 +579,7 @@ class RolloutCalibrationLossRunner:
                 ),
             )
             for candidate in context.metadata.candidates
-            for site in candidate.selected_sites
+            for site in _active_selected_sites(candidate, self.profile)
         )
         result = rollout_site_token_type_gate(declarations)
         diagnostics = {
@@ -634,23 +635,13 @@ def build_calibration_micro_step_stream(
     rank: int,
     world_size: int,
 ) -> Iterator[SupervisedMicroStep]:
-    """Repeat events while keeping every enabled family present per global step."""
+    """Expose each profile-admitted frozen-bank event exactly once."""
 
     if not base_micro_steps:
         raise RuntimeContractError(
             "rollout calibration has no admitted train events",
             code="training.rollout_calibration_empty_train",
         )
-    entity = tuple(
-        item
-        for item in base_micro_steps
-        if _micro_step_metadata(item).entity_transition_eligible
-    )
-    coordinate = tuple(
-        item
-        for item in base_micro_steps
-        if _micro_step_metadata(item).coordinate_boundary_eligible
-    )
     admitted = tuple(
         item
         for item in base_micro_steps
@@ -673,62 +664,42 @@ def build_calibration_micro_step_stream(
             context={"rank": rank, "world_size": world_size},
         )
     slots = schedule.runtime_batch.effective_batch_size
-    for planned_index in range(schedule.resolved_max_steps):
-        window = _planned_event_window(
-            admitted,
-            entity=entity,
-            coordinate=coordinate,
-            profile=profile,
-            slots=slots,
-            planned_index=planned_index,
+    scheduled_exposure = schedule.resolved_max_steps * slots
+    if scheduled_exposure != len(admitted):
+        raise RuntimeContractError(
+            "rollout-calibration schedule must expose every admitted frozen-bank event exactly once",
+            code="training.rollout_calibration_frozen_exposure",
+            context={
+                "profile": profile,
+                "admitted_event_count": len(admitted),
+                "scheduled_event_count": scheduled_exposure,
+                "resolved_max_steps": schedule.resolved_max_steps,
+                "effective_batch_size": slots,
+            },
         )
+    if profile == "joint":
+        complete_families = {
+            "entity": any(
+                _micro_step_metadata(item).entity_transition_eligible
+                for item in admitted
+            ),
+            "coordinate": any(
+                _micro_step_metadata(item).coordinate_boundary_eligible
+                for item in admitted
+            ),
+        }
+        if not all(complete_families.values()):
+            raise RuntimeContractError(
+                "complete frozen joint schedule must exercise both objective families",
+                code="training.rollout_calibration_joint_family_missing",
+                context=complete_families,
+            )
+    for planned_index in range(schedule.resolved_max_steps):
+        window = admitted[planned_index * slots : (planned_index + 1) * slots]
         for local_accum_index in range(
             schedule.runtime_batch.resolved_grad_accum_steps
         ):
             yield window[local_accum_index * world_size + rank]
-
-
-def _planned_event_window(
-    admitted: tuple[SupervisedMicroStep, ...],
-    *,
-    entity: tuple[SupervisedMicroStep, ...],
-    coordinate: tuple[SupervisedMicroStep, ...],
-    profile: str,
-    slots: int,
-    planned_index: int,
-) -> tuple[SupervisedMicroStep, ...]:
-    required: list[SupervisedMicroStep] = []
-    if profile in {"transition_only", "joint"}:
-        if not entity:
-            raise RuntimeContractError(
-                "profile requires an entity-transition event",
-                code="training.rollout_calibration_entity_missing",
-            )
-        required.append(entity[planned_index % len(entity)])
-    if profile in {"coordinate_boundary_only", "joint"}:
-        if not coordinate:
-            raise RuntimeContractError(
-                "profile requires a coordinate-boundary event",
-                code="training.rollout_calibration_coordinate_missing",
-            )
-        coordinate_event = coordinate[planned_index % len(coordinate)]
-        if not required or coordinate_event is not required[0]:
-            required.append(coordinate_event)
-    if len(required) > slots:
-        raise RuntimeContractError(
-            "effective batch cannot contain every enabled calibration family",
-            code="training.rollout_calibration_atomic_window_capacity",
-            context={
-                "profile": profile,
-                "required_slots": len(required),
-                "available_slots": slots,
-            },
-        )
-    window = list(required)
-    start = planned_index * slots
-    while len(window) < slots:
-        window.append(admitted[(start + len(window)) % len(admitted)])
-    return tuple(window)
 
 
 def _profile_admits(metadata: CalibrationEventMetadata, profile: str) -> bool:
@@ -761,9 +732,11 @@ def _micro_step_metadata(micro_step: SupervisedMicroStep) -> CalibrationEventMet
 def _local_denominator(
     term: str,
     metadata: tuple[CalibrationEventMetadata, ...],
+    *,
+    profile: str,
 ) -> SegmentBalancedDenominator:
-    eligible = sum(_event_eligible(item, term) for item in metadata)
-    selected = sum(_selected_count(item, term) for item in metadata)
+    eligible = sum(_event_eligible(item, term, profile=profile) for item in metadata)
+    selected = sum(_selected_count(item, term, profile=profile) for item in metadata)
     return SegmentBalancedDenominator(
         term_name=term,
         denominator_scope="planned_step",
@@ -812,26 +785,33 @@ def _merge_denominators(
     return merged
 
 
-def _event_eligible(metadata: CalibrationEventMetadata, term: str) -> bool:
+def _event_eligible(
+    metadata: CalibrationEventMetadata, term: str, *, profile: str
+) -> bool:
     if term == ENTITY_TERM:
         return metadata.entity_transition_eligible
     if term == COORDINATE_TERM:
         return metadata.coordinate_boundary_eligible
     if term == GATE_TERM:
-        return True
+        return any(
+            _active_selected_sites(candidate, profile)
+            for candidate in metadata.candidates
+        )
     raise KeyError(term)
 
 
-def _selected_count(metadata: CalibrationEventMetadata, term: str) -> int:
+def _selected_count(
+    metadata: CalibrationEventMetadata, term: str, *, profile: str
+) -> int:
     if term == GATE_TERM:
         return len(
             {
                 (candidate.candidate_id, site.physical_logits_position)
                 for candidate in metadata.candidates
-                for site in candidate.selected_sites
+                for site in _active_selected_sites(candidate, profile)
             }
         )
-    if not _event_eligible(metadata, term):
+    if not _event_eligible(metadata, term, profile=profile):
         return 0
     if term == COORDINATE_TERM:
         return 1
@@ -845,6 +825,29 @@ def _selected_count(metadata: CalibrationEventMetadata, term: str) -> int:
             start, end = candidate.owner_resolution_physical_target_interval
             count += end - start
     return count
+
+
+def _active_selected_sites(candidate: Any, profile: str) -> tuple[Any, ...]:
+    active_offsets: set[int] = set()
+    if profile in {"transition_only", "joint"} and candidate.entity_eligible:
+        interval = candidate.owner_resolution_candidate_interval
+        if interval is None:
+            if candidate.harmful_kind == "premature_terminal":
+                active_offsets.add(0)
+        else:
+            start, end = interval
+            active_offsets.update(range(start, end))
+    if (
+        profile in {"coordinate_boundary_only", "joint"}
+        and candidate.geometry_eligible
+        and candidate.coordinate_decision is not None
+    ):
+        active_offsets.add(candidate.coordinate_decision.candidate_token_offset)
+    return tuple(
+        site
+        for site in candidate.selected_sites
+        if site.candidate_token_offset in active_offsets
+    )
 
 
 def _candidate_path(

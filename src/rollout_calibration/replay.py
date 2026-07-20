@@ -52,6 +52,7 @@ def build_exact_replay_segment(
     components: Any,
     processor_config: ProcessorConfig,
     global_max_length: int,
+    image_token_id: int,
 ) -> ExactReplaySegment:
     """Materialize exact stored ids and the existing no-resize image plan.
 
@@ -91,6 +92,11 @@ def build_exact_replay_segment(
         components=components,
         processor_config=processor_config,
     )
+    _validate_image_placeholder(
+        event,
+        image_token_id=image_token_id,
+        expected_merged_visual_tokens=image_encoding.merged_visual_tokens,
+    )
     return ExactReplaySegment(
         example_id=example_id,
         event_id=event.event_id,
@@ -102,6 +108,52 @@ def build_exact_replay_segment(
         candidate_token_end=candidate_start + len(candidate.token_ids),
         image_encoding=image_encoding,
     )
+
+
+def _validate_image_placeholder(
+    event: StateBankEvent,
+    *,
+    image_token_id: int,
+    expected_merged_visual_tokens: int,
+) -> None:
+    if (
+        isinstance(image_token_id, bool)
+        or not isinstance(image_token_id, int)
+        or image_token_id < 0
+    ):
+        raise EncodingContractError(
+            "exact replay requires the active nonnegative Qwen image placeholder token id",
+            code="rollout_calibration.image_placeholder_identity",
+            context={"image_token_id": image_token_id},
+        )
+    start, end = event.image_pad_interval
+    prompt_ids = event.executed_prompt_token_ids
+    placeholder_positions = tuple(
+        index for index, token_id in enumerate(prompt_ids) if token_id == image_token_id
+    )
+    expected_positions = tuple(range(start, end))
+    if placeholder_positions != expected_positions:
+        raise EncodingContractError(
+            "executed prompt must contain one contiguous image-placeholder run at the declared interval",
+            code="rollout_calibration.image_placeholder_identity",
+            context={
+                "event_id": event.event_id,
+                "declared_interval": [start, end],
+                "observed_positions": list(placeholder_positions),
+                "image_token_id": image_token_id,
+            },
+        )
+    observed_count = end - start
+    if observed_count != expected_merged_visual_tokens:
+        raise EncodingContractError(
+            "image-placeholder count differs from the active processor merged visual-token count",
+            code="rollout_calibration.image_placeholder_count",
+            context={
+                "event_id": event.event_id,
+                "placeholder_count": observed_count,
+                "expected_merged_visual_tokens": expected_merged_visual_tokens,
+            },
+        )
 
 
 __all__ = ["ExactReplaySegment", "build_exact_replay_segment"]

@@ -6,6 +6,7 @@ import pytest
 import torch
 
 import src.training.pipeline as pipeline_module
+import src.training.rollout_calibration as rollout_training_module
 from src.common.errors import RuntimeContractError
 from src.config.fingerprint import sha256_json
 from src.rollout_calibration.planning import (
@@ -13,7 +14,11 @@ from src.rollout_calibration.planning import (
     CalibrationEventMetadata,
     CalibrationSelectedSite,
 )
-from src.rollout_calibration.state_bank import CoordinateDecision
+from src.rollout_calibration.state_bank import (
+    CoordinateBoundaryObservation,
+    CoordinateDecision,
+    ReviewProvenance,
+)
 from src.rollout_calibration.state_bank import (
     CheckpointIdentity,
     StateBankManifestBinding,
@@ -92,11 +97,11 @@ def test_joint_runner_uses_compact_logits_and_emits_event_balanced_metrics() -> 
     assert artifact["finite_status"]["all_finite"] is True
 
 
-def test_joint_stream_keeps_both_objective_families_in_every_planned_step() -> None:
+def test_joint_stream_preserves_frozen_bank_exposure_without_duplication() -> None:
     entity_step = _micro_step(_single_family_metadata("entity"))
     coordinate_step = _micro_step(_single_family_metadata("coordinate"))
     schedule = SimpleNamespace(
-        resolved_max_steps=2,
+        resolved_max_steps=1,
         runtime_batch=SimpleNamespace(
             world_size=1,
             effective_batch_size=2,
@@ -114,27 +119,43 @@ def test_joint_stream_keeps_both_objective_families_in_every_planned_step() -> N
         )
     )
 
-    assert len(stream) == 4
-    for offset in (0, 2):
-        window = stream[offset : offset + 2]
-        assert any(
-            item.calibration_metadata.entity_transition_eligible for item in window
-        )
-        assert any(
-            item.calibration_metadata.coordinate_boundary_eligible for item in window
-        )
+    assert stream == (entity_step, coordinate_step)
 
 
-def test_joint_stream_rejects_one_slot_without_a_dual_eligible_event() -> None:
+def test_joint_stream_allows_visible_single_family_windows_without_reweighting() -> (
+    None
+):
     schedule = SimpleNamespace(
-        resolved_max_steps=1,
+        resolved_max_steps=2,
         runtime_batch=SimpleNamespace(
             world_size=1,
             effective_batch_size=1,
             resolved_grad_accum_steps=1,
         ),
     )
-    with pytest.raises(RuntimeContractError, match="effective batch cannot contain"):
+    entity_step = _micro_step(_single_family_metadata("entity"))
+    coordinate_step = _micro_step(_single_family_metadata("coordinate"))
+    assert tuple(
+        build_calibration_micro_step_stream(
+            (entity_step, coordinate_step),
+            schedule,
+            profile="joint",
+            rank=0,
+            world_size=1,
+        )
+    ) == (entity_step, coordinate_step)
+
+
+def test_joint_stream_rejects_schedule_that_duplicates_frozen_events() -> None:
+    schedule = SimpleNamespace(
+        resolved_max_steps=2,
+        runtime_batch=SimpleNamespace(
+            world_size=1,
+            effective_batch_size=2,
+            resolved_grad_accum_steps=2,
+        ),
+    )
+    with pytest.raises(RuntimeContractError) as exc_info:
         tuple(
             build_calibration_micro_step_stream(
                 (
@@ -147,6 +168,33 @@ def test_joint_stream_rejects_one_slot_without_a_dual_eligible_event() -> None:
                 world_size=1,
             )
         )
+    assert exc_info.value.code == "training.rollout_calibration_frozen_exposure"
+
+
+def test_single_objective_gate_selects_only_that_objective_sites() -> None:
+    candidate = SimpleNamespace(
+        entity_eligible=True,
+        geometry_eligible=True,
+        harmful_kind=None,
+        owner_resolution_candidate_interval=(0, 1),
+        coordinate_decision=SimpleNamespace(candidate_token_offset=2),
+        selected_sites=(
+            SimpleNamespace(candidate_token_offset=0),
+            SimpleNamespace(candidate_token_offset=2),
+        ),
+    )
+    assert [
+        site.candidate_token_offset
+        for site in rollout_training_module._active_selected_sites(
+            candidate, "transition_only"
+        )
+    ] == [0]
+    assert [
+        site.candidate_token_offset
+        for site in rollout_training_module._active_selected_sites(
+            candidate, "coordinate_boundary_only"
+        )
+    ] == [2]
 
 
 def test_pipeline_validates_actual_warm_start_payloads_before_loading_records(
@@ -249,6 +297,60 @@ def test_pipeline_validates_actual_warm_start_payloads_before_loading_records(
     )
 
 
+def test_source_step_zero_surface_parity_requires_exact_copy_and_frozen_delta() -> None:
+    receipt = SimpleNamespace(
+        warm_start={
+            "initialized_target_tensors": [],
+            "ignored_source_tensors": [],
+            "post_copy_equality": "pass",
+        }
+    )
+    special = SimpleNamespace(
+        shared_embed_delta=torch.nn.Parameter(torch.zeros(1), requires_grad=False),
+        receipt=SimpleNamespace(delta_parameter_names=("shared_embed_delta",)),
+    )
+    parity = pipeline_module._validate_calibration_source_step_zero_parity(
+        receipt, special_token_result=special
+    )
+    assert parity["status"] == "pass"
+    assert parity["real_fixture_logit_parity"]["status"] == "not_run"
+
+    receipt.warm_start["initialized_target_tensors"] = ["new.target"]
+    with pytest.raises(RuntimeContractError) as exc_info:
+        pipeline_module._validate_calibration_source_step_zero_parity(
+            receipt, special_token_result=special
+        )
+    assert exc_info.value.code == "training.rollout_calibration_source_surface_mismatch"
+
+
+def test_calibration_trainable_surface_rejects_embedding_or_nonlanguage_ownership() -> (
+    None
+):
+    special = SimpleNamespace(
+        shared_embed_delta=torch.nn.Parameter(torch.zeros(1), requires_grad=False)
+    )
+    valid = SimpleNamespace(
+        optimizer_groups=({"group_name": "adapter.language"},),
+        trainable_towers=("adapter.language",),
+    )
+    pipeline_module._validate_calibration_trainable_surface(
+        valid, special_token_result=special
+    )
+
+    invalid = SimpleNamespace(
+        optimizer_groups=(
+            {"group_name": "adapter.language"},
+            {"group_name": "token_embeddings"},
+        ),
+        trainable_towers=("adapter.language", "token_embeddings"),
+    )
+    with pytest.raises(RuntimeContractError) as exc_info:
+        pipeline_module._validate_calibration_trainable_surface(
+            invalid, special_token_result=special
+        )
+    assert exc_info.value.code == "training.rollout_calibration_optimizer_surface"
+
+
 def _micro_step(metadata: CalibrationEventMetadata) -> SupervisedMicroStep:
     return SupervisedMicroStep(
         pack=SimpleNamespace(pack_index=0, input_ids=(9, 2, 9, 3, 9)),
@@ -280,11 +382,21 @@ def _joint_metadata() -> CalibrationEventMetadata:
     )
     coordinate = CoordinateDecision(
         owner_id="owner-b",
-        coordinate="x1",
-        tolerance_axis="horizontal",
-        candidate_token_offset=0,
-        actual_wrong_coordinate_value=1,
-        acceptable_coordinate_values=(0,),
+        observations=(
+            CoordinateBoundaryObservation(
+                coordinate="x1",
+                tolerance_axis="horizontal",
+                candidate_token_offset=0,
+                actual_coordinate_value=1,
+                acceptable_coordinate_values=(0,),
+                review_provenance=ReviewProvenance(
+                    source="synthetic_unit_test",
+                    reviewer="synthetic",
+                    confidence="fixture_only",
+                    comment="not scientific evidence",
+                ),
+            ),
+        ),
     )
     return CalibrationEventMetadata(
         event_id="joint-event",

@@ -511,6 +511,19 @@ class TrainConfig(StrictConfigModel):
                 "training.mode=rollout_calibration requires "
                 "adapter.seed_mode=warm_start_expand_dora"
             )
+        if self.adapter.target_towers != ("language",):
+            raise ValueError(
+                "training.mode=rollout_calibration requires language-only DoRA targets"
+            )
+        adapter_groups = self.optimizer.groups.adapters
+        if adapter_groups.language is None:
+            raise ValueError(
+                "training.mode=rollout_calibration requires a language DoRA optimizer group"
+            )
+        if adapter_groups.vision is not None or adapter_groups.aligner is not None:
+            raise ValueError(
+                "training.mode=rollout_calibration optimizer may own language DoRA only"
+            )
         if (
             self.eval.forward.every_fraction is not None
             or self.eval.forward.steps

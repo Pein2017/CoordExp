@@ -191,6 +191,61 @@ def test_rollout_calibration_binding_is_compact_immutable_and_adds_no_file(
     assert exc_info.value.code == "run_writer.rollout_calibration_already_bound"
 
 
+def test_rollout_calibration_qualification_persists_surface_gradient_and_pending_smokes(
+    tmp_path: Path,
+) -> None:
+    writer = _writer(tmp_path)
+    writer.bind_rollout_calibration(
+        bank_identity="bank-v1",
+        bank_fingerprint="bank-v1",
+        source_composite_fingerprint="source-v1",
+        profile="joint",
+        records_sha256="records-v1",
+        record_count=2,
+        split_counts={"train": 2},
+        event_counts={"entity_transition": 1, "coordinate_boundary": 1},
+        rejection_reasons={},
+    )
+    writer.bind_rollout_calibration_qualification(
+        source_checkpoint={"adapter_fingerprint": "a" * 64},
+        source_step_zero_parity={"status": "pass"},
+        trainable_surface={
+            "exact_surface_groups": {
+                "trainable_language_dora": {"parameter_names": ["lora_A"]},
+                "frozen_vision": {"parameter_names": ["visual.weight"]},
+                "frozen_aligner": {"parameter_names": ["visual.merger.weight"]},
+                "frozen_selected_token_delta": {
+                    "parameter_names": ["shared_embed_delta"]
+                },
+            }
+        },
+    )
+    qualification = writer.read_run()["rollout_calibration"]["qualification"]
+    assert qualification["post_backward_gradient"]["status"] == "not_run"
+    assert qualification["target_margins"]["post_update"] == {}
+    assert (
+        qualification["checkpoint_reload_and_ordinary_inference"]["status"] == "not_run"
+    )
+
+    writer.record_rollout_calibration_step_evidence(
+        planned_step_id=1,
+        post_backward_gradient={
+            "status": "pass",
+            "finite_nonzero_gradient": True,
+            "grad_norm": 0.25,
+        },
+        pre_update_margins={"entity": -0.5, "coordinate": -0.25},
+        optimizer_update_status="applied",
+    )
+    qualification = writer.read_run()["rollout_calibration"]["qualification"]
+    assert qualification["post_backward_gradient"]["grad_norm"] == 0.25
+    assert (
+        qualification["post_backward_gradient"]["optimizer_update_status"] == "applied"
+    )
+    assert qualification["target_margins"]["status"] == "partial"
+    assert qualification["target_margins"]["post_update"] == {}
+
+
 @pytest.mark.parametrize(
     ("split_counts", "event_counts"),
     [

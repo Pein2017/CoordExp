@@ -262,6 +262,85 @@ class RunWriter:
         state["rollout_calibration"] = binding
         self._write_json_atomic(self.run_path, state)
 
+    def bind_rollout_calibration_qualification(
+        self,
+        *,
+        source_checkpoint: Mapping[str, Any],
+        source_step_zero_parity: Mapping[str, Any],
+        trainable_surface: Mapping[str, Any],
+    ) -> None:
+        state = self.read_run()
+        calibration = state.get("rollout_calibration")
+        if not isinstance(calibration, dict):
+            raise ArtifactContractError(
+                "rollout-calibration identity must be bound before qualification evidence",
+                code="run_writer.rollout_calibration_binding_missing",
+            )
+        if "qualification" in calibration:
+            raise ArtifactContractError(
+                "rollout-calibration qualification binding is immutable",
+                code="run_writer.rollout_calibration_qualification_already_bound",
+            )
+        calibration["qualification"] = {
+            "source_checkpoint": dict(source_checkpoint),
+            "source_step_zero_parity": dict(source_step_zero_parity),
+            "trainable_surface": dict(trainable_surface),
+            "post_backward_gradient": {
+                "status": "not_run",
+                "reason": "no_completed_calibration_backward",
+            },
+            "target_margins": {
+                "status": "not_run",
+                "pre_update": {},
+                "post_update": {},
+                "reason": "shared_real_smoke_fixture_not_available",
+            },
+            "checkpoint_reload_and_ordinary_inference": {
+                "status": "not_run",
+                "reason": "shared_real_smoke_fixture_not_available",
+            },
+        }
+        state["rollout_calibration"] = calibration
+        self._write_json_atomic(self.run_path, state)
+
+    def record_rollout_calibration_step_evidence(
+        self,
+        *,
+        planned_step_id: int,
+        post_backward_gradient: Mapping[str, Any],
+        pre_update_margins: Mapping[str, float],
+        optimizer_update_status: str,
+    ) -> None:
+        state = self.read_run()
+        calibration = state.get("rollout_calibration")
+        qualification = (
+            calibration.get("qualification") if isinstance(calibration, dict) else None
+        )
+        if not isinstance(qualification, dict):
+            raise ArtifactContractError(
+                "rollout-calibration qualification must be bound before step evidence",
+                code="run_writer.rollout_calibration_qualification_missing",
+            )
+        qualification["post_backward_gradient"] = {
+            **dict(post_backward_gradient),
+            "planned_step_id": _normalize_binding_count(
+                planned_step_id, field="planned_step_id"
+            ),
+            "optimizer_update_status": str(optimizer_update_status),
+        }
+        qualification["target_margins"] = {
+            "status": "partial",
+            "pre_update": {
+                str(name): float(value)
+                for name, value in sorted(pre_update_margins.items())
+            },
+            "post_update": {},
+            "reason": "post_update_margin_requires_shared_smoke_replay",
+        }
+        calibration["qualification"] = qualification
+        state["rollout_calibration"] = calibration
+        self._write_json_atomic(self.run_path, state)
+
     def finalize(
         self,
         *,

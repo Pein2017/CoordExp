@@ -17,19 +17,21 @@ from src.rollout_calibration import CheckpointIdentity
 
 
 IMAGE_TOKEN_ID = 151655
+SYNTHETIC_SOURCE_CHECKPOINT = {
+    "adapter_fingerprint": "1" * 64,
+    "embedding_delta_fingerprint": "2" * 64,
+    "base_config_sha256": "3" * 64,
+    "tokenizer_sha256": "4" * 64,
+    "token_identity_sha256": "5" * 64,
+    "special_token_identity_sha256": "6" * 64,
+    "processor_identity_sha256": "7" * 64,
+}
+SYNTHETIC_SOURCE_CHECKPOINT_ID = sha256_json(SYNTHETIC_SOURCE_CHECKPOINT)
 
 
 @pytest.fixture
 def checkpoint_identity() -> CheckpointIdentity:
-    return CheckpointIdentity(
-        adapter_fingerprint="1" * 64,
-        embedding_delta_fingerprint="2" * 64,
-        base_config_sha256="3" * 64,
-        tokenizer_sha256="4" * 64,
-        token_identity_sha256="5" * 64,
-        special_token_identity_sha256="6" * 64,
-        processor_identity_sha256="7" * 64,
-    )
+    return CheckpointIdentity(**SYNTHETIC_SOURCE_CHECKPOINT)
 
 
 @pytest.fixture
@@ -128,14 +130,32 @@ def synthetic_inputs(
                 "candidate_id": "positive-a",
                 "token_ids": positive_ids,
                 "token_ids_sha256": token_ids_sha256(positive_ids),
-                "generation_provenance": {"mode": "sample", "seed": 11},
+                "generation_provenance": {
+                    "mode": "sampled",
+                    "seed": 11,
+                    "temperature": 0.2,
+                    "top_p": 0.95,
+                    "repetition_penalty": 1.0,
+                    "checkpoint_id": SYNTHETIC_SOURCE_CHECKPOINT_ID,
+                    "prompt_token_ids_sha256": token_ids_sha256(prompt_ids),
+                    "prefix_token_ids_sha256": token_ids_sha256(prefix_ids),
+                },
                 "evidence_text": "optional evidence that is never retokenized",
             },
             {
                 "candidate_id": "harmful-a",
                 "token_ids": harmful_ids,
                 "token_ids_sha256": token_ids_sha256(harmful_ids),
-                "generation_provenance": {"mode": "greedy", "seed": None},
+                "generation_provenance": {
+                    "mode": "greedy",
+                    "seed": 0,
+                    "temperature": 0.0,
+                    "top_p": 1.0,
+                    "repetition_penalty": 1.0,
+                    "checkpoint_id": SYNTHETIC_SOURCE_CHECKPOINT_ID,
+                    "prompt_token_ids_sha256": token_ids_sha256(prompt_ids),
+                    "prefix_token_ids_sha256": token_ids_sha256(prefix_ids),
+                },
                 "evidence_text": None,
             },
         ],
@@ -155,6 +175,29 @@ def synthetic_inputs(
                 "reviewer": "synthetic",
                 "review_confidence": "fixture_only",
                 "comment": "not scientific evidence",
+            },
+            {
+                "entity_id": "entity-covered",
+                "category": "person",
+                "entity_trusted": True,
+                "geometry_trusted": True,
+                "reference_bbox": [10, 10, 90, 90],
+                "review_source": "synthetic_unit_test",
+                "reviewer": "synthetic",
+                "review_confidence": "fixture_only",
+                "comment": "prefix owner only",
+            },
+        ],
+        "prefix_covered_owner_proofs": [
+            {
+                "prefix_object_row_index": 0,
+                "owner_id": "entity-covered",
+                "review_provenance": {
+                    "source": "synthetic_unit_test",
+                    "reviewer": "synthetic",
+                    "confidence": "fixture_only",
+                    "comment": "not scientific evidence",
+                },
             }
         ],
         "entity_transition_eligible": True,
@@ -173,11 +216,21 @@ def synthetic_inputs(
                 "owner_resolution_interval": [0, 1],
                 "coordinate_decision": {
                     "owner_id": "entity-a",
-                    "coordinate": "x1",
-                    "tolerance_axis": "horizontal",
-                    "candidate_token_offset": 1,
-                    "actual_wrong_coordinate_value": 500,
-                    "acceptable_coordinate_values": [490, 491],
+                    "observations": [
+                        {
+                            "coordinate": "x1",
+                            "tolerance_axis": "horizontal",
+                            "candidate_token_offset": 1,
+                            "actual_coordinate_value": 500,
+                            "acceptable_coordinate_values": [490, 491],
+                            "review_provenance": {
+                                "source": "synthetic_unit_test",
+                                "reviewer": "synthetic",
+                                "confidence": "fixture_only",
+                                "comment": "not scientific evidence",
+                            },
+                        }
+                    ],
                 },
                 "selected_sites": [
                     {"candidate_token_offset": 0, "intended_token_type": "desc_text"},
@@ -188,7 +241,7 @@ def synthetic_inputs(
                 "candidate_id": "harmful-a",
                 "role": "harmful",
                 "harmful_kind": "duplicate",
-                "physical_owner_id": "entity-a",
+                "physical_owner_id": "entity-covered",
                 "coverage_status": "covered",
                 "entity_review_status": "trusted",
                 "geometry_review_status": "unknown",

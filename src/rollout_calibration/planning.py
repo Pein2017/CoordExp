@@ -95,7 +95,7 @@ def plan_calibration_micro_steps(
     components: Any,
     processor_config: ProcessorConfig,
     global_max_length: int,
-    image_token_id: int | None = None,
+    image_token_id: int,
 ) -> tuple[CalibrationPlannedMicroStep, ...]:
     """Build one atomic pack/micro-step per event.
 
@@ -113,6 +113,7 @@ def plan_calibration_micro_steps(
                 components=components,
                 processor_config=processor_config,
                 global_max_length=global_max_length,
+                image_token_id=image_token_id,
             )
             for candidate in event.candidates
         )
