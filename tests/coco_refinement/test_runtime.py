@@ -722,6 +722,65 @@ def test_resume_source_requires_exact_terminal_publication_receipt(
         inspect_source_contracts_for_resume(contracts, runtime_root)
 
 
+def test_resume_accepts_published_target_before_newer_ordinary_commit(
+    tmp_path: Path,
+) -> None:
+    contracts = _dual_contracts(tmp_path)
+    runtime_root = tmp_path / "outputs/coco_refinement/gate-a"
+    workspace = bootstrap_workspace(
+        tmp_path,
+        runtime_root=runtime_root,
+        source_contracts=contracts,
+    )
+    split = workspace.splits["val"]
+
+    def advance_generation(generation: int, bbox: list[int]) -> None:
+        working_path = split.store.working_path
+        manifest_path = split.store.manifest_path
+        journal_path = split.store.journal_path
+        row = json.loads(working_path.read_text(encoding="utf-8"))
+        row["objects"][0]["bbox_2d"] = bbox
+        working_path.write_text(canonical_json(row) + "\n", encoding="utf-8")
+        working_sha256 = sha256_file(working_path)
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["generation"] = generation
+        manifest["working_sha256"] = working_sha256
+        manifest_path.write_text(
+            canonical_json(manifest) + "\n", encoding="utf-8"
+        )
+        with journal_path.open("a", encoding="utf-8") as journal:
+            journal.write(
+                canonical_json(
+                    {
+                        "batch_id": f"ordinary-{generation}",
+                        "error": None,
+                        "generation": generation,
+                        "kind": "batch_terminal",
+                        "status": "succeeded",
+                        "working_sha256": working_sha256,
+                    }
+                )
+                + "\n"
+            )
+
+    advance_generation(1, [20, 30, 310, 410])
+    published = CommittedGenerationPublisher(
+        repository_root=tmp_path,
+        runtime_root=runtime_root,
+        split="val",
+        token_budget_validator=_PublisherTokenValidator(),
+    ).publish()
+    advance_generation(2, [30, 40, 320, 420])
+
+    inspected = inspect_source_contracts_for_resume(contracts, runtime_root)
+
+    assert inspected[1].authority == "published_iteration"
+    assert published.generation == 1
+    assert json.loads(
+        (runtime_root / "val/project.json").read_text(encoding="utf-8")
+    )["generation"] == 2
+
+
 def test_receipt_store_factory_runs_only_after_writer_lock(
     tmp_path: Path,
 ) -> None:

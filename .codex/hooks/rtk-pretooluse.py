@@ -16,6 +16,15 @@ PYTHON_NAMES = {"python", "python3", "python3.10", "python3.11", "python3.12"}
 MACHINE_OUTPUT_FLAGS = {"--json", "-json", "--porcelain", "-z"}
 SHELL_NAMES = {"bash", "dash", "sh", "zsh"}
 SUPPORTED_TOOL_NAMES = {"Bash", "shell", "exec_command", "functions.exec_command"}
+CONDA_RUN_FLAGS = {
+    "--debug-wrapper-scripts",
+    "--dev",
+    "--live-stream",
+    "--no-capture-output",
+    "-v",
+    "--verbose",
+}
+CONDA_RUN_OPTIONS_WITH_VALUES = {"-n", "--name", "-p", "--prefix", "--cwd"}
 NOISY_COMMANDS = {
     "bun",
     "cargo",
@@ -108,6 +117,20 @@ def rewrite_command(command: str) -> str | None:
             return None
         return shlex.join([*prefix, rewritten_inner])
 
+    conda_wrapped = unwrap_conda_run(tokens)
+    if conda_wrapped is not None:
+        prefix, inner = conda_wrapped
+        rewritten_inner = rewrite_simple_command(shlex.join(inner))
+        if rewritten_inner is None:
+            return None
+        rewritten_inner_tokens = split_command(rewritten_inner)
+        if not rewritten_inner_tokens:
+            return None
+        # Unlike ``bash -c``, conda receives the executable and its arguments
+        # as separate argv entries.  Do not quote the rewritten command as one
+        # argument, or conda would look for an executable named ``rtk pytest``.
+        return shlex.join([*prefix, *rewritten_inner_tokens])
+
     return rewrite_simple_command(command)
 
 
@@ -195,6 +218,50 @@ def unwrap_shell(tokens: list[str]) -> tuple[list[str], str] | None:
             idx += 1
             continue
         break
+    return None
+
+
+def unwrap_conda_run(tokens: list[str]) -> tuple[list[str], list[str]] | None:
+    """Find the executable inside a ``conda run`` invocation.
+
+    RTK must be inserted after the conda environment-selection options so the
+    wrapped command still resolves tools and plugins from that environment.
+    Unknown options deliberately fail open instead of risking a misplaced
+    insertion.
+    """
+
+    candidate_index = find_candidate_index(tokens)
+    if candidate_index is None:
+        return None
+    if Path(tokens[candidate_index]).name != "conda":
+        return None
+    if candidate_index + 1 >= len(tokens) or tokens[candidate_index + 1] != "run":
+        return None
+
+    idx = candidate_index + 2
+    while idx < len(tokens):
+        token = tokens[idx]
+        if token == "--":
+            idx += 1
+            break
+        if token in CONDA_RUN_FLAGS:
+            idx += 1
+            continue
+        if token in CONDA_RUN_OPTIONS_WITH_VALUES:
+            if idx + 1 >= len(tokens):
+                return None
+            idx += 2
+            continue
+        if any(
+            token.startswith(f"{option}=")
+            for option in CONDA_RUN_OPTIONS_WITH_VALUES
+            if option.startswith("--")
+        ):
+            idx += 1
+            continue
+        if token.startswith("-"):
+            return None
+        return tokens[:idx], tokens[idx:]
     return None
 
 
