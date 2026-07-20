@@ -216,6 +216,14 @@ and all unrelated metadata remain byte-for-byte equivalent; missing regions
 are never recreated. Failure preserves every Draft and exposes a retry/status
 receipt. Startup runs existing store reconciliation before accepting writes.
 
+The browser's post-Commit authority rebind compares objects by stable
+`region_key`, not array position: the working row may normalize the same set to
+training top-left order and may fill previously absent `coco_ann_id` values.
+Every other semantic or pre-existing identity change remains an error. Such an
+error is latched after one attempt and requires explicit reload rather than
+being retried by every one-second Commit/Focus status poll, so a failure cannot
+repeatedly rebuild or disable the canvas.
+
 Every terminal-success batch, whether ordinary or Focus-scoped, then enters
 the same background training-publication stage. The validated publisher
 transactionally overwrites that split's derived max_len12000 norm/coord pair;

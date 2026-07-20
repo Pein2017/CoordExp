@@ -37,6 +37,7 @@
 - [x] 3.12 Add tested edit-equivalent right-panel object activation that enters Select mode and accepts Delete/Backspace from inventory focus while preserving ordinary move/resize/autosave behavior.
 - [x] 3.13 Add tested cursor-anchored local magnification with ordinary raster resampling, fit-relative zoom status, Space/middle temporary pan, 15-percent selected-object focus, canvas-focus reflow, and one natural/client contain-transform authority that preserves norm1000 output across zoom history.
 - [x] 3.14 Add tested rendered-image wheel routing: Command/Meta zoom, plain vertical pan, Shift horizontal pan with browser delta normalization, letterbox/outside page pass-through, and fit/boundary handoff without Draft mutation.
+- [x] 3.15 Accept post-Commit canonical object reordering through stable-key semantic comparison, preserve identity-only enrichment and Undo, and latch genuine rebind failures so status polling cannot repeatedly rebuild the canvas.
 
 ## 4. Real ROI Assistance Gate
 

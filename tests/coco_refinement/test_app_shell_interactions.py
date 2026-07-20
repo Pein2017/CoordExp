@@ -124,6 +124,14 @@ def test_focus_queue_shell_separates_navigation_commit_and_publication() -> None
     assert "Publish: ${focusState(queue.publication)}" in app_source
 
 
+def test_failed_commit_rebind_is_latched_instead_of_retried_by_every_poll() -> None:
+    app_source = (STATIC_ROOT / "app.js").read_text()
+
+    assert app_source.count("if (state.commitRebindError) return;") == 2
+    assert "if (state.commitRebindError) return Promise.reject(state.commitRebindError);" in app_source
+    assert ": state.commitRebindError ? 'Authority refresh failed'" in app_source
+
+
 def test_api_client_exposes_csrf_protected_delete() -> None:
     source = (STATIC_ROOT / "api-client.js").read_text()
 

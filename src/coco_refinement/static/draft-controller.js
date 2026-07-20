@@ -407,9 +407,21 @@ function clone(value) {
 
 function sameSemanticsWithAuthorityIdentityEnrichment(left, right) {
   if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
-  return left.every((value, index) => {
+  const authoritativeByRegion = new Map();
+  for (const value of right) {
+    if (typeof value?.region_key !== 'string' || authoritativeByRegion.has(value.region_key)) {
+      return false;
+    }
+    authoritativeByRegion.set(value.region_key, value);
+  }
+  const currentRegions = new Set();
+  return left.every(value => {
+    if (typeof value?.region_key !== 'string' || currentRegions.has(value.region_key)) return false;
+    currentRegions.add(value.region_key);
     const current = clone(value);
-    const authoritative = clone(right[index]);
+    const matching = authoritativeByRegion.get(current.region_key);
+    if (!matching) return false;
+    const authoritative = clone(matching);
     const currentId = Number.isInteger(current.coco_ann_id) && current.coco_ann_id !== 0
       ? current.coco_ann_id : null;
     const authoritativeId = Number.isInteger(authoritative.coco_ann_id)

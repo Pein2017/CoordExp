@@ -235,8 +235,12 @@ function renderDraftState(snapshot) {
     renderObjectInventory([]);
   }
   const visiblePhase = state.interactionBusy ? 'Saving'
+    : state.commitRebindError ? 'Authority refresh failed'
     : commitRebindRequired() ? 'Refreshing authority' : snapshot.phase;
-  const tone = { Committed: 'ok', Draft: 'pending', Saving: 'pending', Conflict: 'error', Error: 'error' }[visiblePhase] || 'pending';
+  const tone = {
+    Committed: 'ok', Draft: 'pending', Saving: 'pending', Conflict: 'error', Error: 'error',
+    'Authority refresh failed': 'error',
+  }[visiblePhase] || 'pending';
   $('save-status').textContent = visiblePhase === 'Draft' ? 'Draft saved · Commit pending' : visiblePhase;
   $('save-status').dataset.tone = tone;
   $('save-retry').hidden = snapshot.phase !== 'Error';
@@ -360,6 +364,7 @@ function scheduleFocusRebind(queue) {
   const current = controller.getState().binding?.generation;
   if (!Number.isInteger(current) || generation <= current) return;
   state.commitRebindTarget = Math.max(state.commitRebindTarget ?? 0, generation);
+  if (state.commitRebindError) return;
   void ensureCurrentCommitBinding().catch(error => {
     setNotice(error.message || 'Focus Commit succeeded, but task authority refresh failed.', 'error');
   });
@@ -388,6 +393,7 @@ function scheduleCommitRebind(snapshot) {
   const current = controller.getState().binding?.generation;
   if (!Number.isInteger(current) || generation <= current) return;
   state.commitRebindTarget = Math.max(state.commitRebindTarget ?? 0, generation);
+  if (state.commitRebindError) return;
   void ensureCurrentCommitBinding().catch(error => {
     setNotice(error.message || 'Commit succeeded, but task authority refresh failed.', 'error');
   });
@@ -395,6 +401,7 @@ function scheduleCommitRebind(snapshot) {
 
 function ensureCurrentCommitBinding() {
   if (!commitRebindRequired()) return Promise.resolve(controller.getState());
+  if (state.commitRebindError) return Promise.reject(state.commitRebindError);
   if (state.commitRebindPromise) return state.commitRebindPromise;
   const split = state.split;
   const taskId = state.task.task_id;

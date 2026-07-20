@@ -350,15 +350,23 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 0));
   await controller.flush();
   const rebasedCurrent = controller.getState().objects.map(object => (
     object.region_key === 'local:new' ? {{ ...object, coco_ann_id: -9101 }} : object
-  ));
+  )).reverse();
   controller.rebind({{
     ...task(rebasedCurrent, revision), generation: 1, base_row_hash: 'c'.repeat(64),
   }});
   assert.equal(controller.getState().canUndo, true);
-  assert.equal(controller.getState().objects[2].coco_ann_id, -9101);
+  assert.deepEqual(
+    controller.getState().objects.map(object => object.region_key),
+    ['local:new', 'train:coco:202', 'train:coco:101'],
+  );
+  assert.equal(
+    controller.getState().objects.find(object => object.region_key === 'local:new').coco_ann_id,
+    -9101,
+  );
   await controller.undo();
-  assert.deepEqual(controller.getState().objects[2].bbox_2d, local.bbox_2d);
-  assert.equal(controller.getState().objects[2].coco_ann_id, -9101);
+  const undoneLocal = controller.getState().objects.find(object => object.region_key === 'local:new');
+  assert.deepEqual(undoneLocal.bbox_2d, local.bbox_2d);
+  assert.equal(undoneLocal.coco_ann_id, -9101);
   assert.equal(bodies.at(-1).expected_generation, 1);
   assert.equal(bodies.at(-1).expected_base_row_hash, 'c'.repeat(64));
   const changedNegativeId = controller.getState().objects.map(object => (

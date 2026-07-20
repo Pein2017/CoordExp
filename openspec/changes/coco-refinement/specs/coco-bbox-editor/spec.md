@@ -231,6 +231,14 @@ SHALL NOT be displayed as committed dataset success.
 - **WHEN** a captured task was edited after enqueue and its batch succeeds
 - **THEN** the UI shows the committed generation plus that task's newer pending Draft without replacing it
 
+#### Scenario: Commit normalizes authoritative object order
+- **WHEN** a successful Commit returns the same stable-key object semantics in canonical training order and enriches only previously absent object IDs
+- **THEN** the editor rebinds once without treating order normalization as a semantic conflict or repeatedly rebuilding the canvas
+
+#### Scenario: Commit rebind genuinely conflicts
+- **WHEN** the returned authority changes object membership, geometry, category, provenance, or an existing object ID outside the accepted Commit contract
+- **THEN** the editor latches one recoverable authority-refresh error, stops automatic polling retries for that task, and offers explicit reload without flashing the canvas
+
 ### Requirement: Focus Queue navigation and status
 When an active Focus Queue exists, the editor SHALL expose a Focus mode whose
 task list and Next/Previous controls follow exact queue order. It SHALL show
