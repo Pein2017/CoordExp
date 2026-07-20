@@ -85,6 +85,23 @@ def test_object_inventory_activation_enters_select_and_supports_keyboard_delete(
     )
 
 
+def test_local_magnification_shell_exposes_zoom_focus_and_canvas_focus() -> None:
+    index = (STATIC_ROOT / "index.html").read_text()
+    css = (STATIC_ROOT / "app.css").read_text()
+    app_source = (STATIC_ROOT / "app.js").read_text()
+
+    assert 'id="zoom-level"' in index
+    assert 'id="zoom-selection"' in index
+    assert 'id="canvas-focus"' in index
+    assert "onViewChange: renderViewState" in app_source
+    assert "editor.focusSelected()" in app_source
+    assert "editor.setTemporaryPan(true)" in app_source
+    assert "event.code === 'Space'" in app_source
+    assert "event.key.toLowerCase() === 'f'" in app_source
+    assert "event.key === '0'" in app_source
+    assert ".workspace.is-canvas-focused" in css
+
+
 def test_focus_queue_shell_separates_navigation_commit_and_publication() -> None:
     index = (STATIC_ROOT / "index.html").read_text()
     css = (STATIC_ROOT / "app.css").read_text()

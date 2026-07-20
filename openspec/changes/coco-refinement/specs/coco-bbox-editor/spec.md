@@ -14,6 +14,34 @@ from canonical norm1000 objects.
 - **WHEN** a dense task is opened
 - **THEN** every object remains individually selectable, visible, and addressable without changing its saved order or semantics
 
+### Requirement: Natural-coordinate local magnification
+The editor SHALL provide cursor-anchored local zoom, temporary pan,
+selected-object focus, fit/reset, a visible fit-relative zoom level, and a
+canvas-focus layout. Every viewport operation SHALL remain presentation-only.
+Screen interaction SHALL be inverted through the aspect-preserving SVG contain
+transform into original natural-image pixels before the existing server
+projection quantizes any completed bbox to norm1000.
+
+#### Scenario: Operator zooms at a small object
+- **WHEN** wheel or trackpad input zooms while the pointer is over the image
+- **THEN** the same natural-image point remains under the pointer whenever image bounds permit, the view otherwise clamps inside the original image, and no Draft mutation occurs
+
+#### Scenario: Operator temporarily pans
+- **WHEN** the operator drags with Space plus the primary button or with the middle button while Select or Draw mode is active
+- **THEN** the natural-pixel view pans within image bounds without changing the persistent editor mode, selection, object semantics, or Draft state
+
+#### Scenario: Selected object is focused
+- **WHEN** the operator invokes selected-object focus for a current bbox
+- **THEN** the viewport fits that bbox with 15 percent per-side target padding, preserves the natural image aspect ratio, clamps at image edges, and keeps the object selected and editable
+
+#### Scenario: Bbox is edited under magnification and letterboxing
+- **WHEN** the editor is zoomed, panned, or reflowed and the operator creates, moves, or resizes a bbox
+- **THEN** the contain transform including letterbox offsets is inverted to natural pixels and the ordinary server projection returns the same canonical norm1000 geometry independent of display size or zoom history
+
+#### Scenario: Canvas-focus layout is toggled
+- **WHEN** the operator hides or restores the task and details side panels
+- **THEN** the canvas reflows and refreshes screen-space affordances while natural view, selection, Draft hash, and exported objects remain unchanged
+
 ### Requirement: COCO-80 bbox CRUD
 The editor SHALL create, select, move, resize, relabel, and delete axis-aligned
 bboxes. Every saved object SHALL use strict non-degenerate norm1000 `xyxy`, one

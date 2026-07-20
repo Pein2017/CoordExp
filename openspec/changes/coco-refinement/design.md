@@ -266,6 +266,27 @@ presentation-only horizontal and vertical guides through the pointer while it
 is inside the natural image, including during the drag. Guides never affect
 geometry, Draft state, or exported data.
 
+Local magnification remains a presentation transform over the original image,
+never a second geometry authority. `editor-geometry` owns the testable contain
+transform between client CSS pixels and the SVG `viewBox`, including
+aspect-preserving letterbox offsets and its exact inverse. `svg-editor` owns one
+`viewBox` expressed only in natural-image pixels. Wheel or trackpad input zooms
+about the natural point under the pointer, Space+primary-drag and middle-drag
+temporarily pan without changing Select/Draw mode, and the selected-object
+focus action fits its natural rectangle with 15 percent padding while
+preserving image aspect and clamping to image bounds. The application receives
+only natural-pixel `pixelXYXY`; the existing server projection remains the sole
+norm1000 quantizer.
+
+The UI exposes the current fit-relative zoom, Fit/reset, selected-object focus,
+and a canvas-focus layout that hides both side panels without changing the
+`viewBox` or Draft. Reflow refreshes screen-space handles against the unchanged
+natural view. Magnification uses ordinary browser-native smooth raster
+resampling of the original JPEG, equivalent to a conventional resize of the
+visible natural crop. It performs no AI enhancement, creates no replacement
+image artifact, and is prohibited from annotation coordinate conversion or
+exported data.
+
 The right panel renders every current authoritative-or-Draft object in the
 same top-left order required by training: ascending `(y1, x1)`, with exact
 anchor ties retaining prior committed rank and then new-object creation order.

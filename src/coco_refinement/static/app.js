@@ -21,7 +21,7 @@ const status = $('connection-status');
 const notice = $('notice');
 const editorButtons = [
   $('mode-select'), $('mode-draw'), $('mode-pan'),
-  $('zoom-out'), $('zoom-in'), $('zoom-reset'),
+  $('zoom-out'), $('zoom-in'), $('zoom-selection'), $('zoom-reset'),
 ];
 const visibilityControls = [
   $('visibility-mode'), $('hide-selected'), $('restore-visibility'),
@@ -29,6 +29,29 @@ const visibilityControls = [
 let categoryPicker = null;
 const setNotice = (message, tone = '') => { notice.textContent = message; notice.dataset.tone = tone; };
 const setStatus = (message, tone = 'pending') => { status.textContent = message; status.dataset.tone = tone; };
+
+function renderViewState(view) {
+  if (!view) {
+    $('zoom-level').textContent = '—';
+    return;
+  }
+  if (view.fit) {
+    $('zoom-level').textContent = 'Fit';
+    return;
+  }
+  const digits = view.zoom >= 10 ? 1 : 2;
+  const value = view.zoom.toFixed(digits).replace(/\.?0+$/, '');
+  $('zoom-level').textContent = `${value}×`;
+}
+
+function toggleCanvasFocus() {
+  const workspace = document.querySelector('.workspace');
+  const active = workspace.classList.toggle('is-canvas-focused');
+  document.querySelector('.app-shell').classList.toggle('is-canvas-focused', active);
+  $('canvas-focus').setAttribute('aria-pressed', String(active));
+  $('canvas-focus').textContent = active ? 'Restore panels' : 'Focus canvas';
+  requestAnimationFrame(() => editor.refreshViewport());
+}
 
 function objectsInTrainingOrder(objects) {
   return objects
@@ -61,6 +84,7 @@ const editor = createSvgEditor({
     selectObject(regionKey, object, { editorAlreadySelected: true, scroll: true });
   },
   onMessage: ({ message, tone }) => setNotice(message, tone),
+  onViewChange: renderViewState,
 });
 controller = createDraftController({ api, onChange: snapshot => renderDraftState(snapshot) });
 commitController = createCommitController({
@@ -166,6 +190,7 @@ function selectObject(regionKey, object, { editorAlreadySelected = false, scroll
   $('visibility-mode').value = editor.getPresentationState().visibilityMode;
   $('hide-selected').disabled = !state.selectedRegion || !state.taskOpen;
   $('delete-button').disabled = !state.selectedRegion || !state.taskOpen;
+  $('zoom-selection').disabled = !state.selectedRegion || !state.taskOpen;
   if (object) {
     setActiveCategory({ id: object.category_id, name: object.category_name });
   }
@@ -220,6 +245,8 @@ function renderDraftState(snapshot) {
   editor.setDisabled(locked);
   $('category-search').disabled = locked || !state.taskOpen;
   for (const button of editorButtons) button.disabled = locked || !state.taskOpen;
+  $('zoom-selection').disabled = locked || !state.selectedRegion;
+  $('canvas-focus').disabled = !state.taskOpen;
   $('undo-button').disabled = locked || !snapshot.canUndo;
   $('delete-button').disabled = locked || !state.selectedRegion;
   for (const control of visibilityControls) control.disabled = !state.taskOpen;
@@ -400,6 +427,8 @@ function setEditorControls(enabled) {
   $('category-search').disabled = !enabled || state.interactionBusy;
   $('undo-button').disabled = !enabled || !controller.getState().canUndo;
   $('delete-button').disabled = !enabled || !state.selectedRegion;
+  $('zoom-selection').disabled = !enabled || !state.selectedRegion;
+  $('canvas-focus').disabled = !enabled;
   for (const control of visibilityControls) control.disabled = !enabled;
   $('hide-selected').disabled = !enabled || !state.selectedRegion;
 }
@@ -841,7 +870,9 @@ for (const mode of ['select', 'draw', 'pan']) {
 }
 $('zoom-in').addEventListener('click', () => editor.zoomIn());
 $('zoom-out').addEventListener('click', () => editor.zoomOut());
+$('zoom-selection').addEventListener('click', () => editor.focusSelected());
 $('zoom-reset').addEventListener('click', () => editor.reset());
+$('canvas-focus').addEventListener('click', toggleCanvasFocus);
 $('undo-button').addEventListener('click', () => { void undoLastEdit(); });
 $('delete-button').addEventListener('click', () => { void deleteSelectedRegion(); });
 $('visibility-mode').addEventListener('change', event => setVisibilityMode(event.target.value));
@@ -856,6 +887,26 @@ $('save-retry').addEventListener('click', () => navigate(retrySave));
 $('task-reload').addEventListener('click', () => navigate(reloadCurrentTask));
 document.addEventListener('keydown', event => {
   const tag = event.target instanceof Element ? event.target.tagName : '';
+  const textEntry = ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)
+    || (event.target instanceof Element && event.target.isContentEditable);
+  if (event.code === 'Space' && !textEntry && $('bbox-overlay').contains(event.target)
+      && state.taskOpen && !semanticActionLocked()) {
+    event.preventDefault();
+    editor.setTemporaryPan(true);
+    return;
+  }
+  if (!textEntry && !event.metaKey && !event.ctrlKey && !event.altKey
+      && event.key.toLowerCase() === 'f' && state.taskOpen && state.selectedRegion) {
+    event.preventDefault();
+    editor.focusSelected();
+    return;
+  }
+  if (!textEntry && !event.metaKey && !event.ctrlKey && !event.altKey
+      && event.key === '0' && state.taskOpen) {
+    event.preventDefault();
+    editor.reset();
+    return;
+  }
   const shortcutMode = modeShortcut(event);
   if (shortcutMode) {
     if (!state.taskOpen || semanticActionLocked()) return;
@@ -876,6 +927,11 @@ document.addEventListener('keydown', event => {
     void deleteSelectedRegion();
   }
 });
+document.addEventListener('keyup', event => {
+  if (event.code === 'Space') editor.setTemporaryPan(false);
+});
+window.addEventListener('blur', () => editor.setTemporaryPan(false));
+window.addEventListener('resize', () => editor.refreshViewport());
 window.addEventListener('beforeunload', event => {
   if (!controller.hasUnsavedLocal() && !state.interactionPromise && !editor.hasActiveGesture()) return;
   event.preventDefault();

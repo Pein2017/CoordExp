@@ -108,14 +108,57 @@ def test_zoom_about_anchor_pan_clamp_and_reset_vectors() -> None:
     assert value["zoomOut"] == {"x": 0, "y": 0, "width": 1200, "height": 800}
 
 
+def test_client_natural_contain_transform_round_trips_through_letterbox() -> None:
+    value = _run_node("""(() => {
+      const bounds = {left: 10, top: 20, width: 200, height: 200};
+      const viewBox = {x: 100, y: 50, width: 1200, height: 800};
+      const natural = {x: 400, y: 250};
+      const client = geometry.naturalToClientPoint(natural, bounds, viewBox);
+      return {
+        client,
+        roundTrip: geometry.clientToNaturalPoint(client, bounds, viewBox),
+        topLetterbox: geometry.clientToNaturalPoint({x: 110, y: 20}, bounds, viewBox),
+      };
+    })()""")
+
+    assert value["client"] == pytest.approx({"x": 60, "y": 86.6666666667})
+    assert value["roundTrip"] == pytest.approx({"x": 400, "y": 250})
+    assert value["topLetterbox"] == pytest.approx({"x": 700, "y": -150})
+
+
+def test_focus_viewbox_preserves_image_aspect_padding_and_edge_clamp() -> None:
+    value = _run_node("""({
+      centered: geometry.focusViewBox(
+        {x: 100, y: 100, width: 100, height: 50}, 1200, 800, 0.15, 24),
+      atEdge: geometry.focusViewBox(
+        {x: 0, y: 0, width: 20, height: 20}, 1200, 800, 0.15, 24),
+      full: geometry.focusViewBox(
+        {x: 0, y: 0, width: 1200, height: 800}, 1200, 800, 0.15, 24),
+    })""")
+
+    centered = value["centered"]
+    assert centered == pytest.approx(
+        {"x": 85, "y": 81.6666666667, "width": 130, "height": 86.6666666667}
+    )
+    assert centered["width"] / centered["height"] == pytest.approx(1200 / 800)
+    assert value["atEdge"]["x"] == 0
+    assert value["atEdge"]["y"] == 0
+    assert value["full"] == {"x": 0, "y": 0, "width": 1200, "height": 800}
+
+
 def test_invalid_geometry_fails_closed() -> None:
     value = _run_node("""(() => {
       const cases = [
         () => geometry.validateNaturalExtent(0, 10),
         () => geometry.norm1000ToNaturalRect([0, 0, 1000, 2], 10, 10),
         () => geometry.resizeRect({x: 1, y: 1, width: 2, height: 2}, 'center', 1, 1, 10, 10),
+        () => geometry.clientToNaturalPoint(
+          {x: 1, y: 1}, {left: 0, top: 0, width: 0, height: 10},
+          {x: 0, y: 0, width: 10, height: 10}),
+        () => geometry.focusViewBox(
+          {x: 1, y: 1, width: 2, height: 2}, 10, 10, -0.1),
       ];
       return cases.map(run => { try { run(); return false; } catch { return true; } });
     })()""")
 
-    assert value == [True, True, True]
+    assert value == [True, True, True, True, True]

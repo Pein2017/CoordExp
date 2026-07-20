@@ -214,9 +214,12 @@ function rectCenter(node) {
 function naturalToClient(svg, point) {
   const [x, y, width, height] = svg.getAttribute('viewBox').split(/\s+/).map(Number);
   const bounds = svg.getBoundingClientRect();
+  const scale = Math.min(bounds.width / width, bounds.height / height);
+  const offsetX = (bounds.width - width * scale) / 2;
+  const offsetY = (bounds.height - height * scale) / 2;
   return {
-    clientX: bounds.left + (point.x - x) * bounds.width / width,
-    clientY: bounds.top + (point.y - y) * bounds.height / height,
+    clientX: bounds.left + offsetX + (point.x - x) * scale,
+    clientY: bounds.top + offsetY + (point.y - y) * scale,
   };
 }
 
@@ -423,5 +426,84 @@ svg.dispatch('pointermove', {
   clientY: nw.clientY - 15 * outwardUnit,
 });
 assert.equal(svg.getAttribute('data-resize-handle'), null);
+"""
+    )
+
+
+def test_local_magnification_anchors_pointer_and_keeps_pan_presentation_only() -> None:
+    _run_node(
+        r"""
+const svg = new FakeSVGSVGElement();
+const callbacks = { gestures: [], selections: [], views: [] };
+const editor = createSvgEditor({
+  svg,
+  onGesture: detail => callbacks.gestures.push(detail),
+  onSelection: detail => callbacks.selections.push(detail),
+  onViewChange: detail => callbacks.views.push(detail),
+});
+editor.setTask({
+  image_width: 1000,
+  image_height: 500,
+  image_url: '/api/images/zoom',
+  objects: [
+    { region_key: 'tiny', bbox_2d: [100, 100, 150, 150], category_id: 1, category_name: 'person' },
+  ],
+});
+editor.setMode('draw');
+
+const anchorClient = { clientX: 60, clientY: 45 };
+const anchorBefore = { x: 250, y: 125 };
+const wheel = svg.dispatch('wheel', { ...anchorClient, deltaY: -100 });
+assert.equal(wheel.defaultPrevented, true);
+const [x, y, width, height] = svg.getAttribute('viewBox').split(/\s+/).map(Number);
+const anchorAfter = {
+  x: x + (anchorClient.clientX - svg.bounds.left) * width / svg.bounds.width,
+  y: y + (anchorClient.clientY - svg.bounds.top) * height / svg.bounds.height,
+};
+assert.deepEqual(anchorAfter, anchorBefore);
+assert.ok(callbacks.views.at(-1).zoom > 1);
+assert.equal(callbacks.views.at(-1).fit, false);
+
+const beforePan = svg.getAttribute('viewBox');
+editor.setTemporaryPan(true);
+svg.dispatch('pointerdown', { pointerId: 8, ...anchorClient });
+svg.dispatch('pointermove', { pointerId: 8, clientX: 40, clientY: 45 });
+svg.dispatch('pointerup', { pointerId: 8, clientX: 40, clientY: 45 });
+editor.setTemporaryPan(false);
+assert.notEqual(svg.getAttribute('viewBox'), beforePan);
+assert.equal(svg.dataset.mode, 'draw');
+
+editor.setSelected('tiny');
+assert.equal(editor.focusSelected(), true);
+const focused = editor.getViewState();
+assert.ok(focused.viewBox.width < 1000);
+assert.equal(focused.viewBox.width / focused.viewBox.height, 2);
+assert.equal(focused.zoom, 1000 / focused.viewBox.width);
+
+const beforeMiddlePan = svg.getAttribute('viewBox');
+svg.dispatch('pointerdown', { pointerId: 9, button: 1, clientX: 110, clientY: 70 });
+svg.dispatch('pointermove', { pointerId: 9, button: 1, clientX: 90, clientY: 70 });
+svg.dispatch('pointerup', { pointerId: 9, button: 1, clientX: 90, clientY: 70 });
+assert.notEqual(svg.getAttribute('viewBox'), beforeMiddlePan);
+assert.equal(svg.dataset.mode, 'draw');
+assert.deepEqual(callbacks.gestures, []);
+assert.deepEqual(callbacks.selections, []);
+
+editor.setCategory({ id: 1, name: 'person' });
+svg.bounds = { left: 10, top: 20, width: 200, height: 200 };
+editor.refreshViewport();
+const naturalStart = { x: 120, y: 60 };
+const naturalEnd = { x: 140, y: 70 };
+const clientStart = naturalToClient(svg, naturalStart);
+const clientEnd = naturalToClient(svg, naturalEnd);
+svg.dispatch('pointerdown', { pointerId: 10, ...clientStart });
+svg.dispatch('pointermove', { pointerId: 10, ...clientEnd });
+svg.dispatch('pointerup', { pointerId: 10, ...clientEnd });
+assert.equal(callbacks.gestures.length, 1);
+assert.equal(callbacks.gestures[0].operation, 'create');
+const expected = [naturalStart.x, naturalStart.y, naturalEnd.x, naturalEnd.y];
+callbacks.gestures[0].pixelXYXY.forEach((value, index) => {
+  assert.ok(Math.abs(value - expected[index]) < 1e-9);
+});
 """
     )

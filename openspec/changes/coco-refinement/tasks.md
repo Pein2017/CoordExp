@@ -34,6 +34,7 @@
 - [x] 3.10 Add one tested foreground Gate A launcher that directly binds the fixed `localhost:53662` browser endpoint and approved runtime root without an ephemeral relay.
 - [x] 3.11 Add a tested topmost selection-affordance layer and screen-space selected-handle arbitration so corner/edge resize wins over overlapping bbox bodies while clicks outside handle zones retain ordinary object selection.
 - [x] 3.12 Add tested edit-equivalent right-panel object activation that enters Select mode and accepts Delete/Backspace from inventory focus while preserving ordinary move/resize/autosave behavior.
+- [x] 3.13 Add tested cursor-anchored local magnification with ordinary raster resampling, fit-relative zoom status, Space/middle temporary pan, 15-percent selected-object focus, canvas-focus reflow, and one natural/client contain-transform authority that preserves norm1000 output across zoom history.
 
 ## 4. Real ROI Assistance Gate
 

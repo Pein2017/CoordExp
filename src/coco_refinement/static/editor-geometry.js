@@ -34,6 +34,26 @@ function point(value, name) {
   };
 }
 
+function rectangle(value, name) {
+  if (!value || typeof value !== 'object') throw new TypeError(`${name} must be a rectangle`);
+  return {
+    x: finiteNumber(value.x, `${name}.x`),
+    y: finiteNumber(value.y, `${name}.y`),
+    width: positiveNumber(value.width, `${name}.width`),
+    height: positiveNumber(value.height, `${name}.height`),
+  };
+}
+
+function viewport(value, name = 'bounds') {
+  if (!value || typeof value !== 'object') throw new TypeError(`${name} must be viewport bounds`);
+  return {
+    left: finiteNumber(value.left, `${name}.left`),
+    top: finiteNumber(value.top, `${name}.top`),
+    width: positiveNumber(value.width, `${name}.width`),
+    height: positiveNumber(value.height, `${name}.height`),
+  };
+}
+
 export function validateNaturalExtent(width, height) {
   return {
     width: positiveNumber(width, 'width'),
@@ -42,13 +62,7 @@ export function validateNaturalExtent(width, height) {
 }
 
 function validateRect(rect, extent, name = 'rect') {
-  if (!rect || typeof rect !== 'object') throw new TypeError(`${name} must be a rectangle`);
-  const value = {
-    x: finiteNumber(rect.x, `${name}.x`),
-    y: finiteNumber(rect.y, `${name}.y`),
-    width: positiveNumber(rect.width, `${name}.width`),
-    height: positiveNumber(rect.height, `${name}.height`),
-  };
+  const value = rectangle(rect, name);
   if (
     value.x < 0 || value.y < 0 ||
     value.x + value.width > extent.width ||
@@ -134,6 +148,73 @@ export function resizeRect(
 export function resetViewBox(naturalWidth, naturalHeight) {
   const extent = validateNaturalExtent(naturalWidth, naturalHeight);
   return { x: 0, y: 0, width: extent.width, height: extent.height };
+}
+
+function containTransform(bounds, viewBox) {
+  const frame = viewport(bounds);
+  const view = rectangle(viewBox, 'viewBox');
+  const scale = Math.min(frame.width / view.width, frame.height / view.height);
+  return {
+    frame,
+    view,
+    scale,
+    offsetX: (frame.width - view.width * scale) / 2,
+    offsetY: (frame.height - view.height * scale) / 2,
+  };
+}
+
+export function clientToNaturalPoint(clientPoint, bounds, viewBox) {
+  const client = point(clientPoint, 'clientPoint');
+  const transform = containTransform(bounds, viewBox);
+  return {
+    x: transform.view.x +
+      (client.x - transform.frame.left - transform.offsetX) / transform.scale,
+    y: transform.view.y +
+      (client.y - transform.frame.top - transform.offsetY) / transform.scale,
+  };
+}
+
+export function naturalToClientPoint(naturalPoint, bounds, viewBox) {
+  const natural = point(naturalPoint, 'naturalPoint');
+  const transform = containTransform(bounds, viewBox);
+  return {
+    x: transform.frame.left + transform.offsetX +
+      (natural.x - transform.view.x) * transform.scale,
+    y: transform.frame.top + transform.offsetY +
+      (natural.y - transform.view.y) * transform.scale,
+  };
+}
+
+export function focusViewBox(
+  rect,
+  naturalWidth,
+  naturalHeight,
+  paddingRatio = 0.15,
+  minimumViewSize = 1,
+) {
+  const extent = validateNaturalExtent(naturalWidth, naturalHeight);
+  const target = validateRect(rect, extent);
+  finiteNumber(paddingRatio, 'paddingRatio');
+  if (paddingRatio < 0) throw new RangeError('paddingRatio must be zero or greater');
+  positiveNumber(minimumViewSize, 'minimumViewSize');
+  const paddedWidth = target.width * (1 + 2 * paddingRatio);
+  const paddedHeight = target.height * (1 + 2 * paddingRatio);
+  const scale = Math.min(1, Math.max(
+    paddedWidth / extent.width,
+    paddedHeight / extent.height,
+    minimumViewSize / extent.width,
+    minimumViewSize / extent.height,
+  ));
+  const width = extent.width * scale;
+  const height = extent.height * scale;
+  const centerX = target.x + target.width / 2;
+  const centerY = target.y + target.height / 2;
+  return {
+    x: clamp(centerX - width / 2, 0, extent.width - width),
+    y: clamp(centerY - height / 2, 0, extent.height - height),
+    width,
+    height,
+  };
 }
 
 export function panViewBox(viewBox, deltaX, deltaY, naturalWidth, naturalHeight) {

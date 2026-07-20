@@ -1,5 +1,8 @@
 import {
+  clientToNaturalPoint,
+  focusViewBox,
   moveRect,
+  naturalToClientPoint,
   norm1000ToNaturalRect,
   orderedClippedDragRect,
   panViewBox,
@@ -16,6 +19,8 @@ const CORNER_HANDLES = new Set(['nw', 'ne', 'se', 'sw']);
 const HANDLE_HIT_RADIUS = { corner: 14, edge: 12 };
 const HANDLE_TIE_EPSILON = 1e-6;
 const MINIMUM_BOX_SIZE = 1;
+const MINIMUM_VIEW_SIZE = 24;
+const WHEEL_ZOOM_SENSITIVITY = 0.002;
 
 function element(name, attributes = {}) {
   const node = document.createElementNS(SVG_NS, name);
@@ -86,9 +91,10 @@ export function createSvgEditor({
   onGesture = () => {},
   onSelection = () => {},
   onMessage = () => {},
+  onViewChange = () => {},
 }) {
   if (!(svg instanceof SVGSVGElement)) throw new TypeError('svg must be an SVGSVGElement');
-  if (![onGesture, onSelection, onMessage].every(callback => typeof callback === 'function')) {
+  if (![onGesture, onSelection, onMessage, onViewChange].every(callback => typeof callback === 'function')) {
     throw new TypeError('editor callbacks must be functions');
   }
 
@@ -147,6 +153,7 @@ export function createSvgEditor({
     gesture: null,
     pointerClient: null,
     hoverHandle: null,
+    temporaryPan: false,
   };
 
   function message(code, text, tone = 'info') {
@@ -164,6 +171,17 @@ export function createSvgEditor({
     renderRegions();
     renderPointerGuides();
     syncResizeAffordance(state.pointerClient);
+    onViewChange(getViewState());
+  }
+
+  function getViewState() {
+    if (!hasTask()) return null;
+    const zoom = state.width / state.viewBox.width;
+    return {
+      viewBox: copyRect(state.viewBox),
+      zoom,
+      fit: Math.abs(zoom - 1) <= 1e-9,
+    };
   }
 
   function naturalUnitsForPixels(pixels) {
@@ -182,10 +200,7 @@ export function createSvgEditor({
     }
     const bounds = svg.getBoundingClientRect();
     if (!state.viewBox || bounds.width <= 0 || bounds.height <= 0) return point;
-    return {
-      x: bounds.left + (point.x - state.viewBox.x) * bounds.width / state.viewBox.width,
-      y: bounds.top + (point.y - state.viewBox.y) * bounds.height / state.viewBox.height,
-    };
+    return naturalToClientPoint(point, bounds, state.viewBox);
   }
 
   function selectedHandleNear(event) {
@@ -410,10 +425,7 @@ export function createSvgEditor({
     }
     const bounds = svg.getBoundingClientRect();
     if (!state.viewBox || bounds.width <= 0 || bounds.height <= 0) return { x: 0, y: 0 };
-    return {
-      x: state.viewBox.x + (event.clientX - bounds.left) * state.viewBox.width / bounds.width,
-      y: state.viewBox.y + (event.clientY - bounds.top) * state.viewBox.height / bounds.height,
-    };
+    return clientToNaturalPoint({ x: event.clientX, y: event.clientY }, bounds, state.viewBox);
   }
 
   function hidePointerGuides() {
@@ -476,20 +488,15 @@ export function createSvgEditor({
   }
 
   function beginGesture(event) {
-    if (state.disabled || !hasTask() || event.button !== 0) return;
+    const temporaryPan = state.temporaryPan || event.button === 1;
+    if (state.disabled || !hasTask() || (!temporaryPan && event.button !== 0)) return;
     svg.focus({ preventScroll: true });
     const target = event.target instanceof Element ? event.target : null;
     const regionKey = target?.getAttribute('data-region-key');
     const point = clientToNatural(event);
     const selectedHandle = selectedHandleNear(event);
 
-    if (state.mode === 'draw') {
-      if (!validCategory(state.category)) {
-        message('category_required', 'Choose one canonical COCO-80 category before drawing.', 'warning');
-        return;
-      }
-      state.gesture = { type: 'draw', pointerId: event.pointerId, start: point, preview: null };
-    } else if (state.mode === 'pan') {
+    if (temporaryPan || state.mode === 'pan') {
       const bounds = svg.getBoundingClientRect();
       const screenMatrix = svg.getScreenCTM();
       state.gesture = {
@@ -500,6 +507,12 @@ export function createSvgEditor({
         bounds,
         viewBox: copyRect(state.viewBox),
       };
+    } else if (state.mode === 'draw') {
+      if (!validCategory(state.category)) {
+        message('category_required', 'Choose one canonical COCO-80 category before drawing.', 'warning');
+        return;
+      }
+      state.gesture = { type: 'draw', pointerId: event.pointerId, start: point, preview: null };
     } else if (selectedHandle && state.selected !== null) {
       const original = copyRect(state.rectangles.get(state.selected));
       state.gesture = {
@@ -540,16 +553,11 @@ export function createSvgEditor({
       if (gesture.inverseMatrix) {
         point = new DOMPoint(event.clientX, event.clientY).matrixTransform(gesture.inverseMatrix);
       } else {
-        const scale = Math.min(
-          gesture.bounds.width / gesture.viewBox.width,
-          gesture.bounds.height / gesture.viewBox.height,
+        point = clientToNaturalPoint(
+          { x: event.clientX, y: event.clientY },
+          gesture.bounds,
+          gesture.viewBox,
         );
-        const offsetX = (gesture.bounds.width - gesture.viewBox.width * scale) / 2;
-        const offsetY = (gesture.bounds.height - gesture.viewBox.height * scale) / 2;
-        point = {
-          x: gesture.viewBox.x + (event.clientX - gesture.bounds.left - offsetX) / Math.max(scale, Number.EPSILON),
-          y: gesture.viewBox.y + (event.clientY - gesture.bounds.top - offsetY) / Math.max(scale, Number.EPSILON),
-        };
       }
       const deltaX = gesture.start.x - point.x;
       const deltaY = gesture.start.y - point.y;
@@ -630,6 +638,26 @@ export function createSvgEditor({
     beginGesture(event);
     renderPointerGuides();
   });
+  svg.addEventListener('wheel', event => {
+    if (state.disabled || !hasTask() || !Number.isFinite(event.deltaY) || event.deltaY === 0) return;
+    event.preventDefault();
+    const anchor = clientToNatural(event);
+    const deltaUnit = event.deltaMode === 1 ? 16
+      : event.deltaMode === 2 ? svg.getBoundingClientRect().height : 1;
+    const factor = Math.min(1.5, Math.max(
+      2 / 3,
+      Math.exp(-event.deltaY * deltaUnit * WHEEL_ZOOM_SENSITIVITY),
+    ));
+    state.viewBox = zoomViewBox(
+      state.viewBox,
+      factor,
+      anchor,
+      state.width,
+      state.height,
+      MINIMUM_VIEW_SIZE,
+    );
+    applyViewBox();
+  }, { passive: false });
   svg.addEventListener('pointermove', event => {
     trackPointer(event);
     moveGesture(event);
@@ -659,6 +687,9 @@ export function createSvgEditor({
   return {
     setTask(task) {
       cancelGesture();
+      state.temporaryPan = false;
+      svg.classList.remove('is-temporary-pan');
+      svg.removeAttribute('aria-keyshortcuts');
       state.pointerClient = null;
       state.hoverHandle = null;
       svg.removeAttribute('data-resize-handle');
@@ -677,6 +708,7 @@ export function createSvgEditor({
         previewLayer.replaceChildren();
         selectionLayer.replaceChildren();
         svg.setAttribute('viewBox', '0 0 1000 1000');
+        onViewChange(null);
         return;
       }
       const width = Number(task.image_width ?? task.width);
@@ -717,7 +749,12 @@ export function createSvgEditor({
 
     setDisabled(disabled) {
       state.disabled = Boolean(disabled);
-      if (state.disabled) cancelGesture();
+      if (state.disabled) {
+        cancelGesture();
+        state.temporaryPan = false;
+        svg.classList.remove('is-temporary-pan');
+        svg.removeAttribute('aria-keyshortcuts');
+      }
       svg.classList.toggle('is-disabled', state.disabled);
       svg.setAttribute('aria-disabled', String(state.disabled));
       renderPointerGuides();
@@ -769,8 +806,36 @@ export function createSvgEditor({
 
     getPresentationState,
 
+    getViewState,
+
     hasActiveGesture() {
       return Boolean(state.gesture);
+    },
+
+    setTemporaryPan(active) {
+      state.temporaryPan = Boolean(active);
+      svg.classList.toggle('is-temporary-pan', state.temporaryPan);
+      if (state.temporaryPan) svg.setAttribute('aria-keyshortcuts', 'Space');
+      else svg.removeAttribute('aria-keyshortcuts');
+    },
+
+    focusSelected(paddingRatio = 0.15) {
+      if (!hasTask() || state.selected === null) return false;
+      const rect = state.rectangles.get(state.selected);
+      if (!rect) return false;
+      state.viewBox = focusViewBox(
+        rect,
+        state.width,
+        state.height,
+        paddingRatio,
+        MINIMUM_VIEW_SIZE,
+      );
+      applyViewBox();
+      return true;
+    },
+
+    refreshViewport() {
+      if (hasTask()) applyViewBox();
     },
 
     zoomIn() {
@@ -779,7 +844,9 @@ export function createSvgEditor({
         x: state.viewBox.x + state.viewBox.width / 2,
         y: state.viewBox.y + state.viewBox.height / 2,
       };
-      state.viewBox = zoomViewBox(state.viewBox, 1.25, anchor, state.width, state.height, 24);
+      state.viewBox = zoomViewBox(
+        state.viewBox, 1.25, anchor, state.width, state.height, MINIMUM_VIEW_SIZE,
+      );
       applyViewBox();
     },
 
@@ -789,14 +856,15 @@ export function createSvgEditor({
         x: state.viewBox.x + state.viewBox.width / 2,
         y: state.viewBox.y + state.viewBox.height / 2,
       };
-      state.viewBox = zoomViewBox(state.viewBox, 0.8, anchor, state.width, state.height, 24);
+      state.viewBox = zoomViewBox(
+        state.viewBox, 0.8, anchor, state.width, state.height, MINIMUM_VIEW_SIZE,
+      );
       applyViewBox();
     },
 
     reset() {
       if (!hasTask()) return;
       cancelGesture();
-      restoreVisibility();
       state.viewBox = resetViewBox(state.width, state.height);
       applyViewBox();
     },

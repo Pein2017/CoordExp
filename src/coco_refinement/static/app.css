@@ -7,6 +7,7 @@ button:hover:not(:disabled), button:focus-visible { border-color: var(--accent);
 button:disabled { opacity: .45; cursor: not-allowed; }
 input, select { border: 1px solid #bbc5d6; border-radius: 6px; background: var(--panel); padding: .45rem .55rem; color: inherit; }
 .app-shell { max-width: 1500px; margin: 0 auto; padding: 1rem 1.25rem 2rem; }
+.app-shell.is-canvas-focused { max-width: none; }
 .app-header, .toolbar, .panel-heading { display: flex; align-items: center; gap: .8rem; }
 .app-header { justify-content: space-between; border-bottom: 1px solid var(--line); padding-bottom: .8rem; }
 h1, h2, p { margin: 0; }
@@ -25,12 +26,16 @@ h2 { font-size: 1rem; }
 .notice { min-height: 1.45rem; color: var(--muted); }
 .notice[data-tone="error"] { color: #a22828; }
 .workspace { display: grid; grid-template-columns: 220px minmax(340px, 1fr) 240px; gap: 1rem; margin-top: .75rem; }
+.workspace.is-canvas-focused { grid-template-columns: minmax(0, 1fr); }
+.workspace.is-canvas-focused .task-list-panel, .workspace.is-canvas-focused .details-panel { display: none; }
+.workspace.is-canvas-focused .preview-panel { grid-column: 1; grid-row: 1; }
 .task-list-panel, .preview-panel, .details-panel { min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: .75rem; }
 .panel-heading { justify-content: space-between; margin-bottom: .65rem; }
 .panel-heading span { color: var(--muted); font-size: .8rem; }
 .editor-toolbar, .tool-group { display: flex; align-items: center; gap: .4rem; }
 .editor-toolbar { flex-wrap: wrap; justify-content: space-between; margin-bottom: .65rem; }
 .tool-group button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: #edf3ff; box-shadow: inset 0 0 0 1px var(--accent); }
+.zoom-level { min-width: 3.5rem; color: var(--muted); font-size: .8rem; text-align: center; font-variant-numeric: tabular-nums; }
 .drawing-category { flex: 1 1 100%; border: 1px solid #d9e1ef; border-radius: 6px; padding: .45rem .65rem; color: var(--muted); background: #f8fafc; font-size: .85rem; font-weight: 650; }
 .drawing-category[data-active="true"] { border-color: #94adf0; color: #153f9d; background: #edf3ff; }
 .compact-control { color: var(--muted); font-size: .78rem; }
@@ -44,12 +49,14 @@ h2 { font-size: 1rem; }
 #bbox-overlay[data-mode="draw"] { cursor: crosshair; }
 #bbox-overlay[data-mode="pan"] { cursor: grab; }
 #bbox-overlay[data-mode="pan"].is-gesturing { cursor: grabbing; }
+#bbox-overlay.is-temporary-pan { cursor: grab; }
+#bbox-overlay.is-temporary-pan.is-gesturing { cursor: grabbing; }
 #bbox-overlay[data-resize-handle="ns"] { cursor: ns-resize; }
 #bbox-overlay[data-resize-handle="ew"] { cursor: ew-resize; }
 #bbox-overlay[data-resize-handle="nesw"] { cursor: nesw-resize; }
 #bbox-overlay[data-resize-handle="nwse"] { cursor: nwse-resize; }
 #bbox-overlay.is-disabled { pointer-events: none; opacity: .72; }
-.editor-image { pointer-events: none; }
+.editor-image { pointer-events: none; image-rendering: auto; }
 .editor-box { fill-opacity: .1; stroke-width: 2; vector-effect: non-scaling-stroke; pointer-events: none; }
 .editor-box-hit { fill: transparent; stroke: transparent; stroke-width: 12; vector-effect: non-scaling-stroke; cursor: move; pointer-events: all; }
 .editor-region.is-selected .editor-box, .editor-region:focus .editor-box { fill-opacity: .18; stroke-width: 3; filter: drop-shadow(0 0 2px white); }
@@ -80,5 +87,6 @@ dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
 .object-list button { width: 100%; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: .48rem .55rem; text-align: left; }
 .object-list li:last-child button { border-bottom: 0; }
 .object-list button[aria-current="true"] { color: var(--accent); background: #edf3ff; font-weight: 700; box-shadow: inset 3px 0 0 var(--accent); }
+.workspace.is-canvas-focused #bbox-overlay { height: calc(100vh - 14rem); min-height: 70vh; }
 @media (max-width: 900px) { .workspace { grid-template-columns: 1fr 1fr; } .preview-panel { grid-column: 1 / -1; grid-row: 1; } .task-list-panel { grid-column: 1; } .details-panel { grid-column: 2; } }
 @media (max-width: 600px) { .workspace { display: flex; flex-direction: column; } .preview-panel { order: -1; } .image-frame { min-height: 45vh; } }

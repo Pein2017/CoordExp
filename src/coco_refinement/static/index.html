@@ -67,7 +67,10 @@
             <div class="tool-group" role="group" aria-label="Viewport zoom">
               <button id="zoom-out" type="button" aria-label="Zoom out" disabled>−</button>
               <button id="zoom-in" type="button" aria-label="Zoom in" disabled>+</button>
-              <button id="zoom-reset" type="button" disabled>Reset view</button>
+              <span id="zoom-level" class="zoom-level" role="status" aria-label="Current zoom">—</span>
+              <button id="zoom-selection" type="button" title="Focus selected bbox · F" disabled>Focus selected · F</button>
+              <button id="zoom-reset" type="button" title="Fit image · 0" disabled>Fit · 0</button>
+              <button id="canvas-focus" type="button" aria-pressed="false" disabled>Focus canvas</button>
             </div>
             <div class="tool-group" role="group" aria-label="Undo and visibility">
               <button id="undo-button" type="button" disabled>Undo</button>
