@@ -2,7 +2,7 @@ extends: ../qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4
 
 run:
   name: qwen3-vl-2b-rollout-calibration-smoke-b-source
-  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-a-combined-v4/smoke-b-v2/runs
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-a-combined-v4/smoke-b-v3/runs
   collision_policy: fail
 
 model:
@@ -12,7 +12,7 @@ model:
 backend:
   type: hf
   hf:
-    attn_implementation: flash_attention_2
+    attn_implementation: sdpa
     patch_embed_linearization: enabled
 
 data:
