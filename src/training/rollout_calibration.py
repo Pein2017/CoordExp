@@ -705,7 +705,7 @@ def build_calibration_micro_step_stream(
 def _profile_admits(metadata: CalibrationEventMetadata, profile: str) -> bool:
     if profile == "transition_only":
         return metadata.entity_transition_eligible
-    if profile == "coordinate_boundary_only":
+    if profile in {"coordinate_boundary_only", "coordinate_boundary_gate_only"}:
         return metadata.coordinate_boundary_eligible
     if profile == "joint":
         return (
@@ -838,7 +838,8 @@ def _active_selected_sites(candidate: Any, profile: str) -> tuple[Any, ...]:
             start, end = interval
             active_offsets.update(range(start, end))
     if (
-        profile in {"coordinate_boundary_only", "joint"}
+        profile
+        in {"coordinate_boundary_only", "coordinate_boundary_gate_only", "joint"}
         and candidate.geometry_eligible
         and candidate.coordinate_decision is not None
     ):

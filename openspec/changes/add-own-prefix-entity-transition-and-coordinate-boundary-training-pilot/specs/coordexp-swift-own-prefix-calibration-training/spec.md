@@ -21,8 +21,19 @@ it MUST NOT disable a separately trusted objective axis.
 #### Scenario: Entity is real but geometry is not trusted
 
 - **WHEN** a state-bank candidate is entity-positive and geometry-unknown
+- **AND** physical ownership is resolved before the first coordinate token
 - **THEN** it MAY participate in entity-transition loss
 - **AND** it MUST be excluded from coordinate-boundary loss.
+
+#### Scenario: Candidate-row ownership requires coordinate tokens
+
+- **WHEN** a scored positive or harmful candidate path requires one or more
+  coordinate tokens to resolve its physical owner
+- **THEN** the geometry of that exact candidate path MUST be reviewed as
+  trusted before it participates in entity-transition loss
+- **AND** a reviewer-corrected box MUST NOT silently replace the sampled path
+- **AND** an independently trusted correction MAY instead define a separate
+  first-wrong-coordinate objective.
 
 #### Scenario: Entity ownership is unknown but geometry is independently eligible
 
@@ -102,6 +113,12 @@ valid new greedy entity, official-annotation mismatch, unsupported-but-
 ambiguous entity, or entity reachable only under another prefix MUST NOT be
 used as a negative.
 
+Every scored nonterminal positive or harmful path whose owner-resolution
+interval contains an actual coordinate token MUST have trusted geometry for
+that exact path. This rule is independent of whether the candidate is enabled
+for the coordinate-boundary objective. A corrected reference box does not make
+an untrusted sampled row eligible for complete candidate-row scoring.
+
 #### Scenario: Several uncovered entities are valid
 
 - **WHEN** two or more verified uncovered physical entities occur in the same
@@ -156,6 +173,34 @@ coordinate tokens in `[0, 999]`, and use only horizontal tolerance for `x1` or
   outside its accepted set
 - **THEN** the direct coordinate objective MUST select `y1`
 - **AND** MUST NOT directly supervise `x1`, `x2`, or `y2` for that event.
+
+### Requirement: Prefix Coverage Scope
+
+The StateBank SHALL record the number of prior object rows and one typed prefix
+coverage status: `empty`, `resolved`, or `unresolved`. Entity-transition events
+MUST use `resolved` coverage and MUST prove one trusted physical owner for each
+prior row. A coordinate-only event MAY use `unresolved` coverage only when its
+exact prefix tokens are preserved, its current-row owner and geometry are
+independently trusted, all candidates are entity-ineligible, and candidate
+coverage is `unknown`. Such an event MUST NOT support a novelty, commitment,
+covered-set redistribution, or coverage-aware enumeration claim.
+
+#### Scenario: Coordinate boundary is trusted but prior ownership is unresolved
+
+- **WHEN** a nonempty exact prefix contains at least one prior row without a
+  unique trusted physical owner
+- **AND** the current-row owner, geometry, earlier accepted coordinates, and
+  first wrong coordinate are independently reviewed
+- **THEN** the event MAY be admitted for coordinate-only or matched gate-only
+  training with `prefix_coverage_status=unresolved`
+- **AND** it MUST have zero prefix-owner proofs, disabled entity-transition
+  eligibility, entity-ineligible candidates, and `coverage_status=unknown`.
+
+#### Scenario: Entity transition uses unresolved prefix coverage
+
+- **WHEN** an event with unresolved prefix coverage enables an entity-
+  transition candidate or objective
+- **THEN** StateBank validation MUST fail before loss computation.
 
 #### Scenario: Row mixes physical owners
 
@@ -212,12 +257,19 @@ eligible events in the complete planned optimizer step.
 ### Requirement: Rollout-Only Research Profiles
 
 The strict training configuration SHALL expose transition-only,
-coordinate-boundary-only, and joint rollout-calibration profiles. These
+coordinate-boundary-only, coordinate-boundary-gate-only, and joint rollout-
+calibration profiles. These
 profiles MUST consume only the configured frozen rollout state bank and MUST
 NOT mix canonical supervised-fine-tuning examples, full-row base
 cross-entropy, Kullback-Leibler divergence anchoring, or online bank refresh.
 The joint profile MUST normalize entity-transition and coordinate-boundary
 terms independently before applying their configured weights.
+
+The coordinate-boundary-gate-only profile MUST consume the same coordinate
+events and selected sites as the coordinate-boundary-only profile, set both
+research-objective weights to zero, and retain only the configured rollout-site
+token-type gate. It is a matched training control, not an unchanged-source
+baseline.
 
 #### Scenario: Canonical supervised data is mixed into a calibration run
 
@@ -233,6 +285,12 @@ terms independently before applying their configured weights.
 - **THEN** the step MUST fail or be skipped according to an explicit visible
   incomplete-objective policy
 - **AND** it MUST NOT silently renormalize the joint arm into transition-only.
+
+#### Scenario: Coordinate gate-only control activates a research objective
+
+- **WHEN** the coordinate-boundary-gate-only profile has a nonzero entity-
+  transition or coordinate-boundary objective weight
+- **THEN** strict config validation MUST fail before model loading.
 
 ### Requirement: Calibration Metrics and Run Evidence
 

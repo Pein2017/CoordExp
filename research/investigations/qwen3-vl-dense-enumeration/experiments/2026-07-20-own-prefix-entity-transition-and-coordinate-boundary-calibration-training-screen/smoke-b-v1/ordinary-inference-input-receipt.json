@@ -1,0 +1,112 @@
+{
+  "schema": "ordinary_inference_input_receipt.v1",
+  "purpose": "Eight-image ordinary greedy inference input for Smoke B; source rows are copied without field or prompt transformation.",
+  "source": {
+    "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl",
+    "sha256": "81d674070d4b588488a2cb911c09f765b63c0e6d035b50db27ee0a41ff2a1894"
+  },
+  "output": {
+    "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.smoke_b8_source_order.jsonl",
+    "sha256": "fcef378899846be1b07ea6556aac410b2b18a038524f41c245dd0b503f045f06",
+    "record_count": 8,
+    "emitted_source_order": [
+      2299,
+      7816,
+      9400,
+      9590,
+      12576,
+      18380,
+      19109,
+      19432
+    ]
+  },
+  "requested_image_ids": [
+    12576,
+    18380,
+    19109,
+    19432,
+    2299,
+    7816,
+    9400,
+    9590
+  ],
+  "source_order_row_map": {
+    "2299": 28,
+    "7816": 79,
+    "9400": 94,
+    "9590": 97,
+    "12576": 121,
+    "18380": 182,
+    "19109": 191,
+    "19432": 194
+  },
+  "row_byte_identity_assertion": true,
+  "selected_image_metadata": {
+    "2299": {
+      "source_line": 28,
+      "byte_length": 7265,
+      "image_path": "../rescale_32_1024_bbox/images/val2017/000000002299.jpg",
+      "image_exists": true
+    },
+    "7816": {
+      "source_line": 79,
+      "byte_length": 1944,
+      "image_path": "../rescale_32_1024_bbox/images/val2017/000000007816.jpg",
+      "image_exists": true
+    },
+    "9400": {
+      "source_line": 94,
+      "byte_length": 3983,
+      "image_path": "../rescale_32_1024_bbox/images/val2017/000000009400.jpg",
+      "image_exists": true
+    },
+    "9590": {
+      "source_line": 97,
+      "byte_length": 4697,
+      "image_path": "../rescale_32_1024_bbox/images/val2017/000000009590.jpg",
+      "image_exists": true
+    },
+    "12576": {
+      "source_line": 121,
+      "byte_length": 2532,
+      "image_path": "../rescale_32_1024_bbox/images/val2017/000000012576.jpg",
+      "image_exists": true
+    },
+    "18380": {
+      "source_line": 182,
+      "byte_length": 8499,
+      "image_path": "../rescale_32_1024_bbox/images/val2017/000000018380.jpg",
+      "image_exists": true
+    },
+    "19109": {
+      "source_line": 191,
+      "byte_length": 4546,
+      "image_path": "../rescale_32_1024_bbox/images/val2017/000000019109.jpg",
+      "image_exists": true
+    },
+    "19432": {
+      "source_line": 194,
+      "byte_length": 2567,
+      "image_path": "../rescale_32_1024_bbox/images/val2017/000000019432.jpg",
+      "image_exists": true
+    }
+  },
+  "blind_image_ids": [
+    1584,
+    2685,
+    4134,
+    5001,
+    6040,
+    7511,
+    10707,
+    13348,
+    13923,
+    14038,
+    14439,
+    16228
+  ],
+  "blind_exclusion_assertion": true,
+  "all_selected_images_exist": true,
+  "relative_image_references_preserved": true,
+  "source_adjacent_output_reason": "The JSONL image references are relative to the source-adjacent directory; copying source-adjacent preserves those references without rewriting or resizing images."
+}

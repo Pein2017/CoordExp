@@ -1,0 +1,11 @@
+schema_version: 1
+extends: qwen3_vl_2b_desc_first_geo_sorted_rollout_calibration_coordinate_boundary_gate_only_learning_rate_1e-5_smoke_b_v1.yaml
+
+run:
+  name: qwen3_vl_2b_desc_first_geo_sorted_rollout_calibration_coordinate_boundary_gate_only_learning_rate_2e-5_smoke_b_v1
+
+optimizer:
+  groups:
+    adapters:
+      language:
+        lr: 2.0e-5

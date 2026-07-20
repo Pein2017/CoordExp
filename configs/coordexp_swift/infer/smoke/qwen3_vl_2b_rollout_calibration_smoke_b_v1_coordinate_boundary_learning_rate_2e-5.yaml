@@ -1,0 +1,11 @@
+schema_version: 1
+extends: qwen3_vl_2b_rollout_calibration_smoke_b_v1_source.yaml
+
+run:
+  name: qwen3-vl-2b-rollout-calibration-smoke-b-v1-coordinate-boundary-learning-rate-2e-5
+
+adapter:
+  path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-b-v1/runs/qwen3_vl_2b_desc_first_geo_sorted_rollout_calibration_coordinate_boundary_learning_rate_2e-5_smoke_b_v1/checkpoints/step-2/adapter
+
+embedding_delta:
+  path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-b-v1/runs/qwen3_vl_2b_desc_first_geo_sorted_rollout_calibration_coordinate_boundary_learning_rate_2e-5_smoke_b_v1/checkpoints/step-2/special_token_embeddings

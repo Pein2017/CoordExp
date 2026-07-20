@@ -1,0 +1,110 @@
+{
+  "schema_version": "exact_prefix_sampled_rescue_visual_review.v1",
+  "reviewed_at_utc": "2026-07-20",
+  "reviewer": "codex-main-agent-visual-review",
+  "source_packet": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-b-v1/exact-prefix-sampling-review-packet-v3/review-packet.json",
+    "sha256": "ab7c6797747371316a1ad8227e8b003f716ef861e97280e2f083c3db9abe0cc3"
+  },
+  "supporting_human_review": {
+    "path": "/data/CoordExp/.codex/attachments/66f7e558-3bc6-49cf-98f1-dfacd97802d7/human-review-candidate-ledger-20260716a.review.json",
+    "relevant_candidate_index": 118,
+    "interpretation": "The tiny reference entity is the distant white-haired person's visible head between adjacent people. Nearby larger predictions were explicitly reviewed as mixing multiple people. Entity existence and geometry or owner binding must remain separate."
+  },
+  "review_policy": {
+    "automatic_same_class_matching_is_not_owner_proof": true,
+    "entity_and_geometry_are_separate": true,
+    "same_prefix_sampled_support_is_necessary_but_not_sufficient": true,
+    "transition_admission_requires": [
+      "one visually identifiable physical owner",
+      "the scored owner-resolving token interval identifies that owner",
+      "every coordinate token in that interval has trusted geometry",
+      "the candidate does not mix adjacent same-class entities"
+    ]
+  },
+  "group_decisions": [
+    {
+      "image_id": 7816,
+      "row_index": 5,
+      "harmful_kind": "duplicate",
+      "prefix_token_ids_sha256": "3757b1090b39f2d8db0f2745892ca98932c9c2efa2926637cfff715666132194",
+      "greedy_harmful_candidate": {
+        "status": "visually_consistent_duplicate",
+        "owner_id": "205108",
+        "comment": "The greedy row repeats an already covered full-height person in the right-side cluster. It is a valid harmful duplicate, but a usable event also requires at least one trusted positive rescue."
+      },
+      "sampled_positive_status": "rejected_all",
+      "transition_event_admission_status": "rejected",
+      "comment": "All seven sampled rows are person-shaped evidence in the correct dense cluster, but their boxes combine the red-clothed foreground person with the tiny distant white-haired person used as owner 211764. The shared description token cannot distinguish these same-class instances, and the coordinate-bearing owner-resolution path is not geometrically trustworthy."
+    },
+    {
+      "image_id": 7816,
+      "row_index": 10,
+      "harmful_kind": "premature_terminal",
+      "prefix_token_ids_sha256": "5fd57ab75689ea8d4b57341e4eabf97b7d90deb42e1095824feb30215fafc911",
+      "greedy_harmful_candidate": {
+        "status": "verified_premature_terminal",
+        "comment": "Two verified owners remain uncovered at this exact prefix."
+      },
+      "sampled_positive_status": "no_sampled_complete_row_in_128_seeds",
+      "transition_event_admission_status": "rejected",
+      "comment": "The frozen low-temperature policy terminated in every sampled replay. There is no same-prefix positive path to calibrate without inventing one from teacher targets."
+    }
+  ],
+  "sampled_case_decisions": [
+    {
+      "case_id": "image-7816-row-5-duplicate-sample-rescue-seed-28-c3e4528bd866",
+      "status": "rejected",
+      "entity_review_status": "ambiguous_owner",
+      "geometry_review_status": "multiple_entities",
+      "comment": "The box spans the red-clothed person and the distant white-haired head. It does not cleanly resolve owner 211764."
+    },
+    {
+      "case_id": "image-7816-row-5-duplicate-sample-rescue-seed-39-c85f17dfc26a",
+      "status": "rejected",
+      "entity_review_status": "ambiguous_owner",
+      "geometry_review_status": "multiple_entities",
+      "comment": "The box spans the red-clothed person and the distant white-haired head. It does not cleanly resolve owner 211764."
+    },
+    {
+      "case_id": "image-7816-row-5-duplicate-sample-rescue-seed-58-9b47f8ebd17c",
+      "status": "rejected",
+      "entity_review_status": "ambiguous_owner",
+      "geometry_review_status": "multiple_entities",
+      "comment": "The box spans the red-clothed person and the distant white-haired head. It does not cleanly resolve owner 211764."
+    },
+    {
+      "case_id": "image-7816-row-5-duplicate-sample-rescue-seed-82-4c16498a0c35",
+      "status": "rejected",
+      "entity_review_status": "ambiguous_owner",
+      "geometry_review_status": "multiple_entities",
+      "comment": "The box spans the red-clothed person and the distant white-haired head. It does not cleanly resolve owner 211764."
+    },
+    {
+      "case_id": "image-7816-row-5-duplicate-sample-rescue-seed-85-1740cf49602f",
+      "status": "rejected",
+      "entity_review_status": "ambiguous_owner",
+      "geometry_review_status": "multiple_entities",
+      "comment": "The box spans the red-clothed person and the distant white-haired head. It does not cleanly resolve owner 211764."
+    },
+    {
+      "case_id": "image-7816-row-5-duplicate-sample-rescue-seed-89-1bbb78be92c2",
+      "status": "rejected",
+      "entity_review_status": "ambiguous_owner",
+      "geometry_review_status": "multiple_entities",
+      "comment": "The box spans the red-clothed person and the distant white-haired head. It does not cleanly resolve owner 211764."
+    },
+    {
+      "case_id": "image-7816-row-5-duplicate-sample-rescue-seed-98-7e89555f4486",
+      "status": "rejected",
+      "entity_review_status": "ambiguous_owner",
+      "geometry_review_status": "multiple_entities",
+      "comment": "The box spans the red-clothed person and the distant white-haired head. It does not cleanly resolve owner 211764."
+    }
+  ],
+  "conclusion": {
+    "trusted_transition_event_count": 0,
+    "coordinate_boundary_arm_can_proceed_independently": true,
+    "transition_arm_action": "do_not_train_from_current_sampled_rescue_cohort"
+  }
+}

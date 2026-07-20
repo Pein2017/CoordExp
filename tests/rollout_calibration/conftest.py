@@ -200,6 +200,8 @@ def synthetic_inputs(
                 },
             }
         ],
+        "prefix_object_row_count": 1,
+        "prefix_coverage_status": "resolved",
         "entity_transition_eligible": True,
         "coordinate_boundary_eligible": True,
         "candidates": [

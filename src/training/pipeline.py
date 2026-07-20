@@ -995,7 +995,10 @@ def _calibration_profile_event_count(
         coordinate = bool(getattr(metadata, "coordinate_boundary_eligible", False))
         if (
             (profile == "transition_only" and entity)
-            or (profile == "coordinate_boundary_only" and coordinate)
+            or (
+                profile in {"coordinate_boundary_only", "coordinate_boundary_gate_only"}
+                and coordinate
+            )
             or (profile == "joint" and (entity or coordinate))
         ):
             count += 1

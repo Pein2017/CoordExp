@@ -1,0 +1,14 @@
+extends: qwen3_vl_2b_rollout_calibration_smoke_b_joint.yaml
+
+run:
+  name: qwen3-vl-2b-rollout-calibration-smoke-b-joint-learning-rate-1e-5-dose-v1
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-a-combined-v4/dose-v1/smoke-b-v1/runs
+  collision_policy: fail
+
+adapter:
+  type: dora
+  path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-a-combined-v4/dose-v1/runs/qwen3_vl_2b_desc_first_geo_sorted_rollout_calibration_joint_learning_rate_1e-5_smoke_a_dose_v1/checkpoints/step-1/adapter
+  name: default
+
+embedding_delta:
+  path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-a-combined-v4/dose-v1/runs/qwen3_vl_2b_desc_first_geo_sorted_rollout_calibration_joint_learning_rate_1e-5_smoke_a_dose_v1/checkpoints/step-1/special_token_embeddings

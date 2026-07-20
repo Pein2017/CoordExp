@@ -35,6 +35,7 @@ SOURCE_CHECKPOINT_ID = sha256_json(SOURCE_CHECKPOINT)
     [
         ("transition_only", 1.0, 0.0),
         ("coordinate_boundary_only", 0.0, 1.0),
+        ("coordinate_boundary_gate_only", 0.0, 0.0),
         ("joint", 0.5, 0.5),
     ],
 )
@@ -228,6 +229,7 @@ def test_rollout_calibration_rejects_forbidden_surfaces(
     [
         ("transition_only", 0.5, 0.5),
         ("coordinate_boundary_only", 1.0, 0.0),
+        ("coordinate_boundary_gate_only", 1.0, 0.5),
         ("joint", 1.0, 1.0),
     ],
 )

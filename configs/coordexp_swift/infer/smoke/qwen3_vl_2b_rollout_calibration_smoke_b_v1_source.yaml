@@ -1,0 +1,13 @@
+schema_version: 1
+extends: qwen3_vl_2b_rollout_calibration_smoke_b_source.yaml
+
+run:
+  name: qwen3-vl-2b-rollout-calibration-smoke-b-v1-source
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-b-v1/ordinary-inference-runs
+  collision_policy: fail
+
+data:
+  input_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.smoke_b8_source_order.jsonl
+
+generation:
+  batch_size: 4

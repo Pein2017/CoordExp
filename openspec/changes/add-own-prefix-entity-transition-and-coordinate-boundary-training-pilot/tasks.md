@@ -11,7 +11,7 @@
 
 ## 2. Exact Replay and Atomic Event Materialization
 
-- [ ] 2.1 Add a reference parity test proving that one stored image and exact token prefix reaches the same pre-candidate logits as its frozen source event without decode-and-retokenize reconstruction.
+- [x] 2.1 Add a reference parity test proving that one stored image and exact token prefix reaches the same pre-candidate logits as its frozen source event without decode-and-retokenize reconstruction.
 - [x] 2.2 Implement the narrow exact-token replay seam by reusing current image preparation, Qwen position construction, forward behavior, and segment isolation.
 - [x] 2.3 Implement companion calibration metadata and atomic event planning so every positive and harmful candidate group remains complete within one planned optimizer step.
 
@@ -24,16 +24,16 @@
 
 ## 4. Config, Pipeline, and Artifacts
 
-- [x] 4.1 Extend strict config validation with transition-only, coordinate-boundary-only, and joint rollout-calibration profiles while preserving all ordinary supervised-training defaults.
+- [x] 4.1 Extend strict config validation with transition-only, coordinate-boundary-only, coordinate-boundary-gate-only, and joint rollout-calibration profiles while preserving all ordinary supervised-training defaults.
 - [x] 4.2 Wire the profiles through the existing training assembly, Weight-Decomposed Low-Rank Adaptation source-checkpoint loading, optimizer, gradient clipping, Accelerate runtime, and checkpoint writer without adding a second trainer or runtime.
 - [x] 4.3 Extend existing rank-zero run and logging artifacts with bank identity, enabled research profile, raw and weighted losses, eligibility counts, target margins, token-type legal mass, ignored and unknown counts, and finite status.
 - [x] 4.4 Add negative config tests proving that canonical supervised-fine-tuning mixtures, full-row base cross-entropy, zero rollout-site token-type-gate weight, Kullback-Leibler divergence anchoring, online bank refresh, and cross-checkpoint bank reuse are rejected in this profile.
 
 ## 5. Smoke Evidence
 
-- [ ] 5.1 Build and run the deterministic one-transition-plus-one-geometry smoke; verify exact replay, masks, selected positions, intended token types, finite gradients, and intended margin movement after one tiny update.
-- [ ] 5.2 Build and run the 8-to-16-reviewed-state smoke for all three research profiles; verify parseable ordinary free-row inference from each produced adapter and prove that no canonical supervised-fine-tuning examples were consumed.
-- [ ] 5.3 Verify that each smoke checkpoint loads through the existing inference composition and requires no state bank or custom controller at inference time.
+- [x] 5.1 Build and run the deterministic one-transition-plus-one-geometry smoke; verify exact replay, masks, selected positions, intended token types, finite gradients, and intended margin movement after one tiny update.
+- [ ] 5.2 Build and run the 13-reviewed-coordinate-state smoke for coordinate-boundary and learning-rate-matched coordinate-boundary-gate-only profiles; verify parseable ordinary free-row inference from each produced adapter and prove that no canonical supervised-fine-tuning examples were consumed. Keep transition and joint profiles deferred until a visually trusted same-prefix transition positive exists.
+- [x] 5.3 Verify that each smoke checkpoint loads through the existing inference composition and requires no state bank or custom controller at inference time.
 
 ## 6. Implementation-Race Handoff Gate
 

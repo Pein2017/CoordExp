@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -95,6 +96,58 @@ def test_joint_runner_uses_compact_logits_and_emits_event_balanced_metrics() -> 
     )
     assert artifact["metrics"]["calibration/rejected_record_count"] == 3.0
     assert artifact["finite_status"]["all_finite"] is True
+
+
+def test_coordinate_only_diagnostic_candidate_reaches_coordinate_and_gate_losses() -> None:
+    joint = _joint_metadata()
+    harmful = joint.candidates[1]
+    diagnostic = replace(
+        harmful,
+        candidate_id="diagnostic",
+        role="diagnostic",
+        harmful_kind=None,
+        entity_eligible=False,
+        owner_resolution_candidate_interval=None,
+        owner_resolution_physical_target_interval=None,
+    )
+    metadata = CalibrationEventMetadata(
+        event_id="coordinate-only-event",
+        image_id=joint.image_id,
+        split=joint.split,
+        entity_transition_eligible=False,
+        coordinate_boundary_eligible=True,
+        candidates=(diagnostic,),
+        selected_logits_positions=joint.selected_logits_positions,
+    )
+    micro_step = _micro_step(metadata)
+    logits = torch.tensor(
+        [[[0.0, 0.0, -1.0, -1.0, 1.5, -1.0]]], requires_grad=True
+    )
+    context = rollout_calibration_loss_context(
+        micro_step,
+        SimpleNamespace(logits=logits, logits_position_ids=(2,)),
+    )
+    runner = RolloutCalibrationLossRunner(
+        profile="coordinate_boundary_only",
+        entity_weight=0.0,
+        entity_margin=0.2,
+        entity_smooth_max_temperature=0.5,
+        coordinate_weight=1.0,
+        coordinate_margin=0.2,
+        gate_weight=0.1,
+    )
+
+    plan = runner.prepare_planned_step((micro_step,))
+    bundle = runner.compute_micro_step(context, plan, local_micro_step_index=0)
+    bundle.total_loss.backward()
+
+    assert [term.name for term in bundle.terms] == [
+        "rollout_coordinate_boundary",
+        "rollout_site_token_type_gate",
+    ]
+    assert bundle.terms[0].selected_count == 1
+    assert bundle.terms[1].selected_count == 1
+    assert logits.grad is not None and torch.isfinite(logits.grad).all()
 
 
 def test_joint_stream_preserves_frozen_bank_exposure_without_duplication() -> None:
@@ -195,6 +248,86 @@ def test_single_objective_gate_selects_only_that_objective_sites() -> None:
             candidate, "coordinate_boundary_only"
         )
     ] == [2]
+    assert [
+        site.candidate_token_offset
+        for site in rollout_training_module._active_selected_sites(
+            candidate, "coordinate_boundary_gate_only"
+        )
+    ] == [2]
+
+
+def test_coordinate_boundary_gate_only_has_gate_term_only_and_nonzero_gradient() -> None:
+    micro_step = _micro_step(_single_family_metadata("coordinate"))
+    logits = torch.tensor(
+        [[[0.0, 0.0, 2.0, -1.0, -1.0, -1.0], [0.0, 0.0, -1.0, 1.5, 0.5, -1.0]]],
+        requires_grad=True,
+    )
+    context = rollout_calibration_loss_context(
+        micro_step,
+        SimpleNamespace(logits=logits, logits_position_ids=(0, 2)),
+    )
+    runner = RolloutCalibrationLossRunner(
+        profile="coordinate_boundary_gate_only",
+        entity_weight=0.0,
+        entity_margin=0.2,
+        entity_smooth_max_temperature=0.5,
+        coordinate_weight=0.0,
+        coordinate_margin=0.2,
+        gate_weight=0.1,
+    )
+
+    plan = runner.prepare_planned_step((micro_step,))
+    assert plan.enabled_terms == ("rollout_site_token_type_gate",)
+    denominator = plan.denominators["rollout_site_token_type_gate"]
+    assert denominator.eligible_segment_count == 1
+    assert denominator.selected_atom_count == 1
+
+    bundle = runner.compute_micro_step(context, plan, local_micro_step_index=0)
+    assert [term.name for term in bundle.terms] == ["rollout_site_token_type_gate"]
+    bundle.total_loss.backward()
+    assert logits.grad is not None
+    assert torch.isfinite(logits.grad).all()
+    assert torch.count_nonzero(logits.grad[0, 1]).item() > 0
+    assert torch.count_nonzero(logits.grad[0, 0]).item() == 0
+
+    artifact = runner.finalize_planned_step((bundle.to_artifact_dict(),), plan)
+    assert artifact["counts"]["global_eligible_event_counts"] == {
+        "rollout_site_token_type_gate": 1
+    }
+    assert artifact["diagnostics"]["profile"] == "coordinate_boundary_gate_only"
+    assert artifact["metrics"]["calibration/rollout_site_token_type_gate/legal_mass"] > 0.0
+
+
+def test_pipeline_counts_coordinate_boundary_gate_only_events() -> None:
+    assert pipeline_module._calibration_profile_event_count(
+        (
+            _micro_step(_single_family_metadata("coordinate")),
+            _micro_step(_single_family_metadata("entity")),
+        ),
+        "coordinate_boundary_gate_only",
+    ) == 1
+
+
+def test_coordinate_boundary_gate_only_stream_exposes_coordinate_events_once() -> None:
+    coordinate_step = _micro_step(_single_family_metadata("coordinate"))
+    entity_step = _micro_step(_single_family_metadata("entity"))
+    schedule = SimpleNamespace(
+        resolved_max_steps=1,
+        runtime_batch=SimpleNamespace(
+            world_size=1,
+            effective_batch_size=1,
+            resolved_grad_accum_steps=1,
+        ),
+    )
+    assert tuple(
+        build_calibration_micro_step_stream(
+            (entity_step, coordinate_step),
+            schedule,
+            profile="coordinate_boundary_gate_only",
+            rank=0,
+            world_size=1,
+        )
+    ) == (coordinate_step,)
 
 
 def test_pipeline_validates_actual_warm_start_payloads_before_loading_records(

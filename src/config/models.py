@@ -310,6 +310,7 @@ class RolloutCalibrationConfig(StrictConfigModel):
     profile: Literal[
         "transition_only",
         "coordinate_boundary_only",
+        "coordinate_boundary_gate_only",
         "joint",
     ]
     state_bank_manifest_path: str
@@ -331,6 +332,7 @@ class RolloutCalibrationConfig(StrictConfigModel):
         expected = {
             "transition_only": (1.0, 0.0),
             "coordinate_boundary_only": (0.0, 1.0),
+            "coordinate_boundary_gate_only": (0.0, 0.0),
             "joint": (0.5, 0.5),
         }[self.profile]
         actual = (

@@ -68,6 +68,8 @@ def test_state_bank_round_trip_binds_identity_splits_and_receipt(
         11,
     )
     assert loaded.records[0].prefix_token_ids == (12, 13)
+    assert loaded.records[0].prefix_object_row_count == 1
+    assert loaded.records[0].prefix_coverage_status == "resolved"
     assert loaded.validation_receipt.to_artifact_dict() == {
         "bank_id": manifest.bank_id,
         "source_checkpoint_id": manifest.source_checkpoint_id,
@@ -139,6 +141,265 @@ def test_state_bank_identity_is_deterministic_and_output_is_write_once(
             output_name="bank-a",
         )
     assert exc_info.value.code == "state_bank.immutable_output_exists"
+
+
+def test_coordinate_only_event_accepts_one_diagnostic_greedy_candidate(
+    tmp_path: Path,
+) -> None:
+    rollouts, reviews, _ = synthetic_inputs(tmp_path)
+    joined = _joined_event(rollouts[0], reviews[0])
+    joined["entity_transition_eligible"] = False
+    joined["coordinate_boundary_eligible"] = True
+    candidate = joined["candidates"][0]
+    candidate.update(
+        {
+            "role": "diagnostic",
+            "harmful_kind": None,
+            "entity_eligible": False,
+            "owner_resolution_interval": None,
+            "selected_sites": [
+                {"candidate_token_offset": 1, "intended_token_type": "coordinate"}
+            ],
+            "generation_provenance": {
+                **candidate["generation_provenance"],
+                "mode": "greedy",
+                "seed": 0,
+                "temperature": 0.0,
+            },
+        }
+    )
+    joined["candidates"] = [candidate]
+
+    event = StateBankEvent.from_mapping(joined)
+
+    assert event.entity_transition_eligible is False
+    assert event.coordinate_boundary_eligible is True
+    assert len(event.candidates) == 1
+    assert event.candidates[0].role == "diagnostic"
+    assert event.candidates[0].harmful_kind is None
+    assert event.candidates[0].entity_eligible is False
+    assert event.candidates[0].geometry_eligible is True
+    assert event.candidates[0].coordinate_decision is not None
+
+
+def test_coordinate_only_event_rejects_non_greedy_diagnostic_candidate(
+    tmp_path: Path,
+) -> None:
+    rollouts, reviews, _ = synthetic_inputs(tmp_path)
+    joined = _joined_event(rollouts[0], reviews[0])
+    joined["entity_transition_eligible"] = False
+    joined["coordinate_boundary_eligible"] = True
+    candidate = joined["candidates"][0]
+    candidate.update(
+        {
+            "role": "diagnostic",
+            "harmful_kind": None,
+            "entity_eligible": False,
+            "owner_resolution_interval": None,
+            "selected_sites": [
+                {"candidate_token_offset": 1, "intended_token_type": "coordinate"}
+            ],
+            "generation_provenance": {
+                **candidate["generation_provenance"],
+                "mode": "sampled",
+                "seed": 11,
+                "temperature": 0.2,
+            },
+        }
+    )
+    joined["candidates"] = [candidate]
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        StateBankEvent.from_mapping(joined)
+
+    assert exc_info.value.code == "state_bank.coordinate_greedy_diagnostic"
+
+
+def _coordinate_only_joined_event(tmp_path: Path) -> dict:
+    rollouts, reviews, _ = synthetic_inputs(tmp_path)
+    joined = _joined_event(rollouts[0], reviews[0])
+    joined["entity_transition_eligible"] = False
+    joined["coordinate_boundary_eligible"] = True
+    candidate = joined["candidates"][0]
+    candidate.update(
+        {
+            "role": "diagnostic",
+            "harmful_kind": None,
+            "coverage_status": "unknown",
+            "entity_eligible": False,
+            "owner_resolution_interval": None,
+            "selected_sites": [
+                {"candidate_token_offset": 1, "intended_token_type": "coordinate"}
+            ],
+            "generation_provenance": {
+                **candidate["generation_provenance"],
+                "mode": "greedy",
+                "seed": 0,
+                "temperature": 0.0,
+            },
+        }
+    )
+    joined["candidates"] = [candidate]
+    return joined
+
+
+def test_empty_prefix_coverage_accepts_exactly_zero_rows_tokens_and_proofs(
+    tmp_path: Path,
+) -> None:
+    joined = _coordinate_only_joined_event(tmp_path)
+    joined["prefix_object_row_count"] = 0
+    joined["prefix_coverage_status"] = "empty"
+    joined["prefix_token_ids"] = []
+    joined["prefix_token_ids_sha256"] = token_ids_sha256([])
+    joined["prefix_covered_owner_proofs"] = []
+    for candidate in joined["candidates"]:
+        candidate["generation_provenance"]["prefix_token_ids_sha256"] = (
+            token_ids_sha256([])
+        )
+
+    event = StateBankEvent.from_mapping(joined)
+
+    assert event.prefix_object_row_count == 0
+    assert event.prefix_coverage_status == "empty"
+    assert event.prefix_token_ids == ()
+    assert event.prefix_covered_owner_proofs == ()
+
+
+def test_empty_prefix_coverage_rejects_entity_transition_supervision(
+    tmp_path: Path,
+) -> None:
+    rollouts, reviews, _ = synthetic_inputs(tmp_path)
+    joined = _joined_event(rollouts[0], reviews[0])
+    joined["prefix_object_row_count"] = 0
+    joined["prefix_coverage_status"] = "empty"
+    joined["prefix_token_ids"] = []
+    joined["prefix_token_ids_sha256"] = token_ids_sha256([])
+    joined["prefix_covered_owner_proofs"] = []
+    for candidate in joined["candidates"]:
+        candidate["generation_provenance"]["prefix_token_ids_sha256"] = (
+            token_ids_sha256([])
+        )
+        if candidate["role"] == "harmful":
+            candidate.update(
+                harmful_kind="premature_terminal",
+                physical_owner_id=None,
+                coverage_status="unknown",
+                owner_resolution_interval=None,
+                selected_sites=[
+                    {"candidate_token_offset": 0, "intended_token_type": "schema"}
+                ],
+            )
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        StateBankEvent.from_mapping(joined)
+
+    assert exc_info.value.code == "state_bank.entity_prefix_coverage_not_resolved"
+
+
+@pytest.mark.parametrize(
+    ("mutate", "expected_code"),
+    [
+        (
+            lambda event: event.update(
+                prefix_object_row_count=0,
+                prefix_coverage_status="empty",
+            ),
+            "state_bank.prefix_coverage_empty",
+        ),
+        (
+            lambda event: event.update(prefix_object_row_count=2),
+            "state_bank.prefix_coverage_resolved",
+        ),
+        (
+            lambda event: event.update(
+                prefix_coverage_status="unresolved",
+            ),
+            "state_bank.prefix_coverage_unresolved",
+        ),
+    ],
+)
+def test_prefix_coverage_shape_rejects_inconsistent_row_token_and_proof_counts(
+    tmp_path: Path, mutate, expected_code: str
+) -> None:
+    rollouts, reviews, _ = synthetic_inputs(tmp_path)
+    joined = _joined_event(rollouts[0], reviews[0])
+    mutate(joined)
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        StateBankEvent.from_mapping(joined)
+
+    assert exc_info.value.code == expected_code
+
+
+def test_unresolved_prefix_coverage_accepts_coordinate_only_unknown_coverage(
+    tmp_path: Path,
+) -> None:
+    joined = _coordinate_only_joined_event(tmp_path)
+    joined["prefix_coverage_status"] = "unresolved"
+    joined["prefix_covered_owner_proofs"] = []
+
+    event = StateBankEvent.from_mapping(joined)
+
+    assert event.prefix_object_row_count == 1
+    assert event.prefix_coverage_status == "unresolved"
+    assert event.prefix_covered_owner_proofs == ()
+    assert event.entity_transition_eligible is False
+    assert all(not candidate.entity_eligible for candidate in event.candidates)
+    assert event.candidates[0].coverage_status == "unknown"
+
+
+@pytest.mark.parametrize(
+    ("mutate", "expected_code"),
+    [
+        (
+            lambda event: event.update(entity_transition_eligible=True),
+            "state_bank.unresolved_prefix_entity_event",
+        ),
+        (
+            lambda event: event["candidates"][0].update(
+                role="positive",
+                coverage_status="uncovered",
+                entity_eligible=True,
+                owner_resolution_interval=[0, 1],
+                selected_sites=[
+                    {
+                        "candidate_token_offset": 0,
+                        "intended_token_type": "desc_text",
+                    },
+                    {
+                        "candidate_token_offset": 1,
+                        "intended_token_type": "coordinate",
+                    },
+                ],
+                generation_provenance={
+                    **event["candidates"][0]["generation_provenance"],
+                    "mode": "sampled",
+                    "seed": 11,
+                    "temperature": 0.2,
+                },
+            ),
+            "state_bank.unresolved_prefix_entity_candidate",
+        ),
+        (
+            lambda event: event["candidates"][0].update(
+                coverage_status="uncovered"
+            ),
+            "state_bank.unresolved_prefix_coordinate_coverage",
+        ),
+    ],
+)
+def test_unresolved_prefix_coverage_rejects_entity_use_and_known_coordinate_coverage(
+    tmp_path: Path, mutate, expected_code: str
+) -> None:
+    joined = _coordinate_only_joined_event(tmp_path)
+    joined["prefix_coverage_status"] = "unresolved"
+    joined["prefix_covered_owner_proofs"] = []
+    mutate(joined)
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        StateBankEvent.from_mapping(joined)
+
+    assert exc_info.value.code == expected_code
 
 
 def test_manifest_binding_is_strict_and_does_not_read_records(
@@ -229,6 +490,183 @@ def test_candidate_rejects_selected_sites_outside_enabled_objectives(
         StateBankCandidate.from_mapping(candidate, field="candidate")
 
     assert exc_info.value.code == "state_bank.selected_site_scope"
+
+
+def test_entity_transition_rejects_untrusted_geometry_when_owner_resolution_reaches_coordinate(
+    tmp_path: Path,
+) -> None:
+    rollouts, reviews, _ = synthetic_inputs(tmp_path)
+    candidate = _joined_event(rollouts[0], reviews[0])["candidates"][0]
+    candidate.update(
+        {
+            "geometry_review_status": "unknown",
+            "geometry_eligible": False,
+            "coordinate_decision": None,
+            "owner_resolution_interval": [0, 2],
+            "selected_sites": [
+                {"candidate_token_offset": 0, "intended_token_type": "desc_text"},
+                {"candidate_token_offset": 1, "intended_token_type": "coordinate"},
+            ],
+        }
+    )
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        StateBankCandidate.from_mapping(candidate, field="candidate")
+
+    assert exc_info.value.code == "state_bank.entity_transition_geometry_untrusted"
+
+
+def test_entity_transition_may_use_trusted_full_row_geometry_without_coordinate_objective(
+    tmp_path: Path,
+) -> None:
+    rollouts, reviews, _ = synthetic_inputs(tmp_path)
+    candidate = _joined_event(rollouts[0], reviews[0])["candidates"][0]
+    candidate.update(
+        {
+            "geometry_review_status": "trusted",
+            "geometry_eligible": False,
+            "coordinate_decision": None,
+            "owner_resolution_interval": [0, 2],
+            "selected_sites": [
+                {"candidate_token_offset": 0, "intended_token_type": "desc_text"},
+                {"candidate_token_offset": 1, "intended_token_type": "coordinate"},
+            ],
+        }
+    )
+
+    parsed = StateBankCandidate.from_mapping(candidate, field="candidate")
+
+    assert parsed.geometry_review_status == "trusted"
+    assert parsed.geometry_eligible is False
+
+
+def test_entity_transition_can_resolve_before_coordinates_with_ambiguous_geometry(
+    tmp_path: Path,
+) -> None:
+    rollouts, reviews, _ = synthetic_inputs(tmp_path)
+    candidate = _joined_event(rollouts[0], reviews[0])["candidates"][0]
+    candidate.update(
+        {
+            "geometry_review_status": "ambiguous",
+            "geometry_eligible": False,
+            "coordinate_decision": None,
+            "owner_resolution_interval": [0, 1],
+            "selected_sites": [
+                {"candidate_token_offset": 0, "intended_token_type": "desc_text"}
+            ],
+        }
+    )
+
+    parsed = StateBankCandidate.from_mapping(candidate, field="candidate")
+
+    assert parsed.geometry_review_status == "ambiguous"
+    assert parsed.owner_resolution_interval == (0, 1)
+
+
+def test_token_identity_rejects_coordinate_token_declared_as_description(
+    tmp_path: Path,
+) -> None:
+    rollouts, reviews, _ = synthetic_inputs(tmp_path)
+    joined = _joined_event(rollouts[0], reviews[0])
+    positive = joined["candidates"][0]
+    positive.update(
+        {
+            "token_ids": [20, 1500, 22],
+            "token_ids_sha256": token_ids_sha256((20, 1500, 22)),
+            "geometry_review_status": "unknown",
+            "geometry_eligible": False,
+            "coordinate_decision": None,
+            "owner_resolution_interval": [0, 2],
+            "selected_sites": [
+                {"candidate_token_offset": 0, "intended_token_type": "desc_text"},
+                {"candidate_token_offset": 1, "intended_token_type": "desc_text"},
+            ],
+        }
+    )
+    joined["coordinate_boundary_eligible"] = False
+    event = StateBankEvent.from_mapping(joined)
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        validate_state_bank_token_identity(
+            SimpleNamespace(records=(event,)),
+            SimpleNamespace(
+                im_end_token_ids=(5,),
+                coordinate_token_ids=tuple(range(1000, 2000)),
+            ),
+        )
+
+    assert exc_info.value.code == "state_bank.entity_transition_geometry_untrusted"
+
+
+def test_token_identity_rejects_untrusted_geometry_on_harmful_duplicate_path(
+    tmp_path: Path,
+) -> None:
+    rollouts, reviews, _ = synthetic_inputs(tmp_path)
+    joined = _joined_event(rollouts[0], reviews[0])
+    positive = joined["candidates"][0]
+    positive.update(
+        {
+            "geometry_review_status": "unknown",
+            "geometry_eligible": False,
+            "coordinate_decision": None,
+            "owner_resolution_interval": [0, 1],
+            "selected_sites": [
+                {"candidate_token_offset": 0, "intended_token_type": "desc_text"}
+            ],
+        }
+    )
+    harmful = joined["candidates"][1]
+    harmful.update(
+        {
+            "token_ids": [30, 1500, 32],
+            "token_ids_sha256": token_ids_sha256((30, 1500, 32)),
+            "geometry_review_status": "ambiguous",
+            "owner_resolution_interval": [0, 2],
+            "selected_sites": [
+                {"candidate_token_offset": 0, "intended_token_type": "desc_text"},
+                {"candidate_token_offset": 1, "intended_token_type": "desc_text"},
+            ],
+        }
+    )
+    joined["coordinate_boundary_eligible"] = False
+    event = StateBankEvent.from_mapping(joined)
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        validate_state_bank_token_identity(
+            SimpleNamespace(records=(event,)),
+            SimpleNamespace(
+                im_end_token_ids=(5,),
+                coordinate_token_ids=tuple(range(1000, 2000)),
+            ),
+        )
+
+    assert exc_info.value.code == "state_bank.entity_transition_geometry_untrusted"
+
+
+def test_historical_smoke_a_entity_path_with_untrusted_coordinate_geometry_is_rejected(
+    tmp_path: Path,
+) -> None:
+    rollouts, reviews, _ = synthetic_inputs(tmp_path)
+    joined = _joined_event(rollouts[0], reviews[0])
+    positive = joined["candidates"][0]
+    positive.update(
+        {
+            "geometry_review_status": "ambiguous",
+            "geometry_eligible": False,
+            "coordinate_decision": None,
+            "owner_resolution_interval": [0, 2],
+            "selected_sites": [
+                {"candidate_token_offset": 0, "intended_token_type": "schema"},
+                {"candidate_token_offset": 1, "intended_token_type": "coordinate"},
+            ],
+        }
+    )
+    joined["coordinate_boundary_eligible"] = False
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        StateBankEvent.from_mapping(joined)
+
+    assert exc_info.value.code == "state_bank.entity_transition_geometry_untrusted"
 
 
 def test_diagnostic_candidate_rejects_selected_gradient_sites(tmp_path: Path) -> None:
@@ -350,7 +788,7 @@ def test_unknown_axis_cannot_receive_direct_gradient(
         ),
         (
             lambda rollouts, reviews: reviews[0].update(prefix_covered_owner_proofs=[]),
-            "state_bank.duplicate_prefix_uncovered",
+            "state_bank.prefix_coverage_resolved",
         ),
         (
             lambda rollouts, reviews: reviews[0]["candidates"][0][
@@ -577,6 +1015,8 @@ def _joined_event(rollout: dict, review: dict) -> dict:
     return {
         **{key: value for key, value in rollout.items() if key != "candidates"},
         "physical_entities": review["physical_entities"],
+        "prefix_object_row_count": review["prefix_object_row_count"],
+        "prefix_coverage_status": review["prefix_coverage_status"],
         "prefix_covered_owner_proofs": review["prefix_covered_owner_proofs"],
         "entity_transition_eligible": review["entity_transition_eligible"],
         "coordinate_boundary_eligible": review["coordinate_boundary_eligible"],

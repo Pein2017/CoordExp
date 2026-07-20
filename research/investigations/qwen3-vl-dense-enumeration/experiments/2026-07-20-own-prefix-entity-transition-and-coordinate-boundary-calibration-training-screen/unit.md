@@ -5,12 +5,12 @@ type: investigation
 role: research-unit
 authority: non_normative_research
 architecture_promotion_status: not_promoted
-training_promotion_status: design_ready_launch_not_authorized
-implementation_status: not_authorized
+training_promotion_status: smoke_a_complete_real_smoke_b_required
+implementation_status: implemented_and_smoke_a_validated
 unit_id: 2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen
 topic: qwen3-vl-dense-enumeration
-status: ready
-evidence_status: none
+status: active
+evidence_status: smoke_a_and_dose_screen_complete
 updated: 2026-07-20
 ---
 
@@ -18,16 +18,58 @@ updated: 2026-07-20
 
 ## Decision Status
 
-This document freezes the scientific design for a small training screen. It
-does not authorize implementation, create a worktree, launch inference, or
-start training. A separate OpenSpec change defines the minimum reusable
-implementation contract. The user will later create equivalent worktrees for
-independent implementation agents and will ask the lead agent to compare their
-results.
+This document originally froze the scientific design for a small training
+screen. The independent implementation race, source-parity check, deterministic
+one-event Smoke A, learning-rate dose screen, checkpoint reload, and ordinary
+greedy inference have now completed. The [Smoke A and dose-screen results](smoke-a-dose-screen-results.md)
+record the evidence and the required interpretation changes.
+
+The formal 256-image screen is still not authorized. The reviewed Smoke B
+coordinate bank contains 13 current-row boundary decisions: 8 image-grouped
+training events and 5 evaluation events. Seven nonempty-prefix events have an
+unresolved prior-row covered set, but all 13 retain an exact prefix and an
+independently reviewed current physical owner and first wrong coordinate.
+Before launch, the bank contract must encode that distinction explicitly and
+the canonical prompt contract must be bound to the source traces.
 
 The screen deliberately tests a loss-only treatment before adding object
 slots, object queries, an external detector, a persistent covered-object
 ledger, a visual write-back mechanism, or any inference-time controller.
+
+## Evidence-Driven Amendment After Smoke A
+
+The one-event dose screen changes the original plan in four ways.
+
+1. The term `entity-transition preference` is too strong for a same-category
+   path whose owner becomes distinguishable only through coordinates. The
+   operational treatment is now called **same-prefix uncovered-versus-covered
+   candidate-row preference**.
+2. Any scored positive or harmful candidate row whose owner-resolution
+   interval contains coordinate tokens must have trusted geometry for that
+   candidate's own sampled path. Entity trust alone is not enough, because
+   those coordinates receive direct gradient. A reviewer-corrected box does
+   not replace the sampled candidate path; it belongs to the separate
+   coordinate-boundary objective unless the corrected path was independently
+   produced by the checkpoint and admitted.
+3. The complete-row preference has a provisional safe dose of `5e-6` on one
+   event. The coordinate-boundary package keeps `1e-5` and `2e-5` for the real
+   Smoke B. A joint arm is deferred because the two objectives have different
+   observed dose ranges.
+4. The coordinate-boundary package changed whole-rollout entity composition
+   on an untrained image. This motivates the multi-state replication but does
+   not yet prove a general coverage or commitment mechanism.
+
+5. Expanded exact-prefix sampling produced no visually trusted same-prefix
+   rescue: all apparent person rescues mixed adjacent instances and the
+   terminal state remained terminal in 128 of 128 samples. Entity-transition
+   and joint arms are therefore deferred rather than filled with weak labels.
+6. The real Smoke B comparison is now coordinate preference plus the selected-
+   site token-type gate versus a matched gate-only control, each at learning
+   rates `1e-5` and `2e-5`. This separates the boundary objective from the
+   accompanying gate instead of attributing their combined effect to one term.
+
+These amendments narrow the next experiment. They do not retroactively change
+the historical two-event bank or its completed evidence.
 
 ## Primary Question
 
@@ -224,12 +266,22 @@ not disable a separately trusted and eligible axis.
 
 ### Prefix admission
 
-A prefix is eligible only when every prior object row maps uniquely to one
-physical entity identifier. All token aliases or sampled rows that refer to
-the same physical entity are grouped; they must not multiply that entity's
-weight. The owner score is the maximum candidate-path score among that owner's
-admitted aliases. The multi-positive smooth maximum is then applied across
-distinct physical-owner scores, not across raw aliases.
+Entity-transition and covered-set claims are eligible only when every prior
+object row maps uniquely to one physical entity identifier. All token aliases
+or sampled rows that refer to the same physical entity are grouped; they must
+not multiply that entity's weight. The owner score is the maximum candidate-
+path score among that owner's admitted aliases. The multi-positive smooth
+maximum is then applied across distinct physical-owner scores, not across raw
+aliases.
+
+A coordinate-only diagnostic may keep a nonempty exact prefix whose prior-row
+owners are unresolved when, and only when, the current-row physical owner,
+geometry, earlier accepted coordinates, and first wrong coordinate are
+independently reviewed. Such an event records unresolved prefix coverage,
+uses no entity-transition gradient, and makes no claim about novelty,
+commitment, covered-object redistribution, or coverage-aware enumeration. The
+exception preserves the conditional question: given this exact natural prefix
+and current owner, can training improve the selected boundary decision?
 
 An actual greedy row that is a valid new entity is committed and the rollout
 continues. It is not used as a negative merely because another valid entity
@@ -278,10 +330,13 @@ selected there. Otherwise the row remains an evaluation and audit example.
 
 ### Imperfect geometry on a real entity
 
-A verified real uncovered entity with imperfect geometry can be positive for
-entity transition while being negative or ignored for geometry, depending on
-whether trusted corrected geometry is available. Entity and geometry
-eligibility are always stored separately.
+A verified real uncovered entity with imperfect geometry can participate in
+the candidate-row preference only when its physical owner is resolved before
+the first coordinate token. If ownership requires any coordinate token, the
+candidate's own scored geometry must be trusted; otherwise the row is
+diagnostic-only for candidate-row preference. Independently trusted corrected
+geometry may still define a first-wrong-coordinate objective for the same
+physical owner. Entity and geometry eligibility remain separate.
 
 ## Sampling Policy for State Collection
 
@@ -466,25 +521,21 @@ once per research term.
 
 ## Loss Arms
 
-The original checkpoint is an evaluation-only baseline. Train three arms from
-each checkpoint:
+The original checkpoint is an evaluation-only baseline. The current Smoke B
+trains four tightly matched arms from that checkpoint:
 
-1. entity-transition preference plus rollout-site token-type gate;
-2. first-wrong-coordinate preference plus rollout-site token-type gate; and
-3. joint entity-transition and coordinate preference plus the same gate.
+1. first-wrong-coordinate preference plus the selected-site token-type gate
+   at learning rate `1e-5`;
+2. the same package at learning rate `2e-5`;
+3. selected-site token-type gate only at learning rate `1e-5`; and
+4. selected-site token-type gate only at learning rate `2e-5`.
 
-Each objective is normalized by its eligible event count over the complete
-optimizer step. In the joint arm:
-
-```text
-joint_research_loss =
-  0.5 * normalized_transition_loss
-  + 0.5 * normalized_geometry_loss
-  + small_weight * normalized_token_type_gate
-```
-
-The token-type-gate weight is one shared small value for all three arms. The
-first screen does not tune arm-specific weights.
+The gate-only arm consumes the exact same coordinate events and selected sites
+but sets both research-objective weights to zero. It is not a no-training
+baseline. Its purpose is to identify whether any observed change comes from
+the first-wrong-coordinate preference or from legal token-type mass alone.
+Entity-transition and joint profiles remain implemented but are not launched
+without a visually trusted same-prefix positive.
 
 Use a low learning rate, gradient clipping, few optimizer steps, and frequent
 evaluation. One shared implementation-race smoke fixture and smoke config must
@@ -497,21 +548,16 @@ are not tuned per checkpoint or image.
 
 ## Experiment Matrix
 
-For each of the two source checkpoints, train:
+Smoke B uses one frozen geometry-sorted pure-cross-entropy source checkpoint,
+one frozen 13-event StateBank, one seed, and the four arms above. Every arm
+sees each of the 8 training events exactly once with effective batch size 4,
+for two optimizer steps. The unchanged source checkpoint is evaluated with the
+same ordinary greedy inference fixture and does not consume a training job.
 
-- entity-transition-only;
-- coordinate-boundary-only; and
-- joint.
-
-Use two training seeds per trained arm. This produces 12 training jobs:
-
-```text
-2 checkpoints * 3 objectives * 2 seeds = 12 jobs
-```
-
-Baseline evaluation reuses each unchanged source checkpoint and does not
-consume a training job. Eight graphics processing units may execute the jobs
-in waves after implementation is approved.
+This is a mechanism and launch screen, not a variance estimate. Replicated
+seeds and a 256-image screen are permitted only if one coordinate arm improves
+held-out coordinate margins, preserves owner consistency and ordinary rollout
+health, and exceeds its learning-rate-matched gate-only control.
 
 ## Smoke Ladder
 
@@ -536,11 +582,14 @@ an implementation agent may not substitute an easier event.
 
 Verify:
 
-- both event families can train;
-- each single arm changes its intended local behavior;
-- the joint arm receives both gradient families;
+- reviewed first-wrong-coordinate events train under both learning rates;
+- each coordinate arm changes its held-out coordinate margin more than its
+  learning-rate-matched selected-site token-type-gate-only control;
 - ordinary free-row output remains parseable; and
 - no hidden canonical supervised-fine-tuning replay is present.
+
+Entity-transition and joint training are not part of this Smoke B because the
+same-prefix sampling panel produced no visually trusted complete-row rescue.
 
 ### Formal screen: frozen 256-image state bank
 

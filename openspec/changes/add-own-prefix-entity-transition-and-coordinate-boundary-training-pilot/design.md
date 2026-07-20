@@ -149,12 +149,17 @@ rollout-calibration mode may enable:
 
 - entity-transition preference;
 - first-wrong-coordinate preference; or
+- the coordinate selected-site token-type gate alone as a matched control; or
 - both terms jointly.
 
 It omits ordinary full-row base cross-entropy and consumes only rollout-derived
 selected sites. The loss runner keeps per-term eligibility and complete
 planned-step denominators. A joint run normalizes transition and geometry
 separately before applying their configured weights.
+
+The gate-only control reuses the coordinate event stream and selected sites,
+sets both research-objective weights to zero, and differs from the coordinate
+package only by removing the first-wrong-coordinate preference term.
 
 All selected logits used by the research objectives are converted to 32-bit
 floating point before `logsumexp`, `softplus`, normalization, or metric math.

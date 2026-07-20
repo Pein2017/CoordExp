@@ -1,0 +1,183 @@
+{
+  "schema_version": "exact_trace_coordinate_visual_review.v1",
+  "reviewed_at_utc": "2026-07-20",
+  "reviewer": "codex-main-agent-visual-review",
+  "source_packet": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-b-v1/coordinate-review-packet/review-packet.json",
+    "sha256": "3f96ca213ee6338332c1e95945b23b95fbc72764aacd1089d467cd5fb94b3465"
+  },
+  "review_policy": {
+    "entity_and_geometry_are_separate": true,
+    "official_ledger_geometry_is_not_automatically_trusted": true,
+    "accepted_case_requires": [
+      "one visually identifiable physical owner",
+      "all coordinates before the selected boundary are visually acceptable",
+      "the selected boundary is the first visually unacceptable coordinate",
+      "the accepted replacement range is supported by the enlarged original-image crop"
+    ]
+  },
+  "decisions": [
+    {
+      "case_id": "image-12576-row-12-fork-left-boundary",
+      "status": "accepted_for_coordinate_objective",
+      "entity_review_status": "trusted",
+      "geometry_review_status": "trusted",
+      "review_confidence": "medium",
+      "first_wrong_coordinate": "x1",
+      "accepted_coordinate_ranges_inclusive": {"x1": [868, 878]},
+      "comment": "The generated left boundary cuts into the visible fork. The enlarged crop supports a left edge near the ledger reference, with moderate uncertainty from blur."
+    },
+    {
+      "case_id": "image-12576-row-13-pizza-right-boundary",
+      "status": "rejected",
+      "entity_review_status": "trusted",
+      "geometry_review_status": "untrusted",
+      "review_confidence": "high",
+      "first_wrong_coordinate": null,
+      "accepted_coordinate_ranges_inclusive": null,
+      "comment": "The generated right boundary follows the visible pizza more closely than the wider ledger box, which includes substantial pizza-box or table context. The proposed correction is not trustworthy."
+    },
+    {
+      "case_id": "image-18380-row-13-person-top-boundary",
+      "status": "rejected",
+      "entity_review_status": "trusted",
+      "geometry_review_status": "untrusted",
+      "review_confidence": "high",
+      "first_wrong_coordinate": null,
+      "accepted_coordinate_ranges_inclusive": null,
+      "comment": "The generated top boundary includes the person's hair, while the ledger top boundary cuts through it. The proposed y1 correction points in the wrong direction."
+    },
+    {
+      "case_id": "image-19109-row-10-motorcycle-left-boundary",
+      "status": "accepted_for_coordinate_objective",
+      "entity_review_status": "trusted",
+      "geometry_review_status": "trusted",
+      "review_confidence": "medium",
+      "first_wrong_coordinate": "x1",
+      "accepted_coordinate_ranges_inclusive": {"x1": [585, 605]},
+      "comment": "The generated left boundary omits the target motorcycle's visible left body. Dense overlap makes the exact edge moderately uncertain, but the generated x1 is clearly too far right."
+    },
+    {
+      "case_id": "image-19109-row-12-motorcycle-left-boundary",
+      "status": "accepted_for_coordinate_objective",
+      "entity_review_status": "trusted",
+      "geometry_review_status": "trusted",
+      "review_confidence": "medium",
+      "first_wrong_coordinate": "x1",
+      "accepted_coordinate_ranges_inclusive": {"x1": [708, 724]},
+      "comment": "The generated x1 cuts the left part of the selected motorcycle. The target remains distinguishable despite neighboring motorcycles."
+    },
+    {
+      "case_id": "image-19109-row-13-motorcycle-left-boundary",
+      "status": "accepted_for_coordinate_objective",
+      "entity_review_status": "trusted",
+      "geometry_review_status": "trusted",
+      "review_confidence": "high",
+      "first_wrong_coordinate": "x1",
+      "accepted_coordinate_ranges_inclusive": {"x1": [104, 120]},
+      "comment": "The generated box begins at the image edge and absorbs an adjacent motorcycle. The target motorcycle has a clear left boundary near the ledger reference."
+    },
+    {
+      "case_id": "image-19432-row-8-chair-top-boundary-diagnostic",
+      "status": "accepted_for_coordinate_objective",
+      "entity_review_status": "trusted",
+      "geometry_review_status": "trusted",
+      "review_confidence": "medium",
+      "first_wrong_coordinate": "y1",
+      "accepted_coordinate_ranges_inclusive": {"x1": [425, 448], "y1": [25, 46]},
+      "comment": "The generated x1 is acceptable, but y1 removes the upper back of the vertically aligned chair. This remains an evaluation-only dense-chair diagnostic because adjacent instances are highly repetitive."
+    },
+    {
+      "case_id": "image-19432-row-9-chair-left-boundary-diagnostic",
+      "status": "accepted_for_coordinate_objective",
+      "entity_review_status": "trusted",
+      "geometry_review_status": "trusted",
+      "review_confidence": "medium",
+      "first_wrong_coordinate": "x1",
+      "accepted_coordinate_ranges_inclusive": {"x1": [635, 650]},
+      "comment": "The generated left boundary extends into the neighboring chair. The selected chair's left support is visible near the ledger reference; keep this as an evaluation-only dense-chair diagnostic."
+    },
+    {
+      "case_id": "image-2299-row-17-person-top-boundary",
+      "status": "accepted_for_coordinate_objective",
+      "entity_review_status": "trusted",
+      "geometry_review_status": "trusted",
+      "review_confidence": "high",
+      "first_wrong_coordinate": "y1",
+      "accepted_coordinate_ranges_inclusive": {"x1": [560, 585], "y1": [380, 410]},
+      "comment": "The generated x1 is acceptable. Its y1 starts below the person's head and shoulders, whereas the enlarged crop supports the earlier top boundary."
+    },
+    {
+      "case_id": "image-7816-row-1-person-bottom-boundary",
+      "status": "accepted_for_coordinate_objective",
+      "entity_review_status": "trusted",
+      "geometry_review_status": "trusted",
+      "review_confidence": "high",
+      "first_wrong_coordinate": "y2",
+      "accepted_coordinate_ranges_inclusive": {"x1": [900, 918], "y1": [100, 120], "x2": [960, 978], "y2": [420, 450]},
+      "comment": "The first three boundaries isolate the orange-shirt person. The generated y2 stops well above the visible lower body and legs."
+    },
+    {
+      "case_id": "image-7816-row-7-person-bottom-boundary",
+      "status": "accepted_for_coordinate_objective",
+      "entity_review_status": "trusted",
+      "geometry_review_status": "trusted",
+      "review_confidence": "high",
+      "first_wrong_coordinate": "y2",
+      "accepted_coordinate_ranges_inclusive": {"x1": [558, 573], "y1": [243, 260], "x2": [594, 608], "y2": [340, 358]},
+      "comment": "The first three generated boundaries are acceptable. The generated y2 extends into the motorcycle below the small seated person."
+    },
+    {
+      "case_id": "image-9400-row-0-person-right-boundary",
+      "status": "accepted_for_coordinate_objective",
+      "entity_review_status": "trusted",
+      "geometry_review_status": "trusted",
+      "review_confidence": "high",
+      "first_wrong_coordinate": "x2",
+      "accepted_coordinate_ranges_inclusive": {"x1": [874, 880], "y1": [98, 99], "x2": [959, 961]},
+      "comment": "Reuses the previously reviewed Smoke A boundary decision: x1 and y1 are accepted, while x2=999 includes substantial background to the person's right."
+    },
+    {
+      "case_id": "image-9400-row-11-laptop-right-boundary",
+      "status": "rejected",
+      "entity_review_status": "trusted",
+      "geometry_review_status": "untrusted",
+      "review_confidence": "medium",
+      "first_wrong_coordinate": null,
+      "accepted_coordinate_ranges_inclusive": null,
+      "comment": "The laptop's visible right extent is ambiguous because the screen, base, and nearby table objects overlap. The wider ledger x2 is not sufficiently supported for training."
+    },
+    {
+      "case_id": "image-9400-row-3-person-bottom-boundary",
+      "status": "accepted_for_coordinate_objective",
+      "entity_review_status": "trusted",
+      "geometry_review_status": "trusted",
+      "review_confidence": "medium",
+      "first_wrong_coordinate": "y2",
+      "accepted_coordinate_ranges_inclusive": {"x1": [710, 735], "y1": [135, 150], "x2": [820, 845], "y2": [445, 475]},
+      "comment": "The first three boundaries identify the same central person. The generated y2 cuts off a visible lower portion, although table occlusion makes the exact boundary moderately uncertain."
+    },
+    {
+      "case_id": "image-9590-row-0-person-right-boundary",
+      "status": "accepted_for_coordinate_objective",
+      "split_override": "eval",
+      "entity_review_status": "trusted",
+      "geometry_review_status": "trusted",
+      "review_confidence": "high",
+      "first_wrong_coordinate": "x2",
+      "accepted_coordinate_ranges_inclusive": {"x1": [0, 10], "y1": [115, 140], "x2": [355, 385]},
+      "comment": "The generated x1 and y1 are acceptable for the large foreground person. Its x2 extends across the center of the scene and includes another person and table context."
+    },
+    {
+      "case_id": "image-9590-row-2-person-left-boundary",
+      "status": "accepted_for_coordinate_objective",
+      "split_override": "eval",
+      "entity_review_status": "trusted",
+      "geometry_review_status": "trusted",
+      "review_confidence": "high",
+      "first_wrong_coordinate": "x1",
+      "accepted_coordinate_ranges_inclusive": {"x1": [790, 810]},
+      "comment": "The generated left boundary includes a wide curtain or background strip. The person's visible left extent begins near the ledger reference."
+    }
+  ]
+}

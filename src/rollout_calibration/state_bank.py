@@ -44,6 +44,7 @@ _REVIEW_STATUSES = frozenset({"trusted", "unknown", "ambiguous"})
 _ROLES = frozenset({"positive", "harmful", "diagnostic"})
 _HARMFUL_KINDS = frozenset({"duplicate", "premature_terminal"})
 _COVERAGE_STATUSES = frozenset({"uncovered", "covered", "unknown"})
+_PREFIX_COVERAGE_STATUSES = frozenset({"empty", "resolved", "unresolved"})
 _TOKEN_TYPES = frozenset({"desc_text", "schema", "coordinate", "eos"})
 _COORDINATE_AXES = {
     "x1": "horizontal",
@@ -812,6 +813,22 @@ class StateBankCandidate:
                         field=field,
                         missing_offsets=missing_sites,
                     )
+                if self.geometry_review_status != "trusted":
+                    coordinate_offsets = [
+                        site.candidate_token_offset
+                        for site in self.selected_sites
+                        if (
+                            start <= site.candidate_token_offset < end
+                            and site.intended_token_type == "coordinate"
+                        )
+                    ]
+                    if coordinate_offsets:
+                        _fail(
+                            "state_bank.entity_transition_geometry_untrusted",
+                            "entity-transition candidate resolving through coordinate tokens requires trusted geometry review",
+                            field=field,
+                            coordinate_offsets=coordinate_offsets,
+                        )
             if self.role == "positive" and self.coverage_status != "uncovered":
                 _fail(
                     "state_bank.positive_coverage",
@@ -918,6 +935,8 @@ class StateBankEvent:
     prefix_token_ids: tuple[int, ...]
     prefix_token_ids_sha256: str
     physical_entities: tuple[PhysicalEntity, ...]
+    prefix_object_row_count: int
+    prefix_coverage_status: str
     prefix_covered_owner_proofs: tuple[PrefixCoveredOwnerProof, ...]
     entity_transition_eligible: bool
     coordinate_boundary_eligible: bool
@@ -942,6 +961,8 @@ class StateBankEvent:
                 "prefix_token_ids",
                 "prefix_token_ids_sha256",
                 "physical_entities",
+                "prefix_object_row_count",
+                "prefix_coverage_status",
                 "prefix_covered_owner_proofs",
                 "entity_transition_eligible",
                 "coordinate_boundary_eligible",
@@ -1027,6 +1048,15 @@ class StateBankEvent:
         proof_indices = tuple(
             item.prefix_object_row_index for item in prefix_owner_proofs
         )
+        prefix_object_row_count = _require_nonnegative_int(
+            checked["prefix_object_row_count"],
+            field=f"{field}.prefix_object_row_count",
+        )
+        prefix_coverage_status = _choice(
+            checked["prefix_coverage_status"],
+            _PREFIX_COVERAGE_STATUSES,
+            field=f"{field}.prefix_coverage_status",
+        )
         if proof_indices != tuple(range(len(prefix_owner_proofs))):
             _fail(
                 "state_bank.prefix_owner_proof_rows",
@@ -1034,6 +1064,46 @@ class StateBankEvent:
                 field=field,
                 row_indices=list(proof_indices),
             )
+        if prefix_coverage_status == "empty":
+            if prefix_object_row_count != 0 or prefix_ids or prefix_owner_proofs:
+                _fail(
+                    "state_bank.prefix_coverage_empty",
+                    "empty prefix coverage requires zero object rows, empty prefix tokens, and zero owner proofs",
+                    field=field,
+                    prefix_object_row_count=prefix_object_row_count,
+                    prefix_token_count=len(prefix_ids),
+                    proof_count=len(prefix_owner_proofs),
+                )
+        elif prefix_coverage_status == "resolved":
+            if (
+                prefix_object_row_count == 0
+                or not prefix_ids
+                or len(prefix_owner_proofs) != prefix_object_row_count
+                or proof_indices != tuple(range(prefix_object_row_count))
+            ):
+                _fail(
+                    "state_bank.prefix_coverage_resolved",
+                    "resolved prefix coverage requires a nonempty prefix and one ordered owner proof for every prior object row",
+                    field=field,
+                    prefix_object_row_count=prefix_object_row_count,
+                    prefix_token_count=len(prefix_ids),
+                    proof_count=len(prefix_owner_proofs),
+                    proof_row_indices=list(proof_indices),
+                )
+        else:
+            if (
+                prefix_object_row_count == 0
+                or not prefix_ids
+                or prefix_owner_proofs
+            ):
+                _fail(
+                    "state_bank.prefix_coverage_unresolved",
+                    "unresolved prefix coverage requires one or more prior object rows, a nonempty prefix, and zero owner proofs",
+                    field=field,
+                    prefix_object_row_count=prefix_object_row_count,
+                    prefix_token_count=len(prefix_ids),
+                    proof_count=len(prefix_owner_proofs),
+                )
         candidates = tuple(
             StateBankCandidate.from_mapping(item, field=f"{field}.candidates[{index}]")
             for index, item in enumerate(
@@ -1062,6 +1132,8 @@ class StateBankEvent:
             prefix_token_ids=prefix_ids,
             prefix_token_ids_sha256=prefix_hash,
             physical_entities=entities,
+            prefix_object_row_count=prefix_object_row_count,
+            prefix_coverage_status=prefix_coverage_status,
             prefix_covered_owner_proofs=prefix_owner_proofs,
             entity_transition_eligible=_bool(
                 checked["entity_transition_eligible"],
@@ -1208,20 +1280,104 @@ class StateBankEvent:
             for candidate in self.candidates
             if candidate.generation_provenance.mode == "greedy"
         ]
+        if self.prefix_coverage_status == "unresolved":
+            if self.entity_transition_eligible:
+                _fail(
+                    "state_bank.unresolved_prefix_entity_event",
+                    "unresolved prefix coverage cannot support entity-transition supervision",
+                    event_id=self.event_id,
+                )
+            entity_eligible_ids = [
+                candidate.candidate_id
+                for candidate in self.candidates
+                if candidate.entity_eligible
+            ]
+            if entity_eligible_ids:
+                _fail(
+                    "state_bank.unresolved_prefix_entity_candidate",
+                    "every candidate must be entity-ineligible when prefix coverage is unresolved",
+                    event_id=self.event_id,
+                    candidate_ids=entity_eligible_ids,
+                )
+            coordinate_candidates_with_known_coverage = [
+                candidate.candidate_id
+                for candidate in geometry_candidates
+                if candidate.coverage_status != "unknown"
+            ]
+            if coordinate_candidates_with_known_coverage:
+                _fail(
+                    "state_bank.unresolved_prefix_coordinate_coverage",
+                    "coordinate candidates must declare unknown coverage when prefix coverage is unresolved",
+                    event_id=self.event_id,
+                    candidate_ids=coordinate_candidates_with_known_coverage,
+                )
         if (
-            len(harmful_candidates) != 1
-            or len(greedy_candidates) != 1
-            or greedy_candidates[0] is not harmful_candidates[0]
+            self.entity_transition_eligible
+            and self.prefix_coverage_status != "resolved"
         ):
             _fail(
-                "state_bank.greedy_harmful_identity",
-                "the sole harmful branch must be the sole producer-declared greedy candidate",
+                "state_bank.entity_prefix_coverage_not_resolved",
+                "entity-transition supervision requires fully resolved prefix coverage",
                 event_id=self.event_id,
-                greedy_candidate_ids=[item.candidate_id for item in greedy_candidates],
-                harmful_candidate_ids=[
-                    item.candidate_id for item in harmful_candidates
-                ],
+                prefix_coverage_status=self.prefix_coverage_status,
             )
+        if self.entity_transition_eligible:
+            if (
+                len(harmful_candidates) != 1
+                or len(greedy_candidates) != 1
+                or greedy_candidates[0] is not harmful_candidates[0]
+            ):
+                _fail(
+                    "state_bank.greedy_harmful_identity",
+                    "the sole harmful branch must be the sole producer-declared greedy candidate",
+                    event_id=self.event_id,
+                    greedy_candidate_ids=[item.candidate_id for item in greedy_candidates],
+                    harmful_candidate_ids=[
+                        item.candidate_id for item in harmful_candidates
+                    ],
+                )
+        elif self.coordinate_boundary_eligible:
+            # A coordinate-only event is a diagnostic replay of one exact
+            # greedy row, not an entity-transition preference.  Its sole
+            # greedy candidate is therefore intentionally diagnostic and has
+            # no harmful branch.  The coordinate objective still consumes its
+            # reviewed wrong-boundary decision below.
+            if harmful_candidates:
+                _fail(
+                    "state_bank.coordinate_harmful_candidate",
+                    "coordinate-only event must not declare a harmful candidate",
+                    event_id=self.event_id,
+                    harmful_candidate_ids=[
+                        item.candidate_id for item in harmful_candidates
+                    ],
+                )
+            if len(greedy_candidates) != 1:
+                _fail(
+                    "state_bank.coordinate_greedy_diagnostic",
+                    "coordinate-only event requires exactly one diagnostic greedy candidate",
+                    event_id=self.event_id,
+                    greedy_candidate_ids=[item.candidate_id for item in greedy_candidates],
+                    greedy_roles=[item.role for item in greedy_candidates],
+                )
+            diagnostic = greedy_candidates[0]
+            if not (
+                diagnostic.role == "diagnostic"
+                and diagnostic.harmful_kind is None
+                and not diagnostic.entity_eligible
+                and diagnostic.geometry_eligible
+                and diagnostic.coordinate_decision is not None
+            ):
+                _fail(
+                    "state_bank.coordinate_greedy_diagnostic",
+                    "coordinate-only greedy candidate must be diagnostic, geometry-eligible, entity-ineligible, and carry a coordinate decision",
+                    event_id=self.event_id,
+                    candidate_id=diagnostic.candidate_id,
+                    role=diagnostic.role,
+                    harmful_kind=diagnostic.harmful_kind,
+                    entity_eligible=diagnostic.entity_eligible,
+                    geometry_eligible=diagnostic.geometry_eligible,
+                    has_coordinate_decision=diagnostic.coordinate_decision is not None,
+                )
         non_sampled_positives = [
             candidate.candidate_id
             for candidate in self.candidates
@@ -1329,6 +1485,8 @@ class StateBankEvent:
             "physical_entities": [
                 entity.to_artifact_dict() for entity in self.physical_entities
             ],
+            "prefix_object_row_count": self.prefix_object_row_count,
+            "prefix_coverage_status": self.prefix_coverage_status,
             "prefix_covered_owner_proofs": [
                 proof.to_artifact_dict() for proof in self.prefix_covered_owner_proofs
             ],
@@ -1778,6 +1936,7 @@ def validate_state_bank_token_identity(
             terminal_token_count=len(terminal_token_ids),
             coordinate_token_count=len(coordinate_token_ids),
         )
+    coordinate_token_id_set = frozenset(coordinate_token_ids)
     for event in bank.records:
         for candidate in event.candidates:
             if candidate.harmful_kind == "premature_terminal" and (
@@ -1791,25 +1950,46 @@ def validate_state_bank_token_identity(
                     expected_token_ids=list(terminal_token_ids),
                     actual_token_ids=list(candidate.token_ids),
                 )
+    for event in bank.records:
+        for candidate in event.candidates:
             decision = candidate.coordinate_decision
-            if decision is None:
-                continue
-            for observation in decision.observations:
-                expected_coordinate_id = coordinate_token_ids[
-                    observation.actual_coordinate_value
+            if decision is not None:
+                for observation in decision.observations:
+                    expected_coordinate_id = coordinate_token_ids[
+                        observation.actual_coordinate_value
+                    ]
+                    actual_coordinate_id = candidate.token_ids[
+                        observation.candidate_token_offset
+                    ]
+                    if actual_coordinate_id != expected_coordinate_id:
+                        _fail(
+                            "state_bank.coordinate_token_identity",
+                            "coordinate observation value does not match its exact candidate token",
+                            event_id=event.event_id,
+                            candidate_id=candidate.candidate_id,
+                            coordinate=observation.coordinate,
+                            expected_token_id=expected_coordinate_id,
+                            actual_token_id=actual_coordinate_id,
+                        )
+            if (
+                candidate.entity_eligible
+                and candidate.harmful_kind != "premature_terminal"
+                and candidate.owner_resolution_interval is not None
+                and candidate.geometry_review_status != "trusted"
+            ):
+                start, end = candidate.owner_resolution_interval
+                actual_coordinate_offsets = [
+                    offset
+                    for offset in range(start, end)
+                    if candidate.token_ids[offset] in coordinate_token_id_set
                 ]
-                actual_coordinate_id = candidate.token_ids[
-                    observation.candidate_token_offset
-                ]
-                if actual_coordinate_id != expected_coordinate_id:
+                if actual_coordinate_offsets:
                     _fail(
-                        "state_bank.coordinate_token_identity",
-                        "coordinate observation value does not match its exact candidate token",
+                        "state_bank.entity_transition_geometry_untrusted",
+                        "entity-transition candidate resolving through bound coordinate tokens requires trusted geometry review",
                         event_id=event.event_id,
                         candidate_id=candidate.candidate_id,
-                        coordinate=observation.coordinate,
-                        expected_token_id=expected_coordinate_id,
-                        actual_token_id=actual_coordinate_id,
+                        coordinate_offsets=actual_coordinate_offsets,
                     )
 
 
@@ -1839,6 +2019,8 @@ def _join_rollout_and_review(
             "admission_status",
             "rejection_reason",
             "physical_entities",
+            "prefix_object_row_count",
+            "prefix_coverage_status",
             "prefix_covered_owner_proofs",
             "entity_transition_eligible",
             "coordinate_boundary_eligible",
@@ -1919,6 +2101,8 @@ def _join_rollout_and_review(
         "prefix_token_ids": rollout["prefix_token_ids"],
         "prefix_token_ids_sha256": rollout["prefix_token_ids_sha256"],
         "physical_entities": review["physical_entities"],
+        "prefix_object_row_count": review["prefix_object_row_count"],
+        "prefix_coverage_status": review["prefix_coverage_status"],
         "prefix_covered_owner_proofs": review["prefix_covered_owner_proofs"],
         "entity_transition_eligible": review["entity_transition_eligible"],
         "coordinate_boundary_eligible": review["coordinate_boundary_eligible"],
