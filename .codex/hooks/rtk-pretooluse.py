@@ -14,6 +14,7 @@ from pathlib import Path
 
 PYTHON_NAMES = {"python", "python3", "python3.10", "python3.11", "python3.12"}
 MACHINE_OUTPUT_FLAGS = {"--json", "-json", "--porcelain", "-z"}
+MACHINE_OUTPUT_FLAG_PREFIXES = ("--json=", "--porcelain=")
 SHELL_NAMES = {"bash", "dash", "sh", "zsh"}
 SUPPORTED_TOOL_NAMES = {"Bash", "shell", "exec_command", "functions.exec_command"}
 CONDA_RUN_FLAGS = {
@@ -25,6 +26,7 @@ CONDA_RUN_FLAGS = {
     "--verbose",
 }
 CONDA_RUN_OPTIONS_WITH_VALUES = {"-n", "--name", "-p", "--prefix", "--cwd"}
+SAFE_TARGET_REPLACEMENTS = {"cat": "read"}
 NOISY_COMMANDS = {
     "bun",
     "cargo",
@@ -50,6 +52,7 @@ NOISY_COMMANDS = {
 }
 INFO_COMMAND_ARGS = {"--help", "-h", "--version", "version", "-version"}
 SHELL_OPERATOR_TOKENS = {"|", "||", "&&", ";", "&", ">", ">>", "<", "2>", "2>>"}
+LOGICAL_CHAIN_OPERATORS = {"&&", "||", ";", "&"}
 
 
 def main() -> int:
@@ -112,10 +115,13 @@ def rewrite_command(command: str) -> str | None:
     shell_wrapped = unwrap_shell(tokens)
     if shell_wrapped is not None:
         prefix, inner = shell_wrapped
-        rewritten_inner = rewrite_simple_command(inner)
+        rewritten_inner = rewrite_command(inner)
         if rewritten_inner is None:
             return None
         return shlex.join([*prefix, rewritten_inner])
+
+    if has_shell_operator(command):
+        return rewrite_compound_command(command, tokens)
 
     conda_wrapped = unwrap_conda_run(tokens)
     if conda_wrapped is not None:
@@ -132,6 +138,133 @@ def rewrite_command(command: str) -> str | None:
         return shlex.join([*prefix, *rewritten_inner_tokens])
 
     return rewrite_simple_command(command)
+
+
+def rewrite_compound_command(command: str, tokens: list[str]) -> str | None:
+    """Accept only RTK rewrites that preserve the compound shell command.
+
+    RTK is the source of truth for which shell combinations it understands.
+    The extra token check prevents a rewrite from changing an argument or a
+    shell operator; this is especially important for pipelines and redirects.
+    Exact/machine-readable output remains raw because RTK's compact formatter
+    is not a drop-in replacement for those byte-level contracts.
+    """
+
+    if any(is_machine_output_flag(token) for token in tokens):
+        return None
+
+    shell_tokens = split_shell_tokens(command)
+    if not shell_tokens:
+        return None
+    operators = [token for token in shell_tokens if token in SHELL_OPERATOR_TOKENS]
+    if operators and all(token in LOGICAL_CHAIN_OPERATORS for token in operators):
+        return rewrite_logical_chain(shell_tokens)
+
+    rewritten = rewrite_with_rtk(command)
+    if rewritten is None or rewritten == command:
+        return None
+    if not is_rtk_insertion_only(command, rewritten):
+        return None
+    return rewritten
+
+
+def rewrite_logical_chain(tokens: list[str]) -> str | None:
+    """Rewrite independent commands joined by logical shell operators."""
+
+    parts: list[str] = []
+    segment: list[str] = []
+    changed = False
+    for token in [*tokens, None]:
+        if token is None or token in LOGICAL_CHAIN_OPERATORS:
+            if not segment:
+                return None
+            segment_command = shlex.join(segment)
+            rewritten_segment = rewrite_command(segment_command)
+            if rewritten_segment is None:
+                rewritten_segment = segment_command
+            else:
+                changed = True
+            parts.append(rewritten_segment)
+            segment = []
+            if token is not None:
+                parts.append(token)
+            continue
+        segment.append(token)
+
+    if not changed:
+        return None
+    return " ".join(parts)
+
+
+def is_rtk_insertion_only(command: str, rewritten: str) -> bool:
+    """Return whether ``rewritten`` only inserts ``rtk`` tokens.
+
+    This keeps RTK's supported command/operator selection while rejecting
+    transformations such as ``rg --files`` becoming a different executable.
+    """
+
+    original_tokens = split_shell_tokens(command)
+    rewritten_tokens = split_shell_tokens(rewritten)
+    if not original_tokens or not rewritten_tokens:
+        return False
+
+    original_index = 0
+    inserted = 0
+    for token in rewritten_tokens:
+        if original_index < len(original_tokens) and token == original_tokens[original_index]:
+            original_index += 1
+            continue
+        if token == "rtk":
+            inserted += 1
+            continue
+        return False
+    return inserted > 0 and original_index == len(original_tokens)
+
+
+def split_shell_tokens(command: str) -> list[str] | None:
+    """Tokenize shell syntax for comparison, including adjacent operators."""
+
+    try:
+        lexer = shlex.shlex(command.strip(), posix=True, punctuation_chars=";&|<>")
+        lexer.whitespace_split = True
+        return list(lexer)
+    except ValueError:
+        return None
+
+
+def has_shell_operator(command: str) -> bool:
+    """Detect compound-command operators without treating quoted text as syntax."""
+
+    quote: str | None = None
+    escaped = False
+    idx = 0
+    while idx < len(command):
+        character = command[idx]
+        if escaped:
+            escaped = False
+            idx += 1
+            continue
+        if character == "\\" and quote != "'":
+            escaped = True
+            idx += 1
+            continue
+        if quote is not None:
+            if character == quote:
+                quote = None
+            idx += 1
+            continue
+        if character in {"'", '"'}:
+            quote = character
+            idx += 1
+            continue
+        if command.startswith(("&&", "||"), idx) or character in {";", "|", "&", ">", "<"}:
+            return True
+        idx += 1
+    return False
+
+
+def is_machine_output_flag(token: str) -> bool:
+    return token in MACHINE_OUTPUT_FLAGS or token.startswith(MACHINE_OUTPUT_FLAG_PREFIXES)
 
 
 def rewrite_simple_command(command: str) -> str | None:
@@ -309,6 +442,12 @@ def repair_or_reject_rtk_rewrite(
         return shlex.join(rewritten_tokens)
 
     target = rtk_target_after(rewritten_tokens, rtk_index)
+    safe_target = SAFE_TARGET_REPLACEMENTS.get(candidate)
+    if safe_target == target:
+        rewritten_args = rewritten_tokens[rtk_index + 2 :]
+        if rewritten_args == original_args:
+            return shlex.join([*prefix, "rtk", safe_target, *original_args])
+
     if candidate == "rg" and "--files" in original_args and target == "grep":
         return None
 
@@ -432,11 +571,7 @@ def is_shell_assignment(token: str) -> bool:
 
 def should_skip_exact_output(tokens: list[str], idx: int) -> bool:
     candidate = Path(tokens[idx]).name
-    if candidate in {"awk", "cat", "date", "jq", "nl", "pwd", "sed", "wc"}:
-        return True
-    if candidate == "find" and not is_simple_rtk_find_shape(tokens[idx + 1 :]):
-        return True
-    if any(flag in MACHINE_OUTPUT_FLAGS for flag in tokens[idx + 1 :]):
+    if any(is_machine_output_flag(flag) for flag in tokens[idx + 1 :]):
         return True
     if "-o" in tokens and "json" in tokens:
         return True
@@ -445,43 +580,6 @@ def should_skip_exact_output(tokens: list[str], idx: int) -> bool:
     if candidate == "node" and idx + 1 < len(tokens) and tokens[idx + 1] == "-e":
         return True
     return False
-
-
-def is_simple_rtk_find_shape(args: list[str]) -> bool:
-    """Return True only for simple searches that RTK can safely rewrite.
-
-    Native find predicates/actions are intentionally skipped because RTK's find
-    shorthand does not support the full find expression language.
-    """
-
-    find_expression_tokens = {
-        "!",
-        "(",
-        ")",
-        "-a",
-        "-and",
-        "-delete",
-        "-exec",
-        "-execdir",
-        "-false",
-        "-fls",
-        "-fprint",
-        "-fprint0",
-        "-fprintf",
-        "-ls",
-        "-not",
-        "-o",
-        "-ok",
-        "-okdir",
-        "-or",
-        "-print",
-        "-print0",
-        "-printf",
-        "-prune",
-        "-quit",
-        "-true",
-    }
-    return not any(arg.startswith("-") or arg in find_expression_tokens for arg in args)
 
 
 if __name__ == "__main__":

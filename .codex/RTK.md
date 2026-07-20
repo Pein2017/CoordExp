@@ -15,9 +15,10 @@ rtk npm run build
 rtk pytest -q
 ```
 
-The local Codex PreToolUse hook also rewrites common shell commands through
-RTK automatically. If exact stdout, shell syntax, or machine-readable output
-matters, prefer the raw command with `RTK_HOOK_DISABLE=1` or use `rtk proxy`.
+The local Codex PreToolUse hook also rewrites common shell commands and RTK-
+supported compound commands through RTK automatically. If exact stdout,
+shell syntax, or machine-readable output matters, prefer the raw command with
+`RTK_HOOK_DISABLE=1` or use `rtk proxy`.
 
 ## CoordExp Caveats
 
@@ -25,7 +26,8 @@ matters, prefer the raw command with `RTK_HOOK_DISABLE=1` or use `rtk proxy`.
   version checks, or ambiguous "No tests collected" output. `rtk pytest` may
   summarize zero selected or informational pytest runs too aggressively.
 - Use `RTK_HOOK_DISABLE=1 <command>` for exact Git status/diff output,
-  structured JSON/YAML, NUL-delimited output, or commands with shell pipelines.
+  structured JSON/YAML, NUL-delimited output, or a pipeline whose downstream
+  consumer requires the producer's raw bytes.
 - Do not rely on `rtk pytest --version`; upstream currently collapses that
   informational output into the pytest summary path.
 - If RTK output is surprising, re-run once with `rtk proxy <command>` before
