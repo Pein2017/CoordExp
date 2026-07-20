@@ -1,13 +1,30 @@
 {
   "schema_version": "own_prefix_entity_transition_review.v1",
   "research_unit": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/unit.md",
-  "status": "closed_without_eligible_transition_event",
+  "status": "frozen_with_one_human_reviewed_transition_event",
   "reviewed_at_utc": "2026-07-20T20:00:00Z",
   "reviewer": {
     "identity": "lead_agent",
     "confidence": "high",
     "method": "Exact-artifact inspection followed by full-image and four-times enlarged crop review with the sampled prediction and all adjacent physical-owner boxes overlaid."
   },
+  "review_history": [
+    {
+      "reviewer": "lead_agent",
+      "decision": "initially_rejected_as_mixed_or_ambiguous",
+      "reason": "The sampled box visibly overlaps the covered red-clothed person as well as the uncovered white-clothed person."
+    },
+    {
+      "reviewer": "independent_gpt_5_6_sol_max",
+      "decision": "accepted_as_owner_211764_with_untrusted_geometry",
+      "reason": "The compact height, center, and relative overlap distinguish the short partially occluded white-clothed person from the two standing neighbors."
+    },
+    {
+      "reviewer": "lead_agent_final_adjudication",
+      "decision": "accepted_for_entity_transition_only",
+      "reason": "The independent objection is persuasive under the unit's separate entity-versus-geometry contract. The row identifies owner 211764 at the complete coordinate extent, but its contaminated boundaries are not trusted geometry."
+    }
+  ],
   "source_checkpoint": {
     "name": "Qwen3-VL 2B description-first geometry-sorted pure cross-entropy plus token-type-gate Weight-Decomposed Low-Rank Adaptation checkpoint at step 4887",
     "checkpoint_json_path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/checkpoint.json",
@@ -27,6 +44,7 @@
     "natural_prefixes_reviewed": 384,
     "eligible_harmful_prefixes": 0,
     "strict_same_prefix_sampled_rescues": 0,
+    "human_reviewed_same_prefix_rescues": 0,
     "refusal_counts": {
       "greedy_already_reached_verified_uncovered_owner": 124,
       "prior_prefix_owner_unresolved": 235,
@@ -77,6 +95,17 @@
     "sampled_candidates": [
       {
         "seed": 12,
+        "candidate_token_ids": [
+          151646,
+          8987,
+          151647,
+          151648,
+          152553,
+          151804,
+          152600,
+          151883,
+          151649
+        ],
         "candidate_token_ids_sha256": "da10dd0a40e0226e6960954a56b3ba9477b6d8bb25b725d63785436f18ea0a19",
         "pixel_box_xyxy": [
           1102,
@@ -90,7 +119,13 @@
           930,
           213
         ],
-        "intersection_over_union_with_211764": 0.4935121170958232
+        "intersection_over_union_with_211764": 0.4935121170958232,
+        "center_distance_norm_with_211764": 0.01551508016229607,
+        "intersection_over_union_with_205108": 0.24339957419932848,
+        "center_distance_norm_with_205108": 0.10011219549486187,
+        "intersection_over_union_with_213695": 0.07829176173908481,
+        "center_distance_norm_with_213695": 0.10565923889430835,
+        "role": "selected_entity_transition_positive"
       },
       {
         "seed": 15,
@@ -149,19 +184,50 @@
         "meaning": "Four-times enlarged right-person cluster with seed-16 prediction overlaid."
       }
     ],
+    "harmful_greedy_candidate": {
+      "physical_owner_id": "205108",
+      "candidate_token_ids": [
+        151646,
+        8987,
+        151647,
+        151648,
+        152556,
+        151815,
+        152605,
+        152102,
+        151649
+      ],
+      "candidate_token_ids_sha256": "6f254c918edb7d6f52be7dc77b46e1be0899b91ad599c1297731d67c1d4033e9",
+      "coordinate_bins_xyxy": [
+        886,
+        145,
+        935,
+        432
+      ],
+      "producer_mode": "greedy",
+      "verified_covered_duplicate": true
+    },
     "decision": {
       "entity_existence_and_category": "person evidence is present",
-      "physical_owner_resolution": "mixed_or_ambiguous",
-      "entity_transition_eligible": false,
+      "physical_owner_resolution": "resolved_to_211764_at_complete_coordinate_extent",
+      "entity_transition_eligible": true,
       "geometry_eligible": false,
-      "reason": "Every sampled candidate spans visible evidence from both the already covered owner 205108 and the uncovered owner 211764. Seeds 15 and 16 extend farther toward adjacent owner 213695. The candidate therefore cannot be assigned to exactly one physical owner, even though its highest numerical overlap is with 211764."
+      "selected_seed": 12,
+      "selected_positive_owner_id": "211764",
+      "selected_harmful_owner_id": "205108",
+      "positive_owner_resolution_interval_start_inclusive": 0,
+      "positive_owner_resolution_interval_end_exclusive": 8,
+      "harmful_owner_resolution_interval_start_inclusive": 0,
+      "harmful_owner_resolution_interval_end_exclusive": 8,
+      "owner_resolution_basis": "The path must include y2. The early x1 and y1 values alone remain compatible with covered owner 205108; the short complete vertical extent distinguishes uncovered owner 211764.",
+      "reason": "Seed 12 is closest by center and has roughly twice the overlap with owner 211764 as with covered owner 205108. Its compact height follows the short partially occluded white-clothed person rather than either standing neighbor. Boundary contamination makes geometry untrusted but does not erase the entity owner. Seeds 15 and 16 are retained only as audit evidence and receive no training weight."
     }
   },
   "unit_consequence": {
-    "transition_smoke_a_status": "blocked_by_missing_valid_same_prefix_rescue",
-    "joint_smoke_a_status": "blocked_by_missing_transition_event",
-    "formal_twelve_job_screen_status": "not_admissible_under_current_frozen_unit",
-    "coordinate_only_diagnostic_status": "may_continue_without_promoting_the_formal_screen",
-    "next_interpretation": "The frozen unit's interpretation matrix applies: local entity-transition preference cannot invent a route absent from same-prefix sampled support. Any short-horizon, visual intervention, or different candidate-construction treatment requires a new research unit and a new user decision."
+    "transition_smoke_a_status": "ready_with_one_human_reviewed_entity_event",
+    "joint_smoke_a_status": "ready_after_state_bank_assembly",
+    "formal_twelve_job_screen_status": "still_blocked_until_smoke_a_and_smoke_b_pass",
+    "coordinate_only_diagnostic_status": "ready_with_independent_image_9400_event",
+    "claim_boundary": "The selected transition event is a deliberately reviewed functional development fixture. It proves neither event frequency nor training efficacy."
   }
 }
