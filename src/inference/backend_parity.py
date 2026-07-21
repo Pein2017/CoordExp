@@ -84,6 +84,12 @@ def build_backend_parity_receipt(
     )
     _exact_gate(
         gates,
+        "semantic_execution_contract",
+        _semantic_execution_contract(hf),
+        _semantic_execution_contract(vllm),
+    )
+    _exact_gate(
+        gates,
         "ordered_row_request_identity",
         _ordered_row_identity(hf),
         _ordered_row_identity(vllm),
@@ -577,6 +583,33 @@ def _generated_rows(run: _RunArtifacts) -> list[dict[str, Any]]:
     ]
 
 
+def _semantic_execution_contract(run: _RunArtifacts) -> dict[str, Any]:
+    manifest = run.manifest
+    provenance = run.provenance
+
+    def value(field: str) -> Any:
+        return manifest.get(field, provenance.get(field))
+
+    fields = (
+        "dataset_identity",
+        "generation_config_fingerprint",
+        "generation_policy",
+        "prompt_policy_fingerprint",
+        "template_identity",
+        "parser_policy",
+        "score_policy_fingerprint",
+        "processor_identity_fingerprint",
+        "raw_model_logprob_status",
+    )
+    contract = {field: value(field) for field in fields}
+    missing = [field for field, observed in contract.items() if observed is None]
+    if missing:
+        raise BackendParityInputError(
+            f"{run.role} run is missing semantic execution identity: {missing}"
+        )
+    return contract
+
+
 def _generated_token_identity(run: _RunArtifacts) -> list[dict[str, Any]]:
     return [
         {
@@ -584,7 +617,7 @@ def _generated_token_identity(run: _RunArtifacts) -> list[dict[str, Any]]:
             "generated_step_index": row["generated_step_index"],
             "token_id": row["token_id"],
         }
-        for row in _generated_rows(run)
+        for row in _semantic_generated_rows(run)
     ]
 
 
@@ -660,8 +693,8 @@ def _likelihood_metrics(
             status="not_evaluated", issues=["generated token alignment failed"]
         )
         return metrics, False
-    hf_rows = _generated_rows(hf)
-    vllm_rows = _generated_rows(vllm)
+    hf_rows = _semantic_generated_rows(hf)
+    vllm_rows = _semantic_generated_rows(vllm)
     if len(hf_rows) != len(vllm_rows):
         metrics = _empty_numeric_metrics(
             status="not_evaluated", issues=["generated trace row counts differ"]
@@ -671,11 +704,6 @@ def _likelihood_metrics(
     deltas: list[float] = []
     issues: list[str] = []
     for hf_row, vllm_row in zip(hf_rows, vllm_rows, strict=True):
-        if bool(hf_row["is_pad"]) != bool(vllm_row["is_pad"]):
-            issues.append(_trace_label(hf_row) + ": pad flags differ")
-            continue
-        if hf_row["is_pad"]:
-            continue
         hf_value, hf_issue = _channel_value(hf_row, channel)
         vllm_value, vllm_issue = _channel_value(vllm_row, channel)
         if hf_issue:
@@ -820,7 +848,7 @@ def _object_log_score_metrics(
                     "abs_delta": abs(hf_log_score - vllm_log_score),
                 }
             )
-    max_delta = max((item["abs_delta"] for item in objects), default=0.0)
+    max_delta = max((item["abs_delta"] for item in objects), default=None)
     metrics = {
         "status": "computed" if not issues else "invalid_evidence",
         "count": len(objects),
@@ -828,7 +856,17 @@ def _object_log_score_metrics(
         "objects": objects,
         "issues": issues,
     }
-    return metrics, not issues and max_delta <= OBJECT_LOG_SCORE_THRESHOLD
+    return (
+        metrics,
+        bool(objects)
+        and not issues
+        and max_delta is not None
+        and max_delta <= OBJECT_LOG_SCORE_THRESHOLD,
+    )
+
+
+def _semantic_generated_rows(run: _RunArtifacts) -> list[dict[str, Any]]:
+    return [row for row in _generated_rows(run) if not bool(row.get("is_pad"))]
 
 
 def _authoritative_log_score(

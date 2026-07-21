@@ -20,7 +20,10 @@ from src.eval.detection_categories import (
     COCO_80_CLASS_NAMES,
     normalize_coco_category_name,
 )
-from src.inference.artifacts import benchmark_scope_eligible
+from src.inference.artifacts import (
+    benchmark_scope_eligible,
+    recompute_scores_from_artifacts,
+)
 
 
 RAW_NAME = "gt_vs_pred.jsonl"
@@ -33,6 +36,7 @@ COCO_GT_NAME = "coco_gt.json"
 COCO_PREDICTIONS_NAME = "coco_predictions.json"
 RUN_MANIFEST_NAME = "run_manifest.json"
 SUMMARY_NAME = "summary.json"
+TOKEN_TRACE_NAME = "pred_token_trace.jsonl"
 SUPPORTED_PRED_SCORE_VERSION = 1
 SUPPORTED_SCORE_SOURCE_KIND = "token_trace_selected_logprob_mean"
 
@@ -62,6 +66,12 @@ def evaluate_scored_detection_artifacts(
         scored_path=scored_path,
         rows=rows,
         provenance=provenance,
+    )
+    token_trace_path = artifact_root / TOKEN_TRACE_NAME
+    _require_file(token_trace_path, code="eval_detection.missing_token_trace")
+    recompute_scores_from_artifacts(
+        scored_jsonl=scored_path,
+        token_trace_jsonl=token_trace_path,
     )
     raw_rows = _read_jsonl(artifact_root / RAW_NAME)
     normalized_rows = _normalize_eval_rows(scored_rows=rows, raw_rows=raw_rows)
@@ -167,6 +177,31 @@ def _validate_provenance(
                 code="eval_detection.provenance_field_missing",
                 context={"field": field},
             )
+    manifest_path = artifact_root / RUN_MANIFEST_NAME
+    if manifest_path.is_file():
+        manifest = _read_json(manifest_path)
+        for field in (
+            "generation_config_fingerprint",
+            "model_identity_fingerprint",
+            "processor_identity_fingerprint",
+            "prompt_policy_fingerprint",
+            "template_identity",
+            "parser_policy",
+            "score_policy_fingerprint",
+            "execution_model_identity",
+            "adapter_identity",
+            "embedding_delta_identity",
+        ):
+            if manifest.get(field) != provenance.get(field):
+                raise ArtifactContractError(
+                    "run manifest and scored provenance identities disagree",
+                    code="eval_detection.manifest_provenance_mismatch",
+                    context={
+                        "field": field,
+                        "manifest": manifest.get(field),
+                        "provenance": provenance.get(field),
+                    },
+                )
     _validate_row_local_scores(
         rows,
         score_policy_fingerprint=str(provenance["score_policy_fingerprint"]),
@@ -672,6 +707,7 @@ def _evaluation_receipt(
         RAW_NAME: _artifact_receipt(artifact_root / RAW_NAME),
         SCORED_NAME: _artifact_receipt(artifact_root / SCORED_NAME),
         PROVENANCE_NAME: _artifact_receipt(artifact_root / PROVENANCE_NAME),
+        TOKEN_TRACE_NAME: _artifact_receipt(artifact_root / TOKEN_TRACE_NAME),
     }
     manifest = _optional_json_artifact_receipt(artifact_root / RUN_MANIFEST_NAME)
     summary = _optional_json_artifact_receipt(artifact_root / SUMMARY_NAME)

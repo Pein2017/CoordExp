@@ -625,7 +625,10 @@ def _model_first_parameter_device(model: Any | None) -> str | None:
         return None
     first_param = next(iter(parameters()), None)
     device = getattr(first_param, "device", None)
-    return None if device is None else str(device)
+    if device is None:
+        return None
+    rendered = str(device)
+    return "cuda:0" if rendered == "cuda" else rendered
 
 
 if __name__ == "__main__":

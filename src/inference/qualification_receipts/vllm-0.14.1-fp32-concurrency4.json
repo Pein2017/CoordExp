@@ -12,8 +12,8 @@
     },
     {
       "relative_path": "execution_model.json",
-      "sha256": "b327094b1b327efe820e7d9562e75ccfd6f9f427c1c105339f683667235d37a4",
-      "size_bytes": 568910
+      "sha256": "40c7765961bf7b48ddefd87ef76b93899be0c2f51e60d66f33ee80a08a735618",
+      "size_bytes": 569126
     },
     {
       "relative_path": "gt_vs_pred.jsonl",
@@ -27,8 +27,8 @@
     },
     {
       "relative_path": "gt_vs_pred_scored.jsonl.provenance.json",
-      "sha256": "8c10e54e614ad80a44eba142f145c4a306051917e3a859d820b53ad61acb044f",
-      "size_bytes": 1264015
+      "sha256": "8bdb14c4eb418730b6baa3a6adf66a40962b455726d07d0b21543b80839f31a0",
+      "size_bytes": 1264591
     },
     {
       "relative_path": "image_plan.jsonl",
@@ -47,13 +47,13 @@
     },
     {
       "relative_path": "run_manifest.json",
-      "sha256": "51a378b670a2f4ba99090b840060530fb0a38044d69a81ca21004c7b82bd76d9",
-      "size_bytes": 1264305
+      "sha256": "1dfd9fda8a2fcd938ae13ef5fe6694d5557b902c174aea4248e4f58c6eea7e71",
+      "size_bytes": 1264934
     },
     {
       "relative_path": "summary.json",
-      "sha256": "1b349cba972e226be8cda7597ce44eeef56b15da0f9e429e0eec07e5d4c0122c",
-      "size_bytes": 1554
+      "sha256": "04835b9916f0f883fa38171dd2cb399c59d2dfa4ec0e892b2bcbe32740c5500e",
+      "size_bytes": 1555
     }
   ],
   "backend_session_engine_kwargs": {
@@ -125,10 +125,10 @@
     "sha256": "9b524a8c20f03758e2e3939703ff35a1e35a1108fb095ac6e7af5a1539c8cfc4"
   },
   "max_num_seqs": 4,
-  "probe_source_sha256": "52bc43da664111733dc9e11308f4cf9b62a2c936cc70cc193f1eb61425c946df",
+  "probe_source_sha256": "197069872ff6e8b10abaec762659c4a62a16125587e5a77ee432f749a341093b",
   "process_cuda_binding": {
     "cuda": {
-      "CUDA_VISIBLE_DEVICES": "2",
+      "CUDA_VISIBLE_DEVICES": "0",
       "cuda_available": true,
       "cuda_current_device": 0,
       "cuda_device_count": 1,
@@ -136,12 +136,12 @@
       "logical_device": "cuda:0",
       "torch_cuda_version": "12.8",
       "visible_cuda_tokens": [
-        "2"
+        "0"
       ]
     },
     "process": {
-      "pid": 3501644,
-      "ppid": 3501606
+      "pid": 2142969,
+      "ppid": 2142946
     }
   },
   "prompt_trace": {
@@ -238,6 +238,7 @@
       "forced_logits_processor": {
         "module": "src.inference.vllm_forced_replay",
         "qualname": "CoordExpForcedSequenceLogitsProcessor",
+        "repo_relative_path": "src/inference/vllm_forced_replay.py",
         "source_path": "/data/CoordExp/.worktrees/CoordExp-swift/src/inference/vllm_forced_replay.py",
         "source_sha256": "8c833e66759d3059b11e2c3d9d3f5f837710d1a39eb5eb3e2e209d423a2ff692"
       },
@@ -246,10 +247,11 @@
       "logprobs_mode": "raw_logprobs",
       "max_num_seqs": 4,
       "qualification": {
-        "probe_source_sha256": "52bc43da664111733dc9e11308f4cf9b62a2c936cc70cc193f1eb61425c946df",
+        "evidence": "executed_by_this_receipt",
+        "probe_source_sha256": "197069872ff6e8b10abaec762659c4a62a16125587e5a77ee432f749a341093b",
         "processor_source_sha256": "8c833e66759d3059b11e2c3d9d3f5f837710d1a39eb5eb3e2e209d423a2ff692",
         "source_base_snapshot_fingerprint": "e43d3a07b5fe47db7abcc07a9b6a318dd32d9a2fa12f620c2e734573bf9fe5eb",
-        "status": "qualification_probe_under_renewal"
+        "status": "passed"
       },
       "request_count": 4,
       "row_evidence_sha256": "9d422da10c7269aa2539c57aeca8509f0314d0a7fb552e34c258d7a785636bc6",
@@ -514,8 +516,8 @@
     "baseline": {
       "application_qualification": {
         "receipt_path": "/data/CoordExp/.worktrees/CoordExp-swift/src/inference/qualification_receipts/vllm-0.14.1-application-sources.json",
-        "receipt_sha256": "bcb112782e158af90bcfe3249d921487e65858dba4cde2f4389f27382d394c5d",
-        "source_count": 23,
+        "receipt_sha256": "af2ed1be6b0e42baf68814f611bc0da56b712d1bbc3e385fd29170355c6cadfd",
+        "source_count": 24,
         "status": "passed"
       },
       "candidate_version": "0.14.1",

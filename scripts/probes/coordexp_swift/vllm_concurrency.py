@@ -350,6 +350,26 @@ def build_passed_receipt(
                 "raw replay receipt is not completed",
                 code="vllm_concurrency.raw_replay_receipt",
             )
+        renewal = _require_mapping(
+            raw_replay_settings.get("qualification"),
+            field=(
+                "run_manifest.backend_session.effective_settings.raw_replay."
+                "qualification"
+            ),
+        )
+        if renewal.get("status") != "qualification_probe_under_renewal":
+            _fail(
+                "raw replay did not use the qualification-renewal boundary",
+                code="vllm_concurrency.raw_replay_receipt",
+            )
+        raw_replay_settings = {
+            **dict(raw_replay_settings),
+            "qualification": {
+                **dict(renewal),
+                "status": "passed",
+                "evidence": "executed_by_this_receipt",
+            },
+        }
         raw_replay_by_id = {
             str(row["row_id"]): {
                 key: value for key, value in row.items() if key != "row_id"

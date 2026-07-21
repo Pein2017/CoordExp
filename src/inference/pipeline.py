@@ -19,7 +19,13 @@ from src.common.errors import (
     EncodingContractError,
     RuntimeContractError,
 )
-from src.config.inference import InferConfig, ResolvedInferConfig, load_infer_config, resolve_infer_run_directory
+from src.config.inference import (
+    InferConfig,
+    ResolvedInferConfig,
+    load_infer_config,
+    resolve_infer_run_directory,
+    validate_infer_input_paths,
+)
 from src.config.models import ProcessorConfig, TemplateConfig, TemplatePromptConfig
 from src.config.writer import write_resolved_config_artifacts
 from src.data import RawExample, load_raw_examples
@@ -86,6 +92,12 @@ def run(
         return 0
 
     try:
+        if (
+            frontend_factory is None
+            and session_opener is None
+            and worker_launcher is None
+        ):
+            validate_infer_input_paths(resolved)
         visible_cuda_tokens = require_visible_cuda_for_inference(
             debug_dry_run=resolved.config.debug.dry_run,
         )
@@ -157,6 +169,8 @@ def run_shard(
     session_opener: BackendSessionOpener | None = None,
     execution_model: dict[str, Any] | None = None,
 ) -> int:
+    if frontend_factory is None and session_opener is None:
+        validate_infer_input_paths(resolved, fields=("data.input_jsonl",))
     raw_examples = list(load_raw_examples(resolved.config.data.input_jsonl))
     metadata = _base_metadata(resolved=resolved)
     metadata["benchmark_eligible"] = _benchmark_scope_eligible(
@@ -561,6 +575,7 @@ def _execute_indexed_rows(
             merged_visual_tokens=image_plan_by_row_id[
                 raw_example.example_id
             ].merged_visual_tokens,
+            object_order_seed=resolved.config.template.object_order_seed,
         )
         for row_index, raw_example in indexed_raw_examples
     ]
@@ -615,30 +630,37 @@ def _execute_indexed_rows(
         ]
     }
 
-    with open_backend_session(frontend.launch, opener=session_opener) as session:
-        metadata.update(
-            _session_metadata(frontend=frontend, receipt=session.receipt)
-        )
-        _fill_worker_runtime_device_metadata(
-            metadata=metadata,
-            session_receipt=session.receipt,
-        )
-        results = validate_decode_results(
-            requests=requests,
-            results=session.decode(requests),
-            receipt=session.receipt,
-        )
-        # Decode may add executed backend evidence, such as vLLM raw replay.
-        metadata.update(
-            _session_metadata(frontend=frontend, receipt=session.receipt)
-        )
-        metadata["prompt_trace"] = _prompt_trace(
-            requests=requests,
-            results=results,
-        )
-        raw_replay_trace = _raw_replay_trace(results=results)
-        if raw_replay_trace:
-            metadata["raw_replay_trace"] = raw_replay_trace
+    session = None
+    try:
+        with open_backend_session(frontend.launch, opener=session_opener) as session:
+            metadata.update(
+                _session_metadata(frontend=frontend, receipt=session.receipt)
+            )
+            _fill_worker_runtime_device_metadata(
+                metadata=metadata,
+                session_receipt=session.receipt,
+            )
+            results = validate_decode_results(
+                requests=requests,
+                results=session.decode(requests),
+                receipt=session.receipt,
+            )
+            # Decode may add executed backend evidence, such as vLLM raw replay.
+            metadata.update(
+                _session_metadata(frontend=frontend, receipt=session.receipt)
+            )
+            metadata["prompt_trace"] = _prompt_trace(
+                requests=requests,
+                results=results,
+            )
+            raw_replay_trace = _raw_replay_trace(results=results)
+            if raw_replay_trace:
+                metadata["raw_replay_trace"] = raw_replay_trace
+    finally:
+        if session is not None:
+            metadata.update(
+                _session_metadata(frontend=frontend, receipt=session.receipt)
+            )
 
     decode_results = {result.request_id: result for result in results}
     for result in results:
@@ -867,6 +889,7 @@ def _base_metadata(*, resolved: ResolvedInferConfig) -> dict[str, Any]:
             "id": TEMPLATE_ID,
             "object_field_order": resolved.config.template.object_field_order,
             "object_ordering": resolved.config.template.object_ordering,
+            "object_order_seed": resolved.config.template.object_order_seed,
             "assistant_format": resolved.config.template.assistant_format,
         },
         "parser_policy": PARSER_POLICY,

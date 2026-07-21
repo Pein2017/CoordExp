@@ -20,7 +20,6 @@ from PIL import Image
 import torch
 
 from src.common.errors import RuntimeContractError
-from src.config.inference import validate_vllm_runtime_version
 from src.inference.backend import (
     POLICY_LIKELIHOOD_DEFINITION,
     RAW_LIKELIHOOD_DEFINITION,
@@ -99,6 +98,10 @@ class VLLMBackendSession:
         synchronize_cuda_for_timing(torch)
         started_at = time.perf_counter()
         policy = _require_shared_generation_policy(checked)
+        if policy.include_raw_model_logprob:
+            self._require_known_raw_replay_semantics()
+        if self._engine is None:
+            self._engine = self._engine_factory(self._engine_kwargs)
         prompts, media_hashes = self._generation_prompts(checked)
         try:
             outputs = self._engine.generate(
@@ -137,6 +140,10 @@ class VLLMBackendSession:
             results=results,
             receipt=self.receipt,
         )
+        self._record_live_operational_smoke(
+            requests=checked,
+            results=validated,
+        )
         synchronize_cuda_for_timing(torch)
         allocated, reserved = cuda_peak_memory_snapshot(torch)
         self._receipt = update_decode_performance_receipt(
@@ -149,6 +156,35 @@ class VLLMBackendSession:
         )
         return validated
 
+    def _record_live_operational_smoke(
+        self,
+        *,
+        requests: Sequence[DecodeRequest],
+        results: Sequence[DecodeResult],
+    ) -> None:
+        settings = dict(self._receipt.effective_settings)
+        value = settings.get("runtime_preflight")
+        if not isinstance(value, Mapping) or value.get("status") != (
+            "ready_for_engine_construction"
+        ):
+            return
+        preflight = dict(value)
+        first = results[0]
+        preflight.update(
+            status="passed_live_decode",
+            live_decode={
+                "request_count": len(requests),
+                "first_request_id": first.request_id,
+                "first_generated_token_count": len(first.generated_token_ids),
+                "first_stop_reason": first.stop_reason,
+                "raw_model_logprob_enabled": requests[
+                    0
+                ].generation_policy.include_raw_model_logprob,
+            },
+        )
+        settings["runtime_preflight"] = preflight
+        self._receipt = replace(self._receipt, effective_settings=settings)
+
     def close(self) -> None:
         if self._closed:
             return
@@ -156,7 +192,74 @@ class VLLMBackendSession:
         engine = self._engine
         self._engine = None
         self._tokenizer = None
-        _close_vllm_engine(engine)
+        self._close_owned_engine(engine, scope="session_close")
+        self._record_cleanup_complete()
+
+    def _require_known_raw_replay_semantics(self) -> None:
+        preflight = self._receipt.effective_settings.get("runtime_preflight")
+        if not isinstance(preflight, Mapping):
+            return
+        version = preflight.get("version")
+        if isinstance(version, Mapping) and version.get("status") == "unverified":
+            raise RuntimeContractError(
+                "raw-model likelihood semantics are unverified for this vLLM version",
+                code="vllm_backend.raw_replay_version_unverified",
+                context={"version": dict(version)},
+            )
+
+    def _close_owned_engine(self, engine: Any | None, *, scope: str) -> None:
+        try:
+            evidence = _close_vllm_engine(engine)
+        except BaseException as exc:
+            self._record_cleanup_event(
+                {
+                    "scope": scope,
+                    "status": "failed",
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                }
+            )
+            raise
+        self._record_cleanup_event({"scope": scope, **evidence})
+
+    def _record_cleanup_event(self, event: Mapping[str, object]) -> None:
+        settings = dict(self._receipt.effective_settings)
+        preflight_value = settings.get("runtime_preflight")
+        preflight = (
+            dict(preflight_value) if isinstance(preflight_value, Mapping) else {}
+        )
+        cleanup_value = preflight.get("cleanup")
+        cleanup = dict(cleanup_value) if isinstance(cleanup_value, Mapping) else {}
+        events = list(cleanup.get("events") or [])
+        events.append(dict(event))
+        cleanup.update(
+            status=(
+                "failed"
+                if any(item.get("status") == "failed" for item in events)
+                else "in_progress"
+            ),
+            events=events,
+        )
+        preflight["cleanup"] = cleanup
+        settings["runtime_preflight"] = preflight
+        self._receipt = replace(self._receipt, effective_settings=settings)
+
+    def _record_cleanup_complete(self) -> None:
+        settings = dict(self._receipt.effective_settings)
+        preflight_value = settings.get("runtime_preflight")
+        if not isinstance(preflight_value, Mapping):
+            return
+        preflight = dict(preflight_value)
+        cleanup_value = preflight.get("cleanup")
+        cleanup = dict(cleanup_value) if isinstance(cleanup_value, Mapping) else {}
+        if cleanup.get("status") == "failed":
+            return
+        cleanup["status"] = "completed"
+        preflight["cleanup"] = cleanup
+        if preflight.get("status") == "passed_live_decode":
+            preflight["status"] = "passed_live_decode_and_cleanup"
+        settings["runtime_preflight"] = preflight
+        self._receipt = replace(self._receipt, effective_settings=settings)
 
     def _generation_prompts(
         self,
@@ -192,29 +295,35 @@ class VLLMBackendSession:
         qualification = self._qualify_raw_replay(processor_identity)
         processed_engine = self._engine
         self._engine = None
-        _close_vllm_engine(processed_engine)
+        self._close_owned_engine(
+            processed_engine,
+            scope="policy_engine_before_raw_replay",
+        )
         raw_engine_kwargs = _raw_replay_engine_kwargs(
             self._engine_kwargs,
             forced_replay_processor=processor,
         )
-        self._engine = self._engine_factory(raw_engine_kwargs)
-        prompts, _ = self._generation_prompts(requests)
-        sampling_params = [
-            _raw_forced_replay_sampling_params(
-                policy=policy,
-                expected_token_ids=generated,
-                stop_token_id=self._im_end_token_id(),
-            )
-            for generated in generated_by_request
-        ]
+        raw_engine = None
+        prompts: list[Any] = []
         try:
-            replay_outputs = self._engine.generate(
+            raw_engine = self._engine_factory(raw_engine_kwargs)
+            prompts, _ = self._generation_prompts(requests)
+            sampling_params = [
+                _raw_forced_replay_sampling_params(
+                    policy=policy,
+                    expected_token_ids=generated,
+                    stop_token_id=self._im_end_token_id(),
+                )
+                for generated in generated_by_request
+            ]
+            replay_outputs = raw_engine.generate(
                 prompts,
                 sampling_params,
                 use_tqdm=False,
             )
         finally:
             _close_prompt_images(prompts)
+            self._close_owned_engine(raw_engine, scope="raw_replay_engine")
         ordered = _restore_native_request_order(replay_outputs, len(requests))
         channels: list[tuple[float, ...]] = []
         replay_evidence: dict[str, dict[str, object]] = {}
@@ -225,6 +334,22 @@ class VLLMBackendSession:
             ordered,
             strict=True,
         ):
+            if str(getattr(replay, "request_id", "")) != str(
+                getattr(generation, "request_id", "")
+            ):
+                raise RuntimeContractError(
+                    "vLLM raw replay request id differs from authoritative generation",
+                    code="vllm_backend.raw_replay_request_id_mismatch",
+                    context={
+                        "request_id": request.request_id,
+                        "generation_native_request_id": getattr(
+                            generation, "request_id", None
+                        ),
+                        "replay_native_request_id": getattr(
+                            replay, "request_id", None
+                        ),
+                    },
+                )
             expected_ids = request.expected_executed_prompt_token_ids
             observed_ids = tuple(int(value) for value in (replay.prompt_token_ids or ()))
             if observed_ids != expected_ids:
@@ -338,13 +463,17 @@ class VLLMBackendSession:
         qualifier = self._raw_replay_qualifier
         if qualifier is None:
             from src.inference.vllm_qualification import (
-                validate_vllm_forced_replay_qualification,
+                inspect_vllm_raw_replay_preflight,
             )
 
-            qualifier = lambda launch, identity: validate_vllm_forced_replay_qualification(
-                launch=launch,
-                processor_identity=identity,
-            )
+            def qualifier(
+                launch: BackendLaunch,
+                identity: Mapping[str, object],
+            ) -> Mapping[str, object]:
+                return inspect_vllm_raw_replay_preflight(
+                    launch=launch,
+                    processor_identity=identity,
+                )
         return qualifier(self._launch, processor_identity)
 
     def _resolve_forced_replay_processor(self) -> type[Any]:
@@ -565,22 +694,21 @@ def open_vllm_backend_session(
             code="vllm_backend.execution_model_required",
         )
     observed_version = metadata.version("vllm")
-    validate_vllm_runtime_version(observed_version=observed_version)
-    _configure_process_mode()
-    _validate_rank_local_cuda()
+    process_evidence = _configure_process_mode()
+    cuda_evidence = _validate_rank_local_cuda()
     options = _vllm_options(launch)
     engine_kwargs = _engine_kwargs(launch, options=options)
-    if engine_factory is None:
-        from src.inference.vllm_qualification import (
-            validate_vllm_runtime_qualification,
-        )
+    from src.inference.vllm_qualification import (
+        inspect_vllm_operational_preflight,
+    )
 
-        qualification = validate_vllm_runtime_qualification(
-            launch=launch,
-            engine_kwargs=engine_kwargs,
-        )
-    else:
-        qualification = {"status": "injected_test_engine"}
+    preflight = inspect_vllm_operational_preflight(
+        launch=launch,
+        engine_kwargs=engine_kwargs,
+        observed_version=observed_version,
+        process_evidence=process_evidence,
+        cuda_evidence=cuda_evidence,
+    )
     resolved_engine_factory = engine_factory or _default_engine_factory
     engine = resolved_engine_factory(engine_kwargs)
     try:
@@ -609,7 +737,7 @@ def open_vllm_backend_session(
                 "device": "cuda:0",
                 "engine_kwargs": engine_kwargs,
                 "scheduler_owned_batching": True,
-                "runtime_qualification": qualification,
+                "runtime_preflight": preflight,
             },
             likelihood_semantics={
                 "policy": POLICY_LIKELIHOOD_DEFINITION,
@@ -745,13 +873,20 @@ def _processor_source_identity(processor: type[Any]) -> dict[str, object]:
             "module": processor.__module__,
             "qualname": processor.__qualname__,
             "source_path": None,
+            "repo_relative_path": None,
             "source_sha256": None,
         }
     path = Path(source_path).resolve()
+    repo_root = Path(__file__).resolve().parents[2]
+    try:
+        repo_relative_path = path.relative_to(repo_root).as_posix()
+    except ValueError:
+        repo_relative_path = None
     return {
         "module": processor.__module__,
         "qualname": processor.__qualname__,
         "source_path": str(path),
+        "repo_relative_path": repo_relative_path,
         "source_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
     }
 
@@ -1030,17 +1165,23 @@ def _default_engine_factory(kwargs: Mapping[str, object]) -> Any:
     return LLM(**dict(kwargs))
 
 
-def _configure_process_mode() -> None:
+def _configure_process_mode() -> dict[str, object]:
     observed = os.environ.get("VLLM_ENABLE_V1_MULTIPROCESSING")
     if observed is None:
         os.environ["VLLM_ENABLE_V1_MULTIPROCESSING"] = "0"
-        return
+        observed = "0"
     if observed != "0":
         raise RuntimeContractError(
             "vLLM worker requires in-process V1 engine mode",
             code="vllm_backend.process_mode",
             context={"VLLM_ENABLE_V1_MULTIPROCESSING": observed},
         )
+    return {
+        "status": "validated",
+        "engine_process_mode": "uniprocess",
+        "VLLM_ENABLE_V1_MULTIPROCESSING": observed,
+        "pid": os.getpid(),
+    }
 
 
 def _load_processor_components(launch: BackendLaunch) -> Any:
@@ -1077,7 +1218,7 @@ def _identity_dict(value: object, *, fallback: Mapping[str, object]) -> dict[str
     return dict(fallback)
 
 
-def _validate_rank_local_cuda() -> None:
+def _validate_rank_local_cuda() -> dict[str, object]:
     try:
         import torch
     except ImportError as exc:
@@ -1097,15 +1238,43 @@ def _validate_rank_local_cuda() -> None:
             "vLLM worker must bind its visible GPU as logical cuda:0",
             code="vllm_backend.cuda_binding",
         )
+    return {
+        "status": "validated",
+        "available": True,
+        "device_count": 1,
+        "current_device": 0,
+        "logical_device": "cuda:0",
+        "CUDA_VISIBLE_DEVICES": os.environ.get("CUDA_VISIBLE_DEVICES"),
+    }
 
 
-def _close_vllm_engine(engine: Any | None) -> None:
+def _close_vllm_engine(engine: Any | None) -> dict[str, object]:
+    shutdown_called = False
+    shutdown_interface = None
     if engine is not None:
+        already_closed = getattr(engine, "_coordexp_shutdown_complete", False)
         llm_engine = getattr(engine, "llm_engine", None)
-        engine_core = getattr(llm_engine, "engine_core", None)
-        shutdown = getattr(engine_core, "shutdown", None)
-        if callable(shutdown):
+        if already_closed:
+            shutdown_interface = "already_closed"
+        else:
+            engine_core = getattr(llm_engine, "engine_core", None)
+            shutdown = getattr(engine_core, "shutdown", None)
+            if callable(getattr(engine, "shutdown", None)):
+                shutdown = engine.shutdown
+                shutdown_interface = "engine.shutdown"
+            elif callable(shutdown):
+                shutdown_interface = "engine.llm_engine.engine_core.shutdown"
+            else:
+                raise RuntimeContractError(
+                    "owned vLLM engine exposes no supported shutdown interface",
+                    code="vllm_backend.cleanup_interface_missing",
+                )
             shutdown()
+            shutdown_called = True
+            try:
+                setattr(engine, "_coordexp_shutdown_complete", True)
+            except (AttributeError, TypeError):
+                pass
         if llm_engine is not None:
             llm_engine.engine_core = None
         try:
@@ -1122,6 +1291,13 @@ def _close_vllm_engine(engine: Any | None) -> None:
         destroy_distributed_environment()
     except ImportError:
         pass
+    # Drop the local object graph before asking the CUDA allocator to release
+    # cached blocks; raw replay constructs a fresh engine in the same process.
+    llm_engine = None
+    engine_core = None
+    shutdown = None
+    engine_present = engine is not None
+    engine = None
     gc.collect()
     try:
         import torch
@@ -1131,6 +1307,12 @@ def _close_vllm_engine(engine: Any | None) -> None:
             torch.cuda.synchronize()
     except ImportError:
         pass
+    return {
+        "status": "completed",
+        "engine_present": engine_present,
+        "shutdown_called": shutdown_called,
+        "shutdown_interface": shutdown_interface,
+    }
 
 
 def _close_prompt_images(prompts: Sequence[Any]) -> None:

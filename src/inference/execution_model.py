@@ -69,6 +69,7 @@ def resolve_execution_model(
     embedding_delta_identity: Mapping[str, object] | None = None,
     cache_root: str | Path | None = None,
     materialize_snapshot: MaterializeSnapshot | None = None,
+    _skip_existing_composition_fidelity: bool = False,
 ) -> dict[str, Any]:
     """Resolve a content-hashed base snapshot or atomically materialize a composition."""
 
@@ -140,6 +141,12 @@ def resolve_execution_model(
     lock_path = root / ".locks" / f"{composition_key}.lock"
 
     with _exclusive_lock(lock_path):
+        _validate_live_source_identity(
+            expected=source_identity,
+            base_root=base_root,
+            adapter_path=adapter_path,
+            embedding_delta_path=embedding_delta_path,
+        )
         if final_root.exists():
             receipt = _load_receipt(receipt_path)
             _validate_expected_composition(
@@ -148,9 +155,7 @@ def resolve_execution_model(
                 source_identity=source_identity,
                 target_dtype=target_dtype,
             )
-            return _bind_existing_composition_fidelity_if_present(
-                validate_execution_model_receipt(receipt)
-            )
+            return validate_execution_model_receipt(receipt)
 
         staging_parent = root / ".staging"
         staging_parent.mkdir(parents=True, exist_ok=True)
@@ -168,9 +173,20 @@ def resolve_execution_model(
                 embedding_delta_identity=embedding_delta_identity,
             )
             evidence = dict(builder(staging_snapshot) or {})
+            _validate_live_source_identity(
+                expected=source_identity,
+                base_root=base_root,
+                adapter_path=adapter_path,
+                embedding_delta_path=embedding_delta_path,
+            )
             _validate_standard_snapshot(
                 staging_snapshot,
                 expected_weight_dtype=target_dtype,
+            )
+            _validate_materialization_evidence(
+                evidence,
+                source_identity=source_identity,
+                composition_key=composition_key,
             )
             staged_manifest = build_model_snapshot_manifest(staging_snapshot)
             published_manifest = {
@@ -195,9 +211,72 @@ def resolve_execution_model(
             shutil.rmtree(staging_root, ignore_errors=True)
             raise
 
-    return _bind_existing_composition_fidelity_if_present(
-        validate_execution_model_receipt(_load_receipt(receipt_path))
-    )
+    return validate_execution_model_receipt(_load_receipt(receipt_path))
+
+
+def _validate_live_source_identity(
+    *,
+    expected: Mapping[str, object],
+    base_root: Path,
+    adapter_path: str | Path | None,
+    embedding_delta_path: str | Path | None,
+) -> None:
+    observed_base = build_model_snapshot_manifest(base_root)
+    expected_base = expected.get("base")
+    if not isinstance(expected_base, Mapping) or (
+        _without_provenance_paths(observed_base)
+        != _without_provenance_paths(expected_base)
+    ):
+        raise RuntimeContractError(
+            "execution-model base source changed during materialization",
+            code="inference.execution_model_source_changed",
+            context={"source": "base", "path": str(base_root)},
+        )
+
+    if adapter_path is not None:
+        from src.adapters.dora import inspect_dora_adapter_payload
+
+        observed_adapter = inspect_dora_adapter_payload(
+            adapter_path,
+            expected_base_model_path=base_root,
+        )
+        if _without_provenance_paths(observed_adapter) != _without_provenance_paths(
+            expected.get("adapter")
+        ):
+            raise RuntimeContractError(
+                "execution-model adapter source changed during materialization",
+                code="inference.execution_model_source_changed",
+                context={"source": "adapter", "path": str(adapter_path)},
+            )
+
+    if embedding_delta_path is not None:
+        from src.qwen.special_token_embeddings import (
+            inspect_special_token_embedding_delta_payload,
+        )
+
+        observed_delta = inspect_special_token_embedding_delta_payload(
+            embedding_delta_path,
+            expected_base_model_path=base_root,
+            expected_base_config_sha256=_manifest_file_sha256(
+                observed_base,
+                "config.json",
+            ),
+            expected_tokenizer_sha256=_manifest_file_sha256(
+                observed_base,
+                "tokenizer.json",
+            ),
+        )
+        if _without_provenance_paths(observed_delta) != _without_provenance_paths(
+            expected.get("embedding_delta")
+        ):
+            raise RuntimeContractError(
+                "execution-model embedding-delta source changed during materialization",
+                code="inference.execution_model_source_changed",
+                context={
+                    "source": "embedding_delta",
+                    "path": str(embedding_delta_path),
+                },
+            )
 
 
 def validate_execution_model_receipt(
@@ -234,6 +313,18 @@ def validate_execution_model_receipt(
     if payload["mode"] not in ("base_only", "materialized"):
         _receipt_error("mode", payload)
     _validate_target_dtype(str(payload["target_dtype"]))
+    source_identity = payload["source_identity"]
+    materialization = payload["materialization"]
+    if not isinstance(source_identity, Mapping):
+        _receipt_error("source_identity", payload)
+    if not isinstance(materialization, Mapping):
+        _receipt_error("materialization", payload)
+    if payload["mode"] == "materialized":
+        _validate_materialization_evidence(
+            materialization,
+            source_identity=source_identity,
+            composition_key=str(payload["composition_key"]),
+        )
 
     expected_receipt_fingerprint = _receipt_fingerprint(payload)
     if payload["receipt_fingerprint"] != expected_receipt_fingerprint:
@@ -299,6 +390,62 @@ def validate_execution_model_receipt(
     return payload
 
 
+def _validate_materialization_evidence(
+    materialization: Mapping[str, object],
+    *,
+    source_identity: Mapping[str, object],
+    composition_key: str,
+) -> None:
+    """Prove configured adapter/delta payloads were folded before publication."""
+
+    failures: list[str] = []
+    expected_adapter = source_identity.get("adapter")
+    observed_adapter = materialization.get("adapter_merge")
+    if expected_adapter is None:
+        if observed_adapter is not None:
+            failures.append("adapter_merge_unexpected")
+    elif not isinstance(observed_adapter, Mapping):
+        failures.append("adapter_merge_missing")
+    else:
+        if observed_adapter.get("status") != "merged":
+            failures.append("adapter_merge_status")
+        if _without_provenance_paths(observed_adapter.get("adapter_identity")) != (
+            _without_provenance_paths(expected_adapter)
+        ):
+            failures.append("adapter_merge_identity")
+
+    expected_delta = source_identity.get("embedding_delta")
+    observed_delta = materialization.get("embedding_delta_fold")
+    if expected_delta is None:
+        if observed_delta is not None:
+            failures.append("embedding_delta_fold_unexpected")
+    elif not isinstance(observed_delta, Mapping):
+        failures.append("embedding_delta_fold_missing")
+    else:
+        if observed_delta.get("status") != "folded":
+            failures.append("embedding_delta_fold_status")
+        if _without_provenance_paths(observed_delta.get("delta_identity")) != (
+            _without_provenance_paths(expected_delta)
+        ):
+            failures.append("embedding_delta_fold_identity")
+        if observed_delta.get("row_addition_count") != 1:
+            failures.append("embedding_delta_fold_count")
+        if observed_delta.get("tied_input_output_storage") is not True:
+            failures.append("embedding_delta_fold_tie")
+
+    if materialization.get("tied_input_output") is not True:
+        failures.append("tied_input_output")
+    if failures:
+        raise RuntimeContractError(
+            "execution-model materialization evidence does not prove the requested composition",
+            code="inference.execution_model_materialization_evidence",
+            context={
+                "composition_key": composition_key,
+                "failures": failures,
+            },
+        )
+
+
 def bind_execution_model_composition(
     receipt: Mapping[str, object],
     composition_receipt: Mapping[str, object],
@@ -328,9 +475,7 @@ def bind_execution_model_composition(
 
 
 def load_execution_model_receipt(path: str | Path) -> dict[str, Any]:
-    return _bind_existing_composition_fidelity_if_present(
-        validate_execution_model_receipt(_load_receipt(Path(path)))
-    )
+    return validate_execution_model_receipt(_load_receipt(Path(path)))
 
 
 def _bind_existing_composition_fidelity_if_present(

@@ -90,16 +90,16 @@
       ]
     }
   ],
-  "digest": "3f1d1ff4e39377cdef35d923868cd801369bbe273094b0adc503f603fbef9cc2",
+  "digest": "9ed8bf12a802e8412e4dbffe3d96f68d56e7e4c2b6a0fa06a79f864ba69876a6",
   "pytest_command": "conda run -n ms pytest tests/inference/test_pipeline.py tests/inference/test_worker_runtime.py tests/inference/test_data_parallel_merge.py -q",
-  "pytest_result": "94 passed in 16.60s",
+  "pytest_result": "99 passed in 16.61s",
   "receipt_version": "coordexp-swift-inference-failure-matrix-v2",
   "schema_version": 2,
   "source_sha256": {
-    "src/inference/merge.py": "970dac0bb7442d7bd02848767c7d9ee0efff2f28ea263d8ab9f6ef2a56055945",
+    "src/inference/merge.py": "cbf7faf6a08e9c44e7d4dbd8f1d05c67ce29007fd17227bfcdd87be05925d1e7",
     "src/inference/pipeline.py": "008b6b208cae877e3da2dbcfbbb08ae07e2cbbb9de35ca1f2ffc3843ac43a9d8",
     "src/inference/worker.py": "5661b0ebd4bd266bbaab7273a10c102b6617ee65944e5e99cebaa7948f1279c0",
-    "tests/inference/test_data_parallel_merge.py": "28aa6323f3e4a06fe2124c0080079dcbc0f2df166aef6f1385f1f976fd38e803",
+    "tests/inference/test_data_parallel_merge.py": "5c2ecf14d31d0b1f9d6c96b7c6ea6f4b9e58623acd474428318e86cf2b1a1264",
     "tests/inference/test_failure_matrix_receipt.py": "d92c82a19b951db6aa4bee45309a40131aa3da4e6a6da180021472f0166f4ff7",
     "tests/inference/test_pipeline.py": "90d1db6ab7cead7d6f02d44ffd05807b72b10b9f8e54dbe77771e170127eaf53",
     "tests/inference/test_worker_runtime.py": "4702cdd95e1eef6a4a898449d1c4cc58eb0895972f0b8452d7f3327df3463283"

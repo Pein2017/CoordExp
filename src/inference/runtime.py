@@ -87,18 +87,6 @@ def prepare_backend_launch(
                 "composed vLLM inference requires a resolved execution model",
                 code="inference.execution_model_required",
             )
-        if (
-            execution_identity is not None
-            and execution_identity.get("mode") == "materialized"
-            and not isinstance(execution_identity.get("composition_fidelity"), Mapping)
-        ):
-            raise RuntimeContractError(
-                "materialized vLLM inference requires a bound composition-fidelity receipt",
-                code="inference.execution_model_composition_fidelity_required",
-                context={
-                    "composition_key": execution_identity.get("composition_key")
-                },
-            )
         backend_options = {"vllm": config.backend.vllm.model_dump(mode="json")}
         adapter = None
         embedding_delta = None

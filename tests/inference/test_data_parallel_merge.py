@@ -94,12 +94,19 @@ def test_backend_session_merge_aggregates_rank_decode_performance() -> None:
 
     merged = _merge_backend_sessions(
         semantic_session=semantic,
-        shard_sessions=sessions,
+        ranked_shard_sessions=list(enumerate(sessions)),
         raw_replay_trace=[],
         raw_replay_required=False,
     )
 
     performance = merged["effective_settings"]["performance"]
+    assert performance["measurement_scope"] == (
+        "parallel_rank_backend_decode_capacity_estimate"
+    )
+    assert performance["aggregation_assumption"] == (
+        "perfect_rank_overlap_using_max_rank_elapsed"
+    )
+    assert performance["controller_wall_time_observed"] is False
     assert performance["rank_count"] == 2
     assert performance["request_count"] == 12
     assert performance["generated_token_count"] == 55
@@ -108,6 +115,56 @@ def test_backend_session_merge_aggregates_rank_decode_performance() -> None:
     assert performance["generated_tokens_per_second"] == pytest.approx(22.0)
     assert performance["peak_cuda_memory_allocated_bytes_per_rank_max"] == 110
     assert performance["peak_cuda_memory_reserved_bytes_per_rank_max"] == 130
+
+
+def test_backend_session_merge_aggregates_rank_local_live_decode_and_cleanup() -> None:
+    from src.inference.merge import (
+        _backend_session_semantic_identity,
+        _merge_backend_sessions,
+    )
+
+    def session(row_id: str, *, rank: int) -> dict[str, Any]:
+        return {
+            "backend": "vllm",
+            "effective_settings": {
+                "batch_size": 1,
+                "runtime_preflight": {
+                    "status": "passed_live_decode_and_cleanup",
+                    "version": {"observed_version": "0.14.1"},
+                    "engine_settings": {"max_num_seqs": 1},
+                    "process": {"pid": 1000 + rank},
+                    "cuda": {"CUDA_VISIBLE_DEVICES": str(rank)},
+                    "live_decode": {
+                        "request_count": 1,
+                        "first_request_id": row_id,
+                    },
+                    "cleanup": {
+                        "status": "completed",
+                        "events": [{"scope": "session_close", "status": "completed"}],
+                    },
+                },
+            },
+        }
+
+    sessions = [session("row-a", rank=0), session("row-b", rank=1)]
+    semantic = _backend_session_semantic_identity(sessions[0])
+    assert _backend_session_semantic_identity(sessions[1]) == semantic
+
+    merged = _merge_backend_sessions(
+        semantic_session=semantic,
+        ranked_shard_sessions=[(1, sessions[1]), (0, sessions[0])],
+        raw_replay_trace=[],
+        raw_replay_required=False,
+    )
+
+    preflight = merged["effective_settings"]["runtime_preflight"]
+    assert preflight["status"] == "passed_all_rank_live_decode_and_cleanup"
+    assert [row["rank"] for row in preflight["rank_evidence"]] == [1, 0]
+    assert [row["live_decode"]["first_request_id"] for row in preflight["rank_evidence"]] == [
+        "row-b",
+        "row-a",
+    ]
+    assert [row["process"]["pid"] for row in preflight["rank_evidence"]] == [1001, 1000]
 
 
 def test_rank_local_shard_dirs_contain_complete_scored_artifact_family(tmp_path: Path) -> None:
@@ -533,6 +590,37 @@ def test_strict_merge_rejects_missing_required_shard_metadata(tmp_path: Path) ->
 
 
 @pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("worker_logical_device", "cuda:1"),
+        ("cuda_device_count", 2),
+        ("cuda_current_device", 1),
+        ("model_first_parameter_device", "cpu"),
+    ],
+)
+def test_strict_merge_rejects_invalid_worker_cuda_evidence(
+    tmp_path: Path,
+    field: str,
+    value: object,
+) -> None:
+    _assert_merge_failure(
+        tmp_path / field,
+        row_ids=("row-0", "row-1"),
+        mutate=lambda shard_dirs, plan: _rewrite_manifest_parallelism(
+            shard_dirs[0],
+            lambda parallelism: {
+                **parallelism,
+                "worker": {
+                    **parallelism["worker"],
+                    field: value,
+                },
+            },
+        ),
+        expected_code="merge.worker_metadata_mismatch",
+    )
+
+
+@pytest.mark.parametrize(
     "field",
     (
         "backend_session",
@@ -761,8 +849,14 @@ def test_merge_failure_publishes_only_terminal_status_and_preserves_shards(
     shard_dirs = _write_plan_shards(tmp_path, plan)
     stale_eval_dir = tmp_path / "eval_detection"
     stale_eval_dir.mkdir()
+    current_eval_dir = tmp_path / "evaluation" / "detection"
+    current_eval_dir.mkdir(parents=True)
     for name in ("metrics.json", "coco_gt.json", "coco_predictions.json"):
         (stale_eval_dir / name).write_text(
+            json.dumps({"benchmark_metric": True}) + "\n",
+            encoding="utf-8",
+        )
+        (current_eval_dir / name).write_text(
             json.dumps({"benchmark_metric": True}) + "\n",
             encoding="utf-8",
         )
@@ -799,12 +893,54 @@ def test_merge_failure_publishes_only_terminal_status_and_preserves_shards(
     assert not (tmp_path / PARSE_DIAGNOSTICS_NAME).exists()
     assert not (tmp_path / IMAGE_PLAN_NAME).exists()
     assert not stale_eval_dir.exists()
+    assert not current_eval_dir.exists()
     assert not (tmp_path / "metrics.json").exists()
     assert not (tmp_path / "evaluation_receipt.json").exists()
     assert not (tmp_path / "coco_gt.json").exists()
     assert not (tmp_path / "coco_predictions.json").exists()
     assert all(shard_dir.is_dir() for shard_dir in shard_dirs)
     assert _read_json(tmp_path / SUMMARY_NAME)["benchmark_eligible"] is False
+
+
+def test_merged_artifact_publication_rolls_back_on_interrupt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.inference import merge as merge_module
+
+    final = merge_module._paths(tmp_path)
+    staged_root = tmp_path / "staged"
+    staged_root.mkdir()
+    staged = merge_module._paths(staged_root)
+    for path in (
+        staged.raw_jsonl,
+        staged.scored_jsonl,
+        staged.provenance_json,
+        staged.token_trace_jsonl,
+        staged.parse_diagnostics_jsonl,
+        staged.image_plan_jsonl,
+        staged.summary_json,
+        staged.run_manifest_json,
+    ):
+        path.write_text("{}\n", encoding="utf-8")
+    real_replace = merge_module.os.replace
+    moved = 0
+
+    def interrupt_after_scored(src: Path, dst: Path) -> None:
+        nonlocal moved
+        real_replace(src, dst)
+        if Path(dst).parent == tmp_path:
+            moved += 1
+            if moved == 2:
+                raise KeyboardInterrupt()
+
+    monkeypatch.setattr(merge_module.os, "replace", interrupt_after_scored)
+
+    with pytest.raises(KeyboardInterrupt):
+        merge_module._publish_staged_artifacts(staged=staged, final=final)
+
+    assert not final.raw_jsonl.exists()
+    assert not final.scored_jsonl.exists()
 
 
 def _assert_merge_failure(

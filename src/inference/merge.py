@@ -42,7 +42,7 @@ REQUIRED_MERGE_ARTIFACTS = (
     SUMMARY_NAME,
     MANIFEST_NAME,
 )
-EVAL_OUTPUT_DIR_NAMES = ("eval_detection",)
+EVAL_OUTPUT_DIR_NAMES = ("eval_detection", "evaluation/detection")
 EVAL_ARTIFACT_NAMES = (
     "metrics.json",
     "evaluation_receipt.json",
@@ -240,7 +240,7 @@ def _merge_shard_artifacts(
     image_plan_rows: list[dict[str, Any]] = []
     prompt_trace_rows: list[dict[str, Any]] = []
     raw_replay_trace_rows: list[dict[str, Any]] = []
-    backend_sessions: list[dict[str, Any]] = []
+    backend_sessions: list[tuple[int, dict[str, Any]]] = []
     shard_evidence: list[ShardEvidence] = []
     identity: dict[str, Any] | None = None
     expected_ranks = {rank_plan.rank for rank_plan in plan.ranks}
@@ -290,7 +290,7 @@ def _merge_shard_artifacts(
         image_plan_rows.extend(shard["image_plan_rows"])
         prompt_trace_rows.extend(shard["prompt_trace"])
         raw_replay_trace_rows.extend(shard["raw_replay_trace"])
-        backend_sessions.append(shard["backend_session"])
+        backend_sessions.append((rank, shard["backend_session"]))
         shard_evidence.append(
             ShardEvidence(
                 rank=rank,
@@ -402,7 +402,7 @@ def _merge_shard_artifacts(
     metadata["raw_replay_trace"] = raw_replay_trace_rows
     metadata["backend_session"] = _merge_backend_sessions(
         semantic_session=dict(metadata.get("backend_session") or {}),
-        shard_sessions=backend_sessions,
+        ranked_shard_sessions=backend_sessions,
         raw_replay_trace=raw_replay_trace_rows,
         raw_replay_required=raw_replay_required,
     )
@@ -719,6 +719,17 @@ def _backend_session_semantic_identity(value: Any) -> dict[str, Any]:
     effective_settings = session.get("effective_settings")
     if isinstance(effective_settings, dict):
         effective_settings.pop("performance", None)
+        runtime_preflight = effective_settings.get("runtime_preflight")
+        if isinstance(runtime_preflight, dict):
+            runtime_preflight = dict(runtime_preflight)
+            runtime_preflight.pop("live_decode", None)
+            runtime_preflight.pop("cleanup", None)
+            runtime_preflight.pop("process", None)
+            runtime_preflight.pop("cuda", None)
+            runtime_preflight.pop("rank_evidence", None)
+            if str(runtime_preflight.get("status", "")).startswith("passed_"):
+                runtime_preflight["status"] = "ready_for_engine_construction"
+            effective_settings["runtime_preflight"] = runtime_preflight
         raw_replay = effective_settings.get("raw_replay")
         if isinstance(raw_replay, dict):
             raw_replay = dict(raw_replay)
@@ -1001,11 +1012,12 @@ def _require_sha256(value: Any, *, code: str, context: dict[str, Any]) -> None:
 def _merge_backend_sessions(
     *,
     semantic_session: dict[str, Any],
-    shard_sessions: list[dict[str, Any]],
+    ranked_shard_sessions: list[tuple[int, dict[str, Any]]],
     raw_replay_trace: list[dict[str, Any]],
     raw_replay_required: bool,
 ) -> dict[str, Any]:
-    for session in shard_sessions:
+    shard_sessions = [session for _, session in ranked_shard_sessions]
+    for _, session in ranked_shard_sessions:
         observed = _backend_session_semantic_identity(session)
         if observed != semantic_session:
             raise ArtifactContractError(
@@ -1015,7 +1027,8 @@ def _merge_backend_sessions(
             )
     merged = _json_safe(semantic_session)
     performance = _merge_decode_performance(shard_sessions)
-    if not raw_replay_required and performance is None:
+    operational = _merge_runtime_preflight(ranked_shard_sessions)
+    if not raw_replay_required and performance is None and operational is None:
         return merged
     effective_settings = merged.get("effective_settings")
     if not isinstance(effective_settings, dict):
@@ -1025,6 +1038,8 @@ def _merge_backend_sessions(
         )
     if performance is not None:
         effective_settings["performance"] = performance
+    if operational is not None:
+        effective_settings["runtime_preflight"] = operational
     if not raw_replay_required:
         return merged
     raw_replay = effective_settings.get("raw_replay")
@@ -1038,6 +1053,81 @@ def _merge_backend_sessions(
         _raw_replay_trace_mapping(raw_replay_trace)
     )
     return merged
+
+
+def _merge_runtime_preflight(
+    ranked_shard_sessions: list[tuple[int, dict[str, Any]]],
+) -> dict[str, Any] | None:
+    observations: list[dict[str, Any]] = []
+    semantic: dict[str, Any] | None = None
+    missing = 0
+    for rank, session in ranked_shard_sessions:
+        settings = session.get("effective_settings")
+        value = settings.get("runtime_preflight") if isinstance(settings, dict) else None
+        if value is None:
+            missing += 1
+            continue
+        if not isinstance(value, dict):
+            raise ArtifactContractError(
+                "rank-local runtime preflight must be a JSON object",
+                code="merge.runtime_preflight_invalid",
+                context={"rank": rank},
+            )
+        status = value.get("status")
+        live_decode = value.get("live_decode")
+        cleanup = value.get("cleanup")
+        if (
+            status != "passed_live_decode_and_cleanup"
+            or not isinstance(live_decode, dict)
+            or not isinstance(cleanup, dict)
+            or cleanup.get("status") != "completed"
+        ):
+            raise ArtifactContractError(
+                "rank-local runtime preflight is not live-decode and cleanup complete",
+                code="merge.runtime_preflight_incomplete",
+                context={"rank": rank, "status": status},
+            )
+        current_semantic = dict(value)
+        current_semantic.pop("live_decode", None)
+        current_semantic.pop("cleanup", None)
+        process = current_semantic.pop("process", None)
+        cuda = current_semantic.pop("cuda", None)
+        current_semantic.pop("rank_evidence", None)
+        current_semantic["status"] = "ready_for_engine_construction"
+        if semantic is None:
+            semantic = current_semantic
+        elif current_semantic != semantic:
+            raise ArtifactContractError(
+                "rank-local runtime preflight settings disagree",
+                code="merge.runtime_preflight_mismatch",
+                context={"rank": rank},
+            )
+        observations.append(
+            {
+                "rank": rank,
+                "process": process,
+                "cuda": cuda,
+                "live_decode": dict(live_decode),
+                "cleanup": dict(cleanup),
+            }
+        )
+    if not observations:
+        return None
+    if missing:
+        raise ArtifactContractError(
+            "rank-local runtime preflight is missing on some ranks",
+            code="merge.runtime_preflight_missing",
+            context={
+                "missing_rank_count": missing,
+                "rank_count": len(ranked_shard_sessions),
+            },
+        )
+    assert semantic is not None
+    return {
+        **semantic,
+        "status": "passed_all_rank_live_decode_and_cleanup",
+        "rank_evidence": observations,
+    }
 
 
 def _merge_decode_performance(
@@ -1076,7 +1166,9 @@ def _merge_decode_performance(
     allocated = _performance_optional_ints(rows, "peak_cuda_memory_allocated_bytes")
     reserved = _performance_optional_ints(rows, "peak_cuda_memory_reserved_bytes")
     return {
-        "measurement_scope": "parallel_rank_backend_decode",
+        "measurement_scope": "parallel_rank_backend_decode_capacity_estimate",
+        "aggregation_assumption": "perfect_rank_overlap_using_max_rank_elapsed",
+        "controller_wall_time_observed": False,
         "rank_count": len(rows),
         "request_count": request_count,
         "generated_token_count": generated_token_count,
@@ -1524,6 +1616,26 @@ def _validate_worker_metadata_matches_rank_plan(
                 "observed": worker_metadata.get("worker_logical_device"),
             },
         )
+    required_cuda_evidence = {
+        "cuda_device_count": 1,
+        "cuda_current_device": 0,
+        "model_first_parameter_device": "cuda:0",
+    }
+    for field, expected_value in required_cuda_evidence.items():
+        observed = worker_metadata.get(field)
+        if field == "model_first_parameter_device" and observed == "cuda":
+            observed = "cuda:0"
+        if observed != expected_value:
+            raise ArtifactContractError(
+                "rank-local worker CUDA evidence violates one-device isolation",
+                code="merge.worker_metadata_mismatch",
+                context={
+                    "rank": rank_plan.rank,
+                    "field": field,
+                    "expected": expected_value,
+                    "observed": observed,
+                },
+            )
 
 
 def _rank_plan_for(*, plan: DataParallelPlan, rank: int) -> RankShardPlan:
@@ -2776,8 +2888,8 @@ def _publish_staged_artifacts(*, staged: InferenceArtifactPaths, final: Inferenc
         for staged_path, final_path in pairs:
             os.replace(staged_path, final_path)
             replaced.append(final_path)
-    except OSError as exc:
-        for final_path in replaced:
+    except BaseException as exc:
+        for _, final_path in pairs:
             try:
                 if final_path.exists():
                     final_path.unlink()
@@ -2790,12 +2902,14 @@ def _publish_staged_artifacts(*, staged: InferenceArtifactPaths, final: Inferenc
                 shutil.move(str(backup_path), str(final_path))
             except OSError:
                 pass
-        raise ArtifactContractError(
-            "failed to publish complete merged inference artifact set",
-            code="merge.publish_failed",
-            context={"failed_after": [path.name for path in replaced]},
-            cause=exc,
-        ) from exc
+        if isinstance(exc, OSError):
+            raise ArtifactContractError(
+                "failed to publish complete merged inference artifact set",
+                code="merge.publish_failed",
+                context={"failed_after": [path.name for path in replaced]},
+                cause=exc,
+            ) from exc
+        raise
     finally:
         shutil.rmtree(backup_dir, ignore_errors=True)
 

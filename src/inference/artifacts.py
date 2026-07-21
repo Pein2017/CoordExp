@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from src.common.errors import ArtifactContractError
-from src.inference.backend import DecodeResult, TokenTrace
+from src.inference.backend import DecodeResult
 from src.inference.scoring import SCORE_POLICY_FINGERPRINT, score_prediction
 
 
@@ -108,6 +108,13 @@ def write_inference_artifacts(
                         token_trace=list(decode_result.token_trace),
                     )
                 except ArtifactContractError as exc:
+                    if exc.code not in {
+                        "scoring.missing_span_evidence",
+                        "scoring.object_span_not_contiguous",
+                        "scoring.trace_alignment_missing",
+                        "scoring.trace_alignment_ambiguous",
+                    }:
+                        raise
                     score_failure_count += 1
                     diagnostic_rows.append(
                         {
@@ -754,8 +761,8 @@ def _replace_final_artifacts(staged: InferenceArtifactPaths, final: InferenceArt
         for staged_path, final_path in pairs:
             os.replace(staged_path, final_path)
             replaced.append(final_path)
-    except OSError as exc:
-        for final_path in replaced:
+    except BaseException as exc:
+        for _, final_path in pairs:
             try:
                 if final_path.exists():
                     final_path.unlink()
@@ -768,12 +775,14 @@ def _replace_final_artifacts(staged: InferenceArtifactPaths, final: InferenceArt
                 shutil.move(str(backup_path), str(final_path))
             except OSError:
                 pass
-        raise ArtifactContractError(
-            "failed to publish complete inference artifact set",
-            code="artifacts.publish_failed",
-            context={"failed_after": [path.name for path in replaced]},
-            cause=exc,
-        ) from exc
+        if isinstance(exc, OSError):
+            raise ArtifactContractError(
+                "failed to publish complete inference artifact set",
+                code="artifacts.publish_failed",
+                context={"failed_after": [path.name for path in replaced]},
+                cause=exc,
+            ) from exc
+        raise
     finally:
         shutil.rmtree(backup_dir, ignore_errors=True)
 

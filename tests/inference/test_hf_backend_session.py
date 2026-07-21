@@ -156,6 +156,7 @@ def _semantic_request(
     raw: bool = False,
     expected_prompt_token_ids: tuple[int, ...] = (11, 12),
     logical_transform_id: str = "identity",
+    repetition_penalty: float = 1.0,
 ) -> Any:
     from src.inference.backend import DecodeRequest, GenerationPolicy
 
@@ -173,6 +174,7 @@ def _semantic_request(
         image_sha256=hashlib.sha256(image_bytes).hexdigest(),
         generation_policy=GenerationPolicy(
             max_new_tokens=2,
+            repetition_penalty=repetition_penalty,
             include_raw_model_logprob=raw,
         ),
         expected_image_grid_thw=(1, 1, 2),
@@ -395,6 +397,42 @@ def test_hf_session_forces_left_padding_for_heterogeneous_prompts(
     assert model.generate_kwargs is not None
     assert model.generate_kwargs["input_ids"].tolist() == [[0, 11], [11, 12]]
     assert model.generate_kwargs["attention_mask"].tolist() == [[0, 1], [1, 1]]
+
+
+def test_hf_repetition_penalty_groups_native_batches_by_prompt_width(
+    tmp_path: Any,
+) -> None:
+    from src.inference.hf_backend import _native_batch_groups
+
+    image_path = tmp_path / "image.png"
+    Image.new("RGB", (2, 2), color="white").save(image_path)
+    requests = (
+        _semantic_request(
+            image_path,
+            request_id="short-1",
+            expected_prompt_token_ids=(11,),
+            repetition_penalty=1.1,
+        ),
+        _semantic_request(
+            image_path,
+            request_id="long",
+            expected_prompt_token_ids=(11, 12),
+            repetition_penalty=1.1,
+        ),
+        _semantic_request(
+            image_path,
+            request_id="short-2",
+            expected_prompt_token_ids=(13,),
+            repetition_penalty=1.1,
+        ),
+    )
+
+    groups = _native_batch_groups(requests, batch_size=3)
+
+    assert [[item.request_id for item in group] for group in groups] == [
+        ["short-1", "short-2"],
+        ["long"],
+    ]
 
 
 def test_hf_raw_trace_fails_when_generate_returns_no_raw_logits(tmp_path: Any) -> None:

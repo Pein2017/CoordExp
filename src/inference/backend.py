@@ -472,6 +472,7 @@ class DecodeResult:
                 field="generated_token_ids",
                 request_id=request.request_id,
             )
+        self._validate_text_alignment(request_id=request.request_id)
         if stop_count > 1:
             _fail_result(
                 "decode result contains multiple semantic stop tokens",
@@ -500,6 +501,44 @@ class DecodeResult:
                 step_index=trace.step_index,
                 is_pad=trace.is_pad,
                 raw_required=raw_model_logprob_required,
+            )
+        non_pad_ids = tuple(
+            trace.token_id for trace in self.token_trace if not trace.is_pad
+        )
+        if non_pad_ids != self.generated_token_ids:
+            _fail_result(
+                "generated ids and non-padding token trace ids are misaligned",
+                field="generated_token_ids",
+                request_id=self.request_id,
+            )
+        self._validate_text_alignment(request_id=self.request_id)
+
+    def _validate_text_alignment(self, *, request_id: str) -> None:
+        semantic_trace = tuple(trace for trace in self.token_trace if not trace.is_pad)
+        reconstructed = "".join(trace.token_text for trace in semantic_trace)
+        if reconstructed != self.raw_generated_text:
+            _fail_result(
+                "generated token text does not reconstruct raw generated text",
+                field="raw_generated_text",
+                request_id=request_id,
+            )
+        if self.strip_policy == "none":
+            expected_parser_text = self.raw_generated_text
+        elif semantic_trace and semantic_trace[-1].is_stop:
+            expected_parser_text = self.raw_generated_text[
+                : -len(semantic_trace[-1].token_text)
+            ]
+        else:
+            _fail_result(
+                "terminal strip policy requires a final semantic stop token",
+                field="strip_policy",
+                request_id=request_id,
+            )
+        if self.parser_text != expected_parser_text:
+            _fail_result(
+                "parser text does not follow the declared strip policy",
+                field="parser_text",
+                request_id=request_id,
             )
 
 

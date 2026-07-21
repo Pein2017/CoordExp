@@ -95,12 +95,11 @@ class HFBackendSession:
         synchronize_cuda_for_timing(torch)
         started_at = time.perf_counter()
         results: list[DecodeResult] = []
-        for offset in range(0, len(checked), self._launch.batch_size):
-            results.extend(
-                self._decode_native_batch(
-                    checked[offset : offset + self._launch.batch_size]
-                )
-            )
+        for native_batch in _native_batch_groups(
+            checked,
+            batch_size=self._launch.batch_size,
+        ):
+            results.extend(self._decode_native_batch(native_batch))
         validated = validate_decode_results(
             requests=checked,
             results=results,
@@ -793,6 +792,28 @@ def _require_shared_generation_policy(requests: Sequence[DecodeRequest]) -> Any:
             context={"request_ids": [request.request_id for request in requests]},
         )
     return policies.pop()
+
+
+def _native_batch_groups(
+    requests: Sequence[DecodeRequest],
+    *,
+    batch_size: int,
+) -> tuple[tuple[DecodeRequest, ...], ...]:
+    """Keep repetition-penalty conditioning independent of batch-only pads."""
+
+    groups: list[tuple[DecodeRequest, ...]] = []
+    for offset in range(0, len(requests), batch_size):
+        chunk = tuple(requests[offset : offset + batch_size])
+        policy = _require_shared_generation_policy(chunk)
+        if policy.repetition_penalty == 1.0:
+            groups.append(chunk)
+            continue
+        by_prompt_width: dict[int, list[DecodeRequest]] = {}
+        for request in chunk:
+            width = len(request.expected_executed_prompt_token_ids)
+            by_prompt_width.setdefault(width, []).append(request)
+        groups.extend(tuple(group) for group in by_prompt_width.values())
+    return tuple(groups)
 
 
 def _require_step_tensors(

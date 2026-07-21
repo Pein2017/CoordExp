@@ -17,7 +17,7 @@ from src.config.paths import get_nested, set_nested
 
 
 INFER_CONFIG_LOADER_VERSION = "coordexp-swift-infer-config-v1"
-QUALIFIED_VLLM_VERSIONS = ("0.14.1",)
+KNOWN_WORKING_VLLM_VERSIONS = ("0.14.1",)
 INFER_PATH_FIELDS = (
     "run.artifact_root",
     "model.base_model",
@@ -47,7 +47,7 @@ class InferModelConfig(StrictConfigModel):
 class InferAdapterConfig(StrictConfigModel):
     type: Literal["dora"]
     path: str
-    name: str = "default"
+    name: Literal["default"] = "default"
 
 
 class InferEmbeddingDeltaConfig(StrictConfigModel):
@@ -66,8 +66,25 @@ class InferTemplatePromptConfig(StrictConfigModel):
 class InferTemplateConfig(StrictConfigModel):
     object_field_order: Literal["desc_first", "geometry_first"]
     object_ordering: Literal["source_order", "geo_sorted", "random"]
+    object_order_seed: int | None = None
     assistant_format: Literal["object_box_closed"]
     prompt: InferTemplatePromptConfig
+
+    @model_validator(mode="after")
+    def _random_ordering_requires_seed(self) -> "InferTemplateConfig":
+        if self.object_ordering == "random" and self.object_order_seed is None:
+            raise ConfigContractError(
+                "random inference object ordering requires an explicit seed",
+                code="config.random_object_order_seed_required",
+                context={"template.object_ordering": self.object_ordering},
+            )
+        if self.object_ordering != "random" and self.object_order_seed is not None:
+            raise ConfigContractError(
+                "object order seed is valid only for random inference ordering",
+                code="config.object_order_seed_unused",
+                context={"template.object_ordering": self.object_ordering},
+            )
+        return self
 
 
 class InferHfBackendOptions(StrictConfigModel):
@@ -197,6 +214,16 @@ class InferConfig(StrictConfigModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def _vllm_dtype_must_be_qualified(self) -> "InferConfig":
+        if self.backend.type == "vllm" and self.model.dtype == "fp16":
+            raise ConfigContractError(
+                "vLLM inference supports only the executed bf16 and fp32 qualification envelopes",
+                code="config.vllm_dtype_unqualified",
+                context={"model.dtype": self.model.dtype},
+            )
+        return self
+
 
 @dataclass(frozen=True)
 class ResolvedInferConfig:
@@ -260,16 +287,62 @@ def load_infer_config(path: str | Path) -> ResolvedInferConfig:
     )
 
 
-def validate_vllm_runtime_version(*, observed_version: str) -> None:
-    """Fail closed before engine construction for an unqualified vLLM version."""
+def inspect_vllm_runtime_version(*, observed_version: str) -> dict[str, Any]:
+    """Classify version provenance without substituting it for live execution."""
 
-    if observed_version not in QUALIFIED_VLLM_VERSIONS:
+    return {
+        "observed_version": observed_version,
+        "status": (
+            "known_working"
+            if observed_version in KNOWN_WORKING_VLLM_VERSIONS
+            else "unverified"
+        ),
+        "known_working_versions": list(KNOWN_WORKING_VLLM_VERSIONS),
+    }
+
+
+def validate_infer_input_paths(
+    resolved: ResolvedInferConfig,
+    *,
+    fields: tuple[str, ...] | None = None,
+) -> None:
+    """Fail at the config boundary without searching alternate artifact roots."""
+
+    expected_kinds = {
+        "model.base_model": "directory",
+        "data.input_jsonl": "file",
+        "adapter.path": "directory",
+        "embedding_delta.path": "directory",
+    }
+    selected = tuple(expected_kinds) if fields is None else fields
+    unknown = sorted(set(selected).difference(expected_kinds))
+    if unknown:
+        raise ValueError(f"unknown inference path fields: {unknown}")
+    for field in selected:
+        value = get_nested(resolved.config_dict, field)
+        if value is None:
+            continue
+        path = Path(str(value))
+        expected_kind = expected_kinds[field]
+        valid = path.is_file() if expected_kind == "file" else path.is_dir()
+        if valid:
+            continue
+        origin = resolved.path_origins.get(field)
         raise ConfigContractError(
-            "installed vLLM version is not runtime-qualified",
-            code="config.vllm_version_unqualified",
+            "resolved inference input path is missing or has the wrong kind",
+            code="config.inference_input_path_missing",
             context={
-                "observed_version": observed_version,
-                "qualified_versions": list(QUALIFIED_VLLM_VERSIONS),
+                "field": field,
+                "declared_path": (
+                    str(value) if origin is None else origin.declared_path
+                ),
+                "declaring_config_path": (
+                    str(resolved.entry_config_path)
+                    if origin is None
+                    else str(origin.declaring_config_path)
+                ),
+                "resolved_path": str(path.resolve()),
+                "expected_kind": expected_kind,
             },
         )
 

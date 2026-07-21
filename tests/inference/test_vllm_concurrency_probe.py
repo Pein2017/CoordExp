@@ -405,6 +405,12 @@ def _write_fake_artifacts(
                         "source_path": "/repo/src/inference/vllm_forced_replay.py",
                         "source_sha256": "f" * 64,
                     },
+                    "qualification": {
+                        "status": "qualification_probe_under_renewal",
+                        "probe_source_sha256": _sha256(Path(probe.__file__)),
+                        "source_base_snapshot_fingerprint": "base-fingerprint",
+                        "processor_source_sha256": "f" * 64,
+                    },
                     "request_count": len(request_ids),
                     "row_evidence_sha256": _sha256_json(raw_replay_by_id),
                 },

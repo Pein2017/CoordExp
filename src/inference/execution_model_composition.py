@@ -30,8 +30,8 @@ def compare_execution_models(
     materialized_native_inputs: Mapping[str, Any],
     selected_token_ids: list[int] | tuple[int, ...],
     generation_kwargs: Mapping[str, object],
-    expected_merged_target_identity: Mapping[str, object],
-    expected_folded_selected_rows_sha256: str,
+    expected_merged_target_identity: Mapping[str, object] | None,
+    expected_folded_selected_rows_sha256: str | None,
     compared_position_count: int = 4,
 ) -> dict[str, Any]:
     """Prove composition fidelity and record dynamic-HF behavior drift."""
@@ -69,15 +69,20 @@ def compare_execution_models(
     dynamic_rows_sha256 = _tensor_sha256(dynamic_rows)
     materialized_rows_sha256 = _tensor_sha256(materialized_rows)
     rows_equal = bool(torch.equal(dynamic_rows, materialized_rows))
-    expected_targets = _target_names(expected_merged_target_identity)
-    from src.adapters.dora import inspect_merged_dora_target_weights
+    observed_merged_target_identity: Mapping[str, object] | None = None
+    if expected_merged_target_identity is not None:
+        expected_targets = _target_names(expected_merged_target_identity)
+        from src.adapters.dora import inspect_merged_dora_target_weights
 
-    observed_merged_target_identity = inspect_merged_dora_target_weights(
-        materialized_model,
-        expected_targets,
-    )
+        observed_merged_target_identity = inspect_merged_dora_target_weights(
+            materialized_model,
+            expected_targets,
+        )
     merged_targets_equal = (
-        dict(expected_merged_target_identity) == observed_merged_target_identity
+        None
+        if expected_merged_target_identity is None
+        else dict(expected_merged_target_identity)
+        == observed_merged_target_identity
     )
 
     prompt_width = int(dynamic_input_ids.shape[1])
@@ -150,8 +155,16 @@ def compare_execution_models(
             ],
         },
         "merged_target_weight_identity": {
-            "expected": _target_identity_summary(expected_merged_target_identity),
-            "observed": _target_identity_summary(observed_merged_target_identity),
+            "expected": (
+                None
+                if expected_merged_target_identity is None
+                else _target_identity_summary(expected_merged_target_identity)
+            ),
+            "observed": (
+                None
+                if observed_merged_target_identity is None
+                else _target_identity_summary(observed_merged_target_identity)
+            ),
         },
         "selected_row_identity": {
             "dynamic_effective_sha256": dynamic_rows_sha256,
@@ -451,7 +464,6 @@ def _validate_comparison(
         "selected_rows_target_dtype",
         "dynamic_tied_weights",
         "materialized_tied_weights",
-        "merged_target_weights",
     }
     missing = sorted(required_composition.difference(composition_checks))
     failed = sorted(
@@ -465,6 +477,11 @@ def _validate_comparison(
             code="inference.execution_model_composition_exact_check",
             context={"missing": missing, "failed": failed},
         )
+    if "merged_target_weights" not in composition_checks:
+        _fail("comparison.composition_checks.merged_target_weights", "missing")
+    merged_check = composition_checks.get("merged_target_weights")
+    if merged_check not in (True, None):
+        _fail("comparison.composition_checks.merged_target_weights", merged_check)
     behavior_checks = _require_mapping(comparison, "behavior_checks")
     required_behavior = {
         "greedy_generated_ids_match",
@@ -485,24 +502,30 @@ def _validate_comparison(
                 "invalid": invalid_behavior,
             },
         )
-    merged_identity = _require_mapping(
-        comparison,
-        "merged_target_weight_identity",
-    )
-    if _require_mapping(merged_identity, "expected") != _require_mapping(
-        merged_identity,
-        "observed",
-    ):
+    merged_identity = _require_mapping(comparison, "merged_target_weight_identity")
+    expected_merged = merged_identity.get("expected")
+    observed_merged = merged_identity.get("observed")
+    if expected_merged != observed_merged:
         _fail("comparison.merged_target_weight_identity", "mismatch")
+    if expected_merged is not None:
+        if not isinstance(expected_merged, Mapping):
+            _fail("comparison.merged_target_weight_identity.expected", expected_merged)
+        _target_identity_summary(expected_merged)
+    if (expected_merged is None) != (merged_check is None):
+        _fail(
+            "comparison.composition_checks.merged_target_weights",
+            merged_check,
+        )
     selected_rows = _require_mapping(comparison, "selected_row_identity")
+    if "materializer_folded_sha256" not in selected_rows:
+        _fail("comparison.selected_row_identity.materializer_folded_sha256", "missing")
     selected_hashes = {
         _require_sha256(selected_rows, field)
-        for field in (
-            "dynamic_effective_sha256",
-            "materializer_folded_sha256",
-            "reloaded_materialized_sha256",
-        )
+        for field in ("dynamic_effective_sha256", "reloaded_materialized_sha256")
     }
+    folded_hash = selected_rows.get("materializer_folded_sha256")
+    if folded_hash is not None:
+        selected_hashes.add(_require_sha256(selected_rows, "materializer_folded_sha256"))
     if len(selected_hashes) != 1:
         _fail("comparison.selected_row_identity", "mismatch")
     for name, rtol, atol in (
@@ -570,9 +593,8 @@ def _validate_owner_binding(
     materialization_identity: Mapping[str, object],
 ) -> None:
     merged = _require_mapping(comparison, "merged_target_weight_identity")
-    if _require_mapping(merged, "expected") != _require_mapping(
-        materialization_identity,
-        "merged_target_weight_identity",
+    if merged.get("expected") != materialization_identity.get(
+        "merged_target_weight_identity"
     ):
         _fail("comparison.merged_target_weight_identity.owner", "mismatch")
     selected = _require_mapping(comparison, "selected_row_identity")
@@ -588,13 +610,26 @@ def _materialization_identity(
     if execution_model.get("mode") != "materialized":
         _fail("execution_model.mode", execution_model.get("mode"))
     materialization = _require_mapping(execution_model, "materialization")
-    adapter_merge = _require_mapping(materialization, "adapter_merge")
-    merge = _require_mapping(adapter_merge, "merge")
-    target_identity = _target_identity_summary(
-        _require_mapping(merge, "target_weight_identity")
-    )
-    delta_fold = _require_mapping(materialization, "embedding_delta_fold")
-    folded_rows = _require_sha256(delta_fold, "selected_rows_after_sha256")
+    source = _require_mapping(execution_model, "source_identity")
+    adapter_merge = materialization.get("adapter_merge")
+    delta_fold = materialization.get("embedding_delta_fold")
+    if (source.get("adapter") is None) != (adapter_merge is None):
+        _fail("materialization.adapter_merge", adapter_merge)
+    if (source.get("embedding_delta") is None) != (delta_fold is None):
+        _fail("materialization.embedding_delta_fold", delta_fold)
+    target_identity = None
+    if adapter_merge is not None:
+        if not isinstance(adapter_merge, Mapping):
+            _fail("materialization.adapter_merge", adapter_merge)
+        merge = _require_mapping(adapter_merge, "merge")
+        target_identity = _target_identity_summary(
+            _require_mapping(merge, "target_weight_identity")
+        )
+    folded_rows = None
+    if delta_fold is not None:
+        if not isinstance(delta_fold, Mapping):
+            _fail("materialization.embedding_delta_fold", delta_fold)
+        folded_rows = _require_sha256(delta_fold, "selected_rows_after_sha256")
     return {
         "merged_target_weight_identity": target_identity,
         "folded_selected_rows_sha256": folded_rows,

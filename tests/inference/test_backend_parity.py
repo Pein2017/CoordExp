@@ -82,6 +82,92 @@ def test_backend_parity_exact_generated_id_mismatch_cannot_pass(
     assert "policy_logprob_numeric" in receipt["failed_gates"]
 
 
+def test_backend_parity_rejects_generation_contract_mismatch(
+    tmp_path: Path,
+) -> None:
+    hf, vllm = _matched_runs(tmp_path, raw=True)
+    manifest_path = vllm / "run_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["generation_config_fingerprint"] = "different-generation"
+    _write_json(manifest_path, manifest)
+
+    receipt = build_backend_parity_receipt(
+        hf_run_dir=hf,
+        vllm_run_dir=vllm,
+        require_raw=True,
+    )
+
+    assert receipt["status"] == "hold"
+    assert "semantic_execution_contract" in receipt["failed_gates"]
+
+
+def test_backend_parity_ignores_legal_hf_post_stop_padding(
+    tmp_path: Path,
+) -> None:
+    hf, vllm = _matched_runs(tmp_path, raw=True)
+    trace_path = hf / "pred_token_trace.jsonl"
+    trace = _read_jsonl(trace_path)
+    generated = [row for row in trace if row.get("trace_type") == "generated_token"]
+    pad = dict(generated[-1])
+    pad.update(
+        {
+            "generated_step_index": len(generated),
+            "token_id": 0,
+            "token_text": "<|pad|>",
+            "logprob": None,
+            "raw_model_logprob": None,
+            "is_stop": False,
+            "is_pad": True,
+        }
+    )
+    trace.insert(len(generated), pad)
+    _write_jsonl(trace_path, trace)
+
+    receipt = build_backend_parity_receipt(
+        hf_run_dir=hf,
+        vllm_run_dir=vllm,
+        require_raw=True,
+    )
+
+    assert receipt["status"] == "passed"
+
+
+def test_backend_parity_requires_nonempty_scored_object_population(
+    tmp_path: Path,
+) -> None:
+    hf, vllm = _matched_runs(tmp_path, raw=True)
+    for run_dir in (hf, vllm):
+        raw_path = run_dir / "gt_vs_pred.jsonl"
+        raw_rows = _read_jsonl(raw_path)
+        raw_rows[0]["pred"] = []
+        _write_jsonl(raw_path, raw_rows)
+        scored_path = run_dir / "gt_vs_pred_scored.jsonl"
+        scored_rows = _read_jsonl(scored_path)
+        scored_rows[0]["pred"] = []
+        _write_jsonl(scored_path, scored_rows)
+        trace_path = run_dir / "pred_token_trace.jsonl"
+        trace_rows = [
+            row
+            for row in _read_jsonl(trace_path)
+            if row.get("trace_type") != "selected_token_replay"
+        ]
+        _write_jsonl(trace_path, trace_rows)
+        provenance_path = run_dir / "gt_vs_pred_scored.jsonl.provenance.json"
+        provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+        provenance["raw_artifact"]["sha256"] = _sha256_file(raw_path)
+        provenance["scored_artifact"]["sha256"] = _sha256_file(scored_path)
+        _write_json(provenance_path, provenance)
+
+    receipt = build_backend_parity_receipt(
+        hf_run_dir=hf,
+        vllm_run_dir=vllm,
+        require_raw=True,
+    )
+
+    assert receipt["status"] == "hold"
+    assert "per_object_selected_log_score" in receipt["failed_gates"]
+
+
 def test_backend_parity_raw_requirement_and_missing_enabled_evidence_hold(
     tmp_path: Path,
 ) -> None:
@@ -474,11 +560,36 @@ def _write_run(
         run_dir / "run_manifest.json",
         {
             "backend": backend,
+            "dataset_identity": "dataset-identity",
+            "generation_config_fingerprint": "generation-config",
+            "generation_policy": {"temperature": 0.0, "top_p": 1.0},
+            "prompt_policy_fingerprint": "prompt-policy",
+            "template_identity": {"assistant_format": "coordexp"},
+            "parser_policy": {"parser": "coordexp"},
+            "score_policy_fingerprint": "score-policy",
+            "processor_identity_fingerprint": "processor-identity",
             "raw_model_logprob_status": raw_status,
             "scored_artifact_materialized": True,
         },
     )
     return run_dir
+
+
+def test_backend_parity_rejects_missing_semantic_execution_identity(
+    tmp_path: Path,
+) -> None:
+    hf, vllm = _matched_runs(tmp_path, raw=True)
+    manifest_path = hf / "run_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest.pop("template_identity")
+    _write_json(manifest_path, manifest)
+
+    with pytest.raises(BackendParityInputError, match="template_identity"):
+        build_backend_parity_receipt(
+            hf_run_dir=hf,
+            vllm_run_dir=vllm,
+            require_raw=True,
+        )
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:

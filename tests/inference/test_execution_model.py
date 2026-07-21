@@ -55,12 +55,39 @@ def _identity(name: str, fingerprint: str) -> dict[str, object]:
     }
 
 
+def _materialization_evidence(
+    *,
+    adapter_identity: dict[str, object] | None = None,
+    delta_identity: dict[str, object] | None = None,
+) -> dict[str, object]:
+    return {
+        "adapter_merge": (
+            None
+            if adapter_identity is None
+            else {"status": "merged", "adapter_identity": adapter_identity}
+        ),
+        "embedding_delta_fold": (
+            None
+            if delta_identity is None
+            else {
+                "status": "folded",
+                "delta_identity": delta_identity,
+                "row_addition_count": 1,
+                "tied_input_output_storage": True,
+            }
+        ),
+        "tied_input_output": True,
+    }
+
+
 def _concurrent_materializer(marker: Path, snapshot_root: Path) -> dict[str, object]:
     with marker.open("a", encoding="utf-8") as handle:
         handle.write("build\n")
     time.sleep(0.2)
     _write_snapshot(snapshot_root, weight=b"derived")
-    return {"owner": "concurrency-test"}
+    return _materialization_evidence(
+        adapter_identity=_identity("adapter", "adapter-a")
+    )
 
 
 def _resolve_in_subprocess(
@@ -187,17 +214,22 @@ def test_base_only_receipt_revalidates_snapshot_bytes(tmp_path: Path) -> None:
 def test_composed_cache_hit_reuses_published_snapshot(tmp_path: Path) -> None:
     base = _write_snapshot(tmp_path / "base")
     builds: list[Path] = []
+    adapter_identity = _identity("adapter", "adapter-a")
+    delta_identity = _identity("delta", "delta-a")
 
     def materialize(snapshot_root: Path) -> dict[str, object]:
         builds.append(snapshot_root)
         _write_snapshot(snapshot_root, weight=b"derived")
-        return {"owner": "test"}
+        return _materialization_evidence(
+            adapter_identity=adapter_identity,
+            delta_identity=delta_identity,
+        )
 
     kwargs = {
         "base_model_path": base,
         "target_dtype": "bf16",
-        "adapter_identity": _identity("adapter", "adapter-a"),
-        "embedding_delta_identity": _identity("delta", "delta-a"),
+        "adapter_identity": adapter_identity,
+        "embedding_delta_identity": delta_identity,
         "cache_root": tmp_path / "cache",
         "materialize_snapshot": materialize,
     }
@@ -214,17 +246,18 @@ def test_composed_cache_hit_reuses_published_snapshot(tmp_path: Path) -> None:
 def test_corrupt_completed_cache_fails_without_rebuild(tmp_path: Path) -> None:
     base = _write_snapshot(tmp_path / "base")
     builds = 0
+    adapter_identity = _identity("adapter", "adapter-a")
 
     def materialize(snapshot_root: Path) -> dict[str, object]:
         nonlocal builds
         builds += 1
         _write_snapshot(snapshot_root, weight=b"derived")
-        return {"owner": "test"}
+        return _materialization_evidence(adapter_identity=adapter_identity)
 
     kwargs = {
         "base_model_path": base,
         "target_dtype": "bf16",
-        "adapter_identity": _identity("adapter", "adapter-a"),
+        "adapter_identity": adapter_identity,
         "cache_root": tmp_path / "cache",
         "materialize_snapshot": materialize,
     }
@@ -234,6 +267,47 @@ def test_corrupt_completed_cache_fails_without_rebuild(tmp_path: Path) -> None:
     with pytest.raises(RuntimeContractError, match="snapshot"):
         resolve_execution_model(**kwargs)
     assert builds == 1
+
+
+@pytest.mark.parametrize(
+    "evidence",
+    [
+        {"tied_input_output": True},
+        {
+            "adapter_merge": {"status": "merged", "adapter_identity": {}},
+            "embedding_delta_fold": None,
+            "tied_input_output": True,
+        },
+        {
+            "adapter_merge": None,
+            "embedding_delta_fold": None,
+            "tied_input_output": True,
+        },
+    ],
+)
+def test_composed_materialization_rejects_missing_or_unbound_merge_evidence(
+    tmp_path: Path,
+    evidence: dict[str, object],
+) -> None:
+    base = _write_snapshot(tmp_path / "base")
+
+    def materialize(snapshot_root: Path) -> dict[str, object]:
+        _write_snapshot(snapshot_root, weight=b"derived")
+        return evidence
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        resolve_execution_model(
+            base_model_path=base,
+            target_dtype="bf16",
+            adapter_identity=_identity("adapter", "adapter-a"),
+            cache_root=tmp_path / "cache",
+            materialize_snapshot=materialize,
+        )
+
+    assert exc_info.value.code == "inference.execution_model_materialization_evidence"
+    assert not (tmp_path / "cache").joinpath(
+        exc_info.value.context["composition_key"]
+    ).exists()
 
 
 def test_failed_build_never_publishes_completed_directory(tmp_path: Path) -> None:
@@ -259,6 +333,35 @@ def test_failed_build_never_publishes_completed_directory(tmp_path: Path) -> Non
         if path.is_dir() and path.name not in {".locks", ".staging"}
     ]
     assert completed == []
+
+
+def test_source_mutation_during_build_never_publishes_completed_directory(
+    tmp_path: Path,
+) -> None:
+    from src.inference.execution_model import resolve_execution_model
+
+    base = _write_snapshot(tmp_path / "base")
+    cache_root = tmp_path / "cache"
+
+    def mutate_source(snapshot_root: Path) -> dict[str, object]:
+        _write_snapshot(snapshot_root, weight=b"derived")
+        (base / "config.json").write_text('{"changed": true}\n', encoding="utf-8")
+        return {"owner": "test"}
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        resolve_execution_model(
+            base_model_path=base,
+            target_dtype="bf16",
+            adapter_identity=_identity("adapter", "adapter-a"),
+            cache_root=cache_root,
+            materialize_snapshot=mutate_source,
+        )
+
+    assert exc_info.value.code == "inference.execution_model_source_changed"
+    assert not any(
+        path.is_dir() and path.name not in {".locks", ".staging"}
+        for path in cache_root.iterdir()
+    )
 
 
 def test_materialized_snapshot_rejects_unreadable_model_payload(

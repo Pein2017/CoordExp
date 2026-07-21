@@ -12,8 +12,8 @@
     },
     {
       "relative_path": "execution_model.json",
-      "sha256": "b327094b1b327efe820e7d9562e75ccfd6f9f427c1c105339f683667235d37a4",
-      "size_bytes": 568910
+      "sha256": "40c7765961bf7b48ddefd87ef76b93899be0c2f51e60d66f33ee80a08a735618",
+      "size_bytes": 569126
     },
     {
       "relative_path": "gt_vs_pred.jsonl",
@@ -27,8 +27,8 @@
     },
     {
       "relative_path": "gt_vs_pred_scored.jsonl.provenance.json",
-      "sha256": "83a08d7420655f6298a7220eda04dd9c635d598f6936336af77abfe839ec7190",
-      "size_bytes": 1259752
+      "sha256": "4def4701ba5fbbf777724574b4e5dde6f8349b3d0f722543f96a5aeb70acd865",
+      "size_bytes": 1260327
     },
     {
       "relative_path": "image_plan.jsonl",
@@ -47,12 +47,12 @@
     },
     {
       "relative_path": "run_manifest.json",
-      "sha256": "a8e1b429fe5483ddf2bf58547d325a80e03bae4b9b36b396b7328be5238d88c4",
-      "size_bytes": 1260014
+      "sha256": "050af739e803480e76d84ab336a2da76fafa245d436b9070587c8a4726832dd2",
+      "size_bytes": 1260642
     },
     {
       "relative_path": "summary.json",
-      "sha256": "99ce77c89c712cb61e3975643b0ead4504f4930c6e6b77d59ead46523eb15722",
+      "sha256": "2d73484abb5dea10e7638bba4c1bc60d7874d717f2bd587c0b614343121944e1",
       "size_bytes": 1535
     }
   ],
@@ -125,10 +125,10 @@
     "sha256": "f1a13e7470f4636f2c89e11c23074c69a1318ba60fc3292ae0aa72bfbd495ace"
   },
   "max_num_seqs": 1,
-  "probe_source_sha256": "52bc43da664111733dc9e11308f4cf9b62a2c936cc70cc193f1eb61425c946df",
+  "probe_source_sha256": "197069872ff6e8b10abaec762659c4a62a16125587e5a77ee432f749a341093b",
   "process_cuda_binding": {
     "cuda": {
-      "CUDA_VISIBLE_DEVICES": "3",
+      "CUDA_VISIBLE_DEVICES": "0",
       "cuda_available": true,
       "cuda_current_device": 0,
       "cuda_device_count": 1,
@@ -136,12 +136,12 @@
       "logical_device": "cuda:0",
       "torch_cuda_version": "12.8",
       "visible_cuda_tokens": [
-        "3"
+        "0"
       ]
     },
     "process": {
-      "pid": 3501647,
-      "ppid": 3501611
+      "pid": 2167441,
+      "ppid": 2167428
     }
   },
   "prompt_trace": {
@@ -178,6 +178,7 @@
       "forced_logits_processor": {
         "module": "src.inference.vllm_forced_replay",
         "qualname": "CoordExpForcedSequenceLogitsProcessor",
+        "repo_relative_path": "src/inference/vllm_forced_replay.py",
         "source_path": "/data/CoordExp/.worktrees/CoordExp-swift/src/inference/vllm_forced_replay.py",
         "source_sha256": "8c833e66759d3059b11e2c3d9d3f5f837710d1a39eb5eb3e2e209d423a2ff692"
       },
@@ -186,10 +187,11 @@
       "logprobs_mode": "raw_logprobs",
       "max_num_seqs": 1,
       "qualification": {
-        "probe_source_sha256": "52bc43da664111733dc9e11308f4cf9b62a2c936cc70cc193f1eb61425c946df",
+        "evidence": "executed_by_this_receipt",
+        "probe_source_sha256": "197069872ff6e8b10abaec762659c4a62a16125587e5a77ee432f749a341093b",
         "processor_source_sha256": "8c833e66759d3059b11e2c3d9d3f5f837710d1a39eb5eb3e2e209d423a2ff692",
         "source_base_snapshot_fingerprint": "e43d3a07b5fe47db7abcc07a9b6a318dd32d9a2fa12f620c2e734573bf9fe5eb",
-        "status": "qualification_probe_under_renewal"
+        "status": "passed"
       },
       "request_count": 1,
       "row_evidence_sha256": "33d8310e53efe768c78a275547a1c3da52576690170413e18e24ce5eea83f795",
@@ -251,8 +253,8 @@
     "baseline": {
       "application_qualification": {
         "receipt_path": "/data/CoordExp/.worktrees/CoordExp-swift/src/inference/qualification_receipts/vllm-0.14.1-application-sources.json",
-        "receipt_sha256": "bcb112782e158af90bcfe3249d921487e65858dba4cde2f4389f27382d394c5d",
-        "source_count": 23,
+        "receipt_sha256": "af2ed1be6b0e42baf68814f611bc0da56b712d1bbc3e385fd29170355c6cadfd",
+        "source_count": 24,
         "status": "passed"
       },
       "candidate_version": "0.14.1",
