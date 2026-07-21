@@ -534,11 +534,20 @@ def _run_initialized_training(
         components.token_identity,
     )
     calibration_bank = None
+    calibration_warm_start_checkpoint = None
     if getattr(config.training, "mode", "supervised") == "rollout_calibration":
+        calibration_warm_start_checkpoint = (
+            _inspect_rollout_calibration_warm_start_checkpoint(
+                config,
+                components=components,
+                special_token_selection=special_token_selection,
+            )
+        )
         calibration_bank = _load_bound_rollout_calibration_bank(
             config,
             components=components,
             special_token_selection=special_token_selection,
+            observed_checkpoint=calibration_warm_start_checkpoint,
         )
 
     adapter_result = setup_dora_adapter(components.model, adapter_plan)
@@ -651,6 +660,15 @@ def _run_initialized_training(
                 split_counts=calibration_bank.manifest.split_counts,
                 event_counts=calibration_bank.manifest.event_family_counts,
                 rejection_reasons=calibration_bank.manifest.rejection_reasons,
+                trajectory_source_checkpoint=(
+                    calibration_bank.manifest.source_checkpoint.to_artifact_dict()
+                ),
+                training_warm_start_checkpoint=(
+                    calibration_warm_start_checkpoint.to_artifact_dict()
+                ),
+                off_policy_state_bank_replay=(
+                    bool(calibration.allow_off_policy_state_bank_replay)
+                ),
             )
     train_micro_steps = _attach_image_processors_to_micro_steps(
         train_micro_steps,
@@ -821,6 +839,7 @@ def _load_bound_rollout_calibration_bank(
     *,
     components: Any,
     special_token_selection: Any,
+    observed_checkpoint: CheckpointIdentity | None = None,
 ) -> Any:
     calibration = config.rollout_calibration
     if calibration is None:
@@ -829,6 +848,45 @@ def _load_bound_rollout_calibration_bank(
             code="training.rollout_calibration_config_missing",
         )
     binding = load_state_bank_manifest_binding(calibration.state_bank_manifest_path)
+    observed = observed_checkpoint or _inspect_rollout_calibration_warm_start_checkpoint(
+        config,
+        components=components,
+        special_token_selection=special_token_selection,
+    )
+    allow_off_policy = bool(
+        getattr(calibration, "allow_off_policy_state_bank_replay", False)
+    )
+    if not allow_off_policy and observed != binding.source_checkpoint:
+        raise RuntimeContractError(
+            "configured warm-start payloads do not match the state-bank source checkpoint",
+            code="training.rollout_calibration_source_checkpoint_mismatch",
+            context={
+                "expected": binding.source_checkpoint.to_artifact_dict(),
+                "observed": observed.to_artifact_dict(),
+                "state_bank_id": binding.bank_id,
+            },
+        )
+    if allow_off_policy:
+        _validate_off_policy_checkpoint_compatibility(
+            trajectory_source=binding.source_checkpoint,
+            training_warm_start=observed,
+            state_bank_id=binding.bank_id,
+        )
+    bank = load_state_bank(
+        calibration.state_bank_manifest_path,
+        expected_source_checkpoint=binding.source_checkpoint,
+        expected_prompt_identity_sha256=binding.prompt_identity_sha256,
+    )
+    validate_state_bank_token_identity(bank, components.token_identity)
+    return bank
+
+
+def _inspect_rollout_calibration_warm_start_checkpoint(
+    config: Any,
+    *,
+    components: Any,
+    special_token_selection: Any,
+) -> CheckpointIdentity:
     source_adapter_path = config.adapter.source_adapter_path
     embedding_payload_path = config.adapter.repaired_embedding_payload_path
     if source_adapter_path is None or embedding_payload_path is None:
@@ -846,7 +904,7 @@ def _load_bound_rollout_calibration_bank(
         expected_base_config_sha256=components.base_config_sha256,
         expected_tokenizer_sha256=components.tokenizer_sha256,
     )
-    observed = CheckpointIdentity(
+    return CheckpointIdentity(
         adapter_fingerprint=str(adapter_identity["fingerprint"]),
         embedding_delta_fingerprint=str(embedding_identity["fingerprint"]),
         base_config_sha256=str(components.base_config_sha256),
@@ -859,23 +917,35 @@ def _load_bound_rollout_calibration_bank(
             components.processor_identity.to_artifact_dict()
         ),
     )
-    if observed != binding.source_checkpoint:
-        raise RuntimeContractError(
-            "configured warm-start payloads do not match the state-bank source checkpoint",
-            code="training.rollout_calibration_source_checkpoint_mismatch",
-            context={
-                "expected": binding.source_checkpoint.to_artifact_dict(),
-                "observed": observed.to_artifact_dict(),
-                "state_bank_id": binding.bank_id,
-            },
-        )
-    bank = load_state_bank(
-        calibration.state_bank_manifest_path,
-        expected_source_checkpoint=observed,
-        expected_prompt_identity_sha256=binding.prompt_identity_sha256,
+
+
+def _validate_off_policy_checkpoint_compatibility(
+    *,
+    trajectory_source: CheckpointIdentity,
+    training_warm_start: CheckpointIdentity,
+    state_bank_id: str,
+) -> None:
+    shared_fields = (
+        "base_config_sha256",
+        "tokenizer_sha256",
+        "token_identity_sha256",
+        "special_token_identity_sha256",
+        "processor_identity_sha256",
     )
-    validate_state_bank_token_identity(bank, components.token_identity)
-    return bank
+    mismatches = {
+        field: {
+            "trajectory_source": getattr(trajectory_source, field),
+            "training_warm_start": getattr(training_warm_start, field),
+        }
+        for field in shared_fields
+        if getattr(trajectory_source, field) != getattr(training_warm_start, field)
+    }
+    if mismatches:
+        raise RuntimeContractError(
+            "off-policy StateBank replay crosses an incompatible model or token identity",
+            code="training.rollout_calibration_off_policy_identity_mismatch",
+            context={"state_bank_id": state_bank_id, "mismatches": mismatches},
+        )
 
 
 def _validate_calibration_source_step_zero_parity(

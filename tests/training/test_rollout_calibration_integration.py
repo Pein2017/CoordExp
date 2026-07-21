@@ -429,6 +429,28 @@ def test_pipeline_validates_actual_warm_start_payloads_before_loading_records(
         "training.rollout_calibration_source_checkpoint_mismatch"
     )
 
+    config.rollout_calibration.allow_off_policy_state_bank_replay = True
+    assert (
+        pipeline_module._load_bound_rollout_calibration_bank(
+            config,
+            components=components,
+            special_token_selection=selection,
+        )
+        is loaded_bank
+    )
+
+    components.base_config_sha256 = "a" * 64
+    with pytest.raises(RuntimeContractError) as exc_info:
+        pipeline_module._load_bound_rollout_calibration_bank(
+            config,
+            components=components,
+            special_token_selection=selection,
+        )
+    assert exc_info.value.code == (
+        "training.rollout_calibration_off_policy_identity_mismatch"
+    )
+    assert "base_config_sha256" in exc_info.value.context["mismatches"]
+
 
 def test_source_step_zero_surface_parity_requires_exact_copy_and_frozen_delta() -> None:
     receipt = SimpleNamespace(

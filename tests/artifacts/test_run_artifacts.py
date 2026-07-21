@@ -151,6 +151,9 @@ def test_rollout_calibration_binding_is_compact_immutable_and_adds_no_file(
         split_counts={"eval": 2, "train": 8},
         event_counts={"entity_transition": 4, "coordinate_boundary": 3},
         rejection_reasons={"ambiguous": 2},
+        trajectory_source_checkpoint={"adapter_fingerprint": "source"},
+        training_warm_start_checkpoint={"adapter_fingerprint": "warm"},
+        off_policy_state_bank_replay=True,
     )
 
     assert writer.file_inventory() == inventory
@@ -162,6 +165,11 @@ def test_rollout_calibration_binding_is_compact_immutable_and_adds_no_file(
         "records_sha256": "records-sha256",
         "split_counts": {"eval": 2, "train": 8},
         "event_counts": {"coordinate_boundary": 3, "entity_transition": 4},
+        "checkpoint_replay": {
+            "trajectory_source_checkpoint": {"adapter_fingerprint": "source"},
+            "training_warm_start_checkpoint": {"adapter_fingerprint": "warm"},
+            "off_policy_state_bank_replay": True,
+        },
         "validation_receipt": {
             "status": "validated",
             "bank_id": "bank-v1",

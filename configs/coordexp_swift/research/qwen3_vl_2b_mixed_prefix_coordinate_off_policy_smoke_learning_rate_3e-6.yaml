@@ -1,0 +1,12 @@
+schema_version: 1
+extends: qwen3_vl_2b_mixed_prefix_coordinate_common_old_epoch_learning_rate_3e-6.yaml
+
+run:
+  name: qwen3_vl_2b_mixed_prefix_coordinate_off_policy_smoke_learning_rate_3e-6
+  collision_policy: fail
+
+training:
+  epochs: 1
+  # The frozen-bank exposure contract requires one complete 256-event pass.
+  max_steps: 8
+  effective_batch_size: 32

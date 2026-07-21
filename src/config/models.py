@@ -319,6 +319,7 @@ class RolloutCalibrationConfig(StrictConfigModel):
     coordinate_boundary: CoordinateBoundaryObjectiveConfig
     incomplete_objective_policy: Literal["fail"] = "fail"
     online_state_bank_refresh: Literal[False] = False
+    allow_off_policy_state_bank_replay: bool = False
 
     @field_validator("state_bank_manifest_path", "source_checkpoint_id")
     @classmethod

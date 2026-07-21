@@ -31,6 +31,8 @@ reusable execution path.
 - compute entity-transition, first-wrong-coordinate, and rollout-site
   token-type-gate losses in 32-bit floating point;
 - preserve separate event masks, normalization, metrics, and provenance;
+- distinguish the checkpoint that generated a StateBank from the checkpoint
+  used to warm-start an explicitly declared off-policy replay run;
 - reuse existing model loading, packing, runtime, optimizer, artifact, and
   checkpoint owners; and
 - support deterministic one-event and small-state smokes before the formal
@@ -38,7 +40,7 @@ reusable execution path.
 
 **Non-Goals:**
 
-- online rollout collection during optimization;
+- online rollout collection during optimization or an in-trainer refresh loop;
 - automatic human-review replacement;
 - canonical supervised-fine-tuning replay or full-row base cross-entropy;
 - Kullback-Leibler divergence anchoring;
@@ -79,6 +81,8 @@ current adapter parameters.
 | Entity and geometry trust are separate | State-bank fields, eligibility masks, normalizers, losses, and metrics are separate. |
 | Unknown ownership has zero direct gradient | Loader validation excludes unknown or ambiguous status only from its corresponding entity or geometry term. |
 | Fixed offline bank for the first screen | The trainer has no online collector or refresh loop. |
+| Offline mixed correction successor | Orchestration performs rollout, StateBank construction, and the next training run as separate stages; each training run still consumes exactly one immutable bank. |
+| Truthful off-policy replay | The bank keeps the trajectory-generating checkpoint identity, while the run separately records the compatible training warm-start checkpoint identity. |
 | Geometry-sorted primary and random-order ablation | Each source checkpoint requires its own bound bank and run; cross-bank reuse fails. |
 | No final architecture yet | Produced adapters use unchanged ordinary greedy Qwen3-VL inference. |
 | Independent implementation race before full training | Tasks end after the two smoke levels and prohibit the formal 256-image launch. |
@@ -198,19 +202,30 @@ site must agree on intended type or validation fails; repeated identical
 declarations are counted once. The loss averages distinct sites within an
 event, then averages eligible events over the complete optimizer step.
 
-### 6. Freeze state banks before training
+### 6. Freeze every state bank before its training stage
 
-Collection, review, and split assignment finish before optimization. The bank
-manifest binds all records to one source checkpoint and declares image-grouped
-train and evaluation partitions. State-bank refresh is not a trainer feature
-in this change.
+Collection, review, and split assignment finish before each optimization
+stage. Every bank manifest binds all records to the checkpoint that generated
+their exact prefixes and declares image-grouped train and evaluation
+partitions. StateBank refresh remains external orchestration: a model first
+finishes training, ordinary inference produces new trajectories, a new bank is
+assembled, and only then may a later training process consume that immutable
+bank.
 
 Geometry-sorted and random-order checkpoints use different bank identities and
-different runs. Cross-bank prefix or candidate reuse is rejected.
+different runs. Unrelated cross-bank prefix or candidate reuse is rejected.
 
-**Alternative deferred:** periodic on-policy refresh. It changes the scientific
-question and adds worker orchestration, versioning, and new review burden before
-the fixed-bank treatment is known to work.
+The default remains strict on-policy replay: the warm-start checkpoint must
+equal the StateBank trajectory source. A separately declared off-policy mode
+may relax only the adapter and selected-token embedding-payload equality. Base
+configuration, tokenizer, token identity, special-token identity, and
+processor identity must still match exactly. The run receipt records both
+checkpoint identities and the explicit off-policy status. Neither identity may
+be rewritten to make them appear equal.
+
+**Alternative rejected:** periodic refresh inside the trainer. It obscures
+which model produced which state and is unnecessary for the bounded staged
+comparison.
 
 ### 7. Reuse current training and inference owners
 
@@ -232,7 +247,8 @@ No new external dependency is planned.
 The strict configuration needs only enough information to select the
 rollout-calibration mode, state-bank manifest, enabled objective terms,
 objective weights and fixed margins, token-type-gate weight, and source
-adapter. Collection policy and scientific thresholds remain in the state-bank
+adapter. One default-false switch permits compatible off-policy StateBank
+replay. Collection policy and scientific thresholds remain in the state-bank
 manifest and research unit rather than becoming trainer knobs.
 
 Implementation agents may choose the narrowest existing internal owner and
@@ -246,7 +262,9 @@ log row includes weighted and raw research losses, eligible event counts,
 positive/harmful margins, coordinate-mass margins, token-type legal mass,
 unknown/rejected counts, and finite status. Rank zero writes one compact bank
 validation receipt and smoke receipt; ranks do not create parallel evidence
-trees.
+trees. An off-policy run additionally records the trajectory-source identity,
+training-warm-start identity, their compatible shared identities, and the
+explicit replay mode.
 
 Raw review assets and state-bank source files remain outside the run tree and
 are referenced by identity and checksum.
@@ -286,6 +304,10 @@ are referenced by identity and checksum.
    training pipeline.
 5. Run the one-event smoke and the 8-to-16-state smoke.
 6. Stop for review before any formal 256-image launch.
+7. Add the default-off compatible off-policy replay seam after the original
+   screen establishes the need for a trajectory-refresh test.
+8. Execute refresh as separate rollout, assembly, and training stages rather
+   than adding an online collector to the trainer.
 
 Rollback is deletion or disabling of the explicit rollout-calibration mode.
 Normal supervised configs, inference configs, and checkpoint loading remain

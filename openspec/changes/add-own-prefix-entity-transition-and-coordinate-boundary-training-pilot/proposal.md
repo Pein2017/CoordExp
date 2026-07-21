@@ -13,6 +13,14 @@ The scientific design is owned by the
 This change supplies only the minimum reusable implementation needed to run
 that screen.
 
+The completed 256-image coordinate-boundary screen established that the
+objective improves the requested margin at frozen Source-checkpoint prefixes
+but does not improve clean self-rollout. The authorized successor therefore
+adds one bounded offline trajectory-refresh comparison, owned by the
+[Mixed Old-Prefix and Refreshed-Prefix Coordinate Correction](../../../research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-21-mixed-old-and-refreshed-prefix-coordinate-correction/unit.md)
+research unit. It tests whether the failed transfer is caused by stale prefix
+states rather than by an ineffective local objective.
+
 ## What Changes
 
 - Add a frozen, exact-token rollout state-bank input path with physical-entity,
@@ -31,9 +39,15 @@ that screen.
   inference pipeline.
 - Add the one-event and 8-to-16-state smoke paths required before the formal
   screen.
+- Add an explicit, default-off off-policy replay mode in which a frozen
+  StateBank remains truthfully bound to the checkpoint that generated its
+  trajectories while training warm-starts from a later compatible checkpoint.
+- Keep refreshed rollout collection and StateBank construction outside the
+  trainer, then compare an equal-budget repeat on old prefixes with correction
+  on newly visited prefixes from one shared intermediate checkpoint.
 - Do not add canonical supervised-fine-tuning replay, Kullback-Leibler
-  divergence anchoring, Gaussian coordinate smoothing, online state-bank
-  refresh, new model heads, or inference-time control modules.
+  divergence anchoring, Gaussian coordinate smoothing, online collection
+  inside the trainer, new model heads, or inference-time control modules.
 - **BREAKING for the new research profile only:** permit a declared
   rollout-calibration run to omit protected full-row base cross-entropy while
   retaining a positive-weight token-type gate over its selected research

@@ -1,0 +1,21 @@
+schema_version: 1
+extends: qwen3_vl_2b_mixed_prefix_coordinate_common_old_epoch_learning_rate_3e-6.yaml
+
+run:
+  name: qwen3_vl_2b_mixed_prefix_coordinate_old_prefix_repeat_192_verified_learning_rate_3e-6
+
+adapter:
+  source_adapter_path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-mixed-old-and-refreshed-prefix-coordinate-correction/runs/qwen3_vl_2b_mixed_prefix_coordinate_common_old_epoch_learning_rate_3e-6/checkpoints/step-8/adapter
+  repaired_embedding_payload_path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-mixed-old-and-refreshed-prefix-coordinate-correction/runs/qwen3_vl_2b_mixed_prefix_coordinate_common_old_epoch_learning_rate_3e-6/checkpoints/step-8/special_token_embeddings
+
+rollout_calibration:
+  state_bank_manifest_path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-mixed-old-and-refreshed-prefix-coordinate-correction/old-prefix-paired-192/state-bank/manifest.json
+  allow_off_policy_state_bank_replay: true
+
+training:
+  epochs: 1
+  max_steps: 6
+  effective_batch_size: 32
+
+runtime:
+  seed: 29

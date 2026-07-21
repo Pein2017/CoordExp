@@ -71,7 +71,16 @@ becomes worse. The 256-image successor is therefore closed: it establishes a
 learnable local decision signal and rejects ordinary language-tower DoRA on
 frozen source prefixes as a sufficient whole-rollout treatment. The token-type
 gate was used only as a stabilizer inside the treatment, not as an independent
-scientific arm.
+scientific arm. A staged old-event versus refreshed-event successor then finds
+event-package specialization: each equal-budget branch is best on the event
+package it trained on. The full comparison also changes owners, coordinate
+targets, and candidate rows; a 35-case prefix-only matched subset is
+inconclusive. Refreshed-event training slightly
+improves aggregate clean-rollout tight-box accuracy over the old-prefix
+control, but does not preserve the exact trained owner at its intended row and
+increases invalid geometry relative to the shared intermediate. Prefix-state
+distribution mismatch therefore remains unresolved, and first-wrong-coordinate
+correction is not promoted to a larger training scale.
 The weekly report and research compass own the broader synthesis and next-
 discriminator boundary.
 

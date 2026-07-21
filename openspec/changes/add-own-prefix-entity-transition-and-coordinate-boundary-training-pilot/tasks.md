@@ -40,3 +40,18 @@
 - [x] 6.1 Run targeted config, state-bank, replay, packing, loss, training-pipeline, checkpoint, and inference tests plus strict OpenSpec validation and residue checks for forbidden alternate trainers or inference paths.
 - [x] 6.2 Produce one compact implementation receipt listing changed owner surfaces, exact commands, test and smoke outcomes, runtime and peak-memory observations, known limitations, and any deviation from the frozen research unit.
 - [x] 6.3 Stop before the formal 256-image and 12-job training screen; leave that launch for lead-agent comparison of the independently implemented worktrees and a separate user authorization.
+
+## 7. Compatible Off-Policy StateBank Replay
+
+- [x] 7.1 Add focused config and pipeline tests proving strict replay remains the default, compatible off-policy replay permits only adapter and selected-token embedding-delta differences, and all base/token/processor identity mismatches fail before forward.
+- [x] 7.2 Implement one default-false off-policy replay switch without adding online collection, a second trainer, or a multi-bank scheduler.
+- [x] 7.3 Record both the immutable trajectory-source checkpoint identity and the training-warm-start checkpoint identity in rank-zero run evidence.
+- [x] 7.4 Extend the inference-to-StateBank builder so a refreshed bank is bound to the checkpoint that actually generated its trajectories rather than copying an older reference-bank checkpoint identity.
+
+## 8. Mixed Old-Prefix and Refreshed-Prefix Coordinate Correction
+
+- [x] 8.1 Run a real smoke from Treated-v1 that consumes the old Source-prefix StateBank through explicit off-policy replay and verify truthful dual-checkpoint evidence.
+- [x] 8.2 Train one common old-prefix epoch from Treated-v1, run clean inference from the shared intermediate checkpoint, and build a refreshed StateBank from its actual prefixes.
+- [x] 8.3 Freeze one paired image cohort admitted by both the old and refreshed builders, then create equal-sized old-prefix and refreshed-prefix branch banks over exactly those images.
+- [x] 8.4 From the identical shared intermediate checkpoint, train the Old-Prefix Repeat Control and the Refreshed-Prefix Treatment with equal event and optimizer budgets.
+- [x] 8.5 Compare exact-prefix 32-bit floating-point margins and clean self-rollout geometry, detection, duplicate, invalid, and truncation behavior; update the research unit with the decision and artifact handles.

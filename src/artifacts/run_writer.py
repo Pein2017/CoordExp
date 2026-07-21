@@ -202,6 +202,9 @@ class RunWriter:
         split_counts: Mapping[str, int],
         event_counts: Mapping[str, int],
         rejection_reasons: Mapping[str, int],
+        trajectory_source_checkpoint: Mapping[str, Any] | None = None,
+        training_warm_start_checkpoint: Mapping[str, Any] | None = None,
+        off_policy_state_bank_replay: bool = False,
     ) -> None:
         """Bind one immutable rollout-calibration provenance summary to run.json."""
         string_fields = {
@@ -253,6 +256,23 @@ class RunWriter:
                 event_counts, field="event_counts"
             ),
         }
+        if (trajectory_source_checkpoint is None) != (
+            training_warm_start_checkpoint is None
+        ):
+            raise ArtifactContractError(
+                "rollout-calibration checkpoint replay evidence must provide both identities",
+                code="run_writer.invalid_rollout_calibration_checkpoint_replay",
+            )
+        if trajectory_source_checkpoint is not None:
+            binding["checkpoint_replay"] = {
+                "trajectory_source_checkpoint": dict(trajectory_source_checkpoint),
+                "training_warm_start_checkpoint": dict(
+                    training_warm_start_checkpoint or {}
+                ),
+                "off_policy_state_bank_replay": bool(
+                    off_policy_state_bank_replay
+                ),
+            }
         state = self.read_run()
         if "rollout_calibration" in state:
             raise ArtifactContractError(

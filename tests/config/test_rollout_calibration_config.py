@@ -77,6 +77,7 @@ def test_rollout_calibration_profiles_load_with_exact_weights_and_paths(
     assert calibration.coordinate_boundary.weight == coordinate_weight
     assert calibration.incomplete_objective_policy == "fail"
     assert calibration.online_state_bank_refresh is False
+    assert calibration.allow_off_policy_state_bank_replay is False
     assert calibration.state_bank_manifest_path == str(manifest_path.resolve())
     assert config.adapter.source_adapter_path == str(
         (config_dir / "warm-start" / "adapter").resolve()
@@ -289,6 +290,36 @@ def test_state_bank_checkpoint_mismatch_fails_during_config_loading(
         "configured_source_checkpoint_id": SOURCE_CHECKPOINT_ID,
         "manifest_source_checkpoint_id": other_checkpoint_id,
     }
+
+
+def test_explicit_off_policy_config_still_binds_the_trajectory_source_bank(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    manifest_path = tmp_path / "banks" / "state-bank-manifest.json"
+    trajectory_source = {
+        **SOURCE_CHECKPOINT,
+        "adapter_fingerprint": "8" * 64,
+        "embedding_delta_fingerprint": "9" * 64,
+    }
+    trajectory_source_id = _write_manifest(
+        manifest_path,
+        source_checkpoint=trajectory_source,
+    )
+    payload = _calibration_config()
+    payload["rollout_calibration"].update(
+        {
+            "source_checkpoint_id": trajectory_source_id,
+            "allow_off_policy_state_bank_replay": True,
+        }
+    )
+    _write_yaml(config_path, payload)
+
+    calibration = load_train_config(config_path).config.rollout_calibration
+
+    assert calibration is not None
+    assert calibration.source_checkpoint_id == trajectory_source_id
+    assert calibration.allow_off_policy_state_bank_replay is True
 
 
 def test_state_bank_manifest_binding_requires_strict_json(tmp_path: Path) -> None:

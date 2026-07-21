@@ -22,9 +22,11 @@ if __package__ in {None, ""}:
 
 from src.config.fingerprint import sha256_file, sha256_json
 from src.config.inference import load_infer_config
+from src.adapters.dora import inspect_dora_adapter_payload
 from src.data import load_raw_examples
 from src.inference.backend import token_ids_sha256
 from src.inference.runtime import assemble_frontend
+from src.qwen.special_token_embeddings import inspect_special_token_embedding_delta_payload
 from src.rollout_calibration import CheckpointIdentity, assemble_state_bank, load_state_bank
 from scripts.research.run_current_seeded_sampled_rollouts import _build_requests
 
@@ -132,6 +134,22 @@ def _image_id(example_id: str) -> int:
     return int(example_id.rsplit("_", 1)[-1])
 
 
+def load_allowed_image_ids(path: Path | None) -> set[int] | None:
+    """Load an optional exact image cohort for paired StateBank construction."""
+    if path is None:
+        return None
+    resolved = path.resolve(strict=True)
+    payload = json.loads(resolved.read_text(encoding="utf-8"))
+    if not isinstance(payload, list) or not payload:
+        raise ValueError("allowed image IDs must be a non-empty JSON list")
+    if not all(isinstance(value, int) and value >= 0 for value in payload):
+        raise ValueError("allowed image IDs must contain only non-negative integers")
+    allowed = set(payload)
+    if len(allowed) != len(payload):
+        raise ValueError("allowed image IDs must be unique")
+    return allowed
+
+
 def _content_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -147,11 +165,88 @@ def _image_pad_interval(ids: Sequence[int], image_pad_id: int) -> list[int]:
     return [positions[0], positions[-1] + 1]
 
 
+def checkpoint_identity_for_inference_run(
+    *,
+    inference_manifest: Mapping[str, Any],
+    reference_checkpoint: CheckpointIdentity,
+    source_adapter_path: Path,
+    source_embedding_payload_path: Path,
+) -> CheckpointIdentity:
+    """Bind refreshed prefixes to the payloads that actually generated them."""
+
+    adapter_path = source_adapter_path.resolve(strict=True)
+    embedding_path = source_embedding_payload_path.resolve(strict=True)
+    recorded_adapter = Path(
+        str((inference_manifest.get("adapter_identity") or {}).get("adapter_path"))
+    ).resolve(strict=True)
+    recorded_embedding = Path(
+        str(
+            ((inference_manifest.get("embedding_delta_identity") or {}).get("identity") or {}).get(
+                "delta_path"
+            )
+        )
+    ).resolve(strict=True)
+    if adapter_path != recorded_adapter or embedding_path != recorded_embedding:
+        raise ValueError(
+            "explicit checkpoint payload paths do not match the inference run manifest"
+        )
+    frontend = inference_manifest.get("frontend_identity") or {}
+    base_model_path = str(frontend.get("base_model_path") or "")
+    if not base_model_path:
+        raise ValueError("inference run manifest lacks frontend base_model_path")
+    actual_invariants = {
+        "base_config_sha256": str(frontend.get("base_config_sha256") or ""),
+        "tokenizer_sha256": str(frontend.get("tokenizer_sha256") or ""),
+        "token_identity_sha256": sha256_json(dict(frontend.get("tokens") or {})),
+        "processor_identity_sha256": sha256_json(
+            dict(frontend.get("processor") or {})
+        ),
+    }
+    expected_invariants = {
+        field: getattr(reference_checkpoint, field)
+        for field in actual_invariants
+    }
+    mismatches = {
+        field: {"reference": expected_invariants[field], "inference": value}
+        for field, value in actual_invariants.items()
+        if not value or value != expected_invariants[field]
+    }
+    if mismatches:
+        raise ValueError(
+            "inference frontend identity is incompatible with the reference StateBank: "
+            f"{mismatches}"
+        )
+    adapter_identity = inspect_dora_adapter_payload(
+        adapter_path,
+        expected_base_model_path=base_model_path,
+    )
+    embedding_identity = inspect_special_token_embedding_delta_payload(
+        embedding_path,
+        expected_base_model_path=base_model_path,
+        expected_base_config_sha256=reference_checkpoint.base_config_sha256,
+        expected_tokenizer_sha256=reference_checkpoint.tokenizer_sha256,
+    )
+    return CheckpointIdentity(
+        adapter_fingerprint=str(adapter_identity["fingerprint"]),
+        embedding_delta_fingerprint=str(embedding_identity["fingerprint"]),
+        base_config_sha256=actual_invariants["base_config_sha256"],
+        tokenizer_sha256=actual_invariants["tokenizer_sha256"],
+        token_identity_sha256=actual_invariants["token_identity_sha256"],
+        special_token_identity_sha256=(
+            reference_checkpoint.special_token_identity_sha256
+        ),
+        processor_identity_sha256=actual_invariants["processor_identity_sha256"],
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--inference-dir", type=Path, required=True)
     parser.add_argument("--infer-config", type=Path, required=True)
     parser.add_argument("--reference-bank-manifest", type=Path, required=True)
+    parser.add_argument("--source-adapter-path", type=Path)
+    parser.add_argument("--source-embedding-payload-path", type=Path)
+    parser.add_argument("--allowed-image-ids-json", type=Path)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--train-count", type=int, default=256)
     parser.add_argument("--eval-count", type=int, default=64)
@@ -159,6 +254,7 @@ def main() -> int:
     parser.add_argument("--minimum-iou", type=float, default=0.55)
     parser.add_argument("--minimum-match-margin", type=float, default=0.30)
     args = parser.parse_args()
+    allowed_image_ids = load_allowed_image_ids(args.allowed_image_ids_json)
 
     infer_dir = args.inference_dir.resolve(strict=True)
     resolved = load_infer_config(args.infer_config.resolve(strict=True))
@@ -182,14 +278,35 @@ def main() -> int:
         traces[str(row["row_id"])].append((int(row["generated_step_index"]), int(row["token_id"])))
 
     reference = json.loads(args.reference_bank_manifest.resolve(strict=True).read_text())
-    checkpoint = CheckpointIdentity.from_mapping(reference["source_checkpoint"])
-    checkpoint_id = str(reference["source_checkpoint_id"])
+    reference_checkpoint = CheckpointIdentity.from_mapping(reference["source_checkpoint"])
+    if (args.source_adapter_path is None) != (
+        args.source_embedding_payload_path is None
+    ):
+        raise SystemExit(
+            "--source-adapter-path and --source-embedding-payload-path must be provided together"
+        )
+    if args.source_adapter_path is None:
+        checkpoint = reference_checkpoint
+    else:
+        inference_manifest = json.loads(
+            (infer_dir / "run_manifest.json").read_text(encoding="utf-8")
+        )
+        checkpoint = checkpoint_identity_for_inference_run(
+            inference_manifest=inference_manifest,
+            reference_checkpoint=reference_checkpoint,
+            source_adapter_path=args.source_adapter_path,
+            source_embedding_payload_path=args.source_embedding_payload_path,
+        )
+    checkpoint_id = sha256_json(checkpoint.to_artifact_dict())
     prompt_identity = str(reference["prompt_identity_sha256"])
     rollout_rows: list[dict[str, Any]] = []
     review_rows: list[dict[str, Any]] = []
     exclusions: dict[str, int] = defaultdict(int)
 
     for row_id in sorted(gt_rows):
+        if allowed_image_ids is not None and _image_id(row_id) not in allowed_image_ids:
+            exclusions["outside_allowed_image_cohort"] += 1
+            continue
         artifact = gt_rows[row_id]
         exact_ids = [value for _, value in sorted(traces.get(row_id, []))]
         exact_rows = split_complete_rows(exact_ids)
@@ -409,6 +526,14 @@ def main() -> int:
     receipt = {
         "schema_version": SCHEMA_VERSION,
         "eligible_before_limit": eligible_before_limit,
+        "allowed_image_ids": {
+            "count": None if allowed_image_ids is None else len(allowed_image_ids),
+            "sha256": (
+                None
+                if args.allowed_image_ids_json is None
+                else sha256_file(args.allowed_image_ids_json.resolve(strict=True))
+            ),
+        },
         "train_count": args.train_count,
         "eval_count": args.eval_count,
         "exclusions": dict(sorted(exclusions.items())),
