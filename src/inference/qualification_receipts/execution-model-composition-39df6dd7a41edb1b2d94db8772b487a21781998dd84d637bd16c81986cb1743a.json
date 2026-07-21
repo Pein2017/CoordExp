@@ -42,7 +42,13 @@
       85,
       519,
       151647,
-      151648
+      151648,
+      152044,
+      152030,
+      152303,
+      152489,
+      151649,
+      151645
     ],
     "full_vocab": {
       "allclose": true,
@@ -72,7 +78,13 @@
       85,
       519,
       151647,
-      151648
+      151648,
+      152044,
+      152030,
+      152303,
+      152489,
+      151649,
+      151645
     ],
     "merged_target_weight_identity": {
       "expected": {
@@ -103,7 +115,7 @@
     ]
   },
   "composition_key": "39df6dd7a41edb1b2d94db8772b487a21781998dd84d637bd16c81986cb1743a",
-  "digest": "778b5358dc9857c4024dc7f13c817bbe3e324c425844f46d87670b340ee4b0bc",
+  "digest": "5f49244d2de107dfe4467e7f511a41315d310d06b7c983cee1f366becfbca60b",
   "fixture_identity": {
     "dynamic_executed_prompt_ids_sha256": "dc21acac635d4fddfeca65c2572e453ce5624dab403351da6973b434623b5ca1",
     "executed_media_sha256": "717ea08635737ef030944d9b316646c3d85d432056952d8632c4ceaf9764fd79",
@@ -111,7 +123,7 @@
     "image_file_sha256": "b5888357f78716bb99985638fe0788160c538612d7e67654ee44ceb2ab66de6d",
     "input_jsonl_sha256": "f1a13e7470f4636f2c89e11c23074c69a1318ba60fc3292ae0aa72bfbd495ace",
     "materialized_executed_prompt_ids_sha256": "dc21acac635d4fddfeca65c2572e453ce5624dab403351da6973b434623b5ca1",
-    "max_new_tokens": 16,
+    "max_new_tokens": 64,
     "processor_fingerprint": "1b6a8d3fdd4ee4bc30734aab17d902f1ce89ae2ac208f875b624cdb6cac4d055",
     "prompt_ids_sha256": "dc21acac635d4fddfeca65c2572e453ce5624dab403351da6973b434623b5ca1",
     "row_id": "coco2017_train_000000000030__smoke2obj",
@@ -132,7 +144,7 @@
   },
   "probe_identity": {
     "path": "scripts/probes/coordexp_swift/execution_model_composition.py",
-    "sha256": "6c6bb887c4ce228c6b97d22582d5a83516050bf4d257aa38c749993c1f86081a"
+    "sha256": "7b78355174fb233ac82a9117ce7ff87a3c1d8a56f396a7eee301d563444a2cc2"
   },
   "resolved_config_identity": {
     "entry_config_path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/infer/smoke/qwen3_vl_2b_step4887_dynamic_hf_fp32_composition.yaml",

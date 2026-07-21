@@ -17,6 +17,7 @@ from src.inference.execution_model import (
     validate_execution_model_receipt,
 )
 from src.inference.execution_model_composition import (
+    EXECUTION_MODEL_COMPOSITION_NAME,
     build_execution_model_composition_receipt,
     compare_execution_models,
     validate_execution_model_composition_receipt,
@@ -65,7 +66,12 @@ def _target_identity() -> dict[str, object]:
     }
 
 
-def _comparison(*, native_dtype: str = "torch.bfloat16") -> dict[str, object]:
+def _comparison(
+    *,
+    native_dtype: str = "torch.bfloat16",
+    with_adapter: bool = True,
+    with_delta: bool = True,
+) -> dict[str, object]:
     target_identity = _target_identity()
     selected_rows_sha256 = "c" * 64
     return {
@@ -74,7 +80,7 @@ def _comparison(*, native_dtype: str = "torch.bfloat16") -> dict[str, object]:
             "selected_rows_target_dtype": True,
             "dynamic_tied_weights": True,
             "materialized_tied_weights": True,
-            "merged_target_weights": True,
+            "merged_target_weights": True if with_adapter else None,
         },
         "behavior_checks": {
             "greedy_generated_ids_match": False,
@@ -82,18 +88,28 @@ def _comparison(*, native_dtype: str = "torch.bfloat16") -> dict[str, object]:
             "selected_vocab_within_reference_tolerance": False,
         },
         "merged_target_weight_identity": {
-            "expected": {
-                "target_count": target_identity["target_count"],
-                "fingerprint": target_identity["fingerprint"],
-            },
-            "observed": {
-                "target_count": target_identity["target_count"],
-                "fingerprint": target_identity["fingerprint"],
-            },
+            "expected": (
+                {
+                    "target_count": target_identity["target_count"],
+                    "fingerprint": target_identity["fingerprint"],
+                }
+                if with_adapter
+                else None
+            ),
+            "observed": (
+                {
+                    "target_count": target_identity["target_count"],
+                    "fingerprint": target_identity["fingerprint"],
+                }
+                if with_adapter
+                else None
+            ),
         },
         "selected_row_identity": {
             "dynamic_effective_sha256": selected_rows_sha256,
-            "materializer_folded_sha256": selected_rows_sha256,
+            "materializer_folded_sha256": (
+                selected_rows_sha256 if with_delta else None
+            ),
             "reloaded_materialized_sha256": selected_rows_sha256,
         },
         "full_vocab": {
@@ -127,23 +143,82 @@ def _comparison(*, native_dtype: str = "torch.bfloat16") -> dict[str, object]:
 
 def _materialized_execution_model(tmp_path: Path) -> dict[str, object]:
     target_identity = _target_identity()
+    adapter_identity = {"kind": "adapter", "fingerprint": "a" * 64}
+    delta_identity = {"kind": "delta", "fingerprint": "d" * 64}
 
     def materialize(snapshot_root: Path) -> dict[str, object]:
         _write_snapshot(snapshot_root)
         return {
             "adapter_merge": {
+                "status": "merged",
+                "adapter_identity": adapter_identity,
                 "merge": {"target_weight_identity": target_identity}
             },
             "embedding_delta_fold": {
-                "selected_rows_after_sha256": "c" * 64
+                "status": "folded",
+                "delta_identity": delta_identity,
+                "selected_rows_after_sha256": "c" * 64,
+                "row_addition_count": 1,
+                "tied_input_output_storage": True,
             },
+            "tied_input_output": True,
         }
 
     return resolve_execution_model(
         base_model_path=_write_snapshot(tmp_path / "base"),
         target_dtype="bf16",
-        adapter_identity={"kind": "adapter", "fingerprint": "a" * 64},
-        embedding_delta_identity={"kind": "delta", "fingerprint": "d" * 64},
+        adapter_identity=adapter_identity,
+        embedding_delta_identity=delta_identity,
+        cache_root=tmp_path / "cache",
+        materialize_snapshot=materialize,
+    )
+
+
+def _partial_materialized_execution_model(
+    tmp_path: Path,
+    *,
+    with_adapter: bool,
+    with_delta: bool,
+) -> dict[str, object]:
+    target_identity = _target_identity()
+    adapter_identity = {"kind": "adapter", "fingerprint": "a" * 64}
+    delta_identity = {"kind": "delta", "fingerprint": "d" * 64}
+
+    def materialize(snapshot_root: Path) -> dict[str, object]:
+        _write_snapshot(snapshot_root)
+        return {
+            "adapter_merge": (
+                {
+                    "status": "merged",
+                    "adapter_identity": adapter_identity,
+                    "merge": {"target_weight_identity": target_identity},
+                }
+                if with_adapter
+                else None
+            ),
+            "embedding_delta_fold": (
+                {
+                    "status": "folded",
+                    "delta_identity": delta_identity,
+                    "selected_rows_after_sha256": "c" * 64,
+                    "row_addition_count": 1,
+                    "tied_input_output_storage": True,
+                }
+                if with_delta
+                else None
+            ),
+            "tied_input_output": True,
+        }
+
+    return resolve_execution_model(
+        base_model_path=_write_snapshot(tmp_path / "base"),
+        target_dtype="bf16",
+        adapter_identity=(
+            adapter_identity if with_adapter else None
+        ),
+        embedding_delta_identity=(
+            delta_identity if with_delta else None
+        ),
         cache_root=tmp_path / "cache",
         materialize_snapshot=materialize,
     )
@@ -206,7 +281,7 @@ def test_composition_receipt_binds_execution_identity(
     assert validate_execution_model_receipt(bound) == bound
 
 
-def test_clean_cache_binds_matching_durable_composition_receipt(
+def test_clean_cache_does_not_auto_bind_durable_comparison_receipt(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -228,8 +303,29 @@ def test_clean_cache_binds_matching_durable_composition_receipt(
 
     loaded = load_execution_model_receipt(execution_model["receipt_path"])
 
-    assert loaded["composition_fidelity"]["digest"] == composition["digest"]
-    assert loaded["composition_fidelity"]["path"] == str(durable_path.resolve())
+    assert "composition_fidelity" not in loaded
+
+
+def test_stale_comparison_sidecar_does_not_block_execution_model_resolution(
+    tmp_path: Path,
+) -> None:
+    execution_model = _materialized_execution_model(tmp_path)
+    stale_path = Path(str(execution_model["receipt_path"])).with_name(
+        EXECUTION_MODEL_COMPOSITION_NAME
+    )
+    stale_path.write_text("{}\n", encoding="utf-8")
+    kwargs = {
+        "base_model_path": tmp_path / "base",
+        "target_dtype": "bf16",
+        "adapter_identity": {"kind": "adapter", "fingerprint": "a" * 64},
+        "embedding_delta_identity": {"kind": "delta", "fingerprint": "d" * 64},
+        "cache_root": tmp_path / "cache",
+    }
+
+    renewed = resolve_execution_model(**kwargs)
+
+    assert renewed["mode"] == "materialized"
+    assert "composition_fidelity" not in renewed
 
 
 def test_composition_receipt_accepts_fp32_execution_evidence(
@@ -249,6 +345,47 @@ def test_composition_receipt_accepts_fp32_execution_evidence(
     assert composition["comparison"]["dtypes"]["comparison_logits"] == (
         "torch.float32"
     )
+
+
+@pytest.mark.parametrize(
+    ("with_adapter", "with_delta"),
+    [(True, False), (False, True)],
+)
+def test_composition_receipt_supports_independently_optional_payloads(
+    tmp_path: Path,
+    with_adapter: bool,
+    with_delta: bool,
+) -> None:
+    execution_model = _partial_materialized_execution_model(
+        tmp_path,
+        with_adapter=with_adapter,
+        with_delta=with_delta,
+    )
+    composition = build_execution_model_composition_receipt(
+        execution_model=execution_model,
+        fixture_identity=_fixture(),
+        probe_identity=_probe_identity(),
+        resolved_config_identity=_config_identity(),
+        comparison=_comparison(
+            with_adapter=with_adapter,
+            with_delta=with_delta,
+        ),
+    )
+
+    bound = bind_execution_model_composition(execution_model, composition)
+
+    assert bound["composition_fidelity"]["digest"] == composition["digest"]
+    assert composition["materialization_identity"] == {
+        "merged_target_weight_identity": (
+            {
+                "target_count": _target_identity()["target_count"],
+                "fingerprint": _target_identity()["fingerprint"],
+            }
+            if with_adapter
+            else None
+        ),
+        "folded_selected_rows_sha256": "c" * 64 if with_delta else None,
+    }
 
 
 @pytest.mark.parametrize(

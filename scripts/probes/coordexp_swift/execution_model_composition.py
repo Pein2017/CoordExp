@@ -57,6 +57,7 @@ def main() -> int:
         adapter_path=config.adapter.path,
         adapter_name=config.adapter.name,
         embedding_delta_path=config.embedding_delta.path,
+        _skip_existing_composition_fidelity=True,
     )
     dynamic_launch = prepare_backend_launch(
         config,
@@ -274,11 +275,12 @@ def _sha256_file(path: Path) -> str:
 
 def _merged_target_identity(
     execution_model: dict[str, Any],
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
+    adapter_merge = execution_model.get("materialization", {}).get("adapter_merge")
+    if adapter_merge is None:
+        return None
     try:
-        identity = execution_model["materialization"]["adapter_merge"]["merge"][
-            "target_weight_identity"
-        ]
+        identity = adapter_merge["merge"]["target_weight_identity"]
     except (KeyError, TypeError) as exc:
         raise ValueError(
             "execution-model receipt lacks merged DoRA target identity"
@@ -288,11 +290,16 @@ def _merged_target_identity(
     return identity
 
 
-def _folded_selected_rows_sha256(execution_model: dict[str, Any]) -> str:
+def _folded_selected_rows_sha256(
+    execution_model: dict[str, Any],
+) -> str | None:
+    delta_fold = execution_model.get("materialization", {}).get(
+        "embedding_delta_fold"
+    )
+    if delta_fold is None:
+        return None
     try:
-        value = execution_model["materialization"]["embedding_delta_fold"][
-            "selected_rows_after_sha256"
-        ]
+        value = delta_fold["selected_rows_after_sha256"]
     except (KeyError, TypeError) as exc:
         raise ValueError(
             "execution-model receipt lacks folded selected-row identity"

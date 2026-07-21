@@ -427,18 +427,21 @@ def test_raw_model_logprob_is_opt_in(tmp_path: Path) -> None:
     assert enabled_config.config.artifacts.include_raw_model_logprob is True
 
 
-def test_vllm_version_preflight_rejects_unqualified_version() -> None:
-    from src.config.inference import validate_vllm_runtime_version
+def test_vllm_version_preflight_classifies_without_authorizing_runtime() -> None:
+    from src.config.inference import inspect_vllm_runtime_version
 
-    validate_vllm_runtime_version(observed_version="0.14.1")
+    known = inspect_vllm_runtime_version(observed_version="0.14.1")
+    unverified = inspect_vllm_runtime_version(observed_version="0.14.2")
 
-    with pytest.raises(ConfigContractError) as exc_info:
-        validate_vllm_runtime_version(observed_version="0.14.2")
-
-    assert exc_info.value.code == "config.vllm_version_unqualified"
-    assert exc_info.value.context == {
+    assert known == {
+        "observed_version": "0.14.1",
+        "status": "known_working",
+        "known_working_versions": ["0.14.1"],
+    }
+    assert unverified == {
         "observed_version": "0.14.2",
-        "qualified_versions": ["0.14.1"],
+        "status": "unverified",
+        "known_working_versions": ["0.14.1"],
     }
 
 
@@ -737,7 +740,7 @@ def test_vllm_execution_model_launch_uses_materialized_path_without_live_payload
     assert launch.execution_model_identity["composition_key"] == "a" * 64
 
 
-def test_vllm_materialized_launch_rejects_unqualified_execution_model(
+def test_vllm_materialized_launch_accepts_structural_identity_without_comparison(
     tmp_path: Path,
 ) -> None:
     from src.config.inference import load_infer_config
@@ -746,21 +749,52 @@ def test_vllm_materialized_launch_rejects_unqualified_execution_model(
     config_path = _write_vllm_config(tmp_path, gpu_memory_utilization=0.7)
     resolved = load_infer_config(config_path)
 
-    with pytest.raises(RuntimeContractError) as exc_info:
-        prepare_backend_launch(
-            resolved.config,
-            generation_config_fingerprint="generation-fingerprint",
-            execution_model={
-                "model_path": str(tmp_path / "snapshot"),
-                "mode": "materialized",
-                "composition_key": "a" * 64,
-                "snapshot_fingerprint": "b" * 64,
-            },
-        )
-    assert (
-        exc_info.value.code
-        == "inference.execution_model_composition_fidelity_required"
+    launch = prepare_backend_launch(
+        resolved.config,
+        generation_config_fingerprint="generation-fingerprint",
+        execution_model={
+            "model_path": str(tmp_path / "snapshot"),
+            "mode": "materialized",
+            "composition_key": "a" * 64,
+            "snapshot_fingerprint": "b" * 64,
+        },
     )
+
+    assert launch.execution_model_identity is not None
+    assert "composition_fidelity" not in launch.execution_model_identity
+
+
+def test_missing_inference_input_reports_declaring_config_and_resolved_path(
+    tmp_path: Path,
+) -> None:
+    from src.config.inference import load_infer_config, validate_infer_input_paths
+
+    config_path = _write_vllm_config(tmp_path / "leaf", gpu_memory_utilization=0.7)
+    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    base_path = Path(payload["model"]["base_model"])
+    data_path = Path(payload["data"]["input_jsonl"])
+    base_path.mkdir(parents=True)
+    data_path.parent.mkdir(parents=True)
+    data_path.write_text("{}\n", encoding="utf-8")
+    payload["adapter"] = {
+        "type": "dora",
+        "path": "../shared/missing-adapter",
+        "name": "default",
+    }
+    config_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    resolved = load_infer_config(config_path)
+
+    with pytest.raises(ConfigContractError) as exc_info:
+        validate_infer_input_paths(resolved)
+
+    assert exc_info.value.code == "config.inference_input_path_missing"
+    assert exc_info.value.context == {
+        "field": "adapter.path",
+        "declared_path": "../shared/missing-adapter",
+        "declaring_config_path": str(config_path.resolve()),
+        "resolved_path": str((config_path.parent / "../shared/missing-adapter").resolve()),
+        "expected_kind": "directory",
+    }
 
 
 def test_qwen_components_shape_exposes_delta_identity_sha_fields() -> None:

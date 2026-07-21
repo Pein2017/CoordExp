@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from PIL import Image
 
-from src.common.errors import ConfigContractError, RuntimeContractError
+from src.common.errors import RuntimeContractError
 
 
 IM_END_ID = 151645
@@ -303,6 +303,8 @@ def _qualification_case(tmp_path: Path) -> tuple[Any, dict[str, object], Path, s
         },
     )
     engine_kwargs: dict[str, object] = {
+        "model": launch.model_path,
+        "tokenizer": launch.model_path,
         "tensor_parallel_size": 1,
         "data_parallel_size": 1,
         "dtype": "bfloat16",
@@ -317,6 +319,36 @@ def _qualification_case(tmp_path: Path) -> tuple[Any, dict[str, object], Path, s
     receipt = {
         "status": "passed",
         "candidate_version": "0.14.1",
+        "dependencies": {
+            package: vllm_qualification.metadata.version(package)
+            for package in ("vllm", "torch", "transformers", "peft", "qwen-vl-utils")
+        },
+        "generation": {
+            "generated_token_ids": [21, IM_END_ID],
+            "policy_logprobs": [-0.1, -0.2],
+            "finish_reason": "stop",
+        },
+        "likelihood_alignment": {
+            "finite_non_positive": True,
+            "token_ids_aligned": True,
+            "token_count": 2,
+        },
+        "cuda": {"available": True, "device_count": 1, "current_device": 0},
+        "process": {
+            "engine_process_mode": "uniprocess",
+            "children_after_engine_open": [],
+        },
+        "cleanup": {
+            "shutdown_called": True,
+            "shutdown_error": None,
+            "owned_children_after_cleanup": [],
+        },
+        "post_worker_exit": {
+            "worker_returncode": 0,
+            "worker_pid_alive_after_exit": False,
+            "gpu_memory_returned_to_baseline": True,
+            "children_after": [],
+        },
         "probe": {
             "path": str(vllm_qualification.QUALIFICATION_PROBE.resolve()),
             "repo_relative_path": (
@@ -516,31 +548,150 @@ def test_open_vllm_backend_session_rejects_wrong_backend_or_missing_execution_mo
     assert attempts == 0
 
 
-def test_open_vllm_backend_session_rejects_unqualified_version_before_engine_start(
+def test_open_vllm_backend_session_records_unverified_version_and_starts_engine(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from src.inference import vllm_backend
 
     monkeypatch.setattr(vllm_backend.metadata, "version", lambda _: "0.15.0")
-    attempts = 0
+    monkeypatch.setattr(vllm_backend, "_validate_rank_local_cuda", lambda: None)
+    engine = FakeEngine()
+    components = SimpleNamespace(
+        tokenizer=FakeTokenizer(),
+        processor=object(),
+        token_identity={"sha256": "tokenizer"},
+        processor_identity={"sha256": "processor"},
+    )
 
-    def engine_factory(_: Any) -> Any:
-        nonlocal attempts
-        attempts += 1
-        raise AssertionError("unqualified runtime reached engine construction")
+    session = vllm_backend.open_vllm_backend_session(
+        _launch(),
+        engine_factory=lambda _: engine,
+        components_loader=lambda _: components,
+    )
 
-    with pytest.raises(ConfigContractError) as exc_info:
-        vllm_backend.open_vllm_backend_session(
-            _launch(),
-            engine_factory=engine_factory,
-        )
-
-    assert exc_info.value.code == "config.vllm_version_unqualified"
-    assert exc_info.value.context == {
+    assert session.receipt.effective_settings["runtime_preflight"]["version"] == {
         "observed_version": "0.15.0",
-        "qualified_versions": ["0.14.1"],
+        "status": "unverified",
+        "known_working_versions": ["0.14.1"],
     }
-    assert attempts == 0
+    session.close()
+
+
+def test_unverified_vllm_version_rejects_raw_trace_but_allows_policy_decode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.inference import vllm_backend
+
+    image_path = tmp_path / "image.png"
+    Image.new("RGB", (2, 2), color="white").save(image_path)
+    engine = FakeEngine([_native_output()])
+    components = SimpleNamespace(
+        tokenizer=FakeTokenizer(),
+        processor=object(),
+        token_identity={"sha256": "tokenizer"},
+        processor_identity={"sha256": "processor"},
+    )
+    monkeypatch.setattr(vllm_backend.metadata, "version", lambda _: "0.15.0")
+    monkeypatch.setattr(vllm_backend, "_validate_rank_local_cuda", lambda: None)
+    session = vllm_backend.open_vllm_backend_session(
+        _launch(),
+        engine_factory=lambda _: engine,
+        components_loader=lambda _: components,
+    )
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        session.decode([_request(image_path, raw=True)])
+
+    assert exc_info.value.code == "vllm_backend.raw_replay_version_unverified"
+    session.close()
+
+
+def test_first_live_decode_promotes_operational_preflight(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.inference import vllm_backend
+
+    image_path = tmp_path / "image.png"
+    Image.new("RGB", (2, 2), color="white").save(image_path)
+    engine = FakeEngine([_native_output()])
+    components = SimpleNamespace(
+        tokenizer=FakeTokenizer(),
+        processor=object(),
+        token_identity={"sha256": "tokenizer"},
+        processor_identity={"sha256": "processor"},
+    )
+    monkeypatch.setattr(vllm_backend.metadata, "version", lambda _: "0.14.1")
+    monkeypatch.setattr(vllm_backend, "_validate_rank_local_cuda", lambda: None)
+    session = vllm_backend.open_vllm_backend_session(
+        _launch(),
+        engine_factory=lambda _: engine,
+        components_loader=lambda _: components,
+    )
+
+    request = _request(image_path)
+    session.decode([request])
+
+    preflight = session.receipt.effective_settings["runtime_preflight"]
+    assert preflight["status"] == "passed_live_decode"
+    assert preflight["live_decode"]["request_count"] == 1
+    assert preflight["live_decode"]["first_request_id"] == request.request_id
+    session.close()
+    preflight = session.receipt.effective_settings["runtime_preflight"]
+    assert preflight["status"] == "passed_live_decode_and_cleanup"
+    assert preflight["cleanup"]["status"] == "completed"
+    assert preflight["cleanup"]["events"][-1]["scope"] == "session_close"
+
+
+def test_operational_preflight_demotes_historical_source_and_argument_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.inference import vllm_qualification
+
+    launch, engine_kwargs, receipt_path, source_sha256 = _qualification_case(tmp_path)
+    engine_kwargs["gpu_memory_utilization"] = 0.4
+    monkeypatch.setattr(
+        vllm_qualification,
+        "_sha256_file",
+        lambda path: "e" * 64 if path.name == "vllm_backend.py" else source_sha256,
+    )
+
+    result = vllm_qualification.inspect_vllm_operational_preflight(
+        launch=launch,
+        engine_kwargs=engine_kwargs,
+        observed_version="0.14.1",
+        application_receipt_path=(tmp_path / "vllm-0.14.1-application-sources.json"),
+    )
+
+    assert result["status"] == "ready_for_engine_construction"
+    assert result["engine_settings"]["gpu_memory_utilization"] == pytest.approx(0.4)
+    assert result["historical_application_sources"]["status"] == "stale"
+    assert (
+        result["historical_application_sources"]["error"]["code"]
+        == "vllm_backend.application_qualification_source_drift"
+    )
+
+
+def test_raw_replay_preflight_treats_missing_historical_receipt_as_diagnostic(
+    tmp_path: Path,
+) -> None:
+    from src.inference import vllm_qualification
+
+    result = vllm_qualification.inspect_vllm_raw_replay_preflight(
+        launch=_launch(),
+        processor_identity={
+            "module": "src.inference.vllm_forced_replay",
+            "qualname": "CoordExpForcedSequenceLogitsProcessor",
+            "source_sha256": "f" * 64,
+        },
+        receipt_path=tmp_path / "missing.json",
+    )
+
+    assert result["status"] == "ready_for_live_replay"
+    assert result["historical_qualification"]["status"] == "unavailable"
+    assert result["processor_identity"]["source_sha256"] == "f" * 64
 
 
 def test_open_vllm_backend_session_rejects_inherited_multiprocessing_mode(
@@ -623,6 +774,29 @@ def test_validate_vllm_runtime_qualification_rejects_incomplete_application_sour
     assert exc_info.value.context["missing_paths"] == ["src/inference/pipeline.py"]
 
 
+def test_validate_vllm_runtime_qualification_rejects_missing_runtime_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.inference import vllm_qualification
+
+    launch, engine_kwargs, receipt_path, source_sha256 = _qualification_case(tmp_path)
+    payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+    payload.pop("generation")
+    receipt_path.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setattr(vllm_qualification, "_sha256_file", lambda _: source_sha256)
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        vllm_qualification.validate_vllm_runtime_qualification(
+            launch=launch,
+            engine_kwargs=engine_kwargs,
+            receipt_path=receipt_path,
+        )
+
+    assert exc_info.value.code == "vllm_backend.qualification_receipt"
+    assert exc_info.value.context["field"] == "generation"
+
+
 def test_validate_vllm_runtime_qualification_accepts_executed_concurrency_receipt(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -630,6 +804,8 @@ def test_validate_vllm_runtime_qualification_accepts_executed_concurrency_receip
     from src.inference import vllm_qualification
 
     launch, engine_kwargs, receipt_path, source_sha256 = _qualification_case(tmp_path)
+    application_path = tmp_path / "vllm-0.14.1-application-sources.json"
+    application_sha256 = hashlib.sha256(application_path.read_bytes()).hexdigest()
     launch = replace(launch, batch_size=4)
     engine_kwargs["max_num_seqs"] = 4
     concurrency_receipt = {
@@ -643,6 +819,10 @@ def test_validate_vllm_runtime_qualification_accepts_executed_concurrency_receip
         "runtime_qualification": {
             "baseline": {
                 "receipt_sha256": hashlib.sha256(receipt_path.read_bytes()).hexdigest(),
+                "application_qualification": {
+                    "status": "passed",
+                    "receipt_sha256": application_sha256,
+                },
             },
         },
         "execution_model": {
@@ -689,6 +869,19 @@ def test_validate_vllm_runtime_qualification_accepts_executed_concurrency_receip
     )
     assert derivative["concurrency_qualification"]["status"] == "passed"
 
+    concurrency_receipt["runtime_qualification"]["baseline"][
+        "application_qualification"
+    ]["receipt_sha256"] = "0" * 64
+    concurrency_path.write_text(json.dumps(concurrency_receipt), encoding="utf-8")
+    with pytest.raises(RuntimeContractError) as exc_info:
+        vllm_qualification.validate_vllm_runtime_qualification(
+            launch=launch,
+            engine_kwargs=engine_kwargs,
+            receipt_path=receipt_path,
+            concurrency_receipt_path=concurrency_path,
+        )
+    assert exc_info.value.code == "vllm_backend.concurrency_qualification_receipt"
+
 
 def test_validate_vllm_runtime_qualification_rejects_missing_concurrency_receipt(
     tmp_path: Path,
@@ -720,6 +913,9 @@ def test_validate_vllm_forced_replay_qualification_binds_processor_and_base(
 
     baseline_path = tmp_path / "baseline.json"
     baseline_path.write_text('{"status":"passed"}\n', encoding="utf-8")
+    application_path = tmp_path / "vllm-0.14.1-application-sources.json"
+    application_path.write_text('{"status":"passed"}\n', encoding="utf-8")
+    application_sha256 = hashlib.sha256(application_path.read_bytes()).hexdigest()
     source_sha256 = "d" * 64
     processor_identity = {
         "module": "src.inference.vllm_forced_replay",
@@ -749,9 +945,13 @@ def test_validate_vllm_forced_replay_qualification_binds_processor_and_base(
         "max_num_seqs": 1,
         "request_count": 1,
         "runtime_qualification": {
-            "baseline": {
-                "receipt_sha256": hashlib.sha256(baseline_path.read_bytes()).hexdigest()
-            }
+                "baseline": {
+                    "receipt_sha256": hashlib.sha256(baseline_path.read_bytes()).hexdigest(),
+                    "application_qualification": {
+                        "status": "passed",
+                        "receipt_sha256": application_sha256,
+                    },
+                }
         },
         "probe_source_sha256": source_sha256,
         "config": {
@@ -772,11 +972,22 @@ def test_validate_vllm_forced_replay_qualification_binds_processor_and_base(
                 "logprobs_mode": "raw_logprobs",
                 "max_num_seqs": 1,
                 "request_count": 1,
-                "row_evidence_sha256": hashlib.sha256(
-                    json.dumps(row_map, sort_keys=True, separators=(",", ":")).encode()
-                ).hexdigest(),
-                "forced_logits_processor": processor_identity,
-            },
+                    "row_evidence_sha256": hashlib.sha256(
+                        json.dumps(row_map, sort_keys=True, separators=(",", ":")).encode()
+                    ).hexdigest(),
+                    "forced_logits_processor": processor_identity,
+                    "qualification": {
+                        "status": "passed",
+                        "evidence": "executed_by_this_receipt",
+                        "probe_source_sha256": source_sha256,
+                        "source_base_snapshot_fingerprint": (
+                            "qualified-base-fingerprint"
+                        ),
+                        "processor_source_sha256": processor_identity[
+                            "source_sha256"
+                        ],
+                    },
+                },
             "rows": rows,
             "row_evidence_sha256": hashlib.sha256(
                 json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()
@@ -806,6 +1017,16 @@ def test_validate_vllm_forced_replay_qualification_binds_processor_and_base(
 
     assert result["status"] == "passed"
     assert result["processor_source_sha256"] == "f" * 64
+    relocated = vllm_qualification.validate_vllm_forced_replay_qualification(
+        launch=launch,
+        processor_identity={
+            **processor_identity,
+            "source_path": "/equivalent/checkout/src/inference/vllm_forced_replay.py",
+        },
+        receipt_path=receipt_path,
+        baseline_receipt_path=baseline_path,
+    )
+    assert relocated["status"] == "passed"
     with pytest.raises(RuntimeContractError) as exc_info:
         vllm_qualification.validate_vllm_forced_replay_qualification(
             launch=launch,
@@ -1099,6 +1320,49 @@ def test_vllm_session_replays_raw_likelihoods_in_forced_decode_mode(
     assert len(raw_receipt["row_evidence_sha256"]) == 64
 
 
+def test_raw_enabled_session_recreates_processed_engine_before_second_decode(
+    tmp_path: Path,
+) -> None:
+    from src.inference.vllm_backend import VLLMBackendSession
+
+    image_path = tmp_path / "image.png"
+    Image.new("RGB", (2, 2), color="white").save(image_path)
+    launch = _launch()
+    first_processed = FakeEngine([_native_output(policy_values=(-0.1, -0.2))])
+    second_processed = FakeEngine([_native_output(policy_values=(-0.3, -0.4))])
+    raw_engines = [
+        FakeEngine([_native_output(policy_values=(-1.1, -1.2))]),
+        FakeEngine([_native_output(policy_values=(-1.3, -1.4))]),
+    ]
+    processed_engines = [second_processed]
+
+    def engine_factory(kwargs: Any) -> FakeEngine:
+        if kwargs["logprobs_mode"] == "raw_logprobs":
+            return raw_engines.pop(0)
+        return processed_engines.pop(0)
+
+    session = VLLMBackendSession(
+        launch=launch,
+        engine=first_processed,
+        engine_factory=engine_factory,
+        engine_kwargs={"logprobs_mode": "processed_logprobs"},
+        tokenizer=FakeTokenizer(),
+        receipt=_receipt(launch),
+        forced_replay_processor=object,
+        raw_replay_qualifier=lambda launch, identity: {"status": "passed"},
+    )
+
+    first = session.decode([_request(image_path, raw=True)])[0]
+    second = session.decode([_request(image_path, raw=True)])[0]
+
+    assert first.token_trace[0].policy_logprob == pytest.approx(-0.1)
+    assert first.token_trace[0].raw_model_logprob == pytest.approx(-1.1)
+    assert second.token_trace[0].policy_logprob == pytest.approx(-0.3)
+    assert second.token_trace[0].raw_model_logprob == pytest.approx(-1.3)
+    assert len(first_processed.calls) == 1
+    assert len(second_processed.calls) == 1
+
+
 def test_raw_replay_engine_uses_raw_mode_forcing_and_bounded_kv_cache() -> None:
     from src.inference.vllm_backend import _raw_replay_engine_kwargs
 
@@ -1155,6 +1419,21 @@ def test_vllm_session_rejects_raw_replay_stop_drift(tmp_path: Path) -> None:
         _session(engine).decode([_request(image_path, raw=True)])
 
     assert exc_info.value.code == "vllm_backend.raw_replay_stop_mismatch"
+
+
+def test_vllm_session_rejects_raw_replay_native_request_id_drift(
+    tmp_path: Path,
+) -> None:
+    image_path = tmp_path / "image.png"
+    Image.new("RGB", (2, 2), color="white").save(image_path)
+    generation = _native_output(native_request_id="4")
+    replay = _native_output(native_request_id="0")
+    engine = FakeEngine([generation], [replay])
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        _session(engine).decode([_request(image_path, raw=True)])
+
+    assert exc_info.value.code == "vllm_backend.raw_replay_request_id_mismatch"
 
 
 @pytest.mark.parametrize(
@@ -1293,3 +1572,37 @@ def test_vllm_session_close_is_idempotent_and_decode_after_close_fails(
     with pytest.raises(RuntimeContractError) as exc_info:
         session.decode([_request(image_path)])
     assert exc_info.value.code == "vllm_backend.session_closed"
+
+
+def test_vllm_engine_cleanup_collects_after_shutdown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.inference import vllm_backend
+
+    calls = 0
+
+    def collect() -> int:
+        nonlocal calls
+        calls += 1
+        return 0
+
+    monkeypatch.setattr(vllm_backend.gc, "collect", collect)
+    engine = FakeEngine()
+
+    receipt = vllm_backend._close_vllm_engine(engine)
+
+    assert receipt["status"] == "completed"
+    assert receipt["shutdown_called"] is True
+    assert calls == 1
+
+
+def test_vllm_session_close_rejects_missing_owned_shutdown_interface() -> None:
+    engine = SimpleNamespace(llm_engine=SimpleNamespace(engine_core=object()))
+    session = _session(engine)
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        session.close()
+
+    assert exc_info.value.code == "vllm_backend.cleanup_interface_missing"
+    cleanup = session.receipt.effective_settings["runtime_preflight"]["cleanup"]
+    assert cleanup["status"] == "failed"

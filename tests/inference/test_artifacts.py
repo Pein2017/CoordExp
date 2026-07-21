@@ -678,6 +678,39 @@ def test_artifact_writer_rolls_back_all_final_artifacts_when_publish_replace_fai
     assert {path: path.read_bytes() for path in final_paths} == prior
 
 
+def test_artifact_writer_rolls_back_all_final_artifacts_on_interrupt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import src.inference.artifacts as artifacts
+    from src.inference.artifacts import write_inference_artifacts
+
+    real_replace = artifacts.os.replace
+    moved = 0
+
+    def interrupt_after_scored(src: Path, dst: Path) -> None:
+        nonlocal moved
+        real_replace(src, dst)
+        if Path(dst).parent == tmp_path:
+            moved += 1
+            if moved == 2:
+                raise KeyboardInterrupt()
+
+    monkeypatch.setattr(artifacts.os, "replace", interrupt_after_scored)
+
+    with pytest.raises(KeyboardInterrupt):
+        write_inference_artifacts(
+            output_dir=tmp_path,
+            rows=[_raw_row("row-1", 0)],
+            decode_results={"row-1": _decode_result("row-1")},
+            image_plan_rows=[_image_plan_row("row-1", 0)],
+            metadata=_metadata(),
+        )
+
+    assert not (tmp_path / "gt_vs_pred.jsonl").exists()
+    assert not (tmp_path / "gt_vs_pred_scored.jsonl").exists()
+
+
 def test_artifact_writer_rejects_decode_result_request_id_mismatch(tmp_path: Path) -> None:
     from src.inference.artifacts import write_inference_artifacts
 

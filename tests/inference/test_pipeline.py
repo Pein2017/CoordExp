@@ -14,6 +14,7 @@ from PIL import Image
 
 from src.common.errors import (
     ArtifactContractError,
+    ConfigContractError,
     EncodingContractError,
     RuntimeContractError,
 )
@@ -32,6 +33,34 @@ OBJECT_TEXT = (
     "<|object_ref_start|>cat<|object_ref_end|>"
     "<|box_start|><|coord_100|><|coord_200|><|coord_300|><|coord_400|><|box_end|>"
 )
+
+
+def test_pipeline_validates_owned_data_path_before_cuda_or_jsonl_loading(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.inference import pipeline
+
+    config_path = _write_config(tmp_path, batch_size=1, row_count=1)
+    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    model_path = Path(payload["model"]["base_model"])
+    model_path.mkdir(parents=True)
+    payload["data"]["input_jsonl"] = "missing/examples.jsonl"
+    config_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    monkeypatch.setattr(
+        pipeline,
+        "require_visible_cuda_for_inference",
+        lambda **_: (_ for _ in ()).throw(AssertionError("CUDA reached")),
+    )
+
+    with pytest.raises(ConfigContractError) as exc_info:
+        pipeline.run(config_path=config_path)
+
+    assert exc_info.value.code == "config.inference_input_path_missing"
+    assert exc_info.value.context["field"] == "data.input_jsonl"
+    assert exc_info.value.context["declaring_config_path"] == str(
+        config_path.resolve()
+    )
 
 
 class FakeTokenizer:

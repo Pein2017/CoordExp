@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from importlib import metadata
 from pathlib import Path
-from typing import Any
 
 from src.common.errors import RuntimeContractError
+from src.config.inference import inspect_vllm_runtime_version
 from src.inference.backend import BackendLaunch
 
 
@@ -75,7 +75,189 @@ APPLICATION_EXECUTION_SOURCE_PATHS = (
     "src/qwen/images.py",
     "src/qwen/runtime_loading.py",
     "src/qwen/special_token_embeddings.py",
+    "src/qwen/tokens.py",
 )
+
+
+def inspect_vllm_operational_preflight(
+    *,
+    launch: BackendLaunch,
+    engine_kwargs: Mapping[str, object],
+    observed_version: str,
+    process_evidence: Mapping[str, object] | None = None,
+    cuda_evidence: Mapping[str, object] | None = None,
+    application_receipt_path: str | Path | None = None,
+) -> dict[str, object]:
+    """Describe current launch inputs while leaving compatibility to execution."""
+
+    if not isinstance(launch.execution_model_identity, Mapping):
+        raise RuntimeContractError(
+            "vLLM operational preflight requires execution-model identity",
+            code="vllm_backend.execution_model_required",
+        )
+    _validate_operational_engine_settings(launch=launch, engine_kwargs=engine_kwargs)
+    application_path = (
+        APPLICATION_QUALIFICATION_RECEIPT
+        if application_receipt_path is None
+        else Path(application_receipt_path).expanduser().resolve()
+    )
+    return {
+        "status": "ready_for_engine_construction",
+        "version": inspect_vllm_runtime_version(observed_version=observed_version),
+        "execution_model": {
+            "mode": launch.execution_model_identity.get("mode"),
+            "composition_key": launch.execution_model_identity.get("composition_key"),
+            "snapshot_fingerprint": launch.execution_model_identity.get(
+                "snapshot_fingerprint"
+            ),
+            "composition_comparison": (
+                "present"
+                if isinstance(
+                    launch.execution_model_identity.get("composition_fidelity"),
+                    Mapping,
+                )
+                else "not_required"
+            ),
+        },
+        "engine_settings": dict(engine_kwargs),
+        "process": dict(process_evidence or {"status": "validated"}),
+        "cuda": dict(cuda_evidence or {"status": "validated"}),
+        "historical_application_sources": _inspect_historical_application_sources(
+            application_path
+        ),
+    }
+
+
+def inspect_vllm_raw_replay_preflight(
+    *,
+    launch: BackendLaunch,
+    processor_identity: Mapping[str, object],
+    receipt_path: str | Path | None = None,
+) -> dict[str, object]:
+    """Record historical replay evidence without authorizing the live replay."""
+
+    missing = [
+        field
+        for field in ("module", "qualname", "source_sha256")
+        if not isinstance(processor_identity.get(field), str)
+        or not processor_identity.get(field)
+    ]
+    if missing:
+        raise RuntimeContractError(
+            "vLLM raw replay processor identity is incomplete",
+            code="vllm_backend.raw_replay_processor_identity",
+            context={"missing_fields": missing},
+        )
+
+    selected = receipt_path or _FORCED_REPLAY_QUALIFICATION_RECEIPTS.get(
+        (launch.model_dtype, launch.batch_size)
+    )
+    if selected is None:
+        historical: dict[str, object] = {
+            "status": "unavailable",
+            "reason": "no_matching_historical_receipt",
+        }
+    else:
+        path = Path(selected).expanduser().resolve()
+        if not path.is_file():
+            historical = {
+                "status": "unavailable",
+                "path": str(path),
+            }
+        else:
+            try:
+                raw = path.read_bytes()
+                payload = json.loads(raw)
+            except (OSError, json.JSONDecodeError) as exc:
+                historical = {
+                    "status": "stale",
+                    "path": str(path),
+                    "error": {
+                        "code": "vllm_backend.raw_replay_historical_receipt",
+                        "message": str(exc),
+                        "context": {},
+                    },
+                }
+            else:
+                historical = {
+                    "status": "available_unverified",
+                    "path": str(path),
+                    "receipt_sha256": hashlib.sha256(raw).hexdigest(),
+                    "recorded_status": (
+                        payload.get("status") if isinstance(payload, Mapping) else None
+                    ),
+                }
+    return {
+        "status": "ready_for_live_replay",
+        "processor_identity": dict(processor_identity),
+        "historical_qualification": historical,
+    }
+
+
+def _validate_operational_engine_settings(
+    *,
+    launch: BackendLaunch,
+    engine_kwargs: Mapping[str, object],
+) -> None:
+    gpu_utilization = engine_kwargs.get("gpu_memory_utilization")
+    max_model_len = engine_kwargs.get("max_model_len")
+    max_num_seqs = engine_kwargs.get("max_num_seqs")
+    expected_dtype = {
+        "bf16": "bfloat16",
+        "fp16": "float16",
+        "fp32": "float32",
+    }[launch.model_dtype]
+    valid = (
+        not isinstance(gpu_utilization, bool)
+        and isinstance(gpu_utilization, (int, float))
+        and 0.0 < float(gpu_utilization) <= 1.0
+        and isinstance(max_model_len, int)
+        and max_model_len > 0
+        and isinstance(max_num_seqs, int)
+        and max_num_seqs == launch.batch_size
+        and engine_kwargs.get("tensor_parallel_size") == 1
+        and engine_kwargs.get("data_parallel_size") == 1
+        and engine_kwargs.get("model") == launch.model_path
+        and engine_kwargs.get("tokenizer") == launch.model_path
+        and engine_kwargs.get("dtype") == expected_dtype
+        and engine_kwargs.get("logprobs_mode") == "processed_logprobs"
+        and engine_kwargs.get("generation_config") == "vllm"
+        and engine_kwargs.get("limit_mm_per_prompt") == {"image": 1, "video": 0}
+        and engine_kwargs.get("mm_processor_kwargs") == {"do_resize": False}
+    )
+    if not valid:
+        raise RuntimeContractError(
+            "vLLM engine settings violate the live operational contract",
+            code="vllm_backend.operational_engine_settings",
+            context={
+                "gpu_memory_utilization": gpu_utilization,
+                "max_model_len": max_model_len,
+                "max_num_seqs": max_num_seqs,
+                "batch_size": launch.batch_size,
+            },
+        )
+
+
+def _inspect_historical_application_sources(path: Path) -> dict[str, object]:
+    if not path.is_file():
+        return {"status": "unavailable", "path": str(path)}
+    try:
+        validated = _validate_application_sources(path)
+    except RuntimeContractError as exc:
+        return {
+            "status": "stale",
+            "path": str(path),
+            "error": _diagnostic_error(exc),
+        }
+    return {"status": "matching", **validated}
+
+
+def _diagnostic_error(error: RuntimeContractError) -> dict[str, object]:
+    return {
+        "code": error.code,
+        "message": error.message,
+        "context": error.context,
+    }
 
 
 def validate_vllm_runtime_qualification(
@@ -113,6 +295,7 @@ def validate_vllm_runtime_qualification(
     if payload.get("candidate_version") != "0.14.1":
         _fail("candidate_version", payload.get("candidate_version"))
     _validate_qualification_probe(payload.get("probe"))
+    _validate_runtime_evidence(payload)
 
     execution = launch.execution_model_identity
     if not isinstance(execution, Mapping):
@@ -219,6 +402,7 @@ def validate_vllm_runtime_qualification(
             launch=launch,
             engine_kwargs=engine_kwargs,
             baseline_receipt_sha256=result["receipt_sha256"],
+            application_receipt_sha256=application_qualification["receipt_sha256"],
             receipt_path=concurrency_path,
         )
     return result
@@ -296,6 +480,24 @@ def validate_vllm_forced_replay_qualification(
             "runtime_qualification.baseline.receipt_sha256",
             baseline.get("receipt_sha256") if isinstance(baseline, Mapping) else None,
         )
+    application_path = _application_receipt_path(
+        baseline_receipt_path=baseline_path,
+        explicit_path=None,
+    )
+    try:
+        application_sha256 = hashlib.sha256(application_path.read_bytes()).hexdigest()
+    except OSError as exc:
+        raise RuntimeContractError(
+            "vLLM application qualification receipt is unavailable",
+            code="vllm_backend.raw_replay_qualification_receipt",
+            context={"path": str(application_path)},
+            cause=exc,
+        ) from exc
+    _validate_nested_application_qualification(
+        baseline,
+        expected_receipt_sha256=application_sha256,
+        fail=_fail_raw_replay,
+    )
 
     probe_path = (
         Path(__file__).resolve().parents[2]
@@ -351,6 +553,17 @@ def validate_vllm_forced_replay_qualification(
             "raw_replay.settings.max_num_seqs",
             settings.get("max_num_seqs"),
         )
+    replay_qualification = settings.get("qualification")
+    if (
+        not isinstance(replay_qualification, Mapping)
+        or replay_qualification.get("status") != "passed"
+        or replay_qualification.get("evidence") != "executed_by_this_receipt"
+        or replay_qualification.get("probe_source_sha256")
+        != payload.get("probe_source_sha256")
+        or replay_qualification.get("source_base_snapshot_fingerprint")
+        != qualified_base
+    ):
+        _fail_raw_replay("raw_replay.settings.qualification", replay_qualification)
     if not isinstance(rows, list) or not rows:
         _fail_raw_replay("raw_replay.rows", rows)
     if replay.get("row_evidence_sha256") != _sha256_json(rows):
@@ -374,7 +587,13 @@ def validate_vllm_forced_replay_qualification(
         _fail_raw_replay("raw_replay.settings.row_evidence_sha256", settings)
 
     qualified_processor = settings.get("forced_logits_processor")
-    for field in ("module", "qualname", "source_path", "source_sha256"):
+    if replay_qualification.get("processor_source_sha256") != (
+        qualified_processor.get("source_sha256")
+        if isinstance(qualified_processor, Mapping)
+        else None
+    ):
+        _fail_raw_replay("raw_replay.settings.qualification", replay_qualification)
+    for field in ("module", "qualname", "source_sha256"):
         qualified = (
             qualified_processor.get(field)
             if isinstance(qualified_processor, Mapping)
@@ -390,6 +609,18 @@ def validate_vllm_forced_replay_qualification(
                     "observed": processor_identity.get(field),
                 },
             )
+    qualified_path = _portable_processor_source_path(qualified_processor)
+    observed_path = _portable_processor_source_path(processor_identity)
+    if qualified_path != observed_path:
+        raise RuntimeContractError(
+            "forced-replay processor differs from executed qualification",
+            code="vllm_backend.raw_replay_qualification_processor_drift",
+            context={
+                "field": "repo_relative_path",
+                "expected": qualified_path,
+                "observed": observed_path,
+            },
+        )
     return {
         "status": "passed",
         "receipt_path": str(path),
@@ -400,6 +631,22 @@ def validate_vllm_forced_replay_qualification(
         "processor_source_sha256": processor_identity["source_sha256"],
         "qualified_request_count": len(rows),
     }
+
+
+def _portable_processor_source_path(value: object) -> str | None:
+    if not isinstance(value, Mapping):
+        return None
+    relative = value.get("repo_relative_path")
+    if isinstance(relative, str) and relative:
+        return relative
+    source_path = value.get("source_path")
+    if not isinstance(source_path, str) or not source_path:
+        return None
+    normalized = source_path.replace("\\", "/")
+    marker = "/src/"
+    if marker in normalized:
+        return "src/" + normalized.split(marker, 1)[1]
+    return Path(normalized).name
 
 
 def _select_qualification_receipt(
@@ -430,6 +677,7 @@ def _validate_concurrency_qualification(
     launch: BackendLaunch,
     engine_kwargs: Mapping[str, object],
     baseline_receipt_sha256: object,
+    application_receipt_sha256: object,
     receipt_path: str | Path,
 ) -> dict[str, object]:
     path = Path(receipt_path).resolve()
@@ -494,6 +742,11 @@ def _validate_concurrency_qualification(
             "runtime_qualification.baseline.receipt_sha256",
             baseline.get("receipt_sha256"),
         )
+    _validate_nested_application_qualification(
+        baseline,
+        expected_receipt_sha256=application_receipt_sha256,
+        fail=_fail_concurrency,
+    )
 
     execution = launch.execution_model_identity
     receipt_execution = payload.get("execution_model")
@@ -538,6 +791,29 @@ def _validate_concurrency_qualification(
         "receipt_sha256": hashlib.sha256(raw).hexdigest(),
         "max_num_seqs": observed_max,
     }
+
+
+def _validate_nested_application_qualification(
+    baseline: Mapping[str, object],
+    *,
+    expected_receipt_sha256: object,
+    fail: Callable[[str, object], None],
+) -> None:
+    application = baseline.get("application_qualification")
+    observed = (
+        application.get("receipt_sha256")
+        if isinstance(application, Mapping)
+        else None
+    )
+    if (
+        not isinstance(application, Mapping)
+        or application.get("status") != "passed"
+        or observed != expected_receipt_sha256
+    ):
+        fail(
+            "runtime_qualification.baseline.application_qualification",
+            application,
+        )
 
 
 def _validate_config_sources(value: object) -> None:
@@ -616,6 +892,80 @@ def _validate_source_identities(value: object) -> None:
             code="vllm_backend.qualification_source_drift",
             context={"mismatches": mismatches[:8]},
         )
+
+
+def _validate_runtime_evidence(payload: Mapping[str, object]) -> None:
+    dependencies = payload.get("dependencies")
+    required_packages = ("vllm", "torch", "transformers", "peft", "qwen-vl-utils")
+    if not isinstance(dependencies, Mapping):
+        _fail("dependencies", dependencies)
+    for package in required_packages:
+        recorded = dependencies.get(package)
+        try:
+            installed = metadata.version(package)
+        except metadata.PackageNotFoundError:
+            installed = None
+        if recorded != installed:
+            _fail(
+                f"dependencies.{package}",
+                {"recorded": recorded, "installed": installed},
+            )
+
+    generation = payload.get("generation")
+    if not isinstance(generation, Mapping):
+        _fail("generation", generation)
+    generated_ids = generation.get("generated_token_ids")
+    policy_logprobs = generation.get("policy_logprobs")
+    if (
+        not isinstance(generated_ids, list)
+        or not generated_ids
+        or not isinstance(policy_logprobs, list)
+        or len(policy_logprobs) != len(generated_ids)
+        or generation.get("finish_reason") not in {"stop", "length"}
+    ):
+        _fail("generation.trace", generation)
+
+    likelihood = payload.get("likelihood_alignment")
+    if (
+        not isinstance(likelihood, Mapping)
+        or likelihood.get("finite_non_positive") is not True
+        or likelihood.get("token_ids_aligned") is not True
+        or likelihood.get("token_count") != len(generated_ids)
+    ):
+        _fail("likelihood_alignment", likelihood)
+
+    cuda = payload.get("cuda")
+    if (
+        not isinstance(cuda, Mapping)
+        or cuda.get("available") is not True
+        or cuda.get("device_count") != 1
+        or cuda.get("current_device") != 0
+    ):
+        _fail("cuda", cuda)
+    process = payload.get("process")
+    if (
+        not isinstance(process, Mapping)
+        or process.get("engine_process_mode") != "uniprocess"
+        or process.get("children_after_engine_open") != []
+    ):
+        _fail("process", process)
+    cleanup = payload.get("cleanup")
+    if (
+        not isinstance(cleanup, Mapping)
+        or cleanup.get("shutdown_called") is not True
+        or cleanup.get("shutdown_error") is not None
+        or cleanup.get("owned_children_after_cleanup") != []
+    ):
+        _fail("cleanup", cleanup)
+    post_exit = payload.get("post_worker_exit")
+    if (
+        not isinstance(post_exit, Mapping)
+        or post_exit.get("worker_returncode") != 0
+        or post_exit.get("worker_pid_alive_after_exit") is not False
+        or post_exit.get("gpu_memory_returned_to_baseline") is not True
+        or post_exit.get("children_after") != []
+    ):
+        _fail("post_worker_exit", post_exit)
 
 
 def _validate_loaded_runtime_sources(value: object) -> None:

@@ -1,0 +1,23 @@
+extends: qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200.yaml
+run:
+  name: qwen3-vl-2b-desc-first-random-pure-ce-typegate-dora-r16a32-step4887-val200-hf-fp32
+  collision_policy: timestamp
+model:
+  dtype: fp32
+data:
+  input_jsonl: ../../../outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl
+template:
+  object_ordering: random
+  object_order_seed: 17
+generation:
+  batch_size: 4
+  max_new_tokens: 3084
+  temperature: 0.0
+  top_p: 1.0
+  repetition_penalty: 1.10
+scoring:
+  enabled: true
+adapter:
+  path: ../../../outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_random_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1-20260719T070043Z/checkpoints/step-4887/adapter
+embedding_delta:
+  path: ../../../outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_random_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1-20260719T070043Z/checkpoints/step-4887/special_token_embeddings
