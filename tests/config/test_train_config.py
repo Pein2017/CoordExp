@@ -839,6 +839,86 @@ def test_coord_gaussian_rps_prod_config_loads_strictly() -> None:
     assert protected.coord_gaussian_rps.gaussian_r95_fallback_bins == 8
 
 
+def test_random_ordering_pure_ce_typegate_configs_are_matched_and_prompt_neutral() -> None:
+    prod_path = Path(
+        "configs/coordexp_swift/prod/"
+        "qwen3_vl_2b_desc_first_random_pure_ce_typegate_dora_r16a32_llm_12000_"
+        "accelerate8_ebs24_8epoch_warmup0p1.yaml"
+    )
+    prod_reference_path = Path(
+        "configs/coordexp_swift/prod/"
+        "qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_"
+        "12000_accelerate8_ebs24_8epoch_warmup0p1.yaml"
+    )
+    smoke_path = Path(
+        "configs/coordexp_swift/smoke/"
+        "qwen3_vl_2b_desc_first_random_pure_ce_typegate_dora_r16a32_llm_12000_"
+        "accelerate8_ebs24_2step_warmup0p1_eval_patchproof.yaml"
+    )
+    smoke_reference_path = Path(
+        "configs/coordexp_swift/smoke/"
+        "qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_"
+        "12000_accelerate8_ebs24_2step_warmup0p1_eval_patchproof.yaml"
+    )
+
+    prod = load_train_config(prod_path).config
+    prod_reference = load_train_config(prod_reference_path).config
+    smoke = load_train_config(smoke_path).config
+    smoke_reference = load_train_config(smoke_reference_path).config
+
+    assert prod.template.object_ordering == "random"
+    assert smoke.template.object_ordering == "random"
+    assert prod.runtime.seed == 17
+    assert smoke.runtime.seed == 17
+    assert resolve_effective_batch_runtime(
+        prod, world_size=8
+    ).resolved_grad_accum_steps == 3
+    assert resolve_planned_step_schedule(
+        prod,
+        packs_per_epoch=14_660,
+        world_size=8,
+        source_config_path=str(prod_path),
+    ).resolved_max_steps == 4_887
+
+    for candidate, reference in (
+        (prod, prod_reference),
+        (smoke, smoke_reference),
+    ):
+        candidate_payload = candidate.model_dump(mode="json")
+        reference_payload = reference.model_dump(mode="json")
+        candidate_payload["run"]["name"] = reference_payload["run"]["name"]
+        candidate_payload["run"]["artifact_root"] = reference_payload["run"][
+            "artifact_root"
+        ]
+        candidate_payload["template"]["object_ordering"] = reference_payload[
+            "template"
+        ]["object_ordering"]
+        assert candidate_payload == reference_payload
+
+        prompt = " ".join(
+            part
+            for part in (
+                candidate.template.prompt.system,
+                candidate.template.prompt.user,
+            )
+            if part is not None
+        ).lower()
+        for object_order_requirement in (
+            "top-to-bottom",
+            "top to bottom",
+            "left-to-right",
+            "left to right",
+            "geo_sorted",
+            "geo sorted",
+            "sorted order",
+            "source order",
+            "random order",
+            "order objects",
+        ):
+            assert object_order_requirement not in prompt
+        assert "x1 y1 x2 y2 order" in prompt
+
+
 def _minimal_config() -> dict[str, Any]:
     return {
         "schema_version": 1,
