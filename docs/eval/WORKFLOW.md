@@ -47,6 +47,8 @@ Implementation ownership note:
   `src/inference/execution_model.py` and `src/inference/vllm_backend.py`
 - infer artifact writing lives in `src/inference/artifacts.py`
 - standardized Swift mAP/mRecall reduction lives in `src/eval/detection_consumer.py`
+- benchmark evaluation requires the score-bearing `pred_token_trace.jsonl` and
+  replays selected-token scores before publishing metrics
 
 Backend roles:
 
@@ -54,10 +56,14 @@ Backend roles:
   base, DoRA adapter, and selected-token embedding delta directly.
 - `backend.type: vllm` is a first-class offline path that resolves the same
   composition into a content-addressed immutable execution model first.
-- FP32 is the strict HF/vLLM parity mode. BF16 vLLM is supported for throughput
-  but must be reported as non-parity evidence.
-- Materialized HF is an acceptance oracle for execution-model composition, not
-  a replacement for dynamic HF.
+- BF16 vLLM is the normal high-throughput path after current structural and live
+  decode contracts pass. FP32 HF/vLLM comparison is optional evidence for a
+  specifically declared numerical-parity claim.
+- Materialized HF is an optional composition/numerical diagnostic, not a
+  runtime authorization oracle or replacement for dynamic HF.
+- Raw replay is available on the documented known-working vLLM version. An
+  unverified version may still run policy-only inference, but cannot publish the
+  raw-model channel without version-specific ordering evidence.
 
 ## Default Flow
 

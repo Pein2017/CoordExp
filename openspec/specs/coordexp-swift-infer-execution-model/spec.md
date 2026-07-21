@@ -1,7 +1,9 @@
 # coordexp-swift-infer-execution-model Specification
 
 ## Purpose
-TBD - created by archiving change add-coordexp-swift-vllm-inference-backend. Update Purpose after archive.
+Define how backends that cannot load CoordExp DoRA and selected-token payloads
+resolve, verify, and execute an immutable standard-model snapshot without
+changing the trained composition.
 ## Requirements
 ### Requirement: Exact execution-model composition
 The system SHALL resolve one immutable execution model for the configured base,
@@ -114,53 +116,77 @@ later whole-model cast.
   stored in BF16 without a subsequent whole-model dtype conversion
 
 ### Requirement: Composition fidelity and behavioral diagnosis
-The derived checkpoint MUST be reloaded through HF before adapter-enabled vLLM
-support is claimed. Its merged DoRA target weights MUST be bitwise identical to
-the owner-recorded target-dtype weights produced before snapshot publication.
-Its selected embedding rows MUST be bitwise equal to the effective rows of the
-existing dynamic HF composition after target-dtype casting. Both models MUST
-retain tied input/output storage and use identical prompt ids on one real
-multimodal no-resize fixture.
 
-The same fixture MUST also record dynamic-HF versus materialized-HF FP32
-fixed-prefix full-vocabulary and selected-vocabulary logit differences plus
-greedy generated ids. Those values are behavioral diagnostics, not composition
-fidelity failures, because unmerged DoRA and one folded BF16 linear weight use
-different floating-point operation orderings. The diagnostic MUST retain the
-reference thresholds `rtol=1e-4`, full-vocabulary `atol=5e-3`, and
-selected-vocabulary `atol=2e-3` without claiming execution identity when they
-are exceeded.
+The system SHALL resolve one immutable execution model for the configured base,
+optional DoRA adapter, and optional selected-token embedding delta. Any
+configured adapter or embedding delta MUST be materialized into a standard HF
+checkpoint before vLLM loading. DoRA MUST be merged first and the selected-
+token delta MUST be folded exactly once into the tied input/output weight.
 
-Canonical HF inference MUST continue to use dynamic DoRA plus the selected-token
-delta. Materialized HF MUST be the exact executable-model oracle for vLLM. The
-receipt MUST record fixture/source fingerprints, merged-target identities,
-compared positions, shapes, dtypes, maximum absolute/relative differences,
-generated ids, composition checks, behavioral checks, and thresholds.
-Passed composition receipts used as runtime authority MUST be preserved in a
-stable inference-owned qualification directory and keyed by composition key.
-When a newly materialized cache entry has no local composition sidecar, runtime
-MAY bind a durable receipt only after exact linkage validation against the new
-execution-model receipt. It MUST NOT infer, weaken, or silently regenerate the
-proof.
+The blocking execution receipt MUST bind and validate the current source
+payload identities, tensor compatibility, target dtype, merge/fold outcomes,
+tied-weight structure, standard Qwen3-VL snapshot files, absence of adapter
+residue, exhaustive snapshot identity, and atomic cache publication. A
+composition-fidelity or HF/vLLM behavioral-comparison receipt MUST NOT be
+required for ordinary vLLM loading.
+
+Before publication, adapter merge evidence MUST exist exactly when an adapter
+identity is configured and MUST bind that identity with status `merged`.
+Embedding-delta fold evidence MUST exist exactly when a delta identity is
+configured and MUST bind that identity, status `folded`, one row addition, and
+tied input/output storage. The complete materialization MUST also attest tied
+input/output structure. Missing, unexpected, or identity-mismatched outcomes
+MUST prevent cache publication.
+
+Explicit composition probes MAY bind and validate exact merged-target,
+selected-row, prompt, logit, or generated-token comparisons as optional
+diagnostics. A failed or stale optional comparison MUST NOT invalidate a
+structurally valid execution model unless it demonstrates that the current
+materialized snapshot violates one of the blocking composition invariants.
+
+#### Scenario: Valid composition without comparison sidecar
+
+- **WHEN** base, DoRA, and embedding delta materialize into a structurally
+  valid tied Qwen3-VL snapshot but no composition-fidelity sidecar exists
+- **THEN** ordinary vLLM runtime accepts the execution-model receipt and
+  proceeds to engine loading
+
+#### Scenario: Stale behavioral comparison
+
+- **WHEN** an old HF comparison receipt is missing, source-stale, or exceeds a
+  historical numerical tolerance while the current structural receipt passes
+- **THEN** the condition is recorded only when inspected diagnostically
+- **AND** does not prevent ordinary vLLM execution
+
+#### Scenario: Invalid selected-token fold
+
+- **WHEN** selected-token ids, shapes, dtype, base/tokenizer identity, or tied
+  input/output structure is incompatible during materialization
+- **THEN** materialization fails and no completed execution snapshot is
+  published
 
 #### Scenario: Dynamic and materialized BF16 behavior differs
-- **WHEN** exact state-composition checks pass but dynamic and materialized HF
-  logits exceed a reference threshold or greedy ids differ
-- **THEN** the receipt records the difference without replacing canonical HF or
-  rejecting the correctly materialized execution model
+
+- **WHEN** current structural composition checks pass but dynamic and
+  materialized HF logits or greedy ids differ
+- **THEN** an explicit comparison records the behavioral difference without
+  rejecting the structurally valid execution model
 
 #### Scenario: Reloaded merged target differs
-- **WHEN** any reloaded materialized DoRA target weight differs from the
-  owner-recorded pre-save merged target identity
+
+- **WHEN** a reloaded materialized DoRA target differs from the merge outcome
+  bound by the current execution receipt
 - **THEN** the execution model is rejected before vLLM loading
 
 #### Scenario: Folded selected row differs after target-dtype cast
-- **WHEN** any selected embedding row is not bitwise equal between dynamic and
-  materialized HF after target-dtype casting
-- **THEN** the execution model is rejected before vLLM loading
+
+- **WHEN** a selected embedding row does not equal the current one-addition
+  fold outcome after target-dtype casting
+- **THEN** materialization fails before completed snapshot publication
 
 #### Scenario: Clean cache reuses durable FP32 proof
-- **WHEN** a clean checkout materializes the byte-identical FP32 composition
-  and the cache has no local composition sidecar
-- **THEN** runtime binds the durable content-addressed receipt after exact
-  composition and snapshot linkage validation
+
+- **WHEN** a clean checkout reuses a structurally valid content-addressed cache
+  entry and a linked durable FP32 comparison is available
+- **THEN** runtime may expose that comparison as diagnostic evidence
+- **AND** cache acceptance remains based on the current structural receipt

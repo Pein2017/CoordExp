@@ -122,18 +122,47 @@ Inference supports both dynamic HF and offline vLLM through one backend-neutral
 session contract. HF remains the direct compatibility path for base plus DoRA
 plus selected-token embedding delta. vLLM uses a content-addressed materialized
 execution model because upstream vLLM does not load this DoRA composition
-directly. Materialized HF is the composition oracle used to isolate
-materialization from backend differences. FP32 is the strict cross-backend
-parity mode; BF16 vLLM is supported for throughput but is not strict parity
-evidence. The backend session consumes semantic multimodal decode requests and
-does not depend on evaluator or inference-artifact orchestration. Future GRPO
+directly. The materializer validates the current base, DoRA, selected-token
+delta, tied-weight structure, and published snapshot bytes before vLLM loads.
+Optional materialized-HF and FP32 comparisons isolate composition or numerical
+differences when a research claim needs them; they are not launch receipts.
+BF16 vLLM is the normal high-throughput path. The backend session consumes
+semantic multimodal decode requests and does not depend on evaluator or
+inference-artifact orchestration. Future GRPO
 or other post-training rollout code should reuse that session, execution-model,
 likelihood, and worker-lifecycle boundary rather than introduce a second vLLM
 engine wrapper. No GRPO trainer is implemented by this inference change.
 
-The direct evaluator consumes
-`gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, and the scored provenance sidecar
-from the same artifact directory, then writes COCO artifacts and metrics.
+The direct evaluator consumes `gt_vs_pred.jsonl`,
+`gt_vs_pred_scored.jsonl`, `pred_token_trace.jsonl`, and the scored provenance
+sidecar from the same artifact directory. It replays every prediction score
+from the trace and checks manifest/provenance identity before writing COCO
+artifacts and metrics.
+
+The runtime records a compact `runtime_preflight`: installed vLLM version,
+effective engine settings, execution-model identity, and optional historical
+source evidence. Historical application-source hashes, exact engine values,
+concurrency receipts, and composition-comparison sidecars are diagnostic only.
+Current engine construction and the first contract-valid real multimodal
+decode establish operational support. Raw likelihood uses a fresh live replay
+and remains fail-closed on prompt, token, stop, length, finiteness, or alignment
+mismatch. The older strict qualification probes remain available for explicit
+repeatability, parity, or version studies.
+
+Unknown vLLM versions may attempt policy-only inference, but raw-model
+likelihood remains version-qualified because replay alignment cannot prove
+where that version captures logits relative to the forcing processor. Every
+composed execution-model receipt proves the configured DoRA merge and selected-
+token embedding fold before atomic publication. Rank-local vLLM receipts retain
+live-decode and engine-cleanup observations; multi-rank merge compares semantic
+settings and aggregates those observations.
+
+All model, data, adapter, and embedding-delta paths resolve to absolute paths
+owned by the YAML file that authored them. Missing paths fail with declaring
+config and resolved-path evidence; inference never searches another worktree
+or output root automatically.
+Merged rank-local decode rates are labeled capacity estimates: they assume
+perfect rank overlap and are not controller-wall or end-to-end throughput.
 
 The accepted two-rank BF16 production-mimic smoke completed one finite applied
 step, one train row, one eval row, and one shared ten-file run tree with no
