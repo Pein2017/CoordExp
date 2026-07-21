@@ -1,0 +1,21 @@
+schema_version: 1
+extends: qwen3_vl_2b_coordinate_boundary_256_image_one_epoch_learning_rate_1e-5.yaml
+
+run:
+  name: qwen3_vl_2b_coordinate_boundary_256_image_one_epoch_learning_rate_3e-6
+  collision_policy: fail
+
+optimizer:
+  groups:
+    adapters:
+      language:
+        lr: 3.0e-6
+        weight_decay: 0.0
+    token_embeddings:
+      lr: 3.0e-6
+      weight_decay: 0.0
+
+training:
+  epochs: 1
+  max_steps: 8
+  effective_batch_size: 32

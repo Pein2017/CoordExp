@@ -252,9 +252,21 @@ Markdown links, rather than this diagram, are the durable graph edges.
   matched control, and both create substantially more unmatched and duplicate
   candidates. The gate-only `1e-5` arm is the strongest ordinary-rollout arm
   on the eight-image smoke. The local coordinate objective is therefore a
-  valid diagnostic and an insufficient treatment; the 256-image stage is
-  closed. See [Smoke B First-Wrong-Coordinate Calibration
+  valid diagnostic and was not promoted by that smoke alone. A later user-
+  authorized 256-image successor is recorded below. See [Smoke B First-Wrong-
+  Coordinate Calibration
   Results](experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-b-v1/results.md).
+- The completed 256-image successor confirms local learnability and rejects
+  the tested end-to-end treatment. Exact source-prefix float32 margins improve
+  in `242 / 256` events at learning rate `1e-5` and `241 / 256` at `3e-6`,
+  spanning all four coordinate positions. Clean rollout on the same 256 images
+  does not improve at either learning rate. The lower learning rate reduces
+  format and length disturbance but still lowers Mean Average Precision.
+  Selected-coordinate error can improve while the intended row category or
+  full box becomes worse. The result isolates a fixed-prefix-to-own-prefix
+  transfer or parameter-entanglement problem; it does not justify a larger
+  learning-rate sweep, 1,024-image training, or full-data training. See [256-
+  Image Coordinate-Boundary Training Screen](experiments/2026-07-21-256-image-coordinate-boundary-training-screen/unit.md).
 - The sampled-history reachability unit now closes the direct path from bagged
   novelty to complete-row preference training. Exact sampled prefixes make
   later targets greedily reachable in several images, but access can be
@@ -453,13 +465,14 @@ failing to establish correct uncovered-object redistribution.
 
 ## Current Discriminator Queue
 
-The [Own-Prefix Entity-Transition and Coordinate-Boundary Calibration Training
-Screen](experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-b-v1/results.md)
-is now closed. No trusted same-prefix complete-row rescue was found, so the
-entity-transition and joint arms did not run. The coordinate arm passed its
-local learnability check and failed its end-to-end promotion check against the
-matched token-type-gate controls. No replicated seed, 256-image, 1,024-image,
-or full-size successor is active for this objective.
+The [256-Image Coordinate-Boundary Training
+Screen](experiments/2026-07-21-256-image-coordinate-boundary-training-screen/unit.md)
+is now closed. The coordinate arm passes exact-prefix learnability and fails
+clean-rollout promotion at both tested learning rates. The token-type gate is
+part of the treatment and is not an independent scientific arm in this
+successor. No 1,024-image or full-size successor is active. The smallest
+remaining discriminator is one treated-model-prefix refresh versus an equal-
+budget repeat on the original frozen prefixes.
 
 The completed [Person 25 Dominant-Owner Commit and Persistence Closeout
 results](experiments/2026-07-18-person25-dominant-owner-commit-and-persistence-closeout/results.md)
@@ -501,11 +514,11 @@ physical owners, so exact-token or exact-coordinate invariance is not an
 appropriate training target.
 
 That short-horizon discriminator, its complete-row scoring successor, and the
-subsequent sampled-history causal-value unit are now closed. No expensive
-successor is active and no training algorithm is promoted. Do not add more
-seeds or post-hoc factorial arms to the existing cases, introduce a covered-set
-architecture, suppress terminal globally, or launch the previously proposed
-256-image coordinate screen. The last unit found three causal same-owner
+subsequent sampled-history causal-value unit are now closed. The separately
+authorized 256-image coordinate screen has also completed without promotion.
+Do not add more seeds or post-hoc factorial arms to the existing cases,
+introduce a covered-set architecture, suppress terminal globally, or scale the
+coordinate treatment unchanged. The sampled-history unit found three causal same-owner
 coordinate-history effects but only one safe final unique-owner gain; the two
 other cases exchanged owners. It also found both a one-row-local effect and a
 joint two-row effect. This is insufficient to define one recurrent defect or
@@ -674,15 +687,14 @@ The screen compares a few matched-budget arms on 256 images. It is a stop-or-
 promote test for learnability, not a final model, broad hyperparameter search,
 or paper result.
 
-Current gate decision: **closed for the executed first-wrong-coordinate
-objective**. Its local held-out margin moved as intended, but ordinary rollout
-did not beat the learning-rate-matched gate-only control on owner consistency,
-matched-box geometry, or duplication health. The formal 256-image screen is
-not authorized. A future screen needs a new research unit and a target that
-connects a same-prefix decision to downstream owner-and-geometry value; it
-must not inherit authorization from this smoke or treat unmatched dense
-predictions as negatives. This decision selects neither an architecture nor a
-general replacement loss.
+Current gate decision: **closed after the executed 256-image first-wrong-
+coordinate screen**. Fixed-prefix float32 margins move as intended, but clean
+rollout does not improve at learning rates `1e-5` or `3e-6`. The result rejects
+promotion to 1,024 images or full size. A future screen needs either refreshed
+treated-model prefixes or a more local coordinate-decision update and must
+still connect the local change to complete-row owner and geometry value. It
+must not treat unmatched dense predictions as negatives. This decision
+selects neither an architecture nor a general replacement loss.
 
 ## Demoted or Rejected Claims
 

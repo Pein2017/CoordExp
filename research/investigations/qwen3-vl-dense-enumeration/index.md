@@ -62,13 +62,16 @@ retains more route diversity and supplies a clean image-`18380` category-plus-
 `x1` intervention, but neither checkpoint demonstrates an order-invariant
 ledger. The result supports a small geometry-sorted-base local transition-
 calibration training screen, with random ordering retained as an ablation and
-execution separately authorized. That screen is now complete. The reviewed
-first-wrong-coordinate objective improves frozen held-out coordinate margins
-relative to source and a learning-rate-matched token-type-gate control, but it
-does not improve matched-box geometry or ordinary rollout health relative to
-that control. The 256-image successor is therefore closed: the experiment
-establishes a learnable local decision signal and rejects it as a sufficient
-whole-rollout treatment.
+execution separately authorized. That screen is now complete. On 256 training
+images, the first-wrong-coordinate objective improves exact source-prefix
+float32 margins at learning rates `1e-5` and `3e-6`. Neither checkpoint
+improves clean rollout on the same images. The selected boundary can improve
+locally while the object category, the other boundaries, or the row trajectory
+becomes worse. The 256-image successor is therefore closed: it establishes a
+learnable local decision signal and rejects ordinary language-tower DoRA on
+frozen source prefixes as a sufficient whole-rollout treatment. The token-type
+gate was used only as a stabilizer inside the treatment, not as an independent
+scientific arm.
 The weekly report and research compass own the broader synthesis and next-
 discriminator boundary.
 
@@ -159,6 +162,7 @@ durable program reading path below.
 79. [Matched ordering-policy results and local transition-calibration recommendation](experiments/2026-07-20-matched-random-sorted-prefix-order-screen/results.md)
 80. [Own-prefix entity-transition and coordinate-boundary calibration training screen](experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/unit.md)
 81. [Smoke B first-wrong-coordinate calibration results and no-promotion verdict](experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-b-v1/results.md)
+82. [256-image coordinate-boundary training screen and fixed-prefix-to-rollout transfer verdict](experiments/2026-07-21-256-image-coordinate-boundary-training-screen/unit.md)
 
 The review and readiness amendment preserve the pre-execution gate. The
 completed unit and results record own current lifecycle and evidence status.

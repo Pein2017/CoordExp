@@ -1,0 +1,19 @@
+extends: qwen3_vl_2b_step4887_coordinate_boundary_blind_12_source_hf.yaml
+
+run:
+  name: qwen3-vl-2b-step4887-coordinate-boundary-train-256-source-hf
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-256-image-coordinate-boundary-training-screen/train-256-clean-rollouts
+  collision_policy: fail
+
+data:
+  input_jsonl: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-256-image-coordinate-boundary-training-screen/train-256-clean-rollout.coord.jsonl
+
+generation:
+  batch_size: 16
+  max_new_tokens: 512
+  temperature: 0.0
+  top_p: 1.0
+  repetition_penalty: 1.0
+
+scoring:
+  enabled: true

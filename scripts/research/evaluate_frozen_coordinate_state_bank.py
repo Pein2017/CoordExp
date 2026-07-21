@@ -68,6 +68,7 @@ from src.training.supervised_trainer import (  # noqa: E402
 
 
 EVAL_SPLIT = "eval"
+ALLOWED_SPLITS = frozenset({"train", EVAL_SPLIT})
 EVALUATOR_SCHEMA_VERSION = "coordexp.research.frozen_coordinate_state_bank_eval.v1"
 COORDINATE_TERM = "rollout_coordinate_boundary"
 GATE_TERM = "rollout_site_token_type_gate"
@@ -141,9 +142,10 @@ def validate_eval_event_set(
     loading and gives tests a no-runtime validation seam.
     """
 
-    if split != EVAL_SPLIT:
+    if split not in ALLOWED_SPLITS:
         raise EvaluationArgumentError(
-            f"frozen coordinate evaluator only accepts split={EVAL_SPLIT!r}, got {split!r}"
+            "frozen coordinate evaluator only accepts split='train' or split='eval', "
+            f"got {split!r}"
         )
     if any(not isinstance(event_id, str) for event_id in event_ids):
         raise EvaluationArgumentError("frozen eval event ids must be strings")
@@ -294,6 +296,7 @@ def _load_trusted_bank(
     manifest_path: Path,
     source_identity: CheckpointIdentity,
     token_identity: Any,
+    split: str,
 ) -> Any:
     binding = load_state_bank_manifest_binding(manifest_path)
     bank = load_state_bank(
@@ -302,27 +305,30 @@ def _load_trusted_bank(
         expected_prompt_identity_sha256=binding.prompt_identity_sha256,
     )
     validate_state_bank_token_identity(bank, token_identity)
-    events = bank.records_for_split(EVAL_SPLIT)
-    expected_count = int(bank.manifest.split_counts.get(EVAL_SPLIT, -1))
+    events = bank.records_for_split(split)
+    expected_count = int(bank.manifest.split_counts.get(split, -1))
     expected_event_ids = tuple(
-        event.event_id for event in bank.records if event.split == EVAL_SPLIT
+        event.event_id for event in bank.records if event.split == split
     )
     validate_eval_event_set(
         [event.event_id for event in events],
         expected_count=expected_count,
         expected_event_ids=expected_event_ids,
+        split=split,
     )
     if not events or any(not event.coordinate_boundary_eligible for event in events):
         raise EvaluationArgumentError(
-            "frozen eval split must contain only coordinate-boundary-eligible events"
+            f"frozen {split} split must contain only coordinate-boundary-eligible events"
         )
     return bank
 
 
-def _build_eval_micro_steps(*, config: Any, components: Any, bank: Any) -> tuple[SupervisedMicroStep, ...]:
+def _build_eval_micro_steps(
+    *, config: Any, components: Any, bank: Any, split: str
+) -> tuple[SupervisedMicroStep, ...]:
     planned = plan_calibration_micro_steps(
         bank,
-        split=EVAL_SPLIT,
+        split=split,
         components=components,
         processor_config=config.model.processor,
         global_max_length=config.packing.global_max_length,
@@ -551,6 +557,9 @@ def run_evaluation(arguments: argparse.Namespace) -> dict[str, Any]:
     resolved_config = load_train_config(paths["config"])
     config = resolved_config.config
     device = torch.device(getattr(arguments, "device", "cuda:0"))
+    split = str(getattr(arguments, "split", EVAL_SPLIT))
+    if split not in ALLOWED_SPLITS:
+        raise EvaluationArgumentError(f"unsupported StateBank split: {split!r}")
     if config.adapter is None:
         raise EvaluationArgumentError("config must declare a DoRA adapter")
 
@@ -574,11 +583,13 @@ def run_evaluation(arguments: argparse.Namespace) -> dict[str, Any]:
         manifest_path=paths["bank_manifest"],
         source_identity=source_identity,
         token_identity=components.token_identity,
+        split=split,
     )
     micro_steps = _build_eval_micro_steps(
         config=config,
         components=components,
         bank=bank,
+        split=split,
     )
     adapter_gate = load_default_adapter_source_gate_evidence(REPOSITORY_ROOT)
     from src.qwen.special_token_embeddings import (  # noqa: PLC0415
@@ -639,7 +650,7 @@ def run_evaluation(arguments: argparse.Namespace) -> dict[str, Any]:
 
     payload = {
         "schema_version": EVALUATOR_SCHEMA_VERSION,
-        "split": EVAL_SPLIT,
+        "split": split,
         "objective": {
             "profile": runner.profile,
             "coordinate_weight": runner.coordinate_weight,
@@ -657,7 +668,7 @@ def run_evaluation(arguments: argparse.Namespace) -> dict[str, Any]:
             "manifest_path": str(paths["bank_manifest"]),
             "manifest": bank.manifest.to_artifact_dict(),
             "validation": bank.validation_receipt.to_artifact_dict(),
-            "eval_event_ids": [event.event_id for event in bank.records_for_split(EVAL_SPLIT)],
+            "event_ids": [event.event_id for event in bank.records_for_split(split)],
         },
         "config": {
             "path": str(paths["config"]),
@@ -691,6 +702,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument(
+        "--split",
+        choices=sorted(ALLOWED_SPLITS),
+        default=EVAL_SPLIT,
+        help="frozen StateBank split to replay (default: eval)",
+    )
+    parser.add_argument(
         "--device",
         default="cuda:0",
         help="device for one composed model replay (default: cuda:0)",
@@ -706,7 +723,7 @@ def main() -> int:
             {
                 "output": str(Path(arguments.output).expanduser().resolve()),
                 "schema_version": payload["schema_version"],
-                "event_count": len(payload["bank"]["eval_event_ids"]),
+                "event_count": len(payload["bank"]["event_ids"]),
                 "model_count": len(payload["models"]),
             },
             sort_keys=True,

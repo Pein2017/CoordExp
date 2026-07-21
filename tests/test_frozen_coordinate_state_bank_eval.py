@@ -29,9 +29,10 @@ def test_validate_eval_event_set_rejects_wrong_count_and_duplicates() -> None:
         validate_eval_event_set(("e1", "e1"), expected_count=2)
 
 
-def test_validate_eval_event_set_rejects_non_eval_split() -> None:
-    with pytest.raises(EvaluationArgumentError, match="split='eval'"):
-        validate_eval_event_set(("e1",), expected_count=1, split="train")
+def test_validate_eval_event_set_accepts_train_and_rejects_unknown_split() -> None:
+    assert validate_eval_event_set(("e1",), expected_count=1, split="train") == ("e1",)
+    with pytest.raises(EvaluationArgumentError, match="split='train' or split='eval'"):
+        validate_eval_event_set(("e1",), expected_count=1, split="test")
     with pytest.raises(EvaluationArgumentError, match="event-id set"):
         validate_eval_event_set(
             ("e1",), expected_event_ids=("e2",), expected_count=1

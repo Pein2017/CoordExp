@@ -1,0 +1,26 @@
+extends: qwen3_vl_2b_step4887_coordinate_boundary_train_256_source_hf.yaml
+
+run:
+  name: qwen3-vl-2b-step8-coordinate-boundary-learning-rate-3e-6-train-256-treated-hf
+  collision_policy: fail
+
+data:
+  input_jsonl: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-256-image-coordinate-boundary-training-screen/train-256-clean-rollout.coord.jsonl
+
+generation:
+  batch_size: 16
+  max_new_tokens: 512
+  temperature: 0.0
+  top_p: 1.0
+  repetition_penalty: 1.0
+
+scoring:
+  enabled: true
+
+adapter:
+  type: dora
+  path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-256-image-coordinate-boundary-training-screen/runs/qwen3_vl_2b_coordinate_boundary_256_image_one_epoch_learning_rate_3e-6/checkpoints/step-8/adapter
+  name: default
+
+embedding_delta:
+  path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-256-image-coordinate-boundary-training-screen/runs/qwen3_vl_2b_coordinate_boundary_256_image_one_epoch_learning_rate_3e-6/checkpoints/step-8/special_token_embeddings
