@@ -172,6 +172,12 @@ durable program reading path below.
 80. [Own-prefix entity-transition and coordinate-boundary calibration training screen](experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/unit.md)
 81. [Smoke B first-wrong-coordinate calibration results and no-promotion verdict](experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-b-v1/results.md)
 82. [256-image coordinate-boundary training screen and fixed-prefix-to-rollout transfer verdict](experiments/2026-07-21-256-image-coordinate-boundary-training-screen/unit.md)
+83. [Mixed old-prefix and refreshed-prefix coordinate correction](experiments/2026-07-21-mixed-old-and-refreshed-prefix-coordinate-correction/unit.md)
+84. [Mixed old-prefix and refreshed-prefix coordinate-correction results](experiments/2026-07-21-mixed-old-and-refreshed-prefix-coordinate-correction/results.md)
+85. [Individual-trajectory versus sampled-union object-support audit](experiments/2026-07-21-individual-trajectory-versus-union-support-audit/unit.md)
+86. [Individual-trajectory versus sampled-union object-support audit results](experiments/2026-07-21-individual-trajectory-versus-union-support-audit/results.md)
+87. [Independent audit and conservative-bound correction](experiments/2026-07-21-individual-trajectory-versus-union-support-audit/audit.md)
+88. [Trajectory-quality-weighted object-row self-imitation screen](experiments/2026-07-21-trajectory-quality-weighted-row-self-imitation-screen/unit.md)
 
 The review and readiness amendment preserve the pre-execution gate. The
 completed unit and results record own current lifecycle and evidence status.

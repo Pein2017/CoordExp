@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Run small, request-scoped seeded sampled rollouts with the current HF runtime.
+"""Run small, request-scoped seeded rollouts with the current HF runtime.
 
 This is intentionally an experiment-local seam.  The canonical CoordExp-Swift
 backend remains deterministic; this script reuses its prompt/image
 materialization and then calls the already-loaded Hugging Face model directly
-for one request at a time.  It is for collecting on-policy samples, not for
-producing benchmark inference artifacts.
+for one request at a time.  Positive temperatures collect seeded samples;
+temperature zero uses true greedy decoding.  It is for collecting on-policy
+rollouts, not for producing benchmark inference artifacts.
 """
 
 from __future__ import annotations
@@ -117,8 +118,12 @@ def validate_artifact_payload(payload: Mapping[str, Any]) -> None:
 
     if payload.get("schema_version") != SCHEMA_VERSION:
         raise ValueError("unexpected sampled-rollout schema version")
-    if not isinstance(payload.get("config"), Mapping):
+    config = payload.get("config")
+    if not isinstance(config, Mapping):
         raise ValueError("artifact config metadata is required")
+    config_decode_mode = config.get("decode_mode")
+    if config_decode_mode is not None and config_decode_mode not in {"greedy", "sampled"}:
+        raise ValueError("unsupported decode_mode")
     rows = payload.get("rollouts")
     if not isinstance(rows, list) or not rows:
         raise ValueError("artifact must contain at least one rollout")
@@ -134,6 +139,15 @@ def validate_artifact_payload(payload: Mapping[str, Any]) -> None:
             raise ValueError("unsupported stop_reason")
         if not isinstance(row["predictions"], Mapping):
             raise ValueError("predictions must contain parser evidence")
+        row_decode_mode = row.get("decode_mode")
+        if row_decode_mode is not None and row_decode_mode not in {"greedy", "sampled"}:
+            raise ValueError("unsupported decode_mode")
+        if (
+            config_decode_mode is not None
+            and row_decode_mode is not None
+            and row_decode_mode != config_decode_mode
+        ):
+            raise ValueError("rollout decode_mode does not match artifact config")
 
 
 def _processor_config(config: Any) -> Any:
@@ -168,6 +182,48 @@ def _seed_torch(seed: int) -> None:
         torch.cuda.manual_seed_all(int(seed))
 
 
+def decode_mode_for_temperature(temperature: float) -> str:
+    """Return the generation mode selected by the requested temperature."""
+
+    if not 0.0 <= temperature:
+        raise ValueError("temperature must be non-negative")
+    return "greedy" if temperature == 0.0 else "sampled"
+
+
+def _build_generate_kwargs(
+    native_inputs: Mapping[str, Any],
+    *,
+    temperature: float,
+    top_p: float,
+    repetition_penalty: float,
+    max_new_tokens: int,
+    eos_token_id: int,
+    pad_token_id: int,
+) -> tuple[dict[str, Any], str]:
+    """Build Hugging Face generation kwargs without sampling-only options for greedy mode."""
+
+    decode_mode = decode_mode_for_temperature(temperature)
+    generate_kwargs: dict[str, Any] = {
+        **dict(native_inputs),
+        "max_new_tokens": int(max_new_tokens),
+        "repetition_penalty": float(repetition_penalty),
+        "do_sample": decode_mode == "sampled",
+        "eos_token_id": eos_token_id,
+        "pad_token_id": pad_token_id,
+        "return_dict_in_generate": True,
+        "output_scores": False,
+    }
+    if decode_mode == "sampled":
+        generate_kwargs.update({
+            "temperature": float(temperature),
+            "top_p": float(top_p),
+        })
+    else:
+        generate_kwargs.pop("temperature", None)
+        generate_kwargs.pop("top_p", None)
+    return generate_kwargs, decode_mode
+
+
 def _sample_one(
     *,
     session: Any,
@@ -182,19 +238,18 @@ def _sample_one(
 ) -> tuple[list[int], str, str]:
     import torch
 
-    _seed_torch(seed)
-    generate_kwargs = {
-        **dict(native_inputs),
-        "max_new_tokens": int(max_new_tokens),
-        "temperature": float(temperature),
-        "top_p": float(top_p),
-        "repetition_penalty": float(repetition_penalty),
-        "do_sample": True,
-        "eos_token_id": session._im_end_token_id(),
-        "pad_token_id": session._pad_token_id(),
-        "return_dict_in_generate": True,
-        "output_scores": False,
-    }
+    decode_mode = decode_mode_for_temperature(temperature)
+    if decode_mode == "sampled":
+        _seed_torch(seed)
+    generate_kwargs, _ = _build_generate_kwargs(
+        native_inputs,
+        temperature=temperature,
+        top_p=top_p,
+        repetition_penalty=repetition_penalty,
+        max_new_tokens=max_new_tokens,
+        eos_token_id=session._im_end_token_id(),
+        pad_token_id=session._pad_token_id(),
+    )
     with torch.inference_mode():
         output = session._model.generate(**generate_kwargs)
     sequences = getattr(output, "sequences", None)
@@ -288,8 +343,7 @@ def run_sampling(
 
     if output.exists() and not force:
         raise ValueError(f"refusing to overwrite {output}; pass --force")
-    if not 0.0 < temperature:
-        raise ValueError("sampled temperature must be positive")
+    decode_mode = decode_mode_for_temperature(temperature)
     if not 0.0 < top_p <= 1.0:
         raise ValueError("top_p must be in (0, 1]")
     resolved = load_infer_config(infer_config.resolve(strict=True))
@@ -357,6 +411,7 @@ def run_sampling(
                         "image_id": physical_image_id(example),
                         "example_id": str(example.example_id),
                         "seed": int(seed),
+                        "decode_mode": decode_mode,
                         "generated_token_ids": ids,
                         "generated_token_ids_sha256": _sha256_json(ids),
                         "generated_text": text,
@@ -381,6 +436,7 @@ def run_sampling(
             "device": device,
             "temperature": float(temperature),
             "top_p": float(top_p),
+            "decode_mode": decode_mode,
             "repetition_penalty": float(repetition_penalty),
             "max_new_tokens": int(max_new_tokens),
             "seeds": [int(seed) for seed in seeds],

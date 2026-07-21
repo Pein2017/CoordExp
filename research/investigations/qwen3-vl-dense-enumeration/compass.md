@@ -7,7 +7,7 @@ authority: non_normative_research
 architecture_promotion_status: not_promoted
 topic: qwen3-vl-dense-enumeration
 status: active
-updated: 2026-07-20
+updated: 2026-07-21
 ---
 
 # Qwen3 Vision-Language Autoregressive Detection Research Compass
@@ -43,6 +43,38 @@ set through deterministic greedy autoregressive generation, while preserving:
 The immediate research target is to convert object support that is currently
 dispersed across stochastic rollouts and prefix-conditioned trajectories into
 a safe greedy traversal. This is an objective, not an established capability.
+
+## Current Treatment Gate
+
+The completed [Individual-Trajectory versus Sampled-Union Object-Support
+Audit](experiments/2026-07-21-individual-trajectory-versus-union-support-audit/results.md)
+shows that two effects coexist:
+
+- at least three fully reviewed sampled trajectories cover more unique owners
+  than greedy at the same row budget without greater harmful-row counts; and
+- five images have a verified sampled-union lower bound above the maximum
+  possible coverage of any one four-row trajectory.
+
+The first bounded treatment discriminator is therefore:
+
+```text
+verified better complete sampled route
+  -> positive-only, span-masked weighted self-imitation
+  -> compare with a within-image shuffled-reward control
+  -> judge native greedy unique-owner coverage and harmful rows
+```
+
+Union complementarity remains an explicit limitation: a whole-trajectory
+treatment may improve route choice without recovering every owner exposed by
+bagging. Local remaining-object completion remains the next alternative only
+if the correctly weighted treatment fails its shuffled control or improves
+fixed-prefix likelihood without improving native greedy rollout.
+
+The twelve human-refined dense validation images are development and
+validation cases for this discriminator and never training data. Because they
+now influence route selection, they are not the final blind cohort. A new blind
+dense cohort will be created only after the treatment family and thresholds
+are frozen.
 
 ## Working First-Principles Model
 

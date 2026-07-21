@@ -1,0 +1,320 @@
+{
+  "schema_version": "individual_trajectory_union_support_review_decisions.v1",
+  "decisions": [
+    {
+      "prediction_id": "coco2017_val_000000002685:seed-21000:span-3",
+      "image_id": "2685",
+      "trajectory_id": "greedy",
+      "entity_status": "duplicate_owner",
+      "owner_id": "2685:1226144",
+      "category": "person",
+      "geometry_status": "oversized",
+      "evidence": {
+        "crop": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/analysis/review/2685/greedy-row3-person.png",
+        "note": "Both independent enlarged reviews identify an oversized repeat of person owner 2685:1226144, already covered earlier in the greedy trajectory."
+      }
+    },
+    {
+      "prediction_id": "coco2017_val_000000002685:seed-21008:span-3",
+      "image_id": "2685",
+      "trajectory_id": "seed-21008",
+      "entity_status": "duplicate_owner",
+      "owner_id": "2685:1240876",
+      "category": "person",
+      "geometry_status": "oversized",
+      "evidence": {
+        "crop": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/analysis/review/2685/seed-21008-row3-person.png",
+        "note": "Both independent enlarged reviews identify an oversized repeat of person owner 2685:1240876, already covered earlier in the sampled trajectory."
+      }
+    },
+    {
+      "prediction_id": "coco2017_val_000000005001:seed-21000:span-3",
+      "image_id": "5001",
+      "trajectory_id": "greedy",
+      "entity_status": "duplicate_owner",
+      "owner_id": "5001:1201627",
+      "category": "person",
+      "geometry_status": "shifted_and_incomplete",
+      "evidence": {
+        "crop": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/analysis/review/5001-greedy-row3-row6-context.png",
+        "note": "Lanczos-enlarged review shows that the red row-3 box is another partial box on the striped person already assigned to owner 5001:1201627."
+      }
+    },
+    {
+      "prediction_id": "coco2017_val_000000005001:seed-21000:span-6",
+      "image_id": "5001",
+      "trajectory_id": "greedy",
+      "entity_status": "uncertain",
+      "geometry_status": "multiple_people_contaminated",
+      "evidence": {
+        "crop": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/analysis/review/5001-greedy-row3-row6-context.png",
+        "note": "The enlarged magenta box spans the already covered striped person and a different leaning person. Phrase-only evidence cannot identify which physical owner controls this contaminated box, so it receives no coverage credit."
+      }
+    },
+    {
+      "prediction_id": "coco2017_val_000000007511:seed-21000:span-4",
+      "image_id": "7511",
+      "trajectory_id": "greedy",
+      "entity_status": "uncertain",
+      "geometry_status": "low_pixel_displaced",
+      "evidence": {
+        "crop": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/analysis/review/7511-greedy-row4-red-owner153-green.png",
+        "note": "Conventional Lanczos enlargement still cannot establish a specific person owner. The predicted box is displaced left of owner 7511:-153 in a low-pixel mixed region."
+      }
+    },
+    {
+      "prediction_id": "coco2017_val_000000007511:seed-21000:span-6",
+      "image_id": "7511",
+      "trajectory_id": "greedy",
+      "entity_status": "duplicate_owner",
+      "owner_id": "7511:-173",
+      "category": "person",
+      "geometry_status": "loose",
+      "evidence": {
+        "crop": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000007511.jpg",
+        "note": "Enlarged coordinate-local review assigns this row to the same lower-right seated person as the later repeated rows and owner 7511:-173."
+      }
+    },
+    {
+      "prediction_id": "coco2017_val_000000007511:seed-21000:span-7",
+      "image_id": "7511",
+      "trajectory_id": "greedy",
+      "entity_status": "duplicate_owner",
+      "owner_id": "7511:-173",
+      "category": "person",
+      "geometry_status": "loose",
+      "evidence": {
+        "crop": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000007511.jpg",
+        "note": "The row repeats owner 7511:-173 with nearly the same low-pixel box as row 6."
+      }
+    },
+    {
+      "prediction_id": "coco2017_val_000000007511:seed-21000:span-9",
+      "image_id": "7511",
+      "trajectory_id": "greedy",
+      "entity_status": "duplicate_owner",
+      "owner_id": "7511:-173",
+      "category": "person",
+      "geometry_status": "bottom_fragment",
+      "evidence": {
+        "crop": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000007511.jpg",
+        "note": "The box is a third fragmentary repeat of the same lower-right seated owner 7511:-173."
+      }
+    },
+    {
+      "prediction_id": "coco2017_val_000000007511:seed-21012:span-4",
+      "image_id": "7511",
+      "trajectory_id": "seed-21012",
+      "entity_status": "verified_owner",
+      "owner_id": "7511:-169",
+      "category": "person",
+      "geometry_status": "loose_and_bottom_truncated",
+      "evidence": {
+        "crop": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/analysis/review/7511-row4-red-owner169-green-owner173-blue.png",
+        "note": "Independent enlarged review identifies the red box as the distinct upper person owner 7511:-169 rather than the lower blue owner 7511:-173; the entity is real although the box is loose."
+      }
+    },
+    {
+      "prediction_id": "coco2017_val_000000002685:seed-21000:span-4",
+      "image_id": "2685",
+      "trajectory_id": "greedy",
+      "entity_status": "uncertain",
+      "geometry_status": "multiple_people_partial",
+      "evidence": {
+        "crop": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/analysis/review/2685/greedy-row4-person.png",
+        "note": "Two independent enlarged reviews agree that real person pixels are present but cannot assign one physical owner because the box is partial and contaminated by adjacent people."
+      }
+    },
+    {
+      "prediction_id": "coco2017_val_000000002685:seed-21000:span-6",
+      "image_id": "2685",
+      "trajectory_id": "greedy",
+      "entity_status": "duplicate_owner",
+      "owner_id": "2685:-83",
+      "category": "wine glass",
+      "geometry_status": "loose",
+      "evidence": {
+        "crop": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/analysis/review/2685/greedy-row6-wine_glass.png",
+        "note": "Two independent crop reviews assign the box to owner 2685:-83; it is repeated later in this trajectory."
+      }
+    },
+    {
+      "prediction_id": "coco2017_val_000000002685:seed-21000:span-7",
+      "image_id": "2685",
+      "trajectory_id": "greedy",
+      "entity_status": "duplicate_owner",
+      "owner_id": "2685:-81",
+      "category": "wine glass",
+      "geometry_status": "loose",
+      "evidence": {
+        "crop": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/analysis/review/2685/greedy-row7-wine_glass.png",
+        "note": "Both enlarged reviews assign this repeated box to owner 2685:-81."
+      }
+    },
+    {
+      "prediction_id": "coco2017_val_000000002685:seed-21000:span-8",
+      "image_id": "2685",
+      "trajectory_id": "greedy",
+      "entity_status": "duplicate_owner",
+      "owner_id": "2685:-81",
+      "category": "wine glass",
+      "geometry_status": "loose",
+      "evidence": {
+        "crop": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/analysis/review/2685/greedy-row8-wine_glass.png",
+        "note": "Both enlarged reviews identify another repeat of wine-glass owner 2685:-81."
+      }
+    },
+    {
+      "prediction_id": "coco2017_val_000000002685:seed-21000:span-9",
+      "image_id": "2685",
+      "trajectory_id": "greedy",
+      "entity_status": "verified_owner",
+      "owner_id": "2685:-83",
+      "category": "wine glass",
+      "geometry_status": "crowded_and_loose",
+      "evidence": {
+        "crop": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/analysis/review/2685/greedy-row9-wine_glass.png",
+        "note": "Crop review resolves the automatic multi-owner ambiguity to wine-glass owner 2685:-83."
+      }
+    },
+    {
+      "prediction_id": "coco2017_val_000000002685:seed-21000:span-10",
+      "image_id": "2685",
+      "trajectory_id": "greedy",
+      "entity_status": "verified_owner",
+      "owner_id": "2685:-92",
+      "category": "wine glass",
+      "geometry_status": "crowded_and_loose",
+      "evidence": {
+        "crop": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/analysis/review/2685/greedy-row10-wine_glass.png",
+        "note": "Crop review resolves this crowded-cluster prediction to owner 2685:-92."
+      }
+    },
+    {
+      "prediction_id": "coco2017_val_000000002685:seed-21000:span-11",
+      "image_id": "2685",
+      "trajectory_id": "greedy",
+      "entity_status": "duplicate_owner",
+      "owner_id": "2685:-81",
+      "category": "wine glass",
+      "geometry_status": "loose",
+      "evidence": {
+        "crop": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/analysis/review/2685/greedy-row11-wine_glass.png",
+        "note": "The prediction repeats owner 2685:-81 in the same crowded cluster."
+      }
+    },
+    {
+      "prediction_id": "coco2017_val_000000002685:seed-21000:span-12",
+      "image_id": "2685",
+      "trajectory_id": "greedy",
+      "entity_status": "verified_owner",
+      "owner_id": "2685:-81",
+      "category": "wine glass",
+      "geometry_status": "crowded_and_loose",
+      "evidence": {
+        "crop": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/analysis/review/2685/greedy-row12-wine_glass.png",
+        "note": "Crop review resolves the automatic ambiguity to owner 2685:-81."
+      }
+    },
+    {
+      "prediction_id": "coco2017_val_000000002685:seed-21000:span-13",
+      "image_id": "2685",
+      "trajectory_id": "greedy",
+      "entity_status": "duplicate_owner",
+      "owner_id": "2685:-81",
+      "category": "wine glass",
+      "geometry_status": "loose",
+      "evidence": {
+        "crop": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/analysis/review/2685/greedy-row13-wine_glass.png",
+        "note": "This is another repeated fragment of owner 2685:-81."
+      }
+    },
+    {
+      "prediction_id": "coco2017_val_000000002685:seed-21000:span-14",
+      "image_id": "2685",
+      "trajectory_id": "greedy",
+      "entity_status": "uncertain",
+      "geometry_status": "low_pixel_crowded",
+      "evidence": {
+        "crop": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/analysis/review/2685/greedy-row14-wine_glass.png",
+        "note": "Conventional enlargement leaves insufficient evidence to distinguish a separate glass owner from background or a fragment in the cluster."
+      }
+    },
+    {
+      "prediction_id": "coco2017_val_000000002685:seed-21008:span-5",
+      "image_id": "2685",
+      "trajectory_id": "seed-21008",
+      "entity_status": "uncertain",
+      "geometry_status": "multiple_people_partial",
+      "evidence": {
+        "crop": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/analysis/review/2685/seed-21008-row5-person.png",
+        "note": "Both reviews find real person evidence but cannot assign one physical owner because the box spans adjacent people; no owner credit is given."
+      }
+    },
+    {
+      "prediction_id": "coco2017_val_000000002685:seed-21008:span-7",
+      "image_id": "2685",
+      "trajectory_id": "seed-21008",
+      "entity_status": "verified_owner",
+      "owner_id": "2685:-92",
+      "category": "wine glass",
+      "geometry_status": "crowded_and_loose",
+      "evidence": {
+        "crop": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/analysis/review/2685/seed-21008-row7-wine_glass.png",
+        "note": "Independent crop review resolves the multi-owner overlap to wine-glass owner 2685:-92."
+      }
+    },
+    {
+      "prediction_id": "coco2017_val_000000002685:seed-21008:span-8",
+      "image_id": "2685",
+      "trajectory_id": "seed-21008",
+      "entity_status": "verified_owner",
+      "owner_id": "2685:-83",
+      "category": "wine glass",
+      "geometry_status": "crowded_and_loose",
+      "evidence": {
+        "crop": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/analysis/review/2685/seed-21008-row8-wine_glass.png",
+        "note": "Independent crop review resolves the multi-owner overlap to wine-glass owner 2685:-83."
+      }
+    },
+    {
+      "prediction_id": "coco2017_val_000000002685:seed-21008:span-11",
+      "image_id": "2685",
+      "trajectory_id": "seed-21008",
+      "entity_status": "duplicate_owner",
+      "owner_id": "2685:-86",
+      "category": "bottle",
+      "geometry_status": "shifted",
+      "evidence": {
+        "crop": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/analysis/review/2685/seed-21008-row11-bottle.png",
+        "note": "The box refers to bottle owner 2685:-86, which is already assigned by a better box in the same trajectory."
+      }
+    },
+    {
+      "prediction_id": "coco2017_val_000000002685:seed-21008:span-14",
+      "image_id": "2685",
+      "trajectory_id": "seed-21008",
+      "entity_status": "verified_owner",
+      "owner_id": "2685:-79",
+      "category": "bottle",
+      "geometry_status": "shifted_and_loose",
+      "evidence": {
+        "crop": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/analysis/review/2685/seed-21008-row14-bottle.png",
+        "note": "Both independent enlarged reviews identify a real, previously uncovered bottle owner 2685:-79 despite inaccurate extent."
+      }
+    },
+    {
+      "prediction_id": "coco2017_val_000000002685:seed-21008:span-15",
+      "image_id": "2685",
+      "trajectory_id": "seed-21008",
+      "entity_status": "verified_owner",
+      "owner_id": "2685:-76",
+      "category": "bottle",
+      "geometry_status": "shifted_and_loose",
+      "evidence": {
+        "crop": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/analysis/review/2685/seed-21008-row15-bottle.png",
+        "note": "Both independent enlarged reviews identify the distinct bottle owner 2685:-76; geometry is imperfect but entity discovery is valid."
+      }
+    }
+  ]
+}
