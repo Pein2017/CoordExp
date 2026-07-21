@@ -94,8 +94,14 @@ likelihood semantics, validation, and session lifecycle.
 optional DoRA adapter, and optional selected-token embedding delta.
 `src/inference/execution_model.py` materializes the same composition into an
 immutable snapshot for `src/inference/vllm_backend.py`. Both backends preserve
-the same prompt, parser, scoring, artifact, and evaluator contracts. FP32 is
-the strict parity surface; BF16 vLLM is throughput-oriented evidence only.
+the same prompt, parser, scoring, artifact, and evaluator contracts. vLLM
+launch authorization comes from current snapshot validation, engine
+construction, and live decode evidence. Historical qualification receipts and
+FP32 HF/vLLM comparisons are optional diagnostics for the claims they measure.
+The execution snapshot independently binds DoRA merge and selected-token delta
+fold outcomes. vLLM shard receipts retain live-decode and cleanup observations,
+which are aggregated per rank instead of entering the cross-rank semantic
+identity comparison.
 
 `src/inference/parsing.py` owns best-effort parser diagnostics and
 `src/inference/scoring.py` owns selected-token scoring. The evaluator does not

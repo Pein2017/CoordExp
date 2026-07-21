@@ -77,8 +77,12 @@ schema from an archived YAML file or an old plan.
   `src/inference/execution_model.py` owns immutable composed snapshots; and
   `src/inference/vllm_backend.py` owns offline vLLM generation and raw replay.
 - `src/inference/runtime.py` owns the processor-only frontend and strict
-  backend launch projection. FP32 is the cross-backend parity mode; BF16 vLLM
-  remains an explicitly non-parity throughput mode.
+  backend launch projection; `src/inference/vllm_qualification.py` retains
+  explicit audit probes while normal sessions record a non-blocking operational
+  preflight. BF16 vLLM is the normal throughput path and FP32 comparison is
+  claim-specific diagnostic evidence.
+  Unknown versions may attempt policy-only execution; raw tracing remains
+  restricted to versions with known pre-processor logprob-capture ordering.
 - `src/eval/detection_consumer.py` owns score-provenance validation, coordinate
   conversion, and detection metrics.
 
