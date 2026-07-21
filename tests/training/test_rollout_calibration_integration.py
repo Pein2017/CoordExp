@@ -90,12 +90,101 @@ def test_joint_runner_uses_compact_logits_and_emits_event_balanced_metrics() -> 
         "calibration/rollout_coordinate_boundary/target_margin"
     ] == pytest.approx(-1.0)
     assert (
+        artifact["metrics"]["calibration/rollout_entity_transition/continuation_loss"]
+        > 0.0
+    )
+    assert (
+        artifact["metrics"][
+            "calibration/rollout_entity_transition/schema_description_continuation_loss"
+        ]
+        > 0.0
+    )
+    assert artifact["metrics"][
+        "calibration/rollout_entity_transition/coordinate_continuation_loss"
+    ] == pytest.approx(0.0)
+    assert (
         0.0
         < artifact["metrics"]["calibration/rollout_site_token_type_gate/legal_mass"]
         < 1.0
     )
     assert artifact["metrics"]["calibration/rejected_record_count"] == 3.0
     assert artifact["finite_status"]["all_finite"] is True
+
+
+def test_positive_path_imitation_runner_has_no_branch_and_weights_both_terms() -> None:
+    positive = CalibrationCandidateMetadata(
+        candidate_id="positive-row",
+        segment_index=0,
+        role="positive",
+        harmful_kind=None,
+        physical_owner_id="owner-a",
+        coverage_status="uncovered",
+        entity_review_status="trusted",
+        geometry_review_status="unknown",
+        entity_eligible=True,
+        geometry_eligible=False,
+        owner_resolution_candidate_interval=(0, 3),
+        owner_resolution_physical_target_interval=(1, 4),
+        coordinate_decision=None,
+        coordinate_physical_target_position=None,
+        coordinate_physical_logits_position=None,
+        selected_sites=(
+            CalibrationSelectedSite("positive-row", 0, 0, "schema", 1, 0),
+            CalibrationSelectedSite("positive-row", 0, 1, "desc_text", 2, 1),
+            CalibrationSelectedSite("positive-row", 0, 2, "coordinate", 3, 2),
+        ),
+    )
+    metadata = CalibrationEventMetadata(
+        event_id="positive-row-event",
+        image_id=42,
+        split="train",
+        entity_transition_eligible=False,
+        coordinate_boundary_eligible=False,
+        candidates=(positive,),
+        selected_logits_positions=(0, 1, 2),
+        positive_path_imitation_eligible=True,
+        image_balanced_event_weight=2.0,
+    )
+    micro_step = replace(
+        _micro_step(metadata),
+        pack=SimpleNamespace(pack_index=0, input_ids=(0, 2, 1, 3, 0)),
+    )
+    logits = torch.tensor(
+        [[[0.0, 2.0, -1.0, -1.0, -1.0, -1.0],
+          [0.0, 1.0, -1.0, -1.0, -1.0, -1.0],
+          [0.0, -1.0, 1.0, -1.0, -1.0, -1.0]]],
+        requires_grad=True,
+    )
+    context = rollout_calibration_loss_context(
+        micro_step,
+        SimpleNamespace(logits=logits, logits_position_ids=(0, 1, 2)),
+    )
+    runner = RolloutCalibrationLossRunner(
+        profile="positive_path_imitation_only",
+        entity_weight=1.0,
+        entity_margin=0.2,
+        entity_smooth_max_temperature=0.5,
+        coordinate_weight=0.0,
+        coordinate_margin=0.2,
+        gate_weight=0.1,
+    )
+    plan = runner.prepare_planned_step((micro_step,))
+    assert plan.enabled_terms == (
+        "rollout_positive_path_imitation",
+        "rollout_site_token_type_gate",
+    )
+    bundle = runner.compute_micro_step(context, plan, local_micro_step_index=0)
+    assert [term.name for term in bundle.terms] == list(plan.enabled_terms)
+    assert bundle.terms[0].selected_count == 2
+    assert bundle.terms[1].selected_count == 2
+    assert bundle.terms[0].diagnostics["image_balanced_event_weight"] == 2.0
+    assert bundle.terms[1].diagnostics["image_balanced_event_weight"] == 2.0
+    bundle.total_loss.backward()
+    assert logits.grad is not None and torch.isfinite(logits.grad).all()
+    assert torch.equal(logits.grad[0, 2], torch.zeros_like(logits.grad[0, 2]))
+    artifact = runner.finalize_planned_step((bundle.to_artifact_dict(),), plan)
+    assert artifact["diagnostics"]["profile"] == "positive_path_imitation_only"
+    assert artifact["metrics"]["calibration/image_balanced_event_weight"] == 2.0
 
 
 def test_coordinate_only_diagnostic_candidate_reaches_coordinate_and_gate_losses() -> None:
@@ -305,6 +394,20 @@ def test_pipeline_counts_coordinate_boundary_gate_only_events() -> None:
             _micro_step(_single_family_metadata("entity")),
         ),
         "coordinate_boundary_gate_only",
+    ) == 1
+
+
+def test_pipeline_counts_positive_path_imitation_events() -> None:
+    metadata = _single_family_metadata("entity")
+    metadata = replace(
+        metadata,
+        entity_transition_eligible=False,
+        coordinate_boundary_eligible=False,
+        positive_path_imitation_eligible=True,
+    )
+    assert pipeline_module._calibration_profile_event_count(
+        (_micro_step(metadata),),
+        "positive_path_imitation_only",
     ) == 1
 
 

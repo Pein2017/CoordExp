@@ -16,6 +16,7 @@ from src.losses import (
     RolloutGateSite,
     first_wrong_coordinate_preference,
     grouped_entity_transition_preference,
+    positive_path_imitation_loss,
     rollout_site_token_type_gate,
 )
 from src.losses.normalizers import SegmentBalancedDenominator
@@ -26,6 +27,7 @@ from src.training.supervised_trainer import SupervisedMicroStep
 
 
 ENTITY_TERM = "rollout_entity_transition"
+POSITIVE_TERM = "rollout_positive_path_imitation"
 COORDINATE_TERM = "rollout_coordinate_boundary"
 GATE_TERM = "rollout_site_token_type_gate"
 
@@ -101,7 +103,9 @@ class RolloutCalibrationLossRunner:
     @property
     def enabled_terms(self) -> tuple[str, ...]:
         terms: list[str] = []
-        if self.entity_weight > 0.0:
+        if self.profile == "positive_path_imitation_only" and self.entity_weight > 0.0:
+            terms.append(POSITIVE_TERM)
+        elif self.entity_weight > 0.0:
             terms.append(ENTITY_TERM)
         if self.coordinate_weight > 0.0:
             terms.append(COORDINATE_TERM)
@@ -203,6 +207,14 @@ class RolloutCalibrationLossRunner:
                     local_micro_step_index=local_micro_step_index,
                 )
             )
+        if POSITIVE_TERM in plan.enabled_terms:
+            terms.append(
+                self._positive_path_term(
+                    context,
+                    plan,
+                    local_micro_step_index=local_micro_step_index,
+                )
+            )
         if COORDINATE_TERM in plan.enabled_terms:
             terms.append(
                 self._coordinate_term(
@@ -240,6 +252,9 @@ class RolloutCalibrationLossRunner:
             terms=tuple(terms),
             metrics={
                 "loss/total": float(total.detach().item()),
+                "calibration/image_balanced_event_weight": float(
+                    context.metadata.image_balanced_event_weight
+                ),
                 "calibration/unknown_entity_count_contribution": float(
                     unknown_entity * count_scale
                 ),
@@ -343,6 +358,24 @@ class RolloutCalibrationLossRunner:
                     float(item.get("target_margin_contribution", 0.0))
                     for item in diagnostics
                 )
+            if term_name == ENTITY_TERM:
+                for metric_name in (
+                    "continuation_loss",
+                    "schema_description_continuation_loss",
+                    "coordinate_continuation_loss",
+                ):
+                    metrics[f"calibration/{term_name}/{metric_name}"] = sum(
+                        float(item.get(metric_name, 0.0)) for item in diagnostics
+                    )
+            if term_name == POSITIVE_TERM:
+                for metric_name in (
+                    "schema_description_loss",
+                    "coordinate_loss",
+                    "selected_token_count",
+                ):
+                    metrics[f"calibration/{term_name}/{metric_name}"] = sum(
+                        float(item.get(metric_name, 0.0)) for item in diagnostics
+                    )
             if term_name == GATE_TERM:
                 metrics["calibration/rollout_site_token_type_gate/legal_mass"] = sum(
                     float(item.get("legal_mass_contribution", 0.0))
@@ -365,6 +398,14 @@ class RolloutCalibrationLossRunner:
             )
             for artifact in artifacts
         )
+        metrics["calibration/image_balanced_event_weight"] = sum(
+            float(
+                artifact.get("metrics", {}).get(
+                    "calibration/image_balanced_event_weight", 1.0
+                )
+            )
+            for artifact in artifacts
+        ) / len(artifacts)
         metrics["calibration/rejected_record_count"] = float(self.rejection_count)
         all_finite = all(
             bool(artifact.get("finite_status", {}).get("all_finite"))
@@ -394,6 +435,83 @@ class RolloutCalibrationLossRunner:
                 "total_loss_finite": all_finite,
             },
         }
+
+    def _positive_path_term(
+        self,
+        context: RolloutCalibrationLossContext,
+        plan: RolloutCalibrationLossPlan,
+        *,
+        local_micro_step_index: int,
+    ) -> LossTermResult:
+        eligible = (
+            self.profile == "positive_path_imitation_only"
+            and context.metadata.positive_path_imitation_eligible
+        )
+        if eligible:
+            if context.metadata.entity_transition_eligible or context.metadata.coordinate_boundary_eligible:
+                raise LossContractError(
+                    "positive-path imitation metadata conflicts with objective-family eligibility",
+                    code="loss.rollout_positive_path_event_flags",
+                    context={"event_id": context.metadata.event_id},
+                )
+            candidates = tuple(
+                item
+                for item in context.metadata.candidates
+                if item.role == "positive" and item.entity_eligible
+            )
+            if len(context.metadata.candidates) != 1 or len(candidates) != 1 or any(
+                item.role == "harmful" for item in context.metadata.candidates
+            ):
+                raise LossContractError(
+                    "positive-path imitation event must contain exactly one positive and no harmful candidate",
+                    code="loss.rollout_positive_path_event_incomplete",
+                    context={
+                        "event_id": context.metadata.event_id,
+                        "candidate_count": len(context.metadata.candidates),
+                        "positive_count": len(candidates),
+                    },
+                )
+            candidate = candidates[0]
+            path = _candidate_path(context, candidate)
+            result = positive_path_imitation_loss(path)
+            raw_event = result.raw_loss
+            selected_count = result.selected_token_count
+            diagnostics = {
+                "event_id": context.metadata.event_id,
+                "eligible": True,
+                "schema_description_loss": float(
+                    result.schema_description_loss.detach().item()
+                ),
+                "coordinate_loss": float(result.coordinate_loss.detach().item()),
+                "selected_token_count": result.selected_token_count,
+                "schema_description_token_count": result.schema_description_token_count,
+                "coordinate_token_count": result.coordinate_token_count,
+                "image_balanced_event_weight": context.metadata.image_balanced_event_weight,
+            }
+        else:
+            raw_event = context.logits.sum() * 0.0
+            selected_count = 0
+            diagnostics = {
+                "event_id": context.metadata.event_id,
+                "eligible": False,
+                "image_balanced_event_weight": context.metadata.image_balanced_event_weight,
+            }
+        return _term_result(
+            name=POSITIVE_TERM,
+            raw_event=raw_event,
+            weight=self.entity_weight,
+            denominator=plan.denominators[POSITIVE_TERM],
+            backend_scale=plan.backend_gradient_scale,
+            eligible=eligible,
+            selected_count=selected_count,
+            local_micro_step_index=local_micro_step_index,
+            diagnostics=diagnostics,
+            metric_name="selected_token_count",
+            metric_value=selected_count if eligible else None,
+            event_weight=(
+                context.metadata.image_balanced_event_weight if eligible else 1.0
+            ),
+        )
 
     def _entity_term(
         self,
@@ -439,6 +557,20 @@ class RolloutCalibrationLossRunner:
             diagnostics = {
                 "event_id": context.metadata.event_id,
                 "target_margin": float(result.target_margin.detach().item()),
+                "branch_margin": float(result.target_margin.detach().item()),
+                "continuation_loss": float(
+                    result.positive_continuation_loss.detach().item()
+                ),
+                "schema_description_continuation_loss": float(
+                    result.positive_schema_description_loss.detach().item()
+                ),
+                "coordinate_continuation_loss": float(
+                    result.positive_coordinate_loss.detach().item()
+                ),
+                "first_divergence_offsets": {
+                    candidate_id: int(offset)
+                    for candidate_id, offset in result.first_divergence_offsets
+                },
                 "positive_path_count": result.positive_path_count,
                 "distinct_owner_count": result.distinct_owner_count,
                 "duplicate_alias_count": result.duplicate_alias_count,
@@ -601,6 +733,12 @@ class RolloutCalibrationLossRunner:
             diagnostics=diagnostics,
             metric_name="legal_mass_contribution",
             metric_value=diagnostics["legal_mass"],
+            event_weight=(
+                context.metadata.image_balanced_event_weight
+                if self.profile == "positive_path_imitation_only"
+                and context.metadata.positive_path_imitation_eligible
+                else 1.0
+            ),
         )
 
 
@@ -703,6 +841,8 @@ def build_calibration_micro_step_stream(
 
 
 def _profile_admits(metadata: CalibrationEventMetadata, profile: str) -> bool:
+    if profile == "positive_path_imitation_only":
+        return metadata.positive_path_imitation_eligible
     if profile == "transition_only":
         return metadata.entity_transition_eligible
     if profile in {"coordinate_boundary_only", "coordinate_boundary_gate_only"}:
@@ -788,6 +928,11 @@ def _merge_denominators(
 def _event_eligible(
     metadata: CalibrationEventMetadata, term: str, *, profile: str
 ) -> bool:
+    if term == POSITIVE_TERM:
+        return (
+            profile == "positive_path_imitation_only"
+            and metadata.positive_path_imitation_eligible
+        )
     if term == ENTITY_TERM:
         return metadata.entity_transition_eligible
     if term == COORDINATE_TERM:
@@ -803,6 +948,15 @@ def _event_eligible(
 def _selected_count(
     metadata: CalibrationEventMetadata, term: str, *, profile: str
 ) -> int:
+    if term == POSITIVE_TERM:
+        if not _event_eligible(metadata, term, profile=profile):
+            return 0
+        return sum(
+            1
+            for candidate in metadata.candidates
+            if candidate.role == "positive" and candidate.entity_eligible
+            for _site in _active_selected_sites(candidate, profile)
+        )
     if term == GATE_TERM:
         return len(
             {
@@ -828,6 +982,22 @@ def _selected_count(
 
 
 def _active_selected_sites(candidate: Any, profile: str) -> tuple[Any, ...]:
+    if profile == "positive_path_imitation_only":
+        if not candidate.entity_eligible or candidate.role != "positive":
+            return ()
+        interval = candidate.owner_resolution_candidate_interval
+        if interval is None:
+            return ()
+        start, end = interval
+        return tuple(
+            site
+            for site in candidate.selected_sites
+            if start <= site.candidate_token_offset < end
+            and not (
+                site.intended_token_type == "coordinate"
+                and candidate.geometry_review_status != "trusted"
+            )
+        )
     active_offsets: set[int] = set()
     if profile in {"transition_only", "joint"} and candidate.entity_eligible:
         interval = candidate.owner_resolution_candidate_interval
@@ -870,12 +1040,53 @@ def _candidate_path(
     logits = torch.stack(
         tuple(_logits_row(context, position) for position in range(start - 1, end - 1))
     )
+    token_types: tuple[str, ...] | None = None
+    if candidate.role == "positive":
+        interval = candidate.owner_resolution_candidate_interval
+        if interval is None:
+            raise LossContractError(
+                "positive entity candidate lacks a token-type interval",
+                code="loss.rollout_continuation_interval_missing",
+                context={"candidate_id": candidate.candidate_id},
+            )
+        interval_start, interval_end = interval
+        token_type_by_offset = {
+            site.candidate_token_offset: site.intended_token_type
+            for site in candidate.selected_sites
+        }
+        missing_offsets = [
+            offset
+            for offset in range(interval_start, interval_end)
+            if offset not in token_type_by_offset
+        ]
+        if missing_offsets:
+            raise LossContractError(
+                "positive continuation is missing intended token-type sites",
+                code="loss.rollout_continuation_token_type_missing",
+                context={
+                    "candidate_id": candidate.candidate_id,
+                    "missing_offsets": missing_offsets,
+                },
+            )
+        token_types_list: list[str] = []
+        for offset in range(interval_start, interval_end):
+            intended = token_type_by_offset[offset]
+            if (
+                intended == "coordinate"
+                and candidate.geometry_review_status != "trusted"
+            ):
+                # Keep entity/schema supervision while excluding exact-token
+                # coordinate supervision whose geometry was not trusted.
+                intended = "untrusted_coordinate"
+            token_types_list.append(intended)
+        token_types = tuple(token_types_list)
     return CandidatePath(
         candidate_id=candidate.candidate_id,
         physical_owner_id=candidate.physical_owner_id,
         logits=logits,
         target_token_ids=tuple(context.pack_input_ids[start:end]),
         premature_terminal=premature,
+        token_types=token_types,
     )
 
 
@@ -941,6 +1152,7 @@ def _term_result(
     diagnostics: dict[str, Any],
     metric_name: str,
     metric_value: Any,
+    event_weight: float = 1.0,
 ) -> LossTermResult:
     if eligible:
         raw = raw_event.float() * (
@@ -948,11 +1160,19 @@ def _term_result(
         )
     else:
         raw = raw_event.float()
-    weighted = raw * float(weight)
+    checked_event_weight = float(event_weight)
+    if not torch.isfinite(raw.new_tensor(checked_event_weight)).item() or checked_event_weight <= 0.0:
+        raise LossContractError(
+            "rollout-calibration event weight must be finite and positive",
+            code="loss.rollout_event_weight",
+            context={"event_weight": checked_event_weight, "term": name},
+        )
+    weighted = raw * float(weight) * checked_event_weight
     result_diagnostics = {
         **diagnostics,
         "local_micro_step_index": int(local_micro_step_index),
         "backend_gradient_scale": float(backend_scale),
+        "image_balanced_event_weight": checked_event_weight,
     }
     if metric_value is not None and eligible:
         result_diagnostics[metric_name] = float(metric_value) * (

@@ -28,8 +28,12 @@ reusable execution path.
 - replay exact image and token prefixes without decoding and tokenizing them
   again;
 - score grouped candidate continuations with gradients;
+- separate the same-state first-divergence decision from coherent positive-row
+  continuation supervision;
 - compute entity-transition, first-wrong-coordinate, and rollout-site
   token-type-gate losses in 32-bit floating point;
+- compute positive-only complete-row imitation with separate
+  schema-and-description and trusted-coordinate group means;
 - preserve separate event masks, normalization, metrics, and provenance;
 - distinguish the checkpoint that generated a StateBank from the checkpoint
   used to warm-start an explicitly declared off-policy replay run;
@@ -76,12 +80,15 @@ current adapter parameters.
 | --- | --- |
 | Rollout-derived training data only | The calibration profile rejects canonical supervised-fine-tuning mixtures and full-row base cross-entropy. |
 | Keep per-prefix corrective supervision | Every eligible exact-prefix event selects explicit transition or coordinate decision sites. |
+| Keep local correction tied to set value | Entity-transition events carry equal-budget counterfactual admission evidence; trajectory quality controls admission rather than gradient weight. |
 | Keep a small token-type gate | Every selected positive and harmful site has one intended phase type; a harmful terminal boundary is gated as object-row schema. |
 | Prefix is conditioning, not a replay target | Exact prefix identifiers enter forward computation but receive no historical-prefix teacher-forced loss. |
 | Entity and geometry trust are separate | State-bank fields, eligibility masks, normalizers, losses, and metrics are separate. |
+| Premature STOP needs only target-specific absence | A target-scoped non-coverage mode checks every prior prediction against one target while keeping all unrelated prior owners unknown; duplicate negatives still require full resolved coverage. |
 | Unknown ownership has zero direct gradient | Loader validation excludes unknown or ambiguous status only from its corresponding entity or geometry term. |
 | Fixed offline bank for the first screen | The trainer has no online collector or refresh loop. |
 | Offline mixed correction successor | Orchestration performs rollout, StateBank construction, and the next training run as separate stages; each training run still consumes exactly one immutable bank. |
+| Positive sampled-path successor | One admitted sampled path provides exact context; only verified first-occurrence rows through its last added owner receive gradient, with equal total loss weight per image. |
 | Truthful off-policy replay | The bank keeps the trajectory-generating checkpoint identity, while the run separately records the compatible training warm-start checkpoint identity. |
 | Geometry-sorted primary and random-order ablation | Each source checkpoint requires its own bound bank and run; cross-bank reuse fails. |
 | No final architecture yet | Produced adapters use unchanged ordinary greedy Qwen3-VL inference. |
@@ -146,7 +153,7 @@ The metadata complements `TokenSequence`; it does not redefine ordinary
 trainer. That would duplicate position, visual replacement, runtime, and
 checkpoint behavior already owned by CoordExp-Swift.
 
-### 4. Add one explicit rollout-calibration loss mode
+### 4. Separate branch selection from coherent-row continuation
 
 The existing normal supervised mode remains unchanged. A separately named
 rollout-calibration mode may enable:
@@ -167,18 +174,28 @@ package only by removing the first-wrong-coordinate preference term.
 
 All selected logits used by the research objectives are converted to 32-bit
 floating point before `logsumexp`, `softplus`, normalization, or metric math.
-For entity transition, candidate aliases are first grouped by physical owner
-and reduced by maximum path score. The configured smooth maximum is applied
-only across the resulting distinct valid-owner scores. A premature terminal
-negative has null owner metadata and contributes exactly its one terminal-token
-log probability at the shared boundary.
+For entity transition, each valid positive is compared with the harmful branch
+at their first divergent token, where both paths share the same causal history.
+Aliases are first grouped by physical owner and reduced by the strongest
+admitted alias. The event asks that at least one distinct valid owner beat the
+harmful token by the configured margin. A premature terminal negative has null
+owner metadata and contributes exactly its terminal token at the shared
+boundary.
+
+The winning positive path then receives a continuation loss from the first
+divergence through row closure. Schema-and-description sites and trusted
+coordinate sites are mean-normalized separately before their non-empty group
+means are combined. Untrusted geometry receives no exact coordinate-token
+continuation loss. The transition term therefore changes the greedy branch
+decision while the continuation term teaches a coherent valid row. It never
+compares a summed long-row likelihood with a one-token terminal likelihood.
 
 **Alternatives rejected:**
 
 - canonical supervised-fine-tuning replay, because the pilot tests direct
   correction at own-prefix failures;
-- one whole-row cross-entropy target, because several next entities are valid
-  and only a short owner-resolving path is the decision surface; and
+- summed whole-row likelihood against a shorter harmful path, because horizon
+  length would determine the comparison; and
 - Gaussian coordinate targets, because reviewed discrete boundary tolerance
   and physical-owner trust are the intended supervision.
 
@@ -269,15 +286,42 @@ explicit replay mode.
 Raw review assets and state-bank source files remain outside the run tree and
 are referenced by identity and checksum.
 
+### 10. Reuse the same pipeline for positive sampled-path imitation
+
+The positive-path profile is a narrow additional use of StateBank replay, not a
+second trainer. Each event contains one positive candidate and no harmful
+candidate. Historical sampled rows remain part of the exact causal prefix but
+receive no gradient. The selected complete row provides two optional site
+groups: schema-and-description and trusted coordinates. Each non-empty group is
+averaged in 32-bit floating point, their means are averaged, and the result is
+multiplied by a precomputed image-balanced event weight.
+
+The assembler, not the trainer, owns route admission, physical-owner trust,
+last-added-owner truncation, and deterministic batch-fit exclusion. The
+trainer validates the declarations and preserves old profile behavior. This
+keeps the scientific policy visible in the research artifact while reusing the
+existing exact replay, optimizer, checkpoint, and inference paths.
+
+The executed 512-event screen shows why this remains a research surface rather
+than a final objective. It shifts greedy output toward the owner set represented
+by the selected sampled routes, but loses ordinary owners at nearly the same
+rate and regresses outside admitted images. Only 118 of 238 route-added owners
+are direct positive-row event targets, so the result does not isolate direct
+owner-wise imitation. A matched-arm preservation-aware successor requires a
+separate research contract; it is not silently added to this single-route
+profile.
+
 ## Risks / Trade-offs
 
 - **Incorrect review labels create direct harmful gradients** -> validate
   physical-entity identifiers, preserve unknown as zero gradient, require
   review provenance, and retain the user spot-audit gate from the research
   unit.
-- **Candidate-path length affects summed likelihood** -> freeze the shortest
-  physical-owner-resolving interval in the bank and log summed, mean, and
-  per-token scores together.
+- **Positive and harmful paths have different lengths** -> compare only their
+  first divergent token, then train the positive continuation with separate
+  mean-normalized entity/schema and trusted-geometry groups.
+- **A locally rescued row harms later coverage** -> require equal row-and-token
+  budget admission evidence before the event becomes gradient-eligible.
 - **Candidate groups split across optimizer steps** -> make event groups atomic
   in the packing and planned-step plan and fail on incomplete groups.
 - **The gate conflicts with a harmful terminal token** -> derive intended type
@@ -292,6 +336,9 @@ are referenced by identity and checksum.
 - **A local margin improves without rollout benefit** -> keep free-rollout
   evaluation outside the training objective and stop according to the research
   unit rather than expanding implementation.
+- **One positive route overwrites other useful routes** -> report targeted-
+  owner gain and ordinary-owner retention separately; do not scale the profile
+  unchanged when final owner coverage is flat or worse.
 
 ## Migration Plan
 

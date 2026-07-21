@@ -5,6 +5,7 @@ import pytest
 from scripts.research.analyze_individual_trajectory_union_support import (
     analyze_rollout_payloads,
     match_prefix,
+    parse_args,
 )
 
 
@@ -77,6 +78,23 @@ def _review(*decisions: dict[str, object]) -> dict[str, object]:
         "schema_version": "individual_trajectory_union_support_review_decisions.v1",
         "decisions": list(decisions),
     }
+
+
+def test_cli_can_select_only_the_fixed_row_budget_needed_by_a_large_panel() -> None:
+    args = parse_args(
+        [
+            "--rollout-artifact",
+            "rollouts",
+            "--annotations",
+            "annotations.jsonl",
+            "--output",
+            "analysis.json",
+            "--budget",
+            "16",
+            "--allow-incomplete-panel",
+        ]
+    )
+    assert args.budgets == [16]
 
 
 def test_duplicate_rows_do_not_increase_unique_owner_coverage() -> None:

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import json
 import math
@@ -44,7 +44,9 @@ _REVIEW_STATUSES = frozenset({"trusted", "unknown", "ambiguous"})
 _ROLES = frozenset({"positive", "harmful", "diagnostic"})
 _HARMFUL_KINDS = frozenset({"duplicate", "premature_terminal"})
 _COVERAGE_STATUSES = frozenset({"uncovered", "covered", "unknown"})
-_PREFIX_COVERAGE_STATUSES = frozenset({"empty", "resolved", "unresolved"})
+_PREFIX_COVERAGE_STATUSES = frozenset(
+    {"empty", "resolved", "unresolved", "target_scoped_noncoverage"}
+)
 _TOKEN_TYPES = frozenset({"desc_text", "schema", "coordinate", "eos"})
 _COORDINATE_AXES = {
     "x1": "horizontal",
@@ -226,6 +228,306 @@ class PrefixCoveredOwnerProof:
             "prefix_object_row_index": self.prefix_object_row_index,
             "owner_id": self.owner_id,
             "review_provenance": self.review_provenance.to_artifact_dict(),
+        }
+
+
+@dataclass(frozen=True)
+class PrefixRowExclusion:
+    """One exact-prefix prior-row exclusion receipt for a target owner."""
+
+    row_index: int
+    prediction_description: str
+    prediction_coord_bins: tuple[int, int, int, int]
+    same_category: bool
+    target_iou: float
+    target_center_inside_prediction: bool
+    prediction_center_inside_target: bool
+    intersection_over_smaller_area: float
+    best_same_class_owner_id: str | None
+    best_same_class_owner_margin: float | None
+    plausible_target_association: bool
+    evidence_reason: str
+
+    @classmethod
+    def from_mapping(
+        cls, value: Mapping[str, Any], *, field: str
+    ) -> "PrefixRowExclusion":
+        checked = _mapping(value, field=field)
+        _require_exact_keys(
+            checked,
+            {
+                "row_index",
+                "prediction_description",
+                "prediction_coord_bins",
+                "same_category",
+                "target_iou",
+                "target_center_inside_prediction",
+                "prediction_center_inside_target",
+                "intersection_over_smaller_area",
+                "best_same_class_owner_id",
+                "best_same_class_owner_margin",
+                "plausible_target_association",
+                "evidence_reason",
+            },
+            field=field,
+        )
+        coords = tuple(
+            _coordinate_value(item, field=f"{field}.prediction_coord_bins[{index}]")
+            for index, item in enumerate(
+                _sequence(checked["prediction_coord_bins"], field=f"{field}.prediction_coord_bins")
+            )
+        )
+        if len(coords) != 4:
+            _fail(
+                "state_bank.noncoverage_prediction_coords",
+                "prior-row prediction coordinates must contain four norm1000 values",
+                field=field,
+            )
+        iou = _finite_float(checked["target_iou"], field=f"{field}.target_iou", minimum=0.0, maximum=1.0)
+        overlap = _finite_float(
+            checked["intersection_over_smaller_area"],
+            field=f"{field}.intersection_over_smaller_area",
+            minimum=0.0,
+            maximum=1.0,
+        )
+        margin = (
+            None
+            if checked["best_same_class_owner_margin"] is None
+            else _finite_float(
+                checked["best_same_class_owner_margin"],
+                field=f"{field}.best_same_class_owner_margin",
+            )
+        )
+        return cls(
+            row_index=_require_nonnegative_int(checked["row_index"], field=f"{field}.row_index"),
+            prediction_description=_string(
+                checked["prediction_description"], field=f"{field}.prediction_description"
+            ),
+            prediction_coord_bins=coords,  # type: ignore[assignment]
+            same_category=_bool(checked["same_category"], field=f"{field}.same_category"),
+            target_iou=iou,
+            target_center_inside_prediction=_bool(
+                checked["target_center_inside_prediction"],
+                field=f"{field}.target_center_inside_prediction",
+            ),
+            prediction_center_inside_target=_bool(
+                checked["prediction_center_inside_target"],
+                field=f"{field}.prediction_center_inside_target",
+            ),
+            intersection_over_smaller_area=overlap,
+            best_same_class_owner_id=_optional_string(
+                checked["best_same_class_owner_id"],
+                field=f"{field}.best_same_class_owner_id",
+            ),
+            best_same_class_owner_margin=margin,
+            plausible_target_association=_bool(
+                checked["plausible_target_association"],
+                field=f"{field}.plausible_target_association",
+            ),
+            evidence_reason=_string(
+                checked["evidence_reason"], field=f"{field}.evidence_reason"
+            ),
+        )
+
+    def to_artifact_dict(self) -> dict[str, Any]:
+        return {
+            "row_index": self.row_index,
+            "prediction_description": self.prediction_description,
+            "prediction_coord_bins": list(self.prediction_coord_bins),
+            "same_category": self.same_category,
+            "target_iou": self.target_iou,
+            "target_center_inside_prediction": self.target_center_inside_prediction,
+            "prediction_center_inside_target": self.prediction_center_inside_target,
+            "intersection_over_smaller_area": self.intersection_over_smaller_area,
+            "best_same_class_owner_id": self.best_same_class_owner_id,
+            "best_same_class_owner_margin": self.best_same_class_owner_margin,
+            "plausible_target_association": self.plausible_target_association,
+            "evidence_reason": self.evidence_reason,
+        }
+
+
+@dataclass(frozen=True)
+class TargetOwnerNoncoverageProof:
+    """Target-scoped noncoverage proof used for premature-terminal events."""
+
+    target_owner_id: str
+    native_terminal_generated_step: int
+    prior_row_count: int
+    thresholds: Mapping[str, float]
+    prior_row_exclusions: tuple[PrefixRowExclusion, ...]
+
+    @classmethod
+    def from_mapping(
+        cls, value: Mapping[str, Any], *, field: str
+    ) -> "TargetOwnerNoncoverageProof":
+        checked = _mapping(value, field=field)
+        _require_exact_keys(
+            checked,
+            {
+                "target_owner_id",
+                "native_terminal_generated_step",
+                "prior_row_count",
+                "thresholds",
+                "prior_row_exclusions",
+            },
+            field=field,
+        )
+        thresholds_raw = _mapping(checked["thresholds"], field=f"{field}.thresholds")
+        if not thresholds_raw:
+            _fail(
+                "state_bank.noncoverage_thresholds_empty",
+                "target noncoverage proof requires thresholds",
+                field=field,
+            )
+        thresholds = {
+            _string(key, field=f"{field}.thresholds.key"): _finite_float(
+                raw, field=f"{field}.thresholds.{key}"
+            )
+            for key, raw in thresholds_raw.items()
+        }
+        exclusions = tuple(
+            PrefixRowExclusion.from_mapping(
+                item, field=f"{field}.prior_row_exclusions[{index}]"
+            )
+            for index, item in enumerate(
+                _sequence(checked["prior_row_exclusions"], field=f"{field}.prior_row_exclusions")
+            )
+        )
+        prior_count = _require_nonnegative_int(
+            checked["prior_row_count"], field=f"{field}.prior_row_count"
+        )
+        if tuple(item.row_index for item in exclusions) != tuple(range(prior_count)):
+            _fail(
+                "state_bank.noncoverage_row_exclusions",
+                "target noncoverage proof must contain one ordered exclusion for every prior row",
+                field=field,
+                expected=list(range(prior_count)),
+                actual=[item.row_index for item in exclusions],
+            )
+        return cls(
+            target_owner_id=_string(
+                checked["target_owner_id"], field=f"{field}.target_owner_id"
+            ),
+            native_terminal_generated_step=_require_nonnegative_int(
+                checked["native_terminal_generated_step"],
+                field=f"{field}.native_terminal_generated_step",
+            ),
+            prior_row_count=prior_count,
+            thresholds=freeze_json(thresholds),
+            prior_row_exclusions=exclusions,
+        )
+
+    def to_artifact_dict(self) -> dict[str, Any]:
+        return {
+            "target_owner_id": self.target_owner_id,
+            "native_terminal_generated_step": self.native_terminal_generated_step,
+            "prior_row_count": self.prior_row_count,
+            "thresholds": _thaw(self.thresholds),
+            "prior_row_exclusions": [
+                item.to_artifact_dict() for item in self.prior_row_exclusions
+            ],
+        }
+
+
+@dataclass(frozen=True)
+class CounterfactualAdmissionEvidence:
+    """Fixed-budget evidence required by a newly admitted entity event.
+
+    This is deliberately evidence, not a derived label.  The offline collector
+    must state the budgets and downstream review outcome explicitly.  Historical
+    banks may omit this field; newly assembled treatment banks should require it
+    before training.
+    """
+
+    row_budget: Mapping[str, int]
+    generated_token_budget: Mapping[str, int]
+    target_owner_retained: bool
+    verified_owner_delta: Mapping[str, tuple[str, ...]]
+    confirmed_new_duplicate_count: int
+    confirmed_new_malformed_count: int
+    confirmed_new_unsupported_entity_count: int
+    unknown_suffix_neutral: bool
+    unknown_suffix_provenance: Mapping[str, Any]
+
+    @classmethod
+    def from_mapping(
+        cls, value: Mapping[str, Any], *, field: str
+    ) -> "CounterfactualAdmissionEvidence":
+        checked = _mapping(value, field=field)
+        _require_exact_keys(
+            checked,
+            {
+                "row_budget",
+                "generated_token_budget",
+                "target_owner_retained",
+                "verified_owner_delta",
+                "confirmed_new_duplicate_count",
+                "confirmed_new_malformed_count",
+                "confirmed_new_unsupported_entity_count",
+                "unknown_suffix_neutral",
+                "unknown_suffix_provenance",
+            },
+            field=field,
+        )
+        row_budget = _budget_pair(checked["row_budget"], field=f"{field}.row_budget")
+        token_budget = _budget_pair(
+            checked["generated_token_budget"],
+            field=f"{field}.generated_token_budget",
+        )
+        delta = _owner_delta(
+            checked["verified_owner_delta"],
+            field=f"{field}.verified_owner_delta",
+        )
+        suffix_provenance = _mapping(
+            checked["unknown_suffix_provenance"],
+            field=f"{field}.unknown_suffix_provenance",
+        )
+        if not suffix_provenance:
+            _fail(
+                "state_bank.unknown_suffix_provenance_empty",
+                "unknown suffix neutrality requires non-empty provenance",
+                field=field,
+            )
+        return cls(
+            row_budget=row_budget,
+            generated_token_budget=token_budget,
+            target_owner_retained=_bool(
+                checked["target_owner_retained"],
+                field=f"{field}.target_owner_retained",
+            ),
+            verified_owner_delta=delta,
+            confirmed_new_duplicate_count=_require_nonnegative_int(
+                checked["confirmed_new_duplicate_count"],
+                field=f"{field}.confirmed_new_duplicate_count",
+            ),
+            confirmed_new_malformed_count=_require_nonnegative_int(
+                checked["confirmed_new_malformed_count"],
+                field=f"{field}.confirmed_new_malformed_count",
+            ),
+            confirmed_new_unsupported_entity_count=_require_nonnegative_int(
+                checked["confirmed_new_unsupported_entity_count"],
+                field=f"{field}.confirmed_new_unsupported_entity_count",
+            ),
+            unknown_suffix_neutral=_bool(
+                checked["unknown_suffix_neutral"],
+                field=f"{field}.unknown_suffix_neutral",
+            ),
+            unknown_suffix_provenance=freeze_json(suffix_provenance),
+        )
+
+    def to_artifact_dict(self) -> dict[str, Any]:
+        return {
+            "row_budget": _thaw(self.row_budget),
+            "generated_token_budget": _thaw(self.generated_token_budget),
+            "target_owner_retained": self.target_owner_retained,
+            "verified_owner_delta": {
+                key: list(value) for key, value in self.verified_owner_delta.items()
+            },
+            "confirmed_new_duplicate_count": self.confirmed_new_duplicate_count,
+            "confirmed_new_malformed_count": self.confirmed_new_malformed_count,
+            "confirmed_new_unsupported_entity_count": self.confirmed_new_unsupported_entity_count,
+            "unknown_suffix_neutral": self.unknown_suffix_neutral,
+            "unknown_suffix_provenance": _thaw(self.unknown_suffix_provenance),
         }
 
 
@@ -813,7 +1115,7 @@ class StateBankCandidate:
                         field=field,
                         missing_offsets=missing_sites,
                     )
-                if self.geometry_review_status != "trusted":
+                if self.geometry_review_status != "trusted" and self.role != "positive":
                     coordinate_offsets = [
                         site.candidate_token_offset
                         for site in self.selected_sites
@@ -938,37 +1240,69 @@ class StateBankEvent:
     prefix_object_row_count: int
     prefix_coverage_status: str
     prefix_covered_owner_proofs: tuple[PrefixCoveredOwnerProof, ...]
+    target_owner_noncoverage_proof: TargetOwnerNoncoverageProof | None
     entity_transition_eligible: bool
     coordinate_boundary_eligible: bool
+    counterfactual_admission: CounterfactualAdmissionEvidence | None
     candidates: tuple[StateBankCandidate, ...]
     review_provenance: Mapping[str, Any]
+    # Optional event-local route metadata.  Missing keys in historical banks
+    # intentionally retain the neutral defaults so their profile behavior is
+    # unchanged.
+    positive_path_imitation_eligible: bool = False
+    image_balanced_event_weight: float = 1.0
+
+    @property
+    def counterfactual_admission_present(self) -> bool:
+        """Whether this event carries explicit new-admission evidence."""
+
+        return self.counterfactual_admission is not None
 
     @classmethod
     def from_mapping(
         cls, value: Mapping[str, Any], *, field: str = "event"
     ) -> "StateBankEvent":
         checked = _mapping(value, field=field)
+        required_keys = {
+            "event_id",
+            "image",
+            "split",
+            "split_group_id",
+            "executed_prompt_token_ids",
+            "executed_prompt_token_ids_sha256",
+            "image_pad_interval",
+            "prefix_token_ids",
+            "prefix_token_ids_sha256",
+            "physical_entities",
+            "prefix_object_row_count",
+            "prefix_coverage_status",
+            "prefix_covered_owner_proofs",
+        "entity_transition_eligible",
+        "coordinate_boundary_eligible",
+        "candidates",
+        "review_provenance",
+        }
+        optional_keys = {
+            "counterfactual_admission",
+            "target_owner_noncoverage_proof",
+            "positive_path_imitation_eligible",
+            "image_balanced_event_weight",
+        }
+        unexpected_keys = set(checked) - required_keys - optional_keys
+        if unexpected_keys:
+            _fail(
+                "state_bank.keys",
+                "state-bank event contains unsupported keys",
+                field=field,
+                unexpected=sorted(unexpected_keys),
+            )
         _require_exact_keys(
-            checked,
             {
-                "event_id",
-                "image",
-                "split",
-                "split_group_id",
-                "executed_prompt_token_ids",
-                "executed_prompt_token_ids_sha256",
-                "image_pad_interval",
-                "prefix_token_ids",
-                "prefix_token_ids_sha256",
-                "physical_entities",
-                "prefix_object_row_count",
-                "prefix_coverage_status",
-                "prefix_covered_owner_proofs",
-                "entity_transition_eligible",
-                "coordinate_boundary_eligible",
-                "candidates",
-                "review_provenance",
+                key: value
+                for key, value in checked.items()
+                if key not in optional_keys
             },
+            required_keys,
             field=field,
         )
         prompt_ids = _token_ids(
@@ -1057,6 +1391,17 @@ class StateBankEvent:
             _PREFIX_COVERAGE_STATUSES,
             field=f"{field}.prefix_coverage_status",
         )
+        target_noncoverage = (
+            None
+            if checked.get("target_owner_noncoverage_proof") is None
+            else TargetOwnerNoncoverageProof.from_mapping(
+                _mapping(
+                    checked["target_owner_noncoverage_proof"],
+                    field=f"{field}.target_owner_noncoverage_proof",
+                ),
+                field=f"{field}.target_owner_noncoverage_proof",
+            )
+        )
         if proof_indices != tuple(range(len(prefix_owner_proofs))):
             _fail(
                 "state_bank.prefix_owner_proof_rows",
@@ -1089,6 +1434,22 @@ class StateBankEvent:
                     prefix_token_count=len(prefix_ids),
                     proof_count=len(prefix_owner_proofs),
                     proof_row_indices=list(proof_indices),
+                )
+        elif prefix_coverage_status == "target_scoped_noncoverage":
+            if (
+                prefix_object_row_count < 0
+                or (prefix_object_row_count > 0 and not prefix_ids)
+                or prefix_owner_proofs
+                or target_noncoverage is None
+                or target_noncoverage.prior_row_count != prefix_object_row_count
+            ):
+                _fail(
+                    "state_bank.target_noncoverage_shape",
+                    "target-scoped noncoverage requires a matching target proof, exact prefix rows, and no covered-owner proofs",
+                    field=field,
+                    prefix_object_row_count=prefix_object_row_count,
+                    prefix_token_count=len(prefix_ids),
+                    proof_count=len(prefix_owner_proofs),
                 )
         else:
             if (
@@ -1143,11 +1504,31 @@ class StateBankEvent:
                 checked["coordinate_boundary_eligible"],
                 field=f"{field}.coordinate_boundary_eligible",
             ),
+            counterfactual_admission=(
+                None
+                if checked.get("counterfactual_admission") is None
+                else CounterfactualAdmissionEvidence.from_mapping(
+                    _mapping(
+                        checked["counterfactual_admission"],
+                        field=f"{field}.counterfactual_admission",
+                    ),
+                    field=f"{field}.counterfactual_admission",
+                )
+            ),
+            target_owner_noncoverage_proof=target_noncoverage,
             candidates=candidates,
             review_provenance=freeze_json(
                 _mapping(
                     checked["review_provenance"], field=f"{field}.review_provenance"
                 )
+            ),
+            positive_path_imitation_eligible=_bool(
+                checked.get("positive_path_imitation_eligible", False),
+                field=f"{field}.positive_path_imitation_eligible",
+            ),
+            image_balanced_event_weight=_positive_event_weight(
+                checked.get("image_balanced_event_weight", 1.0),
+                field=f"{field}.image_balanced_event_weight",
             ),
         )
         event._validate_semantics(field=field)
@@ -1266,6 +1647,103 @@ class StateBankEvent:
                         candidate_id=candidate.candidate_id,
                         owner_id=candidate.physical_owner_id,
                     )
+        if self.entity_transition_eligible:
+            for candidate in self.candidates:
+                if (
+                    not candidate.entity_eligible
+                    or candidate.harmful_kind == "premature_terminal"
+                    or candidate.geometry_review_status == "trusted"
+                    or candidate.owner_resolution_interval is None
+                ):
+                    continue
+                start, end = candidate.owner_resolution_interval
+                coordinate_offsets = [
+                    site.candidate_token_offset
+                    for site in candidate.selected_sites
+                    if (
+                        start <= site.candidate_token_offset < end
+                        and site.intended_token_type == "coordinate"
+                    )
+                ]
+                if coordinate_offsets:
+                    _fail(
+                        "state_bank.entity_transition_geometry_untrusted",
+                        "entity-transition ownership cannot resolve through untrusted coordinate sites",
+                        event_id=self.event_id,
+                        candidate_id=candidate.candidate_id,
+                        coordinate_offsets=coordinate_offsets,
+                    )
+        if self.positive_path_imitation_eligible:
+            self._validate_positive_path_imitation_event(
+                entity_by_id,
+                field=field,
+            )
+            return
+        if self.counterfactual_admission is not None:
+            self._validate_admission_evidence(
+                self.counterfactual_admission,
+                entity_by_id,
+                field=field,
+            )
+        if self.prefix_coverage_status == "target_scoped_noncoverage":
+            proof = self.target_owner_noncoverage_proof
+            if not self.entity_transition_eligible or proof is None:
+                _fail(
+                    "state_bank.target_noncoverage_entity_event",
+                    "target-scoped noncoverage is only valid for entity-transition events with a proof",
+                    event_id=self.event_id,
+                )
+            if self.counterfactual_admission is None:
+                _fail(
+                    "state_bank.target_noncoverage_admission_missing",
+                    "target-scoped noncoverage gradient events require counterfactual admission evidence",
+                    event_id=self.event_id,
+                )
+            assert proof is not None
+            target_owner = entity_by_id.get(proof.target_owner_id)
+            if target_owner is None or not target_owner.entity_trusted:
+                _fail(
+                    "state_bank.target_noncoverage_owner_untrusted",
+                    "target-scoped noncoverage target owner must be trusted in the physical ledger",
+                    event_id=self.event_id,
+                    owner_id=proof.target_owner_id,
+                )
+            if any(item.plausible_target_association for item in proof.prior_row_exclusions):
+                _fail(
+                    "state_bank.target_noncoverage_plausible_row",
+                    "target-scoped noncoverage proof cannot contain a plausible prior-row association",
+                    event_id=self.event_id,
+                )
+            positive_owner_ids = {
+                candidate.physical_owner_id
+                for candidate in self.candidates
+                if candidate.role == "positive" and candidate.entity_eligible
+            }
+            if proof.target_owner_id not in positive_owner_ids:
+                _fail(
+                    "state_bank.target_noncoverage_target_not_positive",
+                    "target-scoped noncoverage target must be an entity-eligible positive owner",
+                    event_id=self.event_id,
+                    owner_id=proof.target_owner_id,
+                )
+            harmful_kinds = {
+                candidate.harmful_kind
+                for candidate in self.candidates
+                if candidate.role == "harmful" and candidate.entity_eligible
+            }
+            if harmful_kinds != {"premature_terminal"}:
+                _fail(
+                    "state_bank.target_noncoverage_harmful_kind",
+                    "target-scoped noncoverage events may use only a premature-terminal harmful branch",
+                    event_id=self.event_id,
+                    harmful_kinds=sorted(item or "null" for item in harmful_kinds),
+                )
+        elif self.target_owner_noncoverage_proof is not None:
+            _fail(
+                "state_bank.target_noncoverage_status",
+                "target noncoverage proof requires target_scoped_noncoverage coverage status",
+                event_id=self.event_id,
+            )
         entity_candidates = [
             candidate for candidate in self.candidates if candidate.entity_eligible
         ]
@@ -1313,7 +1791,8 @@ class StateBankEvent:
                 )
         if (
             self.entity_transition_eligible
-            and self.prefix_coverage_status != "resolved"
+            and self.prefix_coverage_status
+            not in {"resolved", "target_scoped_noncoverage"}
         ):
             _fail(
                 "state_bank.entity_prefix_coverage_not_resolved",
@@ -1430,6 +1909,217 @@ class StateBankEvent:
                 event_id=self.event_id,
             )
 
+    def _validate_positive_path_imitation_event(
+        self,
+        entity_by_id: Mapping[str, PhysicalEntity],
+        *,
+        field: str,
+    ) -> None:
+        """Validate the isolated one-row positive-path imitation profile.
+
+        This route is intentionally independent from entity-transition and
+        coordinate-boundary preference events.  Its exact prefix is merely
+        conditioning context; even unresolved prior rows therefore remain
+        admissible when the sampled candidate itself is a trusted first
+        owner match.
+        """
+
+        if self.entity_transition_eligible or self.coordinate_boundary_eligible:
+            _fail(
+                "state_bank.positive_path_event_flags",
+                "positive-path imitation events must disable transition and coordinate-boundary eligibility",
+                event_id=self.event_id,
+                entity_transition_eligible=self.entity_transition_eligible,
+                coordinate_boundary_eligible=self.coordinate_boundary_eligible,
+            )
+        if self.prefix_coverage_status not in {"empty", "resolved", "unresolved"}:
+            _fail(
+                "state_bank.positive_path_prefix_coverage",
+                "positive-path imitation permits only empty, resolved, or unresolved prefix coverage",
+                event_id=self.event_id,
+                prefix_coverage_status=self.prefix_coverage_status,
+            )
+        if self.target_owner_noncoverage_proof is not None:
+            _fail(
+                "state_bank.positive_path_target_noncoverage",
+                "positive-path imitation must not carry target-scoped noncoverage proof",
+                event_id=self.event_id,
+            )
+        if self.counterfactual_admission is not None:
+            _fail(
+                "state_bank.positive_path_counterfactual",
+                "positive-path imitation must not carry counterfactual admission evidence",
+                event_id=self.event_id,
+            )
+        if len(self.candidates) != 1:
+            _fail(
+                "state_bank.positive_path_candidate_count",
+                "positive-path imitation requires exactly one candidate row",
+                event_id=self.event_id,
+                candidate_count=len(self.candidates),
+            )
+        candidate = self.candidates[0]
+        if candidate.role != "positive" or candidate.harmful_kind is not None:
+            _fail(
+                "state_bank.positive_path_candidate_role",
+                "positive-path imitation requires one non-harmful positive candidate",
+                event_id=self.event_id,
+                candidate_id=candidate.candidate_id,
+                role=candidate.role,
+                harmful_kind=candidate.harmful_kind,
+            )
+        if candidate.generation_provenance.mode != "sampled":
+            _fail(
+                "state_bank.positive_path_not_sampled",
+                "positive-path imitation candidate must have sampled provenance",
+                event_id=self.event_id,
+                candidate_id=candidate.candidate_id,
+                mode=candidate.generation_provenance.mode,
+            )
+        if candidate.entity_review_status != "trusted" or not candidate.entity_eligible:
+            _fail(
+                "state_bank.positive_path_entity_untrusted",
+                "positive-path imitation candidate must be entity-trusted and entity-eligible",
+                event_id=self.event_id,
+                candidate_id=candidate.candidate_id,
+                entity_review_status=candidate.entity_review_status,
+                entity_eligible=candidate.entity_eligible,
+            )
+        if candidate.coverage_status != "uncovered":
+            _fail(
+                "state_bank.positive_path_coverage",
+                "positive-path imitation candidate must be an uncovered route-local owner match",
+                event_id=self.event_id,
+                candidate_id=candidate.candidate_id,
+                coverage_status=candidate.coverage_status,
+            )
+        if candidate.physical_owner_id is None or candidate.owner_resolution_interval is None:
+            _fail(
+                "state_bank.positive_path_owner_interval",
+                "positive-path imitation candidate requires a physical owner and full row interval",
+                event_id=self.event_id,
+                candidate_id=candidate.candidate_id,
+            )
+        owner = entity_by_id.get(candidate.physical_owner_id)
+        if owner is None or not owner.entity_trusted:
+            _fail(
+                "state_bank.positive_path_owner_untrusted",
+                "positive-path imitation owner must be trusted in the physical ledger",
+                event_id=self.event_id,
+                candidate_id=candidate.candidate_id,
+                owner_id=candidate.physical_owner_id,
+            )
+        start, end = candidate.owner_resolution_interval
+        if start != 0 or end != len(candidate.token_ids):
+            _fail(
+                "state_bank.positive_path_full_row_interval",
+                "positive-path imitation owner interval must cover the complete generated row from offset zero",
+                event_id=self.event_id,
+                candidate_id=candidate.candidate_id,
+                interval=[start, end],
+                token_count=len(candidate.token_ids),
+            )
+        expected_offsets = set(range(len(candidate.token_ids)))
+        actual_offsets = {site.candidate_token_offset for site in candidate.selected_sites}
+        if actual_offsets != expected_offsets:
+            _fail(
+                "state_bank.positive_path_selected_sites",
+                "positive-path imitation must select every generated row site exactly once",
+                event_id=self.event_id,
+                candidate_id=candidate.candidate_id,
+                expected_offsets=sorted(expected_offsets),
+                actual_offsets=sorted(actual_offsets),
+            )
+        if any(site.intended_token_type == "eos" for site in candidate.selected_sites):
+            _fail(
+                "state_bank.positive_path_eos_site",
+                "positive-path imitation must not add an EOS target site",
+                event_id=self.event_id,
+                candidate_id=candidate.candidate_id,
+            )
+
+    def _validate_admission_evidence(
+        self,
+        admission: CounterfactualAdmissionEvidence,
+        entity_by_id: Mapping[str, PhysicalEntity],
+        *,
+        field: str,
+    ) -> None:
+        if not self.entity_transition_eligible:
+            _fail(
+                "state_bank.admission_without_entity_event",
+                "counterfactual admission evidence is only valid for entity-transition events",
+                event_id=self.event_id,
+            )
+        if admission.row_budget["native"] != admission.row_budget["counterfactual"]:
+            _fail(
+                "state_bank.admission_row_budget_mismatch",
+                "native and counterfactual row budgets must be equal",
+                event_id=self.event_id,
+                row_budget=_thaw(admission.row_budget),
+            )
+        if admission.generated_token_budget["native"] != admission.generated_token_budget["counterfactual"]:
+            _fail(
+                "state_bank.admission_token_budget_mismatch",
+                "native and counterfactual generated-token budgets must be equal",
+                event_id=self.event_id,
+                generated_token_budget=_thaw(admission.generated_token_budget),
+            )
+        if not admission.target_owner_retained:
+            _fail(
+                "state_bank.admission_target_owner_not_retained",
+                "admitted counterfactual must retain its intended target owner",
+                event_id=self.event_id,
+            )
+        if not admission.unknown_suffix_neutral:
+            _fail(
+                "state_bank.admission_unknown_suffix_non_neutral",
+                "unknown suffix rows must remain neutral",
+                event_id=self.event_id,
+            )
+        harm_counts = {
+            "duplicate": admission.confirmed_new_duplicate_count,
+            "malformed": admission.confirmed_new_malformed_count,
+            "unsupported_entity": admission.confirmed_new_unsupported_entity_count,
+        }
+        if any(count != 0 for count in harm_counts.values()):
+            _fail(
+                "state_bank.admission_confirmed_new_harm",
+                "admitted counterfactual must add no confirmed downstream harm",
+                event_id=self.event_id,
+                counts=harm_counts,
+            )
+        added = set(admission.verified_owner_delta["added_owner_ids"])
+        removed = set(admission.verified_owner_delta["removed_owner_ids"])
+        if not added and not removed:
+            _fail(
+                "state_bank.admission_empty_owner_delta",
+                "admitted counterfactual must change the verified owner set",
+                event_id=self.event_id,
+            )
+        unknown_owner_ids = (added | removed) - set(entity_by_id)
+        if unknown_owner_ids:
+            _fail(
+                "state_bank.admission_owner_missing",
+                "verified owner delta references an absent physical entity",
+                event_id=self.event_id,
+                owner_ids=sorted(unknown_owner_ids),
+            )
+        positive_owner_ids = {
+            candidate.physical_owner_id
+            for candidate in self.candidates
+            if candidate.role == "positive" and candidate.entity_eligible
+        }
+        positive_owner_ids.discard(None)
+        if not added & positive_owner_ids:
+            _fail(
+                "state_bank.admission_positive_owner_delta",
+                "verified owner delta must add an admitted positive physical owner",
+                event_id=self.event_id,
+                added_owner_ids=sorted(added),
+                positive_owner_ids=sorted(positive_owner_ids),
+            )
+
     def to_raw_example(self, *, example_id: str) -> RawExample:
         image = ImageRef(
             declared_path=str(self.image.path),
@@ -1472,7 +2162,7 @@ class StateBankEvent:
         )
 
     def to_artifact_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "event_id": self.event_id,
             "image": self.image.to_artifact_dict(),
             "split": self.split,
@@ -1492,11 +2182,22 @@ class StateBankEvent:
             ],
             "entity_transition_eligible": self.entity_transition_eligible,
             "coordinate_boundary_eligible": self.coordinate_boundary_eligible,
+            "positive_path_imitation_eligible": self.positive_path_imitation_eligible,
+            "image_balanced_event_weight": self.image_balanced_event_weight,
             "candidates": [
                 candidate.to_artifact_dict() for candidate in self.candidates
             ],
             "review_provenance": _thaw(self.review_provenance),
         }
+        if self.counterfactual_admission is not None:
+            result["counterfactual_admission"] = (
+                self.counterfactual_admission.to_artifact_dict()
+            )
+        if self.target_owner_noncoverage_proof is not None:
+            result["target_owner_noncoverage_proof"] = (
+                self.target_owner_noncoverage_proof.to_artifact_dict()
+            )
+        return result
 
 
 @dataclass(frozen=True)
@@ -1795,6 +2496,7 @@ def assemble_state_bank(
             "assembler produced no accepted state-bank records",
         )
     records.sort(key=lambda item: item.event_id)
+    records = list(_normalize_image_balanced_event_weights(tuple(records)))
     _validate_record_collection(tuple(records))
     source_checkpoint_id = sha256_json(checkpoint.to_artifact_dict())
     _validate_record_checkpoint_provenance(
@@ -1810,6 +2512,46 @@ def assemble_state_bank(
             for index, item in enumerate(source_artifacts)
         ),
         rejection_reasons=dict(sorted(rejection_reasons.items())),
+    )
+
+
+def _normalize_image_balanced_event_weights(
+    records: tuple[StateBankEvent, ...],
+) -> tuple[StateBankEvent, ...]:
+    """Normalize positive-path training weights to global mean one.
+
+    The review/assembly stage owns image balancing; the trainer therefore
+    consumes a fixed event weight without introducing a second denominator.
+    Historical rows and non-training rows remain unchanged.
+    """
+
+    if not records:
+        return records
+    positive_path_training_records = tuple(
+        item
+        for item in records
+        if item.positive_path_imitation_eligible and item.split == "train"
+    )
+    if not positive_path_training_records:
+        return records
+    mean_weight = math.fsum(
+        item.image_balanced_event_weight
+        for item in positive_path_training_records
+    ) / len(positive_path_training_records)
+    if not math.isfinite(mean_weight) or mean_weight <= 0.0:
+        _fail(
+            "state_bank.image_balanced_event_weight_mean",
+            "accepted event weights must have a finite positive global mean",
+            mean_weight=mean_weight,
+        )
+    return tuple(
+        replace(
+            item,
+            image_balanced_event_weight=item.image_balanced_event_weight / mean_weight,
+        )
+        if item.positive_path_imitation_eligible and item.split == "train"
+        else item
+        for item in records
     )
 
 
@@ -1972,17 +2714,68 @@ def validate_state_bank_token_identity(
                             actual_token_id=actual_coordinate_id,
                         )
             if (
+                event.positive_path_imitation_eligible
+                and candidate.role == "positive"
+            ):
+                mislabeled_positive_path_sites = []
+                for site in candidate.selected_sites:
+                    token_id = candidate.token_ids[site.candidate_token_offset]
+                    is_coordinate_token = token_id in coordinate_token_id_set
+                    declared_coordinate = site.intended_token_type == "coordinate"
+                    if is_coordinate_token != declared_coordinate:
+                        mislabeled_positive_path_sites.append(
+                            {
+                                "candidate_token_offset": site.candidate_token_offset,
+                                "token_id": token_id,
+                                "intended_token_type": site.intended_token_type,
+                            }
+                        )
+                if mislabeled_positive_path_sites:
+                    _fail(
+                        "state_bank.positive_path_token_type_identity",
+                        "positive-path selected-site type disagrees with the bound coordinate-token identity",
+                        event_id=event.event_id,
+                        candidate_id=candidate.candidate_id,
+                        sites=mislabeled_positive_path_sites,
+                    )
+            if (
                 candidate.entity_eligible
                 and candidate.harmful_kind != "premature_terminal"
                 and candidate.owner_resolution_interval is not None
                 and candidate.geometry_review_status != "trusted"
             ):
                 start, end = candidate.owner_resolution_interval
+                selected_site_types = {
+                    site.candidate_token_offset: site.intended_token_type
+                    for site in candidate.selected_sites
+                }
                 actual_coordinate_offsets = [
                     offset
                     for offset in range(start, end)
                     if candidate.token_ids[offset] in coordinate_token_id_set
                 ]
+                mislabeled_coordinate_offsets = [
+                    offset
+                    for offset in actual_coordinate_offsets
+                    if selected_site_types.get(offset) != "coordinate"
+                ]
+                if mislabeled_coordinate_offsets:
+                    _fail(
+                        "state_bank.entity_transition_geometry_untrusted",
+                        "coordinate token inside an entity interval cannot be mislabeled as a non-coordinate site",
+                        event_id=event.event_id,
+                        candidate_id=candidate.candidate_id,
+                        coordinate_offsets=mislabeled_coordinate_offsets,
+                    )
+                if (
+                    event.positive_path_imitation_eligible
+                    and candidate.role == "positive"
+                ):
+                    # Coherent positive-row continuation may retain coordinate
+                    # sites with unknown geometry; the trainer masks those sites
+                    # from coordinate loss. Exact coordinate-boundary evidence
+                    # remains guarded by CoordinateDecision and geometry_eligible.
+                    continue
                 if actual_coordinate_offsets:
                     _fail(
                         "state_bank.entity_transition_geometry_untrusted",
@@ -2012,9 +2805,7 @@ def _join_rollout_and_review(
         },
         field=f"rollout[{rollout.get('event_id', '?')}]",
     )
-    _require_exact_keys(
-        review,
-        {
+    review_required_keys = {
             "event_id",
             "admission_status",
             "rejection_reason",
@@ -2026,7 +2817,28 @@ def _join_rollout_and_review(
             "coordinate_boundary_eligible",
             "candidates",
             "review_provenance",
+        }
+    optional_review_keys = {
+        "counterfactual_admission",
+        "target_owner_noncoverage_proof",
+        "positive_path_imitation_eligible",
+        "image_balanced_event_weight",
+    }
+    unexpected_review_keys = set(review) - review_required_keys - optional_review_keys
+    if unexpected_review_keys:
+        _fail(
+            "state_bank.assembler_review_keys",
+            "review row contains unsupported keys",
+            event_id=review.get("event_id", "?"),
+            unexpected=sorted(unexpected_review_keys),
+        )
+    _require_exact_keys(
+        {
+            key: value
+            for key, value in review.items()
+            if key not in optional_review_keys
         },
+        review_required_keys,
         field=f"review[{review.get('event_id', '?')}]",
     )
     event_id = _string(rollout["event_id"], field="rollout.event_id")
@@ -2106,6 +2918,16 @@ def _join_rollout_and_review(
         "prefix_covered_owner_proofs": review["prefix_covered_owner_proofs"],
         "entity_transition_eligible": review["entity_transition_eligible"],
         "coordinate_boundary_eligible": review["coordinate_boundary_eligible"],
+        "counterfactual_admission": review.get("counterfactual_admission"),
+        "target_owner_noncoverage_proof": review.get(
+            "target_owner_noncoverage_proof"
+        ),
+        "positive_path_imitation_eligible": review.get(
+            "positive_path_imitation_eligible", False
+        ),
+        "image_balanced_event_weight": review.get(
+            "image_balanced_event_weight", 1.0
+        ),
         "candidates": joined_candidates,
         "review_provenance": review["review_provenance"],
     }
@@ -2199,7 +3021,7 @@ def _validate_record_collection(records: tuple[StateBankEvent, ...]) -> None:
     )
     assignment_by_image: dict[int, tuple[str, str, str]] = {}
     assignment_by_content: dict[str, tuple[str, str]] = {}
-    train_counts: Counter[int] = Counter()
+    train_records_by_image: dict[int, list[StateBankEvent]] = {}
     for record in records:
         _reject_blind_image_id(
             record.image.image_id, field=f"event[{record.event_id}].image_id"
@@ -2225,15 +3047,73 @@ def _validate_record_collection(records: tuple[StateBankEvent, ...]) -> None:
                 content_sha256=record.image.content_sha256,
             )
         if record.split == "train":
-            train_counts[record.image.image_id] += 1
-    excessive = {
-        image_id: count for image_id, count in train_counts.items() if count > 4
-    }
+            train_records_by_image.setdefault(record.image.image_id, []).append(record)
+    excessive: dict[int, int] = {}
+    excessive_positive_paths: dict[int, int] = {}
+    for image_id, image_records in train_records_by_image.items():
+        count = len(image_records)
+        if count <= 4:
+            continue
+        if all(record.positive_path_imitation_eligible for record in image_records):
+            if count > 16:
+                excessive_positive_paths[image_id] = count
+            continue
+        excessive[image_id] = count
     if excessive:
         _fail(
             "state_bank.max_train_states_per_image",
             "pilot permits at most four training states per image",
             counts=excessive,
+        )
+    if excessive_positive_paths:
+        _fail(
+            "state_bank.max_positive_path_states_per_image",
+            "positive-path pilot permits at most sixteen training rows per image",
+            counts=excessive_positive_paths,
+        )
+    _validate_positive_path_image_balanced_event_weights(records)
+
+
+def _validate_positive_path_image_balanced_event_weights(
+    records: tuple[StateBankEvent, ...],
+) -> None:
+    positive_path_records = tuple(
+        record
+        for record in records
+        if record.positive_path_imitation_eligible and record.split == "train"
+    )
+    if not positive_path_records:
+        return
+    mean_weight = math.fsum(
+        record.image_balanced_event_weight for record in positive_path_records
+    ) / len(positive_path_records)
+    if not math.isclose(mean_weight, 1.0, rel_tol=1e-9, abs_tol=1e-12):
+        _fail(
+            "state_bank.positive_path_event_weight_mean",
+            "positive-path event weights must have global mean one",
+            mean_weight=mean_weight,
+        )
+    weights_by_image: dict[int, list[float]] = {}
+    for record in positive_path_records:
+        weights_by_image.setdefault(record.image.image_id, []).append(
+            record.image_balanced_event_weight
+        )
+    totals_by_image = {
+        image_id: math.fsum(weights)
+        for image_id, weights in weights_by_image.items()
+    }
+    reference_total = next(iter(totals_by_image.values()))
+    unequal_totals = {
+        image_id: total
+        for image_id, total in sorted(totals_by_image.items())
+        if not math.isclose(total, reference_total, rel_tol=1e-9, abs_tol=1e-12)
+    }
+    if unequal_totals:
+        _fail(
+            "state_bank.positive_path_image_weight_totals",
+            "positive-path records must assign equal total weight to every admitted image",
+            reference_total=reference_total,
+            unequal_totals=unequal_totals,
         )
 
 
@@ -2311,13 +3191,16 @@ def _record_counts(
     split_counts = Counter(record.split for record in records)
     family_counts = Counter()
     for record in records:
-        if record.entity_transition_eligible:
+        if record.positive_path_imitation_eligible:
+            family_counts["positive_path_imitation"] += 1
+        elif record.entity_transition_eligible:
             family_counts["entity_transition"] += 1
         if record.coordinate_boundary_eligible:
             family_counts["coordinate_boundary"] += 1
         if (
             not record.entity_transition_eligible
             and not record.coordinate_boundary_eligible
+            and not record.positive_path_imitation_eligible
         ):
             family_counts["diagnostic_only"] += 1
     return dict(sorted(split_counts.items())), dict(sorted(family_counts.items()))
@@ -2465,6 +3348,52 @@ def _coordinate_values(value: Any, *, field: str) -> tuple[int, ...]:
             field=field,
         )
     return tuple(sorted(values))
+
+
+def _budget_pair(value: Any, *, field: str) -> Mapping[str, int]:
+    checked = _mapping(value, field=field)
+    _require_exact_keys(checked, {"native", "counterfactual"}, field=field)
+    return freeze_json(
+        {
+            "native": _require_positive_int(
+                checked["native"], field=f"{field}.native"
+            ),
+            "counterfactual": _require_positive_int(
+                checked["counterfactual"], field=f"{field}.counterfactual"
+            ),
+        }
+    )
+
+
+def _owner_delta(value: Any, *, field: str) -> Mapping[str, tuple[str, ...]]:
+    checked = _mapping(value, field=field)
+    _require_exact_keys(
+        checked,
+        {"added_owner_ids", "removed_owner_ids"},
+        field=field,
+    )
+    result: dict[str, tuple[str, ...]] = {}
+    for key in ("added_owner_ids", "removed_owner_ids"):
+        owners = tuple(
+            _string(item, field=f"{field}.{key}[{index}]")
+            for index, item in enumerate(
+                _sequence(checked[key], field=f"{field}.{key}")
+            )
+        )
+        if len(set(owners)) != len(owners):
+            _fail(
+                "state_bank.admission_owner_delta_duplicate",
+                "verified owner delta identifiers must be unique",
+                field=f"{field}.{key}",
+            )
+        result[key] = tuple(sorted(owners))
+    if set(result["added_owner_ids"]) & set(result["removed_owner_ids"]):
+        _fail(
+            "state_bank.admission_owner_delta_overlap",
+            "an owner cannot be both added and removed in one delta",
+            field=field,
+        )
+    return freeze_json(result)
 
 
 def _coordinate_value(value: Any, *, field: str) -> int:
@@ -2801,6 +3730,18 @@ def _finite_float(
             field=field,
             value=parsed,
             maximum=maximum,
+        )
+    return parsed
+
+
+def _positive_event_weight(value: Any, *, field: str) -> float:
+    parsed = _finite_float(value, field=field, minimum=0.0)
+    if parsed <= 0.0:
+        _fail(
+            "state_bank.image_balanced_event_weight",
+            "image-balanced event weight must be strictly positive",
+            field=field,
+            value=parsed,
         )
     return parsed
 

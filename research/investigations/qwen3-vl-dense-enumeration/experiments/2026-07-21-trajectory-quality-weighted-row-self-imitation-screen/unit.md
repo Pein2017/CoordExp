@@ -22,7 +22,11 @@ updated: 2026-07-21
 > Do not implement it as written. The newer evidence prioritizes exact
 > greedy-prefix sampled-row counterfactuals over sampled-prefix trajectory
 > imitation. Route-quality weighting and within-image shuffling may remain as
-> controls in a revised unit.
+> controls in a revised unit. The later [best sampled trajectory positive row
+> imitation screen](../2026-07-21-best-sampled-trajectory-positive-row-imitation-screen/results.md)
+> executed a narrower one-route treatment: it transfers targeted owners into
+> greedy but loses other owners. This draft is retained as historical design
+> context, not as an active implementation plan.
 
 Can positive-only training on complete object rows already produced by the
 source model move native greedy decoding toward higher unique-object coverage,

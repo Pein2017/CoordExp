@@ -1,5 +1,11 @@
 # Implementation Receipt
 
+This receipt originally recorded the independent implementation race before
+the lead-run research screens. Its historical statements about missing shared
+pre-fork fixtures remain true for that race. The later addendum below is the
+current authority for tasks 7 through 10 and must not be read as retroactively
+satisfying procedural tasks 0.1 or 1.1.
+
 ## Scope and commits
 
 - Change: `add-own-prefix-entity-transition-and-coordinate-boundary-training-pilot`
@@ -8,7 +14,8 @@
 - Implementation commit: `HEAD` containing this receipt. Its exact immutable SHA is produced after the commit and reported in the final handoff; a commit cannot embed its own SHA.
 - Mandatory repair base: `485e5a4b8c2d1d9c498bc94e5b75d716830abbeb`.
 - Mandatory repair commit: `HEAD` containing this updated receipt; its exact SHA is reported in the repair handoff.
-- Formal 256-image and 12-job screen: not launched.
+- Formal 256-image and 12-job screen at the time of this original receipt: not
+  launched. Later lead-run evidence is recorded in the addendum below.
 
 ## Implemented owner surfaces
 
@@ -72,10 +79,14 @@ git diff --check
 
 Residue inspection found one training-loop owner, `SupervisedTrainer`, and no inference-side state-bank import, rollout collector, alternate trainer, custom inference controller, or online refresh path. Independent contract and runtime reviewers both returned `APPROVE` after bounded fixes.
 
-## Smoke and runtime observations
+## Historical Smoke and Runtime Observations at Implementation-Race Close
 
 - The required lead-owned Smoke A/B fixture manifest is absent. No substitute checkpoint, state bank, event, optimizer value, loss value, seed, or blind-cohort image was used.
-- Therefore tasks `0.1`, `1.1`, `2.1`, and `5.1` through `5.3` remain open. Real exact-prefix source-logit parity, margin movement after a tiny update, produced-checkpoint inference, runtime duration, GPU peak memory, and multi-rank GPU execution were not claimed.
+- At that time, tasks `0.1`, `1.1`, `2.1`, and `5.1` through `5.3` remained
+  open. Real exact-prefix source-logit parity, margin movement after a tiny
+  update, produced-checkpoint inference, runtime duration, Graphics-Processing-
+  Unit peak memory, and multi-rank execution were not claimed by the race
+  receipt.
 - Synthetic CPU tests establish schema, replay construction, compact-logit mapping, loss gradients, event/global normalization, source identity rejection, artifact evidence, and unchanged inference composition. They are not reported as real smoke evidence.
 - Runtime and peak-memory observation: not measured because no authorized real-model smoke could be run without the immutable shared fixture.
 - Real step-zero source-logit parity, pre/post-update target-margin movement, and
@@ -84,9 +95,53 @@ Residue inspection found one training-loop owner, `SupervisedTrainer`, and no in
   therefore qualifies the code path for the shared Smoke A attempt but does not
   claim that the full frozen pre-smoke gate or Smoke A has passed.
 
+## Subsequent Lead-Run Research Addendum
+
+After the implementation race, the lead research loop exercised this path with
+hash-bound real artifacts. The latest completed successor is the Best Sampled
+Trajectory Positive Row Imitation Screen:
+
+- immutable bank: 512 events from 118 images, bank identifier
+  `c496a3653f6f46539d6bce2e110729c7ee77668fab751a5957bd60fe7829fde3`;
+- one-event real-model smoke: exact replay, finite gradient, checkpoint reload,
+  and ordinary inference completed;
+- full training: one eight-Graphics-Processing-Unit epoch, learning rate
+  `1e-5`, sixteen optimizer steps, saved at steps 5, 10, 15, and 16;
+- evaluation: clean greedy train-256 at steps 10, 15, and 16, plus the twelve
+  human-refined development images at steps 5, 10, 15, and 16;
+- route-level shift: matches on the fixed route-added owner set rise from 93
+  for the separate clean Source rollout to 107, 109, and 110, while ordinary
+  owner retention falls from 712 to 700, 697, and 697. Only 118 of the 238
+  route-added owners are direct positive-row event targets; direct-target
+  matches move from 61 to 62, 63, and 63, while most of the shift occurs on
+  other owners in the same selected-route family;
+- decision: do not run the identical 1,024-image replication; retain the
+  positive-credit implementation for a matched-arm, preservation-aware
+  256-image successor.
+
+Evidence:
+
+```text
+/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/
+2026-07-21-best-sampled-trajectory-positive-row-imitation-screen/
+```
+
+The durable interpretation is in:
+
+```text
+research/investigations/qwen3-vl-dense-enumeration/experiments/
+2026-07-21-best-sampled-trajectory-positive-row-imitation-screen/results.md
+```
+
+The original unchecked pre-fork fixture tasks remain visible in `tasks.md`.
+They are historical process gaps, not claims that the later hash-bound screen
+or real-model smoke did not run.
+
 ## Limitations and deviations
 
 - No deviation from the frozen scientific objective or inference architecture was introduced.
 - Calibration configs disable scheduled training-time evaluation; ordinary free-row inference remains the separate post-checkpoint smoke required by the research unit.
 - The implementation deliberately uses one complete calibration event per isolated packed micro-step. This is stronger than the required same-planned-step atomicity and fails visibly when the complete candidate group or enabled joint-family window cannot fit.
-- The formal screen remains blocked pending lead-agent worktree comparison, publication of the shared fixture, successful Smoke A/B evidence, and separate user authorization.
+- The original implementation-race launch was blocked at closeout. The later
+  lead-run addendum records the authorized real smoke and training successor;
+  only the explicitly historical pre-fork fixture tasks remain unresolved.

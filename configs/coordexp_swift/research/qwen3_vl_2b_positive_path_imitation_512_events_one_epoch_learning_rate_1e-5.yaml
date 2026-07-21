@@ -1,0 +1,20 @@
+schema_version: 1
+extends: ../smoke/qwen3_vl_2b_desc_first_geo_sorted_positive_path_imitation_learning_rate_1e-5_one_event_v1.yaml
+
+run:
+  name: qwen3_vl_2b_positive_path_imitation_512_events_one_epoch_learning_rate_1e-5
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-best-sampled-trajectory-positive-row-imitation-screen/train-512-events-v1/runs
+  collision_policy: fail
+
+rollout_calibration:
+  state_bank_manifest_path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-best-sampled-trajectory-positive-row-imitation-screen/state-bank-v1/state-bank/manifest.json
+
+training:
+  epochs: 1
+  max_steps: 16
+  effective_batch_size: 32
+
+checkpoint:
+  every_fraction: 0.3
+  steps: []
+  save_final: true

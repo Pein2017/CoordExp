@@ -1,0 +1,3 @@
+2df056a802c17e5c67ec2c29108919c9139c9ff4f195d74005b3751031fef410  research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-21-earliest-shared-prefix-branch-pilot/artifacts/person-5001.json
+93405a80d1d7dfdb7663c1e170e63055a4215563dfdfab1e2dd28d2016b6d362  research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-21-earliest-shared-prefix-branch-pilot/artifacts/person-7511.json
+a48b3e2485f2d74e64f4f9ff196e42d7dc3a6d529ae9312f895dc619e4f18f09  research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-21-earliest-shared-prefix-branch-pilot/artifacts/wine-glass-2685.json

@@ -1,0 +1,26 @@
+extends: qwen3_vl_2b_positive_path_imitation_step5_human_refined_12_hf.yaml
+
+run:
+  name: qwen3-vl-2b-positive-path-imitation-step15-human-refined-12-hf
+  collision_policy: fail
+
+data:
+  input_jsonl: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-best-sampled-trajectory-positive-row-imitation-screen/evaluation-inputs/human-refined-12.coord.jsonl
+
+generation:
+  batch_size: 12
+  max_new_tokens: 512
+  temperature: 0.0
+  top_p: 1.0
+  repetition_penalty: 1.0
+
+scoring:
+  enabled: true
+
+adapter:
+  type: dora
+  path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-best-sampled-trajectory-positive-row-imitation-screen/train-512-events-v1/runs/qwen3_vl_2b_positive_path_imitation_512_events_one_epoch_learning_rate_1e-5/checkpoints/step-15/adapter
+  name: default
+
+embedding_delta:
+  path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-best-sampled-trajectory-positive-row-imitation-screen/train-512-events-v1/runs/qwen3_vl_2b_positive_path_imitation_512_events_one_epoch_learning_rate_1e-5/checkpoints/step-15/special_token_embeddings

@@ -8,7 +8,10 @@ prompt identity, processor controls, and image-grouped split assignment. Each
 record MUST preserve exact executed prompt and prefix token identifiers and
 hashes, candidate token identifiers, generation-policy provenance, physical-
 entity references, separate entity and geometry review status, and selected
-causal intervals. Unknown or ambiguous status on one review axis MUST produce
+causal intervals. Entity-transition records MUST additionally preserve the
+fixed row budget, fixed generated-token budget, target-owner retention,
+verified-owner-set delta, and confirmed downstream-harm verdict used for
+admission. Unknown or ambiguous status on one review axis MUST produce
 zero direct gradient only for that corresponding entity or geometry objective;
 it MUST NOT disable a separately trusted objective axis.
 
@@ -132,16 +135,28 @@ changing ordinary `TokenAtom` target semantics.
 ### Requirement: Entity-Transition Preference Objective
 
 The entity-transition objective SHALL compare one actual harmful greedy branch
-against one or more verified, sampled, uncovered physical-entity paths at the
-same exact image and prefix. Each entity-owned path score MUST cover the
-next-row decision through the shortest stored token prefix that resolves
-physical ownership. Multiple token aliases for one physical entity MUST be
-reduced to one owner score by taking the maximum admitted alias-path score.
-Multiple valid owner scores MUST be combined by a configured smooth maximum
-rather than by treating one canonical next owner as the sole target. A harmful
-premature terminal candidate MUST have a null physical owner and null owner-
-resolution interval; its path score MUST be exactly the single terminal-token
-log probability at the shared boundary.
+against one or more verified, sampled, uncovered physical-entity rows at the
+same exact image and prefix. For each positive row, the objective MUST locate
+the first token at which the positive and harmful paths diverge. The branch
+margin MUST compare the positive token and harmful token at that shared causal
+history in 32-bit floating point. It MUST NOT compare summed path
+log-probabilities over unequal token horizons.
+
+Multiple token aliases for one physical entity MUST be reduced to the strongest
+admitted alias. When multiple distinct valid owners remain, the branch term
+MUST ask that at least one valid owner beat the harmful token rather than force
+one geometry-sorted owner as the sole target. A harmful premature terminal
+candidate MUST have a null physical owner and null owner-resolution interval;
+its harmful branch token MUST be exactly the single terminal token at the
+shared boundary.
+
+The selected positive row SHALL also receive coherent continuation supervision
+from the first divergence through row closure. Schema-and-description sites
+and trusted coordinate sites MUST be mean-normalized as separate non-empty
+groups before being combined, so description length and coordinate count do
+not silently change event weight. Geometry-unknown coordinate sites MUST
+receive zero exact-token continuation gradient. Historical prefix tokens and
+unrelated generated rows MUST receive no continuation gradient.
 
 Only a physical duplicate or a verified premature terminal action with a
 same-prefix sampled rescue MAY be the harmful branch in the initial profile. A
@@ -149,26 +164,70 @@ valid new greedy entity, official-annotation mismatch, unsupported-but-
 ambiguous entity, or entity reachable only under another prefix MUST NOT be
 used as a negative.
 
-Every scored nonterminal positive or harmful path whose owner-resolution
-interval contains an actual coordinate token MUST have trusted geometry for
-that exact path. This rule is independent of whether the candidate is enabled
-for the coordinate-boundary objective. A corrected reference box does not make
-an untrusted sampled row eligible for complete candidate-row scoring.
+Every coordinate token selected for coherent continuation MUST have trusted
+geometry for that exact sampled path. A corrected reference box does not make
+an untrusted sampled coordinate token eligible. If physical ownership becomes
+distinguishable only through untrusted coordinate tokens, the candidate MUST
+remain diagnostic-only for the initial entity-transition profile.
+
+Every gradient-eligible entity-transition event MUST also contain fixed-budget
+counterfactual admission evidence. The positive row MUST retain its intended
+owner under the same row and token budgets as native greedy decoding, and the
+counterfactual MUST NOT add a confirmed duplicate, malformed row, or verified
+unsupported entity. Unknown suffix rows MUST remain neutral. Trajectory-level
+quality MAY decide admission but MUST NOT silently become a continuous event
+weight in this profile.
 
 #### Scenario: Several uncovered entities are valid
 
 - **WHEN** two or more verified uncovered physical entities occur in the same
   exact-prefix sample support
-- **THEN** the loss MUST aggregate them as multiple valid positives
+- **THEN** the loss MUST retain them as multiple valid positives grouped by
+  physical owner
 - **AND** MUST NOT force one geometry-sorted owner to be the unique positive.
 
 #### Scenario: One owner has duplicate token aliases
 
 - **WHEN** two or more admitted candidate paths resolve to the same physical
   owner
-- **THEN** the objective MUST use only their maximum path score as that owner's
-  score
+- **THEN** the objective MUST use only the strongest admitted alias as that
+  owner's branch candidate
 - **AND** adding an exact duplicate alias MUST NOT change owner weight.
+
+#### Scenario: Positive row and harmful branch have unequal lengths
+
+- **WHEN** a complete positive row is compared with a one-token premature
+  terminal branch
+- **THEN** the preference margin MUST compare only their first divergent
+  tokens under the shared history
+- **AND** positive-row continuation MUST be mean-normalized separately from
+  that branch margin.
+
+#### Scenario: Positive row has trusted entity but untrusted geometry
+
+- **WHEN** physical ownership is resolved before coordinate tokens and exact
+  sampled geometry is not trusted
+- **THEN** trusted schema and description continuation sites MAY receive
+  gradient
+- **AND** coordinate continuation sites MUST receive zero exact-token gradient.
+
+#### Scenario: Ownership requires an untrusted coordinate
+
+- **WHEN** the first owner-resolving divergence occurs at a coordinate whose
+  geometry is not trusted
+- **THEN** the candidate MUST be diagnostic-only in the initial profile.
+
+#### Scenario: Counterfactual only reorders owners
+
+- **WHEN** the candidate row appears locally but does not improve the admitted
+  fixed-budget owner set or reduce one confirmed native harm
+- **THEN** the event MUST receive zero entity-transition gradient.
+
+#### Scenario: Counterfactual receives extra capacity
+
+- **WHEN** the candidate arm uses a larger row or generated-token budget than
+  the native arm
+- **THEN** the event MUST fail admission before training.
 
 #### Scenario: Greedy branch is a valid new entity
 
@@ -213,13 +272,24 @@ coordinate tokens in `[0, 999]`, and use only horizontal tolerance for `x1` or
 ### Requirement: Prefix Coverage Scope
 
 The StateBank SHALL record the number of prior object rows and one typed prefix
-coverage status: `empty`, `resolved`, or `unresolved`. Entity-transition events
-MUST use `resolved` coverage and MUST prove one trusted physical owner for each
-prior row. A coordinate-only event MAY use `unresolved` coverage only when its
+coverage status: `empty`, `resolved`, `target_scoped_noncoverage`, or
+`unresolved`. Duplicate-negative entity-transition events MUST use `resolved`
+coverage and MUST prove one trusted physical owner for each prior row. A
+premature-terminal entity-transition event MAY instead use
+`target_scoped_noncoverage` when it proves one positive target is absent from
+every prior row while leaving all unrelated prior-row owners unknown. A
+coordinate-only event MAY use `unresolved` coverage only when its
 exact prefix tokens are preserved, its current-row owner and geometry are
 independently trusted, all candidates are entity-ineligible, and candidate
 coverage is `unknown`. Such an event MUST NOT support a novelty, commitment,
 covered-set redistribution, or coverage-aware enumeration claim.
+
+A target-scoped non-coverage proof MUST name the positive target owner, record
+one exclusion receipt for every prior prediction, bind the geometric tests and
+thresholds used, and reject any plausible same-target association. It MAY
+support only “prefer this verified missed target row over premature STOP.” It
+MUST NOT support complete covered-set, duplicate-redistribution, or downstream
+owner-set claims.
 
 #### Scenario: Coordinate boundary is trusted but prior ownership is unresolved
 
@@ -236,6 +306,20 @@ covered-set redistribution, or coverage-aware enumeration claim.
 
 - **WHEN** an event with unresolved prefix coverage enables an entity-
   transition candidate or objective
+- **THEN** StateBank validation MUST fail before loss computation.
+
+#### Scenario: Target-scoped non-coverage is used against premature terminal
+
+- **WHEN** a verified positive target is conservatively excluded from every
+  prior prediction and the actual harmful branch is premature terminal
+- **THEN** the event MAY enable entity-transition training with
+  `prefix_coverage_status=target_scoped_noncoverage`
+- **AND** all unrelated prior-row owners MUST remain unknown.
+
+#### Scenario: Target-scoped non-coverage is used against a duplicate
+
+- **WHEN** a duplicate harmful branch or a complete covered-set claim uses
+  `prefix_coverage_status=target_scoped_noncoverage`
 - **THEN** StateBank validation MUST fail before loss computation.
 
 #### Scenario: Row mixes physical owners
@@ -293,8 +377,8 @@ eligible events in the complete planned optimizer step.
 ### Requirement: Rollout-Only Research Profiles
 
 The strict training configuration SHALL expose transition-only,
-coordinate-boundary-only, coordinate-boundary-gate-only, and joint rollout-
-calibration profiles. These
+coordinate-boundary-only, coordinate-boundary-gate-only, joint, and
+positive-path-imitation-only rollout-calibration profiles. These
 profiles MUST consume only the configured frozen rollout state bank and MUST
 NOT mix canonical supervised-fine-tuning examples, full-row base
 cross-entropy, Kullback-Leibler divergence anchoring, or rollout collection
@@ -336,6 +420,56 @@ baseline.
 - **THEN** the later run MAY consume that refreshed bank
 - **AND** this MUST NOT be represented as online StateBank refresh inside one
   trainer process.
+
+### Requirement: Positive Sampled-Path Row Imitation
+
+The positive-path-imitation-only profile SHALL consume StateBank events with
+exactly one positive candidate and no harmful candidate. Historical prefix
+tokens and unrelated generated rows MUST remain conditioning context with zero
+imitation gradient. Each eligible event MUST declare a positive complete-row
+site mask, an image-balanced event weight, and whether each selected coordinate
+site has trusted geometry. Entity-transition and coordinate-boundary
+eligibility MUST be disabled for this profile.
+
+The complete-row loss MUST be computed in 32-bit floating point. It SHALL first
+average negative log probability over selected schema-and-description sites and
+selected trusted-coordinate sites as separate non-empty groups, then average
+the available group means, then multiply by the declared image-balanced event
+weight. The token-type gate SHALL use the same selected sites and SHALL receive
+the same event weight. The profile MUST NOT apply gradient to terminal tokens,
+untrusted coordinate sites, prefix tokens, unresolved rows, duplicate rows, or
+malformed rows.
+
+#### Scenario: One sampled history leads to several verified rows
+
+- **WHEN** several verified first-occurrence rows from one admitted sampled
+  route occur no later than its last added-owner row
+- **THEN** each eligible row MAY become one positive-path event with its exact
+  sampled prefix
+- **AND** the sum of declared unscaled row weights for that image MUST equal
+  one before any global mean-one rescaling.
+
+#### Scenario: Prefix contains an unresolved row
+
+- **WHEN** an eligible current row follows one or more unresolved sampled rows
+- **THEN** those rows MAY remain in the exact prefix as zero-gradient context
+- **AND** the run evidence MUST expose the unresolved-prefix-row count for that
+  event.
+
+#### Scenario: Coordinate geometry is not trusted
+
+- **WHEN** a positive row has trusted physical ownership but one or more exact
+  sampled coordinate sites are not trusted
+- **THEN** those coordinate sites MUST receive zero imitation and gate gradient
+- **AND** any separately trusted schema-and-description sites MAY remain
+  eligible only when physical ownership is resolved without the untrusted
+  coordinates.
+
+#### Scenario: Positive-path event declares a harmful candidate
+
+- **WHEN** a positive-path-imitation-only event contains a harmful candidate or
+  enables entity-transition or coordinate-boundary eligibility
+- **THEN** StateBank or profile validation MUST fail before model forward.
 
 ### Requirement: Calibration Metrics and Run Evidence
 

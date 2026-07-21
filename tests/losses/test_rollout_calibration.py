@@ -11,6 +11,7 @@ from src.losses import (
     RolloutGateSite,
     first_wrong_coordinate_preference,
     grouped_entity_transition_preference,
+    positive_path_imitation_loss,
     rollout_site_token_type_gate,
 )
 
@@ -41,7 +42,7 @@ def test_entity_transition_groups_aliases_before_distinct_owner_smooth_max() -> 
     assert duplicate.owner_scores[0].alias_count == 2
 
 
-def test_entity_transition_supports_multiple_valid_owners_with_normalized_smooth_max() -> (
+def test_entity_transition_supports_multiple_valid_owners_with_at_least_one_owner_max() -> (
     None
 ):
     logits = ((0.0, 2.0, -1.0, 0.5),)
@@ -111,6 +112,199 @@ def test_premature_terminal_harmful_path_is_null_owner_and_exactly_one_token() -
             smooth_max_temperature=0.5,
         )
     assert exc_info.value.code == "loss.rollout_terminal_path_length"
+
+
+def test_entity_transition_uses_first_divergence_not_unequal_path_sums() -> None:
+    positive = CandidatePath(
+        candidate_id="long-positive",
+        physical_owner_id="owner-a",
+        logits=torch.tensor(
+            (
+                (0.0, 3.0, -1.0, 0.0),
+                (100.0, -100.0, -100.0, -100.0),
+                (-100.0, -100.0, 100.0, -100.0),
+            )
+        ),
+        target_token_ids=(1, 2, 3),
+    )
+    harmful = CandidatePath(
+        candidate_id="stop",
+        physical_owner_id=None,
+        logits=torch.tensor(((0.0, -1.0, -1.0, 2.0),)),
+        target_token_ids=(3,),
+        premature_terminal=True,
+    )
+    result = grouped_entity_transition_preference(
+        (positive,), harmful, margin=0.2, smooth_max_temperature=0.5
+    )
+
+    expected_positive = torch.log_softmax(positive.logits.float()[0], dim=0)[1]
+    expected_harmful = torch.log_softmax(harmful.logits.float()[0], dim=0)[3]
+    assert result.first_divergence_offsets == (("long-positive", 0),)
+    assert torch.allclose(result.positive_score, expected_positive)
+    assert torch.allclose(result.harmful_score, expected_harmful)
+    assert torch.allclose(result.target_margin, expected_positive - expected_harmful)
+
+
+def test_entity_transition_finds_divergence_after_shared_tokens() -> None:
+    positive = _path(
+        "positive",
+        "owner-a",
+        (
+            (0.0, 4.0, -1.0, -1.0),
+            (0.0, -1.0, 3.0, -1.0),
+            (0.0, -1.0, -1.0, 2.0),
+        ),
+        (1, 2, 3),
+    )
+    harmful = CandidatePath(
+        candidate_id="harmful",
+        physical_owner_id="covered-owner",
+        logits=torch.tensor(
+            (
+                (0.0, 4.0, -1.0, -1.0),
+                (0.0, -1.0, -1.0, 2.0),
+            )
+        ),
+        target_token_ids=(1, 3),
+    )
+    result = grouped_entity_transition_preference(
+        (positive,), harmful, margin=0.2, smooth_max_temperature=0.5
+    )
+
+    expected_positive = torch.log_softmax(positive.logits.float()[1], dim=0)[2]
+    expected_harmful = torch.log_softmax(harmful.logits.float()[1], dim=0)[3]
+    assert result.first_divergence_offsets == (("positive", 1),)
+    assert torch.allclose(result.target_margin, expected_positive - expected_harmful)
+
+
+def test_entity_continuation_groups_are_mean_normalized_independently() -> None:
+    def positive_path(schema_count: int) -> CandidatePath:
+        token_ids = (1,) * schema_count + (2,)
+        token_types = ("schema",) * schema_count + ("coordinate",)
+        logits = ((0.0, 2.0, -1.0, -1.0),) * len(token_ids)
+        return CandidatePath(
+            candidate_id=f"positive-{schema_count}",
+            physical_owner_id="owner-a",
+            logits=torch.tensor(logits),
+            target_token_ids=token_ids,
+            token_types=token_types,
+        )
+
+    harmful = CandidatePath(
+        candidate_id="harmful",
+        physical_owner_id=None,
+        logits=torch.tensor(((0.0, -1.0, -1.0, 2.0),)),
+        target_token_ids=(3,),
+        premature_terminal=True,
+    )
+    short = grouped_entity_transition_preference(
+        (positive_path(1),), harmful, margin=0.2, smooth_max_temperature=0.5
+    )
+    long = grouped_entity_transition_preference(
+        (positive_path(4),), harmful, margin=0.2, smooth_max_temperature=0.5
+    )
+
+    assert torch.allclose(
+        short.positive_schema_description_loss,
+        long.positive_schema_description_loss,
+    )
+    assert torch.allclose(short.positive_coordinate_loss, long.positive_coordinate_loss)
+    assert torch.allclose(
+        short.positive_continuation_loss, long.positive_continuation_loss
+    )
+
+
+def test_entity_continuation_keeps_bfloat16_gradients_finite() -> None:
+    positive_logits = torch.tensor(
+        ((0.0, 2.0, -1.0, -1.0), (0.0, 1.0, 2.0, -1.0)),
+        dtype=torch.bfloat16,
+        requires_grad=True,
+    )
+    harmful_logits = torch.tensor(
+        ((0.0, -1.0, -1.0, 2.0),),
+        dtype=torch.bfloat16,
+        requires_grad=True,
+    )
+    result = grouped_entity_transition_preference(
+        (
+            CandidatePath(
+                "positive",
+                "owner-a",
+                positive_logits,
+                (1, 2),
+                token_types=("schema", "coordinate"),
+            ),
+        ),
+        CandidatePath(
+            "harmful",
+            None,
+            harmful_logits,
+            (3,),
+            premature_terminal=True,
+        ),
+        margin=0.2,
+        smooth_max_temperature=0.5,
+    )
+
+    assert result.raw_loss.dtype == torch.float32
+    result.raw_loss.backward()
+    assert positive_logits.grad is not None
+    assert harmful_logits.grad is not None
+    assert torch.isfinite(positive_logits.grad).all()
+    assert torch.isfinite(harmful_logits.grad).all()
+
+
+def test_positive_path_imitation_groups_schema_and_trusted_coordinates() -> None:
+    logits = torch.tensor(
+        (
+            (0.0, 2.0, -1.0, -1.0),
+            (0.0, 1.0, -1.0, -1.0),
+            (0.0, -1.0, 2.0, -1.0),
+            (0.0, -1.0, -1.0, 2.0),
+        ),
+        requires_grad=True,
+    )
+    result = positive_path_imitation_loss(
+        CandidatePath(
+            candidate_id="positive-row",
+            physical_owner_id="owner-a",
+            logits=logits,
+            target_token_ids=(1, 1, 2, 3),
+            token_types=("schema", "desc_text", "coordinate", "untrusted_coordinate"),
+        )
+    )
+    schema = -torch.log_softmax(logits.float()[:2], dim=-1)[:, 1].mean()
+    coordinate = -torch.log_softmax(logits.float()[2:3], dim=-1)[:, 2].mean()
+    assert torch.allclose(result.schema_description_loss, schema)
+    assert torch.allclose(result.coordinate_loss, coordinate)
+    assert torch.allclose(result.raw_loss, (schema + coordinate) / 2)
+    assert result.selected_token_count == 3
+    result.raw_loss.backward()
+    assert logits.grad is not None
+    assert torch.equal(logits.grad[3], torch.zeros_like(logits.grad[3]))
+
+
+def test_positive_path_imitation_can_skip_all_untrusted_coordinates() -> None:
+    logits = torch.tensor(
+        ((0.0, 2.0, -1.0), (0.0, -1.0, 2.0)), requires_grad=True
+    )
+    result = positive_path_imitation_loss(
+        CandidatePath(
+            candidate_id="positive-row",
+            physical_owner_id="owner-a",
+            logits=logits,
+            target_token_ids=(1, 2),
+            token_types=("schema", "untrusted_coordinate"),
+        )
+    )
+    expected = -torch.log_softmax(logits.float()[0], dim=-1)[1]
+    assert torch.allclose(result.raw_loss, expected)
+    assert result.selected_token_count == 1
+    assert result.coordinate_token_count == 0
+    result.raw_loss.backward()
+    assert logits.grad is not None
+    assert torch.equal(logits.grad[1], torch.zeros_like(logits.grad[1]))
 
 
 def test_entity_and_coordinate_objectives_upcast_to_fp32_and_keep_finite_gradients() -> (

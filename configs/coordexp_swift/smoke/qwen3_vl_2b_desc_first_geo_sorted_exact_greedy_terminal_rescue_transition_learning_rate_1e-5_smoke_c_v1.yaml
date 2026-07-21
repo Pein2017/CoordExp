@@ -1,0 +1,11 @@
+schema_version: 1
+
+extends: qwen3_vl_2b_desc_first_geo_sorted_rollout_calibration_transition_learning_rate_1e-5_smoke_a_dose_v1.yaml
+
+run:
+  name: qwen3_vl_2b_desc_first_geo_sorted_exact_greedy_terminal_rescue_transition_learning_rate_1e-5_smoke_c_v1
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-exact-greedy-terminal-rescue-training-screen/smoke-image-34855-v2/training-smoke
+
+rollout_calibration:
+  state_bank_manifest_path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-exact-greedy-terminal-rescue-training-screen/smoke-image-34855-v2/assembled-state-bank-real-v1/manifest.json
+  source_checkpoint_id: ec308f8f5a26f5425eadeecf6fde5114d10dbf8e31de0b1fa0cc78abab8c3f2c

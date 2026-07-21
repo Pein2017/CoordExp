@@ -1063,6 +1063,9 @@ def _calibration_profile_event_count(
         metadata = micro_step.calibration_metadata
         entity = bool(getattr(metadata, "entity_transition_eligible", False))
         coordinate = bool(getattr(metadata, "coordinate_boundary_eligible", False))
+        positive_path = bool(
+            getattr(metadata, "positive_path_imitation_eligible", False)
+        )
         if (
             (profile == "transition_only" and entity)
             or (
@@ -1070,6 +1073,7 @@ def _calibration_profile_event_count(
                 and coordinate
             )
             or (profile == "joint" and (entity or coordinate))
+            or (profile == "positive_path_imitation_only" and positive_path)
         ):
             count += 1
     if count <= 0:

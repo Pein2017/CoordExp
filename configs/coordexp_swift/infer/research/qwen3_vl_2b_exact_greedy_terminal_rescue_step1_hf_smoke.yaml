@@ -1,0 +1,36 @@
+extends: ../qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200.yaml
+
+run:
+  name: qwen3-vl-2b-exact-greedy-terminal-rescue-step1-hf-smoke-replay
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-exact-greedy-terminal-rescue-training-screen/smoke-image-34855-v2/infer-smoke-replay
+  collision_policy: fail
+
+model:
+  base_model: /data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent
+
+backend:
+  type: hf
+  hf:
+    attn_implementation: sdpa
+
+data:
+  input_jsonl: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-exact-greedy-terminal-rescue-training-screen/smoke-image-34855-v2/infer-smoke/image-34855.coord.jsonl
+
+generation:
+  batch_size: 1
+  max_new_tokens: 512
+  temperature: 0.0
+  top_p: 1.0
+  repetition_penalty: 1.0
+
+adapter:
+  type: dora
+  path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-exact-greedy-terminal-rescue-training-screen/smoke-image-34855-v2/training-smoke/qwen3_vl_2b_desc_first_geo_sorted_exact_greedy_terminal_rescue_transition_learning_rate_1e-5_smoke_c_v1/checkpoints/step-1/adapter
+  name: default
+
+embedding_delta:
+  path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-exact-greedy-terminal-rescue-training-screen/smoke-image-34855-v2/training-smoke/qwen3_vl_2b_desc_first_geo_sorted_exact_greedy_terminal_rescue_transition_learning_rate_1e-5_smoke_c_v1/checkpoints/step-1/special_token_embeddings
+
+debug:
+  smoke: true
+  dry_run: false

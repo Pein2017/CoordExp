@@ -92,6 +92,23 @@ owner appears and adds no coverage. The result rejects one universal commit
 position, separates local entity acquisition from downstream set value, and
 promotes only a small coherent-row own-prefix training screen. Beam search and
 a final architecture remain deferred.
+The exact-terminal version of that screen is now closed as a bounded negative:
+it yields only three unique events in the 256-image census, and its one-event
+smoke causes a broad repetition burst. A corrected causal pilot instead finds
+that sampled history before the current row enables later target acquisition,
+while a local first-row branch change alone does not. The completed successor
+selected one naturally closed, fixed-budget sampled route per image and trained
+verified complete rows under their exact sampled prefixes. Its 512-event,
+eight-Graphics-Processing-Unit epoch made greedy output shorter and often
+cleaner, but every evaluated milestone reduced unique annotated-owner coverage
+on train-256 and on twelve human-refined images. The treatment is not promoted
+to 1,024 images. A targeted owner-identity follow-up shows that this is not a
+null treatment: route-added owners enter greedy more often, while ordinary
+owners are lost at nearly the same rate. Step 15 leaves total coverage flat on
+the 118 admitted images and regresses on the 138 non-admitted images. The next
+priority is therefore a 256-image multi-route positive treatment with a
+Source-route preservation anchor, while off-policy prefix mismatch and
+optimization instability remain competing explanations.
 The weekly report and research compass own the broader synthesis and next-
 discriminator boundary.
 
@@ -188,9 +205,11 @@ durable program reading path below.
 85. [Individual-trajectory versus sampled-union object-support audit](experiments/2026-07-21-individual-trajectory-versus-union-support-audit/unit.md)
 86. [Individual-trajectory versus sampled-union object-support audit results](experiments/2026-07-21-individual-trajectory-versus-union-support-audit/results.md)
 87. [Independent audit and conservative-bound correction](experiments/2026-07-21-individual-trajectory-versus-union-support-audit/audit.md)
-88. [Trajectory-quality-weighted object-row self-imitation screen](experiments/2026-07-21-trajectory-quality-weighted-row-self-imitation-screen/unit.md)
-89. [Greedy-prefix forced object-path intervention](experiments/2026-07-21-greedy-prefix-forced-owner-path-intervention/unit.md)
-90. [Greedy-prefix forced object-path results and coherent-row training gate](experiments/2026-07-21-greedy-prefix-forced-owner-path-intervention/results.md)
+88. [Best sampled trajectory positive row imitation screen](experiments/2026-07-21-best-sampled-trajectory-positive-row-imitation-screen/unit.md)
+89. [Best sampled trajectory positive row imitation targeted-transfer and no-identical-scale verdict](experiments/2026-07-21-best-sampled-trajectory-positive-row-imitation-screen/results.md)
+90. [Greedy-prefix forced object-path intervention](experiments/2026-07-21-greedy-prefix-forced-owner-path-intervention/unit.md)
+91. [Greedy-prefix forced object-path results and coherent-row training gate](experiments/2026-07-21-greedy-prefix-forced-owner-path-intervention/results.md)
+92. [Exact greedy prefix uncovered-object row training screen](experiments/2026-07-21-exact-greedy-prefix-uncovered-object-row-training-screen/unit.md)
 
 The review and readiness amendment preserve the pre-execution gate. The
 completed unit and results record own current lifecycle and evidence status.

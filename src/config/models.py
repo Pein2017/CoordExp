@@ -312,6 +312,7 @@ class RolloutCalibrationConfig(StrictConfigModel):
         "coordinate_boundary_only",
         "coordinate_boundary_gate_only",
         "joint",
+        "positive_path_imitation_only",
     ]
     state_bank_manifest_path: str
     source_checkpoint_id: str
@@ -335,6 +336,7 @@ class RolloutCalibrationConfig(StrictConfigModel):
             "coordinate_boundary_only": (0.0, 1.0),
             "coordinate_boundary_gate_only": (0.0, 0.0),
             "joint": (0.5, 0.5),
+            "positive_path_imitation_only": (1.0, 0.0),
         }[self.profile]
         actual = (
             self.entity_transition.weight,

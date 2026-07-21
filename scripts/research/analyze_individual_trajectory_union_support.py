@@ -1331,6 +1331,17 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=Path,
         help="Optional crop-review JSON overlay; applied only to unresolved review-queue rows",
     )
+    parser.add_argument(
+        "--budget",
+        dest="budgets",
+        action="append",
+        type=int,
+        choices=range(1, 513),
+        help=(
+            "Complete-row budget to analyze; repeat for multiple budgets. "
+            "Defaults to the frozen 4, 8, 16, and 32 budgets."
+        ),
+    )
     parser.add_argument("--allow-incomplete-panel", action="store_true", help="Permit synthetic or partial panels; branch evidence remains explicit")
     return parser.parse_args(argv)
 
@@ -1341,6 +1352,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.rollout_artifact,
         args.annotations,
         require_full_panel=not args.allow_incomplete_panel,
+        budgets=tuple(args.budgets) if args.budgets else FIXED_BUDGETS,
         review_decisions_path=args.review_decisions,
     )
     output = args.output.expanduser().resolve()

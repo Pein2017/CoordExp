@@ -1,0 +1,909 @@
+{
+  "cases": [
+    {
+      "case_id": "person-5001-first-sampled-only",
+      "complete_row_budget": 16,
+      "expected_donor": {
+        "coord_bins": [
+          59,
+          115,
+          217,
+          253
+        ],
+        "description": "person",
+        "raw_span_sha256": "00a8f7ee582e88271f3d08af89aa5b3c8e6c3774affddd3b7cbf518a1eed1306",
+        "source_manifest_expected_donor": {
+          "coord_bins": [
+            685,
+            106,
+            792,
+            337
+          ],
+          "description": "person",
+          "raw_span_sha256": "b9f19aa8a86e372f682b3e7e8bb734914a596260bcd289e30e49d49a754e4d93"
+        }
+      },
+      "geometry_trust": "trusted_for_diagnostic",
+      "global_longest_common_prefix": {
+        "first_divergence_index": 4,
+        "first_divergence_row_index": 0,
+        "first_divergence_row_offset": 4,
+        "greedy_token": 152334,
+        "sampled_token": 152342,
+        "token_count": 4,
+        "token_ids_sha256": "065860235ef02ac913eb9e3f851451390972f79340541204e80be1e9538cef9d"
+      },
+      "greedy_artifact": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/full/greedy-all12.json",
+        "sha256": "68cd33d70ecf1a318b89734e2717fe81ac25c39bf9e8784ead1ca4de4e0b59c7"
+      },
+      "greedy_generated_token_count": 182,
+      "image_id": 5001,
+      "prompt_token_ids_sha256": "3fba18e878f1f98599328b0f65b1960b96e1ed64d33085cbb9f5859c23153fa7",
+      "reviewed_donor_owner_id": null,
+      "sampled_artifact": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/full/sampled-shard-gpu6.json",
+        "sha256": "6e3860f80bc58f3468eb35dd6a241f78aecc2a88db9a86e9e630c56a50060be4"
+      },
+      "sampled_donor_row_index": 5,
+      "sampled_generated_token_count": 183,
+      "sampled_prefix_before_target_row_token_count": 45,
+      "sampled_seed": 21015,
+      "source_case_id": "person-5001-row3",
+      "staircase": [
+        {
+          "endpoint_role": "x1",
+          "endpoint_token_count": 5,
+          "forced_row_prefix_token_ids": [
+            151646,
+            8987,
+            151647,
+            151648,
+            152342
+          ],
+          "forced_row_prefix_token_ids_sha256": "c11feefa1579d1d0ed701e08e20eeaf793f8fb9a1ee64ae1bca9a2f40af00f55",
+          "global_lcp_token_count": 4,
+          "level": "A",
+          "row_end_token_index": 9,
+          "row_start_token_index": 0,
+          "rung_name": "level_a_first_divergence"
+        },
+        {
+          "endpoint_role": "y1",
+          "endpoint_token_count": 6,
+          "forced_row_prefix_token_ids": [
+            151646,
+            8987,
+            151647,
+            151648,
+            152342,
+            151720
+          ],
+          "forced_row_prefix_token_ids_sha256": "2cbd69344ed187a98667902b5c3621c465e9f01fd7d38c7b9766b6d1019fbe88",
+          "global_lcp_token_count": 4,
+          "level": "A",
+          "row_end_token_index": 9,
+          "row_start_token_index": 0,
+          "rung_name": "level_a_y1"
+        },
+        {
+          "endpoint_role": "x2",
+          "endpoint_token_count": 7,
+          "forced_row_prefix_token_ids": [
+            151646,
+            8987,
+            151647,
+            151648,
+            152342,
+            151720,
+            152407
+          ],
+          "forced_row_prefix_token_ids_sha256": "23115156ad2fd02fe926322c38bd8b54713dff08bc7cc11b1c2bb154c3a3b4e0",
+          "global_lcp_token_count": 4,
+          "level": "A",
+          "row_end_token_index": 9,
+          "row_start_token_index": 0,
+          "rung_name": "level_a_x2"
+        },
+        {
+          "endpoint_role": "y2",
+          "endpoint_token_count": 8,
+          "forced_row_prefix_token_ids": [
+            151646,
+            8987,
+            151647,
+            151648,
+            152342,
+            151720,
+            152407,
+            151883
+          ],
+          "forced_row_prefix_token_ids_sha256": "e6d75f5caa4efbb1c6469667f5735bfd97e8784d22224800345aeb71f4c96a75",
+          "global_lcp_token_count": 4,
+          "level": "A",
+          "row_end_token_index": 9,
+          "row_start_token_index": 0,
+          "rung_name": "level_a_y2"
+        },
+        {
+          "endpoint_role": "box_end",
+          "endpoint_token_count": 9,
+          "forced_row_prefix_token_ids": [
+            151646,
+            8987,
+            151647,
+            151648,
+            152342,
+            151720,
+            152407,
+            151883,
+            151649
+          ],
+          "forced_row_prefix_token_ids_sha256": "4c76cfcab383e3c7c5bec692f1dcdc165ea5d7cfff560ce5dca507ac6434783f",
+          "global_lcp_token_count": 4,
+          "level": "A",
+          "row_end_token_index": 9,
+          "row_start_token_index": 0,
+          "rung_name": "level_a_box_end"
+        },
+        {
+          "endpoint_role": "row_opener",
+          "endpoint_token_count": 1,
+          "forced_row_prefix_token_ids": [
+            151646
+          ],
+          "forced_row_prefix_token_ids_sha256": "b90e86dcb80da58995de92765ecdbc6a26c15c9bdcced739d1da427bd7228b53",
+          "global_lcp_token_count": 4,
+          "level": "B",
+          "row_end_token_index": 54,
+          "row_start_token_index": 45,
+          "rung_name": "level_b_target_row_start"
+        },
+        {
+          "endpoint_role": "description_end",
+          "endpoint_token_count": 3,
+          "forced_row_prefix_token_ids": [
+            151646,
+            8987,
+            151647
+          ],
+          "forced_row_prefix_token_ids_sha256": "41cbaf75b1ea3d4071ac7972fdd6439353207bd29783b5b084c31b2e67739b7d",
+          "global_lcp_token_count": 4,
+          "level": "B",
+          "row_end_token_index": 54,
+          "row_start_token_index": 45,
+          "rung_name": "level_b_description_end"
+        },
+        {
+          "endpoint_role": "box_start",
+          "endpoint_token_count": 4,
+          "forced_row_prefix_token_ids": [
+            151646,
+            8987,
+            151647,
+            151648
+          ],
+          "forced_row_prefix_token_ids_sha256": "065860235ef02ac913eb9e3f851451390972f79340541204e80be1e9538cef9d",
+          "global_lcp_token_count": 4,
+          "level": "B",
+          "row_end_token_index": 54,
+          "row_start_token_index": 45,
+          "rung_name": "level_b_box_start"
+        },
+        {
+          "endpoint_role": "x1",
+          "endpoint_token_count": 5,
+          "forced_row_prefix_token_ids": [
+            151646,
+            8987,
+            151647,
+            151648,
+            151729
+          ],
+          "forced_row_prefix_token_ids_sha256": "400e28714c6dbe25779528055a24c6bdc0f804d93967ffa2ca7957165cd4a2e7",
+          "global_lcp_token_count": 4,
+          "level": "B",
+          "row_end_token_index": 54,
+          "row_start_token_index": 45,
+          "rung_name": "level_b_x1"
+        },
+        {
+          "endpoint_role": "y1",
+          "endpoint_token_count": 6,
+          "forced_row_prefix_token_ids": [
+            151646,
+            8987,
+            151647,
+            151648,
+            151729,
+            151785
+          ],
+          "forced_row_prefix_token_ids_sha256": "22923091ec15048ab63c9761b59d4e07e779724b34d3cfa016da0b3b37eb030a",
+          "global_lcp_token_count": 4,
+          "level": "B",
+          "row_end_token_index": 54,
+          "row_start_token_index": 45,
+          "rung_name": "level_b_y1"
+        },
+        {
+          "endpoint_role": "x2",
+          "endpoint_token_count": 7,
+          "forced_row_prefix_token_ids": [
+            151646,
+            8987,
+            151647,
+            151648,
+            151729,
+            151785,
+            151887
+          ],
+          "forced_row_prefix_token_ids_sha256": "e0128a506878bd18e0864d42b173831c8172041cc1a3fcd93f6df2fd775fb63b",
+          "global_lcp_token_count": 4,
+          "level": "B",
+          "row_end_token_index": 54,
+          "row_start_token_index": 45,
+          "rung_name": "level_b_x2"
+        },
+        {
+          "endpoint_role": "y2",
+          "endpoint_token_count": 8,
+          "forced_row_prefix_token_ids": [
+            151646,
+            8987,
+            151647,
+            151648,
+            151729,
+            151785,
+            151887,
+            151923
+          ],
+          "forced_row_prefix_token_ids_sha256": "f4a9e15034ae24a257011626041986e1432dbfb10ed8993e1929e49188d8642d",
+          "global_lcp_token_count": 4,
+          "level": "B",
+          "row_end_token_index": 54,
+          "row_start_token_index": 45,
+          "rung_name": "level_b_y2"
+        },
+        {
+          "endpoint_role": "box_end",
+          "endpoint_token_count": 9,
+          "forced_row_prefix_token_ids": [
+            151646,
+            8987,
+            151647,
+            151648,
+            151729,
+            151785,
+            151887,
+            151923,
+            151649
+          ],
+          "forced_row_prefix_token_ids_sha256": "d1be9d995da0724d571a696d0ac73ef76f64c9af6d9efd13b8cf8aca94c7b58a",
+          "global_lcp_token_count": 4,
+          "level": "B",
+          "row_end_token_index": 54,
+          "row_start_token_index": 45,
+          "rung_name": "level_b_box_end"
+        }
+      ],
+      "target_owner_id": "5001:1269467",
+      "target_row_span_in_sampled": {
+        "end": 54,
+        "sha256": "d1be9d995da0724d571a696d0ac73ef76f64c9af6d9efd13b8cf8aca94c7b58a",
+        "start": 45,
+        "token_count": 9
+      }
+    },
+    {
+      "case_id": "person-7511-first-sampled-only",
+      "complete_row_budget": 16,
+      "expected_donor": {
+        "coord_bins": [
+          959,
+          588,
+          983,
+          623
+        ],
+        "description": "person",
+        "raw_span_sha256": "be1d8a2fa34215aad350c966e7f7e5143d096caf8423469b2ddfcaf3220f0fd1",
+        "source_manifest_expected_donor": {
+          "coord_bins": [
+            959,
+            588,
+            983,
+            623
+          ],
+          "description": "person",
+          "raw_span_sha256": "be1d8a2fa34215aad350c966e7f7e5143d096caf8423469b2ddfcaf3220f0fd1"
+        }
+      },
+      "geometry_trust": "entity_only_geometry_loose",
+      "global_longest_common_prefix": {
+        "first_divergence_index": 5,
+        "first_divergence_row_index": 0,
+        "first_divergence_row_offset": 5,
+        "greedy_token": 151988,
+        "sampled_token": 151992,
+        "token_count": 5,
+        "token_ids_sha256": "b69f2c6242e9336cc3063a253666c39f2e080e28d549be9f45fad3d54fa896ed"
+      },
+      "greedy_artifact": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/full/greedy-all12.json",
+        "sha256": "68cd33d70ecf1a318b89734e2717fe81ac25c39bf9e8784ead1ca4de4e0b59c7"
+      },
+      "greedy_generated_token_count": 91,
+      "image_id": 7511,
+      "prompt_token_ids_sha256": "3fba18e878f1f98599328b0f65b1960b96e1ed64d33085cbb9f5859c23153fa7",
+      "reviewed_donor_owner_id": "7511:-169",
+      "sampled_artifact": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/full/sampled-shard-gpu2.json",
+        "sha256": "8f06b0b280ae0b21951f28bb77d688f7d7833c7054c45b4bc59c46a2a78cc788"
+      },
+      "sampled_donor_row_index": 4,
+      "sampled_generated_token_count": 73,
+      "sampled_prefix_before_target_row_token_count": 37,
+      "sampled_seed": 21012,
+      "source_case_id": "person-7511-row4",
+      "staircase": [
+        {
+          "endpoint_role": "x1",
+          "endpoint_token_count": 6,
+          "forced_row_prefix_token_ids": [
+            151646,
+            74,
+            632,
+            151647,
+            151648,
+            151992
+          ],
+          "forced_row_prefix_token_ids_sha256": "f9246b3665a4ccef66e5659bb93a6181c7593d15a0fbe9b047c585cd5bd08c29",
+          "global_lcp_token_count": 5,
+          "level": "A",
+          "row_end_token_index": 10,
+          "row_start_token_index": 0,
+          "rung_name": "level_a_first_divergence"
+        },
+        {
+          "endpoint_role": "y1",
+          "endpoint_token_count": 7,
+          "forced_row_prefix_token_ids": [
+            151646,
+            74,
+            632,
+            151647,
+            151648,
+            151992,
+            151929
+          ],
+          "forced_row_prefix_token_ids_sha256": "ce33a1ee277bc7b2121de34913edb7578cf66bf80cae6d33a77f9dec61ca7225",
+          "global_lcp_token_count": 5,
+          "level": "A",
+          "row_end_token_index": 10,
+          "row_start_token_index": 0,
+          "rung_name": "level_a_y1"
+        },
+        {
+          "endpoint_role": "x2",
+          "endpoint_token_count": 8,
+          "forced_row_prefix_token_ids": [
+            151646,
+            74,
+            632,
+            151647,
+            151648,
+            151992,
+            151929,
+            152018
+          ],
+          "forced_row_prefix_token_ids_sha256": "90dad5a673d41c8e863103e78e53995283d105c43326f6b5bab930726e432a02",
+          "global_lcp_token_count": 5,
+          "level": "A",
+          "row_end_token_index": 10,
+          "row_start_token_index": 0,
+          "rung_name": "level_a_x2"
+        },
+        {
+          "endpoint_role": "y2",
+          "endpoint_token_count": 9,
+          "forced_row_prefix_token_ids": [
+            151646,
+            74,
+            632,
+            151647,
+            151648,
+            151992,
+            151929,
+            152018,
+            152009
+          ],
+          "forced_row_prefix_token_ids_sha256": "6575c77ead2be5c2035c424622568b71481ac8ddfd000f53847841e008533981",
+          "global_lcp_token_count": 5,
+          "level": "A",
+          "row_end_token_index": 10,
+          "row_start_token_index": 0,
+          "rung_name": "level_a_y2"
+        },
+        {
+          "endpoint_role": "box_end",
+          "endpoint_token_count": 10,
+          "forced_row_prefix_token_ids": [
+            151646,
+            74,
+            632,
+            151647,
+            151648,
+            151992,
+            151929,
+            152018,
+            152009,
+            151649
+          ],
+          "forced_row_prefix_token_ids_sha256": "429b05a429d2f02f06c46527c3b249d3ac3776c3b3751ffb5594b84bee8ff214",
+          "global_lcp_token_count": 5,
+          "level": "A",
+          "row_end_token_index": 10,
+          "row_start_token_index": 0,
+          "rung_name": "level_a_box_end"
+        },
+        {
+          "endpoint_role": "row_opener",
+          "endpoint_token_count": 1,
+          "forced_row_prefix_token_ids": [
+            151646
+          ],
+          "forced_row_prefix_token_ids_sha256": "b90e86dcb80da58995de92765ecdbc6a26c15c9bdcced739d1da427bd7228b53",
+          "global_lcp_token_count": 5,
+          "level": "B",
+          "row_end_token_index": 46,
+          "row_start_token_index": 37,
+          "rung_name": "level_b_target_row_start"
+        },
+        {
+          "endpoint_role": "description_end",
+          "endpoint_token_count": 3,
+          "forced_row_prefix_token_ids": [
+            151646,
+            8987,
+            151647
+          ],
+          "forced_row_prefix_token_ids_sha256": "41cbaf75b1ea3d4071ac7972fdd6439353207bd29783b5b084c31b2e67739b7d",
+          "global_lcp_token_count": 5,
+          "level": "B",
+          "row_end_token_index": 46,
+          "row_start_token_index": 37,
+          "rung_name": "level_b_description_end"
+        },
+        {
+          "endpoint_role": "box_start",
+          "endpoint_token_count": 4,
+          "forced_row_prefix_token_ids": [
+            151646,
+            8987,
+            151647,
+            151648
+          ],
+          "forced_row_prefix_token_ids_sha256": "065860235ef02ac913eb9e3f851451390972f79340541204e80be1e9538cef9d",
+          "global_lcp_token_count": 5,
+          "level": "B",
+          "row_end_token_index": 46,
+          "row_start_token_index": 37,
+          "rung_name": "level_b_box_start"
+        },
+        {
+          "endpoint_role": "x1",
+          "endpoint_token_count": 5,
+          "forced_row_prefix_token_ids": [
+            151646,
+            8987,
+            151647,
+            151648,
+            152629
+          ],
+          "forced_row_prefix_token_ids_sha256": "0669f5e1bc7a6a4f4f151809870c567e131c304dc6292bf6e32a14e3a1f2744b",
+          "global_lcp_token_count": 5,
+          "level": "B",
+          "row_end_token_index": 46,
+          "row_start_token_index": 37,
+          "rung_name": "level_b_x1"
+        },
+        {
+          "endpoint_role": "y1",
+          "endpoint_token_count": 6,
+          "forced_row_prefix_token_ids": [
+            151646,
+            8987,
+            151647,
+            151648,
+            152629,
+            152258
+          ],
+          "forced_row_prefix_token_ids_sha256": "b5deeafafa8cd48525110bc0e6aff9bd6da7a217b7996a20ebae5f6e70cf6945",
+          "global_lcp_token_count": 5,
+          "level": "B",
+          "row_end_token_index": 46,
+          "row_start_token_index": 37,
+          "rung_name": "level_b_y1"
+        },
+        {
+          "endpoint_role": "x2",
+          "endpoint_token_count": 7,
+          "forced_row_prefix_token_ids": [
+            151646,
+            8987,
+            151647,
+            151648,
+            152629,
+            152258,
+            152653
+          ],
+          "forced_row_prefix_token_ids_sha256": "f44ed37ce7a06fdf5a2a8baf975118b5f5d9466dd8709ac557aa97604420356f",
+          "global_lcp_token_count": 5,
+          "level": "B",
+          "row_end_token_index": 46,
+          "row_start_token_index": 37,
+          "rung_name": "level_b_x2"
+        },
+        {
+          "endpoint_role": "y2",
+          "endpoint_token_count": 8,
+          "forced_row_prefix_token_ids": [
+            151646,
+            8987,
+            151647,
+            151648,
+            152629,
+            152258,
+            152653,
+            152293
+          ],
+          "forced_row_prefix_token_ids_sha256": "019a17d184dfff997491e1547982bcf62060a49adf58c3e90b0c66a7bfd52789",
+          "global_lcp_token_count": 5,
+          "level": "B",
+          "row_end_token_index": 46,
+          "row_start_token_index": 37,
+          "rung_name": "level_b_y2"
+        },
+        {
+          "endpoint_role": "box_end",
+          "endpoint_token_count": 9,
+          "forced_row_prefix_token_ids": [
+            151646,
+            8987,
+            151647,
+            151648,
+            152629,
+            152258,
+            152653,
+            152293,
+            151649
+          ],
+          "forced_row_prefix_token_ids_sha256": "b3138bb1682940b8613cd8946b640ed7cf70af58c5ce7fa058e6905906418511",
+          "global_lcp_token_count": 5,
+          "level": "B",
+          "row_end_token_index": 46,
+          "row_start_token_index": 37,
+          "rung_name": "level_b_box_end"
+        }
+      ],
+      "target_owner_id": "7511:-169",
+      "target_row_span_in_sampled": {
+        "end": 46,
+        "sha256": "b3138bb1682940b8613cd8946b640ed7cf70af58c5ce7fa058e6905906418511",
+        "start": 37,
+        "token_count": 9
+      }
+    },
+    {
+      "case_id": "wine-glass-2685-first-sampled-only",
+      "complete_row_budget": 16,
+      "expected_donor": {
+        "coord_bins": [
+          142,
+          335,
+          180,
+          414
+        ],
+        "description": "wine glass",
+        "raw_span_sha256": "7e415ad3a7e5c959a40839155fd295efb873e4eac400711cbe510cf05f4d2613",
+        "source_manifest_expected_donor": {
+          "coord_bins": [
+            142,
+            335,
+            180,
+            414
+          ],
+          "description": "wine glass",
+          "raw_span_sha256": "7e415ad3a7e5c959a40839155fd295efb873e4eac400711cbe510cf05f4d2613"
+        }
+      },
+      "geometry_trust": "trusted_for_diagnostic",
+      "global_longest_common_prefix": {
+        "first_divergence_index": 4,
+        "first_divergence_row_index": 0,
+        "first_divergence_row_offset": 4,
+        "greedy_token": 152286,
+        "sampled_token": 152285,
+        "token_count": 4,
+        "token_ids_sha256": "065860235ef02ac913eb9e3f851451390972f79340541204e80be1e9538cef9d"
+      },
+      "greedy_artifact": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/full/greedy-all12.json",
+        "sha256": "68cd33d70ecf1a318b89734e2717fe81ac25c39bf9e8784ead1ca4de4e0b59c7"
+      },
+      "greedy_generated_token_count": 253,
+      "image_id": 2685,
+      "prompt_token_ids_sha256": "f4eacb2098348f3bec19392ebd45e656708a845666f7c47452c70c012e602511",
+      "reviewed_donor_owner_id": null,
+      "sampled_artifact": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/full/sampled-shard-gpu4.json",
+        "sha256": "21b425098dc1bcc08a64d1190affd690c69f060bb3f747ad269d71f80dfa92a1"
+      },
+      "sampled_donor_row_index": 6,
+      "sampled_generated_token_count": 213,
+      "sampled_prefix_before_target_row_token_count": 54,
+      "sampled_seed": 21008,
+      "source_case_id": "wine-glass-2685-row6",
+      "staircase": [
+        {
+          "endpoint_role": "x1",
+          "endpoint_token_count": 5,
+          "forced_row_prefix_token_ids": [
+            151646,
+            8987,
+            151647,
+            151648,
+            152285
+          ],
+          "forced_row_prefix_token_ids_sha256": "8a3b0cc79efad80fe9218d70bc8d59b697aefe264f20d1e861410f8e593075e2",
+          "global_lcp_token_count": 4,
+          "level": "A",
+          "row_end_token_index": 9,
+          "row_start_token_index": 0,
+          "rung_name": "level_a_first_divergence"
+        },
+        {
+          "endpoint_role": "y1",
+          "endpoint_token_count": 6,
+          "forced_row_prefix_token_ids": [
+            151646,
+            8987,
+            151647,
+            151648,
+            152285,
+            151678
+          ],
+          "forced_row_prefix_token_ids_sha256": "16612641aae7480645c87274fbb536a6c5bdcc401a1e94bfa1823afd3745ea8e",
+          "global_lcp_token_count": 4,
+          "level": "A",
+          "row_end_token_index": 9,
+          "row_start_token_index": 0,
+          "rung_name": "level_a_y1"
+        },
+        {
+          "endpoint_role": "x2",
+          "endpoint_token_count": 7,
+          "forced_row_prefix_token_ids": [
+            151646,
+            8987,
+            151647,
+            151648,
+            152285,
+            151678,
+            152609
+          ],
+          "forced_row_prefix_token_ids_sha256": "996c342ebb66994dcf7a51eb05daf7120026cccc007454bbdaf28c4ceb65164d",
+          "global_lcp_token_count": 4,
+          "level": "A",
+          "row_end_token_index": 9,
+          "row_start_token_index": 0,
+          "rung_name": "level_a_x2"
+        },
+        {
+          "endpoint_role": "y2",
+          "endpoint_token_count": 8,
+          "forced_row_prefix_token_ids": [
+            151646,
+            8987,
+            151647,
+            151648,
+            152285,
+            151678,
+            152609,
+            152296
+          ],
+          "forced_row_prefix_token_ids_sha256": "d652ad007c92cad1ef21655ce70f3394a7b1f9c1de1afd5be4e6aea13cd2ceb2",
+          "global_lcp_token_count": 4,
+          "level": "A",
+          "row_end_token_index": 9,
+          "row_start_token_index": 0,
+          "rung_name": "level_a_y2"
+        },
+        {
+          "endpoint_role": "box_end",
+          "endpoint_token_count": 9,
+          "forced_row_prefix_token_ids": [
+            151646,
+            8987,
+            151647,
+            151648,
+            152285,
+            151678,
+            152609,
+            152296,
+            151649
+          ],
+          "forced_row_prefix_token_ids_sha256": "9141f4bc96fa1e8123ebd1a7b625a29dae6816b8c32cdaf3309c75cb5fb3bedf",
+          "global_lcp_token_count": 4,
+          "level": "A",
+          "row_end_token_index": 9,
+          "row_start_token_index": 0,
+          "rung_name": "level_a_box_end"
+        },
+        {
+          "endpoint_role": "row_opener",
+          "endpoint_token_count": 1,
+          "forced_row_prefix_token_ids": [
+            151646
+          ],
+          "forced_row_prefix_token_ids_sha256": "b90e86dcb80da58995de92765ecdbc6a26c15c9bdcced739d1da427bd7228b53",
+          "global_lcp_token_count": 4,
+          "level": "B",
+          "row_end_token_index": 64,
+          "row_start_token_index": 54,
+          "rung_name": "level_b_target_row_start"
+        },
+        {
+          "endpoint_role": "description_end",
+          "endpoint_token_count": 4,
+          "forced_row_prefix_token_ids": [
+            151646,
+            71437,
+            8991,
+            151647
+          ],
+          "forced_row_prefix_token_ids_sha256": "edba825a15e1a7745065e31e25da547a4637d77cec09bacd12fd5ae99c00e73b",
+          "global_lcp_token_count": 4,
+          "level": "B",
+          "row_end_token_index": 64,
+          "row_start_token_index": 54,
+          "rung_name": "level_b_description_end"
+        },
+        {
+          "endpoint_role": "box_start",
+          "endpoint_token_count": 5,
+          "forced_row_prefix_token_ids": [
+            151646,
+            71437,
+            8991,
+            151647,
+            151648
+          ],
+          "forced_row_prefix_token_ids_sha256": "d6e3af9c0a4ab25dbbbfa481f85872b3c70844856553262dac31fafa6fd07442",
+          "global_lcp_token_count": 4,
+          "level": "B",
+          "row_end_token_index": 64,
+          "row_start_token_index": 54,
+          "rung_name": "level_b_box_start"
+        },
+        {
+          "endpoint_role": "x1",
+          "endpoint_token_count": 6,
+          "forced_row_prefix_token_ids": [
+            151646,
+            71437,
+            8991,
+            151647,
+            151648,
+            151812
+          ],
+          "forced_row_prefix_token_ids_sha256": "8057c1809f2e3e9df8253b09082e3465df5d824dac248da6c1c16a9669189401",
+          "global_lcp_token_count": 4,
+          "level": "B",
+          "row_end_token_index": 64,
+          "row_start_token_index": 54,
+          "rung_name": "level_b_x1"
+        },
+        {
+          "endpoint_role": "y1",
+          "endpoint_token_count": 7,
+          "forced_row_prefix_token_ids": [
+            151646,
+            71437,
+            8991,
+            151647,
+            151648,
+            151812,
+            152005
+          ],
+          "forced_row_prefix_token_ids_sha256": "e19a902248aa51ccc2092f941f8445106d635a78c8172638e50ac16fc5e4ec90",
+          "global_lcp_token_count": 4,
+          "level": "B",
+          "row_end_token_index": 64,
+          "row_start_token_index": 54,
+          "rung_name": "level_b_y1"
+        },
+        {
+          "endpoint_role": "x2",
+          "endpoint_token_count": 8,
+          "forced_row_prefix_token_ids": [
+            151646,
+            71437,
+            8991,
+            151647,
+            151648,
+            151812,
+            152005,
+            151850
+          ],
+          "forced_row_prefix_token_ids_sha256": "d46b915317f5e1b24009b719ba10bcfda13d701c99856cde913ffb9d5567ec93",
+          "global_lcp_token_count": 4,
+          "level": "B",
+          "row_end_token_index": 64,
+          "row_start_token_index": 54,
+          "rung_name": "level_b_x2"
+        },
+        {
+          "endpoint_role": "y2",
+          "endpoint_token_count": 9,
+          "forced_row_prefix_token_ids": [
+            151646,
+            71437,
+            8991,
+            151647,
+            151648,
+            151812,
+            152005,
+            151850,
+            152084
+          ],
+          "forced_row_prefix_token_ids_sha256": "4bd2ca88cb4816a1ae9dd37c04c43910dc2727a70171f5ba44a86f480e859a24",
+          "global_lcp_token_count": 4,
+          "level": "B",
+          "row_end_token_index": 64,
+          "row_start_token_index": 54,
+          "rung_name": "level_b_y2"
+        },
+        {
+          "endpoint_role": "box_end",
+          "endpoint_token_count": 10,
+          "forced_row_prefix_token_ids": [
+            151646,
+            71437,
+            8991,
+            151647,
+            151648,
+            151812,
+            152005,
+            151850,
+            152084,
+            151649
+          ],
+          "forced_row_prefix_token_ids_sha256": "55e6cee8f8a982a8aaafa03e5e7826b93c40302e3ef5b02bd34d690a00d706c4",
+          "global_lcp_token_count": 4,
+          "level": "B",
+          "row_end_token_index": 64,
+          "row_start_token_index": 54,
+          "rung_name": "level_b_box_end"
+        }
+      ],
+      "target_owner_id": "2685:-78",
+      "target_row_span_in_sampled": {
+        "end": 64,
+        "sha256": "55e6cee8f8a982a8aaafa03e5e7826b93c40302e3ef5b02bd34d690a00d706c4",
+        "start": 54,
+        "token_count": 10
+      }
+    }
+  ],
+  "greedy_artifact": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/full/greedy-all12.json",
+    "sha256": "68cd33d70ecf1a318b89734e2717fe81ac25c39bf9e8784ead1ca4de4e0b59c7"
+  },
+  "schema_version": "earliest_shared_prefix_branch_cases.v1",
+  "source_cases_manifest": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-21-greedy-prefix-forced-owner-path-intervention/cases.json",
+    "sha256": "75af70466eeff6966c2fc70730113c22c0f4909ba3b2977cce677942c6a5c0e0"
+  },
+  "total_token_budget": 512,
+  "unit_id": "2026-07-21-earliest-shared-prefix-branch-pilot"
+}

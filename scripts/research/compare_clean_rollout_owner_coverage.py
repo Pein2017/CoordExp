@@ -1,0 +1,498 @@
+#!/usr/bin/env python
+"""Compare owner coverage in two clean ``gt_vs_pred.jsonl`` artifacts.
+
+The artifact contract stores GT boxes as norm1000 bins and decoded prediction
+boxes as pixels.  This utility deliberately keeps entity discovery (category
+and box matching) separate from interpretation of unmatched predictions:
+unmatched predictions are counted, but are never labelled hallucinations.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import math
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Iterable
+
+try:  # Allow ``python scripts/research/...py`` from a checkout root.
+    from src.data.geometry import coord_bins_to_pixel_xyxy
+    from src.eval.detection_categories import normalize_coco_category_name
+    from src.vis.matching import iou_xyxy
+except ModuleNotFoundError as exc:  # pragma: no cover - exercised by CLI use
+    if exc.name != "src":
+        raise
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from src.data.geometry import coord_bins_to_pixel_xyxy
+    from src.eval.detection_categories import normalize_coco_category_name
+    from src.vis.matching import iou_xyxy
+
+
+def _read_jsonl(path: Path) -> dict[str, dict[str, Any]]:
+    rows: dict[str, dict[str, Any]] = {}
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            try:
+                value = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"{path}:{line_number} is not valid JSON") from exc
+            if not isinstance(value, dict):
+                raise ValueError(f"{path}:{line_number} must contain an object")
+            row_id = value.get("row_id", value.get("example_id"))
+            if row_id is None:
+                raise ValueError(f"{path}:{line_number} is missing row_id")
+            key = str(row_id)
+            if key in rows:
+                raise ValueError(f"{path} contains duplicate row_id {key!r}")
+            rows[key] = value
+    return rows
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _category(obj: Any) -> str:
+    if not isinstance(obj, dict):
+        return ""
+    return normalize_coco_category_name(
+        obj.get("description", obj.get("desc", obj.get("label", obj.get("category", ""))))
+    )
+
+
+def _bbox(obj: Any) -> Any:
+    return obj.get("bbox", obj.get("bbox_2d")) if isinstance(obj, dict) else None
+
+
+def _pixel_box(value: Any) -> tuple[float, float, float, float] | None:
+    if not isinstance(value, (list, tuple)) or len(value) != 4:
+        return None
+    try:
+        box = tuple(float(item) for item in value)
+    except (TypeError, ValueError):
+        return None
+    if not all(math.isfinite(item) for item in box):
+        return None
+    x1, y1, x2, y2 = box
+    if x1 >= x2 or y1 >= y2:
+        return None
+    return box
+
+
+def _dimensions(row: dict[str, Any]) -> tuple[int, int] | None:
+    width = row.get("image_width", row.get("width"))
+    height = row.get("image_height", row.get("height"))
+    if isinstance(width, bool) or isinstance(height, bool):
+        return None
+    if not isinstance(width, int) or not isinstance(height, int) or width <= 0 or height <= 0:
+        return None
+    return width, height
+
+
+def _gt_objects(row: dict[str, Any], *, row_id: str) -> list[tuple[str, tuple[float, float, float, float]]]:
+    objects = row.get("gt", [])
+    if not isinstance(objects, list):
+        raise ValueError(f"row {row_id!r} has malformed GT list")
+    dimensions = _dimensions(row)
+    if dimensions is None:
+        raise ValueError(f"row {row_id!r} has invalid image dimensions")
+    width, height = dimensions
+    result: list[tuple[str, tuple[float, float, float, float]]] = []
+    for index, obj in enumerate(objects):
+        raw = _bbox(obj)
+        try:
+            box = coord_bins_to_pixel_xyxy(
+                raw,
+                image_width=width,
+                image_height=height,
+                field=f"gt[{index}].bbox",
+            )
+        except Exception as exc:
+            raise ValueError(f"row {row_id!r} has invalid GT bbox at index {index}") from exc
+        result.append((_category(obj), tuple(float(item) for item in box)))
+    return result
+
+
+def _pred_objects(row: dict[str, Any]) -> tuple[list[tuple[str, tuple[float, float, float, float]]], int]:
+    objects = row.get("pred", [])
+    if not isinstance(objects, list):
+        return [], 1
+    result: list[tuple[str, tuple[float, float, float, float]]] = []
+    invalid = 0
+    for obj in objects:
+        box = _pixel_box(_bbox(obj))
+        if box is None or not _category(obj):
+            invalid += 1
+            continue
+        result.append((_category(obj), box))
+    return result, invalid
+
+
+def _distribution(values: Iterable[float]) -> dict[str, Any]:
+    ordered = sorted(float(value) for value in values)
+    if not ordered:
+        return {"count": 0, "mean": None, "min": None, "max": None, "p50": None, "p90": None}
+    def quantile(q: float) -> float:
+        return ordered[int(round((len(ordered) - 1) * q))]
+    return {
+        "count": len(ordered),
+        "mean": sum(ordered) / len(ordered),
+        "min": ordered[0],
+        "max": ordered[-1],
+        "p50": quantile(0.50),
+        "p90": quantile(0.90),
+    }
+
+
+@dataclass
+class _FlowEdge:
+    to: int
+    reverse: int
+    capacity: int
+    cost: int
+    kind: str = ""
+    gt_index: int = -1
+    pred_index: int = -1
+
+
+def _global_matches(
+    gt: list[tuple[str, tuple[float, float, float, float]]],
+    pred: list[tuple[str, tuple[float, float, float, float]]],
+    threshold: float,
+) -> list[tuple[int, int, float]]:
+    """Return deterministic cardinality-first, maximum-IoU matches.
+
+    A tiny integer-cost min-cost-flow implementation avoids making an optional
+    SciPy dependency part of this offline script.  Successive shortest paths
+    augment until no path remains, giving maximum cardinality first; negative
+    IoU costs then maximize total overlap for that cardinality.
+    """
+    source = 0
+    gt_start = 1
+    pred_start = gt_start + len(gt)
+    sink = pred_start + len(pred)
+    graph: list[list[_FlowEdge]] = [[] for _ in range(sink + 1)]
+
+    def add_edge(left: int, right: int, cost: int, *, kind: str = "", gt_index: int = -1, pred_index: int = -1) -> None:
+        forward = _FlowEdge(right, len(graph[right]), 1, cost, kind, gt_index, pred_index)
+        reverse = _FlowEdge(left, len(graph[left]), 0, -cost)
+        graph[left].append(forward)
+        graph[right].append(reverse)
+
+    for gt_index in range(len(gt)):
+        add_edge(source, gt_start + gt_index, 0)
+    for pred_index in range(len(pred)):
+        add_edge(pred_start + pred_index, sink, 0)
+    for gt_index, (gt_category, gt_box) in enumerate(gt):
+        for pred_index, (pred_category, pred_box) in enumerate(pred):
+            if gt_category != pred_category:
+                continue
+            overlap = iou_xyxy(gt_box, pred_box)
+            if overlap >= threshold:
+                # Scale enough to preserve ordinary float IoU ordering while
+                # keeping costs integral and reproducible.
+                add_edge(gt_start + gt_index, pred_start + pred_index, -round(overlap * 1_000_000_000),
+                         kind="match", gt_index=gt_index, pred_index=pred_index)
+
+    node_count = len(graph)
+    while True:
+        distances: list[int | None] = [None] * node_count
+        previous: list[tuple[int, int] | None] = [None] * node_count
+        distances[source] = 0
+        for _ in range(node_count - 1):
+            changed = False
+            for left, edges in enumerate(graph):
+                if distances[left] is None:
+                    continue
+                for edge_index, edge in enumerate(edges):
+                    if edge.capacity <= 0:
+                        continue
+                    candidate = distances[left] + edge.cost
+                    if distances[edge.to] is None or candidate < distances[edge.to]:
+                        distances[edge.to] = candidate
+                        previous[edge.to] = (left, edge_index)
+                        changed = True
+            if not changed:
+                break
+        if distances[sink] is None:
+            break
+        node = sink
+        while node != source:
+            left, edge_index = previous[node]  # type: ignore[misc]
+            edge = graph[left][edge_index]
+            edge.capacity = 0
+            graph[node][edge.reverse].capacity = 1
+            node = left
+
+    matches: list[tuple[int, int, float]] = []
+    for gt_index in range(len(gt)):
+        for edge in graph[gt_start + gt_index]:
+            if edge.kind == "match" and edge.capacity == 0:
+                matches.append((gt_index, edge.pred_index, iou_xyxy(gt[gt_index][1], pred[edge.pred_index][1])))
+    return sorted(matches, key=lambda item: (item[0], item[1]))
+
+
+def _row_metrics(
+    row: dict[str, Any],
+    *,
+    row_id: str,
+    match_iou_threshold: float,
+    duplicate_iou_threshold: float,
+) -> tuple[dict[str, Any], int, int, int, int, int]:
+    gt = _gt_objects(row, row_id=row_id)
+    pred, invalid_predictions = _pred_objects(row)
+    dimensions_valid = _dimensions(row) is not None
+    status = str(row.get("parse_status", "")).lower()
+    malformed = int("malformed" in status)
+    invalid = int("invalid" in status or not dimensions_valid or invalid_predictions > 0)
+    reported_dropped = row.get("dropped_prediction_count", 0)
+    try:
+        dropped_predictions = max(0, int(reported_dropped or 0))
+    except (TypeError, ValueError):
+        dropped_predictions = 0
+    if isinstance(row.get("dropped_predictions"), list):
+        dropped_predictions = max(dropped_predictions, len(row["dropped_predictions"]))
+    dropped = int(dropped_predictions > 0 or "dropped" in status)
+
+    matches = _global_matches(gt, pred, match_iou_threshold)
+    used_gt = {gt_index for gt_index, _, _ in matches}
+    matched_ious: list[float] = []
+    center_errors: list[float] = []
+    size_errors: list[float] = []
+    for gt_index, pred_index, overlap in matches:
+        matched_ious.append(overlap)
+        gx1, gy1, gx2, gy2 = gt[gt_index][1]
+        px1, py1, px2, py2 = pred[pred_index][1]
+        center_errors.append(math.hypot((gx1 + gx2 - px1 - px2) / 2, (gy1 + gy2 - py1 - py2) / 2))
+        size_errors.append(math.hypot((gx2 - gx1) - (px2 - px1), (gy2 - gy1) - (py2 - py1)))
+
+    # Assign each prediction with sufficient overlap to its best physical GT owner.
+    # This includes unmatched predictions, while intentionally making no claim
+    # about whether such predictions are hallucinations.
+    owner_hits: dict[int, int] = {}
+    ambiguous_duplicate_candidate_count = 0
+    for pred_index, (_, pred_box) in enumerate(pred):
+        owner_candidates = [
+            (iou_xyxy(gt_box, pred_box), gt_index)
+            for gt_index, (gt_category, gt_box) in enumerate(gt)
+            if gt_category == pred[pred_index][0]
+            and iou_xyxy(gt_box, pred_box) >= duplicate_iou_threshold
+        ]
+        if len(owner_candidates) == 1:
+            _, owner = owner_candidates[0]
+            owner_hits[owner] = owner_hits.get(owner, 0) + 1
+        elif len(owner_candidates) > 1:
+            ambiguous_duplicate_candidate_count += 1
+    duplicate_candidate_count = sum(max(0, count - 1) for count in owner_hits.values())
+    return (
+        {
+            "gt_count": len(gt),
+            "prediction_count": len(pred),
+            "unique_matched_gt_owners": len(used_gt),
+            "matched_iou": matched_ious,
+            "center_errors_px": center_errors,
+            "size_errors_px": size_errors,
+            "duplicate_candidate_count": duplicate_candidate_count,
+            "ambiguous_duplicate_candidate_count": ambiguous_duplicate_candidate_count,
+            "dropped_prediction_count": dropped_predictions,
+            "invalid_prediction_count": invalid_predictions,
+        },
+        malformed,
+        invalid,
+        dropped,
+        dropped_predictions,
+        invalid_predictions,
+    )
+
+
+def _gt_signature(row: dict[str, Any], *, row_id: str) -> tuple[Any, ...]:
+    # Validate and convert through the canonical path, but compare source
+    # norm1000 bins so two distinct bins that round to the same pixel box do
+    # not silently pass the GT-identity gate.
+    _gt_objects(row, row_id=row_id)
+    objects = row.get("gt", [])
+    dimensions = _dimensions(row)
+    return (
+        dimensions,
+        tuple(
+            (
+                obj.get("object_id", obj.get("id", index)),
+                _category(obj),
+                tuple(_bbox(obj)),
+            )
+            for index, obj in enumerate(objects)
+        ),
+    )
+
+
+def _matched_owner_geometry(
+    row: dict[str, Any], *, row_id: str, match_iou_threshold: float
+) -> dict[int, tuple[float, float, float]]:
+    """Return IoU, center error, and size error keyed by annotated owner index."""
+    gt = _gt_objects(row, row_id=row_id)
+    pred, _ = _pred_objects(row)
+    result: dict[int, tuple[float, float, float]] = {}
+    for gt_index, pred_index, overlap in _global_matches(gt, pred, match_iou_threshold):
+        gx1, gy1, gx2, gy2 = gt[gt_index][1]
+        px1, py1, px2, py2 = pred[pred_index][1]
+        center_error = math.hypot(
+            (gx1 + gx2 - px1 - px2) / 2,
+            (gy1 + gy2 - py1 - py2) / 2,
+        )
+        size_error = math.hypot(
+            (gx2 - gx1) - (px2 - px1),
+            (gy2 - gy1) - (py2 - py1),
+        )
+        result[gt_index] = (overlap, center_error, size_error)
+    return result
+
+
+def _summarize(
+    rows: dict[str, dict[str, Any]], *, match_iou_threshold: float, duplicate_iou_threshold: float
+) -> dict[str, Any]:
+    totals = {"gt_count": 0, "prediction_count": 0, "unique_matched_gt_owners": 0,
+              "duplicate_candidate_count": 0, "ambiguous_duplicate_candidate_count": 0,
+              "malformed_row_count": 0, "invalid_row_count": 0, "dropped_row_count": 0,
+              "dropped_prediction_count": 0, "invalid_prediction_count": 0}
+    ious: list[float] = []
+    centers: list[float] = []
+    sizes: list[float] = []
+    for row_id in sorted(rows):
+        metrics, malformed, invalid, dropped, dropped_predictions, invalid_predictions = _row_metrics(
+            rows[row_id], row_id=row_id, match_iou_threshold=match_iou_threshold,
+            duplicate_iou_threshold=duplicate_iou_threshold,
+        )
+        for key in ("gt_count", "prediction_count", "unique_matched_gt_owners",
+                    "duplicate_candidate_count", "ambiguous_duplicate_candidate_count"):
+            totals[key] += metrics[key]
+        totals["malformed_row_count"] += malformed
+        totals["invalid_row_count"] += invalid
+        totals["dropped_row_count"] += dropped
+        totals["dropped_prediction_count"] += dropped_predictions
+        totals["invalid_prediction_count"] += invalid_predictions
+        ious.extend(metrics["matched_iou"])
+        centers.extend(metrics["center_errors_px"])
+        sizes.extend(metrics["size_errors_px"])
+    gt_count = totals["gt_count"]
+    totals.update({
+        "row_count": len(rows),
+        "owner_coverage": totals["unique_matched_gt_owners"] / gt_count if gt_count else 0.0,
+        "owner_false_negative_rate": 1.0 - totals["unique_matched_gt_owners"] / gt_count if gt_count else 0.0,
+        "matched_iou": _distribution(ious),
+        "center_error_mean_px": sum(centers) / len(centers) if centers else None,
+        "size_error_mean_px": sum(sizes) / len(sizes) if sizes else None,
+    })
+    return totals
+
+
+def compare_artifacts(
+    arm_a_path: str | Path,
+    arm_b_path: str | Path,
+    *,
+    match_iou_threshold: float = 0.50,
+    duplicate_iou_threshold: float = 0.30,
+) -> dict[str, Any]:
+    if not (0.0 <= match_iou_threshold <= 1.0 and 0.0 <= duplicate_iou_threshold <= 1.0):
+        raise ValueError("IoU thresholds must be between 0 and 1")
+    path_a = Path(arm_a_path).resolve()
+    path_b = Path(arm_b_path).resolve()
+    arm_a = _read_jsonl(path_a)
+    arm_b = _read_jsonl(path_b)
+    if set(arm_a) != set(arm_b):
+        raise ValueError("artifact row sets do not match")
+    for row_id in sorted(arm_a):
+        if _gt_signature(arm_a[row_id], row_id=row_id) != _gt_signature(arm_b[row_id], row_id=row_id):
+            raise ValueError(f"GT mismatch for row_id {row_id!r}")
+    summary_a = _summarize(
+        arm_a, match_iou_threshold=match_iou_threshold, duplicate_iou_threshold=duplicate_iou_threshold
+    )
+    summary_b = _summarize(
+        arm_b, match_iou_threshold=match_iou_threshold, duplicate_iou_threshold=duplicate_iou_threshold
+    )
+    delta: dict[str, Any] = {}
+    for key in ("gt_count", "prediction_count", "unique_matched_gt_owners", "owner_coverage",
+                "owner_false_negative_rate", "duplicate_candidate_count",
+                "ambiguous_duplicate_candidate_count", "malformed_row_count",
+                "invalid_row_count", "dropped_row_count", "dropped_prediction_count",
+                "invalid_prediction_count", "center_error_mean_px", "size_error_mean_px"):
+        left, right = summary_a[key], summary_b[key]
+        delta[key] = None if left is None or right is None else right - left
+    delta["matched_iou_mean"] = (
+        None if summary_a["matched_iou"]["mean"] is None or summary_b["matched_iou"]["mean"] is None
+        else summary_b["matched_iou"]["mean"] - summary_a["matched_iou"]["mean"]
+    )
+    common_iou_deltas: list[float] = []
+    common_center_deltas: list[float] = []
+    common_size_deltas: list[float] = []
+    arm_a_only_owner_count = 0
+    arm_b_only_owner_count = 0
+    for row_id in sorted(arm_a):
+        geometry_a = _matched_owner_geometry(
+            arm_a[row_id], row_id=row_id, match_iou_threshold=match_iou_threshold
+        )
+        geometry_b = _matched_owner_geometry(
+            arm_b[row_id], row_id=row_id, match_iou_threshold=match_iou_threshold
+        )
+        common = set(geometry_a) & set(geometry_b)
+        arm_a_only_owner_count += len(set(geometry_a) - set(geometry_b))
+        arm_b_only_owner_count += len(set(geometry_b) - set(geometry_a))
+        for owner_index in sorted(common):
+            iou_a, center_a, size_a = geometry_a[owner_index]
+            iou_b, center_b, size_b = geometry_b[owner_index]
+            common_iou_deltas.append(iou_b - iou_a)
+            common_center_deltas.append(center_b - center_a)
+            common_size_deltas.append(size_b - size_a)
+    return {
+        "inputs": {
+            "arm_a": {"path": str(path_a), "sha256": _sha256(path_a)},
+            "arm_b": {"path": str(path_b), "sha256": _sha256(path_b)},
+        },
+        "policy": {
+            "match_iou_threshold": match_iou_threshold,
+            "duplicate_iou_threshold": duplicate_iou_threshold,
+            "delta_convention": "arm_b_minus_arm_a",
+            "unmatched_predictions_are_not_hallucinations": True,
+            "duplicate_policy": (
+                "count only extra predictions uniquely attributable to one same-category GT owner; "
+                "report ambiguous candidates separately"
+            ),
+        },
+        "arm_a": summary_a,
+        "arm_b": summary_b,
+        "paired_deltas": delta,
+        "common_owner_geometry": {
+            "owner_count": len(common_iou_deltas),
+            "arm_a_only_owner_count": arm_a_only_owner_count,
+            "arm_b_only_owner_count": arm_b_only_owner_count,
+            "iou_delta": _distribution(common_iou_deltas),
+            "center_error_delta_px": _distribution(common_center_deltas),
+            "size_error_delta_px": _distribution(common_size_deltas),
+        },
+    }
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("arm_a", type=Path)
+    parser.add_argument("arm_b", type=Path)
+    parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--match-iou-threshold", type=float, default=0.50)
+    parser.add_argument("--duplicate-iou-threshold", type=float, default=0.30)
+    args = parser.parse_args()
+    result = compare_artifacts(args.arm_a, args.arm_b, match_iou_threshold=args.match_iou_threshold,
+                               duplicate_iou_threshold=args.duplicate_iou_threshold)
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(json.dumps(result, sort_keys=True, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+
+
+if __name__ == "__main__":
+    main()

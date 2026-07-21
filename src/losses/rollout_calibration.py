@@ -28,6 +28,11 @@ class CandidatePath:
     logits: torch.Tensor
     target_token_ids: tuple[int, ...]
     premature_terminal: bool = False
+    # Optional semantic labels for the candidate-row tokens.  The transition
+    # branch itself does not require them, which keeps old diagnostic callers
+    # source-compatible.  Training events that request coherent-row
+    # continuation provide one label per token.
+    token_types: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -70,6 +75,24 @@ class EntityTransitionPreferenceResult:
     positive_path_count: int
     distinct_owner_count: int
     duplicate_alias_count: int
+    first_divergence_offsets: tuple[tuple[str, int], ...]
+    positive_continuation_loss: torch.Tensor
+    positive_schema_description_loss: torch.Tensor
+    positive_coordinate_loss: torch.Tensor
+    finite: LossFiniteDiagnostics
+    math_dtype: str = "float32"
+
+
+@dataclass(frozen=True)
+class PositivePathImitationResult:
+    """Grouped exact-token continuation loss for one complete positive row."""
+
+    raw_loss: torch.Tensor
+    schema_description_loss: torch.Tensor
+    coordinate_loss: torch.Tensor
+    selected_token_count: int
+    schema_description_token_count: int
+    coordinate_token_count: int
     finite: LossFiniteDiagnostics
     math_dtype: str = "float32"
 
@@ -123,6 +146,19 @@ class RolloutSiteTokenTypeGateResult:
     math_dtype: str = "float32"
 
 
+@dataclass(frozen=True)
+class _TransitionPathDetail:
+    path: CandidatePath
+    scored: CandidatePathScore
+    first_divergence_offset: int
+    positive_branch_log_probability: torch.Tensor
+    harmful_branch_log_probability: torch.Tensor
+    branch_margin: torch.Tensor
+    continuation_loss: torch.Tensor
+    schema_description_loss: torch.Tensor
+    coordinate_loss: torch.Tensor
+
+
 def grouped_entity_transition_preference(
     positive_paths: tuple[CandidatePath, ...],
     harmful_path: CandidatePath,
@@ -130,10 +166,19 @@ def grouped_entity_transition_preference(
     margin: float,
     smooth_max_temperature: float,
 ) -> EntityTransitionPreferenceResult:
-    """Compare distinct valid physical owners with one actual harmful path."""
+    """Compare valid owners and a harmful branch at their shared fork.
+
+    A complete positive row and a one-token terminal branch must not be
+    compared by their total sequence likelihoods.  For each positive path we
+    therefore find the first token mismatch, compare only the two logits at
+    that shared-history decision, and then apply a separate coherent-row
+    continuation loss to the selected positive path.
+    """
 
     checked_margin = _finite_scalar(margin, name="margin")
-    temperature = _positive_finite_scalar(
+    # Validate the legacy public knob even though this treatment deliberately
+    # uses a hard owner maximum for its at-least-one-owner semantics.
+    _positive_finite_scalar(
         smooth_max_temperature,
         name="smooth_max_temperature",
     )
@@ -144,37 +189,58 @@ def grouped_entity_transition_preference(
         )
 
     positive_scores: list[CandidatePathScore] = []
-    scores_by_owner: dict[str, list[torch.Tensor]] = {}
+    # Keep branch and continuation details together until aliases have been
+    # reduced to one candidate per physical owner.
+    positive_details: list[_TransitionPathDetail]
     for path in positive_paths:
         _validate_candidate_identity(path, role="positive")
         scored = _score_candidate_path(path)
         positive_scores.append(scored)
-        assert path.physical_owner_id is not None
-        scores_by_owner.setdefault(path.physical_owner_id, []).append(
-            scored.summed_log_probability
-        )
 
     _validate_candidate_identity(harmful_path, role="harmful")
     scored_harmful = _score_candidate_path(harmful_path)
+    # The harmful path is paired independently with every positive path: its
+    # first divergent position can differ when aliases use different prefixes.
+    positive_details = [
+        _transition_path_detail(path, scored, harmful_path=harmful_path)
+        for path, scored in zip(positive_paths, positive_scores, strict=True)
+    ]
+    scores_by_owner: dict[str, list[_TransitionPathDetail]] = {}
+    for detail in positive_details:
+        assert detail.path.physical_owner_id is not None
+        scores_by_owner.setdefault(detail.path.physical_owner_id, []).append(detail)
 
     owner_scores = tuple(
         OwnerScore(
             physical_owner_id=owner_id,
-            score=torch.stack(tuple(alias_scores)).max(dim=0).values,
+            score=max(
+                alias_scores,
+                key=lambda item: float(item.branch_margin.detach().item()),
+            ).branch_margin,
             alias_count=len(alias_scores),
         )
         for owner_id, alias_scores in sorted(scores_by_owner.items())
     )
-    stacked_owner_scores = torch.stack(tuple(item.score for item in owner_scores))
-    positive_score = temperature * (
-        torch.logsumexp(stacked_owner_scores / temperature, dim=0)
-        - math.log(len(owner_scores))
+    # ``temperature`` remains part of the public configuration for backwards
+    # compatibility, but the treatment's semantics are explicitly "at least
+    # one owner beats harm".  A hard owner maximum avoids rewarding an event
+    # merely because it has many weak aliases or owners.
+    winning_owner_index = int(
+        torch.stack(tuple(item.score for item in owner_scores)).argmax().item()
     )
-    harmful_score = scored_harmful.summed_log_probability
-    target_margin = positive_score - harmful_score
-    raw_loss = F.softplus(
+    winning_owner = owner_scores[winning_owner_index].physical_owner_id
+    winning_detail = max(
+        scores_by_owner[winning_owner],
+        key=lambda item: float(item.branch_margin.detach().item()),
+    )
+    positive_score = winning_detail.positive_branch_log_probability
+    harmful_score = winning_detail.harmful_branch_log_probability
+    target_margin = winning_detail.branch_margin
+    branch_loss = F.softplus(
         positive_score.new_tensor(checked_margin) - positive_score + harmful_score
     )
+    continuation_loss = winning_detail.continuation_loss
+    raw_loss = branch_loss + continuation_loss
     duplicate_alias_count = len(positive_scores) - len(owner_scores)
     return EntityTransitionPreferenceResult(
         raw_loss=raw_loss,
@@ -187,11 +253,22 @@ def grouped_entity_transition_preference(
         positive_path_count=len(positive_scores),
         distinct_owner_count=len(owner_scores),
         duplicate_alias_count=duplicate_alias_count,
+        first_divergence_offsets=tuple(
+            (detail.path.candidate_id, detail.first_divergence_offset)
+            for detail in positive_details
+        ),
+        positive_continuation_loss=continuation_loss,
+        positive_schema_description_loss=winning_detail.schema_description_loss,
+        positive_coordinate_loss=winning_detail.coordinate_loss,
         finite=_finite_diagnostics(
             raw_loss=raw_loss,
             target_margin=target_margin,
             positive_score=positive_score,
             harmful_score=harmful_score,
+            branch_loss=branch_loss,
+            continuation_loss=continuation_loss,
+            schema_description_loss=winning_detail.schema_description_loss,
+            coordinate_loss=winning_detail.coordinate_loss,
         ),
     )
 
@@ -249,6 +326,110 @@ def first_wrong_coordinate_preference(
             wrong_token_score=wrong_token_score,
         ),
     )
+
+
+def positive_path_imitation_loss(
+    path: CandidatePath,
+) -> PositivePathImitationResult:
+    """Teach one sampled complete row from its exact generated token ids.
+
+    The row is scored from offset zero.  Schema and description tokens form
+    one mean-normalized group, while trusted coordinate tokens form a second
+    group.  Coordinates converted to ``untrusted_coordinate`` by the existing
+    training seam are intentionally omitted and therefore receive no exact
+    token gradient.  No branch, terminal, or KL term is involved.
+    """
+
+    _validate_candidate_identity(path, role="positive")
+    if path.token_types is None:
+        raise LossContractError(
+            "positive-path imitation requires intended token types",
+            code="loss.rollout_positive_path_token_types_missing",
+            context={"candidate_id": path.candidate_id},
+        )
+    logits = _checked_path_logits(path.logits, candidate_id=path.candidate_id)
+    target_ids = _checked_token_ids(
+        path.target_token_ids,
+        vocab_size=int(logits.shape[1]),
+        name="target_token_ids",
+        require_nonempty=True,
+        require_unique=False,
+    )
+    if len(path.token_types) != len(target_ids):
+        raise LossContractError(
+            "positive-path imitation token types must cover the complete row",
+            code="loss.rollout_positive_path_token_type_length",
+            context={
+                "candidate_id": path.candidate_id,
+                "token_count": len(target_ids),
+                "token_type_count": len(path.token_types),
+            },
+        )
+    allowed_types = {"desc_text", "schema", "coordinate", "untrusted_coordinate"}
+    unknown_types = sorted(set(path.token_types) - allowed_types)
+    if unknown_types:
+        raise LossContractError(
+            "positive-path imitation contains an unsupported token type",
+            code="loss.rollout_positive_path_token_type_unknown",
+            context={
+                "candidate_id": path.candidate_id,
+                "unknown_types": unknown_types,
+            },
+        )
+    selected = -torch.log_softmax(logits, dim=-1).gather(
+        1,
+        torch.tensor(target_ids, dtype=torch.long, device=logits.device).unsqueeze(1),
+    ).squeeze(1)
+    schema_indexes = tuple(
+        index
+        for index, token_type in enumerate(path.token_types)
+        if token_type in {"schema", "desc_text"}
+    )
+    coordinate_indexes = tuple(
+        index
+        for index, token_type in enumerate(path.token_types)
+        if token_type == "coordinate"
+    )
+    if not schema_indexes and not coordinate_indexes:
+        raise LossContractError(
+            "positive-path imitation row has no trusted supervised token group",
+            code="loss.rollout_positive_path_groups_empty",
+            context={"candidate_id": path.candidate_id},
+        )
+    zero = selected.sum() * 0.0
+    schema_loss = (
+        selected[list(schema_indexes)].mean() if schema_indexes else zero
+    )
+    coordinate_loss = (
+        selected[list(coordinate_indexes)].mean() if coordinate_indexes else zero
+    )
+    groups = [
+        value
+        for value, indexes in (
+            (schema_loss, schema_indexes),
+            (coordinate_loss, coordinate_indexes),
+        )
+        if indexes
+    ]
+    raw_loss = torch.stack(groups).mean()
+    return PositivePathImitationResult(
+        raw_loss=raw_loss,
+        schema_description_loss=schema_loss,
+        coordinate_loss=coordinate_loss,
+        selected_token_count=len(schema_indexes) + len(coordinate_indexes),
+        schema_description_token_count=len(schema_indexes),
+        coordinate_token_count=len(coordinate_indexes),
+        finite=_finite_diagnostics(
+            raw_loss=raw_loss,
+            schema_description_loss=schema_loss,
+            coordinate_loss=coordinate_loss,
+        ),
+    )
+
+
+# Keep a compact function alias for callers that use the objective name as a
+# verb, while the explicit ``*_loss`` spelling remains the canonical API.
+positive_path_imitation = positive_path_imitation_loss
 
 
 def rollout_site_token_type_gate(
@@ -385,6 +566,154 @@ def _score_candidate_path(path: CandidatePath) -> CandidatePathScore:
         mean_log_probability=selected.mean(),
         token_count=len(target_ids),
     )
+
+
+def _transition_path_detail(
+    path: CandidatePath,
+    scored: CandidatePathScore,
+    *,
+    harmful_path: CandidatePath,
+) -> _TransitionPathDetail:
+    """Score one positive branch against the actual harmful branch.
+
+    ``path`` and ``harmful_path`` are isolated replay segments, so their
+    logits tensors have independent rows.  Equal target token identifiers
+    before ``divergence`` prove that both rows represent the same causal
+    history; only the two logits at that first mismatch are compared.
+    """
+
+    positive_ids = tuple(path.target_token_ids)
+    harmful_ids = tuple(harmful_path.target_token_ids)
+    divergence = _first_divergence_offset(positive_ids, harmful_ids)
+    positive_logits = _checked_path_logits(path.logits, candidate_id=path.candidate_id)
+    harmful_logits = _checked_path_logits(
+        harmful_path.logits,
+        candidate_id=harmful_path.candidate_id,
+    )
+    if divergence >= int(positive_logits.shape[0]) or divergence >= len(positive_ids):
+        raise LossContractError(
+            "positive branch has no token at its first divergent position",
+            code="loss.rollout_entity_positive_divergence_missing",
+            context={
+                "candidate_id": path.candidate_id,
+                "harmful_candidate_id": harmful_path.candidate_id,
+                "divergence": divergence,
+            },
+        )
+    if divergence >= int(harmful_logits.shape[0]) or divergence >= len(harmful_ids):
+        raise LossContractError(
+            "harmful branch has no token at the first divergent position",
+            code="loss.rollout_entity_harmful_divergence_missing",
+            context={
+                "candidate_id": path.candidate_id,
+                "harmful_candidate_id": harmful_path.candidate_id,
+                "divergence": divergence,
+            },
+        )
+
+    positive_branch = torch.log_softmax(positive_logits[divergence], dim=-1)[
+        positive_ids[divergence]
+    ]
+    harmful_branch = torch.log_softmax(harmful_logits[divergence], dim=-1)[
+        harmful_ids[divergence]
+    ]
+    continuation, schema_description, coordinates = _positive_continuation_loss(
+        path,
+        divergence,
+    )
+    return _TransitionPathDetail(
+        path=path,
+        scored=scored,
+        first_divergence_offset=divergence,
+        positive_branch_log_probability=positive_branch,
+        harmful_branch_log_probability=harmful_branch,
+        branch_margin=positive_branch - harmful_branch,
+        continuation_loss=continuation,
+        schema_description_loss=schema_description,
+        coordinate_loss=coordinates,
+    )
+
+
+def _first_divergence_offset(
+    positive_token_ids: tuple[int, ...],
+    harmful_token_ids: tuple[int, ...],
+) -> int:
+    limit = min(len(positive_token_ids), len(harmful_token_ids))
+    for offset in range(limit):
+        if positive_token_ids[offset] != harmful_token_ids[offset]:
+            return offset
+    # A path that is an exact prefix of the other has no pair of tokens at a
+    # shared boundary.  Such an event cannot provide the requested branch
+    # comparison and must be rejected instead of silently comparing horizons.
+    raise LossContractError(
+        "positive and harmful branches do not have a first divergent token",
+        code="loss.rollout_entity_no_divergence",
+        context={
+            "positive_length": len(positive_token_ids),
+            "harmful_length": len(harmful_token_ids),
+        },
+    )
+
+
+def _positive_continuation_loss(
+    path: CandidatePath,
+    divergence: int,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Return combined, entity/schema, and coordinate continuation losses."""
+
+    logits = _checked_path_logits(path.logits, candidate_id=path.candidate_id)
+    target_ids = tuple(path.target_token_ids)
+    if path.token_types is None:
+        zero = logits.sum() * 0.0
+        return zero, zero, zero
+    if len(path.token_types) != len(target_ids):
+        raise LossContractError(
+            "positive continuation token types must cover the scored row",
+            code="loss.rollout_continuation_token_type_length",
+            context={
+                "candidate_id": path.candidate_id,
+                "token_count": len(target_ids),
+                "token_type_count": len(path.token_types),
+            },
+        )
+    selected = (
+        -torch.log_softmax(logits[divergence:], dim=-1)
+        .gather(
+            1,
+            torch.tensor(
+                target_ids[divergence:],
+                dtype=torch.long,
+                device=logits.device,
+            ).unsqueeze(1),
+        )
+        .squeeze(1)
+    )
+    entity_indexes = tuple(
+        index
+        for index, token_type in enumerate(path.token_types[divergence:])
+        if token_type in {"schema", "desc_text"}
+    )
+    coordinate_indexes = tuple(
+        index
+        for index, token_type in enumerate(path.token_types[divergence:])
+        if token_type == "coordinate"
+    )
+    group_losses: list[torch.Tensor] = []
+    if entity_indexes:
+        schema_description = selected[list(entity_indexes)].mean()
+        group_losses.append(schema_description)
+    else:
+        schema_description = selected.sum() * 0.0
+    if coordinate_indexes:
+        coordinates = selected[list(coordinate_indexes)].mean()
+        group_losses.append(coordinates)
+    else:
+        coordinates = selected.sum() * 0.0
+    if not group_losses:
+        continuation = selected.sum() * 0.0
+    else:
+        continuation = torch.stack(group_losses).mean()
+    return continuation, schema_description, coordinates
 
 
 def _validate_candidate_identity(
