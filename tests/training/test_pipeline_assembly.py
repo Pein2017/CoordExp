@@ -265,6 +265,72 @@ def test_pre_trainer_failure_finalizes_initialized_run_without_masking_original(
     assert state["terminal_error"] == "ValueError: pre-trainer failure"
 
 
+def test_prepare_training_pack_caches_is_model_free_and_covers_train_and_eval(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = SimpleNamespace(
+        runtime=SimpleNamespace(seed=17),
+        data=SimpleNamespace(train=object(), eval=object()),
+    )
+    resolved = SimpleNamespace(
+        config=config,
+        fingerprint="config-fingerprint",
+        entry_config_path=tmp_path / "config.yaml",
+    )
+    components = SimpleNamespace(token_identity=object(), tokenizer=object())
+    load_model_values: list[bool] = []
+    seed_phases: list[str] = []
+    train_cache = {
+        "status": "complete",
+        "build_status": "built",
+        "cache_dir": tmp_path / "train-cache",
+        "format_version": "v2",
+        "fingerprint": "train-fingerprint",
+        "manifest_path": tmp_path / "train-cache" / "manifest.json",
+        "manifest_sha256": "train-manifest",
+        "micro_step_count": 11,
+    }
+    eval_cache = {
+        **train_cache,
+        "cache_dir": tmp_path / "eval-cache",
+        "fingerprint": "eval-fingerprint",
+        "manifest_path": tmp_path / "eval-cache" / "manifest.json",
+        "manifest_sha256": "eval-manifest",
+        "micro_step_count": 3,
+    }
+
+    monkeypatch.setattr(pipeline, "load_train_config", lambda path: resolved)
+    monkeypatch.setattr(
+        pipeline,
+        "seed_training_runtime",
+        lambda seed, deterministic, phase: seed_phases.append(phase),
+    )
+
+    def load_components(config: object, *, load_model: bool) -> object:
+        load_model_values.append(load_model)
+        return components
+
+    monkeypatch.setattr(pipeline, "load_qwen_components", load_components)
+    monkeypatch.setattr(
+        pipeline, "build_token_vocabulary_groups", lambda *args, **kwargs: object()
+    )
+    monkeypatch.setattr(
+        pipeline, "_resolve_or_build_train_pack_cache", lambda *args, **kwargs: train_cache
+    )
+    monkeypatch.setattr(
+        pipeline, "_resolve_eval_pack_cache", lambda *args, **kwargs: eval_cache
+    )
+
+    result = pipeline.prepare_training_pack_caches(tmp_path / "config.yaml")
+
+    assert load_model_values == [False]
+    assert seed_phases == ["pack_cache_preparation"]
+    assert result["model_loaded"] is False
+    assert result["train"]["fingerprint"] == "train-fingerprint"
+    assert result["eval"]["fingerprint"] == "eval-fingerprint"
+    assert result["train"]["micro_step_count"] == 11
+
+
 def test_same_dataset_eval_resolves_distinct_full_cache_and_binding(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

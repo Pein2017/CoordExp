@@ -32,6 +32,11 @@ and
 - Cache fingerprints include the renderer, Qwen encoding/position/forward,
   packing planner, and supervision-token construction code identities where the
   stable spec requires them.
+- Multi-GPU launches use a two-phase lifecycle. Run
+  `python -m src.prepare_train_cache --config <path>` once before
+  `accelerate launch`; preparation loads no model weights and validates train
+  and eval caches. Distributed ranks are cache consumers only and fail fast on
+  a cache miss instead of waiting in a long-lived collective.
 
 ## Ownership map
 
@@ -51,6 +56,12 @@ Use the targeted packing and cache tests before a broader training smoke:
 - `tests/training/test_pack_cache.py`
 - `tests/training/test_pipeline_assembly.py`
 - `tests/qwen/` for position/forward assumptions that affect packed inputs
+
+For a production config, attest the startup boundary directly before launch:
+
+```bash
+python -m src.prepare_train_cache --config configs/coordexp_swift/prod/<config>.yaml
+```
 
 When a change affects packing determinants, update the stable OpenSpec contract
 and the cache-identity tests together. Do not make a documentation-only

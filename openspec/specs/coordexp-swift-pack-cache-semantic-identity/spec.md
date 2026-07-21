@@ -71,3 +71,33 @@ tolerance, or old payload decoders.
   counts, or does not declare complete status
 - **THEN** the cache MUST NOT be consumed
 - **AND** rebuild MUST be the recovery path.
+
+### Requirement: Distributed Training Consumes Prepared Caches
+
+Multi-process training SHALL treat packing-cache preparation as a distinct
+single-process startup phase. The preparation phase MUST load processor and
+tokenizer state without loading model weights, MUST materialize and strictly
+validate both configured train and eval caches, and MUST complete successfully
+before distributed workers are launched. During distributed training, every
+rank MUST independently derive and validate its semantic cache fingerprint.
+A distributed cache miss MUST fail immediately with the preparation command;
+it MUST NOT make workers wait inside a long-lived distributed collective or
+allow any worker to rebuild the cache.
+
+#### Scenario: Production cache is absent
+
+- **WHEN** a multi-process training rank cannot validate its expected cache
+- **THEN** startup MUST fail with `training.pack_cache_not_prepared`
+- **AND** the error MUST identify `python -m src.prepare_train_cache` as the
+  recovery command
+- **AND** no distributed rank may begin cache materialization.
+
+#### Scenario: Preparation succeeds before launch
+
+- **WHEN** `python -m src.prepare_train_cache --config <path>` completes
+  successfully
+- **THEN** its receipt MUST identify the resolved config and strictly validated
+  train and eval cache manifests
+- **AND** it MUST attest that model weights were not loaded
+- **AND** a later multi-process launch may consume those immutable caches
+  without a cache-status collective.

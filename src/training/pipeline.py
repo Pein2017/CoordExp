@@ -356,6 +356,51 @@ def run_training_pipeline(config_path: str | Path) -> dict[str, Any]:
         raise
 
 
+def prepare_training_pack_caches(config_path: str | Path) -> dict[str, Any]:
+    """Materialize all packing caches before distributed model startup."""
+
+    repo_root = Path.cwd().resolve()
+    resolved_config = load_train_config(config_path)
+    config = resolved_config.config
+    seed_training_runtime(
+        config.runtime.seed,
+        deterministic=False,
+        phase="pack_cache_preparation",
+    )
+    components = load_qwen_components(config, load_model=False)
+    vocab_groups = build_token_vocabulary_groups(
+        components.token_identity,
+        tokenizer=components.tokenizer,
+    )
+    train_cache = _resolve_or_build_train_pack_cache(
+        config,
+        components,
+        vocab_groups,
+        repo_root=repo_root,
+        accelerator=None,
+        rank=0,
+    )
+    eval_cache = _resolve_eval_pack_cache(
+        config,
+        components,
+        vocab_groups,
+        repo_root=repo_root,
+        accelerator=None,
+        rank=0,
+    )
+    return {
+        "entry_config_path": str(resolved_config.entry_config_path),
+        "resolved_config_fingerprint": resolved_config.fingerprint,
+        "model_loaded": False,
+        "train": _pack_cache_preparation_receipt(train_cache),
+        "eval": (
+            None
+            if eval_cache is None
+            else _pack_cache_preparation_receipt(eval_cache)
+        ),
+    }
+
+
 def _run_initialized_training(
     *,
     repo_root: Path,
@@ -678,98 +723,71 @@ def _resolve_or_build_pack_cache(
             str(repo_root / ".cache" / "coordexp_swift" / "packing"),
         )
     )
-    cache_complete_before: bool | None = None
-    status: dict[str, Any] | None = None
-    manifest: dict[str, Any] | None = None
-    fingerprint: str | None = None
-    cache_dir: Path | None = None
-    if rank == 0:
-        try:
-            fingerprint = build_packing_cache_fingerprint(
-                config,
-                components,
-                dataset=dataset,
-                split=split,
-            )
-            determinants = build_packing_cache_determinants(
-                config,
-                components,
-                dataset=dataset,
-                split=split,
-            )
-            resolved_materialization_workers = (
-                _resolve_pack_cache_materialization_workers(materialization_workers)
-            )
-            materialization = build_packing_cache_materialization(
-                workers=resolved_materialization_workers,
-                strategy=PACKING_CACHE_MATERIALIZATION_STRATEGY,
-            )
-            cache_dir = cache_dir_for_fingerprint(cache_root, fingerprint)
-            try:
-                manifest = load_cache_manifest(
-                    cache_dir, expected_fingerprint=fingerprint
-                )
-                cache_complete_before = True
-            except PackingCacheInvalidError:
-                cache_complete_before = False
-                micro_steps = tuple(build_micro_steps(resolved_materialization_workers))
-                manifest = write_micro_step_cache(
-                    cache_dir,
-                    micro_steps,
-                    fingerprint=fingerprint,
-                    determinants=determinants,
-                    materialization=materialization,
-                    augmentation=_augmentation_receipt_from_micro_steps(micro_steps),
-                )
-            status = {
-                "ok": True,
-                "build_status": "hit" if cache_complete_before else "built",
-                "fingerprint": fingerprint,
-                "cache_dir": str(cache_dir),
-            }
-        except BaseException as exc:
-            status = {
-                "ok": False,
-                "error_type": type(exc).__name__,
-                "error": str(exc)[:1024],
-                "fingerprint": fingerprint,
-                "cache_dir": None if cache_dir is None else str(cache_dir),
-            }
-    shared = _share_pack_cache_resolution_status(
-        accelerator=accelerator,
-        rank=rank,
-        status=status,
+    world_size = 1 if accelerator is None else int(accelerator.num_processes)
+    fingerprint = build_packing_cache_fingerprint(
+        config,
+        components,
+        dataset=dataset,
+        split=split,
     )
-    if not bool(shared.get("ok")):
+    determinants = build_packing_cache_determinants(
+        config,
+        components,
+        dataset=dataset,
+        split=split,
+    )
+    resolved_materialization_workers = _resolve_pack_cache_materialization_workers(
+        materialization_workers
+    )
+    materialization = build_packing_cache_materialization(
+        workers=resolved_materialization_workers,
+        strategy=PACKING_CACHE_MATERIALIZATION_STRATEGY,
+    )
+    cache_dir = cache_dir_for_fingerprint(cache_root, fingerprint)
+    cache_complete_before = False
+    try:
+        try:
+            manifest = load_cache_manifest(
+                cache_dir, expected_fingerprint=fingerprint
+            )
+            cache_complete_before = True
+        except PackingCacheInvalidError:
+            if world_size > 1:
+                raise RuntimeContractError(
+                    "distributed training requires prepared packing caches; run "
+                    "`python -m src.prepare_train_cache --config <path>` before "
+                    "`accelerate launch`",
+                    code="training.pack_cache_not_prepared",
+                    context={
+                        "rank": rank,
+                        "cache_dir": str(cache_dir),
+                        "fingerprint": fingerprint,
+                        "world_size": world_size,
+                    },
+                )
+            micro_steps = tuple(build_micro_steps(resolved_materialization_workers))
+            manifest = write_micro_step_cache(
+                cache_dir,
+                micro_steps,
+                fingerprint=fingerprint,
+                determinants=determinants,
+                materialization=materialization,
+                augmentation=_augmentation_receipt_from_micro_steps(micro_steps),
+            )
+    except RuntimeContractError:
+        raise
+    except BaseException as exc:
         raise RuntimeContractError(
-            "rank zero failed to resolve packing cache",
+            "failed to resolve packing cache",
             code="training.pack_cache_resolution_failed",
             context={
-                "cache_dir": str(shared.get("cache_dir", cache_root)),
-                "fingerprint": str(shared.get("fingerprint", "unknown")),
-                "error_type": str(shared.get("error_type", "unknown")),
-                "error": str(shared.get("error", "unknown error")),
+                "rank": rank,
+                "cache_dir": str(cache_dir),
+                "fingerprint": fingerprint,
+                "error_type": type(exc).__name__,
+                "error": str(exc)[:1024],
             },
-        )
-    fingerprint = str(shared.get("fingerprint", ""))
-    cache_dir_value = shared.get("cache_dir")
-    if not fingerprint or not isinstance(cache_dir_value, str) or not cache_dir_value:
-        raise RuntimeContractError(
-            "packing cache resolution returned an incomplete shared descriptor",
-            code="training.pack_cache_resolution_failed",
-            context={"rank": rank},
-        )
-    cache_dir = Path(cache_dir_value)
-    if rank != 0:
-        manifest = load_cache_manifest(
-            cache_dir, expected_fingerprint=fingerprint
-        )
-    if manifest is None:
-        raise RuntimeContractError(
-            "packing cache resolution returned no manifest",
-            code="training.pack_cache_resolution_failed",
-            context={"cache_dir": str(cache_dir), "fingerprint": fingerprint},
-        )
+        ) from exc
     cache_manifest_path = manifest_path(cache_dir)
     return {
         "cache_dir": cache_dir,
@@ -780,7 +798,7 @@ def _resolve_or_build_pack_cache(
         "chunk_size": int(manifest["chunk_size"]),
         "status": manifest["status"],
         "build_status": (
-            "waited" if rank != 0 else str(shared["build_status"])
+            "waited" if rank != 0 else ("hit" if cache_complete_before else "built")
         ),
         "manifest_path": cache_manifest_path,
         "manifest_sha256": _file_sha256(cache_manifest_path),
@@ -788,6 +806,19 @@ def _resolve_or_build_pack_cache(
         "chunk_sha256s": [str(chunk["sha256"]) for chunk in manifest["chunks"]],
         "materialization": manifest.get("materialization"),
         "augmentation": manifest.get("augmentation"),
+    }
+
+
+def _pack_cache_preparation_receipt(cache: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "status": str(cache["status"]),
+        "build_status": str(cache["build_status"]),
+        "cache_dir": str(cache["cache_dir"]),
+        "format_version": str(cache["format_version"]),
+        "fingerprint": str(cache["fingerprint"]),
+        "manifest_path": str(cache["manifest_path"]),
+        "manifest_sha256": str(cache["manifest_sha256"]),
+        "micro_step_count": int(cache["micro_step_count"]),
     }
 
 
@@ -874,32 +905,6 @@ def _qwen_image_processor(components: Any) -> Any:
             context={"processor_type": type(processor).__name__},
         )
     return image_processor
-
-
-def _share_pack_cache_resolution_status(
-    *, accelerator: Any, rank: int, status: Mapping[str, Any] | None
-) -> dict[str, Any]:
-    values: list[Any] = [dict(status) if status is not None else None]
-    if int(accelerator.num_processes) > 1:
-        broadcast = getattr(accelerator, "broadcast_object_list", None)
-        if callable(broadcast):
-            broadcast(values, from_process=0)
-        elif broadcast_object_list is not None:
-            broadcast_object_list(values, from_process=0)
-        else:
-            raise RuntimeContractError(
-                "packing cache resolution handshake requires accelerate",
-                code="training.pack_cache_resolution_failed",
-                context={"rank": rank},
-            )
-    shared = values[0]
-    if not isinstance(shared, Mapping):
-        raise RuntimeContractError(
-            "packing cache resolution returned an invalid shared descriptor",
-            code="training.pack_cache_resolution_failed",
-            context={"rank": rank},
-        )
-    return dict(shared)
 
 
 def _build_encoded_examples_for_dataset(

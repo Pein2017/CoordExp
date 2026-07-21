@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from src.artifacts.run_writer import RunWriter
+from src.common.errors import RuntimeContractError
 from src.training import pipeline
 from src.training.pack_cache import (
     PACKING_CACHE_MATERIALIZATION_STRATEGY,
@@ -181,43 +182,26 @@ def test_rank_zero_rebuilds_invalid_cache_and_subsequent_all_read_succeeds(
     assert not list(cache_root.glob(f".{FINGERPRINT}.backup-*"))
 
 
-def test_peer_blocks_on_shared_success_then_strict_reads_published_cache(
+def test_preparation_publishes_cache_before_distributed_peer_strict_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cache_root = tmp_path / "cache-root"
     _install_resolver_identity(monkeypatch, cache_root)
     collective = _SharedCollective()
-    peer_result: dict[str, object] = {}
-    peer_errors: list[BaseException] = []
-
-    def run_peer() -> None:
-        try:
-            peer_result.update(
-                _resolve(
-                    tmp_path,
-                    rank=1,
-                    accelerator=collective.accelerator(rank=1),
-                    build_micro_steps=lambda workers: (_ for _ in ()).throw(
-                        AssertionError("peer must not build")
-                    ),
-                )
-            )
-        except BaseException as exc:
-            peer_errors.append(exc)
-
-    peer = Thread(target=run_peer)
-    peer.start()
-    assert peer.is_alive()
     main_result = _resolve(
         tmp_path,
         rank=0,
-        accelerator=collective.accelerator(rank=0),
         build_micro_steps=lambda workers: (_micro_step(20),),
     )
-    peer.join(timeout=2.0)
+    peer_result = _resolve(
+        tmp_path,
+        rank=1,
+        accelerator=collective.accelerator(rank=1),
+        build_micro_steps=lambda workers: (_ for _ in ()).throw(
+            AssertionError("peer must not build")
+        ),
+    )
 
-    assert not peer.is_alive()
-    assert peer_errors == []
     assert main_result["build_status"] == "built"
     assert peer_result["build_status"] == "waited"
     assert peer_result["manifest_sha256"] == main_result["manifest_sha256"]
@@ -227,43 +211,24 @@ def test_peer_blocks_on_shared_success_then_strict_reads_published_cache(
     assert [step.metadata["pack_id"] for step in loaded] == [20]
 
 
-def test_rank_zero_build_failure_is_broadcast_as_identical_named_error(
+def test_distributed_cache_miss_fails_fast_with_preparation_command(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cache_root = tmp_path / "cache-root"
     _install_resolver_identity(monkeypatch, cache_root)
     collective = _SharedCollective()
-    errors: dict[int, BaseException] = {}
-
-    def resolve_rank(rank: int) -> None:
-        try:
+    for rank in (0, 1):
+        with pytest.raises(RuntimeContractError) as exc_info:
             _resolve(
                 tmp_path,
                 rank=rank,
                 accelerator=collective.accelerator(rank=rank),
-                build_micro_steps=(
-                    lambda workers: (_ for _ in ()).throw(OSError("disk full"))
-                    if rank == 0
-                    else lambda workers: (_ for _ in ()).throw(
-                        AssertionError("peer must not build")
-                    )
+                build_micro_steps=lambda workers: (_ for _ in ()).throw(
+                    AssertionError("distributed rank must not build")
                 ),
             )
-        except BaseException as exc:
-            errors[rank] = exc
-
-    peer = Thread(target=resolve_rank, args=(1,))
-    peer.start()
-    resolve_rank(0)
-    peer.join(timeout=2.0)
-
-    assert not peer.is_alive()
-    assert set(errors) == {0, 1}
-    assert all(
-        getattr(error, "code", None) == "training.pack_cache_resolution_failed"
-        for error in errors.values()
-    )
-    assert str(errors[0]) == str(errors[1])
+        assert exc_info.value.code == "training.pack_cache_not_prepared"
+        assert "python -m src.prepare_train_cache" in str(exc_info.value)
 
 
 def test_shared_cache_hit_descriptor_releases_peer_for_strict_read(
