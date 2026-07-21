@@ -12,7 +12,10 @@
 - Make the smallest reversible change that handles the request. Do not add features, knobs, cleanup, formatting, or refactors unless they are required by the request or by verification. Preserve unrelated work; dirty worktrees and parallel edits are expected.
 - Ask only when the choice changes research meaning, is costly/destructive, publishes externally, touches secrets, or risks irreversible compatibility.
 - In this checkout, Python checks normally run in the conda environment `ms`; use it explicitly if the shell is not already there.
-- When subagents are allowed or requested, dispatch independent lanes instead of stacking broad raw context in one thread. Give each lane scope, permissions, and a stop condition; the parent agent must synthesize, remove duplication, and decide.
+- When subagents are allowed or requested, dispatch independent lanes instead
+  of stacking broad raw context in one thread. Give each lane the smallest
+  self-contained brief, scope, permissions, evidence handles, and a stop
+  condition; the parent agent must synthesize, remove duplication, and decide.
 - Prefer generic subagents with task-specific briefs. Choose the model and
   reasoning effort at dispatch time rather than relying on a fixed
   role-to-model mapping.
@@ -23,6 +26,10 @@
 - Give one current owner to each independent decision surface. Do not create
   duplicate implementation lanes or repeated general reviews merely because
   agent slots are available.
+- Keep implementation ownership and independent judgment separate when that
+  distinction matters. Reviewers should reconstruct the claim from the named
+  code, specification, diff, tests, and artifacts instead of inheriting the
+  implementer's reasoning or the parent thread's preferred conclusion.
 - Preserve source reviews and audits as provenance, but record later changes as
   evidence or deltas instead of creating duplicate current authorities.
 
@@ -125,10 +132,19 @@
   
 ## Subagent context inheritance
 For every V2 `spawn_agent` call, set `fork_turns` explicitly.
-- `none`: self-contained discovery, artifact lookup, narrow probes.
-- `1`-`3`: tasks needing only recent hypotheses or decisions.
-- `all`: full-history synthesis or tasks that explicitly depend on the entire discussion.
-Never omit `fork_turns`, because the runtime defaults an omitted V2 value to `all`. Explain the selected value briefly before spawning.
+- Prefer `none`: use it for self-contained discovery, artifact lookup, narrow
+  probes, bounded implementation, and independent audit or review. Put the
+  required contract and exact evidence paths in the brief rather than passing
+  conversational history.
+- Use `1`-`3` only when the task genuinely depends on recent hypotheses,
+  approvals, or decisions that cannot be stated compactly in the brief.
+- Use `all` only for explicit full-history synthesis or when reconstructing the
+  discussion itself is the task. It is not the default for implementation,
+  audit, or review.
+- For competing audits, give reviewers the same evidence scope and do not show
+  them one another's findings before they reach independent verdicts.
+Never omit `fork_turns`, because the runtime defaults an omitted V2 value to
+`all`. Explain the selected value briefly before spawning.
 
 ## Reporting
 
