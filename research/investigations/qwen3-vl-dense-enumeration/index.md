@@ -81,6 +81,17 @@ control, but does not preserve the exact trained owner at its intended row and
 increases invalid geometry relative to the shared intermediate. Prefix-state
 distribution mismatch therefore remains unresolved, and first-wrong-coordinate
 correction is not promoted to a larger training scale.
+The later greedy-prefix forced object-path intervention tests four reviewed
+objects that low-temperature sampling reaches but native greedy decoding misses
+or reaches too late. Three partial sampled-row prefixes transfer into the exact
+greedy state and add fixed-budget unique owners without new duplicate owners:
+one needs only the object description, one needs `y1` for safe downstream set
+value, and one passes the strict gate at `x2` while crop review shows entity
+identity is already present after `x1`. A fourth case only changes when an
+owner appears and adds no coverage. The result rejects one universal commit
+position, separates local entity acquisition from downstream set value, and
+promotes only a small coherent-row own-prefix training screen. Beam search and
+a final architecture remain deferred.
 The weekly report and research compass own the broader synthesis and next-
 discriminator boundary.
 
@@ -178,6 +189,8 @@ durable program reading path below.
 86. [Individual-trajectory versus sampled-union object-support audit results](experiments/2026-07-21-individual-trajectory-versus-union-support-audit/results.md)
 87. [Independent audit and conservative-bound correction](experiments/2026-07-21-individual-trajectory-versus-union-support-audit/audit.md)
 88. [Trajectory-quality-weighted object-row self-imitation screen](experiments/2026-07-21-trajectory-quality-weighted-row-self-imitation-screen/unit.md)
+89. [Greedy-prefix forced object-path intervention](experiments/2026-07-21-greedy-prefix-forced-owner-path-intervention/unit.md)
+90. [Greedy-prefix forced object-path results and coherent-row training gate](experiments/2026-07-21-greedy-prefix-forced-owner-path-intervention/results.md)
 
 The review and readiness amendment preserve the pre-execution gate. The
 completed unit and results record own current lifecycle and evidence status.

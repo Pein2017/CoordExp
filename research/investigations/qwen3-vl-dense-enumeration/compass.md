@@ -46,29 +46,43 @@ a safe greedy traversal. This is an objective, not an established capability.
 
 ## Current Treatment Gate
 
-The completed [Individual-Trajectory versus Sampled-Union Object-Support
-Audit](experiments/2026-07-21-individual-trajectory-versus-union-support-audit/results.md)
-shows that two effects coexist:
+The completed [Greedy-Prefix Forced Object-Path
+Intervention](experiments/2026-07-21-greedy-prefix-forced-owner-path-intervention/results.md)
+now provides the more direct treatment gate. In three of four frozen cases, a
+partial sampled rescue row can be supplied to an exact greedy prefix, after
+which the released decoder completes the real uncovered object and preserves
+or improves fixed-budget unique-owner coverage. The useful supplied depth is
+case-dependent: description, `y1`, or `x2`. A fourth case only changes when an
+owner appears and adds no unique coverage.
 
-- at least three fully reviewed sampled trajectories cover more unique owners
-  than greedy at the same row budget without greater harmful-row counts; and
-- five images have a verified sampled-union lower bound above the maximum
-  possible coverage of any one four-row trajectory.
-
-The first bounded treatment discriminator is therefore:
+The current bounded treatment discriminator is therefore:
 
 ```text
-verified better complete sampled route
-  -> positive-only, span-masked weighted self-imitation
-  -> compare with a within-image shuffled-reward control
-  -> judge native greedy unique-owner coverage and harmful rows
+exact own-rollout greedy prefix
+  + reviewed sampled row for a real uncovered physical owner
+  + native repeat, unresolved harmful row, or terminal at the same state
+  -> train the sampled object path to outrank the native harmful path
+  -> admit only events with non-negative fixed-budget downstream set value
+  -> judge clean greedy unique-owner coverage and harmful rows
 ```
 
-Union complementarity remains an explicit limitation: a whole-trajectory
-treatment may improve route choice without recovering every owner exposed by
-bagging. Local remaining-object completion remains the next alternative only
-if the correctly weighted treatment fails its shuffled control or improves
-fixed-prefix likelihood without improving native greedy rollout.
+The loss must compare a coherent object-row path rather than only a row opener
+or terminal token. The forced-path endpoint is an event-specific diagnostic
+and possible token-weighting boundary, not a universal commit position.
+Geometry-untrusted rows may supervise entity-path selection but must not
+supervise exact coordinate boundaries.
+
+The earlier trajectory-quality-weighted self-imitation draft remains
+unauthorized and requires revision before implementation. Its sampled-prefix
+training pairs are less direct than the newly supported greedy-prefix
+counterfactual pairs. Route quality and within-image weight shuffling remain
+useful controls, but they are no longer the primary treatment definition.
+
+Union complementarity remains an explicit limitation: even a better single
+greedy route may not recover every owner exposed across independent sampled
+trajectories. Low-temperature sampling remains the donor-discovery method.
+Beam search is deferred unless a later equal-compute diagnostic specifically
+tests search efficiency.
 
 The twelve human-refined dense validation images are development and
 validation cases for this discriminator and never training data. Because they

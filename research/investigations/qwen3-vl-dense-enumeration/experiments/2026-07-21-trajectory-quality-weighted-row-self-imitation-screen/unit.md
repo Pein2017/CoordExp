@@ -8,7 +8,7 @@ architecture_promotion_status: not_promoted
 implementation_status: not_authorized
 unit_id: 2026-07-21-trajectory-quality-weighted-row-self-imitation-screen
 topic: qwen3-vl-dense-enumeration
-status: planned
+status: needs_revision
 evidence_status: none
 updated: 2026-07-21
 ---
@@ -16,6 +16,13 @@ updated: 2026-07-21
 # Trajectory-Quality-Weighted Object-Row Self-Imitation Screen
 
 ## Question
+
+> **Current status:** This draft predates the completed
+> [greedy-prefix forced object-path intervention](../2026-07-21-greedy-prefix-forced-owner-path-intervention/results.md).
+> Do not implement it as written. The newer evidence prioritizes exact
+> greedy-prefix sampled-row counterfactuals over sampled-prefix trajectory
+> imitation. Route-quality weighting and within-image shuffling may remain as
+> controls in a revised unit.
 
 Can positive-only training on complete object rows already produced by the
 source model move native greedy decoding toward higher unique-object coverage,

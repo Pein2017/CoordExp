@@ -1,0 +1,144 @@
+{
+  "schema_version": "greedy_prefix_forced_owner_path_cases.v1",
+  "unit_id": "2026-07-21-greedy-prefix-forced-owner-path-intervention",
+  "total_token_budget": 512,
+  "source_jsonl": {
+    "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl",
+    "sha256": "81d674070d4b588488a2cb911c09f765b63c0e6d035b50db27ee0a41ff2a1894"
+  },
+  "greedy_artifact": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/full/greedy-all12.json",
+    "sha256": "68cd33d70ecf1a318b89734e2717fe81ac25c39bf9e8784ead1ca4de4e0b59c7"
+  },
+  "reviewed_support_artifact": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/analysis/reviewed-support-v3.json",
+    "sha256": "6e09f27845ff9ccd73dba4c224b55e05de85cd594b9c92e3886cbadfc41d4721"
+  },
+  "human_review_decisions": {
+    "path": "/data/CoordExp/.worktrees/research-probes/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-21-individual-trajectory-versus-union-support-audit/review-decisions.json",
+    "sha256": "679ad454de1c4d204a1229a9f10b838e48f79fa2987d584996cd1a2cf89f0892"
+  },
+  "cases": [
+    {
+      "case_id": "person-5001-row3",
+      "image_id": 5001,
+      "sampled_seed": 21015,
+      "sampled_artifact": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/full/sampled-shard-gpu6.json",
+        "sha256": "6e3860f80bc58f3468eb35dd6a241f78aecc2a88db9a86e9e630c56a50060be4"
+      },
+      "greedy_parent_row_count": 3,
+      "sampled_donor_row_index": 3,
+      "expected_donor": {
+        "description": "person",
+        "coord_bins": [685, 106, 792, 337],
+        "raw_span_sha256": "b9f19aa8a86e372f682b3e7e8bb734914a596260bcd289e30e49d49a754e4d93"
+      },
+      "control_donor": {
+        "source": "greedy_artifact",
+        "seed": 21000,
+        "row_index": 0,
+        "owner_id": "5001:1329797",
+        "description": "person",
+        "coord_bins": [664, 52, 737, 204],
+        "raw_span_sha256": "c7c8f16cbc005527a6a984ab893bcc6a21ae26e55fe98d3780c1c859797719cf"
+      },
+      "target_owner_id": "5001:1329465",
+      "complete_row_budget": 8,
+      "owner_evidence": "provisional_high_intersection_over_union_match",
+      "geometry_trust": "trusted_for_diagnostic",
+      "native_state_evidence": "human_reviewed_duplicate"
+    },
+    {
+      "case_id": "wine-glass-2685-row6",
+      "image_id": 2685,
+      "sampled_seed": 21008,
+      "sampled_artifact": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/full/sampled-shard-gpu4.json",
+        "sha256": "21b425098dc1bcc08a64d1190affd690c69f060bb3f747ad269d71f80dfa92a1"
+      },
+      "greedy_parent_row_count": 6,
+      "sampled_donor_row_index": 6,
+      "expected_donor": {
+        "description": "wine glass",
+        "coord_bins": [142, 335, 180, 414],
+        "raw_span_sha256": "7e415ad3a7e5c959a40839155fd295efb873e4eac400711cbe510cf05f4d2613"
+      },
+      "control_donor": {
+        "source": "sampled_artifact",
+        "seed": 21001,
+        "row_index": 6,
+        "owner_id": "2685:-83",
+        "description": "wine glass",
+        "coord_bins": [136, 335, 164, 416],
+        "raw_span_sha256": "107197a4dd1d8def35191f911dafd881cabdee82be63d66682abd7ad5a26efc4"
+      },
+      "target_owner_id": "2685:-78",
+      "complete_row_budget": 16,
+      "owner_evidence": "provisional_distinct_owner_match",
+      "geometry_trust": "trusted_for_diagnostic",
+      "native_state_evidence": "human_reviewed_duplicate"
+    },
+    {
+      "case_id": "person-7511-row4",
+      "image_id": 7511,
+      "sampled_seed": 21012,
+      "sampled_artifact": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/full/sampled-shard-gpu2.json",
+        "sha256": "8f06b0b280ae0b21951f28bb77d688f7d7833c7054c45b4bc59c46a2a78cc788"
+      },
+      "greedy_parent_row_count": 4,
+      "sampled_donor_row_index": 4,
+      "expected_donor": {
+        "description": "person",
+        "coord_bins": [959, 588, 983, 623],
+        "raw_span_sha256": "be1d8a2fa34215aad350c966e7f7e5143d096caf8423469b2ddfcaf3220f0fd1"
+      },
+      "control_donor": {
+        "source": "greedy_artifact",
+        "seed": 21000,
+        "row_index": 3,
+        "owner_id": "7511:565324",
+        "description": "person",
+        "coord_bins": [821, 576, 834, 619],
+        "raw_span_sha256": "42d85598f6fcfd4d5d5c0e92c6da37b614f6fc1d76f85c2f3435de424583a0ec"
+      },
+      "target_owner_id": "7511:-169",
+      "reviewed_donor_owner_id": "7511:-169",
+      "complete_row_budget": 8,
+      "owner_evidence": "human_crop_reviewed",
+      "geometry_trust": "entity_only_geometry_loose",
+      "native_state_evidence": "human_reviewed_unresolved"
+    },
+    {
+      "case_id": "truck-13348-after-stop",
+      "image_id": 13348,
+      "sampled_seed": 21008,
+      "sampled_artifact": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-individual-trajectory-versus-union-support-audit/support-audit-step4887-20260721a/full/sampled-shard-gpu5.json",
+        "sha256": "694ed957af5263e8409f214f269cecd4fee3b7324cf75895a37090711cba19aa"
+      },
+      "greedy_parent_row_count": 6,
+      "sampled_donor_row_index": 6,
+      "expected_donor": {
+        "description": "truck",
+        "coord_bins": [0, 669, 62, 725],
+        "raw_span_sha256": "65240ef5b76608b58dc9524254a86c6467f548ee9f89561654dfa55d6278fddb"
+      },
+      "control_donor": {
+        "source": "greedy_artifact",
+        "seed": 21000,
+        "row_index": 3,
+        "owner_id": "13348:261461",
+        "description": "person",
+        "coord_bins": [190, 634, 204, 679],
+        "raw_span_sha256": "a1660b267bb51acfd9d2fb95249a3930c1653a5a0ca64047380e000e895370bf"
+      },
+      "target_owner_id": "13348:1372048",
+      "complete_row_budget": 8,
+      "owner_evidence": "provisional_high_intersection_over_union_match",
+      "geometry_trust": "trusted_for_diagnostic",
+      "native_state_evidence": "natural_terminal"
+    }
+  ]
+}
