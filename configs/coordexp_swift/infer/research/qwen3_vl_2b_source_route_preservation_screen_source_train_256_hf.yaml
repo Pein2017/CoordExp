@@ -1,0 +1,19 @@
+extends: qwen3_vl_2b_mixed_prefix_source_train_256_hf.yaml
+
+run:
+  name: qwen3-vl-2b-source-route-preservation-screen-source-train-256-hf
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-source-route-preservation-and-multiple-sampled-route-training-screen/clean-rollouts-v1/train-256
+  collision_policy: fail
+
+data:
+  input_jsonl: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-256-image-coordinate-boundary-training-screen/train-256-clean-rollout.coord.jsonl
+
+generation:
+  batch_size: 8
+  max_new_tokens: 3084
+  temperature: 0.0
+  top_p: 1.0
+  repetition_penalty: 1.0
+
+scoring:
+  enabled: true

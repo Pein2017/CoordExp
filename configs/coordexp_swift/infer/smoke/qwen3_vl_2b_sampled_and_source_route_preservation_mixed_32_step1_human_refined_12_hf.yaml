@@ -1,0 +1,27 @@
+extends: ../research/qwen3_vl_2b_positive_path_imitation_source_human_refined_12_hf.yaml
+
+run:
+  name: qwen3-vl-2b-sampled-and-source-route-preservation-mixed-32-step1-human-refined-12-hf
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-source-route-preservation-and-multiple-sampled-route-training-screen/smoke-training-v2/mixed-32-clean-inference
+  collision_policy: fail
+
+data:
+  input_jsonl: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-best-sampled-trajectory-positive-row-imitation-screen/evaluation-inputs/human-refined-12.coord.jsonl
+
+generation:
+  batch_size: 12
+  max_new_tokens: 512
+  temperature: 0.0
+  top_p: 1.0
+  repetition_penalty: 1.0
+
+scoring:
+  enabled: true
+
+adapter:
+  type: dora
+  path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-source-route-preservation-and-multiple-sampled-route-training-screen/smoke-training-v2/mixed-32/runs/qwen3_vl_2b_sampled_and_source_route_preservation_mixed_32_one_step_learning_rate_1e-5/checkpoints/step-1/adapter
+  name: default
+
+embedding_delta:
+  path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-source-route-preservation-and-multiple-sampled-route-training-screen/smoke-training-v2/mixed-32/runs/qwen3_vl_2b_sampled_and_source_route_preservation_mixed_32_one_step_learning_rate_1e-5/checkpoints/step-1/special_token_embeddings

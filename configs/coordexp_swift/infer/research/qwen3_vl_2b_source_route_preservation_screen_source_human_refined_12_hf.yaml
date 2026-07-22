@@ -1,0 +1,19 @@
+extends: qwen3_vl_2b_positive_path_imitation_source_human_refined_12_hf.yaml
+
+run:
+  name: qwen3-vl-2b-source-route-preservation-screen-source-human-refined-12-hf
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-source-route-preservation-and-multiple-sampled-route-training-screen/clean-rollouts-v1/human-refined-12
+  collision_policy: fail
+
+data:
+  input_jsonl: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-best-sampled-trajectory-positive-row-imitation-screen/evaluation-inputs/human-refined-12.coord.jsonl
+
+generation:
+  batch_size: 4
+  max_new_tokens: 3084
+  temperature: 0.0
+  top_p: 1.0
+  repetition_penalty: 1.0
+
+scoring:
+  enabled: true

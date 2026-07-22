@@ -1,0 +1,27 @@
+extends: qwen3_vl_2b_source_route_preservation_screen_multi_route_step31_human_refined_12_hf.yaml
+
+run:
+  name: qwen3-vl-2b-source-route-preservation-screen-multi-route-step20-human-refined-12-hf
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-source-route-preservation-and-multiple-sampled-route-training-screen/clean-rollouts-v1/human-refined-12
+  collision_policy: fail
+
+data:
+  input_jsonl: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-best-sampled-trajectory-positive-row-imitation-screen/evaluation-inputs/human-refined-12.coord.jsonl
+
+generation:
+  batch_size: 4
+  max_new_tokens: 3084
+  temperature: 0.0
+  top_p: 1.0
+  repetition_penalty: 1.0
+
+scoring:
+  enabled: true
+
+adapter:
+  type: dora
+  path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-source-route-preservation-and-multiple-sampled-route-training-screen/train-992-events-v1/multi-route-plus-source-preservation/runs/qwen3_vl_2b_multi_route_plus_source_preservation_496_sampled_496_source_992_events_learning_rate_1e-5/checkpoints/step-20/adapter
+  name: default
+
+embedding_delta:
+  path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-source-route-preservation-and-multiple-sampled-route-training-screen/train-992-events-v1/multi-route-plus-source-preservation/runs/qwen3_vl_2b_multi_route_plus_source_preservation_496_sampled_496_source_992_events_learning_rate_1e-5/checkpoints/step-20/special_token_embeddings

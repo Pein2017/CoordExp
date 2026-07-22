@@ -1,0 +1,20 @@
+schema_version: 1
+extends: ../research/qwen3_vl_2b_multi_route_plus_source_preservation_496_sampled_496_source_992_events_learning_rate_1e-5.yaml
+
+run:
+  name: qwen3_vl_2b_source_route_preservation_one_event_learning_rate_1e-5
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-source-route-preservation-and-multiple-sampled-route-training-screen/smoke-training-v2/source-one-event/runs
+  collision_policy: fail
+
+rollout_calibration:
+  state_bank_manifest_path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-source-route-preservation-and-multiple-sampled-route-training-screen/smoke-state-banks-v2/source-one-event/state-bank/manifest.json
+
+training:
+  epochs: 1
+  max_steps: 1
+  effective_batch_size: 1
+
+checkpoint:
+  every_fraction: 1.0
+  steps: []
+  save_final: true

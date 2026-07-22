@@ -1,0 +1,49 @@
+{
+  "schema_version": "source_route_anchor_manual_review.v1",
+  "status": "review_only_manual_overrides",
+  "review_packet": "source-anchor-gap-review-3-images.json",
+  "treatment_geometry_review_packet": "treatment-geometry-exception-314812.json",
+  "replacement_image_ids": ["35514"],
+  "treatment_geometry_untrusted_allowlist": [
+    {
+      "image_id": "314812",
+      "route_id": "seed-31002",
+      "row_index": 2,
+      "owner_id": "314812:1986481",
+      "iou": 0.5620665342887567,
+      "reviewer": "manual_crop_review",
+      "comment": "Entity identity is trusted; the thin book extent is geometry-uncertain. Retain schema and description sites and mask all coordinate sites."
+    }
+  ],
+  "decisions": [
+    {
+      "image_id": "57676",
+      "row_index": 24,
+      "decision": "admit",
+      "owner_id": "57676:1374505",
+      "category": "boat",
+      "iou": 0.927154,
+      "reviewer": "manual_crop_review",
+      "review_source": "source-anchor-gap-review-3-images.json",
+      "comment": "The greedy boat row is uniquely tied to the reviewed annotation after enlarged-crop inspection."
+    },
+    {
+      "image_id": "190052",
+      "row_index": 23,
+      "decision": "admit",
+      "owner_id": "190052:1156078",
+      "category": "vase",
+      "iou": 0.825202,
+      "reviewer": "manual_crop_review",
+      "review_source": "source-anchor-gap-review-3-images.json",
+      "comment": "The greedy vase row is uniquely tied to the reviewed annotation after enlarged-crop inspection."
+    },
+    {
+      "image_id": "319139",
+      "decision": "exclude",
+      "reviewer": "manual_crop_review",
+      "review_source": "source-anchor-gap-review-3-images.json",
+      "comment": "All greedy rows hug the left boundary and remain unresolved; no unique physical owner is admitted. Exclude the image from both matched arms."
+    }
+  ]
+}

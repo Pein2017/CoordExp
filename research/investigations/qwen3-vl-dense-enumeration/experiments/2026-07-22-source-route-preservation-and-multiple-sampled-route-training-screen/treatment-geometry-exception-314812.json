@@ -1,0 +1,60 @@
+{
+  "schema_version": "source_route_treatment_geometry_exception_review.v1",
+  "image_id": "314812",
+  "owner_id": "314812:1986481",
+  "category": "book",
+  "gt_bbox_absolute": [327.456, 190.08, 403.488, 220.032],
+  "routes": [
+    {
+      "route_id": "seed-31002",
+      "seed": 31002,
+      "row_index": 2,
+      "route_added_owner_ids": ["314812:1986481"],
+      "greedy_owner_ids": ["314812:1150380"],
+      "duplicate_count": 1,
+      "malformed_count": 0,
+      "unresolved_rows": 13,
+      "parser_status": "accepted",
+      "stop_reason": "im_end",
+      "selection_priority": [-1, -1, 13, 31002, "seed-31002"],
+      "predicted_bbox_norm1000": [383, 173, 457, 190],
+      "prefix_token_count": 18,
+      "prefix_token_ids_sha256": "1499fd529edaf2a05a0de18152f6b5aa80c96b7120f986279fc1bc8f5a99235c",
+      "row_token_count": 9,
+      "row_token_ids_sha256": "0663c300cba7cbf9080fca9d5c4a104336be68e37db4803a93a71f3ab9d840b8",
+      "owner_iou": 0.5620665342887567,
+      "owner_entity_status": "verified_owner",
+      "geometry_status": "unknown",
+      "geometry_reason": "multi_instance_iou_below_0.75"
+    },
+    {
+      "route_id": "seed-31014",
+      "seed": 31014,
+      "row_index": 5,
+      "route_added_owner_ids": ["314812:1986481"],
+      "greedy_owner_ids": ["314812:1150380"],
+      "duplicate_count": 0,
+      "malformed_count": 0,
+      "unresolved_rows": 14,
+      "parser_status": "accepted",
+      "stop_reason": "im_end",
+      "selection_priority": [-1, -1, 14, 31014, "seed-31014"],
+      "predicted_bbox_norm1000": [378, 168, 461, 192],
+      "prefix_token_count": 45,
+      "prefix_token_ids_sha256": "18d4b7715f97045acbe35f2a2195a36d4d3be55dde07a2d03688fd446f5586c7",
+      "row_token_count": 9,
+      "row_token_ids_sha256": "634917a70a8bc4dc475aada646955515b8a72de826464d5286ffe6e2ef8e3e34",
+      "owner_iou": 0.7788262245853139,
+      "owner_entity_status": "verified_owner",
+      "geometry_status": "trusted",
+      "geometry_reason": "multi_instance_iou_at_least_0.75"
+    }
+  ],
+  "decision": {
+    "admit_route_id": "seed-31002",
+    "admit_row_index": 2,
+    "owner_gradient": "schema_and_description_only",
+    "coordinate_gradient": "masked",
+    "reason": "Deterministic route priority favors fewer unresolved rows (13 versus 14); the thin book extent is geometry-uncertain but the physical owner identity and category are trusted."
+  }
+}

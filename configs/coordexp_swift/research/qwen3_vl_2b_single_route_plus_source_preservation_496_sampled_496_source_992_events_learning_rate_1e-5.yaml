@@ -1,0 +1,21 @@
+schema_version: 1
+extends: qwen3_vl_2b_positive_path_imitation_512_events_one_epoch_learning_rate_1e-5.yaml
+
+run:
+  name: qwen3_vl_2b_single_route_plus_source_preservation_496_sampled_496_source_992_events_learning_rate_1e-5
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-source-route-preservation-and-multiple-sampled-route-training-screen/train-992-events-v1/single-route-plus-source-preservation/runs
+  collision_policy: fail
+
+rollout_calibration:
+  profile: sampled_path_and_source_route_imitation_only
+  state_bank_manifest_path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-source-route-preservation-and-multiple-sampled-route-training-screen/state-banks-v2/single-route-plus-source-preservation/state-bank/manifest.json
+
+training:
+  epochs: 1
+  max_steps: 31
+  effective_batch_size: 32
+
+checkpoint:
+  every_fraction: 0.3
+  steps: []
+  save_final: true
