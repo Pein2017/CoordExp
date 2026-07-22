@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project Memory (Experimental)"
+  short_description: "Experimental adaptive project memory"
+  default_prompt: "Use $project-memory to recall, checkpoint, or consolidate durable project context."

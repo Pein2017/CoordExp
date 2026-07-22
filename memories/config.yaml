@@ -1,0 +1,36 @@
+version: 1
+format: natural_language
+status: experimental
+
+current_memory: memories/current.md
+notes_directory: memories/notes
+note_template: memories/template.md
+
+behavior:
+  recall_at_relevant_task_start: true
+  allow_agent_semantic_checkpoint: true
+  checkpoint_at_meaningful_boundary: true
+  checkpoint_before_handoff_stop_or_final_when_changed: true
+  verify_dynamic_state_on_resume: true
+  current_memory_writer: main_agent_or_designated_consolidator
+  allow_full_create_read_update_delete: true
+  prefer_concise_current_memory: true
+  preserve_useful_rejected_reasoning: true
+  require_source_handle_when_available: true
+
+authority:
+  memory_is_formal_project_authority: false
+  feature_is_stable_compatibility_contract: false
+  may_modify_memory_without_confirmation: true
+  may_modify_formal_project_knowledge: false
+  may_stage_or_commit_automatically: false
+
+capture:
+  include: >-
+    Cross-session context, durable reasoning, user steering, important
+    decisions, mathematical or statistical insight, experiment or design
+    rationale, reusable implementation lessons, and rejected paths whose
+    explanation prevents repeated work.
+  exclude: >-
+    Routine commands, transient progress, cheap-to-rediscover facts, raw
+    transcripts, large tool outputs, caches, indexes, credentials, and secrets.

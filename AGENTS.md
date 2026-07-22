@@ -87,6 +87,23 @@
   elegance, future consumers, exhaustive manifests, and speculative edge cases
   until the pilot justifies promotion.
 
+## Experimental Project Memory
+
+- The repository-local `memories/` feature and `project-memory` skill are
+  experimental and should improve from observed use rather than be treated as
+  a stable compatibility contract.
+- For a non-trivial continuity-sensitive task, when `memories/config.yaml`
+  exists, the main agent recalls `memories/current.md` once at task start and
+  checks only relevant notes. Do not repeat full recall on every turn.
+- Track whether the live goal, durable decision, evidence-backed conclusion,
+  claim boundary, blocker, costly continuation state, or next action changed.
+  If it did, checkpoint automatically at the next meaningful boundary or
+  before handoff, compaction, stop, or final response; routine progress does
+  not qualify.
+- Only the main agent or an explicitly designated consolidator rewrites
+  `current.md`. Verify dynamic process, artifact, branch, and worktree claims
+  before acting because memory is continuity guidance, not live authority.
+
 ## Judgment Taste
 
 - Search for the narrowest existing repository owner first, then a standard
