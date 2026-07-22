@@ -72,6 +72,7 @@ def test_state_bank_round_trip_binds_identity_splits_and_receipt(
     assert loaded.records[0].prefix_object_row_count == 1
     assert loaded.records[0].prefix_coverage_status == "resolved"
     assert loaded.records[0].positive_path_imitation_eligible is False
+    assert loaded.records[0].source_route_imitation_eligible is False
     assert loaded.records[0].image_balanced_event_weight == 1.0
     assert loaded.validation_receipt.to_artifact_dict() == {
         "bank_id": manifest.bank_id,
@@ -232,6 +233,121 @@ def test_positive_path_imitation_event_accepts_context_prefix_modes(
     assert event.entity_transition_eligible is False
     assert event.coordinate_boundary_eligible is False
     assert event.candidates[0].owner_resolution_interval == (0, 3)
+
+
+def _complete_row_event_mapping(
+    tmp_path: Path,
+    *,
+    family: str,
+    generation_mode: str,
+) -> dict:
+    rollouts, reviews, _ = synthetic_inputs(tmp_path)
+    joined = _joined_event(rollouts[0], reviews[0])
+    joined["positive_path_imitation_eligible"] = family == "positive_path"
+    joined["source_route_imitation_eligible"] = family == "source_route"
+    joined["entity_transition_eligible"] = False
+    joined["coordinate_boundary_eligible"] = False
+    joined["candidates"] = [joined["candidates"][0]]
+    positive = joined["candidates"][0]
+    positive["generation_provenance"].update(
+        {
+            "mode": generation_mode,
+            "seed": 0 if generation_mode == "greedy" else 11,
+            "temperature": 0.0 if generation_mode == "greedy" else 0.2,
+            "top_p": 1.0 if generation_mode == "greedy" else 0.95,
+        }
+    )
+    positive.update(
+        {
+            "geometry_review_status": "unknown",
+            "geometry_eligible": False,
+            "coordinate_decision": None,
+            "owner_resolution_interval": [0, 3],
+            "selected_sites": [
+                {"candidate_token_offset": 0, "intended_token_type": "desc_text"},
+                {"candidate_token_offset": 1, "intended_token_type": "coordinate"},
+                {"candidate_token_offset": 2, "intended_token_type": "schema"},
+            ],
+        }
+    )
+    return joined
+
+
+def test_source_route_imitation_accepts_only_greedy_complete_row(
+    tmp_path: Path,
+) -> None:
+    event = StateBankEvent.from_mapping(
+        _complete_row_event_mapping(
+            tmp_path,
+            family="source_route",
+            generation_mode="greedy",
+        )
+    )
+    assert event.source_route_imitation_eligible is True
+    assert event.positive_path_imitation_eligible is False
+    assert event.to_artifact_dict()["source_route_imitation_eligible"] is True
+
+    sampled = _complete_row_event_mapping(
+        tmp_path,
+        family="source_route",
+        generation_mode="sampled",
+    )
+    with pytest.raises(ArtifactContractError) as exc_info:
+        StateBankEvent.from_mapping(sampled)
+    assert exc_info.value.code == "state_bank.source_route_not_greedy"
+
+
+def test_complete_row_imitation_families_are_mutually_exclusive(
+    tmp_path: Path,
+) -> None:
+    joined = _complete_row_event_mapping(
+        tmp_path,
+        family="positive_path",
+        generation_mode="sampled",
+    )
+    joined["source_route_imitation_eligible"] = True
+    with pytest.raises(ArtifactContractError) as exc_info:
+        StateBankEvent.from_mapping(joined)
+    assert exc_info.value.code == "state_bank.complete_row_imitation_family_conflict"
+
+
+def test_positive_path_imitation_still_rejects_greedy_provenance(
+    tmp_path: Path,
+) -> None:
+    joined = _complete_row_event_mapping(
+        tmp_path,
+        family="positive_path",
+        generation_mode="greedy",
+    )
+    with pytest.raises(ArtifactContractError) as exc_info:
+        StateBankEvent.from_mapping(joined)
+    assert exc_info.value.code == "state_bank.positive_path_not_sampled"
+
+
+def test_complete_row_imitation_families_have_separate_manifest_counts(
+    tmp_path: Path,
+) -> None:
+    sampled = StateBankEvent.from_mapping(
+        _complete_row_event_mapping(
+            tmp_path,
+            family="positive_path",
+            generation_mode="sampled",
+        )
+    )
+    source = StateBankEvent.from_mapping(
+        _complete_row_event_mapping(
+            tmp_path,
+            family="source_route",
+            generation_mode="greedy",
+        )
+    )
+    _, family_counts = state_bank_module._record_counts(
+        (sampled, replace(source, event_id="source-route-event"))
+    )
+    assert family_counts == {
+        "positive_path_imitation": 1,
+        "source_route_imitation": 1,
+    }
 
 
 def test_positive_path_imitation_token_identity_allows_masked_untrusted_coordinates(
@@ -409,6 +525,34 @@ def _positive_path_collection_event(
     )
 
 
+def _source_route_collection_event(
+    tmp_path: Path,
+    *,
+    event_id: str,
+    image_id: int,
+    weight: float,
+) -> StateBankEvent:
+    event = StateBankEvent.from_mapping(
+        _complete_row_event_mapping(
+            tmp_path,
+            family="source_route",
+            generation_mode="greedy",
+        )
+    )
+    image = replace(
+        event.image,
+        image_id=image_id,
+        content_sha256=f"{image_id:064x}",
+    )
+    return replace(
+        event,
+        event_id=event_id,
+        image=image,
+        split_group_id=f"image:{image_id}",
+        image_balanced_event_weight=weight,
+    )
+
+
 def test_positive_path_collection_requires_unit_mean_event_weight(
     tmp_path: Path,
 ) -> None:
@@ -459,6 +603,42 @@ def test_positive_path_collection_requires_equal_total_weight_per_image(
         for event, weight in zip(unequal, (0.75, 0.75, 1.5), strict=True)
     )
     state_bank_module._validate_record_collection(balanced)
+
+
+def test_mixed_family_weights_cannot_offset_sampled_family_imbalance(
+    tmp_path: Path,
+) -> None:
+    records = (
+        _positive_path_collection_event(
+            tmp_path,
+            event_id="sampled-image-42",
+            image_id=42,
+            weight=0.5,
+        ),
+        _positive_path_collection_event(
+            tmp_path,
+            event_id="sampled-image-43",
+            image_id=43,
+            weight=1.5,
+        ),
+        _source_route_collection_event(
+            tmp_path,
+            event_id="source-image-42",
+            image_id=42,
+            weight=1.5,
+        ),
+        _source_route_collection_event(
+            tmp_path,
+            event_id="source-image-43",
+            image_id=43,
+            weight=0.5,
+        ),
+    )
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        state_bank_module._validate_record_collection(records)
+
+    assert exc_info.value.code == "state_bank.positive_path_image_weight_totals"
 
 
 def test_positive_path_weight_normalization_ignores_non_positive_records(

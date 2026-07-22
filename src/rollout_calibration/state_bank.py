@@ -1250,6 +1250,7 @@ class StateBankEvent:
     # intentionally retain the neutral defaults so their profile behavior is
     # unchanged.
     positive_path_imitation_eligible: bool = False
+    source_route_imitation_eligible: bool = False
     image_balanced_event_weight: float = 1.0
 
     @property
@@ -1286,6 +1287,7 @@ class StateBankEvent:
             "counterfactual_admission",
             "target_owner_noncoverage_proof",
             "positive_path_imitation_eligible",
+            "source_route_imitation_eligible",
             "image_balanced_event_weight",
         }
         unexpected_keys = set(checked) - required_keys - optional_keys
@@ -1526,6 +1528,10 @@ class StateBankEvent:
                 checked.get("positive_path_imitation_eligible", False),
                 field=f"{field}.positive_path_imitation_eligible",
             ),
+            source_route_imitation_eligible=_bool(
+                checked.get("source_route_imitation_eligible", False),
+                field=f"{field}.source_route_imitation_eligible",
+            ),
             image_balanced_event_weight=_positive_event_weight(
                 checked.get("image_balanced_event_weight", 1.0),
                 field=f"{field}.image_balanced_event_weight",
@@ -1673,9 +1679,30 @@ class StateBankEvent:
                         candidate_id=candidate.candidate_id,
                         coordinate_offsets=coordinate_offsets,
                     )
+        if (
+            self.positive_path_imitation_eligible
+            and self.source_route_imitation_eligible
+        ):
+            _fail(
+                "state_bank.complete_row_imitation_family_conflict",
+                "one event cannot enable both sampled-path and Source-route imitation",
+                event_id=self.event_id,
+            )
         if self.positive_path_imitation_eligible:
-            self._validate_positive_path_imitation_event(
+            self._validate_complete_row_imitation_event(
                 entity_by_id,
+                family_label="positive-path imitation",
+                expected_generation_mode="sampled",
+                code_prefix="positive_path",
+                field=field,
+            )
+            return
+        if self.source_route_imitation_eligible:
+            self._validate_complete_row_imitation_event(
+                entity_by_id,
+                family_label="Source-route imitation",
+                expected_generation_mode="greedy",
+                code_prefix="source_route",
                 field=field,
             )
             return
@@ -1909,77 +1936,84 @@ class StateBankEvent:
                 event_id=self.event_id,
             )
 
-    def _validate_positive_path_imitation_event(
+    def _validate_complete_row_imitation_event(
         self,
         entity_by_id: Mapping[str, PhysicalEntity],
         *,
+        family_label: str,
+        expected_generation_mode: str,
+        code_prefix: str,
         field: str,
     ) -> None:
-        """Validate the isolated one-row positive-path imitation profile.
+        """Validate one isolated complete-row imitation event family.
 
         This route is intentionally independent from entity-transition and
         coordinate-boundary preference events.  Its exact prefix is merely
-        conditioning context; even unresolved prior rows therefore remain
-        admissible when the sampled candidate itself is a trusted first
-        owner match.
+        conditioning context; unresolved prior rows remain admissible when the
+        candidate itself is a trusted first owner match.
         """
 
         if self.entity_transition_eligible or self.coordinate_boundary_eligible:
             _fail(
-                "state_bank.positive_path_event_flags",
-                "positive-path imitation events must disable transition and coordinate-boundary eligibility",
+                f"state_bank.{code_prefix}_event_flags",
+                f"{family_label} events must disable transition and coordinate-boundary eligibility",
                 event_id=self.event_id,
                 entity_transition_eligible=self.entity_transition_eligible,
                 coordinate_boundary_eligible=self.coordinate_boundary_eligible,
             )
         if self.prefix_coverage_status not in {"empty", "resolved", "unresolved"}:
             _fail(
-                "state_bank.positive_path_prefix_coverage",
-                "positive-path imitation permits only empty, resolved, or unresolved prefix coverage",
+                f"state_bank.{code_prefix}_prefix_coverage",
+                f"{family_label} permits only empty, resolved, or unresolved prefix coverage",
                 event_id=self.event_id,
                 prefix_coverage_status=self.prefix_coverage_status,
             )
         if self.target_owner_noncoverage_proof is not None:
             _fail(
-                "state_bank.positive_path_target_noncoverage",
-                "positive-path imitation must not carry target-scoped noncoverage proof",
+                f"state_bank.{code_prefix}_target_noncoverage",
+                f"{family_label} must not carry target-scoped noncoverage proof",
                 event_id=self.event_id,
             )
         if self.counterfactual_admission is not None:
             _fail(
-                "state_bank.positive_path_counterfactual",
-                "positive-path imitation must not carry counterfactual admission evidence",
+                f"state_bank.{code_prefix}_counterfactual",
+                f"{family_label} must not carry counterfactual admission evidence",
                 event_id=self.event_id,
             )
         if len(self.candidates) != 1:
             _fail(
-                "state_bank.positive_path_candidate_count",
-                "positive-path imitation requires exactly one candidate row",
+                f"state_bank.{code_prefix}_candidate_count",
+                f"{family_label} requires exactly one candidate row",
                 event_id=self.event_id,
                 candidate_count=len(self.candidates),
             )
         candidate = self.candidates[0]
         if candidate.role != "positive" or candidate.harmful_kind is not None:
             _fail(
-                "state_bank.positive_path_candidate_role",
-                "positive-path imitation requires one non-harmful positive candidate",
+                f"state_bank.{code_prefix}_candidate_role",
+                f"{family_label} requires one non-harmful positive candidate",
                 event_id=self.event_id,
                 candidate_id=candidate.candidate_id,
                 role=candidate.role,
                 harmful_kind=candidate.harmful_kind,
             )
-        if candidate.generation_provenance.mode != "sampled":
+        if candidate.generation_provenance.mode != expected_generation_mode:
+            generation_mode_code = (
+                "state_bank.positive_path_not_sampled"
+                if code_prefix == "positive_path"
+                else "state_bank.source_route_not_greedy"
+            )
             _fail(
-                "state_bank.positive_path_not_sampled",
-                "positive-path imitation candidate must have sampled provenance",
+                generation_mode_code,
+                f"{family_label} candidate must have {expected_generation_mode} provenance",
                 event_id=self.event_id,
                 candidate_id=candidate.candidate_id,
                 mode=candidate.generation_provenance.mode,
             )
         if candidate.entity_review_status != "trusted" or not candidate.entity_eligible:
             _fail(
-                "state_bank.positive_path_entity_untrusted",
-                "positive-path imitation candidate must be entity-trusted and entity-eligible",
+                f"state_bank.{code_prefix}_entity_untrusted",
+                f"{family_label} candidate must be entity-trusted and entity-eligible",
                 event_id=self.event_id,
                 candidate_id=candidate.candidate_id,
                 entity_review_status=candidate.entity_review_status,
@@ -1987,24 +2021,24 @@ class StateBankEvent:
             )
         if candidate.coverage_status != "uncovered":
             _fail(
-                "state_bank.positive_path_coverage",
-                "positive-path imitation candidate must be an uncovered route-local owner match",
+                f"state_bank.{code_prefix}_coverage",
+                f"{family_label} candidate must be an uncovered route-local owner match",
                 event_id=self.event_id,
                 candidate_id=candidate.candidate_id,
                 coverage_status=candidate.coverage_status,
             )
         if candidate.physical_owner_id is None or candidate.owner_resolution_interval is None:
             _fail(
-                "state_bank.positive_path_owner_interval",
-                "positive-path imitation candidate requires a physical owner and full row interval",
+                f"state_bank.{code_prefix}_owner_interval",
+                f"{family_label} candidate requires a physical owner and full row interval",
                 event_id=self.event_id,
                 candidate_id=candidate.candidate_id,
             )
         owner = entity_by_id.get(candidate.physical_owner_id)
         if owner is None or not owner.entity_trusted:
             _fail(
-                "state_bank.positive_path_owner_untrusted",
-                "positive-path imitation owner must be trusted in the physical ledger",
+                f"state_bank.{code_prefix}_owner_untrusted",
+                f"{family_label} owner must be trusted in the physical ledger",
                 event_id=self.event_id,
                 candidate_id=candidate.candidate_id,
                 owner_id=candidate.physical_owner_id,
@@ -2012,8 +2046,8 @@ class StateBankEvent:
         start, end = candidate.owner_resolution_interval
         if start != 0 or end != len(candidate.token_ids):
             _fail(
-                "state_bank.positive_path_full_row_interval",
-                "positive-path imitation owner interval must cover the complete generated row from offset zero",
+                f"state_bank.{code_prefix}_full_row_interval",
+                f"{family_label} owner interval must cover the complete generated row from offset zero",
                 event_id=self.event_id,
                 candidate_id=candidate.candidate_id,
                 interval=[start, end],
@@ -2023,8 +2057,8 @@ class StateBankEvent:
         actual_offsets = {site.candidate_token_offset for site in candidate.selected_sites}
         if actual_offsets != expected_offsets:
             _fail(
-                "state_bank.positive_path_selected_sites",
-                "positive-path imitation must select every generated row site exactly once",
+                f"state_bank.{code_prefix}_selected_sites",
+                f"{family_label} must select every generated row site exactly once",
                 event_id=self.event_id,
                 candidate_id=candidate.candidate_id,
                 expected_offsets=sorted(expected_offsets),
@@ -2032,8 +2066,8 @@ class StateBankEvent:
             )
         if any(site.intended_token_type == "eos" for site in candidate.selected_sites):
             _fail(
-                "state_bank.positive_path_eos_site",
-                "positive-path imitation must not add an EOS target site",
+                f"state_bank.{code_prefix}_eos_site",
+                f"{family_label} must not add an EOS target site",
                 event_id=self.event_id,
                 candidate_id=candidate.candidate_id,
             )
@@ -2183,6 +2217,7 @@ class StateBankEvent:
             "entity_transition_eligible": self.entity_transition_eligible,
             "coordinate_boundary_eligible": self.coordinate_boundary_eligible,
             "positive_path_imitation_eligible": self.positive_path_imitation_eligible,
+            "source_route_imitation_eligible": self.source_route_imitation_eligible,
             "image_balanced_event_weight": self.image_balanced_event_weight,
             "candidates": [
                 candidate.to_artifact_dict() for candidate in self.candidates
@@ -2518,7 +2553,7 @@ def assemble_state_bank(
 def _normalize_image_balanced_event_weights(
     records: tuple[StateBankEvent, ...],
 ) -> tuple[StateBankEvent, ...]:
-    """Normalize positive-path training weights to global mean one.
+    """Normalize each complete-row family to mean-one training credit.
 
     The review/assembly stage owns image balancing; the trainer therefore
     consumes a fixed event weight without introducing a second denominator.
@@ -2527,32 +2562,44 @@ def _normalize_image_balanced_event_weights(
 
     if not records:
         return records
-    positive_path_training_records = tuple(
-        item
-        for item in records
-        if item.positive_path_imitation_eligible and item.split == "train"
-    )
-    if not positive_path_training_records:
+    family_means: dict[str, float] = {}
+    for family in ("positive_path_imitation", "source_route_imitation"):
+        family_records = tuple(
+            item
+            for item in records
+            if _complete_row_imitation_family(item) == family
+            and item.split == "train"
+        )
+        if not family_records:
+            continue
+        mean_weight = math.fsum(
+            item.image_balanced_event_weight for item in family_records
+        ) / len(family_records)
+        if not math.isfinite(mean_weight) or mean_weight <= 0.0:
+            _fail(
+                "state_bank.image_balanced_event_weight_mean",
+                "accepted event weights must have a finite positive family mean",
+                family=family,
+                mean_weight=mean_weight,
+            )
+        family_means[family] = mean_weight
+    if not family_means:
         return records
-    mean_weight = math.fsum(
-        item.image_balanced_event_weight
-        for item in positive_path_training_records
-    ) / len(positive_path_training_records)
-    if not math.isfinite(mean_weight) or mean_weight <= 0.0:
-        _fail(
-            "state_bank.image_balanced_event_weight_mean",
-            "accepted event weights must have a finite positive global mean",
-            mean_weight=mean_weight,
+    normalized: list[StateBankEvent] = []
+    for item in records:
+        family = _complete_row_imitation_family(item)
+        if family is None or item.split != "train":
+            normalized.append(item)
+            continue
+        normalized.append(
+            replace(
+                item,
+                image_balanced_event_weight=(
+                    item.image_balanced_event_weight / family_means[family]
+                ),
+            )
         )
-    return tuple(
-        replace(
-            item,
-            image_balanced_event_weight=item.image_balanced_event_weight / mean_weight,
-        )
-        if item.positive_path_imitation_eligible and item.split == "train"
-        else item
-        for item in records
-    )
+    return tuple(normalized)
 
 
 def load_state_bank(
@@ -2713,30 +2760,32 @@ def validate_state_bank_token_identity(
                             expected_token_id=expected_coordinate_id,
                             actual_token_id=actual_coordinate_id,
                         )
-            if (
-                event.positive_path_imitation_eligible
-                and candidate.role == "positive"
-            ):
-                mislabeled_positive_path_sites = []
+            if _complete_row_imitation_eligible(event) and candidate.role == "positive":
+                mislabeled_complete_row_sites = []
                 for site in candidate.selected_sites:
                     token_id = candidate.token_ids[site.candidate_token_offset]
                     is_coordinate_token = token_id in coordinate_token_id_set
                     declared_coordinate = site.intended_token_type == "coordinate"
                     if is_coordinate_token != declared_coordinate:
-                        mislabeled_positive_path_sites.append(
+                        mislabeled_complete_row_sites.append(
                             {
                                 "candidate_token_offset": site.candidate_token_offset,
                                 "token_id": token_id,
                                 "intended_token_type": site.intended_token_type,
                             }
                         )
-                if mislabeled_positive_path_sites:
+                if mislabeled_complete_row_sites:
+                    code_prefix = (
+                        "positive_path"
+                        if event.positive_path_imitation_eligible
+                        else "source_route"
+                    )
                     _fail(
-                        "state_bank.positive_path_token_type_identity",
-                        "positive-path selected-site type disagrees with the bound coordinate-token identity",
+                        f"state_bank.{code_prefix}_token_type_identity",
+                        "complete-row selected-site type disagrees with the bound coordinate-token identity",
                         event_id=event.event_id,
                         candidate_id=candidate.candidate_id,
-                        sites=mislabeled_positive_path_sites,
+                        sites=mislabeled_complete_row_sites,
                     )
             if (
                 candidate.entity_eligible
@@ -2767,10 +2816,7 @@ def validate_state_bank_token_identity(
                         candidate_id=candidate.candidate_id,
                         coordinate_offsets=mislabeled_coordinate_offsets,
                     )
-                if (
-                    event.positive_path_imitation_eligible
-                    and candidate.role == "positive"
-                ):
+                if _complete_row_imitation_eligible(event) and candidate.role == "positive":
                     # Coherent positive-row continuation may retain coordinate
                     # sites with unknown geometry; the trainer masks those sites
                     # from coordinate loss. Exact coordinate-boundary evidence
@@ -2822,6 +2868,7 @@ def _join_rollout_and_review(
         "counterfactual_admission",
         "target_owner_noncoverage_proof",
         "positive_path_imitation_eligible",
+        "source_route_imitation_eligible",
         "image_balanced_event_weight",
     }
     unexpected_review_keys = set(review) - review_required_keys - optional_review_keys
@@ -2924,6 +2971,9 @@ def _join_rollout_and_review(
         ),
         "positive_path_imitation_eligible": review.get(
             "positive_path_imitation_eligible", False
+        ),
+        "source_route_imitation_eligible": review.get(
+            "source_route_imitation_eligible", False
         ),
         "image_balanced_event_weight": review.get(
             "image_balanced_event_weight", 1.0
@@ -3054,7 +3104,7 @@ def _validate_record_collection(records: tuple[StateBankEvent, ...]) -> None:
         count = len(image_records)
         if count <= 4:
             continue
-        if all(record.positive_path_imitation_eligible for record in image_records):
+        if all(_complete_row_imitation_eligible(record) for record in image_records):
             if count > 16:
                 excessive_positive_paths[image_id] = count
             continue
@@ -3071,50 +3121,59 @@ def _validate_record_collection(records: tuple[StateBankEvent, ...]) -> None:
             "positive-path pilot permits at most sixteen training rows per image",
             counts=excessive_positive_paths,
         )
-    _validate_positive_path_image_balanced_event_weights(records)
+    _validate_complete_row_image_balanced_event_weights(records)
 
 
-def _validate_positive_path_image_balanced_event_weights(
+def _validate_complete_row_image_balanced_event_weights(
     records: tuple[StateBankEvent, ...],
 ) -> None:
-    positive_path_records = tuple(
-        record
-        for record in records
-        if record.positive_path_imitation_eligible and record.split == "train"
-    )
-    if not positive_path_records:
-        return
-    mean_weight = math.fsum(
-        record.image_balanced_event_weight for record in positive_path_records
-    ) / len(positive_path_records)
-    if not math.isclose(mean_weight, 1.0, rel_tol=1e-9, abs_tol=1e-12):
-        _fail(
-            "state_bank.positive_path_event_weight_mean",
-            "positive-path event weights must have global mean one",
-            mean_weight=mean_weight,
+    for family in ("positive_path_imitation", "source_route_imitation"):
+        family_records = tuple(
+            record
+            for record in records
+            if _complete_row_imitation_family(record) == family
+            and record.split == "train"
         )
-    weights_by_image: dict[int, list[float]] = {}
-    for record in positive_path_records:
-        weights_by_image.setdefault(record.image.image_id, []).append(
-            record.image_balanced_event_weight
+        if not family_records:
+            continue
+        code_prefix = (
+            "positive_path"
+            if family == "positive_path_imitation"
+            else "source_route"
         )
-    totals_by_image = {
-        image_id: math.fsum(weights)
-        for image_id, weights in weights_by_image.items()
-    }
-    reference_total = next(iter(totals_by_image.values()))
-    unequal_totals = {
-        image_id: total
-        for image_id, total in sorted(totals_by_image.items())
-        if not math.isclose(total, reference_total, rel_tol=1e-9, abs_tol=1e-12)
-    }
-    if unequal_totals:
-        _fail(
-            "state_bank.positive_path_image_weight_totals",
-            "positive-path records must assign equal total weight to every admitted image",
-            reference_total=reference_total,
-            unequal_totals=unequal_totals,
-        )
+        mean_weight = math.fsum(
+            record.image_balanced_event_weight for record in family_records
+        ) / len(family_records)
+        if not math.isclose(mean_weight, 1.0, rel_tol=1e-9, abs_tol=1e-12):
+            _fail(
+                f"state_bank.{code_prefix}_event_weight_mean",
+                "complete-row event weights must have family mean one",
+                family=family,
+                mean_weight=mean_weight,
+            )
+        weights_by_image: dict[int, list[float]] = {}
+        for record in family_records:
+            weights_by_image.setdefault(record.image.image_id, []).append(
+                record.image_balanced_event_weight
+            )
+        totals_by_image = {
+            image_id: math.fsum(weights)
+            for image_id, weights in weights_by_image.items()
+        }
+        reference_total = next(iter(totals_by_image.values()))
+        unequal_totals = {
+            image_id: total
+            for image_id, total in sorted(totals_by_image.items())
+            if not math.isclose(total, reference_total, rel_tol=1e-9, abs_tol=1e-12)
+        }
+        if unequal_totals:
+            _fail(
+                f"state_bank.{code_prefix}_image_weight_totals",
+                "complete-row records must assign equal family credit to every admitted image",
+                family=family,
+                reference_total=reference_total,
+                unequal_totals=unequal_totals,
+            )
 
 
 def _validate_record_checkpoint_provenance(
@@ -3193,6 +3252,8 @@ def _record_counts(
     for record in records:
         if record.positive_path_imitation_eligible:
             family_counts["positive_path_imitation"] += 1
+        elif record.source_route_imitation_eligible:
+            family_counts["source_route_imitation"] += 1
         elif record.entity_transition_eligible:
             family_counts["entity_transition"] += 1
         if record.coordinate_boundary_eligible:
@@ -3201,9 +3262,22 @@ def _record_counts(
             not record.entity_transition_eligible
             and not record.coordinate_boundary_eligible
             and not record.positive_path_imitation_eligible
+            and not record.source_route_imitation_eligible
         ):
             family_counts["diagnostic_only"] += 1
     return dict(sorted(split_counts.items())), dict(sorted(family_counts.items()))
+
+
+def _complete_row_imitation_eligible(record: StateBankEvent) -> bool:
+    return _complete_row_imitation_family(record) is not None
+
+
+def _complete_row_imitation_family(record: StateBankEvent) -> str | None:
+    if record.positive_path_imitation_eligible:
+        return "positive_path_imitation"
+    if record.source_route_imitation_eligible:
+        return "source_route_imitation"
+    return None
 
 
 def _split_assignments(

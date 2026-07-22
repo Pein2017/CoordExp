@@ -38,6 +38,7 @@ SOURCE_CHECKPOINT_ID = sha256_json(SOURCE_CHECKPOINT)
         ("coordinate_boundary_gate_only", 0.0, 0.0),
         ("joint", 0.5, 0.5),
         ("positive_path_imitation_only", 1.0, 0.0),
+        ("sampled_path_and_source_route_imitation_only", 1.0, 0.0),
     ],
 )
 def test_rollout_calibration_profiles_load_with_exact_weights_and_paths(

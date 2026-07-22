@@ -62,6 +62,7 @@ class CalibrationEventMetadata:
     candidates: tuple[CalibrationCandidateMetadata, ...]
     selected_logits_positions: tuple[int, ...]
     positive_path_imitation_eligible: bool = False
+    source_route_imitation_eligible: bool = False
     image_balanced_event_weight: float = 1.0
 
     @property
@@ -78,6 +79,7 @@ class CalibrationEventMetadata:
             "entity_transition_eligible": self.entity_transition_eligible,
             "coordinate_boundary_eligible": self.coordinate_boundary_eligible,
             "positive_path_imitation_eligible": self.positive_path_imitation_eligible,
+            "source_route_imitation_eligible": self.source_route_imitation_eligible,
             "image_balanced_event_weight": self.image_balanced_event_weight,
             "candidate_count": len(self.candidates),
             "selected_logits_positions": list(self.selected_logits_positions),
@@ -210,6 +212,7 @@ def _materialize_event_metadata(
         candidates=tuple(candidates),
         selected_logits_positions=tuple(sorted(selected_logits_positions)),
         positive_path_imitation_eligible=event.positive_path_imitation_eligible,
+        source_route_imitation_eligible=event.source_route_imitation_eligible,
         image_balanced_event_weight=event.image_balanced_event_weight,
     )
 

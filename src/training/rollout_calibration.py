@@ -103,7 +103,7 @@ class RolloutCalibrationLossRunner:
     @property
     def enabled_terms(self) -> tuple[str, ...]:
         terms: list[str] = []
-        if self.profile == "positive_path_imitation_only" and self.entity_weight > 0.0:
+        if _complete_row_profile(self.profile) and self.entity_weight > 0.0:
             terms.append(POSITIVE_TERM)
         elif self.entity_weight > 0.0:
             terms.append(ENTITY_TERM)
@@ -247,6 +247,7 @@ class RolloutCalibrationLossRunner:
             for candidate in context.metadata.candidates
         )
         count_scale = plan.backend_gradient_scale
+        complete_row_family = _complete_row_family(context.metadata, self.profile)
         return LossBundle(
             total_loss=total,
             terms=tuple(terms),
@@ -266,6 +267,12 @@ class RolloutCalibrationLossRunner:
                 "event_count": 1,
                 "unknown_entity_count": int(unknown_entity),
                 "unknown_geometry_count": int(unknown_geometry),
+                "positive_path_imitation_event_count": int(
+                    (complete_row_family == "positive_path_imitation") * count_scale
+                ),
+                "source_route_imitation_event_count": int(
+                    (complete_row_family == "source_route_imitation") * count_scale
+                ),
             },
             diagnostics={
                 "normalizer": "event_balanced",
@@ -273,6 +280,7 @@ class RolloutCalibrationLossRunner:
                 "denominator_scope": plan.denominator_scope,
                 "event_id": context.metadata.event_id,
                 "profile": self.profile,
+                "complete_row_imitation_family": complete_row_family,
                 "local_micro_step_index": int(local_micro_step_index),
             },
             finite_status={
@@ -407,6 +415,22 @@ class RolloutCalibrationLossRunner:
             for artifact in artifacts
         ) / len(artifacts)
         metrics["calibration/rejected_record_count"] = float(self.rejection_count)
+        family_counts = {
+            family: sum(
+                int(
+                    artifact.get("counts", {}).get(
+                        f"{family}_event_count", 0
+                    )
+                )
+                for artifact in artifacts
+            )
+            for family in (
+                "positive_path_imitation",
+                "source_route_imitation",
+            )
+        }
+        for family, count in family_counts.items():
+            metrics[f"calibration/{family}/admitted_event_count"] = float(count)
         all_finite = all(
             bool(artifact.get("finite_status", {}).get("all_finite"))
             for artifact in artifacts
@@ -418,6 +442,7 @@ class RolloutCalibrationLossRunner:
             "metrics": metrics,
             "counts": {
                 "event_count": len(artifacts),
+                "complete_row_imitation_family_counts": family_counts,
                 "global_eligible_event_counts": {
                     name: plan.denominators[name].eligible_segment_count
                     for name in plan.enabled_terms
@@ -443,10 +468,8 @@ class RolloutCalibrationLossRunner:
         *,
         local_micro_step_index: int,
     ) -> LossTermResult:
-        eligible = (
-            self.profile == "positive_path_imitation_only"
-            and context.metadata.positive_path_imitation_eligible
-        )
+        family = _complete_row_family(context.metadata, self.profile)
+        eligible = family is not None
         if eligible:
             if context.metadata.entity_transition_eligible or context.metadata.coordinate_boundary_eligible:
                 raise LossContractError(
@@ -479,6 +502,7 @@ class RolloutCalibrationLossRunner:
             diagnostics = {
                 "event_id": context.metadata.event_id,
                 "eligible": True,
+                "complete_row_imitation_family": family,
                 "schema_description_loss": float(
                     result.schema_description_loss.detach().item()
                 ),
@@ -494,6 +518,7 @@ class RolloutCalibrationLossRunner:
             diagnostics = {
                 "event_id": context.metadata.event_id,
                 "eligible": False,
+                "complete_row_imitation_family": None,
                 "image_balanced_event_weight": context.metadata.image_balanced_event_weight,
             }
         return _term_result(
@@ -735,8 +760,7 @@ class RolloutCalibrationLossRunner:
             metric_value=diagnostics["legal_mass"],
             event_weight=(
                 context.metadata.image_balanced_event_weight
-                if self.profile == "positive_path_imitation_only"
-                and context.metadata.positive_path_imitation_eligible
+                if _complete_row_family(context.metadata, self.profile) is not None
                 else 1.0
             ),
         )
@@ -843,6 +867,11 @@ def build_calibration_micro_step_stream(
 def _profile_admits(metadata: CalibrationEventMetadata, profile: str) -> bool:
     if profile == "positive_path_imitation_only":
         return metadata.positive_path_imitation_eligible
+    if profile == "sampled_path_and_source_route_imitation_only":
+        return bool(
+            metadata.positive_path_imitation_eligible
+            or metadata.source_route_imitation_eligible
+        )
     if profile == "transition_only":
         return metadata.entity_transition_eligible
     if profile in {"coordinate_boundary_only", "coordinate_boundary_gate_only"}:
@@ -929,10 +958,7 @@ def _event_eligible(
     metadata: CalibrationEventMetadata, term: str, *, profile: str
 ) -> bool:
     if term == POSITIVE_TERM:
-        return (
-            profile == "positive_path_imitation_only"
-            and metadata.positive_path_imitation_eligible
-        )
+        return _complete_row_family(metadata, profile) is not None
     if term == ENTITY_TERM:
         return metadata.entity_transition_eligible
     if term == COORDINATE_TERM:
@@ -982,7 +1008,7 @@ def _selected_count(
 
 
 def _active_selected_sites(candidate: Any, profile: str) -> tuple[Any, ...]:
-    if profile == "positive_path_imitation_only":
+    if _complete_row_profile(profile):
         if not candidate.entity_eligible or candidate.role != "positive":
             return ()
         interval = candidate.owner_resolution_candidate_interval
@@ -1019,6 +1045,35 @@ def _active_selected_sites(candidate: Any, profile: str) -> tuple[Any, ...]:
         for site in candidate.selected_sites
         if site.candidate_token_offset in active_offsets
     )
+
+
+def _complete_row_profile(profile: str) -> bool:
+    return profile in {
+        "positive_path_imitation_only",
+        "sampled_path_and_source_route_imitation_only",
+    }
+
+
+def _complete_row_family(
+    metadata: CalibrationEventMetadata,
+    profile: str,
+) -> str | None:
+    positive_path = bool(metadata.positive_path_imitation_eligible)
+    source_route = bool(metadata.source_route_imitation_eligible)
+    if positive_path and source_route:
+        raise LossContractError(
+            "one event cannot enable both complete-row imitation families",
+            code="loss.rollout_complete_row_family_conflict",
+            context={"event_id": metadata.event_id},
+        )
+    if profile == "positive_path_imitation_only":
+        return "positive_path_imitation" if positive_path else None
+    if profile == "sampled_path_and_source_route_imitation_only":
+        if positive_path:
+            return "positive_path_imitation"
+        if source_route:
+            return "source_route_imitation"
+    return None
 
 
 def _candidate_path(

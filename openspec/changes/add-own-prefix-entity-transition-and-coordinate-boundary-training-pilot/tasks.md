@@ -107,3 +107,32 @@ of ordinary owners. Only 118 of 238 route-added owners are direct event
 targets, so direct owner-wise imitation is not established. The next candidate
 is a matched-arm, preservation-aware 256-image screen rather than the unchanged
 1,024-image run.
+
+## 11. Truthful Source-Route Preservation for the Matched Treatment Screen
+
+- [x] 11.1 Add focused StateBank and config tests for a new
+  `source_route_imitation_eligible` event family and
+  `sampled_path_and_source_route_imitation_only` profile, including truthful
+  greedy-versus-sampled provenance, mutual exclusivity, and historical-profile
+  isolation.
+- [x] 11.2 Reuse the existing complete-row imitation loss, token-type gate,
+  exact replay, packing, normalization, and checkpoint path for both event
+  families; expose separate admitted-event counts without adding another loss
+  implementation.
+- [x] 11.3 Build two matched 992-event StateBanks for the 256-image screen:
+  one sampled route plus Source preservation and multiple complementary sampled
+  routes plus the identical Source preservation set. Verify 496 events per
+  family, the same 118 images, equal total image credit, and exclusion of the
+  twelve human-refined development images.
+- [x] 11.4 Run one real one-event smoke for a greedy Source event and one mixed
+  optimizer-step smoke, verifying exact provenance, selected sites, finite
+  gradients, checkpoint reload, and ordinary inference before the two formal
+  training arms launch.
+- [x] 11.5 Train the matched single-route and multiple-route 992-event arms for
+  31 optimizer updates and save the declared milestones.
+- [x] 11.6 Compare ordinary clean greedy rollout on the full 256-image cohort,
+  the admitted and non-admitted subgroups, and the twelve human-refined images.
+  The selected-owner signal is real, but unique-owner transfer is negative on
+  non-admitted images at every milestone. Do not promote this objective to an
+  unchanged 1,024-image epoch. The only authorized follow-on is a separate,
+  constant-dose image-breadth discriminator.

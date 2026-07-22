@@ -1066,6 +1066,9 @@ def _calibration_profile_event_count(
         positive_path = bool(
             getattr(metadata, "positive_path_imitation_eligible", False)
         )
+        source_route = bool(
+            getattr(metadata, "source_route_imitation_eligible", False)
+        )
         if (
             (profile == "transition_only" and entity)
             or (
@@ -1074,6 +1077,10 @@ def _calibration_profile_event_count(
             )
             or (profile == "joint" and (entity or coordinate))
             or (profile == "positive_path_imitation_only" and positive_path)
+            or (
+                profile == "sampled_path_and_source_route_imitation_only"
+                and (positive_path or source_route)
+            )
         ):
             count += 1
     if count <= 0:

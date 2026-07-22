@@ -34,6 +34,8 @@ reusable execution path.
   token-type-gate losses in 32-bit floating point;
 - compute positive-only complete-row imitation with separate
   schema-and-description and trusted-coordinate group means;
+- rehearse exact greedy Source rows without rewriting their generation mode as
+  sampled or adding a second complete-row loss;
 - preserve separate event masks, normalization, metrics, and provenance;
 - distinguish the checkpoint that generated a StateBank from the checkpoint
   used to warm-start an explicitly declared off-policy replay run;
@@ -89,6 +91,7 @@ current adapter parameters.
 | Fixed offline bank for the first screen | The trainer has no online collector or refresh loop. |
 | Offline mixed correction successor | Orchestration performs rollout, StateBank construction, and the next training run as separate stages; each training run still consumes exactly one immutable bank. |
 | Positive sampled-path successor | One admitted sampled path provides exact context; only verified first-occurrence rows through its last added owner receive gradient, with equal total loss weight per image. |
+| Source-route preservation successor | Exact greedy Source rows use a separate eligibility flag and truthful greedy generation provenance, while sharing the complete-row loss and keeping family-specific counts visible. |
 | Truthful off-policy replay | The bank keeps the trajectory-generating checkpoint identity, while the run separately records the compatible training warm-start checkpoint identity. |
 | Geometry-sorted primary and random-order ablation | Each source checkpoint requires its own bound bank and run; cross-bank reuse fails. |
 | No final architecture yet | Produced adapters use unchanged ordinary greedy Qwen3-VL inference. |
@@ -311,6 +314,35 @@ owner-wise imitation. A matched-arm preservation-aware successor requires a
 separate research contract; it is not silently added to this single-route
 profile.
 
+### 11. Preserve ordinary Source routes without falsifying provenance
+
+The preservation-aware screen uses one new profile,
+`sampled_path_and_source_route_imitation_only`. It admits two event families:
+
+- an existing positive sampled-path event, identified by
+  `positive_path_imitation_eligible=true` and sampled generation provenance;
+- a Source-route preservation event, identified by
+  `source_route_imitation_eligible=true` and greedy generation provenance.
+
+Each event still contains exactly one trusted, route-local uncovered physical
+owner and one complete candidate row. Both families use the existing 32-bit
+floating-point complete-row imitation loss and selected-site token-type gate.
+No terminal, prefix, harmful-branch, canonical supervised-fine-tuning, or
+Kullback-Leibler-divergence term is added. The StateBank assembler, rather than
+the trainer, owns the treatment-versus-preservation ratio and image-balanced
+weights.
+
+The two eligibility flags are mutually exclusive per event. The historical
+`positive_path_imitation_only` profile continues to admit only sampled
+positive-path events, so old banks and runs keep their original meaning. The
+new mixed profile exposes separate family counts in the StateBank manifest and
+training diagnostics, allowing the experiment to verify that both halves of
+the planned optimizer exposure were consumed.
+
+**Alternative rejected:** declare an exact greedy Source row as sampled while
+placing its true decode mode only in free-form review metadata. That would pass
+the old validator but make the canonical provenance field false.
+
 ## Risks / Trade-offs
 
 - **Incorrect review labels create direct harmful gradients** -> validate
@@ -339,6 +371,9 @@ profile.
 - **One positive route overwrites other useful routes** -> report targeted-
   owner gain and ordinary-owner retention separately; do not scale the profile
   unchanged when final owner coverage is flat or worse.
+- **Source preservation is mislabeled as sampling** -> require greedy mode for
+  every Source-route event, sampled mode for every sampled-path event, and fail
+  on either mismatch before forward computation.
 
 ## Migration Plan
 
@@ -355,6 +390,9 @@ profile.
    screen establishes the need for a trajectory-refresh test.
 8. Execute refresh as separate rollout, assembly, and training stages rather
    than adding an online collector to the trainer.
+9. Add the mixed sampled-path and Source-route profile only after a real bank
+   demonstrates that truthful greedy provenance cannot pass through the old
+   sampled-only profile; keep the loss implementation shared.
 
 Rollback is deletion or disabling of the explicit rollout-calibration mode.
 Normal supervised configs, inference configs, and checkpoint loading remain

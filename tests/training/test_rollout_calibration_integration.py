@@ -187,6 +187,168 @@ def test_positive_path_imitation_runner_has_no_branch_and_weights_both_terms() -
     assert artifact["metrics"]["calibration/image_balanced_event_weight"] == 2.0
 
 
+def test_mixed_complete_row_profile_reuses_loss_and_reports_families() -> None:
+    sampled_step = _micro_step(
+        _complete_row_metadata("sampled-event", source_route=False)
+    )
+    source_step = _micro_step(
+        _complete_row_metadata("source-event", source_route=True)
+    )
+    runner = RolloutCalibrationLossRunner(
+        profile="sampled_path_and_source_route_imitation_only",
+        entity_weight=1.0,
+        entity_margin=0.2,
+        entity_smooth_max_temperature=0.5,
+        coordinate_weight=0.0,
+        coordinate_margin=0.2,
+        gate_weight=0.1,
+    )
+    plan = runner.prepare_planned_step((sampled_step, source_step))
+    artifacts = []
+    for index, micro_step in enumerate((sampled_step, source_step)):
+        logits = torch.tensor(
+            [[[0.0, 0.0, 2.0, -1.0, -1.0, -1.0]]],
+            requires_grad=True,
+        )
+        context = rollout_calibration_loss_context(
+            micro_step,
+            SimpleNamespace(logits=logits, logits_position_ids=(0,)),
+        )
+        bundle = runner.compute_micro_step(
+            context,
+            plan,
+            local_micro_step_index=index,
+        )
+        bundle.total_loss.backward()
+        assert torch.isfinite(bundle.total_loss)
+        assert logits.grad is not None and torch.isfinite(logits.grad).all()
+        artifacts.append(bundle.to_artifact_dict())
+
+    artifact = runner.finalize_planned_step(tuple(artifacts), plan)
+    assert plan.enabled_terms == (
+        "rollout_positive_path_imitation",
+        "rollout_site_token_type_gate",
+    )
+    assert artifact["counts"]["complete_row_imitation_family_counts"] == {
+        "positive_path_imitation": 1,
+        "source_route_imitation": 1,
+    }
+    assert artifact["metrics"][
+        "calibration/positive_path_imitation/admitted_event_count"
+    ] == 1.0
+    assert artifact["metrics"][
+        "calibration/source_route_imitation/admitted_event_count"
+    ] == 1.0
+
+
+def test_mixed_family_counts_survive_two_rank_mean_reduction() -> None:
+    runner = RolloutCalibrationLossRunner(
+        profile="sampled_path_and_source_route_imitation_only",
+        entity_weight=1.0,
+        entity_margin=0.2,
+        entity_smooth_max_temperature=0.5,
+        coordinate_weight=0.0,
+        coordinate_margin=0.2,
+        gate_weight=0.1,
+    )
+    sampled_step = _micro_step(
+        _complete_row_metadata("sampled-rank-zero", source_route=False)
+    )
+    source_step = _micro_step(
+        _complete_row_metadata("source-rank-one", source_route=True)
+    )
+
+    def gather(local: dict) -> tuple[dict, dict]:
+        return (local, local)
+
+    rank_artifacts = []
+    for rank, micro_step in enumerate((sampled_step, source_step)):
+        plan = runner.prepare_planned_step(
+            (micro_step,),
+            denominator_gatherer=gather,
+            world_size=2,
+            rank=rank,
+        )
+        logits = torch.tensor(
+            [[[0.0, 0.0, 2.0, -1.0, -1.0, -1.0]]],
+            requires_grad=True,
+        )
+        context = rollout_calibration_loss_context(
+            micro_step,
+            SimpleNamespace(logits=logits, logits_position_ids=(0,)),
+        )
+        bundle = runner.compute_micro_step(
+            context,
+            plan,
+            local_micro_step_index=0,
+        )
+        rank_artifacts.append(
+            runner.finalize_planned_step((bundle.to_artifact_dict(),), plan)
+        )
+
+    mean_reduced = {
+        family: sum(
+            artifact["counts"]["complete_row_imitation_family_counts"][family]
+            for artifact in rank_artifacts
+        )
+        / 2
+        for family in (
+            "positive_path_imitation",
+            "source_route_imitation",
+        )
+    }
+    assert mean_reduced == {
+        "positive_path_imitation": 1.0,
+        "source_route_imitation": 1.0,
+    }
+
+
+def test_complete_row_profiles_preserve_old_isolation_and_mixed_exact_once() -> None:
+    sampled_step = _micro_step(
+        _complete_row_metadata("sampled-event", source_route=False)
+    )
+    source_step = _micro_step(
+        _complete_row_metadata("source-event", source_route=True)
+    )
+    unrelated_step = _micro_step(_single_family_metadata("entity"))
+
+    old_schedule = SimpleNamespace(
+        resolved_max_steps=1,
+        runtime_batch=SimpleNamespace(
+            world_size=1,
+            effective_batch_size=1,
+            resolved_grad_accum_steps=1,
+        ),
+    )
+    assert tuple(
+        build_calibration_micro_step_stream(
+            (sampled_step, source_step, unrelated_step),
+            old_schedule,
+            profile="positive_path_imitation_only",
+            rank=0,
+            world_size=1,
+        )
+    ) == (sampled_step,)
+
+    mixed_schedule = SimpleNamespace(
+        resolved_max_steps=1,
+        runtime_batch=SimpleNamespace(
+            world_size=1,
+            effective_batch_size=2,
+            resolved_grad_accum_steps=2,
+        ),
+    )
+    assert tuple(
+        build_calibration_micro_step_stream(
+            (sampled_step, source_step, unrelated_step),
+            mixed_schedule,
+            profile="sampled_path_and_source_route_imitation_only",
+            rank=0,
+            world_size=1,
+        )
+    ) == (sampled_step, source_step)
+
+
 def test_coordinate_only_diagnostic_candidate_reaches_coordinate_and_gate_losses() -> None:
     joint = _joint_metadata()
     harmful = joint.candidates[1]
@@ -409,6 +571,18 @@ def test_pipeline_counts_positive_path_imitation_events() -> None:
         (_micro_step(metadata),),
         "positive_path_imitation_only",
     ) == 1
+
+
+def test_pipeline_counts_both_complete_row_imitation_families() -> None:
+    sampled = _micro_step(
+        _complete_row_metadata("sampled-event", source_route=False)
+    )
+    source = _micro_step(_complete_row_metadata("source-event", source_route=True))
+    unrelated = _micro_step(_single_family_metadata("coordinate"))
+    assert pipeline_module._calibration_profile_event_count(
+        (sampled, source, unrelated),
+        "sampled_path_and_source_route_imitation_only",
+    ) == 2
 
 
 def test_coordinate_boundary_gate_only_stream_exposes_coordinate_events_once() -> None:
@@ -714,4 +888,49 @@ def _single_family_metadata(family: str) -> CalibrationEventMetadata:
         coordinate_boundary_eligible=family == "coordinate",
         candidates=joint.candidates,
         selected_logits_positions=joint.selected_logits_positions,
+    )
+
+
+def _complete_row_metadata(
+    event_id: str,
+    *,
+    source_route: bool,
+) -> CalibrationEventMetadata:
+    candidate = CalibrationCandidateMetadata(
+        candidate_id=f"{event_id}-candidate",
+        segment_index=0,
+        role="positive",
+        harmful_kind=None,
+        physical_owner_id="owner-a",
+        coverage_status="uncovered",
+        entity_review_status="trusted",
+        geometry_review_status="trusted",
+        entity_eligible=True,
+        geometry_eligible=True,
+        owner_resolution_candidate_interval=(0, 1),
+        owner_resolution_physical_target_interval=(1, 2),
+        coordinate_decision=None,
+        coordinate_physical_target_position=None,
+        coordinate_physical_logits_position=None,
+        selected_sites=(
+            CalibrationSelectedSite(
+                candidate_id=f"{event_id}-candidate",
+                segment_index=0,
+                candidate_token_offset=0,
+                intended_token_type="schema",
+                physical_target_position=1,
+                physical_logits_position=0,
+            ),
+        ),
+    )
+    return CalibrationEventMetadata(
+        event_id=event_id,
+        image_id=42,
+        split="train",
+        entity_transition_eligible=False,
+        coordinate_boundary_eligible=False,
+        candidates=(candidate,),
+        selected_logits_positions=(0,),
+        positive_path_imitation_eligible=not source_route,
+        source_route_imitation_eligible=source_route,
     )

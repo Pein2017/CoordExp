@@ -39,6 +39,14 @@ profile is retained as an implemented research surface, while its identical
 1,024-image coverage replication is not promoted. A separate preservation-
 aware, matched-arm 256-image treatment is the next candidate.
 
+The preservation-aware successor revealed one execution-contract gap before
+training: the existing positive-path profile truthfully accepts only sampled
+rows, while the preservation half of the new matched arms consists of exact
+greedy Source-checkpoint rows. Relabeling those rows as sampled would make the
+StateBank executable but would falsify its generation provenance. This change
+therefore adds one narrow mixed complete-row profile that reuses the existing
+loss while keeping sampled-route and greedy-Source event families distinct.
+
 ## What Changes
 
 - Add a frozen, exact-token rollout state-bank input path with physical-entity,
@@ -75,6 +83,11 @@ aware, matched-arm 256-image treatment is the next candidate.
   complete rows through the last added owner, equalizes total weight per image,
   and separately mean-normalizes schema-and-description sites and trusted
   coordinate sites.
+- Add one sampled-path-and-source-route-imitation-only profile that admits the
+  existing sampled positive-path events together with a new, truthfully greedy
+  Source-route preservation event. Both families reuse the same complete-row
+  loss and token-type gate, remain separately counted in artifacts, and retain
+  experiment-supplied image-balanced weights.
 - Do not add canonical supervised-fine-tuning replay, Kullback-Leibler
   divergence anchoring, Gaussian coordinate smoothing, online collection
   inside the trainer, new model heads, or inference-time control modules.
