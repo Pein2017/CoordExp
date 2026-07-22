@@ -1,0 +1,42 @@
+{
+  "schema_version": "human_refined_completion_causal_micro_panel.v1",
+  "cases": [
+    {
+      "case_id": "image-10707-two-remaining-bottles-category-geometry-binding",
+      "image_id": "10707",
+      "parent_prefix_owner_ids": [
+        "233159", "1109589", "193096", "221149", "116290", "113866",
+        "1628363", "1825577", "84825", "-185", "1506809", "1484033",
+        "120550", "682380", "2135228", "1630006", "-188"
+      ],
+      "released_row_budget": 1,
+      "branch_arms": [
+        {
+          "kind": "description_gt_owner",
+          "owner_id": "-186",
+          "operational_meaning": "Force only the trusted bottle description for the right remaining bottle and release coordinate generation."
+        },
+        {
+          "kind": "complete_gt_owner",
+          "owner_id": "-186",
+          "operational_meaning": "Force the complete trusted right-bottle row and observe whether the other bottle is recovered downstream."
+        },
+        {
+          "kind": "description_gt_owner",
+          "owner_id": "-187",
+          "operational_meaning": "Force only the trusted bottle description for the left remaining bottle and release coordinate generation."
+        },
+        {
+          "kind": "complete_gt_owner",
+          "owner_id": "-187",
+          "operational_meaning": "Force the complete trusted left-bottle row and observe whether the other bottle is recovered downstream."
+        },
+        {
+          "kind": "covered_gt_owner",
+          "owner_id": "-188",
+          "operational_meaning": "Repeat the final covered bottle as a same-category negative control."
+        }
+      ]
+    }
+  ]
+}

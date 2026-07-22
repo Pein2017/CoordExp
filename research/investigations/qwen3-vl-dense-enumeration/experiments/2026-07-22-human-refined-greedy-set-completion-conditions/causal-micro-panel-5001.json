@@ -1,0 +1,33 @@
+{
+  "schema_version": "human_refined_completion_causal_micro_panel.v1",
+  "cases": [
+    {
+      "case_id": "image-5001-two-remaining-handbag-before-scissors",
+      "image_id": "5001",
+      "parent_prefix_owner_ids": [
+        "1329797", "1272180", "1201627", "1329465", "1310395",
+        "-106", "-109", "-110", "-107", "1269467", "-105",
+        "2017429", "1263773", "1327525", "1328232", "1261310",
+        "-108", "1764832", "1158531", "1259834", "1220394"
+      ],
+      "released_row_budget": 1,
+      "branch_arms": [
+        {
+          "kind": "description_gt_owner",
+          "owner_id": "1434055",
+          "operational_meaning": "Force only the trusted handbag description and let the model generate its geometry before releasing one successor row."
+        },
+        {
+          "kind": "complete_gt_owner",
+          "owner_id": "1434055",
+          "operational_meaning": "Force the complete trusted handbag row and test whether the naturally reachable scissors row remains available."
+        },
+        {
+          "kind": "covered_gt_owner",
+          "owner_id": "1220394",
+          "operational_meaning": "Repeat the final covered person row as a negative control before releasing one successor row."
+        }
+      ]
+    }
+  ]
+}

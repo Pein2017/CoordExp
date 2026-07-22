@@ -1,0 +1,29 @@
+{
+  "schema_version": "human_refined_completion_causal_micro_panel.v1",
+  "cases": [
+    {
+      "case_id": "image-10707-left-bottle-partial-coordinate-binding",
+      "image_id": "10707",
+      "parent_prefix_owner_ids": [
+        "233159", "1109589", "193096", "221149", "116290", "113866",
+        "1628363", "1825577", "84825", "-185", "1506809", "1484033",
+        "120550", "682380", "2135228", "1630006", "-188"
+      ],
+      "released_row_budget": 1,
+      "branch_arms": [
+        {
+          "kind": "first_coordinate_gt_owner",
+          "owner_id": "-187"
+        },
+        {
+          "kind": "first_two_coordinates_gt_owner",
+          "owner_id": "-187"
+        },
+        {
+          "kind": "first_three_coordinates_gt_owner",
+          "owner_id": "-187"
+        }
+      ]
+    }
+  ]
+}

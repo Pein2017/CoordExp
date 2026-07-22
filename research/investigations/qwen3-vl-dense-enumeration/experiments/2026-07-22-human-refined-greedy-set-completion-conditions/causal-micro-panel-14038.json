@@ -1,0 +1,36 @@
+{
+  "schema_version": "human_refined_completion_causal_micro_panel.v1",
+  "cases": [
+    {
+      "case_id": "image-14038-reverse-prefix-cell-phone-versus-book",
+      "image_id": "14038",
+      "parent_prefix_owner_ids": [
+        "-130", "-132", "-142", "-128", "-115", "-136", "-143",
+        "118573", "1491536", "-127", "1941759", "-125", "2138715",
+        "-141", "-119", "-140", "-131", "-124", "-145", "-117",
+        "-126", "-133", "-114", "-139", "-118", "-134", "-138",
+        "1604128", "-122", "-123", "-146", "-135", "-129", "-121",
+        "33179", "319540", "-137", "-116", "1989219", "1989043",
+        "331203", "90888", "82834", "-144", "1605902", "-120"
+      ],
+      "released_row_budget": 1,
+      "branch_arms": [
+        {
+          "kind": "description_gt_owner",
+          "owner_id": "321540",
+          "operational_meaning": "Force only the trusted cell-phone description under the failed reverse-order prefix and release geometry."
+        },
+        {
+          "kind": "complete_gt_owner",
+          "owner_id": "321540",
+          "operational_meaning": "Force the complete trusted cell-phone row and inspect whether the model terminates or returns to the habitual book route."
+        },
+        {
+          "kind": "covered_gt_owner",
+          "owner_id": "-120",
+          "operational_meaning": "Repeat the final covered book row before releasing one successor row."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "schema_version": "human_refined_completion_causal_micro_panel.v1",
+  "cases": [
+    {
+      "case_id": "image-14038-two-books-with-identical-first-coordinate",
+      "image_id": "14038",
+      "parent_prefix_owner_ids": [
+        "321540", "-132", "-142", "-128", "-115", "-136", "-143",
+        "118573", "1491536", "-127", "1941759", "-125", "2138715",
+        "-141", "-119", "-140", "-131", "-124", "-145", "-117",
+        "-126", "-133", "-114", "-139", "-118", "-134", "-138",
+        "1604128", "-123", "-146", "-135", "-129", "-121", "33179",
+        "319540", "-137", "-116", "1989219", "1989043", "331203",
+        "90888", "82834", "-144", "1605902", "-120"
+      ],
+      "released_row_budget": 1,
+      "branch_arms": [
+        {
+          "kind": "description_gt_owner",
+          "owner_id": "-122",
+          "operational_meaning": "Force only the shared book description while declaring the upper book as the intended owner."
+        },
+        {
+          "kind": "first_coordinate_gt_owner",
+          "owner_id": "-122",
+          "operational_meaning": "Force the shared book description and x1=787 for the upper book; this prefix is intentionally identical to the lower-book x1 arm."
+        },
+        {
+          "kind": "first_two_coordinates_gt_owner",
+          "owner_id": "-122",
+          "operational_meaning": "Force the shared x1=787 plus the upper book y1=501, then release x2 and y2."
+        },
+        {
+          "kind": "first_three_coordinates_gt_owner",
+          "owner_id": "-122",
+          "operational_meaning": "Force x1, y1, and x2 for the upper book, then release y2."
+        },
+        {
+          "kind": "description_gt_owner",
+          "owner_id": "-130",
+          "operational_meaning": "Force only the shared book description while declaring the lower book as the intended owner."
+        },
+        {
+          "kind": "first_coordinate_gt_owner",
+          "owner_id": "-130",
+          "operational_meaning": "Force the shared book description and x1=787 for the lower book; this prefix is intentionally identical to the upper-book x1 arm."
+        },
+        {
+          "kind": "first_two_coordinates_gt_owner",
+          "owner_id": "-130",
+          "operational_meaning": "Force the shared x1=787 plus the lower book y1=771, then release x2 and y2."
+        },
+        {
+          "kind": "first_three_coordinates_gt_owner",
+          "owner_id": "-130",
+          "operational_meaning": "Force x1, y1, and x2 for the lower book, then release y2."
+        }
+      ]
+    }
+  ]
+}

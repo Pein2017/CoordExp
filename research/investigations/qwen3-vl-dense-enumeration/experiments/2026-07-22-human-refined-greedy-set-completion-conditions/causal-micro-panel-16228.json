@@ -1,0 +1,45 @@
+{
+  "schema_version": "human_refined_completion_causal_micro_panel.v1",
+  "cases": [
+    {
+      "case_id": "image-16228-eight-remaining-person-addition-versus-replacement",
+      "image_id": "16228",
+      "parent_prefix_owner_ids": [
+        "1425221", "1795625", "54058", "1830129", "-42", "1425987",
+        "-59", "-63", "-31", "-30", "-58", "-60", "-40", "-49",
+        "-54", "-29", "-50", "-39", "1218312", "-48", "-47", "-55",
+        "-52", "1206679", "-35", "2018451", "-33", "-38", "1704592",
+        "-46", "-44", "-32", "-62", "-51", "1321605", "-53", "-34",
+        "-43", "-36", "-56", "-37", "-28"
+      ],
+      "released_row_budget": 4,
+      "branch_arms": [
+        {
+          "kind": "description_gt_owner",
+          "owner_id": "1703142",
+          "operational_meaning": "Force only the description of the low-pixel left-side person and release geometry before four successor rows."
+        },
+        {
+          "kind": "complete_gt_owner",
+          "owner_id": "1703142",
+          "operational_meaning": "Force the complete low-pixel person row and test whether the naturally stable bench is retained downstream."
+        },
+        {
+          "kind": "description_gt_owner",
+          "owner_id": "-57",
+          "operational_meaning": "Force only the description of a clearer remaining person that appeared after terminal intervention."
+        },
+        {
+          "kind": "complete_gt_owner",
+          "owner_id": "-57",
+          "operational_meaning": "Force the complete clearer-person row and measure downstream owner addition versus replacement."
+        },
+        {
+          "kind": "covered_gt_owner",
+          "owner_id": "-28",
+          "operational_meaning": "Repeat the final covered person row as a same-category negative control."
+        }
+      ]
+    }
+  ]
+}
