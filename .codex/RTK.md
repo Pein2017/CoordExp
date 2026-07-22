@@ -28,6 +28,10 @@ shell syntax, or machine-readable output matters, prefer the raw command with
 - Use `RTK_HOOK_DISABLE=1 <command>` for exact Git status/diff output,
   structured JSON/YAML, NUL-delimited output, or a pipeline whose downstream
   consumer requires the producer's raw bytes.
+- Independent multiline command lists are rewritten line by line while
+  preserving their newlines. Continuations, control-flow blocks, variable or
+  command substitutions, and here-doc style syntax remain raw; prefix each
+  line with `rtk` explicitly when exact control is needed.
 - Do not rely on `rtk pytest --version`; upstream currently collapses that
   informational output into the pytest summary path.
 - If RTK output is surprising, re-run once with `rtk proxy <command>` before

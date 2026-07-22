@@ -53,6 +53,27 @@ NOISY_COMMANDS = {
 INFO_COMMAND_ARGS = {"--help", "-h", "--version", "version", "-version"}
 SHELL_OPERATOR_TOKENS = {"|", "||", "&&", ";", "&", ">", ">>", "<", "2>", "2>>"}
 LOGICAL_CHAIN_OPERATORS = {"&&", "||", ";", "&"}
+MULTILINE_CONTROL_WORDS = {
+    "if",
+    "then",
+    "else",
+    "elif",
+    "fi",
+    "for",
+    "while",
+    "until",
+    "do",
+    "done",
+    "case",
+    "esac",
+    "function",
+    "select",
+    "{",
+    "}",
+    "(",
+    ")",
+}
+MULTILINE_UNSAFE_MARKERS = ("$", "`", "<<", ">>", "<(", ">(")
 
 
 def main() -> int:
@@ -106,6 +127,9 @@ def main() -> int:
 
 
 def rewrite_command(command: str) -> str | None:
+    if "\n" in command or "\r" in command:
+        return rewrite_multiline_command(command)
+
     tokens = split_command(command)
     if not tokens:
         return None
@@ -138,6 +162,65 @@ def rewrite_command(command: str) -> str | None:
         return shlex.join([*prefix, *rewritten_inner_tokens])
 
     return rewrite_simple_command(command)
+
+
+def rewrite_multiline_command(command: str) -> str | None:
+    """Rewrite independent command lines while preserving their boundaries."""
+
+    lines = command.splitlines(keepends=True)
+    if not lines or not multiline_lines_are_independent(lines):
+        return None
+
+    rewritten_lines: list[str] = []
+    changed = False
+    for line in lines:
+        body, ending = split_line_ending(line)
+        stripped = body.strip()
+        if not stripped or stripped.startswith("#"):
+            rewritten_lines.append(line)
+            continue
+
+        leading = body[: len(body) - len(body.lstrip())]
+        trailing = body[len(body.rstrip()) :]
+        rewritten = rewrite_command(stripped)
+        if rewritten is None:
+            rewritten_lines.append(line)
+            continue
+        rewritten_lines.append(f"{leading}{rewritten}{trailing}{ending}")
+        changed = True
+
+    return "".join(rewritten_lines) if changed else None
+
+
+def multiline_lines_are_independent(lines: list[str]) -> bool:
+    """Reject multiline shell grammar that needs a real parser to preserve."""
+
+    for line in lines:
+        body, _ = split_line_ending(line)
+        stripped = body.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if any(marker in body for marker in MULTILINE_UNSAFE_MARKERS):
+            return False
+        if stripped.endswith("\\"):
+            return False
+
+        tokens = split_shell_tokens(stripped)
+        if not tokens:
+            return False
+        if tokens[0] in MULTILINE_CONTROL_WORDS:
+            return False
+        if tokens[0] in SHELL_OPERATOR_TOKENS or tokens[-1] in SHELL_OPERATOR_TOKENS:
+            return False
+    return True
+
+
+def split_line_ending(line: str) -> tuple[str, str]:
+    if line.endswith("\r\n"):
+        return line[:-2], "\r\n"
+    if line.endswith(("\n", "\r")):
+        return line[:-1], line[-1]
+    return line, ""
 
 
 def rewrite_compound_command(command: str, tokens: list[str]) -> str | None:
