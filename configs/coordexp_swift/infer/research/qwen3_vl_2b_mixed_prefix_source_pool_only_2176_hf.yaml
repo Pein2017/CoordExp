@@ -1,0 +1,19 @@
+extends: qwen3_vl_2b_mixed_prefix_source_train_256_hf.yaml
+
+run:
+  name: qwen3-vl-2b-mixed-prefix-source-pool-only-2176-hf
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-constant-dose-image-breadth-treatment-screen/trajectory-panel-2432-v1/infer-config-only
+  collision_policy: fail
+
+data:
+  input_jsonl: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-constant-dose-image-breadth-treatment-screen/candidate-pool-v1/pool-only-2176.coord.jsonl
+
+generation:
+  batch_size: 16
+  max_new_tokens: 512
+  temperature: 0.0
+  top_p: 1.0
+  repetition_penalty: 1.0
+
+scoring:
+  enabled: true

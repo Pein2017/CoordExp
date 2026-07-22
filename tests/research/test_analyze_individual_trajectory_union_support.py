@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import hashlib
+from pathlib import Path
+
 import pytest
 
+import scripts.research.analyze_individual_trajectory_union_support as analyzer
 from scripts.research.analyze_individual_trajectory_union_support import (
+    analyze_rollout_files,
     analyze_rollout_payloads,
     match_prefix,
     parse_args,
@@ -95,6 +100,91 @@ def test_cli_can_select_only_the_fixed_row_budget_needed_by_a_large_panel() -> N
         ]
     )
     assert args.budgets == [16]
+
+
+def test_incomplete_mode_reports_observed_panel_without_legacy_expectation() -> None:
+    result = analyze_rollout_payloads(
+        [
+            _artifact("greedy", [_rollout("scene", "greedy", 31000, [])]),
+            _artifact("sampled", [_rollout("scene", "sampled", 31001, [])]),
+        ],
+        {"scene": []},
+        require_full_panel=False,
+        budgets=(16,),
+    )
+
+    assert result["panel_expected"] is None
+    assert result["observed_panel"] == {
+        "image_count": 1,
+        "greedy_seeds": [31000],
+        "sampled_seeds": [31001],
+        "greedy_trajectories_per_image": [1],
+        "sampled_trajectories_per_image": [1],
+    }
+
+
+def test_file_analysis_sources_bind_current_analyzer_and_policy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    annotations = tmp_path / "candidate-pool.jsonl"
+    annotations.write_text("candidate pool\n", encoding="utf-8")
+    rollout = tmp_path / "rollout.json"
+    rollout.write_text("rollout\n", encoding="utf-8")
+    observed_panel = {
+        "image_count": 1,
+        "greedy_seeds": [31000],
+        "sampled_seeds": [31001],
+        "greedy_trajectories_per_image": [1],
+        "sampled_trajectories_per_image": [1],
+    }
+    monkeypatch.setattr(
+        analyzer,
+        "load_rollout_artifacts",
+        lambda _paths, *, require_decode_mode: [
+            {
+                "_source_path": str(rollout.resolve()),
+                "_source_sha256": "rollout-sha",
+                "rollouts": [],
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        analyzer, "load_generation7_annotations", lambda _path, *, image_ids: {}
+    )
+    monkeypatch.setattr(
+        analyzer,
+        "analyze_rollout_payloads",
+        lambda *_args, **_kwargs: {
+            "fixed_budgets": [16],
+            "iou_threshold": 0.5,
+            "require_full_panel": False,
+            "observed_panel": observed_panel,
+        },
+    )
+
+    result = analyze_rollout_files(
+        [rollout],
+        annotations,
+        require_full_panel=False,
+        budgets=(16,),
+    )
+
+    analyzer_path = Path(analyzer.__file__).resolve()
+    assert result["sources"] == {
+        "rollout_artifacts": [str(rollout.resolve())],
+        "rollout_artifact_sha256": ["rollout-sha"],
+        "annotations_path": str(annotations.resolve()),
+        "annotations_sha256": hashlib.sha256(annotations.read_bytes()).hexdigest(),
+        "analyzer_path": str(analyzer_path),
+        "analyzer_sha256": hashlib.sha256(analyzer_path.read_bytes()).hexdigest(),
+        "analysis_policy": {
+            "fixed_budgets": [16],
+            "iou_threshold": 0.5,
+            "require_full_panel": False,
+            "review_decisions_used": False,
+            "observed_panel": observed_panel,
+        },
+    }
 
 
 def test_duplicate_rows_do_not_increase_unique_owner_coverage() -> None:

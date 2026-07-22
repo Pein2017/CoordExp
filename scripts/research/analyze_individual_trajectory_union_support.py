@@ -1260,6 +1260,39 @@ def analyze_rollout_payloads(
                 "budgets": budget_results,
             }
         )
+    observed_panel = {
+        "image_count": len(grouped_trajectory),
+        "greedy_seeds": sorted(
+            {
+                info.get("seed")
+                for trajectories in grouped_trajectory.values()
+                for info in trajectories.values()
+                if info.get("decode_mode") == "greedy" and info.get("seed") is not None
+            },
+            key=str,
+        ),
+        "sampled_seeds": sorted(
+            {
+                info.get("seed")
+                for trajectories in grouped_trajectory.values()
+                for info in trajectories.values()
+                if info.get("decode_mode") == "sampled" and info.get("seed") is not None
+            },
+            key=str,
+        ),
+        "greedy_trajectories_per_image": sorted(
+            {
+                sum(info.get("decode_mode") == "greedy" for info in trajectories.values())
+                for trajectories in grouped_trajectory.values()
+            }
+        ),
+        "sampled_trajectories_per_image": sorted(
+            {
+                sum(info.get("decode_mode") == "sampled" for info in trajectories.values())
+                for trajectories in grouped_trajectory.values()
+            }
+        ),
+    }
     result = {
         "schema_version": SCHEMA_VERSION,
         "fixed_budgets": [int(item) for item in budgets],
@@ -1267,7 +1300,18 @@ def analyze_rollout_payloads(
         "require_full_panel": bool(require_full_panel),
         "automatic_matching_status": "provisional_pending_crop_review",
         "branch_recommendation": None,
-        "panel_expected": {"greedy_per_image": 1, "sampled_per_image": 16, "sampled_seeds": list(EXPECTED_SAMPLED_SEEDS)},
+        "panel_expected": (
+            {
+                "image_ids": list(EXPECTED_IMAGE_IDS),
+                "greedy_per_image": 1,
+                "greedy_seed": EXPECTED_GREEDY_SEED,
+                "sampled_per_image": 16,
+                "sampled_seeds": list(EXPECTED_SAMPLED_SEEDS),
+            }
+            if require_full_panel
+            else None
+        ),
+        "observed_panel": observed_panel,
         "images": image_results,
         "image_results": image_results,
         "trajectory_count": len(trajectory_evidence),
@@ -1308,11 +1352,21 @@ def analyze_rollout_files(
         budgets=budgets,
         review_decisions=review_decisions,
     )
+    analyzer_path = Path(__file__).resolve(strict=True)
     result["sources"] = {
         "rollout_artifacts": [artifact.get("_source_path") for artifact in artifacts],
         "rollout_artifact_sha256": [artifact.get("_source_sha256") for artifact in artifacts],
         "annotations_path": str(Path(annotations_path).expanduser().resolve()),
         "annotations_sha256": _sha256_file(Path(annotations_path).expanduser().resolve(strict=True)),
+        "analyzer_path": str(analyzer_path),
+        "analyzer_sha256": _sha256_file(analyzer_path),
+        "analysis_policy": {
+            "fixed_budgets": list(result["fixed_budgets"]),
+            "iou_threshold": result["iou_threshold"],
+            "require_full_panel": result["require_full_panel"],
+            "review_decisions_used": review_decisions_path is not None,
+            "observed_panel": result["observed_panel"],
+        },
     }
     if review_decisions_path is not None:
         review_source = result.get("review_provenance", {})

@@ -1,0 +1,12 @@
+schema_version: 1
+extends: qwen3_vl_2b_multi_route_plus_source_preservation_496_sampled_496_source_992_events_learning_rate_1e-5.yaml
+
+run:
+  name: qwen3_vl_2b_constant_dose_breadth_concentrated_496_sampled_496_source_992_events_seed23_learning_rate_1e-5
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-constant-dose-image-breadth-treatment-screen/train-992-events-v1/concentrated/seed-23/runs
+
+rollout_calibration:
+  state_bank_manifest_path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-constant-dose-image-breadth-treatment-screen/state-banks-v1/concentrated-plus-source-preservation/state-bank/manifest.json
+
+runtime:
+  seed: 23
