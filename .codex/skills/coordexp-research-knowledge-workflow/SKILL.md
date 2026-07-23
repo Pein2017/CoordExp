@@ -128,19 +128,39 @@ Conventions:
 
 If `/research/` is ignored, stage only the intended tracked set with explicit paths or `git add -f` after review. Do not sweep unrelated ignored local research artifacts into validation or commits.
 
-## Supervisor Packet Mode
+## Supervisor And Independent Advanced-Model Packet Mode
 
-Use when the user needs many heavy diagnostics compressed for a supervisor or collaborator.
+Use when the user needs many heavy diagnostics compressed for a supervisor or
+collaborator, or when a conclusion-critical research fork needs judgment from
+an independent advanced-model reviewer. Here, an independent advanced-model
+reviewer means an advanced model or agent outside the primary implementation
+and internal-audit chain. A named model such as Pro or Fable is only one
+possible reviewer, never a fixed dependency.
+
+Read [Research Graph and Unit Contract](references/research-graph-contract.md)
+and apply its independent advanced-model review gate. Prefer an internal
+discriminating experiment when it can answer the question directly. Use an
+external review for a bounded method, interpretation, promotion, or costly
+route decision rather than open-ended brainstorming.
 
 Good default packet:
 
 ```text
-01_supervisor_brief.md
+01_decision_brief.md
 02_evidence_atlas.md
-03_advice_and_next_steps.md
+03_review_questions.md
 ```
 
-The brief should foreground decisions, strongest findings, demoted claims, and the launch or training gate. The atlas should group evidence by mechanism family with source-note and artifact handles. The advice memo should ask for concrete guidance on next tracks, thresholds, replications, or unblockers.
+The brief should foreground the decision, strongest findings, demoted claims,
+competing explanations, and the launch or training gate. The atlas should group
+evidence by mechanism family with source-note and artifact handles. The review
+questions should request explicit counterexamples, assumptions, verdicts,
+minimal discriminating experiments, and claim boundaries.
+
+Give independent reviewers the same frozen core packet and do not reveal one
+reviewer's verdict to another. The main research lead reconciles their advice
+with executable evidence; reviewer output is advisory and does not become
+scientific evidence or project authority by itself.
 
 Place packet files outside the original nonrecursive source glob when the user gave one, so follow-up collection does not re-ingest its own synthesis.
 

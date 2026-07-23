@@ -1208,7 +1208,28 @@ conclusion.
   general audits.
 - Failed or invalid runs remain provenance but never enter the result table.
 
-### 14.5 Subagent delegation policy
+### 14.5 Independent advanced-model review
+
+At a conclusion-critical stage gate, the research lead may request advice from
+one or more independent advanced-model reviewers. This means an advanced model
+or agent outside the primary implementation and internal-audit chain; Pro,
+Fable, and future models are examples rather than required providers.
+
+Use one frozen decision packet and keep reviewers blind to one another's
+answers. Ask for assumptions, counterexamples, a concrete disposition, the
+smallest discriminating experiment, and the permitted claim boundary. Their
+answers are advisory: the main thread reconciles them with executable evidence
+and owns the final scientific decision. Disagreement becomes a focused probe or
+user decision, not a vote.
+
+For the current set-level route, run the admission census internally first. If
+the census leaves the trajectory score, owner-preservation semantics, matched
+control, or launch interpretation materially ambiguous, use this external
+review gate after the census and before freezing the 256-image training unit.
+Do not outsource the census, annotation decisions, mechanical invariance tests,
+or real-model smoke.
+
+### 14.6 Subagent delegation policy
 
 - Give each subagent a narrow English brief, exact evidence paths, read/write
   scope, and stop condition.
@@ -1223,7 +1244,7 @@ conclusion.
 - The parent agent synthesizes disagreements and owns the final scientific
   decision.
 
-### 14.6 Evidence and reporting policy
+### 14.7 Evidence and reporting policy
 
 Every closed nontrivial unit separates:
 

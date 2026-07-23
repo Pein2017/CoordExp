@@ -62,6 +62,16 @@ than positive versus negative. Unknown or potentially unlabeled entities
 receive no negative gradient. A compact covered-set or task-state carrier
 remains a later fallback rather than a current architecture commitment.
 
+The user also authorized independent advanced-model review at important or
+stage-defining difficulties. The reviewer may be Pro, Fable, or another
+advanced model outside the primary implementation and internal-audit chain;
+no provider is fixed. Use one frozen packet, keep multiple reviewers blind to
+one another, and treat their answers as advisory rather than scientific
+evidence. For the active route, run the admission census internally first. If
+the post-census choice of set score, owner-preservation semantics, matched
+control, or launch interpretation remains conclusion-critical, invoke the gate
+before freezing the 256-image training unit.
+
 ## Closed parallel objective: physical-owner duplication
 
 The user authorized an independent long-running goal that proceeded in

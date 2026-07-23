@@ -185,6 +185,60 @@ positive and negative patterns.
 When closing a non-trivial unit, separate `Observed`, `Supported`, `Ruled out`,
 `Unresolved`, and `Not claimed`, then name the next discriminator.
 
+## Independent Advanced-Model Review Gate
+
+An **independent advanced-model reviewer** is an advanced model or agent outside
+the primary implementation and internal-audit chain. Pro, Fable, or any future
+model may fill this role; the provider name is not part of the research
+contract. The reviewer supplies independent scientific criticism and advice.
+The research lead remains responsible for the final decision.
+
+Use this gate when at least one of the following is true:
+
+- two or more plausible mechanisms or treatments survive a focused probe and
+  internal audit, and the choice changes scientific meaning;
+- an unresolved mathematical, statistical, or causal assumption determines an
+  expensive training launch, architecture route, scale-up, or claim promotion;
+- conclusion-critical evidence is contradictory after one bounded attempt to
+  separate the explanations; or
+- the user or research lead explicitly requests outside independent judgment.
+
+Do not use it as a substitute for a small local experiment, artifact check,
+runtime diagnosis, annotation review, or data census that can answer the
+question directly. Do not invoke it as a routine ceremony for every unit, or
+with an open-ended request to invent a new architecture before the current
+evidence gap is bounded.
+
+Apply the gate as follows:
+
+1. Freeze the decision at stake, the strongest competing explanations, and the
+   exact evidence scope. State what remains unknown and what action the review
+   may change.
+2. Run the cheapest decisive internal observation first. If that observation
+   directly answers the question, close the unit without external escalation.
+3. Prepare one frozen packet containing a decision brief, an evidence atlas,
+   exact source and receipt handles, the requested questions, excluded or
+   unavailable evidence, the expected verdict format, and the review stop
+   condition. A full chat transcript is not the primary packet.
+4. When using multiple reviewers, give them the same core packet independently
+   and do not reveal another reviewer's reasoning or verdict. Choose the model
+   dynamically for the scientific difficulty; do not hard-code a provider.
+5. Require each response to state its assumptions, strongest counterexample,
+   recommended disposition, minimal discriminating experiment, and permitted
+   claim boundary. Useful dispositions are `proceed`, `narrow`, `probe`,
+   `hold`, or `needs user decision`.
+6. Reconcile responses against executable evidence. Do not use majority vote as
+   proof. Convert material disagreement into a small discriminating experiment
+   or an explicit user decision.
+7. Treat the review as advisory unless the unit or user explicitly declared it
+   a blocking pre-launch gate. A timeout or unavailable reviewer does not
+   silently block an otherwise valid unit.
+8. Preserve the request and responses as provenance. Create or update the
+   concrete unit's `review.md` only when the review changes a claim, rerun gate,
+   launch decision, or next discriminator. Update the compass or decision only
+   if the route changes, and update project memory only when continuation state
+   changes.
+
 ## Closeout Consistency Gate
 
 Close a unit from the evidence owner outward:
