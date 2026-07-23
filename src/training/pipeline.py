@@ -102,6 +102,7 @@ from src.training.supervised_trainer import (
 from src.training.rollout_calibration import (
     CalibrationTokenSequence,
     COORDINATE_TERM,
+    DUPLICATE_TERM,
     ENTITY_TERM,
     RolloutCalibrationLossRunner,
     build_calibration_micro_step_stream,
@@ -112,7 +113,7 @@ from src.training.rollout_calibration import (
 TRAIN_SPLIT = "train"
 _PACK_CACHE_WORKER_CONTEXT: dict[str, Any] | None = None
 BEST_EVAL_SELECTOR_NAME = "acc_top1"
-_TARGET_MARGIN_TERMS = frozenset((ENTITY_TERM, COORDINATE_TERM))
+_TARGET_MARGIN_TERMS = frozenset((ENTITY_TERM, DUPLICATE_TERM, COORDINATE_TERM))
 
 
 def build_repeating_micro_step_stream(
@@ -1069,6 +1070,15 @@ def _calibration_profile_event_count(
         source_route = bool(
             getattr(metadata, "source_route_imitation_eligible", False)
         )
+        recovery_positive = bool(
+            getattr(metadata, "recovery_positive_imitation_eligible", False)
+        )
+        local_duplicate = bool(
+            getattr(metadata, "local_duplicate_rejection_eligible", False)
+        )
+        duplicate_cleaned = bool(
+            getattr(metadata, "duplicate_cleaned_imitation_eligible", False)
+        )
         if (
             (profile == "transition_only" and entity)
             or (
@@ -1080,6 +1090,22 @@ def _calibration_profile_event_count(
             or (
                 profile == "sampled_path_and_source_route_imitation_only"
                 and (positive_path or source_route)
+            )
+            or (
+                profile == "recovery_positive_only"
+                and (source_route or recovery_positive)
+            )
+            or (
+                profile == "local_duplicate_rejection_and_recovery"
+                and (source_route or local_duplicate)
+            )
+            or (
+                profile == "duplicate_cleaned_imitation_only"
+                and (source_route or duplicate_cleaned)
+            )
+            or (
+                profile == "combined_duplicate_rejection_and_cleaned_imitation"
+                and (source_route or local_duplicate or duplicate_cleaned)
             )
         ):
             count += 1

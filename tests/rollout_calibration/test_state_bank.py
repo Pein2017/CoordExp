@@ -73,6 +73,11 @@ def test_state_bank_round_trip_binds_identity_splits_and_receipt(
     assert loaded.records[0].prefix_coverage_status == "resolved"
     assert loaded.records[0].positive_path_imitation_eligible is False
     assert loaded.records[0].source_route_imitation_eligible is False
+    assert loaded.records[0].duplicate_trajectory_evidence is None
+    assert loaded.records[0].recovery_positive_imitation_eligible is False
+    assert loaded.records[0].local_duplicate_rejection_eligible is False
+    assert loaded.records[0].duplicate_cleaned_imitation_eligible is False
+    assert "duplicate_trajectory_evidence" not in loaded.records[0].to_artifact_dict()
     assert loaded.records[0].image_balanced_event_weight == 1.0
     assert loaded.validation_receipt.to_artifact_dict() == {
         "bank_id": manifest.bank_id,
@@ -1689,3 +1694,307 @@ def _joined_event(rollout: dict, review: dict) -> dict:
         "candidates": candidates,
         "review_provenance": review["review_provenance"],
     }
+
+
+def _duplicate_rows(
+    tmp_path: Path,
+    *,
+    family: str,
+    event_id: str = "duplicate-event",
+    burst_credit: float = 1.0,
+    image_balanced_event_weight: float = 1.0,
+) -> tuple[list[dict], list[dict]]:
+    """Synthetic normal A -> normal B -> duplicate B -> duplicate B -> C -> D receipt."""
+
+    rollouts, reviews, _ = synthetic_inputs(tmp_path, event_id=event_id)
+    rollout = rollouts[0]
+    review = reviews[0]
+    replay_prefix = list(rollout["prefix_token_ids"])
+    recovery_origin_prefix = [*replay_prefix, 30, 31, 32, 33, 34, 35, 36, 37]
+    positive = rollout["candidates"][0]
+    duplicate = rollout["candidates"][1]
+    positive["candidate_id"] = "recovery-c"
+    positive["token_ids"] = [20, 21, 22, 23]
+    positive["token_ids_sha256"] = token_ids_sha256(positive["token_ids"])
+    positive["generation_provenance"]["prefix_token_ids_sha256"] = token_ids_sha256(
+        recovery_origin_prefix
+    )
+    duplicate["candidate_id"] = "duplicate-b"
+    duplicate["token_ids"] = [30, 31, 32, 33]
+    duplicate["token_ids_sha256"] = token_ids_sha256(duplicate["token_ids"])
+    duplicate["generation_provenance"]["prefix_token_ids_sha256"] = token_ids_sha256(
+        replay_prefix
+    )
+    review["entity_transition_eligible"] = False
+    review["coordinate_boundary_eligible"] = False
+    positive_review, duplicate_review = review["candidates"]
+    positive_review.update(
+        {
+            "candidate_id": "recovery-c",
+            "role": "positive",
+            "harmful_kind": None,
+            "physical_owner_id": "entity-a",
+            "coverage_status": "uncovered",
+            "entity_review_status": "trusted",
+            "geometry_review_status": "trusted",
+            "entity_eligible": True,
+            "geometry_eligible": False,
+            "owner_resolution_interval": [0, 4],
+            "coordinate_decision": None,
+            "selected_sites": [
+                {"candidate_token_offset": 0, "intended_token_type": "schema"},
+                {"candidate_token_offset": 1, "intended_token_type": "desc_text"},
+                {"candidate_token_offset": 2, "intended_token_type": "coordinate"},
+                {"candidate_token_offset": 3, "intended_token_type": "coordinate"},
+            ],
+        }
+    )
+    duplicate_review.update(
+        {
+            "candidate_id": "duplicate-b",
+            "role": "harmful",
+            "harmful_kind": "duplicate",
+            "physical_owner_id": "entity-covered",
+            "coverage_status": "covered",
+            "entity_review_status": "trusted",
+            "geometry_review_status": "trusted",
+            "entity_eligible": True,
+            "geometry_eligible": False,
+            "owner_resolution_interval": [0, 4],
+            "coordinate_decision": None,
+            "selected_sites": [
+                {"candidate_token_offset": 0, "intended_token_type": "schema"},
+                {"candidate_token_offset": 1, "intended_token_type": "desc_text"},
+                {"candidate_token_offset": 2, "intended_token_type": "coordinate"},
+                {"candidate_token_offset": 3, "intended_token_type": "coordinate"},
+            ],
+        }
+    )
+    evidence = {
+        "trajectory_id": "synthetic-normal-a-normal-b-duplicate-b-duplicate-b-c-d",
+        "burst_id": "synthetic-burst-b",
+        "replay_context_kind": (
+            "counterfactual_rewritten"
+            if family == "duplicate_cleaned_imitation"
+            else "exact_self_prefix_transplant"
+        ),
+        "candidate_generation_prefix_token_ids_sha256": {
+            "recovery-c": positive["generation_provenance"]["prefix_token_ids_sha256"],
+            "duplicate-b": duplicate["generation_provenance"]["prefix_token_ids_sha256"],
+        },
+        "candidate_trajectory_row_indices": {"recovery-c": 4, "duplicate-b": 2},
+        "replay_prefix_token_ids_sha256": rollout["prefix_token_ids_sha256"],
+        "retained_first_owner_row_index": 0,
+        "duplicate_row_indices": [2, 3],
+        "removed_row_indices": [2, 3]
+        if family == "duplicate_cleaned_imitation"
+        else [],
+        "recovery_row_index": 4,
+        "burst_credit": burst_credit,
+    }
+    if family == "local_duplicate_rejection":
+        review["local_duplicate_rejection_eligible"] = True
+    elif family == "recovery_positive_imitation":
+        review["recovery_positive_imitation_eligible"] = True
+        rollout["candidates"] = [positive]
+        review["candidates"] = [positive_review]
+        evidence["candidate_generation_prefix_token_ids_sha256"].pop("duplicate-b")
+        evidence["candidate_trajectory_row_indices"].pop("duplicate-b")
+    elif family == "duplicate_cleaned_imitation":
+        review["duplicate_cleaned_imitation_eligible"] = True
+        rollout["candidates"] = [positive]
+        review["candidates"] = [positive_review]
+        evidence["candidate_generation_prefix_token_ids_sha256"].pop("duplicate-b")
+        evidence["candidate_trajectory_row_indices"].pop("duplicate-b")
+    else:
+        raise AssertionError(f"unknown duplicate fixture family: {family}")
+    review["duplicate_trajectory_evidence"] = evidence
+    review["image_balanced_event_weight"] = image_balanced_event_weight
+    return rollouts, reviews
+
+
+def test_duplicate_trajectory_provenance_round_trip_preserves_original_and_replay_prefixes(
+    tmp_path: Path,
+    checkpoint_identity,
+    prompt_identity_sha256: str,
+) -> None:
+    rollouts, reviews = _duplicate_rows(
+        tmp_path,
+        family="local_duplicate_rejection",
+    )
+    manifest = _assemble(
+        tmp_path,
+        checkpoint_identity,
+        prompt_identity_sha256,
+        rollouts=rollouts,
+        reviews=reviews,
+    )
+    loaded = load_state_bank(
+        tmp_path / "bank" / STATE_BANK_MANIFEST_NAME,
+        expected_source_checkpoint=checkpoint_identity,
+        expected_prompt_identity_sha256=prompt_identity_sha256,
+    )
+
+    event = loaded.records[0]
+    evidence = event.duplicate_trajectory_evidence
+    assert evidence is not None
+    assert event.local_duplicate_rejection_eligible is True
+    assert evidence.replay_context_kind == "exact_self_prefix_transplant"
+    assert evidence.replay_prefix_token_ids_sha256 == event.prefix_token_ids_sha256
+    assert (
+        evidence.candidate_generation_prefix_token_ids_sha256["recovery-c"]
+        != event.prefix_token_ids_sha256
+    )
+    assert evidence.duplicate_row_indices == (2, 3)
+    assert evidence.recovery_row_index == 4
+    assert dict(manifest.event_family_counts) == {"local_duplicate_rejection": 1}
+
+
+@pytest.mark.parametrize(
+    "family",
+    [
+        "local_duplicate_rejection",
+        "recovery_positive_imitation",
+        "duplicate_cleaned_imitation",
+    ],
+)
+def test_duplicate_treatment_accepts_sparse_partially_resolved_prefix_proofs(
+    tmp_path: Path,
+    checkpoint_identity,
+    prompt_identity_sha256: str,
+    family: str,
+) -> None:
+    rollouts, reviews = _duplicate_rows(tmp_path, family=family)
+    review = reviews[0]
+    review["prefix_object_row_count"] = 2
+    review["prefix_coverage_status"] = "partially_resolved"
+
+    _assemble(
+        tmp_path,
+        checkpoint_identity,
+        prompt_identity_sha256,
+        rollouts=rollouts,
+        reviews=reviews,
+        output_name=f"partial-{family}",
+    )
+    loaded = load_state_bank(
+        tmp_path / f"partial-{family}" / STATE_BANK_MANIFEST_NAME,
+        expected_source_checkpoint=checkpoint_identity,
+        expected_prompt_identity_sha256=prompt_identity_sha256,
+    )
+    event = loaded.records[0]
+    assert event.prefix_coverage_status == "partially_resolved"
+    assert event.prefix_object_row_count == 2
+    assert [
+        (proof.prefix_object_row_index, proof.owner_id)
+        for proof in event.prefix_covered_owner_proofs
+    ] == [(0, "entity-covered")]
+
+
+@pytest.mark.parametrize("proof_indices", [(0, 0), (1, 0), (3,)])
+def test_partially_resolved_prefix_proofs_require_sparse_ordered_in_bounds_indices(
+    tmp_path: Path,
+    proof_indices: tuple[int, ...],
+) -> None:
+    rollouts, reviews = _duplicate_rows(
+        tmp_path,
+        family="local_duplicate_rejection",
+    )
+    review = reviews[0]
+    original_proof = review["prefix_covered_owner_proofs"][0]
+    review["prefix_object_row_count"] = 3
+    review["prefix_coverage_status"] = "partially_resolved"
+    review["prefix_covered_owner_proofs"] = [
+        {**copy.deepcopy(original_proof), "prefix_object_row_index": index}
+        for index in proof_indices
+    ]
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        StateBankEvent.from_mapping(_joined_event(rollouts[0], review))
+
+    assert exc_info.value.code == "state_bank.prefix_owner_proof_rows"
+
+
+def test_duplicate_trajectory_rejects_untrusted_owner_and_invalid_row_deletion_receipt(
+    tmp_path: Path,
+    checkpoint_identity,
+    prompt_identity_sha256: str,
+) -> None:
+    rollouts, reviews = _duplicate_rows(
+        tmp_path,
+        family="local_duplicate_rejection",
+    )
+    reviews[0]["candidates"][0]["geometry_review_status"] = "unknown"
+    with pytest.raises(ArtifactContractError) as exc_info:
+        _assemble(
+            tmp_path,
+            checkpoint_identity,
+            prompt_identity_sha256,
+            rollouts=rollouts,
+            reviews=reviews,
+        )
+    assert exc_info.value.code == "state_bank.duplicate_complete_row_owner_evidence"
+
+    cleaned_rollouts, cleaned_reviews = _duplicate_rows(
+        tmp_path,
+        family="duplicate_cleaned_imitation",
+        event_id="cleaned-event",
+    )
+    cleaned_reviews[0]["duplicate_trajectory_evidence"]["removed_row_indices"] = [2]
+    with pytest.raises(ArtifactContractError) as exc_info:
+        _assemble(
+            tmp_path,
+            checkpoint_identity,
+            prompt_identity_sha256,
+            rollouts=cleaned_rollouts,
+            reviews=cleaned_reviews,
+            output_name="cleaned-bank",
+        )
+    assert exc_info.value.code == "state_bank.duplicate_trajectory_removed_rows"
+
+
+def test_duplicate_burst_credit_must_sum_to_one_before_image_balancing(
+    tmp_path: Path,
+    checkpoint_identity,
+    prompt_identity_sha256: str,
+) -> None:
+    first_rollouts, first_reviews = _duplicate_rows(
+        tmp_path,
+        family="local_duplicate_rejection",
+        event_id="burst-entry",
+        burst_credit=0.5,
+        image_balanced_event_weight=0.5,
+    )
+    second_rollouts, second_reviews = _duplicate_rows(
+        tmp_path,
+        family="local_duplicate_rejection",
+        event_id="burst-later",
+        burst_credit=0.5,
+        image_balanced_event_weight=0.5,
+    )
+    manifest = _assemble(
+        tmp_path,
+        checkpoint_identity,
+        prompt_identity_sha256,
+        rollouts=[*first_rollouts, *second_rollouts],
+        reviews=[*first_reviews, *second_reviews],
+    )
+    assert manifest.record_count == 2
+
+    bad_rollouts, bad_reviews = _duplicate_rows(
+        tmp_path,
+        family="local_duplicate_rejection",
+        event_id="bad-credit",
+        burst_credit=0.4,
+        image_balanced_event_weight=0.4,
+    )
+    with pytest.raises(ArtifactContractError) as exc_info:
+        _assemble(
+            tmp_path,
+            checkpoint_identity,
+            prompt_identity_sha256,
+            rollouts=bad_rollouts,
+            reviews=bad_reviews,
+            output_name="bad-credit-bank",
+        )
+    assert exc_info.value.code == "state_bank.duplicate_trajectory_burst_credit"

@@ -45,7 +45,13 @@ _ROLES = frozenset({"positive", "harmful", "diagnostic"})
 _HARMFUL_KINDS = frozenset({"duplicate", "premature_terminal"})
 _COVERAGE_STATUSES = frozenset({"uncovered", "covered", "unknown"})
 _PREFIX_COVERAGE_STATUSES = frozenset(
-    {"empty", "resolved", "unresolved", "target_scoped_noncoverage"}
+    {
+        "empty",
+        "resolved",
+        "partially_resolved",
+        "unresolved",
+        "target_scoped_noncoverage",
+    }
 )
 _TOKEN_TYPES = frozenset({"desc_text", "schema", "coordinate", "eos"})
 _COORDINATE_AXES = {
@@ -56,6 +62,9 @@ _COORDINATE_AXES = {
 }
 _COORDINATE_ORDER = ("x1", "y1", "x2", "y2")
 _GENERATION_MODES = frozenset({"greedy", "sampled"})
+_DUPLICATE_REPLAY_CONTEXT_KINDS = frozenset(
+    {"exact_self_prefix_transplant", "counterfactual_rewritten"}
+)
 
 
 @dataclass(frozen=True)
@@ -190,6 +199,203 @@ class GenerationProvenance:
             "checkpoint_id": self.checkpoint_id,
             "prompt_token_ids_sha256": self.prompt_token_ids_sha256,
             "prefix_token_ids_sha256": self.prefix_token_ids_sha256,
+        }
+
+
+@dataclass(frozen=True)
+class DuplicateTrajectoryEvidence:
+    """Reviewed provenance for one duplicate-burst training event.
+
+    Candidate generation provenance remains attached to each exact candidate
+    row.  This typed receipt repeats the generation-prefix identities under a
+    common trajectory and records the distinct replay prefix, so a recovery
+    transplant or duplicate-deleted rewrite cannot be mistaken for an observed
+    same-prefix rollout.
+    """
+
+    trajectory_id: str
+    burst_id: str
+    replay_context_kind: str
+    candidate_generation_prefix_token_ids_sha256: Mapping[str, str]
+    candidate_trajectory_row_indices: Mapping[str, int]
+    replay_prefix_token_ids_sha256: str
+    retained_first_owner_row_index: int
+    duplicate_row_indices: tuple[int, ...]
+    removed_row_indices: tuple[int, ...]
+    recovery_row_index: int | None
+    burst_credit: float
+
+    @classmethod
+    def from_mapping(
+        cls, value: Mapping[str, Any], *, field: str
+    ) -> "DuplicateTrajectoryEvidence":
+        checked = _mapping(value, field=field)
+        _require_exact_keys(
+            checked,
+            {
+                "trajectory_id",
+                "burst_id",
+                "replay_context_kind",
+                "candidate_generation_prefix_token_ids_sha256",
+                "candidate_trajectory_row_indices",
+                "replay_prefix_token_ids_sha256",
+                "retained_first_owner_row_index",
+                "duplicate_row_indices",
+                "removed_row_indices",
+                "recovery_row_index",
+                "burst_credit",
+            },
+            field=field,
+        )
+        generation_prefixes_raw = _mapping(
+            checked["candidate_generation_prefix_token_ids_sha256"],
+            field=f"{field}.candidate_generation_prefix_token_ids_sha256",
+        )
+        if not generation_prefixes_raw:
+            _fail(
+                "state_bank.duplicate_trajectory_generation_prefixes_empty",
+                "duplicate-trajectory evidence requires one generation-prefix identity per candidate",
+                field=field,
+            )
+        generation_prefixes = {
+            _string(candidate_id, field=f"{field}.candidate_generation_prefix_token_ids_sha256.key"):
+            _require_sha256(
+                prefix_hash,
+                field=(
+                    f"{field}.candidate_generation_prefix_token_ids_sha256."
+                    f"{candidate_id}"
+                ),
+            )
+            for candidate_id, prefix_hash in generation_prefixes_raw.items()
+        }
+        candidate_rows_raw = _mapping(
+            checked["candidate_trajectory_row_indices"],
+            field=f"{field}.candidate_trajectory_row_indices",
+        )
+        if set(candidate_rows_raw) != set(generation_prefixes):
+            _fail(
+                "state_bank.duplicate_trajectory_candidate_receipts",
+                "duplicate-trajectory row and generation-prefix receipts must name the same candidates",
+                field=field,
+                generation_prefix_candidates=sorted(generation_prefixes),
+                trajectory_row_candidates=sorted(str(item) for item in candidate_rows_raw),
+            )
+        candidate_rows = {
+            _string(candidate_id, field=f"{field}.candidate_trajectory_row_indices.key"):
+            _require_nonnegative_int(
+                row_index,
+                field=f"{field}.candidate_trajectory_row_indices.{candidate_id}",
+            )
+            for candidate_id, row_index in candidate_rows_raw.items()
+        }
+        duplicate_rows = _ordered_row_indices(
+            checked["duplicate_row_indices"],
+            field=f"{field}.duplicate_row_indices",
+            require_nonempty=True,
+        )
+        if duplicate_rows != tuple(range(duplicate_rows[0], duplicate_rows[-1] + 1)):
+            _fail(
+                "state_bank.duplicate_trajectory_burst_nonconsecutive",
+                "duplicate-trajectory evidence must declare one consecutive duplicate burst",
+                field=field,
+                duplicate_row_indices=list(duplicate_rows),
+            )
+        removed_rows = _ordered_row_indices(
+            checked["removed_row_indices"],
+            field=f"{field}.removed_row_indices",
+            require_nonempty=False,
+        )
+        replay_context_kind = _choice(
+            checked["replay_context_kind"],
+            _DUPLICATE_REPLAY_CONTEXT_KINDS,
+            field=f"{field}.replay_context_kind",
+        )
+        if replay_context_kind == "counterfactual_rewritten":
+            if removed_rows != duplicate_rows:
+                _fail(
+                    "state_bank.duplicate_trajectory_removed_rows",
+                    "counterfactual rewritten evidence must remove exactly the confirmed duplicate rows",
+                    field=field,
+                    duplicate_row_indices=list(duplicate_rows),
+                    removed_row_indices=list(removed_rows),
+                )
+        elif removed_rows:
+            _fail(
+                "state_bank.duplicate_trajectory_unexpected_row_deletion",
+                "exact-self-prefix transplant evidence must not declare row deletion",
+                field=field,
+                removed_row_indices=list(removed_rows),
+            )
+        retained = _require_nonnegative_int(
+            checked["retained_first_owner_row_index"],
+            field=f"{field}.retained_first_owner_row_index",
+        )
+        if retained >= duplicate_rows[0]:
+            _fail(
+                "state_bank.duplicate_trajectory_retained_owner_order",
+                "the retained first-owner row must precede its duplicate burst",
+                field=field,
+                retained_first_owner_row_index=retained,
+                duplicate_row_indices=list(duplicate_rows),
+            )
+        recovery = (
+            None
+            if checked["recovery_row_index"] is None
+            else _require_nonnegative_int(
+                checked["recovery_row_index"],
+                field=f"{field}.recovery_row_index",
+            )
+        )
+        if recovery is not None and recovery <= duplicate_rows[-1]:
+            _fail(
+                "state_bank.duplicate_trajectory_recovery_order",
+                "the recovery row must follow every duplicate row in its burst",
+                field=field,
+                recovery_row_index=recovery,
+                duplicate_row_indices=list(duplicate_rows),
+            )
+        replay_prefix = _require_sha256(
+            checked["replay_prefix_token_ids_sha256"],
+            field=f"{field}.replay_prefix_token_ids_sha256",
+        )
+        burst_credit = _positive_event_weight(
+            checked["burst_credit"], field=f"{field}.burst_credit"
+        )
+        return cls(
+            trajectory_id=_string(checked["trajectory_id"], field=f"{field}.trajectory_id"),
+            burst_id=_string(checked["burst_id"], field=f"{field}.burst_id"),
+            replay_context_kind=replay_context_kind,
+            candidate_generation_prefix_token_ids_sha256=freeze_json(
+                dict(sorted(generation_prefixes.items()))
+            ),
+            candidate_trajectory_row_indices=freeze_json(
+                dict(sorted(candidate_rows.items()))
+            ),
+            replay_prefix_token_ids_sha256=replay_prefix,
+            retained_first_owner_row_index=retained,
+            duplicate_row_indices=duplicate_rows,
+            removed_row_indices=removed_rows,
+            recovery_row_index=recovery,
+            burst_credit=burst_credit,
+        )
+
+    def to_artifact_dict(self) -> dict[str, Any]:
+        return {
+            "trajectory_id": self.trajectory_id,
+            "burst_id": self.burst_id,
+            "replay_context_kind": self.replay_context_kind,
+            "candidate_generation_prefix_token_ids_sha256": _thaw(
+                self.candidate_generation_prefix_token_ids_sha256
+            ),
+            "candidate_trajectory_row_indices": _thaw(
+                self.candidate_trajectory_row_indices
+            ),
+            "replay_prefix_token_ids_sha256": self.replay_prefix_token_ids_sha256,
+            "retained_first_owner_row_index": self.retained_first_owner_row_index,
+            "duplicate_row_indices": list(self.duplicate_row_indices),
+            "removed_row_indices": list(self.removed_row_indices),
+            "recovery_row_index": self.recovery_row_index,
+            "burst_credit": self.burst_credit,
         }
 
 
@@ -1252,6 +1458,14 @@ class StateBankEvent:
     positive_path_imitation_eligible: bool = False
     source_route_imitation_eligible: bool = False
     image_balanced_event_weight: float = 1.0
+    # Duplicate-treatment families are deliberately separate from the
+    # historical own-prefix transition and complete-row families.  A combined
+    # profile is represented by separate atomic events, not multiple objective
+    # flags on one replay pack.
+    duplicate_trajectory_evidence: DuplicateTrajectoryEvidence | None = None
+    recovery_positive_imitation_eligible: bool = False
+    local_duplicate_rejection_eligible: bool = False
+    duplicate_cleaned_imitation_eligible: bool = False
 
     @property
     def counterfactual_admission_present(self) -> bool:
@@ -1289,6 +1503,10 @@ class StateBankEvent:
             "positive_path_imitation_eligible",
             "source_route_imitation_eligible",
             "image_balanced_event_weight",
+            "duplicate_trajectory_evidence",
+            "recovery_positive_imitation_eligible",
+            "local_duplicate_rejection_eligible",
+            "duplicate_cleaned_imitation_eligible",
         }
         unexpected_keys = set(checked) - required_keys - optional_keys
         if unexpected_keys:
@@ -1404,13 +1622,6 @@ class StateBankEvent:
                 field=f"{field}.target_owner_noncoverage_proof",
             )
         )
-        if proof_indices != tuple(range(len(prefix_owner_proofs))):
-            _fail(
-                "state_bank.prefix_owner_proof_rows",
-                "prefix owner proofs must cover every prior object row in order",
-                field=field,
-                row_indices=list(proof_indices),
-            )
         if prefix_coverage_status == "empty":
             if prefix_object_row_count != 0 or prefix_ids or prefix_owner_proofs:
                 _fail(
@@ -1436,6 +1647,34 @@ class StateBankEvent:
                     prefix_token_count=len(prefix_ids),
                     proof_count=len(prefix_owner_proofs),
                     proof_row_indices=list(proof_indices),
+                )
+        elif prefix_coverage_status == "partially_resolved":
+            if (
+                prefix_object_row_count == 0
+                or not prefix_ids
+                or not prefix_owner_proofs
+                or len(prefix_owner_proofs) >= prefix_object_row_count
+            ):
+                _fail(
+                    "state_bank.prefix_coverage_partially_resolved",
+                    "partially resolved prefix coverage requires a nonempty prefix, one or more ordered owner proofs, and at least one unproved prior object row",
+                    field=field,
+                    prefix_object_row_count=prefix_object_row_count,
+                    prefix_token_count=len(prefix_ids),
+                    proof_count=len(prefix_owner_proofs),
+                    proof_row_indices=list(proof_indices),
+                )
+            if (
+                len(set(proof_indices)) != len(proof_indices)
+                or proof_indices != tuple(sorted(proof_indices))
+                or any(index >= prefix_object_row_count for index in proof_indices)
+            ):
+                _fail(
+                    "state_bank.prefix_owner_proof_rows",
+                    "partially resolved prefix owner proof row indices must be unique, strictly increasing, and within the retained prefix rows",
+                    field=field,
+                    row_indices=list(proof_indices),
+                    prefix_object_row_count=prefix_object_row_count,
                 )
         elif prefix_coverage_status == "target_scoped_noncoverage":
             if (
@@ -1536,6 +1775,29 @@ class StateBankEvent:
                 checked.get("image_balanced_event_weight", 1.0),
                 field=f"{field}.image_balanced_event_weight",
             ),
+            duplicate_trajectory_evidence=(
+                None
+                if checked.get("duplicate_trajectory_evidence") is None
+                else DuplicateTrajectoryEvidence.from_mapping(
+                    _mapping(
+                        checked["duplicate_trajectory_evidence"],
+                        field=f"{field}.duplicate_trajectory_evidence",
+                    ),
+                    field=f"{field}.duplicate_trajectory_evidence",
+                )
+            ),
+            recovery_positive_imitation_eligible=_bool(
+                checked.get("recovery_positive_imitation_eligible", False),
+                field=f"{field}.recovery_positive_imitation_eligible",
+            ),
+            local_duplicate_rejection_eligible=_bool(
+                checked.get("local_duplicate_rejection_eligible", False),
+                field=f"{field}.local_duplicate_rejection_eligible",
+            ),
+            duplicate_cleaned_imitation_eligible=_bool(
+                checked.get("duplicate_cleaned_imitation_eligible", False),
+                field=f"{field}.duplicate_cleaned_imitation_eligible",
+            ),
         )
         event._validate_semantics(field=field)
         return event
@@ -1545,6 +1807,21 @@ class StateBankEvent:
         covered_owner_ids = frozenset(
             proof.owner_id for proof in self.prefix_covered_owner_proofs
         )
+        duplicate_families = self._duplicate_training_families()
+        evidence = self.duplicate_trajectory_evidence
+        if evidence is None and duplicate_families:
+            _fail(
+                "state_bank.duplicate_trajectory_evidence_missing",
+                "duplicate treatment events require typed duplicate-trajectory evidence",
+                event_id=self.event_id,
+                families=list(duplicate_families),
+            )
+        if evidence is not None and not duplicate_families:
+            _fail(
+                "state_bank.duplicate_trajectory_evidence_orphaned",
+                "typed duplicate-trajectory evidence is valid only for a duplicate treatment family",
+                event_id=self.event_id,
+            )
         for proof in self.prefix_covered_owner_proofs:
             owner = entity_by_id.get(proof.owner_id)
             if owner is None or not owner.entity_trusted:
@@ -1566,7 +1843,11 @@ class StateBankEvent:
                     event_id=self.event_id,
                     candidate_id=candidate.candidate_id,
                 )
-            if provenance.prefix_token_ids_sha256 != self.prefix_token_ids_sha256:
+            if (
+                evidence is None
+                and provenance.prefix_token_ids_sha256
+                != self.prefix_token_ids_sha256
+            ):
                 _fail(
                     "state_bank.candidate_prefix_provenance",
                     "candidate generation provenance does not bind the exact prefix",
@@ -1653,6 +1934,15 @@ class StateBankEvent:
                         candidate_id=candidate.candidate_id,
                         owner_id=candidate.physical_owner_id,
                     )
+        if duplicate_families:
+            assert evidence is not None
+            self._validate_duplicate_trajectory_event(
+                evidence,
+                duplicate_families=duplicate_families,
+                entity_by_id=entity_by_id,
+                field=field,
+            )
+            return
         if self.entity_transition_eligible:
             for candidate in self.candidates:
                 if (
@@ -1934,6 +2224,378 @@ class StateBankEvent:
                 "state_bank.geometry_event_disabled",
                 "event-level coordinate eligibility conflicts with candidate declarations",
                 event_id=self.event_id,
+            )
+
+    def _duplicate_training_families(self) -> tuple[str, ...]:
+        return tuple(
+            family
+            for family, enabled in (
+                (
+                    "recovery_positive_imitation",
+                    self.recovery_positive_imitation_eligible,
+                ),
+                (
+                    "local_duplicate_rejection",
+                    self.local_duplicate_rejection_eligible,
+                ),
+                (
+                    "duplicate_cleaned_imitation",
+                    self.duplicate_cleaned_imitation_eligible,
+                ),
+            )
+            if enabled
+        )
+
+    def _validate_duplicate_trajectory_event(
+        self,
+        evidence: DuplicateTrajectoryEvidence,
+        *,
+        duplicate_families: tuple[str, ...],
+        entity_by_id: Mapping[str, PhysicalEntity],
+        field: str,
+    ) -> None:
+        """Validate the opt-in duplicate/recovery event families.
+
+        This is intentionally an early branch from the historical transition
+        validator.  The existing transition contract proves an observed
+        same-prefix sampled candidate; these families instead preserve exact
+        generation provenance while admitting only declared transplants or
+        duplicate-deleted rewrites.
+        """
+
+        if len(duplicate_families) != 1:
+            _fail(
+                "state_bank.duplicate_training_family_conflict",
+                "one atomic duplicate treatment event must enable exactly one family",
+                event_id=self.event_id,
+                families=list(duplicate_families),
+            )
+        if (
+            self.entity_transition_eligible
+            or self.coordinate_boundary_eligible
+            or self.positive_path_imitation_eligible
+            or self.source_route_imitation_eligible
+        ):
+            _fail(
+                "state_bank.duplicate_training_event_flags",
+                "duplicate treatment events must not activate historical calibration families",
+                event_id=self.event_id,
+                entity_transition_eligible=self.entity_transition_eligible,
+                coordinate_boundary_eligible=self.coordinate_boundary_eligible,
+                positive_path_imitation_eligible=self.positive_path_imitation_eligible,
+                source_route_imitation_eligible=self.source_route_imitation_eligible,
+            )
+        if self.counterfactual_admission is not None or self.target_owner_noncoverage_proof is not None:
+            _fail(
+                "state_bank.duplicate_training_legacy_evidence",
+                "duplicate treatment events must use only typed duplicate-trajectory evidence",
+                event_id=self.event_id,
+            )
+        if evidence.replay_prefix_token_ids_sha256 != self.prefix_token_ids_sha256:
+            _fail(
+                "state_bank.duplicate_trajectory_replay_prefix",
+                "typed duplicate-trajectory replay prefix does not match the exact replay event prefix",
+                event_id=self.event_id,
+                evidence_prefix=evidence.replay_prefix_token_ids_sha256,
+                replay_prefix=self.prefix_token_ids_sha256,
+            )
+        candidate_ids = {candidate.candidate_id for candidate in self.candidates}
+        generation_prefixes = dict(
+            evidence.candidate_generation_prefix_token_ids_sha256
+        )
+        row_indices = dict(evidence.candidate_trajectory_row_indices)
+        if set(generation_prefixes) != candidate_ids or set(row_indices) != candidate_ids:
+            _fail(
+                "state_bank.duplicate_trajectory_candidate_provenance",
+                "typed duplicate-trajectory evidence must name every and only event candidate",
+                event_id=self.event_id,
+                candidate_ids=sorted(candidate_ids),
+                generation_prefix_candidates=sorted(generation_prefixes),
+                trajectory_row_candidates=sorted(row_indices),
+            )
+        for candidate in self.candidates:
+            observed = candidate.generation_provenance.prefix_token_ids_sha256
+            declared = generation_prefixes[candidate.candidate_id]
+            if declared != observed:
+                _fail(
+                    "state_bank.duplicate_trajectory_generation_prefix",
+                    "typed duplicate-trajectory evidence rewrites a candidate generation prefix",
+                    event_id=self.event_id,
+                    candidate_id=candidate.candidate_id,
+                    declared=declared,
+                    observed=observed,
+                )
+
+        family = duplicate_families[0]
+        expected_context = (
+            "counterfactual_rewritten"
+            if family == "duplicate_cleaned_imitation"
+            else "exact_self_prefix_transplant"
+        )
+        if evidence.replay_context_kind != expected_context:
+            _fail(
+                "state_bank.duplicate_trajectory_replay_context",
+                "duplicate treatment family uses the wrong replay-context declaration",
+                event_id=self.event_id,
+                family=family,
+                expected=expected_context,
+                actual=evidence.replay_context_kind,
+            )
+        allowed_prefix_coverage = (
+            {"empty", "resolved", "partially_resolved"}
+            if family == "duplicate_cleaned_imitation"
+            else {"resolved", "partially_resolved"}
+        )
+        if self.prefix_coverage_status not in allowed_prefix_coverage:
+            _fail(
+                "state_bank.duplicate_trajectory_prefix_coverage",
+                "duplicate treatment event has unsupported replay-prefix coverage",
+                event_id=self.event_id,
+                family=family,
+                prefix_coverage_status=self.prefix_coverage_status,
+                allowed=sorted(allowed_prefix_coverage),
+            )
+
+        if family == "local_duplicate_rejection":
+            self._validate_local_duplicate_rejection_event(
+                evidence,
+                entity_by_id=entity_by_id,
+                row_indices=row_indices,
+            )
+            return
+
+        if len(self.candidates) != 1:
+            _fail(
+                "state_bank.duplicate_complete_row_candidate_count",
+                "duplicate complete-row family requires exactly one positive candidate",
+                event_id=self.event_id,
+                family=family,
+                candidate_count=len(self.candidates),
+            )
+        candidate = self.candidates[0]
+        self._validate_duplicate_complete_row_candidate(
+            candidate,
+            entity_by_id=entity_by_id,
+            family=family,
+        )
+        candidate_row = row_indices[candidate.candidate_id]
+        if candidate_row in evidence.duplicate_row_indices:
+            _fail(
+                "state_bank.duplicate_complete_row_is_duplicate",
+                "duplicate-cleaned and recovery-positive rows must not reuse a deleted duplicate row",
+                event_id=self.event_id,
+                candidate_id=candidate.candidate_id,
+                candidate_row_index=candidate_row,
+            )
+        if evidence.recovery_row_index is None:
+            _fail(
+                "state_bank.duplicate_trajectory_recovery_missing",
+                "duplicate treatment positive supervision requires a reviewed recovery row",
+                event_id=self.event_id,
+                family=family,
+            )
+        if family == "recovery_positive_imitation":
+            if candidate_row != evidence.recovery_row_index:
+                _fail(
+                    "state_bank.recovery_positive_row_identity",
+                    "recovery-positive control must supervise the reviewed recovery row",
+                    event_id=self.event_id,
+                    candidate_id=candidate.candidate_id,
+                    candidate_row_index=candidate_row,
+                    recovery_row_index=evidence.recovery_row_index,
+                )
+        elif candidate_row < evidence.recovery_row_index:
+            _fail(
+                "state_bank.duplicate_cleaned_row_order",
+                "duplicate-cleaned supervision may begin only at the reviewed recovery row or later trusted suffix",
+                event_id=self.event_id,
+                candidate_id=candidate.candidate_id,
+                candidate_row_index=candidate_row,
+                recovery_row_index=evidence.recovery_row_index,
+            )
+
+    def _validate_local_duplicate_rejection_event(
+        self,
+        evidence: DuplicateTrajectoryEvidence,
+        *,
+        entity_by_id: Mapping[str, PhysicalEntity],
+        row_indices: Mapping[str, int],
+    ) -> None:
+        if len(self.candidates) != 2:
+            _fail(
+                "state_bank.local_duplicate_candidate_count",
+                "local duplicate rejection requires one recovery row and one duplicate row",
+                event_id=self.event_id,
+                candidate_count=len(self.candidates),
+            )
+        positives = [candidate for candidate in self.candidates if candidate.role == "positive"]
+        duplicates = [
+            candidate
+            for candidate in self.candidates
+            if candidate.role == "harmful" and candidate.harmful_kind == "duplicate"
+        ]
+        if len(positives) != 1 or len(duplicates) != 1:
+            _fail(
+                "state_bank.local_duplicate_candidate_roles",
+                "local duplicate rejection requires exactly one positive recovery and one harmful duplicate",
+                event_id=self.event_id,
+                positive_count=len(positives),
+                duplicate_count=len(duplicates),
+            )
+        positive = positives[0]
+        duplicate = duplicates[0]
+        self._validate_duplicate_complete_row_candidate(
+            positive,
+            entity_by_id=entity_by_id,
+            family="local_duplicate_rejection",
+        )
+        self._validate_duplicate_complete_row_candidate(
+            duplicate,
+            entity_by_id=entity_by_id,
+            family="local_duplicate_rejection",
+            expected_role="harmful",
+            expected_coverage="covered",
+        )
+        if positive.physical_owner_id == duplicate.physical_owner_id:
+            _fail(
+                "state_bank.local_duplicate_owner_identity",
+                "local duplicate rejection must compare a new physical owner with a different covered owner",
+                event_id=self.event_id,
+                owner_id=positive.physical_owner_id,
+            )
+        if evidence.recovery_row_index is None or (
+            row_indices[positive.candidate_id] != evidence.recovery_row_index
+        ):
+            _fail(
+                "state_bank.local_duplicate_recovery_identity",
+                "local duplicate rejection positive must be the reviewed recovery row",
+                event_id=self.event_id,
+                candidate_id=positive.candidate_id,
+                candidate_row_index=row_indices[positive.candidate_id],
+                recovery_row_index=evidence.recovery_row_index,
+            )
+        if row_indices[duplicate.candidate_id] not in evidence.duplicate_row_indices:
+            _fail(
+                "state_bank.local_duplicate_row_identity",
+                "local duplicate rejection harmful must be one row from the declared duplicate burst",
+                event_id=self.event_id,
+                candidate_id=duplicate.candidate_id,
+                candidate_row_index=row_indices[duplicate.candidate_id],
+                duplicate_row_indices=list(evidence.duplicate_row_indices),
+            )
+        retained_proofs = [
+            proof
+            for proof in self.prefix_covered_owner_proofs
+            if proof.prefix_object_row_index == evidence.retained_first_owner_row_index
+        ]
+        if (
+            len(retained_proofs) != 1
+            or retained_proofs[0].owner_id != duplicate.physical_owner_id
+        ):
+            _fail(
+                "state_bank.local_duplicate_retained_owner",
+                "the declared retained first-owner row must prove the harmful duplicate owner is covered",
+                event_id=self.event_id,
+                retained_first_owner_row_index=evidence.retained_first_owner_row_index,
+                harmful_owner_id=duplicate.physical_owner_id,
+                proof_owner_ids=[item.owner_id for item in retained_proofs],
+            )
+
+    def _validate_duplicate_complete_row_candidate(
+        self,
+        candidate: StateBankCandidate,
+        *,
+        entity_by_id: Mapping[str, PhysicalEntity],
+        family: str,
+        expected_role: str = "positive",
+        expected_coverage: str = "uncovered",
+    ) -> None:
+        if (
+            candidate.role != expected_role
+            or candidate.coverage_status != expected_coverage
+            or candidate.harmful_kind
+            not in ({None} if expected_role == "positive" else {"duplicate"})
+        ):
+            _fail(
+                "state_bank.duplicate_complete_row_candidate_role",
+                "duplicate treatment candidate has the wrong role or coverage status",
+                event_id=self.event_id,
+                family=family,
+                candidate_id=candidate.candidate_id,
+                role=candidate.role,
+                harmful_kind=candidate.harmful_kind,
+                coverage_status=candidate.coverage_status,
+            )
+        if (
+            candidate.physical_owner_id is None
+            or not candidate.entity_eligible
+            or candidate.entity_review_status != "trusted"
+            or candidate.geometry_review_status != "trusted"
+        ):
+            _fail(
+                "state_bank.duplicate_complete_row_owner_evidence",
+                "duplicate treatment candidate requires trusted physical-owner and coordinate evidence",
+                event_id=self.event_id,
+                family=family,
+                candidate_id=candidate.candidate_id,
+                physical_owner_id=candidate.physical_owner_id,
+                entity_eligible=candidate.entity_eligible,
+                entity_review_status=candidate.entity_review_status,
+                geometry_review_status=candidate.geometry_review_status,
+            )
+        owner = entity_by_id.get(candidate.physical_owner_id)
+        if owner is None or not owner.entity_trusted or not owner.geometry_trusted:
+            _fail(
+                "state_bank.duplicate_complete_row_ledger_evidence",
+                "duplicate treatment candidate owner requires trusted entity and geometry ledger evidence",
+                event_id=self.event_id,
+                family=family,
+                candidate_id=candidate.candidate_id,
+                owner_id=candidate.physical_owner_id,
+            )
+        interval = candidate.owner_resolution_interval
+        if interval != (0, len(candidate.token_ids)):
+            _fail(
+                "state_bank.duplicate_complete_row_interval",
+                "duplicate treatment must score a complete generated row from offset zero",
+                event_id=self.event_id,
+                family=family,
+                candidate_id=candidate.candidate_id,
+                interval=None if interval is None else list(interval),
+                token_count=len(candidate.token_ids),
+            )
+        site_types = {
+            site.candidate_token_offset: site.intended_token_type
+            for site in candidate.selected_sites
+        }
+        expected_offsets = set(range(len(candidate.token_ids)))
+        if set(site_types) != expected_offsets:
+            _fail(
+                "state_bank.duplicate_complete_row_sites",
+                "duplicate treatment must declare every complete-row token site exactly once",
+                event_id=self.event_id,
+                family=family,
+                candidate_id=candidate.candidate_id,
+                expected_offsets=sorted(expected_offsets),
+                actual_offsets=sorted(site_types),
+            )
+        declared_types = set(site_types.values())
+        if "desc_text" not in declared_types or "coordinate" not in declared_types:
+            _fail(
+                "state_bank.duplicate_complete_row_fields",
+                "field-balanced duplicate treatment requires description and trusted coordinate token sites",
+                event_id=self.event_id,
+                family=family,
+                candidate_id=candidate.candidate_id,
+                token_types=sorted(declared_types),
+            )
+        if "eos" in declared_types:
+            _fail(
+                "state_bank.duplicate_complete_row_eos",
+                "duplicate treatment complete rows must not score an EOS site",
+                event_id=self.event_id,
+                family=family,
+                candidate_id=candidate.candidate_id,
             )
 
     def _validate_complete_row_imitation_event(
@@ -2231,6 +2893,19 @@ class StateBankEvent:
         if self.target_owner_noncoverage_proof is not None:
             result["target_owner_noncoverage_proof"] = (
                 self.target_owner_noncoverage_proof.to_artifact_dict()
+            )
+        if self.duplicate_trajectory_evidence is not None:
+            result["duplicate_trajectory_evidence"] = (
+                self.duplicate_trajectory_evidence.to_artifact_dict()
+            )
+            result["recovery_positive_imitation_eligible"] = (
+                self.recovery_positive_imitation_eligible
+            )
+            result["local_duplicate_rejection_eligible"] = (
+                self.local_duplicate_rejection_eligible
+            )
+            result["duplicate_cleaned_imitation_eligible"] = (
+                self.duplicate_cleaned_imitation_eligible
             )
         return result
 
@@ -2588,7 +3263,7 @@ def _normalize_image_balanced_event_weights(
     normalized: list[StateBankEvent] = []
     for item in records:
         family = _complete_row_imitation_family(item)
-        if family is None or item.split != "train":
+        if family not in family_means or item.split != "train":
             normalized.append(item)
             continue
         normalized.append(
@@ -2760,7 +3435,13 @@ def validate_state_bank_token_identity(
                             expected_token_id=expected_coordinate_id,
                             actual_token_id=actual_coordinate_id,
                         )
-            if _complete_row_imitation_eligible(event) and candidate.role == "positive":
+            if (
+                (
+                    _complete_row_imitation_eligible(event)
+                    and candidate.role == "positive"
+                )
+                or event.local_duplicate_rejection_eligible
+            ):
                 mislabeled_complete_row_sites = []
                 for site in candidate.selected_sites:
                     token_id = candidate.token_ids[site.candidate_token_offset]
@@ -2775,11 +3456,7 @@ def validate_state_bank_token_identity(
                             }
                         )
                 if mislabeled_complete_row_sites:
-                    code_prefix = (
-                        "positive_path"
-                        if event.positive_path_imitation_eligible
-                        else "source_route"
-                    )
+                    code_prefix = _row_family_code_prefix(event)
                     _fail(
                         f"state_bank.{code_prefix}_token_type_identity",
                         "complete-row selected-site type disagrees with the bound coordinate-token identity",
@@ -2870,6 +3547,10 @@ def _join_rollout_and_review(
         "positive_path_imitation_eligible",
         "source_route_imitation_eligible",
         "image_balanced_event_weight",
+        "duplicate_trajectory_evidence",
+        "recovery_positive_imitation_eligible",
+        "local_duplicate_rejection_eligible",
+        "duplicate_cleaned_imitation_eligible",
     }
     unexpected_review_keys = set(review) - review_required_keys - optional_review_keys
     if unexpected_review_keys:
@@ -2977,6 +3658,18 @@ def _join_rollout_and_review(
         ),
         "image_balanced_event_weight": review.get(
             "image_balanced_event_weight", 1.0
+        ),
+        "duplicate_trajectory_evidence": review.get(
+            "duplicate_trajectory_evidence"
+        ),
+        "recovery_positive_imitation_eligible": review.get(
+            "recovery_positive_imitation_eligible", False
+        ),
+        "local_duplicate_rejection_eligible": review.get(
+            "local_duplicate_rejection_eligible", False
+        ),
+        "duplicate_cleaned_imitation_eligible": review.get(
+            "duplicate_cleaned_imitation_eligible", False
         ),
         "candidates": joined_candidates,
         "review_provenance": review["review_provenance"],
@@ -3100,10 +3793,20 @@ def _validate_record_collection(records: tuple[StateBankEvent, ...]) -> None:
             train_records_by_image.setdefault(record.image.image_id, []).append(record)
     excessive: dict[int, int] = {}
     excessive_positive_paths: dict[int, int] = {}
+    excessive_duplicate_trajectories: dict[int, int] = {}
     for image_id, image_records in train_records_by_image.items():
         count = len(image_records)
         if count <= 4:
             continue
+        if any(record._duplicate_training_families() for record in image_records):
+            if all(
+                _complete_row_imitation_eligible(record)
+                or record._duplicate_training_families()
+                for record in image_records
+            ):
+                if count > 16:
+                    excessive_duplicate_trajectories[image_id] = count
+                continue
         if all(_complete_row_imitation_eligible(record) for record in image_records):
             if count > 16:
                 excessive_positive_paths[image_id] = count
@@ -3121,7 +3824,14 @@ def _validate_record_collection(records: tuple[StateBankEvent, ...]) -> None:
             "positive-path pilot permits at most sixteen training rows per image",
             counts=excessive_positive_paths,
         )
+    if excessive_duplicate_trajectories:
+        _fail(
+            "state_bank.max_duplicate_trajectory_states_per_image",
+            "duplicate-treatment pilot permits at most sixteen complete-row or duplicate states per image",
+            counts=excessive_duplicate_trajectories,
+        )
     _validate_complete_row_image_balanced_event_weights(records)
+    _validate_duplicate_trajectory_weights(records)
 
 
 def _validate_complete_row_image_balanced_event_weights(
@@ -3174,6 +3884,73 @@ def _validate_complete_row_image_balanced_event_weights(
                 reference_total=reference_total,
                 unequal_totals=unequal_totals,
             )
+
+
+def _validate_duplicate_trajectory_weights(
+    records: tuple[StateBankEvent, ...],
+) -> None:
+    """Keep one mechanism unit per reviewed burst, then equal image credit.
+
+    The review/assembler owns the per-event allocation.  Validation deliberately
+    does not renormalize it: changing those weights at load time would make a
+    combined bank silently change its local-versus-cleaned mechanism dose.
+    """
+
+    train_records = tuple(
+        record
+        for record in records
+        if record.split == "train"
+        and record.duplicate_trajectory_evidence is not None
+        and record._duplicate_training_families()
+    )
+    if not train_records:
+        return
+    burst_totals: dict[tuple[int, str], float] = {}
+    trajectory_by_burst: dict[tuple[int, str], str] = {}
+    image_weights: dict[int, float] = {}
+    for record in train_records:
+        evidence = record.duplicate_trajectory_evidence
+        assert evidence is not None
+        key = (record.image.image_id, evidence.burst_id)
+        previous_trajectory = trajectory_by_burst.setdefault(key, evidence.trajectory_id)
+        if previous_trajectory != evidence.trajectory_id:
+            _fail(
+                "state_bank.duplicate_trajectory_burst_identity",
+                "one image-local duplicate burst id cannot refer to multiple trajectories",
+                image_id=record.image.image_id,
+                burst_id=evidence.burst_id,
+                first_trajectory_id=previous_trajectory,
+                later_trajectory_id=evidence.trajectory_id,
+            )
+        burst_totals[key] = burst_totals.get(key, 0.0) + evidence.burst_credit
+        image_weights[record.image.image_id] = (
+            image_weights.get(record.image.image_id, 0.0)
+            + record.image_balanced_event_weight
+        )
+    invalid_bursts = {
+        f"image:{image_id}/burst:{burst_id}": total
+        for (image_id, burst_id), total in sorted(burst_totals.items())
+        if not math.isclose(total, 1.0, rel_tol=1e-9, abs_tol=1e-12)
+    }
+    if invalid_bursts:
+        _fail(
+            "state_bank.duplicate_trajectory_burst_credit",
+            "duplicate treatment records must allocate one total credit per image-local burst",
+            burst_credit_totals=invalid_bursts,
+        )
+    reference_total = next(iter(image_weights.values()))
+    unequal_images = {
+        image_id: total
+        for image_id, total in sorted(image_weights.items())
+        if not math.isclose(total, reference_total, rel_tol=1e-9, abs_tol=1e-12)
+    }
+    if unequal_images:
+        _fail(
+            "state_bank.duplicate_trajectory_image_weight_totals",
+            "duplicate treatment records must assign equal aggregate mechanism credit to every admitted image",
+            reference_total=reference_total,
+            unequal_totals=unequal_images,
+        )
 
 
 def _validate_record_checkpoint_provenance(
@@ -3250,7 +4027,13 @@ def _record_counts(
     split_counts = Counter(record.split for record in records)
     family_counts = Counter()
     for record in records:
-        if record.positive_path_imitation_eligible:
+        if record.recovery_positive_imitation_eligible:
+            family_counts["recovery_positive_imitation"] += 1
+        elif record.local_duplicate_rejection_eligible:
+            family_counts["local_duplicate_rejection"] += 1
+        elif record.duplicate_cleaned_imitation_eligible:
+            family_counts["duplicate_cleaned_imitation"] += 1
+        elif record.positive_path_imitation_eligible:
             family_counts["positive_path_imitation"] += 1
         elif record.source_route_imitation_eligible:
             family_counts["source_route_imitation"] += 1
@@ -3263,6 +4046,9 @@ def _record_counts(
             and not record.coordinate_boundary_eligible
             and not record.positive_path_imitation_eligible
             and not record.source_route_imitation_eligible
+            and not record.recovery_positive_imitation_eligible
+            and not record.local_duplicate_rejection_eligible
+            and not record.duplicate_cleaned_imitation_eligible
         ):
             family_counts["diagnostic_only"] += 1
     return dict(sorted(split_counts.items())), dict(sorted(family_counts.items()))
@@ -3273,11 +4059,27 @@ def _complete_row_imitation_eligible(record: StateBankEvent) -> bool:
 
 
 def _complete_row_imitation_family(record: StateBankEvent) -> str | None:
+    if record.recovery_positive_imitation_eligible:
+        return "recovery_positive_imitation"
+    if record.duplicate_cleaned_imitation_eligible:
+        return "duplicate_cleaned_imitation"
     if record.positive_path_imitation_eligible:
         return "positive_path_imitation"
     if record.source_route_imitation_eligible:
         return "source_route_imitation"
     return None
+
+
+def _row_family_code_prefix(record: StateBankEvent) -> str:
+    if record.local_duplicate_rejection_eligible:
+        return "local_duplicate"
+    if record.recovery_positive_imitation_eligible:
+        return "recovery_positive"
+    if record.duplicate_cleaned_imitation_eligible:
+        return "duplicate_cleaned"
+    if record.positive_path_imitation_eligible:
+        return "positive_path"
+    return "source_route"
 
 
 def _split_assignments(
@@ -3422,6 +4224,32 @@ def _coordinate_values(value: Any, *, field: str) -> tuple[int, ...]:
             field=field,
         )
     return tuple(sorted(values))
+
+
+def _ordered_row_indices(
+    value: Any,
+    *,
+    field: str,
+    require_nonempty: bool,
+) -> tuple[int, ...]:
+    rows = tuple(
+        _require_nonnegative_int(item, field=f"{field}[{index}]")
+        for index, item in enumerate(_sequence(value, field=field))
+    )
+    if require_nonempty and not rows:
+        _fail(
+            "state_bank.duplicate_trajectory_rows_empty",
+            "duplicate-trajectory row receipt must not be empty",
+            field=field,
+        )
+    if tuple(sorted(rows)) != rows or len(set(rows)) != len(rows):
+        _fail(
+            "state_bank.duplicate_trajectory_rows_order",
+            "duplicate-trajectory row indices must be unique and strictly increasing",
+            field=field,
+            row_indices=list(rows),
+        )
+    return rows
 
 
 def _budget_pair(value: Any, *, field: str) -> Mapping[str, int]:
@@ -3847,6 +4675,7 @@ __all__ = [
     "CheckpointIdentity",
     "CoordinateBoundaryObservation",
     "CoordinateDecision",
+    "DuplicateTrajectoryEvidence",
     "GenerationProvenance",
     "ImageIdentity",
     "LoadedStateBank",

@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from src.common.errors import LossContractError
 from src.losses import (
     CandidatePath,
+    field_balanced_duplicate_rejection_loss,
     GateSiteIdentity,
     RolloutGateSite,
     first_wrong_coordinate_preference,
@@ -305,6 +306,148 @@ def test_positive_path_imitation_can_skip_all_untrusted_coordinates() -> None:
     result.raw_loss.backward()
     assert logits.grad is not None
     assert torch.equal(logits.grad[1], torch.zeros_like(logits.grad[1]))
+
+
+def test_field_balanced_duplicate_rejection_scores_complete_fields_and_opposes_gradients() -> None:
+    positive_logits = torch.tensor(
+        (
+            (4.0, 0.0, -1.0, -2.0),  # schema: gated elsewhere, excluded here
+            (0.0, 2.0, -1.0, -2.0),
+            (0.0, -1.0, 3.0, -2.0),
+            (0.0, -1.0, 2.0, -2.0),
+        ),
+        requires_grad=True,
+    )
+    duplicate_logits = torch.tensor(
+        (
+            (4.0, 0.0, -1.0, -2.0),
+            (0.0, -1.0, 2.5, -2.0),
+            (0.0, 2.0, -1.0, -2.0),
+            (0.0, 1.5, -1.0, -2.0),
+        ),
+        requires_grad=True,
+    )
+    positive = CandidatePath(
+        "recovery",
+        "owner-new",
+        positive_logits,
+        (0, 1, 2, 2),
+        token_types=("schema", "desc_text", "coordinate", "coordinate"),
+    )
+    duplicate = CandidatePath(
+        "duplicate",
+        "owner-covered",
+        duplicate_logits,
+        (0, 2, 1, 1),
+        token_types=("schema", "desc_text", "coordinate", "coordinate"),
+    )
+
+    result = field_balanced_duplicate_rejection_loss(
+        positive,
+        duplicate,
+        margin=0.3,
+    )
+
+    positive_log_probs = torch.log_softmax(positive_logits.float(), dim=-1)
+    duplicate_log_probs = torch.log_softmax(duplicate_logits.float(), dim=-1)
+    expected_positive_description = positive_log_probs[1, 1]
+    expected_positive_coordinates = positive_log_probs[(2, 3), (2, 2)].mean()
+    expected_duplicate_description = duplicate_log_probs[1, 2]
+    expected_duplicate_coordinates = duplicate_log_probs[(2, 3), (1, 1)].mean()
+    expected_positive_score = (
+        expected_positive_description + expected_positive_coordinates
+    ) / 2
+    expected_duplicate_score = (
+        expected_duplicate_description + expected_duplicate_coordinates
+    ) / 2
+
+    assert torch.allclose(
+        result.positive_description_mean_log_probability,
+        expected_positive_description,
+    )
+    assert torch.allclose(
+        result.positive_coordinate_mean_log_probability,
+        expected_positive_coordinates,
+    )
+    assert torch.allclose(result.duplicate_row_score, expected_duplicate_score)
+    assert torch.allclose(result.positive_row_score, expected_positive_score)
+    assert torch.allclose(
+        result.raw_loss,
+        F.softplus(torch.tensor(0.3) - expected_positive_score + expected_duplicate_score),
+    )
+    assert result.selected_token_count == 6
+    assert result.raw_loss.dtype == torch.float32
+    assert result.finite.all_finite
+
+    result.raw_loss.backward()
+    assert positive_logits.grad is not None and duplicate_logits.grad is not None
+    # The selected recovery fields are raised while selected duplicate fields
+    # are lowered; wrapper/schema row zero receives no pairwise gradient.
+    assert positive_logits.grad[1, 1] < 0
+    assert positive_logits.grad[2, 2] < 0
+    assert duplicate_logits.grad[1, 2] > 0
+    assert duplicate_logits.grad[2, 1] > 0
+    assert torch.equal(
+        positive_logits.grad[0], torch.zeros_like(positive_logits.grad[0])
+    )
+
+
+def test_field_balanced_duplicate_rejection_is_row_length_invariant_and_fp32() -> None:
+    duplicate = CandidatePath(
+        "duplicate",
+        "owner-covered",
+        torch.tensor(((0.0, -1.0, 2.0), (0.0, 2.0, -1.0)), dtype=torch.bfloat16,
+                     requires_grad=True),
+        (2, 1),
+        token_types=("desc_text", "coordinate"),
+    )
+    short_logits = torch.tensor(
+        ((0.0, 2.0, -1.0), (0.0, -1.0, 2.0)),
+        dtype=torch.bfloat16,
+        requires_grad=True,
+    )
+    long_logits = torch.tensor(
+        (
+            (0.0, 2.0, -1.0),
+            (0.0, 2.0, -1.0),
+            (0.0, -1.0, 2.0),
+        ),
+        dtype=torch.bfloat16,
+        requires_grad=True,
+    )
+    short = field_balanced_duplicate_rejection_loss(
+        CandidatePath(
+            "short-recovery",
+            "owner-new",
+            short_logits,
+            (1, 2),
+            token_types=("desc_text", "coordinate"),
+        ),
+        duplicate,
+        margin=0.2,
+    )
+    long = field_balanced_duplicate_rejection_loss(
+        CandidatePath(
+            "long-recovery",
+            "owner-new",
+            long_logits,
+            (1, 1, 2),
+            token_types=("desc_text", "desc_text", "coordinate"),
+        ),
+        duplicate,
+        margin=0.2,
+    )
+
+    assert short.raw_loss.dtype == torch.float32
+    assert long.raw_loss.dtype == torch.float32
+    assert torch.allclose(short.positive_row_score, long.positive_row_score)
+    assert short.finite.all_finite and long.finite.all_finite
+    (short.raw_loss + long.raw_loss).backward()
+    assert short_logits.grad is not None and long_logits.grad is not None
+    assert duplicate.logits.grad is not None
+    assert torch.isfinite(short_logits.grad).all()
+    assert torch.isfinite(long_logits.grad).all()
+    assert torch.isfinite(duplicate.logits.grad).all()
 
 
 def test_entity_and_coordinate_objectives_upcast_to_fp32_and_keep_finite_gradients() -> (

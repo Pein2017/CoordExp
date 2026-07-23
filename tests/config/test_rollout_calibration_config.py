@@ -111,6 +111,58 @@ def test_rollout_calibration_profiles_load_with_exact_weights_and_paths(
     assert resolved_binding["records_sha256"] == manifest_payload["records_sha256"]
 
 
+@pytest.mark.parametrize(
+    ("profile", "entity_weight", "duplicate_weight"),
+    [
+        ("recovery_positive_only", 1.0, 0.0),
+        ("local_duplicate_rejection_and_recovery", 1.0, 1.0),
+        ("duplicate_cleaned_imitation_only", 1.0, 0.0),
+        ("combined_duplicate_rejection_and_cleaned_imitation", 1.0, 1.0),
+    ],
+)
+def test_duplicate_rollout_calibration_profiles_are_opt_in_and_exact(
+    tmp_path: Path,
+    profile: str,
+    entity_weight: float,
+    duplicate_weight: float,
+) -> None:
+    config_path = tmp_path / f"{profile}.yaml"
+    _write_manifest(tmp_path / "banks" / "state-bank-manifest.json")
+    payload = _calibration_config(
+        profile=profile,
+        entity_weight=entity_weight,
+        coordinate_weight=0.0,
+    )
+    payload["rollout_calibration"]["duplicate_rejection"] = {
+        "weight": duplicate_weight,
+        "margin": 0.35,
+    }
+    _write_yaml(config_path, payload)
+
+    calibration = load_train_config(config_path).config.rollout_calibration
+
+    assert calibration is not None
+    assert calibration.profile == profile
+    assert calibration.duplicate_rejection.weight == duplicate_weight
+    assert calibration.duplicate_rejection.margin == pytest.approx(0.35)
+
+
+def test_duplicate_profile_rejects_omitted_duplicate_rejection_weight(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    _write_manifest(tmp_path / "banks" / "state-bank-manifest.json")
+    _write_yaml(
+        config_path,
+        _calibration_config(
+            profile="local_duplicate_rejection_and_recovery",
+            entity_weight=1.0,
+            coordinate_weight=0.0,
+        ),
+    )
+
+    with pytest.raises(ConfigContractError, match="duplicate_rejection.weight=1.0"):
+        load_train_config(config_path)
+
+
 def test_supervised_config_keeps_ordinary_resolved_shape_and_defaults() -> None:
     resolved = load_train_config(SUPERVISED_FIXTURE)
 

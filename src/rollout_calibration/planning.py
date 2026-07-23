@@ -15,6 +15,7 @@ from src.rollout_calibration.replay import (
 )
 from src.rollout_calibration.state_bank import (
     CoordinateDecision,
+    DuplicateTrajectoryEvidence,
     LoadedStateBank,
     SelectedSite,
     StateBankCandidate,
@@ -64,6 +65,10 @@ class CalibrationEventMetadata:
     positive_path_imitation_eligible: bool = False
     source_route_imitation_eligible: bool = False
     image_balanced_event_weight: float = 1.0
+    duplicate_trajectory_evidence: DuplicateTrajectoryEvidence | None = None
+    recovery_positive_imitation_eligible: bool = False
+    local_duplicate_rejection_eligible: bool = False
+    duplicate_cleaned_imitation_eligible: bool = False
 
     @property
     def selected_causal_logits_positions(self) -> tuple[int, ...]:
@@ -80,7 +85,15 @@ class CalibrationEventMetadata:
             "coordinate_boundary_eligible": self.coordinate_boundary_eligible,
             "positive_path_imitation_eligible": self.positive_path_imitation_eligible,
             "source_route_imitation_eligible": self.source_route_imitation_eligible,
+            "recovery_positive_imitation_eligible": self.recovery_positive_imitation_eligible,
+            "local_duplicate_rejection_eligible": self.local_duplicate_rejection_eligible,
+            "duplicate_cleaned_imitation_eligible": self.duplicate_cleaned_imitation_eligible,
             "image_balanced_event_weight": self.image_balanced_event_weight,
+            "duplicate_trajectory_evidence": (
+                None
+                if self.duplicate_trajectory_evidence is None
+                else self.duplicate_trajectory_evidence.to_artifact_dict()
+            ),
             "candidate_count": len(self.candidates),
             "selected_logits_positions": list(self.selected_logits_positions),
         }
@@ -214,6 +227,16 @@ def _materialize_event_metadata(
         positive_path_imitation_eligible=event.positive_path_imitation_eligible,
         source_route_imitation_eligible=event.source_route_imitation_eligible,
         image_balanced_event_weight=event.image_balanced_event_weight,
+        duplicate_trajectory_evidence=event.duplicate_trajectory_evidence,
+        recovery_positive_imitation_eligible=(
+            event.recovery_positive_imitation_eligible
+        ),
+        local_duplicate_rejection_eligible=(
+            event.local_duplicate_rejection_eligible
+        ),
+        duplicate_cleaned_imitation_eligible=(
+            event.duplicate_cleaned_imitation_eligible
+        ),
     )
 
 

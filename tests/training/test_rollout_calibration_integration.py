@@ -585,6 +585,507 @@ def test_pipeline_counts_both_complete_row_imitation_families() -> None:
     ) == 2
 
 
+def test_local_duplicate_runner_weights_pairwise_loss_and_reports_margin() -> None:
+    micro_step = replace(
+        _micro_step(_local_duplicate_metadata()),
+        pack=SimpleNamespace(
+            pack_index=0,
+            input_ids=(9, 2, 0, 3, 2, 0, 3, 9),
+        ),
+    )
+    logits = torch.tensor(
+        [
+            [
+                [0.0, 1.0, -1.0, -1.0, -1.0],
+                [0.0, -1.0, 2.0, -1.0, -1.0],
+                [0.0, -1.0, -1.0, 2.0, -1.0],
+                [0.0, 1.0, -1.0, -1.0, -1.0],
+                [0.0, -1.0, -1.0, 1.5, -1.0],
+                [0.0, -1.0, 1.5, -1.0, -1.0],
+            ]
+        ],
+        requires_grad=True,
+    )
+    context = rollout_calibration_loss_context(
+        micro_step,
+        SimpleNamespace(logits=logits, logits_position_ids=(0, 1, 2, 3, 4, 5)),
+    )
+    runner = RolloutCalibrationLossRunner(
+        profile="local_duplicate_rejection_and_recovery",
+        entity_weight=0.0,
+        entity_margin=0.2,
+        entity_smooth_max_temperature=0.5,
+        coordinate_weight=0.0,
+        coordinate_margin=0.2,
+        gate_weight=0.1,
+        duplicate_weight=1.0,
+        duplicate_margin=0.25,
+    )
+
+    plan = runner.prepare_planned_step((micro_step,))
+    assert plan.enabled_terms == (
+        "rollout_duplicate_rejection",
+        "rollout_site_token_type_gate",
+    )
+    bundle = runner.compute_micro_step(context, plan, local_micro_step_index=0)
+    assert bundle.terms[0].diagnostics["image_balanced_event_weight"] == 0.5
+    assert bundle.terms[0].diagnostics["burst_credit"] == 0.5
+    assert bundle.terms[0].selected_count == 4
+    bundle.total_loss.backward()
+    assert logits.grad is not None and torch.isfinite(logits.grad).all()
+
+    artifact = runner.finalize_planned_step((bundle.to_artifact_dict(),), plan)
+    assert artifact["counts"]["complete_row_imitation_family_counts"] == {
+        "source_route_imitation": 0,
+        "local_duplicate_rejection": 1
+    }
+    assert "calibration/rollout_duplicate_rejection/target_margin" in artifact[
+        "metrics"
+    ]
+
+
+@pytest.mark.parametrize(
+    "profile",
+    (
+        "recovery_positive_only",
+        "local_duplicate_rejection_and_recovery",
+        "duplicate_cleaned_imitation_only",
+        "combined_duplicate_rejection_and_cleaned_imitation",
+    ),
+)
+def test_duplicate_profiles_admit_fixed_source_rows_and_apply_source_loss(
+    profile: str,
+) -> None:
+    source_step = _micro_step(
+        _complete_row_metadata("source-preservation", source_route=True)
+    )
+    recovery_step = _micro_step(
+        replace(
+            _complete_row_metadata("recovery-positive", source_route=False),
+            positive_path_imitation_eligible=False,
+            recovery_positive_imitation_eligible=True,
+        )
+    )
+    local_step = _local_duplicate_micro_step("local-duplicate", weight=1.0)
+    cleaned_step = _micro_step(
+        replace(
+            _complete_row_metadata("cleaned-positive", source_route=False),
+            positive_path_imitation_eligible=False,
+            duplicate_cleaned_imitation_eligible=True,
+        )
+    )
+    treatment_steps = {
+        "recovery_positive_only": (recovery_step,),
+        "local_duplicate_rejection_and_recovery": (local_step,),
+        "duplicate_cleaned_imitation_only": (cleaned_step,),
+        "combined_duplicate_rejection_and_cleaned_imitation": (
+            local_step,
+            cleaned_step,
+        ),
+    }[profile]
+    planned_steps = (source_step, *treatment_steps)
+    assert (
+        pipeline_module._calibration_profile_event_count(planned_steps, profile)
+        == len(planned_steps)
+    )
+    schedule = SimpleNamespace(
+        resolved_max_steps=1,
+        runtime_batch=SimpleNamespace(
+            world_size=1,
+            effective_batch_size=len(planned_steps),
+            resolved_grad_accum_steps=len(planned_steps),
+        ),
+    )
+
+    stream = tuple(
+        build_calibration_micro_step_stream(
+            planned_steps,
+            schedule,
+            profile=profile,
+            rank=0,
+            world_size=1,
+        )
+    )
+    assert "source-preservation" in {
+        item.calibration_metadata.event_id for item in stream
+    }
+
+    runner = RolloutCalibrationLossRunner(
+        profile=profile,
+        entity_weight=1.0,
+        entity_margin=0.2,
+        entity_smooth_max_temperature=0.5,
+        coordinate_weight=0.0,
+        coordinate_margin=0.2,
+        gate_weight=0.0,
+        duplicate_weight=float(
+            profile
+            in {
+                "local_duplicate_rejection_and_recovery",
+                "combined_duplicate_rejection_and_cleaned_imitation",
+            }
+        ),
+        duplicate_margin=0.25,
+    )
+    plan = runner.prepare_planned_step(planned_steps)
+    source_logits = torch.zeros((1, 1, 5), requires_grad=True)
+    source_context = rollout_calibration_loss_context(
+        source_step,
+        SimpleNamespace(logits=source_logits, logits_position_ids=(0,)),
+    )
+    source_bundle = runner.compute_micro_step(
+        source_context,
+        plan,
+        local_micro_step_index=0,
+    )
+    source_term = next(
+        term
+        for term in source_bundle.terms
+        if term.name == "rollout_positive_path_imitation"
+    )
+    assert source_term.diagnostics["complete_row_imitation_family"] == (
+        "source_route_imitation"
+    )
+    # With uniform five-way logits, the fixed one-unit Source row contributes
+    # exactly log(5) regardless of how many recovery/cleaned rows share this
+    # profile's positive-path denominator.
+    assert source_term.weighted_loss.item() == pytest.approx(
+        torch.log(torch.tensor(5.0)).item()
+    )
+
+
+def test_duplicate_credit_coefficients_preserve_burst_total_and_combined_split(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def constant_duplicate_loss(positive_path, duplicate_path, *, margin):
+        unit = positive_path.logits.sum().float() * 0.0 + 1.0
+        zero = unit * 0.0
+        return SimpleNamespace(
+            raw_loss=unit,
+            target_margin=zero,
+            positive_row_score=zero,
+            duplicate_row_score=zero,
+            positive_description_mean_log_probability=zero,
+            positive_coordinate_mean_log_probability=zero,
+            duplicate_description_mean_log_probability=zero,
+            duplicate_coordinate_mean_log_probability=zero,
+            positive_description_token_count=1,
+            positive_coordinate_token_count=1,
+            duplicate_description_token_count=1,
+            duplicate_coordinate_token_count=1,
+            selected_token_count=4,
+        )
+
+    def constant_positive_loss(path):
+        unit = path.logits.sum().float() * 0.0 + 1.0
+        zero = unit * 0.0
+        return SimpleNamespace(
+            raw_loss=unit,
+            schema_description_loss=zero,
+            coordinate_loss=zero,
+            selected_token_count=1,
+            schema_description_token_count=1,
+            coordinate_token_count=0,
+        )
+
+    monkeypatch.setattr(
+        rollout_training_module,
+        "field_balanced_duplicate_rejection_loss",
+        constant_duplicate_loss,
+    )
+    monkeypatch.setattr(
+        rollout_training_module,
+        "positive_path_imitation_loss",
+        constant_positive_loss,
+    )
+
+    local_runner = RolloutCalibrationLossRunner(
+        profile="local_duplicate_rejection_and_recovery",
+        entity_weight=0.0,
+        entity_margin=0.2,
+        entity_smooth_max_temperature=0.5,
+        coordinate_weight=0.0,
+        coordinate_margin=0.2,
+        gate_weight=0.0,
+        duplicate_weight=1.0,
+        duplicate_margin=0.25,
+    )
+
+    def duplicate_total(
+        steps: tuple[SupervisedMicroStep, ...],
+    ) -> float:
+        plan = local_runner.prepare_planned_step(steps)
+        total = 0.0
+        for index, step in enumerate(steps):
+            context = rollout_calibration_loss_context(
+                step,
+                SimpleNamespace(
+                    logits=torch.zeros((1, 6, 5), requires_grad=True),
+                    logits_position_ids=(0, 1, 2, 3, 4, 5),
+                ),
+            )
+            bundle = local_runner.compute_micro_step(
+                context,
+                plan,
+                local_micro_step_index=index,
+            )
+            total += next(
+                term.weighted_loss.item()
+                for term in bundle.terms
+                if term.name == "rollout_duplicate_rejection"
+            )
+        return total
+
+    one_row_total = duplicate_total(
+        (_local_duplicate_micro_step("one-row", weight=1.0),)
+    )
+    two_row_total = duplicate_total(
+        (
+            _local_duplicate_micro_step("two-row-entry", weight=0.5),
+            _local_duplicate_micro_step("two-row-later", weight=0.5),
+        )
+    )
+    assert one_row_total == pytest.approx(1.0)
+    assert two_row_total == pytest.approx(1.0)
+
+    local_step = _local_duplicate_micro_step("combined-local", weight=0.5)
+    cleaned_step = _micro_step(
+        replace(
+            _complete_row_metadata("combined-cleaned", source_route=False),
+            positive_path_imitation_eligible=False,
+            duplicate_cleaned_imitation_eligible=True,
+            image_balanced_event_weight=0.5,
+        )
+    )
+    combined_runner = replace(
+        local_runner,
+        profile="combined_duplicate_rejection_and_cleaned_imitation",
+        entity_weight=1.0,
+    )
+    combined_plan = combined_runner.prepare_planned_step((local_step, cleaned_step))
+    local_bundle = combined_runner.compute_micro_step(
+        rollout_calibration_loss_context(
+            local_step,
+            SimpleNamespace(
+                logits=torch.zeros((1, 6, 5), requires_grad=True),
+                logits_position_ids=(0, 1, 2, 3, 4, 5),
+            ),
+        ),
+        combined_plan,
+        local_micro_step_index=0,
+    )
+    cleaned_bundle = combined_runner.compute_micro_step(
+        rollout_calibration_loss_context(
+            cleaned_step,
+            SimpleNamespace(
+                logits=torch.zeros((1, 1, 5), requires_grad=True),
+                logits_position_ids=(0,),
+            ),
+        ),
+        combined_plan,
+        local_micro_step_index=1,
+    )
+    local_contribution = next(
+        term.weighted_loss.item()
+        for term in local_bundle.terms
+        if term.name == "rollout_duplicate_rejection"
+    )
+    cleaned_contribution = next(
+        term.weighted_loss.item()
+        for term in cleaned_bundle.terms
+        if term.name == "rollout_positive_path_imitation"
+    )
+    assert local_contribution == pytest.approx(0.5)
+    assert cleaned_contribution == pytest.approx(0.5)
+
+
+def test_combined_stream_is_deterministic_family_stratified_and_fails_early() -> None:
+    source_a = _micro_step(_complete_row_metadata("source-a", source_route=True))
+    source_b = _micro_step(_complete_row_metadata("source-b", source_route=True))
+    local_a = _micro_step(
+        replace(
+            _complete_row_metadata("local-a", source_route=False),
+            positive_path_imitation_eligible=False,
+            local_duplicate_rejection_eligible=True,
+        )
+    )
+    local_b = _micro_step(
+        replace(
+            _complete_row_metadata("local-b", source_route=False),
+            positive_path_imitation_eligible=False,
+            local_duplicate_rejection_eligible=True,
+        )
+    )
+    cleaned_a = _micro_step(
+        replace(
+            _complete_row_metadata("cleaned-a", source_route=False),
+            positive_path_imitation_eligible=False,
+            duplicate_cleaned_imitation_eligible=True,
+        )
+    )
+    cleaned_b = _micro_step(
+        replace(
+            _complete_row_metadata("cleaned-b", source_route=False),
+            positive_path_imitation_eligible=False,
+            duplicate_cleaned_imitation_eligible=True,
+        )
+    )
+    schedule = SimpleNamespace(
+        resolved_max_steps=2,
+        runtime_batch=SimpleNamespace(
+            world_size=1,
+            effective_batch_size=3,
+            resolved_grad_accum_steps=3,
+        ),
+    )
+    stream = tuple(
+        build_calibration_micro_step_stream(
+            (cleaned_b, source_b, local_b, cleaned_a, source_a, local_a),
+            schedule,
+            profile="combined_duplicate_rejection_and_cleaned_imitation",
+            rank=0,
+            world_size=1,
+        )
+    )
+    windows = (stream[:3], stream[3:])
+    assert [
+        tuple(item.calibration_metadata.event_id for item in window)
+        for window in windows
+    ] == [
+        ("source-a", "local-a", "cleaned-a"),
+        ("source-b", "local-b", "cleaned-b"),
+    ]
+    assert all(
+        any(item.calibration_metadata.source_route_imitation_eligible for item in window)
+        and any(item.calibration_metadata.local_duplicate_rejection_eligible for item in window)
+        and any(item.calibration_metadata.duplicate_cleaned_imitation_eligible for item in window)
+        for window in windows
+    )
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        tuple(
+            build_calibration_micro_step_stream(
+                (source_a, local_a, local_b),
+                SimpleNamespace(
+                    resolved_max_steps=1,
+                    runtime_batch=SimpleNamespace(
+                        world_size=1,
+                        effective_batch_size=3,
+                        resolved_grad_accum_steps=3,
+                    ),
+                ),
+                profile="combined_duplicate_rejection_and_cleaned_imitation",
+                rank=0,
+                world_size=1,
+            )
+        )
+    assert exc_info.value.code == "training.rollout_calibration_combined_family_missing"
+    assert exc_info.value.context["missing_families"] == [
+        "duplicate_cleaned_imitation"
+    ]
+
+
+def test_local_duplicate_stream_is_global_window_stratified_across_ranks_and_fails_early() -> None:
+    source_steps = (
+        _micro_step(_complete_row_metadata("local-source-a", source_route=True)),
+        _micro_step(_complete_row_metadata("local-source-b", source_route=True)),
+    )
+    local_steps = tuple(
+        _local_duplicate_micro_step(f"local-duplicate-{index}", weight=1.0)
+        for index in range(6)
+    )
+    schedule = SimpleNamespace(
+        resolved_max_steps=2,
+        runtime_batch=SimpleNamespace(
+            world_size=2,
+            effective_batch_size=4,
+            resolved_grad_accum_steps=2,
+        ),
+    )
+    streams = {
+        rank: tuple(
+            build_calibration_micro_step_stream(
+                (*local_steps, *source_steps),
+                schedule,
+                profile="local_duplicate_rejection_and_recovery",
+                rank=rank,
+                world_size=2,
+            )
+        )
+        for rank in range(2)
+    }
+    assert all(len(stream) == 4 for stream in streams.values())
+    runner = RolloutCalibrationLossRunner(
+        profile="local_duplicate_rejection_and_recovery",
+        entity_weight=1.0,
+        entity_margin=0.2,
+        entity_smooth_max_temperature=0.5,
+        coordinate_weight=0.0,
+        coordinate_margin=0.2,
+        gate_weight=0.0,
+        duplicate_weight=1.0,
+        duplicate_margin=0.25,
+    )
+    for planned_index in range(2):
+        rank_windows = {
+            rank: streams[rank][planned_index * 2 : (planned_index + 1) * 2]
+            for rank in range(2)
+        }
+        global_window = [
+            item
+            for local_accum_index in range(2)
+            for rank in range(2)
+            for item in (rank_windows[rank][local_accum_index],)
+        ]
+        assert any(
+            item.calibration_metadata.source_route_imitation_eligible
+            for item in global_window
+        )
+        assert any(
+            item.calibration_metadata.local_duplicate_rejection_eligible
+            for item in global_window
+        )
+        gathered_denominators = [
+            {
+                term: rollout_training_module._local_denominator(
+                    term,
+                    tuple(item.calibration_metadata for item in rank_window),
+                    profile=runner.profile,
+                ).to_artifact_dict()
+                for term in runner.enabled_terms
+            }
+            for rank_window in rank_windows.values()
+        ]
+        for rank, rank_window in rank_windows.items():
+            plan = runner.prepare_planned_step(
+                rank_window,
+                world_size=2,
+                rank=rank,
+                denominator_gatherer=lambda _local: gathered_denominators,
+            )
+            assert plan.denominators["rollout_positive_path_imitation"].eligible_segment_count > 0
+            assert plan.denominators["rollout_duplicate_rejection"].eligible_segment_count > 0
+
+    insufficient_sources = tuple(
+        _local_duplicate_micro_step(f"local-insufficient-{index}", weight=1.0)
+        for index in range(7)
+    ) + (source_steps[0],)
+    with pytest.raises(RuntimeContractError) as exc_info:
+        tuple(
+            build_calibration_micro_step_stream(
+                insufficient_sources,
+                schedule,
+                profile="local_duplicate_rejection_and_recovery",
+                rank=0,
+                world_size=2,
+            )
+        )
+    assert exc_info.value.code == "training.rollout_calibration_local_duplicate_family_missing"
+    assert exc_info.value.context["missing_families"] == [
+        "source_route_imitation"
+    ]
+
+
 def test_coordinate_boundary_gate_only_stream_exposes_coordinate_events_once() -> None:
     coordinate_step = _micro_step(_single_family_metadata("coordinate"))
     entity_step = _micro_step(_single_family_metadata("entity"))
@@ -933,4 +1434,115 @@ def _complete_row_metadata(
         selected_logits_positions=(0,),
         positive_path_imitation_eligible=not source_route,
         source_route_imitation_eligible=source_route,
+    )
+
+
+def _local_duplicate_metadata() -> CalibrationEventMetadata:
+    def candidate(
+        candidate_id: str,
+        *,
+        segment_index: int,
+        role: str,
+        harmful_kind: str | None,
+        owner_id: str,
+        coverage_status: str,
+        target_start: int,
+        logits_start: int,
+    ) -> CalibrationCandidateMetadata:
+        return CalibrationCandidateMetadata(
+            candidate_id=candidate_id,
+            segment_index=segment_index,
+            role=role,
+            harmful_kind=harmful_kind,
+            physical_owner_id=owner_id,
+            coverage_status=coverage_status,
+            entity_review_status="trusted",
+            geometry_review_status="trusted",
+            entity_eligible=True,
+            geometry_eligible=True,
+            owner_resolution_candidate_interval=(0, 3),
+            owner_resolution_physical_target_interval=(target_start, target_start + 3),
+            coordinate_decision=None,
+            coordinate_physical_target_position=None,
+            coordinate_physical_logits_position=None,
+            selected_sites=(
+                CalibrationSelectedSite(
+                    candidate_id=candidate_id,
+                    segment_index=segment_index,
+                    candidate_token_offset=0,
+                    intended_token_type="schema",
+                    physical_target_position=target_start,
+                    physical_logits_position=logits_start,
+                ),
+                CalibrationSelectedSite(
+                    candidate_id=candidate_id,
+                    segment_index=segment_index,
+                    candidate_token_offset=1,
+                    intended_token_type="desc_text",
+                    physical_target_position=target_start + 1,
+                    physical_logits_position=logits_start + 1,
+                ),
+                CalibrationSelectedSite(
+                    candidate_id=candidate_id,
+                    segment_index=segment_index,
+                    candidate_token_offset=2,
+                    intended_token_type="coordinate",
+                    physical_target_position=target_start + 2,
+                    physical_logits_position=logits_start + 2,
+                ),
+            ),
+        )
+
+    return CalibrationEventMetadata(
+        event_id="local-duplicate-event",
+        image_id=42,
+        split="train",
+        entity_transition_eligible=False,
+        coordinate_boundary_eligible=False,
+        candidates=(
+            candidate(
+                "recovery",
+                segment_index=0,
+                role="positive",
+                harmful_kind=None,
+                owner_id="owner-recovery",
+                coverage_status="uncovered",
+                target_start=1,
+                logits_start=0,
+            ),
+            candidate(
+                "duplicate",
+                segment_index=1,
+                role="harmful",
+                harmful_kind="duplicate",
+                owner_id="owner-duplicate",
+                coverage_status="covered",
+                target_start=4,
+                logits_start=3,
+            ),
+        ),
+        selected_logits_positions=(0, 1, 2, 3, 4, 5),
+        duplicate_trajectory_evidence=SimpleNamespace(burst_credit=0.5),
+        local_duplicate_rejection_eligible=True,
+        image_balanced_event_weight=0.5,
+    )
+
+
+def _local_duplicate_micro_step(
+    event_id: str,
+    *,
+    weight: float,
+) -> SupervisedMicroStep:
+    metadata = replace(
+        _local_duplicate_metadata(),
+        event_id=event_id,
+        duplicate_trajectory_evidence=SimpleNamespace(burst_credit=weight),
+        image_balanced_event_weight=weight,
+    )
+    return replace(
+        _micro_step(metadata),
+        pack=SimpleNamespace(
+            pack_index=0,
+            input_ids=(9, 2, 0, 3, 2, 0, 3, 9),
+        ),
     )

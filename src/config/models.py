@@ -306,6 +306,18 @@ class CoordinateBoundaryObjectiveConfig(StrictConfigModel):
     margin: float = Field(ge=0.0, allow_inf_nan=False)
 
 
+class DuplicateRejectionObjectiveConfig(StrictConfigModel):
+    """Opt-in complete-row duplicate preference controls.
+
+    Defaults keep the historical rollout-calibration configs byte-for-byte
+    usable at the input surface; new duplicate profiles must opt in with their
+    exact canonical weight below.
+    """
+
+    weight: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
+    margin: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
+
+
 class RolloutCalibrationConfig(StrictConfigModel):
     profile: Literal[
         "transition_only",
@@ -314,11 +326,19 @@ class RolloutCalibrationConfig(StrictConfigModel):
         "joint",
         "positive_path_imitation_only",
         "sampled_path_and_source_route_imitation_only",
+        "recovery_positive_only",
+        "local_duplicate_rejection_and_recovery",
+        "duplicate_cleaned_imitation_only",
+        "combined_duplicate_rejection_and_cleaned_imitation",
     ]
     state_bank_manifest_path: str
     source_checkpoint_id: str
     entity_transition: EntityTransitionObjectiveConfig
     coordinate_boundary: CoordinateBoundaryObjectiveConfig
+    duplicate_rejection: DuplicateRejectionObjectiveConfig = Field(
+        default_factory=DuplicateRejectionObjectiveConfig,
+        exclude_if=lambda value: value.weight == 0.0 and value.margin == 0.0,
+    )
     incomplete_objective_policy: Literal["fail"] = "fail"
     online_state_bank_refresh: Literal[False] = False
     allow_off_policy_state_bank_replay: bool = False
@@ -333,22 +353,31 @@ class RolloutCalibrationConfig(StrictConfigModel):
     @model_validator(mode="after")
     def _profile_has_exact_objective_weights(self) -> "RolloutCalibrationConfig":
         expected = {
-            "transition_only": (1.0, 0.0),
-            "coordinate_boundary_only": (0.0, 1.0),
-            "coordinate_boundary_gate_only": (0.0, 0.0),
-            "joint": (0.5, 0.5),
-            "positive_path_imitation_only": (1.0, 0.0),
-            "sampled_path_and_source_route_imitation_only": (1.0, 0.0),
+            "transition_only": (1.0, 0.0, 0.0),
+            "coordinate_boundary_only": (0.0, 1.0, 0.0),
+            "coordinate_boundary_gate_only": (0.0, 0.0, 0.0),
+            "joint": (0.5, 0.5, 0.0),
+            "positive_path_imitation_only": (1.0, 0.0, 0.0),
+            "sampled_path_and_source_route_imitation_only": (1.0, 0.0, 0.0),
+            "recovery_positive_only": (1.0, 0.0, 0.0),
+            # The local treatment keeps the fixed Source-preservation rows
+            # active through the existing complete-row primitive while its
+            # duplicate pair is owned by ``duplicate_rejection``.
+            "local_duplicate_rejection_and_recovery": (1.0, 0.0, 1.0),
+            "duplicate_cleaned_imitation_only": (1.0, 0.0, 0.0),
+            "combined_duplicate_rejection_and_cleaned_imitation": (1.0, 0.0, 1.0),
         }[self.profile]
         actual = (
             self.entity_transition.weight,
             self.coordinate_boundary.weight,
+            self.duplicate_rejection.weight,
         )
         if actual != expected:
             raise ValueError(
                 f"rollout_calibration.profile={self.profile} requires "
                 f"entity_transition.weight={expected[0]} and "
-                f"coordinate_boundary.weight={expected[1]}"
+                f"coordinate_boundary.weight={expected[1]} and "
+                f"duplicate_rejection.weight={expected[2]}"
             )
         return self
 

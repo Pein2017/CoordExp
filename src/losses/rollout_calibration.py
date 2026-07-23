@@ -98,6 +98,27 @@ class PositivePathImitationResult:
 
 
 @dataclass(frozen=True)
+class FieldBalancedDuplicateRejectionResult:
+    """Pure complete-row preference diagnostics for one recovery/duplicate pair."""
+
+    raw_loss: torch.Tensor
+    target_margin: torch.Tensor
+    positive_row_score: torch.Tensor
+    duplicate_row_score: torch.Tensor
+    positive_description_mean_log_probability: torch.Tensor
+    positive_coordinate_mean_log_probability: torch.Tensor
+    duplicate_description_mean_log_probability: torch.Tensor
+    duplicate_coordinate_mean_log_probability: torch.Tensor
+    positive_description_token_count: int
+    positive_coordinate_token_count: int
+    duplicate_description_token_count: int
+    duplicate_coordinate_token_count: int
+    selected_token_count: int
+    finite: LossFiniteDiagnostics
+    math_dtype: str = "float32"
+
+
+@dataclass(frozen=True)
 class CoordinateBoundaryPreferenceResult:
     raw_loss: torch.Tensor
     target_margin: torch.Tensor
@@ -432,6 +453,92 @@ def positive_path_imitation_loss(
 positive_path_imitation = positive_path_imitation_loss
 
 
+def field_balanced_duplicate_rejection_loss(
+    positive_path: CandidatePath,
+    duplicate_path: CandidatePath,
+    *,
+    margin: float,
+) -> FieldBalancedDuplicateRejectionResult:
+    """Prefer a reviewed recovery row to a reviewed covered-owner duplicate.
+
+    This deliberately scores complete rows, not their first divergence.  The
+    score gives equal mass to description and trusted-coordinate fields, while
+    wrapper and delimiter/schema sites remain available to the separate token
+    type gate but contribute no pairwise score.
+    """
+
+    checked_margin = _finite_scalar(margin, name="margin")
+    _validate_candidate_identity(positive_path, role="positive")
+    _validate_candidate_identity(duplicate_path, role="harmful")
+    if duplicate_path.premature_terminal:
+        raise LossContractError(
+            "field-balanced duplicate rejection cannot score a terminal branch",
+            code="loss.rollout_duplicate_terminal",
+            context={"candidate_id": duplicate_path.candidate_id},
+        )
+    if positive_path.physical_owner_id == duplicate_path.physical_owner_id:
+        raise LossContractError(
+            "field-balanced duplicate rejection requires distinct positive and duplicate owners",
+            code="loss.rollout_duplicate_owner_identity",
+            context={"physical_owner_id": positive_path.physical_owner_id},
+        )
+    (
+        positive_score,
+        positive_description,
+        positive_coordinates,
+        positive_description_count,
+        positive_coordinate_count,
+    ) = _field_balanced_row_score(positive_path, role="positive")
+    (
+        duplicate_score,
+        duplicate_description,
+        duplicate_coordinates,
+        duplicate_description_count,
+        duplicate_coordinate_count,
+    ) = _field_balanced_row_score(duplicate_path, role="duplicate")
+    target_margin = positive_score - duplicate_score
+    raw_loss = F.softplus(
+        positive_score.new_tensor(checked_margin) - positive_score + duplicate_score
+    )
+    return FieldBalancedDuplicateRejectionResult(
+        raw_loss=raw_loss,
+        target_margin=target_margin,
+        positive_row_score=positive_score,
+        duplicate_row_score=duplicate_score,
+        positive_description_mean_log_probability=positive_description,
+        positive_coordinate_mean_log_probability=positive_coordinates,
+        duplicate_description_mean_log_probability=duplicate_description,
+        duplicate_coordinate_mean_log_probability=duplicate_coordinates,
+        positive_description_token_count=positive_description_count,
+        positive_coordinate_token_count=positive_coordinate_count,
+        duplicate_description_token_count=duplicate_description_count,
+        duplicate_coordinate_token_count=duplicate_coordinate_count,
+        selected_token_count=(
+            positive_description_count
+            + positive_coordinate_count
+            + duplicate_description_count
+            + duplicate_coordinate_count
+        ),
+        finite=_finite_diagnostics(
+            raw_loss=raw_loss,
+            target_margin=target_margin,
+            positive_row_score=positive_score,
+            duplicate_row_score=duplicate_score,
+            positive_description_mean_log_probability=positive_description,
+            positive_coordinate_mean_log_probability=positive_coordinates,
+            duplicate_description_mean_log_probability=duplicate_description,
+            duplicate_coordinate_mean_log_probability=duplicate_coordinates,
+        ),
+    )
+
+
+# The explicit loss spelling is canonical; this short alias follows the name
+# used by the duplicate-treatment design and is useful to small research probes.
+field_balanced_duplicate_rejection_and_recovery = (
+    field_balanced_duplicate_rejection_loss
+)
+
+
 def rollout_site_token_type_gate(
     declarations: tuple[RolloutGateSite, ...],
 ) -> RolloutSiteTokenTypeGateResult:
@@ -528,6 +635,95 @@ def rollout_site_token_type_gate(
         declaration_count=len(declarations),
         duplicate_declaration_count=len(declarations) - len(unique_by_identity),
         finite=_finite_diagnostics(raw_loss=raw_loss, legal_mass=legal_mass),
+    )
+
+
+def _field_balanced_row_score(
+    path: CandidatePath,
+    *,
+    role: Literal["positive", "duplicate"],
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, int, int]:
+    if path.token_types is None:
+        raise LossContractError(
+            "field-balanced duplicate rejection requires complete-row token types",
+            code="loss.rollout_duplicate_token_types_missing",
+            context={"candidate_id": path.candidate_id, "role": role},
+        )
+    logits = _checked_path_logits(path.logits, candidate_id=path.candidate_id)
+    target_ids = _checked_token_ids(
+        path.target_token_ids,
+        vocab_size=int(logits.shape[1]),
+        name="target_token_ids",
+        require_nonempty=True,
+        require_unique=False,
+    )
+    if len(target_ids) != int(logits.shape[0]):
+        raise LossContractError(
+            "field-balanced duplicate rejection targets must align with causal logits",
+            code="loss.rollout_duplicate_path_length",
+            context={
+                "candidate_id": path.candidate_id,
+                "role": role,
+                "logits_row_count": int(logits.shape[0]),
+                "target_count": len(target_ids),
+            },
+        )
+    if len(path.token_types) != len(target_ids):
+        raise LossContractError(
+            "field-balanced duplicate rejection token types must cover the complete row",
+            code="loss.rollout_duplicate_token_type_length",
+            context={
+                "candidate_id": path.candidate_id,
+                "role": role,
+                "token_count": len(target_ids),
+                "token_type_count": len(path.token_types),
+            },
+        )
+    allowed_types = {"desc_text", "schema", "coordinate"}
+    unknown_types = sorted(set(path.token_types) - allowed_types)
+    if unknown_types:
+        raise LossContractError(
+            "field-balanced duplicate rejection contains an unsupported token type",
+            code="loss.rollout_duplicate_token_type_unknown",
+            context={
+                "candidate_id": path.candidate_id,
+                "role": role,
+                "unknown_types": unknown_types,
+            },
+        )
+    selected = torch.log_softmax(logits, dim=-1).gather(
+        1,
+        torch.tensor(target_ids, dtype=torch.long, device=logits.device).unsqueeze(1),
+    ).squeeze(1)
+    description_indexes = tuple(
+        index
+        for index, token_type in enumerate(path.token_types)
+        if token_type == "desc_text"
+    )
+    coordinate_indexes = tuple(
+        index
+        for index, token_type in enumerate(path.token_types)
+        if token_type == "coordinate"
+    )
+    if not description_indexes or not coordinate_indexes:
+        raise LossContractError(
+            "field-balanced duplicate rejection requires both description and trusted coordinate fields",
+            code="loss.rollout_duplicate_fields_missing",
+            context={
+                "candidate_id": path.candidate_id,
+                "role": role,
+                "description_token_count": len(description_indexes),
+                "coordinate_token_count": len(coordinate_indexes),
+            },
+        )
+    description_score = selected[list(description_indexes)].mean()
+    coordinate_score = selected[list(coordinate_indexes)].mean()
+    return (
+        (description_score + coordinate_score) * 0.5,
+        description_score,
+        coordinate_score,
+        len(description_indexes),
+        len(coordinate_indexes),
     )
 
 
@@ -939,12 +1135,15 @@ __all__ = [
     "CoordinateBoundaryPreferenceResult",
     "EntityTransitionPreferenceResult",
     "EventGateResult",
+    "FieldBalancedDuplicateRejectionResult",
     "GateSiteIdentity",
     "LossFiniteDiagnostics",
     "OwnerScore",
     "RolloutGateSite",
     "RolloutSiteTokenTypeGateResult",
     "first_wrong_coordinate_preference",
+    "field_balanced_duplicate_rejection_and_recovery",
+    "field_balanced_duplicate_rejection_loss",
     "grouped_entity_transition_preference",
     "rollout_site_token_type_gate",
 ]

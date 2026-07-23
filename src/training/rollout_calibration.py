@@ -11,6 +11,7 @@ import torch
 from src.common.errors import LossContractError, RuntimeContractError
 from src.losses import (
     CandidatePath,
+    field_balanced_duplicate_rejection_loss,
     GateSiteIdentity,
     LossBundle,
     RolloutGateSite,
@@ -28,8 +29,27 @@ from src.training.supervised_trainer import SupervisedMicroStep
 
 ENTITY_TERM = "rollout_entity_transition"
 POSITIVE_TERM = "rollout_positive_path_imitation"
+DUPLICATE_TERM = "rollout_duplicate_rejection"
 COORDINATE_TERM = "rollout_coordinate_boundary"
 GATE_TERM = "rollout_site_token_type_gate"
+
+_DUPLICATE_TREATMENT_PROFILES = frozenset(
+    {
+        "recovery_positive_only",
+        "local_duplicate_rejection_and_recovery",
+        "duplicate_cleaned_imitation_only",
+        "combined_duplicate_rejection_and_cleaned_imitation",
+    }
+)
+_COMBINED_DUPLICATE_WINDOW_FAMILIES = (
+    "source_route_imitation",
+    "local_duplicate_rejection",
+    "duplicate_cleaned_imitation",
+)
+_LOCAL_DUPLICATE_WINDOW_FAMILIES = (
+    "source_route_imitation",
+    "local_duplicate_rejection",
+)
 
 
 @dataclass(frozen=True)
@@ -71,6 +91,8 @@ class RolloutCalibrationLossRunner:
     coordinate_weight: float
     coordinate_margin: float
     gate_weight: float
+    duplicate_weight: float = 0.0
+    duplicate_margin: float = 0.0
     rejection_count: int = 0
 
     @classmethod
@@ -97,6 +119,8 @@ class RolloutCalibrationLossRunner:
             coordinate_weight=float(calibration.coordinate_boundary.weight),
             coordinate_margin=float(calibration.coordinate_boundary.margin),
             gate_weight=float(gate.weight),
+            duplicate_weight=float(calibration.duplicate_rejection.weight),
+            duplicate_margin=float(calibration.duplicate_rejection.margin),
             rejection_count=int(rejection_count),
         )
 
@@ -107,6 +131,8 @@ class RolloutCalibrationLossRunner:
             terms.append(POSITIVE_TERM)
         elif self.entity_weight > 0.0:
             terms.append(ENTITY_TERM)
+        if _duplicate_rejection_profile(self.profile) and self.duplicate_weight > 0.0:
+            terms.append(DUPLICATE_TERM)
         if self.coordinate_weight > 0.0:
             terms.append(COORDINATE_TERM)
         terms.append(GATE_TERM)
@@ -207,6 +233,14 @@ class RolloutCalibrationLossRunner:
                     local_micro_step_index=local_micro_step_index,
                 )
             )
+        if DUPLICATE_TERM in plan.enabled_terms:
+            terms.append(
+                self._duplicate_rejection_term(
+                    context,
+                    plan,
+                    local_micro_step_index=local_micro_step_index,
+                )
+            )
         if POSITIVE_TERM in plan.enabled_terms:
             terms.append(
                 self._positive_path_term(
@@ -272,6 +306,17 @@ class RolloutCalibrationLossRunner:
                 ),
                 "source_route_imitation_event_count": int(
                     (complete_row_family == "source_route_imitation") * count_scale
+                ),
+                "recovery_positive_imitation_event_count": int(
+                    (complete_row_family == "recovery_positive_imitation")
+                    * count_scale
+                ),
+                "duplicate_cleaned_imitation_event_count": int(
+                    (complete_row_family == "duplicate_cleaned_imitation")
+                    * count_scale
+                ),
+                "local_duplicate_rejection_event_count": int(
+                    context.metadata.local_duplicate_rejection_eligible * count_scale
                 ),
             },
             diagnostics={
@@ -361,7 +406,7 @@ class RolloutCalibrationLossRunner:
                 denominator.skipped_segment_count
             )
             diagnostics = [dict(item.get("diagnostics", {})) for item in matching]
-            if term_name in {ENTITY_TERM, COORDINATE_TERM}:
+            if term_name in {ENTITY_TERM, DUPLICATE_TERM, COORDINATE_TERM}:
                 metrics[f"calibration/{term_name}/target_margin"] = sum(
                     float(item.get("target_margin_contribution", 0.0))
                     for item in diagnostics
@@ -379,6 +424,19 @@ class RolloutCalibrationLossRunner:
                 for metric_name in (
                     "schema_description_loss",
                     "coordinate_loss",
+                    "selected_token_count",
+                ):
+                    metrics[f"calibration/{term_name}/{metric_name}"] = sum(
+                        float(item.get(metric_name, 0.0)) for item in diagnostics
+                    )
+            if term_name == DUPLICATE_TERM:
+                for metric_name in (
+                    "positive_row_score",
+                    "duplicate_row_score",
+                    "positive_description_mean_log_probability",
+                    "positive_coordinate_mean_log_probability",
+                    "duplicate_description_mean_log_probability",
+                    "duplicate_coordinate_mean_log_probability",
                     "selected_token_count",
                 ):
                     metrics[f"calibration/{term_name}/{metric_name}"] = sum(
@@ -424,10 +482,7 @@ class RolloutCalibrationLossRunner:
                 )
                 for artifact in artifacts
             )
-            for family in (
-                "positive_path_imitation",
-                "source_route_imitation",
-            )
+            for family in _profile_family_names(self.profile)
         }
         for family, count in family_counts.items():
             metrics[f"calibration/{family}/admitted_event_count"] = float(count)
@@ -535,6 +590,9 @@ class RolloutCalibrationLossRunner:
             metric_value=selected_count if eligible else None,
             event_weight=(
                 context.metadata.image_balanced_event_weight if eligible else 1.0
+            ),
+            preserve_declared_event_credit=_uses_declared_event_credit(
+                self.profile
             ),
         )
 
@@ -715,6 +773,110 @@ class RolloutCalibrationLossRunner:
             metric_value=diagnostics.get("target_margin"),
         )
 
+    def _duplicate_rejection_term(
+        self,
+        context: RolloutCalibrationLossContext,
+        plan: RolloutCalibrationLossPlan,
+        *,
+        local_micro_step_index: int,
+    ) -> LossTermResult:
+        eligible = context.metadata.local_duplicate_rejection_eligible
+        if eligible:
+            positives = tuple(
+                candidate
+                for candidate in context.metadata.candidates
+                if candidate.role == "positive" and candidate.entity_eligible
+            )
+            duplicates = tuple(
+                candidate
+                for candidate in context.metadata.candidates
+                if (
+                    candidate.role == "harmful"
+                    and candidate.harmful_kind == "duplicate"
+                    and candidate.entity_eligible
+                )
+            )
+            if len(positives) != 1 or len(duplicates) != 1:
+                raise LossContractError(
+                    "local duplicate-rejection event must declare one recovery and one duplicate row",
+                    code="loss.rollout_duplicate_event_incomplete",
+                    context={
+                        "event_id": context.metadata.event_id,
+                        "positive_count": len(positives),
+                        "duplicate_count": len(duplicates),
+                    },
+                )
+            positive_path = _candidate_path(
+                context,
+                positives[0],
+                complete_row_token_types=True,
+            )
+            duplicate_path = _candidate_path(
+                context,
+                duplicates[0],
+                complete_row_token_types=True,
+            )
+            result = field_balanced_duplicate_rejection_loss(
+                positive_path,
+                duplicate_path,
+                margin=self.duplicate_margin,
+            )
+            raw_event = result.raw_loss
+            selected_count = result.selected_token_count
+            diagnostics = {
+                "event_id": context.metadata.event_id,
+                "eligible": True,
+                "target_margin": float(result.target_margin.detach().item()),
+                "positive_row_score": float(result.positive_row_score.detach().item()),
+                "duplicate_row_score": float(result.duplicate_row_score.detach().item()),
+                "positive_description_mean_log_probability": float(
+                    result.positive_description_mean_log_probability.detach().item()
+                ),
+                "positive_coordinate_mean_log_probability": float(
+                    result.positive_coordinate_mean_log_probability.detach().item()
+                ),
+                "duplicate_description_mean_log_probability": float(
+                    result.duplicate_description_mean_log_probability.detach().item()
+                ),
+                "duplicate_coordinate_mean_log_probability": float(
+                    result.duplicate_coordinate_mean_log_probability.detach().item()
+                ),
+                "positive_description_token_count": result.positive_description_token_count,
+                "positive_coordinate_token_count": result.positive_coordinate_token_count,
+                "duplicate_description_token_count": result.duplicate_description_token_count,
+                "duplicate_coordinate_token_count": result.duplicate_coordinate_token_count,
+                "selected_token_count": selected_count,
+                "burst_credit": (
+                    None
+                    if context.metadata.duplicate_trajectory_evidence is None
+                    else context.metadata.duplicate_trajectory_evidence.burst_credit
+                ),
+                "image_balanced_event_weight": context.metadata.image_balanced_event_weight,
+            }
+        else:
+            raw_event = context.logits.sum() * 0.0
+            selected_count = 0
+            diagnostics = {"event_id": context.metadata.event_id, "eligible": False}
+        return _term_result(
+            name=DUPLICATE_TERM,
+            raw_event=raw_event,
+            weight=self.duplicate_weight,
+            denominator=plan.denominators[DUPLICATE_TERM],
+            backend_scale=plan.backend_gradient_scale,
+            eligible=eligible,
+            selected_count=selected_count,
+            local_micro_step_index=local_micro_step_index,
+            diagnostics=diagnostics,
+            metric_name="target_margin_contribution",
+            metric_value=diagnostics.get("target_margin"),
+            event_weight=(
+                context.metadata.image_balanced_event_weight if eligible else 1.0
+            ),
+            preserve_declared_event_credit=_uses_declared_event_credit(
+                self.profile
+            ),
+        )
+
     def _gate_term(
         self,
         context: RolloutCalibrationLossContext,
@@ -760,8 +922,16 @@ class RolloutCalibrationLossRunner:
             metric_value=diagnostics["legal_mass"],
             event_weight=(
                 context.metadata.image_balanced_event_weight
-                if _complete_row_family(context.metadata, self.profile) is not None
+                if _weighted_duplicate_or_complete_row_event(
+                    context.metadata, self.profile
+                )
                 else 1.0
+            ),
+            preserve_declared_event_credit=(
+                _uses_declared_event_credit(self.profile)
+                and _weighted_duplicate_or_complete_row_event(
+                    context.metadata, self.profile
+                )
             ),
         )
 
@@ -815,6 +985,15 @@ def build_calibration_micro_step_stream(
             code="training.rollout_calibration_profile_empty",
             context={"profile": profile},
         )
+    if profile in _DUPLICATE_TREATMENT_PROFILES and not any(
+        _micro_step_metadata(item).source_route_imitation_eligible
+        for item in admitted
+    ):
+        raise RuntimeContractError(
+            "duplicate-treatment calibration requires its fixed Source-preservation family",
+            code="training.rollout_calibration_source_family_missing",
+            context={"profile": profile},
+        )
     if (
         world_size != schedule.runtime_batch.world_size
         or rank < 0
@@ -839,6 +1018,18 @@ def build_calibration_micro_step_stream(
                 "effective_batch_size": slots,
             },
         )
+    if profile == "combined_duplicate_rejection_and_cleaned_imitation":
+        admitted = _family_stratified_combined_events(
+            admitted,
+            slots=slots,
+            planned_step_count=schedule.resolved_max_steps,
+        )
+    elif profile == "local_duplicate_rejection_and_recovery":
+        admitted = _family_stratified_local_duplicate_events(
+            admitted,
+            slots=slots,
+            planned_step_count=schedule.resolved_max_steps,
+        )
     if profile == "joint":
         complete_families = {
             "entity": any(
@@ -858,10 +1049,239 @@ def build_calibration_micro_step_stream(
             )
     for planned_index in range(schedule.resolved_max_steps):
         window = admitted[planned_index * slots : (planned_index + 1) * slots]
+        if profile == "combined_duplicate_rejection_and_cleaned_imitation":
+            _validate_combined_window(
+                window,
+                planned_step_id=planned_index + 1,
+            )
+        elif profile == "local_duplicate_rejection_and_recovery":
+            _validate_local_duplicate_window(
+                window,
+                planned_step_id=planned_index + 1,
+            )
         for local_accum_index in range(
             schedule.runtime_batch.resolved_grad_accum_steps
         ):
             yield window[local_accum_index * world_size + rank]
+
+
+def _family_stratified_combined_events(
+    admitted: tuple[SupervisedMicroStep, ...],
+    *,
+    slots: int,
+    planned_step_count: int,
+) -> tuple[SupervisedMicroStep, ...]:
+    """Deterministically place both combined families in every global window."""
+
+    return _family_stratified_duplicate_events(
+        admitted,
+        slots=slots,
+        planned_step_count=planned_step_count,
+        family_order=_COMBINED_DUPLICATE_WINDOW_FAMILIES,
+        profile_label="combined duplicate",
+        error_code_prefix="combined",
+    )
+
+
+def _family_stratified_local_duplicate_events(
+    admitted: tuple[SupervisedMicroStep, ...],
+    *,
+    slots: int,
+    planned_step_count: int,
+) -> tuple[SupervisedMicroStep, ...]:
+    """Place Source and local-duplicate events in every global window."""
+
+    return _family_stratified_duplicate_events(
+        admitted,
+        slots=slots,
+        planned_step_count=planned_step_count,
+        family_order=_LOCAL_DUPLICATE_WINDOW_FAMILIES,
+        profile_label="local duplicate",
+        error_code_prefix="local_duplicate",
+    )
+
+
+def _family_stratified_duplicate_events(
+    admitted: tuple[SupervisedMicroStep, ...],
+    *,
+    slots: int,
+    planned_step_count: int,
+    family_order: tuple[str, ...],
+    profile_label: str,
+    error_code_prefix: str,
+) -> tuple[SupervisedMicroStep, ...]:
+    """Deterministically cover every required duplicate family per window."""
+
+    if slots < len(family_order):
+        raise RuntimeContractError(
+            f"{profile_label} calibration requires one global slot for every enabled family per planned step",
+            code=f"training.rollout_calibration_{error_code_prefix}_window_capacity",
+            context={
+                "effective_batch_size": slots,
+                "required_family_count": len(family_order),
+            },
+        )
+    queues = {
+        family: sorted(
+            (
+                item
+                for item in admitted
+                if _combined_window_family(_micro_step_metadata(item)) == family
+            ),
+            key=lambda item: _micro_step_metadata(item).event_id,
+        )
+        for family in family_order
+    }
+    if any(len(queues[family]) < planned_step_count for family in family_order):
+        raise RuntimeContractError(
+            f"{profile_label} calibration lacks one enabled family for a planned global window",
+            code=f"training.rollout_calibration_{error_code_prefix}_family_missing",
+            context={
+                "planned_step_id": None,
+                "required_windows": planned_step_count,
+                **{
+                    f"{family}_event_count": len(queues[family])
+                    for family in family_order
+                },
+                "missing_families": [
+                    family
+                    for family in family_order
+                    if len(queues[family]) < planned_step_count
+                ],
+            },
+        )
+    if sum(len(queues[family]) for family in family_order) != len(admitted):
+        raise RuntimeContractError(
+            f"{profile_label} calibration admits an unsupported event family",
+            code=f"training.rollout_calibration_{error_code_prefix}_family_unknown",
+            context={
+                "admitted_event_count": len(admitted),
+                **{
+                    f"{family}_event_count": len(queues[family])
+                    for family in family_order
+                },
+            },
+        )
+
+    queues = {family: list(items) for family, items in queues.items()}
+    windows: list[SupervisedMicroStep] = []
+    for planned_index in range(planned_step_count):
+        window: list[SupervisedMicroStep] = []
+        for family in family_order:
+            window.append(queues[family].pop(0))
+        remaining_windows = planned_step_count - planned_index - 1
+        while len(window) < slots:
+            eligible_families = [
+                family
+                for family in family_order
+                if len(queues[family]) > remaining_windows
+            ]
+            if not eligible_families:
+                raise RuntimeContractError(
+                    f"{profile_label} calibration cannot fill a family-stratified planned window",
+                    code=f"training.rollout_calibration_{error_code_prefix}_window_fill",
+                    context={
+                        "planned_step_id": planned_index + 1,
+                        "effective_batch_size": slots,
+                        "remaining_windows": remaining_windows,
+                        "remaining_by_family": {
+                            family: len(queues[family]) for family in family_order
+                        },
+                    },
+                )
+            family = max(
+                eligible_families,
+                key=lambda item: (len(queues[item]), -family_order.index(item)),
+            )
+            window.append(queues[family].pop(0))
+        windows.extend(window)
+    if any(queues[family] for family in family_order):
+        raise RuntimeContractError(
+            f"{profile_label} calibration left an unplanned admitted event",
+            code=f"training.rollout_calibration_{error_code_prefix}_window_residue",
+            context={
+                "remaining_by_family": {
+                    family: len(queues[family]) for family in family_order
+                }
+            },
+        )
+    return tuple(windows)
+
+
+def _validate_combined_window(
+    window: Sequence[SupervisedMicroStep],
+    *,
+    planned_step_id: int,
+) -> None:
+    present = {
+        family: any(
+            _combined_window_family(_micro_step_metadata(item)) == family
+            for item in window
+        )
+        for family in _COMBINED_DUPLICATE_WINDOW_FAMILIES
+    }
+    missing = [family for family, available in present.items() if not available]
+    if missing:
+        raise RuntimeContractError(
+            "combined duplicate calibration window lacks an enabled global family before forward",
+            code="training.rollout_calibration_combined_family_missing",
+            context={
+                "planned_step_id": planned_step_id,
+                "missing_families": missing,
+                "event_ids": [
+                    _micro_step_metadata(item).event_id for item in window
+                ],
+            },
+        )
+
+
+def _validate_local_duplicate_window(
+    window: Sequence[SupervisedMicroStep],
+    *,
+    planned_step_id: int,
+) -> None:
+    present = {
+        family: any(
+            _combined_window_family(_micro_step_metadata(item)) == family
+            for item in window
+        )
+        for family in _LOCAL_DUPLICATE_WINDOW_FAMILIES
+    }
+    missing = [family for family, available in present.items() if not available]
+    if missing:
+        raise RuntimeContractError(
+            "local duplicate calibration window lacks an enabled global family before forward",
+            code="training.rollout_calibration_local_duplicate_family_missing",
+            context={
+                "planned_step_id": planned_step_id,
+                "missing_families": missing,
+                "event_ids": [
+                    _micro_step_metadata(item).event_id for item in window
+                ],
+            },
+        )
+
+
+def _combined_window_family(metadata: CalibrationEventMetadata) -> str | None:
+    if metadata.source_route_imitation_eligible:
+        return "source_route_imitation"
+    if metadata.local_duplicate_rejection_eligible:
+        return "local_duplicate_rejection"
+    if metadata.duplicate_cleaned_imitation_eligible:
+        return "duplicate_cleaned_imitation"
+    return None
+
+
+def _uses_declared_event_credit(profile: str) -> bool:
+    """Keep duplicate-bank credits additive after planned-step normalization.
+
+    Historical profiles continue to use event-balanced means.  Duplicate-bank
+    event weights instead encode declared burst/image credit; multiplying by
+    the planned global eligible count cancels the reducer's event-count mean
+    so a burst's declared credits add to its intended total.
+    """
+
+    return profile in _DUPLICATE_TREATMENT_PROFILES
 
 
 def _profile_admits(metadata: CalibrationEventMetadata, profile: str) -> bool:
@@ -871,6 +1291,27 @@ def _profile_admits(metadata: CalibrationEventMetadata, profile: str) -> bool:
         return bool(
             metadata.positive_path_imitation_eligible
             or metadata.source_route_imitation_eligible
+        )
+    if profile == "recovery_positive_only":
+        return bool(
+            metadata.source_route_imitation_eligible
+            or metadata.recovery_positive_imitation_eligible
+        )
+    if profile == "local_duplicate_rejection_and_recovery":
+        return bool(
+            metadata.source_route_imitation_eligible
+            or metadata.local_duplicate_rejection_eligible
+        )
+    if profile == "duplicate_cleaned_imitation_only":
+        return bool(
+            metadata.source_route_imitation_eligible
+            or metadata.duplicate_cleaned_imitation_eligible
+        )
+    if profile == "combined_duplicate_rejection_and_cleaned_imitation":
+        return bool(
+            metadata.source_route_imitation_eligible
+            or metadata.local_duplicate_rejection_eligible
+            or metadata.duplicate_cleaned_imitation_eligible
         )
     if profile == "transition_only":
         return metadata.entity_transition_eligible
@@ -959,6 +1400,8 @@ def _event_eligible(
 ) -> bool:
     if term == POSITIVE_TERM:
         return _complete_row_family(metadata, profile) is not None
+    if term == DUPLICATE_TERM:
+        return metadata.local_duplicate_rejection_eligible
     if term == ENTITY_TERM:
         return metadata.entity_transition_eligible
     if term == COORDINATE_TERM:
@@ -982,6 +1425,16 @@ def _selected_count(
             for candidate in metadata.candidates
             if candidate.role == "positive" and candidate.entity_eligible
             for _site in _active_selected_sites(candidate, profile)
+        )
+    if term == DUPLICATE_TERM:
+        if not _event_eligible(metadata, term, profile=profile):
+            return 0
+        return sum(
+            1
+            for candidate in metadata.candidates
+            if candidate.role in {"positive", "harmful"}
+            for site in candidate.selected_sites
+            if site.intended_token_type in {"desc_text", "coordinate"}
         )
     if term == GATE_TERM:
         return len(
@@ -1008,8 +1461,32 @@ def _selected_count(
 
 
 def _active_selected_sites(candidate: Any, profile: str) -> tuple[Any, ...]:
-    if _complete_row_profile(profile):
+    if profile in {
+        "positive_path_imitation_only",
+        "sampled_path_and_source_route_imitation_only",
+        "recovery_positive_only",
+        "duplicate_cleaned_imitation_only",
+    }:
         if not candidate.entity_eligible or candidate.role != "positive":
+            return ()
+        interval = candidate.owner_resolution_candidate_interval
+        if interval is None:
+            return ()
+        start, end = interval
+        return tuple(
+            site
+            for site in candidate.selected_sites
+            if start <= site.candidate_token_offset < end
+            and not (
+                site.intended_token_type == "coordinate"
+                and candidate.geometry_review_status != "trusted"
+            )
+        )
+    if profile in {
+        "local_duplicate_rejection_and_recovery",
+        "combined_duplicate_rejection_and_cleaned_imitation",
+    }:
+        if not candidate.entity_eligible:
             return ()
         interval = candidate.owner_resolution_candidate_interval
         if interval is None:
@@ -1051,6 +1528,17 @@ def _complete_row_profile(profile: str) -> bool:
     return profile in {
         "positive_path_imitation_only",
         "sampled_path_and_source_route_imitation_only",
+        "recovery_positive_only",
+        "local_duplicate_rejection_and_recovery",
+        "duplicate_cleaned_imitation_only",
+        "combined_duplicate_rejection_and_cleaned_imitation",
+    }
+
+
+def _duplicate_rejection_profile(profile: str) -> bool:
+    return profile in {
+        "local_duplicate_rejection_and_recovery",
+        "combined_duplicate_rejection_and_cleaned_imitation",
     }
 
 
@@ -1058,14 +1546,30 @@ def _complete_row_family(
     metadata: CalibrationEventMetadata,
     profile: str,
 ) -> str | None:
-    positive_path = bool(metadata.positive_path_imitation_eligible)
-    source_route = bool(metadata.source_route_imitation_eligible)
-    if positive_path and source_route:
+    enabled_families = tuple(
+        family
+        for family, enabled in (
+            ("positive_path_imitation", metadata.positive_path_imitation_eligible),
+            ("source_route_imitation", metadata.source_route_imitation_eligible),
+            (
+                "recovery_positive_imitation",
+                metadata.recovery_positive_imitation_eligible,
+            ),
+            (
+                "duplicate_cleaned_imitation",
+                metadata.duplicate_cleaned_imitation_eligible,
+            ),
+        )
+        if enabled
+    )
+    if len(enabled_families) > 1:
         raise LossContractError(
             "one event cannot enable both complete-row imitation families",
             code="loss.rollout_complete_row_family_conflict",
-            context={"event_id": metadata.event_id},
+            context={"event_id": metadata.event_id, "families": enabled_families},
         )
+    positive_path = metadata.positive_path_imitation_eligible
+    source_route = metadata.source_route_imitation_eligible
     if profile == "positive_path_imitation_only":
         return "positive_path_imitation" if positive_path else None
     if profile == "sampled_path_and_source_route_imitation_only":
@@ -1073,11 +1577,70 @@ def _complete_row_family(
             return "positive_path_imitation"
         if source_route:
             return "source_route_imitation"
+    if profile == "recovery_positive_only":
+        if source_route:
+            return "source_route_imitation"
+        return (
+            "recovery_positive_imitation"
+            if metadata.recovery_positive_imitation_eligible
+            else None
+        )
+    if profile == "duplicate_cleaned_imitation_only":
+        if source_route:
+            return "source_route_imitation"
+        return (
+            "duplicate_cleaned_imitation"
+            if metadata.duplicate_cleaned_imitation_eligible
+            else None
+        )
+    if profile == "combined_duplicate_rejection_and_cleaned_imitation":
+        if source_route:
+            return "source_route_imitation"
+        return (
+            "duplicate_cleaned_imitation"
+            if metadata.duplicate_cleaned_imitation_eligible
+            else None
+        )
+    if profile == "local_duplicate_rejection_and_recovery":
+        return "source_route_imitation" if source_route else None
     return None
 
 
+def _weighted_duplicate_or_complete_row_event(
+    metadata: CalibrationEventMetadata,
+    profile: str,
+) -> bool:
+    return bool(
+        metadata.local_duplicate_rejection_eligible
+        or _complete_row_family(metadata, profile) is not None
+    )
+
+
+def _profile_family_names(profile: str) -> tuple[str, ...]:
+    if profile == "sampled_path_and_source_route_imitation_only":
+        return ("positive_path_imitation", "source_route_imitation")
+    if profile == "recovery_positive_only":
+        return ("source_route_imitation", "recovery_positive_imitation")
+    if profile == "local_duplicate_rejection_and_recovery":
+        return ("source_route_imitation", "local_duplicate_rejection")
+    if profile == "duplicate_cleaned_imitation_only":
+        return ("source_route_imitation", "duplicate_cleaned_imitation")
+    if profile == "combined_duplicate_rejection_and_cleaned_imitation":
+        return (
+            "source_route_imitation",
+            "local_duplicate_rejection",
+            "duplicate_cleaned_imitation",
+        )
+    if profile == "positive_path_imitation_only":
+        return ("positive_path_imitation",)
+    return ()
+
+
 def _candidate_path(
-    context: RolloutCalibrationLossContext, candidate: Any
+    context: RolloutCalibrationLossContext,
+    candidate: Any,
+    *,
+    complete_row_token_types: bool = False,
 ) -> CandidatePath:
     interval = candidate.owner_resolution_physical_target_interval
     premature = candidate.harmful_kind == "premature_terminal"
@@ -1096,11 +1659,11 @@ def _candidate_path(
         tuple(_logits_row(context, position) for position in range(start - 1, end - 1))
     )
     token_types: tuple[str, ...] | None = None
-    if candidate.role == "positive":
+    if candidate.role == "positive" or complete_row_token_types:
         interval = candidate.owner_resolution_candidate_interval
         if interval is None:
             raise LossContractError(
-                "positive entity candidate lacks a token-type interval",
+                "complete-row candidate lacks a token-type interval",
                 code="loss.rollout_continuation_interval_missing",
                 context={"candidate_id": candidate.candidate_id},
             )
@@ -1208,6 +1771,7 @@ def _term_result(
     metric_name: str,
     metric_value: Any,
     event_weight: float = 1.0,
+    preserve_declared_event_credit: bool = False,
 ) -> LossTermResult:
     if eligible:
         raw = raw_event.float() * (
@@ -1222,12 +1786,25 @@ def _term_result(
             code="loss.rollout_event_weight",
             context={"event_weight": checked_event_weight, "term": name},
         )
-    weighted = raw * float(weight) * checked_event_weight
+    denominator_compensation = (
+        float(denominator.eligible_segment_count)
+        if eligible and preserve_declared_event_credit
+        else 1.0
+    )
+    event_coefficient = checked_event_weight * denominator_compensation
+    weighted = raw * float(weight) * event_coefficient
     result_diagnostics = {
         **diagnostics,
         "local_micro_step_index": int(local_micro_step_index),
         "backend_gradient_scale": float(backend_scale),
         "image_balanced_event_weight": checked_event_weight,
+        "event_weight_convention": (
+            "declared_credit"
+            if preserve_declared_event_credit
+            else "event_balanced"
+        ),
+        "event_weight_denominator_compensation": denominator_compensation,
+        "effective_event_coefficient": event_coefficient,
     }
     if metric_value is not None and eligible:
         result_diagnostics[metric_name] = float(metric_value) * (
@@ -1251,6 +1828,7 @@ def _term_result(
 
 __all__ = [
     "CalibrationTokenSequence",
+    "DUPLICATE_TERM",
     "RolloutCalibrationLossContext",
     "RolloutCalibrationLossPlan",
     "RolloutCalibrationLossRunner",
