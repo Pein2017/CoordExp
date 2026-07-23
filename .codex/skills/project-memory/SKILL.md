@@ -87,6 +87,12 @@ necessary to resume safely.
 A checkpoint is complete when a future agent can understand what changed, why
 it matters, what remains uncertain, and where to continue.
 
+Before a phase-close or durable handoff checkpoint, compare `current.md` with
+the owning result and current decision or compass. Resolve contradictions by
+rewriting stale memory rather than appending another interpretation. Record an
+explicit superseded direction when a plausible old route would otherwise be
+easy to restart.
+
 ## Curate
 
 Agents have full create, read, update, and delete access inside `memories/`.
@@ -101,10 +107,11 @@ consolidator rewrite `current.md`; other agents should produce bounded notes or
 proposals for consolidation.
 
 Aim for roughly one or two readable pages in `current.md`, not an append-only
-log. It should answer the active objective, latest decision-relevant evidence,
-live blocker or continuation state, unresolved questions, immediate next
-actions, and minimum reading path. Rewrite stale sections instead of adding
-contradictory updates.
+log. It should answer the active objective and decision-owning outcome, current
+decision and why, latest decision-relevant evidence, superseded directions and
+their reopening condition, live blocker or continuation state, strongest
+unresolved alternative, immediate next discriminator, and minimum reading path.
+Rewrite stale sections instead of adding contradictory updates.
 
 Curation is complete when the live memory is coherent, searchable, and free of
 obvious stale duplication.
@@ -117,6 +124,11 @@ raw tool output only when a retained claim needs it. Write a few natural
 chapters that follow the work's actual transitions, then reconstruct
 `current.md` as the best approximate terminal state. Mark uncertainty and
 historical reconstruction explicitly.
+
+Deduplicate imported transcripts, side-chat packets, or repeated user context by
+path and content hash before synthesis. Process one canonical copy and record
+the duplicate boundary; do not repeatedly inject the same large source into a
+live task.
 
 Recovery is complete when the useful history and final working state are
 available without requiring future agents to reopen the full transcript.

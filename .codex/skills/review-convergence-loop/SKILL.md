@@ -56,6 +56,7 @@ State:
 - source-of-truth surfaces
 - decision at stake
 - evidence that would change the decision
+- artifact or evidence delta since any prior review
 - stop condition
 - approval gates
 
@@ -82,18 +83,23 @@ Use subagents only when the user explicitly requested subagents or the active wo
 Dispatch according to independent decision surfaces, not available agent slots
 or a mechanical lane count. Give each surface one current owner. A second agent
 on the same surface must replace or audit the first, not create a duplicate
-implementation or general-review lane. Prefer project custom-agent roles when
-they fit:
+implementation or general-review lane. Use task-specific generic briefs and
+select the model from `.codex/MODEL_ROUTING.md`. Useful independent lane types
+include unknown-surface discovery, upstream dependency tracing, contract or
+artifact audit, scientific interpretation, runtime receipt, research
+synthesis, and bounded implementation. These are task descriptions, not
+permanent role profiles.
 
-- `repo_scout`: unknown surface map before other lanes spend tokens.
-- `upstream_relation_tracer`: upstream/library or cross-root dependency claims.
-- `contract_auditor`: governance/spec, implementation-contract, config/runtime, artifact/eval, docs, or launch-gate risks.
-- `model_diagnostician`: abnormal model behavior, rollout symptoms, metric drops, or artifact-root diagnosis.
-- `probe_runner`: execution receipts for runtime-dependent findings; upgrades PLAUSIBLE to CONFIRMED or refutes it.
-- `research_synthesizer`: research-note clustering, supervisor packets, or OKF-style hub drafts.
-- `implementation_worker`: assigned patch lane after the parent gives owned files/modules and verification target.
+Before every review wave, record:
 
-Use generic lanes only when no custom role fits the work.
+- the open decision risk owned by each lane;
+- the changed artifact or new evidence since the last wave;
+- the action each possible verdict would trigger;
+- why a deterministic check or concrete probe is insufficient.
+
+If a lane has no distinct risk or no possible decision impact, do not dispatch
+it. Default to one reviewer for one decision surface. Use a second lane only
+when two genuinely independent judgment surfaces are both required.
 
 Each subagent prompt must include:
 
@@ -182,12 +188,19 @@ production-style completeness.
 Default max rounds:
 
 - design/docs: 2 review rounds unless new P0/P1 appears
-- implementation: 3 review/fix rounds per task before escalating
+- implementation: 2 review/fix rounds; a third requires changed evidence on an
+  unresolved P0/P1
 - launch gate: 1 focused review round, then rerun only if evidence changed
 
 Continue beyond the default only when each round is closing material findings. Do not churn on style-only P2s.
 
-Do not run a third clean review wave without changed evidence, a new artifact version, or an unresolved high-stakes decision.
+If a review wave produces no new accepted P0/P1 and no decision change, close
+that surface immediately. Continue with a probe, bounded revision, narrowed
+claim, user decision, or stop; do not seek another reviewer for reassurance.
+
+Do not run a third clean review wave. Changed evidence, a new artifact version,
+or an unresolved high-stakes decision may justify a focused follow-up on the
+open finding, not another general review.
 
 ### 8. Stop Correctly
 
@@ -247,7 +260,6 @@ for path in pathlib.Path(".codex/agents").glob("*.toml"):
         raise SystemExit(f"{path}: missing {sorted(missing)}")
     print(f"{path}: ok")
 PY
-git check-ignore -v .codex/agents/repo_scout.toml || true
 git diff --check
 ```
 

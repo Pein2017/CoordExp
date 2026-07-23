@@ -131,23 +131,35 @@ not a production pre-registration or a speculative software interface.
 
 Require only:
 
-1. **Question**: one falsifiable question.
-2. **Competing explanation**: the strongest alternative and the control that
+1. **Decision and outcome**: the decision at stake, the behavior or capability
+   that owns it, and the unit on which that outcome is judged.
+2. **Question**: one falsifiable question.
+3. **Competing explanation**: the strongest alternative and the control that
    separates it from the working hypothesis.
-3. **Primary observation**: the smallest score, trace, visualization, or short
+4. **Primary observation**: the smallest score, trace, visualization, or short
    rollout that changes the next decision.
-4. **Outline**: expected owner surfaces, reused infrastructure, non-goals,
+5. **Alignment**: the proposed intervention or proxy unit, the final evaluation
+   surface, the transfer claim between them, behavior that must be preserved,
+   ambiguous evidence that stays neutral, and whether the data contains enough
+   correctly attributed signal.
+6. **Outline**: expected owner surfaces, reused infrastructure, non-goals,
    representative smoke, stop rule, and rough cost. Do not freeze code-level
    interfaces before runtime evidence exists.
-5. **Scope**: checkpoint, cases, changed factor, invariants, and decode or
+7. **Scope**: checkpoint, cases, changed factor, invariants, and decode or
    training semantics needed to interpret the pilot.
-6. **Artifact handle**: logical output root and the compact run receipt expected
+8. **Artifact handle**: logical output root and the compact run receipt expected
    from execution.
-7. **Terminology**: define local abbreviations and coined names once.
+9. **Terminology**: define local abbreviations and coined names once.
 
 For inference-led case or mechanism studies, prefer a few deliberately selected
 representative cases and sample-level review over population metric estimation.
 The owning domain skill may define a more specific default range.
+
+Before a unit becomes `ready`, run one real case through every
+conclusion-bearing link from source selection through intervention, emitted
+artifact, and the evaluator, visualization, or trace that owns the decision. If
+a link is bypassed or represented by a proxy, name it and narrow the claim.
+Helper-level tests alone are not this representative smoke.
 
 ### Decision-grade additions
 
@@ -163,8 +175,29 @@ Ordinary implementation repairs do not require a new protocol ceremony. Never
 rewrite a declared scope after observing results; label partial execution as
 partial evidence.
 
+Before scaling a treatment, distinguish lack of signal supply, optimization
+failure, proxy-to-outcome transfer failure, and failure of the intended
+mechanism. Do not let the easiest available label, candidate, metric, or
+intermediate representation silently redefine the research objective. Use
+[Research Alignment Examples](research-alignment-examples.md) for compact
+positive and negative patterns.
+
 When closing a non-trivial unit, separate `Observed`, `Supported`, `Ruled out`,
 `Unresolved`, and `Not claimed`, then name the next discriminator.
+
+## Closeout Consistency Gate
+
+Close a unit from the evidence owner outward:
+
+1. freeze `results.md` or the result section in `unit.md`;
+2. update the experiment router and lifecycle status;
+3. update the investigation decision or compass only if the route changed;
+4. refresh `memories/current.md` only if continuation changed;
+5. write a durable handoff only when another session or machine needs one.
+
+These surfaces may summarize the same decision, but they must not become
+independent authorities. Keep one current frontier, link to the owning result,
+mark superseded routes explicitly, and resolve contradictions before handoff.
 
 ## Artifact Root
 
@@ -227,6 +260,9 @@ linear probe, single checkpoint, or mechanics smoke cannot promote a mechanism.
   metric symbol, or coined name.
 - Run `conda run -n ms python scripts/research/check_research_graph.py` for the
   decision layer.
+- Check for lifecycle contradictions such as a completed result whose router
+  still says `planned`, `ready`, or `running`, or a current decision that names
+  a superseded unit.
 - Verify referenced artifact receipts/hashes when available.
 - Run `git diff --check` on touched files.
 

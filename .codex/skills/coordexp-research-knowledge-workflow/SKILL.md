@@ -26,11 +26,12 @@ Do not use this as the first skill for:
 - isolated feature branches or cleanup lifecycle: use `worktree-feature-loop` and `git-hygiene`;
 - infer/eval launch or artifact repair: use `coordexp-infer-eval-workflow`.
 
-Use the `research_synthesizer` custom agent for large note clustering,
-cross-worktree Markdown collection, supervisor packets, or Open Knowledge
-Format (`OKF`)-style hub drafts. Keep the agent on research/provenance surfaces;
-use `contract_auditor` before promoting any synthesized claim into current docs
-or stable specs.
+For large note clustering, cross-worktree collection, supervisor packets, or
+Open Knowledge Format (`OKF`)-style hub drafts, delegate a bounded read-only
+research/provenance lane with exact sources and an output schema. Before
+promoting a synthesized claim into current docs or stable specs, use one
+independent contract-focused lane. Select models and reasoning effort from
+`.codex/MODEL_ROUTING.md`; do not depend on a permanent custom-agent profile.
 
 ## Authority Rules
 
@@ -57,11 +58,22 @@ authority without an explicit docs/spec update.
    authorization. Read
    [Research Graph and Unit Contract](references/research-graph-contract.md)
    when creating or closing a unit.
-7. **Match the evidence tier.** Keep exploratory units as compact executable
+7. **Check research alignment.** Before a treatment or scale-up, record the
+   decision-owning outcome, intervention or proxy, final evaluation surface,
+   transfer claim, preservation risks, and signal supply. Read
+   [Research Alignment Examples](references/research-alignment-examples.md)
+   when positive and negative patterns would clarify the boundary.
+8. **Match the evidence tier.** Keep exploratory units as compact executable
    outlines. Add frozen protocols, broad manifests, replication, and hardened
    runtime contracts only after a pilot survives its discriminating control.
-8. **Route discoveries.** Promote only stable current behavior into `docs/`; use OpenSpec only for stable compatibility-sensitive contracts.
-9. **Verify the boundary.** Check source counts, manifest rows, tracked file set,
+9. **Close the routing fan-out once.** After evidence closes, update the owning
+   unit/results, its experiment index, and the current decision or compass when
+   the route changed. Refresh project memory only when continuation state
+   changed, and create a durable handoff only for an actual session or machine
+   transfer. Link these surfaces rather than copying the same current-state
+   prose into each one.
+10. **Route discoveries.** Promote only stable current behavior into `docs/`; use OpenSpec only for stable compatibility-sensitive contracts.
+11. **Verify the boundary.** Check source counts, manifest rows, tracked file set,
    local links, YAML Ain't Markup Language (`YAML`) frontmatter where used, and
    ignored-file behavior before reporting.
 
@@ -167,6 +179,11 @@ protocol/result separation, evidence-tier-appropriate artifact attribution,
 and that the bounded verdict does not exceed its evidence scope. Require an
 immutable run identifier once execution artifacts need stable comparison; do
 not turn a pre-execution exploratory outline into a manifest exercise.
+
+For a closed unit, also check that the experiment index does not retain an old
+`planned`, `ready`, or `running` state; that the active decision surface does not
+point to a superseded route; and that project memory or a durable handoff does
+not contradict the owning result.
 
 ## Output Contract
 

@@ -43,9 +43,10 @@ This skill complements `model-diagnosis`. Use `model-diagnosis` for immediate sy
 2. Set or refine a `/goal` for long runs. If the user's words are rough, translate them into a precise objective with mechanism targets, contrast axes, evidence surfaces, and manual-review gates.
 3. Load local routing first: `docs/AGENT_INDEX.md`, `docs/catalog.yaml`, relevant specs/docs, prior `research/` notes, legacy `progress/` provenance when explicitly relevant, and existing analysis scripts.
 4. Select or create one owning research unit before implementation. Write a
-   compact outline: one falsifiable question, strongest alternative, primary
-   contrast, smallest observation, expected owner surfaces, reused
-   infrastructure, non-goals, stop rule, rough cost, and logical
+   compact outline: the decision-relevant outcome and its unit of analysis, one
+   falsifiable question, strongest alternative, primary contrast, smallest
+   observation, expected owner surfaces, reused infrastructure, non-goals,
+   stop rule, rough cost, and logical
    `outputs/research/<investigation>/<unit-id>/<run-id>/` root. Use
    `coordexp-research-knowledge-workflow` for the unit lifecycle. Do not freeze a
    speculative code interface or production-shaped protocol for an exploratory
@@ -95,6 +96,21 @@ occupancy. Preserve matched effective examples or tokens per optimizer update,
 loss normalization, optimizer schedule, and packing isolation across compared
 arms unless one of those is an explicit experimental variable.
 
+## Outcome, Intervention, And Evaluation Alignment
+
+Use the alignment contract in
+`coordexp-research-knowledge-workflow` before implementing a treatment or
+scaling a pilot. For V-LLM work, classify token-, span-, row-, trajectory-, or
+module-level interventions as proxies, diagnostics, or auxiliary treatments
+until native free-behavior evaluation supports transfer to the
+decision-owning outcome. Distinguish signal-supply or admission failure from
+failure of the objective, and make preservation of useful existing behavior
+visible rather than allowing aggregate metrics to hide exchange.
+
+Read
+[Research Alignment Examples](../coordexp-research-knowledge-workflow/references/research-alignment-examples.md)
+when the treatment unit or claim boundary is easy to confuse.
+
 ## Minimal Implementation And Runtime Assurance
 
 - Expand the implementation only to obtain the primary observation or protect
@@ -107,6 +123,19 @@ arms unless one of those is an explicit experimental variable.
 - For an exploratory run, retain a compact receipt containing source identity,
   checkpoint/config/case identities, request conditions and seeds, raw output,
   parser/failure status, and the representative smoke result.
+- Make the representative smoke reach every conclusion-bearing consumer of the primary
+  observation, including merge, parsing, scoring, or evaluation when those
+  surfaces determine the claim. Producing shards or intermediate tensors alone
+  is not end-to-end success. Cover semantically distinct changed branches and
+  known failure surfaces that could reverse the conclusion.
+- After an invalidated full run, reproduce the failure, add the smallest
+  regression check, and pass the complete representative smoke before using a
+  fresh immutable run root. Repeated invalidation with the same unresolved
+  failure class should stop fan-out and trigger a focused launch-contract check
+  instead of another full run.
+- Give one job owner responsibility for launch, monitoring, failure
+  classification, and the terminal receipt. Other lanes consume that receipt
+  rather than polling the same job independently.
 - Do not add live tensor inventories, mutation seals, adversarial capability
   objects, replay attestations, or parity systems unless a demonstrated runtime
   ambiguity could alter the primary conclusion.
@@ -142,6 +171,10 @@ discrete coordinate token.
 
 Move from cheap structure to causal mechanisms, but do not stop at the cheap layer when the user has asked for roots.
 
+This ladder orders probe depth, not evidential strength. Use the research graph
+promotion ladder for claim promotion; even a successful causal patch may remain
+exploratory evidence.
+
 1. **Case and onset ledger**: classify parse validity, emitted count, pair onset, component onset, component growth, normalized row position, desc/class, spatial basin, and stop/termination behavior.
 2. **Slot and boundary readouts**: keep `x1`, `y1`, `x2`, `y2`, `box_end`, stop/continue, and type/schema tokens separate. Do not collapse them into one aggregate score.
 3. **Prefix and guidance splits**: compare full history, no-history,
@@ -163,6 +196,8 @@ Good probe families include object pointer trajectory, guidance separability mat
 ## Interpretation Rules
 
 - Separate visible symptom, candidate mechanism, causal evidence, and unresolved alternative.
+- Separate an existence proof from prevalence, a causal handle from a useful
+  treatment, and a bounded treatment from evidence that scaling is justified.
 - Prefer "probe handle mismatch" or "inconclusive-needs-mechanism-panel" over "mechanism absent" when a negative result does not actually target the suspected surface.
 - Treat attention-only findings as route hypotheses until paired with ablation or patch evidence.
 - Distinguish a local slot rescue from full object-span recovery. A patch that fixes `y1` but fails `x2/y2/box_end` is evidence for split onset vs span-binding mechanisms.
@@ -197,6 +232,9 @@ Good probe families include object pointer trajectory, guidance separability mat
   collision-safe. Include checkpoint, image/sample identity, candidate identity,
   source specification, history variant, slot, and mode as needed.
 - Use `handoff` when context is near exhaustion. Link exact artifacts and notes instead of duplicating large logs.
+- For large imported discussions or prior transcripts, keep one path and content
+  hash plus a distilled decision packet. Do not repeatedly inject identical
+  context into the active research loop.
 
 ## Verification
 
@@ -218,6 +256,12 @@ For artifact claims, also verify row counts, skipped/error counts, parser/drop s
 - Using the first duplicate-like pair as the burst onset when the largest component starts later.
 - Comparing checkpoints without aligning prompt/template, adapter/module loading, decode protocol, and token surface.
 - Treating attention as causal proof.
+- Optimizing a convenient local proxy and then interpreting its result as if
+  the decision-owning behavior had been trained directly.
+- Treating a lack of admissible examples for one proposed loss or grouping rule
+  as falsification of the broader research objective.
+- Scaling images, updates, reviewers, or implementation surface before the
+  outcome-intervention-evaluation alignment has passed.
 - Porting every old helper into a new worktree instead of referencing prior tools and copying only what is necessary.
 - Flattening slot-wise or condition-wise evidence into a single metric.
 - Ignoring special coordinate-token embeddings or newly trained token surfaces.

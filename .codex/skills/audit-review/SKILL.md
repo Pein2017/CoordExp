@@ -40,6 +40,18 @@ Before broad reading, name:
 - stop condition
 - finding ledger or prior review packet, if one exists
 
+Before launching an independent audit lane, also name:
+
+- the one open risk that requires independent judgment;
+- what artifact or evidence changed since the previous review;
+- what each plausible verdict would cause the lead to do next;
+- why a deterministic check or focused probe cannot settle the risk more
+  cheaply.
+
+If these cannot be named, do not launch another audit. A prior review that found
+no new accepted P0/P1 and caused no decision change closes that decision surface
+until the artifact, evidence, or open risk changes.
+
 For each P0/P1, classify the decision implication:
 
 - `fix`: intended direction is still valid; implement a bounded correction.
@@ -49,6 +61,11 @@ For each P0/P1, classify the decision implication:
 - `needs user decision`: next step changes research meaning, compatibility, cost, destructive behavior, or publication/launch risk.
 
 Prefer `probe` over speculative fixes when runtime semantics, artifact identity, matched baselines, or installed upstream behavior are unverified. Prefer `needs user decision` over quietly converting research-meaning forks into engineering tasks.
+
+For research treatments and claim-validity audits, compare the
+decision-owning outcome, intervention or proxy unit, final evaluation unit,
+transfer assumption, preservation risks, and signal supply. A mismatch is a
+claim-boundary finding even when the implementation is internally correct.
 
 ## Exploratory Research Triage
 
@@ -238,8 +255,19 @@ Use `references/report-template.md` when a skeleton is helpful.
 - Do not use `progress/` as current behavior when `docs/` or stable specs cover the contract.
 - Use Git inspection only when the audit scope depends on dirty state, a PR/change diff, or the user asks for it; otherwise do not run Git by reflex.
 - For Python code exploration, route docs/configs first, then use a correct local CodeGraph index only for broad "where should I look?" maps. Once files or symbols are known, switch to Serena for exact references, bodies, declarations/implementations, diagnostics, and edit-risk checks. In linked worktrees, do not trust CodeGraph results from another checkout.
-- For broad approval audits, use `contract_auditor` as the default custom-agent role. Add `repo_scout` for unknown surfaces and `upstream_relation_tracer` for cross-root dependencies; route runtime-dependent P0/P1 confirmation through `probe_runner` receipts; reconcile every lane into one verdict. A timed-out or vague lane is unresolved, not approval.
-- Do not launch or recommend broad audit fleets by default. Use one focused audit or 2 independent lanes; add a cross-model lane only for high-stakes launch, merge, architecture, or expensive-run gates. A third clean wave needs changed evidence or a new decision.
+- For a broad approval audit, use one bounded contract-focused lane by default.
+  Add a separate discovery, upstream-dependency, runtime-probe, or scientific-
+  interpretation lane only when it owns a genuinely independent decision
+  surface. Select the model from `.codex/MODEL_ROUTING.md`; do not require a
+  permanent custom-agent profile. Reconcile every lane into one verdict. A
+  timed-out or vague lane is unresolved only when that lane is required by the
+  stated stop condition.
+- Do not launch or recommend broad audit fleets by default. Use one focused
+  audit; use two independent lanes only when engineering-contract and
+  scientific-interpretation judgments are both conclusion-critical. Add a
+  cross-model lane only when model disagreement is itself the bounded question.
+  Never add a clean wave merely to rank reviewers or increase confidence by
+  repetition.
 - If a finding ledger such as `agent_verdict/<surface>-ledger.md` exists in scope, read it first and report only new findings, status changes, rejected findings, or closure evidence.
 - If a temporary probe is unavoidable, prefer `/tmp/`. Ask before writing under repo `temp/`.
 

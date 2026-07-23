@@ -67,6 +67,12 @@ it can change a durable routing or process decision. Include representative
 expansion-prone work and a lean negative control, require independent contract
 and quality adjudication, and never treat raw lines of code as adoption proof.
 
+For audit-derived guidance, state the portable invariant before editing an
+asset. Test it against one positive case and one near-miss or negative case. If
+the rule only fits the originating checkpoint, model, dataset, artifact shape,
+or research direction, keep it in the owning unit or examples reference rather
+than promoting it into shared Skill instructions.
+
 ## Output First
 
 Before creating assets, produce a compact shortlist with:
@@ -91,5 +97,10 @@ for path in pathlib.Path(".codex/skills").glob("*/agents/openai.yaml"):
     yaml.safe_load(path.read_text())
 PY
 ```
+
+For non-trivial behavioral Skill edits, forward-test in a fresh context with
+raw task evidence. Use one prompt that should trigger and apply the rule and one
+boundary prompt that should not. Do not reveal the intended answer or the edit
+being tested.
 
 For final reporting, include created/extended assets, deliberate skips, unresolved evidence gaps, and commands run.

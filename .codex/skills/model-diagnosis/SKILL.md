@@ -24,7 +24,12 @@ model outputs, metrics, rollouts, optimization, or train/eval behavior.
 
 Switch to `model-innovation-risk-audit` when symptom evidence suggests silent train/eval/config/runtime mismatch, stale artifacts, wrong adapter, prompt/template drift, schema drift, or metric-contract ambiguity.
 
-For large or independent diagnosis lanes, delegate to the `model_diagnostician` custom agent. Add `upstream_relation_tracer` only when the symptom depends on upstream library behavior, and add `contract_auditor` only when artifact/eval validity or launch approval is the question.
+For a large or independent diagnosis, delegate one task-specific lane with the
+exact artifact root, symptom, competing causes, and stop condition. Add a
+separate upstream-dependency lane only when library behavior is causal to the
+symptom, and a contract-focused lane only when artifact/eval validity or launch
+approval is a distinct decision surface. Select models from
+`.codex/MODEL_ROUTING.md`; do not depend on permanent custom-agent profiles.
 
 ## Artifact Triage First
 
