@@ -9,8 +9,8 @@ implementation_status: authorized_separately
 unit_id: 2026-07-22-constant-dose-image-breadth-treatment-screen
 topic: qwen3-vl-dense-enumeration
 status: running
-evidence_status: none
-updated: 2026-07-22
+evidence_status: partial
+updated: 2026-07-23
 ---
 
 # Constant-Dose Image-Breadth Treatment Screen
@@ -110,17 +110,32 @@ affect membership. Write the split and its source hash to an immutable receipt.
 Keep byte-preserving split and complement JSONL files beside the candidate pool
 so their relative image paths retain exactly the same meaning.
 
-Reuse the immutable one-greedy plus sixteen-sampled-route panel for the
-original 256 images. Generate only the missing 2,176-image trajectories with
-the same request-scoped physical batch size one, Source checkpoint, prompt,
-temperature 0.4, nucleus probability 0.95, repetition penalty 1.0, generation
-limit, and sixteen fixed sampled seeds 31,001 through 31,016. Use seed 31,000
-for the greedy route. Reset the random generator per image and seed, matching
-the earlier panel exactly. Physical batch size one means one image per model
-request; the eight GPUs may process independent seed shards concurrently, but
-requests must not be combined into a multi-image generation batch. Development
-and held-out trajectories may be materialized for later evaluation, but no
-admission statistic from those images may affect either training bank.
+Regenerate the complete 2,432-image trajectory panel with one unified vLLM
+high-throughput inference backend. Do not combine the earlier Hugging Face
+256-image routes with new vLLM routes. For each image, collect sixteen sampled
+trajectories at temperature 0.4, nucleus probability 0.95, repetition penalty
+1.0, and a 1,024-token generation allowance. Identify them by `sample_index`
+0 through 15; request seed is not a research variable.
+
+Use eight disjoint image shards, one graphics-processing-unit worker and one
+vLLM engine per shard, with scheduler capacity 32 and 16 images per persisted
+batch. Set the prompt-plus-generation model length to 4,096. Require natural
+closure for every route and stop a worker after persisting evidence if any
+route ends because of length.
+
+Do not include a greedy route in this production panel. A targeted four-image
+smoke showed that greedy decoding at repetition penalty 1.0 entered stable
+repeated-row loops and consumed the full token allowance, whereas all 64
+matched low-temperature samples closed naturally. Raising the greedy limit,
+allowing truncation, or changing its repetition penalty would each change the
+comparison rather than produce a valid matched completion. The complete
+production panel therefore estimates sampled object support only. Its receipt
+and exact claim boundary are recorded in
+`trajectory-panel-vllm-receipt.md`.
+
+Development and held-out trajectories may be materialized for later
+evaluation, but no admission statistic from those images may affect either
+training bank.
 
 The twelve human-refined validation images remain development safety evidence
 only. They never supply gradients and are not part of the 2,432-image pool.
@@ -136,6 +151,14 @@ Apply the same conservative route admission semantics as the completed screen:
 - only trusted first-occurrence physical owners receive gradient;
 - entity identity and coordinate trust remain separate;
 - unresolved or annotation-ambiguous rows receive no gradient.
+
+The sampled-only production panel does not contain the source greedy owner set
+referenced by the first admission rule. Before any StateBank is frozen, define
+a separate finite source-baseline decoding policy or revise the admission rule
+and its claims. Do not silently substitute a length-truncated greedy loop, a
+greedy run with a different repetition penalty, or an arbitrary sampled route.
+Until this decision is recorded, trajectory collection is complete but
+StateBank assembly remains pending.
 
 Run route admission only inside the frozen 2,048-image training-candidate
 split.
@@ -153,7 +176,9 @@ trusted Source-preservation event. The gate therefore proves that the broad
 bank can use 496 different physical images with no second event from any image.
 If it fails, stop before training rather than weakening trust rules.
 
-Build two newly matched StateBanks. Each contains exactly:
+Build two newly matched `StateBank` artifacts. Here, a StateBank is the
+persisted collection of model states, prefixes, target rows, and token-level
+training supervision consumed by the training pipeline. Each contains exactly:
 
 - 496 sampled-route treatment events;
 - 496 Source-route preservation events;
